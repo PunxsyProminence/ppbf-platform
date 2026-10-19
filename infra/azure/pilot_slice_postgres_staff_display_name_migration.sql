@@ -2,12 +2,15 @@
 --
 -- WHY. No screen can name a coach by their real name, because the platform
 -- has nowhere to keep one. pilot.accounts has no name column, so every
--- surface builds "Coach " + the stem of the login address
--- (apps/web/src/shared/coachDisplayName.ts). A shared or role login names
--- nobody ("Coach Coach", "From Ppbf"; parent walk 2026-10-19 item 6). Jason
--- 2026-10-19, parent-portal Q1 "C: A now, B later (Rec.)": A strips the role
--- words from the stem (#1786); B, this file and the two pull requests after
--- it, is "a real display-name field so the gym types each coach's name".
+-- surface builds a name from the stem of the login address instead: "Coach "
+-- + the stem (deriveCoachDisplayName), the stem alone (deriveStaffDisplayName;
+-- both apps/web/src/shared/coachDisplayName.ts), or the stem with the account
+-- id as its floor (profileDb.ts staffDisplayName, a function, not this
+-- column). A shared or role login names nobody ("Coach Coach", "From Ppbf";
+-- parent walk 2026-10-19 item 6). Jason 2026-10-19, parent-portal Q1 "C: A
+-- now, B later (Rec.)": A strips the role words from the stem (PR #1786); B,
+-- this file and the two pull requests after it, is "a real display-name field
+-- so the gym types each coach's name".
 --
 -- WHERE IT LIVES, AND WHY HERE. pilot.account_profiles, keyed
 -- (organization_id, account_id), is already the record of the part of a
@@ -27,9 +30,12 @@
 --                         falls back to today's derived name on every
 --                         surface. No default: an empty string would make
 --                         "not typed" look like "typed as nothing".
--- One check: a name, when present, is 1 to 60 characters with no leading or
--- trailing spaces. The application trims before writing; the check is what
--- holds when a later writer forgets.
+-- One check: a name, when present, is 1 to 60 characters (characters, not
+-- bytes), with no leading or trailing space and no control character (a tab
+-- or a line break would split the name across lines on a printed card). btrim
+-- strips only the ASCII space, so the application's own validator, which
+-- trims all whitespace and normalises the text, is the full rule; the check
+-- is what holds when a later writer forgets to call it.
 -- Which accounts may carry one (staff roles only) and who may set it (the
 -- organization admin) are application rules, enforced where the name is
 -- written; this file adds no role check, because the role lives on another
@@ -60,11 +66,15 @@ begin
     alter table pilot.account_profiles
       add constraint pilot_account_profiles_staff_display_name_check check (
         staff_display_name is null
-        or (char_length(staff_display_name) between 1 and 60 and staff_display_name = btrim(staff_display_name))
+        or (
+          char_length(staff_display_name) between 1 and 60
+          and staff_display_name = btrim(staff_display_name)
+          and staff_display_name !~ '[[:cntrl:]]'
+        )
       );
   end if;
 end
 $pilot_account_profiles_staff_display_name_check$;
 
 comment on column pilot.account_profiles.staff_display_name is
-  'The name the gym''s organization admin typed for this coach or staff member at this organization, or NULL when none has been typed. Surfaces that name staff prefer it and fall back to the name derived from the login. 1-60 characters, trimmed (pilot_account_profiles_staff_display_name_check).';
+  'The name the gym''s organization admin typed for this coach or staff member at this organization, or NULL when none has been typed. Surfaces that name staff prefer it and fall back to the name derived from the login. 1-60 characters, no leading or trailing space, no control character (pilot_account_profiles_staff_display_name_check).';

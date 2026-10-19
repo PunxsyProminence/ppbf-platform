@@ -3,8 +3,9 @@
 //
 // What needs a real database to prove: that the column is nullable with no default, so every
 // profile written before or without a name reads NULL; that a name is refused blank, all spaces,
-// with a leading or trailing space, or over 60 characters, and kept as sent at 1 and at 60; that
-// one account carries a different name at each of two gyms; that re-applying the file is a no-op;
+// with a leading or trailing space or a control character, or over 60 characters (not bytes),
+// and kept as sent at 1 and at 60; that one account carries a different name at each of two gyms;
+// that re-applying the file is a no-op;
 // that the file holds nothing destructive; and that the runner's readiness assertion refuses a
 // result it did not produce, including a database with no pilot.account_profiles at all. Spins up
 // the disposable local embedded Postgres the other migration suites use. It never connects to
@@ -205,10 +206,10 @@ describe('staff display name migration (coach display names, Q1 part B)', () => 
     }
   });
 
-  test('a name is refused blank, all spaces, padded, or over 60 characters; 1 and 60 are kept', async () => {
+  test('a name is refused blank, all spaces, padded, with a control character, or over 60 characters; 1 and 60 are kept', async () => {
     const client = await freshDatabase('sdn_limits');
     try {
-      for (const bad of ['', '   ', ' Mike', 'Mike ', 'm'.repeat(61)]) {
+      for (const bad of ['', '   ', ' Mike', 'Mike ', 'm'.repeat(61), 'é'.repeat(61), 'Mike\nNeale', '\tMike', 'Mike\u0007']) {
         const refused = await refusal(insertProfile(client, ORG, bad));
         expect(refused.code).toBe('23514');
         expect(refused.constraint).toBe(CHECK);
@@ -219,6 +220,13 @@ describe('staff display name migration (coach display names, Q1 part B)', () => 
       expect(longest).toHaveLength(60);
       await insertProfile(client, OTHER_ORG, longest);
       expect(await storedName(client, OTHER_ORG)).toEqual([longest]);
+
+      // Sixty characters, not sixty bytes: an accented name is not cut short.
+      await client.query('delete from pilot.account_profiles where organization_id = $1', [ORG]);
+      const accented = `José ${'é'.repeat(55)}`;
+      expect(accented).toHaveLength(60);
+      await insertProfile(client, ORG, accented);
+      expect(await storedName(client, ORG)).toEqual([accented]);
     } finally {
       await client.end();
     }

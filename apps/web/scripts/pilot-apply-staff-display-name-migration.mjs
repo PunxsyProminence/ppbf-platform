@@ -24,7 +24,7 @@ function sslConfig() {
 // existing coach the same thing), and the check, validated, compared IN FULL
 // against the text Postgres stores for this migration's own check
 // (staffDisplayName.pg.test.ts).
-const EXPECTED_CHECK = 'CHECK (((staff_display_name IS NULL) OR (((char_length(staff_display_name) >= 1) AND (char_length(staff_display_name) <= 60)) AND (staff_display_name = btrim(staff_display_name)))))';
+const EXPECTED_CHECK = "CHECK (((staff_display_name IS NULL) OR (((char_length(staff_display_name) >= 1) AND (char_length(staff_display_name) <= 60)) AND (staff_display_name = btrim(staff_display_name)) AND (staff_display_name !~ '[[:cntrl:]]'::text))))";
 
 const READINESS_QUERY = `
   select
