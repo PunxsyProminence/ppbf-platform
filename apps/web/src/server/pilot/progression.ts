@@ -182,6 +182,14 @@ export interface AssignmentCompletion {
    should. */
 export type FamilyAssignmentCompletion = Omit<AssignmentCompletion, 'notes'>;
 
+/* WHO IS SENT THE WHOLE ENTRY. Named, like the assignments route's isStaff:
+   the athlete (their own log) and staff. Any other role a gate admits -- a
+   linked guardian today, any role added later -- gets toFamilyCompletion, so
+   a widened gate fails toward the projection. */
+export function readsFullCompletions(role: string): boolean {
+  return role === 'athlete' || role === 'coach' || role === 'admin' || role === 'organization_admin';
+}
+
 export function toFamilyCompletion(row: AssignmentCompletion): FamilyAssignmentCompletion {
   return {
     completion_id: row.completion_id,

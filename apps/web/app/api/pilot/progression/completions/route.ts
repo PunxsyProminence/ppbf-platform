@@ -8,6 +8,7 @@ import {
   getAssignmentCompletions,
   getCompletionById,
   getDrillAssignmentById,
+  readsFullCompletions,
   toFamilyCompletion,
 } from '@/src/server/pilot/progression';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
@@ -42,9 +43,10 @@ export async function GET(request: NextRequest) {
 
     const completions = await getAssignmentCompletions(principal.organizationId, assignmentId);
 
-    // A guardian is sent each entry without its free-text notes (a coach may
-    // have written them); the athlete and staff keep the row.
-    if (principal.role === 'parent') {
+    // A guardian -- anyone not named in readsFullCompletions -- is sent each
+    // entry without its free-text notes (a coach may have written them); the
+    // athlete and staff keep the row.
+    if (!readsFullCompletions(principal.role)) {
       return NextResponse.json({ items: completions.map(toFamilyCompletion) });
     }
     return NextResponse.json({ items: completions });

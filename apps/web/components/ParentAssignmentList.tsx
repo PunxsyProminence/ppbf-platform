@@ -22,7 +22,8 @@ import {
 
    READ-ONLY, and that is the decision rather than an omission (Q1 = B). A
    completion is logged by the athlete and verified by a coach; the
-   completions route refuses a guardian. A family supports the practice and
+   completions route refuses a guardian's write (its read sends a guardian
+   each entry without its notes). A family supports the practice and
    reads the record. */
 
 type AssignmentStatus = 'assigned' | 'in_progress' | 'completed' | 'incomplete' | 'cancelled';

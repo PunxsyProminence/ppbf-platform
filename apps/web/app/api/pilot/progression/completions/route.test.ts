@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { readsFullCompletions } from '@/src/server/pilot/progression';
 import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -123,22 +124,33 @@ describe('GET /api/pilot/progression/completions', () => {
     mockQueryOne
       .mockResolvedValueOnce(assignmentRow())
       .mockResolvedValueOnce({ athlete_id: 'ath-1' }); // guardian link found
-    mockQuery.mockResolvedValueOnce([{ ...loggedEntry }]);
+    // Two entries, and each carries a column the projection does not name: a
+    // copy-everything-but-notes projection would pass it through to a family.
+    mockQuery.mockResolvedValueOnce([
+      { ...loggedEntry, recorded_by_account_id: 'acct-coach-9' },
+      { ...loggedEntry, completion_id: 'c2', notes: 'second note', recorded_by_account_id: 'acct-coach-9' },
+    ]);
     const res = await GET(getRequest('assignment_id=asg-1'));
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(JSON.parse(text)).toEqual({
-      items: [{
-        completion_id: 'c1',
-        assignment_id: 'asg-1',
-        completed_at: '2026-10-10T15:00:00.000Z',
-        reps_completed: 12,
-        verification_status: 'verified',
-        verified_at: '2026-10-10T16:00:00.000Z',
-      }],
-    });
+    const family = {
+      completion_id: 'c1',
+      assignment_id: 'asg-1',
+      completed_at: '2026-10-10T15:00:00.000Z',
+      reps_completed: 12,
+      verification_status: 'verified',
+      verified_at: '2026-10-10T16:00:00.000Z',
+    };
+    expect(JSON.parse(text)).toEqual({ items: [family, { ...family, completion_id: 'c2' }] });
     expect(text).not.toContain('notes');
     expect(text).not.toContain('left hand');
+    expect(text).not.toContain('second note');
+    expect(text).not.toContain('acct-coach-9');
+  });
+
+  test('who is sent the whole entry is a named list: the athlete and staff, and no other role', () => {
+    for (const role of ['athlete', 'coach', 'admin', 'organization_admin']) expect(readsFullCompletions(role)).toBe(true);
+    for (const role of ['parent', 'guardian', 'volunteer', 'board', 'platform_owner', '']) expect(readsFullCompletions(role)).toBe(false);
   });
 
   test('the athlete and staff still get the notes', async () => {

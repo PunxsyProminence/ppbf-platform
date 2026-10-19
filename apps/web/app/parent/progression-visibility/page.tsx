@@ -28,8 +28,9 @@ const GAP_RABBIT_HOLE_CLASS =
 // three GET routes already allow the parent role and enforce the guardian
 // link server-side (assertActorCanAccessAthlete -> isGuardianLinkedToAthlete),
 // and their projections are already athlete-safe (no detection payloads, no
-// staff identifiers). A guardian reads exactly what their child reads, never
-// more. This surface is deliberately read-only: logging a completion is the
+// staff identifiers). A guardian reads what their child reads, never more,
+// and less where the record holds staff notes: a logged entry reaches a
+// guardian without its free-text notes (toFamilyCompletion). This surface is deliberately read-only: logging a completion is the
 // athlete's or a coach's act, not a guardian's, and the completions route
 // enforces that on POST.
 interface LinkedChild {

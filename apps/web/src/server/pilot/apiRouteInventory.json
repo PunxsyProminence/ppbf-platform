@@ -10738,7 +10738,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists completions for assignment_id; reach check on the assignment's own athlete, refusal returns 404. A parent is sent toFamilyCompletion (progression.ts): named fields, no free-text notes.",
+    "notes": "Lists completions for assignment_id; reach check on the assignment's own athlete, refusal returns 404. Roles outside readsFullCompletions (athlete and staff; progression.ts) -- a linked parent today -- are sent toFamilyCompletion: named fields, no free-text notes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
