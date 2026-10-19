@@ -567,7 +567,7 @@ describe('cleared tonight against real Postgres', () => {
       expect(byId.get(RECLEARED)!.tonight.hold).toBeNull();
       expect(byId.get(NO_RECORD)!.tonight.medical).toEqual({ status: 'no_record', current: false, expires_at: null });
       expect(byId.get(NO_RECORD)!.tonight.open_violations).toBe(0);
-      expect(byId.get(ADULT)!.tonight.media_consent).toEqual({ basis: 'adult_own_consent' });
+      expect(byId.get(ADULT)!.tonight.media_consent).toEqual({ basis: 'adult_own_consent', own: 'none', outside_gym: false });
 
       const sent = JSON.stringify(rows);
       expect(sent).not.toContain('STAFF-ONLY');

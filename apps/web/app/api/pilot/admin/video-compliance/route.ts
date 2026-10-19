@@ -5,7 +5,7 @@ import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
-import { assertGuardianMediaConsent, assertGuardianMediaConsentWithClient, assertNotAdultForNewPublication, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
+import { assertGuardianMediaConsent, assertGuardianMediaConsentWithClient, assertNewPublicationConsentPath, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import {
   decidePublicationCompliance,
@@ -337,17 +337,19 @@ export async function POST(request: NextRequest) {
         // Reopening puts footage back on the way to a new publication: an
         // adult's is refused on a guardian's consent (OD-2026-10-08-015),
         // checked first since no guardian paperwork can cure it.
-        await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id);
-        await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
-        await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+        if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id) === 'guardian_consent') {
+          await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
+          await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+        }
 
         applied = await reopenRetractedPublication({
           organizationId: principal.organizationId,
           publicationId,
           verifyBeforeCommit: async (client) => {
-            await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
-            await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
-            await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id, client);
+            if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id, client) === 'guardian_consent') {
+              await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+              await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+            }
           },
         });
       } catch (error) {
@@ -461,9 +463,10 @@ export async function POST(request: NextRequest) {
         // No approval of an adult's footage on a guardian's consent
         // (OD-2026-10-08-015), checked first since no guardian paperwork can
         // cure it; again inside the transaction below.
-        await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id);
-        await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
-        await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
+        if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id) === 'guardian_consent') {
+          await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+          await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
+        }
       }
 
       // CAS-guarded status transition AND its compliance-check record, as one
@@ -492,9 +495,10 @@ export async function POST(request: NextRequest) {
         // here, which is the drift the shared helper exists to prevent.
         verifyBeforeCommit: decision === 'approve'
           ? async (client) => {
-            await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
-            await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
-            await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id, client);
+            if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id, client) === 'guardian_consent') {
+              await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+              await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+            }
           }
           : undefined,
       });

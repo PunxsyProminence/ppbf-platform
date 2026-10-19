@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { gymDayIso } from '@/src/lib/gymTime';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import {
+  JUMP_PROTOCOL_IDS,
   PPBF_ASSESSMENT_PROTOCOLS,
   SKILL_RATING_LEVELS,
   ensurePpbfAssessmentProtocols,
@@ -39,8 +40,9 @@ function requireAthleteId(value: unknown): string {
 
 function catalog() {
   return {
+    // The jump picker offers the jumps only; the shuttle is recorded on the test-day form.
     jump_protocols: PPBF_ASSESSMENT_PROTOCOLS
-      .filter((p) => p.measure_kind === 'physical_test')
+      .filter((p) => (JUMP_PROTOCOL_IDS as readonly string[]).includes(p.protocol_id))
       .map((p) => ({ protocol_id: p.protocol_id, name: p.name, summary: p.protocol_summary, equipment: p.equipment_needed })),
     skill_families: SKILL_FAMILY_IDS.map((id) => ({ skill_family_id: id, name: SKILL_FAMILY_NAMES[id] })),
     rating_levels: SKILL_RATING_LEVELS,

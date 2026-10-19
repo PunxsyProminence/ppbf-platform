@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useAchievementCeremony } from './achievementCeremony';
+import { forgetCelebrated, useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
@@ -94,6 +94,16 @@ export interface AthleteAchievementsProps {
 
 type LoadState = 'loading' | 'ready' | 'unavailable';
 
+/** When the Undo line stops being offered. The server's MILESTONE_UNDO_WINDOW_MINUTES decides. */
+const UNDO_WINDOW_MS = 10 * 60 * 1000;
+
+/** What the earned card needs to offer a take-back of the athlete's own mark. */
+export interface MilestoneUndoState {
+  readonly offered: boolean;
+  readonly undoing: boolean;
+  readonly failed?: string;
+}
+
 export default function AthleteAchievements({
   athleteId,
   athleteName,
@@ -117,6 +127,17 @@ export default function AthleteAchievements({
   const [milestoneSave, setMilestoneSave] = useState<Readonly<Record<string, SaveState>>>({});
   // One mark per press (#1529). "Did it" had no in-flight guard at all.
   const markingRef = useRef(false);
+  // "Undo" for the athlete's own mark made in the last ten minutes
+  // (OD-2026-10-17-003). The server decides the window and the owner
+  // (undoSelfMilestone); this clock only decides when to stop offering the line.
+  // Ticked in an effect, not read in render.
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const undoingRef = useRef<Set<string>>(new Set());
+  const [undoing, setUndoing] = useState<ReadonlySet<string>>(new Set());
+  const [undoFailed, setUndoFailed] = useState<Readonly<Record<string, string>>>({});
+  // Marks the server has answered 409 for. A device clock behind the server's
+  // would otherwise keep offering an Undo the server will only refuse again.
+  const [closedMarks, setClosedMarks] = useState<ReadonlySet<string>>(new Set());
 
   const isFamily = audience === 'family';
 
@@ -211,7 +232,9 @@ export default function AthleteAchievements({
     onCross: ring,
   });
 
-  const pressedMilestone = pressed ? milestoneByKey(pressed) : null;
+  // Only while it is still earned: after an Undo the pressed key stays for the
+  // visit, but the panel must not keep saying "Earned."
+  const pressedMilestone = pressed && earned.includes(pressed) ? milestoneByKey(pressed) : null;
 
   const chooseProgram = useCallback(async (next: string) => {
     if (!athleteId || !isProgram(next) || savingProgram) return;
@@ -254,6 +277,8 @@ export default function AthleteAchievements({
       if (response.ok) {
         await load();
         setMilestoneSave((now) => withoutKey(now, key));
+        // A fresh mark starts with no leftover line from an earlier Undo.
+        setUndoFailed((now) => withoutKey(now, key));
       } else {
         setMilestoneSave((now) => ({ ...now, [key]: 'failed' }));
       }
@@ -264,6 +289,65 @@ export default function AthleteAchievements({
       markingRef.current = false;
     }
   }, [athleteId, isFamily, load]);
+
+  useEffect(() => {
+    if (isFamily) return undefined;
+    const timer = setInterval(() => setClockMs(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, [isFamily]);
+
+  const undoMilestone = useCallback(async (milestone: Milestone) => {
+    if (!athleteId || isFamily) return;
+    const key = `${athleteId}:${milestone.key}`;
+    if (undoingRef.current.has(key)) return;
+    const markedAt = awards.find((item) => item.milestone_key === milestone.key)?.awarded_at ?? '';
+    undoingRef.current.add(key);
+    setUndoing(new Set(undoingRef.current));
+    setUndoFailed((now) => withoutKey(now, key));
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/achievements/milestones`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ athlete_id: athleteId, milestone_key: milestone.key, undo: true }),
+      });
+      if (response.ok) {
+        // The slip came off the record, so the real reach later rings (F-134).
+        forgetCelebrated(athleteId, milestone.key);
+        await load();
+      } else {
+        // 409: past the window, as the server counts it, or already undone
+        // elsewhere: read again so the panel shows what is stored. PROPOSED wording.
+        setUndoFailed((now) => ({
+          ...now,
+          [key]: response.status === 409 ? 'That can no longer be undone.' : 'That did not undo. Try again.',
+        }));
+        if (response.status === 409) {
+          setClosedMarks((now) => new Set(now).add(`${key}@${markedAt}`));
+          await load();
+        }
+      }
+    } catch {
+      setUndoFailed((now) => ({ ...now, [key]: 'That did not undo. Try again.' }));
+    } finally {
+      undoingRef.current.delete(key);
+      setUndoing(new Set(undoingRef.current));
+    }
+  }, [athleteId, isFamily, load, awards]);
+
+  // Only the athlete's own mark, and only while it is new. A coach's award, a
+  // count-earned seal (the count would earn it straight back) and anything on
+  // the family surface never offer it.
+  const undoOf = (milestoneKey: string): MilestoneUndoState => {
+    const award = awards.find((item) => item.milestone_key === milestoneKey);
+    const key = `${athleteId}:${milestoneKey}`;
+    const offered = !isFamily
+      && award?.awarded_by_role === 'self'
+      && milestoneByKey(milestoneKey)?.evidence !== 'session_count'
+      && !closedMarks.has(`${key}@${award.awarded_at}`)
+      && clockMs - Date.parse(award.awarded_at) < UNDO_WINDOW_MS;
+    return { offered, undoing: undoing.has(key), failed: undoFailed[key] };
+  };
 
   if (!athleteId) {
     return null;
@@ -306,7 +390,14 @@ export default function AthleteAchievements({
           </h3>
           <p className="tcard-sub">
             {athleteName ? `${athleteName} · ` : ''}
-            {earnedCount} {earnedCount === 1 ? 'thing' : 'things'} earned · nothing here ever comes off
+            {earnedCount} {earnedCount === 1 ? 'thing' : 'things'} earned
+          </p>
+          {/* "Nothing here ever comes off" stopped being true when the athlete's own
+              ten-minute Undo arrived (OD-2026-10-17-003). PROPOSED wording (Overwatch, L43). */}
+          <p className="tcard-sub">
+            {isFamily
+              ? 'Earned milestones stay.'
+              : 'Earned milestones stay. If you marked one yourself by mistake, you can undo it for 10 minutes.'}
           </p>
         </div>
       </header>
@@ -410,7 +501,8 @@ export default function AthleteAchievements({
       {pressedMilestone && !isFamily && (
         <p className="tcard-earned mt-[var(--s5)]" role="status">
           <b>{pressedMilestone.label}</b>
-          <span>Earned. It never comes off.</span>
+          {/* Not "never comes off" while the athlete can still take back their own slip. PROPOSED. */}
+          <span>{undoOf(pressedMilestone.key).offered ? 'Earned.' : 'Earned. It never comes off.'}</span>
         </p>
       )}
 
@@ -427,6 +519,8 @@ export default function AthleteAchievements({
             pressedKey={pressed}
             saveOf={(milestoneKey) => milestoneSave[`${athleteId}:${milestoneKey}`]}
             onMark={isFamily ? undefined : markMilestone}
+            undoOf={undoOf}
+            onUndo={isFamily ? undefined : undoMilestone}
           />
         ))}
       </div>
@@ -468,7 +562,7 @@ export default function AthleteAchievements({
 export type SaveState = 'idle' | 'saving' | 'failed';
 
 /** The same record without `key`: a kept press leaves no line behind. */
-export function withoutKey(saves: Readonly<Record<string, SaveState>>, key: string): Record<string, SaveState> {
+export function withoutKey<T>(saves: Readonly<Record<string, T>>, key: string): Record<string, T> {
   const next = { ...saves };
   delete next[key];
   return next;
@@ -513,12 +607,16 @@ function TrackPanel({
   pressedKey,
   saveOf,
   onMark,
+  undoOf,
+  onUndo,
 }: {
   track: TrackProgress;
   isFamily: boolean;
   pressedKey: string | null;
   saveOf: (milestoneKey: string) => SaveState | undefined;
   onMark?: (milestone: Milestone) => void;
+  undoOf?: (milestoneKey: string) => MilestoneUndoState;
+  onUndo?: (milestone: Milestone) => void;
 }) {
   const total = track.earned.length + track.ahead.length;
 
@@ -552,6 +650,7 @@ function TrackPanel({
             <span aria-hidden="true" className="mr-[var(--s2)]">✓</span>
             {isFamily ? milestone.family : milestone.label}
             <span className="sr-only"> — earned</span>
+            <UndoLine milestone={milestone} state={undoOf?.(milestone.key)} onUndo={onUndo} />
           </li>
         ))}
 
@@ -586,6 +685,38 @@ function TrackPanel({
         ))}
       </ul>
     </section>
+  );
+}
+
+/** One tap marks it; a slip can be taken back for ten minutes (OD-2026-10-17-003). PROPOSED wording, as #1704's goals. */
+function UndoLine({
+  milestone,
+  state,
+  onUndo,
+}: {
+  milestone: Milestone;
+  state: MilestoneUndoState | undefined;
+  onUndo?: (milestone: Milestone) => void;
+}) {
+  if (!state) return null;
+  return (
+    <>
+      {onUndo && state.offered && (
+        <p className="mt-[var(--s2)]">
+          Marked.{' '}
+          <button
+            type="button"
+            onClick={() => onUndo(milestone)}
+            disabled={state.undoing}
+            aria-label={`Undo "${milestone.label}"`}
+            className="btn btn--ghost min-h-[var(--tap)] disabled:opacity-60"
+          >
+            {state.undoing ? 'Undoing…' : 'Undo'}
+          </button>
+        </p>
+      )}
+      {state.failed && <p className="tcard-sub mt-[var(--s2)]" role="status">{state.failed}</p>}
+    </>
   );
 }
 

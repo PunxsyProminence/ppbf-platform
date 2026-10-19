@@ -62,9 +62,10 @@ enforces the other windows below, and nothing sets `deleted_at` at age 18.
 | Video clip tags (`pilot.video_clip_tags`) | Period not yet ruled | -- | Not yet ruled |
 | Check-in body mass (`pilot.shadow_formula_observations`, kind `body_weight`, since #1199; no table of its own) | Period not yet ruled | -- | Not yet ruled |
 | Issued workouts: the block, order, scale level, contact level and coach note of each step of a workout template issued to an athlete, and the random request key of the press that issued it when the screen sent one (`pilot.workout_issues`, `pilot.workout_issue_steps`; they leave with the athlete's assignments, by cascade) | Period not yet ruled | -- | Not yet ruled |
+| Standing height, coach-entered, one row per reading; a correction is a new row naming the reading it replaces (`pilot.athlete_heights`; append-only, it leaves with the athlete row by cascade when the purge deletes it) | Period not yet ruled | -- | Not yet ruled |
 
-The eleven rows above name tables added or extended for athlete data that no window has been
-ruled for yet (2026-10-04; minor limits added 2026-10-07; staff session notes and capacity notes 2026-10-09; issued workouts 2026-10-11). They are listed so the gap is visible, not filled; the periods are
+The rows above from injury records down name tables added or extended for athlete data that no window has been
+ruled for yet (2026-10-04; minor limits added 2026-10-07; staff session notes and capacity notes 2026-10-09; issued workouts 2026-10-11; heights 2026-10-18). They are listed so the gap is visible, not filled; the periods are
 the owner's decision.
 
 ### Guardians/Parents
@@ -484,8 +485,7 @@ treated like any other); nothing writes `subject_deleted_at` yet. Pinned by
 `retiredLoginPurge.pg.test.ts`. Three tokens per person, none shared: the chat log's, the
 feedback and learning rows', and the review, receipt and flagged-conversation rows'. **Not yet
 built:** a flagged conversation someone ELSE had about the purged child (`athlete_id` set) is still
-deleted with the child by the athlete trigger, not de-identified; and `shadow_telemetry_events.actor_account_id`
-still names the purged athlete's login (F-106).
+deleted with the child by the athlete trigger, not de-identified.
 **The retired athlete login (F-102).** The login is retired, not deleted: refusing its sign-in and
 the purged-child filters read its id, role, gym and `deleted_at`, and nothing else left on it names
 or signs in the child. The purge clears its email, PIN, password and Microsoft binding, and its
@@ -509,7 +509,14 @@ intake case loses all its rows or none: the review queue reads a case's status f
 here and from the case's own status when it has none. A row tied by id to a conversation or review
 entry still under the safeguarding hold stays, and keeps naming the person after the hold (nothing
 writes `subject_deleted_at` yet). `pilot.audit_events`, the legal record, is not touched. Pinned by
-`shadowEventsPurge.pg.test.ts`, which also reads the feed as a coach. The
+`shadowEventsPurge.pg.test.ts`, which also reads the feed as a coach.
+**SHADOW's metric log (F-106).** The person's rows in `pilot.shadow_telemetry_events` go the same
+way, under the same ruling and for the same reason (its one reader, `listShadowTelemetry`, shows a
+row tied to no athlete to every role that sees unscoped rows): in the purged gym (a guardian's
+everywhere), every row whose actor is their login, or whose dimensions name their login or athlete
+id anywhere, an entity id built from them, their guardian record, or one of the child's records
+(today's writers put an athlete id or a video id there) (`shadow_telemetry_events_deleted`). A row tied to a conversation or review entry still under the
+safeguarding hold stays. Pinned by `shadowTelemetryPurge.pg.test.ts`. The
 script is the only purge (`retentionPurgeSingleSource.test.ts`). A playback
 link handed out before the deletion keeps working until it expires (60 minutes). No storage
 lifecycle rule is defined in `infra/`; whether the live storage account has one is

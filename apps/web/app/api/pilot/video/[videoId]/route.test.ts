@@ -47,7 +47,7 @@ jest.mock('@/src/server/pilot/blob', () => ({
 // admin/video-compliance, shadow/video-analysis.
 jest.mock('@/src/server/pilot/guardianConsent', () => {
   const actual = jest.requireActual('@/src/server/pilot/guardianConsent');
-  return { ...actual, checkGuardianMediaConsent: jest.fn() };
+  return { ...actual, checkGuardianMediaConsent: jest.fn(), readAdultOwnMediaConsent: jest.fn(async () => null) };
 });
 
 // Clip tags (videoClipTags.ts). Defaults to "no tags", so every test above

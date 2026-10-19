@@ -2371,9 +2371,9 @@ describe('Omega cross-organization breadth', () => {
       recommendationsMade: 0,
       researchRequirementsCreated: 0,
       researchRequirementsClosed: 0,
-      newLibraryPatterns: 0,
+      newLibrarySources: 0,
       filterRate: null,
-      positiveOutcomeRate: null,
+      reviewedHelpfulRate: null,
       unavailableReasons: {},
     };
   }
@@ -3701,6 +3701,46 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
     expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
     expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ATH-SELF' }));
   });
+
+  // F-093: a disclosure with a pain word was withheld as a personal health
+  // question. It is answered like any disclosure.
+  test('a disclosure with a pain word is answered and files (F-093)', async () => {
+    const { response, body, providerCalled } = await askAsAthlete('my coach hits me and it hurts');
+
+    expect(response.status).toBe(200);
+    expect(providerCalled).toBe(true);
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(ANSWER);
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({ category: 'safeguarding_disclosure' }));
+  });
+
+  // F-093: an athlete is refused a board summary with a 403, and POST files
+  // nothing on a 403. The disclosure escalation, already owed by then, is
+  // filed at the refusal; the reply is the refusal every athlete gets.
+  test.each(['My dad hits me', 'my coach hits me and it hurts'])(
+    '"%s" sent as a board summary is refused as before and still files (F-093)',
+    async (message) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-SELF' }));
+      const control = await POST(postRequest({ message: 'How do I throw a better jab?', sessionType: 'board_summary' }));
+      const controlBody = await control.json();
+      expect(mockFileDisclosure).not.toHaveBeenCalled();
+
+      const response = await POST(postRequest({ message, sessionType: 'board_summary' }));
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(response.status).toBe(control.status);
+      expect(body.error).toBe(controlBody.error);
+      expect(body.response).toBe(controlBody.response);
+      expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+      expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({
+        organizationId: 'org-session',
+        athleteId: 'ATH-SELF',
+        conversationId: null,
+      }));
+    },
+  );
 
   test('a disclosure met by a failed provider still files', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-SELF' }));

@@ -1,23 +1,28 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { apiBase } from '@/lib/apiBase';
 import {
   INTAKE_MAX_TEXT_LENGTH,
   formatIntakeCount,
   isTextFromPage,
+  linkableOriginal,
   normalizeIntakeText,
   pdfPageLocator,
+  readArchiveFilingStatus,
   readLibraryPdf,
   splitIntakeText,
   submitLibraryTextIntake,
   validateIntakeInput,
+  type ArchiveFilingStatus,
+  type FiledOriginal,
   type IntakeInput,
   type IntakeResume,
   type IntakeShelf,
   type PdfPageText,
 } from '@/src/client/libraryTextIntake';
+import ArchiveFilingBox, { type ArchiveLinkState } from './ArchiveFilingBox';
 import LibrarySourcePicker from './LibrarySourcePicker';
 
 /* RINT-01: manual research text intake.
@@ -83,6 +88,8 @@ export const SHELF_WORDS = {
 export const PDF_WORDS = {
   heading: 'Read a PDF',
   help: "Choose the PDF this source's words come from. The app reads it and does not keep it; file the original in the SharePoint Research Archive.",
+  // PROPOSED (lane L57), shown where the app files the original itself.
+  helpFiling: "Choose the PDF this source's words come from. The app reads it and does not keep it; file the original below.",
   limit: 'PDFs up to 10 MB.',
   fileLabel: 'Choose the PDF',
   reading: 'Reading…',
@@ -97,11 +104,20 @@ export const PDF_WORDS = {
   forbidden: 'Your role cannot read PDFs here.',
 };
 
+// PROPOSED (lane L57).
+export const ARCHIVE_LINK_WORDS = {
+  saved: 'Linked to the PDF filed in the Research Archive.',
+};
+
 const EMPTY_DRAFT = { sourceId: '', documentName: '', locator: '', text: '', pdfPageNum: null as number | null };
 
 interface LoadedPdf {
   pages: PdfPageText[];
   emptyPageCount: number;
+  file: File;
+  contentSha256: string | null;
+  /** Which read this is: the filing box starts fresh for each PDF. */
+  serial: number;
 }
 
 // First words of a page: enough to recognise it in the list.
@@ -120,7 +136,7 @@ function readRefusalMessage(status: number, serverMessage: string | null): strin
 }
 
 type Outcome =
-  | { kind: 'saved'; chunkCount: number; documentName: string }
+  | { kind: 'saved'; chunkCount: number; documentName: string; linked: boolean }
   | { kind: 'incomplete'; message: string }
   | { kind: 'refused'; message: string };
 
@@ -148,6 +164,16 @@ export default function LibraryTextIntakePanel({
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [reading, setReading] = useState(false);
   const [pdfMessage, setPdfMessage] = useState<string | null>(null);
+  // Lane L57: whether this shelf files originals in the Research Archive (asked
+  // once, when a PDF is first read), and what the PDF on screen was filed as.
+  // A filing answer counts only for the file still on screen.
+  const [archive, setArchive] = useState<ArchiveFilingStatus | 'unknown'>('unknown');
+  const [filed, setFiled] = useState<FiledOriginal | null>(null);
+  const fileOnScreen = useRef<File | null>(null);
+  const linkable = linkableOriginal(filed, draft.sourceId, pdf?.contentSha256 ?? null);
+  const linkState: ArchiveLinkState = !filed || linkable
+    ? 'linked'
+    : filed.sourceId !== draft.sourceId ? 'other_source' : 'different_file';
 
   const { textLength, partCount } = useMemo(() => {
     const length = normalizeIntakeText(draft.text).length;
@@ -212,6 +238,7 @@ export default function LibraryTextIntakePanel({
       ...(linkedPage
         ? { pdfPage: { num: linkedPage.num, text: linkedPage.text, notOnPageMessage: PDF_WORDS.notOnPage(linkedPage.num) } }
         : {}),
+      ...(linkedPage && linkable ? { archivedOriginalId: linkable.archivedOriginalId } : {}),
     };
   }
 
@@ -227,9 +254,18 @@ export default function LibraryTextIntakePanel({
       }
       // A different PDF voids any page link to the old one. Text already in the
       // box stays, unlinked, so nothing the curator did is lost.
-      setPdf({ pages: result.pages, emptyPageCount: result.emptyPageCount });
+      setPdf({
+        pages: result.pages,
+        emptyPageCount: result.emptyPageCount,
+        file,
+        contentSha256: result.contentSha256,
+        serial: (pdf?.serial ?? 0) + 1,
+      });
+      fileOnScreen.current = file;
+      setFiled(null);
       setDraft((current) => ({ ...current, pdfPageNum: null }));
       if (result.pages.every((page) => page.text === '')) setPdfMessage(PDF_WORDS.noText);
+      if (archive === 'unknown') setArchive(await readArchiveFilingStatus(apiBase(), shelf));
     } finally {
       setReading(false);
     }
@@ -243,6 +279,8 @@ export default function LibraryTextIntakePanel({
 
   function handleClearPdf() {
     setPdf(null);
+    fileOnScreen.current = null;
+    setFiled(null);
     setPdfMessage(null);
     setDraft((current) => ({ ...current, pdfPageNum: null }));
   }
@@ -268,6 +306,7 @@ export default function LibraryTextIntakePanel({
       }
     }
     const startedAsResume = resume !== null;
+    const linkedToFiled = !startedAsResume && linkedPage !== null && linkable !== null;
     setBusy(true);
     try {
       const result = await submitLibraryTextIntake(apiBase(), intakeInput(), { resume });
@@ -294,7 +333,7 @@ export default function LibraryTextIntakePanel({
           });
         }
         onSaved?.();
-        setOutcome({ kind: 'saved', chunkCount: result.chunkCount, documentName: draft.documentName.trim() });
+        setOutcome({ kind: 'saved', chunkCount: result.chunkCount, documentName: draft.documentName.trim(), linked: linkedToFiled });
         setResume(null);
         // The source stays selected: several excerpts from one source is the
         // common case. So does the PDF; the page link does not.
@@ -343,7 +382,7 @@ export default function LibraryTextIntakePanel({
             </div>
             <div className="field md:col-span-2 space-y-[var(--s2)]">
               <span className="t-label">{PDF_WORDS.heading}</span>
-              <p className="t-muted">{PDF_WORDS.help} {PDF_WORDS.limit}</p>
+              <p className="t-muted">{archive === 'on' ? PDF_WORDS.helpFiling : PDF_WORDS.help} {PDF_WORDS.limit}</p>
               <div className="flex flex-wrap items-center gap-[var(--s3)]">
                 <input type="file" accept="application/pdf" aria-label={PDF_WORDS.fileLabel} className="input"
                   disabled={locked || reading}
@@ -379,6 +418,13 @@ export default function LibraryTextIntakePanel({
                     </li>
                   ))}
                 </ul>
+              ) : null}
+              {archive === 'on' && pdf && !reading ? (
+                <ArchiveFilingBox key={pdf.serial} file={pdf.file} sourceId={draft.sourceId} shelf={shelf} disabled={locked}
+                  filed={filed} linkState={linkState}
+                  onFiled={(original, file) => {
+                    if (fileOnScreen.current === file) setFiled(original);
+                  }} />
               ) : null}
             </div>
             <label className="field">
@@ -453,6 +499,7 @@ export default function LibraryTextIntakePanel({
             {outcome.chunkCount === 1 ? 'part' : 'parts'}. SHADOW cannot cite it yet. Next:{' '}
             <Link href="/evidence" className="underline">Evidence Review</Link> to index and approve it.
           </p>
+          {outcome.linked ? <p className="t-muted">{ARCHIVE_LINK_WORDS.saved}</p> : null}
         </div>
       ) : null}
       {outcome?.kind === 'incomplete' ? (

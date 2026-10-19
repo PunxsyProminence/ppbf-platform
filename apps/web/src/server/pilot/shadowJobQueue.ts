@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 34;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 38;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -153,6 +153,21 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 34;
 // grade and return the other grades ("Also cites"). What goes into
 // authorizedContext is unchanged; bumped because a listed file moved. A v33
 // job still queued at deploy is refused as STALE.
+// 35: shadowUnlocks.ts reports whether a feature is built (lane L46): an
+// unbuilt one (fine-tuning, aggressive research generation) is never
+// unlocked whatever its mode and counter. Neither could change what goes into
+// authorizedContext; bumped because a listed file moved. A v34 job still
+// queued at deploy is refused as STALE.
+// 36: shadowLibrary.ts can link a library document to its filed Research
+// Archive original (lane L57, #1762): the insert carries archived_original_id
+// only when a link is given. What goes into authorizedContext is unchanged;
+// bumped because a listed file moved. A v35 job still queued at deploy is
+// refused as STALE.
+// 37: chat route (F-093): an athlete's disclosure sent with a board-summary
+// session type files its escalation at the 403 refusal; a comment on the
+// disclosure mark is corrected. What goes into authorizedContext is
+// unchanged; bumped because a listed file moved. A v36 job still queued at
+// deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -242,6 +257,9 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 32, sha256: '052152692c2d09011ed34bd3a7ae242b4c92afd4f1f159728014b7edca1b5992' },
   { version: 33, sha256: '1e053971a819027525a896d4129034dbd9b6d1b112df7ad90229c273689c2ae3' },
   { version: 34, sha256: '085a17130a0b54b1174b13d5adb08367e79717ac5e8125dfeec072b28313af76' },
+  { version: 35, sha256: '18d97d4b91af977ca65b3b5591164b9430fc07022ec6e5944eca8c6eead711f4' },  { version: 36, sha256: 'ef6d92e298dd203d0853c7538b6463e78f2bf8c638c1c6fae24d91b3581a99aa' },
+  { version: 37, sha256: '07d219416bbad9356dcf0478615020ab6f1ee0f3961944c435b63df994e504c6' },
+  { version: 38, sha256: '8427e079e886099a108906f34b8aee90ba351eeecfb3e3d32023288bf31fa21f' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

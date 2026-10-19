@@ -128,6 +128,8 @@ export interface ShadowLibraryDocumentRow {
   document_name: string;
   blob_path: string | null;
   content_sha256: string | null;
+  /** The filed Research Archive original this excerpt was read from (research-archive-originals migration). */
+  archived_original_id?: string | null;
   ingest_state: ShadowLibraryIngestState;
   index_completed_at: string | null;
   approval_state: ShadowLibraryApprovalState;
@@ -914,9 +916,13 @@ export async function listApprovedGlobalEvidenceForResearchBridge(input: {
       and s.organization_id = c.organization_id
      -- The source whose document the text was cut from. A chunk may cite a
      -- different source; the text's rights are its document's, which is what
-     -- the database's own full-text guard reads too.
+     -- the database's own full-text guard reads too (by source_id alone).
+     -- Matched on the document's gym as well: documents.source_id has only a
+     -- global foreign key, and another gym's source must never decide this
+     -- gym's export (F-095).
      join pilot.shadow_library_sources ds
        on ds.source_id = d.source_id
+      and ds.organization_id = d.organization_id
      where c.organization_id = $1
        and c.subject_id is null
        and d.subject_id is null
@@ -1064,6 +1070,8 @@ export async function createShadowLibraryDocument(input: {
   metadata?: Record<string, unknown>;
   /** The client's id for this entry; a retry with the same id gets the document it already made. */
   requestId?: string | null;
+  /** Set only for an excerpt read from a PDF filed in the Research Archive; the database holds it to the same source and shelf. */
+  archivedOriginalId?: string | null;
 }): Promise<ShadowLibraryDocumentRow & { recovered?: true }> {
   assertNoReservedProvenance(input.metadata);
   assertNoRequestKey(input.metadata, DOCUMENT_INTAKE_REQUEST_KEY);
@@ -1116,10 +1124,13 @@ export async function createShadowLibraryDocument(input: {
     }
 
     const documentId = `doc_${randomUUID()}`;
+    // The link column is named only when there is a link, so every other write
+    // is the statement it always was (and does not depend on that migration).
+    const archivedOriginalId = input.archivedOriginalId?.trim() || null;
     const inserted = await client.query<ShadowLibraryDocumentRow>(
       `insert into pilot.shadow_library_documents
-        (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
+        (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role${archivedOriginalId ? ', archived_original_id' : ''})
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11${archivedOriginalId ? ',$12' : ''})
        returning *`,
       [
         documentId,
@@ -1133,6 +1144,7 @@ export async function createShadowLibraryDocument(input: {
         JSON.stringify(metadata),
         input.actorAccountId,
         input.actorRole,
+        ...(archivedOriginalId ? [archivedOriginalId] : []),
       ],
     );
     const row = inserted.rows[0];
