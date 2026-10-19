@@ -42,8 +42,9 @@ interface RosterFace {
  * Three children, and the differences between them are the whole point.
  *
  * MINE has a ring name and this coach is the coach of record. COVERED has a
- * ring name and another coach of the gym is its coach of record -- and that no
- * longer matters: resolveRelationship answers 'coach_of_subject' for every coach
+ * ring name and another coach of the gym is its coach of record; it is not in
+ * this coach's own list at all (the roster mock leaves it out unless the screen
+ * asks for scope=organization). Neither matters to the takedown: resolveRelationship answers 'coach_of_subject' for every coach
  * of the athlete's gym (issue #1480 C2; OD-2026-10-11-007, OD-2026-10-12-016
  * "Any coach all coaches coach all athletes"), which is what the clear route
  * admits. PLAIN is this coach's own and simply has no ring name to take down.
@@ -92,7 +93,7 @@ function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }): 
 interface Routes {
   /** What POST /api/pilot/profile/nickname/clear answers. */
   clear?: (body: { account_id?: string }) => Promise<Response> | Response;
-  roster?: () => Response;
+  roster?: (url: string) => Response;
 }
 
 function installFetch(routes: Routes = {}): jest.Mock {
@@ -104,7 +105,13 @@ function installFetch(routes: Routes = {}): jest.Mock {
       return routes.clear ? routes.clear(body) : jsonResponse({ ok: true, locked_for_hours: 72 });
     }
     if (url.includes('/api/pilot/profile/roster')) {
-      return routes.roster ? routes.roster() : jsonResponse({ ok: true, items: FACES });
+      // The route's real split (profile/roster/route.ts): without
+      // scope=organization it answers only the coach's own athletes. Modelled
+      // here so a screen that forgets to ask for the whole gym loses the faces
+      // -- and the takedown -- for every athlete outside the coach's own list.
+      if (routes.roster) return routes.roster(url);
+      const wholeGym = url.includes('scope=organization');
+      return jsonResponse({ ok: true, items: wholeGym ? FACES : FACES.filter((face) => face.is_mine) });
     }
     if (url.includes('/api/pilot/athletes/list')) {
       return jsonResponse({

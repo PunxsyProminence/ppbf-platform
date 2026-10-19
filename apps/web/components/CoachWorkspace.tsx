@@ -1864,11 +1864,18 @@ export default function CoachWorkspace() {
 
       // Faces, from the profile roster. Best-effort and separate on purpose:
       // this call applies the portrait visibility gate per athlete server-side,
-      // so a coach browsing athletes who are not theirs gets plates for them --
-      // and if the call fails outright, every athlete falls back to a plate,
-      // which is a finished object rather than a broken row.
+      // and if it fails outright every athlete falls back to a plate, which is
+      // a finished object rather than a broken row.
+      //
+      // `scope=organization` because the list above is the whole gym. Without
+      // it the route answers only the coach's assigned and covered athletes,
+      // and every other row had no ring name or account id -- so the takedown
+      // below could never appear on it, although the clear route admits any
+      // coach of the gym (issue #1480 C2). Every coach of the gym is inside a
+      // child's photo circle too (OD-2026-10-12-016; OWNER_DECISIONS "Teen
+      // staff"), so the wider read shows no face the server would not.
       try {
-        const facesResponse = await fetch(`${apiBase()}/api/pilot/profile/roster`, {
+        const facesResponse = await fetch(`${apiBase()}/api/pilot/profile/roster?scope=organization`, {
           method: 'GET',
           credentials: 'include',
         });
