@@ -3851,14 +3851,23 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
       arrange();
       const { response, body } = await send('My dad hits me', extra);
 
+      // The whole reply, headers included, is the one a plain question gets:
+      // nothing tells whoever is beside the child that the words were caught.
+      // Ids and timestamps differ per request by construction; tier and
+      // complexity follow the message text, not the disclosure.
+      const strip = (reply: Record<string, unknown>) => Object.fromEntries(
+        Object.entries(reply).filter(([key]) => !['messageId', 'createdAt', 'tier', 'complexity'].includes(key)),
+      );
       expect(response.status).toBe(status);
-      expect(body.state).toBe(control.body.state);
-      expect(body.response).toBe(control.body.response);
-      expect(body.error).toBe(control.body.error);
+      expect(strip(body)).toEqual(strip(control.body));
+      expect([...response.headers]).toEqual([...control.response.headers]);
       expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+      // The requested conversation, already access-checked, so the "this
+      // conversation already named staff" rule still applies on these paths.
       expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({
         organizationId: 'org-session',
         athleteId: 'ATH-SELF',
+        conversationId: (extra.conversationId as string | undefined) ?? null,
       }));
     });
 
