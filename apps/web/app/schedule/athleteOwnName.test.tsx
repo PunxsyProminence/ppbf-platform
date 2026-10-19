@@ -116,11 +116,11 @@ test("an athlete's own rows read their name, not their roster code", async () =>
   const fetchMock = install('ok');
   await renderPage();
 
-  const registrations = textOf(/^Registration:/);
-  expect(registrations).toContain('Registration: Jordan Price');
-  expect(registrations).not.toContain(`Registration: ${OWN_ID}`);
-  expect(textOf(/^Attendance:/)).toContain('Attendance: Jordan Price');
-  expect(textOf(/^Attendance:/)).not.toContain(OWN_ID);
+  const registrations = textOf(/ is registered for /);
+  expect(registrations).toContain('Jordan Price is registered for');
+  expect(registrations).not.toContain(`${OWN_ID} is registered for`);
+  expect(textOf(/ at Youth Boxing$/)).toContain('Jordan Price at ');
+  expect(textOf(/ at Youth Boxing$/)).not.toContain(OWN_ID);
 
   const requestRow = screen.getByText('Yes').closest('.input');
   expect(requestRow?.textContent).toContain('Jordan Price');
@@ -138,7 +138,7 @@ test('an athlete reads no roster, and no other id gains a name', async () => {
   await renderPage();
 
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/pilot/athletes/list'))).toBe(false);
-  expect(textOf(/^Registration:/)).toContain(`Registration: ${OTHER_ID}`);
+  expect(textOf(/ is registered for /)).toContain(`${OTHER_ID} is registered for`);
   expect(screen.queryByText(/Casey Lee/)).not.toBeInTheDocument();
 });
 
@@ -146,7 +146,7 @@ test.each<OwnRead>(['fails', 'not-found'])('an own record that cannot be read (%
   install(ownRead);
   await renderPage();
 
-  expect(textOf(/^Registration:/)).toContain(`Registration: ${OWN_ID}`);
+  expect(textOf(/ is registered for /)).toContain(`${OWN_ID} is registered for`);
   expect(screen.queryByText(/Jordan Price/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Failed to load/)).not.toBeInTheDocument();
 });

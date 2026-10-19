@@ -76,9 +76,29 @@ type SchedulerCoachingRequest = {
 function coachingRequestStatusText(item: SchedulerCoachingRequest, nowMs: number): string {
   const preferredMs = Date.parse(item.preferred_at);
   if (item.status === 'pending' && Number.isFinite(preferredMs) && preferredMs < nowMs) {
-    return 'not answered, and the preferred time has passed';
+    return 'Not answered, and the preferred time has passed';
   }
-  return item.status;
+  return COACHING_REQUEST_STATUS_WORDS[item.status] ?? item.status;
+}
+
+/* The data's status words, said to a person (parent walk 2026-10-19 item 9:
+   "Status: pending", "Status: registered"). Wording PROPOSED. */
+const COACHING_REQUEST_STATUS_WORDS: Readonly<Record<SchedulerCoachingRequest['status'], string>> = {
+  pending: 'Waiting for an answer',
+  approved: 'Approved',
+  declined: 'Declined',
+};
+
+const ATTENDANCE_STATUS_WORDS: Readonly<Record<SchedulerAttendance['status'], string>> = {
+  present: 'Present',
+  absent: 'Absent',
+  excused: 'Excused',
+};
+
+function registrationLine(athlete: string, classTitle: string, status: SchedulerRegistration['status']): string {
+  if (status === 'waitlisted') return `${athlete} is on the waitlist for ${classTitle}`;
+  if (status === 'cancelled') return `Registration cancelled: ${athlete}, ${classTitle}`;
+  return `${athlete} is registered for ${classTitle}`;
 }
 
 type MembershipFlag = {
@@ -1198,9 +1218,13 @@ export default function SchedulerPage() {
                     {registrations.map((item) => (
                       <div key={item.registration_id} className="input">
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
-                          Registration: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
+                          {registrationLine(
+                            athleteMap.get(item.athlete_id) || item.athlete_id,
+                            classes.find((x) => x.class_id === item.class_id)?.title || item.class_id,
+                            item.status,
+                          )}
                         </p>
-                        <p className="text-[color:var(--bone-300)]">Status: {item.status} | Parent Reviewed: {item.parent_reviewed ? 'Yes' : 'No'}</p>
+                        <p className="text-[color:var(--bone-300)]">Parent reviewed: {item.parent_reviewed ? 'Yes' : 'No'}</p>
                         {roleCanManageParents(role) && !item.parent_reviewed ? (
                           <button
                             type="button"
@@ -1222,9 +1246,9 @@ export default function SchedulerPage() {
                     {attendance.map((item) => (
                       <div key={item.attendance_id} className="input">
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
-                          Attendance: {athleteMap.get(item.athlete_id) || item.athlete_id} {' -> '} {classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}
+                          {`${athleteMap.get(item.athlete_id) || item.athlete_id} at ${classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}`}
                         </p>
-                        <p className="text-[color:var(--bone-300)]">{item.status.toUpperCase()} via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
+                        <p className="text-[color:var(--bone-300)]">{ATTENDANCE_STATUS_WORDS[item.status] ?? item.status}, via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
                         <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
                       </div>
                     ))}
