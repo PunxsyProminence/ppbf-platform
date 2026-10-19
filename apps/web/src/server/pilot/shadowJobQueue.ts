@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 40;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 41;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -262,6 +262,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 38, sha256: '8427e079e886099a108906f34b8aee90ba351eeecfb3e3d32023288bf31fa21f' },
   { version: 39, sha256: '573c2eb9b85eecaf8d132d9f635be84664eeec88c0a4ed1a7e2694419547b6b0' },
   { version: 40, sha256: '7c223b6243f8c2828ff4ff8ea9132fa7042e5817ff5b0584d81bd6de5cc02b89' },
+  { version: 41, sha256: '5341bddbbdb3cfbdeb87af2352784de4a328da33ffb75b3fa8087f795123f548' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

@@ -575,6 +575,26 @@ export async function POST(request: NextRequest): Promise<NextResponse<ShadowCha
   return response;
 }
 
+// F-093, F-155: POST files nothing on a 403 or 404, which is right for a
+// request that failed authorization -- and that is the only kind for which
+// atExit.fileDisclosureEscalation is still null. Once it is set, the request
+// was authenticated and authorized and the escalation is owed, so a 403 or 404
+// that comes after (a session type this role may not run, a context check or
+// conversation lookup that failed transiently, a conversation deleted
+// mid-request) files it here, before the refusal. Taken off atExit so it files
+// once, and swallowed as at the exit so the reply is the same with or without
+// a disclosure.
+async function fileOwedDisclosureEscalationNow(atExit: ShadowChatExit): Promise<void> {
+  const fileDisclosure = atExit.fileDisclosureEscalation;
+  atExit.fileDisclosureEscalation = null;
+  if (!fileDisclosure) return;
+  try {
+    await fileDisclosure();
+  } catch {
+    console.error('SHADOW disclosure escalation write failed');
+  }
+}
+
 async function handleShadowChat(
   request: NextRequest,
   atExit: ShadowChatExit,
@@ -1118,20 +1138,9 @@ async function handleShadowChat(
     }
 
     if (boardSummaryRequested && !BOARD_SUMMARY_ROLES.has(userRole as PilotRole)) {
-      // F-093: POST files nothing on a 403, but this refusal is about the
-      // session type, not the person: the request is authenticated and
-      // authorized, so a disclosure's escalation is already owed. It is filed
-      // here, before the refusal every athlete gets, and swallowed as at the
-      // exit so the reply is the same with or without a disclosure.
-      const fileDisclosure = atExit.fileDisclosureEscalation;
-      atExit.fileDisclosureEscalation = null;
-      if (fileDisclosure) {
-        try {
-          await fileDisclosure();
-        } catch {
-          console.error('SHADOW disclosure escalation write failed');
-        }
-      }
+      // F-093: this refusal is about the session type, not the person, so a
+      // disclosure's escalation is already owed and is filed before it.
+      await fileOwedDisclosureEscalationNow(atExit);
       return NextResponse.json(
         {
           success: false,
@@ -1253,6 +1262,9 @@ async function handleShadowChat(
     });
 
     if (!roleBasedContext.authorized) {
+      // F-155: after the owed point, so a transient context failure must not
+      // take the escalation with it.
+      await fileOwedDisclosureEscalationNow(atExit);
       return NextResponse.json(
         {
           success: false,
@@ -1883,6 +1895,10 @@ async function handleShadowChat(
       );
     }
     if (error instanceof Error && error.message === 'SHADOW_CONVERSATION_NOT_FOUND') {
+      // F-155: files only if the escalation was already owed -- a conversation
+      // deleted mid-request, or a dropped connection the lookup reports as not
+      // found. A conversation missing at the access check leaves it null.
+      await fileOwedDisclosureEscalationNow(atExit);
       return NextResponse.json(
         {
           success: false,
@@ -1901,6 +1917,10 @@ async function handleShadowChat(
     }
     const mappedError = jsonError(error);
     const status = mappedError.status;
+    if (status === 403 || status === 404) {
+      // F-155: as above, files only if already owed.
+      await fileOwedDisclosureEscalationNow(atExit);
+    }
     const payload = await mappedError.json().catch(() => ({ error: 'Request failed' })) as { error?: string };
     const state: ShadowResponseState = status >= 500 ? 'degraded' : 'filtered';
     return NextResponse.json(
