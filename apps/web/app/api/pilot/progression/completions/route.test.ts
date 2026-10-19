@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
+import { readsFullCompletions } from '@/src/server/pilot/progression';
 import { query, queryOne, withTransaction } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -103,6 +104,71 @@ describe('GET /api/pilot/progression/completions', () => {
     mockQuery.mockResolvedValueOnce([]);
     const res = await GET(getRequest('assignment_id=asg-1'));
     expect(res.status).toBe(200);
+  });
+
+  // A logged entry's notes are free text a coach may have written (POST admits
+  // coaches recording and verifying). Families get display facts, never staff
+  // notes: a guardian is sent each entry from named fields, without notes.
+  const loggedEntry = {
+    completion_id: 'c1',
+    assignment_id: 'asg-1',
+    completed_at: '2026-10-10T15:00:00.000Z',
+    reps_completed: 12,
+    notes: 'Coach: watch the left hand, flinches under pressure',
+    verification_status: 'verified',
+    verified_at: '2026-10-10T16:00:00.000Z',
+  };
+
+  test('a linked parent gets each entry without its notes, absent from the bytes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce(assignmentRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' }); // guardian link found
+    // Two entries, and each carries a column the projection does not name: a
+    // copy-everything-but-notes projection would pass it through to a family.
+    mockQuery.mockResolvedValueOnce([
+      { ...loggedEntry, recorded_by_account_id: 'acct-coach-9' },
+      { ...loggedEntry, completion_id: 'c2', notes: 'second note', recorded_by_account_id: 'acct-coach-9' },
+    ]);
+    const res = await GET(getRequest('assignment_id=asg-1'));
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const family = {
+      completion_id: 'c1',
+      assignment_id: 'asg-1',
+      completed_at: '2026-10-10T15:00:00.000Z',
+      reps_completed: 12,
+      verification_status: 'verified',
+      verified_at: '2026-10-10T16:00:00.000Z',
+    };
+    expect(JSON.parse(text)).toEqual({ items: [family, { ...family, completion_id: 'c2' }] });
+    expect(text).not.toContain('notes');
+    expect(text).not.toContain('left hand');
+    expect(text).not.toContain('second note');
+    expect(text).not.toContain('acct-coach-9');
+  });
+
+  test('who is sent the whole entry is a named list: the athlete and staff, and no other role', () => {
+    for (const role of ['athlete', 'coach', 'admin', 'organization_admin']) expect(readsFullCompletions(role)).toBe(true);
+    for (const role of ['parent', 'guardian', 'volunteer', 'board', 'platform_owner', '']) expect(readsFullCompletions(role)).toBe(false);
+  });
+
+  test('the athlete and staff still get the notes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+    mockQueryOne
+      .mockResolvedValueOnce(assignmentRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([{ ...loggedEntry }]);
+    const athleteRes = await GET(getRequest('assignment_id=asg-1'));
+    expect((await athleteRes.json()).items[0].notes).toBe(loggedEntry.notes);
+
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'coach', athleteId: null }));
+    mockQueryOne
+      .mockResolvedValueOnce(assignmentRow())
+      .mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce([{ ...loggedEntry }]);
+    const coachRes = await GET(getRequest('assignment_id=asg-1'));
+    expect((await coachRes.json()).items[0].notes).toBe(loggedEntry.notes);
   });
 
   test('unlinked parent gets hidden not-found', async () => {
