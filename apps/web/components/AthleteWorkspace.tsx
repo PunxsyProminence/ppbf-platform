@@ -6,6 +6,8 @@ import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
+import AthleteCyclePanel from './AthleteCyclePanel';
+import AthleteMediaConsentPanel from './AthleteMediaConsentPanel';
 import { SESSION_TYPES, SESSION_TYPE_QUESTION, type SessionType } from '@/src/shared/sessionTypes';
 import SparringSymptomCheck from './SparringSymptomCheck';
 import Chalkboard from './Chalkboard';
@@ -3874,6 +3876,20 @@ export default function AthleteWorkspace() {
           {/* The next-day sparring symptom check: renders nothing unless the
               athlete sparred on the previous gym day. */}
           {activeTab === 'bio-checkin' && <SparringSymptomCheck context="next_day" />}
+          {/* The athlete's private cycle card (OD-2026-10-17-023 item 4): only
+              the athlete's own route feeds it, and nothing else shows it. */}
+          {activeTab === 'bio-checkin' && (
+            <div className={PANEL}>
+              <AthleteCyclePanel />
+            </div>
+          )}
+          {/* The adult athlete's own photo and video consent (OD-2026-10-08-015):
+              only the athlete's own route feeds it. */}
+          {activeTab === 'my-dashboard' && (
+            <div className={PANEL}>
+              <AthleteMediaConsentPanel />
+            </div>
+          )}
 
 
           {/* DRILL LIBRARY */}

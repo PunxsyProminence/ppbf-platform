@@ -467,7 +467,7 @@ function waiverItems() {
                 recorded_on: waivers[type] === 'missing' ? null : iso(30 + i).slice(0, 10),
               })),
               media_consent:
-                i === 6 ? { basis: 'adult_own_consent' } : { basis: 'guardian', status: waivers.photo_media },
+                i === 6 ? { basis: 'adult_own_consent', own: 'none', outside_gym: false } : { basis: 'guardian', status: waivers.photo_media },
               open_violations: i === 5 ? 'unavailable' : i % 3,
             },
           }),

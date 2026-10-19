@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { NextRequest } from 'next/server';
 
 import { LIBRARY_PDF_MAX_BYTES } from '@/src/server/pilot/libraryPdfText';
@@ -168,6 +170,8 @@ describe('POST /api/pilot/shadow/library/pdf-text: what it returns', () => {
       ok: true,
       page_count: 2,
       empty_page_count: 1,
+      // Of the bytes read, computed here independently; the panel compares it with the archive's.
+      content_sha256: createHash('sha256').update(PDF_BYTES).digest('hex'),
       pages: [
         { num: 1, text: 'Page one words.' },
         { num: 2, text: '' },

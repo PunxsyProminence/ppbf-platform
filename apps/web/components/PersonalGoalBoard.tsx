@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useAchievementCeremony } from './achievementCeremony';
+import { forgetCelebrated, useAchievementCeremony } from './achievementCeremony';
 import useGymSound from './useGymSound';
 import { SaveNote, withoutKey, type SaveState } from './AthleteAchievements';
 import { apiBase } from '@/lib/apiBase';
@@ -128,8 +128,8 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
     onCross: ring,
   });
 
-  // Only a goal that is still reached: after an Undo the ceremony keeps its
-  // record (it never shrinks), but the board must not keep saying "You did."
+  // Only a goal that is still reached: after an Undo the pressed key stays for
+  // the visit, but the board must not keep saying "You did."
   const pressedGoal = pressed
     ? goals.find((goal) => `goal:${goal.goal_id}` === pressed && goal.reached_at !== null) ?? null
     : null;
@@ -231,6 +231,8 @@ export default function PersonalGoalBoard({ athleteId, readOnly = false, onChang
         body: JSON.stringify({ athlete_id: athleteId, goal_id: goalId, undo: true }),
       });
       if (response.ok) {
+        // The slip came off the record, so the real reach later rings (F-134).
+        forgetCelebrated(athleteId, `goal:${goalId}`);
         await load();
         onChanged?.();
       } else {
