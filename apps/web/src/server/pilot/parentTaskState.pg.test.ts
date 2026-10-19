@@ -632,7 +632,7 @@ describe('listFamilyNotesForStaff (#1542)', () => {
     expect(notes.map((note) => note.note_id)).toEqual([LATER_NOTE, MESSAGE_NOTE]);
     expect(notes[0]).toMatchObject({
       note_text: 'Medical form by Friday, please.',
-      posted_by_name: 'Coach Pat',
+      posted_by_name: 'Coach Pat Coach',
       task: { due_date: '2026-10-16', completed_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.*Z$/) },
     });
     expect(notes[0]!.posted_at).toEqual(expect.any(String));
@@ -672,9 +672,9 @@ describe('listFamilyNotesForStaff (#1542)', () => {
 
     const notes = await parentTasks.listFamilyNotesForStaff(ORG_ID, ATHLETE);
 
-    expect(notes[0]!.posted_by_name).toBe('Coach Pat');
+    expect(notes[0]!.posted_by_name).toBe('Coach Pat Coach');
     // No role on record: the name alone, with no role invented for it.
-    expect(notes[1]!.posted_by_name).toBe('Pat');
+    expect(notes[1]!.posted_by_name).toBe('Pat Coach');
   });
 
   test('which guardian ticked it is never returned', async () => {

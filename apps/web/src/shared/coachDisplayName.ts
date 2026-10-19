@@ -16,15 +16,18 @@
  * function to change.
  */
 export function deriveCoachDisplayName(loginEmail: string | null | undefined): string {
-  const spoken = deriveStaffDisplayName(loginEmail);
+  // "coach.dave@" is Dave, not "Coach Coach Dave" (parent walk 2026-10-19
+  // item 6): the title is added once.
+  const spoken = deriveStaffDisplayName(loginEmail)?.replace(/^Coach\s+/, '');
   return spoken ? `Coach ${spoken}` : 'Your coach';
 }
 
 /**
  * Words a shared or role login is made of, which are not anybody's name.
  * coach@ read "Coach Coach" and ppbf@ read "From Ppbf" on family screens
- * (parent walk 2026-10-19 item 6). Dropped from the stem; a stem with nothing
- * else left names nobody, and the caller's floor stands. Jason 2026-10-19, Q1
+ * (parent walk 2026-10-19 item 6). A stem made only of these names nobody,
+ * and the caller's floor stands; one with a name in it ("gym-admin",
+ * "pat.office") is read as before. Jason 2026-10-19, Q1
  * "C: A now, B later (Rec.)": a real display-name field comes later.
  */
 const ROLE_WORDS: ReadonlySet<string> = new Set(['coach', 'admin', 'staff', 'office', 'info', 'ppbf']);
@@ -43,8 +46,8 @@ export function deriveStaffDisplayName(loginEmail: string | null | undefined): s
     .trim()
     .split(/\s+/)
     .filter(Boolean)
-    .filter((part) => !ROLE_WORDS.has(part.toLowerCase()))
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+  if (spoken.split(' ').every((part) => ROLE_WORDS.has(part.toLowerCase()))) return null;
   return spoken || null;
 }

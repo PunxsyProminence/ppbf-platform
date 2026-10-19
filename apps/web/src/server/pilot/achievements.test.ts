@@ -351,7 +351,9 @@ describe('deriveStaffDisplayName', () => {
     ['jane.okafor@example.test', 'Jane Okafor'],
     ['ppbf@punxsyprominence.org', null],
     ['Admin@punxsyprominence.org', null],
-    ['admin.jane@example.test', 'Jane'],
+    ['admin.jane@example.test', 'Admin Jane'],
+    ['gym-admin@example.org', 'Gym Admin'],
+    ['pat.office@example.test', 'Pat Office'],
     ['coach@example.test', null],
   ])('%s gives %s', (email, expected) => {
     expect(deriveStaffDisplayName(email)).toBe(expected);
