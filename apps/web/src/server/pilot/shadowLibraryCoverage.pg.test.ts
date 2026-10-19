@@ -49,6 +49,7 @@ import {
   listShadowCapabilityCoverage,
   recomputeShadowCapabilityCoverage,
 } from './shadowLibrary';
+import { publicationKey, PUBLICATION_KEY_SQL, type PublicationKeySource } from './shadowPublicationKey';
 import { resolveShadowResearchRequirement } from './shadowResearch';
 
 jest.setTimeout(180_000);
@@ -1382,6 +1383,118 @@ describe('listApprovedGlobalEvidenceForResearchBridge against real rows', () => 
       const rows = await listApprovedGlobalEvidenceForResearchBridge({ organizationId: ORG_ID });
 
       expect(rows).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// F-136 (Jason 2026-10-18, "A: DOI/PMID/URL key (Rec.)"): one paper filed under
+// two source ids is one source, not two.
+describe('coverage counts publications, not source ids (F-136)', () => {
+  test('two servable sources that are the same paper leave a two-source rule partial', async () => {
+    const client = await freshDatabase('coverage_same_paper');
+    activeClient = client;
+    try {
+      await seedRule(client, 'cap-two-papers', { minimumSourceCount: 2 });
+      await seedSource(client, 'src-paper-meta');
+      await seedSource(client, 'src-paper-url');
+      await client.query(
+        `update pilot.shadow_library_sources set metadata = '{"doi":"10.1000/ABC.1"}'::jsonb where source_id = 'src-paper-meta'`,
+      );
+      await client.query(
+        `update pilot.shadow_library_sources set url = 'https://doi.org/10.1000/abc.1' where source_id = 'src-paper-url'`,
+      );
+
+      const result = await recomputeShadowCapabilityCoverage({
+        organizationId: ORG_ID,
+        actorAccountId: ADMIN_ID,
+        actorRole: 'organization_admin',
+      });
+
+      const rule = result.find((row) => row.capability_key === 'cap-two-papers');
+      expect(rule?.matched_sources).toBe(1);
+      expect(rule?.coverage_state).toBe('partial');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('two different papers still cover it', async () => {
+    const client = await freshDatabase('coverage_two_papers');
+    activeClient = client;
+    try {
+      await seedRule(client, 'cap-two-papers', { minimumSourceCount: 2 });
+      await seedSource(client, 'src-paper-a');
+      await seedSource(client, 'src-paper-b');
+      await client.query(`update pilot.shadow_library_sources set url = 'https://example.com/a' where source_id = 'src-paper-a'`);
+      await client.query(`update pilot.shadow_library_sources set url = 'https://example.com/b' where source_id = 'src-paper-b'`);
+
+      const result = await recomputeShadowCapabilityCoverage({
+        organizationId: ORG_ID,
+        actorAccountId: ADMIN_ID,
+        actorRole: 'organization_admin',
+      });
+
+      const rule = result.find((row) => row.capability_key === 'cap-two-papers');
+      expect(rule?.matched_sources).toBe(2);
+      expect(rule?.coverage_state).toBe('covered');
+    } finally {
+      await client.end();
+    }
+  });
+
+  // DRIFT GUARD: the claim path keys in JS (publicationKey), coverage keys in
+  // SQL (PUBLICATION_KEY_SQL). If the two rules diverge, a claim and a
+  // coverage count would disagree about what one paper is.
+  test('PUBLICATION_KEY_SQL agrees with publicationKey on every shape', async () => {
+    const src = (id: string, url: string | null = null, metadata: Record<string, unknown> | null = null): PublicationKeySource =>
+      ({ source_id: id, url, metadata });
+    const shapes: PublicationKeySource[] = [
+      src('s-doi-meta', null, { doi: '10.1000/ABC.1' }),
+      src('s-doi-url', 'https://doi.org/10.1000/abc.1'),
+      src('s-doi-kind', null, { identifier_kind: 'doi', identifier: 'doi:10.2000/Xyz' }),
+      src('s-doi-trailing', null, { doi: 'https://doi.org/10.3000/trail.' }),
+      src('s-doi-and-pmid', 'https://x.org/a', { doi: '10.4000/both', pmid: '123' }),
+      src('s-pmid-meta', null, { pmid: '31452104' }),
+      src('s-pmid-num', null, { pmid: 31452104 }),
+      src('s-pmid-kind', null, { identifier_kind: 'pmid', identifier: '777' }),
+      src('s-pmid-url', 'https://pubmed.ncbi.nlm.nih.gov/31452104/'),
+      src('s-pmid-old-url', 'https://www.ncbi.nlm.nih.gov/pubmed/42?dopt=Abstract'),
+      src('s-pmid-bad', null, { pmid: 'PMID: abc' }),
+      src('s-url-http', 'http://www.Example.com/Paper/1/'),
+      src('s-url-https', 'https://example.com/Paper/1#methods'),
+      src('s-url-utm', 'https://example.com/Paper/1?utm_source=x&UTM_Medium=y'),
+      src('s-url-keep', 'https://example.com/Paper/1?id=5&utm_source=x&b=2'),
+      src('s-url-other', 'https://example.com/Paper/2'),
+      src('s-url-root', 'https://www.example.com/'),
+      src('s-bare', null, null),
+      src('s-blank', '   ', { doi: '  ', pmid: '', identifier_kind: 'doi', identifier: ' ' }),
+      // Review edge cases: the two keys trimmed different whitespace, read
+      // non-string JSON as text, and let '.' cross a newline only in SQL.
+      src('s-pmid-tab', null, { pmid: '\t123\n' }),
+      src('s-url-newline', '\t\n', { pmid: 'x' }),
+      src('s-doi-object', null, { doi: { value: '10.5000/obj' } }),
+      src('s-pmid-fraction', null, { pmid: 123.5 }),
+      src('s-pmid-bool', null, { pmid: true }),
+      src('s-url-inner-newline', 'https://example.com/p?x=1\n#frag'),
+    ];
+    const client = await freshDatabase('coverage_key_drift');
+    activeClient = client;
+    try {
+      for (const shape of shapes) {
+        await seedSource(client, shape.source_id, { ownsDocument: false });
+        await client.query(
+          `update pilot.shadow_library_sources set url = $2, metadata = $3::jsonb where source_id = $1`,
+          [shape.source_id, shape.url, JSON.stringify(shape.metadata ?? {})],
+        );
+      }
+      const rows = await client.query(
+        `select s.source_id, ${PUBLICATION_KEY_SQL('s')} as key from pilot.shadow_library_sources s order by s.source_id`,
+      );
+      const sqlKeys = Object.fromEntries(rows.rows.map((row) => [row.source_id, row.key]));
+      const jsKeys = Object.fromEntries(shapes.map((shape) => [shape.source_id, publicationKey(shape)]));
+      expect(sqlKeys).toEqual(jsKeys);
     } finally {
       await client.end();
     }
