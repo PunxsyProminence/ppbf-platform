@@ -86,6 +86,7 @@ describe('the ruled words', () => {
     ['/coach/development', 'app/coach/development/page.tsx', 'Your Coaching Growth'],
     ['/admin/people', 'app/admin/people/page.tsx', 'Gym Office'],
     ['/dashboard', 'app/dashboard/page.tsx', 'Home'],
+    ['/coach/test-day', 'app/coach/test-day/page.tsx', 'Test Day'],
   ])('%s: door label = page title = %s', (href, file, title) => {
     expect(door(href)?.label).toBe(title);
     expect(read(file)).toMatch(new RegExp(`<h1[^>]*>\\s*${title}\\s*</h1>`));

@@ -8,8 +8,11 @@ import {
   getAthleteProgram,
   listMilestoneAwards,
   setAthleteProgram,
+  undoSelfMilestone,
 } from '@/src/server/pilot/achievements';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { withTransaction } from '@/src/server/pilot/db';
+import { PilotError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -32,6 +35,10 @@ export const runtime = 'nodejs';
  * NOTHING HERE EXPIRES OR DECAYS. There is no DELETE and no re-qualification.
  * An award is a thing that happened, and a thing that happened is not undone by
  * three months away.
+ *
+ * THE ONE TAKE-BACK IS THE ATHLETE'S OWN SLIP (OD-2026-10-17-003): POST with
+ * `undo: true` takes back their own "I did it" within ten minutes. Never a
+ * coach's award, never anybody else's, never a delete -- see undoSelfMilestone.
  */
 
 const MILESTONE_READER_ROLES = ['coach', 'organization_admin', 'admin', 'athlete', 'parent'] as const;
@@ -83,7 +90,50 @@ export async function POST(request: NextRequest) {
       throw new Error('Missing athlete_id');
     }
 
+    // Only the athlete takes back their own mark: a coach's hand on this would be
+    // the platform un-saying something, which it does not do.
+    if (body.undo === true) {
+      requireRole(principal, ['athlete']);
+    }
+
     await assertActorCanAccessAthlete(principal, athleteId);
+
+    // "Undo" (OD-2026-10-17-003): the owner, the account, their own mark and the
+    // window are all in undoSelfMilestone's WHERE clause, not in the button. A
+    // reversal with its own audit event, in one transaction, never a delete.
+    if (body.undo === true) {
+      const milestoneKey = typeof body.milestone_key === 'string' ? body.milestone_key : '';
+      const undone = await withTransaction(async (client) => {
+        const reversed = await undoSelfMilestone({
+          organizationId: principal.organizationId,
+          athleteId,
+          milestoneKey,
+          actorAccountId: principal.accountId,
+          client,
+        });
+        if (!reversed) {
+          // One answer for "too late", "a coach's mark", "not yours", "already
+          // undone" and "no such award".
+          throw new PilotError(409, 'That can no longer be undone.', 'MILESTONE_UNDO_CLOSED');
+        }
+        await writePilotAuditEvent({
+          event_type: 'update',
+          actor_account_id: principal.accountId,
+          actor_role: principal.role,
+          organization_id: principal.organizationId,
+          entity_type: 'athlete_milestone',
+          entity_id: `${athleteId}:${reversed.milestone_key}`,
+          details: {
+            athlete_id: athleteId,
+            milestone_key: reversed.milestone_key,
+            undone: true,
+            undone_awarded_at: new Date(reversed.undone_awarded_at).toISOString(),
+          },
+        }, client);
+        return reversed;
+      });
+      return NextResponse.json({ ok: true, undone: { milestone_key: undone.milestone_key } });
+    }
 
     // The role is derived from who is signed in, never taken from the body: an
     // athlete cannot claim a coach witnessed something.

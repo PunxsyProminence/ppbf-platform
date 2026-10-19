@@ -326,6 +326,14 @@ describe('every direct reader of a consent status is registered', () => {
         + 'so the next change to it is seen.',
     ],
     [
+      'src/server/pilot/clearedTonight.ts',
+      "The staff worklist's word for an adult's own media consent "
+        + '(OD-2026-10-08-015). Reports only: it gates nothing. "video" comes '
+        + "from ownConsentCoversNewPublication, the publication gate's own test; "
+        + "the `=== 'withdrawn'` / `=== 'signed'` lines run on a normalised value "
+        + "and anything else reads 'none'. Fails closed.",
+    ],
+    [
       'app/admin/waiver-status/page.tsx',
       'Admin worklist rendering. Reads server-normalised values and renders '
         + "anything it does not recognise as 'Missing', which is the honest "

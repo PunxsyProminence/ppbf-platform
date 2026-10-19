@@ -797,10 +797,16 @@ describe('an observation that completes an input set triggers its formula', () =
 
     expect(response.status).toBe(200);
     expect(mockRecalculate).toHaveBeenCalledTimes(1);
-    expect(mockAutoCalculate).not.toHaveBeenCalled();
+    // Detection also runs now (lane L50): filling a blank "Whole session" box
+    // re-runs MVP-10 AND newly satisfies MVP-02/04/05. A set recalculation
+    // already re-ran comes back as the same row (calculationKey).
+    expect(mockAutoCalculate).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      contextId: 'sparring-2026-08-18',
+    });
     await expect(response.json()).resolves.toEqual(expect.objectContaining({
       recalculatedResultCount: 1,
-      autoCalculatedResultCount: 0,
     }));
   });
 

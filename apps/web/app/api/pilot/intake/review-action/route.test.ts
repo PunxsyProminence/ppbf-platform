@@ -1201,6 +1201,23 @@ describe('promotion waiver status is validated before any promotion write', () =
     expect(mockUpsertWaiver).not.toHaveBeenCalled();
     expect(mockUpdateStatus).not.toHaveBeenCalled();
   });
+  // OD-2026-10-07-009: photo and media consent is never a promoted register
+  // row. Before this, a promotion could file one with no guardian -- and, once
+  // adults record their own (OD-2026-10-08-015), one marked 'athlete_self'.
+  test.each([
+    ['photo_media', 'athlete_self'],
+    ['photo_media', 'guardian'],
+    [' Photo_Media ', 'athlete'],
+  ])('a %p waiver signed as %p is refused 400 before any promotion write', async (waiverType, role) => {
+    const response = await POST(waiverPromoteRequest({ ...WAIVER, waiver_type: waiverType, signed_by_role: role, status: 'withdrawn' }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(String(payload.error)).toMatch(/^Unsupported promotion\.waiver\.waiver_type/);
+    expect(mockUpsertAthlete).not.toHaveBeenCalled();
+    expect(mockUpsertWaiver).not.toHaveBeenCalled();
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+  });
 });
 
 describe('review-action authorizes the actor against the case before mutating it', () => {

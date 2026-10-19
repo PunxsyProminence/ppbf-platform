@@ -27,6 +27,7 @@ jest.mock('./guardianConsent', () => {
     // not mocked) reads these guardians: the scope refusals under test are
     // that function's, not a copy of them written into this suite.
     checkGuardianMediaConsent: jest.fn(),
+    readAdultOwnMediaConsent: jest.fn(async () => null),
   };
 });
 /*

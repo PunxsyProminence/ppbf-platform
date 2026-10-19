@@ -85,7 +85,7 @@ beforeEach(() => {
 async function renderPanel(props: Partial<React.ComponentProps<typeof AthleteAchievements>> = {}) {
   const view = render(<AthleteAchievements athleteId="ath_1" {...props} />);
   await waitFor(() => {
-    expect(screen.getByText(/nothing here ever comes off/i)).toBeTruthy();
+    expect(screen.getByText(/Earned milestones stay\./)).toBeTruthy();
   });
   return view;
 }
