@@ -289,6 +289,13 @@ function assertTiersRise(bar: PatternFormationBar): void {
         && higher.observers.orDoubleCodedShare < lower.observers.orDoubleCodedShare) {
       fail(`${at}.orDoubleCodedShare`, `at least ${below}`);
     }
+    // A double-coded route a harder tier adds is two coders on the same
+    // attempts: no easier than a lower tier that already asks for no more than
+    // two coaches, but easier than one that asks for more -- so not allowed then.
+    if (higher.observers.orDoubleCodedShare !== null && lower.observers.orDoubleCodedShare === null
+        && lower.observers.minimumCoaches > 2) {
+      fail(`${at}.orDoubleCodedShare`, `null while ${below} asks for more than two coaches with no such route`);
+    }
   }
   // Evidence must be able to stay current for the longest span a tier asks for,
   // or that tier could never be reached.

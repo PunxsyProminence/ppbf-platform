@@ -299,3 +299,101 @@ export function assessObserverReliability(
     policyVersion: policy.policyVersion,
   });
 }
+
+// ── Pair calibration (lane L49; Jason 2026-10-18, "A: Not until calibrated") ──
+//
+// The approved bar (research report R1-R4) is per BEHAVIOUR, per COACH PAIR:
+// two coaches' readings of the same attempts must agree often enough, beyond
+// chance, over enough attempts, before their double-coded evidence counts. A
+// paired judgment is one attempt (session, task and opportunityKey -- the
+// same grouping the pattern evaluator uses, ../episodes.ts) that both coaches
+// coded. Cohen's kappa for the two of them; agreement on "present" and on
+// "absent" reported beside it, because a rare or very common behaviour makes
+// kappa paradoxically low (R5).
+
+export interface PairCalibrationBar {
+  readonly minimumAgreement: number;
+  readonly minimumKappa: number;
+  readonly minimumPairedJudgments: number;
+}
+
+export interface PairCalibration {
+  /** The two observer accounts, sorted. */
+  readonly observers: readonly [string, string];
+  readonly pairedJudgments: number;
+  readonly observedAgreement: number | null;
+  /** Cohen's kappa; null when chance agreement is total and kappa is undefined. */
+  readonly kappa: number | null;
+  /** Agreement on the behaviour showing, and on it not showing (R5). Null with no such judgments. */
+  readonly presentAgreement: number | null;
+  readonly absentAgreement: number | null;
+  /** All three of the bar's numbers met. Too few judgments, or an undefined kappa, is not calibrated. */
+  readonly calibrated: boolean;
+}
+
+/** The key of a pair, order-free. */
+export function pairKey(first: string, second: string): string {
+  return JSON.stringify(first < second ? [first, second] : [second, first]);
+}
+
+export function assessPairCalibration(
+  readings: readonly BehaviourObservation[],
+  bar: PairCalibrationBar,
+): ReadonlyMap<string, PairCalibration> {
+  // Each person's verdict on each attempt they coded with a key. Only people:
+  // a detector does not calibrate against a coach (see buildCoRatedItems).
+  const verdicts = new Map<string, Map<string, ObservationPolarity>>();
+  for (const reading of readings) {
+    if (!reading.observerAccountId || reading.interpretation !== 'human_observed') continue;
+    const key = reading.opportunityKey;
+    if (typeof key !== 'string' || key.length === 0) continue;
+    const attempt = JSON.stringify([reading.sessionId, reading.taskContextKey, key]);
+    const byObserver = verdicts.get(attempt) ?? new Map<string, ObservationPolarity>();
+    byObserver.set(reading.observerAccountId, reading.polarity);
+    verdicts.set(attempt, byObserver);
+  }
+
+  interface Tally { observers: [string, string]; both: number; neither: number; firstOnly: number; secondOnly: number }
+  const tallies = new Map<string, Tally>();
+  for (const byObserver of verdicts.values()) {
+    const observers = [...byObserver.keys()].sort();
+    for (let i = 0; i < observers.length; i += 1) {
+      for (let j = i + 1; j < observers.length; j += 1) {
+        const key = pairKey(observers[i], observers[j]);
+        const tally = tallies.get(key)
+          ?? { observers: [observers[i], observers[j]], both: 0, neither: 0, firstOnly: 0, secondOnly: 0 };
+        const first = byObserver.get(observers[i]) === 'occurrence';
+        const second = byObserver.get(observers[j]) === 'occurrence';
+        if (first && second) tally.both += 1;
+        else if (!first && !second) tally.neither += 1;
+        else if (first) tally.firstOnly += 1;
+        else tally.secondOnly += 1;
+        tallies.set(key, tally);
+      }
+    }
+  }
+
+  const result = new Map<string, PairCalibration>();
+  for (const [key, tally] of tallies) {
+    const { both, neither, firstOnly, secondOnly } = tally;
+    const n = both + neither + firstOnly + secondOnly;
+    const split = firstOnly + secondOnly;
+    const observed = n === 0 ? null : (both + neither) / n;
+    const pFirst = n === 0 ? 0 : (both + firstOnly) / n;
+    const pSecond = n === 0 ? 0 : (both + secondOnly) / n;
+    const chance = pFirst * pSecond + (1 - pFirst) * (1 - pSecond);
+    const kappa = observed === null || chance >= 1 ? null : (observed - chance) / (1 - chance);
+    result.set(key, Object.freeze({
+      observers: Object.freeze([tally.observers[0], tally.observers[1]]) as readonly [string, string],
+      pairedJudgments: n,
+      observedAgreement: observed,
+      kappa,
+      presentAgreement: 2 * both + split === 0 ? null : (2 * both) / (2 * both + split),
+      absentAgreement: 2 * neither + split === 0 ? null : (2 * neither) / (2 * neither + split),
+      calibrated: n >= bar.minimumPairedJudgments
+        && observed !== null && observed >= bar.minimumAgreement
+        && kappa !== null && kappa >= bar.minimumKappa,
+    }));
+  }
+  return result;
+}
