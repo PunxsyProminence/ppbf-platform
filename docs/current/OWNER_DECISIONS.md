@@ -164,6 +164,124 @@ and should not try to.
 
 ---
 
+## OD-2026-10-19-014 -- Gym TV live-workout screen: "fix thos first"; "no i need the code and for you to do a mock workout on it" (REPORTED)
+
+**Provenance: REPORTED.** Jason typed these in the lane "Pilot walkthrough: admin, coach, athlete day (signed in)" (local_59900f1a-bc0d-4cb7-a6da-185bb46c00df), not in overwatch. The lane relayed them to overwatch (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; line 10424, 2026-10-19T23:37:21.811Z), opening: "LA2 -> Overwatch: Jason says "fix thos first" about the gym TV live-workout screen. LA2 builds nothing, so this needs a FIX LANE from you (screens, Sonnet)." and closing: "WRITES (production): W-TV1 TV paired; W-TV2 plan run dfcf6432 started/sent to TV/ended abandoned. Jason: "no i need the code and for you to do a mock workout on it"." Item 5 of its fix list carries a third quote: "A paired TV shows the wall, not a workout screen, until a session is sent (Jason: "this should be a workk out screen")." Read by script (records lane, 2026-10-20, at Overwatch's request). The quotes are the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
+
+Jason (REPORTED): *"fix thos first"*; *"no i need the code and for you to do a mock workout on it"*; *"this should be a workk out screen"*
+
+**Ruling (as the lane read it):** the gym TV live-workout screen's defects from the signed-in pilot walkthrough are fixed before the pilot, ahead of the rest of the walk's findings; the proof he wants is the code change plus a mock workout run on a paired TV, not a description. A paired TV that has no session sent to it should show a workout screen, not the wall.
+
+**The fix list, as the lane relayed it (line 10424):** (1) the 7-tile block strip is drawn on top of the NOW card, hiding the current drill name, the "DRILL" label, the block clock and SCHEDULED; (2) the "POOR MAN'S SPORT" / THE WALL band runs across the ON THE FLOOR card, which is squashed and its count clipped; (3) every strip tile reads "Drill" with the same icon and times are cut; (4) the bell is a ding, not a boxing bell; (5) a paired TV shows the wall until a session is sent; (6) the unpaired public /wall has the same overlap at about 800px and reads PPBF_PILOT_DEFAULT_ORG_ID, so tonight's punxsy_prominence class did not appear (a production config matter, not code); (7) the gym name is truncated. Evidence named by the lane: his screenshot `audit\LA2-shots\2026-10-19-tv-live-workout-1302w.webp` and `audit\LIVE-AUDIT-2026-10-18-PILOT-DAY.md`, section "Gym TV / wall", under `Documents\PPBF-overwatch\`.
+
+**Acted on (Overwatch, 2026-10-20):** after his *"tmy main claude account usage has reset, lets get these lanes closed out updat the git hub, and use the fable useage for somthing appropiate to it model before i switch"* (line 10450, 2026-10-20T17:50:10.636Z), Overwatch opened GitHub issue #1792, "Gym TV live-workout screen: overlapping layout, unnamed strip, bell, idle screen (pilot walkthrough LA2)" (line 10492; created 2026-10-20T17:51:39Z, OPEN, gh issue view), and chip "Fix gym TV live-workout screen (#1792)" (line 10498), whose brief sends item 5 (the idle paired TV) to the existing rulings OD-2026-10-17-028 and OD-2026-10-18-001 first and to Overwatch if not covered, keeps item 6 with Overwatch, and lists the mock workout on the paired production TV "ZZ-AUDIT LA2 test screen" as the final step for Overwatch and Jason after a release.
+
+**Status:** ruled (REPORTED); issue open, fix lane started as a chip; nothing fixed yet.
+
+---
+
+## OD-2026-10-19-013 -- Release 32: "yes stage release 32"; staged at 12f3bde7, production not yet shipped
+
+**Provenance: PRIMARY.** Typed in the overwatch session (transcript as in OD-2026-10-19-014; line 10341, 2026-10-19T23:05:07.089Z). Read by script (records lane, 2026-10-20, at Overwatch's request). His words are quoted exactly. New; edits no earlier entry.
+
+**What it answered.** Overwatch (line 10337, 2026-10-19T23:04:39.294Z), after his *"when di f163 go into affect"* (line 10315, 23:01:42.147Z) and *"i was on a mobile hotspot"* (line 10328, 23:04:08.114Z), which explained why this PC could no longer reach the production database (its address had changed): "**Recommended:** for the Release 32 SHADOW check, I run it read-only from inside the production app, the same way the #345 lane did. That works from any network. Say "yes" to stage Release 32 and I'll use that route." Jason: *"yes stage release 32"*
+
+**Ruling:** stage Release 32 from main's head; the pre-production SHADOW empty-queue check runs read-only from inside the production app instead of from this PC.
+
+**Acted on (Overwatch):**
+- Dispatched staging migrations (all) and deploy-staging at main `12f3bde70b510b2313d2cd845acd0bc5c362c3e1` (line 10380). apply-migrations run 39340196715 concluded success (created 2026-10-19T23:13:23Z, updated 23:16:07Z) and deploy-staging run 39340531992 concluded success (created 23:16:25Z, updated 23:23:06Z), both at that sha (gh run view, 2026-10-20). Overwatch observed revision app-ppbf-staging--0000285 (line 10406).
+- Merge hold for the release window; PR #1789 (the coach display-name migration, OD-2026-10-19-008 part B) held for Release 33 (line 10355).
+- Sent Jason the staging checklist (line 10406): as parent, no "No corner chosen" line, no "Coach Coach", plain Schedule sentences with a **Withdraw request** button on an old unanswered coaching request, **Past due** on overdue tasks; as coach, ring-name take-down for any gym athlete and a SHADOW concussion question; as gym admin, no private "why it matters" line on athlete goals. Then "staging OK", then two production clicks: the database update (family withdraw) and the deploy.
+
+**What Release 32 carries** (main `75b4efa3`..`12f3bde7`, first-parent log): #1781, #1777, #1782, #1783, #1784 (F-155 disclosure escalation), #1778, #1779, #1780, #1788, #1786, #1790 (migration: coaching request 'withdrawn'), #1791, #1787, #1785 (F-100).
+
+**Overwatch's technical call, not Jason's (SHADOW per-source cap, #1787).** The F-159 lane ("Pilot: SHADOW search shows more than one source (diversify)", local_caec0b91-75a5-4bce-bd4b-d8c3a5562cf3) reported (line 9790, 2026-10-19T20:31:41.404Z) that on the cached AI-JUDGED benchmark N=1, N=2 and no cap tie on top-1 and hit@5 (30/34, 33/34), that only N=1 lifts the concussion passage into the top 8 (rank 7; N=2 rank 10), and that N=1 drops keyed passages on 9 questions (a biased estimate). Overwatch's earlier tie rule had said pick N=2. Overwatch (line 9793): "Option A, N=1. The tie rule assumed the benchmark would separate N=1 from N=2 on outcome; here it doesn't, and the purpose of this lane is breadth plus F-159." and had F-159 marked "partly closed" (the claim path at limit 5 still misses). #1787 merged as `60bcb336` (2026-10-19T22:56:17Z, gh pr view); SHADOW context contract version 42 (line 10244). Jason has not ruled on N.
+
+**Status:** staged; his staging check and the production clicks had not happened when this was written (the newest deploy-production run is 39282460147 at `75b4efa3`, Release 31; gh run list, 2026-10-20).
+
+---
+
+## OD-2026-10-19-012 -- The pilot walkthrough uses existing logins, no new test people: "use neeko" (REPORTED)
+
+**Provenance: REPORTED.** Jason typed this in the lane "Pilot walkthrough: admin, coach, athlete day (signed in)" (local_59900f1a-bc0d-4cb7-a6da-185bb46c00df), not in overwatch. The lane relayed it to overwatch (transcript as in OD-2026-10-19-014; line 10224, a queued cross-session message, 2026-10-19T22:56:16.306Z): "LA2: Jason ruled "use neeko" (after "those work i dont want to create new emails"). The cost was stated once: Neeko's real history gets ZZ-AUDIT test records. So no new people (W1-W4 dropped). Item 5 becomes a check that the existing logins work: coach@punxsyprominence.org (coach), Neeko Neale (athlete), jason.c.neale@outlook.com (parent of Neeko). W6-W13 go on Neeko/coach@ with the ZZ-AUDIT LA2 2026-10-19 prefix, and every record goes in the table for the audit-data lane. Signed in as ppbf@ (GYM ADMIN pill, profile/me checked). Starting item 6 now." Read by script (records lane, 2026-10-20, at Overwatch's request). The quotes are the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
+
+Jason (REPORTED): *"those work i dont want to create new emails"*, then *"use neeko"*
+
+**What it answered.** The walkthrough was briefed to use three made-up test people. Overwatch (line 9531, 2026-10-19T18:44:45.460Z) asked him to "Pick 3 email addresses you control (aliases are fine) for a test coach, a test adult athlete and a test parent", and to sign in as ppbf@ in the in-app browser; his *"open it in the in app browser"* (line 9554, 18:45:29.359Z) answered Overwatch's reminder at line 9550 that the walkthrough was waiting for that sign-in. In the lane he then chose the existing logins over new ones.
+
+**Ruling (as the lane read it):** no new test accounts for the pilot walkthrough. It runs on the existing coach@ login, Neeko's athlete account and Jason's own parent login; every record it writes carries the ZZ-AUDIT LA2 2026-10-19 prefix and goes in the table for the audit-data lane. The cost, stated once by the lane: Neeko's real history gets ZZ-AUDIT test records.
+
+**Acted on (Overwatch, line 10232):** "Noted: Jason's "use neeko" rules out new test people, and the cost was stated once. GO on W6-W13 against Neeko, coach@ and the parent login, ZZ-AUDIT prefixed and every record tabled. Keep reading-only on any other athlete." The gym TV findings of that walk are OD-2026-10-19-014.
+
+**Status:** ruled (REPORTED); the walk was running when this was written.
+
+---
+
+## OD-2026-10-19-011 -- Parent portal item 9, an old unanswered coaching request: "A: Family can withdraw (Rec.)"
+
+**Provenance: PRIMARY.** The fourth question of a four-question card in the overwatch session (transcript as in OD-2026-10-19-014; card put at line 9635, 2026-10-19T18:48:08.583Z; answered at line 9639, 2026-10-19T20:24:45.367Z). Read by script (records lane, 2026-10-20, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The card put the four questions the "Parent portal: next fixes (items 5-9)" lane (local_007eabe5-82b2-40b6-a927-2124ef3ecd92) had asked Overwatch at line 9624 (18:47:57.014Z), itself under OD-2026-10-19-004. New; edits no earlier entry.
+
+**Question "Old request", as written:** "Parent portal item 9: a family's coaching request whose preferred time has passed sits "not answered" forever and they can't clear it. A) the family can withdraw their own request (database change + its own PR) (Rec.); B) hide it from the family once the time passes, staff still see it; C) as today, staff only. PLAIN: let parents cancel old unanswered requests?" Options as written: "A: Family can withdraw (Rec.)": "Parents clean up their own requests."; "B: Hide after time": "No database change."; "C: Staff only": "As today.". Jason: *"A: Family can withdraw (Rec.)"*
+
+**Ruling:** a family can withdraw its own pending coaching request. "B: Hide after time" and "C: Staff only" were not chosen.
+
+**Acted on:**
+- Overwatch to the lane (line 9657): GO on "PR C2 (withdraw, migration): Opus with 2 reviewers; I apply the migration", and on PR C1, the schedule wording (plain sentences, no raw "->"), which merged as #1788, `3d897ad5` (2026-10-19T21:18:19Z, gh pr view).
+- The lane's design (line 9977): a migration widening the coaching-request status check to add 'withdrawn' (apply script `pilot:apply-scheduler-coaching-request-withdrawn`); a route action allowed only while the request is pending; "a guardian who can act on the athlete may withdraw any pending request for that child; an athlete may withdraw only a request they made themselves. Staff use decline as today."; a "Withdraw request" button with a confirm press, status word "Withdrawn". Overwatch (line 9988): "C2 design is OK as written (guardian for their child; athlete for their own request; pending only; audited)."
+- #1790 merged as `6983ac43` (2026-10-19T21:58:37Z, gh pr view). Its migration ran on staging in Release 32's apply-migrations run 39340196715 (OD-2026-10-19-013); production still needs Jason's click.
+
+**Overwatch's technical call, not Jason's (the withdraw audit).** The lane asked (line 10060): "should "audited" in Q4 mean must-audit? Today the withdraw audit is best-effort, the same as approve/decline (auditSchedulerEvent logs a failure and the withdraw stands) ... Recommend keep (it matches approve/decline)." Overwatch (line 10071): "Keep the best-effort audit, matching approve/decline. Q4's "audited" means the event is logged the same way as its siblings; it isn't a separate must-audit rule. Note it in #1790's body." A Codex review asked for a transactional audit; the lane answered it with that ruling and did not change the code (line 10079). Jason has not ruled on it.
+
+**Status:** ruled; merged; on staging; production migration pending.
+
+---
+
+## OD-2026-10-19-010 -- Parent portal item 8, the fight card's "NO CORNER CHOSEN": "A: Hide until chosen (Rec.)"
+
+**Provenance: PRIMARY.** The third question of the card in OD-2026-10-19-011 (line 9635 put, line 9639 answered, 2026-10-19T20:24:45.367Z). Read by script. His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Corner", as written:** "Parent portal item 8: the fight card shows "NO CORNER CHOSEN" with no explanation. A) hide the corner line until a corner is chosen, keep the programme line (Rec.); B) keep both and add a plain line like "Corner colour: not picked yet"; C) as is. PLAIN: "No corner chosen" means nothing to a parent." Options as written: "A: Hide until chosen (Rec.)": "Less noise for families."; "B: Explain it": "Keep and add a plain line."; "C: As is": "No change.". Jason: *"A: Hide until chosen (Rec.)"*
+
+**Ruling:** the family's fight card hides the corner line until a corner is chosen and keeps the programme line. "B: Explain it" and "C: As is" were not chosen.
+
+**Acted on:** Overwatch to the lane (line 9657): "PR A (items 6 + 8): "Your coach" fallback for role-word stems; hide the corner line until a corner is chosen." Shipped with item 6 in #1786, merged `b830b565` (2026-10-19T21:42:26Z, gh pr view); on staging in Release 32 (OD-2026-10-19-013).
+
+**Status:** ruled; merged; on staging.
+
+---
+
+## OD-2026-10-19-009 -- Parent portal item 5, tasks past their due date: "A: "Past due" badge (Rec.)"
+
+**Provenance: PRIMARY.** The second question of the card in OD-2026-10-19-011 (line 9635 put, line 9639 answered, 2026-10-19T20:24:45.367Z). Read by script. His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Past due", as written:** "Parent portal item 5: open tasks past their due date look the same as new ones. A) a "Past due" badge next to "Due <date>" (Rec.); B) the word "Overdue"; C) no marker. PLAIN: should late tasks say they're late?" Options as written: "A: "Past due" badge (Rec.)": "Soft wording, clear."; "B: "Overdue"": "Firmer wording."; "C: No marker": "As today.". Jason: *"A: "Past due" badge (Rec.)"*
+
+**Ruling:** an open task past its due date carries a "Past due" badge next to "Due <date>" on the family screens. "B: "Overdue"" and "C: No marker" were not chosen.
+
+**Acted on:** Overwatch to the lane (line 9657): "PR B (past-due badge) waits until the items 2-4 lane's ParentHub PR merges; that lane hasn't started yet." It merged as #1791, `a4055c19` (2026-10-19T22:17:52Z, gh pr view); on staging in Release 32 (OD-2026-10-19-013). Whether the items 2-4 lane's PR had merged first was not checked by this records pass.
+
+**Status:** ruled; merged; on staging.
+
+---
+
+## OD-2026-10-19-008 -- Parent portal item 6, a coach named "Coach Coach": "C: A now, B later (Rec.)"
+
+**Provenance: PRIMARY.** The first question of the card in OD-2026-10-19-011 (line 9635 put, line 9639 answered, 2026-10-19T20:24:45.367Z). Read by script. His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Coach name", as written:** "Parent portal item 6: when a coach's login starts with a role word (coach@, admin@, info@, ppbf@), the app names them "Coach Coach". A) treat it as unnamed and show "Your coach" (Rec.); B) add a real display-name field so the gym types each coach's name (database change, own lane); C) A now, B later. PLAIN: the app builds coach names from email addresses; coach@ becomes "Coach Coach"." Options as written: "C: A now, B later (Rec.)": "Fix the silly name now; real names come in a later lane."; "A: "Your coach"": "Hide role-word names; no real-name field."; "B: Real name field": "Wait for the database change before fixing.". Jason: *"C: A now, B later (Rec.)"*
+
+**Ruling:** two parts. (A, now) a coach whose login is a role word is shown to families as "Your coach", not "Coach Coach". (B, later) a real display-name field, typed by the gym for each coach, comes in its own lane with a database change.
+
+**Acted on, part A:** #1786 merged as `b830b565` (2026-10-19T21:42:26Z, gh pr view). As narrowed in review (lane, line 9977): "only a WHOLE-stem role word is unnamed (gym-admin@ stays "Gym Admin"), the doubled title is stripped (coach.dave@ gives "Coach Dave")"; a Codex finding that recognitions sent by coach@ before the PR had stored "Coach Coach" as text was fixed at read time, no stored rows changed (line 10060). On staging in Release 32 (OD-2026-10-19-013).
+
+**Acted on, part B:** after his *"any new chips needed, i want to focus on getting the coach athlete users complete and pilot ready"* (line 9919, 2026-10-19T20:43:10.958Z), Overwatch opened chip "Coaches get real display names (Q1 part B)" (line 9924), a three-PR lane: the migration, the gym admin's edit on the People screen, and every coach-naming screen preferring the stored name with #1786's rule as fallback. Its PR 1, #1789 "Staff display name migration: a gym-typed name for coaches (Q1 part B, PR 1 of 3)", is OPEN (gh pr view, 2026-10-20), held for Release 33 (line 10355). The lane's reading that coaches, staff, gym admins and volunteers can all carry a name, since all can appear on family screens, was accepted by Overwatch as fitting this ruling (line 10387).
+
+**Overwatch's technical call, not Jason's (staff screens).** The lane noted (line 9977) that on staff screens (admin/athletes picker, schedule coach picker, capacity and session notes) a coach@ login would now also read "Your coach". Overwatch (line 9988): "Staff screens: Q1's ruling was about family-facing names, so on staff surfaces (pickers, capacity and session notes) a role-word login should show the login itself, not "Your coach". Staff need to tell accounts apart." Jason has not ruled on what staff screens show.
+
+**Status:** part A ruled and merged, on staging; part B ruled, PR 1 of 3 open.
+
+---
+
 ## OD-2026-10-19-007 -- #345 test file: Jason deletes it himself; more pilot chips ("Go with your recommendations and what other chips do we need")
 
 **Provenance: PRIMARY.** Typed in the overwatch session ("Overwatch", Max account; transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; line 9438, 2026-10-19T18:42:49.818Z). Read by script (records lane, 2026-10-19, at Overwatch's request). His words are quoted exactly. New; edits no earlier entry.
