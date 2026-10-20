@@ -2451,7 +2451,7 @@ export default function AthleteWorkspace() {
         ? ''
         : ` Tagged: ${SESSION_TYPES.find((type) => type.key === sessionType)?.label ?? sessionType}.`;
       // Said back too: no session read sends enjoyment to the athlete.
-      const enjoymentLine = enjoyment === null ? '' : ` Enjoyed it: ${enjoymentLabel(enjoyment)} (${enjoyment} of 5).`;
+      const enjoymentLine = enjoyment === null ? '' : ` Enjoyment: ${enjoymentLabel(enjoyment)} (${enjoyment} of 5).`;
       // Session load is shown only when both of the athlete's own answers are
       // there, and labelled for what it is: arithmetic, not a verdict.
       const loadLine = rpe === null || durationMinutes === null
@@ -3294,7 +3294,7 @@ export default function AthleteWorkspace() {
                         Out writes it. Copy PROPOSED. */}
                     <fieldset className="space-y-[var(--s2)]">
                       <legend className="t-label mb-[var(--s2)]">{ENJOYMENT_QUESTION}</legend>
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-[var(--s2)]">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-[var(--s2)]">
                         {ENJOYMENT_LEVELS.map((level) => {
                           const selected = answeredEnjoyment === level.value;
                           return (
@@ -3314,7 +3314,7 @@ export default function AthleteWorkspace() {
                       </div>
                       {answeredEnjoyment === null ? (
                         <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not tapped — you can skip this. It goes on the session when you check out.
+                          Not tapped — you can skip this. It goes on the session when you check out, and your coach sees it.
                         </p>
                       ) : (
                         <button

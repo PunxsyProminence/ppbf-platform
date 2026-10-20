@@ -526,6 +526,10 @@ describe('upsertSession stamps the close record on the completed transition', ()
       await upsertSession(ORG_ID, asRouteSends({ enjoyment: null }), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true }, { closedBy: 'athlete' });
       expect(await enjoymentOf()).toBeNull();
 
+      // A session created already answered (an athlete's POST with a new id) stores it too.
+      await upsertSession(ORG_ID, asRouteSends({ session_id: 'sess-enjoy-new', enjoyment: 3 }), { mode: 'create' }, { closedBy: 'athlete' });
+      expect((await client.query(`select enjoyment from pilot.sessions where session_id = 'sess-enjoy-new'`)).rows[0].enjoyment).toBe(3);
+
       // The column's own bounds stand behind the validator.
       await expect(client.query(`update pilot.sessions set enjoyment = 6 where session_id = 'sess-enjoy'`))
         .rejects.toMatchObject({ code: '23514', constraint: 'pilot_sessions_enjoyment_range' });
