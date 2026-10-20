@@ -86,11 +86,11 @@ test('a pending request whose preferred time has passed says so, and no longer r
   await renderPage();
 
   const old = statusLineFor('Footwork before the August show');
-  expect(old).toContain('Status: not answered, and the preferred time has passed');
-  expect(old).not.toContain('Status: pending');
+  expect(old).toContain('Status: Not answered, and the preferred time has passed');
+  expect(old).not.toContain('Status: Waiting for an answer');
 
-  expect(statusLineFor('Southpaw sparring prep')).toContain('Status: pending');
-  expect(statusLineFor('Extra conditioning')).toContain('Status: declined');
+  expect(statusLineFor('Southpaw sparring prep')).toContain('Status: Waiting for an answer');
+  expect(statusLineFor('Extra conditioning')).toContain('Status: Declined');
   expect(statusLineFor('Extra conditioning')).not.toContain('preferred time has passed');
 });
 
@@ -109,13 +109,13 @@ test('a request whose preferred time passes while the page is open flips to the 
   try {
     install('parent', [request('soon', 10_000, 'pending', 'Southpaw sparring prep')]);
     await renderPage();
-    expect(statusLineFor('Southpaw sparring prep')).toContain('Status: pending');
+    expect(statusLineFor('Southpaw sparring prep')).toContain('Status: Waiting for an answer');
 
     act(() => {
       jest.advanceTimersByTime(15_000);
     });
 
-    expect(statusLineFor('Southpaw sparring prep')).toContain('Status: not answered, and the preferred time has passed');
+    expect(statusLineFor('Southpaw sparring prep')).toContain('Status: Not answered, and the preferred time has passed');
   } finally {
     jest.useRealTimers();
   }

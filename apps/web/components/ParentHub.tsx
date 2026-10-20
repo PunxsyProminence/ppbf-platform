@@ -30,7 +30,6 @@ type TabID = 'overview' | 'parent-floor' | 'home-assignments' | 'observations' |
 interface Child {
   id: string;
   name: string;
-  track: string;
 
   /* Identity. A guardian is inside their own child's circle, so a released
      portrait reaches them -- and only their own children's, because the server
@@ -65,9 +64,21 @@ interface ParentMessage {
   athlete_id: string;
   athlete_name: string | null;
   sender_role: string;
+  // Who sent it by name ("Coach Rivera", an admin's name, or "Gym office"),
+  // from GET /api/pilot/parent/messages (F-120). Absent from an older server.
+  sender_name?: string | null;
   note_text: string;
   created_at: string;
   task: ParentMessageTask | null;
+}
+
+/** "Coach Rivera" when the server names the sender; the role word otherwise (F-120). */
+function senderLabel(message: ParentMessage): string {
+  const name = message.sender_name?.trim();
+  // "Your coach" is the server's floor for a coach it cannot name
+  // (deriveCoachDisplayName); "From Your coach" misreads, so the role word stands.
+  if (name && name !== 'Your coach') return name;
+  return message.sender_role === 'coach' ? 'Coach' : 'Admin';
 }
 
 /* A due date is a bare calendar date ('2026-10-20', Postgres date::text).
@@ -114,6 +125,25 @@ function membershipLine(row: SupportStatus['memberships'][number]): string {
 /** A task is open until the family ticks it. */
 function isOpenTask(message: ParentMessage): boolean {
   return message.task !== null && message.task.completed_at === null;
+}
+
+/* PAST DUE (parent walk 2026-10-19 item 5; Jason 2026-10-19, Q2 "A: "Past
+   due" badge (Rec.)"): still open, and its due date is a calendar day before
+   the gym's today (America/New_York, gymDayIso). Due today is not late. No
+   clock reading yet (0) judges nothing late rather than guessing. */
+function isPastDue(message: ParentMessage, nowMs: number): boolean {
+  if (!isOpenTask(message) || nowMs <= 0) return false;
+  const due = message.task?.due_date;
+  const today = gymDayIso(nowMs);
+  return isCalendarDay(due) && Boolean(today) && due < (today as string);
+}
+
+/* Needs attention, not a safety state: the restricted rung with its glyph
+   (Law 3; docs/visual-inventory/03-glyphs-and-photos.md, "needs attention"). */
+function PastDueBadge() {
+  return (
+    <span className="badge badge--restricted"><i aria-hidden="true">▲</i><span>Past due</span></span>
+  );
 }
 
 /* THE GYM'S WEEK, Monday to Sunday on the gym's calendar (America/New_York,
@@ -743,7 +773,6 @@ export default function ParentHub() {
           return {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
-            track: 'Unavailable',
             photoPath: null,
             initials: '\u2014',
             photoAvailable: false,
@@ -1148,8 +1177,9 @@ export default function ParentHub() {
     return (
       <li key={message.note_id} className="rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
         <p className="t-body" id={`floor-task-${message.note_id}`}>{message.note_text}</p>
-        <p className="t-muted mt-[var(--s2)]">
-          {`From ${message.sender_role === 'coach' ? 'Coach' : 'Admin'} · ${task.due_date ? `Due ${isCalendarDay(task.due_date) ? formatDueDate(task.due_date) : task.due_date}` : 'No due date'}`}
+        <p className="t-muted mt-[var(--s2)] flex flex-wrap items-center gap-[var(--s2)]">
+          <span>{`From ${senderLabel(message)} · ${task.due_date ? `Due ${isCalendarDay(task.due_date) ? formatDueDate(task.due_date) : task.due_date}` : 'No due date'}`}</span>
+          {isPastDue(message, floorClockMs) && <PastDueBadge />}
         </p>
         <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
           <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
@@ -1479,7 +1509,7 @@ export default function ParentHub() {
                 title="Child Overview"
                 description="Quick snapshot of your child's current training status, progress, and upcoming events."
                 usage={[
-                  'Review current track and skill level',
+                  'Review membership, scholarship and support status',
                   'Check attendance and progress summary',
                   'See upcoming events and important dates',
                   'Review coach messages'
@@ -1499,10 +1529,6 @@ export default function ParentHub() {
                       <div>
                         <p className="t-label mb-[var(--s2)]">Child Name</p>
                         <p className="t-body font-semibold">{activeChild.name}</p>
-                      </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Current Track</p>
-                        <p className="t-body font-semibold">{activeChild.track}</p>
                       </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Progress</p>
@@ -1840,7 +1866,7 @@ export default function ParentHub() {
                             {wasNewThisVisit(message) && (
                               <span className="badge badge--filed"><i aria-hidden="true">◉</i><span>New</span></span>
                             )}
-                            <span className="t-label">From {message.sender_role === 'coach' ? 'Coach' : 'Admin'}</span>
+                            <span className="t-label">From {senderLabel(message)}</span>
                           </span>
                         </div>
                         <p className="t-body mb-[var(--s3)]">{message.note_text}</p>
@@ -1855,6 +1881,7 @@ export default function ParentHub() {
                           <span className="t-body font-semibold">
                             {message.task.due_date ? `Due ${formatDueDate(message.task.due_date)}` : 'To do'}
                           </span>
+                          {isPastDue(message, floorClockMs) && <PastDueBadge />}
                           <label className="inline-flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s2)]">
                             <input
                               type="checkbox"

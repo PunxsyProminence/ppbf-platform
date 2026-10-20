@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
+import { ConflictError } from './errors';
 import { getProtocol } from './interventionProtocols';
 import { recordChanged } from './interventionRecordChanged';
 
@@ -122,12 +123,84 @@ export interface ExecutionFactsInput {
   actualStart?: string;
 }
 
+// ONE TAP, ONE EXECUTION (finding F-135). A request key is a random id the
+// coach's screen makes for one tap of Log intervention and sends again when
+// that tap got no clear answer -- a write can commit after the screen's
+// recovery read found nothing. The partial unique index named here makes a
+// key name at most one execution in an organization, so a second send is
+// answered with the execution the first one started instead of starting
+// another (the request key pilot.workout_issues has, workoutIssues.ts). A key
+// is optional: a start sent without one is written exactly as before.
+const REQUEST_KEY_INDEX = 'pilot_intervention_executions_one_per_request_key';
+
+/** An execution as startExecution answers it. `replayed` is there, and true,
+ * only when the request's key already named this execution: nothing was
+ * written by this request. */
+export type StartedExecution = InterventionExecutionRow & { replayed?: true };
+
+/** The execution this request key started in this organization, as a replay;
+ * null when the key names none. A key is one start's: sent again for another
+ * athlete, protocol, decision or session it is refused, never answered with
+ * the other execution and never used for a second one. The execution is
+ * answered as it stands now: the current record of its lineage when it has
+ * been corrected since (a correction does not carry the key), whatever has
+ * happened to its protocol. */
+async function repeatOfStartedRequest(
+  input: {
+    organizationId: string;
+    athleteId: string;
+    protocolId: string;
+    decisionId?: string | null;
+    sessionRunId?: string | null;
+  },
+  requestKey: string,
+): Promise<StartedExecution | null> {
+  const first = await queryOne<{
+    execution_id: string;
+    lineage_id: string;
+    athlete_id: string;
+    protocol_id: string;
+    session_run_id: string | null;
+    same_decision: boolean;
+  }>(
+    // The decision is compared as a uuid, so a link sent in another spelling
+    // of the same id is the same link.
+    `select execution_id, lineage_id, athlete_id, protocol_id, session_run_id,
+            decision_id is not distinct from $3::uuid as same_decision
+     from pilot.intervention_executions
+     where organization_id = $1 and request_key = $2`,
+    [input.organizationId, requestKey, input.decisionId ?? null],
+  );
+  if (!first) return null;
+  if (
+    first.athlete_id !== input.athleteId
+    || first.protocol_id !== input.protocolId
+    || !first.same_decision
+    || first.session_run_id !== (input.sessionRunId ?? null)
+  ) {
+    throw new ConflictError(
+      'This request was already used to log a different intervention.',
+      'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED',
+    );
+  }
+  const current = await queryOne<{ execution_id: string }>(
+    `select execution_id from pilot.intervention_executions
+     where organization_id = $1 and lineage_id = $2 and status <> 'superseded'`,
+    [input.organizationId, first.lineage_id],
+  );
+  const item = await getExecution(input.organizationId, current?.execution_id ?? first.execution_id);
+  return item ? { ...item, replayed: true } : null;
+}
+
 /** Starts an execution against an ACTIVE protocol head, snapshotting the
  * protocol's intended exposure and task context as the plan. The decision
  * link, when given, must belong to the same org AND athlete -- anything
  * else is a hidden not-found, indistinguishable from nonexistence. A
  * protocol the athlete could use that is no longer the active version is the
- * one refusal that says why (see below). */
+ * one refusal that says why (see below). A request key that already names an
+ * execution here is answered with that execution (replayed) before anything
+ * else is read, and so is one that loses the race to write it; the same key
+ * for a different start is a ConflictError. */
 export async function startExecution(input: {
   organizationId: string;
   athleteId: string;
@@ -137,7 +210,15 @@ export async function startExecution(input: {
   plannedStart?: string | null;
   actualStart?: string | null;
   recordedByAccountId: string;
-}): Promise<InterventionExecutionRow | null> {
+  /** The request's key, when it sent one. See ONE TAP, ONE EXECUTION. */
+  requestKey?: string | null;
+}): Promise<StartedExecution | null> {
+  const requestKey = input.requestKey ?? null;
+  if (requestKey !== null) {
+    const repeat = await repeatOfStartedRequest(input, requestKey);
+    if (repeat) return repeat;
+  }
+
   const athlete = await queryOne<{ athlete_id: string }>(
     `select athlete_id from pilot.athletes
      where organization_id = $1 and athlete_id = $2`,
@@ -166,28 +247,42 @@ export async function startExecution(input: {
   }
 
   const executionId = randomUUID();
-  await queryOne(
-    `insert into pilot.intervention_executions
-       (organization_id, execution_id, lineage_id, version, athlete_id, decision_id,
-        protocol_id, protocol_version, session_run_id, recorded_by_account_id,
-        planned_start, actual_start, planned_exposure, planned_task_context)
-     values ($1, $2, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
-     returning execution_id`,
-    [
-      input.organizationId,
-      executionId,
-      input.athleteId,
-      input.decisionId ?? null,
-      input.protocolId,
-      protocol.version,
-      input.sessionRunId ?? null,
-      input.recordedByAccountId,
-      input.plannedStart ?? null,
-      input.actualStart ?? null,
-      JSON.stringify(protocol.intended_exposure ?? {}),
-      protocol.intended_task_context ?? '',
-    ],
-  );
+  // request_key is named only when the request sent one, so a start without a
+  // key is the statement it always was.
+  try {
+    await queryOne(
+      `insert into pilot.intervention_executions
+         (organization_id, execution_id, lineage_id, version, athlete_id, decision_id,
+          protocol_id, protocol_version, session_run_id, recorded_by_account_id,
+          planned_start, actual_start, planned_exposure, planned_task_context${requestKey === null ? '' : ', request_key'})
+       values ($1, $2, $2, 1, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12${requestKey === null ? '' : ', $13'})
+       returning execution_id`,
+      [
+        input.organizationId,
+        executionId,
+        input.athleteId,
+        input.decisionId ?? null,
+        input.protocolId,
+        protocol.version,
+        input.sessionRunId ?? null,
+        input.recordedByAccountId,
+        input.plannedStart ?? null,
+        input.actualStart ?? null,
+        JSON.stringify(protocol.intended_exposure ?? {}),
+        protocol.intended_task_context ?? '',
+        ...(requestKey === null ? [] : [requestKey]),
+      ],
+    );
+  } catch (error) {
+    // The same tap's other send committed first (it was still in flight when
+    // this one looked): this one wrote nothing and is answered as its repeat.
+    const { code, constraint } = error as { code?: string; constraint?: string };
+    if (requestKey !== null && code === '23505' && constraint === REQUEST_KEY_INDEX) {
+      const repeat = await repeatOfStartedRequest(input, requestKey);
+      if (repeat) return repeat;
+    }
+    throw error;
+  }
 
   return getExecution(input.organizationId, executionId);
 }

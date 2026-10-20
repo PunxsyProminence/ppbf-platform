@@ -65,6 +65,7 @@ jest.mock('./guardianConsent', () => ({
   ...jest.requireActual('./guardianConsent'),
   assertGuardianMediaConsent: jest.fn(),
   checkGuardianMediaConsent: jest.fn(),
+  readAdultOwnMediaConsent: jest.fn(async () => null),
   lockGuardianLinksForAthletes: jest.fn().mockResolvedValue([]),
 }));
 jest.mock('./videoClipTags', () => ({ listLiveTagSubjects: jest.fn() }));

@@ -16,9 +16,35 @@
  * function to change.
  */
 export function deriveCoachDisplayName(loginEmail: string | null | undefined): string {
-  const spoken = deriveStaffDisplayName(loginEmail);
+  // "coach.dave@" is Dave, not "Coach Coach Dave" (parent walk 2026-10-19
+  // item 6): the title is added once.
+  const spoken = deriveStaffDisplayName(loginEmail)?.replace(/^Coach\s+/, '');
   return spoken ? `Coach ${spoken}` : 'Your coach';
 }
+
+/**
+ * A signature stored as text before the role-word rule, read as the rule
+ * would write it today: "Coach Coach" and "Coach Ppbf" read "Your coach",
+ * "Coach Coach Dave" reads "Coach Dave" (Codex review of #1786; parent walk
+ * 2026-10-19 item 6). Anything that is not a "Coach ..." signature, such as
+ * the floor itself, is returned as stored. Nothing stored is rewritten.
+ */
+export function readStoredCoachSignature(stored: string): string {
+  if (!/^Coach\s/.test(stored)) return stored;
+  const rest = stored.replace(/^(Coach\s+)+/, '').trim();
+  if (rest.split(/\s+/).every((part) => ROLE_WORDS.has(part.toLowerCase()))) return 'Your coach';
+  return `Coach ${rest}`;
+}
+
+/**
+ * Words a shared or role login is made of, which are not anybody's name.
+ * coach@ read "Coach Coach" and ppbf@ read "From Ppbf" on family screens
+ * (parent walk 2026-10-19 item 6). A stem made only of these names nobody,
+ * and the caller's floor stands; one with a name in it ("gym-admin",
+ * "pat.office") is read as before. Jason 2026-10-19, Q1
+ * "C: A now, B later (Rec.)": a real display-name field comes later.
+ */
+const ROLE_WORDS: ReadonlySet<string> = new Set(['coach', 'admin', 'staff', 'office', 'info', 'ppbf']);
 
 /**
  * The same name without the title, for a list of staff who are not all
@@ -36,5 +62,6 @@ export function deriveStaffDisplayName(loginEmail: string | null | undefined): s
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+  if (spoken.split(' ').every((part) => ROLE_WORDS.has(part.toLowerCase()))) return null;
   return spoken || null;
 }

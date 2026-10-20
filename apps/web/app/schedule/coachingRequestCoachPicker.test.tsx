@@ -143,7 +143,7 @@ describe('the coaching-request coach picker (#1536)', () => {
     await screen.findByLabelText(/Coach to assign/);
 
     expect(screen.getByText(/Coach: Coach Jane Doe \| Cover: Coach Sam Ruiz$/)).toBeInTheDocument();
-    expect(screen.getByText(/Status: approved \| Coach: Coach Sam Ruiz$/)).toBeInTheDocument();
+    expect(screen.getByText(/Status: Approved \| Coach: Coach Sam Ruiz$/)).toBeInTheDocument();
     expect(screen.queryByText(/Coach: .*@gym\.example/)).toBeNull();
   });
 

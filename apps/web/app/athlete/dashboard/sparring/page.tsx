@@ -6,6 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
 import BackHome from '@/components/BackHome';
+import { SESSION_TOTAL_DIMENSIONS, SPARRING_LOG_FIELD_KEYS } from '@/src/server/pilot/formulas/types';
 import ClusterNav from '@/components/ClusterNav';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
@@ -14,6 +15,17 @@ type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
 const PUNCH_TYPES: PunchType[] = ['Jab', 'Cross', 'Hook', 'Uppercut', 'Body', 'Other'];
 
 const RECOVERY_NOTES_MAX_LENGTH = 300;
+const MINUTES_WORKED_MAX = 120;
+
+/* How the "Punch you threw most" choice reads in a sentence. */
+const PUNCH_TYPE_PLURAL: Record<PunchType, string> = {
+  Jab: 'jabs',
+  Cross: 'crosses',
+  Hook: 'hooks',
+  Uppercut: 'uppercuts',
+  Body: 'body shots',
+  Other: 'other punches',
+};
 
 // Deep-Track: the rich data-entry path for athletes/coaches willing to take
 // the time to log a full sparring session, in exchange for the formula
@@ -50,14 +62,21 @@ async function submitDeepTrackObservations(input: {
   recoveryNotes: string;
   bodyWeightKg: number | null;
   opponentStance: OpponentStance;
+  /* The "Whole session" boxes: null when left blank, never sent as zero. */
+  allThrown: number | null;
+  allLanded: number | null;
+  minutesWorked: number | null;
 }): Promise<DeepTrackResult> {
   const baseDimensions = { opponentStance: input.opponentStance };
 
   const observations: Array<{
     kind: string;
-    value: number;
+    value: number | null;
     unit: string;
     dimensions?: Record<string, string | number | boolean>;
+    /* Keeps a whole-session count's idempotency key apart from the per-type
+       observation of the same kind in this context. */
+    keySuffix?: string;
   }> = [
     // The contact pair is sent only when contact actually happened. The
     // rounds field on this form is TOTAL session rounds, so sending it as
@@ -79,6 +98,25 @@ async function submitDeepTrackObservations(input: {
     { kind: 'punch_absorbed', value: input.punchesAbsorbed, unit: 'count', dimensions: baseDimensions },
     { kind: 'focus_achieved', value: input.focusAchieved ? 1 : 0, unit: 'boolean_0_1' },
   ];
+
+  // WHOLE SESSION (Jason 2026-10-17, "B: Longer sparring form"). The three
+  // boxes are always sent, a blank one as null: data completeness (MVP-10)
+  // counts a blank as a gap (Overwatch QD3), and a null is never a value for
+  // MVP-02/04/05, which run only when the box was filled in. Tagged
+  // SESSION_TOTAL_DIMENSIONS so the detector can tell the whole-session landed
+  // count from the per-type one above, and with the box's fieldKey.
+  const box = (fieldKey: string) => ({ ...SESSION_TOTAL_DIMENSIONS, fieldKey });
+  observations.push(
+    { kind: 'punch_count', value: input.allThrown, unit: 'count', dimensions: box(SPARRING_LOG_FIELD_KEYS.allThrown) },
+    { kind: 'punch_landed', value: input.allLanded, unit: 'count', dimensions: box(SPARRING_LOG_FIELD_KEYS.allLanded), keySuffix: 'session_total' },
+    { kind: 'active_time', value: input.minutesWorked, unit: 'minutes', dimensions: box(SPARRING_LOG_FIELD_KEYS.minutesWorked) },
+  );
+  // Rounds are sent whenever answered, so filling "All punches thrown" later
+  // (Fix a number) can still give punches per round. A cleared rounds box
+  // reads as 0, which is not a count of rounds, so it is not sent.
+  if (input.totalRoundsCompleted >= 1) {
+    observations.push({ kind: 'round_count', value: input.totalRoundsCompleted, unit: 'count', dimensions: { ...SESSION_TOTAL_DIMENSIONS } });
+  }
 
   if (input.bodyWeightKg != null) {
     observations.push({ kind: 'body_weight', value: input.bodyWeightKg, unit: 'kilograms' });
@@ -109,7 +147,9 @@ async function submitDeepTrackObservations(input: {
       unit: observation.unit,
       dimensions: observation.dimensions ?? {},
       observedAt: input.observedAt,
-      idempotencyKey: `${input.contextId}-${observation.kind}`,
+      idempotencyKey: observation.keySuffix
+        ? `${input.contextId}-${observation.kind}-${observation.keySuffix}`
+        : `${input.contextId}-${observation.kind}`,
     }),
     });
 
@@ -146,12 +186,19 @@ async function submitDeepTrackObservations(input: {
    Corrections go one at a time, in order. Each one re-runs the calculations
    its old number fed, and a later one must see the earlier one stored.
    Copy in this block is PROPOSED (lane L50). */
-type CorrectableKind = 'punch_attempted' | 'punch_landed' | 'punch_absorbed';
+type CorrectableKind = 'punch_attempted' | 'punch_landed' | 'punch_absorbed' | 'punch_count' | 'round_count' | 'active_time';
+type CorrectableField = 'thrown' | 'landed' | 'taken' | 'allThrown' | 'rounds' | 'allLanded' | 'minutesWorked';
 
-const CORRECTABLE_FIELDS: ReadonlyArray<{ kind: CorrectableKind; label: string }> = [
-  { kind: 'punch_attempted', label: 'Thrown' },
-  { kind: 'punch_landed', label: 'Landed' },
-  { kind: 'punch_absorbed', label: 'Punches taken' },
+/* `sessionTotal` separates the whole-session counts from the per-type ones:
+   one entry can hold two punch_landed numbers. */
+const CORRECTABLE_FIELDS: ReadonlyArray<{ field: CorrectableField; kind: CorrectableKind; sessionTotal: boolean; label: string }> = [
+  { field: 'thrown', kind: 'punch_attempted', sessionTotal: false, label: 'Thrown' },
+  { field: 'landed', kind: 'punch_landed', sessionTotal: false, label: 'Landed' },
+  { field: 'taken', kind: 'punch_absorbed', sessionTotal: false, label: 'Punches taken' },
+  { field: 'allThrown', kind: 'punch_count', sessionTotal: true, label: 'All punches thrown' },
+  { field: 'rounds', kind: 'round_count', sessionTotal: true, label: 'Rounds you finished' },
+  { field: 'allLanded', kind: 'punch_landed', sessionTotal: true, label: 'All punches landed' },
+  { field: 'minutesWorked', kind: 'active_time', sessionTotal: true, label: 'Minutes of actual work' },
 ];
 
 interface SparringEntryObservation {
@@ -169,13 +216,21 @@ interface SparringEntry {
   observations: SparringEntryObservation[];
 }
 
-function entryObservation(entry: SparringEntry, kind: CorrectableKind) {
-  return entry.observations.find((observation) => observation.kind === kind);
+function isSessionTotal(observation: SparringEntryObservation): boolean {
+  return Object.entries(SESSION_TOTAL_DIMENSIONS)
+    .every(([key, value]) => observation.dimensions[key] === value);
+}
+
+function entryObservation(entry: SparringEntry, field: CorrectableField) {
+  const spec = CORRECTABLE_FIELDS.find((item) => item.field === field)!;
+  return entry.observations.find((observation) => (
+    observation.kind === spec.kind && isSessionTotal(observation) === spec.sessionTotal
+  ));
 }
 
 function entryLabel(entry: SparringEntry): string {
-  const punchType = entryObservation(entry, 'punch_attempted')?.dimensions.punchType
-    ?? entryObservation(entry, 'punch_landed')?.dimensions.punchType;
+  const punchType = entryObservation(entry, 'thrown')?.dimensions.punchType
+    ?? entryObservation(entry, 'landed')?.dimensions.punchType;
   const when = formatGymDateTimeShort(entry.observedAt) ?? 'Unknown time';
   return typeof punchType === 'string' ? `${when} · ${punchType}` : when;
 }
@@ -184,7 +239,7 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
   const [entries, setEntries] = useState<SparringEntry[]>([]);
   const [listState, setListState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Partial<Record<CorrectableKind, string>>>({});
+  const [draft, setDraft] = useState<Partial<Record<CorrectableField, string>>>({});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -206,10 +261,10 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
   }
 
   function startEditing(entry: SparringEntry) {
-    const values: Partial<Record<CorrectableKind, string>> = {};
-    for (const { kind } of CORRECTABLE_FIELDS) {
-      const observation = entryObservation(entry, kind);
-      if (observation) values[kind] = observation.value == null ? '' : String(observation.value);
+    const values: Partial<Record<CorrectableField, string>> = {};
+    for (const { field } of CORRECTABLE_FIELDS) {
+      const observation = entryObservation(entry, field);
+      if (observation) values[field] = observation.value == null ? '' : String(observation.value);
     }
     setDraft(values);
     setEditing(entry.contextId);
@@ -218,25 +273,64 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
 
   async function saveFix(entry: SparringEntry) {
     if (!athleteId) return;
-    const changes = CORRECTABLE_FIELDS.flatMap(({ kind }) => {
-      const observation = entryObservation(entry, kind);
-      const raw = draft[kind];
-      if (!observation || raw === undefined || raw.trim() === '') return [];
-      const value = Number(raw);
-      return value === observation.value ? [] : [{ observation, value }];
+    const changes = CORRECTABLE_FIELDS.flatMap(({ field, sessionTotal }) => {
+      const observation = entryObservation(entry, field);
+      const raw = draft[field];
+      if (!observation || raw === undefined) return [];
+      // A cleared whole-session box means "not counted" -- the same as leaving
+      // it blank on the log -- so the stored number is replaced by null rather
+      // than kept. The per-type numbers always carry a count; a blank there
+      // changes nothing.
+      if (raw.trim() === '') {
+        return sessionTotal && observation.value != null
+          ? [{ field, observation, value: null as number | null }]
+          : [];
+      }
+      const value: number | null = Number(raw);
+      return value === observation.value ? [] : [{ field, observation, value }];
     });
-    if (changes.some(({ value }) => !Number.isInteger(value) || value < 0)) {
+    if (changes.some(({ field, value }) => value != null && field !== 'minutesWorked' && (!Number.isInteger(value) || value < 0))) {
       setMessage('Counts are whole numbers, 0 or more.');
       return;
     }
-    const finalValue = (kind: CorrectableKind) => {
-      const change = changes.find(({ observation }) => observation.kind === kind);
-      return change ? change.value : entryObservation(entry, kind)?.value ?? null;
+    // The log's own rounds box takes 1-12 (min/max on the input).
+    if (changes.some(({ field, value }) => field === 'rounds' && value != null && (value < 1 || value > 12))) {
+      setMessage('Rounds you finished has to be between 1 and 12.');
+      return;
+    }
+    if (changes.some(({ field, value }) => field === 'minutesWorked' && value != null && (!Number.isFinite(value) || value < 1 || value > MINUTES_WORKED_MAX))) {
+      setMessage(`Minutes of actual work has to be between 1 and ${MINUTES_WORKED_MAX}.`);
+      return;
+    }
+    const finalValue = (field: CorrectableField) => {
+      const change = changes.find((item) => item.field === field);
+      return change ? change.value : entryObservation(entry, field)?.value ?? null;
     };
-    const thrown = finalValue('punch_attempted');
-    const landed = finalValue('punch_landed');
+    const thrown = finalValue('thrown');
+    const landed = finalValue('landed');
     if (thrown != null && landed != null && landed > thrown) {
       setMessage('You cannot land more than you threw. Check those two numbers.');
+      return;
+    }
+    const wholeThrown = finalValue('allThrown');
+    const wholeLanded = finalValue('allLanded');
+    if (wholeThrown != null && wholeLanded != null && wholeLanded > wholeThrown) {
+      setMessage("All punches landed can't be more than all punches thrown. Check those two numbers.");
+      return;
+    }
+    // The same two checks the log itself makes (onSubmit).
+    const typeName = (() => {
+      const punchType = entryObservation(entry, 'thrown')?.dimensions.punchType;
+      return typeof punchType === 'string' && punchType in PUNCH_TYPE_PLURAL
+        ? PUNCH_TYPE_PLURAL[punchType as PunchType]
+        : 'punches';
+    })();
+    if (wholeThrown != null && thrown != null && wholeThrown < thrown) {
+      setMessage(`All punches thrown can't be fewer than the ${typeName} you threw above. Check those numbers.`);
+      return;
+    }
+    if (wholeLanded != null && landed != null && wholeLanded < landed) {
+      setMessage(`All punches landed can't be fewer than the ${typeName} you landed above. Check those numbers.`);
       return;
     }
     if (changes.length === 0) {
@@ -337,15 +431,16 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
                 {editing === entry.contextId ? (
                   <div className="grid gap-[var(--s3)]">
                     <div className="grid gap-[var(--s3)] sm:grid-cols-3">
-                      {CORRECTABLE_FIELDS.filter(({ kind }) => draft[kind] !== undefined).map(({ kind, label }) => (
-                        <div key={kind} className="field">
-                          <label htmlFor={`fix-${entry.contextId}-${kind}`} className="t-label">{label}</label>
+                      {CORRECTABLE_FIELDS.filter(({ field }) => draft[field] !== undefined).map(({ field, label }) => (
+                        <div key={field} className="field">
+                          <label htmlFor={`fix-${entry.contextId}-${field}`} className="t-label">{label}</label>
                           <input
-                            id={`fix-${entry.contextId}-${kind}`}
+                            id={`fix-${entry.contextId}-${field}`}
                             type="number"
                             min={0}
-                            value={draft[kind] ?? ''}
-                            onChange={(event) => setDraft((current) => ({ ...current, [kind]: event.target.value }))}
+                            step={field === 'minutesWorked' ? '0.5' : '1'}
+                            value={draft[field] ?? ''}
+                            onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.value }))}
                             className="input input--kiosk"
                           />
                         </div>
@@ -363,8 +458,8 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
                 ) : (
                   <p className="t-data m-0 text-[length:var(--t-md)]">
                     {CORRECTABLE_FIELDS
-                      .filter(({ kind }) => entryObservation(entry, kind))
-                      .map(({ kind, label }) => `${label} ${entryObservation(entry, kind)?.value ?? '—'}`)
+                      .filter(({ field }) => entryObservation(entry, field))
+                      .map(({ field, label }) => `${label} ${entryObservation(entry, field)?.value ?? '—'}`)
                       .join(' · ')}
                   </p>
                 )}
@@ -425,6 +520,9 @@ export default function SparringTelemetryPage() {
   const [punchesAbsorbed, setPunchesAbsorbed] = useState(0);
   const [focusAchieved, setFocusAchieved] = useState(true);
   const [bodyWeightKg, setBodyWeightKg] = useState('');
+  const [allThrown, setAllThrown] = useState('');
+  const [allLanded, setAllLanded] = useState('');
+  const [minutesWorked, setMinutesWorked] = useState('');
   const [recoveryNotes, setRecoveryNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSubmitted, setLastSubmitted] = useState('Nothing logged yet');
@@ -501,6 +599,29 @@ export default function SparringTelemetryPage() {
       setStatusMessage('You cannot land more than you threw. Check those two numbers.');
       return;
     }
+    const wholeThrown = allThrown.trim() ? Number(allThrown) : null;
+    const wholeLanded = allLanded.trim() ? Number(allLanded) : null;
+    const wholeMinutes = minutesWorked.trim() ? Number(minutesWorked) : null;
+    if ([wholeThrown, wholeLanded].some((value) => value != null && (!Number.isInteger(value) || value < 0))) {
+      setStatusMessage('Counts are whole numbers, 0 or more.');
+      return;
+    }
+    if (wholeThrown != null && wholeLanded != null && wholeLanded > wholeThrown) {
+      setStatusMessage("All punches landed can't be more than all punches thrown. Check those two numbers.");
+      return;
+    }
+    if (wholeThrown != null && wholeThrown < punchesAttempted) {
+      setStatusMessage(`All punches thrown can't be fewer than the ${PUNCH_TYPE_PLURAL[punchType]} you threw above. Check those numbers.`);
+      return;
+    }
+    if (wholeLanded != null && wholeLanded < punchesLanded) {
+      setStatusMessage(`All punches landed can't be fewer than the ${PUNCH_TYPE_PLURAL[punchType]} you landed above. Check those numbers.`);
+      return;
+    }
+    if (wholeMinutes != null && (!Number.isFinite(wholeMinutes) || wholeMinutes < 1 || wholeMinutes > MINUTES_WORKED_MAX)) {
+      setStatusMessage(`Minutes of actual work has to be between 1 and ${MINUTES_WORKED_MAX}.`);
+      return;
+    }
 
     setIsSubmitting(true);
     const contextId = `sparring_${Date.now()}`;
@@ -521,6 +642,9 @@ export default function SparringTelemetryPage() {
         recoveryNotes,
         bodyWeightKg: bodyWeightKg.trim() ? Number(bodyWeightKg) : null,
         opponentStance,
+        allThrown: wholeThrown,
+        allLanded: wholeLanded,
+        minutesWorked: wholeMinutes,
       });
 
       if (savedCount === 0) {
@@ -791,6 +915,56 @@ export default function SparringTelemetryPage() {
                   placeholder="Leave blank to skip"
                   className="input input--kiosk"
                 />
+              </div>
+            </div>
+
+            {/* WHOLE SESSION -- copy accepted by Overwatch 2026-10-17 (lane L50). */}
+            <div className="grid gap-[var(--s3)]">
+              <h3 className="t-label m-0">Whole session</h3>
+              <p className="m-0 text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                {actor === 'staff'
+                  ? 'Every punch they threw, every round. Leave a box blank if nobody counted it.'
+                  : "Every punch, every round. Leave a box blank if you didn't count it."}
+              </p>
+              <div className="grid gap-[var(--s5)] sm:grid-cols-3">
+                <div className="field">
+                  <label htmlFor="allThrown" className="t-label">All punches thrown</label>
+                  <input
+                    id="allThrown"
+                    type="number"
+                    min={0}
+                    step="1"
+                    value={allThrown}
+                    onChange={(event) => setAllThrown(event.target.value)}
+                    className="input input--kiosk"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="allLanded" className="t-label">All punches landed</label>
+                  <input
+                    id="allLanded"
+                    type="number"
+                    min={0}
+                    step="1"
+                    value={allLanded}
+                    onChange={(event) => setAllLanded(event.target.value)}
+                    className="input input--kiosk"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="minutesWorked" className="t-label">Minutes of actual work</label>
+                  <input
+                    id="minutesWorked"
+                    type="number"
+                    min={1}
+                    max={MINUTES_WORKED_MAX}
+                    step="0.5"
+                    value={minutesWorked}
+                    onChange={(event) => setMinutesWorked(event.target.value)}
+                    placeholder="Round time only, not rest"
+                    className="input input--kiosk"
+                  />
+                </div>
               </div>
             </div>
 

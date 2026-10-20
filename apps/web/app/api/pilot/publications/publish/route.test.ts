@@ -4,7 +4,8 @@ import { POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
   assertGuardianMediaConsent,
-  assertNotAdultForNewPublication,
+  assertGuardianMediaConsentWithClient,
+  assertNewPublicationConsentPath,
   GuardianConsentMissingError,
 } from '@/src/server/pilot/guardianConsent';
 import { getPublicationForPublish, publishToResearchLibrary } from '@/src/server/pilot/publication';
@@ -33,7 +34,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
     ...actual,
     assertGuardianMediaConsent: jest.fn(),
     assertGuardianMediaConsentWithClient: jest.fn(),
-    assertNotAdultForNewPublication: jest.fn(),
+    assertNewPublicationConsentPath: jest.fn(),
   };
 });
 
@@ -41,6 +42,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
 // it against fake consent rows. Here consent is the mocked helpers above.
 jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
   assertConsentCoversVideo: jest.fn().mockResolvedValue(undefined),
+  coverageRefusalKind: jest.requireActual('@/src/server/pilot/videoPlaybackConsent').coverageRefusalKind,
 }));
 
 jest.mock('@/src/server/pilot/videoSessions', () => ({
@@ -53,13 +55,14 @@ const mockGetPublication = getPublicationForPublish as jest.Mock;
 const mockPublish = publishToResearchLibrary as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
 const mockAssertConsent = assertGuardianMediaConsent as jest.Mock;
-const mockAssertNotAdult = assertNotAdultForNewPublication as jest.Mock;
+const mockConsentPath = assertNewPublicationConsentPath as jest.Mock;
 
 beforeEach(() => {
   // Consent is on file unless a test says otherwise.
   mockAssertConsent.mockResolvedValue(undefined);
   // Reset, not clear: a queued once-rejection must not leak between tests.
-  mockAssertNotAdult.mockReset();
+  mockConsentPath.mockReset();
+  mockConsentPath.mockResolvedValue('guardian_consent');
   // The video is attributed to the publication's athlete unless a test says
   // otherwise.
   mockGetVideoSession.mockResolvedValue({ video_session_id: 'vid-1', athlete_id: 'ath-1', status: 'ready' });
@@ -380,14 +383,14 @@ describe('POST /api/pilot/publications/publish', () => {
   test("an adult athlete is not published on a guardian's consent (OD-2026-10-08-015)", async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal({}));
     mockGetPublication.mockResolvedValueOnce(publicationRow());
-    mockAssertNotAdult.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
+    mockConsentPath.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
 
     const res = await POST(postRequest(validBody));
 
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error?: string };
     expect(body.error).toMatch(/18 or older/);
-    expect(mockAssertNotAdult).toHaveBeenCalledWith('org-1', 'ath-1');
+    expect(mockConsentPath).toHaveBeenCalledWith('org-1', 'ath-1');
     expect(mockPublish).not.toHaveBeenCalled();
   });
 
@@ -408,9 +411,65 @@ describe('POST /api/pilot/publications/publish', () => {
     // The adult gate (OD-2026-10-08-015) is inside the claim too, on the
     // claim's client, for this publication's athlete.
     const client = { query: jest.fn() } as never;
-    mockAssertNotAdult.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
+    mockConsentPath.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
     await expect(publishArgs.verifyBeforeCommit(client)).rejects.toMatchObject({ athleteIsAdult: true });
-    expect(mockAssertNotAdult).toHaveBeenCalledWith('org-1', 'ath-1', client);
+    expect(mockConsentPath).toHaveBeenCalledWith('org-1', 'ath-1', client);
+  });
+
+  describe("an adult's own consent is the whole of it (OD-2026-10-08-015)", () => {
+    const mockCoversVideo = assertConsentCoversVideo as jest.Mock;
+    const mockConsentWithClient = assertGuardianMediaConsentWithClient as jest.Mock;
+
+    test('an adult with their own video consent publishes and no guardian check runs, before or inside the claim', async () => {
+      mockConsentPath.mockResolvedValue('adult_own_consent');
+      mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+      mockGetPublication.mockResolvedValueOnce(publicationRow());
+      mockPublish.mockResolvedValueOnce('lib-1');
+      // Were any guardian check consulted it would refuse.
+      const refusal = new GuardianConsentMissingError('ath-1', ['parent-1']);
+      mockAssertConsent.mockRejectedValue(refusal);
+      mockCoversVideo.mockRejectedValue(refusal);
+      mockConsentWithClient.mockRejectedValue(refusal);
+
+      const res = await POST(postRequest(validBody));
+      expect(res.status).toBe(200);
+
+      const client = { query: jest.fn() } as never;
+      const [publishArgs] = mockPublish.mock.calls[0];
+      await publishArgs.verifyBeforeCommit(client).catch((error: unknown) => {
+        // Only the clip-tag and video-state checks after consent may touch the
+        // client; a consent refusal here is the defect.
+        if (error instanceof GuardianConsentMissingError) throw error;
+      });
+      expect(mockConsentPath).toHaveBeenCalledWith('org-1', 'ath-1', client);
+      expect(mockAssertConsent).not.toHaveBeenCalled();
+      expect(mockCoversVideo).not.toHaveBeenCalled();
+      expect(mockConsentWithClient).not.toHaveBeenCalled();
+      mockCoversVideo.mockReset();
+      mockCoversVideo.mockResolvedValue(undefined);
+      mockConsentWithClient.mockReset();
+    });
+
+    test("a minor's checks are unchanged: inside the claim the age gate runs first, then both guardian checks on the claim's client", async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+      mockGetPublication.mockResolvedValueOnce(publicationRow());
+      mockPublish.mockResolvedValueOnce('lib-1');
+      const res = await POST(postRequest(validBody));
+      expect(res.status).toBe(200);
+      expect(mockAssertConsent).toHaveBeenCalledWith('org-1', 'ath-1');
+      expect(mockCoversVideo).toHaveBeenCalledWith('org-1', 'ath-1');
+
+      const order: string[] = [];
+      mockConsentPath.mockImplementationOnce(async () => { order.push('age'); return 'guardian_consent'; });
+      mockConsentWithClient.mockImplementationOnce(async () => { order.push('signed'); });
+      mockCoversVideo.mockImplementationOnce(async () => { order.push('video'); });
+      const client = { query: jest.fn() } as never;
+      const [publishArgs] = mockPublish.mock.calls[0];
+      await publishArgs.verifyBeforeCommit(client).catch(() => undefined);
+      expect(order).toEqual(['age', 'signed', 'video']);
+      expect(mockConsentWithClient).toHaveBeenCalledWith(client, 'org-1', 'ath-1');
+      expect(mockCoversVideo).toHaveBeenCalledWith('org-1', 'ath-1', client);
+    });
   });
 
   test('a failed audit write does not fail a publish that already committed', async () => {

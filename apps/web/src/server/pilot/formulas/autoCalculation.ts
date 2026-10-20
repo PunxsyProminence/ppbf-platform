@@ -104,12 +104,26 @@ export function canTriggerStoredCalculation(role: PilotRole): boolean {
 export interface DetectedFormulaCalculation {
   readonly formulaId: FormulaInputRequirement['formulaId'];
   readonly observationIds: readonly string[];
+  /** Present for a policy formula (MVP-10): what it runs under. */
+  readonly policy?: FormulaInputRequirement['policy'];
 }
 
 /** The switch's own reading of a dimension: absent and non-string are ''. */
 function dimensionString(observation: NumericObservation, key: string): string {
   const value = observation.dimensions?.[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Whether an observation carries every dimension value the requirement
+ *  names for its kind -- the switch's own string reading, trimmed. */
+function isCandidate(
+  observation: NumericObservation,
+  requirement: FormulaInputRequirement,
+): boolean {
+  if (observation.value == null && requirement.nonNullKinds.includes(observation.kind)) return false;
+  const wanted = requirement.dimensionValues[observation.kind];
+  if (!wanted) return true;
+  return Object.entries(wanted).every(([key, value]) => dimensionString(observation, key) === value);
 }
 
 function groupKeyFor(
@@ -166,7 +180,7 @@ export function detectSatisfiedFormulaInputs(
     const kinds = new Set(Object.keys(requirement.kinds) as ObservationKind[]);
     const groups = new Map<string, NumericObservation[]>();
     for (const observation of observations) {
-      if (!kinds.has(observation.kind)) continue;
+      if (!kinds.has(observation.kind) || !isCandidate(observation, requirement)) continue;
       const key = groupKeyFor(observation, requirement);
       const members = groups.get(key) ?? [];
       members.push(observation);
@@ -181,6 +195,7 @@ export function detectSatisfiedFormulaInputs(
         observationIds: Object.freeze(
           members.map((member) => member.observationId).sort(),
         ),
+        ...(requirement.policy ? { policy: requirement.policy } : {}),
       }));
     }
   }
@@ -242,6 +257,9 @@ export async function autoCalculateForObservationContext(input: {
       athleteId: input.athleteId,
       formulaId: calculation.formulaId,
       observationIds: calculation.observationIds,
+      ...(calculation.policy
+        ? { parameters: calculation.policy.parameters, policyVersion: calculation.policy.policyVersion }
+        : {}),
     });
     results.push(...output.results);
   }

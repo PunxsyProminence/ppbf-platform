@@ -184,6 +184,12 @@ describe('role gates in source', () => {
       reason: "list names both 'organization_admin' and 'admin'",
     },
     {
+      // Coach-entered standing height (L60 PR C1, OD-2026-10-17-026 (b)).
+      file: 'src/server/pilot/athleteHeights.ts',
+      expression: 'HEIGHT_ROLES',
+      reason: "list names both 'organization_admin' and 'admin'",
+    },
+    {
       file: 'src/server/pilot/credentialPolicy.ts',
       expression: 'PASSWORD_ROLES',
       reason: 'credential choice, not a role gate: parent only',

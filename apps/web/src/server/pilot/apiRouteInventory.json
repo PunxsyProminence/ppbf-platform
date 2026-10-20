@@ -225,7 +225,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "requireRole :224 (writers incl. athlete); assertActorCanAccessAthlete :233 (athlete = self only); awarded_by role derived from session (:237); audit written.",
+    "notes": "requireRole :224 (writers incl. athlete); assertActorCanAccessAthlete :233 (athlete = self only); awarded_by role derived from session (:237); audit written. A coach's mark on the athlete's own standing award makes it the coach's (first date kept). With undo: true (OD-2026-10-17-003, lane L43) requireRole athlete only, then undoSelfMilestone keys athlete, the signed-in account, awarded_by_role self and the 10-minute window (DB clock) into one statement, sets undone_at (no delete) and writes its audit event in the same transaction; anything else answers 409 MILESTONE_UNDO_CLOSED.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -235,7 +235,8 @@
         "assertActorCanAccessAthlete"
       ],
       "roleLiterals": [
-        "admin,athlete,coach,organization_admin"
+        "admin,athlete,coach,organization_admin",
+        "athlete"
       ]
     }
   },
@@ -2635,6 +2636,114 @@
     }
   },
   {
+    "id": "app/api/pilot/athlete/sparring-symptoms/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/sparring-symptoms",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Athlete own sparring symptom reports for the gym's today, whether the next-day check is due (own session tagged sparring or a sparring log row on the previous gym day), and the gym's flag settings. Self only via session athleteId (requireOwnAthleteId in sparring-symptoms/route.ts). Coach not admitted; staff see flags through the escalation list.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/sparring-symptoms/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/athlete/sparring-symptoms",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Athlete own sparring symptom report (a flag only, never a score). Adds new ticks to the day's report and files one safety escalation (source sparring_symptom, fixed severity high) to the gym's recipient role, default coach (OD-2026-10-17-029), plus an audit row not mirrored to SHADOW. Self only via session athleteId (requireOwnAthleteId). Coach not admitted.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/cycle/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/cycle",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Athlete own cycle tracking (OD-2026-10-17-023 item 4): opt-in state and the dates their period started. Athlete only, self only via session athleteId (requireOwnAthleteId in cycle/route.ts); no other role or route reads the tables (cycleTrackingAthleteOnly.test.ts). No audit row.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/cycle/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/athlete/cycle",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Athlete own cycle tracking writes: turn_on, turn_off (deletes every date), add (a day or the gym's today), remove (own entry only). Athlete only, self only via session athleteId. No audit row by design (an audit row would disclose it).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/athlete/coach-messages/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/athlete/coach-messages",
@@ -2717,6 +2826,60 @@
       ],
       "roleLiterals": [
         "athlete,parent"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/media-consent/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/media-consent",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Adult athlete's own photo/video consent (OD-2026-10-08-015): whether they are 18+ on the gym's day, their own latest consent row, and whether it counts for a new publication. Athlete only, self only via session athleteId; a minor's own rows are not read.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/athlete/media-consent/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/athlete/media-consent",
+    "gate": "requirePrincipal + requireRole(athlete) + requireOwnAthleteId",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Adult athlete's own photo/video consent writes (OD-2026-10-08-015): grant (photo+video or photo only, public use yes/no) and withdraw. Athlete only, self only via session athleteId; the writer (athleteMediaConsent.ts) re-checks in its transaction that the account is the athlete's own live login and that they are 18+. Withdrawal and photo-only retract published video in the same transaction (recordMediaConsentAndSuppress). Audited as athlete_media_consent.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
       ]
     }
   },
@@ -4762,6 +4925,64 @@
       ],
       "roleLiterals": [
         "<[...CAPACITY_NOTE_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-height/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/athlete-height",
+    "gate": "requirePrincipal + requireRole(HEIGHT_ROLES) + assertHeightAccess in readAthleteHeights",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Reads one athlete's coach-entered standing heights and the growth rate in cm/year (OD-2026-10-17-026 (b)); coach-only, reach enforced in athleteHeights.ts assertHeightAccess via membership role + assertActorCanAccessAthlete. No maturity labels.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...HEIGHT_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/athlete-height/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/athlete-height",
+    "gate": "requirePrincipal + requireRole(HEIGHT_ROLES) + assertHeightAccess in recordAthleteHeight",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records one standing-height reading, or a correction naming the reading it replaces (append-only; the original stays); one row per request_key, a retry writes nothing and no audit row. Coach-only (OD-2026-10-17-026 (b)).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...HEIGHT_ROLES]>"
       ]
     }
   },
@@ -7029,6 +7250,35 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/test-day/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/test-day",
+    "gate": "requirePrincipal + requireRole(HEIGHT_ROLES) + heightRoleInOrganization + heightAccessibleAthleteIds for every row in recordTestDay",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The quarterly test day (OD-2026-10-17-026): a group's standing height, CMJ/broad jump (OD-2026-10-04-020) and 20-m shuttle level/shuttle on one date, all cells in one transaction or none; a retry of the same request_key writes nothing new; one athlete the staff seat does not reach refuses the whole save. Also action accessible_athletes for the form's roster.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...HEIGHT_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/transfer-check/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/transfer-check",
@@ -7867,7 +8117,7 @@
     "missingGate": false,
     "looksWrong": "The goal is fetched before the access check, so found:false vs 403 reveals whether a goal_id exists to an unauthorized in-gym caller (minor).",
     "confidence": "high",
-    "notes": "Reads one goal by id (POST used as read; no write). goals/get/route.ts:11-12 role gate, :23 assertActorCanAccessAthlete on goal.athlete_id. Parent not admitted.",
+    "notes": "Reads one goal by id (POST used as read; no write). goals/get/route.ts:12-13 role gate, :26 assertActorCanAccessAthlete on goal.athlete_id. Parent not admitted. Roles outside readsFullGoals (goalProjection.ts: athlete, coach), the gym admin included (F-100), are sent toFamilyGoal: named fields, no own_words, why_it_matters or set_by_role.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7899,7 +8149,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists one athlete's goals. goals/list/route.ts role gate admits parent (lane N8-05); assertActorCanAccessAthlete before read (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts) are sent toFamilySmartGoals: SMART rows only (filtered in SQL), named fields, no own_words or why_it_matters.",
+    "notes": "Lists one athlete's goals. goals/list/route.ts role gate admits parent (lane N8-05); assertActorCanAccessAthlete before read (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts: athlete, coach), the gym admin included (F-100), are sent toFamilySmartGoals: SMART rows only (filtered in SQL), named fields, no own_words or why_it_matters.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -7931,7 +8181,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts GOAL_ROLES gate; assertActorCanAccessAthlete (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts) are sent toFamilyPersonalGoal: no why_it_matters or set_by_role (lane N8-05).",
+    "notes": "Lists personal (own-words) goals for one athlete. goals/personal/route.ts GOAL_ROLES gate; assertActorCanAccessAthlete (parent = linked child only). Roles outside readsFullGoals (goalProjection.ts: athlete, coach), the gym admin included (F-100), are sent toFamilyPersonalGoal: no why_it_matters or set_by_role (lane N8-05).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -10488,7 +10738,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lists completions for assignment_id (route.ts:19-41); reach check on the assignment own athlete at route.ts:34, refusal returns 404.",
+    "notes": "Lists completions for assignment_id; reach check on the assignment's own athlete, refusal returns 404. Roles outside readsFullCompletions (athlete and staff; progression.ts) -- a linked parent today -- are sent toFamilyCompletion: named fields, no free-text notes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -11245,7 +11495,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "medium",
-    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside the coach's reach (since issue #1480 any athlete not live in their own gym) the hold warning carries scope only and the stored note is kept, a note from them refused. review_coaching_request: the named coach must reach the athlete through assertActorCanAccessAthlete asked as that coach (any active coach of the gym, #1480 Q2). cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
+    "notes": "Actions create_class, cover_class, register_class, parent_review_registration, request_coaching, review_coaching_request (org admin only), withdraw_coaching_request (a guardian for their child, or an athlete for a request they made; pending only; audited), attendance_checkin, bulk_attendance_checkin. Attendance by a coach or admin is the class register (OD-2026-10-07-008 ruling 4): the coach who teaches, scheduled or covers the class marks every registered athlete and may mark a live athlete of the gym present as a walk-in (method walk_in); for athletes outside the coach's reach (since issue #1480 any athlete not live in their own gym) the hold warning carries scope only and the stored note is kept, a note from them refused. review_coaching_request: the named coach must reach the athlete through assertActorCanAccessAthlete asked as that coach (any active coach of the gym, #1480 Q2). cover_class needs no approval by ruling and writes an audit row (route-survey B6). Athlete/parent marks: assertCanActOnAthlete and registered-only. Coach reach is the whole gym since issue #1480 (Jason, 2026-10-12): the gate admits any live athlete of the coach's organization, not only assigned or covered athletes.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12311,7 +12561,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "formulas/observations/route.ts GET (lane L50): requireRole athlete/coach/org_admin/admin, then assertActorCanAccessAthlete(athlete_id) before listRecentSparringEntries. Answers the sparring page's recent entries for 'Fix a number': punch_attempted/punch_landed/punch_absorbed only (no body weight, notes or source reference), enumerated projection.",
+    "notes": "formulas/observations/route.ts GET (lane L50): requireRole athlete/coach/org_admin/admin, then assertActorCanAccessAthlete(athlete_id) before listRecentSparringEntries. Answers the sparring page's recent entries for 'Fix a number': punch_attempted/punch_landed/punch_absorbed/punch_count/active_time only (no body weight, notes or source reference), enumerated projection.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -12571,6 +12821,64 @@
     }
   },
   {
+    "id": "app/api/pilot/shadow/library/archive-original/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/shadow/library/archive-original",
+    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "platform_owner"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "archive-original/route.ts GET: tells a curator whether filing in the SharePoint Research Archive is on here (on/off/unavailable). Reads configuration only. Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/shadow/library/archive-original/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/shadow/library/archive-original",
+    "gate": "requirePrincipal + requireRole (SHADOW_LIBRARY_CURATOR_ROLES)",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin",
+      "platform_owner"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "archive-original/route.ts POST: files an uploaded research PDF in the SharePoint Research Archive (create-only Graph write via the app's managed identity) and records its archive identity in pilot.shadow_library_archived_originals; shelf by resolveLibraryShelf('write'); rate-limited. OFF (503) unless configured. Not athlete data.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...SHADOW_LIBRARY_CURATOR_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/shadow/library/capability-coverage/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/library/capability-coverage",
@@ -12707,7 +13015,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "documents/route.ts:41-42 gate; :121-123 assertActorCanAccessAthlete only when subject_id set (athlete-scoped document), which refuses platform_owner. Registers a library document row (pending_review). Coach not admitted so coach-reach n/a.",
+    "notes": "documents/route.ts:46 gate; :149 assertActorCanAccessAthlete only when subject_id set (athlete-scoped document), which refuses platform_owner. Registers a library document row (pending_review). Coach not admitted so coach-reach n/a.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -14994,6 +15302,180 @@
       ],
       "roleLiterals": [
         "admin,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-keys/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behaviour-keys",
+    "gate": "requirePrincipal + requireRole(BEHAVIOUR_KEY_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. The gym's shared list of behaviour names (Jason 2026-10-18 Q1); keys are server-minted. A coach-typed label could name a child, so staff only (FIELD_TIERS behaviour_keys.label).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-keys/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/behaviour-keys",
+    "gate": "requirePrincipal + requireRole(BEHAVIOUR_KEY_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. Adds a name under one skill from the skill graph, created by the caller, with a server-minted key; the same name under the same skill returns the existing key. The table's guard requires a live staff creator and keeps a name's meaning fixed.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-observations/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behaviour-observations",
+    "gate": "requirePrincipal + requireRole(OBSERVATION_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. One athlete's coach behaviour reports, as written (no evaluation). Staff only (Q2); a refused athlete is a hidden 404.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-observations/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/behaviour-observations",
+    "gate": "requirePrincipal + requireRole(OBSERVATION_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. Files a report as the caller in the caller's role; recordBehaviourObservation builds session, drill and episode keys from this gym's records and the table's guard re-checks staff membership and the athlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/learning-policies/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/admin/learning-policies",
+    "gate": "requirePrincipal + requireRole(READ_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. Every version of the gym's learning-loop bars with their citations and signer; names no athlete. Staff read so a coach can see what the app's words rest on.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/admin/learning-policies/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/admin/learning-policies",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole(RATIFY_ROLES) + exact organization_admin check",
+    "rolesAdmitted": [
+      "organization_admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lane L49. The organization admin alone ratifies a new cited version (Jason 2026-10-18 Q3 'Needs to be backed by research'; ratifier 'A: Gym admin only (Rec.)'), on a Microsoft-authenticated session; the legacy admin alias is refused by an exact role check. barFor's shape rules and the table's guard (ratifier of this gym, version chain, one in force) both apply.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
       ]
     }
   }

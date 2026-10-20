@@ -42,7 +42,8 @@ export interface SchedulerCoachingRequest {
   requested_by_account_id: string;
   preferred_at: string;
   goals: string;
-  status: 'pending' | 'approved' | 'declined';
+  // 'withdrawn': the family closed it (parent walk 2026-10-19 item 9).
+  status: 'pending' | 'approved' | 'declined' | 'withdrawn';
   assigned_coach_account_id?: string;
   created_at: string;
   updated_at: string;
@@ -482,6 +483,28 @@ export async function resolveSchedulerCoachingRequest(params: {
     [params.organizationId, params.requestId, params.status, params.assignedCoachAccountId, params.resolvedAt],
   );
 
+  return rows.length > 0;
+}
+
+/* The family's half (Jason 2026-10-19, Q4 "A: Family can withdraw (Rec.)"):
+   pending -> withdrawn, on the same CAS as the admin's resolution above, so a
+   withdraw racing an approval cannot undo the committed decision. Who may
+   call it is the route's job. Exported for the real-Postgres test. */
+export const COACHING_REQUEST_WITHDRAW_SQL = `update pilot.scheduler_coaching_requests
+     set status = 'withdrawn',
+         updated_at = $3
+     where organization_id = $1 and request_id = $2 and status = 'pending'
+     returning request_id`;
+
+export async function withdrawSchedulerCoachingRequest(params: {
+  organizationId: string;
+  requestId: string;
+  withdrawnAt: string;
+}): Promise<boolean> {
+  const rows = await query<{ request_id: string }>(
+    COACHING_REQUEST_WITHDRAW_SQL,
+    [params.organizationId, params.requestId, params.withdrawnAt],
+  );
   return rows.length > 0;
 }
 

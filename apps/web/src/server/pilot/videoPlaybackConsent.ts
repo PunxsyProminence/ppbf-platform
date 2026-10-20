@@ -1,7 +1,11 @@
 import { lockConsentSets } from './consentSetLock';
 import { withTransaction } from './db';
 import { ConflictError } from './errors';
-import { checkGuardianMediaConsent, type QueryExecutor } from './guardianConsent';
+import {
+  checkGuardianMediaConsent,
+  readAdultOwnMediaConsent,
+  type QueryExecutor,
+} from './guardianConsent';
 // The same trim-and-lowercase the consent readers use. Imported rather than
 // kept as a local copy: this gate and guardianConsent.ts read the SAME
 // column, and a private duplicate is how two readings of one value start
@@ -164,6 +168,81 @@ import { normalizeWaiverStatusText } from './waiverCompliance';
  */
 const CONSENT_STATUSES_THIS_GATE_UNDERSTANDS = new Set(['signed', 'withdrawn']);
 
+export type CoverageRefusalKind = 'withdrawn' | 'excludes_video' | 'unreadable';
+
+const COVERAGE_REFUSAL_KINDS: Record<string, CoverageRefusalKind> = {
+  GUARDIAN_CONSENT_WITHDRAWN: 'withdrawn',
+  GUARDIAN_CONSENT_EXCLUDES_VIDEO: 'excludes_video',
+  GUARDIAN_CONSENT_UNREADABLE: 'unreadable',
+  ADULT_OWN_CONSENT_WITHDRAWN: 'withdrawn',
+  ADULT_OWN_CONSENT_EXCLUDES_VIDEO: 'excludes_video',
+  ADULT_OWN_CONSENT_UNREADABLE: 'unreadable',
+};
+
+/**
+ * Which of assertConsentCoversVideo's refusals this is, a guardian's or an
+ * adult's own, or null for anything else (a fault, not a refusal). For the
+ * callers that act on the kind and not on whose decision it was.
+ */
+export function coverageRefusalKind(error: unknown): CoverageRefusalKind | null {
+  if (!(error instanceof ConflictError) || !error.code) return null;
+  return COVERAGE_REFUSAL_KINDS[error.code] ?? null;
+}
+
+/*
+ * THE ADULT'S OWN CONSENT GOVERNS THEIR PLAYBACK (OD-2026-10-08-015). At 18
+ * guardian-era consent stops counting for anything new, and the adult
+ * consents for themselves (athleteMediaConsent.ts). Once they have, their
+ * own latest row decides playback by the rules a guardian's does here:
+ *   - signed, covering video, recorded by their own login: plays, whatever
+ *     the guardian-era rows say;
+ *   - withdrawn: refused, as a guardian's withdrawal is;
+ *   - signed photo-only: refused;
+ *   - any other status: refused as unreadable.
+ * A signed row their own login did not record cannot authorise: it is
+ * ignored and the guardian-era reading below stands, as for an adult who has
+ * made no decision. That, a minor and an unknown date of birth (read as a
+ * minor, as everywhere) all keep today's reading, so publications already
+ * made are untouched until the adult decides.
+ *
+ * Returns 'plays', the refusal to throw, or null for "not decided here".
+ *
+ * The refusals carry ADULT_OWN_CONSENT_* codes, not the guardian ones: the
+ * decision is the adult's, and a caller that says "a guardian has withdrawn"
+ * for it tells a coach something false. coverageRefusalKind above reads both
+ * families for the callers that only need to know which kind of refusal.
+ */
+async function adultOwnDecision(
+  organizationId: string,
+  athleteId: string,
+  client: QueryExecutor | undefined,
+): Promise<'plays' | ConflictError | null> {
+  const own = await readAdultOwnMediaConsent(organizationId, athleteId, client);
+  if (own === null) return null;
+
+  const status = normalizeWaiverStatusText(own.status);
+  if (status === 'withdrawn') {
+    return new ConflictError(
+      'Blocked: this athlete, who is 18 or older, has withdrawn their own media consent. Video of them cannot be '
+      + 'played back while that withdrawal stands; only their own new consent restores playback.',
+      'ADULT_OWN_CONSENT_WITHDRAWN',
+    );
+  }
+  if (status === 'signed' && !own.coversVideo) {
+    return new ConflictError(
+      'Blocked: this athlete, who is 18 or older, consented to photos only. Video of them cannot be played back '
+      + 'until they consent to video themselves.',
+      'ADULT_OWN_CONSENT_EXCLUDES_VIDEO',
+    );
+  }
+  if (status === 'signed') return own.recordedByOwnLogin ? 'plays' : null;
+  return new ConflictError(
+    "Blocked: this athlete's own media consent is recorded with a status this platform cannot read. Video of them "
+    + 'cannot be played back until that record is corrected.',
+    'ADULT_OWN_CONSENT_UNREADABLE',
+  );
+}
+
 export async function assertConsentCoversVideo(
   organizationId: string,
   athleteId: string,
@@ -172,6 +251,13 @@ export async function assertConsentCoversVideo(
   client?: QueryExecutor,
 ): Promise<void> {
   const consent = await checkGuardianMediaConsent(organizationId, athleteId, ...(client ? [client] : []));
+
+  // An adult's own decision, when they have made one, is the whole of it.
+  // Read after the guardian read above, which took the consent-set lock when
+  // there is a client, so the adult's own writer (exclusive) is ordered too.
+  const own = await adultOwnDecision(organizationId, athleteId, client);
+  if (own === 'plays') return;
+  if (own !== null) throw own;
 
   // Withdrawal is checked first, and the two refusals stay separate rather
   // than being folded into one "not signed for video" test, because they are

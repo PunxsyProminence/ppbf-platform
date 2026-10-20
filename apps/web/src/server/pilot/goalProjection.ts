@@ -54,25 +54,46 @@ export function isOwnWordsRow(goal: PilotGoal): boolean {
 
 /* WHO IS SENT THE WHOLE ROW. Named, so a role added to a route's gate later
    gets the family projection until somebody decides otherwise -- the reason
-   line does not go to a role by default. The athlete wrote it; staff (coach,
-   organization admin) read it under the owner ruling. */
-const FULL_GOAL_READERS = new Set(['athlete', 'coach', 'organization_admin', 'admin']);
+   line does not go to a role by default. The athlete wrote it; the coach reads
+   it under the owner ruling ("The "why it matters" line shows to the coach
+   only", OD-2026-10-12-011). The gym admin (organization_admin, or its legacy
+   name admin) is not the coach, so it is sent the family projection (F-100). */
+const FULL_GOAL_READERS = new Set(['athlete', 'coach']);
 
 export function readsFullGoals(role: string): boolean {
   return FULL_GOAL_READERS.has(role);
 }
 
+function toFamilySmartGoal(goal: PilotGoal): FamilySmartGoal {
+  return {
+    goal_id: goal.goal_id,
+    title: goal.title,
+    category: goal.category ?? null,
+    target_date: goal.target_date,
+    metric: goal.metric,
+    progress_percent: goal.progress_percent ?? null,
+    status: goal.status,
+    created_at: goal.created_at,
+  };
+}
+
 export function toFamilySmartGoals(goals: PilotGoal[]): FamilySmartGoal[] {
-  return goals
-    .filter((goal) => !isOwnWordsRow(goal))
-    .map((goal) => ({
+  return goals.filter((goal) => !isOwnWordsRow(goal)).map(toFamilySmartGoal);
+}
+
+/** One goal read by id (goals/get), which may be either kind: an own-words
+ *  row gets the same named fields /goals/personal sends a family, a SMART row
+ *  the same fields /goals/list sends. reached_at is on the select * row
+ *  though PilotGoal does not declare it. */
+export function toFamilyGoal(goal: PilotGoal & { reached_at?: string | null }): FamilySmartGoal | FamilyPersonalGoal {
+  if (isOwnWordsRow(goal)) {
+    return {
       goal_id: goal.goal_id,
       title: goal.title,
-      category: goal.category ?? null,
-      target_date: goal.target_date,
-      metric: goal.metric,
-      progress_percent: goal.progress_percent ?? null,
-      status: goal.status,
+      target_date: goal.target_date ?? null,
+      reached_at: goal.reached_at ?? null,
       created_at: goal.created_at,
-    }));
+    };
+  }
+  return toFamilySmartGoal(goal);
 }

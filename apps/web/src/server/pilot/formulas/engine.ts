@@ -1142,11 +1142,51 @@ export function calculateRoundToRoundChange(input: {
   return deepFreeze([rawResult, percentResult]);
 }
 
-export interface PersonalBaselinePolicy {
+/** The athlete's last N entries: the original policy, still accepted. */
+export interface CountWindowBaselinePolicy {
   readonly metricKey: string;
   readonly windowSize: number;
   readonly minimumHistory: 4;
   readonly adequateHistory: number;
+}
+
+/**
+ * The athlete's own last N DAYS, with an SD floor. Jason 2026-10-17: each
+ * check-in item against the athlete's own last 28 days, starting once they
+ * have 7 check-ins, "provisional" until about 14, with an SD floor for 1-5
+ * scales ("Yes, all three (Rec.)"; floor 0.5 point, 0.5 h for sleep, relayed
+ * by Overwatch). The floor stops a steady athlete's tiny spread from turning
+ * one ordinary off-day into a huge standardized change, or into a
+ * divide-by-zero when every answer was the same.
+ */
+export interface DayWindowBaselinePolicy {
+  readonly metricKey: string;
+  readonly windowDays: number;
+  readonly minimumHistory: number;
+  readonly adequateHistory: number;
+  readonly sdFloor: number;
+}
+
+export type PersonalBaselinePolicy = CountWindowBaselinePolicy | DayWindowBaselinePolicy;
+
+export function isDayWindowBaselinePolicy(
+  policy: PersonalBaselinePolicy,
+): policy is DayWindowBaselinePolicy {
+  return 'windowDays' in policy;
+}
+
+/** Whether a day-window policy is one the engine can honour. */
+export function dayWindowBaselinePolicyIsValid(policy: DayWindowBaselinePolicy): boolean {
+  return Boolean(policy.metricKey.trim())
+    && Number.isInteger(policy.windowDays)
+    && policy.windowDays >= 1
+    && policy.windowDays <= 366
+    && Number.isInteger(policy.minimumHistory)
+    && policy.minimumHistory >= 2
+    && Number.isInteger(policy.adequateHistory)
+    && policy.adequateHistory >= policy.minimumHistory
+    && Number.isFinite(policy.sdFloor)
+    && policy.sdFloor > 0;
 }
 
 export function calculatePersonalBaselineComparison(input: {
@@ -1156,30 +1196,46 @@ export function calculatePersonalBaselineComparison(input: {
   policyVersion: string;
   computedAt?: string;
 }): readonly FormulaResult[] {
-  const selectedHistory = input.history.slice(-input.policy.windowSize);
+  const dayWindow = isDayWindowBaselinePolicy(input.policy) ? input.policy : null;
+  const currentMs = Date.parse(input.current.observedAt);
+  // A day window keeps what falls after (current - windowDays); anything at or
+  // after the current observation is left in, so the chronology check below
+  // still refuses it rather than this filter hiding it.
+  const windowStartMs = dayWindow ? currentMs - dayWindow.windowDays * 24 * 60 * 60 * 1_000 : 0;
+  const selectedHistory = isDayWindowBaselinePolicy(input.policy)
+    ? input.history.filter((observation) => Date.parse(observation.observedAt) > windowStartMs)
+    : input.history.slice(-input.policy.windowSize);
   const observations = [...selectedHistory, input.current];
   const outputs: readonly OutputSpec[] = [
     { outputKey: 'raw_change', unit: input.current.unit },
     { outputKey: 'standardized_change', unit: 'ratio' },
   ];
-  const parameters = {
-    metricKey: input.policy.metricKey,
-    windowSize: input.policy.windowSize,
-    minimumHistory: input.policy.minimumHistory,
-    adequateHistory: input.policy.adequateHistory,
-  };
+  const parameters = isDayWindowBaselinePolicy(input.policy)
+    ? {
+      metricKey: input.policy.metricKey,
+      windowDays: input.policy.windowDays,
+      minimumHistory: input.policy.minimumHistory,
+      adequateHistory: input.policy.adequateHistory,
+      sdFloor: input.policy.sdFloor,
+    }
+    : {
+      metricKey: input.policy.metricKey,
+      windowSize: input.policy.windowSize,
+      minimumHistory: input.policy.minimumHistory,
+      adequateHistory: input.policy.adequateHistory,
+    };
   const validation = commonValidation(observations, { requireSameContext: false });
-  if (
-    !policyVersionIsValid(input.policyVersion)
-    || !input.policy.metricKey.trim()
-    || !Number.isInteger(input.policy.windowSize)
-    || input.policy.windowSize < 8
-    || input.policy.windowSize > 12
-    || input.policy.minimumHistory !== 4
-    || !Number.isInteger(input.policy.adequateHistory)
-    || input.policy.adequateHistory < 8
-    || input.policy.adequateHistory > input.policy.windowSize
-  ) {
+  const policyIsValid = isDayWindowBaselinePolicy(input.policy)
+    ? dayWindowBaselinePolicyIsValid(input.policy)
+    : Boolean(input.policy.metricKey.trim())
+      && Number.isInteger(input.policy.windowSize)
+      && input.policy.windowSize >= 8
+      && input.policy.windowSize <= 12
+      && input.policy.minimumHistory === 4
+      && Number.isInteger(input.policy.adequateHistory)
+      && input.policy.adequateHistory >= 8
+      && input.policy.adequateHistory <= input.policy.windowSize;
+  if (!policyVersionIsValid(input.policyVersion) || !policyIsValid) {
     validation.hardBlocks.push('INVALID_POLICY');
   }
   for (const observation of observations) {
@@ -1238,7 +1294,11 @@ export function calculatePersonalBaselineComparison(input: {
     ? deduplicate<ValidationReasonCode>([...validation.warnings, 'SHORT_BASELINE'])
     : validation.warnings;
   const rawChange = input.current.value! - baselineMean.value;
-  const standardized = standardizedChange(input.current.value!, baselineMean.value, baselineSd.value);
+  const standardized = standardizedChange(
+    input.current.value!,
+    baselineMean.value,
+    dayWindow ? Math.max(baselineSd.value, dayWindow.sdFloor) : baselineSd.value,
+  );
   const rawResult = makeResult({
     formulaId: 'MVP-09',
     observations,

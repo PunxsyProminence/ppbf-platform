@@ -5,7 +5,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import {
   getShadowFeedbackSummary,
-  hasDurableHumanReviewedLearningEvent,
+  hasCompletedLearning,
   recordShadowFeedback,
   resolveShadowFeedbackReview,
   verifyShadowFeedbackCorrelation,
@@ -29,7 +29,7 @@ jest.mock('@/src/server/pilot/shadowFeedback', () => {
     getShadowFeedbackSummary: jest.fn(),
     listShadowFeedback: jest.fn(),
     recordShadowFeedback: jest.fn(),
-    hasDurableHumanReviewedLearningEvent: jest.fn(),
+    hasCompletedLearning: jest.fn(),
     resolveShadowFeedbackReview: jest.fn(),
     verifyShadowFeedbackCorrelation: jest.fn(),
   };
@@ -50,7 +50,7 @@ const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockReadiness = jest.mocked(assertShadowRuntimeReadiness);
 const mockResolveReview = jest.mocked(resolveShadowFeedbackReview);
 const mockProcessLearning = jest.mocked(processLearningSignal);
-const mockHasDurableLearning = jest.mocked(hasDurableHumanReviewedLearningEvent);
+const mockHasCompleted = jest.mocked(hasCompletedLearning);
 const mockRecordFeedback = jest.mocked(recordShadowFeedback);
 const mockVerifyCorrelation = jest.mocked(verifyShadowFeedbackCorrelation);
 const mockGetSummary = jest.mocked(getShadowFeedbackSummary);
@@ -131,7 +131,7 @@ beforeEach(() => {
   mockRequirePrincipal.mockResolvedValue(principal());
   mockReadiness.mockResolvedValue(undefined);
   mockResolveReview.mockResolvedValue(durableReview);
-  mockHasDurableLearning.mockResolvedValue(true);
+  mockHasCompleted.mockResolvedValue(true);
   mockVerifyCorrelation.mockResolvedValue({
     verified: true,
     learningEligible: true,
@@ -164,6 +164,7 @@ beforeEach(() => {
     factsExtracted: 0,
     humanReviewRequired: true,
     actions: [],
+    complete: true,
   });
 });
 
@@ -234,7 +235,7 @@ describe('PATCH /api/pilot/shadow/feedback human review', () => {
     expect(mockProcessLearning).not.toHaveBeenCalled();
   });
 
-  test('returns an already-durable approval without replaying learning', async () => {
+  test('returns an already-complete approval without replaying learning', async () => {
     mockResolveReview.mockResolvedValueOnce({
       ...durableReview,
       alreadyResolved: true,
@@ -250,30 +251,38 @@ describe('PATCH /api/pilot/shadow/feedback human review', () => {
       alreadyResolved: true,
     });
     expect(mockProcessLearning).not.toHaveBeenCalled();
-    expect(mockHasDurableLearning).toHaveBeenCalledWith({
+    expect(mockHasCompleted).toHaveBeenCalledWith({
       organizationId: 'org-1',
       feedbackId: 41,
     });
   });
 
-  test('safely repairs an approved review whose durable event is missing', async () => {
+  // L46 item 1: the learning log alone used to answer "already promoted", so
+  // an approval whose fact, flag or research write had failed beside a
+  // written log returned 200 on every retry and was never repaired.
+  test('repairs an approved review that is not complete, even when its learning log exists', async () => {
     mockResolveReview.mockResolvedValueOnce({
       ...durableReview,
       alreadyResolved: true,
     });
-    mockHasDurableLearning
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+    mockHasCompleted.mockResolvedValueOnce(false);
 
     const response = await PATCH(patchRequest({ feedbackId: 41, decision: 'approve' }));
 
     expect(response.status).toBe(200);
     expect(mockProcessLearning).toHaveBeenCalledTimes(1);
-    expect(mockHasDurableLearning).toHaveBeenCalledTimes(2);
   });
 
-  test('returns a retryable failure when the learning event was not durable', async () => {
-    mockHasDurableLearning.mockResolvedValueOnce(false);
+  test('returns a retryable failure when any learning effect did not complete', async () => {
+    mockProcessLearning.mockResolvedValueOnce({
+      profileUpdated: false,
+      metricsRecorded: true,
+      libraryFlagged: true,
+      factsExtracted: 0,
+      humanReviewRequired: true,
+      actions: ['Library entry flagged for review (topic: defense)', 'Research requirement creation failed'],
+      complete: false,
+    });
 
     const response = await PATCH(patchRequest({ feedbackId: 41, decision: 'approve' }));
     const payload = await response.json();
@@ -328,7 +337,10 @@ describe('PATCH /api/pilot/shadow/feedback human review', () => {
 });
 
 describe('POST /api/pilot/shadow/feedback idempotency', () => {
-  test('does not rerun learning for a repeated open feedback submission', async () => {
+  // L46 item 2: a pending edit used to skip learning, so the topic's review
+  // flag and the client effectiveness row kept the FIRST judgment. It is now
+  // re-projected from the row's current values, keyed by the feedback id.
+  test('re-projects a pending edit from the current values, not as a new observation', async () => {
     mockRecordFeedback.mockResolvedValueOnce({
       feedbackId: 41,
       created: false,
@@ -346,12 +358,44 @@ describe('POST /api/pilot/shadow/feedback idempotency', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(mockProcessLearning).not.toHaveBeenCalled();
+    expect(mockProcessLearning).toHaveBeenCalledTimes(1);
+    expect(mockProcessLearning).toHaveBeenCalledWith(expect.objectContaining({
+      feedbackId: 41,
+      outcome: 'thumbs_up',
+      userNote: 'Original note',
+      verificationState: 'durable_client',
+    }));
     expect(payload.learning).toMatchObject({
-      accepted: false,
+      accepted: true,
       humanReviewRequired: true,
       reason: 'FEEDBACK_UPDATED_PENDING_REVIEW',
     });
+  });
+
+  test('says so when a projection did not complete, so a resubmission can repair it', async () => {
+    mockRecordFeedback.mockResolvedValueOnce({
+      feedbackId: 41,
+      created: true,
+      verificationState: 'durable_client',
+      humanReviewRequired: true,
+      outcomeSignal: 'thumbs_down',
+      comment: null,
+    });
+    mockProcessLearning.mockResolvedValueOnce({
+      profileUpdated: false,
+      metricsRecorded: true,
+      libraryFlagged: false,
+      factsExtracted: 0,
+      humanReviewRequired: true,
+      actions: ['Client feedback review queue unavailable'],
+      complete: false,
+    });
+
+    const response = await POST(postRequest({ message_id: durableReview.messageId, helpful: false }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.learning).toMatchObject({ accepted: false, reason: 'LEARNING_RECORD_FAILED' });
   });
 
   test('does not downgrade or relearn from feedback after human review', async () => {

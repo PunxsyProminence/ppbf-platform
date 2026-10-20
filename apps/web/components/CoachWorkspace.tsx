@@ -65,6 +65,7 @@ import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreLabel } from '@
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
 import AthleteAttendancePanel from './AthleteAttendancePanel';
+import AthleteGrowthPanel from './AthleteGrowthPanel';
 import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type BodyMassEntryView } from './BodyMassCorrection';
 import { BUILDING } from './buildingMap';
 
@@ -178,15 +179,11 @@ interface Athlete {
   ringName?: string | null;
   photoAvailable?: boolean;
   /* Whether this coach is the coach OF RECORD for this athlete, straight from
-     the roster route's `is_mine`. Not a display field: it is the one bit that
-     separates the two ways a coach can be looking at a child. A covering coach
-     under an active pilot.coach_coverage grant reaches the athlete -- rosters,
-     sessions, reviews -- but resolveRelationship still answers
-     'organization_staff' for them, and the ring-name takedown admits only
-     'coach_of_subject'. Without this the takedown control would be offered to
-     a covering coach on an adult athlete (a minor's ring name is already
-     withheld from anyone outside MINOR_CIRCLE) and could only ever produce a
-     404. */
+     the roster route's `is_mine`. It does NOT gate the ring-name takedown:
+     resolveRelationship answers 'coach_of_subject' for every coach of the
+     athlete's gym (issue #1480 C2; OD-2026-10-11-007, OD-2026-10-12-016 "Any
+     coach all coaches coach all athletes"), and that is the standing the clear
+     route admits. "My athlete" is a different question from "may I act". */
   isMine?: boolean;
 }
 
@@ -507,6 +504,8 @@ const ESCALATION_SOURCE_LABEL: Record<string, string> = {
   repeated_pattern: 'Repeated pattern',
   training_hold: 'Training hold',
   incident: 'Incident',
+  // The athlete's sparring symptom flag (OD-2026-10-17-029: to their coach).
+  sparring_symptom: 'Sparring symptoms',
 };
 
 /**
@@ -1865,11 +1864,18 @@ export default function CoachWorkspace() {
 
       // Faces, from the profile roster. Best-effort and separate on purpose:
       // this call applies the portrait visibility gate per athlete server-side,
-      // so a coach browsing athletes who are not theirs gets plates for them --
-      // and if the call fails outright, every athlete falls back to a plate,
-      // which is a finished object rather than a broken row.
+      // and if it fails outright every athlete falls back to a plate, which is
+      // a finished object rather than a broken row.
+      //
+      // `scope=organization` because the list above is the whole gym. Without
+      // it the route answers only the coach's assigned and covered athletes,
+      // and every other row had no ring name or account id -- so the takedown
+      // below could never appear on it, although the clear route admits any
+      // coach of the gym (issue #1480 C2). Every coach of the gym is inside a
+      // child's photo circle too (OD-2026-10-12-016; OWNER_DECISIONS "Teen
+      // staff"), so the wider read shows no face the server would not.
       try {
-        const facesResponse = await fetch(`${apiBase()}/api/pilot/profile/roster`, {
+        const facesResponse = await fetch(`${apiBase()}/api/pilot/profile/roster?scope=organization`, {
           method: 'GET',
           credentials: 'include',
         });
@@ -3762,18 +3768,21 @@ export default function CoachWorkspace() {
                           a selection nobody made is not a deliberate act.
 
                           Not offered at all where there is nothing to remove
-                          (`ringName`), nothing to address it to (`accountId`),
-                          or no standing to remove it (`isMine`). The first two
-                          travel together -- the roster route only produces a
-                          ring name from a profile it found by account id --
-                          but the control asserts both rather than inferring
-                          one from the other. The third is the one that is NOT
-                          implied: a covering coach sees an adult athlete's
-                          ring name and is still 'organization_staff' to
-                          resolveRelationship, so offering them this button
-                          would offer a 404. */}
+                          (`ringName`) or nothing to address it to
+                          (`accountId`). The two travel together -- the roster
+                          route only produces a ring name from a profile it
+                          found by account id -- but the control asserts both
+                          rather than inferring one from the other.
+
+                          Standing is NOT `isMine`. This screen is coach-only
+                          (allowedRoles ['coach']) and the clear route admits
+                          any coach of the athlete's gym as coach_of_subject
+                          (resolveRelationship, issue #1480 C2), so every
+                          roster row is one this coach may take down. Gating on
+                          the coach of record shut the door for every other
+                          coach in the gym. */}
                       {athleteChosenByCoach && selectedAthleteId === athlete.id
-                        && athlete.ringName && athlete.accountId && athlete.isMine && (
+                        && athlete.ringName && athlete.accountId && (
                         <div className="mt-[var(--s2)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           {nicknameClearArmedId === athlete.id ? (
                             <>
@@ -3985,6 +3994,13 @@ export default function CoachWorkspace() {
                         }}
                       />
                     </div>
+                  )}
+
+                  {/* Standing height and growth rate, coach-only, beside body
+                      mass (OD-2026-10-17-026 (b)). It reads its own route;
+                      keyed by athlete so a new athlete starts a fresh panel. */}
+                  {wellnessShown?.status === 'loaded' && (
+                    <AthleteGrowthPanel key={`growth-${wellnessShown.athleteId}`} athleteId={wellnessShown.athleteId} />
                   )}
 
                   {wellnessShown?.status === 'loaded' && wellnessShown.today !== null && (

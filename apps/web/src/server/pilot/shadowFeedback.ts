@@ -465,17 +465,24 @@ export async function resolveShadowFeedbackReview(input: {
   };
 }
 
-export async function hasDurableHumanReviewedLearningEvent(input: {
+/**
+ * An approval is promoted only when every learning effect that applied to it
+ * succeeded: processLearningSignal marks the feedback row 'complete' last,
+ * after them all. A human_reviewed learning-event row used to count instead,
+ * and that row is written even when a fact, flag or research write failed
+ * beside it -- so such an approval reported promoted and a retry never
+ * repaired it.
+ */
+export async function hasCompletedLearning(input: {
   organizationId: string;
   feedbackId: number;
 }): Promise<boolean> {
   const row = await queryOne<{ present: boolean }>(
     `SELECT true AS present
-     FROM pilot.shadow_learning_events
+     FROM pilot.shadow_feedback
      WHERE organization_id = $1
        AND feedback_id = $2
-       AND verification_state = 'human_reviewed'
-     LIMIT 1`,
+       AND 'complete' = ANY (learning_effects_done)`,
     [input.organizationId, input.feedbackId],
   );
   return row?.present === true;

@@ -33,6 +33,9 @@ const INGEST_STATES: Record<ShadowLibraryIngestState, true> = {
   quarantined: true,
 };
 
+// researchArchiveFiling.ts mints `arc_<uuid>`.
+const ARCHIVED_ORIGINAL_ID = /^arc_[0-9a-f-]{36}$/;
+
 function isIngestState(value: unknown): value is ShadowLibraryIngestState {
   return typeof value === 'string' && Object.hasOwn(INGEST_STATES, value);
 }
@@ -52,6 +55,7 @@ export async function POST(request: NextRequest) {
       metadata?: unknown;
       shelf?: unknown;
       request_id?: unknown;
+      archived_original_id?: unknown;
     };
     const organizationId = resolveLibraryShelf(principal, body.shelf, 'write');
 
@@ -120,6 +124,27 @@ export async function POST(request: NextRequest) {
     if (subjectId && parseLibraryShelf(body.shelf) === 'platform') {
       return NextResponse.json({ ok: false, error: 'subject_id is not allowed on the platform shelf' }, { status: 400 });
     }
+    // The filed Research Archive original an excerpt was read from (lane L57).
+    // The database holds it to this document's source and shelf, and refuses it
+    // on a document about an athlete; both are said here first, plainly.
+    const archivedOriginalId = body.archived_original_id ?? null;
+    if (archivedOriginalId !== null && (typeof archivedOriginalId !== 'string' || !ARCHIVED_ORIGINAL_ID.test(archivedOriginalId))) {
+      return NextResponse.json({ ok: false, error: 'archived_original_id must be a filed original id' }, { status: 400 });
+    }
+    if (archivedOriginalId !== null && subjectId) {
+      return NextResponse.json(
+        { ok: false, error: 'A document about an athlete is not linked to a Research Archive original' },
+        { status: 400 },
+      );
+    }
+    // Only an excerpt taken from a page of the PDF is linked to it; the panel
+    // marks those text_origin 'pdf_page' (libraryTextIntake.ts).
+    if (archivedOriginalId !== null && (body.metadata as Record<string, unknown> | undefined)?.text_origin !== 'pdf_page') {
+      return NextResponse.json(
+        { ok: false, error: 'Only an excerpt taken from a page of the filed PDF is linked to it' },
+        { status: 400 },
+      );
+    }
     if (subjectId) {
       await assertActorCanAccessAthlete(principal, subjectId);
     }
@@ -144,6 +169,7 @@ export async function POST(request: NextRequest) {
       ingestState: body.ingest_state as ShadowLibraryIngestState | undefined,
       metadata: body.metadata as Record<string, unknown> | undefined,
       requestId,
+      archivedOriginalId,
     });
 
     if (recovered) return NextResponse.json({ ok: true, document, recovered: true }, { status: 200 });
@@ -155,6 +181,12 @@ export async function POST(request: NextRequest) {
       // other organizations' sources by id.
       if (error.message === 'Source does not exist in this organization.') {
         return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+      }
+      if ((error as { constraint?: unknown }).constraint === 'pilot_shadow_library_documents_archived_original_fk') {
+        return NextResponse.json(
+          { ok: false, error: "That filed PDF is not one of this source's originals on this shelf, so this excerpt cannot be linked to it" },
+          { status: 409 },
+        );
       }
       // unique (organization_id, content_sha256): the same content is already
       // registered, which is the seed script re-running rather than a fault.

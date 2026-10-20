@@ -41,12 +41,13 @@ interface RosterFace {
 /**
  * Three children, and the differences between them are the whole point.
  *
- * MINE has a ring name and this coach is the coach of record -- the only row
- * the takedown may appear on. COVERED has a ring name this coach can READ (an
- * adult athlete's ring name reaches any organization staff; a minor's never
- * leaves MINOR_CIRCLE) while resolveRelationship still answers
- * 'organization_staff' for them, so a takedown would be refused. PLAIN is this
- * coach's own and simply has no ring name to take down.
+ * MINE has a ring name and this coach is the coach of record. COVERED has a
+ * ring name and another coach of the gym is its coach of record; it is not in
+ * this coach's own list at all (the roster mock leaves it out unless the screen
+ * asks for scope=organization). Neither matters to the takedown: resolveRelationship answers 'coach_of_subject' for every coach
+ * of the athlete's gym (issue #1480 C2; OD-2026-10-11-007, OD-2026-10-12-016
+ * "Any coach all coaches coach all athletes"), which is what the clear route
+ * admits. PLAIN is this coach's own and simply has no ring name to take down.
  */
 const FACES: readonly RosterFace[] = [
   {
@@ -92,7 +93,7 @@ function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }): 
 interface Routes {
   /** What POST /api/pilot/profile/nickname/clear answers. */
   clear?: (body: { account_id?: string }) => Promise<Response> | Response;
-  roster?: () => Response;
+  roster?: (url: string) => Response;
 }
 
 function installFetch(routes: Routes = {}): jest.Mock {
@@ -104,7 +105,13 @@ function installFetch(routes: Routes = {}): jest.Mock {
       return routes.clear ? routes.clear(body) : jsonResponse({ ok: true, locked_for_hours: 72 });
     }
     if (url.includes('/api/pilot/profile/roster')) {
-      return routes.roster ? routes.roster() : jsonResponse({ ok: true, items: FACES });
+      // The route's real split (profile/roster/route.ts): without
+      // scope=organization it answers only the coach's own athletes. Modelled
+      // here so a screen that forgets to ask for the whole gym loses the faces
+      // -- and the takedown -- for every athlete outside the coach's own list.
+      if (routes.roster) return routes.roster(url);
+      const wholeGym = url.includes('scope=organization');
+      return jsonResponse({ ok: true, items: wholeGym ? FACES : FACES.filter((face) => face.is_mine) });
     }
     if (url.includes('/api/pilot/athletes/list')) {
       return jsonResponse({
@@ -184,17 +191,28 @@ describe('the takedown is offered exactly where it can work', () => {
     ).not.toBeNull();
   });
 
-  it('is absent for an athlete this coach is not the coach of record for', async () => {
-    // The covering coach can READ this ring name -- it is rendered on the row
-    // above -- and resolveRelationship still calls them 'organization_staff',
-    // which the clear route refuses. Offering the button here would offer a
-    // 404, and a coach who is told "not found" about a child in front of them
-    // learns the wrong thing.
-    await renderWorkspace();
+  it('is offered on an athlete another coach of the gym is coach of record for, and acts', async () => {
+    // The clear route admits any coach of the athlete's gym: resolveRelationship
+    // answers 'coach_of_subject' for every one of them (issue #1480 C2), so the
+    // coach of record (`is_mine`) is not the standing the route asks for.
+    // Gating on it kept the door shut for every coach but one, on a takedown
+    // the rulings give to the whole gym.
+    const fetchMock = await renderWorkspace();
     await selectAthlete('ath_covered');
 
-    expect(screen.getByText('“Hammer”')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: /Remove ring name/ })).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove ring name “Hammer” from Devon Pike' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove it' }));
+    });
+
+    const [request] = clearRequests(fetchMock) as Array<[unknown, RequestInit]>;
+    expect(request).toBeDefined();
+    expect(JSON.parse(String(request[1].body))).toEqual({ account_id: 'acct_covered' });
+    await waitFor(() => {
+      expect(screen.queryByText('“Hammer”')).toBeNull();
+    });
   });
 
   it('is absent for an athlete with no ring name', async () => {

@@ -78,7 +78,13 @@ const DEFINING_MODULES = [
 // yes/no of session_run_athletes for the staff-only session-note route
 // (isSessionRunningForAthleteToday, F-067): is this athlete in a live run, or
 // is nobody marked in it. It returns no name, no run and no mark.
+// behaviourObservations.ts asks one yes/no of session_run_athletes before a
+// coach's behaviour report is filed under a run (Jason 2026-10-18, "A: Strict
+// (Rec.)"): is this athlete marked present on it. It returns nothing from the
+// table; its only callers are the coach routes behaviour-observations and
+// behaviour-keys, gated to coach, organization_admin and admin.
 const TABLE_FILES = [
+  'src/server/pilot/behaviourObservations.ts',
   'src/server/pilot/privacyTiers.ts',
   'src/server/pilot/sessionNotes.ts',
   'src/server/pilot/sessionRunAthletes.ts',

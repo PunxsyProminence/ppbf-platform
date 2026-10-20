@@ -327,7 +327,8 @@ function emptyShadowCounts() {
     shadowFlaggedConversations: 0, shadowFlaggedMessagesDeleted: 0,
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
-    shadowEventsDeleted: 0,
+    shadowEventsDeleted: 0, behaviourObservations: 0, shadowGymBehaviourNotesScrubbed: 0,
+    shadowGymBehaviourLabelsScrubbed: 0, shadowTelemetryDeleted: 0,
   };
 }
 
@@ -805,10 +806,64 @@ async function deleteShadowEvents(client, tables, { organizationId, accountIds, 
   return (deleted.rowCount ?? 0) + (rest.rowCount ?? 0);
 }
 
+/* THE PERSON'S SHADOW METRIC ROWS GO TOO (F-106). pilot.shadow_telemetry_events
+   is SHADOW's metric log: who did it (actor_account_id) and what it was about
+   (dimensions; today's writers put an athlete_id (intake) or a
+   video_session_id (video upload) there, and the reader also filters on
+   entity_id, owner_entity_id and intake_case_id, so those shapes are covered
+   too). Its one reader, listShadowTelemetry
+   (shadowReadModels.ts), shows a row tied to no athlete to every role that
+   sees unscoped rows, the same as the event log, so the event log's ruling
+   applies (Overwatch 2026-10-16, option A, under Jason 2026-10-06: "delete
+   any thing that personally Identifys the person"): a row that names the
+   person -- as actor, or anywhere in its dimensions by their login or athlete
+   id, or by an entity id built from them, their guardian record, or a record
+   of the child's (their videos, the intake cases filed about them) -- is
+   deleted, in the purged gym (a guardian: everywhere). A row tied to a
+   conversation or review entry still held for safeguarding stays, as in the
+   event log. Nothing derives state from these rows, so no row is kept for
+   another's sake. */
+async function deleteShadowTelemetry(client, tables, { organizationId, accountIds, athleteId, parentIds, recordIds }) {
+  if (!tables.shadowTelemetry) return 0;
+  const ids = [...accountIds, ...(athleteId ? [athleteId] : [])].filter(Boolean);
+  if (ids.length === 0 && parentIds.length === 0 && recordIds.length === 0) return 0;
+  const held = tables.deidentifyKeys
+    ? `and not exists (
+         select 1 from pilot.shadow_chat_sessions s
+          where s.organization_id = t.organization_id
+            and s.subject_deleted_at >= (now() - ${SAFEGUARDING_CHAT_RETENTION})
+            and jsonb_path_exists(t.dimensions, '$.** ? (@ == $id)', jsonb_build_object('id', s.conversation_id::text)))
+       and not exists (
+         select 1 from pilot.shadow_human_review_queue q
+          where q.organization_id = t.organization_id
+            and q.subject_deleted_at >= (now() - ${SAFEGUARDING_CHAT_RETENTION})
+            and jsonb_path_exists(t.dimensions, '$.** ? (@ == $id)', jsonb_build_object('id', q.review_id::text)))`
+    : '';
+  // A guardian record id is unique only within its gym: each is matched in its own.
+  const deleted = await client.query(
+    `delete from pilot.shadow_telemetry_events t
+      where ($1::text is null or t.organization_id = $1)
+        and (t.actor_account_id = any($2::text[])
+          or jsonb_path_exists(t.dimensions, '$.** ? (@ == $ids[*])', jsonb_build_object('ids', to_jsonb($2::text[])))
+          or ($3::text is not null
+            and (left(t.dimensions->>'entity_id', length($3) + 1) = $3 || ':'
+              or right(t.dimensions->>'entity_id', length($3) + 1) = ':' || $3))
+          or exists (select 1 from unnest($4::text[], $6::text[]) as p(organization_id, id)
+                      where p.organization_id = t.organization_id
+                        and (t.dimensions->>'entity_id' = p.id or left(t.dimensions->>'entity_id', length(p.id) + 1) = p.id || ':'))
+          or exists (select 1 from unnest($2::text[]) as a(id) where right(t.dimensions->>'entity_id', length(a.id) + 1) = ':' || a.id)
+          or jsonb_path_exists(t.dimensions, '$.** ? (@ == $ids[*])', jsonb_build_object('ids', to_jsonb($5::text[]))))
+        ${held}`,
+    [organizationId, ids, athleteId, parentIds.map((row) => row.organizationId), recordIds, parentIds.map((row) => row.parentId)],
+  );
+  return deleted.rowCount ?? 0;
+}
+
 async function scrubGymNotes(client, tables, organizationId, names) {
   const counts = {
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
+    shadowGymBehaviourNotesScrubbed: 0, shadowGymBehaviourLabelsScrubbed: 0,
   };
   const pattern = namePattern(names, true);
   if (!organizationId || pattern === null) return counts;
@@ -824,6 +879,23 @@ async function scrubGymNotes(client, tables, organizationId, names) {
   counts.shadowGymFeedbackScrubbed = await scrub(tables.shadowFeedback, 'shadow_feedback', 'comment');
   counts.shadowGymFlagNotesScrubbed = await scrub(tables.reviewFlags, 'shadow_library_review_flags', 'user_note');
   counts.shadowGymReviewSummariesScrubbed = await scrub(tables.reviewQueue, 'shadow_human_review_queue', 'summary');
+  if (tables.behaviourObservations) {
+    // A coach's report on another child that names this person (a partner
+    // in the drill, say). Capped at the column's 2000, as above.
+    counts.shadowGymBehaviourNotesScrubbed = (await withNameScrubPattern(client, pattern, () => client.query(
+      `update pilot.behaviour_observations set note = left(regexp_replace(note, $2, '[name]', 'gi'), 2000)
+        where organization_id = $1 and note ~* $2`,
+      [organizationId, pattern],
+    ))).rowCount ?? 0;
+    // A behaviour name a coach typed with a child's name in it ("Rosa drops
+    // her hands"): the name goes, the behaviour stays. Capped at the
+    // label's 120.
+    counts.shadowGymBehaviourLabelsScrubbed = (await withNameScrubPattern(client, pattern, () => client.query(
+      `update pilot.behaviour_keys set label = left(regexp_replace(label, $2, '[name]', 'gi'), 120)
+        where organization_id = $1 and label ~* $2`,
+      [organizationId, pattern],
+    ))).rowCount ?? 0;
+  }
   if (tables.researchRequirements) {
     // The typed text a research row carries: the requirement (a filed
     // question, verbatim), the knowledge gap, and in metadata the learning
@@ -949,6 +1021,48 @@ async function deidentifyShadowChatAudit(client, tables, people) {
   );
   counts.shadowChatAuditScrubbed = scrubbed.rowCount ?? 0;
   return counts;
+}
+
+/* A COACH'S BEHAVIOUR REPORTS ABOUT THE CHILD (pilot.behaviour_observations, lane
+   L49) are coaching records the learning loop keeps de-identified (Jason
+   2026-10-06; Q5 "Keep coaching, delete medical"): the athlete key becomes
+   the person's token -- the same one the chat log gets -- and the coach's
+   note is kept with the child's names scrubbed, as a coach's chat turn about
+   them is (Jason 2026-10-07, "Scrub the child's name, keep"), or emptied when
+   no usable name is on record. The behaviour, context and timing stay. Runs
+   before the athlete row goes, whose follow trigger deletes any report still
+   naming the child, so a purge that rolls back leaves every report as it was.
+   Other children's notes naming this one are scrubbed with the gym-wide notes
+   (scrubGymNotes). Capped at the column's 2000: [name] can be longer than the
+   name it replaces. */
+async function deidentifyBehaviourObservations(client, tables, athlete, token, names) {
+  if (!tables.behaviourObservations) return 0;
+  const pattern = namePattern(names);
+  // The table's guard admits the scrubbed note only as exactly what this
+  // pattern makes of it, so the pattern is named to it for the statement.
+  const result = await withNameScrubPattern(client, pattern, () => client.query(
+    `update pilot.behaviour_observations
+        set athlete_id = $3,
+            note = case when $4::text is null then '' else left(regexp_replace(note, $4, '[name]', 'gi'), 2000) end,
+            deidentified_at = now()
+      where organization_id = $1 and athlete_id = $2`,
+    [athlete.organization_id, athlete.athlete_id, token, pattern],
+  ));
+  return result.rowCount ?? 0;
+}
+
+/* The learning-loop tables admit a name scrub only as exactly what the purge's
+   pattern makes of the text (their guards read pilot.name_scrub_pattern), so
+   the pattern is set for the transaction around the scrub and cleared after:
+   nothing later in the purge can rewrite a note under it. On a failure there is
+   nothing to clear here -- the caller rolls back to its savepoint, which undoes
+   the setting with everything else -- and a query on the failed transaction
+   would only replace the error the purge reports. */
+async function withNameScrubPattern(client, pattern, run) {
+  await client.query(`select set_config('pilot.name_scrub_pattern', $1, true)`, [pattern ?? '']);
+  const result = await run();
+  await client.query(`select set_config('pilot.name_scrub_pattern', '', true)`);
+  return result;
 }
 
 /**
@@ -1135,7 +1249,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
          read while the rows that hold them still exist: the delete below
          cascades the guardian links and, through the login, the profile. */
       const athleteLogins = linked.rows.filter((row) => row.role === 'athlete').map((row) => row.account_id);
-      let knownNames = tables.shadowChatAudit || tables.deidentifyKeys
+      let knownNames = tables.shadowChatAudit || tables.deidentifyKeys || tables.behaviourObservations
         ? (await client.query(
           `select full_name as name, false as guardian from pilot.athletes where organization_id = $1 and athlete_id = $2
            union all
@@ -1201,6 +1315,10 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       const flaggedHere = await deidentifyFlaggedConversations(
         client, tables, athleteLogins, athlete.organization_id, receiptToken, knownNames,
       );
+      // One token for the person (SHADOW_OPERATIONAL_TABLES), minted before
+      // the athlete row goes so their behaviour reports can carry it too.
+      const token = anonymousToken();
+      const behaviourHere = await deidentifyBehaviourObservations(client, tables, athlete, token, knownNames);
       const removed = await client.query(
         'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
         key,
@@ -1220,6 +1338,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       let retiredHere = 0;
       let correctionsHere = 0;
       const shadowHere = emptyShadowCounts();
+      shadowHere.behaviourObservations = behaviourHere;
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
           /* A retired athlete login keeps only what refusing its sign-in needs:
@@ -1272,8 +1391,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
           }
         }
         /* The same athlete-role logins as the corrections above, and the
-           athlete's own record: one token for the person (SHADOW_OPERATIONAL_TABLES). */
-        const token = anonymousToken();
+           athlete's own record: the person's one token, minted above. */
         const subject = { organizationId: athlete.organization_id, athleteId: athlete.athlete_id };
         Object.assign(shadowHere, await deleteShadowOperationalRows(client, tables, athleteLogins));
         shadowHere.shadowProfileMentions = await clearShadowProfileMentions(client, tables, [subject]);
@@ -1483,7 +1601,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       // Last of the SHADOW work, after the rows above that go anyway, so the
       // count is notes that stay.
       Object.assign(shadowHere, await scrubGymNotes(client, tables, athlete.organization_id, ownNames));
-      shadowHere.shadowEventsDeleted = await deleteShadowEvents(client, tables, {
+      const athleteRefs = {
         organizationId: athlete.organization_id, accountIds: athleteLogins, athleteId: athlete.athlete_id, parentIds: [],
         // Rows keyed only on a record of the child's: their videos (archive,
         // restore, scan), and the intake cases filed about them (an upload's
@@ -1495,7 +1613,9 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
             key,
           )).rows.map((row) => row.id) : []),
         ],
-      });
+      };
+      shadowHere.shadowEventsDeleted = await deleteShadowEvents(client, tables, athleteRefs);
+      shadowHere.shadowTelemetryDeleted = await deleteShadowTelemetry(client, tables, athleteRefs);
       /* THE PORTRAIT GOES TOO: the athlete login's own photo in this gym,
          cleared the way a reviewer's removal clears it (profileDb.ts). So does
          the ring name (F-102): the scrub above already treats it as one of the
@@ -1575,7 +1695,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
     try {
       // Read before the guardian record and its links go (SHADOW_OPERATIONAL_TABLES):
       // the guardian's names, and the children whose turns those names must leave.
-      const guardianNames = tables.shadowChatAudit || tables.deidentifyKeys
+      const guardianNames = tables.shadowChatAudit || tables.deidentifyKeys || tables.behaviourObservations
         ? (await client.query(
           `select full_name as name from pilot.parents where account_id = $1
            union all
@@ -1727,9 +1847,11 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
         )
         : { rowCount: 0 };
       Object.assign(shadowHere, await scrubGymNotes(client, tables, guardianGym, guardianNames));
-      shadowHere.shadowEventsDeleted = await deleteShadowEvents(client, tables, {
+      const guardianRefs = {
         organizationId: null, accountIds: [accountId], athleteId: null, parentIds: guardianParentIds, recordIds: [],
-      });
+      };
+      shadowHere.shadowEventsDeleted = await deleteShadowEvents(client, tables, guardianRefs);
+      shadowHere.shadowTelemetryDeleted = await deleteShadowTelemetry(client, tables, guardianRefs);
       await client.query('delete from pilot.accounts where account_id = $1', [accountId]);
       await client.query('release savepoint purge_account');
       accountsDeleted += 1;
@@ -1791,8 +1913,12 @@ function shadowCountsFor(shadow, prefix, suffix) {
       ['shadow_review_flag_notes', shadow.shadowGymFlagNotesScrubbed],
       ['shadow_research_rows', shadow.shadowGymResearchScrubbed],
       ['shadow_review_summaries', shadow.shadowGymReviewSummariesScrubbed],
+      ['behaviour_observation_notes', shadow.shadowGymBehaviourNotesScrubbed],
+      ['behaviour_key_labels', shadow.shadowGymBehaviourLabelsScrubbed],
     ].map(([name, n]) => [`${prefix.replace('delete_', 'scrub_')}${name}_names${suffix.replace('_deleted', '_scrubbed')}`, n])),
     [`${prefix}shadow_events${suffix}`]: shadow.shadowEventsDeleted,
+    [`${prefix}shadow_telemetry_events${suffix}`]: shadow.shadowTelemetryDeleted,
+    [`${prefix.replace('delete_', 'deidentify_')}behaviour_observations${suffix.replace('_deleted', '_deidentified')}`]: shadow.behaviourObservations,
   };
 }
 
@@ -1881,12 +2007,14 @@ async function main() {
               to_regclass('pilot.shadow_evidence_items') is not null as "evidenceItems",
               to_regclass('pilot.shadow_chat_messages') is not null as "chatMessages",
               to_regclass('pilot.shadow_events') is not null as "shadowEvents",
+              to_regclass('pilot.shadow_telemetry_events') is not null as "shadowTelemetry",
               to_regclass('pilot.intake_cases') is not null as "intakeCases",
               to_regclass('pilot.shadow_chat_sessions') is not null as "chatSessions",
               to_regclass('pilot.shadow_human_review_queue') is not null as "reviewQueue",
               exists (select 1 from information_schema.columns
                        where table_schema = 'pilot' and table_name = 'shadow_human_review_queue'
                          and column_name = 'deidentified_at') as "deidentifyKeys",
+              to_regclass('pilot.behaviour_observations') is not null as "behaviourObservations",
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];

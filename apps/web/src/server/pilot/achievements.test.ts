@@ -97,6 +97,7 @@ describe('recognition', () => {
   });
 
   it('reads one athlete at a time, with a bounded page', async () => {
+    mockQuery.mockResolvedValue([]);
     await listRecognitionsForAthlete('org-1', 'ath-1', 5000);
     const params = mockQuery.mock.calls[0][1] as unknown[];
 
@@ -109,13 +110,41 @@ describe('recognition', () => {
     await listRecognitionsForAthlete('org-1', 'ath-1', -3);
     expect((mockQuery.mock.calls[1][1] as unknown[])[2]).toBe(1);
   });
+
+  /* A recognition stores its signature as text. Ones a coach@ login sent
+     before the role-word rule read "Coach Coach" for ever (Codex review of
+     #1786); the rule is applied when the stored text is read, and nothing
+     stored is rewritten. Parent walk 2026-10-19 item 6. */
+  it('reads a stored role-word signature the way a new one is written', async () => {
+    const stored = ['Coach Coach', 'Coach Coach Dave', 'Coach Ppbf', 'Coach Jason', 'Your coach', 'Coach Mary Ellen Walsh'];
+    mockQuery.mockResolvedValueOnce(stored.map((name, i) => ({ recognition_id: `r${i}`, coach_display_name: name })));
+
+    const rows = await listRecognitionsForAthlete('org-1', 'ath-1');
+
+    expect(rows.map((row) => row.coach_display_name)).toEqual([
+      'Your coach', 'Coach Dave', 'Your coach', 'Coach Jason', 'Your coach', 'Coach Mary Ellen Walsh',
+    ]);
+  });
 });
 
 describe('the signature on a recognition', () => {
   it('is derived from the sender\'s own login, never supplied', () => {
     expect(deriveCoachDisplayName('jason@punxsyprominence.org')).toBe('Coach Jason');
     expect(deriveCoachDisplayName('mary.ellen.walsh@example.org')).toBe('Coach Mary Ellen Walsh');
-    expect(deriveCoachDisplayName('coach_dave2@example.org')).toBe('Coach Coach Dave');
+    expect(deriveCoachDisplayName('coach_dave2@example.org')).toBe('Coach Dave');
+  });
+
+  /* Parent walk 2026-10-19 item 6: a coach signed in as coach@ read "Coach
+     Coach" on every family screen. A role word in the login is not a name
+     (Jason 2026-10-19, Q1 "C: A now, B later (Rec.)"). */
+  it('never signs with a role word as if it were a name', () => {
+    expect(deriveCoachDisplayName('coach@punxsyprominence.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('Coach@punxsyprominence.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('coach.mike@example.org')).toBe('Coach Mike');
+    expect(deriveCoachDisplayName('ppbf@punxsyprominence.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('admin@punxsyprominence.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('info.office@example.org')).toBe('Your coach');
+    expect(deriveCoachDisplayName('staff1@example.org')).toBe('Your coach');
   });
 
   it('falls back to something true rather than to an empty signature', () => {
@@ -162,10 +191,12 @@ describe('milestones', () => {
       awardedByRole: 'self',
     });
 
-    // `do nothing`, so a second tap does not move the day it happened -- and
-    // one row per milestone per athlete means no countable quantity ever
-    // accumulates that two athletes could be compared on.
-    expect(lastSql()).toContain('on conflict (organization_id, athlete_id, milestone_key) do nothing');
+    // A second tap on a standing award changes nothing, so it does not move the
+    // day it happened -- only an award the athlete took back (undone_at set) is
+    // rewritten -- and one row per milestone per athlete means no countable
+    // quantity ever accumulates that two athletes could be compared on.
+    expect(lastSql()).toContain('on conflict (organization_id, athlete_id, milestone_key) do update');
+    expect(lastSql()).toContain('where pilot.athlete_milestones.undone_at is not null');
     expect(award?.awarded_at).toBe('2026-05-01T00:00:00.000Z');
   });
 
@@ -334,6 +365,12 @@ describe('deriveStaffDisplayName', () => {
     ['4411-77@example.test', null],
     ['mike1987@example.test', 'Mike'],
     ['jane.okafor@example.test', 'Jane Okafor'],
+    ['ppbf@punxsyprominence.org', null],
+    ['Admin@punxsyprominence.org', null],
+    ['admin.jane@example.test', 'Admin Jane'],
+    ['gym-admin@example.org', 'Gym Admin'],
+    ['pat.office@example.test', 'Pat Office'],
+    ['coach@example.test', null],
   ])('%s gives %s', (email, expected) => {
     expect(deriveStaffDisplayName(email)).toBe(expected);
     expect(deriveCoachDisplayName(email)).toBe(expected ? `Coach ${expected}` : 'Your coach');

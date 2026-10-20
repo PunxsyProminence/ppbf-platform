@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
@@ -131,7 +131,10 @@ const RUN_NOT_SAVED = 'No clear answer came back, and the server shows it was no
 const RUN_UNCHECKED = 'No clear answer came back and the server could not be checked. Reload the page before trying again.';
 const RUN_END_UNKNOWN = 'No clear answer came back, and the server does not show how this session ended. Reload the page before trying again.';
 const LOG_SAVED = 'No clear answer came back, but the server shows the intervention was logged.';
-const LOG_NOT_SAVED = 'No clear answer came back, and the server shows the intervention was not logged. Try again.';
+// With the request key below, a retry of the same tap is answered with the record the first send
+// wrote if that write lands late, so "try again" cannot log it twice (finding F-135). Accepted
+// by Overwatch for lane L55.
+const LOG_NOT_SAVED = 'No clear answer came back, and the server does not show the intervention yet. Try again -- it will not be logged twice.';
 const LOG_UNCHECKED = 'No clear answer came back and the server could not be checked. Check The Work before logging it again.';
 const RUN_OUT_OF_DATE = 'The session shown was out of date and has been reloaded from the server.';
 const RUN_GONE = 'This session is no longer live on the server. Nothing further can be recorded through this screen.';
@@ -319,6 +322,17 @@ export default function SessionScriptLiveDelivery({
   const [logError, setLogError] = useState('');
   const [loggedInterventions, setLoggedInterventions] = useState<LoggedIntervention[]>([]);
 
+  // ONE TAP, ONE INTERVENTION (finding F-135). A read that finds nothing does not prove a write
+  // still in flight will not commit after it, so a retry must not be a new log. Each tap of an
+  // athlete and protocol in this run gets one random request key, sent again on every retry of
+  // that pair while its answer is unsettled; the server answers a repeated key with the execution
+  // the first send started (POST intervention-executions, request_key). Only an answer about THIS
+  // tap ends it: logged (said by the server or found by the check), or its key refused as another
+  // intervention's. Any other refusal keeps the key -- a refused retry says nothing about an
+  // earlier send still in flight, and a key that names nothing is simply written. Null marks a pair
+  // whose key could not be made (no randomUUID); then none is sent, as before.
+  const logRequestKeys = useRef(new Map<string, string | null>());
+
   // A protocol authored for one specific athlete never applies to another --
   // the server enforces this too (startExecution), but narrowing the list
   // here means a coach cannot even select a mismatched pair.
@@ -360,9 +374,16 @@ export default function SessionScriptLiveDelivery({
     }
     setLogBusy(true);
     setLogError('');
+    const pair = JSON.stringify([run.run_id, logAthleteId, logProtocolId]);
+    const keys = logRequestKeys.current;
+    if (!keys.has(pair)) {
+      keys.set(pair, typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : null);
+    }
+    const requestKey = keys.get(pair) ?? null;
     const athleteName = logAthletes.find((a) => a.athlete_id === logAthleteId)?.full_name ?? logAthleteId;
     const protocolTitle = logProtocols.find((p) => p.protocol_id === logProtocolId)?.title ?? logProtocolId;
     const showLogged = (item: { execution_id: string; created_at: string }) => {
+      keys.delete(pair);
       setLoggedInterventions((items) => [
         { execution_id: item.execution_id, athlete_name: athleteName, protocol_title: protocolTitle, created_at: item.created_at },
         ...items,
@@ -390,17 +411,20 @@ export default function SessionScriptLiveDelivery({
             athlete_id: logAthleteId,
             protocol_id: logProtocolId,
             session_run_id: run.run_id,
+            ...(requestKey ? { request_key: requestKey } : {}),
           }),
         });
         const payload = (await response.json().catch(() => ({}))) as {
           item?: { execution_id: string; created_at: string };
           error?: string;
+          code?: string;
         };
         if (response.ok && payload.item) {
           showLogged(payload.item);
           return;
         }
         if (isRefusal(response.status)) {
+          if (payload.code === 'INTERVENTION_EXECUTION_REQUEST_KEY_REUSED') keys.delete(pair);
           setLogError(refusalWords({ error: payload.error, status: response.status }, {}, 'The intervention was not logged. Try again.'));
           return;
         }

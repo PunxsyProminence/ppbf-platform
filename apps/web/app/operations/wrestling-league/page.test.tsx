@@ -454,8 +454,83 @@ test('an inactive member is listed under Inactive, not in the active roster', as
   expect(within(active).getByText(/Jordan Little/)).toBeTruthy();
   expect(within(active).queryByText(/Riley Shaw/)).toBeNull();
   const inactive = screen.getByRole('list', { name: 'Inactive' });
-  expect(within(inactive).getByText('Riley Shaw · inactive')).toBeTruthy();
-  expect(within(inactive).queryByRole('button')).toBeNull();
+  expect(within(inactive).getByText(/Riley Shaw · inactive/)).toBeTruthy();
+  // Its one control puts the member back; Mark inactive belongs to the active list only.
+  expect(within(inactive).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['Re-add Riley Shaw']);
+});
+
+// #1449 D1: an inactive member is put back on the roster through the same POST as a first add, so
+// the server turns their row back to active and reruns every check.
+test('Re-add posts the same roster link as adding an athlete, then re-reads the season and lists them as active', async () => {
+  const capture = { posts: [] as Array<{ url: string; body: unknown }> };
+  const roster: Array<Record<string, unknown>> = [ROSTER_ENTRY, INACTIVE];
+  const base = mockFetch({ capture, roster });
+  const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await (base as unknown as jest.Mock)(input, init);
+    // The server turned the row back to active.
+    if (init?.method === 'POST') roster[1] = { ...INACTIVE, status: 'active' };
+    return response;
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+  await openTheSeason();
+  const rosterReads = () => fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/roster?'));
+  const before = rosterReads().length;
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Re-add Riley Shaw' }));
+  });
+
+  expect(capture.posts).toEqual([
+    { url: expect.stringContaining('/api/pilot/operations/wrestling-league/roster'), body: { season_id: 'season-1', athlete_id: 'ath-3' } },
+  ]);
+  expect(rosterReads().slice(before)).toEqual([expect.stringContaining('season_id=season-1')]);
+  expect(within(screen.getByRole('list', { name: 'Roster' })).getByText(/Riley Shaw/)).toBeTruthy();
+  expect(screen.queryByRole('list', { name: 'Inactive' })).toBeNull();
+});
+
+test('a refused re-add shows the server message and re-reads the season', async () => {
+  global.fetch = mockFetch({
+    roster: [INACTIVE],
+    rosterPostStatus: 409,
+    rosterPostError: 'This athlete is already on the season roster.',
+  });
+  await openTheSeason();
+  const rosterReads = () => (global.fetch as jest.Mock).mock.calls.filter((call) => String(call[0]).includes('/roster?')).length;
+  const before = rosterReads();
+
+  await act(async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Re-add Riley Shaw' }));
+  });
+
+  expect(await screen.findByText('This athlete is already on the season roster.')).toBeTruthy();
+  expect(rosterReads()).toBe(before + 1);
+});
+
+test('Re-add cannot be pressed twice while the first press is in flight', async () => {
+  let release: (value: Response) => void = () => {};
+  const posts: unknown[] = [];
+  const reads = mockFetch({ roster: [INACTIVE] });
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      posts.push(JSON.parse(String(init.body)));
+      return new Promise<Response>((resolve) => { release = resolve; });
+    }
+    return (reads as unknown as jest.Mock)(input, init);
+  }) as unknown as typeof fetch;
+  await openTheSeason();
+
+  const readd = await screen.findByRole('button', { name: 'Re-add Riley Shaw' });
+  await act(async () => {
+    fireEvent.click(readd);
+  });
+  expect((screen.getByRole('button', { name: 'Re-add Riley Shaw' }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Re-add Riley Shaw' }));
+  });
+  expect(posts).toHaveLength(1);
+  await act(async () => {
+    release({ ok: true, json: async () => ({ item: {} }) } as Response);
+  });
 });
 
 test('with every member inactive, the active list says it is empty and the history stays', async () => {

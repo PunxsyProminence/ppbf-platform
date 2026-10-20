@@ -164,6 +164,219 @@ and should not try to.
 
 ---
 
+## OD-2026-10-19-007 -- #345 test file: Jason deletes it himself; more pilot chips ("Go with your recommendations and what other chips do we need")
+
+**Provenance: PRIMARY.** Typed in the overwatch session ("Overwatch", Max account; transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; line 9438, 2026-10-19T18:42:49.818Z). Read by script (records lane, 2026-10-19, at Overwatch's request). His words are quoted exactly. New; edits no earlier entry.
+
+**What it answered.** Overwatch's message just before (line 9434, 2026-10-19T18:02:34.479Z), as written: "**#345 test file cleanup:** once the lane files the made-up test PDF in the Research Archive, do you want it deleted or left? (Recommended: you delete it yourself in SharePoint; I can't delete files.)" Jason: *"Go with your recommendations and what other chips do we need"*
+
+**Ruling:** the one synthetic #345 test file stays in the Research Archive until Jason deletes it himself in SharePoint; no Claude session deletes it. The same message asks for the further chips the pilot needs.
+
+**Acted on (Overwatch):** told the #345 lane (line 9443): "Cleanup ruled: Jason deletes the test file himself in SharePoint ("Go with your recommendations"). After step 2, send me the file's webUrl and name so I can give him the link. Do not delete it." Overwatch listed seven chips in reply (line 9463).
+
+**Status:** ruled; deletion is Jason's step, not checked by this records pass.
+
+---
+
+## OD-2026-10-19-006 -- Start the chips for the coach/athlete pilot ("start the chips necessary to get the coach athelete  pilot ready")
+
+**Provenance: PRIMARY.** Typed in the overwatch session (transcript as in OD-2026-10-19-007; line 9368, 2026-10-19T17:58:53.754Z). Read by script. Quoted exactly, spelling and the double space kept. New; edits no earlier entry.
+
+Jason: *"start the chips necessary to get the coach athelete  pilot ready"*
+
+**Ruling:** Overwatch opens the chips needed to make the coach/athlete pilot ready.
+
+**Acted on (Overwatch, line 9434):** created chips task_4823ba12 ("Pilot walkthrough: admin, coach, athlete day (signed in)"), task_e0495fe0 ("Pilot: coaches see only named fields of members' typed words") and task_1fed5eba ("Pilot: trim gym admin's goal record (F-100)"); OD-2026-10-19-007 followed.
+
+**Status:** ruled; chips started (per the system notices at line 9438).
+
+---
+
+## OD-2026-10-19-005 -- Start the curator screen lane; Graph Explorer in Chrome ("Yes start the curator screen lane ...")
+
+**Provenance: PRIMARY.** Typed in the overwatch session (transcript as in OD-2026-10-19-007; line 8962, 2026-10-19T17:33:32.617Z). Read by script. Quoted exactly, spelling kept. New; edits no earlier entry.
+
+Jason: *"Yes start the curator screen lane open the graph lane in browser with extension its not letting me sign in in th einapp"*
+
+**Ruling:** (1) start the lane "Curator screen: set source rights and evidence tier"; (2) open Graph Explorer, for the #345 SharePoint grant, in his Chrome through the Claude in Chrome extension, because the in-app browser would not let him sign in.
+
+**Acted on (Overwatch):** created chip task_f42b2fca (line 8994); opened Graph Explorer in his Chrome after he said *"extension is signed in"* (line 8998, 2026-10-19T17:37:32.754Z; Overwatch line 9035). The grant itself is in OD-2026-10-19-002.
+
+**Status:** ruled; lane started as a chip.
+
+---
+
+## OD-2026-10-19-004 -- Parent portal flaw list: split into lanes, items 1-4 first ("A go with your recommendation"; REPORTED)
+
+**Provenance: REPORTED.** Jason typed this in the session "Open parent portal logins (staging + production)" (local_1384fac3-dc99-44ac-a018-f23058b8ffdb), not in overwatch. That session relayed it to overwatch (transcript as in OD-2026-10-19-007; line 8810, 2026-10-19T17:25:01.229Z): "PARENT PORTAL FLAW LIST (production, read-only walk 2026-10-19). Jason: "A go with your recommendation", meaning Overwatch splits these into lanes, items 1-4 first." The quote is the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
+
+Jason (REPORTED): *"A go with your recommendation"*
+
+**Ruling (as the lane read it):** the 14-item parent portal flaw list from the 2026-10-19 production read-only walk is split into lanes by Overwatch, items 1-4 first.
+
+**Acted on (Overwatch, line 8836):** chips task_94c981c1 ("Parent portal: fix dates, counts and labels (items 2-4)") and task_1a667211 ("Parent portal: retire audit test data in production (item 1)", plan only); later "Parent portal: next fixes (items 5-9)" (line 9449).
+
+**Status:** ruled (REPORTED); lanes open.
+
+---
+
+## OD-2026-10-19-003 -- #1172: the lane enters the 8 papers itself in the in-app browser ("you do it open in in app browser"; REPORTED)
+
+**Provenance: REPORTED.** Jason typed this in the lane "#1172: add elite-boxing sources to research shelf" (local_d6a69315-cb18-4acc-b8cc-9df9e5ff5f2e). The lane relayed it to overwatch (transcript as in OD-2026-10-19-007; line 8869, 2026-10-19T17:26:50.309Z): "#1172 NEW STEP: Jason, in this lane's chat: "you do it open in in app browser". I'm opening www.punxsyprominence.org/research in the in-app browser. Jason signs in as Admin@ himself (I enter no credentials)." The quote is the lane's; this records pass did not read the lane's transcript. New; edits no earlier entry.
+
+Jason (REPORTED): *"you do it open in in app browser"*
+
+**Ruling:** the #1172 lane registers the 8 not-yet-entered elite-boxing sources itself through the production General Research Intake form, in the in-app browser, after Jason signs in as Admin@ himself. Approval stays with the approve-library-baseline workflow and Jason's production click.
+
+**Acted on:** Overwatch: "No conflict" (line 8875). The lane entered the 8 rows (pending review, tier 3, licence unknown; Overwatch line 9064). approve-library-baseline dry-run run 39297125136 and the real run 39297390508 both concluded success at main `53075f3f` (gh run view, 2026-10-19). Issue #1172 is still OPEN (gh issue view).
+
+**Status:** ruled (REPORTED) and carried out.
+
+---
+
+## OD-2026-10-19-002 -- The 9 GitHub issues: close 7, open lanes for #1172 and #345 ("Go with your recommendations")
+
+**Provenance: PRIMARY.** Typed in the overwatch session (transcript as in OD-2026-10-19-007; line 8428, 2026-10-19T15:57:42.578Z). Read by script. Quoted exactly. New; edits no earlier entry.
+
+**Questions, as Overwatch wrote them (line 8400, 2026-10-19T15:43:46.963Z), after his *"look at the 9 issues in github, what are they and what do we d to fix it"* (line 8358, 2026-10-19T15:34:08.664Z):**
+- "**Q1:** may I close #1596, #1595, #1593, #1527, #1480, #1474 and #1469 with evidence comments? (Recommended: yes)"
+- "**Q2, #1172:** should a lane add the 33 elite-boxing sources to the platform research shelf? It checks them against what the library already has first, and needs a sign-in as Admin@ for the final approval. (Recommended: yes)"
+- "**Q3, #345:** may a lane do one supervised test that files a made-up PDF into the real SharePoint research archive? Then it would show you the archive wording for approval. (Recommended: yes)"
+
+Jason: *"Go with your recommendations"*
+
+**Ruling:** yes to Q1, Q2 and Q3.
+
+**Acted on:**
+1. Q1: Overwatch closed #1596, #1595, #1593, #1527, #1480, #1474 and #1469 with evidence comments (line 8454); all seven CLOSED between 2026-10-19T15:57:53Z and 15:58:08Z (gh issue view). #1480's leftover (take-down button for any coach) went to chip task_8bb3ee17 and merged as #1781 (line 8877).
+2. Q2: chip task_ab6eb94d; see OD-2026-10-19-003.
+3. Q3, the #345 trail:
+   - **Test method, option A (INFERRED, not Jason's pick).** Option A (a SharePoint-only test file with no library record, proved through Graph) was first proposed by the #345 lane at line 8554 (2026-10-19T16:03:50Z), after his 15:57Z answer. Overwatch chose it (line 8560: "Option A is my recommendation (Graph-only proof, no DB row).") as applying his Q3 yes, and told him (line 8650, 2026-10-19T16:06:09.904Z): "I recommend a SharePoint-only test file with no library record. Say "use B" if you'd rather run the test through the app instead; that leaves a permanent test record." He never said "use B" (searched: no line after 8400 contains "use B" except Overwatch's own messages at lines 8650 and 9593). His later "Go with your recommendations" (OD-2026-10-19-007, line 9438) is the nearest confirmation.
+   - **The grant clicks.** Jason (line 9227, 2026-10-19T17:54:23.744Z): *"you do it i give permission and ill watch from the browser"*. Overwatch declined (line 9232): "I can't do these two clicks, even with your permission. Consenting to Sites.FullControl.All and granting the app write access both change Microsoft 365 security settings, and I'm not allowed to make those changes; that stays with you." Jason clicked Consent and Run query himself and said *"done"* (line 9331, 2026-10-19T17:57:07.417Z). Overwatch read the response (line 9355): "Graph answered **201 Created**, giving the app's production identity **write** access on the Research Archive folder only"; the lane message at line 9351 records the 201 with roles ["write"] on folder item 0154YZVWYXXDPDFKTSCBA3G2XDFG34WAO7.
+   - Cleanup: OD-2026-10-19-007.
+
+**Status:** Q1 done; #1172 and #345 still OPEN (gh issue view, 2026-10-19).
+
+---
+
+## OD-2026-10-19-001 -- Release 31: "staging OK", then production
+
+**Provenance: PRIMARY.** Typed in the overwatch session (transcript as in OD-2026-10-19-007; line 8241, 2026-10-19T14:12:51.798Z). Read by script. Quoted exactly. New; edits no earlier entry.
+
+**What it answered.** Overwatch (line 8237; its line breaks shown here as spaces): "**Release 31 is still waiting on you.** Staging has been ready since last night. Please check it, signed in: 1. As an adult athlete: the photo/video consent panel on the Dashboard, giving then withdrawing. 2. As an athlete: the sparring symptom check. 3. As gym admin: the waiver-status page shows the adult's own consent line. Then say "staging OK"." Jason: *"staging OK"*
+
+**Trail:** Overwatch dispatched deploy-production run 39267014295 (line 8279). Jason: *"Try again"* (line 8310, 15:27:45.039Z); *"approved check production"* (line 8344, 15:31:04.391Z). That run failed on an Azure "Too Many Requests" before deploying; Overwatch dispatched run 39282460147 with the same inputs (line 8524), and Jason approved it as PunxsyProminence (Overwatch line 8884).
+
+**Ruling:** his signed-in staging check passed; ship Release 31 (main `75b4efa38b70fe3fd9a7a640abc316556997bfe8`).
+
+**Acted on:** deploy-production run 39282460147 concluded success at `75b4efa3` (2026-10-19T17:25:43Z, gh run view); Overwatch observed revision app-ppbf-production--0000189 serving it (line 8852).
+
+**Status:** ruled and shipped.
+
+---
+
+## OD-2026-10-18-010 -- SHADOW relevance-bar calibration: the AI judges it ("have the Ai figure it out while i sleep")
+
+**Provenance: PRIMARY.** Typed in the overwatch session (transcript as in OD-2026-10-19-007; line 8053, a queued message, 2026-10-19T02:24:40.095Z). Read by script. Quoted exactly, spelling kept. The id carries 2026-10-18 because this UTC time is the evening of 2026-10-18 Eastern. New; edits no earlier entry.
+
+Jason: *"have the Ai figure it out while i sleep"*
+
+**Ruling:** Claude, not a person, marks the calibration sheet for the SHADOW Library relevance bar, and the calibration lane settles it overnight.
+
+**Acted on (Overwatch):** told the calibration lane (line 8059) to use two blind subagents, label the key AI-JUDGED and run its pre-registered rule unchanged. The gate was not met, so the bar stayed at 0.30/0.50 with no PR (line 8097; F-161), and a follow-up chip, "Benchmark a second check for SHADOW 'no answer'", was opened (line 8134).
+
+**Status:** ruled; bar unchanged.
+
+---
+
+## OD-2026-10-18-009 -- SHADOW Library search: "B: Backfill now"
+
+**Provenance: PRIMARY.** A one-question card in the overwatch session (transcript as in OD-2026-10-19-007; card put at line 7764, 2026-10-19T01:33:08.837Z; answered at line 7774, 2026-10-19T01:57:14.973Z). Read by script. His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-18 because this UTC time is the evening of 2026-10-18 Eastern. New; edits no earlier entry.
+
+**Question "SHADOW search", as written:** "SHADOW Library search, next step after GPU Phase 2: A) one lane that (1) calibrates the relevance bar on a human-checked set (coach does SPOT-CHECK-40, ~20 min) and (2) then runs the production embedding backfill through the existing Actions path (your per-run approval, ~$0.01); B) run the backfill now, calibrate later; C) leave production on keyword search for now. PLAIN: Azure smart search found the right passage first 30/34 times vs 13/34 for today's keyword search, but uncalibrated it also hands over 'evidence' for questions the Library can't answer (6 of 6). A turns it on only once it knows when to say 'I don't know'." Options as written: "A: Calibrate, then backfill (Rec.)": "Needs a coach's 20-min spot-check first; then your one production click."; "B: Backfill now": "Better answers right away, but SHADOW cites weak evidence for unanswerable questions until calibrated."; "C: Keep keyword": "No change; SHADOW stays on keyword search.". Jason: *"B: Backfill now"*
+
+**Also (REPORTED):** the GPU lane (local_2e4176c4-79fd-4f24-8c6b-6461e38b6c51) relayed (line 7775, 2026-10-19T01:38:33.497Z): "Jason, typed in this lane 2026-10-18: "go with your recommendation, run the backfill"." That lane also corrected the card: the backfill is the operator script `pilot:backfill-chunk-embeddings`, not an Actions path.
+
+**Ruling:** run the production embedding backfill now and calibrate afterwards, against the recommendation (A). The cost, as the card stated it: SHADOW cites weak evidence for unanswerable questions until calibrated.
+
+**Acted on (Overwatch, line 7836):** main's `pilot-backfill-chunk-embeddings.mjs` ran three times from this PC; 1,222 of 1,222 approved chunks embedded with text-embedding-3-small, 0 failures, 0 left null (read-only counts before and after, as Overwatch reported them). F-158 marked FIXED.
+
+**Status:** ruled and carried out; calibration in OD-2026-10-18-010.
+
+---
+
+## OD-2026-10-18-008 -- GPU Phase 2: the AI judges the answer key ("go with your recomendation on everything"; REPORTED)
+
+**Provenance: REPORTED.** Jason typed this in the lane "Run GPU retrieval Phase 2 (L61) on real Library" (local_2e4176c4-79fd-4f24-8c6b-6461e38b6c51). The lane relayed it to overwatch (transcript as in OD-2026-10-19-007; line 7736, 2026-10-19T01:28:01.821Z): "L61 RULING (Jason, typed in this lane 2026-10-18): "go with your recomendation on everything"." It came right after the lane put the 40 questions to him for marking. The quote is the lane's; this records pass did not read the lane's transcript. New; edits no earlier entry.
+
+Jason (REPORTED): *"go with your recomendation on everything"*
+
+**Ruling (as the lane read it):** Claude marks the 40-question answer key instead of Jason.
+
+**Cost, stated once by Overwatch (line 7751):** "your Phase 2 brief required a person to judge relevance. With Claude judging, the report can't claim the local GPU beats Azure on a human-judged test; it'll be labelled AI-JUDGED."
+
+**Acted on (Overwatch, line 7739):** "Proceed with the AI-JUDGED (Claude) key as you described", labelled AI-JUDGED on every table, levels A and B only plus "C pending human check", with a 40-row spot-check list.
+
+**Status:** ruled (REPORTED); Phase 2 closed (line 7830).
+
+---
+
+## OD-2026-10-18-007 -- GPU Phase 2 answer key: "A: 40 questions (Rec.)"
+
+**Provenance: PRIMARY.** A one-question card in the overwatch session (transcript as in OD-2026-10-19-007; answered at line 7156, 2026-10-19T00:24:29.692Z). Read by script. His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-18 because this UTC time is the evening of 2026-10-18 Eastern. New; edits no earlier entry.
+
+**Question "Answer key", as written:** "GPU Phase 2 answer key: how many benchmark questions? A) 40 questions, ~250-300 relevant/not-relevant marks, ~2 hours, splittable, a coach can take a subject; B) 30 questions, ~180 marks, ~1-1.5 hours. PLAIN: you (or a coach) mark which Library passages actually answer each question; that's the honest answer sheet all four search methods get graded against. More questions = a fairer verdict, more of your time." Options as written: "A: 40 questions (Rec.)": "~2 h of marking, stronger result."; "B: 30 questions": "~1-1.5 h, weaker result.". Jason: *"A: 40 questions (Rec.)"*
+
+**Ruling:** the GPU Phase 2 benchmark uses 40 questions. Who marks them: OD-2026-10-18-008.
+
+**Acted on (Overwatch, line 7159):** told the lane to build ANSWER-KEY-SHEET.xlsx for 40 questions.
+
+**Status:** ruled.
+
+---
+
+## OD-2026-10-18-006 -- Behaviour report against a session run: "A: Strict (Rec.)"
+
+**Provenance: PRIMARY.** The third question of a three-question card in the overwatch session (transcript as in OD-2026-10-19-007; card put at line 6342, 2026-10-18T20:57:55.833Z; answered at line 6343, 2026-10-18T20:58:21.454Z). Read by script. His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Presence", as written:** "Behaviour report against a session run: refuse it unless the athlete is marked present on that run (A, strict); check presence only when the coach marked anyone on that run (B); or no presence check (C)? PLAIN: stops a report being filed on a kid who wasn't in that session. Cost of A: coaches who don't mark who's present on a run get "not marked present" and must mark them first." Options as written: "A: Strict (Rec.)": "Report only for athletes marked present on that run."; "B: Only if marked": "Strict once a run has any presence marks; open otherwise."; "C: No check": "As today: any athlete in the gym.". Jason: *"A: Strict (Rec.)"*
+
+**Ruling:** a behaviour report against a session run is refused unless the athlete is marked present on that run.
+
+**Acted on (Overwatch, line 6416):** told the retention lane: "A behaviour report against a session run is refused unless the athlete is marked present on that run (session_run_athletes, removed_at null). Build it into PR 2". Overwatch lists "strict presence for behaviour reports" as shipped in Release 31 (line 8884).
+
+**Status:** ruled; shipped per Overwatch, not checked in code by this records pass.
+
+---
+
+## OD-2026-10-18-005 -- F-136, publication identity for SHADOW corroboration: "A: DOI/PMID/URL key (Rec.)"
+
+**Provenance: PRIMARY.** The second question of the card in OD-2026-10-18-006 (line 6342 put, line 6343 answered, 2026-10-18T20:58:21.454Z). Read by script. His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "F-136", as written:** "F-136, publication identity for SHADOW corroboration: two passages count as two independent sources only when their keys differ, key = DOI, else PMID, else normalised URL, else source id (A); normalised URL only (B); or leave as is (C)? PLAIN: today one paper entered twice can make SHADOW call a claim "supported". A counts it once by its paper ID or cleaned web link." Options as written: "A: DOI/PMID/URL key (Rec.)": "Same paper counted once, however it was entered."; "B: Clean URL only": "Catches link variants; misses the same paper with no or different links."; "C: Leave as is": "Duplicates can still inflate 'supported'.". Jason: *"A: DOI/PMID/URL key (Rec.)"*
+
+**Ruling:** two passages count as two independent sources only when their publication keys differ; the key is DOI, else PMID, else normalised URL, else source id.
+
+**Acted on (Overwatch, line 6414):** told the SHADOW evidence lane: "The key is DOI, else PMID, else normalised URL (lowercase host; no scheme, www, trailing slash, fragment or utm params), else source_id." Overwatch lists "duplicate papers counted once" as shipped in Release 31 (line 8884).
+
+**Status:** ruled; shipped per Overwatch, not checked in code by this records pass.
+
+---
+
+## OD-2026-10-18-004 -- Production migration at cfa2f89b: "A: Dispatch it (Rec.)"
+
+**Provenance: PRIMARY.** The first question of the card in OD-2026-10-18-006 (line 6342 put, line 6343 answered, 2026-10-18T20:58:21.454Z). Read by script. His pick is quoted exactly; the question and options are quoted as overwatch wrote them. New; edits no earlier entry.
+
+**Question "Prod DB", as written:** "Production migration: dispatch apply-migrations target=production migration=all at main cfa2f89b (learning-loop, intervention request-key, learning-effects; staging run 39165359534 passed)? Then you approve it as PunxsyProminence. PLAIN: puts 3 new tables in the live database so #1732 (one-tap intervention) and #1738 (SHADOW feedback) can ship." Options as written: "A: Dispatch it (Rec.)": "I start the run and send you the approval link."; "B: Not now": "Both PRs keep waiting.". Jason: *"A: Dispatch it (Rec.)"*
+
+**Ruling:** Overwatch dispatches the production migrations at `cfa2f89b`; Jason approves the run as PunxsyProminence.
+
+**Acted on:** apply-migrations run 39165744622 (Overwatch line 6451) concluded success at `cfa2f89bc218cc928929093ef339e9e68d007e56`, 2026-10-19T00:29:38Z (gh run view).
+
+**Status:** ruled and applied.
+
+---
+
 ## OD-2026-10-18-003 -- Who ratifies the coaching pattern bar: "A: Gym admin only (Rec.)"
 
 **Provenance: PRIMARY.** A one-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 20442, 2026-10-18T15:27:11.325Z; answered at line 20444, 2026-10-18T15:32:01.307Z). Read by script (housekeeping lane HK, 2026-10-18, at Overwatch's request). His pick is quoted exactly; the question and options are quoted as overwatch wrote them. The id carries 2026-10-18 because this UTC time is the morning of 2026-10-18 Eastern. It settles who sets the bar, which OD-2026-10-17-022 item 3 left unpicked, for the numbers OD-2026-10-17-027 approved. New; edits no earlier entry.

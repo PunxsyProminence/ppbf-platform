@@ -17,6 +17,7 @@ import {
 } from '@/src/server/pilot/shadowResearch';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { deletedAthleteIdsAmong } from '@/src/server/pilot/deletedAthletes';
+import * as pilotDb from '@/src/server/pilot/db';
 
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
@@ -1337,6 +1338,48 @@ describe('research questions that name no athlete (CL-A3 / CL-C14)', () => {
       );
     },
   );
+
+  // F-137 close-out (REPORTED by lane L52: "a coach can close an asker-filed
+  // question it cannot read"). Not reproduced: an athlete's or parent's own
+  // question is filed with NO subject (shadowResearchFiling.ts), so the read
+  // and the close are the same staff gate (isResearchStaff, CL-A3 "Staff
+  // only"), and the athlete the asker named in metadata.asker_athlete_id is no
+  // reach gate. The coach who closes it is a coach who reads it.
+  test('a coach reads an asker-filed question about an athlete it does not reach, and closes it', async () => {
+    const ASKER_QUESTION = row({
+      research_requirement_id: 34,
+      source_event_name: 'shadow_unanswered_question',
+      source_entity_type: 'shadow_asker_question',
+      source_entity_id: 'asker-question-34',
+      created_by_account_id: 'acct-asker-parent',
+      created_by_role: 'parent',
+      knowledge_gap: 'is it ok to cut weight before a first bout',
+      metadata: { question: 'is it ok to cut weight before a first bout', asker_athlete_id: 'athlete-not-reached' },
+    });
+    // omitDeletedAskerRows reads the filing accounts' deletion marks; nobody
+    // here is deleted.
+    const dbQuery = jest.spyOn(pilotDb, 'query').mockResolvedValue([]);
+    try {
+      mockRequirePrincipal.mockResolvedValue(principal('coach'));
+      mockAccessibleAthleteIds.mockResolvedValue(new Set());
+      mockAssertAthlete.mockRejectedValue(new Error('Forbidden: athlete not reachable'));
+      mockList.mockResolvedValue([ASKER_QUESTION]);
+      const listed = await GET(new NextRequest('http://localhost/api/pilot/shadow/research-requirements'));
+      expect(listed.status).toBe(200);
+      const body = (await listed.json()) as { items: ShadowResearchRequirementRow[] };
+      expect(body.items.map((item) => item.research_requirement_id)).toEqual([34]);
+
+      const response = await resolveAs('coach', ASKER_QUESTION);
+
+      expect(response.status).toBe(200);
+      expect(mockResolve).toHaveBeenCalledWith(expect.objectContaining({ expectedSubjectAthleteId: null }));
+      // Neither path asked the athlete gate: the row is about no athlete.
+      expect(mockAssertAthlete).not.toHaveBeenCalled();
+      expect(mockAccessibleAthleteIds).not.toHaveBeenCalled();
+    } finally {
+      dbQuery.mockRestore();
+    }
+  });
 
   // The coverage check's own markers. `resolution: 'capability_covered'` lets
   // the check reopen a row; `covered_after_resolution_at` says coverage

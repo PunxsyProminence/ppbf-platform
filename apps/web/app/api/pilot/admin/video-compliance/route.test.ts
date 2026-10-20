@@ -5,7 +5,7 @@ import { getAthleteById } from '@/src/server/pilot/entities';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
 import { ConflictError } from '@/src/server/pilot/errors';
-import { assertGuardianMediaConsent, assertNotAdultForNewPublication, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
+import { assertGuardianMediaConsent, assertNewPublicationConsentPath, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   decidePublicationCompliance,
@@ -41,7 +41,7 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
   return {
     ...actual,
     assertGuardianMediaConsent: jest.fn(),
-    assertNotAdultForNewPublication: jest.fn(),
+    assertNewPublicationConsentPath: jest.fn(),
   };
 });
 
@@ -68,6 +68,7 @@ jest.mock('@/src/server/pilot/videoClipTags', () => ({
 jest.mock('@/src/server/pilot/videoPlaybackConsent', () => ({
   mintUnderPlaybackConsent: jest.fn(async (_org: string, _ids: string[], mint: () => unknown) => mint()),
   assertConsentCoversVideo: jest.fn(async () => undefined),
+  coverageRefusalKind: jest.requireActual('@/src/server/pilot/videoPlaybackConsent').coverageRefusalKind,
 }));
 jest.mock('@/src/server/pilot/videoSessions', () => ({
   getVideoSessionById: jest.fn(),
@@ -93,7 +94,7 @@ const mockGetVideoSession = jest.mocked(getVideoSessionById);
 const mockAudit = jest.mocked(writePilotAuditEvent);
 const mockSasUrl = jest.mocked(getPilotVideoSasUrl);
 const mockAssertConsent = jest.mocked(assertGuardianMediaConsent);
-const mockAssertNotAdult = jest.mocked(assertNotAdultForNewPublication);
+const mockConsentPath = jest.mocked(assertNewPublicationConsentPath);
 const mockRetract = jest.mocked(retractPublication);
 const mockMintUnderConsent = jest.mocked(mintUnderPlaybackConsent);
 const mockCoversVideo = jest.mocked(assertConsentCoversVideo);
@@ -143,7 +144,8 @@ function publication(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   // Reset, not clear: a queued once-rejection must not leak between tests.
-  mockAssertNotAdult.mockReset();
+  mockConsentPath.mockReset();
+  mockConsentPath.mockResolvedValue('guardian_consent');
   mockDecide.mockResolvedValue(true);
   mockGetForPublish.mockResolvedValue(publication());
   mockAssertConsent.mockResolvedValue(undefined);
@@ -372,6 +374,25 @@ describe('GET /api/pilot/admin/video-compliance', () => {
 
       expect(item).toMatchObject({ stream_url: null, playback_blocked: 'photo_only' });
       expect(mockSasUrl).not.toHaveBeenCalled();
+    });
+
+    // OD-2026-10-08-015: an adult's own refusal carries its own code and lands
+    // in the same three states, without being logged as a fault.
+    test.each([
+      ['ADULT_OWN_CONSENT_WITHDRAWN', 'consent_withdrawn'],
+      ['ADULT_OWN_CONSENT_EXCLUDES_VIDEO', 'photo_only'],
+      ['ADULT_OWN_CONSENT_UNREADABLE', 'consent_unverified'],
+    ])("an adult's own refusal %s mints no link and says %s", async (code, blocked) => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      queueOneItem();
+      mockMintUnderConsent.mockRejectedValueOnce(new ConflictError('Blocked: 18 or older', code));
+
+      const item = await onlyItem();
+
+      expect(item).toMatchObject({ stream_url: null, playback_blocked: blocked });
+      expect(mockSasUrl).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'video-compliance-playback-mint-failed' }));
+      consoleErrorSpy.mockRestore();
     });
 
     test('an unreadable consent record fails closed: no link, and the queue still loads', async () => {
@@ -734,26 +755,71 @@ describe('POST /api/pilot/admin/video-compliance', () => {
   describe('guardian media consent gate (T-008)', () => {
     test("approve of an adult athlete's footage is refused on a guardian's consent (OD-2026-10-08-015)", async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
-      mockAssertNotAdult.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
+      mockConsentPath.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
 
       const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
 
       expect(response.status).toBe(409);
-      expect(mockAssertNotAdult).toHaveBeenCalledWith('org-a', 'ath-1');
+      expect(mockConsentPath).toHaveBeenCalledWith('org-a', 'ath-1');
       expect(mockDecide).not.toHaveBeenCalled();
     });
 
     test("reopening an adult athlete's retracted publication is refused on a guardian's consent (OD-2026-10-08-015)", async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
-      mockAssertNotAdult.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
+      mockConsentPath.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
 
       const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
 
       expect(response.status).toBe(409);
       await expect(response.json()).resolves.toMatchObject({ error: expect.stringMatching(/18 or older/) });
-      expect(mockAssertNotAdult).toHaveBeenCalledWith('org-a', 'ath-1');
+      expect(mockConsentPath).toHaveBeenCalledWith('org-a', 'ath-1');
       expect(mockReopen).not.toHaveBeenCalled();
+    });
+
+    // An adult's own current video consent is the whole of it: no guardian
+    // check runs, in the pre-check or inside the transaction.
+    test('approve of an adult with their own video consent runs no guardian check, before or inside the transaction', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockConsentPath.mockResolvedValue('adult_own_consent');
+      mockAssertConsent.mockRejectedValue(new GuardianConsentMissingError('ath-1', ['parent-1']));
+      mockCoversVideo.mockClear();
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'approve' }));
+
+      expect(response.status).toBe(200);
+      const verify = mockDecide.mock.calls[0][0].verifyBeforeCommit;
+      const client = { query: jest.fn() } as never;
+      await expect(verify!(client)).resolves.toBeUndefined();
+      expect(mockConsentPath).toHaveBeenCalledWith('org-a', 'ath-1', client);
+      // The real transactional guardian check would have read guardian_links.
+      expect((client as unknown as { query: jest.Mock }).query).not.toHaveBeenCalled();
+      expect(mockAssertConsent).not.toHaveBeenCalled();
+      expect(mockCoversVideo).not.toHaveBeenCalled();
+      mockAssertConsent.mockReset();
+      mockAssertConsent.mockResolvedValue(undefined);
+    });
+
+    test('reopen of an adult with their own video consent runs no guardian check, before or inside the transaction', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+      mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
+      mockConsentPath.mockResolvedValue('adult_own_consent');
+      mockAssertConsent.mockRejectedValue(new GuardianConsentMissingError('ath-1', ['parent-1']));
+      mockCoversVideo.mockClear();
+      mockReopen.mockResolvedValueOnce(true);
+
+      const response = await POST(jsonRequest({ publication_id: 'pub-1', decision: 'reopen_review' }));
+
+      expect(response.status).toBe(200);
+      const verify = mockReopen.mock.calls[0][0].verifyBeforeCommit;
+      const client = { query: jest.fn() } as never;
+      await expect(verify!(client)).resolves.toBeUndefined();
+      expect(mockConsentPath).toHaveBeenCalledWith('org-a', 'ath-1', client);
+      expect((client as unknown as { query: jest.Mock }).query).not.toHaveBeenCalled();
+      expect(mockAssertConsent).not.toHaveBeenCalled();
+      expect(mockCoversVideo).not.toHaveBeenCalled();
+      mockAssertConsent.mockReset();
+      mockAssertConsent.mockResolvedValue(undefined);
     });
 
     test('approve is refused with 409 when guardian consent is missing, and the row is never touched', async () => {
@@ -856,10 +922,10 @@ describe('POST /api/pilot/admin/video-compliance', () => {
 
       // And the adult gate (OD-2026-10-08-015) runs inside the transaction too,
       // on the same client, for this publication's athlete.
-      mockAssertNotAdult.mockClear();
-      mockAssertNotAdult.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
+      mockConsentPath.mockClear();
+      mockConsentPath.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
       await expect(verify!(client)).rejects.toMatchObject({ athleteIsAdult: true });
-      expect(mockAssertNotAdult).toHaveBeenCalledWith('org-a', 'ath-1', client);
+      expect(mockConsentPath).toHaveBeenCalledWith('org-a', 'ath-1', client);
     });
 
     test('reject and request_changes are never gated on consent -- neither publishes anything', async () => {
@@ -959,6 +1025,9 @@ describe('POST /api/pilot/admin/video-compliance', () => {
       ['GUARDIAN_CONSENT_WITHDRAWN', 'Blocked: withdrawn'],
       ['GUARDIAN_CONSENT_EXCLUDES_VIDEO', 'Blocked: photo-only'],
       ['GUARDIAN_CONSENT_UNREADABLE', 'Blocked: unreadable'],
+      ['ADULT_OWN_CONSENT_WITHDRAWN', 'Blocked: 18 or older, withdrawn'],
+      ['ADULT_OWN_CONSENT_EXCLUDES_VIDEO', 'Blocked: 18 or older, photo-only'],
+      ['ADULT_OWN_CONSENT_UNREADABLE', 'Blocked: 18 or older, unreadable'],
     ])('reopen is refused with 409 under %s, audited, and the row is never touched', async (code, message) => {
       mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
       mockGetForPublish.mockResolvedValueOnce(publication({ status: 'retracted' }));
@@ -1059,10 +1128,10 @@ describe('POST /api/pilot/admin/video-compliance', () => {
 
       // And the adult gate (OD-2026-10-08-015) runs inside the transaction too,
       // on the same client, for this publication's athlete.
-      mockAssertNotAdult.mockClear();
-      mockAssertNotAdult.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
+      mockConsentPath.mockClear();
+      mockConsentPath.mockRejectedValueOnce(new GuardianConsentMissingError('ath-1', [], 0, true));
       await expect(verify!(client)).rejects.toMatchObject({ athleteIsAdult: true });
-      expect(mockAssertNotAdult).toHaveBeenCalledWith('org-a', 'ath-1', client);
+      expect(mockConsentPath).toHaveBeenCalledWith('org-a', 'ath-1', client);
     });
 
     test('a withdrawal in the reopen transaction refuses it and is audited', async () => {

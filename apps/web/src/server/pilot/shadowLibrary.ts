@@ -12,6 +12,7 @@ import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } f
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
+import { publicationKey, PUBLICATION_KEY_SQL } from './shadowPublicationKey';
 import { reservedProvenanceKey, reservedProvenanceMessage, type ShadowLibraryRightsStatus } from './shadowLibraryRights';
 import {
   buildCapabilityGapResearchFields,
@@ -48,6 +49,27 @@ export const KEYWORD_HIGH_CONFIDENCE = 0.8;
 // Semantic search reads every candidate in keyset batches of this many rows
 // (CL-C13), so memory holds one batch of vectors at a time, not the Library.
 export const SEMANTIC_CANDIDATE_BATCH_SIZE = 500;
+
+// Semantic results keep at most this many passages from any one source
+// (F-159). One long source used to fill the list: for "what to do right away
+// if I think a boxer has a concussion" a single source held 5 of the top 6 and
+// the CISG 2022 removal-from-play passage ranked 13th, outside the 8 delivered.
+// 1, not 2, from the cached benchmark (GPU-RETRIEVAL-BENCHMARK-2026-10-18,
+// AI-JUDGED key): top-1 and hit@5 tie at 1, 2 and 3, but only 1 brings CISG
+// into the 8 (rank 7; at 2 it is 10th). Best passage first within a source, so
+// the top result never changes.
+export const SEMANTIC_MAX_CHUNKS_PER_SOURCE = 1;
+
+// Keeps the first `cap` passages of each source in an already-sorted list.
+function capPerSource(sorted: ShadowLibrarySearchResult[], cap: number): ShadowLibrarySearchResult[] {
+  const kept = new Map<string, number>();
+  return sorted.filter((item) => {
+    const count = kept.get(item.source_id) ?? 0;
+    if (count >= cap) return false;
+    kept.set(item.source_id, count + 1);
+    return true;
+  });
+}
 
 function isNumericVector(value: unknown): value is number[] {
   return Array.isArray(value) && value.every((element) => typeof element === 'number' && Number.isFinite(element));
@@ -128,6 +150,8 @@ export interface ShadowLibraryDocumentRow {
   document_name: string;
   blob_path: string | null;
   content_sha256: string | null;
+  /** The filed Research Archive original this excerpt was read from (research-archive-originals migration). */
+  archived_original_id?: string | null;
   ingest_state: ShadowLibraryIngestState;
   index_completed_at: string | null;
   approval_state: ShadowLibraryApprovalState;
@@ -233,6 +257,8 @@ export interface ShadowLibraryClaimResult {
   // Passages at or above the bar. `evidence` may also hold below-bar closest
   // passages when confidenceLevel is 'low'; they are not counted here.
   evidenceCount: number;
+  // Distinct publications among the counted passages (DOI, else PMID, else
+  // normalised URL, else source_id; F-136), not distinct source ids.
   distinctSourceCount: number;
   evidence: ShadowLibrarySearchResult[];
   researchRequirementId: number | null;
@@ -308,7 +334,7 @@ interface ShadowCoverageComputationRow {
  */
 const SERVABLE_MATCHED_SOURCES_LATERAL = `
      left join lateral (
-       select count(distinct s.source_id) as matched_sources
+       select count(distinct ${PUBLICATION_KEY_SQL('s')}) as matched_sources
        from pilot.shadow_library_sources s
        where s.organization_id = any($2::text[])
          and ${SERVABLE_LIBRARY_SOURCE_SQL}
@@ -914,9 +940,13 @@ export async function listApprovedGlobalEvidenceForResearchBridge(input: {
       and s.organization_id = c.organization_id
      -- The source whose document the text was cut from. A chunk may cite a
      -- different source; the text's rights are its document's, which is what
-     -- the database's own full-text guard reads too.
+     -- the database's own full-text guard reads too (by source_id alone).
+     -- Matched on the document's gym as well: documents.source_id has only a
+     -- global foreign key, and another gym's source must never decide this
+     -- gym's export (F-095).
      join pilot.shadow_library_sources ds
        on ds.source_id = d.source_id
+      and ds.organization_id = d.organization_id
      where c.organization_id = $1
        and c.subject_id is null
        and d.subject_id is null
@@ -1064,6 +1094,8 @@ export async function createShadowLibraryDocument(input: {
   metadata?: Record<string, unknown>;
   /** The client's id for this entry; a retry with the same id gets the document it already made. */
   requestId?: string | null;
+  /** Set only for an excerpt read from a PDF filed in the Research Archive; the database holds it to the same source and shelf. */
+  archivedOriginalId?: string | null;
 }): Promise<ShadowLibraryDocumentRow & { recovered?: true }> {
   assertNoReservedProvenance(input.metadata);
   assertNoRequestKey(input.metadata, DOCUMENT_INTAKE_REQUEST_KEY);
@@ -1116,10 +1148,13 @@ export async function createShadowLibraryDocument(input: {
     }
 
     const documentId = `doc_${randomUUID()}`;
+    // The link column is named only when there is a link, so every other write
+    // is the statement it always was (and does not depend on that migration).
+    const archivedOriginalId = input.archivedOriginalId?.trim() || null;
     const inserted = await client.query<ShadowLibraryDocumentRow>(
       `insert into pilot.shadow_library_documents
-        (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
+        (document_id, source_id, organization_id, subject_id, document_name, blob_path, content_sha256, ingest_state, metadata, created_by_account_id, created_by_role${archivedOriginalId ? ', archived_original_id' : ''})
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11${archivedOriginalId ? ',$12' : ''})
        returning *`,
       [
         documentId,
@@ -1133,6 +1168,7 @@ export async function createShadowLibraryDocument(input: {
         JSON.stringify(metadata),
         input.actorAccountId,
         input.actorRole,
+        ...(archivedOriginalId ? [archivedOriginalId] : []),
       ],
     );
     const row = inserted.rows[0];
@@ -1597,6 +1633,25 @@ function mergeRankedPaths(
 // keeps one body (and so one retrieval-organization predicate) on purpose:
 // platformLibraryWriteScope.convention.test.ts reads this function to prove it
 // still admits the platform baseline.
+// Score gap (research GPU-RETRIEVAL-BENCHMARK-2026-10-18, SEPARATOR-RESULT):
+// the top-1 cosine minus the mean of the top-10 cosines. A real answer tends
+// to stand out from the rest; on a question the Library cannot answer the top
+// ten look equally weak. Logged only, to calibrate a later gate; with fewer
+// than ten candidates the mean is over those there are, and the candidate
+// count is logged so a re-fit can tell them apart.
+const SCORE_GAP_TOP_K = 10;
+
+interface ShadowLibraryScoreGap {
+  gap: number;
+  top1: number;
+  candidateCount: number;
+}
+
+function scoreGapOf(topScores: number[], candidateCount: number): ShadowLibraryScoreGap {
+  const mean = topScores.reduce((sum, score) => sum + score, 0) / topScores.length;
+  return { gap: topScores[0] - mean, top1: topScores[0], candidateCount };
+}
+
 export async function searchShadowLibrary(
   input: ShadowLibrarySearchInput,
   detail?: ShadowLibrarySearchDetail,
@@ -1648,6 +1703,7 @@ export async function searchShadowLibrary(
     relevant: ShadowLibrarySearchResult[];
     nearest: ShadowLibrarySearchResult[];
     embeddingModel: string;
+    scoreGap: ShadowLibraryScoreGap;
   } | null = null;
   if (isSemanticLibrarySearchEnabled()) {
     const queryEmbedding = await embedText(normalizedQuery);
@@ -1664,6 +1720,9 @@ export async function searchShadowLibrary(
       let candidateCount = 0;
       let afterChunkId = '';
       let ranked: ShadowLibrarySearchResult[] = [];
+      // The raw top cosines of every candidate, below the floor too, for the
+      // score-gap telemetry only. Nothing here changes what is returned.
+      let gapScores: number[] = [];
       for (;;) {
         const batch = await query<ShadowLibrarySearchResult & { embedding: unknown }>(
           `select
@@ -1715,7 +1774,7 @@ export async function searchShadowLibrary(
           ],
         );
         candidateCount += batch.length;
-        const scored = batch
+        const allScored = batch
           .map(({ embedding, ...candidate }) => ({
             ...candidate,
             // An embedding that is not an array of finite numbers scores 0
@@ -1723,15 +1782,25 @@ export async function searchShadowLibrary(
             // a string "1" is not read as the number 1.
             score: isNumericVector(embedding) ? cosineSimilarity(queryEmbedding, embedding) : 0,
             match_mode: 'semantic' as const,
-          }))
-          // Below the floor, "closest" is noise, not relevance. It is dropped,
-          // and it does NOT fall back to loose keywords: that fallback is how a
-          // nonsense question used to get an unrelated passage.
-          .filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR);
-        ranked = [...ranked, ...scored]
+          }));
+        // A non-finite cosine (overflowing components) counts as 0, as a bad
+        // vector does, so one row cannot turn the logged gap into NaN.
+        gapScores = [...gapScores, ...allScored.map((candidate) => (Number.isFinite(candidate.score) ? candidate.score : 0))]
+          .sort((a, b) => b - a)
+          .slice(0, SCORE_GAP_TOP_K);
+        // Below the floor, "closest" is noise, not relevance. It is dropped,
+        // and it does NOT fall back to loose keywords: that fallback is how a
+        // nonsense question used to get an unrelated passage.
+        const scored = allScored.filter((candidate) => candidate.score >= SEMANTIC_SCORE_FLOOR);
+        // Capped per source before the limit, so a source's extra passages give
+        // way to other sources instead of filling the list. Only rows already
+        // here are dropped: it never brings in a row the query or the floor
+        // did not admit. Exact across batches, since a passage dropped by the
+        // cap or the limit cannot climb back.
+        ranked = capPerSource([...ranked, ...scored]
           // chunk_id last, so the order does not depend on which batch a tie arrived in.
           .sort((a, b) => b.score - a.score || a.authority_tier - b.authority_tier || a.ordinal - b.ordinal
-            || (a.chunk_id < b.chunk_id ? -1 : a.chunk_id > b.chunk_id ? 1 : 0))
+            || (a.chunk_id < b.chunk_id ? -1 : a.chunk_id > b.chunk_id ? 1 : 0)), SEMANTIC_MAX_CHUNKS_PER_SOURCE)
           .slice(0, limit);
         if (batch.length < SEMANTIC_CANDIDATE_BATCH_SIZE) break;
         afterChunkId = batch[batch.length - 1].chunk_id;
@@ -1746,6 +1815,7 @@ export async function searchShadowLibrary(
           relevant: ranked.filter((item) => item.score >= SEMANTIC_RELEVANCE_BAR),
           nearest: ranked.filter((item) => item.score < SEMANTIC_RELEVANCE_BAR),
           embeddingModel: currentEmbeddingModel,
+          scoreGap: scoreGapOf(gapScores, candidateCount),
         };
       }
     }
@@ -1847,6 +1917,11 @@ export async function searchShadowLibrary(
         unindexed_count: relevant.filter((item) => item.match_mode === 'keyword').length,
         term_count: terms.length,
         search_mode: 'semantic',
+        score_gap: semantic.scoreGap.gap,
+        top1_score: semantic.scoreGap.top1,
+        gap_candidate_count: semantic.scoreGap.candidateCount,
+        // Whether the current cosine bar alone delivered evidence.
+        bar_delivered: semantic.relevant.length > 0,
       },
     });
     if (detail) {
@@ -1916,7 +1991,21 @@ export async function createShadowLibraryClaim(input: {
   const evidence = belowBarOnly ? ranked.nearest : ranked.relevant;
   const counted = ranked.relevant;
 
-  const distinctSourceCount = new Set(counted.map((item) => item.source_id)).size;
+  // Distinct PUBLICATIONS, not source ids (F-136, Jason 2026-10-18, "A:
+  // DOI/PMID/URL key (Rec.)"): one paper filed twice must not read as two
+  // independent sources. The field keeps its name; it now counts papers.
+  const countedIds = [...new Set(counted.map((item) => item.source_id))];
+  const keySources =
+    countedIds.length === 0
+      ? []
+      : ((await query<{ source_id: string; url: string | null; metadata: Record<string, unknown> | null }>(
+          `select source_id, url, metadata from pilot.shadow_library_sources where source_id = any($1::text[])`,
+          [countedIds],
+        )) ?? []);
+  const keySourceById = new Map(keySources.map((row) => [row.source_id, row]));
+  const distinctSourceCount = new Set(
+    countedIds.map((id) => publicationKey(keySourceById.get(id) ?? { source_id: id, url: null, metadata: null })),
+  ).size;
   let status: ShadowLibraryClaimStatus;
   let confidence: number;
   let confidenceLevel: ShadowLibraryConfidenceLevel;

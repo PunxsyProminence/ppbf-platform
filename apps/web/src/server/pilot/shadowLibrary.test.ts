@@ -30,6 +30,7 @@ import { assertActorCanAccessAthlete } from './access';
 import { query, queryOne, withTransaction } from './db';
 import { embedText, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
+import { writeShadowTelemetryEvent } from './shadowTelemetry';
 import {
   createShadowResearchRequirement,
   listShadowResearchRequirements,
@@ -51,6 +52,7 @@ import {
   recomputeShadowCapabilityCoverage,
   confidenceLevelForScore,
   SEMANTIC_CANDIDATE_BATCH_SIZE,
+  SEMANTIC_MAX_CHUNKS_PER_SOURCE,
   searchShadowLibrary,
   type ShadowLibrarySearchDetail,
 } from './shadowLibrary';
@@ -355,13 +357,15 @@ describe('SHADOW library semantic search', () => {
     limit: 2,
   };
 
-  function candidate(chunkId: string, embedding: number[], authorityTier = 3) {
+  // Each chunk is its own source unless a test says otherwise, so the
+  // per-source cap (F-159) only acts where a test sets it up.
+  function candidate(chunkId: string, embedding: number[], authorityTier = 3, sourceId = `src-${chunkId}`, ordinal = 0) {
     return {
       chunk_id: chunkId,
       document_id: 'doc-1',
-      source_id: 'src-1',
+      source_id: sourceId,
       subject_id: null,
-      ordinal: 0,
+      ordinal,
       document_name: 'Coaching Manual',
       source_title: 'Manual',
       source_publisher: null,
@@ -570,6 +574,207 @@ describe('SHADOW library semantic search', () => {
     expect(String(mockQuery.mock.calls[0][0])).not.toContain('c.embedding');
     expect(mockQuery.mock.calls[0][1]).toHaveLength(5);
   });
+
+  // F-159: one long source held 5 of the top 6 for a concussion question and
+  // pushed the CISG removal-from-play passage out of the delivered 8.
+  describe('per-source cap', () => {
+    const unit = (cosine: number) => [cosine, Math.sqrt(1 - cosine * cosine)];
+
+    it('keeps one passage per source, so a lower-scoring other source is delivered', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      mockQuery.mockResolvedValueOnce([
+        candidate('chunk_long_1', unit(0.9), 3, 'src-long', 1),
+        candidate('chunk_long_2', unit(0.88), 3, 'src-long', 2),
+        candidate('chunk_long_3', unit(0.86), 3, 'src-long', 3),
+        candidate('chunk_long_4', unit(0.84), 3, 'src-long', 4),
+        candidate('chunk_long_5', unit(0.82), 3, 'src-long', 5),
+        candidate('chunk_cisg', unit(0.5), 1, 'src-cisg'),
+      ] as never);
+
+      const results = await searchShadowLibrary({ ...searchInput, limit: 4 });
+
+      expect(SEMANTIC_MAX_CHUNKS_PER_SOURCE).toBe(1);
+      // The source's best passage stays first: the top result does not change.
+      expect(results.map((r) => r.chunk_id)).toEqual(['chunk_long_1', 'chunk_cisg']);
+    });
+
+    it('applies the cap to nearest as well as evidence', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      mockQuery.mockResolvedValueOnce([
+        candidate('chunk_a_1', unit(0.25), 3, 'src-a', 1),
+        candidate('chunk_a_2', unit(0.24), 3, 'src-a', 2),
+        candidate('chunk_b', unit(0.2), 3, 'src-b'),
+      ] as never);
+
+      const ranked = await searchShadowLibraryRanked({ ...searchInput, limit: 3 });
+
+      expect(ranked.relevant).toEqual([]);
+      expect(ranked.nearest.map((r) => r.chunk_id)).toEqual(['chunk_a_1', 'chunk_b']);
+    });
+
+    it('never fills a dropped slot with a passage below the floor', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      mockQuery.mockResolvedValueOnce([
+        candidate('chunk_a_1', unit(0.9), 3, 'src-a', 1),
+        candidate('chunk_a_2', unit(0.8), 3, 'src-a', 2),
+        candidate('chunk_noise', unit(0.1), 3, 'src-noise'),
+      ] as never);
+
+      const ranked = await searchShadowLibraryRanked({ ...searchInput, limit: 3 });
+
+      expect(ranked.relevant.map((r) => r.chunk_id)).toEqual(['chunk_a_1']);
+      expect(ranked.nearest).toEqual([]);
+    });
+
+    it('keeps the cap exact across keyset batches', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      const firstBatch = Array.from({ length: SEMANTIC_CANDIDATE_BATCH_SIZE }, (_, index) =>
+        candidate(`chunk_a${String(index).padStart(4, '0')}`, unit(index === 0 ? 0.6 : 0.1), 3, 'src-a', index));
+      firstBatch[1] = candidate('chunk_a0001', unit(0.5), 3, 'src-b', 1);
+      mockQuery
+        .mockResolvedValueOnce(firstBatch as never)
+        // A better passage of src-a in the second batch replaces the first one.
+        .mockResolvedValueOnce([candidate('chunk_b_best', unit(0.9), 3, 'src-a', 900)] as never);
+
+      const results = await searchShadowLibrary({ ...searchInput, limit: 3 });
+
+      expect(results.map((r) => r.chunk_id)).toEqual(['chunk_b_best', 'chunk_a0001']);
+    });
+
+    it('breaks a tie within a source the same way whatever order the rows arrive in', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      const rows = [
+        candidate('chunk_t_b', unit(0.7), 2, 'src-t', 4),
+        candidate('chunk_t_a', unit(0.7), 2, 'src-t', 4),
+        candidate('chunk_t_ord', unit(0.7), 2, 'src-t', 3),
+        candidate('chunk_t_tier', unit(0.7), 1, 'src-t', 9),
+      ];
+      mockQuery.mockResolvedValueOnce(rows as never);
+      const first = await searchShadowLibrary(searchInput);
+      mockQuery.mockResolvedValueOnce([...rows].reverse() as never);
+      const second = await searchShadowLibrary(searchInput);
+
+      // Authority tier, then ordinal, then chunk_id: the tier-1 passage wins.
+      expect(first.map((r) => r.chunk_id)).toEqual(['chunk_t_tier']);
+      expect(second.map((r) => r.chunk_id)).toEqual(['chunk_t_tier']);
+
+      mockQuery.mockResolvedValueOnce([rows[0], rows[1]] as never);
+      expect((await searchShadowLibrary(searchInput)).map((r) => r.chunk_id)).toEqual(['chunk_t_a']);
+    });
+
+    it('computes the score gap over every candidate, the capped-out ones included', async () => {
+      const mockTelemetry = jest.mocked(writeShadowTelemetryEvent);
+      mockEmbedText.mockResolvedValue([1, 0]);
+      const cosines = [0.9, 0.5, 0.4, 0.3, 0.2, 0.1, 0.1, 0.05, 0.05, 0, -0.1, -0.2];
+      mockQuery.mockResolvedValueOnce(cosines.map((cosine, index) =>
+        candidate(`chunk_${index}`, unit(cosine), 3, 'src-one', index)) as never);
+
+      const results = await searchShadowLibrary(searchInput);
+
+      expect(results.map((r) => r.chunk_id)).toEqual(['chunk_0']);
+      const searchCalls = mockTelemetry.mock.calls.filter(([event]) => event.metricName === 'shadow.library.search');
+      expect(searchCalls).toHaveLength(1);
+      const dimensions = searchCalls[0][0].dimensions as Record<string, unknown>;
+      // Same numbers as the uncapped case: top-10 mean 0.26, gap 0.64, 12 candidates.
+      expect(dimensions.score_gap as number).toBeCloseTo(0.64, 10);
+      expect(dimensions.gap_candidate_count).toBe(12);
+      expect(dimensions.result_count).toBe(1);
+    });
+  });
+
+  // Score-gap telemetry (step 1 of 3, observe only): the gap is the top-1
+  // cosine minus the mean of the top-10 cosines over EVERY eligible candidate,
+  // below-floor ones included, recorded on the existing search event. What
+  // search returns does not change.
+  describe('score-gap telemetry', () => {
+    const mockTelemetry = jest.mocked(writeShadowTelemetryEvent);
+    const unit = (cosine: number) => [cosine, Math.sqrt(1 - cosine * cosine)];
+    const searchDimensions = () => {
+      const searchCalls = mockTelemetry.mock.calls.filter(([event]) => event.metricName === 'shadow.library.search');
+      expect(searchCalls).toHaveLength(1);
+      return searchCalls[0][0].dimensions as Record<string, unknown>;
+    };
+
+    it('records the gap over the raw top-10 cosines without changing the results', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      const cosines = [0.9, 0.5, 0.4, 0.3, 0.2, 0.1, 0.1, 0.05, 0.05, 0, -0.1, -0.2];
+      mockQuery.mockResolvedValueOnce(cosines.map((cosine, index) => candidate(`chunk_${index}`, unit(cosine))) as never);
+
+      const results = await searchShadowLibrary(searchInput);
+
+      expect(results.map((r) => r.chunk_id)).toEqual(['chunk_0', 'chunk_1']);
+      expect(results[0].score).toBeCloseTo(0.9, 10);
+      expect(results[1].score).toBeCloseTo(0.5, 10);
+      const dimensions = searchDimensions();
+      // No query text and no athlete identifier: the dimension keys are exactly these.
+      expect(Object.keys(dimensions).sort()).toEqual([
+        'bar_delivered', 'gap_candidate_count', 'nearest_count', 'result_count', 'scope',
+        'score_gap', 'search_mode', 'term_count', 'top1_score', 'unindexed_count',
+      ]);
+      // top-10 mean = 2.6 / 10 = 0.26; gap = 0.9 - 0.26.
+      expect(dimensions.score_gap as number).toBeCloseTo(0.64, 10);
+      expect(dimensions.top1_score as number).toBeCloseTo(0.9, 10);
+      expect(dimensions.gap_candidate_count).toBe(12);
+      expect(dimensions.bar_delivered).toBe(true);
+      expect(JSON.stringify(dimensions)).not.toContain('jab');
+    });
+
+    it('records bar_delivered false when no candidate clears the semantic bar', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      mockQuery.mockResolvedValueOnce([candidate('chunk_a', unit(0.25)), candidate('chunk_b', unit(0.05))] as never);
+
+      const results = await searchShadowLibrary(searchInput);
+
+      expect(results).toEqual([]);
+      const dimensions = searchDimensions();
+      // Fewer than ten candidates: the mean is over the candidates there are.
+      expect(dimensions.score_gap as number).toBeCloseTo(0.25 - 0.15, 10);
+      expect(dimensions.top1_score as number).toBeCloseTo(0.25, 10);
+      expect(dimensions.gap_candidate_count).toBe(2);
+      expect(dimensions.bar_delivered).toBe(false);
+    });
+
+    it('takes the top ten across keyset batches', async () => {
+      mockEmbedText.mockResolvedValue([1, 0]);
+      const firstBatch = Array.from({ length: SEMANTIC_CANDIDATE_BATCH_SIZE }, (_, index) =>
+        candidate(`chunk_a${String(index).padStart(4, '0')}`, unit(0.1)));
+      mockQuery
+        .mockResolvedValueOnce(firstBatch as never)
+        .mockResolvedValueOnce([candidate('chunk_b_best', unit(0.8))] as never);
+
+      await searchShadowLibrary(searchInput);
+
+      const dimensions = searchDimensions();
+      // top-10 = 0.8 and nine 0.1s: mean 0.17, gap 0.63.
+      expect(dimensions.score_gap as number).toBeCloseTo(0.63, 10);
+      expect(dimensions.gap_candidate_count).toBe(SEMANTIC_CANDIDATE_BATCH_SIZE + 1);
+    });
+
+    it('counts a non-finite cosine as 0 so the gap stays a number', async () => {
+      // The dot product and the candidate's norm both overflow to Infinity,
+      // so its cosine is Infinity / Infinity = NaN.
+      mockEmbedText.mockResolvedValue([1e10, 0]);
+      mockQuery.mockResolvedValueOnce([candidate('chunk_overflow', [1e300, 0]), candidate('chunk_ok', [1, 0])] as never);
+
+      await searchShadowLibrary(searchInput);
+
+      const dimensions = searchDimensions();
+      expect(dimensions.top1_score).toBe(1);
+      expect(dimensions.score_gap as number).toBeCloseTo(0.5, 10);
+    });
+
+    it('adds no gap fields on the keyword path', async () => {
+      mockIsSemanticEnabled.mockReturnValue(false);
+
+      await searchShadowLibrary(searchInput);
+
+      const dimensions = searchDimensions();
+      expect(dimensions).not.toHaveProperty('score_gap');
+      expect(dimensions).not.toHaveProperty('top1_score');
+      expect(dimensions).not.toHaveProperty('gap_candidate_count');
+      expect(dimensions).not.toHaveProperty('bar_delivered');
+    });
+  });
 });
 
 describe('SHADOW library keyword relevance', () => {
@@ -704,6 +909,47 @@ describe('SHADOW library claim honesty', () => {
     expect(result.confidence).toBe(0.78);    expect(result.confidenceLevel).toBe('high');
     // Which path found a passage stays internal: the claim's rows are as before.
     expect(result.evidence.some((row) => 'match_mode' in row)).toBe(false);
+  });
+
+  // F-136 (Jason 2026-10-18, "A: DOI/PMID/URL key (Rec.)"): one paper filed under
+  // two source ids is one source, so it cannot make a claim 'supported'.
+  it('counts one paper filed under two source ids once, so the claim stays weak', async () => {
+    mockQuery
+      .mockResolvedValueOnce([evidenceRow('src-a'), evidenceRow('src-b')] as never)
+      .mockResolvedValueOnce([
+        { source_id: 'src-a', url: null, metadata: { doi: '10.1000/ABC.1' } },
+        { source_id: 'src-b', url: 'https://doi.org/10.1000/abc.1', metadata: {} },
+      ] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'What does the evidence say about jab timing drills?',
+    });
+
+    expect(result.evidenceCount).toBe(2);
+    expect(result.distinctSourceCount).toBe(1);
+    expect(result.status).toBe('weak');
+  });
+
+  it('counts two different papers as two sources', async () => {
+    mockQuery
+      .mockResolvedValueOnce([evidenceRow('src-a'), evidenceRow('src-b')] as never)
+      .mockResolvedValueOnce([
+        { source_id: 'src-a', url: 'https://example.com/a', metadata: {} },
+        { source_id: 'src-b', url: 'https://example.com/b', metadata: {} },
+      ] as never);
+
+    const result = await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole: 'organization_admin',
+      question: 'What does the evidence say about jab timing drills?',
+    });
+
+    expect(result.distinctSourceCount).toBe(2);
+    expect(result.status).toBe('supported');
   });
 
   // JASON'S RULING 2026-10-03: below the relevance bar the closest passages are

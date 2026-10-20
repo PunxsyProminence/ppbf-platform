@@ -268,9 +268,10 @@ describe('family goals for staff (PH-06b)', () => {
       await access.assertActorCanAccessAthlete(reader, ATHLETE);
       const listed = await goals.listFamilyGoalsForStaff(reader.organizationId, ATHLETE);
       // Newest first; the retired goal is not listed.
+      // office@ is a role login, not a name: the admin reads by role (parent walk 2026-10-19 item 6).
       expect(listed.map(({ title, set_by, mine_to_change, state, target_date }) => ({ title, set_by, mine_to_change, state, target_date }))).toEqual([
         { title: 'Shadowbox at home', set_by: 'Coach Pat Smith', mine_to_change: true, state: 'active', target_date: '2026-12-01' },
-        { title: 'Bring the signed waiver', set_by: 'Admin Office', mine_to_change: true, state: 'active', target_date: '2026-12-01' },
+        { title: 'Bring the signed waiver', set_by: 'An administrator', mine_to_change: true, state: 'active', target_date: '2026-12-01' },
         { title: 'Pack a water bottle', set_by: 'A guardian', mine_to_change: false, state: 'active', target_date: '2026-11-30' },
         { title: 'Get to the gym twice a week', set_by: 'A guardian', mine_to_change: false, state: 'completed', target_date: '2026-11-30' },
       ]);

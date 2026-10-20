@@ -16,6 +16,7 @@ import {
   STORED_CALCULATION_TRIGGER_ROLES,
 } from './autoCalculation';
 import { FORMULA_INPUT_REQUIREMENTS } from './runner';
+import { SESSION_TOTAL_DIMENSIONS } from './types';
 import type {
   FormulaUnit,
   MvpFormulaId,
@@ -125,18 +126,114 @@ function sparringContext(contextId = 'sparring_1'): NumericObservation[] {
   ];
 }
 
+/** The sparring page's "Whole session" boxes as it sends them: always all
+ *  three, tagged with their fieldKey; `blank` ones carry null. */
+function wholeSession(contextId = 'sparring_1', blank: readonly string[] = []): NumericObservation[] {
+  const box = (fieldKey: string) => ({ ...SESSION_TOTAL_DIMENSIONS, fieldKey });
+  const value = (fieldKey: string, filled: number) => (blank.includes(fieldKey) ? null : filled);
+  return [
+    observation({ id: `${contextId}-all-thrown`, kind: 'punch_count', unit: 'count', value: value('all_thrown', 90), contextId, dimensions: box('all_thrown') }),
+    ...(blank.includes('all_thrown')
+      ? []
+      : [observation({ id: `${contextId}-rounds`, kind: 'round_count', unit: 'count', value: 6, contextId, dimensions: { ...SESSION_TOTAL_DIMENSIONS } })]),
+    observation({ id: `${contextId}-all-landed`, kind: 'punch_landed', unit: 'count', value: value('all_landed', 30), contextId, dimensions: box('all_landed') }),
+    observation({ id: `${contextId}-minutes`, kind: 'active_time', unit: 'minutes', value: value('minutes_worked', 12), contextId, dimensions: box('minutes_worked') }),
+  ];
+}
+
 describe('satisfied formula input detection', () => {
-  test('a complete sparring context yields exactly MVP-03 and MVP-04', () => {
+  test('a sparring context without the whole-session boxes yields MVP-03 only', () => {
+    // MVP-04 reads the whole-session landed total and runs only when it is
+    // filled in (Overwatch 2026-10-17, "A, all punches landed only").
     expect(detectSatisfiedFormulaInputs(sparringContext())).toEqual([
       {
         formulaId: 'MVP-03',
         observationIds: ['sparring_1-attempted', 'sparring_1-landed'],
       },
+    ]);
+  });
+
+  test('with the whole-session boxes filled it yields MVP-02, MVP-03, MVP-04, MVP-05 and MVP-10', () => {
+    expect(detectSatisfiedFormulaInputs([...sparringContext(), ...wholeSession()])).toEqual([
+      { formulaId: 'MVP-02', observationIds: ['sparring_1-all-thrown', 'sparring_1-minutes', 'sparring_1-rounds'] },
+      // The per-type pair, never the whole-session landed count.
+      { formulaId: 'MVP-03', observationIds: ['sparring_1-attempted', 'sparring_1-landed'] },
+      { formulaId: 'MVP-04', observationIds: ['sparring_1-absorbed', 'sparring_1-all-landed'] },
+      { formulaId: 'MVP-05', observationIds: ['sparring_1-all-landed', 'sparring_1-minutes'] },
       {
-        formulaId: 'MVP-04',
-        observationIds: ['sparring_1-absorbed', 'sparring_1-landed'],
+        formulaId: 'MVP-10',
+        observationIds: ['sparring_1-all-landed', 'sparring_1-all-thrown', 'sparring_1-minutes'],
+        policy: {
+          parameters: {
+            expectedFieldKeys: ['all_thrown', 'all_landed', 'minutes_worked'],
+            highAt: 0.8,
+            moderateAt: 0.5,
+            lowAt: 0,
+          },
+          policyVersion: 'sparring-log-completeness-2026-10-17',
+        },
       },
     ]);
+  });
+
+  test('blank boxes (null) still complete MVP-10, and never run MVP-02/04/05', () => {
+    const detected = detectSatisfiedFormulaInputs([
+      ...sparringContext(),
+      ...wholeSession('sparring_1', ['all_thrown', 'all_landed', 'minutes_worked']),
+    ]);
+    expect(detected.map((item) => item.formulaId)).toEqual(['MVP-03', 'MVP-10']);
+  });
+
+  test('one blank box: MVP-10 runs, and only the formulas whose boxes were filled', () => {
+    const detected = detectSatisfiedFormulaInputs([...sparringContext(), ...wholeSession('sparring_1', ['minutes_worked'])]);
+    // MVP-02 and MVP-05 need minutes; MVP-04 needs only all landed.
+    expect(detected.map((item) => item.formulaId)).toEqual(['MVP-03', 'MVP-04', 'MVP-10']);
+  });
+
+  test('MVP-10 waits for all three boxes: a submission still arriving computes nothing early', () => {
+    const partial = wholeSession().filter((item) => item.kind !== 'active_time');
+    expect(detectSatisfiedFormulaInputs(partial).map((item) => item.formulaId)).not.toContain('MVP-10');
+  });
+
+  test('two whole-session landed counts in one context run neither MVP-04 nor MVP-05', () => {
+    const detected = detectSatisfiedFormulaInputs([
+      ...sparringContext(),
+      ...wholeSession(),
+      observation({
+        id: 'sparring_1-all-landed-again',
+        kind: 'punch_landed',
+        unit: 'count',
+        value: 31,
+        dimensions: { ...SESSION_TOTAL_DIMENSIONS },
+      }),
+    ]);
+    // MVP-10 still runs: it reads the boxes by fieldKey, and the extra count
+    // carries none.
+    expect(detected.map((item) => item.formulaId)).toEqual(['MVP-02', 'MVP-03', 'MVP-10']);
+  });
+
+  test('MVP-10 runs with its policy; the executor passes it through', async () => {
+    const repository = await import('./repository');
+    const runner = await import('./runner');
+    jest.spyOn(repository, 'getActiveObservationsForContext').mockResolvedValue(wholeSession('sparring_1', ['all_thrown', 'all_landed', 'minutes_worked']));
+    const run = jest.spyOn(runner, 'runStoredMvpFormula').mockResolvedValue({ results: [] });
+
+    await autoCalculateForObservationContext({ organizationId: 'org-1', athleteId: 'athlete-1', contextId: 'sparring_1' });
+
+    expect(run.mock.calls.map(([input]) => input)).toEqual([{
+      organizationId: 'org-1',
+      athleteId: 'athlete-1',
+      formulaId: 'MVP-10',
+      observationIds: ['sparring_1-all-landed', 'sparring_1-all-thrown', 'sparring_1-minutes'],
+      parameters: {
+        expectedFieldKeys: ['all_thrown', 'all_landed', 'minutes_worked'],
+        highAt: 0.8,
+        moderateAt: 0.5,
+        lowAt: 0,
+      },
+      policyVersion: 'sparring-log-completeness-2026-10-17',
+    }]);
+    jest.restoreAllMocks();
   });
 
   test('returns nothing until the last observation of the set has landed', () => {
@@ -153,7 +250,7 @@ describe('satisfied formula input detection', () => {
       ));
       expect(detectSatisfiedFormulaInputs(partial)).toEqual([]);
     }
-    expect(detectSatisfiedFormulaInputs(full)).toHaveLength(2);
+    expect(detectSatisfiedFormulaInputs(full)).toHaveLength(1);
   });
 
   test('an extra observation of a required kind means NOT satisfied, never "pick one"', () => {
@@ -194,14 +291,16 @@ describe('satisfied formula input detection', () => {
   test('separates contexts and never pairs across them', () => {
     const detected = detectSatisfiedFormulaInputs([
       ...sparringContext('sparring_1'),
+      ...wholeSession('sparring_1'),
       ...sparringContext('sparring_2'),
+      ...wholeSession('sparring_2'),
     ]);
 
-    expect(detected).toEqual([
+    expect(detected.filter((item) => item.formulaId === 'MVP-03' || item.formulaId === 'MVP-04')).toEqual([
       { formulaId: 'MVP-03', observationIds: ['sparring_1-attempted', 'sparring_1-landed'] },
       { formulaId: 'MVP-03', observationIds: ['sparring_2-attempted', 'sparring_2-landed'] },
-      { formulaId: 'MVP-04', observationIds: ['sparring_1-absorbed', 'sparring_1-landed'] },
-      { formulaId: 'MVP-04', observationIds: ['sparring_2-absorbed', 'sparring_2-landed'] },
+      { formulaId: 'MVP-04', observationIds: ['sparring_1-absorbed', 'sparring_1-all-landed'] },
+      { formulaId: 'MVP-04', observationIds: ['sparring_2-absorbed', 'sparring_2-all-landed'] },
     ]);
   });
 
@@ -212,12 +311,9 @@ describe('satisfied formula input detection', () => {
 
     // MVP-03 requires punchType on both halves -- it is the grouping key, and
     // without it calculateAccuracyByPunchType cannot even name its output
-    // (`accuracy_unknown`). MVP-04 has no punch-type requirement at all, so it
-    // is unaffected: the pair it needs is still exactly one landed and one
-    // absorbed in this context.
-    expect(detected).toEqual([
-      { formulaId: 'MVP-04', observationIds: ['sparring_1-absorbed', 'sparring_1-landed'] },
-    ]);
+    // (`accuracy_unknown`). An unlabelled landed count is not the
+    // whole-session total either, so MVP-04 does not take it.
+    expect(detected).toEqual([]);
   });
 
   test('a pair carrying no punch type at all is not an MVP-03 input set', () => {
@@ -234,7 +330,7 @@ describe('satisfied formula input detection', () => {
         : item
     )));
 
-    expect(detected.map((item) => item.formulaId)).toEqual(['MVP-04']);
+    expect(detected.map((item) => item.formulaId)).toEqual([]);
   });
 
   test('a mismatched punch type across the pair is not a pair', () => {
@@ -260,13 +356,13 @@ describe('satisfied formula input detection', () => {
     // `insufficient` result. The manual /results path persists that result, so
     // this path must produce it too. Filtering null values here would make the
     // two paths disagree about the same observations.
-    const detected = detectSatisfiedFormulaInputs(sparringContext().map((item) => (
+    const detected = detectSatisfiedFormulaInputs([...sparringContext(), ...wholeSession()].map((item) => (
       item.kind === 'punch_absorbed' ? { ...item, value: null } : item
     )));
 
     expect(detected).toContainEqual({
       formulaId: 'MVP-04',
-      observationIds: ['sparring_1-absorbed', 'sparring_1-landed'],
+      observationIds: ['sparring_1-absorbed', 'sparring_1-all-landed'],
     });
   });
 
@@ -295,10 +391,13 @@ describe('satisfied formula input detection', () => {
 });
 
 describe('declared input requirements match the executable contract', () => {
-  test('covers MVP-03 and MVP-04 and nothing else', () => {
+  test('covers MVP-02, MVP-03, MVP-04, MVP-05 and MVP-10 and nothing else', () => {
     expect(FORMULA_INPUT_REQUIREMENTS.map((item) => item.formulaId)).toEqual([
+      'MVP-02',
       'MVP-03',
       'MVP-04',
+      'MVP-05',
+      'MVP-10',
     ]);
   });
 
@@ -319,9 +418,10 @@ describe('declared input requirements match the executable contract', () => {
             kind: kind as ObservationKind,
             unit: requirement.units[kind as ObservationKind] as FormulaUnit,
             value: 1,
-            dimensions: Object.fromEntries(
-              requirement.requiredDimensionKeys.map((key) => [key, 'Jab']),
-            ),
+            dimensions: {
+              ...Object.fromEntries(requirement.requiredDimensionKeys.map((key) => [key, 'Jab'])),
+              ...requirement.dimensionValues[kind as ObservationKind],
+            },
           }));
         }
       }
@@ -345,6 +445,9 @@ describe('declared input requirements match the executable contract', () => {
         athleteId: 'athlete-1',
         formulaId: formulaId as MvpFormulaId,
         observationIds: built.map((item) => item.observationId),
+        ...(requirement.policy
+          ? { parameters: requirement.policy.parameters, policyVersion: requirement.policy.policyVersion }
+          : {}),
       });
 
       // Not throwing is only half of it. A wrong unit or a dropped dimension
@@ -485,12 +588,6 @@ describe('the executor', () => {
         formulaId: 'MVP-03',
         observationIds: ['sparring_1-attempted', 'sparring_1-landed'],
       },
-      {
-        organizationId: 'org-1',
-        athleteId: 'athlete-1',
-        formulaId: 'MVP-04',
-        observationIds: ['sparring_1-absorbed', 'sparring_1-landed'],
-      },
       // MVP-11 spans contexts: every session in the 28 days up to this one.
       {
         organizationId: 'org-1',
@@ -506,7 +603,7 @@ describe('the executor', () => {
       observedAfter: '2026-07-29T18:00:00.000Z',
       observedAtOrBefore: '2026-08-26T18:00:00.000Z',
     });
-    // No parameters and no policyVersion: none of MVP-03, MVP-04 or MVP-11 is
+    // No parameters and no policyVersion: neither MVP-03 nor MVP-11 is
     // a policy formula, and runStoredMvpFormula rejects the pair outright for
     // formulas that are not.
     expect(run.mock.calls.every(([input]) => (
@@ -588,11 +685,12 @@ describe('focusAttainmentWindow', () => {
 });
 
 /**
- * WHY THE SCOPE IS MVP-03 AND MVP-04 ONLY.
+ * WHY SOME FORMULAS ARE NOT ORCHESTRATED.
  *
- * Not a judgement about which formulas matter. Six of the twelve MVP formulas
- * cannot fire because nothing in this application produces the observation
- * kinds they consume, and orchestrating them would be orchestrating nothing.
+ * Not a judgement about which formulas matter. MVP-01, MVP-07 and MVP-08
+ * cannot fire here because nothing in this application produces the
+ * observation kinds they consume, and orchestrating them would be
+ * orchestrating nothing.
  * That is a claim about the current source tree, so it is measured here rather
  * than asserted in a comment: this suite finds every file that posts to the
  * observations endpoint and reads back the kinds it sends.
@@ -713,7 +811,7 @@ describe('observation kinds this application actually produces', () => {
     });
   });
 
-  test('six MVP formulas have no producer for their inputs at all', () => {
+  test('MVP-01, MVP-07 and MVP-08 have no producer for their inputs at all', () => {
     const produced = new Set<string>();
     for (const file of producerFiles) {
       const source = readFileSync(join(WEB_ROOT, file), 'utf8');
@@ -722,14 +820,15 @@ describe('observation kinds this application actually produces', () => {
       }
     }
 
-    // MVP-01 and MVP-05 need session_rpe/duration/active_time; MVP-02 needs
-    // punch_count/round_count/active_time; MVP-07 and MVP-08 need
-    // round_output. The session_rpe and duration producers were removed on
-    // purpose -- AthleteWorkspace.tsx:1500 and :1581 record that check-in was
-    // posting a pre-session readiness slider as session RPE and a PLANNED
-    // duration as an observed one, and that both feeds were deleted rather
-    // than corrected. Nothing replaced them.
+    // MVP-01 needs session_rpe/duration; MVP-07 and MVP-08 need round_output.
+    // The session_rpe and duration producers were removed on purpose: check-in
+    // was posting a pre-session readiness slider as session RPE and a PLANNED
+    // duration as an observed one. Session load is now computed from the
+    // check-out answers on pilot.sessions where it is read. punch_count,
+    // round_count and active_time come from the sparring page's "Whole
+    // session" boxes (Jason 2026-10-17, "B: Longer sparring form").
     expect([...produced].sort()).toEqual([
+      'active_time',
       'body_weight',
       'contact_level',
       'contact_rounds',
@@ -737,16 +836,17 @@ describe('observation kinds this application actually produces', () => {
       'pain_report',
       'punch_absorbed',
       'punch_attempted',
+      'punch_count',
       'punch_landed',
       'recovery_notes',
+      'round_count',
     ]);
 
+    // MVP-01's session load is computed from pilot.sessions where it is read
+    // (weeklySessionLoad.ts); MVP-07/08 need per-round output nobody logs.
     for (const kind of [
       'session_rpe',
       'duration',
-      'punch_count',
-      'round_count',
-      'active_time',
       'round_output',
     ]) {
       expect(produced.has(kind)).toBe(false);

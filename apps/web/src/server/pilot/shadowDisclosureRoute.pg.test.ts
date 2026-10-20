@@ -366,8 +366,11 @@ describe('an athlete disclosure in SHADOW chat, end to end on real Postgres (F-0
         expect(escalation.athlete_id).toBe(ATHLETE_ID);
         expect(escalation.source_type).toBe(staff ? 'athlete_voice' : 'shadow_disclosure');
         expect(escalation.metadata).toEqual({ channel: 'shadow_chat', conversation_id: sent.body.conversationId });
-        // No words of the message in the stored row.
-        const stored = JSON.stringify(escalation).toLowerCase();
+        // No words of the message in the stored row. Random UUIDs (escalation_id,
+        // conversation_id) are left out: one holding the hex run "dad" failed CI.
+        const stored = JSON.stringify(escalation, (_key, value) => (
+          typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? undefined : value
+        )).toLowerCase();
         for (const word of ['hits', 'scared', 'touched', 'behind', 'leaves', 'kill', 'dad']) {
           if (message.toLowerCase().includes(word)) expect(stored).not.toContain(word);
         }
@@ -417,6 +420,30 @@ describe('an athlete disclosure in SHADOW chat, end to end on real Postgres (F-0
       expect(escalations.rows[0].n).toBe(4);
       const reviews = await client.query(`select count(*)::int as n from pilot.shadow_human_review_queue where category = 'safeguarding_disclosure'`);
       expect(reviews.rows[0].n).toBe(3);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+
+  // F-093: the same disclosure with a pain word was withheld as a personal
+  // health question. It is answered like any disclosure; the escalation and
+  // the admin review row are as before.
+  test('a disclosure that also carries a pain word is answered and files its escalation', async () => {
+    const client = await freshDatabase('ppbf_test_shadow_disclosure_pain');
+    activeClient = client;
+    try {
+      const sent = await sendAsAthlete('my coach hits me and it hurts');
+      expect(sent).toMatchObject({ status: 200, providerCalled: true, body: { state: 'ok', response: ANSWER } });
+      const { rows } = await client.query(`select source_type from pilot.safety_escalations`);
+      expect(rows.map((row: { source_type: string }) => row.source_type)).toEqual(['athlete_voice']);
+      const reviews = await client.query(
+        `select category from pilot.shadow_human_review_queue where conversation_id = $1`,
+        [sent.body.conversationId],
+      );
+      expect(reviews.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ category: 'safeguarding_disclosure' }),
+      ]));
     } finally {
       activeClient = null;
       await client.end();

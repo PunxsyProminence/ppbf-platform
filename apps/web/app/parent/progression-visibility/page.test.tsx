@@ -54,7 +54,6 @@ const COMPLETION = {
   completion_id: 'comp-1',
   assignment_id: 'assign-1',
   reps_completed: 20,
-  notes: '',
   verification_status: 'verified',
   completed_at: '2026-08-01T12:00:00.000Z',
   verified_at: '2026-08-02T12:00:00.000Z',

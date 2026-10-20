@@ -2371,9 +2371,9 @@ describe('Omega cross-organization breadth', () => {
       recommendationsMade: 0,
       researchRequirementsCreated: 0,
       researchRequirementsClosed: 0,
-      newLibraryPatterns: 0,
+      newLibrarySources: 0,
       filterRate: null,
-      positiveOutcomeRate: null,
+      reviewedHelpfulRate: null,
       unavailableReasons: {},
     };
   }
@@ -3702,6 +3702,46 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
     expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ATH-SELF' }));
   });
 
+  // F-093: a disclosure with a pain word was withheld as a personal health
+  // question. It is answered like any disclosure.
+  test('a disclosure with a pain word is answered and files (F-093)', async () => {
+    const { response, body, providerCalled } = await askAsAthlete('my coach hits me and it hurts');
+
+    expect(response.status).toBe(200);
+    expect(providerCalled).toBe(true);
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(ANSWER);
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({ category: 'safeguarding_disclosure' }));
+  });
+
+  // F-093: an athlete is refused a board summary with a 403, and POST files
+  // nothing on a 403. The disclosure escalation, already owed by then, is
+  // filed at the refusal; the reply is the refusal every athlete gets.
+  test.each(['My dad hits me', 'my coach hits me and it hurts'])(
+    '"%s" sent as a board summary is refused as before and still files (F-093)',
+    async (message) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-SELF' }));
+      const control = await POST(postRequest({ message: 'How do I throw a better jab?', sessionType: 'board_summary' }));
+      const controlBody = await control.json();
+      expect(mockFileDisclosure).not.toHaveBeenCalled();
+
+      const response = await POST(postRequest({ message, sessionType: 'board_summary' }));
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(response.status).toBe(control.status);
+      expect(body.error).toBe(controlBody.error);
+      expect(body.response).toBe(controlBody.response);
+      expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+      expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({
+        organizationId: 'org-session',
+        athleteId: 'ATH-SELF',
+        conversationId: null,
+      }));
+    },
+  );
+
   test('a disclosure met by a failed provider still files', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-SELF' }));
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }) as unknown as typeof fetch;
@@ -3759,5 +3799,120 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
 
     expect(response.status).toBe(429);
     expect(mockFileDisclosure).not.toHaveBeenCalled();
+  });
+
+  // F-155: POST files nothing on a 403 or 404. A 403 or 404 that comes AFTER
+  // the escalation is owed -- a transient context failure, a conversation
+  // deleted mid-request, a dropped connection read as "not found" -- files it
+  // at the refusal, once, with the reply unchanged. One that comes BEFORE
+  // (the request was never authorized) still files nothing.
+  describe('a 403 or 404 after the escalation is owed (F-155)', () => {
+    const conversationCheck = jest.mocked(assertConversationAccess);
+    const athleteCheck = jest.mocked(assertActorCanAccessAthlete);
+    afterEach(() => {
+      conversationCheck.mockReset();
+      athleteCheck.mockReset();
+    });
+
+    const LATE_REFUSALS: ReadonlyArray<[string, number, () => void, Record<string, unknown>]> = [
+      ['the context check refuses (403)', 403, () => {
+        mockRetrieveShadowContext.mockResolvedValue({ authorized: false, reason: 'Not authorized to access this context' } as never);
+      }, {}],
+      ['the context read throws Forbidden (catch-all 403)', 403, () => {
+        mockRetrieveShadowContext.mockRejectedValue(new Error('Forbidden: access check unavailable'));
+      }, {}],
+      ['the context read throws Not found (catch-all 404)', 404, () => {
+        mockRetrieveShadowContext.mockRejectedValue(new Error('Not found: athlete record'));
+      }, {}],
+      ['the conversation is deleted before the exchange is stored (404)', 404, () => {
+        mockResolveConversation.mockRejectedValue(new Error('SHADOW_CONVERSATION_NOT_FOUND'));
+      }, { conversationId: '00000000-0000-4000-8000-000000000301' }],
+      ['the history read reports a dropped connection as not found (404)', 404, () => {
+        mockLoadConversationMessages.mockRejectedValue(new Error('SHADOW_CONVERSATION_NOT_FOUND'));
+      }, { conversationId: '00000000-0000-4000-8000-000000000301' }],
+    ];
+
+    async function send(message: string, extra: Record<string, unknown>) {
+      mockRequirePrincipal.mockResolvedValue(principal({ role: 'athlete', athleteId: 'ATH-SELF' }));
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: ANSWER } }] }),
+      }) as unknown as typeof fetch;
+      const response = await POST(postRequest({ message, ...extra }));
+      return { response, body: await response.json() };
+    }
+
+    test.each(LATE_REFUSALS)('%s: the reply is unchanged and the escalation files once', async (_name, status, arrange, extra) => {
+      arrange();
+      const control = await send('How do I throw a better jab?', extra);
+      expect(control.response.status).toBe(status);
+      expect(mockFileDisclosure).not.toHaveBeenCalled();
+
+      arrange();
+      const { response, body } = await send('My dad hits me', extra);
+
+      // The whole reply, headers included, is the one a plain question gets:
+      // nothing tells whoever is beside the child that the words were caught.
+      // Ids and timestamps differ per request by construction; tier and
+      // complexity follow the message text, not the disclosure.
+      const strip = (reply: Record<string, unknown>) => Object.fromEntries(
+        Object.entries(reply).filter(([key]) => !['messageId', 'createdAt', 'tier', 'complexity'].includes(key)),
+      );
+      expect(response.status).toBe(status);
+      expect(strip(body)).toEqual(strip(control.body));
+      expect([...response.headers]).toEqual([...control.response.headers]);
+      expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+      // The requested conversation, already access-checked, so the "this
+      // conversation already named staff" rule still applies on these paths.
+      expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({
+        organizationId: 'org-session',
+        athleteId: 'ATH-SELF',
+        conversationId: (extra.conversationId as string | undefined) ?? null,
+      }));
+    });
+
+    test.each(LATE_REFUSALS)('%s: a failed filing changes nothing the athlete sees', async (_name, status, arrange, extra) => {
+      arrange();
+      const filed = await send('My dad hits me', extra);
+      arrange();
+      mockFileDisclosure.mockRejectedValueOnce(new Error('insert failed'));
+      const failed = await send('My dad hits me', extra);
+
+      expect(mockFileDisclosure).toHaveBeenCalledTimes(2);
+      expect(failed.response.status).toBe(status);
+      expect(failed.response.status).toBe(filed.response.status);
+      const strip = (body: Record<string, unknown>) => Object.fromEntries(
+        Object.entries(body).filter(([key]) => !['messageId', 'createdAt'].includes(key)),
+      );
+      expect(strip(failed.body)).toEqual(strip(filed.body));
+    });
+
+    // BEFORE the owed point: the request was not authorized, so there is
+    // nothing owed and the second lock still holds.
+    test.each([
+      ['a conversation that genuinely does not exist (404)', 404, () => {
+        conversationCheck.mockRejectedValue(new Error('SHADOW_CONVERSATION_NOT_FOUND'));
+      }, { conversationId: '00000000-0000-4000-8000-000000000399' }],
+      ['an athlete record this account may not read (403)', 403, () => {
+        athleteCheck.mockRejectedValue(new Error('Forbidden: athlete outside your assignment'));
+      }, { athleteId: 'athlete-other' }],
+    ] as ReadonlyArray<[string, number, () => void, Record<string, unknown>]>)(
+      '%s, refused at the access check: files nothing',
+      async (_name, status, arrange, extra) => {
+        arrange();
+        const { response } = await send('My dad hits me', extra);
+
+        expect(response.status).toBe(status);
+        expect(mockFileDisclosure).not.toHaveBeenCalled();
+      },
+    );
+
+    test('a 401 after the escalation is owed files nothing (not signed in is not filed)', async () => {
+      mockRetrieveShadowContext.mockRejectedValue(new Error('Unauthorized'));
+      const { response } = await send('My dad hits me', {});
+
+      expect(response.status).toBe(401);
+      expect(mockFileDisclosure).not.toHaveBeenCalled();
+    });
   });
 });

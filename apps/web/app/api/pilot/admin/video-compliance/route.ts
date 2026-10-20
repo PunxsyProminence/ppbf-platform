@@ -5,7 +5,7 @@ import { sanitizedSqlState } from '@/src/server/pilot/db';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getPilotVideoSasUrl } from '@/src/server/pilot/blob';
-import { assertGuardianMediaConsent, assertGuardianMediaConsentWithClient, assertNotAdultForNewPublication, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
+import { assertGuardianMediaConsent, assertGuardianMediaConsentWithClient, assertNewPublicationConsentPath, GuardianConsentMissingError } from '@/src/server/pilot/guardianConsent';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import {
   decidePublicationCompliance,
@@ -17,7 +17,7 @@ import {
 } from '@/src/server/pilot/publication';
 import { getSubjectIdentity } from '@/src/server/pilot/profileDb';
 import { listLiveTagSubjects } from '@/src/server/pilot/videoClipTags';
-import { assertConsentCoversVideo, mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
+import { assertConsentCoversVideo, coverageRefusalKind, mintUnderPlaybackConsent } from '@/src/server/pilot/videoPlaybackConsent';
 import { getVideoSessionById } from '@/src/server/pilot/videoSessions';
 
 // A lost audit row is a gap an operator can close by re-dispatching, not a
@@ -65,13 +65,16 @@ async function mintQueuePlayback(
     const streamUrl = await mintUnderPlaybackConsent(organizationId, [athleteId], () => getPilotVideoSasUrl(blobPath, 60));
     return { stream_url: streamUrl, playback_blocked: null };
   } catch (error) {
-    if (error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_WITHDRAWN') {
+    // A guardian's refusal or an adult's own (OD-2026-10-08-015): the same
+    // three states either way.
+    const kind = coverageRefusalKind(error);
+    if (kind === 'withdrawn') {
       return { stream_url: null, playback_blocked: 'consent_withdrawn' };
     }
-    if (error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_EXCLUDES_VIDEO') {
+    if (kind === 'excludes_video') {
       return { stream_url: null, playback_blocked: 'photo_only' };
     }
-    if (!(error instanceof ConflictError && error.code === 'GUARDIAN_CONSENT_UNREADABLE')) {
+    if (kind !== 'unreadable') {
       // A fault in the consent read or in signing the link itself; this
       // cannot tell them apart, so the event names neither. The SQLSTATE
       // only: a driver message can carry host and query detail.
@@ -83,12 +86,6 @@ async function mintQueuePlayback(
   }
 }
 
-// The playback gate's coverage refusals, which approve now also runs.
-const COVERAGE_REFUSAL_CODES = new Set([
-  'GUARDIAN_CONSENT_WITHDRAWN',
-  'GUARDIAN_CONSENT_EXCLUDES_VIDEO',
-  'GUARDIAN_CONSENT_UNREADABLE',
-]);
 
 /**
  * T-006: THE ADMIN CONSOLE FOR AN ALREADY-BUILT COMPLIANCE WORKFLOW.
@@ -337,17 +334,19 @@ export async function POST(request: NextRequest) {
         // Reopening puts footage back on the way to a new publication: an
         // adult's is refused on a guardian's consent (OD-2026-10-08-015),
         // checked first since no guardian paperwork can cure it.
-        await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id);
-        await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
-        await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+        if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id) === 'guardian_consent') {
+          await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
+          await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+        }
 
         applied = await reopenRetractedPublication({
           organizationId: principal.organizationId,
           publicationId,
           verifyBeforeCommit: async (client) => {
-            await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
-            await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
-            await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id, client);
+            if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id, client) === 'guardian_consent') {
+              await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+              await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+            }
           },
         });
       } catch (error) {
@@ -368,7 +367,7 @@ export async function POST(request: NextRequest) {
             },
             shadow_mirror: false,
           });
-        } else if (error instanceof ConflictError && error.code && COVERAGE_REFUSAL_CODES.has(error.code)) {
+        } else if (error instanceof ConflictError && coverageRefusalKind(error) !== null) {
           await auditComplianceEvent({
             event_type: 'update',
             actor_account_id: principal.accountId,
@@ -461,9 +460,10 @@ export async function POST(request: NextRequest) {
         // No approval of an adult's footage on a guardian's consent
         // (OD-2026-10-08-015), checked first since no guardian paperwork can
         // cure it; again inside the transaction below.
-        await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id);
-        await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
-        await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
+        if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id) === 'guardian_consent') {
+          await assertGuardianMediaConsent(principal.organizationId, publication.athlete_id);
+          await assertConsentCoversVideo(principal.organizationId, publication.athlete_id);
+        }
       }
 
       // CAS-guarded status transition AND its compliance-check record, as one
@@ -492,9 +492,10 @@ export async function POST(request: NextRequest) {
         // here, which is the drift the shared helper exists to prevent.
         verifyBeforeCommit: decision === 'approve'
           ? async (client) => {
-            await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
-            await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
-            await assertNotAdultForNewPublication(principal.organizationId, publication.athlete_id, client);
+            if (await assertNewPublicationConsentPath(principal.organizationId, publication.athlete_id, client) === 'guardian_consent') {
+              await assertGuardianMediaConsentWithClient(client, principal.organizationId, publication.athlete_id);
+              await assertConsentCoversVideo(principal.organizationId, publication.athlete_id, client);
+            }
           }
           : undefined,
       });
@@ -521,7 +522,7 @@ export async function POST(request: NextRequest) {
           },
           shadow_mirror: false,
         });
-      } else if (error instanceof ConflictError && error.code && COVERAGE_REFUSAL_CODES.has(error.code)) {
+      } else if (error instanceof ConflictError && coverageRefusalKind(error) !== null) {
         await auditComplianceEvent({
           event_type: 'update',
           actor_account_id: principal.accountId,

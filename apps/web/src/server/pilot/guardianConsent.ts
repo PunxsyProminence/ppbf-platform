@@ -220,9 +220,9 @@ export class GuardianConsentMissingError extends ConflictError {
     // records are gone.
     readonly retainedRestrictionCount = 0,
     // The athlete is 18 or older on the gym's day: no guardian's consent
-    // counts for a NEW publication any more and no self-consent exists yet
-    // (OD-2026-10-08-015). Callers run that gate before the guardian checks
-    // in their pre-checks, since a guardian cannot cure it.
+    // counts for a NEW publication any more and the athlete's own current
+    // video consent is not on file (OD-2026-10-08-015). Callers run that gate
+    // before the guardian checks, since a guardian cannot cure it.
     readonly athleteIsAdult = false,
   ) {
     super(
@@ -240,33 +240,151 @@ export class GuardianConsentMissingError extends ConflictError {
 }
 
 export const ADULT_CONSENT_NEEDED_MESSAGE =
-  "Blocked: the athlete is 18 or older, so a guardian's consent no longer counts for a new publication and the athlete's own consent is needed. No consent of the athlete's own can be recorded yet.";
+  "Blocked: the athlete is 18 or older, so a guardian's consent no longer counts for a new publication. The athlete has not given their own current photo and video consent; they record it themselves, signed in on their own account.";
 
 /*
- * NO NEW PUBLICATION OF AN ADULT ON A GUARDIAN'S CONSENT. Owner ruling
- * OD-2026-10-08-015 (Jason, "A: adult consents for themselves
- * (Recommended)"): at 18 guardian-era consent stops counting; no NEW
- * publication of an adult athlete's footage until the adult consents for
- * themselves; existing publications are untouched; the adult's own consent
- * writer and screen are a separate lane.
+ * THE ADULT'S OWN MEDIA CONSENT (OD-2026-10-08-015). A pilot.waivers row like
+ * a guardian's -- waiver_type photo_media, append-only, latest by created_at
+ * wins -- told apart by THREE things together: parent_id NULL, signed_by_role
+ * 'athlete_self', and (for a grant to count) recorded_by_account_id being the
+ * athlete's own login. No migration: the role column is free text.
  *
- * Scope is the ruling's words -- new publications: the publish claim, admin
- * approve, and reopening a retracted publication call this beside their
- * guardian consent checks. It is deliberately NOT inside
- * assertGuardianMediaConsent / checkGuardianMediaConsent, which also feed the
- * safety scan, Film Study, playback of footage already published and the
- * consent screens; none of those is a new publication.
+ * Why the marker and not parent_id NULL alone: before OD-2026-10-07-009 the
+ * general register (intake/domain-upsert) could file photo_media rows with no
+ * parent_id and signed_by_role 'athlete' ("Athlete (18 or over)", typed by
+ * staff off paper). Those are not the adult's own act on this platform and
+ * never read as one here. 'athlete_self' is written only by
+ * athleteMediaConsent.ts.
  *
- * Until a self-consent writer exists there is no consent to read, so an adult
- * is always refused here. Age is the gym's day (guardianLinkEnded); an
- * unknown date of birth reads as a minor, as everywhere else. A missing
- * athlete row is left to the caller's other checks.
+ * Every guardian reader filters parent_id is not null, so a self row is
+ * invisible to them (currentConsentByGuardian, the transactional check,
+ * videoPlaybackConsent.ts); waiverCompliance.ts does not read photo_media.
+ *
+ * The latest self row decides, whoever recorded it: a withdrawal always
+ * counts. Only a GRANT also needs recordedByOwnLogin -- an account bound to
+ * this athlete (pilot.accounts.athlete_id, role athlete) -- so a row carrying
+ * the marker from anywhere else can refuse but never authorise.
  */
-export async function assertNotAdultForNewPublication(
+export const ATHLETE_SELF_SIGNED_BY_ROLE = 'athlete_self';
+
+export interface OwnMediaConsent {
+  status: string;
+  coversVideo: boolean;
+  publicUseAllowed: boolean;
+  signedAt: string;
+  recordedByOwnLogin: boolean;
+}
+
+export async function readOwnMediaConsent(
   organizationId: string,
   athleteId: string,
   client?: QueryExecutor,
-): Promise<void> {
+): Promise<OwnMediaConsent | null> {
+  const rows = await readRows<{
+    status: string;
+    covers_video: boolean;
+    public_use_allowed: boolean;
+    created_at: string;
+    recorded_by_own_login: boolean;
+  }>(
+    client,
+    `select w.status, w.covers_video, w.public_use_allowed, w.created_at,
+            exists (
+              select 1 from pilot.accounts acc
+               where acc.account_id = w.recorded_by_account_id
+                 and acc.organization_id = w.organization_id
+                 and acc.athlete_id = w.athlete_id
+                 and acc.role = 'athlete'
+            ) as recorded_by_own_login
+       from pilot.waivers w
+      where w.organization_id = $1 and w.athlete_id = $2 and w.waiver_type = $3
+        and w.parent_id is null and w.signed_by_role = $4
+      order by w.created_at desc
+      limit 1`,
+    [organizationId, athleteId, MEDIA_CONSENT_WAIVER_TYPE, ATHLETE_SELF_SIGNED_BY_ROLE],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    status: row.status,
+    coversVideo: row.covers_video,
+    publicUseAllowed: row.public_use_allowed,
+    signedAt: row.created_at,
+    recordedByOwnLogin: row.recorded_by_own_login,
+  };
+}
+
+/*
+ * The adult's own latest row, only when the athlete is 18 or older on the
+ * gym's day; null for a minor, an unknown date of birth (read as a minor), a
+ * missing athlete row, or an adult with no row of their own. One function so
+ * callers that mock this module at its boundary (the playback gate's callers'
+ * suites) mock one read. Lock first if the caller needs ordering: it takes
+ * none itself.
+ */
+export async function readAdultOwnMediaConsent(
+  organizationId: string,
+  athleteId: string,
+  client?: QueryExecutor,
+): Promise<OwnMediaConsent | null> {
+  const rows = await readRows<{ dob: string | null }>(
+    client,
+    `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
+     where organization_id = $1 and athlete_id = $2`,
+    [organizationId, athleteId],
+  );
+  if (rows[0] === undefined || !guardianLinkEnded(rows[0].dob)) return null;
+  return readOwnMediaConsent(organizationId, athleteId, client);
+}
+
+/** Signed (normalised as every media gate reads it), covering video, recorded by the athlete's own login. */
+export function ownConsentCoversNewPublication(own: OwnMediaConsent | null): boolean {
+  return own !== null
+    && own.recordedByOwnLogin
+    && normalizeWaiverStatusText(own.status) === 'signed'
+    && own.coversVideo;
+}
+
+/*
+ * WHICH CONSENT GOVERNS A NEW PUBLICATION, decided by age. Owner ruling
+ * OD-2026-10-08-015 (Jason, "A: adult consents for themselves
+ * (Recommended)"): at 18 guardian-era consent stops counting; no NEW
+ * publication of an adult athlete's footage until the adult consents for
+ * themselves; existing publications are untouched.
+ *
+ * Returns 'guardian_consent' for a minor: the caller then runs its guardian
+ * checks as before. For an adult it returns 'adult_own_consent' only when the
+ * adult's own current consent is signed, covers video and was recorded by
+ * their own login, and the caller runs NO guardian check (a guardian's row,
+ * yes or no, no longer counts); otherwise it refuses with the adult reason.
+ * Callers run it FIRST, before any guardian check, in the pre-check and again
+ * inside their transaction.
+ *
+ * Scope is the ruling's words -- new publications: the publish claim, admin
+ * approve, and reopening a retracted publication. It is deliberately NOT
+ * inside assertGuardianMediaConsent / checkGuardianMediaConsent, which also
+ * feed the safety scan, Film Study, playback of footage already published and
+ * the consent screens; none of those is a new publication.
+ *
+ * WITH A CLIENT it takes the consent-set lock SHARED before reading, so the
+ * adult's own writer (athleteMediaConsent.ts, EXCLUSIVE) is ordered against
+ * it even when the athlete has no guardian link row to lock: a withdrawal in
+ * flight is waited for and then read. Same order as the guardian readers
+ * (consent-set, then links), so a caller's guardian checks after it take a
+ * lock this transaction already holds.
+ *
+ * Age is the gym's day (guardianLinkEnded); an unknown date of birth reads as
+ * a minor, as everywhere else. A missing athlete row is left to the caller's
+ * other checks (it reads as a minor, so the guardian checks refuse it).
+ */
+export type NewPublicationConsentPath = 'guardian_consent' | 'adult_own_consent';
+
+export async function assertNewPublicationConsentPath(
+  organizationId: string,
+  athleteId: string,
+  client?: QueryExecutor,
+): Promise<NewPublicationConsentPath> {
+  if (client) await lockConsentSet(client, organizationId, athleteId, 'shared');
   const rows = await readRows<{ dob: string | null }>(
     client,
     `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
@@ -274,9 +392,11 @@ export async function assertNotAdultForNewPublication(
     [organizationId, athleteId],
   );
   const athlete = rows[0];
-  if (athlete !== undefined && guardianLinkEnded(athlete.dob)) {
-    throw new GuardianConsentMissingError(athleteId, [], 0, true);
+  if (athlete === undefined || !guardianLinkEnded(athlete.dob)) return 'guardian_consent';
+  if (ownConsentCoversNewPublication(await readOwnMediaConsent(organizationId, athleteId, client))) {
+    return 'adult_own_consent';
   }
+  throw new GuardianConsentMissingError(athleteId, [], 0, true);
 }
 
 interface CurrentConsentRow {
