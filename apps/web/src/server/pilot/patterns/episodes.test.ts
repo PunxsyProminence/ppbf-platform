@@ -1,6 +1,7 @@
 /**
  * The counting unit is the attempt (episodes.ts), and the lesson rules lane
- * L49 fixed (lessons.ts). Every case here fails on the code before it: two
+ * L49 fixed (lessons.ts). Every behavioural case here fails on the code before
+ * it (the two marked as controls do not, by design): two
  * readings of one rep counted as two, a pre-lesson improvement counted as
  * transfer, a fault on day one of the drill counted as regression, an
  * unresolved review or an undelivered intervention validating a lesson, and a
@@ -116,6 +117,63 @@ describe('readings of one attempt are one episode', () => {
     expect(result.evidence.distinctSourceTypes).toBe(2);
   });
 
+  test("one coach's call never hides another's: readings that disagree on whose fault leave the attempt unresolved", () => {
+    const observations: BehaviourObservation[] = [];
+    ['task-mitts', 'task-sparring', 'task-bag'].forEach((task, index) => {
+      const at = `2026-06-${10 + index}T10:00:00.000Z`;
+      const session = `session-${index + 1}`;
+      // Ids sort coach-b's reading first, then coach-a's: the order must not matter.
+      observations.push(reading(`b${index}`, { sessionId: session, taskContextKey: task, observedAt: at, opportunityKey: `rep-${index}`, observerAccountId: 'coach-b', attribution: { target: 'coach_cue', certainty: 'uncertain' } }));
+      observations.push(reading(`a${index}`, { sessionId: session, taskContextKey: task, observedAt: at, opportunityKey: `rep-${index}`, observerAccountId: 'coach-a' }));
+    });
+    const result = evaluatePattern(observations);
+    expect(result.state).toBe('ATTRIBUTION_UNRESOLVED');
+    expect(result.promotion).toBeNull();
+    expect(result.warnings).toEqual(expect.arrayContaining(['COACH_CUE_IMPLICATED', 'ATTRIBUTION_UNCERTAIN']));
+  });
+
+  test('an attempt one person read both ways is disputed, never silently dropped', () => {
+    const result = evaluatePattern([
+      reading('o1', { sessionId: 'session-1', taskContextKey: 'task-mitts', observedAt: '2026-06-10T10:00:00.000Z' }),
+      reading('o2', { sessionId: 'session-2', taskContextKey: 'task-sparring', observedAt: '2026-06-12T10:00:00.000Z' }),
+      reading('s1', { sessionId: 'session-3', taskContextKey: 'task-bag', observedAt: '2026-06-14T10:00:00.000Z', opportunityKey: 'rep-1' }),
+      reading('s2', { sessionId: 'session-3', taskContextKey: 'task-bag', observedAt: '2026-06-14T10:00:00.000Z', opportunityKey: 'rep-1', polarity: 'counterexample' }),
+    ]);
+    expect(result.blockers).toContain('ATTEMPT_DISPUTED');
+    expect(result.state).toBe('CONTESTED');
+    expect(result.promotion).toBeNull();
+  });
+
+  test("a model's reading never erases a coach's counter-evidence on the same attempt", () => {
+    const result = evaluatePattern([
+      reading('o1', { sessionId: 'session-1', taskContextKey: 'task-mitts', observedAt: '2026-06-10T10:00:00.000Z' }),
+      reading('o2', { sessionId: 'session-2', taskContextKey: 'task-sparring', observedAt: '2026-06-12T10:00:00.000Z' }),
+      reading('c', { sessionId: 'session-3', taskContextKey: 'task-bag', opportunityKey: 'rep-1', polarity: 'counterexample' }),
+      reading('m', {
+        sessionId: 'session-3', taskContextKey: 'task-bag', opportunityKey: 'rep-1', observerAccountId: null,
+        interpretation: 'ai_proposed', source: { type: 'imu', quality: 'high', referenceId: 'imu-1' },
+      }),
+    ]);
+    expect(result.blockers).toContain('ATTEMPT_DISPUTED');
+    expect(result.state).toBe('CONTESTED');
+  });
+
+  test('when every attempt is disputed the candidate is contested; one disputed attempt is still one attempt', () => {
+    const twoDisputed = evaluatePattern([
+      reading('a1', { opportunityKey: 'rep-1', observerAccountId: 'coach-a' }),
+      reading('b1', { opportunityKey: 'rep-1', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+      reading('a2', { opportunityKey: 'rep-2', observerAccountId: 'coach-a', sessionId: 'session-2', observedAt: '2026-06-12T10:00:00.000Z' }),
+      reading('b2', { opportunityKey: 'rep-2', observerAccountId: 'coach-b', sessionId: 'session-2', observedAt: '2026-06-12T10:00:00.000Z', polarity: 'counterexample' }),
+    ]);
+    expect(twoDisputed.state).toBe('CONTESTED');
+    const oneDisputed = evaluatePattern([
+      reading('a1', { opportunityKey: 'rep-1', observerAccountId: 'coach-a' }),
+      reading('b1', { opportunityKey: 'rep-1', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ]);
+    expect(oneDisputed.state).toBe('INSUFFICIENT_EVIDENCE');
+  });
+
+  // Control: pure grouping rules.
   test('a reading with no key is its own episode; the same key in another session or drill is another attempt', () => {
     const plain = reading('a');
     expect(episodeKeyOf(plain)).not.toBe(episodeKeyOf(reading('b')));
@@ -123,7 +181,9 @@ describe('readings of one attempt are one episode', () => {
       reading('a', { opportunityKey: 'rep-1' }),
       reading('b', { opportunityKey: 'rep-1', sessionId: 'session-2' }),
       reading('c', { opportunityKey: 'rep-1', taskContextKey: 'task-bag' }),
-      reading('d', { opportunityKey: '  ' }),
+      // Taken exactly as evidence.ts takes it: any non-empty string is a key,
+      // untrimmed, so 'rep-1 ' is a different attempt from 'rep-1'.
+      reading('d', { opportunityKey: 'rep-1 ' }),
       reading('e', { opportunityKey: null }),
     ]);
     expect(collapse.episodes).toHaveLength(5);
@@ -189,6 +249,7 @@ const evaluateLesson = (overrides: {
 });
 
 describe('lessons', () => {
+  // Control: the fixture itself.
   test('the fixture validates, so each case below isolates one refusal', () => {
     const result = evaluateLesson();
     expect(result.blockers).toEqual([]);
@@ -239,6 +300,44 @@ describe('lessons', () => {
     }
     expect(evaluateLesson({ outcome: { ...outcome, hypothesisResult: 'supported', performanceResult: 'improved' } }).eligible)
       .toBe(true);
+  });
+
+  test('a fault one coach saw come back is regression, even when another coach read that rep the other way', () => {
+    const result = evaluateLesson({
+      postObservations: [
+        ...retained,
+        reading('ra', { sessionId: 'later-1', taskContextKey: 'task-mitts', observedAt: '2026-06-24T10:00:00.000Z', opportunityKey: 'rep-7', observerAccountId: 'coach-a' }),
+        reading('rb', { sessionId: 'later-1', taskContextKey: 'task-mitts', observedAt: '2026-06-24T10:00:00.000Z', opportunityKey: 'rep-7', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+      ],
+    });
+    expect(result.blockers).toContain('POST_INTERVENTION_REGRESSION');
+    expect(result.eligible).toBe(false);
+  });
+
+  test("the coach's finding against the lesson is read too: confounded, contradicted, no better", () => {
+    expect(evaluateLesson({ outcome: { ...outcome, hypothesisResult: 'confounded' } }).blockers).toContain('OUTCOME_CONFOUNDED');
+    for (const review of [
+      { ...outcome, hypothesisResult: 'contradicted' as const },
+      { ...outcome, performanceResult: 'declined' as const },
+      { ...outcome, performanceResult: 'unchanged' as const },
+    ]) {
+      expect(evaluateLesson({ outcome: review }).blockers).toContain('OUTCOME_MISS');
+    }
+    expect(evaluateLesson({ outcome: { ...outcome, performanceResult: 'mixed' } }).eligible).toBe(true);
+  });
+
+  test('an end nobody can place, or one before the start, is no end, and says so', () => {
+    const duringDrill = reading('day-one', { sessionId: 'drill-1', taskContextKey: 'task-mitts', observedAt: '2026-06-03T10:00:00.000Z' });
+    for (const endedAt of ['not a time', '2026-05-01T00:00:00.000Z']) {
+      const result = evaluateLesson({ intervention: { ...intervention, endedAt }, postObservations: [...retained, duringDrill] });
+      expect(result.warnings).toContain('INVALID_TIMESTAMP');
+      // Counted from the start, as for one still running.
+      expect(result.blockers).toContain('POST_INTERVENTION_REGRESSION');
+    }
+    const before = reading('pre-start', { sessionId: 'pre-1', taskContextKey: 'task-mitts', observedAt: '2026-05-10T10:00:00.000Z' });
+    expect(evaluateLesson({
+      intervention: { ...intervention, endedAt: '2026-05-01T00:00:00.000Z' }, postObservations: [...retained, before],
+    }).blockers).not.toContain('POST_INTERVENTION_REGRESSION');
   });
 
   test('an intervention never delivered taught nothing', () => {

@@ -30,7 +30,12 @@
  * readings are gone, so one observer's revised call appears once.
  */
 
-import type { BehaviourObservation, PatternEvidenceSummary } from './types';
+import type {
+  AttributionCertainty,
+  BehaviourObservation,
+  ObservationAttribution,
+  PatternEvidenceSummary,
+} from './types';
 
 /** Source types that constitute video corroboration -- the same set as evidence.ts VIDEO_SOURCE_TYPES. */
 const VIDEO_SOURCE_TYPES: ReadonlySet<string> = new Set(['computer_vision']);
@@ -44,12 +49,34 @@ export interface EpisodeCollapse {
   readonly disputedEpisodeKeys: readonly string[];
 }
 
-/** The attempt a reading is about: session, task and key; or the reading itself when it names none. */
+/**
+ * The attempt a reading is about: session, task and key; or the reading itself
+ * when it names none. The key is taken exactly as evidence.ts takes it (any
+ * non-empty string, untrimmed), so this grouping and the disagreement
+ * detectors' grouping are the same grouping.
+ */
 export function episodeKeyOf(reading: BehaviourObservation): string {
-  const key = typeof reading.opportunityKey === 'string' ? reading.opportunityKey.trim() : '';
-  return key
-    ? `attempt\u0000${reading.sessionId}\u0000${reading.taskContextKey}\u0000${key}`
-    : `reading\u0000${reading.observationId}`;
+  const key = reading.opportunityKey;
+  return typeof key === 'string' && key.length > 0
+    ? JSON.stringify(['attempt', reading.sessionId, reading.taskContextKey, key])
+    : JSON.stringify(['reading', reading.observationId]);
+}
+
+const CERTAINTY_ORDER: readonly AttributionCertainty[] = ['stated', 'probable', 'uncertain'];
+
+/**
+ * Whose failure the attempt was, across every reading of it: the target only
+ * when every reading names the same one, 'unresolved' otherwise, at the least
+ * certain reading's certainty. One coach's call never hides another's.
+ */
+function mergedAttribution(readings: readonly BehaviourObservation[]): ObservationAttribution {
+  const targets = new Set(readings.map((reading) => reading.attribution.target));
+  const certainty = readings
+    .map((reading) => reading.attribution.certainty)
+    .reduce((least, next) => (CERTAINTY_ORDER.indexOf(next) > CERTAINTY_ORDER.indexOf(least) ? next : least));
+  return targets.size === 1
+    ? { target: readings[0].attribution.target, certainty }
+    : { target: 'unresolved', certainty: 'uncertain' };
 }
 
 function sortKey(reading: BehaviourObservation): string {
@@ -74,9 +101,11 @@ export function collapseToEpisodes(readings: readonly BehaviourObservation[]): E
       continue;
     }
     // The earliest person's reading stands for the episode where there is
-    // one: it carries the attribution and context the episode is counted
-    // under. Who else looked is carried in readingsOf, not lost.
-    const representative = group.find((reading) => reading.interpretation === 'human_observed') ?? group[0];
+    // one: it carries the context the episode is counted under, and the
+    // attribution of ALL its readings (mergedAttribution). Who else looked is
+    // carried in readingsOf, not lost.
+    const first = group.find((reading) => reading.interpretation === 'human_observed') ?? group[0];
+    const representative = group.length === 1 ? first : Object.freeze({ ...first, attribution: mergedAttribution(group) });
     episodes.push(representative);
     readingsOf.set(representative.observationId, Object.freeze([...group]));
   }

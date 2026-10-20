@@ -371,14 +371,25 @@ export function evaluateValidatedAthleteLesson(
     if (outcome.matchState === 'partial') {
       warnings.push('COUNTEREVIDENCE_PRESENT');
     }
-    // The coach's own answer, read, not judged: a belief they left open, or a
-    // performance they could not call, supports no lesson yet.
+    // The coach's own answers (the intervention ledger's), read, not judged.
+    // A belief they left open, or a performance they could not call, supports
+    // no lesson yet; a belief they found confounded or contradicted, or a
+    // performance that stayed put or fell, supports none at all -- the same
+    // lines the ledger's own checks draw.
     if (
       outcome.hypothesisResult === 'unresolved'
       || outcome.hypothesisResult === 'insufficient_evidence'
       || outcome.performanceResult === 'unknown'
     ) {
       blockers.push('OUTCOME_UNRESOLVED');
+    }
+    if (outcome.hypothesisResult === 'confounded') blockers.push('OUTCOME_CONFOUNDED');
+    if (
+      outcome.hypothesisResult === 'contradicted'
+      || outcome.performanceResult === 'declined'
+      || outcome.performanceResult === 'unchanged'
+    ) {
+      blockers.push('OUTCOME_MISS');
     }
   }
 
@@ -409,11 +420,21 @@ export function evaluateValidatedAthleteLesson(
     // ended by asOf: a fault on day one, while the fix is still being
     // drilled, is why the drill exists, not a sign it failed. While it runs,
     // from its start.
+    const startedAtMs = Date.parse(intervention.startedAt);
     const endedMs = intervention.endedAt ? Date.parse(intervention.endedAt) : Number.NaN;
-    const regressionFromMs = Number.isFinite(endedMs) && endedMs <= asOfMs
+    // An end nobody can place, or one before the start, is no end: the window
+    // stays at the start, and the reviewer is told.
+    if (intervention.endedAt && (!Number.isFinite(endedMs) || endedMs < startedAtMs)) {
+      warnings.push('INVALID_TIMESTAMP');
+    }
+    const regressionFromMs = Number.isFinite(endedMs) && endedMs >= startedAtMs && endedMs <= asOfMs
       ? endedMs
-      : Date.parse(intervention.startedAt);
-    const regressed = postObservations.some(
+      : startedAtMs;
+    // Read from every reading, not the counted episodes: a rep one coach saw
+    // the fault come back in is regression to be looked at, even when another
+    // coach read the same rep the other way (episodes.ts drops that rep from
+    // the counts, and nothing in a lesson would otherwise say so).
+    const regressed = postAdmission.admitted.some(
       (observation) => observation.polarity === 'occurrence'
         && observation.taskContextKey === intervention.trainedTaskContextKey
         && Date.parse(observation.observedAt) >= regressionFromMs,

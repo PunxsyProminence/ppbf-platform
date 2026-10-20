@@ -228,6 +228,12 @@ export function evaluatePatternCandidate(
     ledger.add('SOURCE_QUALITY_WARNING', false);
   }
 
+  // An attempt read both ways -- by two people, by one person twice, or by a
+  // person and a model -- is counted as neither (episodes.ts), and is never
+  // dropped silently: it contests the candidate, as a disagreement does.
+  if (collapse.disputedEpisodeKeys.length > 0) {
+    ledger.add('ATTEMPT_DISPUTED', true);
+  }
   const observerDisagreement = detectObserverDisagreement(admitted);
   if (observerDisagreement) {
     ledger.add('OBSERVER_DISAGREEMENT', true);
@@ -238,10 +244,13 @@ export function evaluatePatternCandidate(
   }
 
   // ── attribution ──────────────────────────────────────────────────────────
-  if (attribution.tally.coach_cue > 0) ledger.add('COACH_CUE_IMPLICATED', false);
-  if (attribution.tally.task_design > 0) ledger.add('TASK_DESIGN_IMPLICATED', false);
-  if (attribution.tally.partner_role > 0) ledger.add('PARTNER_ROLE_IMPLICATED', false);
-  if (attribution.uncertainCount > 0) ledger.add('ATTRIBUTION_UNCERTAIN', false);
+  // Named from every reading: any coach who saw the cue, the drill or the
+  // partner implicated is worth a reviewer's look, whoever else looked too.
+  const readingAttribution = summarizeAttribution(admitted);
+  if (readingAttribution.tally.coach_cue > 0) ledger.add('COACH_CUE_IMPLICATED', false);
+  if (readingAttribution.tally.task_design > 0) ledger.add('TASK_DESIGN_IMPLICATED', false);
+  if (readingAttribution.tally.partner_role > 0) ledger.add('PARTNER_ROLE_IMPLICATED', false);
+  if (readingAttribution.uncertainCount > 0) ledger.add('ATTRIBUTION_UNCERTAIN', false);
 
   if (
     evidence.occurrenceCount > 0
@@ -293,7 +302,10 @@ export function evaluatePatternCandidate(
       { trials: episodes.length, occurrences: evidence.occurrenceCount },
       inferencePolicy,
     );
-    const stratified = assessStratifiedAttribution(episodes, inferencePolicy);
+    // Strata are compared across readings: whether two observers -- or two
+    // fatigue states, or two task types -- name different culprits is a
+    // claim about the looking, which needs every look.
+    const stratified = assessStratifiedAttribution(admitted, inferencePolicy);
     const drift = assessDrift(episodes, inferencePolicy);
 
     if (recurrence.posteriorTooWide) ledger.add('POSTERIOR_TOO_WIDE', true);
@@ -334,6 +346,7 @@ export function evaluatePatternCandidate(
   const state = resolveState({
     hasAdmitted: admitted.length > 0,
     occurrenceCount: evidence.occurrenceCount,
+    disputedAttempts: collapse.disputedEpisodeKeys.length,
     distinctTaskContexts: evidence.distinctTaskContexts,
     previouslyEstablished: input.previouslyEstablished === true,
     // A charted decline retires an established pattern the same way silence
@@ -341,6 +354,7 @@ export function evaluatePatternCandidate(
     noRecentEvidence: ledger.has('NO_RECENT_EVIDENCE') || ledger.has('PATTERN_FADING'),
     contested:
       ledger.has('OBSERVER_DISAGREEMENT')
+      || ledger.has('ATTEMPT_DISPUTED')
       || ledger.has('VIDEO_CONTRADICTS_OBSERVER')
       || ledger.has('COUNTEREVIDENCE_DOMINATES')
       || ledger.has('COUNTEREVIDENCE_RIVALS_OCCURRENCE'),
@@ -415,6 +429,8 @@ export function evaluatePatternCandidate(
 function resolveState(input: {
   hasAdmitted: boolean;
   occurrenceCount: number;
+  /** Attempts read both ways: neither occurrence nor counterexample, but attempts all the same. */
+  disputedAttempts: number;
   distinctTaskContexts: number;
   previouslyEstablished: boolean;
   noRecentEvidence: boolean;
@@ -422,7 +438,13 @@ function resolveState(input: {
   attributionUnresolved: boolean;
   blockerCount: number;
 }): PatternEpistemicState {
-  if (!input.hasAdmitted || input.occurrenceCount === 0) return 'INSUFFICIENT_EVIDENCE';
+  if (!input.hasAdmitted) return 'INSUFFICIENT_EVIDENCE';
+  // Two or more attempts that are in dispute are a contested candidate, even
+  // when the dispute leaves fewer than two undisputed occurrences -- the
+  // readers disagreeing is the finding. One attempt is one attempt, disputed
+  // or not.
+  if (input.contested && input.occurrenceCount + input.disputedAttempts >= 2) return 'CONTESTED';
+  if (input.occurrenceCount === 0) return 'INSUFFICIENT_EVIDENCE';
   // One rep is one rep, whatever else is true of it. Stated methodology, not
   // a tunable: a policy cannot lower this and neither can a spectacular rep.
   if (input.occurrenceCount === 1) return 'INSUFFICIENT_EVIDENCE';

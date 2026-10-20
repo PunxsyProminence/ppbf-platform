@@ -223,6 +223,7 @@ export type PatternReasonCode =
   | 'NO_VIDEO_CORROBORATION'
   | 'VIDEO_CONTRADICTS_OBSERVER'
   | 'OBSERVER_DISAGREEMENT'
+  | 'ATTEMPT_DISPUTED'
   // --- attribution ---------------------------------------------------------
   | 'ATTRIBUTION_NOT_ATHLETE'
   | 'ATTRIBUTION_SPLIT'
