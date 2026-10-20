@@ -7,7 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
-import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import { coachDisplayNameFor, deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 import { roleWords } from '@/src/shared/roleWords';
 import BackHome from '@/components/BackHome';
 import ArmedButton from '@/components/ArmedButton';
@@ -256,7 +256,7 @@ function coachOptionsFrom(members: unknown): CoachOption[] {
 
 function coachOptionRows(members: unknown[]): CoachOption[] {
   return members.flatMap((raw): CoachOption[] => {
-    const member = raw as { account_id?: unknown; login_email?: unknown; role?: unknown; active_flag?: unknown; membership_active?: unknown };
+    const member = raw as { account_id?: unknown; login_email?: unknown; staff_display_name?: unknown; role?: unknown; active_flag?: unknown; membership_active?: unknown };
     if (
       member.role !== 'coach'
       || member.active_flag === false
@@ -267,8 +267,10 @@ function coachOptionRows(members: unknown[]): CoachOption[] {
       return [];
     }
     const login = typeof member.login_email === 'string' && member.login_email !== '' ? member.login_email : member.account_id;
-    // Names only, never the sign-in address (OD-2026-10-06-025, "Show coach name, hide ID").
-    return [{ account_id: member.account_id, label: deriveCoachDisplayName(login), login }];
+    // Names only, never the sign-in address (OD-2026-10-06-025, "Show coach name, hide ID");
+    // the name the gym typed first (Q1 part B).
+    const typed = typeof member.staff_display_name === 'string' ? member.staff_display_name : null;
+    return [{ account_id: member.account_id, label: coachDisplayNameFor(typed, login), login }];
   });
 }
 
@@ -660,10 +662,11 @@ export default function SchedulerPage() {
   // staff list when there is one, otherwise from the stored account id when it
   // is an email-shaped login. Any other id is not turned into a name: the row
   // says the name is not available, as the athletes page does (F-058).
-  const coachLogins = new Map(coachOptions.map((option) => [option.account_id, option.login]));
+  const coachLabels = new Map(coachOptions.map((option) => [option.account_id, option.label]));
   const staffName = (accountId: string) => {
-    const login = coachLogins.get(accountId) || (accountId.includes('@') ? accountId : '');
-    return login ? deriveCoachDisplayName(login) : 'coach name not available';
+    const known = coachLabels.get(accountId);
+    if (known) return known;
+    return accountId.includes('@') ? deriveCoachDisplayName(accountId) : 'coach name not available';
   };
 
   /* One class row, in the upcoming list or under Past and cancelled (#1536).

@@ -65,3 +65,25 @@ export function deriveStaffDisplayName(loginEmail: string | null | undefined): s
   if (spoken.split(' ').every((part) => ROLE_WORDS.has(part.toLowerCase()))) return null;
   return spoken || null;
 }
+
+/**
+ * A coach named by the name the gym typed (pilot.account_profiles.
+ * staff_display_name; Jason 2026-10-19, Q1 part B), else by the login as
+ * above. The title is added once: a typed "Coach Jordan" reads "Coach
+ * Jordan", and a name that is only the title falls back to the login.
+ */
+export function coachDisplayNameFor(
+  storedName: string | null | undefined,
+  loginEmail: string | null | undefined,
+): string {
+  const bare = (storedName ?? '').replace(/^(coach\b\s*)+/i, '').trim();
+  return bare ? `Coach ${bare}` : deriveCoachDisplayName(loginEmail);
+}
+
+/** The same without the title, for staff who are not all coaches; null when neither names them. */
+export function staffDisplayNameFor(
+  storedName: string | null | undefined,
+  loginEmail: string | null | undefined,
+): string | null {
+  return storedName?.trim() || deriveStaffDisplayName(loginEmail);
+}

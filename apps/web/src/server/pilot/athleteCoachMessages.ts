@@ -28,7 +28,7 @@
  * this athlete, so a coach can see a message landed and the gym has a record
  * of what was written to a child.
  */
-import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import { coachDisplayNameFor } from '@/src/shared/coachDisplayName';
 
 import { query } from './db';
 
@@ -45,14 +45,17 @@ export async function listAthleteCoachMessages(
 ): Promise<AthleteCoachMessage[]> {
   // A LEFT join: a message stays readable if its writer's account is later
   // removed; it then reads as from the gym's coaches.
-  const rows = await query<{ note_id: string; note_text: string; created_at: string; login_email: string | null; author_role: string }>(
+  const rows = await query<{ note_id: string; note_text: string; created_at: string; login_email: string | null; staff_display_name: string | null; author_role: string }>(
     `select co.note_id::text as note_id,
             co.note_text,
             to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at,
             a.login_email,
+            ap.staff_display_name,
             co.author_role
        from pilot.coach_observations co
        left join pilot.accounts a on a.account_id = co.coach_account_id
+       left join pilot.account_profiles ap
+         on ap.organization_id = co.organization_id and ap.account_id = co.coach_account_id
       where co.organization_id = $1
         and co.athlete_id = $2
         and co.note_type = 'athlete_message'
@@ -64,7 +67,7 @@ export async function listAthleteCoachMessages(
     note_id: row.note_id,
     note_text: row.note_text,
     created_at: row.created_at,
-    from_name: row.author_role === 'coach' ? deriveCoachDisplayName(row.login_email) : 'Your gym',
+    from_name: row.author_role === 'coach' ? coachDisplayNameFor(row.staff_display_name, row.login_email) : 'Your gym',
   }));
 }
 
@@ -82,15 +85,18 @@ export async function listGuardianCopiesOfAthleteMessages(
   athleteIdsInScope: readonly string[],
 ): Promise<GuardianCopyOfAthleteMessage[]> {
   if (athleteIdsInScope.length === 0) return [];
-  const rows = await query<{ note_id: string; athlete_id: string; note_text: string; created_at: string; login_email: string | null; author_role: string }>(
+  const rows = await query<{ note_id: string; athlete_id: string; note_text: string; created_at: string; login_email: string | null; staff_display_name: string | null; author_role: string }>(
     `select co.note_id::text as note_id,
             co.athlete_id,
             co.note_text,
             to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at,
             a.login_email,
+            ap.staff_display_name,
             co.author_role
        from pilot.coach_observations co
        left join pilot.accounts a on a.account_id = co.coach_account_id
+       left join pilot.account_profiles ap
+         on ap.organization_id = co.organization_id and ap.account_id = co.coach_account_id
       where co.organization_id = $1
         and co.athlete_id = any($2::text[])
         and co.note_type = 'athlete_message'
@@ -103,6 +109,6 @@ export async function listGuardianCopiesOfAthleteMessages(
     athlete_id: row.athlete_id,
     note_text: row.note_text,
     created_at: row.created_at,
-    from_name: row.author_role === 'coach' ? deriveCoachDisplayName(row.login_email) : 'Your gym',
+    from_name: row.author_role === 'coach' ? coachDisplayNameFor(row.staff_display_name, row.login_email) : 'Your gym',
   }));
 }

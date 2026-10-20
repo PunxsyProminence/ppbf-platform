@@ -8,7 +8,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
-import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import { coachDisplayNameFor, deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 import BackHome from '@/components/BackHome';
 
 /** A row of pilot.athletes as GET /api/pilot/athletes/list returns it. */
@@ -28,6 +28,8 @@ interface RosterAthlete {
 interface CoachOption {
   account_id: string;
   login_email: string | null;
+  /** The name the gym typed on the people screen (Q1 part B), or null. */
+  staff_display_name?: string | null;
 }
 
 type RosterLoadState = 'loading' | 'loaded' | 'unavailable';
@@ -245,7 +247,7 @@ function AthleteRecordsConsoleContent() {
 
     const staffPayload = (await staffResult.value.json().catch(() => ({}))) as {
       ok?: boolean;
-      members?: Array<{ account_id?: string; login_email?: string | null; role?: string; active_flag?: boolean; membership_active?: boolean }>;
+      members?: Array<{ account_id?: string; login_email?: string | null; staff_display_name?: string | null; role?: string; active_flag?: boolean; membership_active?: boolean }>;
     };
 
     if (staffPayload.ok !== true) {
@@ -258,13 +260,14 @@ function AthleteRecordsConsoleContent() {
       .map((member) => ({
         account_id: readString(member.account_id),
         login_email: member.login_email ?? null,
+        staff_display_name: member.staff_display_name ?? null,
         selectable: member.active_flag !== false && member.membership_active !== false,
       }))
       .filter((coach) => coach.account_id.length > 0);
-    setCoachDirectory(everyCoach.map(({ account_id, login_email }) => ({ account_id, login_email })));
+    setCoachDirectory(everyCoach.map(({ account_id, login_email, staff_display_name }) => ({ account_id, login_email, staff_display_name })));
     setCoaches(everyCoach
       .filter((coach) => coach.selectable)
-      .map(({ account_id, login_email }) => ({ account_id, login_email })));
+      .map(({ account_id, login_email, staff_display_name }) => ({ account_id, login_email, staff_display_name })));
     setCoachesAvailable(true);
   }, []);
 
@@ -362,7 +365,10 @@ function AthleteRecordsConsoleContent() {
   // said plainly rather than printed as an id.
   const coachNameFor = useCallback((coachId: string) => {
     const known = coachDirectory.find((coach) => coach.account_id === coachId);
-    if (known?.login_email) return deriveCoachDisplayName(known.login_email);
+    // The name the gym typed comes first (Q1 part B), then the login.
+    if (known?.staff_display_name?.trim() || known?.login_email) {
+      return coachDisplayNameFor(known.staff_display_name, known.login_email);
+    }
     if (coachId.includes('@')) return deriveCoachDisplayName(coachId);
     // On the staff list, with no login address to name them from: they are
     // listed, so "not on the staff list" would be false.
@@ -402,7 +408,10 @@ function AthleteRecordsConsoleContent() {
       ?? (coach.account_id.includes('@') ? coach.account_id : null)
     );
     const names = coachChoices.map((coach) => {
+      const typed = coach.staff_display_name
+        ?? coachDirectory.find((entry) => entry.account_id === coach.account_id)?.staff_display_name;
       const address = addressFor(coach);
+      if (typed?.trim()) return coachDisplayNameFor(typed, address);
       return address ? deriveCoachDisplayName(address) : coachNameFor(coach.account_id);
     });
     return new Map(coachChoices.map((coach, index) => {

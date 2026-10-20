@@ -159,11 +159,16 @@ export async function resolveActorDisplayName(input: {
     return athlete?.full_name?.trim() || 'An athlete';
   }
 
-  const account = await queryOne<{ login_email: string | null }>(
-    `select login_email from pilot.accounts a
+  const account = await queryOne<{ login_email: string | null; staff_display_name: string | null }>(
+    `select a.login_email, ap.staff_display_name from pilot.accounts a
+     left join pilot.account_profiles ap
+       on ap.organization_id = a.organization_id and ap.account_id = a.account_id
      where a.organization_id = $1 and a.account_id = $2 and ${accountNotDeletedSql('a')}`,
     [input.organizationId, input.accountId],
   );
+  // The name the gym typed (Q1 part B) first.
+  const typed = account?.staff_display_name?.trim();
+  if (typed) return `Admin ${typed}`;
   const local = account?.login_email?.split('@')[0];
   if (!local) return 'An administrator';
   const spoken = local

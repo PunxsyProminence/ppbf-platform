@@ -371,6 +371,8 @@ export interface CredentialQueueRow {
   clearance_id: string;
   person_account_id: string;
   person_login_email: string | null;
+  /** The name the gym typed for the holder here (Q1 part B), or null. */
+  person_display_name: string | null;
   person_role: PilotRoleLike;
   clearance_type_id: string;
   clearance_name: string;
@@ -404,7 +406,7 @@ export async function listPersonClearancesForVerification(organizationId: string
   return query<CredentialQueueRow>(
     `select
        pc.organization_id, pc.clearance_id, pc.person_account_id,
-       a.login_email as person_login_email, a.role as person_role,
+       a.login_email as person_login_email, ap.staff_display_name as person_display_name, a.role as person_role,
        pc.clearance_type_id, ct.name as clearance_name, ct.issuing_authority, ct.validity_months,
        pc.status, pc.issued_on, pc.expires_on, pc.document_ref,
        pc.verified_by_account_id, pc.verified_at, pc.verification_note,
@@ -414,6 +416,8 @@ export async function listPersonClearancesForVerification(organizationId: string
        on ct.organization_id = pc.organization_id and ct.clearance_type_id = pc.clearance_type_id
      join pilot.accounts a
        on a.organization_id = pc.organization_id and a.account_id = pc.person_account_id
+     left join pilot.account_profiles ap
+       on ap.organization_id = pc.organization_id and ap.account_id = pc.person_account_id
      where pc.organization_id = $1
      order by pc.status = 'submitted' desc, pc.expires_on nulls last, a.login_email`,
     [organizationId],
@@ -449,6 +453,8 @@ export interface StaffCredentialStatusRow {
   account_id: string;
   role: PilotRoleLike;
   login_email: string | null;
+  /** The name the gym typed (Q1 part B), or null. */
+  staff_display_name: string | null;
   clearance_type_id: string;
   clearance_name: string;
   issuing_authority: string;
@@ -482,10 +488,12 @@ export async function listStaffCredentialStatus(
 ): Promise<StaffCredentialStatusRow[]> {
   return query<StaffCredentialStatusRow>(
     `select
-       a.account_id, a.role, a.login_email,
+       a.account_id, a.role, a.login_email, ap.staff_display_name,
        ct.clearance_type_id, ct.name as clearance_name, ct.issuing_authority,
        coalesce(pc.status, 'not_started') as status, pc.expires_on
      from pilot.accounts a
+     left join pilot.account_profiles ap
+       on ap.organization_id = a.organization_id and ap.account_id = a.account_id
      cross join pilot.clearance_types ct
      left join pilot.person_clearances pc
        on pc.organization_id = a.organization_id

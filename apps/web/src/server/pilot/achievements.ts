@@ -9,7 +9,12 @@ import {
   type Program,
   type RecognitionKind,
 } from '@/src/shared/achievementPaths';
-import { deriveCoachDisplayName, deriveStaffDisplayName, readStoredCoachSignature } from '@/src/shared/coachDisplayName';
+import {
+  coachDisplayNameFor,
+  deriveCoachDisplayName,
+  readStoredCoachSignature,
+  staffDisplayNameFor,
+} from '@/src/shared/coachDisplayName';
 
 import { query, queryOne } from './db';
 import type { PoolClient } from 'pg';
@@ -316,7 +321,8 @@ export async function getCoachDisplayName(
   organizationId: string,
   accountId: string,
 ): Promise<string> {
-  return deriveCoachDisplayName(await memberLoginEmail(organizationId, accountId));
+  const member = await memberName(organizationId, accountId);
+  return coachDisplayNameFor(member?.staff_display_name, member?.login_email);
 }
 
 /**
@@ -329,7 +335,8 @@ export async function getStaffDisplayName(
   organizationId: string,
   accountId: string,
 ): Promise<string | null> {
-  return deriveStaffDisplayName(await memberLoginEmail(organizationId, accountId));
+  const member = await memberName(organizationId, accountId);
+  return staffDisplayNameFor(member?.staff_display_name, member?.login_email);
 }
 
 /** The floor for a staff note's author who is not a coach and cannot be named (F-058; wording PROPOSED). */
@@ -350,10 +357,10 @@ export async function getStaffAuthorName(
   return (await getStaffDisplayName(organizationId, accountId)) ?? STAFF_AUTHOR_NAME_FLOOR;
 }
 
-async function memberLoginEmail(
+async function memberName(
   organizationId: string,
   accountId: string,
-): Promise<string | null | undefined> {
+): Promise<{ login_email: string | null; staff_display_name: string | null } | null> {
   /* HOMED HERE, *OR* ACTIVELY A MEMBER HERE.
    *
    * pilot.accounts holds ONE row per account with ONE home organization_id, so
@@ -386,9 +393,14 @@ async function memberLoginEmail(
    * cleanup script (scripts/lib/account-cleanup-plan.mjs) or by hand. The
    * family screens read this function (OD-2026-10-06-025 ruling 2), and a
    * name is not something a deleted person keeps lending to records. */
-  const row = await queryOne<{ login_email: string | null }>(
-    `select a.login_email
+  /* THE NAME THE GYM TYPED (Q1 part B) is read for THIS organization only, and
+   * only behind the same gate: a coach who has left, or was never here, is not
+   * named by a name an earlier gym typed. */
+  return queryOne<{ login_email: string | null; staff_display_name: string | null }>(
+    `select a.login_email, ap.staff_display_name
      from pilot.accounts a
+     left join pilot.account_profiles ap
+       on ap.organization_id = $1 and ap.account_id = a.account_id
      where a.account_id = $2
        and not ${accountDeletedSql('a')}
        and (
@@ -402,8 +414,6 @@ async function memberLoginEmail(
        )`,
     [organizationId, accountId],
   );
-
-  return row?.login_email;
 }
 
 export async function createRecognition(params: {

@@ -34,7 +34,7 @@ import { query, queryOne } from './db';
 import { NotFoundError, ValidationError } from './errors';
 import { isGuardianLinkedToAthlete } from './guardianAccess';
 import { staffFacingAuthorName } from './parentTasks';
-import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
+import { coachDisplayNameFor } from '@/src/shared/coachDisplayName';
 
 export const FAMILY_GOAL_TITLE_MAX = 200;
 export const FAMILY_GOAL_SUPPORT_MAX = 500;
@@ -78,6 +78,7 @@ interface GoalRow {
   created_by_account_id: string | null;
   created_by_role: string;
   login_email: string | null;
+  staff_display_name: string | null;
 }
 
 const SELECT_GOAL = `
@@ -85,9 +86,11 @@ const SELECT_GOAL = `
          to_char(g.target_date, 'YYYY-MM-DD') as target_date,
          g.state,
          to_char(g.completed_at at time zone 'UTC', ${ISO_UTC}) as completed_at,
-         g.created_by_account_id, g.created_by_role, a.login_email
+         g.created_by_account_id, g.created_by_role, a.login_email, ap.staff_display_name
     from pilot.family_goals g
-    left join pilot.accounts a on a.account_id = g.created_by_account_id`;
+    left join pilot.accounts a on a.account_id = g.created_by_account_id
+    left join pilot.account_profiles ap
+      on ap.organization_id = g.organization_id and ap.account_id = g.created_by_account_id`;
 
 function present(row: GoalRow, accountId: string): FamilyGoalForGuardian {
   const mine = row.created_by_role === 'parent' && row.created_by_account_id === accountId;
@@ -98,7 +101,7 @@ function present(row: GoalRow, accountId: string): FamilyGoalForGuardian {
     target_date: row.target_date,
     state: row.state,
     completed_at: row.completed_at,
-    set_by: mine ? 'You' : row.created_by_role === 'coach' ? deriveCoachDisplayName(row.login_email) : 'Your gym',
+    set_by: mine ? 'You' : row.created_by_role === 'coach' ? coachDisplayNameFor(row.staff_display_name, row.login_email) : 'Your gym',
     mine,
   };
 }
@@ -269,7 +272,7 @@ function presentForStaff(row: GoalRow): FamilyGoalForStaff {
     state: row.state,
     completed_at: row.completed_at,
     // Never which guardian: no name, no id (as barrier reports and family replies show staff).
-    set_by: staffGoal ? staffFacingAuthorName(row.login_email, row.created_by_role) : 'A guardian',
+    set_by: staffGoal ? staffFacingAuthorName(row.login_email, row.created_by_role, row.staff_display_name) : 'A guardian',
     mine_to_change: staffGoal,
   };
 }

@@ -1,4 +1,4 @@
-import { deriveStaffDisplayName } from '@/src/shared/coachDisplayName';
+import { staffDisplayNameFor } from '@/src/shared/coachDisplayName';
 import { gymDayIso } from '@/src/lib/gymTime';
 
 import { STAFF_AUTHOR_NAME_FLOOR } from './achievements';
@@ -65,9 +65,10 @@ function seatRefusal(error: unknown): never {
 export async function listSupportForStaff(organizationId: string, athleteId: string): Promise<StaffSupportRow[]> {
   // The recorder is named only while their account stands and they belong to
   // this gym (the rule achievements.ts names staff by); otherwise the floor.
-  const rows = await query<Omit<StaffSupportRow, 'recorded_by_name'> & { recorder_email: string | null }>(
+  const rows = await query<Omit<StaffSupportRow, 'recorded_by_name'> & { recorder_email: string | null; recorder_display_name: string | null }>(
     `select r.record_id::text as record_id, r.support_kind, r.provided_on::text as provided_on,
-            r.created_at::text as created_at, acc.login_email as recorder_email
+            r.created_at::text as created_at, acc.login_email as recorder_email,
+            ap.staff_display_name as recorder_display_name
        from pilot.family_support_records r
        join pilot.athletes ath
          on ath.organization_id = r.organization_id and ath.athlete_id = r.athlete_id and ath.deleted_at is null
@@ -76,13 +77,16 @@ export async function listSupportForStaff(organizationId: string, athleteId: str
         and (acc.organization_id = r.organization_id or exists (
               select 1 from pilot.organization_memberships om
                where om.account_id = acc.account_id and om.organization_id = r.organization_id and om.active_flag))
+       -- The name the gym typed (Q1 part B), only for a recorder the join above still names.
+       left join pilot.account_profiles ap
+         on acc.account_id is not null and ap.organization_id = r.organization_id and ap.account_id = acc.account_id
       where r.organization_id = $1 and r.athlete_id = $2 and r.retired_at is null
       order by r.provided_on desc, r.created_at desc, r.record_id`,
     [organizationId, athleteId],
   );
-  return rows.map(({ recorder_email, ...row }) => ({
+  return rows.map(({ recorder_email, recorder_display_name, ...row }) => ({
     ...row,
-    recorded_by_name: deriveStaffDisplayName(recorder_email) ?? STAFF_AUTHOR_NAME_FLOOR,
+    recorded_by_name: staffDisplayNameFor(recorder_display_name, recorder_email) ?? STAFF_AUTHOR_NAME_FLOOR,
   }));
 }
 
