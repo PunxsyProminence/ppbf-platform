@@ -69,6 +69,8 @@ const PREREQUISITE_MIGRATIONS = [
   'pilot_slice_postgres_session_duration_migration.sql',
   'pilot_slice_postgres_athlete_check_ins_migration.sql',
   'pilot_slice_postgres_athlete_self_report_measures_migration.sql',
+  // upsertSession writes enjoyment too (athlete-metrics migration, OD-2026-10-17-026 (a)).
+  'pilot_slice_postgres_athlete_metrics_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_session_close_migration.sql';
 
@@ -494,6 +496,39 @@ describe('upsertSession stamps the close record on the completed transition', ()
 
       await upsertSession(ORG_ID, asRouteSends({ session_type: null }), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true }, { closedBy: 'athlete' });
       expect(await typeOf()).toBeNull();
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("the athlete's enjoyment answer is stored at check-out, kept by a write that omits it, and cleared by null", async () => {
+    const client = await freshDatabase('close_upsert_enjoyment');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      activeClient = client;
+      const enjoymentOf = async () => (
+        await client.query(`select enjoyment from pilot.sessions where session_id = 'sess-enjoy'`)
+      ).rows[0].enjoyment;
+      const asRouteSends = (overrides: Partial<PilotSession>) => validateSessionPayload(JSON.parse(JSON.stringify(session({
+        session_id: 'sess-enjoy', rpe: 6, rpe_method: SELF_REPORT, completed_flag: true, ...overrides,
+      }))));
+
+      await upsertSession(ORG_ID, session({ session_id: 'sess-enjoy' }), { mode: 'create' }, { closedBy: 'athlete' });
+      expect(await enjoymentOf()).toBeNull();
+
+      await upsertSession(ORG_ID, asRouteSends({ enjoyment: 4 }), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true }, { closedBy: 'athlete' });
+      expect(await enjoymentOf()).toBe(4);
+
+      // A staff write omits the key (the validator keeps it absent): the answer stays.
+      await upsertSession(ORG_ID, asRouteSends({}), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: false }, { closedBy: 'staff' });
+      expect(await enjoymentOf()).toBe(4);
+
+      await upsertSession(ORG_ID, asRouteSends({ enjoyment: null }), { mode: 'update', expectedAthleteId: ATHLETE_ID, noteWriter: true }, { closedBy: 'athlete' });
+      expect(await enjoymentOf()).toBeNull();
+
+      // The column's own bounds stand behind the validator.
+      await expect(client.query(`update pilot.sessions set enjoyment = 6 where session_id = 'sess-enjoy'`))
+        .rejects.toMatchObject({ code: '23514', constraint: 'pilot_sessions_enjoyment_range' });
     } finally {
       await client.end();
     }

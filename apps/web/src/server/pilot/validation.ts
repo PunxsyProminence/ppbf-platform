@@ -13,6 +13,7 @@ import {
   type PilotSession,
   type SessionRpeMethod,
 } from './contracts';
+import { isEnjoymentLevel } from '@/src/shared/enjoyment';
 import { SESSION_TYPE_KEYS, isSessionType } from '@/src/shared/sessionTypes';
 
 function asRecord(payload: unknown): Record<string, unknown> {
@@ -230,6 +231,13 @@ export function assertDurationWrittenByAthlete(role: string, session: PilotSessi
       'Forbidden: session_type is recorded only by the athlete at check-out',
     );
   }
+  // enjoyment is the athlete's own answer too (OD-2026-10-17-026 (a)): a staff
+  // write carrying it would be stored and read as the athlete's.
+  if (session.enjoyment !== undefined && role !== 'athlete') {
+    throw new Error(
+      'Forbidden: enjoyment is recorded only by the athlete at check-out',
+    );
+  }
 }
 
 export function validateSessionPayload(payload: unknown): PilotSession {
@@ -276,6 +284,14 @@ export function validateSessionPayload(payload: unknown): PilotSession {
       throw new Error(`Request body field session_type must be one of ${SESSION_TYPE_KEYS.join(', ')}, or null`);
     }
     session.session_type = sessionType === null ? null : sessionType;
+  }
+  // Same again for enjoyment: a whole number 1-5, or null for "not answered".
+  if (Object.prototype.hasOwnProperty.call(record, 'enjoyment')) {
+    const enjoyment = record.enjoyment;
+    if (enjoyment !== null && !isEnjoymentLevel(enjoyment)) {
+      throw new Error('Request body field enjoyment must be a whole number from 1 to 5, or null');
+    }
+    session.enjoyment = enjoyment === null ? null : enjoyment;
   }
   return session;
 }

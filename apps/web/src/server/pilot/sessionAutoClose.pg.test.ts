@@ -84,6 +84,8 @@ const MIGRATIONS = [
   'pilot_slice_postgres_session_close_migration.sql',
   // upsertSession writes session_type (self-report measures migration).
   'pilot_slice_postgres_athlete_self_report_measures_migration.sql',
+  // upsertSession writes enjoyment too (athlete-metrics migration, OD-2026-10-17-026 (a)).
+  'pilot_slice_postgres_athlete_metrics_migration.sql',
 ];
 
 const ORG_A = 'org-autoclose-a';
