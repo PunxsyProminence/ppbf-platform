@@ -33,6 +33,7 @@ import {
 import { collapseToEpisodes, withReadingDimensions } from './episodes';
 import { assertPatternFormationPolicy, policyParameters, type PatternFormationPolicy } from './policy';
 import { assessStratifiedAttribution, type StratifiedAttributionAssessment } from './inference/attribution';
+import type { PatternReasonCode as ReasonCode } from './types';
 import { assessDrift, type DriftAssessment } from './inference/drift';
 import { assessRecurrence, type RecurrenceAssessment } from './inference/recurrence';
 import type { PatternInferencePolicy } from './inference/policy';
@@ -302,10 +303,14 @@ export function evaluatePatternCandidate(
       { trials: episodes.length, occurrences: evidence.occurrenceCount },
       inferencePolicy,
     );
-    // Strata are compared across readings: whether two observers -- or two
-    // fatigue states, or two task types -- name different culprits is a
-    // claim about the looking, which needs every look.
-    const stratified = assessStratifiedAttribution(admitted, inferencePolicy);
+    // Contextual strata (task, constraint, fatigue) count ATTEMPTS, like
+    // every other volume here: one rep watched by three coaches must not
+    // fill a stratum or tip a load comparison. The observer stratum compares
+    // the people, so it reads every reading.
+    const stratified = stratifyAttemptsAndReaders(
+      assessStratifiedAttribution(episodes, inferencePolicy),
+      assessStratifiedAttribution(admitted, inferencePolicy),
+    );
     const drift = assessDrift(episodes, inferencePolicy);
 
     if (recurrence.posteriorTooWide) ledger.add('POSTERIOR_TOO_WIDE', true);
@@ -426,6 +431,33 @@ export function evaluatePatternCandidate(
  * precedes staleness so that a one-drill artefact is named as an artefact
  * rather than as a pattern that faded.
  */
+/** Contextual axes from the attempts, the observer axis from the readings. */
+function stratifyAttemptsAndReaders(
+  byAttempt: StratifiedAttributionAssessment,
+  byReading: StratifiedAttributionAssessment,
+): StratifiedAttributionAssessment {
+  const strata = [
+    ...byAttempt.strata.filter((stratum) => stratum.axis !== 'observer'),
+    ...byReading.strata.filter((stratum) => stratum.axis === 'observer'),
+  ];
+  const disagreeingAxes = [
+    ...byAttempt.disagreeingAxes.filter((axis) => axis !== 'observer'),
+    ...byReading.disagreeingAxes.filter((axis) => axis === 'observer'),
+  ];
+  const disagreement = disagreeingAxes.length > 0;
+  const reasons = new Set<ReasonCode>(byAttempt.reasons);
+  if (disagreement) reasons.add('STRATA_DISAGREEMENT');
+  else reasons.delete('STRATA_DISAGREEMENT');
+  return Object.freeze({
+    strata: Object.freeze(strata),
+    eligibleStrataCount: strata.filter((stratum) => stratum.eligible).length,
+    disagreeingAxes: Object.freeze(disagreeingAxes),
+    disagreement,
+    loadImplicated: byAttempt.loadImplicated,
+    reasons: Object.freeze([...reasons]),
+  });
+}
+
 function resolveState(input: {
   hasAdmitted: boolean;
   occurrenceCount: number;

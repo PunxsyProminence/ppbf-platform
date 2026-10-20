@@ -354,6 +354,12 @@ export function evaluateValidatedAthleteLesson(
   if (intervention?.adherence === 'not_delivered') {
     blockers.push('INTERVENTION_NOT_DELIVERED');
   }
+  // The ledger's own "unknown" -- delivery never recorded -- is not proof the
+  // lesson was given (approved bar W6: delivery recorded). A caller that
+  // passes no adherence at all is the legacy path, and is left as it was.
+  if (intervention?.adherence === 'unknown') {
+    blockers.push('INTERVENTION_DELIVERY_UNRECORDED');
+  }
 
   if (!outcome) {
     blockers.push('OUTCOME_NOT_HUMAN_REVIEWED');
