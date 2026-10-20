@@ -12,6 +12,7 @@
 
 import { collapseToEpisodes, episodeKeyOf } from './episodes';
 import { evaluateValidatedAthleteLesson, type AthleteLessonPolicy } from './lessons';
+import type { PatternInferencePolicy } from './inference/policy';
 import type { PatternFormationPolicy } from './policy';
 import { evaluatePatternCandidate } from './promotion';
 import type { BehaviourObservation, InterventionOutcomeReview, PatternIntervention } from './types';
@@ -191,6 +192,37 @@ describe('readings of one attempt are one episode', () => {
   });
 });
 
+describe('strata count attempts; the observer stratum counts readers', () => {
+  const inferencePolicy: PatternInferencePolicy = {
+    policyVersion: 'inference-policy-v0-test-not-ratified',
+    ratifiedByAccountId: 'account-owner-1',
+    ratifiedAt: '2026-01-01T00:00:00.000Z',
+    recurrencePrior: { priorOccurrences: 1, priorNonOccurrences: 3 },
+    sequentialTest: { nullRate: 0.2, alternativeRate: 0.6, falsePromotionRate: 0.05, missedPatternRate: 0.2 },
+    posteriorWidth: { credibleMass: 0.9, maximumCredibleWidth: 0.4 },
+    stratifiedAttribution: { concentration: 1, minimumStratumSize: 2 },
+    drift: { ewmaLambda: 0.3, cusumSlack: 0.1, cusumThreshold: 0.4, minimumHistorySessions: 3 },
+  };
+
+  test('one fatigued rep watched by three coaches is one trial in its stratum', () => {
+    const result = evaluatePatternCandidate({
+      organizationId: ORG, athleteId: ATHLETE, behaviourKey: BEHAVIOUR, policy: patternPolicy, asOf: AS_OF, inferencePolicy,
+      observations: [
+        reading('a', { opportunityKey: 'rep-1', fatigueContext: 'fatigued', observerAccountId: 'coach-a' }),
+        reading('b', { opportunityKey: 'rep-1', fatigueContext: 'fatigued', observerAccountId: 'coach-b' }),
+        reading('c', { opportunityKey: 'rep-1', fatigueContext: 'fatigued', observerAccountId: 'coach-c' }),
+      ],
+    });
+    const strata = result.inference!.attribution.strata;
+    const fatigued = strata.find((stratum) => stratum.axis === 'fatigue_context' && stratum.key === 'fatigued');
+    expect(fatigued?.trials).toBe(1);
+    expect(fatigued?.eligible).toBe(false);
+    // Who looked is still every reading.
+    expect(strata.filter((stratum) => stratum.axis === 'observer').map((stratum) => stratum.key))
+      .toEqual(['coach-a', 'coach-b', 'coach-c']);
+  });
+});
+
 // ── lessons ─────────────────────────────────────────────────────────────────
 
 const STARTED_AT = '2026-06-01T00:00:00.000Z';
@@ -340,9 +372,14 @@ describe('lessons', () => {
     }).blockers).not.toContain('POST_INTERVENTION_REGRESSION');
   });
 
-  test('an intervention never delivered taught nothing', () => {
+  test('an intervention never delivered taught nothing; one whose delivery nobody recorded proves nothing yet', () => {
     const result = evaluateLesson({ intervention: { ...intervention, adherence: 'not_delivered' } });
     expect(result.blockers).toContain('INTERVENTION_NOT_DELIVERED');
+    const unrecorded = evaluateLesson({ intervention: { ...intervention, adherence: 'unknown' } });
+    expect(unrecorded.blockers).toContain('INTERVENTION_DELIVERY_UNRECORDED');
+    expect(unrecorded.eligible).toBe(false);
+    // No adherence passed at all: the legacy path, unchanged.
+    expect(evaluateLesson().eligible).toBe(true);
     expect(evaluateLesson({ intervention: { ...intervention, adherence: 'under_delivered' } }).blockers)
       .not.toContain('INTERVENTION_NOT_DELIVERED');
   });

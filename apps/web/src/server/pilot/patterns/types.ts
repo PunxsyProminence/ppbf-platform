@@ -270,6 +270,7 @@ export type PatternReasonCode =
   // --- intervention / lesson ----------------------------------------------
   | 'PATTERN_NOT_ESTABLISHED'
   | 'INTERVENTION_NOT_DELIVERED'
+  | 'INTERVENTION_DELIVERY_UNRECORDED'
   | 'OUTCOME_UNRESOLVED'
   | 'NO_INTERVENTION'
   | 'INTERVENTION_NOT_HUMAN_AUTHORIZED'
