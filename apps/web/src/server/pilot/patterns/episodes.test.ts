@@ -14,7 +14,7 @@ import { collapseToEpisodes, episodeKeyOf } from './episodes';
 import { evaluateValidatedAthleteLesson, type AthleteLessonPolicy } from './lessons';
 import type { PatternInferencePolicy } from './inference/policy';
 import type { PatternFormationPolicy } from './policy';
-import { evaluatePatternCandidate } from './promotion';
+import { evaluatePatternCandidate, type PatternInferenceReport } from './promotion';
 import type { BehaviourObservation, InterventionOutcomeReview, PatternIntervention } from './types';
 
 const ORG = 'org-1';
@@ -213,7 +213,7 @@ describe('strata count attempts; the observer stratum counts readers', () => {
         reading('c', { opportunityKey: 'rep-1', fatigueContext: 'fatigued', observerAccountId: 'coach-c' }),
       ],
     });
-    const strata = result.inference!.attribution.strata;
+    const strata = (result.inference as PatternInferenceReport).attribution.strata;
     const fatigued = strata.find((stratum) => stratum.axis === 'fatigue_context' && stratum.key === 'fatigued');
     expect(fatigued?.trials).toBe(1);
     expect(fatigued?.eligible).toBe(false);
