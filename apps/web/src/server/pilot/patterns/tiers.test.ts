@@ -9,6 +9,7 @@ import {
   APPROVED_OBSERVER_CALIBRATION_V1,
   APPROVED_PATTERN_FORMATION_V1,
 } from '../learningPolicyApprovedV1';
+import { assessPairCalibration, pairKey } from './inference/reliability';
 import { evaluatePatternTiers } from './tiers';
 import type { BehaviourObservation } from './types';
 
@@ -39,14 +40,20 @@ function chance(day: number, overrides: Partial<BehaviourObservation> = {}): Beh
   };
 }
 
-const tiersOf = (observations: BehaviourObservation[], calibration = true) => evaluatePatternTiers({
+const tiersOf = (
+  observations: BehaviourObservation[],
+  calibration = true,
+  options: { calibrationReadings?: BehaviourObservation[]; asOf?: string } = {},
+) => evaluatePatternTiers({
   organizationId: ORG,
   athleteId: ATHLETE,
   behaviourKey: BEHAVIOUR,
   observations,
+  // The gym's record of this behaviour; here, the athlete's own unless a case says otherwise.
+  calibrationReadings: options.calibrationReadings ?? observations,
   bar: APPROVED_PATTERN_FORMATION_V1,
   calibration: calibration ? APPROVED_OBSERVER_CALIBRATION_V1 : null,
-  asOf: AS_OF,
+  asOf: options.asOf ?? AS_OF,
 });
 
 /** Five chances over three sessions in one drill, nine days, one coach: emerging. */
@@ -149,5 +156,87 @@ describe('the approved tiers', () => {
     expect(result.withheld).toContain('ATTEMPT_DISPUTED');
     expect(result.tier).toBeNull();
     expect(result.humanReviewRequired).toBe(true);
+  });
+});
+
+describe('review fixes', () => {
+  test('two coaches not yet calibrated who disagree still withhold', () => {
+    const disputed = [
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-a' }),
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ];
+    const result = tiersOf([...emergingEvidence(), ...disputed], false);
+    expect(result.withheld).toContain('ATTEMPT_DISPUTED');
+    expect(result.tier).toBeNull();
+  });
+
+  test('a third coach does not undo a calibrated pair', () => {
+    const third = [0, 10, 20].map((day) => chance(day, { observerAccountId: 'coach-c' }));
+    const result = tiersOf([...establishedEvidence(), ...calibrationHistory(), ...third]);
+    expect(result.counts.coaches).toBe(3);
+    expect(result.tier).toBe('established');
+  });
+
+  test('a pair is calibrated on the gym\'s record of the behaviour, every athlete', () => {
+    // The 30 double-coded attempts, 10 on each of three athletes, outside the currency window.
+    const athletes = ['athlete-1', 'athlete-2', 'athlete-3'];
+    const gym = calibrationHistory().map((row, index) => ({ ...row, athleteId: athletes[Math.floor(index / 2) % 3] }));
+    const evidence = establishedEvidence();
+    expect(tiersOf(evidence, true, { calibrationReadings: [...evidence, ...gym] }).tier).toBe('established');
+    // Only this athlete's 10: too few paired judgments.
+    expect(tiersOf(evidence, true, { calibrationReadings: [...evidence, ...gym.filter((row) => row.athleteId === ATHLETE)] }).tier)
+      .toBe('pattern');
+  });
+
+  test('two athletes\' "rep-1" in the same session are two attempts, not one paired judgment', () => {
+    const readings = [
+      chance(0, { opportunityKey: 'rep-1', observerAccountId: 'coach-a' }),
+      chance(0, { opportunityKey: 'rep-1', observerAccountId: 'coach-b', athleteId: 'athlete-2' }),
+    ];
+    expect(assessPairCalibration(readings, APPROVED_OBSERVER_CALIBRATION_V1).size).toBe(0);
+  });
+
+  test('a coach who scored one attempt both ways gives no verdict on it, whatever the order', () => {
+    const a1 = chance(0, { opportunityKey: 'rep-1', observerAccountId: 'coach-a' });
+    const a2 = chance(0, { opportunityKey: 'rep-1', observerAccountId: 'coach-a', polarity: 'counterexample' });
+    const b = chance(0, { opportunityKey: 'rep-1', observerAccountId: 'coach-b' });
+    for (const order of [[a1, a2, b], [a2, a1, b]]) {
+      expect(assessPairCalibration(order, APPROVED_OBSERVER_CALIBRATION_V1).get(pairKey('coach-a', 'coach-b'))).toBeUndefined();
+    }
+  });
+
+  test('film or a model alone is not a coded chance', () => {
+    const model = [4, 4, 9, 9].map((day) => chance(day, {
+      observerAccountId: null, interpretation: 'ai_proposed',
+      source: { type: 'computer_vision', quality: 'high', referenceId: `clip-${day}` },
+    }));
+    const result = tiersOf([chance(0), ...model]);
+    expect(result.counts.codedChances).toBe(1);
+    expect(result.tier).toBeNull();
+  });
+
+  test('a coach who only recorded misses did not see it', () => {
+    const rows = [
+      chance(0), chance(0), chance(3, { taskContextKey: 'task-sparring' }), chance(6), chance(9),
+      chance(12), chance(15), chance(15, { taskContextKey: 'task-sparring' }),
+      chance(12, { observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ];
+    const result = tiersOf(rows);
+    expect(result.counts.coaches).toBe(1);
+    expect(result.singleObserver).toBe(true);
+    expect(result.standings.pattern.shortfalls).toContain('observers');
+  });
+
+  test('span is in the gym\'s calendar days: a week across the clock change is a week', () => {
+    // 6pm at the gym on Monday 8 March 2027 (EST) and Monday 15 March 2027 (EDT).
+    const at = (observedAt: string, sessionId: string) => chance(0, { observedAt, sessionId });
+    const rows = [
+      at('2027-03-08T23:00:00.000Z', 's1'), at('2027-03-08T23:10:00.000Z', 's1'),
+      at('2027-03-11T23:00:00.000Z', 's2'), at('2027-03-11T23:10:00.000Z', 's2'),
+      at('2027-03-15T22:00:00.000Z', 's3'),
+    ];
+    const result = tiersOf(rows, true, { asOf: '2027-03-20T12:00:00.000Z' });
+    expect(result.counts.spanDays).toBe(7);
+    expect(result.tier).toBe('emerging');
   });
 });

@@ -29,6 +29,7 @@
  * the strongest possible reliability claim.
  */
 
+import { episodeKeyOf } from '../episodes';
 import type { BehaviourObservation, ObservationPolarity } from '../types';
 
 export type ReliabilityVerdict =
@@ -306,8 +307,10 @@ export function assessObserverReliability(
 // two coaches' readings of the same attempts must agree often enough, beyond
 // chance, over enough attempts, before their double-coded evidence counts. A
 // paired judgment is one attempt (session, task and opportunityKey -- the
-// same grouping the pattern evaluator uses, ../episodes.ts) that both coaches
-// coded. Cohen's kappa for the two of them; agreement on "present" and on
+// same grouping the pattern evaluator uses, ../episodes.ts -- of one athlete's
+// one behaviour, so the gym's whole record can be passed in) that both
+// coaches coded. A coach who scored one attempt both ways gave no verdict on
+// it. Cohen's kappa for the two of them; agreement on "present" and on
 // "absent" reported beside it, because a rare or very common behaviour makes
 // kappa paradoxically low (R5).
 
@@ -342,21 +345,22 @@ export function assessPairCalibration(
 ): ReadonlyMap<string, PairCalibration> {
   // Each person's verdict on each attempt they coded with a key. Only people:
   // a detector does not calibrate against a coach (see buildCoRatedItems).
-  const verdicts = new Map<string, Map<string, ObservationPolarity>>();
+  const verdicts = new Map<string, Map<string, ObservationPolarity | 'both'>>();
   for (const reading of readings) {
     if (!reading.observerAccountId || reading.interpretation !== 'human_observed') continue;
     const key = reading.opportunityKey;
     if (typeof key !== 'string' || key.length === 0) continue;
-    const attempt = JSON.stringify([reading.sessionId, reading.taskContextKey, key]);
-    const byObserver = verdicts.get(attempt) ?? new Map<string, ObservationPolarity>();
-    byObserver.set(reading.observerAccountId, reading.polarity);
+    const attempt = JSON.stringify([reading.organizationId, reading.athleteId, reading.behaviourKey, episodeKeyOf(reading)]);
+    const byObserver = verdicts.get(attempt) ?? new Map<string, ObservationPolarity | 'both'>();
+    const earlier = byObserver.get(reading.observerAccountId);
+    byObserver.set(reading.observerAccountId, earlier === undefined || earlier === reading.polarity ? reading.polarity : 'both');
     verdicts.set(attempt, byObserver);
   }
 
   interface Tally { observers: [string, string]; both: number; neither: number; firstOnly: number; secondOnly: number }
   const tallies = new Map<string, Tally>();
   for (const byObserver of verdicts.values()) {
-    const observers = [...byObserver.keys()].sort();
+    const observers = [...byObserver.keys()].filter((observer) => byObserver.get(observer) !== 'both').sort();
     for (let i = 0; i < observers.length; i += 1) {
       for (let j = i + 1; j < observers.length; j += 1) {
         const key = pairKey(observers[i], observers[j]);
