@@ -3307,7 +3307,8 @@ export default function AthleteWorkspace() {
                               onClick={() => setPostSessionEnjoyment({ sessionId: activeSessionRecord.sessionId, value: level.value })}
                               className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
                             >
-                              <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{level.value}</span> {level.label}
+                              {/* No inline size: the kiosk type floor (--t-md) sets it on the floor. */}
+                              <span className="t-data">{level.value}</span> {level.label}
                             </button>
                           );
                         })}
