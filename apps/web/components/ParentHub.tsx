@@ -503,7 +503,7 @@ export default function ParentHub() {
       const reason = (error instanceof Error && error.message ? error.message : 'the gym could not be reached').replace(/\.$/, '');
       setReplyNotices((held) => ({
         ...held,
-        [noteId]: `That reply did not send -- ${reason}. Your text is still in the box; try again.`,
+        [noteId]: `That reply did not send — ${reason}. Your text is still in the box; try again.`,
       }));
     } finally {
       replySendingRef.current.delete(noteId);
@@ -557,7 +557,7 @@ export default function ParentHub() {
     } catch (error) {
       setTaskNotice({
         athleteId: aboutAthlete,
-        text: `That tick did not save -- ${error instanceof Error ? error.message : 'the gym could not be reached'}. The box shows what the gym has on record; try again.`,
+        text: `That tick did not save — ${error instanceof Error ? error.message : 'the gym could not be reached'}. The box shows what the gym has on record; try again.`,
       });
     } finally {
       setTaskBusy((held) => {
@@ -1295,24 +1295,6 @@ export default function ParentHub() {
             furniture and correct as an object -- it is just not what a parent
             opens this page for. Rendered at the bottom now. */}
 
-        <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
-          <p className="t-label">Family Commitment</p>
-          <p className="t-body mt-[var(--s2)]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
-        </div>
-
-        {/* ROLE SUMMARY PANEL. Progress, Upcoming and Attendance are the
-            selected child's; Parent Floor tasks and New messages count across every
-            child. Each tile is Unavailable until the read it counts from has
-            answered, never 0: a derived 0 would tell a parent "nothing is
-            scheduled" or "nothing is due", which nobody verified. */}
-        <ParentSummaryPanel
-          childProgress={progressText}
-          tasksDue={messagesLoaded ? messages.filter(isOpenTask).length : null}
-          upcomingEvents={activeUpcomingPlaces}
-          attendance={activeAttendanceTally}
-          unreadMessages={messagesLoaded && ownReadsLoaded ? messages.filter(isNewToMe).length : null}
-        />
-
         {/* CHILD SELECTOR */}
         {childrenLoading && (
           <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] text-center">
@@ -1411,6 +1393,30 @@ export default function ParentHub() {
           </div>
         </div>
 
+        {/* PHONE ORDER (parent walk 2026-10-19 item 11: the tabs began about a
+            screen and a half down, below the stat boxes). The child selector
+            and the tab row come first, so any tab is one tap from the top of
+            the page. The family line and the summary tiles follow the row and
+            still show on every tab, so nothing was removed or hidden; only the
+            order changed. PROPOSED order. */}
+        <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
+          <p className="t-label">Family Commitment</p>
+          <p className="t-body mt-[var(--s2)]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
+        </div>
+
+        {/* ROLE SUMMARY PANEL. Progress, Upcoming and Attendance are the
+            selected child's; Parent Floor tasks and New messages count across every
+            child. Each tile is Unavailable until the read it counts from has
+            answered, never 0: a derived 0 would tell a parent "nothing is
+            scheduled" or "nothing is due", which nobody verified. */}
+        <ParentSummaryPanel
+          childProgress={progressText}
+          tasksDue={messagesLoaded ? messages.filter(isOpenTask).length : null}
+          upcomingEvents={activeUpcomingPlaces}
+          attendance={activeAttendanceTally}
+          unreadMessages={messagesLoaded && ownReadsLoaded ? messages.filter(isNewToMe).length : null}
+        />
+
         {/* TAB CONTENT */}
         <div className="space-y-6">
           {/* OVERVIEW */}
@@ -1481,7 +1487,7 @@ export default function ParentHub() {
                     {safetySummary.activeHolds > 0 ? `${safetySummary.activeHolds} active training hold(s)` : null}
                     {safetySummary.activeHolds > 0 && safetySummary.flaggedGates > 0 ? ' and ' : null}
                     {safetySummary.flaggedGates > 0 ? `${safetySummary.flaggedGates} gate(s) awaiting clearance` : null}
-                    {' '}across your children. This is not a punishment -- see the Safety page for details.
+                    {' '}across your children. This is not a punishment — see the Safety page for details.
                   </p>
                 ) : safetySummary ? (
                   <p className="t-body mt-[var(--s2)]">Check your child&apos;s active training-hold and safety-gate status, and manage photo/video consent.</p>
@@ -1791,7 +1797,7 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Parent Observations"
-                description="Write down what you notice at home -- energy, motivation, sleep and recovery, how they are developing -- and it is saved to your child's record at the gym, where the coaches can read it."
+                description="Write down what you notice at home — energy, motivation, sleep and recovery, how they are developing — and it is saved to your child's record at the gym, where the coaches can read it."
                 usage={[
                   'Pick what it is about and say what you noticed',
                   'Add a rating from 1 to 10 if it helps; it is optional',
@@ -2157,7 +2163,7 @@ export default function ParentHub() {
             <div className="space-y-6 panel-settle">
               <RoleSpecificShadow
                 role="parent"
-                description="Ask SHADOW how to support your child at home. Tap below to open a live chat scoped to your family -- there is no canned answer here."
+                description="Ask SHADOW how to support your child at home. Tap below to open a live chat scoped to your family — there is no canned answer here."
                 chatContext="Parent Hub"
               />
             </div>

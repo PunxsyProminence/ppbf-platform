@@ -267,21 +267,35 @@ export default function GuardianSafetyPage() {
                 (the route reads those four only), so the copy names them. */}
             <p className="t-body mt-[var(--s3)] max-w-3xl">
               Whether your child&rsquo;s training is currently paused for any reason, and their standing
-              against the gym&rsquo;s safety checks -- the same information your child can see about
+              against the gym&rsquo;s safety checks &mdash; the same information your child can see about
               themselves, nothing more.
             </p>
-            <p className="t-body mt-[var(--s2)] max-w-3xl">
-              Then your child&rsquo;s injury record: each injury the gym recorded, where and what kind, who
-              reported it and when they are expected back -- the same record your child sees, without staff notes.
-            </p>
-            <p className="t-body mt-[var(--s2)] max-w-3xl">
-              Below that, the status of the four waivers the gym tracks: general, medical release, photo
-              &amp; media and travel. Photo &amp; media reads Signed only when every guardian on file for
-              your child has signed it with video included. Photos only means a guardian&rsquo;s consent on file,
-              including a former guardian&rsquo;s, covers photos but not video, so the gym cannot use video.
-              The Photo &amp; Video Consent page below is where you sign or withdraw yours. Not on file means
-              the gym has no signed waiver of that kind yet, and the row says what to do.
-            </p>
+            {/* LAYOUT ONLY (parent walk 2026-10-19 item 14: three long
+                paragraphs stood between the title and the status). The first
+                paragraph stays: it is the claim about what this page shows.
+                The other two, which explain the injury record and the
+                waivers, move into a disclosure one tap away. Not a word of
+                either changed except the "--" now written as a dash (item 12),
+                and nothing is removed: the header's text still holds all of
+                it, in the same order. The summary line is PROPOSED copy. The
+                summary carries the tap floor the page's other controls do. */}
+            <details className="mt-[var(--s3)] max-w-3xl">
+              <summary className="t-label min-h-[var(--tap)] cursor-pointer py-[var(--s3)]">
+                How to read the injury record and the waivers
+              </summary>
+              <p className="t-body mt-[var(--s2)]">
+                Then your child&rsquo;s injury record: each injury the gym recorded, where and what kind, who
+                reported it and when they are expected back &mdash; the same record your child sees, without staff notes.
+              </p>
+              <p className="t-body mt-[var(--s2)]">
+                Below that, the status of the four waivers the gym tracks: general, medical release, photo
+                &amp; media and travel. Photo &amp; media reads Signed only when every guardian on file for
+                your child has signed it with video included. Photos only means a guardian&rsquo;s consent on file,
+                including a former guardian&rsquo;s, covers photos but not video, so the gym cannot use video.
+                The Photo &amp; Video Consent page below is where you sign or withdraw yours. Not on file means
+                the gym has no signed waiver of that kind yet, and the row says what to do.
+              </p>
+            </details>
             {errorMessage ? (
               <p role="alert" className="alert alert--warning mt-[var(--s3)]">
                 <span className="alert-icon" aria-hidden="true">▲</span>
@@ -291,9 +305,15 @@ export default function GuardianSafetyPage() {
           </header>
 
           {isLoading ? (
-            <div className="empty mt-[var(--s5)]">
+            /* Names what is loading and says it can take a few seconds (parent
+               walk 2026-10-19 item 13: a bare "Loading…" stood for 2 to 5
+               seconds). A status region, so it is announced. The sheet's
+               `.working` cue is not used: it pins 11px and this is a kiosk
+               page with a 19.1px type floor. Wording PROPOSED. */
+            <div className="empty mt-[var(--s5)]" role="status">
               <div className="empty-glyph" aria-hidden="true">◌</div>
-              <div className="empty-title">Loading…</div>
+              <div className="empty-title">Loading safety status…</div>
+              <div className="empty-msg">This can take a few seconds.</div>
             </div>
           ) : errorMessage ? (
             <div className="empty mt-[var(--s5)]">

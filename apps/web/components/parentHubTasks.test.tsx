@@ -189,7 +189,7 @@ describe('a message with a due date on the Messages tab', () => {
     });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'That tick did not save -- Not found: no such task for your children. The box shows what the gym has on record; try again.',
+      'That tick did not save — Not found: no such task for your children. The box shows what the gym has on record; try again.',
     );
     expect(screen.getByRole('checkbox', { name: 'Done' })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Done' })).toBeEnabled();
@@ -207,7 +207,7 @@ describe('a message with a due date on the Messages tab', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: 'Done' }));
     });
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('That tick did not save -- The tick did not save.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('That tick did not save — The tick did not save.');
     expect(screen.getByRole('checkbox', { name: 'Done' })).not.toBeChecked();
   });
 
@@ -225,7 +225,7 @@ describe('a message with a due date on the Messages tab', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: 'Done' }));
     });
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('That tick did not save -- Failed to fetch.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('That tick did not save — Failed to fetch.');
     expect(screen.getByRole('checkbox', { name: 'Done' })).not.toBeChecked();
   });
 

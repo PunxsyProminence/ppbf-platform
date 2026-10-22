@@ -260,7 +260,7 @@ describe('replying to a coach message (FC-03)', () => {
       fireEvent.click(within(gloves).getByRole('button', { name: /^Send reply/ }));
     });
     expect(within(gloves).getByRole('alert').textContent).toBe(
-      'That reply did not send -- A reply is at most 2000 characters. Your text is still in the box; try again.',
+      'That reply did not send — A reply is at most 2000 characters. Your text is still in the box; try again.',
     );
 
     fireEvent.change(within(medical).getByLabelText(/^Your reply/), { target: { value: 'Form is in.' } });

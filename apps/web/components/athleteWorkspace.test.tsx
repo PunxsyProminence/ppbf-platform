@@ -5507,6 +5507,6 @@ describe('the Tracks tab', () => {
     await screen.findByText('Nobody has put you on a track yet.');
     expect(screen.queryByText(/Nobody has written this down yet/)).toBeNull();
     expect(screen.queryByText(/request upgrades/)).toBeNull();
-    expect(screen.queryByText(/Your programme|Where you stand|Support:|Hours you have put in/)).toBeNull();
+    expect(screen.queryByText(/Your program|Where you stand|Support:|Hours you have put in/)).toBeNull();
   });
 });
