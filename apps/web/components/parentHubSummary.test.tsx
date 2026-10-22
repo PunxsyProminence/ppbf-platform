@@ -30,6 +30,8 @@ function jsonResponse(body: unknown, ok = true): Response {
 
 const CLASSES = [
   { class_id: 'cls_past', title: 'Tuesday Fundamentals', start_at: '2020-01-07T23:00:00.000Z', location: 'Main Floor', status: 'open' },
+  { class_id: 'cls_past2', title: 'Tuesday Fundamentals', start_at: '2020-01-14T23:00:00.000Z', location: 'Main Floor', status: 'open' },
+  { class_id: 'cls_past3', title: 'Tuesday Fundamentals', start_at: '2020-01-21T23:00:00.000Z', location: 'Main Floor', status: 'open' },
   { class_id: 'cls_sat', title: 'Saturday Sparring', start_at: '2099-06-05T15:00:00.000Z', location: 'Ring Two', status: 'open' },
   { class_id: 'cls_sun', title: 'Sunday Roadwork', start_at: '2099-06-06T15:00:00.000Z', location: 'Track', status: 'open' },
   { class_id: 'cls_off', title: 'Called-off Class', start_at: '2099-06-07T15:00:00.000Z', location: 'Main Floor', status: 'cancelled' },
@@ -51,10 +53,10 @@ const SCHEDULE = {
   ],
   attendance: [
     { attendance_id: 'a1', class_id: 'cls_past', athlete_id: 'ath_1', status: 'present', checked_in_at: '2020-01-07T23:05:00.000Z' },
-    { attendance_id: 'a2', class_id: 'cls_past', athlete_id: 'ath_1', status: 'excused', checked_in_at: '2020-01-14T23:05:00.000Z' },
+    { attendance_id: 'a2', class_id: 'cls_past2', athlete_id: 'ath_1', status: 'excused', checked_in_at: '2020-01-14T23:05:00.000Z' },
     { attendance_id: 'a3', class_id: 'cls_past', athlete_id: 'ath_2', status: 'absent', checked_in_at: '2020-01-07T23:06:00.000Z' },
-    { attendance_id: 'a4', class_id: 'cls_past', athlete_id: 'ath_2', status: 'absent', checked_in_at: '2020-01-14T23:06:00.000Z' },
-    { attendance_id: 'a5', class_id: 'cls_past', athlete_id: 'ath_2', status: 'present', checked_in_at: '2020-01-21T23:06:00.000Z' },
+    { attendance_id: 'a4', class_id: 'cls_past2', athlete_id: 'ath_2', status: 'absent', checked_in_at: '2020-01-14T23:06:00.000Z' },
+    { attendance_id: 'a5', class_id: 'cls_past3', athlete_id: 'ath_2', status: 'present', checked_in_at: '2020-01-21T23:06:00.000Z' },
   ],
 };
 
@@ -88,8 +90,8 @@ const MILESTONES: Record<string, unknown> = {
     ],
   },
 };
-const FIRST_PROGRESS = '4 milestones earned · 12 sessions logged';
-const SECOND_PROGRESS = '2 milestones earned · 1 session logged';
+const FIRST_PROGRESS = '4 milestones earned · 12 training sessions logged';
+const SECOND_PROGRESS = '2 milestones earned · 1 training session logged';
 
 type MilestoneHandler = (athleteId: string, init?: RequestInit) => Promise<Response>;
 
@@ -205,14 +207,14 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
   test('a real zero is a zero', async () => {
     installFetch({ milestones: async () => jsonResponse({ ok: true, completed_sessions: 0, items: [] }) });
     await renderHub();
-    await waitFor(() => expect(tileValue('Progress')).toBe('0 milestones earned · 0 sessions logged'));
+    await waitFor(() => expect(tileValue('Progress')).toBe('0 milestones earned · 0 training sessions logged'));
   });
 
   test('sessions earn their milestones with no award row, as the Progress tab counts them', async () => {
     installFetch({ milestones: async () => jsonResponse({ ok: true, completed_sessions: 13, items: [] }) });
     await renderHub();
     // consistency.first_session, consistency.5 and consistency.13.
-    await waitFor(() => expect(tileValue('Progress')).toBe('3 milestones earned · 13 sessions logged'));
+    await waitFor(() => expect(tileValue('Progress')).toBe('3 milestones earned · 13 training sessions logged'));
   });
 
   test('right after a switch, the child left behind’s progress is not shown while the new read is open', async () => {
@@ -295,6 +297,21 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
   });
 });
 
+// Parent walk 2026-10-19, item 3: "4 sessions logged" beside "Present 1" read as
+// two answers to one question. They are two records: the training log (a count
+// of sessions logged) and the gym's class register (marks per class).
+test('the two counts are named for what they count: training sessions logged, class attendance', async () => {
+  installFetch();
+  await renderHub();
+
+  await waitFor(() => expect(tileValue('Progress')).toBe(FIRST_PROGRESS));
+  expect(tileValue('Progress')).toContain('12 training sessions logged');
+  expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0/);
+  // No tile is left with a bare "Attendance" name beside "sessions logged".
+  expect(screen.queryByText('Attendance', { selector: 'p' })).toBeNull();
+  expect(document.body.textContent).not.toMatch(/\d+ sessions? logged/);
+});
+
 describe('Upcoming: places the selected child holds in sessions still to come', () => {
   test('counts registered, future, not-cancelled sessions for this child only', async () => {
     installFetch();
@@ -312,7 +329,7 @@ describe('Upcoming: places the selected child holds in sessions still to come', 
     installFetch({ scheduler: () => new Promise<Response>(() => {}) });
     await renderHub();
     expect(tileValue('Upcoming')).toBe('Unavailable');
-    expect(tileValue('Attendance')).toBe('Unavailable');
+    expect(tileValue('Class attendance')).toBe('Unavailable');
     expect(statusPanelText()).not.toContain('Present 0');
   });
 
@@ -327,35 +344,35 @@ describe('Attendance: the recorded marks, counted and never divided', () => {
   test('the tile and status row show this child’s marks, and move with the selection', async () => {
     installFetch();
     await renderHub();
-    await waitFor(() => expect(tileValue('Attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0Last marked Jan 14, 2020/));
+    await waitFor(() => expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0Latest class on the register: Jan 14, 2020, 6:00 PM/));
     expect(statusPanelText()).toContain('Present 1 · Excused 1 · Absent 0');
-    // Newest mark first: the excused one on the 14th.
-    expect(statusPanelText()).toMatch(/Last marked Jan 14, 2020/);
+    // Newest CLASS first: the excused one, for the class held on the 14th.
+    expect(statusPanelText()).toMatch(/Latest class on the register: Jan 14, 2020, 6:00 PM/);
 
     await selectChild('Second Child');
-    expect(tileValue('Attendance')).toMatch(/^Present 1 · Excused 0 · Absent 2Last marked Jan 21, 2020/);
+    expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 0 · Absent 2Latest class on the register: Jan 21, 2020, 6:00 PM/);
     expect(statusPanelText()).toContain('Present 1 · Excused 0 · Absent 2');
-    expect(statusPanelText()).toMatch(/Last marked Jan 21, 2020/);
+    expect(statusPanelText()).toMatch(/Latest class on the register: Jan 21, 2020, 6:00 PM/);
   });
 
   test('a child with no marks reads zeros and no last-marked line', async () => {
     installFetch({ scheduler: async () => jsonResponse({ ok: true, classes: [], registrations: [], attendance: [] }) });
     await renderHub();
-    await waitFor(() => expect(tileValue('Attendance')).toBe('Present 0 · Excused 0 · Absent 0'));
-    expect(statusPanelText()).not.toContain('Last marked');
+    await waitFor(() => expect(tileValue('Class attendance')).toBe('Present 0 · Excused 0 · Absent 0'));
+    expect(statusPanelText()).not.toMatch(/Latest class|Last marked/);
   });
 
   test('a failed schedule read is Unavailable on both, not zeros', async () => {
     installFetch({ scheduler: async () => jsonResponse({ error: 'down' }, false) });
     await renderHub();
-    await waitFor(() => expect(tileValue('Attendance')).toBe('Unavailable'));
+    await waitFor(() => expect(tileValue('Class attendance')).toBe('Unavailable'));
     expect(statusPanelText()).not.toContain('Present 0');
   });
 
   test('no attendance percentage anywhere on the overview', async () => {
     installFetch();
     const { container } = render(<ParentHub />);
-    await waitFor(() => expect(tileValue('Attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0/));
+    await waitFor(() => expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0/));
     expect(container.textContent ?? '').not.toMatch(/\d+\s*%/);
   });
 });
@@ -376,7 +393,7 @@ describe('no child selected', () => {
     });
     await waitFor(() => expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/pilot/scheduler'))).toBe(true));
     expect(tileValue('Upcoming')).toBe('Unavailable');
-    expect(tileValue('Attendance')).toBe('Unavailable');
+    expect(tileValue('Class attendance')).toBe('Unavailable');
     expect(tileValue('Progress')).toBe('Unavailable');
   });
 });

@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { type PilotAuditEvent, writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
+import { ConflictError } from './errors';
 import { listMembershipFlagsForAthlete, type MembershipFlag } from './programMemberships';
 import { findRegistrationBlockingHold } from './trainingHolds';
 
@@ -141,33 +142,74 @@ export async function getSchedulerClassById(organizationId: string, classId: str
   );
 }
 
-export async function createSchedulerClass(organizationId: string, item: SchedulerClass): Promise<void> {
-  await query(
-    `insert into pilot.scheduler_classes (
-       organization_id, class_id, title, start_at, end_at, location, capacity,
-       scheduled_by_account_id, coach_account_id, covering_coach_account_id,
-       status, created_at, updated_at
-     ) values (
-       $1,$2,$3,$4,$5,$6,$7,
-       $8,$9,$10,
-       $11,$12,$13
-     )`,
-    [
-      organizationId,
-      item.class_id,
-      item.title,
-      item.start_at,
-      item.end_at,
-      item.location,
-      item.capacity,
-      item.scheduled_by_account_id,
-      item.coach_account_id,
-      item.covering_coach_account_id ?? null,
-      item.status,
-      item.created_at,
-      item.updated_at,
-    ],
-  );
+/*
+ * One class, or a repeat-weekly run of them (lane LW), in ONE transaction: all
+ * of them or none. Each row is an ordinary class with its own id, so editing or
+ * cancelling one never touches the others; nothing records that they were made
+ * together.
+ *
+ * Retry-safe without a key table: the route derives each class_id from the
+ * request key (same caller, same key, same week -> same id), so a repeated
+ * submit inserts nothing ("on conflict do nothing") and is answered
+ * 'already_created' -- when every class it names is already there exactly as
+ * asked. A key that already made DIFFERENT classes (or only some of these) is
+ * refused, and the transaction takes back anything this call inserted. Two
+ * submits racing on one key: the second waits on the first's rows, then finds
+ * them.
+ */
+export type CreateClassesOutcome = 'created' | 'already_created';
+
+export const CLASS_REQUEST_KEY_REUSED =
+  'Your earlier tap already scheduled classes under this request, so nothing was added this time. Check the schedule before scheduling again.';
+
+export async function createSchedulerClasses(
+  organizationId: string,
+  items: readonly SchedulerClass[],
+): Promise<CreateClassesOutcome> {
+  const column = <K extends keyof SchedulerClass>(key: K) => items.map((item) => item[key] ?? null);
+  const params = [
+    organizationId,
+    column('class_id'), column('title'), column('start_at'), column('end_at'), column('location'),
+    column('capacity'), column('scheduled_by_account_id'), column('coach_account_id'),
+    column('covering_coach_account_id'), column('status'), column('created_at'), column('updated_at'),
+  ];
+  return withTransaction(async (client) => {
+    const inserted = await client.query<{ class_id: string }>(
+      `insert into pilot.scheduler_classes (
+         organization_id, class_id, title, start_at, end_at, location, capacity,
+         scheduled_by_account_id, coach_account_id, covering_coach_account_id,
+         status, created_at, updated_at
+       )
+       select $1::text, r.*
+         from unnest($2::text[], $3::text[], $4::timestamptz[], $5::timestamptz[], $6::text[],
+                     $7::integer[], $8::text[], $9::text[], $10::text[], $11::text[],
+                     $12::timestamptz[], $13::timestamptz[])
+           as r(class_id, title, start_at, end_at, location, capacity, scheduled_by_account_id,
+                coach_account_id, covering_coach_account_id, status, created_at, updated_at)
+       on conflict (organization_id, class_id) do nothing
+       returning class_id`,
+      params,
+    );
+    if (inserted.rows.length === items.length) return 'created';
+    if (inserted.rows.length === 0) {
+      // The same request again only if every class is there as asked; status and
+      // cover are not compared (a class cancelled since is still the one made).
+      const same = await client.query<{ count: string }>(
+        `select count(*)::text as count
+           from pilot.scheduler_classes c
+           join unnest($2::text[], $3::text[], $4::timestamptz[], $5::timestamptz[], $6::text[],
+                       $7::integer[], $8::text[])
+             as r(class_id, title, start_at, end_at, location, capacity, coach_account_id)
+             on c.class_id = r.class_id
+          where c.organization_id = $1 and c.title = r.title and c.start_at = r.start_at
+            and c.end_at = r.end_at and c.location = r.location and c.capacity = r.capacity
+            and c.coach_account_id = r.coach_account_id`,
+        [...params.slice(0, 7), column('coach_account_id')],
+      );
+      if (Number(same.rows[0]?.count ?? 0) === items.length) return 'already_created';
+    }
+    throw new ConflictError(CLASS_REQUEST_KEY_REUSED, 'CLASS_REQUEST_KEY_REUSED');
+  });
 }
 
 /**
