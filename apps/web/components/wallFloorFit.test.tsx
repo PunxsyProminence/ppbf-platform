@@ -46,13 +46,13 @@ function board(count: number, total = count): WallBoard {
     generated_at: '2026-10-22T18:30:00.000Z',
     gym_day: '2026-10-22',
     time_zone: 'America/New_York',
-    name_mode: 'full',
+    name_mode: 'consent',
     sessions: [],
-    on_floor: FULL.slice(0, count).map((name, i) => ({ key: `p${i}`, name, visibility: 'full' as const })),
+    on_floor: FULL.slice(0, count).map((name, i) => ({ key: `p${i}`, name, visibility: 'full_name' as const })),
     on_floor_total: total,
     marquee: [],
     notice: null,
-  } as WallBoard;
+  };
 }
 
 /** Fake layout: the list is `room` px tall; each name is a ROW-tall row whose height shrinks one step per rung. */
