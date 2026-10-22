@@ -129,14 +129,22 @@ test('a missing file leaves the synthesized bell ringing, and is not asked for a
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
-test('a fetch that throws (offline) leaves the synthesized bell ringing', async () => {
-  fetchMock.mockRejectedValue(new Error('offline'));
+test('a fetch that throws (offline) leaves the synthesized bell ringing, and the next bell tries the file again', async () => {
+  fetchMock.mockRejectedValueOnce(new Error('offline'));
   const engine = new Engine();
   engine.setRecording('bell', '/sounds/boxing-bell.wav');
   await engine.enable();
   await flush();
+  const ctx = FakeAudioContext.created[0];
   expect(engine.play('bell')).toBe(true);
-  expect(FakeAudioContext.created[0].oscillators.length).toBeGreaterThan(0);
+  expect(ctx.oscillators.length).toBeGreaterThan(0);
+  await flush();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  ctx.currentTime = 5;
+  ctx.oscillators.length = 0;
+  expect(engine.play('bell')).toBe(true);
+  expect(ctx.oscillators).toHaveLength(0);
+  expect(ctx.sources.some((s) => s.buffer === RECORDING)).toBe(true);
 });
 
 test('null goes back to the synthesized bell', async () => {

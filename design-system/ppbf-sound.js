@@ -3,14 +3,15 @@
    ---------------------------------------------------------------------------
    ZERO ASSETS, same as everything else. There are no .mp3 or .wav files here:
    every sound is built from oscillators and filtered noise through the Web
-   Audio API. The kiosk renders on a cold tablet with no network, and that
-   promise does not get an exception for audio.
+   Audio API. The kiosk renders on a cold tablet with no network, and every
+   voice still works there.
 
-   ONE OPT-IN EXCEPTION (Jason 2026-10-21, "A: Free boxing-bell recording"):
-   a surface may hand the engine a recording to ring in place of a voice
-   (setRecording). The gym TV does, for a real boxing-ring bell. The
-   synthesized voice stays the fallback: until the file has loaded, or if it
-   is missing, offline or undecodable, play() synthesizes exactly as before.
+   ONE OPT-IN RECORDING (Jason 2026-10-21, "A: Free boxing-bell recording"):
+   a page may hand the engine a recording to ring in place of a voice
+   (setRecording). The gym TV does, for a real boxing-ring bell. Nothing is
+   fetched unless a page asks, and the synthesized voice stays the fallback:
+   until the file has loaded, or if it is missing, offline or undecodable,
+   play() synthesizes exactly as before.
 
    FIVE RULES, stricter than the visual system's:
 
@@ -146,17 +147,26 @@ class PPBFSound {
     if (this.#ctx) this.#loadRecording(url);
   }
 
-  /** Fetches and decodes a recording, once per URL. Never throws. */
+  /**
+   * Fetches and decodes a recording. Never throws. A missing or undecodable
+   * file is not asked for again on this page; a fetch that failed outright
+   * (the TV was offline) is tried again the next time that voice plays.
+   */
   async #loadRecording(url) {
     if (this.#fetched.has(url)) return;
     this.#fetched.add(url);
+    let response;
     try {
-      const response = await fetch(url, { cache: 'force-cache' });
+      response = await fetch(url);
+    } catch {
+      this.#fetched.delete(url);
+      return;
+    }
+    try {
       if (!response.ok) return;
       this.#audio.set(url, await this.#ctx.decodeAudioData(await response.arrayBuffer()));
     } catch {
-      // Missing, offline, or a format this browser cannot decode: the
-      // synthesized voice keeps ringing.
+      // A format this browser cannot decode: the synthesized voice rings.
     }
   }
 
@@ -170,7 +180,9 @@ class PPBFSound {
     const now = this.#ctx.currentTime;
     if (now < this.#busyUntil) return false;      // rule 5: no stacking
 
-    const recording = this.#audio.get(this.#recordingUrls.get(name));
+    const url = this.#recordingUrls.get(name);
+    const recording = url && this.#audio.get(url);
+    if (url && !recording) this.#loadRecording(url);   // for next time; no-op once asked
     if (recording) {
       this.#busyUntil = now + this.#recorded(recording);
       return true;

@@ -631,9 +631,7 @@ describe('empty states', () => {
       on_floor: Array.from({ length: 15 }, (_, i) => ({ key: `k${i}`, name: 'M.R.', visibility: 'initials' as const })),
       on_floor_total: 15,
     });
-    // A paired TV with nothing sent shows the names beside the ready round clock (issue 1792 item
-    // 5), on the session ladder.
-    expect(container.querySelector('.wall-floor-list')?.getAttribute('data-density')).toBe('session-packed');
+    expect(container.querySelector('.wall-floor-list')?.getAttribute('data-density')).toBe('packed');
   });
 
   it('reports the people it could not fit rather than dropping them silently', async () => {

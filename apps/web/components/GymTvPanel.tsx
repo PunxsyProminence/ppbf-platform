@@ -392,9 +392,9 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
                   <li
                     key={tv.tv_id}
                     data-connected={notConnected ? 'no' : undefined}
-                    className={`space-y-[var(--s3)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]${notConnected ? ' border-dashed opacity-70' : ''}`}
+                    className={`space-y-[var(--s3)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]${notConnected ? ' border-dashed' : ''}`}
                   >
-                    <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                    <div className={`flex flex-wrap items-center gap-[var(--s3)]${notConnected ? ' opacity-70' : ''}`}>
                       <p className="font-semibold">{tv.tv_name}</p>
                       <span className={status.badge}><i aria-hidden="true">{status.glyph}</i>{status.label}</span>
                     </div>

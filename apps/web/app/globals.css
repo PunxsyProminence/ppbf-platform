@@ -2612,29 +2612,6 @@ h6 {
 
 [data-surface="wall"] .wall-strip-range { white-space: nowrap; }
 
-/* READY (issue 1792, item 5): the round clock's bezel, big, on a paired TV with no
-   session sent. */
-[data-surface="wall"] .wall-ready {
-  align-self: center;
-  margin: var(--s4) 0 var(--s3);
-  padding: var(--s4) var(--s7);
-  text-align: center;
-}
-
-[data-surface="wall"] .wall-ready-word {
-  font-size: calc(var(--t-5xl) * var(--root-phi));
-  font-weight: 900;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--bone-100);
-}
-
-[data-surface="wall"] .wall-ready-line {
-  font-size: var(--t-3xl);
-  font-weight: 900;
-  color: var(--bone-100);
-}
-
 [data-surface="wall"] .wall-next-label {
   display: -webkit-box;
   margin: var(--s3) 0 0;

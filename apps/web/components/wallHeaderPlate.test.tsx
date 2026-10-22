@@ -87,9 +87,7 @@ describe('the header plate', () => {
     const { container } = render(<WallDisplay />);
     await settle();
     const enamelled = [...container.querySelectorAll('.ge-enamel')].map((el) => `${el.tagName.toLowerCase()}.${el.classList[0]}`);
-    // A paired TV with nothing sent is the workout-ready board (issue 1792): three boards, as with
-    // a session up -- the round clock, on the floor, today.
-    expect(enamelled.sort()).toEqual(['h2.wall-heading', 'h2.wall-heading', 'h2.wall-heading', 'p.wall-clock']);
+    expect(enamelled.sort()).toEqual(['h2.wall-heading', 'h2.wall-heading', 'p.wall-clock']);
   });
 
   it('puts the board in the wall-board kit\'s scope, so its materials apply', async () => {

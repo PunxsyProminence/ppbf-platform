@@ -604,26 +604,20 @@ export default function WallDisplay() {
   });
 
   const fitStyle = useWallFitStyle();
-  // A paired TV with no session on it is ready for one (#1792 item 5; Jason 2026-10-21, "A:
-  // Workout-ready board (Rec.)"): the round clock big, today's classes and who is on the floor,
-  // until a coach sends a session. The unpaired public wall keeps its approved look.
-  const ready = paired === true && liveShown === null;
-  const round = roundTimer && roundReading ? { reading: roundReading, roundSeconds: roundTimer.view.round_seconds } : null;
+  // Nothing sent to this paired TV yet (#1792 item 5; Jason 2026-10-21, "A: Workout-ready board
+  // (Rec.)"): the round clock waits at READY in its bezel, over the wall's own board -- who is on
+  // the floor and today's classes -- until a coach sends a session. A session that went stale was
+  // sent, so it is not "waiting", and a board that is not fresh claims nothing. The unpaired public
+  // wall keeps its approved look.
+  const ready = paired === true && live === null && health === 'fresh';
+  const face = roundTimer && roundReading ? roundPanelText(roundReading, roundTimer.view.round_seconds) : ready ? WALL_READY_FACE : null;
 
   return (
     <div className="wall-board ge-wallboard ge-screenframe flex h-screen w-screen flex-col overflow-hidden" style={fitStyle}>
-      <Masthead
-        now={now}
-        zone={zone}
-        round={round && !(showLive && ready) ? <RoundPanel reading={round.reading} roundSeconds={round.roundSeconds} /> : null}
-      />
+      <Masthead now={now} zone={zone} round={face ? <RoundPanel label={face.label} time={face.time} /> : null} />
 
       {showLive ? (
-        ready ? (
-          <ReadyBoard board={board} zone={zone} daily={daily} round={round} />
-        ) : (
-          <LiveBoard board={board} zone={zone} daily={daily} live={liveShown} now={now} />
-        )
+        <LiveBoard board={board} zone={zone} daily={daily} live={liveShown} now={now} />
       ) : (
         <StandingBoard health={health} />
       )}
@@ -642,15 +636,17 @@ export default function WallDisplay() {
  * sits in the masthead, between the date and the wall clock, which the masthead is already tall
  * enough to hold: the board below keeps every row it had (floorDensity is sized for that height).
  */
-function RoundPanel({ reading, roundSeconds }: { reading: WallRoundReading; roundSeconds: number }) {
-  const { label, time } = roundPanelText(reading, roundSeconds);
+function RoundPanel({ label, time }: { label: string; time: string }) {
   return (
     <section aria-label="Round clock" className="wall-round flex min-w-0 flex-col items-center">
       <p className="wall-round__label text-[length:var(--t-3xl)] font-black text-[color:var(--bone-100)]">{label}</p>
-      {time && <p className="wall-round__time font-mono tabular-nums text-[length:var(--t-5xl)] font-black text-[color:var(--bone-100)]">{time}</p>}
+      {time && <p className="wall-round__time font-mono tabular-nums uppercase text-[length:var(--t-5xl)] font-black text-[color:var(--bone-100)]">{time}</p>}
     </section>
   );
 }
+
+/** The round clock on a paired TV with nothing sent: Jason's words in the ruling, READY under them. */
+export const WALL_READY_FACE = { label: 'Waiting for coach', time: 'Ready' } as const;
 
 /* ------------------------------------------------------------- pair box --- */
 
@@ -930,51 +926,6 @@ function LiveBoard(props: { board: WallBoard; zone?: string; daily: DailySaying 
             <Today sessions={board.sessions} zone={zone} />
           </>
         )}
-      </main>
-      <Marquee board={board} daily={daily} />
-    </>
-  );
-}
-
-/**
- * READY FOR A WORKOUT: a paired TV with no session sent. The round clock on the major side, big,
- * reading READY and "Waiting for coach" (Jason's words in the ruling); a round timer the coach has
- * set shows there instead of in the masthead. The names under it; today's classes on the minor
- * side, where the wall keeps them. The coach's "Send to TV" swaps this for NOW within one poll.
- */
-function ReadyBoard(props: {
-  board: WallBoard;
-  zone?: string;
-  daily: DailySaying | null;
-  round: { reading: WallRoundReading; roundSeconds: number } | null;
-}) {
-  const { board, zone, daily, round } = props;
-  const face = round ? roundPanelText(round.reading, round.roundSeconds) : null;
-  return (
-    <>
-      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.618fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s4)]">
-        <div className="flex min-h-0 flex-col gap-[var(--s5)]">
-          <section className="wall-panel ge-frame flex shrink-0 flex-col" aria-label="Round clock">
-            <h2 className="wall-heading ge-enamel ge-enamel--sign">
-              <span className="wall-heading-cap">Round clock</span>
-            </h2>
-            <div className="wall-ready wall-round">
-              {face ? (
-                <>
-                  <p className="wall-round__label wall-ready-line">{face.label}</p>
-                  {face.time && <p className="wall-round__time wall-ready-word font-mono tabular-nums">{face.time}</p>}
-                </>
-              ) : (
-                <>
-                  <p className="wall-round__time wall-ready-word font-mono">Ready</p>
-                  <p className="wall-round__label wall-ready-line">Waiting for coach</p>
-                </>
-              )}
-            </div>
-          </section>
-          <OnTheFloor board={board} compact />
-        </div>
-        <Today sessions={board.sessions} zone={zone} />
       </main>
       <Marquee board={board} daily={daily} />
     </>

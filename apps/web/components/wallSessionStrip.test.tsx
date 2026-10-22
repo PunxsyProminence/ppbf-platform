@@ -185,7 +185,7 @@ describe('the session on a paired TV', () => {
     // Jason 2026-10-21, "A: Workout-ready board (Rec.)": the round clock at READY, "Waiting for
     // coach", today's classes and who is on the floor.
     const clock = screen.getByRole('region', { name: 'Round clock' });
-    expect(clock.querySelector('.wall-ready-word')?.textContent).toBe('Ready');
+    expect(clock.querySelector('.wall-round__time')?.textContent).toBe('Ready');
     expect(clock.textContent).toContain('Waiting for coach');
     expect(screen.getByRole('region', { name: 'Today' }).textContent).toContain('Open Gym');
     expect(screen.getByRole('region', { name: 'On the floor' }).textContent).toContain('A.B.');
@@ -258,6 +258,8 @@ describe('the session on a paired TV', () => {
     });
     await settle();
     expect(screen.queryByRole('region', { name: 'Now' })).toBeNull();
+    // A session that went stale was sent: the TV does not claim to be waiting for the coach.
+    expect(screen.queryByText('Waiting for coach')).toBeNull();
   });
 
   it('never prints a field that is not on the TV\'s list', async () => {
