@@ -8,6 +8,7 @@ import {
   listSettledRunsForScript,
   startSessionScriptRun,
 } from '@/src/server/pilot/sessionScriptRuns';
+import { SessionRunClassError } from '@/src/server/pilot/sessionRunClass';
 
 // requireRole and jsonError are deliberately NOT mocked -- role gating and error mapping are two of
 // the three things this suite exists to prove, and mocking them would leave both unexercised.
@@ -49,6 +50,7 @@ const liveRun = {
   paused_at: null,
   paused_seconds: 0,
   show_on_wall: false,
+  class_id: null,
   elapsed_seconds: 600,
   is_paused: false,
 };
@@ -237,7 +239,53 @@ describe('POST runs — start', () => {
       activityId: null,
       athletesPresent: 11,
       deliveredOn: undefined,
+      classId: null,
+      actorRole: 'coach',
     });
+  });
+
+  // D4 (OD-2026-10-21-002): a start may name the scheduled class it is running.
+  it("passes class_id, trimmed, with the caller's role; absent or null ties nothing", async () => {
+    mockStart.mockResolvedValue({ ...liveRun, class_id: 'class-1' });
+    const response = await POST(post({ class_id: ' class-1 ' }));
+    expect(response.status).toBe(201);
+    expect(mockStart).toHaveBeenLastCalledWith('org-1', 'acct-coach', expect.objectContaining({ classId: 'class-1', actorRole: 'coach' }));
+    for (const body of [{}, { class_id: null }]) {
+      await POST(post(body));
+      expect(mockStart).toHaveBeenLastCalledWith('org-1', 'acct-coach', expect.objectContaining({ classId: null }));
+    }
+  });
+
+  it('a class_id that is sent must name a class', async () => {
+    for (const classId of ['', '   ', 7, true]) {
+      const response = await POST(post({ class_id: classId }));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'class_id' });
+    }
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['SESSION_CLASS_NOT_FOUND', 404],
+    ['SESSION_CLASS_NOT_YOURS', 403],
+    ['SESSION_CLASS_CANCELLED', 409],
+    ['SESSION_CLASS_NOT_TODAY', 409],
+  ])('maps the class refusal %s to %i with a plain message beside the code', async (code, status) => {
+    mockStart.mockRejectedValueOnce(new SessionRunClassError(code, status));
+    const response = await POST(post({ class_id: 'class-1' }));
+    expect(response.status).toBe(status);
+    const body = (await response.json()) as { error: string; message?: string };
+    expect(body.error).toBe(code);
+    expect(body.message).toEqual(expect.any(String));
+  });
+
+  it('maps another live session on the class to 409 SESSION_CLASS_ALREADY_LIVE, worded', async () => {
+    mockStart.mockRejectedValueOnce(new SessionScriptRunError('SESSION_CLASS_ALREADY_LIVE', 409));
+    const response = await POST(post({ class_id: 'class-1' }));
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: string; message?: string };
+    expect(body.error).toBe('SESSION_CLASS_ALREADY_LIVE');
+    expect(body.message).toMatch(/already running this class/);
   });
 
   // Issue #1523 (Jason 2026-10-12, "allow a plain session"): no script_id is a plain session.

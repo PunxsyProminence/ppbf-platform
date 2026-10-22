@@ -3,6 +3,7 @@ import { writePilotAuditEvent } from './audit';
 import { organizationActionableRoster } from './coachAthleteRoster';
 import { query, withTransaction } from './db';
 import { ForbiddenError } from './errors';
+import { copyTapToRegister, type RegisterResult, undoTapOnRegister } from './sessionRunClass';
 import { SessionScriptRunError } from './sessionScriptRuns';
 import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization, staffRoleReachingAthlete } from './sessionStaffNotes';
 
@@ -18,7 +19,10 @@ import { lockLiveAthlete, lockStaffMembership, staffNoteRoleInOrganization, staf
 // SESSION DETAIL, NOT ATTENDANCE. The attendance precedence ruling (CT-13,
 // docs/current/ATTENDANCE_PRECEDENCE.md) names what counts as attendance, and a
 // mark here is not one of them: pilot.attendance_reconciled does not read this
-// table and nothing here feeds a report. Nothing is written to the athlete's
+// table and nothing here feeds a report. ON A SESSION TIED TO A CLASS (D4,
+// OD-2026-10-21-002) the same tap also writes that class's REGISTER, which is
+// attendance, through sessionRunClass.ts; an untied session's mark stays
+// session detail only (OD-2026-10-13-016). Nothing is written to the athlete's
 // own tables either: not pilot.sessions, not pilot.athlete_check_ins. An
 // athlete's own check-in is never touched.
 //
@@ -53,6 +57,7 @@ export type RunAthleteOutcome = 'marked' | 'unmarked' | 'unchanged';
 interface RunOwnership {
   delivered_by_account_id: string;
   run_state: string | null;
+  class_id: string | null;
 }
 
 /**
@@ -64,7 +69,7 @@ export async function setRunAthletePresent(input: {
   runId: string;
   athleteId: string;
   present: boolean;
-}): Promise<{ outcome: RunAthleteOutcome }> {
+}): Promise<{ outcome: RunAthleteOutcome; register?: RegisterResult }> {
   const { actor, runId, athleteId } = input;
   // One refusal for "not staff here", "another gym's athlete", "a deleted
   // athlete" and "no such athlete": the answer says nothing about the id.
@@ -82,7 +87,7 @@ export async function setRunAthletePresent(input: {
     }
     // Read under a row lock, so a finish cannot land between this check and the write.
     const run = await client.query<RunOwnership>(
-      `select delivered_by_account_id, run_state
+      `select delivered_by_account_id, run_state, class_id
          from pilot.session_script_runs
         where organization_id = $1 and run_id = $2
           for update`,
@@ -104,6 +109,7 @@ export async function setRunAthletePresent(input: {
 
     let outcome: RunAthleteOutcome;
     let remarked = false;
+    let pointer: { register_class_id: string | null; register_written_at: string | null } | null = null;
     if (input.present) {
       // A first mark inserts. A mark that was taken back is cleared and re-stamped. A standing
       // mark matches neither arm (the conflict's WHERE is false), returns no row, and is left alone.
@@ -124,9 +130,19 @@ export async function setRunAthletePresent(input: {
       outcome = written.rows[0] ? 'marked' : 'unchanged';
       remarked = written.rows[0] ? !written.rows[0].inserted : false;
     } else {
+      // The register mark this mark created (if any), read under the mark's lock before the
+      // take-back clears it: the session no longer claims a register mark it has let go of.
+      const standing = await client.query<{ register_class_id: string | null; register_written_at: string | null }>(
+        `select register_class_id, register_written_at::text from pilot.session_run_athletes
+          where organization_id = $1 and run_id = $2 and athlete_id = $3 and removed_at is null
+            for update`,
+        [actor.organizationId, runId, athleteId],
+      );
+      pointer = standing.rows[0] ?? null;
       const removed = await client.query(
         `update pilot.session_run_athletes
-            set removed_at = clock_timestamp(), removed_by_account_id = $4
+            set removed_at = clock_timestamp(), removed_by_account_id = $4,
+                register_class_id = null, register_written_at = null
           where organization_id = $1 and run_id = $2 and athlete_id = $3 and removed_at is null`,
         [actor.organizationId, runId, athleteId, actor.accountId],
       );
@@ -148,6 +164,21 @@ export async function setRunAthletePresent(input: {
         client,
       );
     }
+
+    // The class register, for a tied session only, after the mark (the lock order: mark, class,
+    // register). A standing mark asked again writes nothing, so a later register change wins.
+    const tap = { organizationId: actor.organizationId, runId, athleteId, accountId: actor.accountId, role };
+    if (outcome === 'marked' && owned.class_id) {
+      return { outcome, register: await copyTapToRegister(client, { ...tap, classId: owned.class_id }) };
+    }
+    if (outcome === 'unmarked' && pointer?.register_class_id && pointer.register_written_at) {
+      return {
+        outcome,
+        register: await undoTapOnRegister(client, { ...tap, classId: pointer.register_class_id }, pointer.register_written_at),
+      };
+    }
+    // Tied, but this mark created no register mark: the register stands as it is.
+    if (outcome === 'unmarked' && owned.class_id) return { outcome, register: { effect: 'unchanged' } };
     return { outcome };
   });
 }

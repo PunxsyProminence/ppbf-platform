@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg';
+
 import { type PilotAuditEvent, writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
@@ -736,4 +738,128 @@ export async function bulkUpsertSchedulerAttendance(
   if (items.length === 0) return;
 
   await query(ATTENDANCE_UPSERT_SQL, attendanceUpsertParams(organizationId, items, options.keepExistingNoteFor));
+}
+
+/*
+ * A LIVE SESSION TIED TO A CLASS WRITES ITS REGISTER (D4, OD-2026-10-21-002;
+ * details OD-2026-10-21-004). sessionRunClass.ts decides when; these are the
+ * statements, here because this file is the one writer of
+ * pilot.scheduler_attendance (CT-13, attendancePrecedence.test.ts). Each runs on
+ * the caller's transaction, after the caller has locked, in this order: staff
+ * membership, run, athlete, session mark, class (lockSchedulerClass), then the
+ * register row here. The mark written is an ordinary register mark: the same
+ * columns and methods a coach's register tap writes, so every reader of the
+ * register (the per-day view, summaries, the TV count, the family view) treats
+ * it exactly as one.
+ */
+
+/** The class row, share-locked until the caller commits: a cancel or a cover change waits for it. */
+export async function lockSchedulerClass(
+  client: PoolClient,
+  organizationId: string,
+  classId: string,
+): Promise<SchedulerClass | null> {
+  const { rows } = await client.query<SchedulerClass>(
+    `select class_id, title, start_at::text, end_at::text, location, capacity,
+            scheduled_by_account_id, coach_account_id, covering_coach_account_id,
+            status, created_at::text, updated_at::text
+       from pilot.scheduler_classes
+      where organization_id = $1 and class_id = $2
+        for share`,
+    [organizationId, classId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Whether the athlete holds a live ('registered') sign-up for the class: a walk-in otherwise. */
+export async function isRegisteredForClass(
+  client: PoolClient,
+  organizationId: string,
+  classId: string,
+  athleteId: string,
+): Promise<boolean> {
+  const { rows } = await client.query(
+    `select 1 from pilot.scheduler_registrations
+      where organization_id = $1 and class_id = $2 and athlete_id = $3 and status = 'registered'
+        and ${athleteNotDeletedSql('pilot.scheduler_registrations')}`,
+    [organizationId, classId, athleteId],
+  );
+  return rows.length > 0;
+}
+
+export type SessionRegisterWrite =
+  | { effect: 'created'; updated_at: string }
+  | { effect: 'already_present' }
+  | { effect: 'flipped'; previous_status: 'absent' | 'excused' };
+
+/**
+ * Make the athlete Present on the class register for a "here" tap.
+ *   no mark            insert Present ('created'; the caller records updated_at for undo)
+ *   Present (anyone's) nothing ('already_present'); a family's own Present stands as theirs
+ *   Absent or Excused  Present, and the previous status is returned to tell the coach
+ *                      (ruling 1, "A: Here wins (Rec.)"); the note is kept, never erased unseen
+ * The insert does nothing on a conflict and the row is then read under a lock, so a register
+ * mark landing at the same moment is waited for and then answered by its committed status.
+ */
+export async function writeSessionRegisterPresent(
+  client: PoolClient,
+  organizationId: string,
+  mark: Pick<SchedulerAttendance, 'class_id' | 'athlete_id' | 'method' | 'checked_in_by_role' | 'checked_in_by_account_id'>,
+  now: string,
+): Promise<SessionRegisterWrite> {
+  const params = [organizationId, mark.class_id, mark.athlete_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now];
+  let previous: SchedulerAttendance['status'] | undefined;
+  // Twice at most: a mark removed between the two statements is inserted on the second pass.
+  for (let attempt = 0; attempt < 2 && !previous; attempt += 1) {
+    const inserted = await client.query<{ updated_at: string }>(
+      `insert into pilot.scheduler_attendance (
+         organization_id, attendance_id, class_id, athlete_id, status, method,
+         checked_in_by_role, checked_in_by_account_id, note, checked_in_at, updated_at
+       ) values ($1, gen_random_uuid()::text, $2, $3, 'present', $4, $5, $6, '', $7::timestamptz, $7::timestamptz)
+       on conflict (organization_id, class_id, athlete_id) do nothing
+       returning updated_at::text`,
+      params,
+    );
+    if (inserted.rows[0]) return { effect: 'created', updated_at: inserted.rows[0].updated_at };
+    const { rows } = await client.query<{ status: SchedulerAttendance['status'] }>(
+      `select status from pilot.scheduler_attendance
+        where organization_id = $1 and class_id = $2 and athlete_id = $3
+          for update`,
+      params.slice(0, 3),
+    );
+    previous = rows[0]?.status;
+  }
+  // Inserted by nobody and found by nobody, twice: never answer "Present" for a mark not there.
+  if (!previous) throw new Error('SESSION_REGISTER_WRITE_RACE');
+  if (previous === 'present') return { effect: 'already_present' };
+  await client.query(
+    `update pilot.scheduler_attendance
+        set status = 'present', method = $4, checked_in_by_role = $5, checked_in_by_account_id = $6,
+            checked_in_at = $7::timestamptz, updated_at = $7::timestamptz
+      where organization_id = $1 and class_id = $2 and athlete_id = $3`,
+    params,
+  );
+  return { effect: 'flipped', previous_status: previous };
+}
+
+/**
+ * Take back the register mark a tap CREATED, only if nobody has changed it since (ruling 2,
+ * "A: Undo if untouched (Rec.)"): still Present, still this coach's, updated_at still the one the
+ * tap wrote. Any later write (a re-mark, a status change, another marker) moves updated_at or the
+ * marker, and the mark then stays. Returns whether it was removed.
+ */
+export async function undoSessionRegisterPresent(
+  client: PoolClient,
+  organizationId: string,
+  mark: { class_id: string; athlete_id: string; written_at: string; account_id: string },
+): Promise<boolean> {
+  const { rows } = await client.query(
+    `delete from pilot.scheduler_attendance
+      where organization_id = $1 and class_id = $2 and athlete_id = $3
+        and updated_at = $4::timestamptz and status = 'present' and checked_in_by_account_id = $5
+        and method in ('coach_override', 'admin_override', 'walk_in')
+      returning attendance_id`,
+    [organizationId, mark.class_id, mark.athlete_id, mark.written_at, mark.account_id],
+  );
+  return rows.length > 0;
 }

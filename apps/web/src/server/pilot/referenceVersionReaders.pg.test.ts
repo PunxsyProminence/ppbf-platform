@@ -104,6 +104,21 @@ const MIGRATIONS: ReadonlyArray<{ file: string; runner: string }> = [
     file: 'pilot_slice_postgres_workout_templates_v2_migration.sql',
     runner: 'pilot-apply-workout-templates-v2-migration.mjs',
   },
+  // sessionScriptRuns.ts reads and writes session_script_runs.class_id (D4), which the
+  // session-run-class migration adds; it alters session_run_athletes, which needs the staff-notes
+  // table it widens.
+  {
+    file: 'pilot_slice_postgres_session_staff_notes_migration.sql',
+    runner: 'pilot-apply-session-staff-notes-migration.mjs',
+  },
+  {
+    file: 'pilot_slice_postgres_session_run_athletes_migration.sql',
+    runner: 'pilot-apply-session-run-athletes-migration.mjs',
+  },
+  {
+    file: 'pilot_slice_postgres_session_run_class_migration.sql',
+    runner: 'pilot-apply-session-run-class-migration.mjs',
+  },
 ];
 
 const ORG_A = 'org-refver-a';
