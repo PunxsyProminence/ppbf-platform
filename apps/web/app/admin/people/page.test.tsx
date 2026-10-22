@@ -1151,22 +1151,49 @@ describe('the name the gym types for a coach or staff member (Q1 part B)', () =>
 
   test('saves the name as the server will store it, then re-reads the list', async () => {
     const patched: Record<string, unknown>[] = [];
+    // The list the server answers with; a save changes what the next read returns.
+    const members = [coachMember()];
     global.fetch = fetchMock({
-      members: [coachMember()],
+      members,
       roster: ROSTER,
       onPatch: (body) => {
         patched.push(body);
+        members[0] = coachMember({ staff_display_name: body.display_name });
         return { ok: true };
       },
     }) as never;
 
     render(<PeopleConsolePage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Set Name' }));
-    fireEvent.change(screen.getByLabelText(/Name for coach@example.com/), { target: { value: '  Jordan   Smith ' } });
+    const input = screen.getByLabelText(/Name for coach@example.com/);
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: '  Jordan   Smith ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Name' }));
 
     await waitFor(() => expect(patched).toEqual([{ account_id: 'coach@example.com', display_name: 'Jordan Smith' }]));
     expect(await screen.findByText(/Saved the name "Jordan Smith"/)).toBeTruthy();
+    // Shown from the re-read list, not from what was typed.
+    expect(await screen.findByText('Jordan Smith')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Edit Name' })).toBeTruthy();
+  });
+
+  test('one row edits at a time: the other rows cannot open while a name is being typed', async () => {
+    global.fetch = fetchMock({
+      members: [coachMember(), coachMember({ account_id: 'staff@example.com', login_email: 'staff@example.com', role: 'staff' })],
+      roster: ROSTER,
+    }) as never;
+
+    render(<PeopleConsolePage />);
+    await screen.findAllByRole('button', { name: 'Set Name' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Set Name' })[0]);
+
+    const others = screen.getAllByRole('button', { name: 'Set Name' });
+    expect(others).toHaveLength(1);
+    expect((others[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    for (const button of screen.getAllByRole('button', { name: 'Set Name' })) {
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    }
   });
 
   test('a stored name is shown, Edit Name starts from it, and an emptied box clears it', async () => {

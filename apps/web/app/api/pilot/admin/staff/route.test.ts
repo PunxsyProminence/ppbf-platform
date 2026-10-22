@@ -502,6 +502,26 @@ describe('PATCH (staff display name, Q1 part B)', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
+  test("the database check's refusal answers 400; any other database error stays a server error", async () => {
+    mockSetName.mockRejectedValueOnce(
+      Object.assign(new Error('new row violates check constraint'), {
+        code: '23514',
+        constraint: 'pilot_account_profiles_staff_display_name_check',
+      }),
+    );
+    const refused = await PATCH(jsonRequest('PATCH', { account_id: 'coach-1', display_name: 'Mike Neale' }));
+    expect(refused.status).toBe(400);
+    expect((await refused.json()).error).toBe(
+      'That name cannot be saved. Use letters, numbers, spaces and ordinary punctuation.',
+    );
+
+    mockSetName.mockRejectedValueOnce(
+      Object.assign(new Error('new row violates check constraint'), { code: '23514', constraint: 'some_other_check' }),
+    );
+    expect((await PATCH(jsonRequest('PATCH', { account_id: 'coach-1', display_name: 'Mike Neale' }))).status).toBe(500);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
   test('missing account_id or display_name answers 400', async () => {
     expect((await PATCH(jsonRequest('PATCH', { display_name: 'Mike' }))).status).toBe(400);
     expect((await PATCH(jsonRequest('PATCH', { account_id: 'coach-1' }))).status).toBe(400);

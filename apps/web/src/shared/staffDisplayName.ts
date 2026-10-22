@@ -46,5 +46,10 @@ export function normalizeStaffDisplayName(raw: unknown): StaffDisplayNameInput {
   if ([...name].length > STAFF_DISPLAY_NAME_MAX) {
     return { ok: false, error: `A display name is at most ${STAFF_DISPLAY_NAME_MAX} characters.` };
   }
+  // A lone joiner or a lone accent mark passes every rule above and shows as
+  // nothing; the screens would then print a blank instead of the login's name.
+  if (!/[^\p{M}\p{Cf}\p{Z}\s]/u.test(name)) {
+    return { ok: false, error: 'A display name needs at least one visible character.' };
+  }
   return { ok: true, name };
 }
