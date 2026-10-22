@@ -161,7 +161,8 @@ export default function FinishedSessions() {
                   <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                     {run.athletes_present !== null
                       && `${run.athletes_present} ${run.athletes_present === 1 ? 'athlete' : 'athletes'} present (the coach's count). `}
-                    {run.blocks_completed !== null && `${run.blocks_completed} blocks completed.`}
+                    {run.blocks_completed !== null
+                      && `${run.blocks_completed} ${run.blocks_completed === 1 ? 'block' : 'blocks'} completed.`}
                   </p>
                 )}
                 <EndNote label="Deviation" text={run.deviation_note} />

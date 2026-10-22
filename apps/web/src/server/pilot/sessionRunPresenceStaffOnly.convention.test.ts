@@ -162,6 +162,31 @@ describe('who was in a session, and notes on a run, are reached only from staff 
       .toMatch(/export const STAFF_NOTE_ROLES = \['coach', 'organization_admin', 'admin'\] as const;/);
   });
 
+  // The exemption for sessionScriptRuns.ts (TABLE_FILES above) is for one use only: a timestamp per
+  // run, inside the idle sweep's SQL, that never leaves the statement. Pinned, because a new read
+  // added to that file would otherwise pass the file-level list unnoticed.
+  it('sessionScriptRuns.ts names either table only inside the idle sweep, which returns nothing from them', () => {
+    const text = source(path.join(PILOT_DIR, 'sessionScriptRuns.ts'));
+    const block = text.slice(text.indexOf('function lastActivitySql('), text.indexOf('export async function closeIdleSessionRuns('));
+    expect(block.length).toBeGreaterThan(0);
+    // Outside it: comments, and the existence check (to_regclass reads the catalog, not the rows).
+    const outside = text.replace(block, '').split('\n').filter((line) => NAMES_A_TABLE.test(line)
+      && !/^\s*\/\//.test(line)
+      && !/to_regclass\('pilot\.session_(run_athletes|staff_notes)'\)/.test(line));
+    expect(outside).toEqual([]);
+    // Inside it: exactly two subqueries, each yielding one timestamp.
+    const reads = block.split('\n').filter((line) => NAMES_A_TABLE.test(line));
+    expect(reads).toHaveLength(2);
+    for (const line of reads) {
+      expect(line.trim()).toMatch(
+        /^signals\.push\(`\(select max\(greatest\([a-z]\.(marked_at|created_at), [a-z]\.(removed_at|updated_at)\)\) from pilot\.session_(run_athletes|staff_notes) [a-z]$/,
+      );
+    }
+    const sweep = text.slice(text.indexOf('export async function closeIdleSessionRuns('), text.indexOf('// The resume lookup.'));
+    expect(sweep).toMatch(/returning r\.run_id`/);
+    expect(sweep).toMatch(/export async function sweepIdleRuns\(organizationId: string\): Promise<void>/);
+  });
+
   it('no component or page imports a value from a server module that reads them', () => {
     const client = ALL_SOURCE.filter((file) => /\.tsx$/.test(file) && !/^src\//.test(relative(file)));
     expect(client.length).toBeGreaterThan(50);

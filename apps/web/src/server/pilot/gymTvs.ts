@@ -24,6 +24,8 @@ import { loadWallBoard } from './wallDisplayDb';
 // WHAT THE KEY IS NOT. It is not a session and it is not an account. It opens exactly the TV read
 // (readGymTvScreen, below: the live session plus the wall board) and nothing else in the app, so a
 // remote in the wrong hands reaches the same screen the room already sees and no athlete record.
+// One side effect, nothing returned: a read with a session pointer first settles the gym's runs
+// idle for three hours (sessionScriptRuns.ts sweepIdleRuns, OD-2026-10-21-001 ruling 2).
 //
 // ONLY HASHES ARE STORED. A database read yields neither a code nor a key. The code's space is
 // 32^6 (about a billion): small enough to brute force offline against a leaked hash, which is why
@@ -215,6 +217,9 @@ const LIVE_SHOWN_RUN = `r.organization_id = t.organization_id and r.run_id = t.c
 // The Paired TVs list reports a run on a TV only while it is live and shown (LIVE_SHOWN_RUN): a
 // pointer left behind by a finished session reads as null, and so does its set_by.
 export async function listGymTvs(organizationId: string): Promise<GymTvListItem[]> {
+  // A forgotten run idle for three hours is settled first, so it is not listed as on a TV
+  // (OD-2026-10-21-001 ruling 2; sessionScriptRuns.ts closeIdleSessionRuns).
+  await sweepIdleRuns(organizationId);
   const rows = await query<GymTvListItem & { code_expired: boolean }>(
     `select t.tv_id, t.tv_name, t.created_by_account_id, t.created_at, t.pair_code_expires_at,
             t.paired_at, t.last_seen_at, t.revoked_at,
@@ -426,6 +431,10 @@ export async function sendRunToGymTv(
   tvId: string,
   runId: string,
 ): Promise<GymTvListItem> {
+  // A forgotten run idle for three hours must not hold this TV (TV_IN_USE). Swept BEFORE the
+  // transaction: inside it the sender's run row is held FOR UPDATE, and the sweep runs on another
+  // connection that would wait on that lock.
+  await sweepIdleRuns(organizationId);
   return withTransaction(async (client) => {
     const tv = await lockGymTv(client, organizationId, tvId);
     if (!tv.paired || tv.revoked) {

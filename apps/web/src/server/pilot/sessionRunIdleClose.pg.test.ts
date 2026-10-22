@@ -68,7 +68,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { mintGymTvPairCode, readGymTvSession, redeemGymTvPairCode, sendRunToGymTv } from './gymTvs';
+import { listGymTvs, mintGymTvPairCode, readGymTvSession, redeemGymTvPairCode, sendRunToGymTv } from './gymTvs';
 import {
   getLiveRunForCoach,
   listSettledRunsForOrganization,
@@ -86,7 +86,7 @@ const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 const DATABASE_NAME = 'ppbf_test_session_run_idle_close';
 
 // The words the run carries when the app closed it (PROPOSED copy, sessionScriptRuns.ts).
-const NOTE = 'Closed automatically after 3 hours with no activity.';
+const NOTE = 'Closed automatically after 3 hours with no recorded activity.';
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -253,6 +253,18 @@ afterAll(async () => {
   await fs.rm(DATA_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }).catch(() => {});
 });
 
+// The readers swallow a failed sweep (sweepIdleRuns) so a screen never goes down with it. That
+// would also let a "stays open" case pass with the sweep broken, so every case here proves the
+// sweep did not fail.
+let consoleError: jest.SpyInstance;
+beforeEach(() => {
+  consoleError = jest.spyOn(console, 'error');
+});
+afterEach(() => {
+  expect(consoleError.mock.calls.filter(([event]) => event === 'session-run-idle-close-failed')).toEqual([]);
+  consoleError.mockRestore();
+});
+
 describe('a live session idle for three hours closes itself (D2)', () => {
   test('the coach finds no live session: it is settled ABANDONED, ended at start + 3 hours, off the TV, with a note saying the app closed it', async () => {
     const gym = await newGym('forgotten');
@@ -344,6 +356,48 @@ describe('a live session idle for three hours closes itself (D2)', () => {
     expect((await getLiveRunForCoach(gym.organizationId, gym.coach))?.run_id).toBe(runId);
   });
 
+  test('an intervention logged against the run 30 minutes ago keeps the run open', async () => {
+    const gym = await newGym('intervention');
+    const runId = await liveRunStarted(gym, 4);
+    await client.query(
+      `insert into pilot.intervention_protocols
+         (organization_id, protocol_id, lineage_id, title, target_problem, hypothesis, intervention_description,
+          expected_outcome, created_by_account_id)
+       values ($1, 'proto-1', 'proto-1', 'Guard reset', 'Hands drop', 'Cue helps', 'Cue the guard', 'Hands stay up', $2)`,
+      [gym.organizationId, gym.coach],
+    );
+    await client.query(
+      `insert into pilot.intervention_executions
+         (organization_id, execution_id, lineage_id, athlete_id, protocol_id, protocol_version, session_run_id,
+          recorded_by_account_id, created_at, updated_at)
+       values ($1, 'exec-1', 'exec-1', $2, 'proto-1', 1, $3, $4, now() - interval '30 minutes', now() - interval '30 minutes')`,
+      [gym.organizationId, gym.athlete, runId, gym.coach],
+    );
+    expect((await getLiveRunForCoach(gym.organizationId, gym.coach))?.run_id).toBe(runId);
+  });
+
+  test('a behaviour report filed under the run 30 minutes ago keeps the run open', async () => {
+    const gym = await newGym('behaviour');
+    const runId = await liveRunStarted(gym, 4);
+    await markPresent(gym, runId, 230);
+    await client.query(
+      `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+       values ($1, 'drops_guard', 'Drops guard', 'SK-DEF-01', $2)`,
+      [gym.organizationId, gym.coach],
+    );
+    await client.query(
+      `insert into pilot.behaviour_observations
+         (organization_id, athlete_id, behaviour_key, episode_id, session_key, task_context_key, task_constraint,
+          polarity, attribution_target, attribution_certainty, source_type, source_quality, observer_account_id,
+          author_role, observed_at, created_at)
+       values ($1, $2, 'drops_guard', 'ep:' || gen_random_uuid()::text, 'run:' || $3, 'drill:jab', 'controlled',
+               'occurrence', 'athlete', 'stated', 'manual', 'high', $4,
+               'coach', now() - interval '30 minutes', now() - interval '30 minutes')`,
+      [gym.organizationId, gym.athlete, runId, gym.coach],
+    );
+    expect((await getLiveRunForCoach(gym.organizationId, gym.coach))?.run_id).toBe(runId);
+  });
+
   test('a run paused four hours ago closes, with the pause banked up to the close and cleared', async () => {
     const gym = await newGym('paused');
     const runId = await liveRunStarted(gym, 5);
@@ -415,5 +469,42 @@ describe('the paired TV drops a forgotten session (D2)', () => {
     await client.query(`update pilot.session_script_runs set started_at = now() - interval '3 hours 5 minutes' where run_id = $1`, [runId]);
     expect((await readGymTvSession(redeemed.device_key))?.session).toBeNull();
     expect((await runRow(runId)).run_state).toBe('abandoned');
+  });
+
+  test('with the TV switched off, the Paired TVs list does not show a forgotten run on it, and another coach can send to it', async () => {
+    const gym = await newGym('tv-off');
+    const forgotten = await liveRunStarted(gym, 0, gym.otherCoach);
+    await setSessionScriptRunShowOnWall(gym.organizationId, gym.otherCoach, forgotten, true);
+    const minted = await mintGymTvPairCode(gym.organizationId, gym.otherCoach, 'Gym main');
+    if (!(await redeemGymTvPairCode(minted.code))) throw new Error('test bug: pairing failed');
+    await sendRunToGymTv(gym.organizationId, gym.otherCoach, minted.tv_id, forgotten);
+    await client.query(`update pilot.session_script_runs set started_at = now() - interval '4 hours' where run_id = $1`, [forgotten]);
+
+    // Nothing reads the TV (it is off). The list is the first reader.
+    expect((await listGymTvs(gym.organizationId)).find((tv) => tv.tv_id === minted.tv_id)?.current_run_id).toBeNull();
+    expect((await runRow(forgotten)).run_state).toBe('abandoned');
+
+    // This coach's own session goes to the TV: the forgotten run no longer holds it.
+    const mine = await startSessionScriptRun(gym.organizationId, gym.coach, {});
+    await setSessionScriptRunShowOnWall(gym.organizationId, gym.coach, mine.run_id, true);
+    const sent = await sendRunToGymTv(gym.organizationId, gym.coach, minted.tv_id, mine.run_id);
+    expect(sent.current_run_id).toBe(mine.run_id);
+  });
+
+  test('a send to a TV still held by another coach\'s forgotten run settles that run first instead of refusing TV_IN_USE', async () => {
+    const gym = await newGym('tv-send');
+    const forgotten = await liveRunStarted(gym, 0, gym.otherCoach);
+    await setSessionScriptRunShowOnWall(gym.organizationId, gym.otherCoach, forgotten, true);
+    const minted = await mintGymTvPairCode(gym.organizationId, gym.otherCoach, 'Gym main');
+    if (!(await redeemGymTvPairCode(minted.code))) throw new Error('test bug: pairing failed');
+    await sendRunToGymTv(gym.organizationId, gym.otherCoach, minted.tv_id, forgotten);
+    const mine = await startSessionScriptRun(gym.organizationId, gym.coach, {});
+    await setSessionScriptRunShowOnWall(gym.organizationId, gym.coach, mine.run_id, true);
+    // The forgotten run goes idle only now, after this coach's start and with no reader since.
+    await client.query(`update pilot.session_script_runs set started_at = now() - interval '4 hours' where run_id = $1`, [forgotten]);
+
+    const sent = await sendRunToGymTv(gym.organizationId, gym.coach, minted.tv_id, mine.run_id);
+    expect(sent.current_run_id).toBe(mine.run_id);
+    expect((await runRow(forgotten)).run_state).toBe('abandoned');
   });
 });

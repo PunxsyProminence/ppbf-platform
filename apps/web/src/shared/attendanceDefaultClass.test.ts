@@ -47,6 +47,13 @@ describe('the class the staff attendance picker opens on', () => {
     expect(defaultStaffAttendanceClassId([TOMORROW, later], NOW)).toBe('tomorrow');
   });
 
+  test('a class whose start does not read is skipped; one whose end does not read is placed by its start', () => {
+    const noStart = cls('no-start', 'not a date', '2026-10-21T23:00:00.000Z');
+    const noEnd = cls('no-end', '2026-10-21T22:40:00.000Z', '');
+    expect(defaultStaffAttendanceClassId([noStart, OLD_TEST_CLASS], NOW)).toBe('old');
+    expect(defaultStaffAttendanceClassId([OLD_TEST_CLASS, noEnd], NOW)).toBe('no-end');
+  });
+
   test('no class that is not cancelled: nothing to open on', () => {
     expect(defaultStaffAttendanceClassId([], NOW)).toBeNull();
     expect(defaultStaffAttendanceClassId([{ ...TONIGHT_6PM, status: 'cancelled' }], NOW)).toBeNull();

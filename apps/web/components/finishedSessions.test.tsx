@@ -137,6 +137,7 @@ test('a session that ended on a later gym day names the end day too; one on a si
     started_at: '2026-10-18T17:33:00.000Z',
     ended_at: '2026-10-19T23:10:00.000Z',
     athletes_present: 1,
+    blocks_completed: 1,
     present: [],
   };
   serve(() => respond({ runs: [overnight, PLAIN] }));
@@ -147,8 +148,8 @@ test('a session that ended on a later gym day names the end day too; one on a si
     .toBe('October 18, 2026, 1:33 PM to October 19, 2026, 7:10 PMAbandoned');
   expect(within(second).getByRole('heading', { level: 3 }).textContent)
     .toBe('October 13, 2026, 10:30 PM to 11:35 PMCompleted');
-  // One athlete is "athlete", not "athletes".
-  expect(first.textContent).toContain("1 athlete present (the coach's count).");
+  // One is singular.
+  expect(first.textContent).toContain("1 athlete present (the coach's count). 1 block completed.");
 });
 
 test('no finished sessions is said in words', async () => {
