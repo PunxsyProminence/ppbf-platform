@@ -12,6 +12,7 @@ import {
   listSessionsForBlock,
   unlinkSessionFromBlock,
 } from '@/src/server/pilot/sessionBlockLinks';
+import { coachNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,7 +109,14 @@ export async function GET(request: NextRequest) {
       if (!block) {
         return NextResponse.json({ ok: false, error: 'Block not found.' }, { status: 404 });
       }
-      const sessions = await listSessionsForBlock(principal.organizationId, blockId);
+      const linked = await listSessionsForBlock(principal.organizationId, blockId);
+      // Who linked each session, by name: the screen prints this, never the
+      // account id (OD-2026-10-06-025, "Show coach name, hide ID").
+      const linkers = await coachNamesByAccount(principal.organizationId, linked.map((row) => row.linked_by_account_id));
+      const sessions = linked.map((row) => ({
+        ...row,
+        linked_by_name: linkers.get(row.linked_by_account_id) ?? 'Your coach',
+      }));
       return NextResponse.json(
         { ok: true, sessions },
         { headers: { 'Cache-Control': 'no-store' } },

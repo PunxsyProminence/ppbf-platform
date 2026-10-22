@@ -119,7 +119,10 @@ describe('floor hours name the person (UXB-12)', () => {
 
     render(<AdminFloorHoursPage />);
 
-    expect(await screen.findByText('coach.nine@example.com')).toBeTruthy();
+    // Staff read by the name rule (typed name, else the login's name), never the sign-in
+    // address (OD-2026-10-06-025; lane LN2).
+    expect(await screen.findByText('Coach Nine')).toBeTruthy();
+    expect(screen.queryByText('coach.nine@example.com')).toBeNull();
     expect(await screen.findByText('Riley Stone')).toBeTruthy();
     expect(screen.getByText('Person (name not loaded)')).toBeTruthy();
     for (const id of ['acct-coach-9', 'acct-ath-3', 'acct-unknown']) {

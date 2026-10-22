@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp } from '@/src/lib/gymTime';
+import { staffListLabels, type StaffListSource } from '@/src/shared/staffListNames';
 
 /**
  * The correction desk for the floor-hours ledger.
@@ -90,8 +91,8 @@ export default function AdminFloorHoursPage() {
   const [formError, setFormError] = useState('');
   const [notice, setNotice] = useState('');
   // Who each total belongs to, in words (UXB-12): an athlete by roster name,
-  // an adult by the address they sign in with. Read once; a failed read leaves
-  // the words fallback, never an account id.
+  // an adult by the name the gym typed, else the one their login gives. Read
+  // once; a failed read leaves the words fallback, never an account id.
   const [personNames, setPersonNames] = useState<ReadonlyMap<string, string>>(new Map());
 
   useEffect(() => {
@@ -104,15 +105,28 @@ export default function AdminFloorHoursPage() {
         ]);
         const staffResponse = staffRead.status === 'fulfilled' ? staffRead.value : null;
         const rosterResponse = rosterRead.status === 'fulfilled' ? rosterRead.value : null;
-        const staff = (await staffResponse?.json().catch(() => ({})) ?? {}) as { members?: Array<{ account_id?: unknown; login_email?: unknown }> };
+        const staff = (await staffResponse?.json().catch(() => ({})) ?? {}) as {
+          members?: Array<{ account_id?: unknown; login_email?: unknown; staff_display_name?: unknown; role?: unknown; membership_active?: unknown }>;
+        };
         const roster = (await rosterResponse?.json().catch(() => ({})) ?? {}) as { items?: Array<{ account_id?: unknown; full_name?: unknown }> };
         const names = new Map<string, string>();
         if (staffResponse?.ok && Array.isArray(staff.members)) {
-          for (const member of staff.members) {
-            if (typeof member.account_id === 'string' && typeof member.login_email === 'string' && member.login_email !== '') {
-              names.set(member.account_id, member.login_email);
-            }
-          }
+          // The name the gym typed, else the one the login gives, else the
+          // floor; two adults who read the same are numbered. Never the
+          // sign-in address (OD-2026-10-06-025, "Show coach name, hide ID").
+          // Athletes are named from the roster below, so they stay out of this
+          // numbering.
+          const adults: StaffListSource[] = staff.members.flatMap((member) =>
+            typeof member.account_id === 'string' && member.account_id !== '' && member.role !== 'athlete'
+              ? [{
+                account_id: member.account_id,
+                login_email: typeof member.login_email === 'string' ? member.login_email : null,
+                staff_display_name: typeof member.staff_display_name === 'string' ? member.staff_display_name : null,
+                role: typeof member.role === 'string' ? member.role : null,
+                membership_active: member.membership_active !== false,
+              }]
+              : []);
+          for (const [accountId, label] of staffListLabels(adults)) names.set(accountId, label);
         }
         if (rosterResponse?.ok && Array.isArray(roster.items)) {
           for (const athlete of roster.items) {

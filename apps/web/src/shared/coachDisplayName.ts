@@ -10,10 +10,9 @@
  * role can forge, and the whole value of this feature is that an athlete can
  * believe a named person said it.
  *
- * pilot.accounts has no display-name column today (logged as a gap — identity
- * work is in flight elsewhere), so the local part of the login address is the
- * best true thing available. When accounts grow a real name, this is the one
- * function to change.
+ * This is the name from the login: the local part of the address. The name
+ * the gym types (Q1 part B) comes first wherever a reader has it -- see
+ * coachDisplayNameFor below -- and this is what it falls back to.
  */
 export function deriveCoachDisplayName(loginEmail: string | null | undefined): string {
   // "coach.dave@" is Dave, not "Coach Coach Dave" (parent walk 2026-10-19
@@ -64,4 +63,42 @@ export function deriveStaffDisplayName(loginEmail: string | null | undefined): s
     .join(' ');
   if (spoken.split(' ').every((part) => ROLE_WORDS.has(part.toLowerCase()))) return null;
   return spoken || null;
+}
+
+/* A title typed in front of the name ("Coach Jordan", "Admin: Pat"). Every
+   screen adds its own title, so it comes off first; a word that only starts
+   like one ("Coachman", "Coach's") is part of the name. */
+const LEADING_TITLES = /^(?:(?:coach|admin)(?=[\s\-–—:.,]|$)[\s\-–—:.,]*)+/iu;
+
+/**
+ * The name the gym typed (pilot.account_profiles.staff_display_name; Jason
+ * 2026-10-19, Q1 part B) without a leading title. Null when nothing is left
+ * but titles and role words ("Coach", "Admin", "Staff"): those name nobody,
+ * as with a login (ROLE_WORDS above), and the caller falls back to the login.
+ */
+export function bareTypedStaffName(storedName: string | null | undefined): string | null {
+  const bare = (storedName ?? '').trim().replace(LEADING_TITLES, '').trim();
+  if (!bare) return null;
+  if (bare.split(/\s+/).every((part) => ROLE_WORDS.has(part.toLowerCase()))) return null;
+  return bare;
+}
+
+/**
+ * A coach named by the name the gym typed, titled once ("Coach Jordan"
+ * whether "Jordan" or "Coach Jordan" was typed), else by the login as above.
+ */
+export function coachDisplayNameFor(
+  storedName: string | null | undefined,
+  loginEmail: string | null | undefined,
+): string {
+  const bare = bareTypedStaffName(storedName);
+  return bare ? `Coach ${bare}` : deriveCoachDisplayName(loginEmail);
+}
+
+/** The same without the title, for staff who are not all coaches; null when neither names them. */
+export function staffDisplayNameFor(
+  storedName: string | null | undefined,
+  loginEmail: string | null | undefined,
+): string | null {
+  return bareTypedStaffName(storedName) ?? deriveStaffDisplayName(loginEmail);
 }

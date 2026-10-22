@@ -1,7 +1,8 @@
 import { isOrganizationAdminRole } from './access';
-import { deriveCoachDisplayName } from './achievements';
+import { coachDisplayNameFor } from '@/src/shared/coachDisplayName';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 
 /**
  * DUE-AND-DONE STATE FOR A PARENT-SUPPORT TASK.
@@ -259,6 +260,8 @@ interface FamilyNoteRow {
   note_text: string;
   posted_at: string;
   author_login: string | null;
+  /** The name the gym typed for the author here (Q1 part B), or null. */
+  author_display_name: string | null;
   author_role: string | null;
   has_task: boolean;
   due_date: string | null;
@@ -270,8 +273,13 @@ interface FamilyNoteRow {
 // who later becomes an admin did not post as one (#1544 review). A note from
 // before that column has no role, and is said by name alone rather than with
 // a role invented for it.
-export function staffFacingAuthorName(login: string | null, role: string | null): string {
-  const coachName = deriveCoachDisplayName(login);
+export function staffFacingAuthorName(
+  login: string | null,
+  role: string | null,
+  // Required: the reader's staff_display_name (storedStaffNameSql), or null.
+  storedName: string | null,
+): string {
+  const coachName = coachDisplayNameFor(storedName, login);
   const bareName = coachName === 'Your coach' ? null : coachName.replace(/^Coach /, '');
   if (role === 'coach') return bareName ? coachName : 'A coach';
   if (role === 'organization_admin' || role === 'admin') return bareName ? `Admin ${bareName}` : 'An administrator';
@@ -285,7 +293,9 @@ export async function listFamilyNotesForStaff(
   const rows = await query<FamilyNoteRow>(
     `select co.note_id::text as note_id, co.note_text,
             to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as posted_at,
-            a.login_email as author_login, co.author_role,
+            a.login_email as author_login,
+            ${storedStaffNameSql('co.organization_id', 'co.coach_account_id')} as author_display_name,
+            co.author_role,
             (t.note_id is not null) as has_task,
             t.due_date::text as due_date,
             to_char(t.completed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as completed_at
@@ -303,7 +313,7 @@ export async function listFamilyNotesForStaff(
     note_id: row.note_id,
     note_text: row.note_text,
     posted_at: row.posted_at,
-    posted_by_name: staffFacingAuthorName(row.author_login, row.author_role),
+    posted_by_name: staffFacingAuthorName(row.author_login, row.author_role, row.author_display_name),
     task: row.has_task ? { due_date: row.due_date, completed_at: row.completed_at } : null,
   }));
 }

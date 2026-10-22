@@ -12,6 +12,7 @@ import {
   listSessionsForBlock,
   unlinkSessionFromBlock,
 } from '@/src/server/pilot/sessionBlockLinks';
+import { coachNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 /*
@@ -58,7 +59,13 @@ jest.mock('@/src/server/pilot/sessionBlockLinks', () => ({
   athleteIdsLinkedToRun: jest.fn(async () => []),
 }));
 
+// Who linked a session is named by the shared lookup (staffNameLookup.test.ts).
+jest.mock('@/src/server/pilot/staffNameLookup', () => ({
+  coachNamesByAccount: jest.fn(async () => new Map()),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockCoachNames = coachNamesByAccount as jest.Mock;
 const mockAccessibleIds = accessibleAthleteIds as jest.Mock;
 const mockGetBlock = getDevelopmentBlock as jest.Mock;
 const mockLink = linkSessionToBlock as jest.Mock;
@@ -149,6 +156,28 @@ describe('block -> sessions: gated on the athlete the STORED block names', () =>
     expect(mockGetBlock).toHaveBeenCalledWith(actor, 'blk-1');
     // And no athlete id from the request reaches anything.
     expect(mockSessionsForBlock).toHaveBeenCalledWith('org-1', 'blk-1');
+  });
+
+  // OD-2026-10-06-025, "Show coach name, hide ID": the page prints who linked a
+  // session. The id stays on the row for callers that key on it.
+  test('each linked session carries who linked it, by name, never only the id', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetBlock.mockResolvedValue(block());
+    mockSessionsForBlock.mockResolvedValue([
+      { run_id: 'run-1', linked_by_account_id: 'acct-coach-a' },
+      { run_id: 'run-2', linked_by_account_id: 'acct-coach-b' },
+    ]);
+    mockCoachNames.mockResolvedValueOnce(new Map([['acct-coach-a', 'Coach Rivera']]));
+
+    const response = await GET(getRequest('?block_id=blk-1'));
+
+    expect(mockCoachNames).toHaveBeenCalledWith('org-1', ['acct-coach-a', 'acct-coach-b']);
+    const body = (await response.json()) as { sessions: Array<Record<string, string>> };
+    expect(body.sessions.map((row) => [row.run_id, row.linked_by_name, row.linked_by_account_id])).toEqual([
+      ['run-1', 'Coach Rivera', 'acct-coach-a'],
+      // Not named by the lookup: the same phrase the blocks route uses, not the id.
+      ['run-2', 'Your coach', 'acct-coach-b'],
+    ]);
   });
 
   test('a block this caller may not reach is a 404 and reads nothing', async () => {

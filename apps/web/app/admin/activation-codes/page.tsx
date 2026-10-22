@@ -8,12 +8,15 @@ import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { DEFAULT_ACTIVATION_TTL_HOURS } from '@/src/server/pilot/activationPolicy';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import { STAFF_LIST_NAME_FLOOR } from '@/src/shared/staffListNames';
 
 interface OutstandingActivationCodeItem {
   account_id: string;
   athlete_id: string | null;
   organization_id: string;
   issued_by_account_id: string;
+  /** Who issued it, by name; the screen prints this and never the account id. */
+  issued_by_name?: string;
   created_at: string;
   expires_at: string;
   is_expired: boolean;
@@ -194,7 +197,7 @@ function ActivationCodesConsoleContent() {
                           </p>
                         )}
                         <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
-                          Issued by: {item.issued_by_account_id}
+                          Issued by: {item.issued_by_name ?? STAFF_LIST_NAME_FLOOR}
                         </p>
                         <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
                           Expires: {formatGymStamp(item.expires_at)}

@@ -337,12 +337,12 @@ describe('resolveRelationship is the cross-family boundary', () => {
 
 describe('staff names come from what the platform actually knows', () => {
   it('reads an address into a name', () => {
-    expect(staffDisplayName('jane.okafor@example.org', 'acct-9')).toBe('Jane Okafor');
-    expect(staffDisplayName('ray_nolan@example.org', 'acct-9')).toBe('Ray Nolan');
+    expect(staffDisplayName('jane.okafor@example.org', 'acct-9', null)).toBe('Jane Okafor');
+    expect(staffDisplayName('ray_nolan@example.org', 'acct-9', null)).toBe('Ray Nolan');
   });
 
   it('falls back to the account id rather than inventing a name', () => {
-    expect(staffDisplayName(null, 'acct-9')).toBe('acct-9');
-    expect(staffDisplayName('12345@example.org', 'acct-9')).toBe('acct-9');
+    expect(staffDisplayName(null, 'acct-9', null)).toBe('acct-9');
+    expect(staffDisplayName('12345@example.org', 'acct-9', null)).toBe('acct-9');
   });
 });

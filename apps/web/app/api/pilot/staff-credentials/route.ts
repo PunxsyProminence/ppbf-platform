@@ -7,7 +7,7 @@ import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { isFamilyRecordCaller } from '@/src/server/pilot/familyRecordView';
 import { staffDisplayName } from '@/src/server/pilot/profileDb';
 import type { PilotRole } from '@/src/server/pilot/contracts';
-import { deriveStaffDisplayName } from '@/src/shared/coachDisplayName';
+import { staffDisplayNameFor } from '@/src/shared/coachDisplayName';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,9 +43,10 @@ function staffKey(organizationId: string, accountId: string): string {
    Every other reader of the list reads the name as before. */
 export const STAFF_NAME_FLOOR = 'Staff member';
 
-function nameFor(role: PilotRole, loginEmail: string | null, accountId: string): string {
-  if (isFamilyRecordCaller(role)) return deriveStaffDisplayName(loginEmail) ?? STAFF_NAME_FLOOR;
-  return staffDisplayName(loginEmail, accountId);
+function nameFor(role: PilotRole, loginEmail: string | null, accountId: string, storedName: string | null): string {
+  // The name the gym typed (Q1 part B) reaches every reader; it was typed to be read.
+  if (isFamilyRecordCaller(role)) return staffDisplayNameFor(storedName, loginEmail) ?? STAFF_NAME_FLOOR;
+  return staffDisplayName(loginEmail, accountId, storedName);
 }
 
 /**
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
       if (!entry) {
         entry = {
           staff_key: staffKey(principal.organizationId, row.account_id),
-          display_name: nameFor(principal.role, row.login_email, row.account_id),
+          display_name: nameFor(principal.role, row.login_email, row.account_id, row.staff_display_name),
           role: row.role,
           credentials: [],
         };

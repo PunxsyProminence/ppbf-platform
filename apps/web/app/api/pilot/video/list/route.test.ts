@@ -5,6 +5,7 @@ import { athleteIdsForCoach } from '@/src/server/pilot/access';
 import { query } from '@/src/server/pilot/db';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import { REFUSED_TEAM_CLIP_SQL } from '@/src/server/pilot/refusedTeamClips';
+import { staffNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -34,7 +35,14 @@ jest.mock('@/src/server/pilot/videoClipTags', () => ({
   untaggedVideoSql: jest.fn(async () => 'and /*UNTAGGED_ONLY*/ true'),
 }));
 
+// Who filmed a clip is named on the safeguarding view only; the lookup itself
+// is covered in staffNameLookup.test.ts.
+jest.mock('@/src/server/pilot/staffNameLookup', () => ({
+  staffNamesByAccount: jest.fn(async () => new Map()),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockStaffNames = staffNamesByAccount as jest.Mock;
 const mockQuery = query as jest.Mock;
 const mockAthleteIdsForCoach = athleteIdsForCoach as jest.Mock;
 
@@ -253,6 +261,48 @@ describe('GET /api/pilot/video/list', () => {
     expect(String(mockQuery.mock.calls[0]![0])).not.toContain('capture_take_id is null');
   });
 
+  // OD-2026-10-06-025, "Show coach name, hide ID": the review page prints who
+  // filmed a clip, and prints a name.
+  test('the safeguarding view names who filmed each clip, once per person', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQuery.mockResolvedValueOnce([
+      { video_session_id: 'v1', uploaded_by_account_id: 'coach-a' },
+      { video_session_id: 'v2', uploaded_by_account_id: 'coach-a' },
+      { video_session_id: 'v3', uploaded_by_account_id: 'coach-b' },
+    ]);
+    mockStaffNames.mockResolvedValueOnce(new Map([['coach-a', 'Sam Rivera']]));
+
+    const res = await GET(request('http://localhost/api/pilot/video/list?scope=all'));
+
+    expect(mockStaffNames).toHaveBeenCalledWith('org-1', ['coach-a', 'coach-a', 'coach-b']);
+    expect((await res.json()).items.map((item: Record<string, string>) => [item.video_session_id, item.uploaded_by_name])).toEqual([
+      ['v1', 'Sam Rivera'],
+      ['v2', 'Sam Rivera'],
+      // The lookup could not name this one: the floor, never the id.
+      ['v3', 'Gym office'],
+    ]);
+  });
+
+  test('the refused-team view names who filmed each clip too', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQuery.mockResolvedValueOnce([{ video_session_id: 'v1', uploaded_by_account_id: 'coach-a' }]);
+    mockStaffNames.mockResolvedValueOnce(new Map([['coach-a', 'Sam Rivera']]));
+
+    const res = await GET(request('http://localhost/api/pilot/video/list?scope=all&filter=refused_team'));
+
+    expect((await res.json()).items[0].uploaded_by_name).toBe('Sam Rivera');
+  });
+
+  test('Film Study lists never pay for a name lookup: nobody prints the uploader there', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'organization_admin' }));
+    mockQuery.mockResolvedValueOnce([{ video_session_id: 'v1', uploaded_by_account_id: 'coach-a' }]);
+
+    const res = await GET(request());
+
+    expect(mockStaffNames).not.toHaveBeenCalled();
+    expect((await res.json()).items[0]).not.toHaveProperty('uploaded_by_name');
+  });
+
   test('a coach cannot ask for every file by naming the scope', async () => {
     // The parameter only ever narrows for everyone else; widening is not a
     // thing a client may request.
@@ -283,7 +333,7 @@ describe('GET /api/pilot/video/list', () => {
       const res = await GET(request('http://localhost/api/pilot/video/list?scope=all&filter=refused_team&limit=100'));
 
       expect(res.status).toBe(200);
-      expect((await res.json()).items).toEqual([{ video_session_id: 'v-refused' }]);
+      expect((await res.json()).items).toEqual([{ video_session_id: 'v-refused', uploaded_by_name: 'Gym office' }]);
       expect(mockQuery).toHaveBeenCalledTimes(1);
       expect(String(mockQuery.mock.calls[0]![0])).toContain(REFUSED_TEAM_CLIP_SQL);
       expect(mockQuery.mock.calls[0]![1]).toEqual(['org-1', 100]);

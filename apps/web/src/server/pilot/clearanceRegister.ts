@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { PilotError } from './errors';
 import { query, queryOne } from './db';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 
 // pilot.clearance_types, pilot.person_clearances,
 // pilot.activity_clearance_requirements and the view pilot.v_clearance_status
@@ -371,6 +372,8 @@ export interface CredentialQueueRow {
   clearance_id: string;
   person_account_id: string;
   person_login_email: string | null;
+  /** The name the gym typed for the holder here (Q1 part B), or null. */
+  person_display_name: string | null;
   person_role: PilotRoleLike;
   clearance_type_id: string;
   clearance_name: string;
@@ -404,7 +407,9 @@ export async function listPersonClearancesForVerification(organizationId: string
   return query<CredentialQueueRow>(
     `select
        pc.organization_id, pc.clearance_id, pc.person_account_id,
-       a.login_email as person_login_email, a.role as person_role,
+       a.login_email as person_login_email,
+       ${storedStaffNameSql('pc.organization_id', 'pc.person_account_id')} as person_display_name,
+       a.role as person_role,
        pc.clearance_type_id, ct.name as clearance_name, ct.issuing_authority, ct.validity_months,
        pc.status, pc.issued_on, pc.expires_on, pc.document_ref,
        pc.verified_by_account_id, pc.verified_at, pc.verification_note,
@@ -449,6 +454,8 @@ export interface StaffCredentialStatusRow {
   account_id: string;
   role: PilotRoleLike;
   login_email: string | null;
+  /** The name the gym typed (Q1 part B), or null. */
+  staff_display_name: string | null;
   clearance_type_id: string;
   clearance_name: string;
   issuing_authority: string;
@@ -483,6 +490,7 @@ export async function listStaffCredentialStatus(
   return query<StaffCredentialStatusRow>(
     `select
        a.account_id, a.role, a.login_email,
+       ${storedStaffNameSql('a.organization_id', 'a.account_id')} as staff_display_name,
        ct.clearance_type_id, ct.name as clearance_name, ct.issuing_authority,
        coalesce(pc.status, 'not_started') as status, pc.expires_on
      from pilot.accounts a

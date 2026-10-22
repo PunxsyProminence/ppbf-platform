@@ -12,6 +12,7 @@ import { apiBase } from '@/lib/apiBase';
 // the database accepts from drifting apart.
 import { boardSeatConfigs, type BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
 import BackHome from '@/components/BackHome';
+import { staffListLabels } from '@/src/shared/staffListNames';
 
 /**
  * The roster read carries the appointment and nothing else about the person --
@@ -28,6 +29,8 @@ interface SeatHolder {
 interface DirectoryMember {
   account_id: string;
   login_email: string | null;
+  staff_display_name: string | null;
+  membership_active: boolean;
   role: string;
 }
 
@@ -80,6 +83,8 @@ function normalizeMembers(raw: unknown): DirectoryMember[] {
     return [{
       account_id: record.account_id,
       login_email: typeof record.login_email === 'string' ? record.login_email : null,
+      staff_display_name: typeof record.staff_display_name === 'string' ? record.staff_display_name : null,
+      membership_active: record.membership_active !== false,
       role: typeof record.role === 'string' ? record.role : '',
     }];
   });
@@ -169,10 +174,12 @@ function BoardSeatsConsole() {
     void load();
   }, [load]);
 
-  const memberLabels = useMemo(
-    () => new Map(members.map((member) => [member.account_id, member.login_email || member.account_id])),
-    [members],
-  );
+  // A member is named, never addressed: the name the gym typed, else the one
+  // the login gives, and two who read the same are numbered "(1 of 2)"
+  // (OD-2026-10-06-025, "Show coach name, hide ID"). A holder the directory
+  // does not list, or no directory at all (the President's view), is still the
+  // sign-in ID the roster carries.
+  const memberLabels = useMemo(() => staffListLabels(members), [members]);
 
   const nameFor = useCallback(
     (accountId: string) => memberLabels.get(accountId) ?? accountId,
@@ -512,7 +519,7 @@ function BoardSeatsConsole() {
                   <option value="">Choose a member...</option>
                   {memberOptions.map((member) => (
                     <option key={member.account_id} value={member.account_id}>
-                      {member.login_email || member.account_id}
+                      {memberLabels.get(member.account_id) ?? member.account_id}
                       {member.role && member.role !== 'board' ? ` (${member.role})` : ''}
                     </option>
                   ))}

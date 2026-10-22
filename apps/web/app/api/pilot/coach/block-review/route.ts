@@ -13,6 +13,7 @@ import {
 } from '@/src/server/pilot/blockReview';
 import { ForbiddenError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { coachNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
        A caller who could name the athlete could name a different one and read
        another child's training record through a block they legitimately
        hold. */
-    const [reviews, evidence] = await Promise.all([
+    const [recorded, evidence] = await Promise.all([
       listBlockReviews(principal.organizationId, blockId),
       blockEvidence(
         principal.organizationId,
@@ -92,6 +93,14 @@ export async function GET(request: NextRequest) {
         block.ends_on,
       ),
     ]);
+
+    // Who made each review, by name: the screen prints this, never the account
+    // id (OD-2026-10-06-025, "Show coach name, hide ID").
+    const reviewers = await coachNamesByAccount(principal.organizationId, recorded.map((row) => row.reviewed_by_account_id));
+    const reviews = recorded.map((row) => ({
+      ...row,
+      reviewed_by_name: reviewers.get(row.reviewed_by_account_id) ?? 'Your coach',
+    }));
 
     return NextResponse.json(
       {

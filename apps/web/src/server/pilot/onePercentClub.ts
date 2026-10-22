@@ -6,9 +6,11 @@ import {
   listMilestoneAwards,
 } from './achievements';
 import { earnedMilestoneKeys, isMilestoneKey } from '@/src/shared/achievementPaths';
+import { bareTypedStaffName } from '@/src/shared/coachDisplayName';
 import { query, queryOne } from './db';
 import { accountNotDeletedSql } from './deletedAthletes';
 import { ConflictError, ValidationError } from './errors';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 
 // The 1% Club (register module 127). Owner design, verbatim: "1,2,3 with the
 // majority of coach and admin on the list vote to confirm".
@@ -159,11 +161,14 @@ export async function resolveActorDisplayName(input: {
     return athlete?.full_name?.trim() || 'An athlete';
   }
 
-  const account = await queryOne<{ login_email: string | null }>(
-    `select login_email from pilot.accounts a
+  const account = await queryOne<{ login_email: string | null; staff_display_name: string | null }>(
+    `select a.login_email, ${storedStaffNameSql('$1', 'a.account_id')} as staff_display_name from pilot.accounts a
      where a.organization_id = $1 and a.account_id = $2 and ${accountNotDeletedSql('a')}`,
     [input.organizationId, input.accountId],
   );
+  // The name the gym typed (Q1 part B) first, without a title typed into it.
+  const typed = bareTypedStaffName(account?.staff_display_name);
+  if (typed) return `Admin ${typed}`;
   const local = account?.login_email?.split('@')[0];
   if (!local) return 'An administrator';
   const spoken = local
