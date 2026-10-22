@@ -2198,18 +2198,30 @@ h6 {
   color: var(--brass-400);
 }
 
-/* One line, whatever the gym's name: a long one ends in an ellipsis rather
-   than pushing the clock onto two lines. */
+/* The gym's whole name (issue 1792, item 7): it wraps to a second line beside the
+   round clock rather than ending in an ellipsis, and only a name longer than
+   two lines is cut. */
 [data-surface="wall"] .wall-eyebrow {
+  display: -webkit-box;
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  text-wrap: balance;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
   letter-spacing: .34em;
   text-transform: uppercase;
   color: var(--brass-300);
+}
+
+/* Beside the round clock the name keeps room for two lines (2 x its 1.5
+   leading) whether it needs them or not. Its column narrows and widens with
+   the clock's digits and the round's label (Round / Rest / Paused), so a name
+   that wrapped only sometimes would move the whole board up and down. The
+   wall without the round clock is as it was. */
+[data-surface="wall"] .wall-board:has(.wall-round) .wall-eyebrow {
+  min-height: 3em;
 }
 
 [data-surface="wall"] .wall-day {
@@ -2222,7 +2234,10 @@ h6 {
   color: var(--wall-ink);
 }
 
+/* One line: a short day (FRIDAY) beside a paused rest line would otherwise
+   let the date fold under itself and push the board down. */
 [data-surface="wall"] .wall-date {
+  white-space: nowrap;
   margin: var(--s2) 0 0;
   font-family: var(--font-ui);
   font-weight: 500;
@@ -2259,6 +2274,21 @@ h6 {
     inset 0 1px 0 rgb(var(--brass-300-rgb) / .22);
 }
 
+/* The day never runs under the round clock (a WEDNESDAY beside "Rest · round
+   3 of 3 next" did at 1920x1080): the day's column gives up its room first,
+   down to its longest word, and only then does the bezel give way, by
+   wrapping its label. (A shrink factor under 1 on the bezel would not do it:
+   flexbox then hands it only that fraction of the overflow.) */
+[data-surface="wall"] .wall-masthead-day {
+  flex-shrink: 1000;
+  min-width: min-content;
+}
+
+[data-surface="wall"] .wall-round {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
 /* Set leading, so the bezel is no taller than the day and date beside it and
    the boards below keep their rows. */
 [data-surface="wall"] .wall-round__label,
@@ -2266,6 +2296,12 @@ h6 {
   margin: 0;
   line-height: 1.05;
   white-space: nowrap;
+}
+
+[data-surface="wall"] .wall-round__label {
+  text-align: center;
+  text-wrap: balance;
+  white-space: normal;
 }
 
 /* --- Panels -------------------------------------------------------------- */
@@ -2488,7 +2524,10 @@ h6 {
   color: var(--bone-200);
 }
 
-[data-surface="wall"] .wall-now { display: flex; flex-direction: column; gap: var(--s3); }
+/* NOW's words clip inside their own box and the strip keeps its own row at the
+   foot of the board (issue 1792, item 1): on a board too short for both, the drill
+   name is cut, never painted over. */
+[data-surface="wall"] .wall-now { display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--s3); overflow: hidden; }
 [data-surface="wall"] .wall-now-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s5); }
 
 [data-surface="wall"] .wall-kind { display: inline-flex; align-items: center; gap: var(--s4); font-size: var(--t-2xl); }
@@ -2555,9 +2594,19 @@ h6 {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: var(--s3);
+  flex-shrink: 0;
   margin: auto 0 0;
   padding: var(--s4) 0 0;
   list-style: none;
+}
+
+/* The number and the pictogram share a row, so the tile has room for the
+   block's name on two lines. */
+[data-surface="wall"] .wall-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
 }
 
 [data-surface="wall"] .wall-strip-number {
@@ -2571,16 +2620,30 @@ h6 {
 [data-surface="wall"] .wall-strip-icon,
 [data-surface="wall"] .wall-kind-roundel { font-size: var(--t-xl); }
 
+/* The block's own name, two lines at most. The time under it wraps before
+   "min" rather than cutting the numbers (issue 1792, item 3). */
 [data-surface="wall"] .wall-strip-word {
+  display: -webkit-box;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 2.2em;
+  overflow-wrap: anywhere;
+  text-align: center;
   font-family: var(--font-ui);
   font-size: var(--t-lg);
   font-weight: 500;
+  line-height: 1.1;
   color: var(--bone-200);
 }
+
+[data-surface="wall"] .wall-strip-min {
+  text-align: center;
+  white-space: normal;
+}
+
+[data-surface="wall"] .wall-strip-range { white-space: nowrap; }
 
 [data-surface="wall"] .wall-next-label {
   display: -webkit-box;
@@ -2652,7 +2715,8 @@ h6 {
   align-items: baseline;
   justify-content: space-around;
   gap: var(--s7);
-  min-width: 100vw;
+  /* A screen wide; on a shrunk board, its canvas wide (WallDisplay wallFit). */
+  min-width: var(--wall-canvas-width, 100vw);
   margin: 0;
   padding: 0 calc(var(--s7) / 2);
   list-style: none;
