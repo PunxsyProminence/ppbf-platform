@@ -116,9 +116,9 @@ it('shows every seat, its holder, its additional holders, and the unfilled ones'
   await renderPage(seatsFetch());
 
   await screen.findByText('Board Chair');
-  expect(screen.getAllByText('dana@example.org').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Dana').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Holds the seat').length).toBeGreaterThan(0);
-  expect(screen.getAllByText('rosa@example.org').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Rosa').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Additional holder').length).toBeGreaterThan(0);
 
   // Two of the eight are filled, and the other six are still listed.
@@ -134,7 +134,7 @@ it('names the current holder instead of failing generically on an occupied seat'
   fireEvent.change(screen.getByLabelText('Seat'), { target: { value: 'chair' } });
   fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'nils' } });
 
-  await screen.findByText(/Board Chair is held by dana@example\.org/);
+  await screen.findByText(/Board Chair is held by Dana/);
   expect((screen.getByRole('button', { name: /assign seat/i }) as HTMLButtonElement).disabled).toBe(true);
   expect(callsTo(fetchMock, 'POST')).toHaveLength(0);
 });
@@ -152,7 +152,7 @@ it('hands a seat to someone new by joining them to it and then promoting', async
   await screen.findByText('Board Chair');
   fireEvent.change(screen.getByLabelText('Seat'), { target: { value: 'chair' } });
   fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'nils' } });
-  await screen.findByText(/Board Chair is held by dana@example\.org/);
+  await screen.findByText(/Board Chair is held by Dana/);
 
   fireEvent.click(screen.getByRole('button', { name: /hand the seat over/i }));
 
@@ -303,5 +303,87 @@ describe('lane N4-02: links and copy that match who is here', () => {
     await screen.findByText('Board Chair');
     expect(screen.getByText(/needs a board account\s+first; the PPBF platform desk creates it\./)).toBeTruthy();
     expect(screen.queryByText(/People page/)).toBeNull();
+  });
+});
+
+// OD-2026-10-06-025, "Show coach name, hide ID": a list names people; it never
+// prints their sign-in address. OD-2026-10-19-008 part B: the name the gym typed
+// comes first.
+describe('LN2: seat holders are named, never addressed', () => {
+  const namedDirectory = {
+    ok: true,
+    members: [
+      { account_id: 'nadia', login_email: 'nadia@example.org', role: 'board' },
+      { account_id: 'dana', login_email: 'dana@example.org', role: 'board' },
+      { account_id: 'rosa', login_email: 'r.ortiz@example.org', staff_display_name: 'Rosa Ortiz', role: 'organization_admin', membership_active: true },
+      { account_id: 'nils', login_email: 'nils@example.org', role: 'board' },
+    ],
+  };
+
+  function withDirectory(directory: unknown) {
+    return seatsFetch((url) => (url.includes('/api/pilot/admin/staff') ? jsonResponse(directory) : undefined));
+  }
+
+  it('prints the name the gym typed, not the login, for a holder and in the member picker', async () => {
+    await renderPage(withDirectory(namedDirectory));
+
+    await screen.findByText('Board Chair');
+    expect(screen.getAllByText('Rosa Ortiz').length).toBeGreaterThan(0);
+    expect(screen.getByRole('option', { name: 'Rosa Ortiz (organization_admin)' })).toBeTruthy();
+    // The stored login's name is not what was typed, and the address is nowhere.
+    expect(screen.queryByText('R Ortiz')).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('@example.org');
+  });
+
+  it('ignores a typed name once the person has left the gym, as the server does', async () => {
+    await renderPage(withDirectory({
+      ok: true,
+      members: [
+        { account_id: 'rosa', login_email: 'rosa@example.org', staff_display_name: 'Rosa Ortiz', role: 'organization_admin', membership_active: false },
+        { account_id: 'dana', login_email: 'dana@example.org', role: 'board' },
+      ],
+    }));
+
+    await screen.findByText('Board Chair');
+    expect(screen.getAllByText('Rosa').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Rosa Ortiz')).toBeNull();
+  });
+
+  it('numbers two people who read the same instead of telling them apart by address', async () => {
+    await renderPage(withDirectory({
+      ok: true,
+      members: [
+        { account_id: 'dana', login_email: 'dana@example.org', role: 'board' },
+        { account_id: 'dana-2', login_email: 'dana@other.example.org', role: 'board' },
+        { account_id: 'rosa', login_email: 'rosa@example.org', role: 'board' },
+      ],
+    }));
+
+    await screen.findByText('Board Chair');
+    expect(screen.getAllByText('Dana (1 of 2)').length).toBeGreaterThan(0);
+    expect(screen.getByRole('option', { name: 'Dana (2 of 2)' })).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('@');
+  });
+
+  it('a role-word login reads as the gym office, never as the address', async () => {
+    await renderPage(withDirectory({
+      ok: true,
+      members: [{ account_id: 'dana', login_email: 'info@example.org', role: 'board' }],
+    }));
+
+    await screen.findByText('Board Chair');
+    expect(screen.getAllByText('Gym office').length).toBeGreaterThan(0);
+    expect(document.body.textContent ?? '').not.toContain('info@');
+  });
+
+  it('without the directory (the President is not an admin) a holder is still the sign-in ID the roster carries', async () => {
+    await renderPage(
+      seatsFetch((url) => (url.includes('/api/pilot/admin/staff') ? jsonResponse({ error: 'Forbidden' }, false, 403) : undefined)),
+      'board',
+      'nadia',
+    );
+
+    await screen.findByText('Board Chair');
+    expect(screen.getAllByText('dana').length).toBeGreaterThan(0);
   });
 });

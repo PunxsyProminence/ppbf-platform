@@ -1362,16 +1362,35 @@ describe('attribution names a person', () => {
     expect(document.body.textContent ?? '').not.toContain('acct-coach-a');
   });
 
-  test('a block whose name did not resolve falls back to the id, not to nothing', async () => {
-    /* An ugly true string beats a line that quietly reads "Written by". If the
-       route ever stops resolving names, a coach should see that something is
-       wrong rather than see a blank where a colleague's name belongs. */
+  test('a block whose name did not resolve reads as the floor phrase, never the id', async () => {
+    /* OD-2026-10-06-025, "Show coach name, hide ID": a raw account id is never
+       shown. This test used to pin the id as the fallback ("an ugly true string
+       beats a line that quietly reads Written by with nothing after"); the route's own floor
+       phrase says the same thing without printing the id. */
     const withoutName: Record<string, unknown> = { ...blockRow() };
     delete withoutName.created_by_name;
     await renderPage({ blocks: [withoutName] });
     await pickAthlete('ath-1');
 
-    expect(screen.getByText(/Written by acct-coach-a/)).toBeTruthy();
+    expect(screen.getByText(/Written by Your coach/)).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('acct-coach-a');
+  });
+
+  test('a linked session is attributed to the name the route resolved, never the id', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      linkedSessions: [
+        sessionRow({ run_id: 'run-1', linked_by_name: 'Coach Rivera' }),
+        sessionRow({ run_id: 'run-2', delivered_on: '2026-09-15' }),
+      ],
+    });
+    await pickAthlete('ath-1');
+    await openSessions();
+
+    expect(screen.getByText('Linked by Coach Rivera')).toBeTruthy();
+    // A row from a server that sent no name reads as the floor phrase.
+    expect(screen.getByText('Linked by Your coach')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('acct-coach-a');
   });
 });
 
@@ -1934,7 +1953,20 @@ describe('plan versus what was recorded', () => {
     expect(screen.getByText(/Reviews are not edited/i)).toBeTruthy();
   });
 
-  test('a review carries who made it, because that is the point of the record', async () => {
+  test('a review carries who made it, by name, because that is the point of the record', async () => {
+    await renderPage({
+      blocks: [blockRow()],
+      reviews: [reviewRow({ reviewed_by_account_id: 'acct-coach-b', reviewed_by_name: 'Coach Okafor' })],
+    });
+    await pickAthlete('ath-1');
+    await openReview();
+
+    expect(screen.getByText(/Reviewed by Coach Okafor/)).toBeTruthy();
+    // OD-2026-10-06-025: the account id is never printed.
+    expect(document.body.textContent ?? '').not.toContain('acct-coach-b');
+  });
+
+  test('a review whose name did not resolve reads as the floor phrase, not the id', async () => {
     await renderPage({
       blocks: [blockRow()],
       reviews: [reviewRow({ reviewed_by_account_id: 'acct-coach-b' })],
@@ -1942,7 +1974,8 @@ describe('plan versus what was recorded', () => {
     await pickAthlete('ath-1');
     await openReview();
 
-    expect(screen.getByText(/Reviewed by acct-coach-b/)).toBeTruthy();
+    expect(screen.getByText(/Reviewed by Your coach/)).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('acct-coach-b');
   });
 
   test('nothing on this page consults SHADOW or offers a generated reading', async () => {

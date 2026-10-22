@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { canCarryStaffDisplayName } from '@/src/shared/staffDisplayName';
+import { STAFF_LIST_NAME_FLOOR, staffListLabels, staffListNameFor, type StaffListSource } from '@/src/shared/staffListNames';
 import BackHome from '@/components/BackHome';
 
 interface ActiveCoverageRow {
@@ -31,7 +33,8 @@ interface RosterAthleteOption {
 /** One option in the coach picker, from /api/pilot/admin/staff's member roster. */
 interface CoachOption {
   account_id: string;
-  login_email: string;
+  /** The name the picker prints; never the sign-in address (OD-2026-10-06-025). */
+  label: string;
 }
 
 export default function CoachCoveragePage() {
@@ -55,6 +58,14 @@ export default function CoachCoveragePage() {
   const [rosterState, setRosterState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   const [coaches, setCoaches] = useState<CoachOption[]>([]);
   const [coachesState, setCoachesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
+  // Every staff member of the gym (not only coaches: a grant is made by an
+  // admin), so the table can name who covers and who granted.
+  const [directory, setDirectory] = useState<ReadonlyMap<string, string>>(new Map());
+
+  // Who a grant row names: the directory's label, else the name the row's own
+  // address gives (a coach who has since left), else the floor. Never an id.
+  const nameFor = (accountId: string, loginEmail: string | null): string =>
+    directory.get(accountId) ?? staffListNameFor({ account_id: accountId, login_email: loginEmail });
 
   const load = useCallback(async () => {
     try {
@@ -96,8 +107,29 @@ export default function CoachCoveragePage() {
       const response = await fetch(`${apiBase()}/api/pilot/admin/staff`, { credentials: 'include' });
       if (!response.ok) throw new Error('members');
       const payload = (await response.json()) as {
-        members?: Array<{ account_id?: unknown; login_email?: unknown; role?: unknown; active_flag?: unknown; membership_active?: unknown }>;
+        members?: Array<{
+          account_id?: unknown;
+          login_email?: unknown;
+          staff_display_name?: unknown;
+          role?: unknown;
+          active_flag?: unknown;
+          membership_active?: unknown;
+        }>;
       };
+      // Names, never sign-in addresses (OD-2026-10-06-025); two staff who read
+      // the same are numbered. The same labels name the table's people.
+      const staff: StaffListSource[] = (payload.members ?? []).flatMap((member) =>
+        typeof member.account_id === 'string' && member.account_id !== '' && canCarryStaffDisplayName(String(member.role))
+          ? [{
+            account_id: member.account_id,
+            login_email: typeof member.login_email === 'string' ? member.login_email : null,
+            staff_display_name: typeof member.staff_display_name === 'string' ? member.staff_display_name : null,
+            role: String(member.role),
+            membership_active: member.membership_active !== false,
+          }]
+          : []);
+      const labels = staffListLabels(staff);
+      setDirectory(labels);
       // Only what the server itself would accept: grantCoachCoverage requires
       // an ACTIVE coach account in this organization, so the picker offers
       // exactly that set rather than every member.
@@ -111,7 +143,7 @@ export default function CoachCoveragePage() {
             && member.account_id !== '')
           .map((member) => ({
             account_id: member.account_id as string,
-            login_email: typeof member.login_email === 'string' && member.login_email !== '' ? member.login_email : (member.account_id as string),
+            label: labels.get(member.account_id as string) ?? STAFF_LIST_NAME_FLOOR,
           })),
       );
       setCoachesState('loaded');
@@ -251,7 +283,7 @@ export default function CoachCoveragePage() {
                   </option>
                   {coaches.map((coach) => (
                     <option key={coach.account_id} value={coach.account_id}>
-                      {coach.login_email}
+                      {coach.label}
                     </option>
                   ))}
                 </select>
@@ -341,8 +373,8 @@ export default function CoachCoveragePage() {
                   {items.map((item) => (
                     <tr key={item.coverage_id}>
                       <td>{item.athlete_full_name}</td>
-                      <td>{item.covering_coach_email ?? item.covering_coach_id}</td>
-                      <td>{item.granted_by_email ?? item.granted_by_account_id}</td>
+                      <td>{nameFor(item.covering_coach_id, item.covering_coach_email)}</td>
+                      <td>{nameFor(item.granted_by_account_id, item.granted_by_email)}</td>
                       <td>{formatDate(item.expires_at)}</td>
                       <td>
                         <button

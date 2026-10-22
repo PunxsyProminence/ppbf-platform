@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { issueActivationCode, listOutstandingActivationCodes } from '@/src/server/pilot/activation';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { staffNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
@@ -51,6 +52,10 @@ jest.mock('@/src/server/pilot/activation', () => ({
   listOutstandingActivationCodes: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/staffNameLookup', () => ({
+  staffNamesByAccount: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/audit', () => ({
   writePilotAuditEvent: jest.fn().mockResolvedValue(undefined),
 }));
@@ -59,6 +64,7 @@ const mockRequirePrincipal = requireMicrosoftAuthenticatedPrincipal as jest.Mock
 const mockIssue = issueActivationCode as jest.Mock;
 const mockList = listOutstandingActivationCodes as jest.Mock;
 const mockAudit = writePilotAuditEvent as jest.Mock;
+const mockNames = staffNamesByAccount as jest.Mock;
 
 const PRINCIPAL_ORG = 'org-alpha';
 const OTHER_ORG = 'org-bravo';
@@ -119,6 +125,7 @@ const ROLE_CASES = Object.entries(ROLE_GATE) as Array<[PilotRole, 'admitted' | '
 beforeEach(() => {
   jest.clearAllMocks();
   mockList.mockResolvedValue([]);
+  mockNames.mockResolvedValue(new Map());
   mockIssue.mockImplementation(async (params: { accountId: string; organizationId: string }) => ({
     accountId: params.accountId,
     organizationId: params.organizationId,
@@ -193,6 +200,29 @@ describe('GET /api/pilot/admin/activation-codes -- inline gate', () => {
     expect(mockList).toHaveBeenCalledWith(PRINCIPAL_ORG);
     expect(mockList).not.toHaveBeenCalledWith('');
     await expect(response.json()).resolves.toMatchObject({ organization_id: PRINCIPAL_ORG });
+  });
+
+  // OD-2026-10-06-025, "Show coach name, hide ID": the screen prints who issued
+  // a code by name. The id stays on the row for callers that key on it.
+  test('names who issued each code, once per person, in this gym', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockList.mockResolvedValueOnce([
+      { account_id: 'ath-1', issued_by_account_id: 'admin-9', is_expired: false },
+      { account_id: 'ath-2', issued_by_account_id: 'admin-9', is_expired: true },
+      { account_id: 'ath-3', issued_by_account_id: 'admin-8', is_expired: false },
+    ]);
+    mockNames.mockResolvedValueOnce(new Map([['admin-9', 'Pat Lowe']]));
+
+    const response = await GET(getRequest());
+
+    expect(mockNames).toHaveBeenCalledWith(PRINCIPAL_ORG, ['admin-9', 'admin-9', 'admin-8']);
+    const body = (await response.json()) as { codes: Array<{ account_id: string; issued_by_name: string; issued_by_account_id: string }> };
+    expect(body.codes.map((code) => [code.account_id, code.issued_by_name, code.issued_by_account_id])).toEqual([
+      ['ath-1', 'Pat Lowe', 'admin-9'],
+      ['ath-2', 'Pat Lowe', 'admin-9'],
+      // Not named by the lookup: the floor, never the id.
+      ['ath-3', 'Gym office', 'admin-8'],
+    ]);
   });
 
   test('a PIN session never reaches the gate', async () => {

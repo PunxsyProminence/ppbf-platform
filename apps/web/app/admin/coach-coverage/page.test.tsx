@@ -96,8 +96,11 @@ test('lists active coverage grants', async () => {
   render(<CoachCoveragePage />);
 
   await screen.findAllByText('Sample Athlete One');
-  expect(screen.getByText('sub@example.org')).toBeInTheDocument();
-  expect(screen.getByText('admin@example.org')).toBeInTheDocument();
+  // Named, never addressed (OD-2026-10-06-025): the directory did not answer
+  // here, so each is named from the address the row itself carries.
+  expect(screen.getByText('Sub')).toBeInTheDocument();
+  expect(screen.getByText('Gym office')).toBeInTheDocument();
+  expect(document.body.textContent ?? '').not.toContain('@example.org');
 });
 
 test('no active grants renders the empty state, not a blank table', async () => {
@@ -118,7 +121,7 @@ test('a failed load shows the error state, never a false "no active grants"', as
   expect(screen.queryByText('No active coverage grants')).not.toBeInTheDocument();
 });
 
-test('the pickers offer the server\'s own lists: athletes by name, active coaches by email', async () => {
+test('the pickers offer the server\'s own lists: athletes by name, active coaches by name', async () => {
   routedFetch();
 
   render(<CoachCoveragePage />);
@@ -138,7 +141,7 @@ test('the pickers offer the server\'s own lists: athletes by name, active coache
     .map((option) => ({ value: option.value, label: option.textContent }));
   expect(coachOptions).toEqual([
     { value: '', label: 'Select a coach' },
-    { value: 'coach-new', label: 'newcoach@example.org' },
+    { value: 'coach-new', label: 'Newcoach' },
   ]);
 });
 
@@ -236,4 +239,68 @@ test('revoking, once confirmed, sends the coverage_id and reloads the list', asy
 
   await waitFor(() => expect(screen.getByText('Coverage revoked.')).toBeInTheDocument());
   expect(deleted).toEqual([{ coverage_id: 'cov-1' }]);
+});
+
+describe('LN2: coaches are named, never addressed', () => {
+  test('the table and the picker print the name the gym typed, and the table finds a granter in the directory', async () => {
+    routedFetch({
+      staff: () => jsonResponse({
+        ok: true,
+        members: [
+          { account_id: 'coach-sub', login_email: 'sub@example.org', staff_display_name: 'Sam Rivera', role: 'coach', active_flag: true, membership_active: true },
+          { account_id: 'admin-1', login_email: 'admin@example.org', staff_display_name: 'Pat Lowe', role: 'organization_admin', active_flag: true, membership_active: true },
+        ],
+      }),
+    });
+
+    render(<CoachCoveragePage />);
+    await screen.findAllByText('Sample Athlete One');
+
+    // Table cells (the picker carries Sam Rivera too).
+    await waitFor(() => expect(screen.getByText('Pat Lowe')).toBeInTheDocument());
+    expect(screen.getAllByText('Sam Rivera').length).toBeGreaterThanOrEqual(2);
+    expect(document.body.textContent ?? '').not.toContain('@example.org');
+  });
+
+  test('two coaches who read the same are numbered in the picker and in the table', async () => {
+    routedFetch({
+      staff: () => jsonResponse({
+        ok: true,
+        members: [
+          { account_id: 'coach-sub', login_email: 'sam@example.org', role: 'coach', active_flag: true, membership_active: true },
+          { account_id: 'coach-new', login_email: 'sam@other.example.org', role: 'coach', active_flag: true, membership_active: true },
+        ],
+      }),
+    });
+
+    render(<CoachCoveragePage />);
+    await screen.findAllByText('Sample Athlete One');
+
+    const labels = await waitFor(() => {
+      const options = Array.from((screen.getByLabelText('Covering coach') as HTMLSelectElement).options).map((option) => option.textContent);
+      expect(options).toContain('Sam (2 of 2)');
+      return options;
+    });
+    expect(labels).toEqual(['Select a coach', 'Sam (1 of 2)', 'Sam (2 of 2)']);
+    // The grant row is for coach-sub: the first Sam, as the picker says.
+    expect(screen.getAllByText('Sam (1 of 2)').length).toBeGreaterThanOrEqual(2);
+    expect(document.body.textContent ?? '').not.toContain('@');
+  });
+
+  test('a coach who has left is not named by the name once typed for them', async () => {
+    routedFetch({
+      staff: () => jsonResponse({
+        ok: true,
+        members: [
+          { account_id: 'coach-sub', login_email: 'sub@example.org', staff_display_name: 'Sam Rivera', role: 'coach', active_flag: true, membership_active: false },
+        ],
+      }),
+    });
+
+    render(<CoachCoveragePage />);
+    await screen.findAllByText('Sample Athlete One');
+
+    await waitFor(() => expect(screen.getByText('Sub')).toBeInTheDocument());
+    expect(screen.queryByText('Sam Rivera')).toBeNull();
+  });
 });

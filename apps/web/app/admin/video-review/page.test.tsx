@@ -97,6 +97,37 @@ describe('VideoReviewManagementPage', () => {
     expect(screen.getByText('ID: vid-101')).toBeTruthy();
   });
 
+  // OD-2026-10-06-025, "Show coach name, hide ID": who filmed it is a name.
+  it('prints who filmed a clip by name, never the uploading account id', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    const clip = {
+      video_session_id: 'vid-101',
+      title: 'Sparring Drill 1',
+      notes: '',
+      file_name: 'clip.mp4',
+      file_size_bytes: 1048576,
+      mime_type: 'video/mp4',
+      status: 'quarantined',
+      scan_state: 'needs_human_review',
+      athlete_id: 'ath-001',
+      uploaded_by_account_id: 'acct-coach-91c',
+      created_at: '2026-08-01T12:00:00Z',
+    };
+    global.fetch = jest.fn(async () => jsonResponse({
+      items: [
+        { ...clip, uploaded_by_name: 'Sam Rivera' },
+        { ...clip, video_session_id: 'vid-102', title: 'Sparring Drill 2' },
+      ],
+    })) as unknown as typeof fetch;
+
+    render(<VideoReviewManagementPage />);
+
+    expect(await screen.findByText(/Filmed by: Sam Rivera/)).toBeTruthy();
+    // A row from a server that sent no name reads as the floor, not the id.
+    expect(screen.getByText(/Filmed by: Gym office/)).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('acct-coach-91c');
+  });
+
   it('requests temporary review link when Inspect / Watch Video is clicked', async () => {
     mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
 

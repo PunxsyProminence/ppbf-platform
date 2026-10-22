@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST } from './route';
 import { resolvePrincipal, type PilotPrincipal } from '@/src/server/pilot/auth';
 import { listOrganizationFeedback, listPlatformFeedback } from '@/src/server/pilot/feedback';
+import { staffNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 
 jest.mock('@/src/server/pilot/auth', () => ({
   resolvePrincipal: jest.fn(),
@@ -14,6 +15,12 @@ jest.mock('@/src/server/pilot/feedback', () => ({
   listPlatformFeedback: jest.fn(),
 }));
 
+// Who a staff submitter is, by name (staffNameLookup.test.ts covers the lookup).
+jest.mock('@/src/server/pilot/staffNameLookup', () => ({
+  staffNamesByAccount: jest.fn(async () => new Map()),
+}));
+
+const mockStaffNames = staffNamesByAccount as jest.Mock;
 const mockResolvePrincipal = resolvePrincipal as jest.MockedFunction<typeof resolvePrincipal>;
 const mockListOrganization = listOrganizationFeedback as jest.MockedFunction<typeof listOrganizationFeedback>;
 const mockListPlatform = listPlatformFeedback as jest.MockedFunction<typeof listPlatformFeedback>;
@@ -93,6 +100,43 @@ describe('POST /api/pilot/feedback/list', () => {
       limit: 10,
     });
     expect(mockListPlatform).not.toHaveBeenCalled();
+  });
+
+  // OD-2026-10-06-025, "Show coach name, hide ID": a staff submitter is named,
+  // not addressed. The query hands back the login for anyone who is not an
+  // athlete; a parent keeps it (no staff name applies to a family and the admin
+  // needs it to reach them), and a submission whose account is gone stays null.
+  test('names a staff submitter, keeps a parent login, and leaves a removed account null', async () => {
+    mockResolvePrincipal.mockResolvedValueOnce(principal());
+    const row = (overrides: Record<string, unknown>) => ({
+      submission_id: 'sub', submitted_by_account_id: 'acct', submitted_by_role: 'coach', submitter_name: 'x@example.org', ...overrides,
+    });
+    mockListOrganization.mockResolvedValueOnce([
+      row({ submission_id: 'coach-1', submitted_by_account_id: 'acct-coach', submitted_by_role: 'coach', submitter_name: 'sam@example.org' }),
+      row({ submission_id: 'coach-2', submitted_by_account_id: 'acct-coach', submitted_by_role: 'coach', submitter_name: 'sam@example.org' }),
+      row({ submission_id: 'admin-1', submitted_by_account_id: 'acct-admin', submitted_by_role: 'organization_admin', submitter_name: 'info@example.org' }),
+      row({ submission_id: 'parent-1', submitted_by_account_id: 'acct-parent', submitted_by_role: 'parent', submitter_name: 'mom@example.org' }),
+      row({ submission_id: 'athlete-1', submitted_by_account_id: 'acct-athlete', submitted_by_role: 'athlete', submitter_name: 'Maya Alvarez' }),
+      row({ submission_id: 'gone-1', submitted_by_account_id: 'acct-gone', submitted_by_role: 'coach', submitter_name: null }),
+    ] as never);
+    mockStaffNames.mockResolvedValueOnce(new Map([['acct-coach', 'Sam Rivera'], ['acct-admin', 'Gym office']]));
+
+    const res = await POST(request());
+    const payload = (await res.json()) as { items: Array<Record<string, string | null>> };
+
+    // One lookup, for the staff submitters who still have an account.
+    expect(mockStaffNames).toHaveBeenCalledTimes(1);
+    expect(mockStaffNames).toHaveBeenCalledWith('org-1', ['acct-coach', 'acct-coach', 'acct-admin']);
+    expect(payload.items.map((item) => [item.submission_id, item.submitter_name])).toEqual([
+      ['coach-1', 'Sam Rivera'],
+      ['coach-2', 'Sam Rivera'],
+      ['admin-1', 'Gym office'],
+      ['parent-1', 'mom@example.org'],
+      ['athlete-1', 'Maya Alvarez'],
+      ['gone-1', null],
+    ]);
+    expect(JSON.stringify(payload)).not.toContain('sam@example.org');
+    expect(JSON.stringify(payload)).not.toContain('info@example.org');
   });
 
   test('the legacy admin role reads the same gym-scoped queue', async () => {

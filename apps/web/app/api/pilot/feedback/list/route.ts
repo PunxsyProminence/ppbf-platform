@@ -8,6 +8,8 @@ import {
   listPlatformFeedback,
 } from '@/src/server/pilot/feedback';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import { staffNamesByAccount } from '@/src/server/pilot/staffNameLookup';
+import { canCarryStaffDisplayName } from '@/src/shared/staffDisplayName';
 
 export const runtime = 'nodejs';
 
@@ -58,11 +60,27 @@ export async function POST(request: NextRequest) {
       throw new Error('Forbidden: role not allowed');
     }
 
-    const items = await listOrganizationFeedback(principal.organizationId, {
+    const listed = await listOrganizationFeedback(principal.organizationId, {
       route,
       triageStatus,
       limit,
     });
+
+    /* A STAFF SUBMITTER IS NAMED, NOT ADDRESSED. The query returns the login
+       for anyone who is not an athlete; for a coach, staff member, volunteer
+       or admin the screen prints the gym-typed name, else the login's name,
+       else the floor (OD-2026-10-06-025, "Show coach name, hide ID"). A parent
+       keeps the login: no staff name helper applies to a family, and the admin
+       needs it to reach them. A submission whose account is gone stays null. */
+    const isStaffRow = (item: (typeof listed)[number]) =>
+      item.submitter_name !== null && item.submitted_by_account_id !== null && canCarryStaffDisplayName(item.submitted_by_role);
+    const staffNames = await staffNamesByAccount(
+      principal.organizationId,
+      listed.filter(isStaffRow).map((item) => item.submitted_by_account_id),
+    );
+    const items = listed.map((item) => (isStaffRow(item)
+      ? { ...item, submitter_name: staffNames.get(item.submitted_by_account_id as string) ?? null }
+      : item));
 
     return NextResponse.json({
       ok: true,

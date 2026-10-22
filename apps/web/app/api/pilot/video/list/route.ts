@@ -11,8 +11,10 @@ import { query } from '@/src/server/pilot/db';
 import { athleteNotDeletedSql } from '@/src/server/pilot/deletedAthletes';
 import { jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import { listRefusedTeamClips } from '@/src/server/pilot/refusedTeamClips';
+import { staffNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 import { untaggedVideoSql } from '@/src/server/pilot/videoClipTags';
 import { isFamilyVideoCaller, toFamilyVideoListItem } from '@/src/server/pilot/videoFamilyView';
+import { STAFF_LIST_NAME_FLOOR } from '@/src/shared/staffListNames';
 
 export const runtime = 'nodejs';
 
@@ -93,6 +95,24 @@ const FILM_STUDY_ONLY = 'and capture_take_id is null';
 
 const REFUSED_TEAM_LIST_MAX = 101;
 
+/*
+ * WHO FILMED IT, BY NAME, on the safeguarding view only (scope=all, which is
+ * organization-admin only). The review page printed uploaded_by_account_id,
+ * which is not attribution (OD-2026-10-06-025, "Show coach name, hide ID").
+ * Only this view pays for the reads: Film Study lists never show the uploader.
+ * The id stays on the row for callers that key on it.
+ */
+async function withFilmerNames<T extends { uploaded_by_account_id: string }>(
+  organizationId: string,
+  rows: T[],
+): Promise<Array<T & { uploaded_by_name: string }>> {
+  const names = await staffNamesByAccount(organizationId, rows.map((row) => row.uploaded_by_account_id));
+  return rows.map((row) => ({
+    ...row,
+    uploaded_by_name: names.get(row.uploaded_by_account_id) ?? STAFF_LIST_NAME_FLOOR,
+  }));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
@@ -139,7 +159,8 @@ export async function GET(request: NextRequest) {
       // "exactly 100" (admin/video-review REFUSED_TEAM_LIMIT). Local to this
       // branch: the general list keeps its ceiling.
       const refusedLimit = parseSafeLimit(searchParams.get('limit'), 50, REFUSED_TEAM_LIST_MAX);
-      return NextResponse.json({ items: await listRefusedTeamClips(principal.organizationId, refusedLimit ?? limit) });
+      const refused = await listRefusedTeamClips(principal.organizationId, refusedLimit ?? limit);
+      return NextResponse.json({ items: await withFilmerNames(principal.organizationId, refused) });
     }
 
     let rows: VideoSessionRow[];
@@ -256,6 +277,9 @@ export async function GET(request: NextRequest) {
     // consent check, and the id never does (OD-2026-10-06-025).
     if (isFamilyVideoCaller(principal.role)) {
       return NextResponse.json({ items: rows.map(toFamilyVideoListItem) });
+    }
+    if (scope === 'all') {
+      return NextResponse.json({ items: await withFilmerNames(principal.organizationId, rows) });
     }
     return NextResponse.json({ items: rows });
   } catch (error) {
