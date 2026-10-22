@@ -2382,6 +2382,8 @@ h6 {
 }
 
 [data-surface="wall"] .wall-floor-list {
+  /* Positioned, so each name's offsetTop is measured from the list (OnTheFloor). */
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
@@ -2420,10 +2422,20 @@ h6 {
 [data-surface="wall"] .wall-floor-list[data-density="packed"] .wall-name {
   font-size: var(--t-3xl);
 }
+/* Two more rungs the list steps to after layout when full names still do not
+   fit (WallDisplay FLOOR_RUNGS), before it cuts to "+N more". */
+[data-surface="wall"] .wall-floor-list[data-density="snug"] .wall-name {
+  font-size: var(--t-2xl);
+}
+[data-surface="wall"] .wall-floor-list[data-density="tight"] .wall-name {
+  font-size: var(--t-xl);
+}
 
+/* Its own line under the names, so it is never clipped with them. */
 [data-surface="wall"] .wall-more {
-  align-self: flex-end;
+  margin: var(--s3) 0 0;
   font-family: var(--font-ui);
+  line-height: 1.15;
   color: var(--bone-400);
 }
 
