@@ -2215,11 +2215,13 @@ h6 {
   color: var(--brass-300);
 }
 
-/* Beside the round clock the name has less room, so its letters close up: a
-   name of about 35 characters still fits on one line there at 1920x1080. The
-   wall without the clock keeps its spacing. */
+/* Beside the round clock the name keeps room for two lines (2 x its 1.5
+   leading) whether it needs them or not. Its column narrows and widens with
+   the clock's digits and the round's label (Round / Rest / Paused), so a name
+   that wrapped only sometimes would move the whole board up and down. The
+   wall without the round clock is as it was. */
 [data-surface="wall"] .wall-board:has(.wall-round) .wall-eyebrow {
-  letter-spacing: .18em;
+  min-height: 3em;
 }
 
 [data-surface="wall"] .wall-day {
@@ -2232,7 +2234,10 @@ h6 {
   color: var(--wall-ink);
 }
 
+/* One line: a short day (FRIDAY) beside a paused rest line would otherwise
+   let the date fold under itself and push the board down. */
 [data-surface="wall"] .wall-date {
+  white-space: nowrap;
   margin: var(--s2) 0 0;
   font-family: var(--font-ui);
   font-weight: 500;
