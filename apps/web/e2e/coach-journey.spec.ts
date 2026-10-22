@@ -838,9 +838,9 @@ test.describe('Coach journey', () => {
   });
 
   /* The fallback, driven rather than asserted in a comment. If the route ever
-     stops resolving a name, a coach should see an ugly true string rather
-     than a line that quietly reads "Written by" and stops. */
-  test('falls back to the account id when no name resolves, rather than to nothing', async ({ page }) => {
+     stops resolving a name, the line reads the route's own floor phrase, never
+     the account id (OD-2026-10-06-025, "Show coach name, hide ID"). */
+  test('falls back to the floor phrase, never the account id, when no name resolves', async ({ page }) => {
     await installPilotApi(page, {
       session: { role: 'coach' },
       routes: {
@@ -873,7 +873,8 @@ test.describe('Coach journey', () => {
     await page.goto('/coach/development-blocks');
     await page.getByLabel('Which athlete').selectOption(ROSA.athlete_id);
 
-    await expect(page.getByText('Written by acct-coach')).toBeVisible();
+    await expect(page.getByText('Written by Your coach')).toBeVisible();
+    await expect(page.getByText('acct-coach')).toHaveCount(0);
   });
 
   /* A coach's own development, in a real browser.

@@ -26,9 +26,10 @@ export interface StaffListSource {
 
 /**
  * One person's name, unnumbered. The typed name counts only for a role that
- * may carry one and only while the membership is active, the same two checks
- * the server makes on every read (storedStaffNameSql); otherwise the name the
- * login gives, then the floor.
+ * may carry one and only while the membership is active, two of the checks
+ * the server makes on every read (storedStaffNameSql; the directory does not
+ * say whether an account is deleted, so the third is the server's alone);
+ * otherwise the name the login gives, then the floor.
  */
 export function staffListNameFor(source: StaffListSource): string {
   const mayBeNamed = canCarryStaffDisplayName(source.role ?? '') && source.membership_active !== false;
@@ -37,18 +38,18 @@ export function staffListNameFor(source: StaffListSource): string {
 }
 
 /**
- * Account id to the label a list prints. Two people who read the same are
- * numbered "(1 of 2)", "(2 of 2)" in the order given, never told apart by their
- * sign-in address (OD-2026-10-06-025, as the schedule's coach picker does).
+ * Account id to the label a list prints, from (account id, name) pairs in the
+ * order a screen wants them numbered. Two different people who read the same
+ * are numbered "(1 of 2)", "(2 of 2)", never told apart by their sign-in
+ * address (OD-2026-10-06-025, as the schedule's coach picker does).
  */
-export function staffListLabels(sources: readonly StaffListSource[]): Map<string, string> {
+export function numberSharedNames(entries: Iterable<readonly [string, string]>): Map<string, string> {
   const names = new Map<string, string>();
   const sharing = new Map<string, string[]>();
-  for (const source of sources) {
-    if (names.has(source.account_id)) continue;
-    const name = staffListNameFor(source);
-    names.set(source.account_id, name);
-    sharing.set(name, [...(sharing.get(name) ?? []), source.account_id]);
+  for (const [accountId, name] of entries) {
+    if (names.has(accountId)) continue;
+    names.set(accountId, name);
+    sharing.set(name, [...(sharing.get(name) ?? []), accountId]);
   }
   const labels = new Map<string, string>();
   for (const [accountId, name] of names) {
@@ -56,4 +57,9 @@ export function staffListLabels(sources: readonly StaffListSource[]): Map<string
     labels.set(accountId, same.length > 1 ? `${name} (${same.indexOf(accountId) + 1} of ${same.length})` : name);
   }
   return labels;
+}
+
+/** The same for a directory of people, each named by staffListNameFor, in the order given. */
+export function staffListLabels(sources: readonly StaffListSource[]): Map<string, string> {
+  return numberSharedNames(sources.map((source) => [source.account_id, staffListNameFor(source)] as const));
 }

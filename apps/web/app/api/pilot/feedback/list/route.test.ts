@@ -103,30 +103,34 @@ describe('POST /api/pilot/feedback/list', () => {
   });
 
   // OD-2026-10-06-025, "Show coach name, hide ID": a staff submitter is named,
-  // not addressed. The query hands back the login for anyone who is not an
+  // not addressed. The query returns the login for anyone who is not an
   // athlete; a parent keeps it (no staff name applies to a family and the admin
   // needs it to reach them), and a submission whose account is gone stays null.
-  test('names a staff submitter, keeps a parent login, and leaves a removed account null', async () => {
+  const row = (overrides: Record<string, unknown>) => ({
+    submission_id: 'sub', submitted_by_account_id: 'acct', submitted_by_role: 'coach', submitter_name: 'x@example.org', ...overrides,
+  });
+  const submitters = async (rows: Array<Record<string, unknown>>) => {
     mockResolvePrincipal.mockResolvedValueOnce(principal());
-    const row = (overrides: Record<string, unknown>) => ({
-      submission_id: 'sub', submitted_by_account_id: 'acct', submitted_by_role: 'coach', submitter_name: 'x@example.org', ...overrides,
-    });
-    mockListOrganization.mockResolvedValueOnce([
+    mockListOrganization.mockResolvedValueOnce(rows as never);
+    const res = await POST(request());
+    return (await res.json()) as { items: Array<Record<string, string | null>> };
+  };
+
+  test('names a staff submitter, keeps a parent login, and leaves a removed account null', async () => {
+    mockStaffNames.mockResolvedValueOnce(new Map([['acct-coach', 'Sam Rivera'], ['acct-admin', 'Gym office']]));
+
+    const payload = await submitters([
       row({ submission_id: 'coach-1', submitted_by_account_id: 'acct-coach', submitted_by_role: 'coach', submitter_name: 'sam@example.org' }),
       row({ submission_id: 'coach-2', submitted_by_account_id: 'acct-coach', submitted_by_role: 'coach', submitter_name: 'sam@example.org' }),
       row({ submission_id: 'admin-1', submitted_by_account_id: 'acct-admin', submitted_by_role: 'organization_admin', submitter_name: 'info@example.org' }),
       row({ submission_id: 'parent-1', submitted_by_account_id: 'acct-parent', submitted_by_role: 'parent', submitter_name: 'mom@example.org' }),
       row({ submission_id: 'athlete-1', submitted_by_account_id: 'acct-athlete', submitted_by_role: 'athlete', submitter_name: 'Maya Alvarez' }),
       row({ submission_id: 'gone-1', submitted_by_account_id: 'acct-gone', submitted_by_role: 'coach', submitter_name: null }),
-    ] as never);
-    mockStaffNames.mockResolvedValueOnce(new Map([['acct-coach', 'Sam Rivera'], ['acct-admin', 'Gym office']]));
+    ]);
 
-    const res = await POST(request());
-    const payload = (await res.json()) as { items: Array<Record<string, string | null>> };
-
-    // One lookup, for the staff submitters who still have an account.
+    // One lookup, for the staff submitters who still have an account, once each.
     expect(mockStaffNames).toHaveBeenCalledTimes(1);
-    expect(mockStaffNames).toHaveBeenCalledWith('org-1', ['acct-coach', 'acct-coach', 'acct-admin']);
+    expect(mockStaffNames).toHaveBeenCalledWith('org-1', ['acct-admin', 'acct-coach']);
     expect(payload.items.map((item) => [item.submission_id, item.submitter_name])).toEqual([
       ['coach-1', 'Sam Rivera'],
       ['coach-2', 'Sam Rivera'],
@@ -137,6 +141,48 @@ describe('POST /api/pilot/feedback/list', () => {
     ]);
     expect(JSON.stringify(payload)).not.toContain('sam@example.org');
     expect(JSON.stringify(payload)).not.toContain('info@example.org');
+  });
+
+  test.each(['coach', 'staff', 'volunteer', 'admin', 'organization_admin'] as const)(
+    'a %s submitter is named',
+    async (role) => {
+      mockStaffNames.mockResolvedValueOnce(new Map([['acct-1', 'Sam Rivera']]));
+
+      const payload = await submitters([row({ submitted_by_account_id: 'acct-1', submitted_by_role: role })]);
+
+      expect(payload.items[0].submitter_name).toBe('Sam Rivera');
+    },
+  );
+
+  test.each(['parent', 'board', 'platform_owner'] as const)(
+    'a %s submitter keeps the login the query returned: no staff name applies',
+    async (role) => {
+      const payload = await submitters([row({ submitted_by_account_id: 'acct-1', submitted_by_role: role, submitter_name: 'who@example.org' })]);
+
+      expect(mockStaffNames).toHaveBeenCalledWith('org-1', []);
+      expect(payload.items[0].submitter_name).toBe('who@example.org');
+    },
+  );
+
+  // A safeguarding queue still has to answer "who wrote it": two different
+  // staff who read the same are numbered, in account-id order, so the number
+  // does not move when a newer submission arrives.
+  test('numbers two different staff who read the same, by account id, and not one person twice', async () => {
+    mockStaffNames.mockResolvedValueOnce(new Map([['acct-b', 'Sam'], ['acct-a', 'Sam'], ['acct-c', 'Pat Lowe']]));
+
+    const payload = await submitters([
+      row({ submission_id: 'newest', submitted_by_account_id: 'acct-b' }),
+      row({ submission_id: 'middle', submitted_by_account_id: 'acct-c' }),
+      row({ submission_id: 'older', submitted_by_account_id: 'acct-a' }),
+      row({ submission_id: 'oldest', submitted_by_account_id: 'acct-b' }),
+    ]);
+
+    expect(payload.items.map((item) => [item.submission_id, item.submitter_name])).toEqual([
+      ['newest', 'Sam (2 of 2)'],
+      ['middle', 'Pat Lowe'],
+      ['older', 'Sam (1 of 2)'],
+      ['oldest', 'Sam (2 of 2)'],
+    ]);
   });
 
   test('the legacy admin role reads the same gym-scoped queue', async () => {

@@ -10,6 +10,7 @@ import {
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 import { staffNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 import { canCarryStaffDisplayName } from '@/src/shared/staffDisplayName';
+import { STAFF_LIST_NAME_FLOOR, numberSharedNames } from '@/src/shared/staffListNames';
 
 export const runtime = 'nodejs';
 
@@ -69,17 +70,20 @@ export async function POST(request: NextRequest) {
     /* A STAFF SUBMITTER IS NAMED, NOT ADDRESSED. The query returns the login
        for anyone who is not an athlete; for a coach, staff member, volunteer
        or admin the screen prints the gym-typed name, else the login's name,
-       else the floor (OD-2026-10-06-025, "Show coach name, hide ID"). A parent
-       keeps the login: no staff name helper applies to a family, and the admin
-       needs it to reach them. A submission whose account is gone stays null. */
+       else the floor (OD-2026-10-06-025, "Show coach name, hide ID"). Two
+       different staff who read the same are numbered, in account-id order so
+       the number does not move as new submissions arrive: on this queue, which
+       carries safeguarding reports, "who wrote it" must stay answerable. A
+       parent keeps the login: no staff name helper applies to a family, and the
+       admin needs it to reach them. A submission whose account is gone stays
+       null. */
     const isStaffRow = (item: (typeof listed)[number]) =>
       item.submitter_name !== null && item.submitted_by_account_id !== null && canCarryStaffDisplayName(item.submitted_by_role);
-    const staffNames = await staffNamesByAccount(
-      principal.organizationId,
-      listed.filter(isStaffRow).map((item) => item.submitted_by_account_id),
-    );
+    const staffIds = [...new Set(listed.filter(isStaffRow).map((item) => item.submitted_by_account_id as string))].sort();
+    const staffNames = await staffNamesByAccount(principal.organizationId, staffIds);
+    const staffLabels = numberSharedNames(staffIds.map((id) => [id, staffNames.get(id) ?? STAFF_LIST_NAME_FLOOR] as const));
     const items = listed.map((item) => (isStaffRow(item)
-      ? { ...item, submitter_name: staffNames.get(item.submitted_by_account_id as string) ?? null }
+      ? { ...item, submitter_name: staffLabels.get(item.submitted_by_account_id as string) ?? STAFF_LIST_NAME_FLOOR }
       : item));
 
     return NextResponse.json({

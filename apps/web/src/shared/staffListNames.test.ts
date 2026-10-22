@@ -1,4 +1,4 @@
-import { STAFF_LIST_NAME_FLOOR, staffListLabels, staffListNameFor } from './staffListNames';
+import { STAFF_LIST_NAME_FLOOR, numberSharedNames, staffListLabels, staffListNameFor } from './staffListNames';
 
 describe('staffListNameFor: the typed name, else the login name, else the floor', () => {
   test('the name the gym typed wins, and a title typed in front is stripped', () => {
@@ -95,5 +95,12 @@ describe('staffListLabels: two who read the same are numbered, never told apart 
       expect(label).not.toContain('@');
       expect(label).not.toContain('acct-secret');
     }
+  });
+});
+
+describe('numberSharedNames: the numbering rule on its own', () => {
+  test('numbers by the order given, leaves a unique name alone, and counts one id once', () => {
+    const labels = numberSharedNames([['b', 'Sam'], ['a', 'Sam'], ['c', 'Pat'], ['b', 'Sam']]);
+    expect([...labels]).toEqual([['b', 'Sam (1 of 2)'], ['a', 'Sam (2 of 2)'], ['c', 'Pat']]);
   });
 });
