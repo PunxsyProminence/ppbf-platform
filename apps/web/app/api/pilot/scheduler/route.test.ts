@@ -10,13 +10,14 @@ import {
 } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { query, queryOne } from '@/src/server/pilot/db';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
   cancelSchedulerClass,
-  createSchedulerClass,
+  createSchedulerClasses,
   createSchedulerCoachingRequest,
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
@@ -80,7 +81,7 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 
 jest.mock('@/src/server/pilot/schedulerDb', () => ({
   cancelSchedulerClass: jest.fn(),
-  createSchedulerClass: jest.fn(),
+  createSchedulerClasses: jest.fn(async () => 'created'),
   createSchedulerCoachingRequest: jest.fn(),
   registerForClassTransactionally: jest.fn(),
   getSchedulerClassById: jest.fn(),
@@ -1142,7 +1143,7 @@ describe('the class register does not reach past the register', () => {
 });
 
 describe('POST /api/pilot/scheduler answers bad input with 400 and the field name', () => {
-  const mockCreateClass = createSchedulerClass as jest.Mock;
+  const mockCreateClass = createSchedulerClasses as jest.Mock;
 
   const cases: Array<[string, Record<string, unknown>, string]> = [
     ['an unparseable start_at', { start_at: 'next tuesday' }, 'start_at must be a valid date string'],
@@ -2017,7 +2018,7 @@ describe("POST parent_review_registration answers a missing id and another famil
  * TZ=UTC and TZ=Asia/Tokyo set before jest starts.
  */
 describe('POST /api/pilot/scheduler reads a zone-less time as the gym clock', () => {
-  const mockCreateClass = createSchedulerClass as jest.Mock;
+  const mockCreateClass = createSchedulerClasses as jest.Mock;
   const mockCreateCoaching = createSchedulerCoachingRequest as jest.Mock;
 
   function createClassRequest(startAt: string, endAt: string) {
@@ -2035,7 +2036,7 @@ describe('POST /api/pilot/scheduler reads a zone-less time as the gym clock', ()
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
     const res = await POST(createClassRequest(startAt, endAt));
     expect(res.status).toBe(200);
-    return mockCreateClass.mock.calls[0][1] as { start_at: string; end_at: string };
+    return mockCreateClass.mock.calls[0][1][0] as { start_at: string; end_at: string };
   }
 
   test('6:00 pm typed in summer is stored as 6:00 pm gym time and reads back as 6:00 pm', async () => {
@@ -2497,7 +2498,7 @@ describe('cancel_class', () => {
    schedules names the coach who runs it, an active coach of the gym; a coach
    schedules the classes they run themselves. */
 describe('create_class names the coach who runs it', () => {
-  const mockCreateClass = createSchedulerClass as jest.Mock;
+  const mockCreateClass = createSchedulerClasses as jest.Mock;
   const mockAssertActiveCoach = assertActiveCoachAccount as jest.Mock;
   const CLASS = {
     action: 'create_class',
@@ -2519,7 +2520,7 @@ describe('create_class names the coach who runs it', () => {
     const response = await POST(jsonRequest({ ...CLASS, coach_account_id: ' acct-jane ' }));
     expect(response.status).toBe(200);
     expect(mockAssertActiveCoach).toHaveBeenCalledWith('org-1', 'acct-jane', 'coach_account_id');
-    expect(mockCreateClass.mock.calls[0][1]).toMatchObject({
+    expect(mockCreateClass.mock.calls[0][1][0]).toMatchObject({
       coach_account_id: 'acct-jane',
       scheduled_by_account_id: 'acct-admin',
     });
@@ -2546,14 +2547,14 @@ describe('create_class names the coach who runs it', () => {
     const response = await POST(jsonRequest(CLASS));
     expect(response.status).toBe(200);
     expect(mockAssertActiveCoach).not.toHaveBeenCalled();
-    expect(mockCreateClass.mock.calls[0][1]).toMatchObject({ coach_account_id: 'acct-coach-1' });
+    expect(mockCreateClass.mock.calls[0][1][0]).toMatchObject({ coach_account_id: 'acct-coach-1' });
   });
 
   test('a coach naming themselves is the same as naming no one', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
     const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-coach-1' }));
     expect(response.status).toBe(200);
-    expect(mockCreateClass.mock.calls[0][1]).toMatchObject({ coach_account_id: 'acct-coach-1' });
+    expect(mockCreateClass.mock.calls[0][1][0]).toMatchObject({ coach_account_id: 'acct-coach-1' });
   });
 
   test('a coach cannot schedule a class for another coach', async () => {
@@ -2738,5 +2739,180 @@ describe('GET tells a family reader which requests it may withdraw', () => {
 
   test('an athlete may withdraw only the pending request they made', async () => {
     expect(await read(athletePrincipal())).toEqual({ mine: true, theirs: false, done: false });
+  });
+});
+
+/* REPEAT WEEKLY (lane LW; pilot readiness 2026-10-20 "NEEDED SOON"). One
+   Schedule Class makes N ordinary classes: same weekday and gym time, same
+   coach, places and title, each its own class, all created or none, and a
+   repeated submit under one request key makes nothing twice. */
+describe('create_class repeat weekly', () => {
+  const mockCreateClasses = createSchedulerClasses as jest.Mock;
+  const mockAssertActiveCoach = assertActiveCoachAccount as jest.Mock;
+  const KEY = 'key-0123456789abcdef';
+  const CLASS = {
+    action: 'create_class',
+    title: 'Evening boxing',
+    // Tuesday; the clocks go back on Sunday 1 November 2026.
+    start_at: '2026-10-27T18:00',
+    end_at: '2026-10-27T19:30',
+    location: 'Main Floor',
+    capacity: 20,
+    request_key: KEY,
+  };
+  type Row = { class_id: string; start_at: string; end_at: string } & Record<string, unknown>;
+  const rows = (call = 0) => mockCreateClasses.mock.calls[call][1] as Row[];
+
+  beforeEach(() => {
+    mockCreateClasses.mockReset();
+    mockCreateClasses.mockResolvedValue('created');
+    mockAssertActiveCoach.mockReset();
+    mockAssertActiveCoach.mockResolvedValue(undefined);
+  });
+
+  test('a coach repeats for 4 weeks: four independent classes in one write, 6:00 pm gym time across the clock change', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    const response = await POST(jsonRequest({ ...CLASS, repeat_weeks: 4 }));
+    expect(response.status).toBe(200);
+
+    expect(mockCreateClasses).toHaveBeenCalledTimes(1);
+    const made = rows();
+    expect(made.map((row) => [row.start_at, row.end_at])).toEqual([
+      ['2026-10-27T22:00:00.000Z', '2026-10-27T23:30:00.000Z'],
+      ['2026-11-03T23:00:00.000Z', '2026-11-04T00:30:00.000Z'],
+      ['2026-11-10T23:00:00.000Z', '2026-11-11T00:30:00.000Z'],
+      ['2026-11-17T23:00:00.000Z', '2026-11-18T00:30:00.000Z'],
+    ]);
+    expect(made.map((row) => formatGymStamp(row.start_at))).toEqual([
+      'October 27, 2026 at 6:00 PM',
+      'November 3, 2026 at 6:00 PM',
+      'November 10, 2026 at 6:00 PM',
+      'November 17, 2026 at 6:00 PM',
+    ]);
+    for (const row of made) {
+      expect(row).toMatchObject({
+        title: 'Evening boxing',
+        location: 'Main Floor',
+        capacity: 20,
+        coach_account_id: 'acct-coach-1',
+        scheduled_by_account_id: 'acct-coach-1',
+        status: 'open',
+      });
+      // Ordinary classes: nothing ties one to the others.
+      expect(Object.keys(row).sort()).toEqual([
+        'capacity', 'class_id', 'coach_account_id', 'created_at', 'end_at', 'location',
+        'scheduled_by_account_id', 'start_at', 'status', 'title', 'updated_at',
+      ]);
+    }
+    expect(new Set(made.map((row) => row.class_id)).size).toBe(4);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      class_id: made[0].class_id,
+      class_ids: made.map((row) => row.class_id),
+      already_created: false,
+    });
+  });
+
+  test('until a date: every week up to and including it', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    const response = await POST(jsonRequest({ ...CLASS, repeat_until: '2026-11-10' }));
+    expect(response.status).toBe(200);
+    expect(rows().map((row) => formatGymStamp(row.start_at))).toEqual([
+      'October 27, 2026 at 6:00 PM',
+      'November 3, 2026 at 6:00 PM',
+      'November 10, 2026 at 6:00 PM',
+    ]);
+  });
+
+  test('an admin names the coach once and every class has that coach', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { accountId: 'acct-admin' }));
+    const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-jane', repeat_weeks: 3 }));
+    expect(response.status).toBe(200);
+    expect(mockAssertActiveCoach).toHaveBeenCalledWith('org-1', 'acct-jane', 'coach_account_id');
+    expect(rows().map((row) => [row.coach_account_id, row.scheduled_by_account_id])).toEqual([
+      ['acct-jane', 'acct-admin'], ['acct-jane', 'acct-admin'], ['acct-jane', 'acct-admin'],
+    ]);
+  });
+
+  test('the same submit again names the same classes, and is told nothing new was made', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    await POST(jsonRequest({ ...CLASS, repeat_weeks: 4 }));
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockCreateClasses.mockResolvedValueOnce('already_created');
+    const again = await POST(jsonRequest({ ...CLASS, repeat_weeks: 4 }));
+
+    expect(rows(1).map((row) => row.class_id)).toEqual(rows(0).map((row) => row.class_id));
+    expect(rows(0)[0].class_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(again.status).toBe(200);
+    await expect(again.json()).resolves.toMatchObject({ ok: true, already_created: true });
+  });
+
+  test('the key is the caller’s own: another coach sending it names different classes', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    await POST(jsonRequest({ ...CLASS, repeat_weeks: 2 }));
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-2' }));
+    await POST(jsonRequest({ ...CLASS, repeat_weeks: 2 }));
+    const first = new Set(rows(0).map((row) => row.class_id));
+    expect(rows(1).some((row) => first.has(row.class_id))).toBe(false);
+  });
+
+  test('a key that already made other classes is refused in words, all or nothing', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    mockCreateClasses.mockRejectedValueOnce(new ConflictError(
+      'These classes were already scheduled from an earlier tap. Check the schedule before scheduling again.',
+      'CLASS_REQUEST_KEY_REUSED',
+    ));
+    const response = await POST(jsonRequest({ ...CLASS, repeat_weeks: 4 }));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: 'These classes were already scheduled from an earlier tap. Check the schedule before scheduling again.',
+      code: 'CLASS_REQUEST_KEY_REUSED',
+    });
+  });
+
+  test('a single class with no key is made as before, with a fresh id each time', async () => {
+    const single: Record<string, unknown> = { ...CLASS };
+    delete single.request_key;
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    await POST(jsonRequest(single));
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    await POST(jsonRequest(single));
+    expect(rows(0)).toHaveLength(1);
+    expect(rows(0)[0].class_id).not.toBe(rows(1)[0].class_id);
+  });
+
+  test.each(['athlete', 'parent'])('a %s cannot schedule a repeating class', async (role) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+    const response = await POST(jsonRequest({ ...CLASS, repeat_weeks: 4 }));
+    expect(response.status).toBe(403);
+    expect(mockCreateClasses).not.toHaveBeenCalled();
+  });
+
+  test('a coach cannot repeat a class for another coach', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    const response = await POST(jsonRequest({ ...CLASS, coach_account_id: 'acct-coach-2', repeat_weeks: 4 }));
+    expect(response.status).toBe(403);
+    expect(mockCreateClasses).not.toHaveBeenCalled();
+  });
+
+  const refusals: Array<[string, Record<string, unknown>, string]> = [
+    ['0 weeks', { repeat_weeks: 0 }, 'Repeat weekly runs for 1 to 12 weeks.'],
+    ['13 weeks', { repeat_weeks: 13 }, 'Repeat weekly runs for 1 to 12 weeks.'],
+    ['a fractional week count', { repeat_weeks: 2.5 }, 'repeat_weeks must be an integer'],
+    ['an end date before the first class', { repeat_until: '2026-10-26' }, 'The repeat end date is before the first class.'],
+    ['an end date past 12 weeks', { repeat_until: '2027-01-19' }, 'Repeat weekly runs for at most 12 weeks. Pick an earlier end date.'],
+    ['an end date that is not a date', { repeat_until: 'soon' }, 'The repeat end date must be a date.'],
+    ['both ways at once', { repeat_weeks: 4, repeat_until: '2026-11-10' }, 'Send repeat_weeks or repeat_until, not both'],
+    ['no request key', { repeat_weeks: 4, request_key: undefined }, 'request_key is required to repeat a class'],
+    ['a malformed request key', { repeat_weeks: 4, request_key: 'short' }, 'request_key must be 8 to 128 letters, digits, - or _'],
+    ['an end before the start', { repeat_weeks: 4, end_at: '2026-10-27T17:00' }, 'end_at must be after start_at'],
+  ];
+
+  test.each(refusals)('%s is refused and nothing is made', async (_label, patch, message) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
+    const response = await POST(jsonRequest({ ...CLASS, ...patch }));
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: message });
+    expect(mockCreateClasses).not.toHaveBeenCalled();
   });
 });
