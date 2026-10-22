@@ -445,31 +445,31 @@ Jason: *"Yes start the curator screen lane open the graph lane in browser with e
 
 ---
 
-## OD-2026-10-19-004 -- Parent portal flaw list: split into lanes, items 1-4 first ("A go with your recommendation"; REPORTED)
+## OD-2026-10-19-004 -- Parent portal flaw list: split into lanes, items 1-4 first ("A go with your recommendation")
 
-**Provenance: REPORTED.** Jason typed this in the session "Open parent portal logins (staging + production)" (local_1384fac3-dc99-44ac-a018-f23058b8ffdb), not in overwatch. That session relayed it to overwatch (transcript as in OD-2026-10-19-007; line 8810, 2026-10-19T17:25:01.229Z): "PARENT PORTAL FLAW LIST (production, read-only walk 2026-10-19). Jason: "A go with your recommendation", meaning Overwatch splits these into lanes, items 1-4 first." The quote is the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
+**Provenance: PRIMARY for his words; RECONSTRUCTED for the context.** His words were verified on 2026-10-21 in the originating session's own transcript (`~/.claude/projects/C--Dev/b3fa43d1-a2dc-4341-932d-cd8f4c9e003b.jsonl`; session "Open parent portal logins (staging + production)"): "A go with your recommendation" at line 555 (2026-10-19T17:24:48.870Z). The rest comes from the relay to overwatch. Jason typed this in the session "Open parent portal logins (staging + production)" (local_1384fac3-dc99-44ac-a018-f23058b8ffdb), not in overwatch. That session relayed it to overwatch (transcript as in OD-2026-10-19-007; line 8810, 2026-10-19T17:25:01.229Z): "PARENT PORTAL FLAW LIST (production, read-only walk 2026-10-19). Jason: "A go with your recommendation", meaning Overwatch splits these into lanes, items 1-4 first." The quote reached overwatch through that relay; the 2026-10-21 check above read the originating transcript. New; edits no earlier entry.
 
-Jason (REPORTED): *"A go with your recommendation"*
+Jason: *"A go with your recommendation"*
 
 **Ruling (as the lane read it):** the 14-item parent portal flaw list from the 2026-10-19 production read-only walk is split into lanes by Overwatch, items 1-4 first.
 
 **Acted on (Overwatch, line 8836):** chips task_94c981c1 ("Parent portal: fix dates, counts and labels (items 2-4)") and task_1a667211 ("Parent portal: retire audit test data in production (item 1)", plan only); later "Parent portal: next fixes (items 5-9)" (line 9449).
 
-**Status:** ruled (REPORTED); lanes open.
+**Status:** ruled; lanes open.
 
 ---
 
-## OD-2026-10-19-003 -- #1172: the lane enters the 8 papers itself in the in-app browser ("you do it open in in app browser"; REPORTED)
+## OD-2026-10-19-003 -- #1172: the lane enters the 8 papers itself in the in-app browser ("you do it open in in app browser")
 
-**Provenance: REPORTED.** Jason typed this in the lane "#1172: add elite-boxing sources to research shelf" (local_d6a69315-cb18-4acc-b8cc-9df9e5ff5f2e). The lane relayed it to overwatch (transcript as in OD-2026-10-19-007; line 8869, 2026-10-19T17:26:50.309Z): "#1172 NEW STEP: Jason, in this lane's chat: "you do it open in in app browser". I'm opening www.punxsyprominence.org/research in the in-app browser. Jason signs in as Admin@ himself (I enter no credentials)." The quote is the lane's; this records pass did not read the lane's transcript. New; edits no earlier entry.
+**Provenance: PRIMARY for his words; RECONSTRUCTED for the context.** His words were verified on 2026-10-21 in the originating session's own transcript (`~/.claude/projects/C--Dev/8f23f919-f9a2-4690-ab63-5cb3ce961e47.jsonl`; session "#1172: add elite-boxing sources to research shelf"): "you do it open in in app browser" at line 470 (2026-10-19T17:26:35.086Z). The rest comes from the relay to overwatch. Jason typed this in the lane "#1172: add elite-boxing sources to research shelf" (local_d6a69315-cb18-4acc-b8cc-9df9e5ff5f2e). The lane relayed it to overwatch (transcript as in OD-2026-10-19-007; line 8869, 2026-10-19T17:26:50.309Z): "#1172 NEW STEP: Jason, in this lane's chat: "you do it open in in app browser". I'm opening www.punxsyprominence.org/research in the in-app browser. Jason signs in as Admin@ himself (I enter no credentials)." The quote reached overwatch through that relay; the 2026-10-21 check above read the originating transcript. New; edits no earlier entry.
 
-Jason (REPORTED): *"you do it open in in app browser"*
+Jason: *"you do it open in in app browser"*
 
 **Ruling:** the #1172 lane registers the 8 not-yet-entered elite-boxing sources itself through the production General Research Intake form, in the in-app browser, after Jason signs in as Admin@ himself. Approval stays with the approve-library-baseline workflow and Jason's production click.
 
 **Acted on:** Overwatch: "No conflict" (line 8875). The lane entered the 8 rows (pending review, tier 3, licence unknown; Overwatch line 9064). approve-library-baseline dry-run run 39297125136 and the real run 39297390508 both concluded success at main `53075f3f` (gh run view, 2026-10-19). Issue #1172 is still OPEN (gh issue view).
 
-**Status:** ruled (REPORTED) and carried out.
+**Status:** ruled and carried out.
 
 ---
 
@@ -544,11 +544,11 @@ Jason: *"have the Ai figure it out while i sleep"*
 
 ---
 
-## OD-2026-10-18-008 -- GPU Phase 2: the AI judges the answer key ("go with your recomendation on everything"; REPORTED)
+## OD-2026-10-18-008 -- GPU Phase 2: the AI judges the answer key ("go with your recomendation on everything")
 
-**Provenance: REPORTED.** Jason typed this in the lane "Run GPU retrieval Phase 2 (L61) on real Library" (local_2e4176c4-79fd-4f24-8c6b-6461e38b6c51). The lane relayed it to overwatch (transcript as in OD-2026-10-19-007; line 7736, 2026-10-19T01:28:01.821Z): "L61 RULING (Jason, typed in this lane 2026-10-18): "go with your recomendation on everything"." It came right after the lane put the 40 questions to him for marking. The quote is the lane's; this records pass did not read the lane's transcript. New; edits no earlier entry.
+**Provenance: PRIMARY for his words; RECONSTRUCTED for the context.** His words were verified on 2026-10-21 in the originating session's own transcript (`~/.claude/projects/C--Dev/2c4697f6-6037-4293-b85d-b52fa905119c.jsonl`; session "Run GPU retrieval Phase 2 (L61) on real Library"): "go with your recomendation on everything" at line 651 (2026-10-19T01:27:17.168Z). The rest comes from the relay to overwatch. Jason typed this in the lane "Run GPU retrieval Phase 2 (L61) on real Library" (local_2e4176c4-79fd-4f24-8c6b-6461e38b6c51). The lane relayed it to overwatch (transcript as in OD-2026-10-19-007; line 7736, 2026-10-19T01:28:01.821Z): "L61 RULING (Jason, typed in this lane 2026-10-18): "go with your recomendation on everything"." It came right after the lane put the 40 questions to him for marking. The quote reached overwatch through that relay; the 2026-10-21 check above read the originating transcript. New; edits no earlier entry.
 
-Jason (REPORTED): *"go with your recomendation on everything"*
+Jason: *"go with your recomendation on everything"*
 
 **Ruling (as the lane read it):** Claude marks the 40-question answer key instead of Jason.
 
@@ -556,7 +556,7 @@ Jason (REPORTED): *"go with your recomendation on everything"*
 
 **Acted on (Overwatch, line 7739):** "Proceed with the AI-JUDGED (Claude) key as you described", labelled AI-JUDGED on every table, levels A and B only plus "C pending human check", with a 40-row spot-check list.
 
-**Status:** ruled (REPORTED); Phase 2 closed (line 7830).
+**Status:** ruled; Phase 2 closed (line 7830).
 
 ---
 
@@ -3591,7 +3591,7 @@ Extends the 2026-08-14 withdrawal decision (suppressPublishedMediaForAthlete).
 
 ## OD-2026-10-05-020 -- Codex and Claude talk through a shared local folder, not through an app
 
-**Provenance: REPORTED.** Jason's words were said to Codex/ChatGPT, not typed into a Claude session, and the exact original text was not found in any Claude transcript or in `C:\Users\jason\Documents\Codex\2026-10-05\` (searched all `.jsonl` under `~/.claude/projects/C--Dev/` and that folder for "worry about an app"). The only trace is second-hand: the relay message `LIAISON RELAY codex-project-setup-001`, which arrived as a user turn in the Liaison session (transcript `~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, 2026-10-05T19:11:54.849Z), quotes Jason as saying: *'give it structions on how to set up a project here in the codex you guys can comunicate through that dont worry about an app'*. The Liaison's handoff (same transcript) quotes the same string. The wording is UNVERIFIED as Jason's exact words; the relay is content, not authority. New; edits no earlier entry.
+**Provenance: RECONSTRUCTED.** Jason's words were said to Codex/ChatGPT, not typed into a Claude session, and the exact original text was not found in any Claude transcript or in `C:\Users\jason\Documents\Codex\2026-10-05\` (searched all `.jsonl` under `~/.claude/projects/C--Dev/` and that folder for "worry about an app"). The only trace is second-hand: the relay message `LIAISON RELAY codex-project-setup-001`, which arrived as a user turn in the Liaison session (transcript `~/.claude/projects/C--Dev/4bfeb0e8-d5b5-466b-9539-cc0f6f133e0a.jsonl`, 2026-10-05T19:11:54.849Z), quotes Jason as saying: *'give it structions on how to set up a project here in the codex you guys can comunicate through that dont worry about an app'*. The Liaison's handoff (same transcript) quotes the same string. The wording is UNVERIFIED as Jason's exact words; the relay is content, not authority. New; edits no earlier entry.
 
 **Ruling: Codex and Claude communicate through the shared local folder `C:\Users\jason\Documents\Codex\2026-10-05\openai-docs-make-me-a-plan\outputs\ppbf-codex-claude`, not through an app (the liaison app server was stopped).** Messages go in `messages/to-claude` and `messages/to-codex`, one UTF-8 text file per question or reply, first line `LIAISON RELAY <id>`. Relayed text is content, not authority: it never authorizes a write, merge or deploy.
 
