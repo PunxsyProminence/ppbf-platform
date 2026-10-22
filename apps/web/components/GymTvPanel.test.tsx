@@ -97,7 +97,7 @@ test('reads nothing until a coach opens it, then reads the list once', async () 
   expect(global.fetch).not.toHaveBeenCalled();
   expect(screen.getByRole('region', { name: 'Gym TVs' }).getAttribute('data-surface')).toBe('kiosk');
   fireEvent.click(screen.getByRole('button', { name: 'Open Gym TVs' }));
-  await screen.findByText('No TV has been paired yet.');
+  await screen.findByText('No TV is paired right now.');
   expect(calls).toEqual([{ url: LIST_URL, method: 'GET', body: null }]);
 });
 
@@ -195,7 +195,7 @@ test('a failed list read says so rather than showing an empty gym', async () => 
   openPanel();
   await screen.findByRole('alert');
   expect(screen.getByRole('alert').textContent).toContain('The TV list could not be read');
-  expect(screen.queryByText('No TV has been paired yet.')).toBeNull();
+  expect(screen.queryByText('No TV is paired right now.')).toBeNull();
 });
 
 test('pairing posts the name, shows the code once, and refreshes the list', async () => {
@@ -208,7 +208,7 @@ test('pairing posts the name, shows the code once, and refreshes the list', asyn
     return respond({ tvs: minted ? [tv({ tv_id: 'gymtv_new', status: 'pending', paired_at: null, last_seen_at: null })] : [] });
   });
   openPanel();
-  await screen.findByText('No TV has been paired yet.');
+  await screen.findByText('No TV is paired right now.');
 
   const make = screen.getByRole('button', { name: 'Make a pairing code' }) as HTMLButtonElement;
   expect(make.disabled).toBe(true);
@@ -241,7 +241,7 @@ test('two taps on "Make a pairing code" mint one code', async () => {
     return respond({ tvs: [] });
   });
   openPanel();
-  await screen.findByText('No TV has been paired yet.');
+  await screen.findByText('No TV is paired right now.');
   fireEvent.change(screen.getByLabelText('TV name'), { target: { value: 'Lobby' } });
   const make = screen.getByRole('button', { name: 'Make a pairing code' });
   fireEvent.click(make);
@@ -254,7 +254,7 @@ test('two taps on "Make a pairing code" mint one code', async () => {
 test('a refused pairing is written on screen and no code is shown', async () => {
   serve((call) => (call.method === 'POST' ? respond({ error: 'TV_PAIR_CODE_RATE_LIMITED' }, 429) : respond({ tvs: [] })));
   openPanel();
-  await screen.findByText('No TV has been paired yet.');
+  await screen.findByText('No TV is paired right now.');
   fireEvent.change(screen.getByLabelText('TV name'), { target: { value: 'Lobby' } });
   fireEvent.click(screen.getByRole('button', { name: 'Make a pairing code' }));
   await screen.findByRole('alert');
@@ -276,7 +276,7 @@ test('TV_NAME_LENGTH and a server answer without a code are both written on scre
     return respond({ tvs: [] });
   });
   openPanel();
-  await screen.findByText('No TV has been paired yet.');
+  await screen.findByText('No TV is paired right now.');
   fireEvent.change(screen.getByLabelText('TV name'), { target: { value: 'Lobby' } });
   fireEvent.click(screen.getByRole('button', { name: 'Make a pairing code' }));
   await screen.findByText(/must be 1 to 60 characters/);
@@ -291,7 +291,7 @@ test('a network failure while pairing says the outcome is unknown, not "no code 
     return respond({ tvs: [] });
   });
   openPanel();
-  await screen.findByText('No TV has been paired yet.');
+  await screen.findByText('No TV is paired right now.');
   fireEvent.change(screen.getByLabelText('TV name'), { target: { value: 'Lobby' } });
   fireEvent.click(screen.getByRole('button', { name: 'Make a pairing code' }));
   await screen.findByRole('alert');
@@ -344,7 +344,7 @@ test('a refused disconnect (TV_NOT_FOUND) is kept on screen even when the re-rea
   await screen.findByText('PAIRED');
   fireEvent.click(screen.getByRole('button', { name: 'Disconnect Ring wall' }));
   fireEvent.click(screen.getByRole('button', { name: 'Yes, disconnect it' }));
-  await screen.findByText('No TV has been paired yet.');
+  await screen.findByText('No TV is paired right now.');
   const alert = screen.getByRole('alert');
   expect(alert.textContent).toContain('Ring wall: This TV is no longer listed');
   expect(screen.queryByText(/Disconnect Ring wall\?/)).toBeNull();

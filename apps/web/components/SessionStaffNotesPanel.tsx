@@ -68,7 +68,8 @@ type Subject = { sessionId: string; runId?: undefined } | { runId: string; sessi
 export default function SessionStaffNotesPanel(
   props: Subject & {
     athleteId: string;
-    /** The closed button's words, when "on this session" is not enough (several athletes on one screen). */
+    /** The closed button's words, when "on this session" is not enough (several athletes on one screen).
+     *  The open panel's heading says the same words (F-173), so the button and the panel name one thing. */
     buttonLabel?: string;
   },
 ) {
@@ -215,6 +216,10 @@ export default function SessionStaffNotesPanel(
   );
 
   const open = reading.state !== 'closed';
+  // What the notes are on, in the words the button used (F-173). A note belongs to
+  // ONE athlete in one session or run, never to the whole session: where several
+  // athletes share a screen the button names the athlete, and so does this heading.
+  const subjectWords = buttonLabel ?? 'Staff notes on this session';
   // A run holds many athletes, so its panel ids carry the athlete too.
   const panelId = props.runId !== undefined
     ? `session-staff-notes-run-${props.runId}-${athleteId}`
@@ -229,12 +234,12 @@ export default function SessionStaffNotesPanel(
         aria-controls={open ? panelId : undefined}
         onClick={toggle}
       >
-        {open ? 'Hide staff notes' : buttonLabel ?? 'Staff notes on this session'}
+        {open ? 'Hide staff notes' : subjectWords}
       </button>
 
       {open ? (
         <div id={panelId} className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
-          <p className="t-eyebrow">Staff notes on this session</p>
+          <p className="t-eyebrow">{subjectWords}</p>
 
           {reading.state === 'loading' ? (
             <p className="t-body mt-[var(--s2)]" role="status">Reading…</p>
@@ -255,7 +260,10 @@ export default function SessionStaffNotesPanel(
             <>
               <div className="mt-[var(--s3)]" data-notes-state={reading.notes.length > 0 ? 'some' : 'none'}>
                 {reading.notes.length === 0 ? (
-                  <p className="t-body">No staff notes on this session yet.</p>
+                  <p className="t-body">
+                    {/* PROPOSED copy. In a run the notes are this athlete's, not the whole session's (F-173). */}
+                    {props.runId !== undefined ? 'No staff notes for this athlete in this session yet.' : 'No staff notes on this session yet.'}
+                  </p>
                 ) : (
                   <ul className="space-y-[var(--s3)]" aria-label="Staff notes, oldest first">
                     {reading.notes.map((row) => {

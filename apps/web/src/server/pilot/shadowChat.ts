@@ -8,6 +8,7 @@ import type { PilotRole } from './contracts';
 import { ForbiddenError } from './errors';
 import { buildAthleteLimitsSection, type ShadowAthleteLimits } from './shadowContextBuilder';
 import { listRecentNearMisses } from './shadowNearMisses';
+import { LIBRARY_HAS_NOTHING_YET } from './shadowNoAnswer';
 import { DECISION_LOOP_ROLES } from './shadowRoleSets';
 import type { OrganizationProfile } from '@/src/shared/organizationProfile';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
@@ -1680,7 +1681,7 @@ Making weight is part of boxing, and this gym teaches it instead of hiding it. W
 1. Teach how it works: what the method does in the body, what actually comes off and how fast it comes back, and why fighters use it.
 2. Teach how it is done as safely as possible: the slow way before the fast way, what makes it riskier, and the warning signs that mean stop and tell the coach now.
 3. Tune it to age. When the context says the athlete is a minor, or you are speaking with an athlete or a parent, teach it for a young athlete: smaller amounts, wider margins, an adult watching. Use only what the context tells you about age; do not guess one.
-4. Ground it in the Library. Use what the verified evidence in your context says, and cite it. Where the Library holds nothing on a point, say so in plain words ("the Library has nothing on that yet") and do not fill the gap with a number, a schedule or a rule of your own.
+4. Ground it in the Library. Use what the verified evidence in your context says, and cite it. Where the Library holds nothing on a point, say so in plain words ("${LIBRARY_HAS_NOTHING_YET}") and do not fill the gap with a number, a schedule or a rule of your own.
 5. Leave the decision with the coach. You teach; the coach decides whether, how much and when. When coach-set limits are in your context, give them as written, each with its id. When they are not, say that the coach may have set limits for this athlete and that those come first.
 A question about being "cleared" to spar, train or take contact is a question about what the coach has set. Answer from the recorded contact cap when it is in your context, with its id; when it is not, say the coach sets that, and to ask them. You never clear anyone yourself, and medical clearance stays a medical professional's call.
 Add no warnings, disclaimers or refusals beyond these steps. Say "don't" rarely, and only where the teaching itself calls for it.

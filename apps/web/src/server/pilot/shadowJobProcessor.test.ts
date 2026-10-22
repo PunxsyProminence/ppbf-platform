@@ -14,6 +14,7 @@ import {
   ShadowRateLimitExceeded,
   type ShadowRateLimitReceipt,
 } from './shadowRateLimit';
+import { LIBRARY_HAS_NOTHING_YET } from './shadowNoAnswer';
 
 jest.mock('./shadowJobQueue', () => ({
   claimNextJob: jest.fn(),
@@ -170,6 +171,32 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     expect(completedOutput.evidenceTier).toBe('EMERGING');
     expect(completedOutput.evidenceAlsoCites).toEqual(['EXPERIMENTAL']);
     expect(completedOutput.evidenceSourceGraded).toBe(true);
+  });
+
+  // F-161 (d), sync parity: the live chat grades an uncited answer that says
+  // the Library has nothing on the question as Research Needed; a queued one
+  // must grade the same, not Experimental.
+  test('an uncited answer that says the Library has nothing on it grades Research Needed', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+    llmReply(`Short answer: ${LIBRARY_HAS_NOTHING_YET}. Ask your coach how they want the rotation drilled.`);
+
+    await processNextShadowJob();
+
+    const completedOutput = mockCompleteJob.mock.calls[0][1] as Record<string, unknown>;
+    expect(completedOutput.resultStatus).toBe('ok');
+    expect(completedOutput.citations).toEqual([]);
+    expect(completedOutput.evidenceTier).toBe('RESEARCH_NEEDED');
+    expect(mockAppendAssistantMessage).toHaveBeenCalledWith(expect.objectContaining({ evidenceTier: 'RESEARCH_NEEDED' }));
+  });
+
+  test('an uncited answer that does not say so stays Experimental', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+    llmReply('Keep the pivot tight and ask your coach how they want the rotation drilled.');
+
+    await processNextShadowJob();
+
+    const completedOutput = mockCompleteJob.mock.calls[0][1] as Record<string, unknown>;
+    expect(completedOutput.evidenceTier).toBe('EXPERIMENTAL');
   });
 
   test('persists only library citation ids against the bundle; near-miss ids stay prose', async () => {

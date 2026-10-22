@@ -18,8 +18,9 @@ import { loadWallBoard } from './wallDisplayDb';
 // it ONCE, and stores only its hash with a 5-minute expiry. Someone types the code on the TV. The
 // TV endpoint redeems it: the row gets a device key (stored hashed; the plain key goes into the
 // TV's httpOnly cookie and nowhere else), the code is cleared, and the TV is paired "Until
-// disconnected" (Jason). A keyed read touches last_seen_at. Disconnect sets revoked_at: the row
-// stays for the Paired TVs list, the key is refused from then on.
+// disconnected" (Jason). A keyed read touches last_seen_at. Disconnect sets revoked_at: the key is
+// refused from then on, and the row stays in the table. The Paired TVs list keeps showing it as
+// DISCONNECTED for GYM_TV_DISCONNECTED_LISTED_DAYS, then drops it (listGymTvs).
 //
 // WHAT THE KEY IS NOT. It is not a session and it is not an account. It opens exactly the TV read
 // (readGymTvScreen, below: the live session plus the wall board) and nothing else in the app, so a
@@ -54,6 +55,10 @@ export const PAIR_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const PAIR_CODE_MINT_LIMIT = 5;
 export const PAIR_CODE_MINT_WINDOW_MS = 10 * 60 * 1000;
 export const TV_NAME_MAX_LENGTH = 60;
+// How long a disconnected TV stays on the coaches' Gym TVs list (retire audit gap G4, 2026-10-22:
+// a disconnected row stayed on every coach's panel forever). After this many days from revoked_at
+// the list leaves it out. Read only: the row and its revoked_at stay in the table.
+export const GYM_TV_DISCONNECTED_LISTED_DAYS = 7;
 // The TV's cookie. 400 days is the longest a browser will keep a cookie (Chrome caps Max-Age
 // there), which is how "Until disconnected" is implemented: the TV stays paired until a coach
 // presses Disconnect or the browser clears its cookies, and then it simply re-pairs.
@@ -216,6 +221,11 @@ const LIVE_SHOWN_RUN = `r.organization_id = t.organization_id and r.run_id = t.c
 
 // The Paired TVs list reports a run on a TV only while it is live and shown (LIVE_SHOWN_RUN): a
 // pointer left behind by a finished session reads as null, and so does its set_by.
+//
+// A TV disconnected MORE than GYM_TV_DISCONNECTED_LISTED_DAYS ago is left out (G4); a recently
+// disconnected one still lists as DISCONNECTED. This is the only reader that lists a gym's TVs: the
+// coach dashboard's panel and its "Send to TV" buttons are both built from it, and the setup
+// checklist (gymSetupStatus.ts) counts only paired, un-revoked rows, so nothing else changes.
 export async function listGymTvs(organizationId: string): Promise<GymTvListItem[]> {
   // A forgotten run idle for three hours is settled first, so it is not listed as on a TV
   // (OD-2026-10-21-001 ruling 2; sessionScriptRuns.ts closeIdleSessionRuns).
@@ -230,8 +240,9 @@ export async function listGymTvs(organizationId: string): Promise<GymTvListItem[
        from pilot.gym_tvs t
        left join pilot.session_script_runs r on ${LIVE_SHOWN_RUN}
       where t.organization_id = $1
+        and (t.revoked_at is null or t.revoked_at >= now() - ($2::int * interval '1 day'))
       order by (t.revoked_at is not null), coalesce(t.paired_at, t.created_at) desc, t.tv_id`,
-    [organizationId],
+    [organizationId, GYM_TV_DISCONNECTED_LISTED_DAYS],
   );
   return rows.map(({ code_expired, ...row }) => ({ ...row, status: statusOf({ ...row, code_expired }) }));
 }

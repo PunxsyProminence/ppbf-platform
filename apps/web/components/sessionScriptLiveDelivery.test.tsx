@@ -37,6 +37,7 @@ function liveRun(overrides: Partial<LiveSessionScriptRun> = {}): LiveSessionScri
     paused_at: null,
     paused_seconds: 0,
     show_on_wall: false,
+    class_id: null,
     elapsed_seconds: 125,
     is_paused: false,
     ...overrides,

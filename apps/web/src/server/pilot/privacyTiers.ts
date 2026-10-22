@@ -547,7 +547,10 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + 'and the read returns only live athletes of the caller\'s own organization, filtered in SQL '
       + '(OD-2026-10-11-007; OD-2026-10-10-003 items 3 and 4). Athletes, guardians, the board and '
       + 'platform_owner have no read of it. Session detail, not attendance: nothing here feeds an '
-      + 'attendance view or report (CT-13). A mark taken back keeps its row.',
+      + 'attendance view or report (CT-13). A mark taken back keeps its row. On a session tied to a '
+      + 'class (D4, OD-2026-10-21-002) the same tap also writes an ordinary class register mark '
+      + '(sessionRunClass.ts), which the register\'s existing readers see as one; this list, its run '
+      + 'and who else was in it stay staff only.',
   },
   'behaviour_keys.label': {
     tier: 'organization',

@@ -24,6 +24,7 @@ import {
   selectExcerpt,
 } from './shadowEvidence';
 import { searchShadowLibrary, tokenizeQuery } from './shadowLibrary';
+import { indicatesInsufficientContext, LIBRARY_HAS_NOTHING_YET } from './shadowNoAnswer';
 
 const mockWithTransaction = jest.mocked(withTransaction);
 const mockSearchShadowLibrary = jest.mocked(searchShadowLibrary);
@@ -110,6 +111,45 @@ describe('SHADOW evidence bundles', () => {
       'athlete-a',
       ['org-a', '__platform__'],
     ]));
+  });
+
+  // F-161 (d): with excerpts in hand the model was told how to cite them, never
+  // what to do when none answers. The words it is given are the ones the chat
+  // route reads back as a no-answer.
+  it('tells the model to say the Library has nothing and cite none when no excerpt answers', async () => {
+    mockSearchShadowLibrary.mockResolvedValue([{
+      chunk_id: 'chunk-hr',
+      document_id: 'doc-hr',
+      source_id: 'source-hr',
+      subject_id: null,
+      ordinal: 0,
+      document_name: 'Bout heart rate',
+      source_title: 'Bout heart rate study',
+      source_publisher: null,
+      source_type: 'study',
+      authority_tier: 2,
+      source_status: 'active',
+      publication_date: null,
+      text_content: 'Heart rate during amateur bouts.',
+      evidence_class: 'VERIFIED EVIDENCE',
+      boxing_specificity: 'boxing_specific',
+      score: 50,
+    }]);
+    mockWithTransaction.mockImplementation(async (callback) => callback({
+      query: jest.fn(async (sql: string, params: unknown[]) => ({
+        rows: sql.includes('returning evidence_id') ? [{ evidence_id: params[0] }] : [],
+      })),
+    } as never));
+
+    const bundle = await retrieveShadowEvidenceBundle({ actor, queryText: 'resting heart rate' });
+
+    expect(bundle.availability).toBe('available');
+    expect(bundle.context).toContain(
+      `When no excerpt answers the question, say so in plain words ("${LIBRARY_HAS_NOTHING_YET}") and cite none of them.`,
+    );
+    const quoted = [...bundle.context.matchAll(/\("([^"]*\blibrary\b[^"]*)"\)/gi)].map((match) => match[1]);
+    expect(quoted).toEqual([LIBRARY_HAS_NOTHING_YET]);
+    expect(indicatesInsufficientContext(quoted[0])).toBe(true);
   });
 
   it('persists an explicit unavailable bundle when no qualified evidence exists', async () => {

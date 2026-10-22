@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
@@ -254,6 +254,39 @@ function newRequestKey(): string {
     : `class-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/* The key of a Schedule Class press that has not been answered, kept for the tab
+   (sessionStorage) so a reload before pressing again does not make a new key and
+   a second set of classes. Written when the press goes out, cleared when the
+   server answers. Storage can be blocked or full: every touch is in a try, and
+   the page works without it (the key then lives in memory only, as before). */
+const PENDING_CLASS_KEY = 'ppbf.schedule.pendingCreateClassKey';
+const STORED_KEY_SHAPE = /^[A-Za-z0-9_-]{8,128}$/;
+
+function pendingClassKey(): string | null {
+  try {
+    const stored = typeof window === 'undefined' ? null : window.sessionStorage.getItem(PENDING_CLASS_KEY);
+    return stored && STORED_KEY_SHAPE.test(stored) ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberPendingClassKey(key: string): void {
+  try {
+    window.sessionStorage.setItem(PENDING_CLASS_KEY, key);
+  } catch {
+    // Not kept across a reload; still kept in memory.
+  }
+}
+
+function forgetPendingClassKey(): void {
+  try {
+    window.sessionStorage.removeItem(PENDING_CLASS_KEY);
+  } catch {
+    // Nothing to clear if storage cannot be reached.
+  }
+}
+
 /* What Repeat weekly will make, before anything is sent. PROPOSED copy. */
 function repeatPreview(startAt: string, endAt: string, repeat: WeeklyRepeat): string {
   const start = startAt ? parseInstantAsGymTime(startAt) : null;
@@ -324,6 +357,12 @@ export default function SchedulerPage() {
   const [attendance, setAttendance] = useState<SchedulerAttendance[]>([]);
 
   const [loading, setLoading] = useState(true);
+  // True while a re-read after an action is in flight (F-167): the lists on
+  // screen are then the OLD ones, and must not say "no upcoming classes" about
+  // a class the server has just made. A count, so two re-reads overlapping
+  // leave it on until the last one answers.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshesInFlight = useRef(0);
   const [actionMessage, setActionMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   // True when the scheduler read itself failed: the class, record and request
@@ -361,7 +400,7 @@ export default function SchedulerPage() {
   // As typed, so the box can be cleared and retyped; read as a number where it is used.
   const [newClassRepeatWeeks, setNewClassRepeatWeeks] = useState(String(REPEAT_WEEKS_DEFAULT));
   const [newClassRepeatUntil, setNewClassRepeatUntil] = useState('');
-  const [createClassKey, setCreateClassKey] = useState(newRequestKey);
+  const [createClassKey, setCreateClassKey] = useState(() => pendingClassKey() ?? newRequestKey());
   const newClassRepeatRule: WeeklyRepeat = newClassRepeatMode === 'weeks'
     ? { weeks: newClassRepeatWeeks.trim() === '' ? Number.NaN : Number(newClassRepeatWeeks) }
     : { until: newClassRepeatUntil };
@@ -412,6 +451,10 @@ export default function SchedulerPage() {
   const loadSchedulerState = useCallback(async (options?: { quiet?: boolean }) => {
     if (!options?.quiet) setLoading(true);
     if (!options?.quiet) showError('');
+    if (options?.quiet) {
+      refreshesInFlight.current += 1;
+      setRefreshing(true);
+    }
     let schedulerRead = false;
 
     try {
@@ -525,6 +568,10 @@ export default function SchedulerPage() {
         : 'The schedule could not be reached. Check the connection and try again.');
     } finally {
       setLoading(false);
+      if (options?.quiet) {
+        refreshesInFlight.current -= 1;
+        if (refreshesInFlight.current === 0) setRefreshing(false);
+      }
     }
   }, [showError]);
 
@@ -931,11 +978,16 @@ export default function SchedulerPage() {
                     </button>
                   </div>
                 ) : classes.length === 0 ? (
-                  <p className="t-muted mt-[var(--s3)]">No classes scheduled yet.</p>
+                  // PROPOSED copy while a re-read is in flight (F-167).
+                  <p className="t-muted mt-[var(--s3)]" role={refreshing ? 'status' : undefined}>
+                    {refreshing ? 'Updating the list…' : 'No classes scheduled yet.'}
+                  </p>
                 ) : (
                   <>
                     {upcomingClasses.length === 0 ? (
-                      <p className="t-muted mt-[var(--s3)]">No upcoming classes.</p>
+                      <p className="t-muted mt-[var(--s3)]" role={refreshing ? 'status' : undefined}>
+                        {refreshing ? 'Updating the list…' : 'No upcoming classes.'}
+                      </p>
                     ) : (
                       <div className="mt-3 space-y-2">{upcomingClasses.map(renderClassRow)}</div>
                     )}
@@ -953,12 +1005,18 @@ export default function SchedulerPage() {
                 {roleCanManageClasses(role) ? (
                   <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
                     <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Schedule New Class</h3>
-                    <input
-                      value={newClassTitle}
-                      onChange={(e) => setNewClassTitle(e.target.value)}
-                      placeholder="Class title"
-                      className="input"
-                    />
+                    <div>
+                      <label htmlFor="new-class-title" className="t-label">
+                        Class title
+                      </label>
+                      <input
+                        id="new-class-title"
+                        value={newClassTitle}
+                        onChange={(e) => setNewClassTitle(e.target.value)}
+                        placeholder="Class title"
+                        className="input"
+                      />
+                    </div>
                     <div className="grid gap-2 md:grid-cols-2">
                       <div>
                         <label htmlFor="new-class-start-at" className="t-label">
@@ -986,23 +1044,33 @@ export default function SchedulerPage() {
                       </div>
                     </div>
                     <div className="grid gap-2 md:grid-cols-2">
-                      <input
-                        value={newClassLocation}
-                        onChange={(e) => setNewClassLocation(e.target.value)}
-                        placeholder="Location"
-                        aria-label="Location"
-                        className="input"
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        max={200}
-                        aria-label="Places in the class"
-                        placeholder="Places"
-                        value={newClassCapacity}
-                        onChange={(e) => setNewClassCapacity(Number.parseInt(e.target.value, 10) || 16)}
-                        className="input"
-                      />
+                      <div>
+                        <label htmlFor="new-class-location" className="t-label">
+                          Location
+                        </label>
+                        <input
+                          id="new-class-location"
+                          value={newClassLocation}
+                          onChange={(e) => setNewClassLocation(e.target.value)}
+                          placeholder="Location"
+                          className="input"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="new-class-places" className="t-label">
+                          Places in the class
+                        </label>
+                        <input
+                          id="new-class-places"
+                          type="number"
+                          min={1}
+                          max={200}
+                          placeholder="Places"
+                          value={newClassCapacity}
+                          onChange={(e) => setNewClassCapacity(Number.parseInt(e.target.value, 10) || 16)}
+                          className="input"
+                        />
+                      </div>
                     </div>
                     {roleCanResolveCoachingRequests(role) ? (
                       <div>
@@ -1081,7 +1149,10 @@ export default function SchedulerPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        // Kept for the tab until the server answers (lane LW): a reload
+                        // before the next press still sends the same key.
+                        rememberPendingClassKey(createClassKey);
                         void runAction(
                           {
                             action: 'create_class',
@@ -1110,9 +1181,12 @@ export default function SchedulerPage() {
                             setNewClassRepeatWeeks(String(REPEAT_WEEKS_DEFAULT));
                             setNewClassRepeatUntil('');
                           },
-                          () => setCreateClassKey(newRequestKey()),
-                        )
-                      }
+                          () => {
+                            forgetPendingClassKey();
+                            setCreateClassKey(newRequestKey());
+                          },
+                        );
+                      }}
                       disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)}
                       className="btn disabled:opacity-60 disabled:grayscale"
                     >

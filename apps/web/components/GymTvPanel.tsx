@@ -376,7 +376,9 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
             </p>
           )}
 
-          {listState === 'loaded' && tvs.length === 0 && <p className="t-muted">No TV has been paired yet.</p>}
+          {/* PROPOSED copy (was "No TV has been paired yet."): the list also leaves out a TV disconnected
+              more than 7 days ago, so an empty list no longer means none was ever paired. */}
+          {listState === 'loaded' && tvs.length === 0 && <p className="t-muted">No TV is paired right now.</p>}
 
           {listState === 'loaded' && tvs.length > 0 && (
             <ul className="space-y-[var(--s3)]" aria-label="Paired TVs">
