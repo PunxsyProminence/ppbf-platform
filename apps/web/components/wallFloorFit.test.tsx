@@ -121,6 +121,34 @@ describe('the floor list on the TV', () => {
     expect(screen.getByRole('region', { name: 'On the floor' }).textContent).toContain('20');
   });
 
+  it('measures again once the web font for the names has loaded, since the slab face is wider than its fallback', async () => {
+    let fontLoaded = false;
+    let loaded: () => void = () => {};
+    const ready = new Promise<void>((resolve) => {
+      loaded = resolve;
+    });
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { ready, addEventListener: jest.fn(), removeEventListener: jest.fn() },
+    });
+    // Before the font: 12 names fit at the count's own rung. After it: they need the snug rung.
+    const restore = fakeLayout((rung) => (fontLoaded ? ({ dense: 300, packed: 400, snug: 600 })[rung] ?? 800 : 800));
+    try {
+      const { container } = await show(board(12));
+      expect(container.querySelector('.wall-floor-list')?.getAttribute('data-density')).toBe('dense');
+      fontLoaded = true;
+      await act(async () => {
+        loaded();
+        await ready;
+      });
+      expect(container.querySelector('.wall-floor-list')?.getAttribute('data-density')).toBe('snug');
+      expect(container.querySelectorAll('.wall-name')).toHaveLength(12);
+    } finally {
+      restore();
+      delete (document as unknown as { fonts?: unknown }).fonts;
+    }
+  });
+
   it('keeps the count-based rung where there is no layout to measure', async () => {
     const { container } = await show(board(12));
     expect(container.querySelector('.wall-floor-list')?.getAttribute('data-density')).toBe('dense');
