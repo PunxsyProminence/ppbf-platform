@@ -11,10 +11,10 @@ import type { SchedulerClass } from './schedulerDb';
  *    coach, and the organization admin (and admin). Covering stays open to
  *    any coach of the gym, but a cover added within the last hour before the
  *    cancel cannot cancel, so "make myself cover, then cancel" no longer works.
- * 2. After the start: the office only. Jason, 2026-10-22: "then classes need
- *    to be able to be canceled", which replaces his 2026-10-14 "A: No, not
- *    after start (Recommended)" (OD-2026-10-14-001's "After start" half; the
- *    "Who cancels" half above stands). A coach, cover or not, still cannot
+ * 2. After the start: the office only. Jason, 2026-10-22 (OD-2026-10-22-001):
+ *    "then classes need to be able to be canceled", which replaces his
+ *    2026-10-14 "A: No, not after start (Recommended)" (OD-2026-10-14-001's
+ *    "After start" half; the "Who cancels" half above stands). A coach, cover or not, still cannot
  *    cancel once the start time has passed; the organization admin can, at any
  *    time. A cancelled class's marks stop counting in the class-mark readers
  *    (lane LC; the per-day attendance view is not yet one of them).
