@@ -56,6 +56,7 @@ const liveRun = {
   paused_at: null,
   paused_seconds: 0,
   show_on_wall: false,
+  class_id: null,
   elapsed_seconds: 300,
   is_paused: false,
 };
