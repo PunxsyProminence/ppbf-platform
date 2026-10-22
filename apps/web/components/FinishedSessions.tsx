@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
-import { formatGymDate, formatGymTimeOfDay } from '@/src/lib/gymTime';
+import { formatGymDate, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
 
 // The gym's finished sessions, plain and scripted (audit finding F-067).
 //
@@ -63,12 +63,17 @@ function isFinishedRun(value: unknown): value is FinishedRun {
       && typeof (athlete as Record<string, unknown>).full_name === 'string');
 }
 
+// A session that ended on a later gym day says that day too. Printing only the end's time of day
+// made a run left open overnight read as a few hours on one day (live walkthrough 2026-10-19:
+// "1:33 PM to 7:10 PM" for a run that ended the next evening).
 function when(run: FinishedRun): string {
   const day = formatGymDate(run.started_at);
   const from = formatGymTimeOfDay(run.started_at);
   const to = formatGymTimeOfDay(run.ended_at);
   if (!day) return 'Date not recorded';
-  return from && to ? `${day}, ${from} to ${to}` : day;
+  if (!from || !to) return day;
+  const endDay = gymDayIso(run.ended_at) !== gymDayIso(run.started_at) ? formatGymDate(run.ended_at) : null;
+  return endDay ? `${day}, ${from} to ${endDay}, ${to}` : `${day}, ${from} to ${to}`;
 }
 
 function EndNote({ label, text }: { label: string; text: string | null }) {
@@ -154,7 +159,8 @@ export default function FinishedSessions() {
                 {/* Only what the coach recorded: a count not stated is not shown as zero. */}
                 {(run.athletes_present !== null || run.blocks_completed !== null) && (
                   <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
-                    {run.athletes_present !== null && `${run.athletes_present} athletes present (the coach's count). `}
+                    {run.athletes_present !== null
+                      && `${run.athletes_present} ${run.athletes_present === 1 ? 'athlete' : 'athletes'} present (the coach's count). `}
                     {run.blocks_completed !== null && `${run.blocks_completed} blocks completed.`}
                   </p>
                 )}

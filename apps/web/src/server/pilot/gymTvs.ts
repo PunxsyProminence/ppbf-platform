@@ -5,6 +5,7 @@ import { PilotError } from './errors';
 import { listLiveQuotes, type QuoteShown } from './orgQuotes';
 import { ROUND_TIMER_FIELDS, deriveRoundTimer, type RoundTimerRow, type RoundTimerView } from './roundTimers';
 import { createOpaqueToken, hashToken } from './security';
+import { sweepIdleRuns } from './sessionScriptRuns';
 import type { WallBoard, WallNameMode } from './wallDisplay';
 import { loadWallBoard } from './wallDisplayDb';
 
@@ -694,6 +695,10 @@ export async function readGymTvScreen(deviceKey: string, options: { mode: WallNa
 async function readSessionForTv(tv: PairedGymTv): Promise<GymTvRead> {
   const empty: GymTvRead = { tv: { tv_name: tv.tv_name }, session: null };
   if (!tv.current_run_id) return empty;
+  // A run idle for three hours is settled first, so a forgotten session drops off this TV
+  // (OD-2026-10-21-001 ruling 2; sessionScriptRuns.ts closeIdleSessionRuns). Best effort: a failed
+  // sweep never blanks the TV.
+  await sweepIdleRuns(tv.organization_id);
 
   const run = await queryOne<Record<string, unknown>>(
     `select r.run_id, s.name as script_name, s.total_minutes, r.started_at, now() as server_time,

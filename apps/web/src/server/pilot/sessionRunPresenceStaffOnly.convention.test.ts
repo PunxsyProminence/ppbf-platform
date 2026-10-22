@@ -83,11 +83,18 @@ const DEFINING_MODULES = [
 // (Rec.)"): is this athlete marked present on it. It returns nothing from the
 // table; its only callers are the coach routes behaviour-observations and
 // behaviour-keys, gated to coach, organization_admin and admin.
+// sessionScriptRuns.ts reads one timestamp from each table, inside the SQL
+// that closes a live run idle for three hours (OD-2026-10-21-001 ruling 2,
+// Jason: "A: Yes, after 3 hours (Rec.)"): the newest mark, unmark or
+// note on the run counts as activity. The statement returns only the ids of
+// the runs it closed; no athlete, name, mark or note leaves it, so the TV read
+// that triggers it (gymTvs.ts) gets nothing from either table.
 const TABLE_FILES = [
   'src/server/pilot/behaviourObservations.ts',
   'src/server/pilot/privacyTiers.ts',
   'src/server/pilot/sessionNotes.ts',
   'src/server/pilot/sessionRunAthletes.ts',
+  'src/server/pilot/sessionScriptRuns.ts',
   'src/server/pilot/sessionStaffNotes.ts',
 ];
 
