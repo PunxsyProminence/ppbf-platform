@@ -303,6 +303,20 @@ describe('/admin/athletes', () => {
       .toEqual(['Coach Jordan Rivera', 'Coach Rosa']);
   });
 
+  test('a coach who has left is named from the login, not by the name the gym typed while they were here', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [{ ...staffBody.members[0], membership_active: false, staff_display_name: 'Jordan Rivera' }],
+      })
+      : undefined)) as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/Coach Jason/);
+    expect(screen.queryByText(/Jordan Rivera/)).toBeNull();
+  });
+
   test('two coaches who would read the same are told apart by their address', async () => {
     global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
       ? jsonResponse({

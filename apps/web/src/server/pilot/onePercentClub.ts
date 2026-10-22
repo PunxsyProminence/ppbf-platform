@@ -6,6 +6,7 @@ import {
   listMilestoneAwards,
 } from './achievements';
 import { earnedMilestoneKeys, isMilestoneKey } from '@/src/shared/achievementPaths';
+import { bareTypedStaffName } from '@/src/shared/coachDisplayName';
 import { query, queryOne } from './db';
 import { accountNotDeletedSql } from './deletedAthletes';
 import { ConflictError, ValidationError } from './errors';
@@ -165,8 +166,8 @@ export async function resolveActorDisplayName(input: {
      where a.organization_id = $1 and a.account_id = $2 and ${accountNotDeletedSql('a')}`,
     [input.organizationId, input.accountId],
   );
-  // The name the gym typed (Q1 part B) first.
-  const typed = account?.staff_display_name?.trim();
+  // The name the gym typed (Q1 part B) first, without a title typed into it.
+  const typed = bareTypedStaffName(account?.staff_display_name);
   if (typed) return `Admin ${typed}`;
   const local = account?.login_email?.split('@')[0];
   if (!local) return 'An administrator';

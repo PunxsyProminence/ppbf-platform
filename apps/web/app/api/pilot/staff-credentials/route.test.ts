@@ -189,3 +189,17 @@ describe('the staff name an athlete or a parent is shown', () => {
     },
   );
 });
+
+describe('the name the gym typed (Q1 part B)', () => {
+  test.each(['parent', 'athlete', 'coach', 'organization_admin'] as const)(
+    'a %s is shown the typed name, not the login or the id',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+      mockList.mockResolvedValue(staffRows().map((row) => ({ ...row, staff_display_name: 'Jordan Rivera' })));
+      const response = await GET(getReq());
+      const raw = await response.text();
+      expect(JSON.parse(raw).staff.map((entry: { display_name: string }) => entry.display_name)).toEqual(['Jordan Rivera']);
+      expect(raw).not.toContain('Okafor');
+    },
+  );
+});

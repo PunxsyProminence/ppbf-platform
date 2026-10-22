@@ -257,12 +257,17 @@ function AthleteRecordsConsoleContent() {
 
     const everyCoach = (staffPayload.members ?? [])
       .filter((member) => member.role === 'coach')
-      .map((member) => ({
-        account_id: readString(member.account_id),
-        login_email: member.login_email ?? null,
-        staff_display_name: member.staff_display_name ?? null,
-        selectable: member.active_flag !== false && member.membership_active !== false,
-      }))
+      .map((member) => {
+        const selectable = member.active_flag !== false && member.membership_active !== false;
+        return {
+          account_id: readString(member.account_id),
+          login_email: member.login_email ?? null,
+          // Only for a coach still active here, as every server reader gates it
+          // (staffDisplayNameRead.ts): one who has left is named from the login.
+          staff_display_name: selectable ? member.staff_display_name ?? null : null,
+          selectable,
+        };
+      })
       .filter((coach) => coach.account_id.length > 0);
     setCoachDirectory(everyCoach.map(({ account_id, login_email, staff_display_name }) => ({ account_id, login_email, staff_display_name })));
     setCoaches(everyCoach

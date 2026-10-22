@@ -24,6 +24,7 @@ import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentit
 import { query, queryOne } from './db';
 import { accountNotDeletedSql } from './deletedAthletes';
 import { storedStaffNameSql } from './staffDisplayNameRead';
+import { bareTypedStaffName } from '@/src/shared/coachDisplayName';
 import { guardianLinkEnded } from './guardianAccess';
 import {
   normalizeCorner,
@@ -236,9 +237,11 @@ export async function getSubjectIdentity(
 export function staffDisplayName(
   loginEmail: string | null,
   accountId: string,
-  storedName: string | null = null,
+  // Required, so a new caller cannot leave the typed name out by omission:
+  // pass the reader's staff_display_name (storedStaffNameSql), or null.
+  storedName: string | null,
 ): string {
-  const typed = storedName?.trim();
+  const typed = bareTypedStaffName(storedName);
   if (typed) return typed;
   const stem = (loginEmail ?? '').split('@')[0]?.trim() ?? '';
   if (!stem) return accountId;

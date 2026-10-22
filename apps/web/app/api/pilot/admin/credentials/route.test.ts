@@ -136,6 +136,21 @@ describe('GET /api/pilot/admin/credentials', () => {
     });
     expect(body.items[0]).not.toHaveProperty('document_ref');
   });
+
+  test('the name the gym typed (Q1 part B) is the display name when there is one', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({}));
+    mockList.mockResolvedValueOnce([{
+      organization_id: 'org-1', clearance_id: 'clr-1', person_account_id: 'acct-9',
+      person_login_email: 'coach@example.com', person_display_name: 'Jordan Rivera', person_role: 'coach',
+      clearance_type_id: 'ct-safesport', clearance_name: 'SafeSport Training', issuing_authority: 'U.S. Center for SafeSport',
+      validity_months: 12, status: 'submitted', issued_on: null, expires_on: null, document_ref: null,
+      verified_by_account_id: null, verified_at: null, verification_note: null,
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    }]);
+
+    const body = (await (await GET(getReq())).json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items[0].person_display_name).toBe('Jordan Rivera');
+  });
 });
 
 describe('POST /api/pilot/admin/credentials', () => {

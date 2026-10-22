@@ -276,7 +276,8 @@ interface FamilyNoteRow {
 export function staffFacingAuthorName(
   login: string | null,
   role: string | null,
-  storedName: string | null = null,
+  // Required: the reader's staff_display_name (storedStaffNameSql), or null.
+  storedName: string | null,
 ): string {
   const coachName = coachDisplayNameFor(storedName, login);
   const bareName = coachName === 'Your coach' ? null : coachName.replace(/^Coach /, '');

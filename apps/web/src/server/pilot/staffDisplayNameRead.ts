@@ -10,6 +10,8 @@ const ROLE_LIST = STAFF_DISPLAY_NAME_ROLES.map((role) => {
   return `'${role}'`;
 }).join(', ');
 
+const SQL_REFERENCE = /^(?:\$\d+|[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)$/;
+
 /**
  * The name the gym typed for a person (pilot.account_profiles.staff_display_name,
  * parent-portal Q1 part B), as ONE SQL expression for a select list: the name,
@@ -25,10 +27,20 @@ const ROLE_LIST = STAFF_DISPLAY_NAME_ROLES.map((role) => {
  *   does not clear it), so the role is checked here, on every read;
  * - is not deleted (the same mark setStaffDisplayName refuses).
  *
- * The arguments are SQL expressions from the caller's own query (an alias's
- * column or a bound parameter such as `$1`), never caller input.
+ * That holds for what a screen reads now. A name already copied into a row
+ * when it was written (a recognition's signature, a behavior standard's
+ * author) is that row's text and is not re-read here.
+ *
+ * The arguments are SQL expressions from the caller's own query: an alias's
+ * column (`co.organization_id`) or a bound parameter (`$1`). Anything else is
+ * refused, so caller input can never be spliced in.
  */
 export function storedStaffNameSql(organizationIdSql: string, accountIdSql: string): string {
+  for (const expression of [organizationIdSql, accountIdSql]) {
+    if (!SQL_REFERENCE.test(expression)) {
+      throw new Error(`storedStaffNameSql: not a column or parameter reference: "${expression}"`);
+    }
+  }
   return `(select sdn_ap.staff_display_name
       from pilot.account_profiles sdn_ap
       join pilot.organization_memberships sdn_om

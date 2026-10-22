@@ -234,16 +234,23 @@ afterAll(async () => {
 });
 
 describe('family and athlete screens read the typed name behind the gate (Q1 part B)', () => {
-  test("a coach's message to an athlete, and the guardian's copy, carry the typed name; a re-roled author's old name is not read", async () => {
+  test("a coach's message to an athlete, and the guardian's copy, carry the typed name; a re-roled or deleted author's is not read", async () => {
     const client = await seededDatabase('sdr_messages');
+    // Deleted after writing: the messages list keeps the login's name (it has no deletion check of its own); the typed name goes.
+    const DELETED_COACH = 'acct-sdr-deleted-coach';
+    await addAccount(client, DELETED_COACH, 'p.castro@ppbf.test', 'coach', ORG);
+    await typed(client, ORG, DELETED_COACH, 'Typed Deleted');
     await note(client, COACH, 'coach', 'athlete_message', 'Great footwork today.', '2026-10-20T16:00:00Z');
     await note(client, REROLED, 'coach', 'athlete_message', 'From before the role change.', '2026-10-19T16:00:00Z');
+    await note(client, DELETED_COACH, 'coach', 'athlete_message', 'From a coach since deleted.', '2026-10-18T16:00:00Z');
+    await client.query('update pilot.accounts set deleted_at = now() where account_id = $1', [DELETED_COACH]);
 
+    const expected = ['Coach Jordan Rivera', 'Coach R Mills', 'Coach P Castro'];
     const toAthlete = await listAthleteCoachMessages(ORG, ATHLETE);
-    expect(toAthlete.map((message) => message.from_name)).toEqual(['Coach Jordan Rivera', 'Coach R Mills']);
+    expect(toAthlete.map((message) => message.from_name)).toEqual(expected);
 
     const toGuardian = await listGuardianCopiesOfAthleteMessages(ORG, [ATHLETE]);
-    expect(toGuardian.map((message) => message.from_name)).toEqual(['Coach Jordan Rivera', 'Coach R Mills']);
+    expect(toGuardian.map((message) => message.from_name)).toEqual(expected);
   });
 
   test('a note to the family names the coach and the admin by the typed name on the staff list', async () => {

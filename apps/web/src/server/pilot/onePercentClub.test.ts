@@ -348,6 +348,12 @@ describe('resolveActorDisplayName', () => {
     const sql = String(mockQueryOne.mock.calls[0][0]);
     expect(sql).toContain('from pilot.account_profiles sdn_ap');
     expect(sql).toContain('sdn_ap.organization_id = $1');
+
+    // A title typed into the name is not said twice.
+    mockQueryOne.mockResolvedValueOnce({ login_email: 'ppbf@ppbf.org', staff_display_name: 'Admin Jordan Smith' });
+    expect(await resolveActorDisplayName({ organizationId: 'org-1', accountId: 'acct-admin', role: 'admin' })).toBe(
+      'Admin Jordan Smith',
+    );
   });
 
   // Scope B. The real-Postgres cases are in athleteSelfPathsDeletion.pg.test.ts;
