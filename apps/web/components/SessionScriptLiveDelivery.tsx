@@ -12,6 +12,7 @@ import { readReferenceInstruction } from '@/components/drills/drillInstructionRe
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
+import SessionRunClass from '@/components/SessionRunClass';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 
@@ -881,6 +882,14 @@ export default function SessionScriptLiveDelivery({
           </ol>
         </>
       )}
+
+      {/* The class this session runs (D4): tied, a "here" tap also goes on its register. */}
+      <SessionRunClass
+        key={`class-${run.run_id}`}
+        runId={run.run_id}
+        classId={run.class_id ?? null}
+        onClassChange={(classId) => setRun((current) => ({ ...current, class_id: classId }))}
+      />
 
       {/* Keyed by run: a run swapped in by a resync starts its own list, never the old run's. */}
       <SessionRunPresence
