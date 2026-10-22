@@ -108,7 +108,9 @@ describe('scheduler page load', () => {
 
     await screen.findByText('Class Schedule');
 
-    expect(findSelectContaining('class-2').value).toBe('class-1');
+    // Both classes are in the past, so a coach opens on the latest that has begun, not the first
+    // on the list (pilot blocker B2; src/shared/attendanceDefaultClass.ts).
+    expect(findSelectContaining('class-2').value).toBe('class-2');
     expect(findSelectContaining('athlete-2').value).toBe('athlete-1');
   });
 
@@ -121,9 +123,10 @@ describe('scheduler page load', () => {
     const callsAfterLoad = fetchMock.mock.calls.length;
 
     const classSelect = findSelectContaining('class-2');
-    fireEvent.change(classSelect, { target: { value: 'class-2' } });
+    // Away from the default (class-2, the latest class that has begun).
+    fireEvent.change(classSelect, { target: { value: 'class-1' } });
 
-    await waitFor(() => expect(classSelect.value).toBe('class-2'));
+    await waitFor(() => expect(classSelect.value).toBe('class-1'));
 
     expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
     expect(screen.queryByText('Loading scheduler...')).toBeNull();
