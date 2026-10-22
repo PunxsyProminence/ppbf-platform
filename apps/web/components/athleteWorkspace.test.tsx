@@ -3828,13 +3828,15 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     const body = await checkOut();
 
     expect(Object.keys(body).sort()).toEqual([
-      'athlete_id', 'completed_flag', 'created_at', 'date', 'duration_minutes', 'notes', 'rpe', 'rpe_method',
+      'athlete_id', 'completed_flag', 'created_at', 'date', 'duration_minutes', 'enjoyment', 'notes', 'rpe', 'rpe_method',
       'session_id', 'session_type', 'updated_at',
     ]);
     // Empty box is "not given" -- never a default, never the check-in-to-now gap.
     expect(body.duration_minutes).toBeNull();
     // No tag picked is "not said", sent as null rather than a guessed type.
     expect(body.session_type).toBeNull();
+    // No enjoyment tapped is "not answered", sent as null rather than a middle value.
+    expect(body.enjoyment).toBeNull();
     expect(postedTo('/api/pilot/shadow/formulas/observations')).toHaveLength(0);
   });
 
@@ -4103,6 +4105,93 @@ describe("the session-type tag is the athlete's pick at check-out, or nothing", 
 
     await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
     expect('session_type' in postedTo('/api/pilot/sessions/update')[0].body).toBe(false);
+  });
+});
+
+// The enjoyment tap (OD-2026-10-17-026 (a), Jason: "A: All three (Rec.)" -- a
+// 1-5 "how much did you enjoy it" tap beside the end-of-session effort
+// rating), stored as pilot.sessions.enjoyment. Optional, nothing tapped until
+// the athlete taps, and only check-out carries it.
+describe("the enjoyment tap is the athlete's answer at check-out, or nothing", () => {
+  const ENJOY_Q = 'How much did you enjoy it?';
+  const LEVELS = ['1, Not at all', '2, A little', '3, Some', '4, A lot', '5, Loved it'];
+
+  function checkOutBodies(): Array<Record<string, unknown>> {
+    return postedTo('/api/pilot/sessions/update')
+      .map((call) => call.body)
+      .filter((body) => body.completed_flag === true);
+  }
+
+  async function openSession() {
+    storedSessions = [openSessionRow({ rpe: null })];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'End training' });
+  }
+
+  test('nothing is tapped on an open session, and a tap is sent at check-out and said back', async () => {
+    await openSession();
+    for (const level of LEVELS) {
+      expect(screen.getByRole('button', { name: `${ENJOY_Q} ${level}` }).getAttribute('aria-pressed')).toBe('false');
+    }
+    expect(screen.getByText('Not tapped — you can skip this. It goes on the session when you check out, and your coach sees it.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: `${ENJOY_Q} 4, A lot` }));
+    expect(screen.getByRole('button', { name: `${ENJOY_Q} 4, A lot` }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(checkOutBodies()[0].enjoyment).toBe(4);
+    expect(await screen.findByText(/Enjoyment: A lot \(4 of 5\)\./)).toBeTruthy();
+  });
+
+  test('a refused check-out keeps the tap, and the retry sends it', async () => {
+    sessionUpdateFails = true;
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${ENJOY_Q} 3, Some` }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    expect(await screen.findByText(/still going/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: `${ENJOY_Q} 3, Some` }).getAttribute('aria-pressed')).toBe('true');
+
+    sessionUpdateFails = false;
+    const before = checkOutBodies().length;
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(before + 1));
+    expect(checkOutBodies()[before].enjoyment).toBe(3);
+  });
+
+  test('the next session starts with nothing tapped after a check-out with an answer', async () => {
+    persistSessionUpdates = true;
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${ENJOY_Q} 5, Loved it` }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+
+    fireEvent.click(await sessionLogCheckIn());
+    await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
+    // Check-in writes no enjoyment: the session has not happened yet.
+    expect('enjoyment' in postedTo('/api/pilot/sessions')[0].body).toBe(false);
+
+    openTab('Dashboard');
+    const button = await screen.findByRole('button', { name: `${ENJOY_Q} 5, Loved it` });
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('a cleared tap is sent as null', async () => {
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${ENJOY_Q} 2, A little` }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear enjoyment' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
+    expect(checkOutBodies()[0].enjoyment).toBeNull();
+  });
+
+  test('a note publication never carries enjoyment, even with one tapped', async () => {
+    await openSession();
+    fireEvent.click(screen.getByRole('button', { name: `${ENJOY_Q} 5, Loved it` }));
+    fireEvent.change(screen.getByPlaceholderText(/Session notes for your coach/), { target: { value: 'Jab felt sharp.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update coach' }));
+
+    await waitFor(() => expect(postedTo('/api/pilot/sessions/update')).toHaveLength(1), { timeout: 5000 });
+    expect('enjoyment' in postedTo('/api/pilot/sessions/update')[0].body).toBe(false);
   });
 });
 

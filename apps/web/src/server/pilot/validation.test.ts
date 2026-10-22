@@ -516,3 +516,30 @@ describe("session_type is one of the six tags, null, or absent -- and only the a
     expect(() => assertDurationWrittenByAthlete('athlete', session)).not.toThrow();
   });
 });
+
+describe("enjoyment is a whole 1-5, null, or absent -- and only the athlete's (OD-2026-10-17-026 (a))", () => {
+  const rated = { rpe: 7, rpe_method: 'athlete_post_session_self_report' };
+
+  test.each([1, 2, 3, 4, 5])('%s is kept', (level) => {
+    expect(validateSessionPayload(sessionPayload({ ...rated, enjoyment: level })).enjoyment).toBe(level);
+  });
+
+  test('null is "not answered", and an absent key stays absent so the stored answer is left alone', () => {
+    expect(validateSessionPayload(sessionPayload({ ...rated, enjoyment: null })).enjoyment).toBeNull();
+    expect('enjoyment' in validateSessionPayload(sessionPayload(rated))).toBe(false);
+  });
+
+  test.each([0, 6, -1, 2.5, '3', '', true])('%p is refused, naming the field', (bad) => {
+    expect(() => validateSessionPayload(sessionPayload({ ...rated, enjoyment: bad }))).toThrow(/enjoyment/);
+  });
+
+  test.each(['coach', 'organization_admin', 'admin', 'platform_owner'])('%s carrying the key is refused as Forbidden', (role) => {
+    const session = validateSessionPayload(sessionPayload({ ...rated, enjoyment: 4 }));
+    expect(() => assertDurationWrittenByAthlete(role, session)).toThrow(/^Forbidden: enjoyment/);
+  });
+
+  test('the athlete may write it', () => {
+    const session = validateSessionPayload(sessionPayload({ ...rated, enjoyment: 4 }));
+    expect(() => assertDurationWrittenByAthlete('athlete', session)).not.toThrow();
+  });
+});
