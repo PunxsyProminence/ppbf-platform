@@ -172,6 +172,32 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
     expect(completedOutput.evidenceSourceGraded).toBe(true);
   });
 
+  // F-161 (d), sync parity: the live chat grades an uncited answer that says
+  // the Library has nothing on the question as Research Needed; a queued one
+  // must grade the same, not Experimental.
+  test('an uncited answer that says the Library has nothing on it grades Research Needed', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+    llmReply('The Library has nothing on that yet. Ask your coach how they want the rotation drilled.');
+
+    await processNextShadowJob();
+
+    const completedOutput = mockCompleteJob.mock.calls[0][1] as Record<string, unknown>;
+    expect(completedOutput.resultStatus).toBe('ok');
+    expect(completedOutput.citations).toEqual([]);
+    expect(completedOutput.evidenceTier).toBe('RESEARCH_NEEDED');
+    expect(mockAppendAssistantMessage).toHaveBeenCalledWith(expect.objectContaining({ evidenceTier: 'RESEARCH_NEEDED' }));
+  });
+
+  test('an uncited answer that does not say so stays Experimental', async () => {
+    mockClaimNextJob.mockResolvedValue(heavyBagJob());
+    llmReply('Keep the pivot tight and ask your coach how they want the rotation drilled.');
+
+    await processNextShadowJob();
+
+    const completedOutput = mockCompleteJob.mock.calls[0][1] as Record<string, unknown>;
+    expect(completedOutput.evidenceTier).toBe('EXPERIMENTAL');
+  });
+
   test('persists only library citation ids against the bundle; near-miss ids stay prose', async () => {
     mockClaimNextJob.mockResolvedValue(heavyBagJob());
     llmReply(`The rotation the gym already logged supports a tighter pivot drill. [E:${LIBRARY_ID}] [E:${NEAR_MISS_ID}] RESEARCH NEEDED.`);

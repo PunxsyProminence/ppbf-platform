@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 43;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 44;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -175,6 +175,11 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 43;
 // bundle is then empty and authorizedContext carries the no-evidence boundary
 // instead of those excerpts. A v42 job still queued at deploy is refused as
 // STALE.
+// 44: cite or abstain (F-161 (d), lane LD): the evidence bundle tells the
+// model, when no excerpt answers, to say the Library has nothing on it and
+// cite none (shadowEvidence.ts). The phrase and the check that reads it back
+// live in shadowNoAnswer.ts, now listed. authorizedContext carries the new
+// line. A v43 job still queued at deploy is refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -220,6 +225,7 @@ export const SHADOW_CONTEXT_CONTRACT_SOURCES: readonly string[] = [
   'src/server/pilot/shadowHeavyBag.ts',
   'src/server/pilot/shadowLibrary.ts',
   'src/server/pilot/shadowNearMisses.ts',
+  'src/server/pilot/shadowNoAnswer.ts',
   'src/server/pilot/shadowPersonalizationGate.ts',
   'src/server/pilot/shadowRoleSets.ts',
   'src/server/pilot/shadowUnlocks.ts',
@@ -272,6 +278,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 41, sha256: '5341bddbbdb3cfbdeb87af2352784de4a328da33ffb75b3fa8087f795123f548' },
   { version: 42, sha256: '379b96ed982d00bbce8793a1e55e6f3dd8776f2ea06c4531933084b01d304ec1' },
   { version: 43, sha256: 'c5b44e7c7169f0e6131a824738f51e042d1952d76361b4af16501f1f285dd8d7' },
+  { version: 44, sha256: '79e81272d892b29901db3365c22012c6023ffbbc4c5e8b12ecedffb9a50bcc9e' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

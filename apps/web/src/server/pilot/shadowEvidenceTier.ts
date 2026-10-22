@@ -68,6 +68,10 @@ export function deriveEvidenceTier(input: {
   isAnsweredState: boolean;
   evidenceAvailability: ShadowEvidenceAvailability;
   strongestEvidence: ShadowEvidenceQuality | null;
+  // The answer cites no Library evidence and says the Library does not answer
+  // the question (shadowNoAnswer.ts). The caller sets it only when nothing was
+  // cited.
+  modelSaidNoAnswer?: boolean;
 }): ShadowEvidenceTier {
   if (!input.isAnsweredState || input.evidenceAvailability === 'unavailable') {
     return 'RESEARCH_NEEDED';
@@ -76,8 +80,10 @@ export function deriveEvidenceTier(input: {
   const evidence = input.strongestEvidence;
   if (!evidence) {
     // Evidence was available in the scope, but this response cited none of
-    // it -- the old rule's citationCount===0 case.
-    return 'EXPERIMENTAL';
+    // it. When the answer itself says none of it answers the question, that
+    // is the same case as an empty bundle: Research Needed (F-161 (d)).
+    // Otherwise it is the old rule's citationCount===0 case.
+    return input.modelSaidNoAnswer === true ? 'RESEARCH_NEEDED' : 'EXPERIMENTAL';
   }
 
   if (evidence.evidenceClass === 'INSUFFICIENT EVIDENCE') {

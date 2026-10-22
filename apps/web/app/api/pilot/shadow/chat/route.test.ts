@@ -2784,6 +2784,87 @@ describe('unsupported answers and an empty Library', () => {
     expect(payload.researchFiled).toBe(false);
   });
 
+  // F-161 (d). The search returned passages, but none answers the question.
+  // The bundle tells the model to say so in LIBRARY_HAS_NOTHING_YET's words
+  // and cite nothing; the route has to read that answer as the honest "no
+  // answer" path (Research Needed, the notice, a research request), not as an
+  // Experimental answer with an unrelated "Strongest source" behind it.
+  describe('an answer that says the Library has nothing on the question (F-161 (d))', () => {
+    const OFF_TOPIC_ID = '00000000-0000-4000-8000-000000000301';
+    function offTopicBundle() {
+      mockRetrieveEvidence.mockResolvedValueOnce({
+        bundleId: '00000000-0000-4000-8000-000000000300',
+        availability: 'available',
+        allowedEvidenceIds: [OFF_TOPIC_ID],
+        context: `Use [E:${OFF_TOPIC_ID}] for the approved excerpt.`,
+        items: [{
+          evidenceId: OFF_TOPIC_ID,
+          token: `[E:${OFF_TOPIC_ID}]`,
+          sourceId: 'source-hr',
+          documentId: 'doc-hr',
+          chunkId: 'chunk-hr',
+          subjectId: null,
+          sourceTitle: 'Bout heart rate study',
+          documentName: 'Bout heart rate',
+          excerpt: 'Heart rate during amateur bouts.',
+          authorityTier: 2,
+          evidenceClass: 'VERIFIED EVIDENCE',
+          boxingSpecificity: 'boxing_specific',
+        }],
+      });
+    }
+
+    test('an uncited answer in the prompt\'s own words grades Research Needed and files the question', async () => {
+      offTopicBundle();
+      answerWith(`The Library has nothing on that yet. Ask your coach what they look for at rest.`);
+
+      const payload = await (await POST(postRequest({ message: 'What is a good resting heart rate for a boxer?' }))).json();
+
+      expect(payload.state).toBe('ok');
+      expect(payload.citations).toEqual([]);
+      expect(payload.evidenceTier).toBe('RESEARCH_NEEDED');
+      expect(payload.evidenceSourceGraded).toBe(false);
+      expect(payload.evidenceNotice).toBe('NO_VERIFIED_EVIDENCE');
+      expect(payload.researchFiled).toBe(true);
+      expect(fileUnansweredShadowQuestion).toHaveBeenCalledWith(expect.objectContaining({
+        question: 'What is a good resting heart rate for a boxer?',
+      }));
+      // The stored grade is the one the reader was shown.
+      expect(mockAppendConversationExchange).toHaveBeenCalledWith(expect.objectContaining({ evidenceTier: 'RESEARCH_NEEDED' }));
+    });
+
+    test('an uncited answer that does not say so stays Experimental, with no notice', async () => {
+      offTopicBundle();
+      answerWith('Keep the rounds short and check in with your coach on the plan.');
+
+      const payload = await (await POST(postRequest({ message: 'How should we structure the round?' }))).json();
+
+      expect(payload.evidenceTier).toBe('EXPERIMENTAL');
+      expect(payload.evidenceNotice).toBeUndefined();
+      expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
+    });
+
+    // The weight-cut section tells the model to use the same words for one
+    // point the Library lacks inside an answer that cites the rest. An answer
+    // with a Sources list must not be told "No verified Library evidence
+    // matched this question" -- whichever no-answer words it uses.
+    test.each([
+      ['the prompt\'s own words', 'the Library has nothing on that yet'],
+      ['an older no-answer phrase', 'I do not have enough context'],
+    ])('a cited answer that uses %s for one point keeps its grade and gets no notice', async (_label, phrase) => {
+      offTopicBundle();
+      answerWith(`Heart rate climbs across the rounds of a bout [E:${OFF_TOPIC_ID}]. On resting heart rate, ${phrase}.`);
+
+      const payload = await (await POST(postRequest({ message: 'How hard does a bout work the heart?' }))).json();
+
+      expect(payload.state).toBe('ok');
+      expect(payload.citations).toHaveLength(1);
+      expect(payload.evidenceTier).toBe('PROVEN');
+      expect(payload.evidenceNotice).toBeUndefined();
+      expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
+    });
+  });
+
   // OD-2026-10-07-009 ruling 4: a flagged exchange is for the organization
   // admin's one-exchange view, never for the coaches' research feed.
   describe('research filing never copies a flagged exchange', () => {

@@ -57,6 +57,7 @@ import {
   gradeableEvidence,
   selectStrongestEvidence,
 } from './shadowEvidenceTier';
+import { indicatesInsufficientContext } from './shadowNoAnswer';
 import { resolveHandoff } from './shadowHandoff';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
 
@@ -214,8 +215,9 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
     let bindingRequiresHumanReview = false;
     let appendedAssistantMessageId: string | null = null;
     if (binding) {
+      const rawResponse = typeof rawOutput.response === 'string' ? rawOutput.response : '';
       const decision = validateShadowResponse(
-        typeof rawOutput.response === 'string' ? rawOutput.response : '',
+        rawResponse,
         { allowedEvidenceIds: binding.allowedEvidenceIds },
       );
       bindingFiltered = !decision.valid || decision.filtered;
@@ -246,6 +248,9 @@ export async function processNextShadowJob(jobTypeFilter?: JobType): Promise<Job
         // citation actually shown grades the tier. See
         // selectStrongestEvidence's own comment for why.
         strongestEvidence: selectStrongestEvidence(citedQuality),
+        // Same rule as the synchronous route (F-161 (d)): an answer citing no
+        // Library evidence that says the Library has nothing on the question.
+        modelSaidNoAnswer: bundleCitationIds.length === 0 && indicatesInsufficientContext(rawResponse),
       });
       // Same banner the synchronous path stores: the response's own topic
       // wins (a benign question can draw an answer that volunteers weight-cut
