@@ -82,6 +82,7 @@ jest.mock('./db', () => ({
   }),
 }));
 
+import { gymDayIso } from '../../lib/gymTime';
 import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
 import { ATTENDANCE_UPSERT_SQL, FAMILY_ATTENDANCE_UPSERT_SQL, attendanceUpsertParams } from './schedulerDb';
@@ -613,12 +614,13 @@ describe('tying or untying a live session', () => {
         { athlete_id: gym.ada, effect: 'created' },
         { athlete_id: gym.ben, effect: 'flipped', previous_status: 'absent' },
       ],
+      released: [],
     });
     expect(await liveRuns(gym)).toEqual([{ by: gym.coach.accountId, class_id: gym.klass }]);
     expect(await register(gym, gym.ada)).toMatchObject({ status: 'present', method: 'coach_override' });
     expect((await pointer(gym, runId, gym.ada))?.register_class_id).toBe(gym.klass);
     // Tying again to the same class changes nothing.
-    expect(await setSessionRunClass(gym.coach, runId, gym.klass)).toEqual({ class_id: gym.klass, copied: [] });
+    expect(await setSessionRunClass(gym.coach, runId, gym.klass)).toEqual({ class_id: gym.klass, copied: [], released: [] });
   });
 
   test('refused, changing nothing: another coach\'s class, cancelled, not today, held by another live session', async () => {
@@ -651,7 +653,7 @@ describe('tying or untying a live session', () => {
     const { run_id: runId } = await start(gym, gym.coach);
     await tap(gym.coach, runId, gym.ada);
 
-    expect(await setSessionRunClass(gym.coach, runId, null)).toEqual({ class_id: null, copied: [] });
+    expect(await setSessionRunClass(gym.coach, runId, null)).toEqual({ class_id: null, copied: [], released: [gym.ada] });
     expect(await register(gym, gym.ada)).toMatchObject({ status: 'present' });
     expect(await pointer(gym, runId, gym.ada)).toMatchObject({ register_class_id: null, written_at: null });
     // Untied: an untap is session detail only, and the register keeps the mark.
@@ -662,9 +664,34 @@ describe('tying or untying a live session', () => {
     expect(await setSessionRunClass(gym.coach, runId, 'class-second')).toEqual({
       class_id: 'class-second',
       copied: [{ athlete_id: gym.ben, effect: 'created' }],
+      released: [],
     });
     expect(await register(gym, gym.ben, 'class-second')).toMatchObject({ status: 'present', method: 'walk_in' });
     expect(await register(gym, gym.ben)).toBeUndefined();
+  });
+
+  test('a register change made after the tap wins when the session is tied later', async () => {
+    const gym = await newGym('tie-newer');
+    const { run_id: runId } = await start(gym, gym.coach, null);
+    await tap(gym.coach, runId, gym.ada);
+    // After the tap, an admin marks Ada Excused on the register.
+    await client.query(`select pg_sleep(0.01)`);
+    await staffMark(gym, gym.ada, 'excused');
+    expect((await setSessionRunClass(gym.coach, runId, gym.klass)).copied).toEqual([
+      { athlete_id: gym.ada, effect: 'register_newer', status: 'excused' },
+    ]);
+    expect(await register(gym, gym.ada)).toMatchObject({ status: 'excused' });
+  });
+
+  test('a refused retie leaves the tie and the claim to undo exactly as they were', async () => {
+    const gym = await newGym('tie-rollback');
+    await addClass(gym.organizationId, 'class-other', gym.otherCoach.accountId);
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    const before = await pointer(gym, runId, gym.ada);
+    expect(await refusal(setSessionRunClass(gym.coach, runId, 'class-other'))).toMatchObject({ message: 'SESSION_CLASS_NOT_YOURS' });
+    expect(await pointer(gym, runId, gym.ada)).toEqual(before);
+    expect((await liveRuns(gym)).find((row) => row.by === gym.coach.accountId)?.class_id).toBe(gym.klass);
   });
 
   test('a finished session cannot be tied', async () => {
@@ -704,7 +731,7 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     // Ada is here on the session, but her register mark has gone: the tap still skips her.
     await client.query(`delete from pilot.scheduler_attendance where organization_id = $1 and athlete_id = $2`, [gym.organizationId, gym.ada]);
 
-    expect((await describeRunClass(gym.organizationId, runId, gym.klass))?.no_shows).toBe(2);
+    expect((await describeRunClass(gym.coach, gym.klass))?.no_shows).toBe(2);
     expect(await markSessionNoShowsAbsent(gym.coach, runId)).toEqual({ marked: [gym.ben, 'athlete-eve'] });
     expect(await register(gym, gym.ben)).toMatchObject({ status: 'absent', method: 'coach_override', by: gym.coach.accountId });
     expect(await register(gym, 'athlete-eve')).toMatchObject({ status: 'absent' });
@@ -714,8 +741,59 @@ describe('the End Session no-shows tap (ruling 3)', () => {
     expect((await registerAudit(gym)).filter((row) => row.details.effect === 'no_show_absent').map((row) => row.entity_id))
       .toEqual([`${gym.klass}:${gym.ben}`, `${gym.klass}:athlete-eve`]);
 
-    expect((await describeRunClass(gym.organizationId, runId, gym.klass))?.no_shows).toBe(0);
+    expect((await describeRunClass(gym.coach, gym.klass))?.no_shows).toBe(0);
     expect(await markSessionNoShowsAbsent(gym.coach, runId)).toEqual({ marked: [] });
+  });
+
+  test('skips waitlisted and cancelled sign-ups, deleted athletes, and anyone seen in another session that day; an admin marks admin_override', async () => {
+    const gym = await newGym('no-shows-filters');
+    const extra = [['athlete-wait', 'waitlisted'], ['athlete-gone', 'cancelled'], ['athlete-deleted', 'registered'], ['athlete-elsewhere', 'registered']];
+    for (const [athleteId, status] of extra) {
+      await client.query(
+        `insert into pilot.athletes
+           (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag,
+            coach_id, created_at, updated_at)
+         values ($1, $2, $2, '2012-01-01', '100', 'active', 'contact', true, $3, now(), now())`,
+        [gym.organizationId, athleteId, gym.coach.accountId],
+      );
+      await client.query(
+        `insert into pilot.scheduler_registrations
+           (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
+         values ($1, $2, $3, $4, 'coach', $5, $6)`,
+        [gym.organizationId, `reg-${athleteId}`, gym.klass, athleteId, gym.coach.accountId, status],
+      );
+    }
+    await client.query(`update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = 'athlete-deleted'`, [gym.organizationId]);
+    // Another coach could not tie the class and ran an untied session: they saw this athlete.
+    const { run_id: elsewhere } = await start(gym, gym.otherCoach, null);
+    await tap(gym.otherCoach, elsewhere, 'athlete-elsewhere');
+    const { run_id: runId } = await start(gym, gym.admin);
+
+    expect((await describeRunClass(gym.admin, gym.klass))?.no_shows).toBe(2);
+    expect(await markSessionNoShowsAbsent(gym.admin, runId)).toEqual({ marked: [gym.ada, gym.ben] });
+    expect(await register(gym, gym.ada)).toMatchObject({ status: 'absent', method: 'admin_override', role: 'organization_admin' });
+    for (const athleteId of ['athlete-wait', 'athlete-gone', 'athlete-deleted', 'athlete-elsewhere', gym.cy]) {
+      expect(await register(gym, athleteId)).toBeUndefined();
+    }
+    expect((await registerAudit(gym)).map((row) => row.event_type)).toEqual(['create', 'create']);
+  });
+
+  test('refused before the class has started, and the live screen is offered nothing', async () => {
+    const gym = await newGym('no-shows-early');
+    await addClass(gym.organizationId, 'class-later', gym.coach.accountId, "now() + interval '3 hours'");
+    await client.query(
+      `insert into pilot.scheduler_registrations
+         (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
+       values ($1, 'reg-later', 'class-later', $2, 'coach', $3, 'registered')`,
+      [gym.organizationId, gym.ada, gym.coach.accountId],
+    );
+    const later = new Date(Date.now() + 3 * 3600 * 1000);
+    // Run late in the evening, "3 hours from now" is tomorrow and cannot be tied; nothing to prove then.
+    if (gymDayIso(later) !== gymDayIso(new Date())) return;
+    const { run_id: runId } = await start(gym, gym.coach, 'class-later');
+    expect((await describeRunClass(gym.coach, 'class-later'))?.no_shows).toBe(0);
+    expect(await refusal(markSessionNoShowsAbsent(gym.coach, runId))).toMatchObject({ message: 'SESSION_CLASS_NOT_STARTED', status: 409 });
+    expect(await register(gym, gym.ada, 'class-later')).toBeUndefined();
   });
 
   test('refused on an untied session, a cancelled class, and another coach\'s run', async () => {
@@ -744,5 +822,13 @@ describe('today\'s classes a session can be tied to', () => {
       .toEqual([['class-other', true], [gym.klass, false]].sort());
     expect((await listTieableClasses(gym.otherCoach)).map((item) => [item.class_id, item.held_by_other_session]))
       .toEqual([['class-other', false]]);
+  });
+
+  test('today is the gym\'s day, not UTC\'s: at 11:30 PM Eastern, a 12:30 AM class tomorrow is not today', async () => {
+    const gym = await newGym('gym-day');
+    const now = new Date('2026-10-15T03:30:00Z'); // 11:30 PM EDT, 14 October
+    await addClass(gym.organizationId, 'class-early-today', gym.coach.accountId, "'2026-10-14T04:30:00Z'::timestamptz"); // 12:30 AM, 14 October
+    await addClass(gym.organizationId, 'class-tomorrow', gym.coach.accountId, "'2026-10-15T04:30:00Z'::timestamptz"); // 12:30 AM, 15 October
+    expect((await listTieableClasses(gym.coach, now)).map((item) => item.class_id)).toEqual(['class-early-today']);
   });
 });

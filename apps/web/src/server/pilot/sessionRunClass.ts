@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 
-import { gymDayIso } from '../../lib/gymTime';
+import { GYM_TIME_ZONE, gymDayIso } from '../../lib/gymTime';
 import { type ActorIdentity, actorRunsClass, isOrganizationAdminRole } from './access';
 import { writePilotAuditEvent } from './audit';
 import { query, withTransaction } from './db';
@@ -40,6 +40,8 @@ import { lockStaffMembership, type StaffNoteRole } from './sessionStaffNotes';
 // Session auto-close finishes runs and never comes here, so it never writes the register.
 //
 // LOCK ORDER, one way only: staff membership, run, athlete, session mark, class, register row.
+// (Tying mid-session locks a run's marks and their athletes in one statement; the run row, locked
+// first by every writer of marks, is what keeps that from deadlocking with a tap.)
 
 export class SessionRunClassError extends Error {
   readonly status: number;
@@ -58,6 +60,7 @@ export const SESSION_CLASS_MESSAGES: ReadonlyMap<string, string> = new Map([
   ['SESSION_CLASS_CANCELLED', 'This class was cancelled.'],
   ['SESSION_CLASS_NOT_TODAY', "A session can only be tied to one of today's classes."],
   ['SESSION_RUN_NOT_TIED', 'This session is not tied to a class, so there is no class register to mark.'],
+  ['SESSION_CLASS_NOT_STARTED', 'This class has not started yet, so nobody is a no-show.'],
   ['SESSION_CLASS_ALREADY_LIVE', 'Another live session is already running this class. Start without a class, or ask that coach to end theirs.'],
 ]);
 
@@ -79,6 +82,8 @@ export type RegisterResult =
   // 'unchanged': an untap on a tied session whose tap created no register mark (it was Present
   // already, or turned Absent/Excused into Present, or was skipped); the register is left as it is.
   | { effect: 'created' | 'already_present' | 'removed' | 'kept' | 'unchanged' | 'no_show_absent' }
+  // Tying mid-session: the register was set Absent/Excused AFTER this tap, so it stands.
+  | { effect: 'register_newer'; status: 'absent' | 'excused' }
   | { effect: 'flipped'; previous_status: 'absent' | 'excused' }
   | { effect: 'skipped'; reason: 'class_cancelled' | 'not_your_class' };
 
@@ -95,7 +100,7 @@ interface TapOnRegister {
 function auditRegister(client: PoolClient, tap: TapOnRegister, result: RegisterResult) {
   return writePilotAuditEvent(
     {
-      event_type: result.effect === 'created' ? 'create' : 'update',
+      event_type: result.effect === 'created' || result.effect === 'no_show_absent' ? 'create' : 'update',
       actor_account_id: tap.accountId,
       actor_role: tap.role,
       organization_id: tap.organizationId,
@@ -109,8 +114,11 @@ function auditRegister(client: PoolClient, tap: TapOnRegister, result: RegisterR
   );
 }
 
-/** A "here" tap on a tied session: the register, after the session mark is written and locked. */
-export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister): Promise<RegisterResult> {
+/**
+ * A "here" tap on a tied session: the register, after the session mark is written and locked.
+ * `tappedAt` is set when an earlier tap is copied on a tie: a register change since then wins.
+ */
+export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister, tappedAt?: string): Promise<RegisterResult> {
   const item = await lockSchedulerClass(client, tap.organizationId, tap.classId);
   if (!item || item.status === 'cancelled') return { effect: 'skipped', reason: 'class_cancelled' };
   if (!isOrganizationAdminRole(tap.role) && !actorRunsClass({ accountId: tap.accountId }, item)) {
@@ -129,6 +137,7 @@ export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister):
       checked_in_by_account_id: tap.accountId,
     },
     new Date().toISOString(),
+    tappedAt,
   );
   if (written.effect === 'created') {
     await client.query(
@@ -140,7 +149,9 @@ export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister):
   }
   const result: RegisterResult = written.effect === 'flipped'
     ? { effect: 'flipped', previous_status: written.previous_status }
-    : { effect: written.effect };
+    : written.effect === 'register_newer'
+      ? { effect: 'register_newer', status: written.status }
+      : { effect: written.effect };
   if (result.effect === 'created' || result.effect === 'flipped') await auditRegister(client, tap, result);
   return result;
 }
@@ -178,15 +189,35 @@ async function lockOwnLiveRun(client: PoolClient, actor: ActorIdentity, runId: s
   return { class_id: owned.class_id };
 }
 
-/** The athletes whose mark stands in this run, ids only: what a tie copies and the no-shows tap skips. */
-async function standingMarkIds(client: Pick<PoolClient, 'query'>, organizationId: string, runId: string, lock: boolean): Promise<string[]> {
-  const { rows } = await client.query<{ athlete_id: string }>(
-    `select m.athlete_id
+/** The marks that stand in this run (athlete, when marked), locked: what a tie copies. */
+async function standingMarks(client: PoolClient, organizationId: string, runId: string): Promise<Array<{ athlete_id: string; marked_at: string }>> {
+  const { rows } = await client.query<{ athlete_id: string; marked_at: string }>(
+    `select m.athlete_id, m.marked_at::text
        from pilot.session_run_athletes m
        join pilot.athletes a on a.organization_id = m.organization_id and a.athlete_id = m.athlete_id
       where m.organization_id = $1 and m.run_id = $2 and m.removed_at is null and a.deleted_at is null
-      order by m.athlete_id${lock ? ' for update of m for share of a' : ''}`,
+      order by m.athlete_id
+        for update of m for share of a`,
     [organizationId, runId],
+  );
+  return rows;
+}
+
+/**
+ * Who the no-shows tap must never mark Absent: anyone whose mark stands in a session of this gym
+ * that is live, or that started on the class's gym day, this one or another coach's (a coach who
+ * could not tie the class still saw them). Untied marks still count as no attendance
+ * (OD-2026-10-13-016); they only stop a false Absent.
+ */
+async function seenOnClassDay(client: Pick<PoolClient, 'query'>, organizationId: string, classStartAt: string): Promise<string[]> {
+  const { rows } = await client.query<{ athlete_id: string }>(
+    `select distinct m.athlete_id
+       from pilot.session_run_athletes m
+       join pilot.session_script_runs r on r.organization_id = m.organization_id and r.run_id = m.run_id
+      where m.organization_id = $1 and m.removed_at is null
+        and (r.run_state = 'in_progress'
+             or (r.started_at at time zone $3)::date = ($2::timestamptz at time zone $3)::date)`,
+    [organizationId, classStartAt, GYM_TIME_ZONE],
   );
   return rows.map((row) => row.athlete_id);
 }
@@ -195,6 +226,8 @@ export interface TieOutcome {
   class_id: string | null;
   /** Tying mid-session: what each standing mark did to the register. */
   copied: Array<{ athlete_id: string } & RegisterResult>;
+  /** Untying or retying: the register marks this session had created, which now simply stay. */
+  released: string[];
 }
 
 /**
@@ -206,13 +239,14 @@ export async function setSessionRunClass(actor: ActorIdentity, runId: string, cl
     const role = await lockStaffMembership(client, actor);
     if (!role) throw new SessionRunClassError('SESSION_RUN_NOT_FOUND', 404);
     const owned = await lockOwnLiveRun(client, actor, runId);
-    if (owned.class_id === classId) return { class_id: classId, copied: [] };
+    if (owned.class_id === classId) return { class_id: classId, copied: [], released: [] };
 
     // The lock order: run, then the marks (and their athletes), then the class, then the register.
-    const standing = await standingMarkIds(client, actor.organizationId, runId, true);
-    await client.query(
+    const standing = await standingMarks(client, actor.organizationId, runId);
+    const released = await client.query<{ athlete_id: string }>(
       `update pilot.session_run_athletes set register_class_id = null, register_written_at = null
-        where organization_id = $1 and run_id = $2 and register_class_id is not null`,
+        where organization_id = $1 and run_id = $2 and register_class_id is not null
+        returning athlete_id`,
       [actor.organizationId, runId],
     );
     if (classId) await lockTieableClass(client, { ...actor, role }, classId);
@@ -243,12 +277,12 @@ export async function setSessionRunClass(actor: ActorIdentity, runId: string, cl
 
     const copied: TieOutcome['copied'] = [];
     if (classId) {
-      for (const athleteId of standing) {
+      for (const { athlete_id: athleteId, marked_at: markedAt } of standing) {
         const tap = { organizationId: actor.organizationId, runId, classId, athleteId, accountId: actor.accountId, role };
-        copied.push({ athlete_id: athleteId, ...(await copyTapToRegister(client, tap)) });
+        copied.push({ athlete_id: athleteId, ...(await copyTapToRegister(client, tap, markedAt)) });
       }
     }
-    return { class_id: classId, copied };
+    return { class_id: classId, copied, released: released.rows.map((row) => row.athlete_id).sort() };
   });
 }
 
@@ -263,10 +297,12 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
     if (!role) throw new SessionRunClassError('SESSION_RUN_NOT_FOUND', 404);
     const { class_id: classId } = await lockOwnLiveRun(client, actor, runId);
     if (!classId) throw new SessionRunClassError('SESSION_RUN_NOT_TIED', 409);
-    const standing = await standingMarkIds(client, actor.organizationId, runId, false);
     const item = await lockSchedulerClass(client, actor.organizationId, classId);
     if (!item || item.status === 'cancelled') throw new SessionRunClassError('SESSION_CLASS_CANCELLED', 409);
     if (!isOrganizationAdminRole(role) && !actorRunsClass(actor, item)) throw new SessionRunClassError('SESSION_CLASS_NOT_YOURS', 403);
+    // Nobody is a no-show before the class starts (a session tied to the wrong class of the day).
+    if (new Date(item.start_at).getTime() > Date.now()) throw new SessionRunClassError('SESSION_CLASS_NOT_STARTED', 409);
+    const standing = await seenOnClassDay(client, actor.organizationId, item.start_at);
     const marked = await markClassNoShowsAbsent(
       client,
       actor.organizationId,
@@ -287,19 +323,27 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
   });
 }
 
-/** The class a live run is tied to, as the live screen names it, and how many no-shows the tap would mark now. */
-export async function describeRunClass(organizationId: string, runId: string, classId: string) {
-  const item = await getSchedulerClassById(organizationId, classId);
+/**
+ * The class a live run is tied to, as the live screen names it, and how many athletes the no-shows
+ * tap would mark now: 0 whenever the tap would be refused (cancelled, not started, not the
+ * caller's class), so the screen never offers a tap that fails.
+ */
+export async function describeRunClass(actor: Tier, classId: string) {
+  const item = await getSchedulerClassById(actor.organizationId, classId);
   if (!item) return null;
+  const offerable = item.status !== 'cancelled'
+    && new Date(item.start_at).getTime() <= Date.now()
+    && (isOrganizationAdminRole(actor.role) || actorRunsClass(actor, item));
   const reader = { query: async (text: string, values?: unknown[]) => ({ rows: await query(text, values) }) };
-  const standing = await standingMarkIds(reader as unknown as Pick<PoolClient, 'query'>, organizationId, runId, false);
   return {
     class_id: item.class_id,
     title: item.title,
     start_at: item.start_at,
     end_at: item.end_at,
     status: item.status,
-    no_shows: await countClassNoShows(organizationId, classId, standing),
+    no_shows: offerable
+      ? await countClassNoShows(actor.organizationId, classId, await seenOnClassDay(reader, actor.organizationId, item.start_at))
+      : 0,
   };
 }
 
@@ -324,7 +368,7 @@ export async function listTieableClasses(actor: Tier, now = new Date()): Promise
             ) as held_by_other_session
        from pilot.scheduler_classes c
       where c.organization_id = $1 and c.status <> 'cancelled'
-        and c.start_at between $3::timestamptz - interval '1 day' and $3::timestamptz + interval '1 day'
+        and c.start_at between $3::timestamptz - interval '36 hours' and $3::timestamptz + interval '36 hours'
       order by c.start_at, c.class_id`,
     [actor.organizationId, actor.accountId, now.toISOString()],
   );

@@ -481,7 +481,7 @@ describe('GET runs -- classes', () => {
     mockGetLive.mockResolvedValue({ ...liveRun, class_id: 'class-1' });
     mockDescribe.mockResolvedValue(tiedClass as never);
     await expect((await GET(get())).json()).resolves.toEqual({ run: { ...liveRun, class_id: 'class-1' }, class: tiedClass });
-    expect(mockDescribe).toHaveBeenCalledWith('org-1', liveRun.run_id, 'class-1');
+    expect(mockDescribe).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'acct-coach', organizationId: 'org-1' }), 'class-1');
     mockDescribe.mockClear();
     mockGetLive.mockResolvedValue(liveRun);
     await expect((await GET(get())).json()).resolves.toEqual({ run: liveRun });

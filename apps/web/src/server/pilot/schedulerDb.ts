@@ -748,7 +748,8 @@ export async function isRegisteredForClass(
 export type SessionRegisterWrite =
   | { effect: 'created'; updated_at: string }
   | { effect: 'already_present' }
-  | { effect: 'flipped'; previous_status: 'absent' | 'excused' };
+  | { effect: 'flipped'; previous_status: 'absent' | 'excused' }
+  | { effect: 'register_newer'; status: 'absent' | 'excused' };
 
 /**
  * Make the athlete Present on the class register for a "here" tap.
@@ -764,9 +765,13 @@ export async function writeSessionRegisterPresent(
   organizationId: string,
   mark: Pick<SchedulerAttendance, 'class_id' | 'athlete_id' | 'method' | 'checked_in_by_role' | 'checked_in_by_account_id'>,
   now: string,
+  // A tap made EARLIER (copied when a session is tied mid-way): an Absent or Excused set on the
+  // register after it is a later register change, and it wins ('register_newer').
+  tappedAt?: string,
 ): Promise<SessionRegisterWrite> {
   const params = [organizationId, mark.class_id, mark.athlete_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now];
   let previous: SchedulerAttendance['status'] | undefined;
+  let newer = false;
   // Twice at most: a mark removed between the two statements is inserted on the second pass.
   for (let attempt = 0; attempt < 2 && !previous; attempt += 1) {
     const inserted = await client.query<{ updated_at: string }>(
@@ -779,17 +784,20 @@ export async function writeSessionRegisterPresent(
       params,
     );
     if (inserted.rows[0]) return { effect: 'created', updated_at: inserted.rows[0].updated_at };
-    const { rows } = await client.query<{ status: SchedulerAttendance['status'] }>(
-      `select status from pilot.scheduler_attendance
+    const { rows } = await client.query<{ status: SchedulerAttendance['status']; newer: boolean }>(
+      `select status, ($4::timestamptz is not null and updated_at > $4::timestamptz) as newer
+         from pilot.scheduler_attendance
         where organization_id = $1 and class_id = $2 and athlete_id = $3
           for update`,
-      params.slice(0, 3),
+      [...params.slice(0, 3), tappedAt ?? null],
     );
     previous = rows[0]?.status;
+    newer = rows[0]?.newer === true;
   }
   // Inserted by nobody and found by nobody, twice: never answer "Present" for a mark not there.
   if (!previous) throw new Error('SESSION_REGISTER_WRITE_RACE');
   if (previous === 'present') return { effect: 'already_present' };
+  if (newer) return { effect: 'register_newer', status: previous };
   await client.query(
     `update pilot.scheduler_attendance
         set status = 'present', method = $4, checked_in_by_role = $5, checked_in_by_account_id = $6,

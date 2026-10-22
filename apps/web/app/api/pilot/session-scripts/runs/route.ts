@@ -104,8 +104,8 @@ export async function GET(request: NextRequest) {
     }
 
     const run = await getLiveRunForCoach(principal.organizationId, principal.accountId);
-    const tied = run?.class_id ? await describeRunClass(principal.organizationId, run.run_id, run.class_id) : null;
-    return NextResponse.json(tied ? { run, class: tied } : { run });
+    const tied = run?.class_id ? await describeRunClass(principal, run.class_id) : null;
+    return NextResponse.json(tied ? { run, class: tied } : { run }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return jsonError(error);
   }
