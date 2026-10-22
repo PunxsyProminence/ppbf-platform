@@ -33,6 +33,7 @@ import {
   markSchedulerRegistrationReviewed,
   registerForClassTransactionally,
   resolveSchedulerCoachingRequest,
+  restoreSchedulerClass,
   setSchedulerClassCover,
   type SchedulerAttendance,
   type SchedulerClass,
@@ -63,6 +64,7 @@ type SchedulerAction =
   | 'create_class'
   | 'cover_class'
   | 'cancel_class'
+  | 'restore_class'
   | 'register_class'
   | 'parent_review_registration'
   | 'request_coaching'
@@ -471,6 +473,12 @@ type FamilyClass = Omit<
   SchedulerClass,
   'scheduled_by_account_id' | 'coach_account_id' | 'covering_coach_account_id'
 > & { registered_count: number };
+
+// restore_class's refusals (lane LRC). PROPOSED copy for the owner.
+const RESTORE_REFUSAL_MESSAGES = {
+  not_office: 'Only the office can restore a cancelled class.',
+  not_cancelled: 'This class is not cancelled, so there is nothing to restore.',
+} as const;
 
 function cancelActor(actor: SchedulerActor): CancelActor {
   return { accountId: actor.accountId, isOffice: canManageAll(actor), isCoach: actor.role === 'coach' };
@@ -980,6 +988,51 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json({ ok: true, class_id: classId, status: 'cancelled' });
+    }
+
+    if (action === 'restore_class') {
+      // Lane LRC (Jason, 2026-10-22: "go with your recommendation build
+      // restore class"): the undo for a cancel, for the office only, before or
+      // after the start. The class reads open (or full) again, and everything
+      // a cancel stopped counting counts again, because every reader skips a
+      // class by its status. Nothing else is changed. Audited like a cancel.
+      if (!canManageAll(actor)) {
+        throw new ForbiddenError(RESTORE_REFUSAL_MESSAGES.not_office);
+      }
+      const classId = requiredString(body.class_id, 'class_id');
+      const classItem = await getSchedulerClassById(actor.organizationId, classId);
+      if (!classItem) {
+        throw new Error('Missing class record');
+      }
+      if (classItem.status !== 'cancelled') {
+        throw new ValidationError(RESTORE_REFUSAL_MESSAGES.not_cancelled);
+      }
+      const start = parseInstantAsGymTime(classItem.start_at);
+      const afterStart = !start || start.getTime() <= Date.now();
+      const restored = await restoreSchedulerClass(actor.organizationId, classId, new Date().toISOString());
+      if (!restored) {
+        // Lost a race to another restore: the update found it not cancelled.
+        throw new ValidationError(RESTORE_REFUSAL_MESSAGES.not_cancelled);
+      }
+
+      await auditSchedulerEvent({
+        event_type: 'update',
+        actor_account_id: actor.accountId,
+        actor_role: actor.role,
+        organization_id: actor.organizationId,
+        entity_type: 'scheduler_class',
+        entity_id: classId,
+        details: {
+          action: 'restore_class',
+          class_id: classId,
+          previous_status: classItem.status,
+          status: restored,
+          after_start: afterStart,
+        },
+        shadow_mirror: false,
+      });
+
+      return NextResponse.json({ ok: true, class_id: classId, status: restored });
     }
 
     if (action === 'register_class') {

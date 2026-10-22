@@ -273,6 +273,41 @@ export async function cancelSchedulerClass(
 }
 
 /**
+ * Undoes a cancel (lane LRC; Jason, 2026-10-22: "go with your recommendation
+ * build restore class"): a cancelled class reads 'open' again, or 'full' when
+ * its seats are taken -- the rule registerForClassTransactionally sets 'full'
+ * by (registered, not-deleted rows against capacity). Nothing else changes, as
+ * with the cancel: its registrations, attendance and cover are as they were,
+ * and every reader that skips a cancelled class counts it again.
+ *
+ * Returns the status it now has, or null when it was not cancelled (a second
+ * restore, or a restore racing one, changes nothing) or is not this gym's. The
+ * status check is in the update itself, under the row lock a cancel and a
+ * registration also take.
+ */
+export async function restoreSchedulerClass(
+  organizationId: string,
+  classId: string,
+  updatedAt: string,
+): Promise<'open' | 'full' | null> {
+  const rows = await query<{ status: 'open' | 'full' }>(
+    `update pilot.scheduler_classes c
+     set status = case
+           when (select count(*)
+                   from pilot.scheduler_registrations r
+                  where r.organization_id = c.organization_id and r.class_id = c.class_id
+                    and r.status = 'registered'
+                    and ${athleteNotDeletedSql('r')}) >= c.capacity
+           then 'full' else 'open' end,
+         updated_at = $3
+     where c.organization_id = $1 and c.class_id = $2 and c.status = 'cancelled'
+     returning c.status`,
+    [organizationId, classId, updatedAt],
+  );
+  return rows[0]?.status ?? null;
+}
+
+/**
  * The newest cover_class audit row for each class (#1595): who it named as
  * cover and when. schedulerCancelRule reads it to tell how long the current
  * cover has been held. setSchedulerClassCover writes the row with the cover;

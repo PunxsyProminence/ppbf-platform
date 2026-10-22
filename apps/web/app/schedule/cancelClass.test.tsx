@@ -45,7 +45,7 @@ function classRow(id: string, title: string, startOffsetMs: number, extra: Recor
   };
 }
 
-function installFetchMock(role: 'coach' | 'athlete' | 'organization_admin', classes: ReturnType<typeof classRow>[]): jest.Mock {
+function installFetchMock(role: 'coach' | 'athlete' | 'organization_admin' | 'admin', classes: ReturnType<typeof classRow>[]): jest.Mock {
   const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const json = (payload: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response);
@@ -281,5 +281,71 @@ describe('Cancel Class (#1536)', () => {
     await renderPage();
 
     expect(screen.queryByRole('button', { name: "I'm here" })).not.toBeInTheDocument();
+  });
+});
+
+/* LANE LRC (Jason, 2026-10-22: "go with your recommendation build restore
+   class"): the office's undo for a cancel, with one confirm step naming the
+   class. Copy PROPOSED. */
+describe('Restore class (lane LRC)', () => {
+  test.each([['organization_admin' as const], ['admin' as const]])(
+    'the office (%s) is offered Restore class on every cancelled class, past or to come, and on no other',
+    async (role) => {
+      installFetchMock(role, [
+        classRow('upcoming', 'Still On', 24 * HOUR, { can_cancel: true }),
+        classRow('gone', 'Called Off', 26 * HOUR, { status: 'cancelled' }),
+        classRow('gone-past', 'Called Off Last Week', -7 * 24 * HOUR, { status: 'cancelled' }),
+      ]);
+      await renderPage();
+
+      expect(within(rowFor('Called Off')).getByRole('button', { name: 'Restore class' })).toBeInTheDocument();
+      expect(within(rowFor('Called Off Last Week')).getByRole('button', { name: 'Restore class' })).toBeInTheDocument();
+      expect(within(rowFor('Still On')).queryByRole('button', { name: 'Restore class' })).not.toBeInTheDocument();
+    },
+  );
+
+  test.each([['coach' as const], ['athlete' as const]])('a %s is never offered Restore class', async (role) => {
+    installFetchMock(role, [classRow('gone', 'Called Off', 26 * HOUR, { status: 'cancelled' })]);
+    await renderPage();
+
+    expect(within(rowFor('Called Off')).queryByRole('button', { name: 'Restore class' })).not.toBeInTheDocument();
+  });
+
+  test('the confirm step names the class and says its marks count again; the second press restores it', async () => {
+    const fetchMock = installFetchMock('organization_admin', [
+      classRow('gone-past', 'Called Off Last Week', -7 * 24 * HOUR, { status: 'cancelled' }),
+    ]);
+    await renderPage();
+
+    expect(within(rowFor('Called Off Last Week')).queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(within(rowFor('Called Off Last Week')).getByRole('button', { name: 'Restore class' }));
+    expect(within(rowFor('Called Off Last Week')).getByRole('status')).toHaveTextContent(
+      /^Restore Called Off Last Week, .+\? It will no longer be cancelled, and its attendance marks will count again in attendance reports, on families' screens, in the roster export and on the TV\.$/,
+    );
+    expect(posts(fetchMock)).toEqual([]);
+
+    await act(async () => {
+      fireEvent.click(within(rowFor('Called Off Last Week')).getByRole('button', { name: 'Press again to restore' }));
+    });
+    expect(posts(fetchMock)).toEqual([{ action: 'restore_class', class_id: 'gone-past' }]);
+    expect(await screen.findByText('Class restored.')).toBeInTheDocument();
+  });
+
+  test('a half-pressed Restore class is forgotten when another action runs', async () => {
+    const fetchMock = installFetchMock('organization_admin', [
+      classRow('gone', 'Called Off', 26 * HOUR, { status: 'cancelled' }),
+      classRow('other', 'Other Tomorrow', 25 * HOUR),
+    ]);
+    await renderPage();
+
+    fireEvent.click(within(rowFor('Called Off')).getByRole('button', { name: 'Restore class' }));
+    await act(async () => {
+      fireEvent.click(within(rowFor('Other Tomorrow')).getByRole('button', { name: 'Cover Class' }));
+    });
+    await screen.findByText('Coach cover assignment updated.');
+
+    fireEvent.click(within(rowFor('Called Off')).getByRole('button', { name: 'Restore class' }));
+
+    expect(posts(fetchMock).map((body) => body.action)).toEqual(['cover_class']);
   });
 });
