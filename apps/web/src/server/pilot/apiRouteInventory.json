@@ -2225,6 +2225,30 @@
     }
   },
   {
+    "id": "app/api/pilot/admin/staff/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/admin/staff",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + inline isOrganizationAdminRole",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Sets or clears the name the gym types for a coach or staff member (pilot.account_profiles.staff_display_name; parent-portal Q1 part B). The organization comes from the session; profileDb.ts setStaffDisplayName writes only when the target holds a membership in that organization in a staff role and is not deleted, in the same statement, else 404. Audited as update with action organization_admin_set/clear_staff_display_name.",
+    "mechanical": {
+      "sessionGates": [
+        "requireMicrosoftAuthenticatedPrincipal"
+      ],
+      "authorizationGates": [],
+      "roleLiterals": []
+    }
+  },
+  {
     "id": "app/api/pilot/admin/track-assignments/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/track-assignments",

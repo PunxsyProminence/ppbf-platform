@@ -410,3 +410,45 @@ describe('the safety escalation badge rides the session bar', () => {
     expect(screen.queryByText(/Safety/)).toBeNull();
   });
 });
+
+/* THE PHONE BAR, PARENT PORTAL WALK 2026-10-19 ITEM 11.
+
+   At 375px the corridor button read "FRONT OF…": the caption, the role plate and
+   the corridor shared one row that could not wrap, and the corridor took what
+   was left. jsdom compiles no CSS, so these hold the classes that decide it:
+   the caption and the current-surface name step off the phone (`hidden`, back
+   at `sm`), the room name does not, and the group may wrap. The same
+   technique roleStandaloneOperations uses for the bell link. */
+describe('the phone bar keeps the whole room name', () => {
+  function classesOf(element: Element): string[] {
+    return Array.from(element.classList);
+  }
+
+  it('hides the "Session active" caption and the surface name below the sm width, and never the room name', () => {
+    mockUsePathname.mockReturnValue('/parent/dashboard');
+    renderAs('parent');
+
+    const caption = screen.getByText('Session active');
+    expect(classesOf(caption)).toEqual(expect.arrayContaining(['hidden', 'sm:inline']));
+
+    const trigger = screen.getByRole('button', { name: /front office/i });
+    const room = trigger.querySelector('.corridor-trigger-lbl') as HTMLElement;
+    expect(room.textContent).toBe('Front Office');
+    expect(classesOf(room)).not.toContain('hidden');
+
+    const surface = trigger.querySelector('.corridor-trigger-here') as HTMLElement;
+    expect(surface.textContent).toBe('Parent Hub');
+    expect(classesOf(surface)).toEqual(expect.arrayContaining(['hidden', 'sm:inline']));
+  });
+
+  it('lets the caption, role plate and corridor group wrap instead of clipping the corridor', () => {
+    mockUsePathname.mockReturnValue('/parent/dashboard');
+    renderAs('parent');
+
+    const group = screen.getByText('Session active').parentElement as HTMLElement;
+    expect(classesOf(group)).toContain('flex-wrap');
+    // The role plate and the corridor are in that same group.
+    expect(group.textContent).toContain('Parent');
+    expect(group.querySelector('.corridor-root')).not.toBeNull();
+  });
+});

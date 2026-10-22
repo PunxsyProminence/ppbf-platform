@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { NotFoundError, ValidationError } from '@/src/server/pilot/errors';
 import {
   jsonError,
   requireMicrosoftAuthenticatedPrincipal,
@@ -20,6 +21,8 @@ import {
   type InvitableStaffRole,
   type VolunteerRosterAssignment,
 } from '@/src/server/pilot/staffProvisioning';
+import { setStaffDisplayName } from '@/src/server/pilot/profileDb';
+import { STAFF_DISPLAY_NAME_ROLES, normalizeStaffDisplayName } from '@/src/shared/staffDisplayName';
 
 export const runtime = 'nodejs';
 
@@ -263,6 +266,79 @@ export async function DELETE(request: NextRequest) {
       parent_id: removed.parentId,
       athlete_id: removed.athleteId,
     });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+/**
+ * Sets or clears the name the gym types for a coach or staff member
+ * (parent-portal Q1 part B). Blank clears it, and every screen names the
+ * person from their login again.
+ *
+ * Same boundaries as the other writes here: Microsoft session, organization
+ * admin, the organization taken from the session. The target must hold a
+ * membership in that organization in a role that may carry a name;
+ * setStaffDisplayName checks that in the same statement as the write, so an
+ * athlete, a guardian or someone in another gym answers 404 and nothing is
+ * written.
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requireMicrosoftAuthenticatedPrincipal(request);
+    if (!isOrganizationAdminRole(principal.role)) {
+      throw new Error('Forbidden: role not allowed');
+    }
+
+    const body = (await request.json().catch(() => null)) as {
+      account_id?: unknown;
+      display_name?: unknown;
+    } | null;
+    const accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
+    if (!accountId) throw new ValidationError('Missing account_id');
+    if (!body || !('display_name' in body)) throw new ValidationError('Missing display_name (send an empty string to clear it)');
+
+    const input = normalizeStaffDisplayName(body.display_name);
+    if (!input.ok) throw new ValidationError(input.error);
+
+    let written: boolean;
+    try {
+      written = await setStaffDisplayName(
+        principal.organizationId,
+        accountId,
+        input.name,
+        STAFF_DISPLAY_NAME_ROLES,
+      );
+    } catch (writeError) {
+      // The database's check has the last word. A name the rule above passed
+      // and the check refused (a server whose [[:cntrl:]] class is wider than
+      // \p{Cc}) is a name the admin can change, not a server fault.
+      const pgError = writeError as { code?: unknown; constraint?: unknown };
+      if (pgError.code === '23514' && pgError.constraint === 'pilot_account_profiles_staff_display_name_check') {
+        throw new ValidationError('That name cannot be saved. Use letters, numbers, spaces and ordinary punctuation.');
+      }
+      throw writeError;
+    }
+    if (!written) {
+      throw new NotFoundError('Not found: no coach or staff member with that account in this gym');
+    }
+
+    await writePilotAuditEvent({
+      event_type: 'update',
+      actor_account_id: principal.accountId,
+      actor_role: principal.role,
+      organization_id: principal.organizationId,
+      entity_type: 'account',
+      entity_id: accountId,
+      details: {
+        action: input.name === null
+          ? 'organization_admin_clear_staff_display_name'
+          : 'organization_admin_set_staff_display_name',
+        staff_display_name: input.name,
+      },
+    });
+
+    return NextResponse.json({ ok: true, account_id: accountId, staff_display_name: input.name });
   } catch (error) {
     return jsonError(error);
   }

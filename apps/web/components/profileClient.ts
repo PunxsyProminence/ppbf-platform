@@ -61,10 +61,10 @@ export const CORNER_OPTIONS: ReadonlyArray<{ value: CornerChoice; label: string;
 ];
 
 export const PROGRAM_OPTIONS: ReadonlyArray<{ value: ProgramChoice; label: string }> = [
-  { value: 'fitness', label: 'Fitness Programme' },
-  { value: 'recreational', label: 'Adult Recreational Programme' },
-  { value: 'youth_mentorship', label: 'Youth Mentorship Programme' },
-  { value: 'competitive', label: 'Competitive Programme' },
+  { value: 'fitness', label: 'Fitness Program' },
+  { value: 'recreational', label: 'Adult Recreational Program' },
+  { value: 'youth_mentorship', label: 'Youth Mentorship Program' },
+  { value: 'competitive', label: 'Competitive Program' },
   { value: 'unstated', label: 'Not recorded' },
 ];
 

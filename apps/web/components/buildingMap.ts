@@ -345,8 +345,8 @@ export const BUILDING: readonly Door[] = [
      record. */
   { href: '/profile', label: 'Your Corner', room: 'office',
     roles: ['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer'],
-    keywords: 'profile identity portrait photo ring name nickname corner fight card programme',
-    hint: 'Your portrait, ring name, corner and programme.' },
+    keywords: 'profile identity portrait photo ring name nickname corner fight card program programme',
+    hint: 'Your portrait, ring name, corner and program.' },
   /* Two coach routes that are desk work rather than floor work, and both
      already paint .room--office. A cohort is a RULE and a discipline record is
      READ ONLY: neither runs a session, neither is touched with gloves on, and
