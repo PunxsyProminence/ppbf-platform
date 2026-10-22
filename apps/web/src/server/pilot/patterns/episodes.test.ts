@@ -11,7 +11,7 @@
  */
 
 import { collapseToEpisodes, episodeKeyOf } from './episodes';
-import { evaluateValidatedAthleteLesson, type AthleteLessonPolicy } from './lessons';
+import { evaluateValidatedAthleteLesson, summarizeRetentionEvidence, type AthleteLessonPolicy } from './lessons';
 import type { PatternInferencePolicy } from './inference/policy';
 import type { PatternFormationPolicy } from './policy';
 import { evaluatePatternCandidate, type PatternInferenceReport } from './promotion';
@@ -356,6 +356,27 @@ describe('lessons', () => {
       expect(evaluateLesson({ outcome: review }).blockers).toContain('OUTCOME_MISS');
     }
     expect(evaluateLesson({ outcome: { ...outcome, performanceResult: 'mixed' } }).eligible).toBe(true);
+  });
+
+  test('retention counts from the lesson\'s end, and from its start only when it has no end', () => {
+    // Ended 15 June: the 14-day window closes 29 June, so the fixture's reps
+    // on 20 and 22 June came while it was still being looked for.
+    const ended = { ...intervention, endedAt: '2026-06-15T00:00:00.000Z' };
+    const early = summarizeRetentionEvidence(ended, retained, lessonPolicy, AS_OF);
+    expect(early.count).toBe(0);
+    expect(early.windowElapsed).toBe(true);
+    expect(evaluateLesson({ intervention: ended }).blockers).toContain('NO_RETENTION_EVIDENCE');
+    const later = [
+      reading('r1', { sessionId: 'later-1', taskContextKey: 'task-sparring', taskConstraint: 'live', polarity: 'counterexample', observedAt: '2026-06-29T10:00:00.000Z' }),
+      reading('r2', { sessionId: 'later-2', taskContextKey: 'task-sparring', taskConstraint: 'live', polarity: 'counterexample', observedAt: '2026-06-30T10:00:00.000Z' }),
+    ];
+    expect(evaluateLesson({ intervention: ended, postObservations: later }).eligible).toBe(true);
+    // Still running at asOf: not yet testable, not failed.
+    expect(evaluateLesson({ intervention: { ...intervention, endedAt: '2026-08-01T00:00:00.000Z' } }).blockers)
+      .toContain('RETENTION_WINDOW_NOT_ELAPSED');
+    // No end recorded, or one nobody can place: from the start, as before.
+    expect(evaluateLesson().eligible).toBe(true);
+    expect(summarizeRetentionEvidence({ ...intervention, endedAt: 'not a time' }, retained, lessonPolicy, AS_OF).count).toBe(2);
   });
 
   test('an end nobody can place, or one before the start, is no end, and says so', () => {

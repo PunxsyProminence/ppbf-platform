@@ -143,6 +143,19 @@ describe('a bar is exactly its kind\'s shape', () => {
     expect(() => barFor('athlete_lesson', staggered)).toThrow('labels.worked_replicated.staggered');
   });
 
+  test('a harder tier cannot open a double-coded route easier than the coaches a lower tier demands', () => {
+    const route = clone(APPROVED_PATTERN_FORMATION_V1);
+    route.tiers.emerging.observers.minimumCoaches = 3;
+    route.tiers.pattern.observers.minimumCoaches = 3;
+    route.tiers.established.observers.minimumCoaches = 3;
+    expect(() => barFor('pattern_formation', route)).toThrow('tiers.pattern.observers.orDoubleCodedShare');
+    // Nor one that skips the sessions each coach must have.
+    const sessions = clone(APPROVED_PATTERN_FORMATION_V1);
+    sessions.tiers.pattern.observers = { minimumCoaches: 2, minimumSessionsPerCoach: 3, coachesMustAgree: true, orDoubleCodedShare: null };
+    sessions.tiers.established.observers.orDoubleCodedShare = 0.2;
+    expect(() => barFor('pattern_formation', sessions)).toThrow('tiers.established.observers.orDoubleCodedShare');
+  });
+
   test('every rule can be met: no window too short, no test that passes anything', () => {
     const currency = clone(APPROVED_PATTERN_FORMATION_V1);
     currency.currentWithinDays = 7;
