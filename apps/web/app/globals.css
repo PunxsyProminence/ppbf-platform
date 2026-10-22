@@ -2207,7 +2207,6 @@ h6 {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  line-height: 1.2;
   text-wrap: balance;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
