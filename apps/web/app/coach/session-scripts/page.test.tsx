@@ -1315,6 +1315,26 @@ describe('the class a new session is for', () => {
     expect(posts).toEqual([{}]);
   });
 
+  it('a default that has gone stale is never started: the class is shown again first', async () => {
+    const posts = withClasses([{ ...YOUTH, end_at: soon(1) }], () => jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
+    render(<CoachSessionScriptsPage />);
+    expect(await screen.findByRole('radio', { name: /Youth boxing/ })).toBeChecked();
+    // The page sat open: the class ended before Start was pressed.
+    const later = Date.now() + 5 * 60_000;
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Start a plain session' }));
+      expect((await screen.findByRole('alert')).textContent).toContain('The class under way has changed');
+      expect(posts).toEqual([]);
+      // No class is under way any more: the coach now chooses, and Start waits for it.
+      expect(screen.getByRole('radio', { name: /Youth boxing/ })).not.toBeChecked();
+      expect(screen.getByText('Choose the class, or No class, to start.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Start a plain session' })).toBeDisabled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('shows the server\'s words when the class cannot be tied', async () => {
     withClasses([YOUTH], () => jsonResponse({ error: 'SESSION_CLASS_ALREADY_LIVE', message: 'Another live session is already running this class.' }, false));
     render(<CoachSessionScriptsPage />);

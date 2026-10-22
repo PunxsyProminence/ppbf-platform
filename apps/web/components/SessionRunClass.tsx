@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import type { ClassChoice } from '@/src/shared/sessionClassChoice';
@@ -20,7 +20,7 @@ export interface RunClassView {
   no_shows: number;
 }
 
-type Copied = { athlete_id: string; effect: string };
+type Copied = { athlete_id: string; effect: string; previous_status?: string };
 
 /** The live run's class as GET /api/pilot/session-scripts/runs answers it, or null. */
 export async function fetchRunClass(): Promise<RunClassView | null> {
@@ -35,30 +35,39 @@ function plural(count: number, one: string, many: string): string {
 
 /** What a tie did to the register, in counts (the names are on the who-is-here list). */
 export function tieSummary(title: string, copied: readonly Copied[]): string {
-  const count = (effect: string) => copied.filter((row) => row.effect === effect).length;
+  const count = (effect: string, previous?: string) =>
+    copied.filter((row) => row.effect === effect && (previous === undefined || row.previous_status === previous)).length;
+  const present = count('created') + count('already_present');
   const parts = [
-    count('created') + count('already_present') > 0 ? `${plural(count('created') + count('already_present'), 'athlete is', 'athletes are')} Present on its register` : '',
-    count('flipped') > 0 ? `${plural(count('flipped'), 'was', 'were')} Absent or Excused and ${count('flipped') === 1 ? 'is' : 'are'} now Present` : '',
+    present > 0 ? `${plural(present, 'athlete is', 'athletes are')} Present on its register` : '',
+    count('flipped', 'absent') > 0 ? `${plural(count('flipped', 'absent'), 'was', 'were')} marked Absent and ${count('flipped', 'absent') === 1 ? 'is' : 'are'} now Present` : '',
+    count('flipped', 'excused') > 0 ? `${plural(count('flipped', 'excused'), 'was', 'were')} marked Excused and ${count('flipped', 'excused') === 1 ? 'is' : 'are'} now Present` : '',
     count('register_newer') > 0 ? `${plural(count('register_newer'), 'mark', 'marks')} changed on the register after your tap ${count('register_newer') === 1 ? 'stays' : 'stay'} as the register says` : '',
     count('skipped') > 0 ? `${plural(count('skipped'), 'athlete was', 'athletes were')} not added` : '',
   ].filter(Boolean);
   return `Tied to ${title}.${parts.length ? ` ${parts.join('; ')}.` : ''}`;
 }
 
+const RUN_GONE = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND']);
+
 export default function SessionRunClass({
   runId,
   classId,
   onClassChange,
+  onRunNotLive,
 }: {
   readonly runId: string;
   readonly classId: string | null;
   readonly onClassChange: (classId: string | null) => void;
+  /** The session ended elsewhere (or was closed for being idle): the parent resyncs. */
+  readonly onRunNotLive: () => void;
 }) {
   const [view, setView] = useState<RunClassView | null>(null);
   const [choosing, setChoosing] = useState(false);
   const [choice, setChoice] = useState<ClassChoice>(undefined);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const onPick = useCallback((next: ClassChoice) => setChoice(next), []);
 
   // The class's name and times, read when the session is (or becomes) tied.
   useEffect(() => {
@@ -92,6 +101,10 @@ export default function SessionRunClass({
         message?: string;
       };
       if (!response.ok) {
+        if (payload.error && RUN_GONE.has(payload.error)) {
+          onRunNotLive();
+          return;
+        }
         setMessage(payload.message ?? 'The class could not be changed. Try again.');
         return;
       }
@@ -112,13 +125,19 @@ export default function SessionRunClass({
     }
   }
 
+  // The name shown is this class's only, never the one tied before a retie.
+  const shown = view && view.class_id === classId ? view : null;
+
   return (
-    <div className="mt-[var(--s5)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]">
+    <div className="mt-[var(--s3)]">
       {classId ? (
         <div className="flex flex-wrap items-center gap-[var(--s3)]">
           <p className="t-body">
-            Class: <strong>{view?.title ?? 'a scheduled class'}</strong>
-            {view && classTimes(view) ? `, ${classTimes(view)}` : ''}. Marks here also go on its register.
+            Class: <strong>{shown?.title ?? 'a scheduled class'}</strong>
+            {shown && classTimes(shown) ? `, ${classTimes(shown)}` : ''}.{' '}
+            {shown?.status === 'cancelled'
+              ? 'This class was cancelled: marks here stay on the session only.'
+              : 'Marks here also go on its register.'}
           </p>
           <button type="button" onClick={() => void tie(null)} disabled={busy} className="btn btn--ghost disabled:opacity-60">
             {busy ? 'Saving...' : 'Untie from the class'}
@@ -127,13 +146,13 @@ export default function SessionRunClass({
       ) : !choosing ? (
         <div className="flex flex-wrap items-center gap-[var(--s3)]">
           <p className="t-body">No class (open gym). Marks here do not go on a class register.</p>
-          <button type="button" onClick={() => setChoosing(true)} className="btn btn--ghost">
+          <button type="button" onClick={() => { setChoice(undefined); setMessage(''); setChoosing(true); }} className="btn btn--ghost">
             Tie to a class...
           </button>
         </div>
       ) : (
         <div className="space-y-[var(--s3)]">
-          <SessionClassPicker value={choice} onChange={setChoice} name={`tie-${runId}`} />
+          <SessionClassPicker value={choice} onChange={onPick} name={`tie-${runId}`} mode="tie" />
           <div className="flex flex-wrap gap-[var(--s3)]">
             <button type="button" onClick={() => choice && void tie(choice)} disabled={busy || !choice} className="btn disabled:opacity-60">
               {busy ? 'Saving...' : 'Tie to this class'}
@@ -144,11 +163,9 @@ export default function SessionRunClass({
           </div>
         </div>
       )}
-      {message && (
-        <p role="status" className="t-body mt-[var(--s2)] text-[color:var(--brass-300)]">
-          {message}
-        </p>
-      )}
+      <p role="status" className="t-body mt-[var(--s2)] text-[color:var(--brass-300)]">
+        {message}
+      </p>
     </div>
   );
 }

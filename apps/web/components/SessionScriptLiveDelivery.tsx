@@ -749,6 +749,15 @@ export default function SessionScriptLiveDelivery({
         </p>
       </div>
 
+      {/* The class this session runs (D4), near the top: tied, a "here" tap also goes on its register. */}
+      <SessionRunClass
+        key={`class-${run.run_id}`}
+        runId={run.run_id}
+        classId={run.class_id ?? null}
+        onClassChange={(classId) => setRun((current) => ({ ...current, class_id: classId }))}
+        onRunNotLive={() => void resyncAfterNotLive()}
+      />
+
       {/* The round clock (WO-N1-03): its own row and its own route, so a refused timer action never
           reads as a refused session action. */}
       <div className="coach-live-timer">
@@ -882,14 +891,6 @@ export default function SessionScriptLiveDelivery({
           </ol>
         </>
       )}
-
-      {/* The class this session runs (D4): tied, a "here" tap also goes on its register. */}
-      <SessionRunClass
-        key={`class-${run.run_id}`}
-        runId={run.run_id}
-        classId={run.class_id ?? null}
-        onClassChange={(classId) => setRun((current) => ({ ...current, class_id: classId }))}
-      />
 
       {/* Keyed by run: a run swapped in by a resync starts its own list, never the old run's. */}
       <SessionRunPresence

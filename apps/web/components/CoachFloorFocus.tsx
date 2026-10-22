@@ -240,8 +240,8 @@ export default function CoachFloorFocus({
      session page to pick one or start plain there. A failed read or start says so and leaves the
      page link beside it, so the coach is never stuck.
      THE CLASS (D4, OD-2026-10-21-002): the plain start is tied to today's class only when exactly
-     one class of the coach's is under way (sessionClassChoice.ts); with no class today it starts
-     as open gym; otherwise the session page asks which class. */
+     one class of the coach's is under way (sessionClassChoice.ts); with no free class today (none,
+     or each run by another live session) it starts as open gym; otherwise the session page asks. */
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   // One start per press. `starting` disables the button only after a render; two taps landing
@@ -254,6 +254,7 @@ export default function CoachFloorFocus({
     setStartError('');
     // Busy until the page changes: a navigation in flight is not a reason to offer the tap again.
     let leaving = false;
+    let refusal = '';
     try {
       const list = await fetch(`${apiBase()}/api/pilot/session-scripts`, { credentials: 'include' });
       if (!list.ok) throw new Error('list');
@@ -272,16 +273,18 @@ export default function CoachFloorFocus({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(choice ? { class_id: choice } : {}),
       });
-      const result = (await started.json().catch(() => ({}))) as { error?: string };
+      const result = (await started.json().catch(() => ({}))) as { error?: string; message?: string };
       // Already live (a double tap, another tab): the session page restores it.
       if (started.ok || result.error === 'SESSION_RUN_ALREADY_LIVE') {
         leaving = true;
         onGoToSessions();
         return;
       }
+      // A class refusal is worded by the route (another live session runs the class, and so on).
+      refusal = result.message ? ` ${result.message}` : '';
       throw new Error('start');
     } catch {
-      setStartError('No session was started. Open the session page to start one.');
+      setStartError(`No session was started.${refusal} Open the session page to start one.`);
     } finally {
       if (!leaving) {
         inFlight.current = false;

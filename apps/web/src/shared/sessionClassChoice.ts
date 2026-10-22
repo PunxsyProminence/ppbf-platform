@@ -27,8 +27,12 @@ export type ClassChoice = string | null | undefined;
  * Milliseconds for a time the server sends as Postgres text ("2026-10-21 22:00:00+00"), which not
  * every browser's Date.parse reads (Safari wants "T" and "+00:00"); ISO strings pass unchanged.
  */
+export function toIsoInstant(value: string): string {
+  return value.trim().replace(' ', 'T').replace(/(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
+}
+
 export function instantMs(value: string): number {
-  return Date.parse(value.trim().replace(' ', 'T').replace(/(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00'));
+  return Date.parse(toIsoInstant(value));
 }
 
 export function classesUnderWay(classes: readonly TieableClassView[], nowMs: number): TieableClassView[] {

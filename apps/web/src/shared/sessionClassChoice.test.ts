@@ -1,4 +1,4 @@
-import { classesUnderWay, defaultClassChoice, instantMs, type TieableClassView } from './sessionClassChoice';
+import { classesUnderWay, defaultClassChoice, instantMs, toIsoInstant, type TieableClassView } from './sessionClassChoice';
 
 // D4 (OD-2026-10-21-002): which class a new session opens on. Never a guess between classes,
 // never the oldest one (the B2 wrong-class failure).
@@ -51,5 +51,12 @@ describe('instantMs', () => {
     expect(instantMs('2026-10-21 22:00:00+00')).toBe(NOW);
     expect(instantMs('2026-10-21 18:00:00.000-04')).toBe(NOW);
     expect(instantMs('2026-10-21T22:00:00.000Z')).toBe(NOW);
+  });
+
+  test('rewrites Postgres text to strict ISO, which Safari reads; leaves ISO alone', () => {
+    expect(toIsoInstant('2026-10-21 22:00:00+00')).toBe('2026-10-21T22:00:00+00:00');
+    expect(toIsoInstant('2026-10-21 18:00:00.123456-04')).toBe('2026-10-21T18:00:00.123456-04:00');
+    expect(toIsoInstant('2026-10-21T22:00:00.000Z')).toBe('2026-10-21T22:00:00.000Z');
+    expect(toIsoInstant('2026-10-21T22:00:00+05:30')).toBe('2026-10-21T22:00:00+05:30');
   });
 });
