@@ -115,6 +115,8 @@ describe('a panel clips rather than painting over its neighbour', () => {
     expect(eyebrow).not.toMatch(/white-space:\s*nowrap/);
     expect(eyebrow).not.toMatch(/text-overflow:\s*ellipsis/);
     expect(eyebrow).toMatch(/-webkit-line-clamp:\s*2/);
+    // Beside the round clock its letters close up, so a ~35-character name stays on one line.
+    expect(rule('[data-surface="wall"] .wall-board:has(.wall-round) .wall-eyebrow')).toMatch(/letter-spacing:\s*\.18em/);
   });
 
   it('runs a one-name marquee a canvas wide on a shrunk board', () => {

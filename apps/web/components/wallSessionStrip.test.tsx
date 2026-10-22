@@ -193,6 +193,22 @@ describe('the session on a paired TV', () => {
     expect(strip(container)).toHaveLength(0);
   });
 
+  it('stops saying "Waiting for coach" once the board is no longer fresh', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ session: null, board: board(), quotes: [] }) })
+      .mockRejectedValue(new Error('network'));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.getByText('Waiting for coach')).toBeTruthy();
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_STALE_MS);
+    });
+    await settle();
+    expect(screen.queryByText('Waiting for coach')).toBeNull();
+  });
+
   it('keeps the public wall as it was on an unpaired TV: no ready board', async () => {
     global.fetch = jest.fn().mockImplementation(async (url: string) => {
       if (url.includes('/api/pilot/tv/session')) {

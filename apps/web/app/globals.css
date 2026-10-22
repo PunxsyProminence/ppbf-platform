@@ -2215,6 +2215,13 @@ h6 {
   color: var(--brass-300);
 }
 
+/* Beside the round clock the name has less room, so its letters close up: a
+   name of about 35 characters still fits on one line there at 1920x1080. The
+   wall without the clock keeps its spacing. */
+[data-surface="wall"] .wall-board:has(.wall-round) .wall-eyebrow {
+  letter-spacing: .18em;
+}
+
 [data-surface="wall"] .wall-day {
   margin: var(--s2) 0 0;
   font-family: var(--font-display);
@@ -2262,6 +2269,21 @@ h6 {
     inset 0 1px 0 rgb(var(--brass-300-rgb) / .22);
 }
 
+/* The day never runs under the round clock (a WEDNESDAY beside "Rest · round
+   3 of 3 next" did at 1920x1080): the day's column gives up its room first,
+   down to its longest word, and only then does the bezel give way, by
+   wrapping its label. (A shrink factor under 1 on the bezel would not do it:
+   flexbox then hands it only that fraction of the overflow.) */
+[data-surface="wall"] .wall-masthead-day {
+  flex-shrink: 1000;
+  min-width: min-content;
+}
+
+[data-surface="wall"] .wall-round {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
 /* Set leading, so the bezel is no taller than the day and date beside it and
    the boards below keep their rows. */
 [data-surface="wall"] .wall-round__label,
@@ -2269,6 +2291,12 @@ h6 {
   margin: 0;
   line-height: 1.05;
   white-space: nowrap;
+}
+
+[data-surface="wall"] .wall-round__label {
+  text-align: center;
+  text-wrap: balance;
+  white-space: normal;
 }
 
 /* --- Panels -------------------------------------------------------------- */
