@@ -42,6 +42,33 @@ describe('deriveEvidenceTier', () => {
       evidenceAvailability: 'available',
       strongestEvidence: null,
     })).toBe('EXPERIMENTAL');
+    expect(deriveEvidenceTier({
+      isAnsweredState: true,
+      evidenceAvailability: 'available',
+      strongestEvidence: null,
+      modelSaidNoAnswer: false,
+    })).toBe('EXPERIMENTAL');
+  });
+
+  // F-161 (d): excerpts came back, but the answer says none of them answers
+  // the question and cites none. That is the Research Needed case, the same
+  // grade an empty bundle gets, not Experimental.
+  test('returns RESEARCH_NEEDED when nothing was cited and the answer says the Library does not answer', () => {
+    expect(deriveEvidenceTier({
+      isAnsweredState: true,
+      evidenceAvailability: 'available',
+      strongestEvidence: null,
+      modelSaidNoAnswer: true,
+    })).toBe('RESEARCH_NEEDED');
+  });
+
+  test('a cited source still grades the answer when the answer also says the Library lacks a point', () => {
+    expect(deriveEvidenceTier({
+      isAnsweredState: true,
+      evidenceAvailability: 'available',
+      strongestEvidence: evidence({ authorityTier: 3 }),
+      modelSaidNoAnswer: true,
+    })).toBe('EMERGING');
   });
 
   test('returns RESEARCH_NEEDED for INSUFFICIENT EVIDENCE', () => {

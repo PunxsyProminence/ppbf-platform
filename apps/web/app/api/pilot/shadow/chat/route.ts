@@ -90,6 +90,7 @@ import {
   degradedShadowEvidenceBundle,
   type ShadowEvidenceCitation,
 } from '@/src/server/pilot/shadowEvidence';
+import { indicatesInsufficientContext } from '@/src/server/pilot/shadowNoAnswer';
 import {
   SHADOW_MESSAGE_TOO_LONG_RESPONSE,
   isShadowMessageTooLong,
@@ -205,18 +206,6 @@ const DEGRADED_RESPONSE = 'SHADOW is temporarily unavailable. No generated guida
  * anyone reads it, the operator is the only person who can help.
  */
 const EMPTY_LIBRARY_RESPONSE = 'No verified evidence is loaded in the Library yet, so SHADOW will not answer from guesswork. This is a platform setup step, not something you did — ask an administrator to load and approve the evidence baseline.';
-
-function indicatesInsufficientContext(response: string): boolean {
-  const normalized = response.toLowerCase();
-  return (
-    /\bnot\s+enough\s+context\b/.test(normalized)
-    || /\binsufficient\s+context\b/.test(normalized)
-    || /\b(?:do\s+not|don't|cannot|can\s*not|can't)\s+have\s+enough\s+(?:context|information)\b/.test(normalized)
-    || /\b(?:i\s+)?(?:do\s+not|don't|cannot|can\s*not|can't)\s+(?:determine|answer)\b.{0,40}\b(?:provided|available)\s+context\b/.test(normalized)
-    || /\bneed\s+more\s+context\b/.test(normalized)
-    || /\b(?:do\s+not|don't|cannot|can\s*not|can't)\s+have\s+enough\s+information\b/.test(normalized)
-  );
-}
 
 /**
  * A reasoning deployment spends completion budget on reasoning tokens before it
@@ -1504,7 +1493,8 @@ async function handleShadowChat(
     });
 
     // An answer with no evidence behind it: either nothing was retrieved, or the
-    // model itself said it lacked context.
+    // model itself said the Library does not answer and cited none of it
+    // (`unsupportedAnswer`, set once the citations are known, below).
     //
     // This used to be replaced wholesale with a blocker string. The owner's
     // decision (2026-08-12) is to serve the answer and label it instead, and the
@@ -1524,9 +1514,6 @@ async function handleShadowChat(
     // guidance, marked as unsourced.
     const canServeUnsupported = providerState !== 'filtered' && providerState !== 'queued';
     const noRetrievedEvidence = evidenceBundle.items.length === 0;
-    const modelSignaledInsufficientContext = indicatesInsufficientContext(llmResponse);
-    const unsupportedAnswer = canServeUnsupported
-      && (noRetrievedEvidence || modelSignaledInsufficientContext);
 
     // The one case that still refuses. An empty bundle has two very different
     // causes and the same appearance, so they are separated by asking the
@@ -1568,6 +1555,14 @@ async function handleShadowChat(
       .filter((citationId) => !nonBundleEvidenceIdSet.has(citationId));
     const finalResponse = responseValidation.message;
     const citations = publicEvidenceCitations(evidenceBundle, responseValidation.citationIds);
+    // F-161 (d): the bundle tells the model, when no excerpt answers, to say
+    // the Library has nothing on it and cite nothing. Its words count only on
+    // an answer with no Library citation: the weight-cut section asks for the
+    // same words for one missing point inside a cited answer, and a reader
+    // looking at Sources must not be told no verified evidence matched.
+    const modelSaidNoAnswer = citations.length === 0 && indicatesInsufficientContext(llmResponse);
+    const unsupportedAnswer = canServeUnsupported
+      && (noRetrievedEvidence || modelSaidNoAnswer);
     // `libraryEmpty`, not `unsupportedAnswer`: an unsourced answer is now served,
     // so it is a real answer ('ok') carrying the RESEARCH_NEEDED tier. Forcing
     // 'filtered' here would withhold it again and undo the decision above, and
@@ -1601,6 +1596,7 @@ async function handleShadowChat(
       // comment for why that reduction is the right one, not the weakest
       // or an average.
       strongestEvidence: selectStrongestEvidence(citedQuality),
+      modelSaidNoAnswer,
     });
     // The other cited sources' grades, under the headline ("Also cites").
     const evidenceAlsoCites = alsoCitedTiers(persistedEvidenceTier, citedQuality);
