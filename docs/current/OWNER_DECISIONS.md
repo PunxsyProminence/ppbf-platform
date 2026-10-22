@@ -164,6 +164,26 @@ and should not try to.
 
 ---
 
+## OD-2026-10-21-004 -- D4 details, tying live sessions to classes: "A: Here wins (Rec.)"; "A: Undo if untouched (Rec.)"; "A: Offer it (Rec.)"
+
+**Provenance: PRIMARY.** A three-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 22803, 2026-10-22T02:35:50.059Z; answered at line 22812, 2026-10-22T03:02:04.682Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-21 because the card was answered at 23:02 on 2026-10-21 Eastern. The questions come from lane P2's plan, `Documents\PPBF-overwatch\lane-inbox\P2-SESSION-CLASS-PLAN-2026-10-21.md` (section 4, "Questions for Jason"; plan only, outside the repo). It follows OD-2026-10-21-002 (D4: "A: Tie them (Rec.)"). New; edits no earlier entry.
+
+**Question "Absent→here".** Overwatch, as written: "Tying live sessions to classes (D4), Q1: a coach taps 'here' on a tied session for an athlete the class register already marks Absent or Excused. What happens?" Options as written: "A: Here wins (Rec.)": "Register flips to Present and the coach is told what it was; a later register change still wins."; "B: Register wins": "The tap is saved on the session only; the coach fixes the register themselves.". Jason: *"A: Here wins (Rec.)"*
+
+**Question "Undo".** Overwatch, as written: "Q2: a coach taps the wrong kid 'here' on a tied session, then untaps. Does the class register undo too?" Options as written: "A: Undo if untouched (Rec.)": "Remove the register mark that tap created, only if nobody changed it since; audited."; "B: Keep it": "Register keeps Present until someone changes it there.". Jason: *"A: Undo if untouched (Rec.)"*
+
+**Question "No-shows".** Overwatch, as written: "Q3: when a tied session ends, offer the coach one tap to mark every signed-up athlete with no mark as Absent (never automatic)?" Options as written: "A: Offer it (Rec.)": "One tap at End Session marks the no-shows Absent."; "B: No": "Absences are marked on the class register only.". Jason: *"A: Offer it (Rec.)"*
+
+**Ruling (for a live session tied to a scheduled class):**
+
+1. When a coach taps "here" for an athlete the class register marks Absent or Excused, the register flips to Present and the coach is told what it was; a later register change still wins. "B: Register wins" was not chosen.
+2. When a coach untaps a wrong "here", the register mark that tap created is removed too, only if nobody changed it since, and the removal is audited. "B: Keep it" was not chosen.
+3. When a tied session ends, the coach is offered one tap to mark every signed-up athlete with no mark as Absent; it is never automatic. "B: No" was not chosen.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
 ## OD-2026-10-21-003 -- The gym TV bell and the idle paired TV (#1792): "A: Free boxing-bell recording (Rec.)"; "A: Workout-ready board (Rec.)"
 
 **Provenance: PRIMARY.** A two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 22563, 2026-10-22T02:21:27.271Z; answered at line 22564, 2026-10-22T02:22:04.044Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-21 because the card was answered at 22:22 on 2026-10-21 Eastern. These are the two open questions on issue #1792, the TV fix list that OD-2026-10-21-001 item 4 (D5) makes a pilot blocker. New; edits no earlier entry.
