@@ -92,7 +92,7 @@ async function checkIn(): Promise<void> {
   render(<SchedulerPage />);
   await screen.findByText('Class Schedule');
   fireEvent.click(await screen.findByRole('button', { name: 'Update Attendance' }));
-  await screen.findByText('Attendance updated with override.');
+  await screen.findByText('Attendance saved.');
 }
 
 describe('attendance check-in on a held athlete', () => {
@@ -189,7 +189,7 @@ describe('attendance check-in on a held athlete', () => {
     const picker = button.closest('article')!.querySelectorAll('select')[1];
     fireEvent.change(picker, { target: { value: 'athlete-2' } });
     releasePost(await jsonResponse({ ok: true, class_id: 'class-1', athlete_id: 'athlete-1', hold_warning: HOLD_WARNING }));
-    await screen.findByText('Attendance updated with override.');
+    await screen.findByText('Attendance saved.');
 
     // A's hold is not on B's screen...
     expect(screen.queryByText('Active Training Hold')).toBeNull();
