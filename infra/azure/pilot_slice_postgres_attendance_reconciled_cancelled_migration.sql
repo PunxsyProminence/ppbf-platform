@@ -35,19 +35,25 @@
 -- was absent.
 --
 -- NOTHING IS DELETED OR ALTERED. No table is touched. Every
--- pilot.scheduler_attendance row stays, and staff still read them on the
--- class's own register (getClassAttendanceRoster). Un-cancelling a class (a
--- status update; there is no button for it) brings its marks straight back,
--- because the view is computed on read.
+-- pilot.scheduler_attendance row stays, and staff still see them: the
+-- attendance list on /schedule (GET /api/pilot/scheduler, staff branches) and
+-- the by-class report on /admin/attendance, which lists the class as
+-- cancelled. Un-cancelling a class (a status update; there is no button for
+-- it) brings its marks straight back, because the view is computed on read.
 --
 -- GRANTS AND OWNERSHIP. `create or replace view` keeps the view's owner, its
 -- privileges and its oid. No migration in infra/azure grants on this view;
 -- nothing here grants or revokes either.
 --
--- ORDER. Runs after attendance-precedence in the `all` list. Dispatching
--- attendance-precedence ON ITS OWN after this one would put the old
--- definition back until this one is run again; `all` always ends with this
--- definition because this runs later in it.
+-- ORDER. Runs after attendance-precedence in the `all` list, which re-runs
+-- attendance-precedence (the old definition) earlier in every dispatch. So:
+-- a completed `all` run ends with this definition; an `all` run that stops
+-- between the two, or attendance-precedence dispatched on its own, leaves the
+-- old definition (cancelled marks counted again) until this one is run again;
+-- and during a completed run the old definition is live for the minutes
+-- between the two steps. pilot-verify-schema checks only that the view
+-- exists, so it cannot tell the two definitions apart; this runner's
+-- readiness can.
 --
 -- Idempotent: one `create or replace view` and one `comment on view`. Re-running
 -- it is a no-op.

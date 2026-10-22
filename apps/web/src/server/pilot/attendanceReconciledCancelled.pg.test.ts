@@ -513,7 +513,7 @@ describe("the runner's readiness refuses a result it did not produce", () => {
     }
   });
 
-  test('the old definition passed off as this one, and a definition that drops a column', async () => {
+  test('the old definition passed off as this one, a definition that drops a column, the filter on the wrong branch', async () => {
     const { apply } = await runner();
     const client = await precedenceDatabase('arc_wrong_sql');
     try {
@@ -530,6 +530,26 @@ describe("the runner's readiness refuses a result it did not produce", () => {
            where sc.status <> 'cancelled'`;
       await expect(apply(client, narrower)).rejects.toThrow(/columns_ready/);
       expect(await viewShape(client)).toHaveLength(7);
+
+      // The filter's text present but on the wrong branch: the shape passes, and the rows do
+      // not, because a day still rests only on a cancelled class's marks.
+      await addClass(client, 'cx-10', '2026-03-10', 'cancelled');
+      await mark(client, 'cx-10', ADA, 'present');
+      const sql = (await migration()).replace(/\r\n/g, '\n');
+      const filterLine = "  where sc.status <> 'cancelled'\n";
+      const activityBranchEnd = "    and al.activity_domain = 'boxing_training'\n";
+      expect(sql.split(filterLine)).toHaveLength(2);
+      expect(sql.split(activityBranchEnd)).toHaveLength(2);
+      const misplaced = sql
+        .replace(filterLine, '')
+        .replace(
+          activityBranchEnd,
+          `${activityBranchEnd}    and not exists (select 1 from pilot.scheduler_classes sc where sc.status <> 'cancelled' and false)\n`,
+        );
+      await expect(apply(client, misplaced)).rejects.toThrow(
+        /^ATTENDANCE_RECONCILED_CANCELLED_NOT_READY: no_day_from_cancelled_marks_only$/,
+      );
+      expect((await viewRows(client)).map((r) => r.attendance_date)).toEqual([]);
     } finally {
       await client.end();
     }
