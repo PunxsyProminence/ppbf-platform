@@ -10,11 +10,17 @@ import {
   resumeSessionScriptRun,
   setSessionScriptRunShowOnWall,
 } from '@/src/server/pilot/sessionScriptRuns';
+import { SessionRunClassError, markSessionNoShowsAbsent, setSessionRunClass } from '@/src/server/pilot/sessionRunClass';
 
 // requireRole and jsonError stay real; gating and error mapping are the point of this suite.
 jest.mock('@/src/server/pilot/http', () => ({
   ...jest.requireActual('@/src/server/pilot/http'),
   requirePrincipal: jest.fn(),
+}));
+jest.mock('@/src/server/pilot/sessionRunClass', () => ({
+  ...jest.requireActual('@/src/server/pilot/sessionRunClass'),
+  setSessionRunClass: jest.fn(),
+  markSessionNoShowsAbsent: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/sessionScriptRuns', () => ({
   ...jest.requireActual('@/src/server/pilot/sessionScriptRuns'),
@@ -31,6 +37,8 @@ const mockPause = jest.mocked(pauseSessionScriptRun);
 const mockResume = jest.mocked(resumeSessionScriptRun);
 const mockFinish = jest.mocked(finishSessionScriptRun);
 const mockShowOnWall = jest.mocked(setSessionScriptRunShowOnWall);
+const mockTie = jest.mocked(setSessionRunClass);
+const mockNoShows = jest.mocked(markSessionNoShowsAbsent);
 
 const RUN_ID = 'ssrun_1';
 
@@ -383,5 +391,66 @@ describe('run id', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: 'run_id' });
     expect(mockPause).not.toHaveBeenCalled();
+  });
+});
+
+// D4 (OD-2026-10-21-002; OD-2026-10-21-004 ruling 3).
+describe('tie_class and mark_no_shows', () => {
+  const ACTOR = { organizationId: 'org-1', accountId: 'acct-coach', role: 'coach', athleteId: undefined };
+
+  it('ties to a class (trimmed) or unties with null, as the session\'s actor, and answers what was copied', async () => {
+    mockTie.mockResolvedValue({ class_id: 'class-1', copied: [{ athlete_id: 'ath-1', effect: 'created' }], released: [] });
+    const response = await patch({ action: 'tie_class', class_id: ' class-1 ' });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ class_id: 'class-1', copied: [{ athlete_id: 'ath-1', effect: 'created' }], released: [] });
+    expect(mockTie).toHaveBeenCalledWith(ACTOR, RUN_ID, 'class-1');
+    mockTie.mockResolvedValue({ class_id: null, copied: [], released: [] });
+    await patch({ action: 'tie_class', class_id: null });
+    expect(mockTie).toHaveBeenLastCalledWith(ACTOR, RUN_ID, null);
+  });
+
+  it.each([[{ action: 'tie_class' }], [{ action: 'tie_class', class_id: '' }], [{ action: 'tie_class', class_id: 7 }]])(
+    'refuses %j: class_id must be a class id or null',
+    async (body) => {
+      const response = await patch(body);
+      expect(response.status).toBe(400);
+      expect(mockTie).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses extra fields on either action', async () => {
+    for (const body of [{ action: 'tie_class', class_id: 'c', run_state: 'x' }, { action: 'mark_no_shows', class_id: 'c' }]) {
+      const response = await patch(body);
+      expect(response.status).toBe(400);
+    }
+    expect(mockTie).not.toHaveBeenCalled();
+    expect(mockNoShows).not.toHaveBeenCalled();
+  });
+
+  it('marks the no-shows only when asked, and answers who', async () => {
+    mockNoShows.mockResolvedValue({ marked: ['ath-2'] });
+    const response = await patch({ action: 'mark_no_shows' });
+    await expect(response.json()).resolves.toEqual({ marked: ['ath-2'] });
+    expect(mockNoShows).toHaveBeenCalledWith(ACTOR, RUN_ID);
+  });
+
+  it('answers a class refusal with its status, code and plain message', async () => {
+    mockTie.mockRejectedValueOnce(new SessionRunClassError('SESSION_CLASS_ALREADY_LIVE', 409));
+    const tie = await patch({ action: 'tie_class', class_id: 'class-1' });
+    expect(tie.status).toBe(409);
+    expect(await tie.json()).toEqual({ error: 'SESSION_CLASS_ALREADY_LIVE', message: expect.stringMatching(/already running this class/) });
+    mockNoShows.mockRejectedValueOnce(new SessionRunClassError('SESSION_RUN_NOT_TIED', 409));
+    const noShows = await patch({ action: 'mark_no_shows' });
+    expect(noShows.status).toBe(409);
+    expect(await noShows.json()).toEqual({ error: 'SESSION_RUN_NOT_TIED', message: expect.any(String) });
+  });
+
+  it.each(['platform_owner', 'athlete', 'parent'])('refuses %s before touching the module', async (role) => {
+    asCoach(role);
+    for (const body of [{ action: 'tie_class', class_id: 'class-1' }, { action: 'mark_no_shows' }]) {
+      expect((await patch(body)).status).toBe(403);
+    }
+    expect(mockTie).not.toHaveBeenCalled();
+    expect(mockNoShows).not.toHaveBeenCalled();
   });
 });

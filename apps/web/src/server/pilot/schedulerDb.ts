@@ -795,7 +795,8 @@ export async function isRegisteredForClass(
 export type SessionRegisterWrite =
   | { effect: 'created'; updated_at: string }
   | { effect: 'already_present' }
-  | { effect: 'flipped'; previous_status: 'absent' | 'excused' };
+  | { effect: 'flipped'; previous_status: 'absent' | 'excused' }
+  | { effect: 'register_newer'; status: 'absent' | 'excused' };
 
 /**
  * Make the athlete Present on the class register for a "here" tap.
@@ -811,9 +812,13 @@ export async function writeSessionRegisterPresent(
   organizationId: string,
   mark: Pick<SchedulerAttendance, 'class_id' | 'athlete_id' | 'method' | 'checked_in_by_role' | 'checked_in_by_account_id'>,
   now: string,
+  // A tap made EARLIER (copied when a session is tied mid-way): an Absent or Excused set on the
+  // register after it is a later register change, and it wins ('register_newer').
+  tappedAt?: string,
 ): Promise<SessionRegisterWrite> {
   const params = [organizationId, mark.class_id, mark.athlete_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now];
   let previous: SchedulerAttendance['status'] | undefined;
+  let newer = false;
   // Twice at most: a mark removed between the two statements is inserted on the second pass.
   for (let attempt = 0; attempt < 2 && !previous; attempt += 1) {
     const inserted = await client.query<{ updated_at: string }>(
@@ -826,17 +831,20 @@ export async function writeSessionRegisterPresent(
       params,
     );
     if (inserted.rows[0]) return { effect: 'created', updated_at: inserted.rows[0].updated_at };
-    const { rows } = await client.query<{ status: SchedulerAttendance['status'] }>(
-      `select status from pilot.scheduler_attendance
+    const { rows } = await client.query<{ status: SchedulerAttendance['status']; newer: boolean }>(
+      `select status, ($4::timestamptz is not null and updated_at > $4::timestamptz) as newer
+         from pilot.scheduler_attendance
         where organization_id = $1 and class_id = $2 and athlete_id = $3
           for update`,
-      params.slice(0, 3),
+      [...params.slice(0, 3), tappedAt ?? null],
     );
     previous = rows[0]?.status;
+    newer = rows[0]?.newer === true;
   }
   // Inserted by nobody and found by nobody, twice: never answer "Present" for a mark not there.
   if (!previous) throw new Error('SESSION_REGISTER_WRITE_RACE');
   if (previous === 'present') return { effect: 'already_present' };
+  if (newer) return { effect: 'register_newer', status: previous };
   await client.query(
     `update pilot.scheduler_attendance
         set status = 'present', method = $4, checked_in_by_role = $5, checked_in_by_account_id = $6,
@@ -867,4 +875,54 @@ export async function undoSessionRegisterPresent(
     [organizationId, mark.class_id, mark.athlete_id, mark.written_at, mark.account_id],
   );
   return rows.length > 0;
+}
+
+/*
+ * The End Session no-shows offer on a tied session (OD-2026-10-21-004 ruling 3, "A: Offer it
+ * (Rec.)"): ONE TAP by the coach marks Absent every athlete signed up for the class who has no
+ * register mark at all. Never automatic: only that tap calls this. An athlete with any mark
+ * (Present, Absent, Excused, a family's own check-in) is left as they are, and so is anyone in
+ * `exceptAthleteIds` (marked here on the session). A mark landing at the same moment wins: the
+ * insert does nothing on a conflict. Returns the athletes it marked.
+ */
+export async function markClassNoShowsAbsent(
+  client: PoolClient,
+  organizationId: string,
+  mark: Pick<SchedulerAttendance, 'class_id' | 'method' | 'checked_in_by_role' | 'checked_in_by_account_id'>,
+  exceptAthleteIds: readonly string[],
+  now: string,
+): Promise<string[]> {
+  const { rows } = await client.query<{ athlete_id: string }>(
+    `insert into pilot.scheduler_attendance (
+       organization_id, attendance_id, class_id, athlete_id, status, method,
+       checked_in_by_role, checked_in_by_account_id, note, checked_in_at, updated_at
+     )
+     select $1, gen_random_uuid()::text, $2, signed_up.athlete_id, 'absent', $3, $4, $5, '', $6::timestamptz, $6::timestamptz
+       from (select distinct r.athlete_id
+               from pilot.scheduler_registrations r
+              where r.organization_id = $1 and r.class_id = $2 and r.status = 'registered'
+                and ${athleteNotDeletedSql('r')}
+                and r.athlete_id <> all($7::text[])) signed_up
+     on conflict (organization_id, class_id, athlete_id) do nothing
+     returning athlete_id`,
+    [organizationId, mark.class_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now, [...exceptAthleteIds]],
+  );
+  return rows.map((row) => row.athlete_id).sort();
+}
+
+/** How many athletes the no-shows tap would mark now: signed up, no register mark, not excepted. */
+export async function countClassNoShows(organizationId: string, classId: string, exceptAthleteIds: readonly string[]): Promise<number> {
+  const row = await queryOne<{ n: number }>(
+    `select count(distinct r.athlete_id)::int as n
+       from pilot.scheduler_registrations r
+      where r.organization_id = $1 and r.class_id = $2 and r.status = 'registered'
+        and ${athleteNotDeletedSql('r')}
+        and r.athlete_id <> all($3::text[])
+        and not exists (
+          select 1 from pilot.scheduler_attendance a
+           where a.organization_id = r.organization_id and a.class_id = r.class_id and a.athlete_id = r.athlete_id
+        )`,
+    [organizationId, classId, [...exceptAthleteIds]],
+  );
+  return row?.n ?? 0;
 }

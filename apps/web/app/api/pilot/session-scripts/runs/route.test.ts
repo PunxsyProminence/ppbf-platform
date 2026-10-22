@@ -8,13 +8,18 @@ import {
   listSettledRunsForScript,
   startSessionScriptRun,
 } from '@/src/server/pilot/sessionScriptRuns';
-import { SessionRunClassError } from '@/src/server/pilot/sessionRunClass';
+import { SessionRunClassError, describeRunClass, listTieableClasses } from '@/src/server/pilot/sessionRunClass';
 
 // requireRole and jsonError are deliberately NOT mocked -- role gating and error mapping are two of
 // the three things this suite exists to prove, and mocking them would leave both unexercised.
 jest.mock('@/src/server/pilot/http', () => ({
   ...jest.requireActual('@/src/server/pilot/http'),
   requirePrincipal: jest.fn(),
+}));
+jest.mock('@/src/server/pilot/sessionRunClass', () => ({
+  ...jest.requireActual('@/src/server/pilot/sessionRunClass'),
+  describeRunClass: jest.fn(),
+  listTieableClasses: jest.fn(),
 }));
 jest.mock('@/src/server/pilot/sessionScriptRuns', () => ({
   ...jest.requireActual('@/src/server/pilot/sessionScriptRuns'),
@@ -453,5 +458,33 @@ describe('POST runs — start', () => {
     const response = await POST(post({ script_id: 'scr-1' }));
     expect(response.status).toBe(403);
     expect(mockStart).not.toHaveBeenCalled();
+  });
+});
+
+// D4 (OD-2026-10-21-002): the start picker's classes, and the live run's class.
+describe('GET runs -- classes', () => {
+  const mockList = jest.mocked(listTieableClasses);
+  const mockDescribe = jest.mocked(describeRunClass);
+
+  it('?classes=today answers the caller\'s tieable classes, uncached, for the session\'s identity', async () => {
+    const classes = [{ class_id: 'class-1', title: 'Youth', start_at: 's', end_at: 'e', held_by_other_session: false }];
+    mockList.mockResolvedValue(classes);
+    const response = await GET(new NextRequest('http://localhost/api/pilot/session-scripts/runs?classes=today'));
+    await expect(response.json()).resolves.toEqual({ classes });
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'acct-coach', organizationId: 'org-1' }));
+    expect(mockGetLive).not.toHaveBeenCalled();
+  });
+
+  it('a live run tied to a class carries the class; an untied one does not', async () => {
+    const tiedClass = { class_id: 'class-1', title: 'Youth', start_at: 's', end_at: 'e', status: 'open', no_shows: 2 };
+    mockGetLive.mockResolvedValue({ ...liveRun, class_id: 'class-1' });
+    mockDescribe.mockResolvedValue(tiedClass as never);
+    await expect((await GET(get())).json()).resolves.toEqual({ run: { ...liveRun, class_id: 'class-1' }, class: tiedClass });
+    expect(mockDescribe).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'acct-coach', organizationId: 'org-1' }), 'class-1');
+    mockDescribe.mockClear();
+    mockGetLive.mockResolvedValue(liveRun);
+    await expect((await GET(get())).json()).resolves.toEqual({ run: liveRun });
+    expect(mockDescribe).not.toHaveBeenCalled();
   });
 });

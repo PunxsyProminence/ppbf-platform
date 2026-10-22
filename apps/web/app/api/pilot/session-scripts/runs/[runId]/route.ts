@@ -2,6 +2,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import {
+  SESSION_CLASS_MESSAGES,
+  SessionRunClassError,
+  markSessionNoShowsAbsent,
+  setSessionRunClass,
+} from '@/src/server/pilot/sessionRunClass';
+import {
   SessionScriptRunError,
   finishSessionScriptRun,
   moveSessionScriptRunCursor,
@@ -16,7 +22,11 @@ interface RouteContext {
   params: Promise<{ runId: string }>;
 }
 
-// Moving a live run: cursor, pause, resume, finish, and the coach's "Show on TV" switch.
+// Moving a live run: cursor, pause, resume, finish, the coach's "Show on TV" switch, and the class
+// (D4, OD-2026-10-21-002): tie_class { class_id } ties the session to today's class and copies the
+// standing marks to its register; { class_id: null } unties it (the register marks stay).
+// mark_no_shows is the End Session offer on a tied session (OD-2026-10-21-004 ruling 3): one tap
+// marks every signed-up athlete with no mark Absent. Never automatic: only this action does it.
 //
 // ONE ACTION PER REQUEST, NAMED EXPLICITLY. The alternative -- a PATCH that accepts current_block_id
 // or run_state directly -- would let a client set run_state to 'completed' while leaving ended_at
@@ -25,7 +35,9 @@ interface RouteContext {
 //
 // The module underneath returns 404 for a run belonging to another coach, identical to a run that
 // does not exist, so this route cannot be used to discover other coaches' run ids.
-const ACTIONS = ['advance', 'pause', 'resume', 'finish', 'show_on_wall'] as const;
+const ACTIONS = ['advance', 'pause', 'resume', 'finish', 'show_on_wall', 'tie_class', 'mark_no_shows'] as const;
+// No platform_owner, as on the sibling runs route (OD-2026-10-08-003 PLAN-3).
+const RUN_ROLES = ['coach', 'admin', 'organization_admin'] as const;
 type RunAction = (typeof ACTIONS)[number];
 
 const FINISH_OPTIONAL_FIELDS = [
@@ -58,8 +70,7 @@ function optionalString(value: unknown): string | null | 'INVALID' {
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const principal = await requirePrincipal(request);
-    // No platform_owner, as on the sibling runs route (OD-2026-10-08-003 PLAN-3).
-    requireRole(principal, ['coach', 'admin', 'organization_admin']);
+    requireRole(principal, [...RUN_ROLES]);
 
     const { runId } = await context.params;
     if (!runId?.trim()) {
@@ -126,6 +137,34 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         return NextResponse.json({ run });
       }
 
+      case 'tie_class': {
+        if (record.class_id !== null && (typeof record.class_id !== 'string' || record.class_id.trim() === '')) {
+          return badRequest('class_id:expected a class id or null');
+        }
+        const extras = Object.keys(record).filter((k) => !['action', 'class_id'].includes(k));
+        if (extras.length > 0) {
+          return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
+        }
+        const tie = await setSessionRunClass(
+          { organizationId, accountId, role: principal.role, athleteId: principal.athleteId },
+          runId,
+          typeof record.class_id === 'string' ? record.class_id.trim() : null,
+        );
+        return NextResponse.json(tie);
+      }
+
+      case 'mark_no_shows': {
+        const extras = Object.keys(record).filter((k) => k !== 'action');
+        if (extras.length > 0) {
+          return badRequest(`UNEXPECTED_FIELD:${extras.sort().join(',')}`);
+        }
+        const result = await markSessionNoShowsAbsent(
+          { organizationId, accountId, role: principal.role, athleteId: principal.athleteId },
+          runId,
+        );
+        return NextResponse.json(result);
+      }
+
       case 'finish': {
         const extras = Object.keys(record).filter(
           (k) =>
@@ -181,8 +220,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         return badRequest('action');
     }
   } catch (error) {
-    if (error instanceof SessionScriptRunError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+    if (error instanceof SessionScriptRunError || error instanceof SessionRunClassError) {
+      const message = SESSION_CLASS_MESSAGES.get(error.message);
+      return NextResponse.json(message ? { error: error.message, message } : { error: error.message }, { status: error.status });
     }
     return jsonError(error);
   }
