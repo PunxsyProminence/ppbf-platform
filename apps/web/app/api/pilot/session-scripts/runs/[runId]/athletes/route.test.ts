@@ -30,11 +30,15 @@ jest.mock('@/src/server/pilot/sessionRunAthletes', () => ({
   setRunAthletePresent: jest.fn(),
   staffPermittedAthletes: jest.fn(),
 }));
+jest.mock('@/src/server/pilot/trainingHolds', () => ({
+  readStaffHoldWarning: jest.fn(),
+}));
 
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockList = listPresentAthletes as jest.Mock;
 const mockSet = setRunAthletePresent as jest.Mock;
 const mockPermitted = staffPermittedAthletes as jest.Mock;
+const mockHold = jest.requireMock('@/src/server/pilot/trainingHolds').readStaffHoldWarning as jest.Mock;
 const ADA = { athlete_id: 'ath-1', full_name: 'Ada Reyes' };
 const BEN = { athlete_id: 'ath-2', full_name: 'Ben Ortiz' };
 
@@ -190,6 +194,25 @@ describe('POST', () => {
     expect(JSON.stringify(mockSet.mock.calls[0][0])).not.toContain('secret-token');
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true });
+  });
+
+  // D4 (OD-2026-10-21-002): on a session tied to a class, what the tap did to the register.
+  it('answers what a tied tap did to the register, with the hold warning only when it wrote a mark', async () => {
+    const HOLD = { hold_id: 'hold-1', scope: 'contact', reason_category: 'medical', athlete_explanation: '', lift_condition_text: '', expires_at: null };
+    mockHold.mockResolvedValue(HOLD);
+    for (const register of [{ effect: 'created' }, { effect: 'flipped', previous_status: 'absent' }]) {
+      mockSet.mockResolvedValueOnce({ outcome: 'marked', register });
+      const response = await post({ athlete_id: 'ath-1', present: true });
+      await expect(response.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true, register, hold_warning: HOLD });
+    }
+    expect(mockHold).toHaveBeenCalledWith('coach', 'org-1', 'ath-1');
+    mockHold.mockClear();
+    for (const register of [{ effect: 'already_present' }, { effect: 'skipped', reason: 'class_cancelled' }, { effect: 'removed' }, { effect: 'kept' }]) {
+      mockSet.mockResolvedValueOnce({ outcome: 'marked', register });
+      const response = await post({ athlete_id: 'ath-1', present: true });
+      await expect(response.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true, register });
+    }
+    expect(mockHold).not.toHaveBeenCalled();
   });
 
   it('takes a mark back with present: false', async () => {

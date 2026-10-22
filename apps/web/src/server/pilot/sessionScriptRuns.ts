@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
+import type { PoolClient } from 'pg';
+
+import type { PilotRole } from './contracts';
 import { query, queryOne, withTransaction } from './db';
+import { lockTieableClass } from './sessionRunClass';
 
 // The delivery side of a session script. sessionScripts.ts reads the plan; this module writes what
 // is happening to it right now, into pilot.session_script_runs.
@@ -54,6 +58,9 @@ export interface SessionScriptRunRow {
   // Added by the show-on-wall migration. False on every row until the delivering coach turns it
   // on, and only ever true on a live run (pilot_ssrun_wall_only_live).
   show_on_wall: boolean;
+  // Added by the session-run-class migration: the scheduled class this session is running, or null
+  // (D4, OD-2026-10-21-002; sessionRunClass.ts).
+  class_id: string | null;
 }
 
 // What a live run looks like to a caller: the stored row plus the two things only the server can
@@ -79,7 +86,7 @@ const RUN_COLUMNS = `
   organization_id, run_id, script_id, script_version, activity_id,
   delivered_by_account_id, delivered_on, athletes_present, blocks_completed,
   reset_protocol_used, deviation_note, what_worked, what_did_not, created_at,
-  run_state, started_at, ended_at, current_block_id, paused_at, paused_seconds, show_on_wall
+  run_state, started_at, ended_at, current_block_id, paused_at, paused_seconds, show_on_wall, class_id
 `;
 
 // Elapsed is derived, never stored: storing it would go stale the moment nobody was writing.
@@ -173,6 +180,28 @@ export interface StartSessionScriptRunInput {
   activityId?: string | null;
   athletesPresent?: number | null;
   deliveredOn?: string;
+  // The scheduled class to tie the session to (D4), checked under the class lock in the same
+  // transaction as the insert (sessionRunClass.ts lockTieableClass). Absent or null: tied to none.
+  classId?: string | null;
+  // The caller's role, which decides whether the class must be one the caller runs.
+  actorRole?: PilotRole;
+}
+
+// The start's one refusal the database decides: the coach's own live run, or the class's.
+function startConflict(error: unknown): never {
+  const constraint = (error as { constraint?: string }).constraint;
+  // pilot_ssrun_one_live_per_coach. A double-tapped start button is the common cause, so this
+  // reads as "you already have one" rather than as a database error.
+  if (constraint === 'pilot_ssrun_one_live_per_coach') throw new SessionScriptRunError('SESSION_RUN_ALREADY_LIVE', 409);
+  // pilot_ssrun_one_live_per_class: another coach's live session already runs this class.
+  if (constraint === 'pilot_ssrun_one_live_per_class') throw new SessionScriptRunError('SESSION_CLASS_ALREADY_LIVE', 409);
+  throw error;
+}
+
+async function tieAtStart(client: PoolClient, organizationId: string, accountId: string, input: StartSessionScriptRunInput) {
+  if (!input.classId) return null;
+  await lockTieableClass(client, { organizationId, accountId, role: input.actorRole ?? 'coach' }, input.classId);
+  return input.classId;
 }
 
 // Starting a run pins the script's CURRENT version onto the row. A script edited mid-season must
@@ -246,6 +275,7 @@ export async function startSessionScriptRun(
     }
 
     const runId = `ssrun_${Date.now()}_${randomUUID().substring(0, 8)}`;
+    const classId = await tieAtStart(client, organizationId, accountId, input);
 
     let inserted;
     try {
@@ -253,11 +283,11 @@ export async function startSessionScriptRun(
         `insert into pilot.session_script_runs (
            organization_id, run_id, script_id, script_version, activity_id,
            delivered_by_account_id, delivered_on, athletes_present,
-           run_state, started_at, current_block_id, paused_seconds
+           run_state, started_at, current_block_id, paused_seconds, class_id
          ) values (
            $1, $2, $3, $4, $5,
            $6, coalesce($7::date, current_date), $8,
-           'in_progress', now(), $9, 0
+           'in_progress', now(), $9, 0, $10
          )
          returning ${RUN_COLUMNS}`,
         [
@@ -270,15 +300,11 @@ export async function startSessionScriptRun(
           input.deliveredOn ?? null,
           input.athletesPresent ?? null,
           firstBlock.rows[0].block_id,
+          classId,
         ],
       );
     } catch (error) {
-      // pilot_ssrun_one_live_per_coach. A double-tapped start button is the common cause, so this
-      // reads as "you already have one" rather than as a database error.
-      if ((error as { constraint?: string }).constraint === 'pilot_ssrun_one_live_per_coach') {
-        throw new SessionScriptRunError('SESSION_RUN_ALREADY_LIVE', 409);
-      }
-      throw error;
+      startConflict(error);
     }
 
     return toLiveRun(inserted.rows[0]);
@@ -295,34 +321,35 @@ async function startPlainRun(
   input: StartSessionScriptRunInput,
 ): Promise<LiveSessionScriptRun> {
   const runId = `ssrun_${Date.now()}_${randomUUID().substring(0, 8)}`;
-  try {
-    const rows = await query<SessionScriptRunRow>(
-      `insert into pilot.session_script_runs (
-         organization_id, run_id, script_id, script_version, activity_id,
-         delivered_by_account_id, delivered_on, athletes_present,
-         run_state, started_at, current_block_id, paused_seconds
-       ) values (
-         $1, $2, null, null, $3,
-         $4, coalesce($5::date, current_date), $6,
-         'in_progress', now(), null, 0
-       )
-       returning ${RUN_COLUMNS}`,
-      [
-        organizationId,
-        runId,
-        input.activityId ?? null,
-        accountId,
-        input.deliveredOn ?? null,
-        input.athletesPresent ?? null,
-      ],
-    );
-    return toLiveRun(rows[0]);
-  } catch (error) {
-    if ((error as { constraint?: string }).constraint === 'pilot_ssrun_one_live_per_coach') {
-      throw new SessionScriptRunError('SESSION_RUN_ALREADY_LIVE', 409);
+  return withTransaction(async (client) => {
+    const classId = await tieAtStart(client, organizationId, accountId, input);
+    try {
+      const { rows } = await client.query<SessionScriptRunRow>(
+        `insert into pilot.session_script_runs (
+           organization_id, run_id, script_id, script_version, activity_id,
+           delivered_by_account_id, delivered_on, athletes_present,
+           run_state, started_at, current_block_id, paused_seconds, class_id
+         ) values (
+           $1, $2, null, null, $3,
+           $4, coalesce($5::date, current_date), $6,
+           'in_progress', now(), null, 0, $7
+         )
+         returning ${RUN_COLUMNS}`,
+        [
+          organizationId,
+          runId,
+          input.activityId ?? null,
+          accountId,
+          input.deliveredOn ?? null,
+          input.athletesPresent ?? null,
+          classId,
+        ],
+      );
+      return toLiveRun(rows[0]);
+    } catch (error) {
+      return startConflict(error);
     }
-    throw error;
-  }
+  });
 }
 
 // Moving the cursor. Deliberately takes a target block rather than "next": a coach who skips a

@@ -83,11 +83,15 @@ const DEFINING_MODULES = [
 // (Rec.)"): is this athlete marked present on it. It returns nothing from the
 // table; its only callers are the coach routes behaviour-observations and
 // behaviour-keys, gated to coach, organization_admin and admin.
+// sessionRunClass.ts (D4) sets one mark's register pointer after a tap on a
+// session tied to a class wrote the register; it reads nothing back from the
+// table, and its only caller is setRunAthletePresent.
 const TABLE_FILES = [
   'src/server/pilot/behaviourObservations.ts',
   'src/server/pilot/privacyTiers.ts',
   'src/server/pilot/sessionNotes.ts',
   'src/server/pilot/sessionRunAthletes.ts',
+  'src/server/pilot/sessionRunClass.ts',
   'src/server/pilot/sessionStaffNotes.ts',
 ];
 

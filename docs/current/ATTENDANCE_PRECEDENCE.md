@@ -143,6 +143,21 @@ in UTC would push any class starting after 8pm ET onto the following calendar
 day and quietly misattribute it. This mirrors the rule `gymTimeDrift.test.ts`
 already enforces on the front end.
 
+### A live session tied to a class (D4)
+
+A coach's "who is here" list on a live session (`pilot.session_run_athletes`,
+F-067) is session detail, not attendance, and the view does not read it. Since
+D4 (OD-2026-10-21-002, details OD-2026-10-21-004), a session can be tied to the
+scheduled class it is running (`session_script_runs.class_id`). On a TIED
+session a "here" tap also writes that class's register: an ordinary
+`scheduler_attendance` mark (`coach_override`, `admin_override` or `walk_in`,
+no new method), written by `schedulerDb.ts` like every other register mark, so
+it reaches the view through rank 2 and is counted once. Nothing reads the
+session list as attendance; the tap writes the register, and the register is
+what counts. An untied (open gym) session writes no register
+(OD-2026-10-13-016). The rules (Absent turned Present, undo only if untouched,
+the no-shows offer at End Session) are in `sessionRunClass.ts`.
+
 ## What this deliberately does not do
 
 - **Does not drop, truncate, or alter either legacy table.** Both hold real
