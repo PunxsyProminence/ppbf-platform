@@ -209,8 +209,10 @@ async function standingMarks(client: PoolClient, organizationId: string, runId: 
  * could not tie the class still saw them). Untied marks still count as no attendance
  * (OD-2026-10-13-016); they only stop a false Absent.
  */
-async function seenOnClassDay(client: Pick<PoolClient, 'query'>, organizationId: string, classStartAt: string): Promise<string[]> {
-  const { rows } = await client.query<{ athlete_id: string }>(
+type AthleteIdReader = (text: string, values: unknown[]) => Promise<Array<{ athlete_id: string }>>;
+
+async function seenOnClassDay(read: AthleteIdReader, organizationId: string, classStartAt: string): Promise<string[]> {
+  const rows = await read(
     `select distinct m.athlete_id
        from pilot.session_run_athletes m
        join pilot.session_script_runs r on r.organization_id = m.organization_id and r.run_id = m.run_id
@@ -302,7 +304,11 @@ export async function markSessionNoShowsAbsent(actor: ActorIdentity, runId: stri
     if (!isOrganizationAdminRole(role) && !actorRunsClass(actor, item)) throw new SessionRunClassError('SESSION_CLASS_NOT_YOURS', 403);
     // Nobody is a no-show before the class starts (a session tied to the wrong class of the day).
     if (new Date(item.start_at).getTime() > Date.now()) throw new SessionRunClassError('SESSION_CLASS_NOT_STARTED', 409);
-    const standing = await seenOnClassDay(client, actor.organizationId, item.start_at);
+    const standing = await seenOnClassDay(
+      (text, values) => client.query<{ athlete_id: string }>(text, values).then((result) => result.rows),
+      actor.organizationId,
+      item.start_at,
+    );
     const marked = await markClassNoShowsAbsent(
       client,
       actor.organizationId,
@@ -334,7 +340,7 @@ export async function describeRunClass(actor: Tier, classId: string) {
   const offerable = item.status !== 'cancelled'
     && new Date(item.start_at).getTime() <= Date.now()
     && (isOrganizationAdminRole(actor.role) || actorRunsClass(actor, item));
-  const reader = { query: async (text: string, values?: unknown[]) => ({ rows: await query(text, values) }) };
+  const reader: AthleteIdReader = (text, values) => query<{ athlete_id: string }>(text, values);
   return {
     class_id: item.class_id,
     title: item.title,
