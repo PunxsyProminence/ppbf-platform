@@ -288,7 +288,10 @@ describe('opened by the family (FC-05)', () => {
     const items = screen.getAllByRole('listitem');
     expect(items[0]!.textContent).toMatch(/Opened by the family · .*7:10/);
     expect(items[1]!.textContent).toContain('No open recorded on the Messages tab yet');
-    expect(screen.getByText(/An open is recorded when a message is shown on the family's Messages tab/)).toBeInTheDocument();
+    // F-174: "no open" must not read as "never opened" -- the line says since when opens are counted.
+    const line = screen.getByText(/Opens are counted from October 14, 2026 at 11:34 PM, when a message is shown on the family's Messages tab/);
+    expect(line.textContent).toContain('A message the family saw before then, or anywhere other than the Messages tab, shows no open here.');
+    expect(screen.queryByText(/from this release on/)).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/pilot/coach/family-message-reads?athlete_id=ath-1'),
       expect.anything(),

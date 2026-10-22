@@ -76,6 +76,8 @@ async function pressSchedule() {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  // A press nobody answered keeps its key for the tab; the next case starts clean.
+  window.sessionStorage.clear();
 });
 
 describe('Repeat weekly on Schedule Class', () => {
