@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
@@ -944,11 +944,88 @@ export function floorDensity(shown: number): 'roomy' | 'dense' | 'packed' {
   return 'packed';
 }
 
+/**
+ * THE NAMES FIT, OR THE BOARD SAYS HOW MANY IT COULD NOT SHOW (#1792 follow-up; the pilot is the
+ * whole gym). The count-based density above assumed every name fits. Measured at 1920x1080 with
+ * full names, 5 of 12 showed and 9 of 18; the rest were cut through their letters, and "+N more"
+ * was clipped away with them. So after layout the list steps further down the ladder until everyone
+ * fits. When even the smallest rung cannot hold them all, it shows the names that fit whole and
+ * "+N more" for everyone else, on a line of its own that is never clipped.
+ */
+export const FLOOR_RUNGS = ['roomy', 'dense', 'packed', 'snug', 'tight'] as const;
+export const SESSION_FLOOR_RUNGS = ['session-roomy', 'session-dense', 'session-packed'] as const;
+
+export type FloorFitStep = { kind: 'all' } | { kind: 'smaller' } | { kind: 'cut'; shown: number };
+
+/**
+ * One measurement of the list at one rung. `bottoms` are the names' bottom edges in the list's own
+ * box, in order; `room` is the list's height with the "+N more" line's room already taken out, and
+ * `moreLine` is that line's height, given back when nobody needs the line.
+ */
+export function floorFitStep(
+  bottoms: readonly number[],
+  room: number,
+  moreLine: number,
+  serverOverflow: number,
+  canStepDown: boolean,
+): FloorFitStep {
+  const fits = (limit: number) => bottoms.every((bottom) => bottom <= limit + 0.5);
+  if (fits(serverOverflow > 0 ? room : room + moreLine)) return { kind: 'all' };
+  if (canStepDown) return { kind: 'smaller' };
+  let shown = 0;
+  while (shown < bottoms.length && bottoms[shown] <= room + 0.5) shown += 1;
+  return { kind: 'cut', shown };
+}
+
 function OnTheFloor({ board, compact = false }: { board: WallBoard; compact?: boolean }) {
   const overflow = board.on_floor_total - board.on_floor.length;
+  const rungs: readonly string[] = compact ? SESSION_FLOOR_RUNGS : FLOOR_RUNGS;
+  const start = Math.max(0, rungs.indexOf(`${compact ? 'session-' : ''}${floorDensity(board.on_floor.length)}`));
+  const sectionRef = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const moreRef = useRef<HTMLParagraphElement>(null);
+  const [resized, setResized] = useState(0);
+  const names = board.on_floor.map((person) => `${person.key}:${person.name}`).join('|');
+  const layoutKey = `${compact}|${board.on_floor_total}|${names}|${resized}`;
+  const [measured, setMeasured] = useState<{ key: string; rung: number; shown: number | null; done: boolean } | null>(null);
+  const fit = measured && measured.key === layoutKey ? measured : { key: layoutKey, rung: start, shown: null, done: false };
+  const shown = fit.shown ?? board.on_floor.length;
+  const more = overflow + board.on_floor.length - shown;
+
+  useLayoutEffect(() => {
+    if (fit.done) return;
+    const list = listRef.current;
+    if (!list) return;
+    const bottoms = [...list.querySelectorAll<HTMLElement>(':scope > .wall-name')].map((item) => item.offsetTop + item.offsetHeight);
+    const line = moreRef.current;
+    const moreLine = line ? line.offsetHeight + (Number.parseFloat(getComputedStyle(line).marginTop) || 0) : 0;
+    const step = floorFitStep(bottoms, list.clientHeight, moreLine, overflow, fit.rung < rungs.length - 1);
+    // Each rung is measured here, after layout and before the screen paints.
+    setMeasured(
+      step.kind === 'smaller'
+        ? { key: fit.key, rung: fit.rung + 1, shown: null, done: false }
+        : { key: fit.key, rung: fit.rung, shown: step.kind === 'cut' ? step.shown : null, done: true },
+    );
+  }, [fit.done, fit.rung, fit.key, overflow, rungs.length]);
+
+  // A new canvas (a resize, the masthead changing height) measures again from the top rung.
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section || typeof ResizeObserver === 'undefined') return;
+    let first = true;
+    const observer = new ResizeObserver(() => {
+      if (first) {
+        first = false;
+        return;
+      }
+      setResized((count) => count + 1);
+    });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <section className="wall-panel ge-frame flex min-h-0 flex-1 flex-col" aria-label="On the floor">
+    <section ref={sectionRef} className="wall-panel ge-frame flex min-h-0 flex-1 flex-col" aria-label="On the floor">
       <h2 className="wall-heading ge-enamel ge-enamel--sign">
         <span className="wall-heading-cap">On the floor</span>
         {board.on_floor_total > 0 && <span className="wall-count">{board.on_floor_total}</span>}
@@ -967,14 +1044,26 @@ function OnTheFloor({ board, compact = false }: { board: WallBoard; compact?: bo
         // Density steps the names down the φ ladder as the room fills, so a
         // busy class does not overflow the panel and get silently clipped. See
         // the [data-density] rules in globals.css.
-        <ul className="wall-floor-list min-h-0" data-density={`${compact ? 'session-' : ''}${floorDensity(board.on_floor.length)}`}>
-          {board.on_floor.map((person) => (
-            <li key={person.key} className="wall-name text-6xl">
-              {person.name}
-            </li>
-          ))}
-          {overflow > 0 && <li className="wall-more text-4xl">+{overflow} more</li>}
-        </ul>
+        <>
+          <ul ref={listRef} className="wall-floor-list min-h-0" data-density={rungs[fit.rung]}>
+            {board.on_floor.slice(0, shown).map((person) => (
+              <li key={person.key} className="wall-name text-6xl">
+                {person.name}
+              </li>
+            ))}
+          </ul>
+          {/* While measuring, the line holds its room unseen; after, it is there only when someone is not shown. */}
+          {(!fit.done || more > 0) && (
+            <p
+              ref={moreRef}
+              className={`wall-more shrink-0 ${compact ? 'text-xl' : 'text-4xl'}`}
+              style={fit.done ? undefined : { visibility: 'hidden' }}
+              aria-hidden={fit.done ? undefined : true}
+            >
+              +{more} more
+            </p>
+          )}
+        </>
       )}
     </section>
   );
