@@ -2617,6 +2617,7 @@ body.ppbf.on-canvas {
 .catalog-hint kbd { font: 650 var(--t-xs)/1.5 var(--font-data); padding: 1px 5px; border-radius: 3px;
                     background: rgba(0,0,0,.5); border: 1px solid rgb(var(--brass-400-rgb) / .3);
                     color: var(--brass-200); }
+.catalog-hint-lbl { white-space: nowrap; }
 /* On a phone the word stays and the chord goes (parent walk 2026-10-19 item 11).
    639px is the width just under Tailwind's `sm` (640px), where the session bar's
    other phone-only changes (the caption and the surface name) also switch.
