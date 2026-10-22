@@ -229,3 +229,129 @@ describe('the Attendance tab reads the real schedule', () => {
     expect(screen.queryByText(/Tuesday Fundamentals/)).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Parent walk 2026-10-19, item 2. The Attendance tab listed a class as
+ * "Oct 13, 2026, 2:27 PM", the time the coach MARKED it, while /schedule showed
+ * that class on Oct 5. Each row now says when the class was held; the mark time
+ * is shown only for a class that is no longer on the schedule, and then it says
+ * "Marked". Newest means newest class.
+ */
+describe('a row shows when the class was held, not when the coach marked it', () => {
+  // 6:00 PM and 6:30 PM gym time (EDT), marked days later.
+  const WALK_CLASSES = [
+    { class_id: 'cls_oct5', title: 'ZZ Walk Class A', start_at: '2026-10-05T22:00:00.000Z', location: 'Main Floor', status: 'open' },
+    { class_id: 'cls_oct8', title: 'ZZ Walk Class B', start_at: '2026-10-08T22:30:00.000Z', location: 'Main Floor', status: 'open' },
+  ];
+  const ROW = { athlete_id: 'ath_1', status: 'present' };
+
+  it('reads the class date, not the later time the mark was written', async () => {
+    installFetch(async () =>
+      jsonResponse({
+        ok: true,
+        classes: WALK_CLASSES,
+        registrations: [],
+        attendance: [{ ...ROW, attendance_id: 'att_1', class_id: 'cls_oct5', checked_in_at: '2026-10-13T18:27:00.000Z' }],
+      }),
+    );
+    render(<ParentHub />);
+    await openAttendanceTab();
+
+    await waitFor(() => expect(screen.getByText('Oct 5, 2026, 6:00 PM | ZZ Walk Class A')).toBeInTheDocument());
+    expect(screen.queryByText(/Oct 13, 2026/)).not.toBeInTheDocument();
+  });
+
+  it('lists the newest class first, even when an older class was marked later', async () => {
+    installFetch(async () =>
+      jsonResponse({
+        ok: true,
+        classes: WALK_CLASSES,
+        registrations: [],
+        attendance: [
+          // Oct 5 was marked last (Oct 13); Oct 8 was marked on the day.
+          { ...ROW, attendance_id: 'att_1', class_id: 'cls_oct5', checked_in_at: '2026-10-13T18:27:00.000Z' },
+          { ...ROW, attendance_id: 'att_2', class_id: 'cls_oct8', checked_in_at: '2026-10-08T23:40:00.000Z' },
+        ],
+      }),
+    );
+    const { container } = render(<ParentHub />);
+    await openAttendanceTab();
+
+    await waitFor(() => expect(screen.getByText(/ZZ Walk Class B/)).toBeInTheDocument());
+    const text = container.textContent ?? '';
+    expect(text.indexOf('ZZ Walk Class B')).toBeGreaterThan(-1);
+    expect(text.indexOf('ZZ Walk Class B')).toBeLessThan(text.indexOf('ZZ Walk Class A'));
+    // The overview line agrees with the list: the latest class, by its own date.
+    expect(text).toContain('Latest class on the register: Oct 8, 2026, 6:30 PM');
+    expect(text).not.toContain('Last marked');
+  });
+
+  it('says "Marked" when the class is no longer listed and only the mark time is known', async () => {
+    installFetch(async () =>
+      jsonResponse({
+        ok: true,
+        classes: [],
+        registrations: [],
+        attendance: [{ ...ROW, attendance_id: 'att_1', class_id: 'cls_gone', checked_in_at: '2026-10-13T18:27:00.000Z' }],
+      }),
+    );
+    const { container } = render(<ParentHub />);
+    await openAttendanceTab();
+
+    await waitFor(() => expect(screen.getByText('Marked Oct 13, 2026, 2:27 PM | Session no longer listed')).toBeInTheDocument());
+    // The overview line does not call a mark time a class.
+    expect(container.textContent ?? '').toContain('Last marked Oct 13, 2026, 2:27 PM');
+    expect(container.textContent ?? '').not.toContain('Latest class');
+  });
+});
+
+/**
+ * The feed sends Postgres timestamptz TEXT ('2026-10-05 22:00:00+00',
+ * '2026-10-13 18:27:00.5+00'), not ISO. Rows are parsed, never compared as
+ * text: as text '...18:27:00.5+00' sorts BEFORE '...18:27:00+00' although it is
+ * the later instant.
+ */
+describe('the row order and date hold for Postgres timestamp text', () => {
+  const ROW = { athlete_id: 'ath_1', status: 'present' };
+
+  it('shows the class date for Postgres-format times and puts the later mark first on one class time', async () => {
+    installFetch(async () =>
+      jsonResponse({
+        ok: true,
+        classes: [
+          { class_id: 'cls_a', title: 'ZZ Same Time A', start_at: '2026-10-05 22:00:00+00', location: 'Main Floor', status: 'open' },
+          { class_id: 'cls_b', title: 'ZZ Same Time B', start_at: '2026-10-05 22:00:00+00', location: 'Ring Two', status: 'open' },
+        ],
+        registrations: [],
+        attendance: [
+          // A was marked at :00; B half a second later. As text, '...00.5+00' < '...00+00'.
+          { ...ROW, attendance_id: 'att_a', class_id: 'cls_a', checked_in_at: '2026-10-13 18:27:00+00' },
+          { ...ROW, attendance_id: 'att_b', class_id: 'cls_b', checked_in_at: '2026-10-13 18:27:00.5+00' },
+        ],
+      }),
+    );
+    const { container } = render(<ParentHub />);
+    await openAttendanceTab();
+
+    await waitFor(() => expect(screen.getByText('Oct 5, 2026, 6:00 PM | ZZ Same Time B')).toBeInTheDocument());
+    const text = container.textContent ?? '';
+    expect(text.indexOf('ZZ Same Time B')).toBeLessThan(text.indexOf('ZZ Same Time A'));
+    expect(text).not.toContain('Oct 13, 2026');
+  });
+
+  it('a listed class whose start will not parse shows the mark time, labelled Marked, under its real title', async () => {
+    installFetch(async () =>
+      jsonResponse({
+        ok: true,
+        classes: [{ class_id: 'cls_bad', title: 'ZZ Odd Start', start_at: 'not a time', location: 'Main Floor', status: 'open' }],
+        registrations: [],
+        attendance: [{ ...ROW, attendance_id: 'att_1', class_id: 'cls_bad', checked_in_at: '2026-10-13T18:27:00.000Z' }],
+      }),
+    );
+    const { container } = render(<ParentHub />);
+    await openAttendanceTab();
+
+    await waitFor(() => expect(screen.getByText('Marked Oct 13, 2026, 2:27 PM | ZZ Odd Start')).toBeInTheDocument());
+    expect(container.textContent ?? '').toContain('Last marked Oct 13, 2026, 2:27 PM');
+  });
+});

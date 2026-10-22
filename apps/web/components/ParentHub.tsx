@@ -167,10 +167,19 @@ function gymWeekBounds(nowMs: number): { start: string; end: string } | null {
   return { start: iso(midnight - sinceMonday * day), end: iso(midnight + (6 - sinceMonday) * day) };
 }
 
+/** A time as a sort key: unparseable sorts last. */
+const orderingMs = (ms: number): number => (Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms);
+
 interface AttendanceEntry {
   id: string;
   childId: string;
+  /** When the class was held. When the class is no longer on the schedule only
+   *  the time the mark was written is known; `dateIsClass` is then false and
+   *  the screen says "Marked ...", so a mark time is never read as a class
+   *  date (parent walk 2026-10-19 item 2). */
   date: string;
+  /** True when `date` is the class's own start. */
+  dateIsClass: boolean;
   session: string;
   status: 'Present' | 'Excused' | 'Absent';
 }
@@ -1024,14 +1033,19 @@ export default function ParentHub() {
     : childSupport.state === 'loaded'
       ? childSupport.status
       : 'failed';
+  /* "Training sessions logged" is the athlete's training log
+     (pilot.sessions); the Attendance tile beside it counts the gym's class
+     register. Two records, so two names (parent walk 2026-10-19 item 3: "4
+     sessions logged" next to "Present 1" read as a contradiction). PROPOSED
+     wording. */
   const progressText = shownProgress?.state === 'loaded'
-    ? `${shownProgress.milestonesEarned} ${shownProgress.milestonesEarned === 1 ? 'milestone' : 'milestones'} earned · ${shownProgress.sessionsCompleted} ${shownProgress.sessionsCompleted === 1 ? 'session' : 'sessions'} logged`
+    ? `${shownProgress.milestonesEarned} ${shownProgress.milestonesEarned === 1 ? 'milestone' : 'milestones'} earned · ${shownProgress.sessionsCompleted} training ${shownProgress.sessionsCompleted === 1 ? 'session' : 'sessions'} logged`
     : 'Unavailable';
 
   const activeChild = children.find(c => c.id === activeChildId);
 
   /* PARENT FLOOR TASKS (WO-PH-02). The selected child's parent-support tasks,
-     cut from the one messages read the Messages tab and the Home Tasks tile
+     cut from the one messages read the Messages tab and the Parent Floor tasks tile
      also use, so a tick in either place moves all three. "This week" is every
      task due in the gym's current week, done or not; "Still open" is every
      unticked task due before it or with no due date, so an unfinished task
@@ -1076,23 +1090,44 @@ export default function ParentHub() {
      child on screen. */
   const schedulerClassById = new Map(schedulerFeed.classes.map((row) => [row.class_id, row]));
 
+  /* THE DATE IS THE CLASS'S, NOT THE MARK'S (parent walk 2026-10-19 item 2).
+     checked_in_at is when the mark was written or re-written, so a coach who
+     marked an October 5 class on October 13 made the row read October 13 while
+     /schedule showed the class on October 5. The row now shows when the class
+     was held, and newest-first means newest CLASS first. A class that is no
+     longer listed (or whose start will not parse) has no class date to give,
+     so that row says "Marked" and shows the only time it has. start_at and
+     checked_in_at arrive as Postgres timestamptz text ('2026-10-13
+     18:27:00.5+00'), so both are parsed, never compared as text (see the note
+     on the upcoming list). */
   const activeAttendanceEntries: AttendanceEntry[] = schedulerFeed.attendance
     .filter((row) => row.athlete_id === activeChildId)
-    // Newest first. checked_in_at is an ISO-8601 timestamptz, so a string
-    // comparison IS a chronological one, and avoids minting Date objects for
-    // a sort that only needs an ordering.
-    .slice()
-    .sort((a, b) => b.checked_in_at.localeCompare(a.checked_in_at))
-    .map((row) => ({
-      id: row.attendance_id,
-      childId: row.athlete_id,
-      date: formatGymDateTimeShort(row.checked_in_at) ?? row.checked_in_at,
-      // A class can be removed while its attendance rows survive. Saying so is
-      // better than rendering a bare id or, worse, dropping the row -- the
-      // child was there, and that fact does not stop being true.
-      session: schedulerClassById.get(row.class_id)?.title ?? 'Session no longer listed',
-      status: row.status === 'present' ? 'Present' : row.status === 'excused' ? 'Excused' : 'Absent',
-    }));
+    .map((row) => {
+      const klass = schedulerClassById.get(row.class_id);
+      const classDate = klass ? formatGymDateTimeShort(klass.start_at) : null;
+      const markedMs = Date.parse(row.checked_in_at);
+      const classMs = klass ? Date.parse(klass.start_at) : Number.NaN;
+      const whenMs = classDate && !Number.isNaN(classMs) ? classMs : markedMs;
+      const entry: AttendanceEntry = {
+        id: row.attendance_id,
+        childId: row.athlete_id,
+        date: classDate ?? formatGymDateTimeShort(row.checked_in_at) ?? row.checked_in_at,
+        dateIsClass: classDate !== null,
+        // A class can be removed while its attendance rows survive. Saying so is
+        // better than rendering a bare id or, worse, dropping the row -- the
+        // child was there, and that fact does not stop being true.
+        session: klass?.title ?? 'Session no longer listed',
+        status: row.status === 'present' ? 'Present' : row.status === 'excused' ? 'Excused' : 'Absent',
+      };
+      return { entry, whenMs: orderingMs(whenMs), markedMs: orderingMs(markedMs) };
+    })
+    // Newest class first; on the same time, the later mark first. An
+    // unparseable time sorts last (-Infinity), so the === keeps the subtraction
+    // from ever being -Infinity - -Infinity.
+    .sort((a, b) => (b.whenMs === a.whenMs
+      ? (b.markedMs === a.markedMs ? 0 : b.markedMs - a.markedMs)
+      : b.whenMs - a.whenMs))
+    .map(({ entry }) => entry);
 
   /* PARSED, NOT COMPARED AS TEXT. start_at arrives as Postgres timestamptz
      text ('2026-10-08 18:00:00+00'), and the old compare held it against
@@ -1126,15 +1161,24 @@ export default function ParentHub() {
      read answered AND a child is selected: a schedule still loading is not
      zero sessions, and neither is a schedule filtered against no child (the
      roster read can land after the schedule, or fail). */
-  // Newest first, so the head of the list is the last mark written. "Marked",
-  // not "attended": checked_in_at is when the mark was written or re-written.
-  const lastAttendanceMark = activeAttendanceEntries[0] ?? null;
+  // Newest class first, so the head of the list is the latest class the gym
+  // recorded a mark for -- ANY mark: present, excused or absent -- which is why
+  // the line says "on the register" and not "attended". "Latest class on the
+  // register" when the date is the class's own; "Last marked" only for a class
+  // that is no longer listed, where the mark time is all there is. PROPOSED
+  // wording.
+  const latestAttendance = activeAttendanceEntries[0] ?? null;
+  const latestAttendanceLine = latestAttendance
+    ? latestAttendance.dateIsClass
+      ? `Latest class on the register: ${latestAttendance.date}`
+      : `Last marked ${latestAttendance.date}`
+    : null;
   const activeAttendanceTally = schedulerFeedState === 'loaded' && activeChildId
     ? {
       present: activeAttendanceEntries.filter((entry) => entry.status === 'Present').length,
       excused: activeAttendanceEntries.filter((entry) => entry.status === 'Excused').length,
       absent: activeAttendanceEntries.filter((entry) => entry.status === 'Absent').length,
-      lastMarked: lastAttendanceMark?.date ?? null,
+      latest: latestAttendanceLine,
     }
     : null;
   // A waitlist is not a place, so this count differs from the tab's Upcoming
@@ -1257,7 +1301,7 @@ export default function ParentHub() {
         </div>
 
         {/* ROLE SUMMARY PANEL. Progress, Upcoming and Attendance are the
-            selected child's; Home Tasks and New messages count across every
+            selected child's; Parent Floor tasks and New messages count across every
             child. Each tile is Unavailable until the read it counts from has
             answered, never 0: a derived 0 would tell a parent "nothing is
             scheduled" or "nothing is due", which nobody verified. */}
@@ -1535,14 +1579,14 @@ export default function ParentHub() {
                         <p className="t-body font-semibold">{progressText}</p>
                       </div>
                       <div>
-                        <p className="t-label mb-[var(--s2)]">Attendance</p>
+                        <p className="t-label mb-[var(--s2)]">Class attendance</p>
                         {activeAttendanceTally ? (
                           <>
                             <p className="t-body font-semibold">
                               {`Present ${activeAttendanceTally.present} · Excused ${activeAttendanceTally.excused} · Absent ${activeAttendanceTally.absent}`}
                             </p>
-                            {lastAttendanceMark ? (
-                              <p className="t-muted">{`Last marked ${lastAttendanceMark.date}`}</p>
+                            {activeAttendanceTally.latest ? (
+                              <p className="t-muted">{activeAttendanceTally.latest}</p>
                             ) : null}
                           </>
                         ) : (
@@ -1986,7 +2030,7 @@ export default function ParentHub() {
                 {schedulerFeedState === 'loaded' && activeAttendanceEntries.map((entry) => (
                   <div key={entry.id} className="flex flex-wrap items-center justify-between gap-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgba(0,0,0,.14)] bg-[var(--paper-2)] p-[var(--s4)]">
                     <div>
-                      <p className="t-body font-semibold">{entry.date} | {entry.session}</p>
+                      <p className="t-body font-semibold">{entry.dateIsClass ? entry.date : `Marked ${entry.date}`} | {entry.session}</p>
                     </div>
                     {/* The glyph is aria-hidden and the word carries the
                         meaning, so status is never colour-only. */}
