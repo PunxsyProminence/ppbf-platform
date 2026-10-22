@@ -1591,8 +1591,9 @@ export interface ShadowLibrarySearchInput {
  * search fills it in; the return value is unchanged.
  */
 export interface ShadowLibrarySearchDetail {
-  // Matched something but below the relevance bar: the closest passages,
-  // never evidence. The return value holds only passages at or above the bar.
+  // Matched something but below the relevance bar, or every ranked passage
+  // when the score-gap gate abstains: the closest passages, never evidence.
+  // The return value holds only passages that count as evidence.
   nearest: ShadowLibrarySearchResult[];
   // Which path ranked them, which decides how a score maps to a confidence level.
   mode: 'semantic' | 'keyword';
@@ -1655,9 +1656,9 @@ export function isScoreGapGateEnabled(env: Record<string, string | undefined> = 
   return env.PPBF_SHADOW_SCORE_GAP_GATE_ENABLED?.trim().toLowerCase() !== 'false';
 }
 
-type ScoreGapGateVerdict = 'abstained' | 'passed' | 'off' | 'other_model' | 'few_candidates';
+export type ScoreGapGateVerdict = 'abstained' | 'passed' | 'off' | 'other_model' | 'few_candidates';
 
-interface ShadowLibraryScoreGap {
+export interface ShadowLibraryScoreGap {
   gap: number;
   top1: number;
   candidateCount: number;
@@ -1668,7 +1669,8 @@ function scoreGapOf(topScores: number[], candidateCount: number): ShadowLibraryS
   return { gap: topScores[0] - mean, top1: topScores[0], candidateCount };
 }
 
-function scoreGapGateVerdict(scoreGap: ShadowLibraryScoreGap, embeddingModel: string): ScoreGapGateVerdict {
+// Exported for the boundary test only.
+export function scoreGapGateVerdict(scoreGap: ShadowLibraryScoreGap, embeddingModel: string): ScoreGapGateVerdict {
   if (!isScoreGapGateEnabled()) return 'off';
   if (embeddingModel !== SEMANTIC_GAP_BAR_EMBEDDING_MODEL) return 'other_model';
   if (scoreGap.candidateCount < SCORE_GAP_TOP_K) return 'few_candidates';

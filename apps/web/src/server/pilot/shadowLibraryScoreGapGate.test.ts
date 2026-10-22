@@ -32,6 +32,7 @@ import { writeShadowTelemetryEvent } from './shadowTelemetry';
 import {
   createShadowLibraryClaim,
   isScoreGapGateEnabled,
+  scoreGapGateVerdict,
   searchShadowLibrary,
   SEMANTIC_GAP_BAR,
   type ShadowLibrarySearchDetail,
@@ -109,8 +110,12 @@ afterAll(() => {
 });
 
 describe('SHADOW score-gap gate: search', () => {
-  it('sits at 0.049, from the study', () => {
+  it('sits at 0.049, from the study: below abstains, at or above answers', () => {
     expect(SEMANTIC_GAP_BAR).toBe(0.049);
+    const verdict = (gap: number) => scoreGapGateVerdict({ gap, top1: 0.6, candidateCount: 10 }, 'text-embedding-3-small');
+    expect(verdict(0.0489)).toBe('abstained');
+    expect(verdict(0.049)).toBe('passed');
+    expect(verdict(0.0491)).toBe('passed');
   });
 
   it('below the gap: no evidence, every ranked passage is closest, and the log says abstained', async () => {
@@ -129,6 +134,21 @@ describe('SHADOW score-gap gate: search', () => {
     expect(dimensions.nearest_count).toBe(8);
     // Unchanged meaning: the cosine bar alone would have delivered evidence.
     expect(dimensions.bar_delivered).toBe(true);
+  });
+
+  it('below the gap, a passage the index does not hold still joins at the keyword bar (#1717)', async () => {
+    const unindexed = { ...candidate(99, 0), embedding: undefined, score: 1 };
+    mockQuery.mockImplementation((async (sql: string) => {
+      if (sql.includes('c.embedding is not null')) return BELOW;
+      if (sql.includes('c.embedding is null or c.embedding_model is distinct from')) return [unindexed];
+      return [];
+    }) as never);
+
+    const result = await ranked();
+
+    expect(result.relevant.map((row) => [row.chunk_id, row.match_mode])).toEqual([['chunk_99', 'keyword']]);
+    expect(result.nearest).toHaveLength(8);
+    expect(searchDimensions().gap_gate).toBe('abstained');
   });
 
   it('above the gap: the bar decides, as today, and the log says passed', async () => {
