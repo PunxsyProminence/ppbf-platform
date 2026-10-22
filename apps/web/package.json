@@ -256,6 +256,7 @@
     "test:migrations:athlete-cycle": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteCycle.pg.test.ts --testTimeout=180000",
     "test:migrations:milestone-undo": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/milestoneUndoMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:session-run-class": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionRunClassMigration.pg.test.ts --testTimeout=180000",
+    "test:migrations:session-run-class-app": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/sessionRunClass.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-metrics": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteMetricsMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-heights": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteHeights.pg.test.ts --testTimeout=180000",
     "test:migrations:test-day": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/testDay.pg.test.ts --testTimeout=180000",

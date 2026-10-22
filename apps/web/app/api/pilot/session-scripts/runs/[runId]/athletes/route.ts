@@ -7,6 +7,7 @@ import {
   staffPermittedAthletes,
 } from '@/src/server/pilot/sessionRunAthletes';
 import { SessionScriptRunError } from '@/src/server/pilot/sessionScriptRuns';
+import { readStaffHoldWarning } from '@/src/server/pilot/trainingHolds';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,8 +37,12 @@ interface RouteContext {
 // are never taken from the request; the module filters on them in SQL. A run id of another gym,
 // or one that does not exist, simply has nobody in it.
 //
-// A mark is session detail, not attendance: nothing here writes or feeds an attendance record
-// (CT-13, docs/current/ATTENDANCE_PRECEDENCE.md).
+// A mark is session detail, not attendance (CT-13, docs/current/ATTENDANCE_PRECEDENCE.md), EXCEPT
+// on a session tied to a class (D4, OD-2026-10-21-002): there the same tap writes that class's
+// register, and `register` in the answer says what it did (created, already_present, flipped with
+// the previous status, skipped with the reason, removed or kept on an untap). A register mark
+// written for a held athlete carries the hold warning the register's own check-in gives
+// (OD-2026-10-06-024 ruling 1: warn, never block).
 const RUN_ROLES = ['coach', 'admin', 'organization_admin'] as const;
 
 const NUL = '\u0000';
@@ -92,7 +97,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return badRequest('present');
     }
 
-    const { outcome } = await setRunAthletePresent({
+    const { outcome, register } = await setRunAthletePresent({
       actor: {
         accountId: principal.accountId,
         role: principal.role,
@@ -103,7 +108,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       athleteId,
       present: record.present,
     });
-    return NextResponse.json({ outcome, athlete_id: athleteId, present: record.present });
+    const holdWarning = register?.effect === 'created' || register?.effect === 'flipped'
+      ? await readStaffHoldWarning(principal.role, principal.organizationId, athleteId)
+      : null;
+    return NextResponse.json({
+      outcome,
+      athlete_id: athleteId,
+      present: record.present,
+      ...(register ? { register } : {}),
+      ...(holdWarning ? { hold_warning: holdWarning } : {}),
+    });
   } catch (error) {
     if (error instanceof SessionScriptRunError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

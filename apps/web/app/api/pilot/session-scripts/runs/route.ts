@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { listPresentAthletes, staffPermittedAthleteIds } from '@/src/server/pilot/sessionRunAthletes';
+import { SESSION_CLASS_MESSAGES, SessionRunClassError } from '@/src/server/pilot/sessionRunClass';
 import {
   SessionScriptRunError,
   getLiveRunForCoach,
@@ -95,8 +96,8 @@ export async function GET(request: NextRequest) {
 }
 
 // Every start field is optional: a start without script_id is a plain session (Jason 2026-10-12,
-// issue #1523).
-const START_OPTIONAL_FIELDS = ['script_id', 'activity_id', 'athletes_present', 'delivered_on'] as const;
+// issue #1523); a start without class_id is tied to no class (open gym).
+const START_OPTIONAL_FIELDS = ['script_id', 'activity_id', 'athletes_present', 'delivered_on', 'class_id'] as const;
 
 function badRequest(code: string) {
   return NextResponse.json({ error: code }, { status: 400 });
@@ -110,6 +111,7 @@ const START_REFUSAL_MESSAGES: ReadonlyMap<string, string> = new Map([
     'SESSION_SCRIPT_SUPERSEDED',
     'This plan has been replaced by a newer version, so no session was started. Reload the list and start the current version.',
   ],
+  ...SESSION_CLASS_MESSAGES,
 ]);
 
 // POST starts a run. The body is deliberately narrow: no run_state, no started_at, no elapsed
@@ -163,6 +165,14 @@ export async function POST(request: NextRequest) {
       return badRequest('activity_id');
     }
 
+    if (
+      record.class_id !== undefined
+      && record.class_id !== null
+      && (typeof record.class_id !== 'string' || record.class_id.trim() === '')
+    ) {
+      return badRequest('class_id');
+    }
+
     // A date, not a timestamp: delivered_on is which night this was, and accepting a full
     // timestamp here would invite it to be confused with the start time the server owns.
     //
@@ -186,11 +196,13 @@ export async function POST(request: NextRequest) {
       activityId: (record.activity_id as string | undefined) ?? null,
       athletesPresent,
       deliveredOn: (record.delivered_on as string | undefined) ?? undefined,
+      classId: typeof record.class_id === 'string' ? record.class_id.trim() : null,
+      actorRole: principal.role,
     });
 
     return NextResponse.json({ run }, { status: 201 });
   } catch (error) {
-    if (error instanceof SessionScriptRunError) {
+    if (error instanceof SessionScriptRunError || error instanceof SessionRunClassError) {
       const message = START_REFUSAL_MESSAGES.get(error.message);
       return NextResponse.json(
         message ? { error: error.message, message } : { error: error.message },
