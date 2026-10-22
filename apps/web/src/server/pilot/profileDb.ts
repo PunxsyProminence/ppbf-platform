@@ -422,6 +422,41 @@ export async function setProgram(
 }
 
 /**
+ * The name the gym's admin typed for a coach or staff member, or null to clear
+ * it (parent-portal Q1 part B). The caller normalises the name first
+ * (src/shared/staffDisplayName.ts).
+ *
+ * One statement, so the check and the write cannot be separated: the row is
+ * written only when the account holds a membership IN THIS ORGANIZATION in a
+ * role that may carry a name, and is not deleted. False when it does not, so a
+ * caller cannot name an athlete, a guardian, a stranger or someone in another
+ * gym by sending their account id. Touches the name and updated_at only; a row
+ * created here has every other column at its default, which is what
+ * emptyProfile reads anyway.
+ */
+export async function setStaffDisplayName(
+  organizationId: string,
+  accountId: string,
+  name: string | null,
+  roles: readonly string[],
+): Promise<boolean> {
+  const row = await queryOne<{ account_id: string }>(
+    `insert into pilot.account_profiles (organization_id, account_id, staff_display_name)
+     select om.organization_id, om.account_id, $3
+       from pilot.organization_memberships om
+      where om.organization_id = $1
+        and om.account_id = $2
+        and om.role = any($4::text[])
+        and ${accountNotDeletedSql('om')}
+     on conflict (organization_id, account_id)
+       do update set staff_display_name = excluded.staff_display_name, updated_at = now()
+     returning account_id`,
+    [organizationId, accountId, name, [...roles]],
+  );
+  return row !== null;
+}
+
+/**
  * Set a ring name. Clears the takedown lock in the same statement, because a
  * successful set is only reachable once the lock has expired -- leaving the
  * timestamp behind would keep the field looking locked forever.

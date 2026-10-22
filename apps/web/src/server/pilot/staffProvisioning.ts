@@ -128,6 +128,8 @@ export interface OrganizationMember {
   active_flag: boolean;
   has_pin: boolean;
   membership_active: boolean;
+  /** The name the gym typed for this person here, or null (pilot.account_profiles; Q1 part B). */
+  staff_display_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1197,10 +1199,13 @@ export async function listOrganizationMembers(
        a.active_flag,
        (a.pin_hash is not null) as has_pin,
        om.active_flag as membership_active,
+       ap.staff_display_name,
        a.created_at,
        a.updated_at
      from pilot.organization_memberships om
      join pilot.accounts a on a.account_id = om.account_id
+     left join pilot.account_profiles ap
+       on ap.organization_id = om.organization_id and ap.account_id = om.account_id
      where om.organization_id = $1
        -- A deleted athlete's login leaves the list (deletion scope B, "10 C"):
        -- the login itself is marked, or the athlete record it names in THIS
