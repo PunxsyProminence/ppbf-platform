@@ -708,9 +708,11 @@ describe('SHADOW library semantic search', () => {
       const dimensions = searchDimensions();
       // No query text and no athlete identifier: the dimension keys are exactly these.
       expect(Object.keys(dimensions).sort()).toEqual([
-        'bar_delivered', 'gap_candidate_count', 'nearest_count', 'result_count', 'scope',
+        'bar_delivered', 'gap_candidate_count', 'gap_gate', 'nearest_count', 'result_count', 'scope',
         'score_gap', 'search_mode', 'term_count', 'top1_score', 'unindexed_count',
       ]);
+      // This file's deployment is 'test-embedding', so the gate stands aside.
+      expect(dimensions.gap_gate).toBe('other_model');
       // top-10 mean = 2.6 / 10 = 0.26; gap = 0.9 - 0.26.
       expect(dimensions.score_gap as number).toBeCloseTo(0.64, 10);
       expect(dimensions.top1_score as number).toBeCloseTo(0.9, 10);
@@ -772,6 +774,7 @@ describe('SHADOW library semantic search', () => {
       expect(dimensions).not.toHaveProperty('score_gap');
       expect(dimensions).not.toHaveProperty('top1_score');
       expect(dimensions).not.toHaveProperty('gap_candidate_count');
+      expect(dimensions).not.toHaveProperty('gap_gate');
       expect(dimensions).not.toHaveProperty('bar_delivered');
     });
   });
