@@ -5,7 +5,7 @@
 /* Lane P6, PR-B (OD-2026-10-08-006/-007): a message a coach gave a due date
    is something the family does, and the family says when it is done.
    The route (/api/pilot/parent/messages) already returned `task`; this
-   file pins what the hub does with it, the Home Tasks count that reads
+   file pins what the hub does with it, the Parent Floor tasks count that reads
    from it, the Upcoming compare, and the state marks on chips and tabs. */
 
 import '@testing-library/jest-dom';
@@ -261,7 +261,23 @@ describe('a message with a due date on the Messages tab', () => {
   });
 });
 
-describe('the Home Tasks tile', () => {
+describe('the Parent Floor tasks tile', () => {
+  // Parent walk 2026-10-19, item 4: the tile said "Home Tasks" and counted what
+  // the Parent Floor tab lists, while the Assignments tab (HELP: Home
+  // Assignments) holds the drills and workouts. The tile now carries the name
+  // of the tab it counts.
+  test('is named for the tab it counts, not "Home Tasks"', async () => {
+    installFetch({
+      messages: async () =>
+        jsonResponse({ ok: true, items: [message({ note_id: 'n1', task: { due_date: '2026-10-20', completed_at: null } })] }),
+    });
+    await renderHub();
+
+    expect(screen.queryByText('Home Tasks')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Parent Floor' })).toBeInTheDocument();
+    expect(tileValue('Parent Floor tasks')).toBe('1');
+  });
+
   test('counts open tasks across every child once the messages read answered; a done task is not counted', async () => {
     installFetch({
       messages: async () =>
@@ -277,14 +293,14 @@ describe('the Home Tasks tile', () => {
     });
     await renderHub();
 
-    expect(tileValue('Home Tasks')).toBe('2');
+    expect(tileValue('Parent Floor tasks')).toBe('2');
   });
 
   test('a real zero stays a number: messages answered, none with a due date', async () => {
     installFetch({ messages: async () => jsonResponse({ ok: true, items: [message()] }) });
     await renderHub();
 
-    expect(tileValue('Home Tasks')).toBe('0');
+    expect(tileValue('Parent Floor tasks')).toBe('0');
   });
 
   test('an unanswered messages read is Unavailable, never 0', async () => {
@@ -295,7 +311,7 @@ describe('the Home Tasks tile', () => {
     });
     await renderHub();
 
-    expect(tileValue('Home Tasks')).toBe('Unavailable');
+    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
   });
 
   test('ticking a task off takes it out of the count', async () => {
@@ -303,14 +319,14 @@ describe('the Home Tasks tile', () => {
       messages: async () => jsonResponse({ ok: true, items: [message({ task: { due_date: '2026-10-20', completed_at: null } })] }),
     });
     await renderHub();
-    expect(tileValue('Home Tasks')).toBe('1');
+    expect(tileValue('Parent Floor tasks')).toBe('1');
 
     await openTab('Messages');
     await act(async () => {
       fireEvent.click(screen.getByRole('checkbox', { name: 'Done' }));
     });
 
-    await waitFor(() => expect(tileValue('Home Tasks')).toBe('0'));
+    await waitFor(() => expect(tileValue('Parent Floor tasks')).toBe('0'));
   });
 });
 
