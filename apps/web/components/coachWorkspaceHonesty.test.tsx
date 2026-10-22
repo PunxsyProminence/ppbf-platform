@@ -1156,6 +1156,31 @@ describe('coach review session picker', () => {
     ]);
   });
 
+  test("the athlete's own enjoyment answer is on the label when there is one, and only a whole 1-5 counts", async () => {
+    await renderWorkspace({
+      athletesList: twoAthletes,
+      sessionsList: () =>
+        jsonResponse({
+          items: [
+            sessionRow('session_a', { date: '2026-08-10', rpe: 6, completed_flag: true, enjoyment: 4, created_at: '2026-08-10T18:00:00.000Z' }),
+            sessionRow('session_b', { date: '2026-08-11', rpe: 5, completed_flag: true, enjoyment: null, created_at: '2026-08-11T18:00:00.000Z' }),
+            sessionRow('session_c', { date: '2026-08-12', rpe: 7, completed_flag: true, enjoyment: 9, created_at: '2026-08-12T18:00:00.000Z' }),
+          ],
+        }),
+    });
+
+    openTab('Athlete Reviews');
+    await pickReviewAthlete('ath_1');
+
+    const labels = Array.from((screen.getByLabelText('Session') as HTMLSelectElement).options).map((option) => option.textContent);
+    expect(labels).toEqual([
+      'Select a session',
+      'Aug 12, 2026 - completed - RPE 7',
+      'Aug 11, 2026 - completed - RPE 5',
+      'Aug 10, 2026 - completed - RPE 6 - enjoyed 4 of 5',
+    ]);
+  });
+
   test('a valid selection submits that real session id on the unchanged contract', async () => {
     const fetchMock = await renderWorkspace({
       athletesList: twoAthletes,

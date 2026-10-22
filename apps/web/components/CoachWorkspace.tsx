@@ -62,6 +62,7 @@ import {
 // definition, not a second one.
 import { isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreLabel } from '@/src/shared/painScoreLabel';
+import { isEnjoymentLevel } from '@/src/shared/enjoyment';
 
 import { CoachAthleteHistory } from './CoachAthleteRecords';
 import AthleteAttendancePanel from './AthleteAttendancePanel';
@@ -518,6 +519,8 @@ interface ReviewableSession {
   sessionId: string;
   date: string;
   rpe: number | null;
+  /** The athlete's own 1-5 enjoyment answer at check-out; null when not answered. */
+  enjoyment: number | null;
   completed: boolean;
   createdAt: string;
 }
@@ -553,16 +556,19 @@ function normalizeReviewableSession(row: unknown): ReviewableSession | null {
     // null, not 0: an RPE that is absent or unreadable is omitted from the
     // label rather than shown as a fabricated zero-effort session.
     rpe: rpe !== null && Number.isFinite(rpe) ? rpe : null,
+    // Only a whole 1-5 is an answer; anything else reads as not answered.
+    enjoyment: isEnjoymentLevel(record.enjoyment) ? record.enjoyment : null,
     completed: Boolean(record.completed_flag),
     createdAt,
   };
 }
 
-/** Real stored fields only: the day, whether it was completed, its RPE. */
+/** Real stored fields only: the day, whether it was completed, its RPE and the athlete's enjoyment. */
 function reviewSessionLabel(session: ReviewableSession): string {
   const status = session.completed ? 'completed' : 'open';
   const rpe = session.rpe === null ? '' : ` - RPE ${session.rpe}`;
-  return `${formatCalendarDay(session.date.slice(0, 10))} - ${status}${rpe}`;
+  const enjoyment = session.enjoyment === null ? '' : ` - enjoyed ${session.enjoyment} of 5`;
+  return `${formatCalendarDay(session.date.slice(0, 10))} - ${status}${rpe}${enjoyment}`;
 }
 
 /**
