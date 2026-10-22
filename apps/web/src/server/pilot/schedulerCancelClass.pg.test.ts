@@ -47,23 +47,27 @@ jest.mock('./db', () => ({
   }),
 }));
 
-// The roster export reads its principal from here; the rest stays real.
+// The roster export and the scheduler route read their principal from here;
+// the rest stays real.
 jest.mock('./http', () => ({
   ...jest.requireActual('./http'),
   requireMicrosoftAuthenticatedPrincipal: jest.fn(),
+  requirePrincipal: jest.fn(),
 }));
 
 import { GET as exportRosterGET } from '@/app/api/pilot/admin/export/roster/route';
+import { GET as schedulerGET, POST as schedulerPOST } from '@/app/api/pilot/scheduler/route';
 
 import { getClassAttendanceRoster, getOrganizationAttendanceSummary, getWeeklyAttendanceTrend } from './attendanceReporting';
 import { writePilotAuditEvent } from './audit';
-import { requireMicrosoftAuthenticatedPrincipal } from './http';
+import { requireMicrosoftAuthenticatedPrincipal, requirePrincipal } from './http';
 import { classCancelRefusal, coverTakenAtMs } from './schedulerCancelRule';
 import {
   cancelSchedulerClass,
   getSchedulerClassById,
   listLatestClassCoverAudits,
   registerForClassTransactionally,
+  restoreSchedulerClass,
   setSchedulerClassCover,
   upsertSchedulerAttendance,
 } from './schedulerDb';
@@ -604,6 +608,182 @@ describe('the office cancels a class after it has run; its marks stop counting a
       expect((await getClassAttendanceRoster(ORG_ID, 'class-a')).map((row) => [row.athlete_id, row.status]))
         .toEqual([[ATHLETE_ID, 'present']]);
     } finally {
+      await client.end();
+    }
+  });
+
+  /* LANE LRC (Jason, 2026-10-22: "go with your recommendation build restore
+     class"). The office cancels class A after it ran, then restores it,
+     through the route: every reader above, and the family's own read, count
+     its marks again, and no row the class owns has changed. */
+  describe('restoring it (lane LRC)', () => {
+    const asCaller = (accountId: string, role: string, athleteId: string | null = null) =>
+      (requirePrincipal as jest.Mock).mockResolvedValue({
+        accountId, role, organizationId: ORG_ID, athleteId, sessionToken: 'token', authProvider: 'microsoft',
+      });
+    const post = async (body: Record<string, unknown>) => {
+      const response = await schedulerPOST(new NextRequest('http://localhost/api/pilot/scheduler', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      }));
+      return { status: response.status, body: await response.json() };
+    };
+    /** The guardian's own /schedule read: which classes, and whose marks on which class. */
+    const familyRead = async () => {
+      asCaller(PARENT_ACCOUNT_ID, 'parent');
+      const body = await (await schedulerGET(new NextRequest('http://localhost/api/pilot/scheduler'))).json();
+      return {
+        classes: (body.classes as Array<{ class_id: string; status: string }>).map((item) => `${item.class_id}:${item.status}`).sort(),
+        registrations: (body.registrations as Array<{ class_id: string }>).map((row) => row.class_id).sort(),
+        marks: (body.attendance as Array<{ class_id: string; status: string }>).map((row) => `${row.class_id}:${row.status}`).sort(),
+      };
+    };
+    async function linkGuardian(client: Client) {
+      await client.query(
+        `insert into pilot.parents (organization_id, parent_id, account_id, full_name) values ($1, 'parent-lrc', $2, 'Linked Guardian')`,
+        [ORG_ID, PARENT_ACCOUNT_ID],
+      );
+      await client.query(
+        `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete) values ($1, 'parent-lrc', $2, 'parent')`,
+        [ORG_ID, ATHLETE_ID],
+      );
+    }
+    const classAudits = async (client: Client) => (await client.query(
+      `select actor_account_id, actor_role, details from pilot.audit_events
+        where organization_id = $1 and entity_type = 'scheduler_class' and entity_id = 'class-a'
+        order by created_at, audit_id`,
+      [ORG_ID],
+    )).rows;
+    const classA = async (client: Client) =>
+      (await client.query(`select * from pilot.scheduler_classes where organization_id = $1 and class_id = 'class-a'`, [ORG_ID])).rows[0];
+
+    test('cancel then restore: the marks count again in the summary, the TV, the roster and the family view; the rows are unchanged; both are audited', async () => {
+      const client = await freshDatabase('cc_lrc_restore');
+      try {
+        await seedRanClasses(client);
+        await linkGuardian(client);
+        const readersBefore = await readers();
+        const familyBefore = await familyRead();
+        const marksBefore = await allRows(client, 'scheduler_attendance', 'attendance_id');
+        const registrationsBefore = await allRows(client, 'scheduler_registrations', 'registration_id');
+        const classBefore = await classA(client);
+        // class-1 is freshDatabase's upcoming class, with no registration.
+        expect(familyBefore).toEqual({
+          classes: ['class-1:open', 'class-a:open', 'class-b:open'],
+          registrations: ['class-a', 'class-b'],
+          marks: ['class-a:present', 'class-b:absent'],
+        });
+
+        asCaller(ADMIN_ID, 'organization_admin');
+        expect(await post({ action: 'cancel_class', class_id: 'class-a' }))
+          .toEqual({ status: 200, body: { ok: true, class_id: 'class-a', status: 'cancelled' } });
+        // The control: the cancel did stop the counting.
+        expect((await readers()).summary).toEqual({ present: 0, absent: 1, marked: 1 });
+        expect(await familyRead()).toEqual({ classes: ['class-1:open', 'class-b:open'], registrations: ['class-b'], marks: ['class-b:absent'] });
+
+        asCaller(ADMIN_ID, 'organization_admin');
+        expect(await post({ action: 'restore_class', class_id: 'class-a' }))
+          .toEqual({ status: 200, body: { ok: true, class_id: 'class-a', status: 'open' } });
+
+        expect(await readers()).toEqual(readersBefore);
+        expect(await familyRead()).toEqual(familyBefore);
+        expect(await allRows(client, 'scheduler_attendance', 'attendance_id')).toEqual(marksBefore);
+        expect(await allRows(client, 'scheduler_registrations', 'registration_id')).toEqual(registrationsBefore);
+        // The class is the class it was; only its timestamp moved.
+        expect({ ...(await classA(client)), updated_at: classBefore.updated_at }).toEqual(classBefore);
+
+        expect(await classAudits(client)).toEqual([
+          { actor_account_id: ADMIN_ID, actor_role: 'organization_admin', details: { action: 'cancel_class', class_id: 'class-a', previous_status: 'open', after_start: true } },
+          { actor_account_id: ADMIN_ID, actor_role: 'organization_admin', details: { action: 'restore_class', class_id: 'class-a', previous_status: 'cancelled', status: 'open', after_start: true } },
+        ]);
+      } finally {
+        await client.end();
+      }
+    });
+
+    test.each([
+      ['its coach', COACH_ID, 'coach', null],
+      ['an athlete', ATHLETE_ACCOUNT_ID, 'athlete', ATHLETE_ID],
+      ['a parent', PARENT_ACCOUNT_ID, 'parent', null],
+    ])('%s is refused through the route: the class stays cancelled and no audit row is written', async (_who, accountId, role, athleteId) => {
+      const client = await freshDatabase('cc_lrc_refused');
+      try {
+        await seedRanClasses(client);
+        await client.query(`update pilot.scheduler_classes set status = 'cancelled' where organization_id = $1 and class_id = 'class-a'`, [ORG_ID]);
+        const before = await classA(client);
+
+        asCaller(accountId, role, athleteId);
+        expect(await post({ action: 'restore_class', class_id: 'class-a' }))
+          .toEqual({ status: 403, body: { error: 'Only the office can restore a cancelled class.' } });
+
+        expect(await classA(client)).toEqual(before);
+        expect(await classAudits(client)).toEqual([]);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+});
+
+describe('restoreSchedulerClass (lane LRC)', () => {
+  test("open again, or full when its seats are taken; a class not cancelled, or another gym's id, is left alone", async () => {
+    const client = await freshDatabase('cc_lrc_status');
+    try {
+      await client.query(`update pilot.scheduler_classes set capacity = 1 where organization_id = $1 and class_id = $2`, [ORG_ID, CLASS_ID]);
+      // Not cancelled: nothing to restore, nothing written.
+      const open = await classRow(client);
+      expect(await restoreSchedulerClass(ORG_ID, CLASS_ID, '2030-01-01T00:00:00.000Z')).toBeNull();
+      expect(await classRow(client)).toEqual(open);
+
+      expect(await cancelSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString())).toBe(true);
+      expect(await restoreSchedulerClass('org-someone-else', CLASS_ID, '2030-01-01T00:00:00.000Z')).toBeNull();
+      expect((await classRow(client)).status).toBe('cancelled');
+
+      expect(await restoreSchedulerClass(ORG_ID, CLASS_ID, '2030-01-01T00:00:00.000Z')).toBe('open');
+      const restored = await classRow(client);
+      expect(restored.status).toBe('open');
+      expect(new Date(restored.updated_at as string).toISOString()).toBe('2030-01-01T00:00:00.000Z');
+
+      // Its one seat taken: full before the cancel, full again after the restore.
+      expect((await registration(ATHLETE_ID)).outcome).toBe('registered');
+      expect((await classRow(client)).status).toBe('full');
+      expect(await cancelSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString())).toBe(true);
+      expect(await restoreSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString())).toBe('full');
+      expect((await classRow(client)).status).toBe('full');
+      // And it takes registrations again: the next one is waitlisted, as on any full class.
+      expect((await registration(OTHER_ATHLETE_ID)).outcome).toBe('waitlisted');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('two restores racing: one lands; the other waits on the row lock, then finds it not cancelled and writes nothing', async () => {
+    const client = await freshDatabase('cc_lrc_race');
+    const second = new Client({ connectionString: connectionStringFor('cc_lrc_race') });
+    await second.connect();
+    try {
+      expect(await cancelSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString())).toBe(true);
+
+      // The first restore, on its own connection, holds its transaction open.
+      await second.query('BEGIN');
+      activeClient = second;
+      expect(await restoreSchedulerClass(ORG_ID, CLASS_ID, '2030-01-01T00:00:00.000Z')).toBe('open');
+
+      // The second starts while the first is uncommitted, and waits for it.
+      activeClient = client;
+      let settled = false;
+      const racing = restoreSchedulerClass(ORG_ID, CLASS_ID, '2031-01-01T00:00:00.000Z').finally(() => { settled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(settled).toBe(false);
+
+      await second.query('COMMIT');
+      expect(await racing).toBeNull();
+      const after = await classRow(client);
+      expect(after.status).toBe('open');
+      // The first restore's write stands; the second wrote nothing.
+      expect(new Date(after.updated_at as string).toISOString()).toBe('2030-01-01T00:00:00.000Z');
+    } finally {
+      await second.query('ROLLBACK').catch(() => {});
+      await second.end();
       await client.end();
     }
   });

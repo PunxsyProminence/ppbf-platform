@@ -28,6 +28,7 @@ import {
   markSchedulerRegistrationReviewed,
   registerForClassTransactionally,
   resolveSchedulerCoachingRequest,
+  restoreSchedulerClass,
   setSchedulerClassCover,
   upsertSchedulerAttendance,
   upsertFamilySchedulerAttendance,
@@ -89,6 +90,7 @@ jest.mock('@/src/server/pilot/schedulerDb', () => ({
   markSchedulerRegistrationReviewed: jest.fn(),
   getSchedulerCoachingRequestById: jest.fn(),
   resolveSchedulerCoachingRequest: jest.fn(),
+  restoreSchedulerClass: jest.fn(),
   setSchedulerClassCover: jest.fn(),
   upsertSchedulerAttendance: jest.fn(),
   upsertFamilySchedulerAttendance: jest.fn(),
@@ -2573,6 +2575,122 @@ describe('cancel_class', () => {
       expect(body.classes.every((item: Record<string, unknown>) => !('can_cancel' in item))).toBe(true);
       expect(body.classes.find((item: { class_id: string }) => item.class_id === 'gone').status).toBe('cancelled');
     });
+  });
+});
+
+/* LANE LRC (Jason, 2026-10-22: "go with your recommendation build restore
+   class"): the office undoes a cancel; nobody else can. */
+describe('restore_class', () => {
+  const mockRestore = restoreSchedulerClass as jest.Mock;
+  const mockAudit = writePilotAuditEvent as jest.Mock;
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const cancelledClass = (fields: Record<string, unknown> = {}) => ({
+    ...classRecord,
+    start_at: new Date(Date.now() + 3_600_000).toISOString(),
+    end_at: new Date(Date.now() + 7_200_000).toISOString(),
+    coach_account_id: 'acct-x',
+    scheduled_by_account_id: 'acct-x',
+    status: 'cancelled' as const,
+    ...fields,
+  });
+  const restore = () => POST(jsonRequest({ action: 'restore_class', class_id: 'class-1' }));
+
+  beforeEach(() => {
+    mockRestore.mockResolvedValue('open');
+    mockGetClass.mockResolvedValue(cancelledClass());
+  });
+
+  test.each([
+    ['an organization admin, before the start', principal('organization_admin'), {}, 'open', false],
+    ['an admin, before the start, seats all taken', principal('admin'), {}, 'full', false],
+    ['an organization admin, eight days after the class ran', principal('organization_admin'), { start_at: minutesAgo(8 * 24 * 60), end_at: minutesAgo(8 * 24 * 60 - 60) }, 'open', true],
+  ])('%s restores it: the status the update set comes back, and an audit row names the restore', async (_who, caller, times, status, afterStart) => {
+    mockRequirePrincipal.mockResolvedValueOnce(caller);
+    mockGetClass.mockResolvedValueOnce(cancelledClass(times));
+    mockRestore.mockResolvedValueOnce(status);
+
+    const response = await restore();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, class_id: 'class-1', status });
+    expect(mockRestore).toHaveBeenCalledWith('org-1', 'class-1', expect.any(String));
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    expect(mockAudit.mock.calls[0][0]).toEqual({
+      event_type: 'update',
+      actor_account_id: 'acct-caller',
+      actor_role: caller.role,
+      organization_id: 'org-1',
+      entity_type: 'scheduler_class',
+      entity_id: 'class-1',
+      details: { action: 'restore_class', class_id: 'class-1', previous_status: 'cancelled', status, after_start: afterStart },
+      shadow_mirror: false,
+    });
+  });
+
+  test.each([
+    ['the coach who teaches it', principal('coach', { accountId: 'acct-x' })],
+    ['its cover coach', principal('coach', { accountId: 'acct-cover' })],
+    ['an athlete', athletePrincipal()],
+    ['a parent', principal('parent')],
+  ])('%s is refused with 403 and a sentence, and nothing is read or written', async (_who, caller) => {
+    // Refused before the class is read: no queued class to leak into later tests.
+    mockRequirePrincipal.mockResolvedValueOnce(caller);
+
+    const response = await restore();
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe('Only the office can restore a cancelled class.');
+    expect(mockGetClass).not.toHaveBeenCalled();
+    expect(mockRestore).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('the platform owner is refused with 403 (not a scheduler role), and nothing is read or written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await restore();
+
+    expect(response.status).toBe(403);
+    expect(mockGetClass).not.toHaveBeenCalled();
+    expect(mockRestore).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test.each([['open'], ['full']])('a class that is %s, not cancelled, is a 400 with a sentence, and nothing is written', async (status) => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockGetClass.mockResolvedValueOnce(cancelledClass({ status }));
+
+    const response = await restore();
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class is not cancelled, so there is nothing to restore.');
+    expect(mockRestore).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a restore that lost a race to another restore says so, and writes no audit row', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
+    mockRestore.mockResolvedValueOnce(null);
+
+    const response = await restore();
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('This class is not cancelled, so there is nothing to restore.');
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test("another gym's class is not found, and nothing is written", async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin', { organizationId: 'org-2' }));
+    mockGetClass.mockResolvedValueOnce(null);
+
+    const response = await restore();
+
+    // The read is scoped to the caller's gym (the pg suite holds the update to it).
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('Missing class record');
+    expect(mockGetClass).toHaveBeenCalledWith('org-2', 'class-1');
+    expect(mockRestore).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });
 

@@ -418,6 +418,8 @@ export default function SchedulerPage() {
   const [coachesState, setCoachesState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
   // A class whose Cancel Class was pressed once: the second press cancels it.
   const [confirmCancelClassId, setConfirmCancelClassId] = useState('');
+  // The same for Restore class (lane LRC).
+  const [confirmRestoreClassId, setConfirmRestoreClassId] = useState('');
   // A request whose Withdraw was pressed once: the second press withdraws it.
   const [confirmWithdrawRequestId, setConfirmWithdrawRequestId] = useState('');
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'excused'>('present');
@@ -598,6 +600,7 @@ export default function SchedulerPage() {
     setActionInFlight(true);
     // A half-pressed Cancel Class does not survive another action (#1536 review).
     setConfirmCancelClassId('');
+    setConfirmRestoreClassId('');
     setConfirmWithdrawRequestId('');
     setActionMessage('');
     setCheckInHold(null);
@@ -760,6 +763,11 @@ export default function SchedulerPage() {
   };
   const showCancel = (item: SchedulerClass) =>
     Boolean(item.can_cancel) && (role === 'admin' || role === 'organization_admin' || notYetStarted(item));
+  /* Restore class (lane LRC; Jason, 2026-10-22: "go with your recommendation
+     build restore class"): the office's undo for a cancel, on every cancelled
+     class, past or to come. restore_class refuses anyone else. */
+  const showRestore = (item: SchedulerClass) =>
+    item.status === 'cancelled' && (role === 'admin' || role === 'organization_admin');
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
@@ -785,8 +793,9 @@ export default function SchedulerPage() {
   };
 
   /* One class row, in the upcoming list or under Past and cancelled (#1536).
-     A cancelled class offers nothing; Cancel Class shows where the server
-     would accept it (can_cancel), and takes a second press. */
+     A cancelled class offers only the office's Restore class; Cancel Class
+     shows where the server would accept it (can_cancel). Both take a second
+     press. */
   const renderClassRow = (item: SchedulerClass) => (
     <div key={item.class_id} className="flex flex-wrap items-center justify-between gap-[var(--s4)] rounded-[var(--r-md)] mat-leather--raised p-[var(--s4)]">
       <div>
@@ -853,7 +862,30 @@ export default function SchedulerPage() {
             {confirmCancelClassId === item.class_id ? 'Press again to cancel' : 'Cancel Class'}
           </button>
         ) : null}
+        {showRestore(item) ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (confirmRestoreClassId !== item.class_id) {
+                setConfirmRestoreClassId(item.class_id);
+                return;
+              }
+              setConfirmRestoreClassId('');
+              void runAction({ action: 'restore_class', class_id: item.class_id }, 'Class restored.');
+            }}
+            disabled={actionInFlight}
+            className="btn btn--ghost disabled:opacity-60"
+          >
+            {confirmRestoreClassId === item.class_id ? 'Press again to restore' : 'Restore class'}
+          </button>
+        ) : null}
       </div>
+      {showRestore(item) && confirmRestoreClassId === item.class_id ? (
+        // PROPOSED copy (lane LRC), the cancel's confirm read backwards.
+        <p className="t-body w-full" role="status">
+          {`Restore ${item.title}, ${formatGymStamp(item.start_at)}? It will no longer be cancelled, and its attendance marks will count again in attendance reports, on families' screens, in the roster export and on the TV.`}
+        </p>
+      ) : null}
       {showCancel(item) && confirmCancelClassId === item.class_id ? (
         // The confirm step names the class (lane LC). PROPOSED copy. It names
         // where the marks stop counting: the per-day view behind the coach's
