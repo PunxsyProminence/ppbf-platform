@@ -101,7 +101,7 @@ export default function SessionNoShows({
             {view.no_shows} signed up for {view.title} {view.no_shows === 1 ? 'has' : 'have'} no mark on its register or in any session today.
           </p>
           <button type="button" onClick={() => void markNoShows()} disabled={busy} className="btn btn--ghost disabled:opacity-60">
-            {busy ? 'Marking...' : `Mark ${view.no_shows === 1 ? 'them' : `all ${view.no_shows}`} Absent`}
+            {busy ? 'Marking…' : `Mark ${view.no_shows === 1 ? 'them' : `all ${view.no_shows}`} Absent`}
           </button>
         </div>
       )}

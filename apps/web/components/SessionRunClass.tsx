@@ -147,7 +147,7 @@ export default function SessionRunClass({
               : 'Marks here also go on its register.'}
           </p>
           <button type="button" onClick={() => void tie(null)} disabled={busy} className="btn btn--ghost disabled:opacity-60">
-            {busy ? 'Saving...' : 'Untie from the class'}
+            {busy ? 'Saving…' : 'Untie from the class'}
           </button>
         </div>
       ) : !choosing ? (
@@ -162,7 +162,7 @@ export default function SessionRunClass({
           <SessionClassPicker value={choice} onChange={onPick} name={`tie-${runId}`} mode="tie" />
           <div className="flex flex-wrap gap-[var(--s3)]">
             <button type="button" onClick={() => choice && void tie(choice)} disabled={busy || !choice} className="btn disabled:opacity-60">
-              {busy ? 'Saving...' : 'Tie to this class'}
+              {busy ? 'Saving…' : 'Tie to this class'}
             </button>
             <button type="button" onClick={() => setChoosing(false)} disabled={busy} className="btn btn--ghost">
               Cancel
