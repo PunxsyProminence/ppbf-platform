@@ -566,6 +566,62 @@ describe('disconnect and the Paired TVs list', () => {
     // Disconnected rows sort last.
     expect(list[list.length - 1].tv_name).toBe('Gone');
   });
+
+  // G4 (retire audit, 2026-10-22): a disconnected TV stayed on every coach's panel forever. The
+  // list now drops a TV that was disconnected MORE than 7 days ago and keeps the rest. Read only:
+  // the row, its revoked_at and its history stay in the table.
+  it('drops a TV disconnected more than 7 days ago, keeps a recent one as disconnected, deletes nothing', async () => {
+    await pairedTv(ORG_A, COACH_A, 'Still paired');
+    const justNow = await pairedTv(ORG_A, COACH_A, 'Disconnected just now');
+    const sixDays = await pairedTv(ORG_A, COACH_A, 'Disconnected 6 days 23 hours ago');
+    const eightDays = await pairedTv(ORG_A, COACH_A, 'Disconnected 8 days ago');
+    const longAgo = await pairedTv(ORG_A, COACH_A, 'Disconnected 90 days ago');
+    const otherGym = await pairedTv(ORG_B, COACH_B, 'Other gym, 8 days ago');
+    // The mint budget counts codes made in the last ten minutes; age these so the next one is allowed.
+    await client.query(`update pilot.gym_tvs set created_at = now() - interval '1 hour'`);
+    const neverPaired = await mintGymTvPairCode(ORG_A, COACH_A, 'Never paired');
+    await client.query(`update pilot.gym_tvs set pair_code_expires_at = now() - interval '30 days' where tv_id = $1`, [
+      neverPaired.tv_id,
+    ]);
+
+    for (const tv of [justNow, sixDays, eightDays, longAgo]) {
+      await disconnectGymTv(ORG_A, tv.minted.tv_id);
+    }
+    await disconnectGymTv(ORG_B, otherGym.minted.tv_id);
+    const backdate = async (tvId: string, ago: string) =>
+      client.query(`update pilot.gym_tvs set revoked_at = now() - $2::interval where tv_id = $1`, [tvId, ago]);
+    await backdate(sixDays.minted.tv_id, '6 days 23 hours');
+    await backdate(eightDays.minted.tv_id, '8 days');
+    await backdate(longAgo.minted.tv_id, '90 days');
+    await backdate(otherGym.minted.tv_id, '8 days');
+
+    const list = await listGymTvs(ORG_A);
+    expect(list.map((t) => [t.tv_name, t.status]).sort()).toEqual([
+      ['Disconnected 6 days 23 hours ago', 'disconnected'],
+      ['Disconnected just now', 'disconnected'],
+      // Not a disconnected TV, so unchanged by this rule: an old unused code still lists as expired.
+      ['Never paired', 'expired'],
+      ['Still paired', 'paired'],
+    ]);
+    // Disconnected rows still sort after the working ones.
+    expect(list.slice(-2).map((t) => t.status)).toEqual(['disconnected', 'disconnected']);
+
+    // The other gym's list is its own, filtered by the same rule.
+    expect(await listGymTvs(ORG_B)).toEqual([]);
+
+    // Nothing was deleted: every row is still there with its disconnect time.
+    for (const tv of [eightDays, longAgo]) {
+      const row = await readTv(tv.minted.tv_id);
+      expect(row).toBeDefined();
+      expect(row.revoked_at).not.toBeNull();
+    }
+    expect((await client.query('select count(*)::int as n from pilot.gym_tvs')).rows[0].n).toBe(7);
+
+    // A hidden TV can still be disconnected again by id (idempotent), and stays hidden.
+    const again = await disconnectGymTv(ORG_A, eightDays.minted.tv_id);
+    expect(again.status).toBe('disconnected');
+    expect((await listGymTvs(ORG_A)).map((t) => t.tv_name)).not.toContain('Disconnected 8 days ago');
+  });
 });
 
 describe('the checks and the run FK', () => {
