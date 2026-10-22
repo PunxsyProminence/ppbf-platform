@@ -164,6 +164,56 @@ and should not try to.
 
 ---
 
+## OD-2026-10-22-001 -- Classes can be cancelled after they start: "then classes need to be able to be canceled" (replaces the "After start" half of OD-2026-10-14-001); with Overwatch's applications of OD-2026-10-21-005 to lane LRA's Q1 and Q3, NOT new rulings of Jason's
+
+**Provenance: PRIMARY for his words; RECONSTRUCTED for the context, the applied details and the applications.** Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`). His one typed message was enqueued at line 24701 (2026-10-22T06:34:28.062Z) as a human prompt (line 24703) and delivered into Overwatch's running turn (line 24707). The rest comes from the plan agent's result with its "5. Questions for Jason" (line 24591, 06:30:07.061Z), Overwatch's "Applied rulings" block written into the plan (line 24620, 06:30:53.166Z), its report to him (line 24654, 06:31:26.862Z), its brief to lane LC (line 24801, 06:35:48.959Z) and its message to this records lane (line 24803, 06:35:53.604Z). The plan is `Documents\PPBF-overwatch\research\RETIRE-AUDIT-DATA-PLAN-2026-10-22.md` (lane LRA, plan only, outside the repo; its code read is origin/main `0a9415d6`). Read by script (housekeeping lane HK, 2026-10-22, at Overwatch's request). His words quoted here are the 06:34 message, OD-2026-10-21-005's (line 22865) and, inside the plan agent's Q3, "use neeko" (OD-2026-10-19-012); they are quoted exactly, spelling kept. The questions are quoted as the plan agent wrote them, and the applications as Overwatch wrote them. The id carries 2026-10-22 because these UTC times are 02:30 to 02:36 on 2026-10-22 Eastern; it is placed by his message. It supersedes the "After start" half of OD-2026-10-14-001; the rest of that entry stands. New; edits no earlier entry. It follows from OD-2026-10-21-005 and OD-2026-10-13-013.
+
+**Part 1, his ruling: cancelling after the start.**
+
+**What he was answering** (a reading from the timing and his "then"). Three minutes earlier Overwatch reported to him (line 24654), as written: "The main finding is that the test classes can't be cancelled or hidden today." and "cancel is refused once a class has started, under your no-cancel-after-start ruling."
+
+**Typed** (line 24701): *"then classes need to be able to be canceled"*
+
+**Ruling:** a class can be cancelled after its start time has passed. That this replaces the "After start" half of OD-2026-10-14-001 ("A: No, not after start (Recommended)") and leaves its "Who cancels" half standing is Overwatch's reading, not his words. Overwatch, as written (line 24803): "That replaces the "After start" half of OD-2026-10-14-001 ("A: No, not after start (Recommended)"). The "Who cancels" half stands."
+
+**Applied details (Overwatch's applications under OD-2026-10-21-005, not his words).** Overwatch, as written (line 24803):
+
+- "after start, the office may cancel;"
+- "a cancelled class's attendance stops counting (rows kept, staff still see them);"
+- "past cancelled classes drop off parent and athlete lists;"
+- "no migration. Lane LC is building it."
+
+Its brief to lane LC (line 24801), under "DESIGN (Overwatch's recommendation, applied under Jason's standing "go with all recomendations to get pilot rnning", OD-2026-10-21-005)", adds: "After the start: the office (org admin / gym admin) may cancel. Coaches keep the before-start rule." and restates the half that stands: "The "Who cancels" half stands: the class's coach, its cover (not within the last hour), and the office."
+
+**What this replaced (not recorded as a decision).** Overwatch had also applied the plan's Q2, an office-only "Hide class", under OD-2026-10-21-005, and started lane LH for it (line 24636). After his message it stopped lane LH (line 24751, 06:35:10.925Z). Overwatch, as written (line 24803): "Lane LH was stopped and the Hide class migration won't be built; Jason's cancel ruling covers the goal."
+
+**Part 2, Overwatch's applications of OD-2026-10-21-005 to lane LRA's Q1 and Q3 (NOT his words).**
+
+**The standing ruling applied** (OD-2026-10-21-005, his words, line 22865): *"go with all recomendations to get pilot rnning"*. Its limits, Overwatch's reading recorded there: his production clicks stay his, and anything touching minors' privacy gets a one-line note after it is applied. He did not answer Q1 or Q3.
+
+**Question Q1, the test athlete.** The plan agent, as written: "Audit walks left ZZ-AUDIT and AUDIT TEST records on the existing athlete you chose (OD-2026-10-19-012). The family notes, observations, attendance and recognitions have no remove button. For the pilot is that athlete (A) a test-only persona who stays as is, with no new test records written to them and coaches told, (B) a real participant whose page must be clean, so a "set aside" button (PR-B) is built first, or (C) removed through the gym's delete-athlete screen? Recommendation: A."
+
+**Question Q3, future audits.** The plan agent, as written: "From pilot start, should write-audits run only in the Audit Test Gym (which needs its own test logins), with the pilot gym read-only? Recommendation: A yes. B is to keep writing in the pilot gym with a ZZ-AUDIT prefix, as "use neeko" allowed for the 10-19 walk only."
+
+**Overwatch, as written** (line 24620, the plan's block headed "Applied rulings (Overwatch, under OD-2026-10-21-005 "go with all recomendations to get pilot rnning")"):
+
+- **Q1 = A.** The test athlete stays a test-only persona as is. No new test records are written to them, and coaches are told. *Minors' privacy note: their page keeps the old audit notes; if they're a real pilot kid, say so and PR-B (a "set aside" flag) gets built.*
+- **Q3 = A.** From pilot start, write-audits run only in the Audit Test Gym, which needs its own test logins. The pilot gym is read-only for audits.
+
+**Overwatch's report to him, as written** (line 24654), under "Applied under your "go with all recomendations":", included: "Privacy note: their page keeps the old audit notes, because there's no button to remove them. If they're a real kid in the pilot, say so and I'll build a "set aside" for those notes."
+
+**What was applied (Overwatch's applications, not his picks):**
+
+1. **Q1 = A.** The test athlete chosen under OD-2026-10-19-012 stays a test-only persona as is: no new test records are written to them, and coaches are told. B (a "set aside" button, PR-B, built first) and C (removal through the delete-athlete screen) were not applied.
+   Minors' privacy note (a summary of Overwatch's note above, not a quote): the athlete's page keeps the old audit notes, which have no remove button; if the athlete is a real pilot participant, Jason says so and PR-B is built.
+2. **Q3 = A.** From pilot start, write-audits run only in the Audit Test Gym, which needs its own test logins; the pilot gym is read-only for audits. B (keep writing in the pilot gym with a ZZ-AUDIT prefix) was not applied. That "use neeko" (OD-2026-10-19-012) covered the 10-19 walk only is the plan agent's reading.
+
+**Not ruled here:** cancelling after the start by a coach (the brief keeps coaches on the before-start rule, an application), and the wording of the confirm step. Nothing new from him on Q1 or Q3; he can override either, and his later words govern.
+
+**Status:** ruled and applied 2026-10-22. Lane LC was started (line 24801); not built at the time of writing. Whether the coaches have been told is not recorded.
+
+---
+
 ## OD-2026-10-21-005 -- Standing: apply the recommended option on pilot-readiness questions ("go with all recomendations to get pilot rnning")
 
 **Provenance: PRIMARY.** His typed message in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; queued at line 22865, 2026-10-22T03:04:32.558Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His words are quoted exactly, spelling kept. The id carries 2026-10-21 because this UTC time is 23:04 on 2026-10-21 Eastern. It came right after Overwatch's report of the pilot build lanes (line 22841) and follows the pilot rulings OD-2026-10-21-001 to -004. New; edits no earlier entry.
@@ -1372,6 +1422,8 @@ Overwatch sent him the other three PR 1 screenshots and asked lane L39 for an Op
 **Acted on:** issue #1595 filed for cloud lane 3 (OBSERVED, `gh`, OPEN). PR #1597 "Cancel a class: its coaches and the office, a cover only after an hour, never after start (#1595)" merged `d3f6ecac6af4a12fa2019ec8229ce2b2fb09ef8d` at 2026-10-15T05:13:11Z (OBSERVED, `gh`).
 
 **Status:** merged to main after Release 25; not live at the time of writing.
+
+**Status (2026-10-22):** the "After start" half is superseded by OD-2026-10-22-001 (Jason: "then classes need to be able to be canceled"); the "Who cancels" half stands, per Overwatch's reading recorded there.
 
 ---
 
