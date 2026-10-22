@@ -2431,12 +2431,19 @@ h6 {
   font-size: var(--t-xl);
 }
 
-/* Its own line under the names, so it is never clipped with them. */
+/* Its own line under the names, so it is never clipped with them; on the two
+   smallest rungs it is no bigger than the names. */
 [data-surface="wall"] .wall-more {
   margin: var(--s3) 0 0;
   font-family: var(--font-ui);
   line-height: 1.15;
   color: var(--bone-400);
+}
+[data-surface="wall"] .wall-floor-list[data-density="snug"] + .wall-more {
+  font-size: var(--t-2xl);
+}
+[data-surface="wall"] .wall-floor-list[data-density="tight"] + .wall-more {
+  font-size: var(--t-xl);
 }
 
 [data-surface="wall"] .wall-session-list {

@@ -1024,6 +1024,23 @@ function OnTheFloor({ board, compact = false }: { board: WallBoard; compact?: bo
     return () => observer.disconnect();
   }, []);
 
+  // The names' face (Alfa Slab One) swaps in after first paint, much wider than its fallback, so a
+  // fit measured before it lands is wrong: measure again once the fonts are in.
+  useEffect(() => {
+    const fonts = typeof document === 'undefined' ? undefined : document.fonts;
+    if (!fonts || typeof fonts.addEventListener !== 'function') return;
+    let alive = true;
+    const again = () => {
+      if (alive) setResized((count) => count + 1);
+    };
+    void fonts.ready.then(again);
+    fonts.addEventListener('loadingdone', again);
+    return () => {
+      alive = false;
+      fonts.removeEventListener('loadingdone', again);
+    };
+  }, []);
+
   return (
     <section ref={sectionRef} className="wall-panel ge-frame flex min-h-0 flex-1 flex-col" aria-label="On the floor">
       <h2 className="wall-heading ge-enamel ge-enamel--sign">
