@@ -13,7 +13,7 @@ import { query, queryOne } from '@/src/server/pilot/db';
 import { ConflictError } from '@/src/server/pilot/errors';
 import { formatGymStamp, formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
-import { requirePrincipal } from '@/src/server/pilot/http';
+import { isUuid, requirePrincipal } from '@/src/server/pilot/http';
 import {
   bulkUpsertSchedulerAttendance,
   cancelSchedulerClass,
@@ -2842,7 +2842,8 @@ describe('create_class repeat weekly', () => {
     const again = await POST(jsonRequest({ ...CLASS, repeat_weeks: 4 }));
 
     expect(rows(1).map((row) => row.class_id)).toEqual(rows(0).map((row) => row.class_id));
-    expect(rows(0)[0].class_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    // A version-5 UUID shape, so isUuid accepts it like any other id.
+    expect(isUuid(rows(0)[0].class_id)).toBe(true);
     expect(again.status).toBe(200);
     await expect(again.json()).resolves.toMatchObject({ ok: true, already_created: true });
   });
@@ -2859,13 +2860,13 @@ describe('create_class repeat weekly', () => {
   test('a key that already made other classes is refused in words, all or nothing', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach', { accountId: 'acct-coach-1' }));
     mockCreateClasses.mockRejectedValueOnce(new ConflictError(
-      'These classes were already scheduled from an earlier tap. Check the schedule before scheduling again.',
+      'Your earlier tap already scheduled classes under this request, so nothing was added this time. Check the schedule before scheduling again.',
       'CLASS_REQUEST_KEY_REUSED',
     ));
     const response = await POST(jsonRequest({ ...CLASS, repeat_weeks: 4 }));
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
-      error: 'These classes were already scheduled from an earlier tap. Check the schedule before scheduling again.',
+      error: 'Your earlier tap already scheduled classes under this request, so nothing was added this time. Check the schedule before scheduling again.',
       code: 'CLASS_REQUEST_KEY_REUSED',
     });
   });
@@ -2905,7 +2906,7 @@ describe('create_class repeat weekly', () => {
     ['both ways at once', { repeat_weeks: 4, repeat_until: '2026-11-10' }, 'Send repeat_weeks or repeat_until, not both'],
     ['no request key', { repeat_weeks: 4, request_key: undefined }, 'request_key is required to repeat a class'],
     ['a malformed request key', { repeat_weeks: 4, request_key: 'short' }, 'request_key must be 8 to 128 letters, digits, - or _'],
-    ['an end before the start', { repeat_weeks: 4, end_at: '2026-10-27T17:00' }, 'end_at must be after start_at'],
+    ['an end before the start', { repeat_weeks: 4, end_at: '2026-10-27T17:00' }, 'The class must end after it starts.'],
   ];
 
   test.each(refusals)('%s is refused and nothing is made', async (_label, patch, message) => {

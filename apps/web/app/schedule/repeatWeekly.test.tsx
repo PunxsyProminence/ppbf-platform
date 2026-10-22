@@ -97,6 +97,22 @@ describe('Repeat weekly on Schedule Class', () => {
     expect(await screen.findByText('4 weekly classes scheduled.')).toBeInTheDocument();
   });
 
+  test('the weeks box can be cleared and retyped', async () => {
+    installFetchMock([]);
+    await renderPage();
+    fillClass();
+    fireEvent.click(screen.getByLabelText('Repeat weekly'));
+    const weeks = screen.getByLabelText('Number of weeks');
+
+    fireEvent.change(weeks, { target: { value: '' } });
+    expect(weeks).toHaveValue(null);
+    expect(screen.getByText('Repeat weekly runs for 1 to 12 weeks.')).toBeInTheDocument();
+
+    fireEvent.change(weeks, { target: { value: '8' } });
+    expect(weeks).toHaveValue(8);
+    expect(screen.getByText('Makes 8 classes, Tue, Oct 27 to Tue, Dec 15, 6:00 PM each week.')).toBeInTheDocument();
+  });
+
   test('until a date sends the date, and a range past 12 weeks says so before sending', async () => {
     const fetchMock = installFetchMock([{ ok: true, class_ids: ['c-1', 'c-2', 'c-3'] }]);
     await renderPage();

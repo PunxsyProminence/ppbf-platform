@@ -358,10 +358,13 @@ export default function SchedulerPage() {
   // Repeat weekly (lane LW): off unless ticked; for a number of weeks or until a date.
   const [newClassRepeat, setNewClassRepeat] = useState(false);
   const [newClassRepeatMode, setNewClassRepeatMode] = useState<'weeks' | 'until'>('weeks');
-  const [newClassRepeatWeeks, setNewClassRepeatWeeks] = useState<number>(REPEAT_WEEKS_DEFAULT);
+  // As typed, so the box can be cleared and retyped; read as a number where it is used.
+  const [newClassRepeatWeeks, setNewClassRepeatWeeks] = useState(String(REPEAT_WEEKS_DEFAULT));
   const [newClassRepeatUntil, setNewClassRepeatUntil] = useState('');
   const [createClassKey, setCreateClassKey] = useState(newRequestKey);
-  const newClassRepeatRule: WeeklyRepeat = newClassRepeatMode === 'weeks' ? { weeks: newClassRepeatWeeks } : { until: newClassRepeatUntil };
+  const newClassRepeatRule: WeeklyRepeat = newClassRepeatMode === 'weeks'
+    ? { weeks: newClassRepeatWeeks.trim() === '' ? Number.NaN : Number(newClassRepeatWeeks) }
+    : { until: newClassRepeatUntil };
 
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
@@ -1047,7 +1050,7 @@ export default function SchedulerPage() {
                                 max={REPEAT_WEEKS_MAX}
                                 aria-label="Number of weeks"
                                 value={newClassRepeatWeeks}
-                                onChange={(e) => setNewClassRepeatWeeks(Number.parseInt(e.target.value, 10) || REPEAT_WEEKS_DEFAULT)}
+                                onChange={(e) => setNewClassRepeatWeeks(e.target.value)}
                                 className="input"
                               />
                             ) : (
@@ -1091,7 +1094,8 @@ export default function SchedulerPage() {
                             setNewClassLocation('');
                             setNewClassCapacity(16);
                             setNewClassRepeat(false);
-                            setNewClassRepeatWeeks(REPEAT_WEEKS_DEFAULT);
+                            setNewClassRepeatMode('weeks');
+                            setNewClassRepeatWeeks(String(REPEAT_WEEKS_DEFAULT));
                             setNewClassRepeatUntil('');
                           },
                           () => setCreateClassKey(newRequestKey()),

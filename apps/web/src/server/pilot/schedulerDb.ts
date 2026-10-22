@@ -158,7 +158,7 @@ export async function getSchedulerClassById(organizationId: string, classId: str
 export type CreateClassesOutcome = 'created' | 'already_created';
 
 export const CLASS_REQUEST_KEY_REUSED =
-  'These classes were already scheduled from an earlier tap. Check the schedule before scheduling again.';
+  'Your earlier tap already scheduled classes under this request, so nothing was added this time. Check the schedule before scheduling again.';
 
 export async function createSchedulerClasses(
   organizationId: string,
@@ -190,8 +190,8 @@ export async function createSchedulerClasses(
     );
     if (inserted.rows.length === items.length) return 'created';
     if (inserted.rows.length === 0) {
-      // The same request again only if every class is there as asked; status,
-      // cover and times since are not compared (a class cancelled since is still the one made).
+      // The same request again only if every class is there as asked; status and
+      // cover are not compared (a class cancelled since is still the one made).
       const same = await client.query<{ count: string }>(
         `select count(*)::text as count
            from pilot.scheduler_classes c

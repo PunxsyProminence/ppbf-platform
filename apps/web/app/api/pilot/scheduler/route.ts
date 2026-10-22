@@ -162,14 +162,15 @@ function readRequestKey(value: unknown, required: boolean): string | null {
    class id is derived from the gym, the caller, the key and the week, so the
    same submit names the same rows and createSchedulerClasses inserts nothing
    the second time. Without one (a single class from an older caller) the id is
-   random, as before. UUID-shaped (version 8) like every other class id. */
+   random, as before. Shaped as a version-5 UUID, as shadowConversations'
+   messageIdForKey is, so isUuid (versions 1-5) accepts it. */
 function classIdFor(actor: SchedulerActor, requestKey: string | null, week: number): string {
   if (!requestKey) return randomUUID();
   const hex = createHash('sha256')
     .update(JSON.stringify(['scheduler_class', actor.organizationId, actor.accountId, requestKey, week]))
     .digest('hex');
   const variant = (8 + (Number.parseInt(hex[16], 16) % 4)).toString(16);
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
 type AttendanceStatus = SchedulerAttendance['status'];
@@ -798,7 +799,7 @@ export async function POST(request: NextRequest) {
 
       // A class that ends before it starts, repeated, is twelve of them.
       if (Date.parse(endAt) <= Date.parse(startAt)) {
-        throw new ValidationError('end_at must be after start_at');
+        throw new ValidationError('The class must end after it starts.');
       }
 
       // REPEAT WEEKLY (lane LW): the same weekday and gym time each week, every
