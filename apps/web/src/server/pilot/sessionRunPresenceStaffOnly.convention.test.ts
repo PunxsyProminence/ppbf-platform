@@ -86,12 +86,19 @@ const DEFINING_MODULES = [
 // sessionRunClass.ts (D4) sets one mark's register pointer after a tap on a
 // session tied to a class wrote the register; it reads nothing back from the
 // table, and its only caller is setRunAthletePresent.
+// sessionScriptRuns.ts reads one timestamp from each table, inside the SQL
+// that closes a live run idle for three hours (OD-2026-10-21-001 ruling 2,
+// Jason: "A: Yes, after 3 hours (Rec.)"): the newest mark, unmark or
+// note on the run counts as activity. The statement returns only the ids of
+// the runs it closed; no athlete, name, mark or note leaves it, so the TV read
+// that triggers it (gymTvs.ts) gets nothing from either table.
 const TABLE_FILES = [
   'src/server/pilot/behaviourObservations.ts',
   'src/server/pilot/privacyTiers.ts',
   'src/server/pilot/sessionNotes.ts',
   'src/server/pilot/sessionRunAthletes.ts',
   'src/server/pilot/sessionRunClass.ts',
+  'src/server/pilot/sessionScriptRuns.ts',
   'src/server/pilot/sessionStaffNotes.ts',
 ];
 
@@ -157,6 +164,31 @@ describe('who was in a session, and notes on a run, are reached only from staff 
   it('STAFF_NOTE_ROLES is the three staff roles and nothing else', () => {
     expect(source(path.join(PILOT_DIR, 'sessionStaffNotes.ts')))
       .toMatch(/export const STAFF_NOTE_ROLES = \['coach', 'organization_admin', 'admin'\] as const;/);
+  });
+
+  // The exemption for sessionScriptRuns.ts (TABLE_FILES above) is for one use only: a timestamp per
+  // run, inside the idle sweep's SQL, that never leaves the statement. Pinned, because a new read
+  // added to that file would otherwise pass the file-level list unnoticed.
+  it('sessionScriptRuns.ts names either table only inside the idle sweep, which returns nothing from them', () => {
+    const text = source(path.join(PILOT_DIR, 'sessionScriptRuns.ts'));
+    const block = text.slice(text.indexOf('function lastActivitySql('), text.indexOf('export async function closeIdleSessionRuns('));
+    expect(block.length).toBeGreaterThan(0);
+    // Outside it: comments, and the existence check (to_regclass reads the catalog, not the rows).
+    const outside = text.replace(block, '').split('\n').filter((line) => NAMES_A_TABLE.test(line)
+      && !/^\s*\/\//.test(line)
+      && !/to_regclass\('pilot\.session_(run_athletes|staff_notes)'\)/.test(line));
+    expect(outside).toEqual([]);
+    // Inside it: exactly two subqueries, each yielding one timestamp.
+    const reads = block.split('\n').filter((line) => NAMES_A_TABLE.test(line));
+    expect(reads).toHaveLength(2);
+    for (const line of reads) {
+      expect(line.trim()).toMatch(
+        /^signals\.push\(`\(select max\(greatest\([a-z]\.(marked_at|created_at), [a-z]\.(removed_at|updated_at)\)\) from pilot\.session_(run_athletes|staff_notes) [a-z]$/,
+      );
+    }
+    const sweep = text.slice(text.indexOf('export async function closeIdleSessionRuns('), text.indexOf('// The resume lookup.'));
+    expect(sweep).toMatch(/returning r\.run_id`/);
+    expect(sweep).toMatch(/export async function sweepIdleRuns\(organizationId: string\): Promise<void>/);
   });
 
   it('no component or page imports a value from a server module that reads them', () => {

@@ -80,7 +80,9 @@ interface AuthorizedAthlete {
  * recorded account of itself.
  *
  * WHAT THE RUN WROTE, VERBATIM. deviation_note, what_worked and what_did_not
- * are the coach's own words about that session, already stored on the run;
+ * are the coach's own words about that session, already stored on the run
+ * (one exception: a run the app closed after three hours idle carries the
+ * app's own sentence saying so in deviation_note, sessionScriptRuns.ts);
  * this panel shows them and computes nothing from them. There is no session
  * count, no "sessions delivered against plan", no coverage bar and no
  * adherence figure. Plan-versus-actual now has its own panel below, and it

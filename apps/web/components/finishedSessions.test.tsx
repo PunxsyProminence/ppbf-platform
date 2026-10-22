@@ -127,6 +127,31 @@ test('each athlete marked here has a staff notes box for that session, which rea
   expect(urls[1]).toEqual({ url: '/api/pilot/coach/session-staff-notes?run_id=ssrun_1&athlete_id=ath-2', method: 'GET' });
 });
 
+// Live walkthrough 2026-10-19: a run left open overnight read "October 18, 2026, 1:33 PM to 7:10 PM"
+// although it ended the next evening -- a day and a half shown as six hours on one day.
+test('a session that ended on a later gym day names the end day too; one on a single day does not repeat it', async () => {
+  const overnight = {
+    ...PLAIN,
+    run_id: 'ssrun_overnight',
+    run_state: 'abandoned',
+    started_at: '2026-10-18T17:33:00.000Z',
+    ended_at: '2026-10-19T23:10:00.000Z',
+    athletes_present: 1,
+    blocks_completed: 1,
+    present: [],
+  };
+  serve(() => respond({ runs: [overnight, PLAIN] }));
+  await show();
+
+  const [first, second] = items();
+  expect(within(first).getByRole('heading', { level: 3 }).textContent)
+    .toBe('October 18, 2026, 1:33 PM to October 19, 2026, 7:10 PMAbandoned');
+  expect(within(second).getByRole('heading', { level: 3 }).textContent)
+    .toBe('October 13, 2026, 10:30 PM to 11:35 PMCompleted');
+  // One is singular.
+  expect(first.textContent).toContain("1 athlete present (the coach's count). 1 block completed.");
+});
+
 test('no finished sessions is said in words', async () => {
   serve(() => respond({ runs: [] }));
   await show();
