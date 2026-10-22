@@ -225,6 +225,21 @@ async function cloneTemplate(name: string): Promise<Client> {
   return client;
 }
 
+/* The wall boards count "today" from the clock, but today's check-ins are
+   stamped now() - 1 minute once, when the template is seeded. A run that
+   crossed gym midnight (America/New_York) between the seed and these tests
+   counted 0 (F-152). The boards take the seeded check-in instant as their
+   now, so they read the gym day the seed wrote. */
+async function seededCheckInInstant(): Promise<Date> {
+  if (!activeClient) throw new Error('test bug: no active embedded client');
+  const { rows } = await activeClient.query<{ at: Date | null }>(
+    `select max(checked_in_at) as at from pilot.scheduler_attendance where organization_id = $1 and class_id = $2`,
+    [ORG, CLASS_TODAY],
+  );
+  if (!rows[0]?.at) throw new Error('test bug: no seeded check-in for CLASS_TODAY');
+  return new Date(rows[0].at);
+}
+
 async function seed(client: Client): Promise<void> {
   const q = (sql: string, params: unknown[] = []) => client.query(sql, params);
 
@@ -798,7 +813,7 @@ describe('before the deletion: every reader shows the athlete (the positive cont
   });
 
   test('the public wall counts both athletes on the floor and in the marquee', async () => {
-    const board = await loadWallBoard({ organizationId: ORG, mode: 'initials' });
+    const board = await loadWallBoard({ organizationId: ORG, mode: 'initials', now: await seededCheckInInstant() });
     expect(board.on_floor_total).toBe(2);
     expect(board.marquee.length).toBe(2);
   });
@@ -972,13 +987,13 @@ describe('after deleteAthleteRecord(GONE)', () => {
   });
 
   test('the paired wall counts only LIVE on the floor and in the marquee', async () => {
-    const board = await loadWallBoard({ organizationId: ORG, mode: 'initials' });
+    const board = await loadWallBoard({ organizationId: ORG, mode: 'initials', now: await seededCheckInInstant() });
     expect(board.on_floor_total).toBe(1);
     expect(board.marquee.length).toBe(1);
   });
 
   test('the public wall (head count only, W1) counts only LIVE, in total and per class', async () => {
-    const board = await loadPublicWallBoard({ organizationId: ORG });
+    const board = await loadPublicWallBoard({ organizationId: ORG, now: await seededCheckInInstant() });
     expect(board.on_floor_total).toBe(1);
     expect(board.sessions.reduce((sum, session) => sum + session.on_floor, 0)).toBe(1);
   });
