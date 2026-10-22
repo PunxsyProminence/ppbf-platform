@@ -116,8 +116,10 @@ interface ParentSummaryPanelProps {
   /* The selected child's recorded attendance marks, counted, never divided:
      the marks record what happened, and nothing records what was expected,
      so no rate a family could read is defined (see the scheduler note in
-     ParentHub.tsx). */
-  attendance: { present: number; excused: number; absent: number; lastMarked: string | null } | null;
+     ParentHub.tsx). `latest` is the whole line ("Last class <when it was
+     held>"), built by the hub: it knows whether the date is the class's own
+     or only the time a mark was written. */
+  attendance: { present: number; excused: number; absent: number; latest: string | null } | null;
   unreadMessages: number | null;
 }
 
@@ -352,15 +354,19 @@ export function ParentSummaryPanel({
         <p className="t-body mt-[var(--s3)]">{childProgress}</p>
       </div>
 
-      {/* Tasks */}
+      {/* Tasks. The tile counts what the Parent Floor tab lists (the things
+          the coach has asked the family to do), so it carries that tab's
+          name. It was "Home Tasks", which a parent reads as the Assignments
+          tab's drills and workouts (parent walk 2026-10-19 item 4).
+          PROPOSED label. */}
       {tasksDue === null ? (
         <div className={KPI_TILE}>
-          <p className="t-label">Home Tasks</p>
+          <p className="t-label">Parent Floor tasks</p>
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
         <div className={STAT_TILE}>
-          <p className="stat-label">Home Tasks</p>
+          <p className="stat-label">Parent Floor tasks</p>
           <p className="stat-val">{tasksDue}</p>
         </div>
       )}
@@ -378,20 +384,22 @@ export function ParentSummaryPanel({
         </div>
       )}
 
-      {/* Attendance */}
+      {/* Attendance. "Class attendance", so it is not read as the Progress
+          tile's training sessions logged: two counts, two records (parent walk
+          2026-10-19 item 3). PROPOSED label. */}
       {attendance === null ? (
         <div className={KPI_TILE}>
-          <p className="t-label">Attendance</p>
+          <p className="t-label">Class attendance</p>
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
         <div className={KPI_TILE}>
-          <p className="t-label">Attendance</p>
+          <p className="t-label">Class attendance</p>
           <p className="t-body mt-[var(--s3)]">
             {`Present ${attendance.present} · Excused ${attendance.excused} · Absent ${attendance.absent}`}
           </p>
-          {attendance.lastMarked ? (
-            <p className="t-muted mt-[var(--s2)]">{`Last marked ${attendance.lastMarked}`}</p>
+          {attendance.latest ? (
+            <p className="t-muted mt-[var(--s2)]">{attendance.latest}</p>
           ) : null}
         </div>
       )}

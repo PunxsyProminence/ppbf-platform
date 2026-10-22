@@ -8,7 +8,7 @@
  * /api/pilot/parent/messages).
  *
  *   the list is the selected child's, cut from the same read the Messages tab
- *   and the Home Tasks tile use, so a tick in one place shows in all three;
+ *   and the Parent Floor tasks tile use, so a tick in one place shows in all three;
  *
  *   "this week" is the gym's calendar week, Monday to Sunday in
  *   America/New_York, and an unticked task from an earlier week stays listed
@@ -267,15 +267,15 @@ describe('the child on screen', () => {
 });
 
 describe('ticking a task off', () => {
-  test('a tick on the Parent Floor is the same write, and shows on Messages and in the Home Tasks tile', async () => {
+  test('a tick on the Parent Floor is the same write, and shows on Messages and in the Parent Floor tasks tile', async () => {
     setClock(WEDNESDAY);
     const fetchMock = installFetch();
     await renderFloor();
 
-    const tileBefore = screen.getAllByText('Home Tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent;
+    const tileBefore = screen.getAllByText('Parent Floor tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent;
     // Open tasks across both children: monday, prev_sunday, week_open,
     // sunday, earlier_open, undated, next_week, sibling.
-    expect(tileBefore).toBe('Home Tasks8');
+    expect(tileBefore).toBe('Parent Floor tasks8');
 
     const row = within(list('Due this week') as HTMLElement).getByText('Bring gloves Thursday').closest('li') as HTMLElement;
     await act(async () => {
@@ -289,7 +289,7 @@ describe('ticking a task off', () => {
 
     await waitFor(() => expect(within(row).getByRole('checkbox', { name: /^Done/ })).toBeChecked());
     expect(card().textContent).toContain('2 of 4 done this week');
-    expect(screen.getAllByText('Home Tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent).toBe('Home Tasks7');
+    expect(screen.getAllByText('Parent Floor tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent).toBe('Parent Floor tasks7');
 
     await openTab('Messages');
     const messageCard = screen.getByText('Bring gloves Thursday').closest('div.mat-paper') as HTMLElement;

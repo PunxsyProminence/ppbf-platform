@@ -844,16 +844,16 @@ describe('summary tile honesty', () => {
     return tile?.textContent?.replace(label, '').trim() ?? '';
   }
 
-  test('Upcoming counts from the answered schedule read and Home Tasks from the answered messages read (a real zero on both here)', async () => {
+  test('Upcoming counts from the answered schedule read and Parent Floor tasks from the answered messages read (a real zero on both here)', async () => {
     installFetch();
     await act(async () => {
       render(<ParentHub />);
     });
 
-    // Home Tasks reads the messages feed (lane P6): zero tasks with a due
+    // Parent Floor tasks reads the messages feed (lane P6): zero tasks with a due
     // date is an observation once that read answered. The unanswered case
     // is pinned in parentHubTasks.test.tsx.
-    expect(tileValue('Home Tasks')).toBe('0');
+    expect(tileValue('Parent Floor tasks')).toBe('0');
     // The schedule answered with nothing booked for this child: a real zero.
     // The unanswered case is pinned in parentHubSummary.test.tsx.
     expect(tileValue('Upcoming')).toBe('0');
