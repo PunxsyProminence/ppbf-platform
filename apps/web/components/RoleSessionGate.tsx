@@ -143,6 +143,15 @@ export default function RoleSessionGate({ allowedRoles, children }: RoleSessionG
           <h1 className="mt-3 font-display text-3xl tracking-tight">
             {accessState === 'retryable' ? 'Unable to verify access' : 'Checking access'}
           </h1>
+          {/* What the wait is, said once (parent walk item 13: this screen sat
+              for 2-5 s with no word of why). It is the sign-in check above. A
+              read the page component starts itself, outside this gate, runs
+              alongside it (a read inside the children waits for it), and
+              nothing behind the gate renders until it passes. Wording
+              PROPOSED. */}
+          {accessState === 'checking' && (
+            <p className="t-body mt-[var(--s3)]">Checking your sign-in. This can take a few seconds.</p>
+          )}
           {accessState === 'retryable' && (
             <button
               type="button"
