@@ -21,6 +21,9 @@ export type {
   CounterEvidenceSummary,
   FatigueContext,
   InterpretationOrigin,
+  InterventionAdherence,
+  InterventionHypothesisResult,
+  InterventionPerformanceResult,
   InterventionMatchState,
   InterventionOutcomeReview,
   ObservationAttribution,
@@ -62,6 +65,13 @@ export {
   type ObservationAdmission,
   type ObservationScope,
 } from './evidence';
+
+export {
+  collapseToEpisodes,
+  episodeKeyOf,
+  withReadingDimensions,
+  type EpisodeCollapse,
+} from './episodes';
 
 export {
   evaluatePatternCandidate,

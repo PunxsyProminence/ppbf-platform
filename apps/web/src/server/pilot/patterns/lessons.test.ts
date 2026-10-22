@@ -182,7 +182,7 @@ describe('validated athlete lesson evaluation', () => {
     },
     {
       name: 'a lesson cannot outrun the pattern it came from',
-      blocker: 'NO_OBSERVATIONS',
+      blocker: 'PATTERN_NOT_ESTABLISHED',
       build: () => evaluate({
         patternState: 'CONTINUE_OBSERVING',
         postObservations: [improvement(1, 'task-sparring', '2026-06-21T10:00:00.000Z')],

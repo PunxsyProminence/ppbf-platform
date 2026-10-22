@@ -164,6 +164,28 @@ and should not try to.
 
 ---
 
+## OD-2026-10-20-001 -- Release 32: "A: Ship it (Rec.)", then "I approved it" twice; shipped 12f3bde7
+
+**Provenance: PRIMARY.** A two-question card and his typed messages in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps per item). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks and words are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-20 because the card was answered at 14:25 on 2026-10-20 Eastern. It follows OD-2026-10-19-013 (Release 32 staged at 12f3bde7; in open records PR #1794 at the time of writing). New; edits no earlier entry.
+
+**The card** (put at line 21354, 2026-10-20T18:25:42.081Z; answered at line 21355, 2026-10-20T18:25:51.658Z).
+- Question "Release 32", as written: "Release 32 (14 changes, staged, you said 'staging OK') is still waiting. Ship it now?" Options as written: "A: Ship it (Rec.)": "I run the read-only SHADOW queue check, then send you the production database click and the deploy click."; "B: Not yet": "I lift the merge hold so #1794 and others merge; Release 32 gets re-staged later.". Jason: *"A: Ship it (Rec.)"*
+- Question "Unfinished", as written: "Finish the two items the usage limit cut off: L49 (push PR1a with its review, then PR1b, the pattern tiers you approved) and L60 (the enjoyment tap)?" Options as written: "A: Resume both now (Rec.)": "I message the two existing lanes on this account to continue; both are small and already planned."; "B: Later": "Leave them parked; nothing else depends on them.". Jason: *"A: Resume both now (Rec.)"*
+
+**The trail, in time order:**
+
+1. Overwatch (line 21439, 2026-10-20T18:27:10.496Z) asked for "**Your approval** of the read-only SHADOW queue check: https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39474719546". Jason (line 21461, 2026-10-20T18:32:45.877Z): *"I approved it"*. Run-checks 39474719546 (TARGET production, CHECK shadow-job-queue) logged "SHADOW JOB QUEUE: EMPTY (postgres)" and concluded success at 2026-10-20T18:33:40Z (gh run view). Overwatch (line 21475): "SHADOW queue is empty (OBSERVED: "Nothing pending or running"), so the contract change is safe."
+2. Overwatch (line 21492): "**Release 32, click 1 of 2:** approve the production database update." Apply-migrations 39475890126 (TARGET production, MIGRATION all) concluded success at 2026-10-20T20:50:27Z (gh run view). No words of his about that click are in the transcript.
+3. Overwatch (line 22345, 2026-10-21T15:22:33.625Z): "I've just started its production deploy, which needs your approval click: https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39625221590" Jason (line 22347, 2026-10-21T15:31:27.060Z): *"I approved it"*. Overwatch (line 22362): "Release 32 is live (OBSERVED: run 39625221590 success at 15:31Z)."
+
+**Ruling:** Release 32 ships ("A: Ship it (Rec.)"); "B: Not yet" was not chosen. The same card's first question resumes lanes L49 and L60 ("A: Resume both now (Rec.)"; "B: Later" was not chosen). Readings (Overwatch's and this records pass's): his first "I approved it" answers Overwatch's request for the queue-check approval at line 21439; his second answers its request for the deploy-production approval at line 22345, whose build-and-deploy job had started at 2026-10-21T15:29:33Z, about two minutes before his message.
+
+**Acted on:** Release 32 shipped from `12f3bde70b510b2313d2cd845acd0bc5c362c3e1`: deploy-production run 39625221590, success 2026-10-21T15:31:29Z; the run records are in `docs/current/PRODUCTION_STATE.json`. Overwatch also sent him its pilot-readiness report (line 21503): "**The pilot-readiness report is attached.** Verdict: not ready yet." That report (`Documents\PPBF-overwatch\research\PILOT-READINESS-2026-10-20.md`) is Overwatch's, not a ruling.
+
+**Status:** ruled and shipped.
+
+---
+
 ## OD-2026-10-19-014 -- Gym TV live-workout screen: "fix thos first"; "no i need the code and for you to do a mock workout on it" (REPORTED)
 
 **Provenance: REPORTED.** Jason typed these in the lane "Pilot walkthrough: admin, coach, athlete day (signed in)" (local_59900f1a-bc0d-4cb7-a6da-185bb46c00df), not in overwatch. The lane relayed them to overwatch (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; line 10424, 2026-10-19T23:37:21.811Z), opening: "LA2 -> Overwatch: Jason says "fix thos first" about the gym TV live-workout screen. LA2 builds nothing, so this needs a FIX LANE from you (screens, Sonnet)." and closing: "WRITES (production): W-TV1 TV paired; W-TV2 plan run dfcf6432 started/sent to TV/ended abandoned. Jason: "no i need the code and for you to do a mock workout on it"." Item 5 of its fix list carries a third quote: "A paired TV shows the wall, not a workout screen, until a session is sent (Jason: "this should be a workk out screen")." Read by script (records lane, 2026-10-20, at Overwatch's request). The quotes are the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
