@@ -284,6 +284,12 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // session-run-plain (#1523) relaxes pilot.session_script_runs' script columns and redefines
     // the cursor check that session-run-state creates; run first, it would fail on run_state.
     expect(at('session-run-plain')).toBeGreaterThan(at('session-run-state'));
+    // session-run-class adds class_id to pilot.session_script_runs (whose live-run index reads
+    // run_state, from session-run-state) with a key into pilot.scheduler_classes, and widens
+    // pilot.session_run_athletes with a key into pilot.scheduler_attendance; all must exist first.
+    for (const prerequisite of ['session-run-state', 'session-run-plain', 'session-run-athletes', 'scheduler-tables']) {
+      expect(at('session-run-class')).toBeGreaterThan(at(prerequisite));
+    }
     // medical-clearance-expiry adds expires_at to
     // pilot.shadow_medical_administrative_status, which shadow-decision-loop
     // creates. Applied first, a rebuild dies on ALTER against a missing table.
