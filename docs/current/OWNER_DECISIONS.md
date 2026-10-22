@@ -164,6 +164,20 @@ and should not try to.
 
 ---
 
+## OD-2026-10-21-005 -- Standing: apply the recommended option on pilot-readiness questions ("go with all recomendations to get pilot rnning")
+
+**Provenance: PRIMARY.** His typed message in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; queued at line 22865, 2026-10-22T03:04:32.558Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His words are quoted exactly, spelling kept. The id carries 2026-10-21 because this UTC time is 23:04 on 2026-10-21 Eastern. It came right after Overwatch's report of the pilot build lanes (line 22841) and follows the pilot rulings OD-2026-10-21-001 to -004. New; edits no earlier entry.
+
+**His words** (line 22865): *"go with all recomendations to get pilot rnning"*
+
+**Ruling:** on questions about getting the pilot running, the recommended option is applied without asking him. That this is a standing rule and that it covers the lanes as well as Overwatch is Overwatch's reading ("Recorded as a standing rule: on pilot questions, lanes and I apply the recommended option without asking.", line 22892), not his words.
+
+**Limits (Overwatch's reading, not his words).** Overwatch, as written (line 22892, 2026-10-22T03:04:54.232Z): "Recorded as a standing rule: on pilot questions, lanes and I apply the recommended option without asking. These stay with you: your GitHub production clicks, file-download OKs, credentials and data entry. Anything touching safety or minors' privacy gets a one-line note after it's applied." Overwatch's message to this records lane (line 22873) also keeps authorization among the items that get a one-line note after they are applied.
+
+**Status:** standing; in force from 2026-10-21.
+
+---
+
 ## OD-2026-10-21-004 -- D4 details, tying live sessions to classes: "A: Here wins (Rec.)"; "A: Undo if untouched (Rec.)"; "A: Offer it (Rec.)"
 
 **Provenance: PRIMARY.** A three-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 22803, 2026-10-22T02:35:50.059Z; answered at line 22812, 2026-10-22T03:02:04.682Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-21 because the card was answered at 23:02 on 2026-10-21 Eastern. The questions come from lane P2's plan, `Documents\PPBF-overwatch\lane-inbox\P2-SESSION-CLASS-PLAN-2026-10-21.md` (section 4, "Questions for Jason"; plan only, outside the repo). It follows OD-2026-10-21-002 (D4: "A: Tie them (Rec.)"). New; edits no earlier entry.
