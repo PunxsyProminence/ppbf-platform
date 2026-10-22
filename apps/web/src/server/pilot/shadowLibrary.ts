@@ -1636,10 +1636,26 @@ function mergeRankedPaths(
 // Score gap (research GPU-RETRIEVAL-BENCHMARK-2026-10-18, SEPARATOR-RESULT):
 // the top-1 cosine minus the mean of the top-10 cosines. A real answer tends
 // to stand out from the rest; on a question the Library cannot answer the top
-// ten look equally weak. Logged only, to calibrate a later gate; with fewer
-// than ten candidates the mean is over those there are, and the candidate
-// count is logged so a re-fit can tell them apart.
+// ten look equally weak. With fewer than ten candidates the mean is over those
+// there are, and the candidate count is logged so a re-fit can tell them apart.
 const SCORE_GAP_TOP_K = 10;
+
+// SCORE-GAP GATE (F-161; study SHADOW-NO-ANSWER-2026-10-22, synthetic questions,
+// AI-judged key). Below this gap the search is "no confident answer": nothing
+// counts as evidence and every ranked passage is only "closest", so the claims
+// page and the chat take their existing no-answer paths. Fitted for
+// text-embedding-3-small only: on another embedder the gap scored at chance, so
+// any other deployment keeps the cosine bar alone. Fewer than ten candidates is
+// not the statistic the bar was fitted on (one candidate always has gap 0).
+// Kill switch: PPBF_SHADOW_SCORE_GAP_GATE_ENABLED=false. Default on.
+export const SEMANTIC_GAP_BAR = 0.049;
+export const SEMANTIC_GAP_BAR_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+export function isScoreGapGateEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.PPBF_SHADOW_SCORE_GAP_GATE_ENABLED?.trim().toLowerCase() !== 'false';
+}
+
+type ScoreGapGateVerdict = 'abstained' | 'passed' | 'off' | 'other_model' | 'few_candidates';
 
 interface ShadowLibraryScoreGap {
   gap: number;
@@ -1650,6 +1666,13 @@ interface ShadowLibraryScoreGap {
 function scoreGapOf(topScores: number[], candidateCount: number): ShadowLibraryScoreGap {
   const mean = topScores.reduce((sum, score) => sum + score, 0) / topScores.length;
   return { gap: topScores[0] - mean, top1: topScores[0], candidateCount };
+}
+
+function scoreGapGateVerdict(scoreGap: ShadowLibraryScoreGap, embeddingModel: string): ScoreGapGateVerdict {
+  if (!isScoreGapGateEnabled()) return 'off';
+  if (embeddingModel !== SEMANTIC_GAP_BAR_EMBEDDING_MODEL) return 'other_model';
+  if (scoreGap.candidateCount < SCORE_GAP_TOP_K) return 'few_candidates';
+  return scoreGap.gap < SEMANTIC_GAP_BAR ? 'abstained' : 'passed';
 }
 
 export async function searchShadowLibrary(
@@ -1704,6 +1727,8 @@ export async function searchShadowLibrary(
     nearest: ShadowLibrarySearchResult[];
     embeddingModel: string;
     scoreGap: ShadowLibraryScoreGap;
+    gapGate: ScoreGapGateVerdict;
+    barDelivered: boolean;
   } | null = null;
   if (isSemanticLibrarySearchEnabled()) {
     const queryEmbedding = await embedText(normalizedQuery);
@@ -1721,7 +1746,7 @@ export async function searchShadowLibrary(
       let afterChunkId = '';
       let ranked: ShadowLibrarySearchResult[] = [];
       // The raw top cosines of every candidate, below the floor too, for the
-      // score-gap telemetry only. Nothing here changes what is returned.
+      // score gap: logged, and read by the score-gap gate below.
       let gapScores: number[] = [];
       for (;;) {
         const batch = await query<ShadowLibrarySearchResult & { embedding: unknown }>(
@@ -1811,11 +1836,19 @@ export async function searchShadowLibrary(
       // chunks yet" or an embedding outage sends the WHOLE library to the
       // keyword path below.
       if (candidateCount > 0) {
+        const scoreGap = scoreGapOf(gapScores, candidateCount);
+        const gapGate = scoreGapGateVerdict(scoreGap, currentEmbeddingModel);
+        const aboveBar = ranked.filter((item) => item.score >= SEMANTIC_RELEVANCE_BAR);
+        // Gated: no passage is evidence, every ranked one is only "closest".
+        // Passages the index does not hold still join at the keyword bar below.
+        const abstained = gapGate === 'abstained';
         semantic = {
-          relevant: ranked.filter((item) => item.score >= SEMANTIC_RELEVANCE_BAR),
-          nearest: ranked.filter((item) => item.score < SEMANTIC_RELEVANCE_BAR),
+          relevant: abstained ? [] : aboveBar,
+          nearest: abstained ? ranked : ranked.filter((item) => item.score < SEMANTIC_RELEVANCE_BAR),
           embeddingModel: currentEmbeddingModel,
-          scoreGap: scoreGapOf(gapScores, candidateCount),
+          scoreGap,
+          gapGate,
+          barDelivered: aboveBar.length > 0,
         };
       }
     }
@@ -1920,8 +1953,10 @@ export async function searchShadowLibrary(
         score_gap: semantic.scoreGap.gap,
         top1_score: semantic.scoreGap.top1,
         gap_candidate_count: semantic.scoreGap.candidateCount,
-        // Whether the current cosine bar alone delivered evidence.
-        bar_delivered: semantic.relevant.length > 0,
+        // The score-gap gate's verdict: abstained, passed, off, other_model or few_candidates.
+        gap_gate: semantic.gapGate,
+        // Whether the current cosine bar alone delivered evidence, before the gate.
+        bar_delivered: semantic.barDelivered,
       },
     });
     if (detail) {
