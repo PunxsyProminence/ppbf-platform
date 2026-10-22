@@ -457,6 +457,25 @@ describe('the migration is additive', () => {
   });
 });
 
+describe('the `all` chain re-runs the runners ahead of it', () => {
+  test('the session-run-athletes runner still passes on a database that has the two new columns', async () => {
+    const client = await cloneOf(AFTER);
+    try {
+      const earlier = await nativeDynamicImport(pathToFileURL(
+        path.resolve(__dirname, '../../../scripts/pilot-apply-session-run-athletes-migration.mjs'),
+      ).href);
+      const earlierSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_session_run_athletes_migration.sql'), 'utf8');
+      await expect((earlier.applyMigrationTransaction as typeof applyMigrationTransaction)(client, earlierSql)).resolves.toBeUndefined();
+      // And it still refuses an extra column nobody added on purpose.
+      await client.query('alter table pilot.session_run_athletes add column stray text');
+      await expect((earlier.applyMigrationTransaction as typeof applyMigrationTransaction)(client, 'select 1'))
+        .rejects.toThrow(/SESSION_RUN_ATHLETES_NOT_READY: (.*, )?columns_ready/);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('the runner', () => {
   /** The gate's refusal, naming exactly this key (not a longer key that ends with it). */
   const refusalNaming = (key: string) => new RegExp(`SESSION_RUN_CLASS_NOT_READY: (.*, )?${key}(, .*)?$`);
