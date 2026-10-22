@@ -748,14 +748,18 @@ export default function SchedulerPage() {
     const endsMs = Date.parse(item.end_at);
     return item.status !== 'cancelled' && !(Number.isFinite(endsMs) && endsMs < nowMs);
   };
-  /* Nobody cancels a class once it has started (#1595). The server's
-     can_cancel says so at load; this takes the button off a class that starts
-     while the page is open (within the clock's 15-second tick). A press after
-     the start is refused by the server. */
+  /* A coach cannot cancel a class once it has started (#1595); the office
+     can, before or after (Jason, 2026-10-22: "then classes need to be able to
+     be canceled"). The server's can_cancel says so at load; for a coach this
+     takes the button off a class that starts while the page is open (within
+     the clock's 15-second tick). A press after the start is refused by the
+     server. */
   const notYetStarted = (item: SchedulerClass) => {
     const startsMs = Date.parse(item.start_at);
     return Number.isFinite(startsMs) && startsMs > cancelClockMs;
   };
+  const showCancel = (item: SchedulerClass) =>
+    Boolean(item.can_cancel) && (role === 'admin' || role === 'organization_admin' || notYetStarted(item));
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
@@ -832,7 +836,7 @@ export default function SchedulerPage() {
             Cover Class
           </button>
         ) : null}
-        {item.can_cancel && notYetStarted(item) ? (
+        {showCancel(item) ? (
           <button
             type="button"
             onClick={() => {
@@ -850,6 +854,14 @@ export default function SchedulerPage() {
           </button>
         ) : null}
       </div>
+      {showCancel(item) && confirmCancelClassId === item.class_id ? (
+        // The confirm step names the class (lane LC). PROPOSED copy. It names
+        // where the marks stop counting: the per-day view behind the coach's
+        // day and training days still counts them until a view migration.
+        <p className="t-body w-full" role="status">
+          {`Cancel ${item.title}, ${formatGymStamp(item.start_at)}? Its attendance marks will stop counting in attendance reports, on families' screens, in the roster export and on the TV. They are kept, not deleted.`}
+        </p>
+      ) : null}
     </div>
   );
 

@@ -29,13 +29,21 @@ describe('classCancelRefusal', () => {
     expect(classCancelRefusal(coach('acct-scheduler'), classItem(), NOW, NOW)).toBeNull();
   });
 
-  test('a class starting now has started, for the office too', () => {
-    expect(classCancelRefusal(office, classItem({ start_at: iso(NOW) }), 0, NOW)).toBe('started');
-    expect(classCancelRefusal(office, classItem({ start_at: iso(NOW + 1) }), 0, NOW)).toBeNull();
+  test('a class starting now has started: its coach and its cover may no longer cancel it', () => {
+    expect(classCancelRefusal(coach('acct-coach'), classItem({ start_at: iso(NOW) }), 0, NOW)).toBe('started');
+    expect(classCancelRefusal(coach('acct-coach'), classItem({ start_at: iso(NOW + 1) }), 0, NOW)).toBeNull();
+    expect(classCancelRefusal(coach('acct-cover'), classItem({ start_at: iso(NOW) }), NOW - 2 * COVER_SETTLE_MS, NOW)).toBe('started');
   });
 
-  test('an unreadable start is treated as started, not waved through', () => {
-    expect(classCancelRefusal(office, classItem({ start_at: 'not a date' }), 0, NOW)).toBe('started');
+  // Jason, 2026-10-22: "then classes need to be able to be canceled" (lane LC).
+  test('the office may cancel before the start, at it, and after the class has ended', () => {
+    expect(classCancelRefusal(office, classItem({ start_at: iso(NOW + 1) }), 0, NOW)).toBeNull();
+    expect(classCancelRefusal(office, classItem({ start_at: iso(NOW) }), 0, NOW)).toBeNull();
+    expect(classCancelRefusal(office, classItem({ start_at: iso(NOW - 8 * 24 * 3_600_000) }), 0, NOW)).toBeNull();
+  });
+
+  test('an unreadable start is treated as started for a coach, not waved through', () => {
+    expect(classCancelRefusal(coach('acct-coach'), classItem({ start_at: 'not a date' }), 0, NOW)).toBe('started');
   });
 
   test('anyone who is neither office nor a coach of the class is refused', () => {
@@ -45,6 +53,7 @@ describe('classCancelRefusal', () => {
 
   test('a cancelled class says so before anything else', () => {
     expect(classCancelRefusal(coach('acct-other'), classItem({ status: 'cancelled' }), 0, NOW)).toBe('cancelled');
+    expect(classCancelRefusal(office, classItem({ status: 'cancelled', start_at: iso(NOW - 3_600_000) }), 0, NOW)).toBe('cancelled');
   });
 });
 

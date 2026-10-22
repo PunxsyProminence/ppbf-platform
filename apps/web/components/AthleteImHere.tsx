@@ -114,7 +114,8 @@ export function useTodaySchedulerRead(enabled: boolean): {
   return { read, reload };
 }
 
-/** Every class today the athlete is registered to, cancelled ones included, earliest first. */
+/** Every class today the athlete is registered to, cancelled ones still to end included, earliest first.
+ * (The scheduler read no longer sends a family a cancelled class that has ended, lane LC.) */
 export function todaysClassesFor(
   athleteId: string,
   classes: readonly ClassRow[],

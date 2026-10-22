@@ -457,10 +457,11 @@ function decorateClasses(
  *                       from them would be inventing a rule, not applying
  *                       one. The case where a coach wrote it is real and
  *                       unresolved; flagged rather than guessed at.
- *   the class catalogue itself  Not row-filtered, and not filtered here
- *                       either. A family browses it to register against it;
- *                       narrowing it is a product decision, not a privacy
- *                       one.
+ *   the class catalogue itself  Not filtered here. A family browses it to
+ *                       register against it; narrowing it is a product
+ *                       decision, not a privacy one. The one narrowing made
+ *                       (a cancelled class that has ended, lane LC) is in
+ *                       familyView.
  */
 function isFamilyReader(actor: SchedulerActor): boolean {
   return actor.role === 'parent' || actor.role === 'athlete';
@@ -585,6 +586,30 @@ function registerOnlyAttendance(row: SchedulerAttendance): SchedulerAttendance {
   return { ...row, note: '', checked_in_by_account_id: '' };
 }
 
+/* A CANCELLED CLASS, AS A FAMILY READS IT (lane LC; Jason, 2026-10-22: "then
+   classes need to be able to be canceled"). For a parent or an athlete:
+   - a cancelled class that has ended is not sent, nor are its registrations,
+     so it drops off their /schedule lists. A cancelled class still to come,
+     or still running, is sent and reads as cancelled, as before.
+   - no attendance mark on a cancelled class is sent, so the parent
+     Attendance tab and its counts, and the athlete's records, stop counting
+     it.
+   Nothing is deleted: every row stays, and staff (the branches above) still
+   read them all, under "Past and cancelled". */
+function familyView(store: SchedulerStore, nowMs: number): SchedulerStore {
+  const cancelled = store.classes.filter((item) => item.status === 'cancelled');
+  const cancelledIds = new Set(cancelled.map((item) => item.class_id));
+  const endedIds = new Set(cancelled
+    .filter((item) => (parseInstantAsGymTime(item.end_at)?.getTime() ?? Number.POSITIVE_INFINITY) <= nowMs)
+    .map((item) => item.class_id));
+  return {
+    classes: store.classes.filter((item) => !endedIds.has(item.class_id)),
+    registrations: store.registrations.filter((row) => !endedIds.has(row.class_id)),
+    coaching_requests: store.coaching_requests,
+    attendance: store.attendance.filter((row) => !cancelledIds.has(row.class_id)),
+  };
+}
+
 function filterStateForActor(
   actor: SchedulerActor,
   store: SchedulerStore,
@@ -640,25 +665,27 @@ function filterStateForActor(
     };
   }
 
+  const family = familyView(store, Date.now());
+
   if (actor.role === 'parent') {
     const allowed = new Set(parentAthleteIds);
     return {
-      classes,
-      registrations: store.registrations.filter((row) => allowed.has(row.athlete_id)),
-      coaching_requests: store.coaching_requests.filter((row) => allowed.has(row.athlete_id)),
-      attendance: store.attendance.filter((row) => allowed.has(row.athlete_id)),
+      classes: family.classes,
+      registrations: family.registrations.filter((row) => allowed.has(row.athlete_id)),
+      coaching_requests: family.coaching_requests.filter((row) => allowed.has(row.athlete_id)),
+      attendance: family.attendance.filter((row) => allowed.has(row.athlete_id)),
     };
   }
 
   if (actor.role === 'athlete') {
     if (!actor.athleteId) {
-      return { classes, registrations: [], coaching_requests: [], attendance: [] };
+      return { classes: family.classes, registrations: [], coaching_requests: [], attendance: [] };
     }
     return {
-      classes,
-      registrations: store.registrations.filter((row) => row.athlete_id === actor.athleteId),
-      coaching_requests: store.coaching_requests.filter((row) => row.athlete_id === actor.athleteId),
-      attendance: store.attendance.filter((row) => row.athlete_id === actor.athleteId),
+      classes: family.classes,
+      registrations: family.registrations.filter((row) => row.athlete_id === actor.athleteId),
+      coaching_requests: family.coaching_requests.filter((row) => row.athlete_id === actor.athleteId),
+      attendance: family.attendance.filter((row) => row.athlete_id === actor.athleteId),
     };
   }
 
@@ -879,9 +906,13 @@ export async function POST(request: NextRequest) {
 
     if (action === 'cancel_class') {
       // #1536, #1595 (Jason's rulings on #1550): the class's own coach, its
-      // cover coach once the cover is an hour old, or the office; never after
-      // the class has started. A soft cancel: registrations, attendance and
-      // history are kept, and families read the class as cancelled.
+      // cover coach once the cover is an hour old, or the office. Before the
+      // start, any of them; after it, the office only (Jason, 2026-10-22:
+      // "then classes need to be able to be canceled"). A soft cancel:
+      // registrations, attendance and history are kept, families read the
+      // class as cancelled, and its marks stop counting in the class-mark
+      // readers (lane LC). The per-day view, pilot.attendance_reconciled,
+      // still counts them until a view migration.
       if (!(actor.role === 'coach' || canManageAll(actor))) {
         throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES.not_class_coach);
       }
@@ -905,20 +936,27 @@ export async function POST(request: NextRequest) {
       }
 
       // Allowed only as the cover coach: the update re-checks the cover.
-      const coverOnly = !canManageAll(actor)
+      const office = canManageAll(actor);
+      const coverOnly = !office
         && classItem.coach_account_id !== actor.accountId
         && classItem.scheduled_by_account_id !== actor.accountId;
+      // For the audit row: whether this cancel came after the start.
+      const start = parseInstantAsGymTime(classItem.start_at);
+      const afterStart = !start || start.getTime() <= Date.now();
       const cancelled = await cancelSchedulerClass(
         actor.organizationId,
         classId,
         new Date().toISOString(),
         coverOnly ? actor.accountId : undefined,
+        office,
       );
       if (!cancelled) {
         // Lost a race (#1595): to another cancel, to the class's start, or
-        // to another coach taking the cover.
+        // to another coach taking the cover. The office's cancel is not
+        // stopped by the start, so only the first can refuse it.
         const now = await getSchedulerClassById(actor.organizationId, classId);
         if (now?.status === 'cancelled') throw new ValidationError(CANCEL_REFUSAL_MESSAGES.cancelled);
+        if (!now) throw new Error('Missing class record');
         if (coverOnly && now?.covering_coach_account_id !== actor.accountId) {
           throw new ForbiddenError(CANCEL_REFUSAL_MESSAGES.not_class_coach);
         }
@@ -936,6 +974,7 @@ export async function POST(request: NextRequest) {
           action: 'cancel_class',
           class_id: classId,
           previous_status: classItem.status,
+          after_start: afterStart,
         },
         shadow_mirror: false,
       });

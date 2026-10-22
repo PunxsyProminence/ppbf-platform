@@ -125,6 +125,9 @@ export async function getOrganizationAttendanceSummary(
          and reg.athlete_id = a.athlete_id
          and reg.status = 'registered'
        where a.organization_id = $1
+         -- A cancelled class's marks stop counting (lane LC). The rows are
+         -- kept; its class roster still shows them.
+         and c.status <> 'cancelled'
          and (
            $2::text is null
            or c.coach_account_id = $2
@@ -277,6 +280,8 @@ export async function getWeeklyAttendanceTrend(
        and reg.athlete_id = a.athlete_id
        and reg.status = 'registered'
      where a.organization_id = $1
+       -- A cancelled class's marks stop counting (lane LC), as in the summary.
+       and c.status <> 'cancelled'
        and c.start_at >= date_trunc('week', now()) - ($2 * interval '1 week')
        and c.start_at < date_trunc('week', now())
        -- Scope B, and agreement with getOrganizationAttendanceSummary, which
