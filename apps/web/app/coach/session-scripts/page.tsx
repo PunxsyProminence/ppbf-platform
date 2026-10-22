@@ -7,6 +7,8 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
 import FinishedSessions from '@/components/FinishedSessions';
+import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
+import { type ClassChoice, type TieableClassView, defaultClassChoice } from '@/src/shared/sessionClassChoice';
 import { apiBase } from '@/lib/apiBase';
 import { authoringStateWords, explainLine, renderingFormatWords, renderingOriginWords } from '@/src/lib/sessionScriptWords';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
@@ -128,6 +130,21 @@ function CoachSessionScripts() {
   // Which start the error belongs to: a script's id, or PLAIN_START. The error is shown beside the
   // button that was pressed, so a failed plain start is never silent (review 2 of #1523 PR 2).
   const [startErrorFor, setStartErrorFor] = useState<string | null>(null);
+  // The class the next session is for (D4, OD-2026-10-21-002); undefined until the coach chooses
+  // when the picker could not choose for them (SessionClassPicker).
+  const [classChoice, setClassChoice] = useState<ClassChoice>(undefined);
+  // Whether the coach picked it, and the list it came from: a default is worked out again at the
+  // moment of Start, so a page left open never starts a session on a class that has ended.
+  const classPick = useRef<{ picked: boolean; classes: readonly TieableClassView[] }>({ picked: false, classes: [] });
+  const onClassChoice = useCallback((choice: ClassChoice, info: ClassChoiceInfo) => {
+    classPick.current = info;
+    setClassChoice(choice);
+  }, []);
+  // A new start begins undecided (the picker is mounted again and reads today's classes afresh).
+  const resetClassChoice = useCallback(() => {
+    classPick.current = { picked: false, classes: [] };
+    setClassChoice(undefined);
+  }, []);
 
   // Changing the open plan (lane L1): its name, block titles and minutes. The
   // notice says what the save did, in the server's terms -- changed where it
@@ -212,7 +229,16 @@ function CoachSessionScripts() {
   // landing before it would both start; the in-flight mark is a ref.
   const startInFlight = useRef(false);
   const startDelivery = useCallback(async (scriptId: string | null) => {
-    if (startBusyScriptId || startInFlight.current) return;
+    if (startBusyScriptId || startInFlight.current || classChoice === undefined) return;
+    if (!classPick.current.picked) {
+      const now = defaultClassChoice(classPick.current.classes, Date.now());
+      if (now !== classChoice) {
+        setClassChoice(now);
+        setStartErrorFor(scriptId ?? PLAIN_START);
+        setStartError('The class under way has changed since this page opened. Check the class above, then start again.');
+        return;
+      }
+    }
     startInFlight.current = true;
     setStartBusyScriptId(scriptId ?? PLAIN_START);
     setStartErrorFor(scriptId ?? PLAIN_START);
@@ -225,7 +251,7 @@ function CoachSessionScripts() {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(scriptId ? { script_id: scriptId } : {}),
+          body: JSON.stringify({ ...(scriptId ? { script_id: scriptId } : {}), ...(classChoice ? { class_id: classChoice } : {}) }),
         });
       } catch {
         setStartError('Network error -- no session was started.');
@@ -280,12 +306,14 @@ function CoachSessionScripts() {
         setStartError(payload.message ?? 'This plan has been replaced by a newer version, so no session was started.');
         return;
       }
-      setStartError(`The server refused to start the session${payload.error ? `: ${payload.error}` : '.'}`);
+      // The class refusals (not today, cancelled, not yours, another session runs it) are worded
+      // by the route (session-scripts/runs/route.ts), so its text is shown.
+      setStartError(payload.message ?? `The server refused to start the session${payload.error ? `: ${payload.error}` : '.'}`);
     } finally {
       startInFlight.current = false;
       setStartBusyScriptId(null);
     }
-  }, [fetchLiveRun, startBusyScriptId]);
+  }, [classChoice, fetchLiveRun, startBusyScriptId]);
 
   const loadDeliveries = useCallback(async (scriptId: string) => {
     setDeliveries([]);
@@ -539,6 +567,7 @@ function CoachSessionScripts() {
               initialRun={liveRun}
               onSettled={(settled) => {
                 setLiveRun(null);
+                resetClassChoice();
                 if (settled.script_id && openScriptId === settled.script_id) {
                   void loadDeliveries(settled.script_id);
                 }
@@ -549,6 +578,7 @@ function CoachSessionScripts() {
               }}
               onRunGone={(message) => {
                 setLiveRun(null);
+                resetClassChoice();
                 setLiveNotice(message);
               }}
             />
@@ -559,10 +589,15 @@ function CoachSessionScripts() {
         {/* A session does not need a plan (issue #1523): roster, check-in, notes and the TV all
             work for a plain one. Offered whether or not the gym has scripts. */}
         <section data-surface="kiosk" className="mt-[var(--s6)]">
+          {liveRunCheck === 'checked' && (
+            <div className="mb-[var(--s4)]">
+              <SessionClassPicker value={classChoice} onChange={onClassChoice} />
+            </div>
+          )}
           <button
             type="button"
             onClick={() => void startDelivery(null)}
-            disabled={startBusyScriptId !== null || liveRunCheck !== 'checked' || saving}
+            disabled={startBusyScriptId !== null || liveRunCheck !== 'checked' || saving || classChoice === undefined}
             className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {startBusyScriptId === PLAIN_START ? 'Starting...' : 'Start a plain session'}
@@ -713,11 +748,14 @@ function CoachSessionScripts() {
 
                 {!editing && detail.authoring_state !== 'retired' && (
                   <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+                    {detail.blocks.length > 0 && classChoice === undefined && (
+                      <p className="t-body w-full text-[color:var(--brass-300)]">Choose the class at the top of the page to start.</p>
+                    )}
                     {detail.blocks.length > 0 && (
                       <button
                         type="button"
                         onClick={() => void startDelivery(detail.script_id)}
-                        disabled={startBusyScriptId !== null || liveRunCheck !== 'checked' || saving}
+                        disabled={startBusyScriptId !== null || liveRunCheck !== 'checked' || saving || classChoice === undefined}
                         className="btn px-[var(--s5)] py-[var(--s4)] text-[length:var(--t-md)] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {startBusyScriptId === detail.script_id ? 'Starting...' : 'Start live delivery'}

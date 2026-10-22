@@ -46,6 +46,7 @@ const run = (overrides: Record<string, unknown>) => ({
   script_id: null,
   script_version: null,
   script_name: null,
+  class_title: null,
   delivered_by_account_id: 'acct-coach',
   delivered_on: '2026-10-13',
   run_state: 'completed',
@@ -87,7 +88,7 @@ describe('GET ?finished=true', () => {
 
   it("lists the session's own gym's finished sessions with end notes, who delivered them and who was present", async () => {
     mockSettled.mockResolvedValue([
-      run({ run_id: 'ssrun_2', delivered_by_account_id: 'acct-other', script_id: 'scr-1', script_version: 2, script_name: 'Tuesday juniors' }),
+      run({ run_id: 'ssrun_2', delivered_by_account_id: 'acct-other', script_id: 'scr-1', script_version: 2, script_name: 'Tuesday juniors', class_title: 'Youth boxing' }),
       run({ run_id: 'ssrun_1' }),
     ]);
     mockPresent.mockResolvedValue([
@@ -109,9 +110,11 @@ describe('GET ?finished=true', () => {
       ['ssrun_1', null, 'Coach Dee', true, [{ athlete_id: 'ath-1', full_name: 'Ada Reyes' }, { athlete_id: 'ath-2', full_name: 'Ben Ortiz' }]],
     ]);
     expect(runs[1]).toMatchObject({ deviation_note: 'Finished early.', what_worked: 'The jab round.', athletes_present: 2 });
+    // D4: the class a session was tied to, by title; null for open gym.
+    expect(runs.map((row) => row.class_title)).toEqual(['Youth boxing', null]);
     // Exactly these fields: no account id (it can be an email address) and no organization id.
     expect(Object.keys(runs[1]).sort()).toEqual([
-      'athletes_present', 'blocks_completed', 'delivered_by_me', 'delivered_by_name', 'delivered_on', 'deviation_note',
+      'athletes_present', 'blocks_completed', 'class_title', 'delivered_by_me', 'delivered_by_name', 'delivered_on', 'deviation_note',
       'ended_at', 'present', 'run_id', 'run_state', 'script_id', 'script_name', 'script_version', 'started_at',
       'what_did_not', 'what_worked',
     ]);

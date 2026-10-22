@@ -312,3 +312,66 @@ describe('a gym of hundreds', () => {
     expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull();
   });
 });
+
+// D4 (OD-2026-10-21-002; OD-2026-10-21-004 rulings 1-2): on a tied session the tap's answer says
+// what it did to the class register, and the footer says marks go on it.
+describe('a session tied to a class', () => {
+  test('the footer says a mark here also goes on the class register', async () => {
+    serve(() => read([]));
+    await act(async () => {
+      render(<SessionRunPresence runId="ssrun 1" tied />);
+    });
+    expect(screen.getByText(/This session is tied to a class: a mark here also goes on that class.s register\./)).toBeTruthy();
+    expect(screen.queryByText(/it does not change anyone.s own check-in or attendance/)).toBeNull();
+  });
+
+  test.each([
+    [{ effect: 'created' }, 'Ada Reyes is Present on the class register.'],
+    [{ effect: 'already_present' }, 'Ada Reyes was already Present on the class register.'],
+    [{ effect: 'flipped', previous_status: 'absent' }, 'Ada Reyes was marked Absent on the class register; now Present.'],
+    [{ effect: 'flipped', previous_status: 'excused' }, 'Ada Reyes was marked Excused on the class register; now Present.'],
+    [{ effect: 'skipped', reason: 'class_cancelled' }, 'Ada Reyes is marked here but not on the class register: the class was cancelled.'],
+    [{ effect: 'skipped', reason: 'not_your_class' }, 'Ada Reyes is marked here but not on the class register: you no longer run this class.'],
+  ])('a tap answered %j says so', async (register, words) => {
+    serve(() => read([]), () => respond({ outcome: 'marked', register }));
+    await show();
+    await tap('Mark here Ada Reyes');
+    // Read out by the live region, and shown under the athlete's own row.
+    expect(screen.getAllByText(words)).toHaveLength(2);
+  });
+
+  test.each([
+    [{ effect: 'removed' }, 'Ada Reyes is off the class register too.'],
+    [{ effect: 'kept' }, "The class register was changed after your tap, so Ada Reyes's mark there was left as it is."],
+    [{ effect: 'unchanged' }, 'Only the mark here was taken back; the class register was not changed.'],
+  ])('an untap answered %j says so', async (register, words) => {
+    serve(() => read([ADA]), () => respond({ outcome: 'unmarked', register }));
+    await show();
+    await tap('Here Ada Reyes');
+    // Read out by the live region, and shown under the athlete's own row.
+    expect(screen.getAllByText(words)).toHaveLength(2);
+  });
+
+  test('a hold on the athlete is said, and the mark stands', async () => {
+    serve(() => read([]), () => respond({ outcome: 'marked', register: { effect: 'created' }, hold_warning: { hold_id: 'h1' } }));
+    await show();
+    await tap('Mark here Ada Reyes');
+    expect(screen.getAllByText('Ada Reyes is Present on the class register. Ada Reyes has an active Training Hold; the mark was NOT blocked.')).toHaveLength(2);
+    expect(screen.getByText('1 marked here.')).toBeTruthy();
+  });
+
+  test('a hold that could not be read is said as not known, never as a hold', async () => {
+    serve(() => read([]), () => respond({ outcome: 'marked', register: { effect: 'created' }, hold_warning: 'unreadable' }));
+    await show();
+    await tap('Mark here Ada Reyes');
+    expect(screen.getAllByText('Ada Reyes is Present on the class register. Whether Ada Reyes is on a Training Hold could not be read.')).toHaveLength(2);
+    expect(screen.queryByText(/has an active Training Hold/)).toBeNull();
+  });
+
+  test('an untied tap leaves no register line', async () => {
+    serve(() => read([]), () => respond({ outcome: 'marked' }));
+    await show();
+    await tap('Mark here Ada Reyes');
+    expect(screen.queryByText(/class register/)).toBeNull();
+  });
+});

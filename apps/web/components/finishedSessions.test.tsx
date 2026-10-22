@@ -192,3 +192,17 @@ test('fewer than fifty says nothing about older ones', async () => {
   await show();
   expect(screen.queryByText(/The newest 50 are shown/)).toBeNull();
 });
+
+// D4 (OD-2026-10-21-002): a session tied to a class names the class in the history.
+test('a finished session tied to a class names the class; an open-gym one does not', async () => {
+  const runs = [
+    { ...PLAIN, run_id: 'run-tied', class_title: 'Youth boxing' },
+    { ...SCRIPTED, run_id: 'run-open', class_title: null },
+  ];
+  serve(() => respond({ runs }));
+  await act(async () => {
+    render(<FinishedSessions />);
+  });
+  expect(screen.getByText(/Plain session · Youth boxing · You ran it/)).toBeTruthy();
+  expect(screen.getByText(/Tuesday juniors \(version 2\) · Run by Coach Ray/)).toBeTruthy();
+});

@@ -12,6 +12,8 @@ import { readReferenceInstruction } from '@/components/drills/drillInstructionRe
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
+import SessionRunClass from '@/components/SessionRunClass';
+import SessionNoShows from '@/components/SessionNoShows';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 
@@ -89,7 +91,8 @@ interface LoggedIntervention {
 // inferred from any other table: SessionRunPresence lists the gym's athletes
 // and the delivering coach taps each one who is here. That is its own record
 // (sessionRunAthletes.ts on the server), session detail and not attendance (CT-13); it
-// touches no athlete's own check-in.
+// touches no athlete's own check-in. On a session tied to a class (D4, OD-2026-10-21-002) the
+// same tap also writes that class's register (sessionRunClass.ts), which is attendance.
 //
 // athletes_present stays what it was: a COUNT the coach states at finish. It
 // starts from the number marked here, until the coach types in it; what the
@@ -608,9 +611,14 @@ export default function SessionScriptLiveDelivery({
   const [athletesPresentTyped, setAthletesPresentTyped] = useState(startCount !== '');
   // Whether the number in the box is the marks as last read; a failed read makes it unknown.
   const [marksKnown, setMarksKnown] = useState(false);
+  // The marks here, as last read: the no-shows offer reads its count again when they change.
+  const [athletesPresentMarks, setAthletesPresentMarks] = useState<number | null>(null);
+  // The tied class was cancelled since the tie: taps stay on the session (the class line says so).
+  const [classCancelled, setClassCancelled] = useState(false);
   const presentFromMarks = useCallback(
     (count: number | null) => {
       setMarksKnown(count !== null);
+      setAthletesPresentMarks(count);
       if (athletesPresentTyped || count === null) return;
       setAthletesPresent(count > 0 ? String(count) : '');
     },
@@ -747,6 +755,16 @@ export default function SessionScriptLiveDelivery({
           Switching this on lets you send the session to a gym TV from Gym TVs on your coach home.
         </p>
       </div>
+
+      {/* The class this session runs (D4), near the top: tied, a "here" tap also goes on its register. */}
+      <SessionRunClass
+        key={`class-${run.run_id}`}
+        runId={run.run_id}
+        classId={run.class_id ?? null}
+        onClassChange={(classId) => setRun((current) => ({ ...current, class_id: classId }))}
+        onRunNotLive={() => void resyncAfterNotLive()}
+        onClassCancelled={setClassCancelled}
+      />
 
       {/* The round clock (WO-N1-03): its own row and its own route, so a refused timer action never
           reads as a refused session action. */}
@@ -886,6 +904,7 @@ export default function SessionScriptLiveDelivery({
       <SessionRunPresence
         key={run.run_id}
         runId={run.run_id}
+        tied={Boolean(run.class_id) && !classCancelled}
         onPresentCount={presentFromMarks}
         onRunNotLive={() => void resyncAfterNotLive()}
       />
@@ -1005,6 +1024,15 @@ export default function SessionScriptLiveDelivery({
               being completed -- both are kept as the record of tonight. Every field below is
               optional.
             </p>
+            {/* Tied to a class: the one-tap no-shows offer (OD-2026-10-21-004 ruling 3), never automatic. */}
+            {run.class_id && (
+              <SessionNoShows
+                runId={run.run_id}
+                classId={run.class_id}
+                presentCount={athletesPresentMarks}
+                onRunNotLive={() => void resyncAfterNotLive()}
+              />
+            )}
             <div className="grid gap-[var(--s3)] sm:grid-cols-2">
               {/* A plain session has no blocks to count. */}
               {!isPlain && (
