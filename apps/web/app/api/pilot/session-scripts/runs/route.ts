@@ -81,6 +81,7 @@ export async function GET(request: NextRequest) {
         script_id: run.script_id,
         script_version: run.script_version,
         script_name: run.script_name,
+        class_title: run.class_title,
         run_state: run.run_state,
         delivered_on: run.delivered_on,
         started_at: run.started_at,

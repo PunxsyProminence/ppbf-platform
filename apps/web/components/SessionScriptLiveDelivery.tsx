@@ -13,6 +13,7 @@ import { useDrillOpener } from '@/components/drills/useDrillOpener';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
 import SessionRunClass from '@/components/SessionRunClass';
+import SessionNoShows from '@/components/SessionNoShows';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
 
@@ -896,6 +897,7 @@ export default function SessionScriptLiveDelivery({
       <SessionRunPresence
         key={run.run_id}
         runId={run.run_id}
+        tied={Boolean(run.class_id)}
         onPresentCount={presentFromMarks}
         onRunNotLive={() => void resyncAfterNotLive()}
       />
@@ -1015,6 +1017,8 @@ export default function SessionScriptLiveDelivery({
               being completed -- both are kept as the record of tonight. Every field below is
               optional.
             </p>
+            {/* Tied to a class: the one-tap no-shows offer (OD-2026-10-21-004 ruling 3), never automatic. */}
+            {run.class_id && <SessionNoShows runId={run.run_id} onRunNotLive={() => void resyncAfterNotLive()} />}
             <div className="grid gap-[var(--s3)] sm:grid-cols-2">
               {/* A plain session has no blocks to count. */}
               {!isPlain && (

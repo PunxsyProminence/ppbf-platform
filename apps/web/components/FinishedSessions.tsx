@@ -32,6 +32,8 @@ interface FinishedRun {
   script_id: string | null;
   script_version: number | null;
   script_name: string | null;
+  // The class it was tied to (D4); absent or null for open gym.
+  class_title?: string | null;
   run_state: 'completed' | 'abandoned';
   started_at: string | null;
   ended_at: string | null;
@@ -153,6 +155,7 @@ export default function FinishedSessions() {
                   {run.script_id === null
                     ? 'Plain session'
                     : `${run.script_name ?? 'A plan'}${run.script_version !== null ? ` (version ${run.script_version})` : ''}`}
+                  {run.class_title ? ` · ${run.class_title}` : ''}
                   {' · '}
                   {run.delivered_by_me ? 'You ran it' : `Run by ${run.delivered_by_name}`}
                 </p>
