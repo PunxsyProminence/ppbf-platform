@@ -1380,6 +1380,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                                       type="text"
                                       value={nameDraft}
                                       maxLength={STAFF_DISPLAY_NAME_MAX * 2}
+                                      // Opened by Set/Edit Name, which leaves the page as it is replaced.
+                                      autoFocus
                                       aria-describedby={`staff-name-help-${member.account_id}${nameError ? ` staff-name-error-${member.account_id}` : ''}`}
                                       aria-invalid={nameError ? true : undefined}
                                       onChange={(event) => { setNameDraft(event.target.value); setNameError(''); }}
@@ -1426,7 +1428,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                                   {microsoftSession ? (
                                     <button
                                       type="button"
-                                      disabled={busy}
+                                      // One row edits at a time: opening a second would drop the first draft.
+                                      disabled={busy || nameEditId !== null}
                                       onClick={() => {
                                         setNameEditId(member.account_id);
                                         setNameDraft(member.staff_display_name ?? '');

@@ -55,6 +55,17 @@ describe('normalizeStaffDisplayName', () => {
     expect(normalizeStaffDisplayName('\u0915\u094d\u200d\u0937').ok).toBe(true);
   });
 
+  test('refuses a name with nothing visible in it, which would show as a blank', () => {
+    for (const raw of ['‍', '́', '‌‍', '́‍']) {
+      expect(normalizeStaffDisplayName(raw)).toEqual({
+        ok: false,
+        error: 'A display name needs at least one visible character.',
+      });
+    }
+    expect(normalizeStaffDisplayName('7').ok).toBe(true);
+    expect(normalizeStaffDisplayName('\u{1F94A}').ok).toBe(true);
+  });
+
   test('refuses anything that is not text', () => {
     expect(normalizeStaffDisplayName(42)).toEqual({ ok: false, error: 'A display name must be text.' });
     expect(normalizeStaffDisplayName({ name: 'Mike' })).toEqual({ ok: false, error: 'A display name must be text.' });

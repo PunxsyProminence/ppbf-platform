@@ -105,12 +105,202 @@ function toLiveRun(row: SessionScriptRunRow, now: Date = new Date()): LiveSessio
   };
 }
 
+// A FORGOTTEN LIVE SESSION CLOSES ITSELF. OD-2026-10-21-001 ruling 2 (pilot decision D2), Jason:
+// "A: Yes, after 3 hours (Rec.)", whose option text reads "If a coach forgets to end class, the app
+// ends it 3 hours after the last activity": closed as ABANDONED and taken off the TV. Found live on
+// 2026-10-19: a coach's plain session sat in_progress for 29h 33m, still set to show on the gym
+// TV, until it was ended by hand.
+//
+// IDLE means nothing about the run was SAVED for three hours. The signals are the timestamps that
+// already exist; nothing here adds a column:
+//   started_at and paused_at on the run itself;
+//   started_at + paused_seconds, a lower bound on the last resume (a resume clears paused_at but
+//     banks the pause, and the pause cannot have begun before the start);
+//   a presence mark made or taken back (pilot.session_run_athletes marked_at / removed_at);
+//   any change to the run's round clock (pilot.round_timers created_at / updated_at);
+//   a staff note on the run (pilot.session_staff_notes created_at / updated_at);
+//   an intervention logged against the run (pilot.intervention_executions session_run_id,
+//     created_at / updated_at);
+//   a behaviour report filed under the run (pilot.behaviour_observations session_key
+//     'run:<run_id>', observed_at / created_at).
+// NOT SEEN: moving the block cursor, a resume after the lower bound above, and the Show on TV
+// switch write no timestamp, so a session driven only by those for three hours reads as idle.
+// Linking a run to a development block or objective is done after a run settles, so it is not a
+// live signal. A TV polling or a screen left open is not activity either: that is exactly the
+// forgotten case. Hence the note says "no recorded activity", not "no activity".
+//
+// THE RECORD. The run settles as 'abandoned' exactly as a coach's own Abandon would (cursor and
+// pause cleared, an open pause banked, off the TV), with two differences: ended_at is the moment
+// the limit was reached (last activity + 3 hours), not the moment a sweep happened to notice, so
+// the history reads the same whenever the sweep ran (the athlete check-in auto-close does the same,
+// sessionAutoClose.ts); and the deviation note says the app closed it, so "Abandoned" is never
+// read as something the coach chose.
+//
+// WHEN IT RUNS. Lazily, before every read that could show a live run: the coach's own live lookup,
+// a start (so a forgotten run does not hold the one-live-per-coach slot), the two history reads,
+// and in gymTvs.ts the paired TV's read, the Paired TVs list and a send to a TV. Dropping it from
+// the TV needs nothing more: the TV only honours a run that is in_progress and shown
+// (LIVE_SHOWN_RUN), so a settled run reads as "nothing on this TV". One statement per
+// organization; it never touches a settled run.
+export const SESSION_RUN_IDLE_LIMIT_SECONDS = 3 * 60 * 60;
+// PROPOSED copy (new words; Jason has not seen them).
+export const SESSION_RUN_IDLE_CLOSE_NOTE = 'Closed automatically after 3 hours with no recorded activity.';
+
+interface ActivitySources {
+  marks: boolean;
+  timer: boolean;
+  notes: boolean;
+  interventions: boolean;
+  behaviour: boolean;
+}
+
+// Which of the side tables this database has. The live read and the TV must never fail because a
+// later migration is not applied where they run, so a missing table drops its signal instead of
+// breaking the statement. Cached only once all are present (tables are never dropped); asked again
+// while any is missing, so an environment that applies the migration picks it up.
+let activitySourcesCache: ActivitySources | null = null;
+
+async function readActivitySources(): Promise<ActivitySources> {
+  if (activitySourcesCache) return activitySourcesCache;
+  const row = await queryOne<{ [K in keyof ActivitySources]: boolean }>(
+    `select to_regclass('pilot.session_run_athletes') is not null as marks,
+            to_regclass('pilot.round_timers') is not null as timer,
+            exists (select 1 from pg_attribute
+                     where attrelid = to_regclass('pilot.session_staff_notes')
+                       and attname = 'run_id' and not attisdropped) as notes,
+            exists (select 1 from pg_attribute
+                     where attrelid = to_regclass('pilot.intervention_executions')
+                       and attname = 'session_run_id' and not attisdropped) as interventions,
+            exists (select 1 from pg_attribute
+                     where attrelid = to_regclass('pilot.behaviour_observations')
+                       and attname = 'session_key' and not attisdropped) as behaviour`,
+  );
+  const sources: ActivitySources = {
+    marks: row?.marks === true,
+    timer: row?.timer === true,
+    notes: row?.notes === true,
+    interventions: row?.interventions === true,
+    behaviour: row?.behaviour === true,
+  };
+  if (Object.values(sources).every(Boolean)) activitySourcesCache = sources;
+  return sources;
+}
+
+// $2 is "now". least() caps a future-dated stamp at now, so a run is never closed on a clock that
+// says something happened later than the sweep (sessionAutoClose.ts does the same). Every subquery
+// yields one timestamp; nothing else is read from these tables.
+const RUN_ROW_SIGNALS = [
+  'r.started_at',
+  'r.paused_at',
+  'r.started_at + make_interval(secs => coalesce(r.paused_seconds, 0))',
+];
+
+function lastActivitySql(sources: ActivitySources): string {
+  const signals = [...RUN_ROW_SIGNALS];
+  if (sources.marks) {
+    signals.push(`(select max(greatest(m.marked_at, m.removed_at)) from pilot.session_run_athletes m
+                    where m.organization_id = r.organization_id and m.run_id = r.run_id)`);
+  }
+  if (sources.timer) {
+    signals.push(`(select greatest(t.created_at, t.updated_at) from pilot.round_timers t
+                    where t.organization_id = r.organization_id and t.run_id = r.run_id)`);
+  }
+  if (sources.notes) {
+    signals.push(`(select max(greatest(n.created_at, n.updated_at)) from pilot.session_staff_notes n
+                    where n.organization_id = r.organization_id and n.run_id = r.run_id)`);
+  }
+  if (sources.interventions) {
+    signals.push(`(select max(greatest(x.created_at, x.updated_at)) from pilot.intervention_executions x
+                    where x.organization_id = r.organization_id and x.session_run_id = r.run_id)`);
+  }
+  if (sources.behaviour) {
+    signals.push(`(select max(greatest(b.observed_at, b.created_at)) from pilot.behaviour_observations b
+                    where b.organization_id = r.organization_id and b.session_key = 'run:' || r.run_id)`);
+  }
+  return `least($2::timestamptz, greatest(${signals.join(', ')}))`;
+}
+
+/**
+ * Settles every live run of this organization that has been idle for the limit, as 'abandoned'.
+ * Returns the run ids it closed. Throws on a database error; readers call sweepIdleRuns instead.
+ */
+export async function closeIdleSessionRuns(
+  organizationId: string,
+  options: { now?: Date; idleLimitSeconds?: number } = {},
+): Promise<string[]> {
+  const now = options.now ?? new Date();
+  const limit = options.idleLimitSeconds ?? SESSION_RUN_IDLE_LIMIT_SECONDS;
+  const sources = await readActivitySources();
+  const rows = await query<{ run_id: string }>(
+    `with idle as (
+       select r.organization_id, r.run_id, ${lastActivitySql(sources)} as last_activity_at
+         from pilot.session_script_runs r
+        where r.organization_id = $1
+          and r.run_state = 'in_progress'
+          and r.started_at is not null
+     )
+     update pilot.session_script_runs r
+        set run_state = 'abandoned',
+            ended_at = i.last_activity_at + make_interval(secs => $3::integer),
+            current_block_id = null,
+            paused_seconds = coalesce(r.paused_seconds, 0)
+                             + case
+                                 when r.paused_at is not null
+                                   then greatest(0, floor(extract(epoch from (
+                                          i.last_activity_at + make_interval(secs => $3::integer) - r.paused_at
+                                        )))::integer)
+                                 else 0
+                               end,
+            paused_at = null,
+            show_on_wall = false,
+            deviation_note = case
+                               when btrim(r.deviation_note) = '' then $4::text
+                               else r.deviation_note || E'\\n' || $4::text
+                             end
+       from idle i
+      where r.organization_id = i.organization_id
+        and r.run_id = i.run_id
+        -- Re-read under the row lock: a coach's own finish that committed first wins, and so does a
+        -- pause or resume (the run's own signals are asked again of the locked row, not only of the
+        -- statement's snapshot above).
+        and r.run_state = 'in_progress'
+        and least($2::timestamptz, greatest(${RUN_ROW_SIGNALS.join(', ')}))
+              <= $2::timestamptz - make_interval(secs => $3::integer)
+        and i.last_activity_at <= $2::timestamptz - make_interval(secs => $3::integer)
+      returning r.run_id`,
+    [organizationId, now, limit, SESSION_RUN_IDLE_CLOSE_NOTE],
+  );
+  return rows.map((row) => row.run_id);
+}
+
+// The readers' form. A sweep that fails must not take the coach's screen or the TV down with it:
+// the read goes ahead and the next read tries again. Logged by error class and SQLSTATE only, and
+// at most once a minute per process: a TV polls every few seconds.
+const SWEEP_FAILURE_LOG_INTERVAL_MS = 60_000;
+let lastSweepFailureLogMs = 0;
+
+export async function sweepIdleRuns(organizationId: string): Promise<void> {
+  try {
+    await closeIdleSessionRuns(organizationId);
+  } catch (error) {
+    const nowMs = Date.now();
+    if (nowMs - lastSweepFailureLogMs < SWEEP_FAILURE_LOG_INTERVAL_MS) return;
+    lastSweepFailureLogMs = nowMs;
+    const code = (error as { code?: unknown })?.code;
+    console.error('session-run-idle-close-failed', {
+      name: error instanceof Error ? error.constructor.name : typeof error,
+      code: typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined,
+    });
+  }
+}
+
 // The resume lookup. pilot_ssrun_one_live_per_coach makes this at most one row, which is why
 // resume can answer definitively instead of picking between candidates.
 export async function getLiveRunForCoach(
   organizationId: string,
   accountId: string,
 ): Promise<LiveSessionScriptRun | null> {
+  await sweepIdleRuns(organizationId);
   const row = await queryOne<SessionScriptRunRow>(
     `select ${RUN_COLUMNS}
        from pilot.session_script_runs
@@ -201,6 +391,8 @@ export async function startSessionScriptRun(
   accountId: string,
   input: StartSessionScriptRunInput,
 ): Promise<LiveSessionScriptRun> {
+  // A forgotten run must not hold this coach's one live slot (SESSION_RUN_ALREADY_LIVE).
+  await sweepIdleRuns(organizationId);
   if (!input.scriptId) {
     return startPlainRun(organizationId, accountId, input);
   }
@@ -532,6 +724,7 @@ export async function listSettledRunsForScript(
   scriptId: string,
   limit = 50,
 ): Promise<SessionScriptRunRow[]> {
+  await sweepIdleRuns(organizationId);
   return query<SessionScriptRunRow>(
     `select ${RUN_COLUMNS}
        from pilot.session_script_runs
@@ -576,6 +769,7 @@ export async function listSettledRunsForOrganization(
   organizationId: string,
   limit = 50,
 ): Promise<SettledSessionRun[]> {
+  await sweepIdleRuns(organizationId);
   return query<SettledSessionRun>(
     `select ${RUN_COLUMNS_QUALIFIED}, s.name as script_name
        from pilot.session_script_runs r

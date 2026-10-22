@@ -301,12 +301,24 @@ export async function PATCH(request: NextRequest) {
     const input = normalizeStaffDisplayName(body.display_name);
     if (!input.ok) throw new ValidationError(input.error);
 
-    const written = await setStaffDisplayName(
-      principal.organizationId,
-      accountId,
-      input.name,
-      STAFF_DISPLAY_NAME_ROLES,
-    );
+    let written: boolean;
+    try {
+      written = await setStaffDisplayName(
+        principal.organizationId,
+        accountId,
+        input.name,
+        STAFF_DISPLAY_NAME_ROLES,
+      );
+    } catch (writeError) {
+      // The database's check has the last word. A name the rule above passed
+      // and the check refused (a server whose [[:cntrl:]] class is wider than
+      // \p{Cc}) is a name the admin can change, not a server fault.
+      const pgError = writeError as { code?: unknown; constraint?: unknown };
+      if (pgError.code === '23514' && pgError.constraint === 'pilot_account_profiles_staff_display_name_check') {
+        throw new ValidationError('That name cannot be saved. Use letters, numbers, spaces and ordinary punctuation.');
+      }
+      throw writeError;
+    }
     if (!written) {
       throw new NotFoundError('Not found: no coach or staff member with that account in this gym');
     }

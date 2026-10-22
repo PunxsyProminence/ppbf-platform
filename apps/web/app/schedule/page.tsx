@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
+import { defaultStaffAttendanceClassId } from '@/src/shared/attendanceDefaultClass';
 import { coachDisplayNameFor, deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 import { roleWords } from '@/src/shared/roleWords';
 import BackHome from '@/components/BackHome';
@@ -409,9 +410,13 @@ export default function SchedulerPage() {
             .map((row) => row.class_id),
         );
         const todays = todaysClasses.find((item) => mine.has(item.class_id)) ?? todaysClasses[0];
-        // Staff open on the first class still running, not a cancelled one
-        // (#1536 review): the register refuses a cancelled class.
-        const firstClassId = (todays ?? scheduler.classes.find((item) => item.status !== 'cancelled') ?? scheduler.classes[0]).class_id;
+        // Staff open on today's class, the one running now or nearest it, and
+        // never a cancelled one (#1536 review). Not the first on the list: the
+        // list is oldest first, so that was a class from weeks ago (pilot
+        // blocker B2; src/shared/attendanceDefaultClass.ts).
+        const firstClassId = isFamilyReader
+          ? (todays ?? scheduler.classes.find((item) => item.status !== 'cancelled') ?? scheduler.classes[0]).class_id
+          : defaultStaffAttendanceClassId(scheduler.classes, Date.now()) ?? scheduler.classes[0].class_id;
         setSelectedClassId((current) => current || firstClassId);
       }
 
@@ -1173,7 +1178,10 @@ export default function SchedulerPage() {
                               status: attendanceStatus,
                               note: attendanceNote,
                             },
-                          isFamily ? 'Checked in. Your coach can see you are here.' : 'Attendance updated with override.',
+                          // "override" is the stored method name for every staff mark,
+                          // not something the coach did; a first normal mark read as one
+                          // (live walkthrough 2026-10-19). PROPOSED copy.
+                          isFamily ? 'Checked in. Your coach can see you are here.' : 'Attendance saved.',
                         );
                       }}
                       disabled={actionInFlight}

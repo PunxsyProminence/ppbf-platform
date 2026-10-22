@@ -151,6 +151,25 @@ test('lists every TV with its status, last seen and what it is showing', async (
   expect(within(items[2]).getAllByRole('button').map((b) => b.textContent)).toEqual(['Disconnect Lobby']);
 });
 
+test('a TV that can show nothing says so and is set apart (issue 1792 item 8)', async () => {
+  serve(
+    listOf([
+      tv({ tv_id: 'a', tv_name: 'Ring wall' }),
+      tv({ tv_id: 'c', tv_name: 'Lobby', status: 'pending', paired_at: null, last_seen_at: null, pair_code_expires_at: '2026-10-08T15:05:00.000Z' }),
+      tv({ tv_id: 'd', tv_name: 'Tablet', status: 'expired', paired_at: null, last_seen_at: null }),
+      tv({ tv_id: 'e', tv_name: 'Gone', status: 'disconnected', revoked_at: '2026-10-07T00:00:00.000Z' }),
+    ]),
+  );
+  openPanel({ liveRun: LIVE });
+  const list = await screen.findByRole('list', { name: 'Paired TVs' });
+  const items = within(list).getAllByRole('listitem');
+  expect(items.map((item) => item.getAttribute('data-connected'))).toEqual([null, null, 'no', 'no']);
+  expect(within(items[2]).getByText(/^Not connected: its code ran out/)).toBeTruthy();
+  expect(within(items[3]).getByText(/^Not connected: it was disconnected/)).toBeTruthy();
+  expect(within(items[0]).queryByText(/Not connected/)).toBeNull();
+  expect(within(items[1]).queryByText(/Not connected/)).toBeNull();
+});
+
 test('with the account id unknown, a session on a TV is not called another coach\'s', async () => {
   serve(listOf([tv({ current_run_id: 'run_x', current_run_set_by_account_id: ME })]));
   openPanel({ liveRun: null, coachAccountId: '' });
