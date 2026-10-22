@@ -29,6 +29,7 @@
  * the strongest possible reliability claim.
  */
 
+import { episodeKeyOf } from '../episodes';
 import type { BehaviourObservation, ObservationPolarity } from '../types';
 
 export type ReliabilityVerdict =
@@ -298,4 +299,158 @@ export function assessObserverReliability(
     reasons: Object.freeze(reasons),
     policyVersion: policy.policyVersion,
   });
+}
+
+// ── Pair calibration (lane L49; Jason 2026-10-18, "A: Not until calibrated") ──
+//
+// The approved bar (research report R1-R4) is per BEHAVIOUR, per COACH PAIR:
+// two coaches' readings of the same attempts must agree often enough, beyond
+// chance, over enough attempts, before their double-coded evidence counts. A
+// paired judgment is one attempt (session, task and opportunityKey -- the
+// same grouping the pattern evaluator uses, ../episodes.ts -- of one athlete's
+// one behaviour, so the gym's whole record can be passed in) that both
+// coaches coded. A coach who scored one attempt both ways gave no verdict on
+// it. Cohen's kappa for the two of them; agreement on "present" and on
+// "absent" reported beside it, because a rare or very common behaviour makes
+// kappa paradoxically low (R5).
+//
+// POOLED COUNT, RECENT AGREEMENT (R4, "a pair falls below": Overwatch
+// 2026-10-21, "Use BOTH"). The pair needs the bar's number of paired
+// judgments over its whole record, and its LATEST that-many judgments must
+// meet the agreement and kappa bars. A long good record therefore cannot
+// carry a pair that has drifted apart lately, and a pair that agrees again
+// over its latest judgments is calibrated again. A judgment's time is the
+// later of the two coaches' readings of that attempt.
+
+export interface PairCalibrationBar {
+  readonly minimumAgreement: number;
+  readonly minimumKappa: number;
+  readonly minimumPairedJudgments: number;
+}
+
+export interface PairAgreement {
+  readonly pairedJudgments: number;
+  readonly observedAgreement: number | null;
+  /** Cohen's kappa; null when chance agreement is total and kappa is undefined. */
+  readonly kappa: number | null;
+  /** Agreement on the behaviour showing, and on it not showing (R5). Null with no such judgments. */
+  readonly presentAgreement: number | null;
+  readonly absentAgreement: number | null;
+}
+
+/** The pair over its whole record; `recent` over its latest `minimumPairedJudgments` judgments. */
+export interface PairCalibration extends PairAgreement {
+  /** The two observer accounts, sorted. */
+  readonly observers: readonly [string, string];
+  readonly recent: PairAgreement;
+  /**
+   * Enough judgments in the whole record, and the recent ones meet the
+   * agreement and kappa bars. Too few judgments, or an undefined kappa, is not
+   * calibrated.
+   */
+  readonly calibrated: boolean;
+}
+
+interface PairedJudgment {
+  readonly atMs: number;
+  readonly attempt: string;
+  readonly first: boolean;
+  readonly second: boolean;
+}
+
+function agreementOf(judgments: readonly PairedJudgment[]): PairAgreement {
+  let both = 0;
+  let neither = 0;
+  let firstOnly = 0;
+  let secondOnly = 0;
+  for (const judgment of judgments) {
+    if (judgment.first && judgment.second) both += 1;
+    else if (!judgment.first && !judgment.second) neither += 1;
+    else if (judgment.first) firstOnly += 1;
+    else secondOnly += 1;
+  }
+  const n = judgments.length;
+  const split = firstOnly + secondOnly;
+  const observed = n === 0 ? null : (both + neither) / n;
+  const pFirst = n === 0 ? 0 : (both + firstOnly) / n;
+  const pSecond = n === 0 ? 0 : (both + secondOnly) / n;
+  const chance = pFirst * pSecond + (1 - pFirst) * (1 - pSecond);
+  return Object.freeze({
+    pairedJudgments: n,
+    observedAgreement: observed,
+    kappa: observed === null || chance >= 1 ? null : (observed - chance) / (1 - chance),
+    presentAgreement: 2 * both + split === 0 ? null : (2 * both) / (2 * both + split),
+    absentAgreement: 2 * neither + split === 0 ? null : (2 * neither) / (2 * neither + split),
+  });
+}
+
+/** The key of a pair, order-free. */
+export function pairKey(first: string, second: string): string {
+  return JSON.stringify(first < second ? [first, second] : [second, first]);
+}
+
+export function assessPairCalibration(
+  readings: readonly BehaviourObservation[],
+  bar: PairCalibrationBar,
+): ReadonlyMap<string, PairCalibration> {
+  // Each person's verdict on each attempt they coded with a key, and when.
+  // Only people: a detector does not calibrate against a coach (see
+  // buildCoRatedItems).
+  interface Verdict { readonly polarity: ObservationPolarity | 'both'; readonly atMs: number }
+  const verdicts = new Map<string, Map<string, Verdict>>();
+  for (const reading of readings) {
+    if (!reading.observerAccountId || reading.interpretation !== 'human_observed') continue;
+    const key = reading.opportunityKey;
+    if (typeof key !== 'string' || key.length === 0) continue;
+    const attempt = JSON.stringify([reading.organizationId, reading.athleteId, reading.behaviourKey, episodeKeyOf(reading)]);
+    const byObserver = verdicts.get(attempt) ?? new Map<string, Verdict>();
+    const earlier = byObserver.get(reading.observerAccountId);
+    const observedMs = Date.parse(reading.observedAt);
+    byObserver.set(reading.observerAccountId, Object.freeze({
+      polarity: earlier === undefined || earlier.polarity === reading.polarity ? reading.polarity : 'both',
+      atMs: Math.max(earlier?.atMs ?? Number.NEGATIVE_INFINITY, Number.isFinite(observedMs) ? observedMs : Number.NEGATIVE_INFINITY),
+    }));
+    verdicts.set(attempt, byObserver);
+  }
+
+  const byPair = new Map<string, { observers: [string, string]; judgments: PairedJudgment[] }>();
+  for (const [attempt, byObserver] of verdicts) {
+    const observers = [...byObserver.keys()].filter((observer) => byObserver.get(observer)!.polarity !== 'both').sort();
+    for (let i = 0; i < observers.length; i += 1) {
+      for (let j = i + 1; j < observers.length; j += 1) {
+        const key = pairKey(observers[i], observers[j]);
+        const entry = byPair.get(key) ?? { observers: [observers[i], observers[j]], judgments: [] };
+        const first = byObserver.get(observers[i])!;
+        const second = byObserver.get(observers[j])!;
+        entry.judgments.push({
+          atMs: Math.max(first.atMs, second.atMs),
+          attempt,
+          first: first.polarity === 'occurrence',
+          second: second.polarity === 'occurrence',
+        });
+        byPair.set(key, entry);
+      }
+    }
+  }
+
+  const result = new Map<string, PairCalibration>();
+  for (const [key, entry] of byPair) {
+    // Oldest first; ties broken by attempt, so the latest window is the same
+    // whatever order the readings came in.
+    const ordered = [...entry.judgments].sort((left, right) => (
+      left.atMs !== right.atMs ? (left.atMs < right.atMs ? -1 : 1)
+        : left.attempt < right.attempt ? -1 : left.attempt > right.attempt ? 1 : 0
+    ));
+    const pooled = agreementOf(ordered);
+    const recent = agreementOf(ordered.slice(-Math.max(1, bar.minimumPairedJudgments)));
+    result.set(key, Object.freeze({
+      observers: Object.freeze([entry.observers[0], entry.observers[1]]) as readonly [string, string],
+      ...pooled,
+      recent,
+      calibrated: pooled.pairedJudgments >= bar.minimumPairedJudgments
+        && recent.observedAgreement !== null && recent.observedAgreement >= bar.minimumAgreement
+        && recent.kappa !== null && recent.kappa >= bar.minimumKappa,
+    }));
+  }
+  return result;
 }

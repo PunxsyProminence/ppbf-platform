@@ -223,6 +223,7 @@ export type PatternReasonCode =
   | 'NO_VIDEO_CORROBORATION'
   | 'VIDEO_CONTRADICTS_OBSERVER'
   | 'OBSERVER_DISAGREEMENT'
+  | 'ATTEMPT_DISPUTED'
   // --- attribution ---------------------------------------------------------
   | 'ATTRIBUTION_NOT_ATHLETE'
   | 'ATTRIBUTION_SPLIT'
@@ -267,6 +268,10 @@ export type PatternReasonCode =
   | 'MEASUREMENT_RELIABILITY_UNKNOWN'
   | 'OBSERVER_SYSTEMATICALLY_DEVIANT'
   // --- intervention / lesson ----------------------------------------------
+  | 'PATTERN_NOT_ESTABLISHED'
+  | 'INTERVENTION_NOT_DELIVERED'
+  | 'INTERVENTION_DELIVERY_UNRECORDED'
+  | 'OUTCOME_UNRESOLVED'
   | 'NO_INTERVENTION'
   | 'INTERVENTION_NOT_HUMAN_AUTHORIZED'
   | 'OUTCOME_INTERVENTION_MISMATCH'
@@ -475,7 +480,40 @@ export interface PatternIntervention {
    */
   readonly trainedTaskContextKey: string;
   readonly description: string;
+  /**
+   * When the intervention ended, if it has. Regression is the behaviour coming
+   * back AFTER the lesson -- a fault while the fix is still being drilled is
+   * the reason for the drill, not its failure -- so it is read from here, or
+   * from the start while the intervention runs.
+   */
+  readonly endedAt?: string | null;
+  /**
+   * Whether it was delivered at all, in the intervention ledger's own words
+   * (pilot.intervention_executions.adherence). Something never delivered
+   * taught nothing, whatever the review says.
+   */
+  readonly adherence?: InterventionAdherence | null;
 }
+
+/** pilot.intervention_executions.adherence, verbatim. */
+export type InterventionAdherence =
+  | 'delivered_as_planned'
+  | 'delivered_with_deviations'
+  | 'under_delivered'
+  | 'not_delivered'
+  | 'unknown';
+
+/** pilot.intervention_outcome_reviews.hypothesis_result, verbatim. */
+export type InterventionHypothesisResult =
+  | 'supported'
+  | 'partially_supported'
+  | 'contradicted'
+  | 'unresolved'
+  | 'confounded'
+  | 'insufficient_evidence';
+
+/** pilot.intervention_outcome_reviews.performance_result, verbatim. */
+export type InterventionPerformanceResult = 'improved' | 'unchanged' | 'declined' | 'mixed' | 'unknown';
 
 /**
  * Reuses `pilot.shadow_decision_outcomes.match_state` verbatim rather than
@@ -493,6 +531,14 @@ export interface InterventionOutcomeReview {
   readonly reviewedByAccountId: string | null;
   readonly reviewedAt: string | null;
   readonly notes?: string;
+  /**
+   * The coach's own answers, when the review came from the intervention
+   * ledger (pilot.intervention_outcome_reviews): read, never computed. A
+   * belief the coach left unresolved, or with too little evidence to say,
+   * and a performance the coach could not judge, validate nothing yet.
+   */
+  readonly hypothesisResult?: InterventionHypothesisResult | null;
+  readonly performanceResult?: InterventionPerformanceResult | null;
 }
 
 export interface TransferEvidenceSummary {

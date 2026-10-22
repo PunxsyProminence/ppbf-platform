@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
@@ -8,7 +8,7 @@ import type { WallBoard, WallPublicBoard, WallSession } from '@/src/server/pilot
 
 import { BlockKindIcon, blockKindWord } from './blockKindIcons';
 import { pickSaying, sayingSource, sayingsFor, type GymSaying, type LibraryQuote } from './gymSayings';
-import useGymSound, { playGymSound } from './useGymSound';
+import useGymSound, { playGymSound, setGymRecording } from './useGymSound';
 import { advanceRoundTimer, isNewSet, releasedKeys, roundPanelText, roundSounds, type WallRoundReading } from './wallRoundTimer';
 import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 
@@ -86,6 +86,57 @@ export function boardHealth(lastGoodAtMs: number | null, nowMs: number): WallHea
   if (age >= WALL_ABANDON_MS) return 'abandoned';
   if (age >= WALL_STALE_MS) return 'stale';
   return 'fresh';
+}
+
+/**
+ * THE BOARD FITS THE SCREEN IT IS ON (#1792 items 1 and 2). The wall is laid out for a 1920x1080
+ * panel. On a smaller window (a laptop browser, a TV whose browser reports 1280x720) that layout
+ * used to overflow: the strip drew over NOW and the marquee over ON THE FLOOR. Now the whole board
+ * is shrunk with CSS zoom, by whichever of width and height is shorter, and laid out on a canvas of
+ * at least 1920x1080, so every window shows the same board, smaller. At 1920x1080 and above it is
+ * null and nothing is applied: that screen looks exactly as it did. zoom rather than a transform,
+ * because the board's drift already owns its transform, and zoom re-lays the text out sharp.
+ */
+export const WALL_DESIGN_WIDTH = 1920;
+export const WALL_DESIGN_HEIGHT = 1080;
+
+export interface WallFit {
+  zoom: number;
+  /** The canvas the board is laid out on, in its own (unzoomed) px. */
+  width: number;
+  height: number;
+}
+
+export function wallFit(width: number, height: number): WallFit | null {
+  if (!(width > 0) || !(height > 0)) return null;
+  const zoom = Math.min(width / WALL_DESIGN_WIDTH, height / WALL_DESIGN_HEIGHT);
+  if (zoom >= 1) return null;
+  return { zoom, width: width / zoom, height: height / zoom };
+}
+
+function subscribeToWindowSize(onChange: () => void): () => void {
+  window.addEventListener('resize', onChange);
+  return () => window.removeEventListener('resize', onChange);
+}
+
+/** "WxH", or '' where zoom is not supported (the board then renders as it always did). */
+function windowSizeKey(): string {
+  const zoomable = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('zoom', '0.5');
+  return zoomable ? `${window.innerWidth}x${window.innerHeight}` : '';
+}
+
+function useWallFitStyle(): CSSProperties | undefined {
+  const key = useSyncExternalStore(subscribeToWindowSize, windowSizeKey, () => '');
+  const [width, height] = key.split('x').map(Number);
+  const fit = key ? wallFit(width, height) : null;
+  if (!fit) return undefined;
+  return {
+    zoom: fit.zoom,
+    width: `${fit.width}px`,
+    height: `${fit.height}px`,
+    // The marquee's one-name run is a canvas wide (globals.css .marquee-run).
+    ['--wall-canvas-width' as string]: `${fit.width}px`,
+  };
 }
 
 /**
@@ -552,13 +603,18 @@ export default function WallDisplay() {
     if (!dropped || !previous) lastReading.current = { runId: roundTimer.runId, reading: roundReading };
   });
 
+  const fitStyle = useWallFitStyle();
+  // Nothing sent to this paired TV yet (#1792 item 5; Jason 2026-10-21, "A: Workout-ready board
+  // (Rec.)"): the round clock waits at READY in its bezel, over the wall's own board -- who is on
+  // the floor and today's classes -- until a coach sends a session. A session that went stale was
+  // sent, so it is not "waiting", and a board that is not fresh claims nothing. The unpaired public
+  // wall keeps its approved look.
+  const ready = paired === true && live === null && health === 'fresh';
+  const face = roundTimer && roundReading ? roundPanelText(roundReading, roundTimer.view.round_seconds) : ready ? WALL_READY_FACE : null;
+
   return (
-    <div className="wall-board ge-wallboard ge-screenframe flex h-screen w-screen flex-col overflow-hidden">
-      <Masthead
-        now={now}
-        zone={zone}
-        round={roundTimer && roundReading ? <RoundPanel reading={roundReading} roundSeconds={roundTimer.view.round_seconds} /> : null}
-      />
+    <div className="wall-board ge-wallboard ge-screenframe flex h-screen w-screen flex-col overflow-hidden" style={fitStyle}>
+      <Masthead now={now} zone={zone} round={face ? <RoundPanel label={face.label} time={face.time} /> : null} />
 
       {showLive ? (
         <LiveBoard board={board} zone={zone} daily={daily} live={liveShown} now={now} />
@@ -580,15 +636,17 @@ export default function WallDisplay() {
  * sits in the masthead, between the date and the wall clock, which the masthead is already tall
  * enough to hold: the board below keeps every row it had (floorDensity is sized for that height).
  */
-function RoundPanel({ reading, roundSeconds }: { reading: WallRoundReading; roundSeconds: number }) {
-  const { label, time } = roundPanelText(reading, roundSeconds);
+function RoundPanel({ label, time }: { label: string; time: string }) {
   return (
     <section aria-label="Round clock" className="wall-round flex min-w-0 flex-col items-center">
       <p className="wall-round__label text-[length:var(--t-3xl)] font-black text-[color:var(--bone-100)]">{label}</p>
-      {time && <p className="wall-round__time font-mono tabular-nums text-[length:var(--t-5xl)] font-black text-[color:var(--bone-100)]">{time}</p>}
+      {time && <p className="wall-round__time font-mono tabular-nums uppercase text-[length:var(--t-5xl)] font-black text-[color:var(--bone-100)]">{time}</p>}
     </section>
   );
 }
+
+/** The round clock on a paired TV with nothing sent: Jason's words in the ruling, READY under them. */
+export const WALL_READY_FACE = { label: 'Waiting for coach', time: 'Ready' } as const;
 
 /* ------------------------------------------------------------- pair box --- */
 
@@ -729,8 +787,21 @@ const WALL_SOUND_LABEL: Record<'off' | 'arming' | 'on' | 'unavailable', string> 
  */
 const WALL_CONTROL_SIZE = { minHeight: 'var(--tap)', fontSize: 'var(--t-md)' } as const;
 
+/**
+ * THE ROUND BELL'S RECORDING (#1792 item 4; Jason 2026-10-21, "A: Free boxing-bell recording
+ * (Rec.)"). A CC0 or public-domain boxing-ring bell saved at this path under apps/web/public rings
+ * on this TV in place of the synthesized bell. Until that file is there, or wherever it cannot be
+ * fetched or decoded, the engine's own bell rings exactly as before: adding the file is the whole
+ * change.
+ */
+export const WALL_BELL_RECORDING_URL = '/sounds/boxing-bell.wav';
+
 function WallSound() {
   const { enabled, status, setEnabled, play } = useGymSound();
+  useEffect(() => {
+    setGymRecording('bell', WALL_BELL_RECORDING_URL);
+    return () => setGymRecording('bell', null);
+  }, []);
   // What this press means, decided as it begins. The hook's own pointerdown listener starts audio
   // on a waiting TV during the same gesture, and can turn the status to "on" before the click
   // lands; reading the status at click time would then switch sound OFF (Codex review). A press
@@ -806,7 +877,7 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
     <header className="flex shrink-0 flex-col gap-[var(--s3)] px-[var(--s7)] pt-[var(--s4)]">
       <MottoPlate />
       <div className="flex items-end justify-between gap-[var(--s6)]">
-        <div className="min-w-0">
+        <div className="wall-masthead-day min-w-0">
           <p className="wall-eyebrow">{gym?.brand ?? HELD}</p>
           <p className="wall-day text-6xl">{stamp ? formatIn(stamp, zone, { weekday: 'long' }) : HELD}</p>
           <p className="wall-date text-4xl">
@@ -840,7 +911,7 @@ function LiveBoard(props: { board: WallBoard; zone?: string; daily: DailySaying 
           session is on this TV the walk-through takes the major side and the
           names shrink to the minor one (the gym TV plan, Q4 A); today's
           classes come back after. */}
-      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.618fr)_minmax(0,1fr)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s4)]">
+      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.618fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s4)]">
         {live ? (
           <>
             <SessionNow live={live} now={now} />
@@ -984,15 +1055,19 @@ function SessionNow({ live, now }: { live: ShownSession; now: number | null }) {
               data-state={state}
               aria-current={state === 'now' ? 'step' : undefined}
             >
-              <span className="wall-strip-number ge-enamel">{position}</span>
-              {blockKindWord(block.block_kind) && (
-                <span className="wall-strip-icon ge-pictogram">
-                  <BlockKindIcon kind={block.block_kind} />
-                </span>
-              )}
-              <span className="wall-strip-word">{blockKindWord(block.block_kind) ?? block.block_label}</span>
+              <span className="wall-strip-head">
+                <span className="wall-strip-number ge-enamel">{position}</span>
+                {blockKindWord(block.block_kind) && (
+                  <span className="wall-strip-icon ge-pictogram">
+                    <BlockKindIcon kind={block.block_kind} />
+                  </span>
+                )}
+              </span>
+              {/* The block's own name (#1792 item 3): the pictogram already says its kind, and
+                  seven tiles reading "Drill" told a boxer nothing. */}
+              <span className="wall-strip-word">{block.block_label}</span>
               <span className="wall-strip-min">
-                {block.start_offset_min}–{block.end_offset_min} min
+                <span className="wall-strip-range">{block.start_offset_min}–{block.end_offset_min}</span> min
               </span>
             </li>
           );

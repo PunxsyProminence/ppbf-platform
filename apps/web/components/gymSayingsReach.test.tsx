@@ -45,6 +45,7 @@ jest.mock('./useGymSound', () => ({
     play: () => false,
     setEnabled: async () => false,
   }),
+  setGymRecording: () => {},
 }));
 
 /* ------------------------------------------------------- the real seeds ---

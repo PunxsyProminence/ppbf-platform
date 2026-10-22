@@ -72,26 +72,33 @@ function index(name, table, columns, predicate) {
   )`;
 }
 
+const MARK_COLUMNS = [
+  'organization_id text not null',
+  'run_id text not null',
+  'athlete_id text not null',
+  'marked_by_account_id text not null',
+  'marked_by_role text not null',
+  'marked_at timestamp with time zone not null',
+  'removed_at timestamp with time zone',
+  'removed_by_account_id text',
+];
+// Added by pilot_slice_postgres_session_run_class_migration.sql, which runs after this one.
+const LATER_MARK_COLUMNS = ['register_class_id text', 'register_written_at timestamp with time zone'];
+
 // Readiness asserts the result, not the attempt: every rule the migration creates is read back
 // from the catalog, and a database that is missing one, or holds a looser one, is refused.
 const READINESS_QUERY = `
   select
     ${MARKS} is not null as table_ready,
-    -- Every column of the new table: name, type and whether it may be null, in order.
+    -- Every column of the new table: name, type and whether it may be null, in order. Exactly
+    -- these, or these followed by the two the session-run-class migration adds later
+    -- (register_class_id, register_written_at, D4), because the \`all\` chain re-runs this runner
+    -- on a database that has both.
     (
       select array_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then ' not null' else '' end order by a.attnum)
         from pg_attribute a
        where a.attrelid = ${MARKS} and a.attnum > 0 and not a.attisdropped
-    ) = ${textArray([
-      'organization_id text not null',
-      'run_id text not null',
-      'athlete_id text not null',
-      'marked_by_account_id text not null',
-      'marked_by_role text not null',
-      'marked_at timestamp with time zone not null',
-      'removed_at timestamp with time zone',
-      'removed_by_account_id text',
-    ])} as columns_ready,
+    ) in (${textArray(MARK_COLUMNS)}, ${textArray([...MARK_COLUMNS, ...LATER_MARK_COLUMNS])}) as columns_ready,
     exists (
       select 1 from pg_constraint c
        where c.conrelid = ${MARKS} and c.conname = 'pilot_session_run_athletes_pkey' and c.contype = 'p'

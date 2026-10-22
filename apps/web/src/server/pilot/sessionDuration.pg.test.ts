@@ -81,6 +81,8 @@ const PREREQUISITE_MIGRATIONS = [
   // also alters athlete_check_ins, so its table comes first).
   'pilot_slice_postgres_athlete_check_ins_migration.sql',
   'pilot_slice_postgres_athlete_self_report_measures_migration.sql',
+  // upsertSession writes enjoyment too (athlete-metrics migration, OD-2026-10-17-026 (a)).
+  'pilot_slice_postgres_athlete_metrics_migration.sql',
 ];
 const MIGRATION_FILE = 'pilot_slice_postgres_session_duration_migration.sql';
 
