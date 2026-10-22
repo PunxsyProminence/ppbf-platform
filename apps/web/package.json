@@ -197,6 +197,7 @@
     "test:migrations:scheduler-membership-flag": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/schedulerMembershipFlag.pg.test.ts --testTimeout=180000",
     "test:migrations:scheduler-family-checkin": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/schedulerFamilyCheckIn.pg.test.ts --testTimeout=180000",
     "test:migrations:scheduler-cancel-class": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/schedulerCancelClass.pg.test.ts --testTimeout=180000",
+    "test:migrations:scheduler-create-classes": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/schedulerCreateClasses.pg.test.ts --testTimeout=180000",
     "test:migrations:grant-obligations": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/grantObligations.pg.test.ts --testTimeout=180000",
     "test:migrations:shadow-research-submissions": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowResearchSubmissions.pg.test.ts --testTimeout=180000",
     "test:migrations:shadow-event-athlete-scope": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowEventAthleteScope.pg.test.ts --testTimeout=180000",
