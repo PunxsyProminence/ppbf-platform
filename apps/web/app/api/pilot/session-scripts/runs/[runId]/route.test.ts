@@ -399,12 +399,12 @@ describe('tie_class and mark_no_shows', () => {
   const ACTOR = { organizationId: 'org-1', accountId: 'acct-coach', role: 'coach', athleteId: undefined };
 
   it('ties to a class (trimmed) or unties with null, as the session\'s actor, and answers what was copied', async () => {
-    mockTie.mockResolvedValue({ class_id: 'class-1', copied: [{ athlete_id: 'ath-1', effect: 'created' }] });
+    mockTie.mockResolvedValue({ class_id: 'class-1', copied: [{ athlete_id: 'ath-1', effect: 'created' }], released: [] });
     const response = await patch({ action: 'tie_class', class_id: ' class-1 ' });
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ class_id: 'class-1', copied: [{ athlete_id: 'ath-1', effect: 'created' }] });
+    await expect(response.json()).resolves.toEqual({ class_id: 'class-1', copied: [{ athlete_id: 'ath-1', effect: 'created' }], released: [] });
     expect(mockTie).toHaveBeenCalledWith(ACTOR, RUN_ID, 'class-1');
-    mockTie.mockResolvedValue({ class_id: null, copied: [] });
+    mockTie.mockResolvedValue({ class_id: null, copied: [], released: [] });
     await patch({ action: 'tie_class', class_id: null });
     expect(mockTie).toHaveBeenLastCalledWith(ACTOR, RUN_ID, null);
   });
