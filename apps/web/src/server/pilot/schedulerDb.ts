@@ -239,28 +239,33 @@ export async function setSchedulerClassCover(
  * Soft-cancels a class (#1536): the status reads 'cancelled' and nothing else
  * changes. Its registrations, attendance and history stay exactly as they
  * were. Returns false when the class was already cancelled, has started
- * (#1595: never after start, checked in the same statement on the database's
- * clock so a cancel racing the start cannot land), or is not this gym's.
+ * (#1595, checked in the same statement on the database's clock so a cancel
+ * racing the start cannot land), or is not this gym's.
  *
  * `onlyIfCoveredBy`: for a caller allowed only as the class's cover coach,
  * the update also requires that they still cover it, so a cover handed to
  * someone else between the check and the write cannot cancel (#1595).
+ *
+ * `evenIfStarted`: the office's cancel, which the start does not stop (Jason,
+ * 2026-10-22: "then classes need to be able to be canceled"). Coaches never
+ * pass it.
  */
 export async function cancelSchedulerClass(
   organizationId: string,
   classId: string,
   updatedAt: string,
   onlyIfCoveredBy?: string,
+  evenIfStarted = false,
 ): Promise<boolean> {
   const rows = await query<{ class_id: string }>(
     `update pilot.scheduler_classes
      set status = 'cancelled',
          updated_at = $3
      where organization_id = $1 and class_id = $2 and status <> 'cancelled'
-       and start_at > now()
+       and ($5::boolean or start_at > now())
        and ($4::text is null or covering_coach_account_id = $4::text)
      returning class_id`,
-    [organizationId, classId, updatedAt, onlyIfCoveredBy ?? null],
+    [organizationId, classId, updatedAt, onlyIfCoveredBy ?? null, evenIfStarted],
   );
   return rows.length > 0;
 }

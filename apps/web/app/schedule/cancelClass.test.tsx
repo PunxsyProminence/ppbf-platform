@@ -45,7 +45,7 @@ function classRow(id: string, title: string, startOffsetMs: number, extra: Recor
   };
 }
 
-function installFetchMock(role: 'coach' | 'athlete', classes: ReturnType<typeof classRow>[]): jest.Mock {
+function installFetchMock(role: 'coach' | 'athlete' | 'organization_admin', classes: ReturnType<typeof classRow>[]): jest.Mock {
   const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const json = (payload: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response);
@@ -56,6 +56,7 @@ function installFetchMock(role: 'coach' | 'athlete', classes: ReturnType<typeof 
     if (url.endsWith('/api/pilot/athletes/list')) {
       return json({ items: [{ athlete_id: 'athlete-1', full_name: 'My Athlete' }] });
     }
+    if (url.endsWith('/api/pilot/admin/staff')) return json({ ok: true, members: [] });
     if (url.endsWith('/api/pilot/scheduler') && init?.method === 'POST') {
       return json({ ok: true, class_id: 'upcoming', status: 'cancelled' });
     }
@@ -144,6 +145,38 @@ describe('Cancel Class (#1536)', () => {
 
     expect(within(rowFor('Running Now')).queryByRole('button', { name: 'Cancel Class' })).not.toBeInTheDocument();
     expect(within(rowFor('Starts Soon')).getByRole('button', { name: 'Cancel Class' })).toBeInTheDocument();
+  });
+
+  // Jason, 2026-10-22: "then classes need to be able to be canceled" (lane LC).
+  test('the office is offered Cancel Class on a class that is running or has ended', async () => {
+    installFetchMock('organization_admin', [
+      classRow('running', 'Running Now', -10 * 60 * 1000, { can_cancel: true }),
+      classRow('ran', 'Ran Last Week', -7 * 24 * HOUR, { can_cancel: true }),
+    ]);
+    await renderPage();
+
+    expect(within(rowFor('Running Now')).getByRole('button', { name: 'Cancel Class' })).toBeInTheDocument();
+    expect(within(rowFor('Ran Last Week')).getByRole('button', { name: 'Cancel Class' })).toBeInTheDocument();
+  });
+
+  test('the confirm step names the class and says its marks stop counting; the second press cancels it', async () => {
+    const fetchMock = installFetchMock('organization_admin', [
+      classRow('ran', 'Ran Last Week', -7 * 24 * HOUR, { can_cancel: true }),
+    ]);
+    await renderPage();
+
+    expect(within(rowFor('Ran Last Week')).queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(within(rowFor('Ran Last Week')).getByRole('button', { name: 'Cancel Class' }));
+    const confirm = within(rowFor('Ran Last Week')).getByRole('status');
+    expect(confirm).toHaveTextContent(
+      /^Cancel Ran Last Week, .+\? Its attendance marks will stop counting in attendance reports, on families' screens, in the roster export and on the TV\. They are kept, not deleted\.$/,
+    );
+    expect(posts(fetchMock)).toEqual([]);
+
+    await act(async () => {
+      fireEvent.click(within(rowFor('Ran Last Week')).getByRole('button', { name: 'Press again to cancel' }));
+    });
+    expect(posts(fetchMock)).toEqual([{ action: 'cancel_class', class_id: 'ran' }]);
   });
 
   test('Cancel Class goes when the class starts while the page is open (#1595)', async () => {

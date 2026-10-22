@@ -11,8 +11,13 @@ import type { SchedulerClass } from './schedulerDb';
  *    coach, and the organization admin (and admin). Covering stays open to
  *    any coach of the gym, but a cover added within the last hour before the
  *    cancel cannot cancel, so "make myself cover, then cancel" no longer works.
- * 2. "A: No, not after start (Recommended)". Nobody cancels a class once its
- *    start time has passed.
+ * 2. After the start: the office only. Jason, 2026-10-22: "then classes need
+ *    to be able to be canceled", which replaces his 2026-10-14 "A: No, not
+ *    after start (Recommended)" (OD-2026-10-14-001's "After start" half; the
+ *    "Who cancels" half above stands). A coach, cover or not, still cannot
+ *    cancel once the start time has passed; the organization admin can, at any
+ *    time. A cancelled class's marks stop counting in the class-mark readers
+ *    (lane LC; the per-day attendance view is not yet one of them).
  *
  * Pure: the route reads the class and when its cover was taken, and this
  * decides. GET's can_cancel and the cancel_class POST both call it, so the
@@ -33,7 +38,7 @@ export interface CancelActor {
 // PROPOSED copy for the owner.
 export const CANCEL_REFUSAL_MESSAGES: Record<CancelRefusal, string> = {
   cancelled: 'This class is already cancelled.',
-  started: 'This class has already started, so it can no longer be cancelled.',
+  started: 'This class has already started, so only the office can cancel it now.',
   not_class_coach: "Only this class's coach, its cover coach or the office can cancel it.",
   cover_too_recent: 'A cover taken in the last hour cannot cancel this class. Its coach or the office can.',
 };
@@ -70,12 +75,13 @@ export function classCancelRefusal(
   nowMs: number,
 ): CancelRefusal | null {
   if (classItem.status === 'cancelled') return 'cancelled';
+  // The office cancels before or after the start (Jason, 2026-10-22).
+  if (actor.isOffice) return null;
 
   // Gym time: a stored start with no zone is the gym's clock, not the server's.
   const start = parseInstantAsGymTime(classItem.start_at);
   if (!start || start.getTime() <= nowMs) return 'started';
 
-  if (actor.isOffice) return null;
   if (!actor.isCoach) return 'not_class_coach';
   if (classItem.coach_account_id === actor.accountId || classItem.scheduled_by_account_id === actor.accountId) {
     return null;

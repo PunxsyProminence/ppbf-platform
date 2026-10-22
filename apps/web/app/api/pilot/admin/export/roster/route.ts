@@ -117,6 +117,8 @@ const ROSTER_QUERY = `
       and sr.status = 'registered'
     where sa.organization_id = ath.organization_id
       and sa.athlete_id = ath.athlete_id
+      -- A cancelled class's marks stop counting (lane LC), as on the dashboard.
+      and sc.status <> 'cancelled'
   ) attend on true
   where ath.organization_id = $1
     -- A deleted athlete is not on the roster, and nothing tied to them --
