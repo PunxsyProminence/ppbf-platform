@@ -6,8 +6,21 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import type { ClubRole } from '@/components/roleRoutes';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric, formatGymStamp, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
+import {
+  formatGymCustom,
+  formatGymDateNumeric,
+  formatGymStamp,
+  formatGymTimeOfDay,
+  gymDayIso,
+  parseInstantAsGymTime,
+} from '@/src/lib/gymTime';
 import { defaultStaffAttendanceClassId } from '@/src/shared/attendanceDefaultClass';
+import {
+  REPEAT_WEEKS_DEFAULT,
+  REPEAT_WEEKS_MAX,
+  weeklyClassDates,
+  type WeeklyRepeat,
+} from '@/src/shared/weeklyClassDates';
 import { deriveCoachDisplayName } from '@/src/shared/coachDisplayName';
 import { roleWords } from '@/src/shared/roleWords';
 import BackHome from '@/components/BackHome';
@@ -232,6 +245,30 @@ function roleCanResolveCoachingRequests(role: SchedulerRole | null): boolean {
   return role === 'admin' || role === 'organization_admin';
 }
 
+/* Schedule Class's request key (lane LW): kept across a tap whose answer never
+   came, so pressing again is the same request and makes nothing twice;
+   replaced once the server has answered. */
+function newRequestKey(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `class-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/* What Repeat weekly will make, before anything is sent. PROPOSED copy. */
+function repeatPreview(startAt: string, endAt: string, repeat: WeeklyRepeat): string {
+  const start = startAt ? parseInstantAsGymTime(startAt) : null;
+  const end = endAt ? parseInstantAsGymTime(endAt) : null;
+  if (!start || !end) return 'Pick when the first class starts and ends.';
+  if ('until' in repeat && !repeat.until) return 'Pick the last date.';
+  const plan = weeklyClassDates({ start, end }, repeat);
+  if (!plan.ok) return plan.error;
+  const day = (instant: Date) => formatGymCustom(instant, { weekday: 'short', month: 'short', day: 'numeric' });
+  const last = plan.classes[plan.classes.length - 1].start;
+  return plan.classes.length === 1
+    ? `Makes 1 class, ${day(start)}.`
+    : `Makes ${plan.classes.length} classes, ${day(start)} to ${day(last)}, ${formatGymTimeOfDay(start)} each week.`;
+}
+
 /* A training hold's stored category in words (UXB-11). PROPOSED; the same
    words Sports Medicine's picker uses. */
 const HOLD_REASON_WORDS: Readonly<Record<string, string>> = {
@@ -318,6 +355,16 @@ export default function SchedulerPage() {
   // The coach who runs a class an admin schedules (lane L31 P6). A coach's own
   // class is theirs; an admin is not a coach, so the admin names one.
   const [newClassCoachId, setNewClassCoachId] = useState('');
+  // Repeat weekly (lane LW): off unless ticked; for a number of weeks or until a date.
+  const [newClassRepeat, setNewClassRepeat] = useState(false);
+  const [newClassRepeatMode, setNewClassRepeatMode] = useState<'weeks' | 'until'>('weeks');
+  // As typed, so the box can be cleared and retyped; read as a number where it is used.
+  const [newClassRepeatWeeks, setNewClassRepeatWeeks] = useState(String(REPEAT_WEEKS_DEFAULT));
+  const [newClassRepeatUntil, setNewClassRepeatUntil] = useState('');
+  const [createClassKey, setCreateClassKey] = useState(newRequestKey);
+  const newClassRepeatRule: WeeklyRepeat = newClassRepeatMode === 'weeks'
+    ? { weeks: newClassRepeatWeeks.trim() === '' ? Number.NaN : Number(newClassRepeatWeeks) }
+    : { until: newClassRepeatUntil };
 
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState('');
@@ -486,7 +533,13 @@ export default function SchedulerPage() {
     loadSchedulerState().catch((err) => console.error('Failed to load scheduler state:', err));
   }, [loadSchedulerState]);
 
-  async function runAction(payload: Record<string, unknown>, successMessage: string, onDone?: () => void) {
+  // onAnswered: the server replied, whatever it said (never on a lost request).
+  async function runAction(
+    payload: Record<string, unknown>,
+    successMessage: string,
+    onDone?: () => void,
+    onAnswered?: () => void,
+  ) {
     // Guards every scheduler action (register, cover, create, request,
     // check-in, review) against double-submit -- a second click before the
     // first request resolves used to be able to reach the server as two
@@ -521,7 +574,11 @@ export default function SchedulerPage() {
         hold_warning?: unknown;
         method?: string;
         recorded?: boolean;
+        class_ids?: unknown[];
+        already_created?: boolean;
       };
+      // The app's own answer, not a gateway page: a timeout there may have landed.
+      if (result.ok === true || typeof result.error === 'string') onAnswered?.();
       if (!response.ok || !result.ok) {
         showError(result.error || 'That did not go through. Check the schedule before trying again.', holdRefusalDetailFrom(result));
         return;
@@ -545,7 +602,12 @@ export default function SchedulerPage() {
           // says when one already stood.
           : payload.action === 'attendance_checkin' && result.recorded === false
             ? 'Your coach has already taken the register for this class.'
-            : successMessage;
+            // Repeat weekly (lane LW): a press whose first answer was lost made nothing twice.
+            : payload.action === 'create_class' && result.already_created === true
+              ? 'Already scheduled: your earlier tap went through. Nothing was added twice.'
+              : payload.action === 'create_class' && (result.class_ids?.length ?? 0) > 1
+                ? `${result.class_ids?.length} weekly classes scheduled.`
+                : successMessage;
       if (payload.action === 'attendance_checkin') {
         const warned = checkInHoldWarningFrom(result.hold_warning);
         setCheckInHold(warned ? { athleteId: String(payload.athlete_id ?? ''), hold: warned } : null);
@@ -960,6 +1022,51 @@ export default function SchedulerPage() {
                         </select>
                       </div>
                     ) : null}
+                    <div className="space-y-[var(--s2)]">
+                      <label className="t-body flex items-center gap-[var(--s2)]">
+                        <input
+                          type="checkbox"
+                          checked={newClassRepeat}
+                          onChange={(e) => setNewClassRepeat(e.target.checked)}
+                        />
+                        Repeat weekly
+                      </label>
+                      {newClassRepeat ? (
+                        <>
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <select
+                              aria-label="Repeat for"
+                              value={newClassRepeatMode}
+                              onChange={(e) => setNewClassRepeatMode(e.target.value === 'until' ? 'until' : 'weeks')}
+                              className="select"
+                            >
+                              <option value="weeks">For a number of weeks</option>
+                              <option value="until">Until a date</option>
+                            </select>
+                            {newClassRepeatMode === 'weeks' ? (
+                              <input
+                                type="number"
+                                min={1}
+                                max={REPEAT_WEEKS_MAX}
+                                aria-label="Number of weeks"
+                                value={newClassRepeatWeeks}
+                                onChange={(e) => setNewClassRepeatWeeks(e.target.value)}
+                                className="input"
+                              />
+                            ) : (
+                              <input
+                                type="date"
+                                aria-label="Last class on or before"
+                                value={newClassRepeatUntil}
+                                onChange={(e) => setNewClassRepeatUntil(e.target.value)}
+                                className="input"
+                              />
+                            )}
+                          </div>
+                          <p className="t-muted">{repeatPreview(newClassStartAt, newClassEndAt, newClassRepeatRule)}</p>
+                        </>
+                      ) : null}
+                    </div>
                     <button
                       type="button"
                       onClick={() =>
@@ -972,6 +1079,12 @@ export default function SchedulerPage() {
                             location: newClassLocation,
                             capacity: newClassCapacity,
                             ...(roleCanResolveCoachingRequests(role) ? { coach_account_id: newClassCoachId } : {}),
+                            request_key: createClassKey,
+                            ...(newClassRepeat
+                              ? 'weeks' in newClassRepeatRule
+                                ? { repeat_weeks: newClassRepeatRule.weeks }
+                                : { repeat_until: newClassRepeatRule.until }
+                              : {}),
                           },
                           'Class scheduled successfully.',
                           () => {
@@ -980,7 +1093,12 @@ export default function SchedulerPage() {
                             setNewClassEndAt('');
                             setNewClassLocation('');
                             setNewClassCapacity(16);
+                            setNewClassRepeat(false);
+                            setNewClassRepeatMode('weeks');
+                            setNewClassRepeatWeeks(String(REPEAT_WEEKS_DEFAULT));
+                            setNewClassRepeatUntil('');
                           },
+                          () => setCreateClassKey(newRequestKey()),
                         )
                       }
                       disabled={actionInFlight || (roleCanResolveCoachingRequests(role) && !newClassCoachId)}

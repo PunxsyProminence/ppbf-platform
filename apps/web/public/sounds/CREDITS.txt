@@ -1,0 +1,6 @@
+boxing-bell.wav -- Wikimedia Commons, File:Dingdingding.wav ("Boxing Bell"), uploaded 2025-09-06 by IOII-IOIO-IIOI.
+https://commons.wikimedia.org/wiki/File:Dingdingding.wav
+License: Creative Commons CC0 1.0 Universal Public Domain Dedication (https://creativecommons.org/publicdomain/zero/1.0/). No attribution required; kept for provenance.
+Original: https://upload.wikimedia.org/wikipedia/commons/6/64/Dingdingding.wav (306,592 bytes; PCM 16-bit stereo 44.1 kHz; 1.738 s).
+sha256 53b462aba98704d034a703892d0eba2bbd1bb5d65d4c7441894fc57c800a60cf
+Downloaded 2026-10-22 by Overwatch on Jason's "A: Download #1 (Rec.)" (issue 1792 item 4); rung by the gym TV in place of the synthesized bell (components/WallDisplay.tsx WALL_BELL_RECORDING_URL).
