@@ -184,14 +184,14 @@ and should not try to.
 1. Surface: the Claude Science desktop app on Windows, signed in as punxsy.prominence.boxing@gmail.com (Max plan; OBSERVED in its account menu), project "PPBF Research"; and the Claude app project Jason is setting up himself (line 264; its account not confirmed).
 2. Read: a read-only clone of GitHub main at `C:\Dev\research-mirror\ppbf-platform` (push URL disabled; Overwatch refreshes it), `Documents\PPBF-overwatch`, and OneDrive (admin@) `AI_GOVERNANCE` and `PPBF-AI-Lanes`.
 3. Write: its own outboxes only, `Documents\PPBF-overwatch\research\claude-research-project\findings\` and OneDrive `PPBF-AI-Lanes\Research\`. It does not edit other sessions' files; Overwatch's live handover keeps one writer.
-4. Repo: pull requests that add research files under `docs/research/`, and comments, once Jason creates a GitHub token and enters it himself. It never merges; Overwatch merges (OD-2026-09-30-003). Not working yet: no token exists, and whether Claude Science can open a pull request with one is UNVERIFIED. The repository is public, so reading main needs no token.
+4. Repo: pull requests that add research files under `docs/research/`, and comments, once Jason creates a GitHub token and enters it himself. It never merges; Overwatch merges (OD-2026-09-30-003). The token was created by Jason on 2026-10-22 on the punxsyprominenceboxing-cloud login (classic; `public_repo`, `notifications`, `read:project`; expires 2027-01-20), not on PunxsyProminence, which approves production; its pull requests come from the fork punxsyprominenceboxing-cloud/ppbf-platform. The repository is public, so reading main needs no token.
 5. It does not change the app's code, database, migrations, workflows or production, and sends no email or chat. Keeping app code with the build lanes is the side session's recommendation, not his words; he can widen it.
 6. Minors' privacy (standing floor): its access reaches places that hold athlete records. It does not open athlete, family or footage records for research, and copies no real person's identifying data into research files, pull requests or chats.
 7. Its findings are NOT APP SOURCE until Jason approves them; Overwatch checks sources and labels and recommends.
 
 The project's instructions are `Documents\PPBF-overwatch\research\claude-research-project\INSTRUCTIONS.md` (v2), saved in the Claude Science project and read back equal.
 
-**Status:** applied 2026-10-22. A setup check in the project read all five folders and wrote and read back a test file in both outboxes (OBSERVED on disk). Repo pull requests wait on the token.
+**Status:** applied 2026-10-22. A setup check in the project read all five folders and wrote and read back a test file in both outboxes (OBSERVED on disk). Its first pull request, #1834 (one README under `docs/research/claude-science/`, draft), was opened from the fork by punxsyprominenceboxing-cloud and passed its checks after one body fix (OBSERVED with gh).
 
 ---
 
