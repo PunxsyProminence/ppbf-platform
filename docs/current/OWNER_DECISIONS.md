@@ -164,6 +164,103 @@ and should not try to.
 
 ---
 
+## OD-2026-10-21-005 -- Standing: apply the recommended option on pilot-readiness questions ("go with all recomendations to get pilot rnning")
+
+**Provenance: PRIMARY.** His typed message in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; queued at line 22865, 2026-10-22T03:04:32.558Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His words are quoted exactly, spelling kept. The id carries 2026-10-21 because this UTC time is 23:04 on 2026-10-21 Eastern. It came right after Overwatch's report of the pilot build lanes (line 22841) and follows the pilot rulings OD-2026-10-21-001 to -004. New; edits no earlier entry.
+
+**His words** (line 22865): *"go with all recomendations to get pilot rnning"*
+
+**Ruling:** on questions about getting the pilot running, the recommended option is applied without asking him. That this is a standing rule and that it covers the lanes as well as Overwatch is Overwatch's reading ("Recorded as a standing rule: on pilot questions, lanes and I apply the recommended option without asking.", line 22892), not his words.
+
+**Limits (Overwatch's reading, not his words).** Overwatch, as written (line 22892, 2026-10-22T03:04:54.232Z): "Recorded as a standing rule: on pilot questions, lanes and I apply the recommended option without asking. These stay with you: your GitHub production clicks, file-download OKs, credentials and data entry. Anything touching safety or minors' privacy gets a one-line note after it's applied." Overwatch's message to this records lane (line 22873) also keeps authorization among the items that get a one-line note after they are applied.
+
+**Status:** standing; in force from 2026-10-21.
+
+---
+
+## OD-2026-10-21-004 -- D4 details, tying live sessions to classes: "A: Here wins (Rec.)"; "A: Undo if untouched (Rec.)"; "A: Offer it (Rec.)"
+
+**Provenance: PRIMARY.** A three-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 22803, 2026-10-22T02:35:50.059Z; answered at line 22812, 2026-10-22T03:02:04.682Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-21 because the card was answered at 23:02 on 2026-10-21 Eastern. The questions come from lane P2's plan, `Documents\PPBF-overwatch\lane-inbox\P2-SESSION-CLASS-PLAN-2026-10-21.md` (section 4, "Questions for Jason"; plan only, outside the repo). It follows OD-2026-10-21-002 (D4: "A: Tie them (Rec.)"). New; edits no earlier entry.
+
+**Question "Absent→here".** Overwatch, as written: "Tying live sessions to classes (D4), Q1: a coach taps 'here' on a tied session for an athlete the class register already marks Absent or Excused. What happens?" Options as written: "A: Here wins (Rec.)": "Register flips to Present and the coach is told what it was; a later register change still wins."; "B: Register wins": "The tap is saved on the session only; the coach fixes the register themselves.". Jason: *"A: Here wins (Rec.)"*
+
+**Question "Undo".** Overwatch, as written: "Q2: a coach taps the wrong kid 'here' on a tied session, then untaps. Does the class register undo too?" Options as written: "A: Undo if untouched (Rec.)": "Remove the register mark that tap created, only if nobody changed it since; audited."; "B: Keep it": "Register keeps Present until someone changes it there.". Jason: *"A: Undo if untouched (Rec.)"*
+
+**Question "No-shows".** Overwatch, as written: "Q3: when a tied session ends, offer the coach one tap to mark every signed-up athlete with no mark as Absent (never automatic)?" Options as written: "A: Offer it (Rec.)": "One tap at End Session marks the no-shows Absent."; "B: No": "Absences are marked on the class register only.". Jason: *"A: Offer it (Rec.)"*
+
+**Ruling (for a live session tied to a scheduled class):**
+
+1. When a coach taps "here" for an athlete the class register marks Absent or Excused, the register flips to Present and the coach is told what it was; a later register change still wins. "B: Register wins" was not chosen.
+2. When a coach untaps a wrong "here", the register mark that tap created is removed too, only if nobody changed it since, and the removal is audited. "B: Keep it" was not chosen.
+3. When a tied session ends, the coach is offered one tap to mark every signed-up athlete with no mark as Absent; it is never automatic. "B: No" was not chosen.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-21-003 -- The gym TV bell and the idle paired TV (#1792): "A: Free boxing-bell recording (Rec.)"; "A: Workout-ready board (Rec.)"
+
+**Provenance: PRIMARY.** A two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 22563, 2026-10-22T02:21:27.271Z; answered at line 22564, 2026-10-22T02:22:04.044Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-21 because the card was answered at 22:22 on 2026-10-21 Eastern. These are the two open questions on issue #1792, the TV fix list that OD-2026-10-21-001 item 4 (D5) makes a pilot blocker. New; edits no earlier entry.
+
+**Question "Bell".** Overwatch, as written: "TV bell (#1792 item 4): the current ding should be a boxing bell. Which sound?" Options as written: "A: Free boxing-bell recording (Rec.)": "A real ring-bell recording with a free (CC0) license, checked before it ships."; "B: I'll supply one": "You send a bell sound file you like."; "C: Synthesized bell": "Rebuild the sound in code to sound like a ring bell; no file needed.". Jason: *"A: Free boxing-bell recording (Rec.)"*
+
+**Question "Idle TV".** Overwatch, as written: "Paired TV with no session sent (#1792 item 5; you said 'this should be a workout screen'): what should it show?" Options as written: "A: Workout-ready board (Rec.)": "A workout-style screen (clock, today's classes, round timer ready) until a coach sends a session."; "B: Auto-show running session": "If any coach has a live session running, show it automatically without sending."; "C: Keep the wall": "Stay on the wall until a session is sent.". Jason: *"A: Workout-ready board (Rec.)"*
+
+**Ruling:**
+
+1. The TV bell becomes a real boxing ring-bell recording with a free (CC0) license, checked before it ships. "B: I'll supply one" and "C: Synthesized bell" were not chosen.
+2. A paired TV with no session sent shows a workout-ready board (clock, today's classes, round timer ready) until a coach sends a session. "B: Auto-show running session" and "C: Keep the wall" were not chosen.
+
+**Not his words:** Overwatch's note to this records lane (line 22593): "Each file download still needs his per-file OK." That follows the workspace rule that any file download needs his OK; it is not part of his pick.
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-21-002 -- Test pilot decisions D4 and D6: "A: Tie them (Rec.)"; "C: Both"
+
+**Provenance: PRIMARY.** A two-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 22503, 2026-10-21T20:03:15.859Z; answered at line 22504, 2026-10-22T02:20:28.849Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-21 because the card was answered at 22:20 on 2026-10-21 Eastern. The questions are D1-D6 of Overwatch's report `Documents\PPBF-overwatch\research\PILOT-READINESS-2026-10-20.md`, listed as open in `docs/current/ACTIVE_WORK.md` ("Test pilot readiness") until these answers. It follows OD-2026-10-21-001. New; edits no earlier entry.
+
+**Question "D4 Attendance".** Overwatch, as written: "D4 Session and class: tie a coach's live session to the scheduled class, so attendance is entered once instead of twice (class register + 'who is here')?" Options as written: "A: Tie them (Rec.)": "Coaches mark attendance once; built as its own small lane before the pilot."; "B: Later": "Coaches enter both during the pilot.". Jason: *"A: Tie them (Rec.)"*
+
+**Question "D6 Watcher".** Overwatch, as written: "D6 Safety alerts: who checks the coach 'Needs you' list, pain reports and disclosure alerts each day of the pilot?" Options as written: "A: Me (Jason)": "You check daily."; "B: Each class's coach": "The coach of record checks their own athletes' alerts."; "C: Both": "Coaches check their own; you check all of them daily as backup.". Jason: *"C: Both"*
+
+**Ruling:**
+
+1. D4: a coach's live session is tied to the scheduled class, so attendance is entered once; per the option text, built as its own small lane before the pilot. "B: Later" was not chosen.
+2. D6: during the pilot, coaches check their own, and Jason checks all of them daily as backup; per the question, the alerts are the coach "Needs you" list, pain reports and disclosure alerts. "A: Me (Jason)" and "B: Each class's coach" alone were not chosen. The card marked no option recommended.
+
+**Acted on (applied by Overwatch 2026-10-21):** Overwatch asked this records lane to record all six decisions (line 22510).
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
+## OD-2026-10-21-001 -- Test pilot decisions D1, D2, D3, D5: "C: Whole gym", not the recommended "A: Smallest group (Rec.)"; "A: Yes, after 3 hours (Rec.)"; "A: On for athletes (Rec.)"; "A: TV in the pilot"
+
+**Provenance: PRIMARY.** A four-question card in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; card put at line 22464, 2026-10-21T15:48:02.799Z; answered at line 22476, 2026-10-21T19:59:38.710Z). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-21 because the card was answered at 15:59 on 2026-10-21 Eastern. The questions are D1-D6 of Overwatch's report `Documents\PPBF-overwatch\research\PILOT-READINESS-2026-10-20.md`, listed as open in `docs/current/ACTIVE_WORK.md` ("Test pilot readiness") until these answers. It follows OD-2026-10-19-006 (the pilot chips). New; edits no earlier entry.
+
+**Question "D1 Cohort".** Overwatch, as written: "D1 Pilot cohort: who is in the first test pilot (coaches, classes per week, athletes, families, and which are under 18)?" Options as written: "A: Smallest group (Rec.)": "1 coach, 1 class, a handful of athletes and their parents, for 2 weeks. We load only them."; "B: One coach's full week": "All of one coach's classes and their athletes/families."; "C: Whole gym": "Everyone at once.". Jason: *"C: Whole gym"*, which is not the recommended option.
+
+**Question "D2 Auto-close".** Overwatch, as written: "D2 Forgotten live session: should the app auto-close a coach's live session as ABANDONED after it sits idle, and take it off the TV? If yes, after how long?" Options as written: "A: Yes, after 3 hours (Rec.)": "If a coach forgets to end class, the app ends it 3 hours after the last activity."; "B: Yes, after 6 hours": "Longer window for long training days."; "C: No auto-close": "Sessions stay open until a coach ends them.". Jason: *"A: Yes, after 3 hours (Rec.)"*
+
+**Question "D3 SHADOW".** Overwatch, as written: "D3 SHADOW in week 1: leave SHADOW on for athletes as it is, or coaches only until the 'no answer' check ships (F-161)?" Options as written: "A: On for athletes (Rec.)": "Pain and disclosure alerts already go to coaches; no ruling limits it. It may sometimes answer without a source."; "B: Coaches only": "Athletes don't get SHADOW until the 'no answer' check is built (needs checking that it can be switched per role).". Jason: *"A: On for athletes (Rec.)"*
+
+**Question "D5 TV".** Overwatch, as written: "D5 Gym TV: is the TV part of the first pilot (its fix list #1792 becomes a blocker), or later?" Options as written: "A: TV in the pilot": "Finish the #1792 TV fixes before the pilot starts."; "B: TV later": "Pilot starts without the TV; its fixes drop to 'soon'.". Jason: *"A: TV in the pilot"*
+
+**Ruling:**
+
+1. D1: the first test pilot is the whole gym, everyone at once. "A: Smallest group (Rec.)" was the recommended option and was not chosen; "B: One coach's full week" was not chosen.
+2. D2: the app auto-closes a coach's live session as ABANDONED 3 hours after the last activity and takes it off the TV. "B: Yes, after 6 hours" and "C: No auto-close" were not chosen.
+3. D3: SHADOW stays on for athletes in week 1. "B: Coaches only" was not chosen. The option text notes it may sometimes answer without a source; the question names the "no answer" check as F-161.
+4. D5: the gym TV is in the first pilot, so the #1792 TV fixes are finished before the pilot starts. "B: TV later" was not chosen. The card marked neither option recommended.
+
+**Acted on (applied by Overwatch 2026-10-21):** Overwatch asked this records lane to record all six decisions (line 22510) and told Jason (line 22562): "TV is now a pilot blocker, and its lane needs your answers on two questions before it builds."
+
+**Status:** ruled; not built at the time of writing.
+
+---
+
 ## OD-2026-10-20-001 -- Release 32: "A: Ship it (Rec.)", then "I approved it" twice; shipped 12f3bde7
 
 **Provenance: PRIMARY.** A two-question card and his typed messages in the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`; lines and UTC timestamps per item). Read by script (housekeeping lane HK, 2026-10-21, at Overwatch's request). His picks and words are quoted exactly; the questions and options are quoted as overwatch wrote them. The id carries 2026-10-20 because the card was answered at 14:25 on 2026-10-20 Eastern. It follows OD-2026-10-19-013 (Release 32 staged at 12f3bde7; in open records PR #1794 at the time of writing). New; edits no earlier entry.
