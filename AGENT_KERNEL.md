@@ -59,6 +59,15 @@ Do not preload archived audits, the historical queue, superseded plans, old buil
   requests. Claude places the approved images.
 - **Codex** -- no role. A Codex review that appears on a pull request is
   evidence, not approval.
+- **PPBF Research project** (Claude Science on punxsy.prominence.boxing@gmail.com,
+  and a Claude app project) -- content and design research, read from
+  OD-2026-10-22-002 by the side session that set it up, his to correct. His
+  words give it the same drive and repo access as the other Claude accounts.
+  Applied limits (recommendations, not his words): it reads a read-only copy of
+  main and the coordination folders, writes only its own outboxes, may open
+  pull requests that add research files under `docs/research/`, does not change
+  app code and never merges; its findings are not app source until Jason
+  approves them.
 
 No other AI holds a standing role, and there is no release role: merging and
 releasing are Claude's, under "Merging and releasing" below. Several Claude
