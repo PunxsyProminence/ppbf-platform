@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
-import { formatGymDateTimeShort } from '@/src/lib/gymTime';
+import { formatGymDateTime, formatGymDateTimeShort } from '@/src/lib/gymTime';
+
+// The moment from which a family's open is recorded (F-174); the line above the list shows it in gym time, not "this release".
+export const OPENS_COUNTED_FROM = '2026-10-15T03:34:25Z';
 
 /**
  * ON THE FAMILY'S PAGE (#1542, FC-01; audit F-041).
@@ -29,7 +32,10 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  * when it was first opened (gym time), or "No open recorded on the Messages
  * tab yet" -- not "not opened": an open before this was built, a task ticked
  * on the Parent Floor, or a write that failed leaves no record. One line
- * above the list says how opens are recorded.
+ * above the list says how opens are recorded, and since when (F-174).
+ * OPENS_COUNTED_FROM is when the recording reached production: #1589 (FC-05)
+ * deployed by deploy-production run 38675987960, finished 2026-10-15T03:34:25Z
+ * (2026-10-14, 11:34 PM gym time). A parent message opened earlier left no row.
  * Never which guardian. Read from GET /api/pilot/coach/family-message-reads on
  * its own, like the replies: a failed read says so once and the notes stay.
  *
@@ -313,8 +319,10 @@ export default function FamilyNotesPosted({
         ) : null}
         {shown.opened instanceof Map ? (
           <p className="t-muted mt-[var(--s2)]">
-            An open is recorded when a message is shown on the family&apos;s Messages tab, from this release on.
-            Ticking a task on the Parent Floor is not counted as opening it.
+            {/* PROPOSED copy (F-174): "no open" is not "not opened". */}
+            Opens are counted from {formatGymDateTime(OPENS_COUNTED_FROM)}, when a message is shown on the family&apos;s Messages tab.
+            A message the family saw before then, or anywhere other than the Messages tab, shows no open here. Ticking a task on the
+            Parent Floor is not counted as opening it.
           </p>
         ) : null}
         {shown.opened === null ? (

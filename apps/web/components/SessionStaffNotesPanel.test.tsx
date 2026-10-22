@@ -406,7 +406,7 @@ describe('a note on an athlete in a session run (F-067)', () => {
     render(<SessionStaffNotesPanel runId="ssrun 1" athleteId="ath-1" buttonLabel="Staff notes on Ada Reyes" />);
     expect(global.fetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
-    await screen.findByText('No staff notes on this session yet.');
+    await screen.findByText('No staff notes for this athlete in this session yet.');
 
     expect(gets.map((call) => call.url)).toEqual([`${ROUTE}?run_id=ssrun%201&athlete_id=ath-1`]);
     fireEvent.change(draftField(), { target: { value: 'Hands dropped in round two.' } });
@@ -416,6 +416,26 @@ describe('a note on an athlete in a session run (F-067)', () => {
     expect(writes.map((call) => [call.method, call.body])).toEqual([
       ['POST', { run_id: 'ssrun 1', athlete_id: 'ath-1', note: 'Hands dropped in round two.' }],
     ]);
+  });
+
+  test('the open panel is headed with the words on its button, so the note is on the athlete, not "this session" (F-173)', async () => {
+    serve(() => loaded([]));
+    render(<SessionStaffNotesPanel runId="ssrun_1" athleteId="ath-1" buttonLabel="Staff notes on Ada Reyes" />);
+    expect(screen.queryByText('Staff notes on this session')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Staff notes on Ada Reyes' }));
+    await screen.findByText('No staff notes for this athlete in this session yet.');
+
+    // Button and panel are the same panel: the heading carries the athlete's name too.
+    const panel = document.getElementById('session-staff-notes-run-ssrun_1-ath-1')!;
+    expect(panel.querySelector('.t-eyebrow')?.textContent).toBe('Staff notes on Ada Reyes');
+    expect(screen.queryByText('Staff notes on this session')).toBeNull();
+  });
+
+  test('an athlete\'s own session, with no button words given, is headed "Staff notes on this session" as before', async () => {
+    serve(() => loaded([]));
+    openPanel();
+    await screen.findByText('No staff notes on this session yet.');
+    expect(document.querySelector('.t-eyebrow')?.textContent).toBe('Staff notes on this session');
   });
 
   test('two athletes of one run on one screen get their own fields', async () => {
@@ -440,7 +460,7 @@ describe('a note on an athlete in a session run (F-067)', () => {
     );
     render(<SessionStaffNotesPanel runId="ssrun_1" athleteId="ath-1" />);
     fireEvent.click(screen.getByRole('button', { name: 'Staff notes on this session' }));
-    await screen.findByText('No staff notes on this session yet.');
+    await screen.findByText('No staff notes for this athlete in this session yet.');
     fireEvent.change(draftField(), { target: { value: 'Late note.' } });
     await act(async () => {
       fireEvent.click(addButton());
