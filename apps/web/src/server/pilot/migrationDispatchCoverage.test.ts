@@ -290,6 +290,12 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['session-run-state', 'session-run-plain', 'session-run-athletes', 'scheduler-tables']) {
       expect(at('session-run-class')).toBeGreaterThan(at(prerequisite));
     }
+    // attendance-reconciled-cancelled replaces the view attendance-precedence creates (and reads
+    // the scheduler tables). Run first, a dispatch of `all` would end with the old view, which
+    // still counts a cancelled class's marks.
+    for (const prerequisite of ['attendance-precedence', 'scheduler-tables']) {
+      expect(at('attendance-reconciled-cancelled')).toBeGreaterThan(at(prerequisite));
+    }
     // medical-clearance-expiry adds expires_at to
     // pilot.shadow_medical_administrative_status, which shadow-decision-loop
     // creates. Applied first, a rebuild dies on ALTER against a missing table.
