@@ -16,6 +16,7 @@ import readline from 'node:readline';
 import type { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
+import { NextRequest } from 'next/server';
 import { Client } from 'pg';
 
 let activeClient: Client | null = null;
@@ -46,7 +47,17 @@ jest.mock('./db', () => ({
   }),
 }));
 
+// The roster export reads its principal from here; the rest stays real.
+jest.mock('./http', () => ({
+  ...jest.requireActual('./http'),
+  requireMicrosoftAuthenticatedPrincipal: jest.fn(),
+}));
+
+import { GET as exportRosterGET } from '@/app/api/pilot/admin/export/roster/route';
+
+import { getClassAttendanceRoster, getOrganizationAttendanceSummary, getWeeklyAttendanceTrend } from './attendanceReporting';
 import { writePilotAuditEvent } from './audit';
+import { requireMicrosoftAuthenticatedPrincipal } from './http';
 import { classCancelRefusal, coverTakenAtMs } from './schedulerCancelRule';
 import {
   cancelSchedulerClass,
@@ -56,6 +67,7 @@ import {
   setSchedulerClassCover,
   upsertSchedulerAttendance,
 } from './schedulerDb';
+import { loadPublicWallBoard, loadWallBoard } from './wallDisplayDb';
 
 jest.setTimeout(180_000);
 
@@ -465,6 +477,132 @@ describe('how long a cover has been held (#1595)', () => {
 
       expect(await cancelSchedulerClass(ORG_ID, CLASS_ID, new Date().toISOString(), COVER_B)).toBe(true);
       expect((await classRow(client)).status).toBe('cancelled');
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+/* LANE LC (Jason, 2026-10-22: "then classes need to be able to be canceled").
+   The office cancels a class after it has run; a coach still cannot. Its
+   attendance then stops counting in every reader changed for it, and nothing
+   is deleted. Two classes eight days ago at 22:00 UTC (the evening in the
+   gym, so the start and its marks share a gym day): A, which the office
+   cancels after it ran, and B, which stays. The athlete was marked present in
+   A and absent in B; a second athlete present in B is the control that a
+   count still counts. */
+describe('the office cancels a class after it has run; its marks stop counting and stay (lane LC)', () => {
+  const START = (() => {
+    const at = new Date(Date.now() - 8 * 86_400_000);
+    at.setUTCHours(22, 0, 0, 0);
+    return at;
+  })();
+  const WALL_NOW = new Date(START.getTime() + 30 * 60_000);
+
+  async function seedRanClasses(client: Client) {
+    await client.query(
+      `insert into pilot.scheduler_classes (organization_id, class_id, title, start_at, end_at, location, capacity, scheduled_by_account_id, coach_account_id, status)
+       values ($1, 'class-a', 'Called Off After', $2, $3, 'Main Floor', 10, $4, $4, 'open'),
+              ($1, 'class-b', 'Held', $2, $3, 'Main Floor', 10, $4, $4, 'open')`,
+      [ORG_ID, START.toISOString(), new Date(START.getTime() + 3_600_000).toISOString(), COACH_ID],
+    );
+    await client.query(
+      `insert into pilot.scheduler_registrations (organization_id, registration_id, class_id, athlete_id, requested_by_role, requested_by_account_id, status)
+       values ($1, 'reg-a', 'class-a', $2, 'coach', $4, 'registered'),
+              ($1, 'reg-b', 'class-b', $2, 'coach', $4, 'registered'),
+              ($1, 'reg-b2', 'class-b', $3, 'coach', $4, 'registered')`,
+      [ORG_ID, ATHLETE_ID, OTHER_ATHLETE_ID, COACH_ID],
+    );
+    await client.query(
+      `insert into pilot.scheduler_attendance (organization_id, attendance_id, class_id, athlete_id, status, method, checked_in_by_role, checked_in_by_account_id, checked_in_at)
+       values ($1, 'att-a', 'class-a', $2, 'present', 'coach_override', 'coach', $4, $5),
+              ($1, 'att-b', 'class-b', $2, 'absent', 'coach_override', 'coach', $4, $5),
+              ($1, 'att-b2', 'class-b', $3, 'present', 'coach_override', 'coach', $4, $5)`,
+      [ORG_ID, ATHLETE_ID, OTHER_ATHLETE_ID, COACH_ID, new Date(START.getTime() + 10 * 60_000).toISOString()],
+    );
+  }
+
+  const allRows = async (client: Client, table: 'scheduler_attendance' | 'scheduler_registrations', key: string) =>
+    (await client.query(`select * from pilot.${table} where organization_id = $1 order by ${key}`, [ORG_ID])).rows;
+
+  /** What every changed reader says about the two classes. */
+  async function readers() {
+    const summary = await getOrganizationAttendanceSummary(ORG_ID);
+    const trend = await getWeeklyAttendanceTrend(ORG_ID);
+    const publicBoard = await loadPublicWallBoard({ organizationId: ORG_ID, now: WALL_NOW, timeZone: 'America/New_York' });
+    const pairedBoard = await loadWallBoard({ organizationId: ORG_ID, mode: 'initials', now: WALL_NOW, timeZone: 'America/New_York' });
+    (requireMicrosoftAuthenticatedPrincipal as jest.Mock).mockResolvedValue({
+      accountId: ADMIN_ID, role: 'organization_admin', organizationId: ORG_ID, athleteId: null, sessionToken: 'token', authProvider: 'microsoft',
+    });
+    const response = await exportRosterGET(new NextRequest('http://localhost/api/pilot/admin/export/roster'));
+    expect(response.status).toBe(200);
+    // Every roster cell is quoted; the seeded values hold no quote or comma.
+    const [header, ...lines] = (await response.text()).replace(/^\uFEFF/, '').trim().split('\r\n')
+      .map((line) => [...line.matchAll(/"([^"]*)"/g)].map((cell) => cell[1]));
+    const rateAt = header.indexOf('Attendance rate');
+    const athlete = summary.find((row) => row.athlete_id === ATHLETE_ID);
+    const perClass = (sessions: readonly { key: string; on_floor: number }[]) =>
+      Object.fromEntries(sessions.map((session) => [session.key, session.on_floor]));
+    return {
+      summary: { present: athlete?.present_count, absent: athlete?.absent_count, marked: athlete?.total_marked },
+      trend: trend.map((week) => ({ present: week.present_count, absent: week.absent_count, marked: week.total_marked })),
+      publicBoard: { total: publicBoard.on_floor_total, perClass: perClass(publicBoard.sessions) },
+      pairedBoard: { total: pairedBoard.on_floor_total, perClass: perClass(pairedBoard.sessions) },
+      rosterRate: lines.find((cells) => cells.includes(ATHLETE_ID))?.[rateAt],
+    };
+  }
+
+  test('before: every reader counts both classes (the control)', async () => {
+    const client = await freshDatabase('cc_lc_before');
+    try {
+      await seedRanClasses(client);
+      expect(await readers()).toEqual({
+        summary: { present: 1, absent: 1, marked: 2 },
+        trend: [{ present: 2, absent: 1, marked: 3 }],
+        publicBoard: { total: 2, perClass: { 'class-a': 1, 'class-b': 1 } },
+        pairedBoard: { total: 2, perClass: { 'class-a': 1, 'class-b': 1 } },
+        rosterRate: '0.500',
+      });
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("after the start the update refuses a coach's cancel and lands the office's; every row stays", async () => {
+    const client = await freshDatabase('cc_lc_update');
+    try {
+      await seedRanClasses(client);
+      const marksBefore = await allRows(client, 'scheduler_attendance', 'attendance_id');
+      const registrationsBefore = await allRows(client, 'scheduler_registrations', 'registration_id');
+
+      expect(await cancelSchedulerClass(ORG_ID, 'class-a', new Date().toISOString())).toBe(false);
+      expect((await getSchedulerClassById(ORG_ID, 'class-a'))?.status).toBe('open');
+      expect(await cancelSchedulerClass(ORG_ID, 'class-a', new Date().toISOString(), undefined, true)).toBe(true);
+      expect((await getSchedulerClassById(ORG_ID, 'class-a'))?.status).toBe('cancelled');
+
+      expect(await allRows(client, 'scheduler_attendance', 'attendance_id')).toEqual(marksBefore);
+      expect(await allRows(client, 'scheduler_registrations', 'registration_id')).toEqual(registrationsBefore);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("a class cancelled after it ran: every changed reader stops counting its marks; staff still read its register", async () => {
+    const client = await freshDatabase('cc_lc_readers');
+    try {
+      await seedRanClasses(client);
+      // Cancelled by status alone, so this test is about the readers, not the update.
+      await client.query(`update pilot.scheduler_classes set status = 'cancelled' where organization_id = $1 and class_id = 'class-a'`, [ORG_ID]);
+
+      expect(await readers()).toEqual({
+        summary: { present: 0, absent: 1, marked: 1 },
+        trend: [{ present: 1, absent: 1, marked: 2 }],
+        publicBoard: { total: 1, perClass: { 'class-a': 0, 'class-b': 1 } },
+        pairedBoard: { total: 1, perClass: { 'class-a': 0, 'class-b': 1 } },
+        rosterRate: '0.000',
+      });
+      expect((await getClassAttendanceRoster(ORG_ID, 'class-a')).map((row) => [row.athlete_id, row.status]))
+        .toEqual([[ATHLETE_ID, 'present']]);
     } finally {
       await client.end();
     }

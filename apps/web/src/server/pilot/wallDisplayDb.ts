@@ -49,8 +49,9 @@ import {
  *   - today's classes (scheduler_classes: title, times, room, status);
  *   - head counts, computed in SQL as count(distinct athlete_id) per class and
  *     in total, so no athlete id crosses the wire at all -- not even to be
- *     hashed. Deleted athletes are left out (Scope B), the same filter the
- *     paired read applies, so the two screens agree about the room;
+ *     hashed. Deleted athletes are left out (Scope B), and so are marks on
+ *     a cancelled class (lane LC), the same filters the paired read applies,
+ *     so the two screens agree about the room;
  *   - notices placed on gym_notices in as many words. NOT 'everywhere': that
  *     placement means every signed-in surface, and this caller is signed out.
  *
@@ -92,6 +93,12 @@ export async function loadPublicWallBoard(input: {
          -- Scope B: a deleted athlete is not counted on the wall, public or
          -- paired, so the two screens never disagree about the room.
          and ${athleteNotDeletedSql('pilot.scheduler_attendance')}
+         -- A cancelled class's marks are not counted (lane LC).
+         and not exists (
+           select 1 from pilot.scheduler_classes cancelled_class
+            where cancelled_class.organization_id = pilot.scheduler_attendance.organization_id
+              and cancelled_class.class_id = pilot.scheduler_attendance.class_id
+              and cancelled_class.status = 'cancelled')
        group by class_id`,
       [input.organizationId, startIso, endIso],
     ),
@@ -102,7 +109,13 @@ export async function loadPublicWallBoard(input: {
          and status = 'present'
          and checked_in_at >= $2::timestamptz
          and checked_in_at <  $3::timestamptz
-         and ${athleteNotDeletedSql('pilot.scheduler_attendance')}`,
+         and ${athleteNotDeletedSql('pilot.scheduler_attendance')}
+         -- A cancelled class's marks are not counted (lane LC).
+         and not exists (
+           select 1 from pilot.scheduler_classes cancelled_class
+            where cancelled_class.organization_id = pilot.scheduler_attendance.organization_id
+              and cancelled_class.class_id = pilot.scheduler_attendance.class_id
+              and cancelled_class.status = 'cancelled')`,
       [input.organizationId, startIso, endIso],
     ),
     query<WallNoticeRow>(
@@ -169,6 +182,12 @@ export async function loadWallBoard(input: {
          -- Scope B: a deleted athlete is not named on the wall. Filtered
          -- here, before the limit, so their rows cannot crowd out anyone's.
          and ${athleteNotDeletedSql('pilot.scheduler_attendance')}
+         -- A cancelled class's marks are not counted (lane LC).
+         and not exists (
+           select 1 from pilot.scheduler_classes cancelled_class
+            where cancelled_class.organization_id = pilot.scheduler_attendance.organization_id
+              and cancelled_class.class_id = pilot.scheduler_attendance.class_id
+              and cancelled_class.status = 'cancelled')
        order by checked_in_at desc
        limit 200`,
       [input.organizationId, startIso, endIso],
