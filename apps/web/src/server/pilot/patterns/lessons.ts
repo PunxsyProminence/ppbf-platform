@@ -228,20 +228,35 @@ export function summarizeTransferEvidence(
   });
 }
 
+/**
+ * Retention is measured from the lesson's END: the approved bar's delayed
+ * probe comes "at least 24 hours after the lesson" (report row C1;
+ * OD-2026-10-17-027), and a rep while the drill still runs is the drill, not
+ * the lesson holding. From its start only when it has no end -- none recorded,
+ * or one nobody can place or that comes before the start (the evaluator warns
+ * INVALID_TIMESTAMP for those). An end after asOf means it is still running,
+ * so retention is not yet testable.
+ */
+function retentionFromMs(intervention: PatternIntervention): number {
+  const startedMs = Date.parse(intervention.startedAt);
+  const endedMs = intervention.endedAt ? Date.parse(intervention.endedAt) : Number.NaN;
+  return Number.isFinite(endedMs) && endedMs >= startedMs ? endedMs : startedMs;
+}
+
 export function summarizeRetentionEvidence(
   intervention: PatternIntervention,
   postObservations: readonly BehaviourObservation[],
   policy: AthleteLessonPolicy,
   asOf: string,
 ): RetentionEvidenceSummary {
-  const startedMs = Date.parse(intervention.startedAt);
+  const fromMs = retentionFromMs(intervention);
   const asOfMs = Date.parse(asOf);
   const windowMs = policy.retentionWindowDays * MILLISECONDS_PER_DAY;
 
   const retained = postObservations.filter((observation) => {
     if (!isImprovement(observation)) return false;
     const observedMs = Date.parse(observation.observedAt);
-    return Number.isFinite(observedMs) && observedMs - startedMs >= windowMs && observedMs <= asOfMs;
+    return Number.isFinite(observedMs) && observedMs - fromMs >= windowMs && observedMs <= asOfMs;
   });
 
   const latestMs = retained
@@ -258,7 +273,7 @@ export function summarizeRetentionEvidence(
     // evaluated the afternoon of the intervention would report "no retention
     // evidence" as though retention had been tested and failed.
     windowElapsed:
-      Number.isFinite(startedMs) && Number.isFinite(asOfMs) && asOfMs - startedMs >= windowMs,
+      Number.isFinite(fromMs) && Number.isFinite(asOfMs) && asOfMs - fromMs >= windowMs,
     latestAt: latestMs == null ? null : new Date(latestMs).toISOString(),
   });
 }
