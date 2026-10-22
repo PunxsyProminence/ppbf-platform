@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -22,7 +22,7 @@ import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/
 import {
   bulkUpsertSchedulerAttendance,
   cancelSchedulerClass,
-  createSchedulerClass,
+  createSchedulerClasses,
   createSchedulerCoachingRequest,
   getSchedulerClassById,
   getSchedulerCoachingRequestById,
@@ -55,6 +55,7 @@ import {
   readStaffHoldWarnings,
   type StaffHoldWarning,
 } from '@/src/server/pilot/trainingHolds';
+import { weeklyClassDates, type WeeklyRepeat } from '@/src/shared/weeklyClassDates';
 
 export const runtime = 'nodejs';
 
@@ -129,6 +130,47 @@ function requiredInt(value: unknown, field: string): number {
     throw new ValidationError(`${field} must be an integer`);
   }
   return value;
+}
+
+/* REPEAT WEEKLY (lane LW): `repeat_weeks` (the first class counts as week 1)
+   or `repeat_until` (a gym date, inclusive), not both. Neither is one class. */
+function readRepeat(weeks: unknown, until: unknown): WeeklyRepeat {
+  if (weeks !== undefined && until !== undefined) {
+    throw new ValidationError('Send repeat_weeks or repeat_until, not both');
+  }
+  if (until !== undefined) {
+    if (typeof until !== 'string') throw new ValidationError('repeat_until must be a date');
+    return { until };
+  }
+  return { weeks: weeks === undefined ? 1 : requiredInt(weeks, 'repeat_weeks') };
+}
+
+const REQUEST_KEY = /^[A-Za-z0-9_-]{8,128}$/;
+
+function readRequestKey(value: unknown, required: boolean): string | null {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new ValidationError('request_key is required to repeat a class');
+    return null;
+  }
+  if (typeof value !== 'string' || !REQUEST_KEY.test(value)) {
+    throw new ValidationError('request_key must be 8 to 128 letters, digits, - or _');
+  }
+  return value;
+}
+
+/* A repeated submit must not double-create (lane LW). With a request key each
+   class id is derived from the gym, the caller, the key and the week, so the
+   same submit names the same rows and createSchedulerClasses inserts nothing
+   the second time. Without one (a single class from an older caller) the id is
+   random, as before. Shaped as a version-5 UUID, as shadowConversations'
+   messageIdForKey is, so isUuid (versions 1-5) accepts it. */
+function classIdFor(actor: SchedulerActor, requestKey: string | null, week: number): string {
+  if (!requestKey) return randomUUID();
+  const hex = createHash('sha256')
+    .update(JSON.stringify(['scheduler_class', actor.organizationId, actor.accountId, requestKey, week]))
+    .digest('hex');
+  const variant = (8 + (Number.parseInt(hex[16], 16) % 4)).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
 type AttendanceStatus = SchedulerAttendance['status'];
@@ -708,6 +750,10 @@ export async function POST(request: NextRequest) {
       assigned_coach_account_id?: string;
       /** create_class: the coach who runs it (lane L31 P6). */
       coach_account_id?: string;
+      /** create_class, repeat weekly (lane LW): one of these two, with request_key. */
+      repeat_weeks?: number;
+      repeat_until?: string;
+      request_key?: string;
       status?: 'present' | 'absent' | 'excused';
       note?: string;
       entries?: Array<{
@@ -751,12 +797,27 @@ export async function POST(request: NextRequest) {
         throw new Error('Forbidden: a coach schedules the classes they run themselves');
       }
 
+      // A class that ends before it starts, repeated, is twelve of them.
+      if (Date.parse(endAt) <= Date.parse(startAt)) {
+        throw new ValidationError('The class must end after it starts.');
+      }
+
+      // REPEAT WEEKLY (lane LW): the same weekday and gym time each week, every
+      // class ordinary and independent, all created or none.
+      const repeating = body.repeat_weeks !== undefined || body.repeat_until !== undefined;
+      const requestKey = readRequestKey(body.request_key, repeating);
+      const plan = weeklyClassDates(
+        { start: new Date(startAt), end: new Date(endAt) },
+        readRepeat(body.repeat_weeks, body.repeat_until),
+      );
+      if (!plan.ok) throw new ValidationError(plan.error);
+
       const now = new Date().toISOString();
-      const classRecord: SchedulerClass = {
-        class_id: randomUUID(),
+      const classRecords: SchedulerClass[] = plan.classes.map((times, week) => ({
+        class_id: classIdFor(actor, requestKey, week),
         title,
-        start_at: startAt,
-        end_at: endAt,
+        start_at: times.start.toISOString(),
+        end_at: times.end.toISOString(),
         location,
         capacity,
         scheduled_by_account_id: actor.accountId,
@@ -764,11 +825,17 @@ export async function POST(request: NextRequest) {
         status: 'open',
         created_at: now,
         updated_at: now,
-      };
+      }));
 
-      await createSchedulerClass(actor.organizationId, classRecord);
+      const outcome = await createSchedulerClasses(actor.organizationId, classRecords);
 
-      return NextResponse.json({ ok: true, class_id: classRecord.class_id });
+      return NextResponse.json({
+        ok: true,
+        class_id: classRecords[0].class_id,
+        class_ids: classRecords.map((item) => item.class_id),
+        // A retry of a submit that already landed: nothing new was made.
+        already_created: outcome === 'already_created',
+      });
     }
 
     if (action === 'cover_class') {
