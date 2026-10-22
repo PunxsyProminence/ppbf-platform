@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 42;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 43;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -168,6 +168,13 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 42;
 // disclosure mark is corrected. What goes into authorizedContext is
 // unchanged; bumped because a listed file moved. A v36 job still queued at
 // deploy is refused as STALE.
+// 43: score-gap gate (F-161, lane LG): on text-embedding-3-small with at
+// least ten candidates, a semantic search whose top-1 cosine stands less than
+// 0.049 above the top-10 mean returns no semantic evidence (shadowLibrary.ts).
+// Unless an unindexed passage clears the keyword bar, the chat's evidence
+// bundle is then empty and authorizedContext carries the no-evidence boundary
+// instead of those excerpts. A v42 job still queued at deploy is refused as
+// STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -264,6 +271,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 40, sha256: '7c223b6243f8c2828ff4ff8ea9132fa7042e5817ff5b0584d81bd6de5cc02b89' },
   { version: 41, sha256: '5341bddbbdb3cfbdeb87af2352784de4a328da33ffb75b3fa8087f795123f548' },
   { version: 42, sha256: '379b96ed982d00bbce8793a1e55e6f3dd8776f2ea06c4531933084b01d304ec1' },
+  { version: 43, sha256: 'c5b44e7c7169f0e6131a824738f51e042d1952d76361b4af16501f1f285dd8d7' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
