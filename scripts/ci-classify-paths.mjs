@@ -116,6 +116,7 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/shared/sessionTypes.ts',
   'apps/web/src/shared/shadowChatLimits.ts',
   'apps/web/src/shared/sparringSymptoms.ts',
+  'apps/web/src/shared/staffDisplayName.ts',
   'apps/web/src/shared/wellnessScales.ts',
   'apps/web/src/testing/captureFixture.ts',
   'apps/web/src/testing/organizationProfileFixtures.ts',
