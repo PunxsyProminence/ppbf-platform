@@ -282,6 +282,41 @@ describe('/admin/athletes', () => {
     expect(options.join(' ')).not.toMatch(/@/);
   });
 
+  test('the name the gym typed for a coach (Q1 part B) names them on the row and in the picker', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [
+          { ...staffBody.members[0], staff_display_name: 'Jordan Rivera' },
+          { ...staffBody.members[1], staff_display_name: null },
+        ],
+      })
+      : undefined)) as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/Coach Jordan Rivera/);
+    expect(screen.queryByText(/Coach Jason/)).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
+    const picker = await screen.findByLabelText(/coach/i, { selector: '#correct-coach' });
+    expect([...picker.querySelectorAll('option')].map((option) => option.textContent))
+      .toEqual(['Coach Jordan Rivera', 'Coach Rosa']);
+  });
+
+  test('a coach who has left is named from the login, not by the name the gym typed while they were here', async () => {
+    global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
+      ? jsonResponse({
+        ok: true,
+        members: [{ ...staffBody.members[0], membership_active: false, staff_display_name: 'Jordan Rivera' }],
+      })
+      : undefined)) as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    await screen.findByText(/Coach Jason/);
+    expect(screen.queryByText(/Jordan Rivera/)).toBeNull();
+  });
+
   test('two coaches who would read the same are told apart by their address', async () => {
     global.fetch = consoleFetch((url) => (url.includes('/api/pilot/admin/staff')
       ? jsonResponse({

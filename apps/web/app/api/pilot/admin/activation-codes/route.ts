@@ -4,6 +4,8 @@ import { isOrganizationAdminRole } from '@/src/server/pilot/access';
 import { issueActivationCode, listOutstandingActivationCodes } from '@/src/server/pilot/activation';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { jsonError, requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import { staffNamesByAccount } from '@/src/server/pilot/staffNameLookup';
+import { STAFF_LIST_NAME_FLOOR } from '@/src/shared/staffListNames';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 export const runtime = 'nodejs';
@@ -46,7 +48,12 @@ export async function GET(request: NextRequest) {
       request.nextUrl.searchParams.get('organization_id')?.trim() || '',
     );
 
-    const codes = await listOutstandingActivationCodes(organizationId);
+    const outstanding = await listOutstandingActivationCodes(organizationId);
+    // Who issued each code, by name: the screen prints this, never the account
+    // id (OD-2026-10-06-025). issued_by_account_id stays on the row for callers
+    // that key on it.
+    const issuers = await staffNamesByAccount(organizationId, outstanding.map((code) => code.issued_by_account_id));
+    const codes = outstanding.map((code) => ({ ...code, issued_by_name: issuers.get(code.issued_by_account_id) ?? STAFF_LIST_NAME_FLOOR }));
 
     return NextResponse.json({ ok: true, organization_id: organizationId, codes });
   } catch (error) {

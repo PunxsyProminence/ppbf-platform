@@ -9,6 +9,7 @@ import { REFUSED_TEAM_CLIPS_CHANGED } from '@/components/SafetyAttentionBadge';
 import { getRoleSessionSnapshot } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymStamp } from '@/src/lib/gymTime';
+import { STAFF_LIST_NAME_FLOOR } from '@/src/shared/staffListNames';
 
 interface QuarantinedVideoItem {
   video_session_id: string;
@@ -21,6 +22,8 @@ interface QuarantinedVideoItem {
   scan_state: string;
   athlete_id: string | null;
   uploaded_by_account_id: string;
+  /** Who filmed it, by name; the screen prints this and never the account id. */
+  uploaded_by_name?: string;
   created_at: string;
 }
 
@@ -303,7 +306,7 @@ function VideoReviewConsoleContent() {
                             ID: {video.video_session_id}
                           </p>
                           <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
-                            Athlete: {video.athlete_id ?? 'Unassigned'} | Filmed by: {video.uploaded_by_account_id}
+                            Athlete: {video.athlete_id ?? 'Unassigned'} | Filmed by: {video.uploaded_by_name ?? STAFF_LIST_NAME_FLOOR}
                           </p>
                           <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">
                             Uploaded: {formatGymStamp(video.created_at)}

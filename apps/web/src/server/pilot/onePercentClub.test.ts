@@ -137,7 +137,7 @@ describe('castVote', () => {
       }
       if (sql.includes('select vote from pilot.one_percent_votes')) return Promise.resolve(null);
       if (sql.includes('count(*)::text as eligible')) return Promise.resolve({ eligible: '5' });
-      if (sql.includes('select login_email from pilot.accounts')) return Promise.resolve({ login_email: 'sam.lee@ppbf.org' });
+      if (sql.includes('as staff_display_name from pilot.accounts a')) return Promise.resolve({ login_email: 'sam.lee@ppbf.org' });
       if (sql.includes('insert into pilot.one_percent_votes')) return Promise.resolve({ voter_account_id: 'acct-1' });
       if (sql.includes("update pilot.one_percent_nominations")) {
         updatedToConfirmed = true;
@@ -161,7 +161,7 @@ describe('createNomination', () => {
         return Promise.resolve(overrides.athleteExists === false ? null : { athlete_id: 'ath-1' });
       }
       if (sql.includes('select full_name from pilot.athletes')) return Promise.resolve({ full_name: 'Jordan P.' });
-      if (sql.includes('select login_email from pilot.accounts')) return Promise.resolve({ login_email: 'alex.rivera@ppbf.org' });
+      if (sql.includes('as staff_display_name from pilot.accounts a')) return Promise.resolve({ login_email: 'alex.rivera@ppbf.org' });
       if (sql.includes('insert into pilot.one_percent_nominations')) return Promise.resolve({ nomination_id: 'nom-new' });
       if (sql.includes('from pilot.one_percent_nominations n')) {
         return Promise.resolve({ nomination_id: 'nom-new', status: 'open', source: overrides.expectSource ?? 'coach_nomination' });
@@ -235,7 +235,7 @@ describe('createNomination', () => {
     let capturedInsertParams: unknown[] = [];
     mockQueryOne.mockImplementation((sql: string, params?: unknown[]) => {
       if (sql.includes('select athlete_id from pilot.athletes')) return Promise.resolve({ athlete_id: 'ath-1' });
-      if (sql.includes('select login_email from pilot.accounts')) return Promise.resolve({ login_email: 'alex.rivera@ppbf.org' });
+      if (sql.includes('as staff_display_name from pilot.accounts a')) return Promise.resolve({ login_email: 'alex.rivera@ppbf.org' });
       if (sql.includes('insert into pilot.one_percent_nominations')) {
         capturedInsertParams = params ?? [];
         return Promise.resolve({ nomination_id: 'nom-new' });
@@ -267,7 +267,7 @@ describe('createNomination', () => {
     let capturedInsertParams: unknown[] = [];
     mockQueryOne.mockImplementation((sql: string, params?: unknown[]) => {
       if (sql.includes('select athlete_id from pilot.athletes')) return Promise.resolve({ athlete_id: 'ath-1' });
-      if (sql.includes('select login_email from pilot.accounts')) return Promise.resolve({ login_email: 'alex.rivera@ppbf.org' });
+      if (sql.includes('as staff_display_name from pilot.accounts a')) return Promise.resolve({ login_email: 'alex.rivera@ppbf.org' });
       if (sql.includes('insert into pilot.one_percent_nominations')) {
         capturedInsertParams = params ?? [];
         return Promise.resolve({ nomination_id: 'nom-new' });
@@ -338,6 +338,22 @@ describe('resolveActorDisplayName', () => {
     mockQueryOne.mockResolvedValueOnce({ login_email: 'alex.rivera@ppbf.org' });
     const name = await resolveActorDisplayName({ organizationId: 'org-1', accountId: 'acct-admin', role: 'admin' });
     expect(name).toBe('Admin Alex Rivera');
+  });
+
+  test('an admin the gym has named (Q1 part B) is signed with that name, not the login', async () => {
+    mockQueryOne.mockResolvedValueOnce({ login_email: 'ppbf@ppbf.org', staff_display_name: 'Jordan Smith' });
+    const name = await resolveActorDisplayName({ organizationId: 'org-1', accountId: 'acct-admin', role: 'admin' });
+    expect(name).toBe('Admin Jordan Smith');
+    // Read through the one gated expression (staffDisplayNameRead.ts), for the gym asking.
+    const sql = String(mockQueryOne.mock.calls[0][0]);
+    expect(sql).toContain('from pilot.account_profiles sdn_ap');
+    expect(sql).toContain('sdn_ap.organization_id = $1');
+
+    // A title typed into the name is not said twice.
+    mockQueryOne.mockResolvedValueOnce({ login_email: 'ppbf@ppbf.org', staff_display_name: 'Admin Jordan Smith' });
+    expect(await resolveActorDisplayName({ organizationId: 'org-1', accountId: 'acct-admin', role: 'admin' })).toBe(
+      'Admin Jordan Smith',
+    );
   });
 
   // Scope B. The real-Postgres cases are in athleteSelfPathsDeletion.pg.test.ts;

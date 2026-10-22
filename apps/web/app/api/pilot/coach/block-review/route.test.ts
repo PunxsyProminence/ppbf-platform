@@ -7,6 +7,7 @@ import {
 } from '@/src/server/pilot/athleteDevelopmentBlocks';
 import { blockEvidence, listBlockReviews, recordBlockReview } from '@/src/server/pilot/blockReview';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { coachNamesByAccount } from '@/src/server/pilot/staffNameLookup';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 /*
@@ -53,7 +54,13 @@ jest.mock('@/src/server/pilot/blockReview', () => {
   };
 });
 
+// Who made a review is named by the shared lookup (staffNameLookup.test.ts).
+jest.mock('@/src/server/pilot/staffNameLookup', () => ({
+  coachNamesByAccount: jest.fn(async () => new Map()),
+}));
+
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
+const mockCoachNames = coachNamesByAccount as jest.Mock;
 const mockGetBlock = getDevelopmentBlock as jest.Mock;
 const mockMembership = hasBlockWriteMembership as jest.Mock;
 const mockListReviews = listBlockReviews as jest.Mock;
@@ -288,6 +295,27 @@ describe('the response reports, and does not evaluate', () => {
     // `adherence_state` survives that sweep and must: it is the HUMAN's
     // chosen word, carried through unchanged, not a derived figure.
     expect(body.reviews[0].adherence_state).toBe('delivered_with_deviations');
+  });
+
+  // OD-2026-10-06-025, "Show coach name, hide ID": the page prints who made a
+  // review. The id stays on the row for callers that key on it.
+  test('each review carries who made it, by name, never only the id', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockGetBlock.mockResolvedValue(block());
+    mockListReviews.mockResolvedValue([
+      review({ review_id: 'rev-1', reviewed_by_account_id: 'acct-coach-a' }),
+      review({ review_id: 'rev-2', reviewed_by_account_id: 'acct-coach-b' }),
+    ]);
+    mockCoachNames.mockResolvedValueOnce(new Map([['acct-coach-a', 'Coach Rivera']]));
+
+    const body = await (await GET(getRequest('?block_id=blk-a'))).json();
+
+    expect(mockCoachNames).toHaveBeenCalledWith('org-1', ['acct-coach-a', 'acct-coach-b']);
+    expect(body.reviews.map((row: Record<string, string>) => [row.review_id, row.reviewed_by_name, row.reviewed_by_account_id])).toEqual([
+      ['rev-1', 'Coach Rivera', 'acct-coach-a'],
+      // Not named by the lookup: the same phrase the blocks route uses, not the id.
+      ['rev-2', 'Your coach', 'acct-coach-b'],
+    ]);
   });
 
   test('a zero source is returned as a zero and never as an absence', async () => {

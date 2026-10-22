@@ -67,10 +67,15 @@ interface Routes {
   totals?: () => { ok: boolean; body: unknown };
   person?: () => { ok: boolean; body: unknown };
   post?: (body: Record<string, unknown>) => { ok: boolean; status?: number; body: unknown };
+  /** The directory the name column reads (/api/pilot/admin/staff). */
+  staff?: unknown;
 }
 
 function installFetch(routes: Routes = {}): jest.Mock {
   const mock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (routes.staff !== undefined && String(url).includes('/api/pilot/admin/staff')) {
+      return { ok: true, status: 200, json: async () => routes.staff } as Response;
+    }
     if (!String(url).includes('/api/pilot/admin/floor-hours')) {
       throw new Error(`Unexpected fetch: ${url}`);
     }
@@ -392,5 +397,52 @@ describe('a correction that did not happen', () => {
     });
 
     expect(await screen.findByText(/nothing was recorded/)).not.toBeNull();
+  });
+});
+
+describe('LN2: an adult is named, never addressed', () => {
+  async function renderWithStaff(members: unknown[]): Promise<void> {
+    await renderPage({ staff: { ok: true, members } });
+    await waitFor(() => expect(screen.queryByText(/name not loaded/)).toBeNull());
+  }
+
+  it('prints the name the gym typed in the totals row', async () => {
+    await renderWithStaff([
+      { account_id: 'coach-1', login_email: 'c.rivera@example.org', staff_display_name: 'Sam Rivera', role: 'coach', membership_active: true },
+    ]);
+
+    expect(screen.getByText('Sam Rivera')).not.toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('@example.org');
+  });
+
+  it('names a coach with no typed name from the login, and a role-word login as the gym office', async () => {
+    await renderWithStaff([
+      { account_id: 'coach-1', login_email: 'info@example.org', role: 'coach', membership_active: true },
+    ]);
+
+    expect(screen.getByText('Gym office')).not.toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('info@');
+  });
+
+  it('numbers two adults who read the same, and leaves an athlete out of that numbering', async () => {
+    await renderPage({
+      staff: {
+        ok: true,
+        members: [
+          { account_id: 'coach-1', login_email: 'sam@example.org', role: 'coach', membership_active: true },
+          { account_id: 'coach-2', login_email: 'sam@other.example.org', role: 'coach', membership_active: true },
+          { account_id: 'ath-login', login_email: 'sam@kids.example.org', role: 'athlete', membership_active: true },
+        ],
+      },
+      totals: () => ({
+        ok: true,
+        body: { floor_hours: [totalsRow(), totalsRow({ person_account_id: 'coach-2' })], activities: null, adjustments: null },
+      }),
+    });
+    await waitFor(() => expect(screen.queryByText(/name not loaded/)).toBeNull());
+
+    expect(screen.getByText('Sam (1 of 2)')).not.toBeNull();
+    expect(screen.getByText('Sam (2 of 2)')).not.toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('@');
   });
 });

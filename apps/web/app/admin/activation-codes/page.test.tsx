@@ -80,6 +80,31 @@ describe('ActivationCodesManagementPage', () => {
     expect(screen.getByText('Pending Redemption')).toBeInTheDocument();
   });
 
+  // OD-2026-10-06-025, "Show coach name, hide ID": who issued a code is a name.
+  it('prints who issued a code by name, never the issuing account id', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    const row = {
+      account_id: 'ath-001',
+      athlete_id: 'athlete-1',
+      organization_id: 'org-1',
+      issued_by_account_id: 'acct-admin-7f3',
+      created_at: '2026-08-01T00:00:00Z',
+      expires_at: '2026-08-15T00:00:00Z',
+      is_expired: false,
+    };
+    global.fetch = jest.fn(async () => jsonResponse({
+      ok: true,
+      codes: [{ ...row, issued_by_name: 'Pat Lowe' }, { ...row, account_id: 'ath-002' }],
+    })) as unknown as typeof fetch;
+
+    render(<ActivationCodesManagementPage />);
+
+    expect(await screen.findByText('Issued by: Pat Lowe')).toBeInTheDocument();
+    // A row from a server that sent no name reads as the floor, not the id.
+    expect(screen.getByText('Issued by: Gym office')).toBeInTheDocument();
+    expect(document.body.textContent ?? '').not.toContain('acct-admin-7f3');
+  });
+
   it('issues an activation code when form is submitted', async () => {
     mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
 

@@ -117,6 +117,7 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/shared/shadowChatLimits.ts',
   'apps/web/src/shared/sparringSymptoms.ts',
   'apps/web/src/shared/staffDisplayName.ts',
+  'apps/web/src/shared/staffListNames.ts',
   // The scheduler route repeats a class weekly with it; athleteSelfDeletionMark.pg.test.ts imports that route.
   'apps/web/src/shared/weeklyClassDates.ts',
   'apps/web/src/shared/wellnessScales.ts',

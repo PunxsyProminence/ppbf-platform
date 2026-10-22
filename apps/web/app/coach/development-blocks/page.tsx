@@ -103,6 +103,8 @@ interface LinkedSession {
   what_worked: string;
   what_did_not: string;
   linked_by_account_id: string;
+  /** Resolved server-side by the route (session-block-links); the screen prints this, never the id. */
+  linked_by_name?: string;
   linked_at: string;
 }
 
@@ -141,6 +143,8 @@ interface BlockReview {
   what_did_not: string;
   next_adjustment: string;
   reviewed_by_account_id: string;
+  /** Resolved server-side by the route (block-review); the screen prints this, never the id. */
+  reviewed_by_name?: string;
   created_at: string;
 }
 
@@ -1534,7 +1538,7 @@ export default function CoachDevelopmentBlocksPage() {
                               Deviation: {session.deviation_note}
                             </p>
                           ) : null}
-                          <p className="t-muted m-0">Linked by {session.linked_by_account_id}</p>
+                          <p className="t-muted m-0">Linked by {session.linked_by_name ?? 'Your coach'}</p>
 
                           {/* WHICH OBJECTIVES THIS SESSION ADDRESSED.
 
@@ -1790,7 +1794,7 @@ export default function CoachDevelopmentBlocksPage() {
                             </p>
                           ) : null}
                           <p className="t-muted m-0">
-                            Reviewed by {item.reviewed_by_account_id}
+                            Reviewed by {item.reviewed_by_name ?? 'Your coach'}
                             {' — '}
                             {formatGymDay(item.created_at) ?? item.created_at}
                           </p>
@@ -1865,11 +1869,10 @@ export default function CoachDevelopmentBlocksPage() {
                         `Written by acct-coach-a`, which is not attribution --
                         it is the absence of it, shown to a coach who then
                         cannot tell which colleague planned the block. The
-                        fallback is the id rather than nothing: if the route
-                        ever stops resolving names, an ugly true string beats a
-                        line that quietly says "Written by". */}
+                        fallback is the route's own phrase, never the id:
+                        OD-2026-10-06-025, "Show coach name, hide ID". */}
                     <p className="t-muted">
-                      Written by {block.created_by_name ?? block.created_by_account_id}
+                      Written by {block.created_by_name ?? 'Your coach'}
                     </p>
 
                     {editingId === block.block_id ? (

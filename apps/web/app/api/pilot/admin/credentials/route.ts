@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
       items: rows.map((row) => ({
         clearance_id: row.clearance_id,
         person_account_id: row.person_account_id,
-        person_display_name: staffDisplayName(row.person_login_email, row.person_account_id),
+        person_display_name: staffDisplayName(row.person_login_email, row.person_account_id, row.person_display_name),
         person_role: row.person_role,
         clearance_type_id: row.clearance_type_id,
         clearance_name: row.clearance_name,

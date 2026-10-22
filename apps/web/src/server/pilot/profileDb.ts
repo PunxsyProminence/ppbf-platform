@@ -23,6 +23,8 @@
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
 import { query, queryOne } from './db';
 import { accountNotDeletedSql } from './deletedAthletes';
+import { storedStaffNameSql } from './staffDisplayNameRead';
+import { bareTypedStaffName } from '@/src/shared/coachDisplayName';
 import { guardianLinkEnded } from './guardianAccess';
 import {
   normalizeCorner,
@@ -170,9 +172,11 @@ export async function getSubjectIdentity(
     account_id: string;
     athlete_id: string | null;
     login_email: string | null;
+    staff_display_name: string | null;
     created_at: string;
   }>(
-    `select a.account_id, a.athlete_id, a.login_email, a.created_at
+    `select a.account_id, a.athlete_id, a.login_email,
+            ${storedStaffNameSql('a.organization_id', 'a.account_id')} as staff_display_name, a.created_at
      from pilot.accounts a
      where a.organization_id = $1 and a.account_id = $2
        -- Scope B: a deleted person is nobody here. The same predicate the
@@ -214,7 +218,7 @@ export async function getSubjectIdentity(
 
   return {
     accountId: account.account_id,
-    fullName: staffDisplayName(account.login_email, account.account_id),
+    fullName: staffDisplayName(account.login_email, account.account_id, account.staff_display_name),
     athleteId: null,
     dob: null,
     coachAccountId: null,
@@ -223,12 +227,22 @@ export async function getSubjectIdentity(
 }
 
 /**
- * A staff member's name, from the only field the platform has. Punctuation
- * becomes spaces and each word is capitalised, so "jane.okafor@..." reads as
- * "Jane Okafor" -- and an address that does not decompose is left alone rather
- * than mangled into something that looks like a name and is not.
+ * A staff member's name: the one the gym typed (pilot.account_profiles.
+ * staff_display_name, Q1 part B) when there is one; otherwise from the login.
+ * Punctuation becomes spaces and each word is capitalised, so
+ * "jane.okafor@..." reads as "Jane Okafor" -- and an address that does not
+ * decompose is left alone rather than mangled into something that looks like
+ * a name and is not.
  */
-export function staffDisplayName(loginEmail: string | null, accountId: string): string {
+export function staffDisplayName(
+  loginEmail: string | null,
+  accountId: string,
+  // Required, so a new caller cannot leave the typed name out by omission:
+  // pass the reader's staff_display_name (storedStaffNameSql), or null.
+  storedName: string | null,
+): string {
+  const typed = bareTypedStaffName(storedName);
+  if (typed) return typed;
   const stem = (loginEmail ?? '').split('@')[0]?.trim() ?? '';
   if (!stem) return accountId;
   const words = stem
