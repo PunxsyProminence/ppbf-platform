@@ -10,6 +10,10 @@ import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
 // The coach delivering the session taps each athlete who is in the room. A mark is SESSION
 // DETAIL, not attendance: it feeds no attendance report (CT-13), and it never touches the
 // athlete's own check-in. Taking a mark back keeps the record of it on the server.
+// ON A SESSION TIED TO A CLASS (D4, OD-2026-10-21-002) the same tap also writes that class's
+// register, and the screen says what it did: Present, what it was before (OD-2026-10-21-004
+// ruling 1), not added and why, or, on an untap, whether the register mark went too (ruling 2).
+// Wording PROPOSED.
 //
 // THE LIST IS THE SERVER'S. GET /api/pilot/session-scripts/runs/[runId]/athletes answers with who
 // is marked and with `gym`, the athletes this coach may mark: the gym's live athletes (a coach's
@@ -50,6 +54,42 @@ function isAthlete(value: unknown): value is Athlete {
   return typeof row.athlete_id === 'string' && typeof row.full_name === 'string';
 }
 
+/** What a tap on a tied session did to the class register (session-scripts/runs/[runId]/athletes). */
+export interface RegisterAnswer {
+  effect: string;
+  previous_status?: string;
+  reason?: string;
+}
+
+/** A hold as the route sends it: details (one stands), 'unreadable' (not known), or nothing. */
+export type HoldAnswer = 'held' | 'unknown' | null;
+
+export function holdAnswer(value: unknown): HoldAnswer {
+  if (value === 'unreadable') return 'unknown';
+  return value && typeof value === 'object' ? 'held' : null;
+}
+
+const WAS: Record<string, string> = { absent: 'marked Absent', excused: 'marked Excused' };
+const NOT_ADDED: Record<string, string> = { class_cancelled: 'the class was cancelled', not_your_class: 'you no longer run this class' };
+
+/** The line a tap leaves for the coach: what the class register now shows, and a hold if one stands. */
+export function registerNote(name: string, register: RegisterAnswer | undefined, hold: HoldAnswer): string {
+  const holdWords = hold === 'held'
+    ? ` ${name} has an active Training Hold; the mark was NOT blocked.`
+    : hold === 'unknown' ? ` Whether ${name} is on a Training Hold could not be read.` : '';
+  if (!register) return holdWords.trim();
+  const words: Record<string, string> = {
+    created: `${name} is Present on the class register.`,
+    already_present: `${name} was already Present on the class register.`,
+    flipped: `${name} was ${WAS[register.previous_status ?? ''] ?? 'not marked Present'} on the class register; now Present.`,
+    skipped: `${name} is marked here but not on the class register: ${NOT_ADDED[register.reason ?? ''] ?? 'it could not be added'}.`,
+    removed: `${name} is off the class register too.`,
+    kept: `The class register was changed after your tap, so ${name}'s mark there was left as it is.`,
+    unchanged: 'Only the mark here was taken back; the class register was not changed.',
+  };
+  return `${words[register.effect] ?? ''}${holdWords}`.trim();
+}
+
 function refusalText(code: unknown): string {
   if (code === 'SESSION_RUN_NOT_LIVE') return 'This session has already ended, so nothing was saved.';
   if (code === 'SESSION_RUN_NOT_FOUND') return 'This session could not be found for this account, so nothing was saved.';
@@ -62,10 +102,13 @@ const ALERT = 'mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(-
 
 export default function SessionRunPresence({
   runId,
+  tied = false,
   onPresentCount,
   onRunNotLive,
 }: {
   runId: string;
+  /** The session is tied to a class (D4): marks here also go on its register. */
+  tied?: boolean;
   /** The number of athletes marked here, each time the server says so; null while it is not known. */
   onPresentCount?: (count: number | null) => void;
   /** The server said this run is over or not this coach's: the live screen should ask what is live now. */
@@ -76,6 +119,8 @@ export default function SessionRunPresence({
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  // What the last tap did to the class register (a tied session), or a hold on the athlete.
+  const [note, setNote] = useState<{ athleteId: string; text: string } | null>(null);
   const latestRead = useRef(0);
   const headingId = useId();
 
@@ -131,6 +176,7 @@ export default function SessionRunPresence({
       if (busy) return;
       setBusy(athlete.athlete_id);
       setMessage('');
+      setNote(null);
       // A read already on its way was asked before this tap: its answer must not paint over this one.
       latestRead.current += 1;
       try {
@@ -152,6 +198,9 @@ export default function SessionRunPresence({
         }
         if (response.ok) {
           // A yes from the server is a yes, whatever its body: the mark is now what was asked for.
+          // On a tied session the body also says what the tap did to the class register.
+          const answer = (await response.json().catch(() => null)) as { register?: RegisterAnswer; hold_warning?: unknown } | null;
+          setNote({ athleteId: athlete.athlete_id, text: registerNote(athlete.full_name, answer?.register, holdAnswer(answer?.hold_warning)) });
           setReading((current) => {
             if (!current || current.runId !== runId || current.state !== 'loaded') return current;
             const next = new Set(current.present);
@@ -212,10 +261,14 @@ export default function SessionRunPresence({
               : `${reading.present.size} marked here.`}
           </p>
           <p className="t-body mt-[var(--s1)] text-[color:var(--bone-400)]" style={{ fontSize: 'var(--t-xs)' }}>
-            Staff only. This is who was in this session; it does not change anyone’s own check-in or attendance.
+            {tied
+              ? 'Staff only. This session is tied to a class: a mark here also goes on that class’s register.'
+              : 'Staff only. This is who was in this session; it does not change anyone’s own check-in or attendance.'}
           </p>
 
           {message ? <p role="alert" className={ALERT}>{message}</p> : null}
+          {/* Read out here; shown under the athlete's own row, where the coach just tapped. */}
+          <p role="status" className="sr-only">{note?.text ?? ''}</p>
 
           {reading.gym.length === 0 ? (
             <p className="t-body mt-[var(--s3)]">There are no athletes in this gym to mark.</p>
@@ -261,6 +314,9 @@ export default function SessionRunPresence({
                             <span className="sr-only">{athlete.full_name}</span>
                           </button>
                         </div>
+                        {note && note.athleteId === athlete.athlete_id && note.text ? (
+                          <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{note.text}</p>
+                        ) : null}
                         {here ? (
                           <SessionStaffNotesPanel
                             runId={runId}

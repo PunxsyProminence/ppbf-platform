@@ -88,7 +88,7 @@ import type { PilotRole } from './contracts';
 import { ATTENDANCE_UPSERT_SQL, FAMILY_ATTENDANCE_UPSERT_SQL, attendanceUpsertParams } from './schedulerDb';
 import { setRunAthletePresent } from './sessionRunAthletes';
 import { describeRunClass, listTieableClasses, markSessionNoShowsAbsent, setSessionRunClass } from './sessionRunClass';
-import { startSessionScriptRun } from './sessionScriptRuns';
+import { finishSessionScriptRun, listSettledRunsForOrganization, startSessionScriptRun } from './sessionScriptRuns';
 
 jest.setTimeout(240_000);
 
@@ -830,5 +830,17 @@ describe('today\'s classes a session can be tied to', () => {
     await addClass(gym.organizationId, 'class-early-today', gym.coach.accountId, "'2026-10-14T04:30:00Z'::timestamptz"); // 12:30 AM, 14 October
     await addClass(gym.organizationId, 'class-tomorrow', gym.coach.accountId, "'2026-10-15T04:30:00Z'::timestamptz"); // 12:30 AM, 15 October
     expect((await listTieableClasses(gym.coach, now)).map((item) => item.class_id)).toEqual(['class-early-today']);
+  });
+});
+
+describe('the history names the class', () => {
+  test('a finished tied session carries its class title; an open-gym one carries none', async () => {
+    const gym = await newGym('history');
+    const { run_id: tied } = await start(gym, gym.coach);
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, tied, { runState: 'completed' });
+    const { run_id: open } = await start(gym, gym.coach, null);
+    await finishSessionScriptRun(gym.organizationId, gym.coach.accountId, open, { runState: 'completed' });
+    const settled = await listSettledRunsForOrganization(gym.organizationId);
+    expect(Object.fromEntries(settled.map((row) => [row.run_id, row.class_title]))).toEqual({ [tied]: 'Youth boxing', [open]: null });
   });
 });

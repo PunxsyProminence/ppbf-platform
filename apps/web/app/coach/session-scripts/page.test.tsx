@@ -1269,3 +1269,79 @@ describe("a plan's other formats", () => {
     expect(screen.queryByRole('region', { name: 'Other formats of this plan' })).not.toBeInTheDocument();
   });
 });
+
+// D4 (OD-2026-10-21-002): the start says which class the session is for.
+describe('the class a new session is for', () => {
+  const soon = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+  const YOUTH = { class_id: 'class-youth', title: 'Youth boxing', start_at: soon(-10), end_at: soon(50), held_by_other_session: false };
+  const ADULT = { class_id: 'class-adult', title: 'Adult boxing', start_at: soon(-5), end_at: soon(55), held_by_other_session: false };
+
+  function withClasses(classes: unknown[], runsPost: (body: Record<string, unknown>) => Response) {
+    const posts: Array<Record<string, unknown>> = [];
+    mockFetch((url, init) => {
+      if (url.includes('/api/pilot/session-scripts/runs') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        posts.push(body);
+        return runsPost(body);
+      }
+      if (url.includes('classes=today')) return jsonResponse({ classes });
+      if (url.includes('/api/pilot/session-scripts/runs')) return jsonResponse(url.includes('script_id=') ? { runs: [] } : { run: null });
+      return url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [] });
+    });
+    return posts;
+  }
+
+  it('opens on the one class under way and starts the session tied to it', async () => {
+    const posts = withClasses([YOUTH], () => jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null, class_id: 'class-youth' }) }));
+    render(<CoachSessionScriptsPage />);
+    expect(await screen.findByRole('radio', { name: /Youth boxing/ })).toBeChecked();
+    const start = screen.getByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+    expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+    expect(posts).toEqual([{ class_id: 'class-youth' }]);
+  });
+
+  it('with two classes under way, nothing starts until the coach chooses', async () => {
+    const posts = withClasses([YOUTH, ADULT], () => jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
+    render(<CoachSessionScriptsPage />);
+    expect(await screen.findByText('Choose the class, or No class, to start.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start a plain session' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: 'No class (open gym)' }));
+    const start = screen.getByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+    expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+    expect(posts).toEqual([{}]);
+  });
+
+  it('a default that has gone stale is never started: the class is shown again first', async () => {
+    const posts = withClasses([{ ...YOUTH, end_at: soon(1) }], () => jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
+    render(<CoachSessionScriptsPage />);
+    expect(await screen.findByRole('radio', { name: /Youth boxing/ })).toBeChecked();
+    // The page sat open: the class ended before Start was pressed.
+    const later = Date.now() + 5 * 60_000;
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(later);
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Start a plain session' }));
+      expect((await screen.findByRole('alert')).textContent).toContain('The class under way has changed');
+      expect(posts).toEqual([]);
+      // No class is under way any more: the coach now chooses, and Start waits for it.
+      expect(screen.getByRole('radio', { name: /Youth boxing/ })).not.toBeChecked();
+      expect(screen.getByText('Choose the class, or No class, to start.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Start a plain session' })).toBeDisabled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('shows the server\'s words when the class cannot be tied', async () => {
+    withClasses([YOUTH], () => jsonResponse({ error: 'SESSION_CLASS_ALREADY_LIVE', message: 'Another live session is already running this class.' }, false));
+    render(<CoachSessionScriptsPage />);
+    expect(await screen.findByRole('radio', { name: /Youth boxing/ })).toBeChecked();
+    const start = screen.getByRole('button', { name: 'Start a plain session' });
+    await waitFor(() => expect(start).not.toBeDisabled());
+    fireEvent.click(start);
+    expect((await screen.findByRole('alert')).textContent).toBe('Another live session is already running this class.');
+  });
+});

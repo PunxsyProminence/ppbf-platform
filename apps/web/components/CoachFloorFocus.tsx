@@ -4,6 +4,8 @@ import Link from 'next/link';
 import React, { useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { defaultClassChoice } from '@/src/shared/sessionClassChoice';
+import { fetchTieableClasses } from './SessionClassPicker';
 import ArmedButton from './ArmedButton';
 import { handOffArrivalAthlete } from './decisionLoopArrival';
 
@@ -236,7 +238,10 @@ export default function CoachFloorFocus({
      With no live session, the tap asks which plans the gym has: none, and it starts a plain
      session (no plan: the clock, pause, TV and finish) and goes to it; some, and it goes to the
      session page to pick one or start plain there. A failed read or start says so and leaves the
-     page link beside it, so the coach is never stuck. */
+     page link beside it, so the coach is never stuck.
+     THE CLASS (D4, OD-2026-10-21-002): the plain start is tied to today's class only when exactly
+     one class of the coach's is under way (sessionClassChoice.ts); with no free class today (none,
+     or each run by another live session) it starts as open gym; otherwise the session page asks. */
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   // One start per press. `starting` disables the button only after a render; two taps landing
@@ -249,11 +254,15 @@ export default function CoachFloorFocus({
     setStartError('');
     // Busy until the page changes: a navigation in flight is not a reason to offer the tap again.
     let leaving = false;
+    let refusal = '';
     try {
       const list = await fetch(`${apiBase()}/api/pilot/session-scripts`, { credentials: 'include' });
       if (!list.ok) throw new Error('list');
       const payload = (await list.json()) as { scripts?: unknown[] };
-      if ((payload.scripts ?? []).length > 0) {
+      // Plans to pick from, or today's classes unreadable: the session page asks.
+      const classes = (payload.scripts ?? []).length > 0 ? null : await fetchTieableClasses().catch(() => null);
+      const choice = classes ? defaultClassChoice(classes, Date.now()) : undefined;
+      if (choice === undefined) {
         leaving = true;
         onGoToSessions();
         return;
@@ -262,18 +271,20 @@ export default function CoachFloorFocus({
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(choice ? { class_id: choice } : {}),
       });
-      const result = (await started.json().catch(() => ({}))) as { error?: string };
+      const result = (await started.json().catch(() => ({}))) as { error?: string; message?: string };
       // Already live (a double tap, another tab): the session page restores it.
       if (started.ok || result.error === 'SESSION_RUN_ALREADY_LIVE') {
         leaving = true;
         onGoToSessions();
         return;
       }
+      // A class refusal is worded by the route (another live session runs the class, and so on).
+      refusal = result.message ? ` ${result.message}` : '';
       throw new Error('start');
     } catch {
-      setStartError('No session was started. Open the session page to start one.');
+      setStartError(`No session was started.${refusal} Open the session page to start one.`);
     } finally {
       if (!leaving) {
         inFlight.current = false;

@@ -778,6 +778,8 @@ const RUN_COLUMNS_QUALIFIED = RUN_COLUMNS.split(',').map((column) => `r.${column
 /** A settled run with the name of the plan it was delivered from (null for a plain session). */
 export interface SettledSessionRun extends SessionScriptRunRow {
   script_name: string | null;
+  // The title of the class it was tied to (D4), or null for an open-gym session.
+  class_title: string | null;
 }
 
 // The gym's finished sessions, newest first: plain and scripted alike (audit finding F-067).
@@ -798,10 +800,12 @@ export async function listSettledRunsForOrganization(
 ): Promise<SettledSessionRun[]> {
   await sweepIdleRuns(organizationId);
   return query<SettledSessionRun>(
-    `select ${RUN_COLUMNS_QUALIFIED}, s.name as script_name
+    `select ${RUN_COLUMNS_QUALIFIED}, s.name as script_name, c.title as class_title
        from pilot.session_script_runs r
        left join pilot.session_scripts s
          on s.organization_id = r.organization_id and s.script_id = r.script_id
+       left join pilot.scheduler_classes c
+         on c.organization_id = r.organization_id and c.class_id = r.class_id
       where r.organization_id = $1
         and r.run_state in ('completed', 'abandoned')
       order by r.ended_at desc nulls last, r.created_at desc, r.run_id

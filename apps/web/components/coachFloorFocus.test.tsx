@@ -600,3 +600,48 @@ describe('"Record what you did" hands its athlete to the Decision Loop', () => {
     expect(takeArrivalAthlete()).toBeNull();
   });
 });
+
+// D4 (OD-2026-10-21-002): the one-tap start ties the session only when exactly one class is under way.
+describe('Start a session, and the class', () => {
+  const soon = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+  const klass = (id: string) => ({ class_id: id, title: id, start_at: soon(-10), end_at: soon(50), held_by_other_session: false });
+  function respond(classes: unknown[] | 'fail') {
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/session-scripts/runs') && init?.method === 'POST') {
+        return { ok: true, status: 201, json: async () => ({ run: {} }) } as Response;
+      }
+      if (url.includes('classes=today')) {
+        if (classes === 'fail') return { ok: false, status: 500, json: async () => ({}) } as Response;
+        return { ok: true, status: 200, json: async () => ({ classes }) } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ scripts: [] }) } as Response;
+    });
+  }
+  const posts = () => fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+
+  test('exactly one class under way: the start is tied to it', async () => {
+    respond([klass('class-youth')]);
+    const onGoToSessions = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+    });
+    expect(JSON.parse(String((posts()[0][1] as RequestInit).body))).toEqual({ class_id: 'class-youth' });
+    expect(onGoToSessions).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['two classes are under way', [klass('a'), klass('b')]],
+    ["today's classes cannot be read", 'fail' as const],
+  ])('when %s, the session page asks and nothing starts', async (_label, classes) => {
+    respond(classes);
+    const onGoToSessions = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+    });
+    expect(posts()).toHaveLength(0);
+    expect(onGoToSessions).toHaveBeenCalledTimes(1);
+  });
+});
