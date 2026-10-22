@@ -225,7 +225,7 @@ describe('the form', () => {
     await fillAndSend({ notes: 'Keep me.' });
 
     // In words a family can act on, not the server's.
-    expect(await screen.findByRole('alert')).toHaveTextContent('That did not save -- this child is not on your account. What you wrote is still in the box.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('That did not save — this child is not on your account. What you wrote is still in the box.');
     expect(screen.getByRole('alert').textContent).not.toContain('Forbidden');
     expect(screen.getByLabelText('What you noticed')).toHaveValue('Keep me.');
     expect(within(history()).getAllByRole('listitem')).toHaveLength(2);

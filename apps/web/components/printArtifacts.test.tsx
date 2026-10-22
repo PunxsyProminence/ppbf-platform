@@ -24,7 +24,7 @@ function card(overrides: Partial<FightCardPayload> = {}): FightCardPayload {
     corner: 'red',
     cornerLabel: 'Red corner',
     program: 'youth_mentorship',
-    programLabel: 'Youth Mentorship Programme',
+    programLabel: 'Youth Mentorship Program',
     coachName: 'Jason Neale',
     coachAccountId: 'acct-coach',
     coachPhotoAvailable: true,
@@ -138,7 +138,7 @@ describe('the printed card', () => {
 
     expect(screen.getByText('Marcus Ruiz')).toBeTruthy();
     expect(screen.getByText(/The Engine/)).toBeTruthy();
-    expect(screen.getByText('Youth Mentorship Programme')).toBeTruthy();
+    expect(screen.getByText('Youth Mentorship Program')).toBeTruthy();
     expect(screen.getByText('Jason Neale')).toBeTruthy();
   });
 
@@ -176,7 +176,7 @@ describe('the printed card', () => {
   });
 
   it('carries no record, ranking or weight class -- a fitness member’s card is the same object', () => {
-    const { container } = render(<PrintableFightCard card={card({ programLabel: 'Fitness Programme' })} />);
+    const { container } = render(<PrintableFightCard card={card({ programLabel: 'Fitness Program' })} />);
     const text = (container.textContent ?? '').toLowerCase();
 
     for (const word of ['win', 'loss', 'record:', 'rank', 'ranking', 'points', 'score']) {

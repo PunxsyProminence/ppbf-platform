@@ -69,7 +69,12 @@ function prettyKey(key: string): string {
  *  does not know, the key with its punctuation taken out. A parent used to
  *  read "Conditioning.Plank One Minute" (F-051). */
 function milestoneLabel(key: string): string {
-  return milestoneByKey(key)?.family ?? prettyKey(key);
+  const known = milestoneByKey(key)?.family;
+  if (known) return known;
+  // Sentence case, like the catalogue's own wording and the Print page: the
+  // first letter, never every word (parent walk 2026-10-19 item 12).
+  const fallback = prettyKey(key);
+  return fallback.charAt(0).toUpperCase() + fallback.slice(1);
 }
 
 /** What the coach's line says. A recognition is a kind and an optional note:
@@ -292,7 +297,7 @@ export default function ParentDigest({ athleteId, childName }: ParentDigestProps
               <ul className="mt-[var(--s2)] space-y-[var(--s3)]">
                 {milestones.map((item) => (
                   <li key={`${item.milestone_key}-${item.awarded_at}`}>
-                    <p className="text-[length:var(--t-sm)] font-semibold capitalize text-[color:var(--card-ink)]">
+                    <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--card-ink)]">
                       {milestoneLabel(item.milestone_key)}
                     </p>
                     {item.note && (

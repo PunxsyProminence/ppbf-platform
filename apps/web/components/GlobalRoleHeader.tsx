@@ -185,8 +185,17 @@ export default function GlobalRoleHeader() {
   return (
     <header className={SHELL}>
       <div className={BAR}>
-        <div className="flex items-center gap-[var(--s4)]">
-          <span className={EYEBROW}>Session active</span>
+        {/* PHONE (parent walk 2026-10-19 item 11: the room name read "FRONT OF…").
+            This group held the caption, the role plate and the corridor on one
+            row that could not wrap, so at 375px the corridor took what was left
+            and cut its own room name. Two changes: the "Session active" caption
+            steps off the phone (the role plate and Logout still say who is
+            signed in), which is what gives the corridor the width, and the group
+            may wrap, so a long role name moves the corridor to a row of its own
+            rather than clipping it. The caption is `hidden` on its own element,
+            which has no competing display class. PROPOSED. */}
+        <div className="flex flex-wrap items-center gap-[var(--s4)]">
+          <span className={`${EYEBROW} hidden sm:inline`}>Session active</span>
           {/* An engraved plate, not a painted one. This badge was
               .mat-brass--patina with ink type, which reads fine in a mockup and
               fails in pixels: patina is a mottled material, and its gradient

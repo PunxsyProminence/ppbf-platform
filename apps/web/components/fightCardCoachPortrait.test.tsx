@@ -21,7 +21,7 @@ function card(overrides: Partial<FightCardPayload> = {}): FightCardPayload {
     corner: 'none',
     cornerLabel: 'No corner',
     program: 'youth_mentorship',
-    programLabel: 'Youth Mentorship Programme',
+    programLabel: 'Youth Mentorship Program',
     coachName: 'Ray Nolan',
     coachAccountId: null,
     coachPhotoAvailable: true,

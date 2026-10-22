@@ -87,7 +87,10 @@ export default function Corridor() {
         <span className="corridor-trigger-lbl">
           {hereRoom ? ROOM_LABEL[hereRoom] : 'Rooms'}
         </span>
-        {here && <span className="corridor-trigger-here">{here.label}</span>}
+        {/* The current surface's name steps off the phone: the page's own title
+            says it, the panel marks it (aria-current), and keeping it made the
+            room name above it the part that was cut ("FRONT OF…"). */}
+        {here && <span className="corridor-trigger-here hidden sm:inline">{here.label}</span>}
       </button>
 
       {open && (

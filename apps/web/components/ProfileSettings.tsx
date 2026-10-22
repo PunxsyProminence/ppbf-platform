@@ -342,13 +342,13 @@ export default function ProfileSettings() {
 
       {/* ----------------------------------------------------- PROGRAMME -- */}
       <section className={PANEL} aria-labelledby="programme-heading">
-        <h2 id="programme-heading" className={HEADING}>Your programme</h2>
+        <h2 id="programme-heading" className={HEADING}>Your program</h2>
         <p className={HELP}>
-          What you come here for. Every programme reads the same on a card — this gym runs
+          What you come here for. Every program reads the same on a card — this gym runs
           fitness, adult recreational, youth mentorship and competitive, and none of them is a
           lesser version of another.
         </p>
-        <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Programme">
+        <div className="flex flex-wrap gap-[var(--s3)]" role="group" aria-label="Program">
           {PROGRAM_OPTIONS.map((option) => (
             <button
               key={option.value}

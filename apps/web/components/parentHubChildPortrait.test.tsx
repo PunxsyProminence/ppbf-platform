@@ -24,7 +24,7 @@ function card(athleteId: string, name: string, initials: string) {
     corner: 'none',
     cornerLabel: 'No corner',
     program: 'youth_mentorship',
-    programLabel: 'Youth Mentorship Programme',
+    programLabel: 'Youth Mentorship Program',
     coachName: 'Coach Ray',
     coachAccountId: null,
     coachPhotoAvailable: false,
