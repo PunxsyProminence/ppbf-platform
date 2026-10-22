@@ -2645,6 +2645,17 @@ describe('restore_class', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
+  test('the platform owner is refused with 403 (not a scheduler role), and nothing is read or written', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('platform_owner'));
+
+    const response = await restore();
+
+    expect(response.status).toBe(403);
+    expect(mockGetClass).not.toHaveBeenCalled();
+    expect(mockRestore).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
   test.each([['open'], ['full']])('a class that is %s, not cancelled, is a 400 with a sentence, and nothing is written', async (status) => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('organization_admin'));
     mockGetClass.mockResolvedValueOnce(cancelledClass({ status }));
@@ -2674,7 +2685,9 @@ describe('restore_class', () => {
 
     const response = await restore();
 
-    expect(response.status).not.toBe(200);
+    // The read is scoped to the caller's gym (the pg suite holds the update to it).
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('Missing class record');
     expect(mockGetClass).toHaveBeenCalledWith('org-2', 'class-1');
     expect(mockRestore).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
