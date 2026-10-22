@@ -82,6 +82,7 @@ the owner's decision.
 | Data Type | Retention Window | Reason | Deletion Trigger |
 |---|---|---|---|
 | Coach/staff account | Duration of employment + 3 years | Legal: employment records, incident investigation | Staff leaves organization + 3 years |
+| Display name the gym typed for a coach or staff member, one per gym (`pilot.account_profiles.staff_display_name`, added 2026-10-19; leaves with the account row by cascade) | As the coach/staff account | Operational: names the person on athlete and family screens | As the coach/staff account |
 | Coach observations about athletes | Duration of employment + 2 years | Safeguarding: historical context for investigations | Staff leaves + 2 years |
 
 ### System Records
