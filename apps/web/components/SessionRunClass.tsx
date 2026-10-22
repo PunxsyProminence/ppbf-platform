@@ -55,12 +55,15 @@ export default function SessionRunClass({
   classId,
   onClassChange,
   onRunNotLive,
+  onClassCancelled,
 }: {
   readonly runId: string;
   readonly classId: string | null;
   readonly onClassChange: (classId: string | null) => void;
   /** The session ended elsewhere (or was closed for being idle): the parent resyncs. */
   readonly onRunNotLive: () => void;
+  /** Whether the tied class has been cancelled since, as last read (the who-is-here footer follows it). */
+  readonly onClassCancelled?: (cancelled: boolean) => void;
 }) {
   const [view, setView] = useState<RunClassView | null>(null);
   const [choosing, setChoosing] = useState(false);
@@ -127,6 +130,10 @@ export default function SessionRunClass({
 
   // The name shown is this class's only, never the one tied before a retie.
   const shown = view && view.class_id === classId ? view : null;
+  const cancelled = shown?.status === 'cancelled';
+  useEffect(() => {
+    onClassCancelled?.(cancelled);
+  }, [cancelled, onClassCancelled]);
 
   return (
     <div className="mt-[var(--s3)]">
