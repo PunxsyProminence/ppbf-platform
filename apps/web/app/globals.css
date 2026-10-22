@@ -2198,13 +2198,17 @@ h6 {
   color: var(--brass-400);
 }
 
-/* One line, whatever the gym's name: a long one ends in an ellipsis rather
-   than pushing the clock onto two lines. */
+/* The gym's whole name (issue 1792, item 7): it wraps to a second line beside the
+   round clock rather than ending in an ellipsis, and only a name longer than
+   two lines is cut. */
 [data-surface="wall"] .wall-eyebrow {
+  display: -webkit-box;
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.2;
+  text-wrap: balance;
   font-family: var(--font-mono, var(--font-data));
   font-size: var(--t-lg);
   letter-spacing: .34em;
@@ -2488,7 +2492,10 @@ h6 {
   color: var(--bone-200);
 }
 
-[data-surface="wall"] .wall-now { display: flex; flex-direction: column; gap: var(--s3); }
+/* NOW's words clip inside their own box and the strip keeps its own row at the
+   foot of the board (issue 1792, item 1): on a board too short for both, the drill
+   name is cut, never painted over. */
+[data-surface="wall"] .wall-now { display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--s3); overflow: hidden; }
 [data-surface="wall"] .wall-now-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s5); }
 
 [data-surface="wall"] .wall-kind { display: inline-flex; align-items: center; gap: var(--s4); font-size: var(--t-2xl); }
@@ -2555,9 +2562,19 @@ h6 {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: var(--s3);
+  flex-shrink: 0;
   margin: auto 0 0;
   padding: var(--s4) 0 0;
   list-style: none;
+}
+
+/* The number and the pictogram share a row, so the tile has room for the
+   block's name on two lines. */
+[data-surface="wall"] .wall-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
 }
 
 [data-surface="wall"] .wall-strip-number {
@@ -2571,15 +2588,52 @@ h6 {
 [data-surface="wall"] .wall-strip-icon,
 [data-surface="wall"] .wall-kind-roundel { font-size: var(--t-xl); }
 
+/* The block's own name, two lines at most. The time under it wraps before
+   "min" rather than cutting the numbers (issue 1792, item 3). */
 [data-surface="wall"] .wall-strip-word {
+  display: -webkit-box;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 2.2em;
+  overflow-wrap: anywhere;
+  text-align: center;
   font-family: var(--font-ui);
   font-size: var(--t-lg);
   font-weight: 500;
+  line-height: 1.1;
   color: var(--bone-200);
+}
+
+[data-surface="wall"] .wall-strip-min {
+  text-align: center;
+  white-space: normal;
+}
+
+[data-surface="wall"] .wall-strip-range { white-space: nowrap; }
+
+/* READY (issue 1792, item 5): the round clock's bezel, big, on a paired TV with no
+   session sent. */
+[data-surface="wall"] .wall-ready {
+  align-self: center;
+  margin: var(--s4) 0 var(--s3);
+  padding: var(--s4) var(--s7);
+  text-align: center;
+}
+
+[data-surface="wall"] .wall-ready-word {
+  font-size: calc(var(--t-5xl) * var(--root-phi));
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--bone-100);
+}
+
+[data-surface="wall"] .wall-ready-line {
+  font-size: var(--t-3xl);
+  font-weight: 900;
+  color: var(--bone-100);
 }
 
 [data-surface="wall"] .wall-next-label {
@@ -2652,7 +2706,8 @@ h6 {
   align-items: baseline;
   justify-content: space-around;
   gap: var(--s7);
-  min-width: 100vw;
+  /* A screen wide; on a shrunk board, its canvas wide (WallDisplay wallFit). */
+  min-width: var(--wall-canvas-width, 100vw);
   margin: 0;
   padding: 0 calc(var(--s7) / 2);
   list-style: none;

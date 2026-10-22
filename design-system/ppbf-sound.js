@@ -6,6 +6,12 @@
    Audio API. The kiosk renders on a cold tablet with no network, and that
    promise does not get an exception for audio.
 
+   ONE OPT-IN EXCEPTION (Jason 2026-10-21, "A: Free boxing-bell recording"):
+   a surface may hand the engine a recording to ring in place of a voice
+   (setRecording). The gym TV does, for a real boxing-ring bell. The
+   synthesized voice stays the fallback: until the file has loaded, or if it
+   is missing, offline or undecodable, play() synthesizes exactly as before.
+
    FIVE RULES, stricter than the visual system's:
 
    1. OFF BY DEFAULT. Sound is opt-in, always. Browsers already require a user
@@ -27,7 +33,9 @@
       quiet surfaces: the office, the clinic, an after-hours kiosk.
 
    5. ONE AT A TIME, AND SHORT. Nothing here runs past ~1.2s, and an overlapping
-      call is dropped rather than stacked. A queue of chimes is noise.
+      call is dropped rather than stacked. A queue of chimes is noise. A
+      recording runs its own length (a ring bell's ding-ding-ding is a few
+      seconds) and holds the engine busy for all of it, so it never stacks.
 
    A CLASSIC SCRIPT, DELIBERATELY. This is not an ES module, because browsers
    block `import` over file:// on CORS grounds and every other preview in this
@@ -68,6 +76,10 @@ class PPBFSound {
   #master = null;
   #enabled = false;
   #busyUntil = 0;
+  /** voice -> the recording asked for; URL -> its decoded audio once loaded; URLs fetched (once each). */
+  #recordingUrls = new Map();
+  #audio = new Map();
+  #fetched = new Set();
 
   constructor({ volume = 0.35 } = {}) {
     this.volume = volume;
@@ -98,6 +110,7 @@ class PPBFSound {
       }
       if (this.#ctx.state === 'suspended') await this.#ctx.resume();
       this.#master.gain.value = this.volume;
+      for (const url of this.#recordingUrls.values()) this.#loadRecording(url);
 
       this.#enabled = true;
       writeStoredPreference(true);
@@ -120,6 +133,34 @@ class PPBFSound {
   }
 
   /**
+   * Ring a recording in place of a voice; null goes back to the synthesized
+   * one. Safe before enable(): the file is fetched once audio is live, and
+   * each URL only once.
+   */
+  setRecording(name, url) {
+    if (!url) {
+      this.#recordingUrls.delete(name);
+      return;
+    }
+    this.#recordingUrls.set(name, url);
+    if (this.#ctx) this.#loadRecording(url);
+  }
+
+  /** Fetches and decodes a recording, once per URL. Never throws. */
+  async #loadRecording(url) {
+    if (this.#fetched.has(url)) return;
+    this.#fetched.add(url);
+    try {
+      const response = await fetch(url, { cache: 'force-cache' });
+      if (!response.ok) return;
+      this.#audio.set(url, await this.#ctx.decodeAudioData(await response.arrayBuffer()));
+    } catch {
+      // Missing, offline, or a format this browser cannot decode: the
+      // synthesized voice keeps ringing.
+    }
+  }
+
+  /**
    * Fire a voice by name. Safe to call unconditionally: returns false and does
    * nothing when disabled, unsupported, unknown, or still busy.
    * @returns {boolean} whether the sound was actually started
@@ -128,6 +169,12 @@ class PPBFSound {
     if (!this.running) return false;
     const now = this.#ctx.currentTime;
     if (now < this.#busyUntil) return false;      // rule 5: no stacking
+
+    const recording = this.#audio.get(this.#recordingUrls.get(name));
+    if (recording) {
+      this.#busyUntil = now + this.#recorded(recording);
+      return true;
+    }
 
     switch (name) {
       case 'bell':   this.#busyUntil = now + this.#bell();   return true;
@@ -187,6 +234,16 @@ class PPBFSound {
     filt.connect(g);
     src.start(t);
     src.onended = () => { src.disconnect(); filt.disconnect(); g.disconnect(); };
+  }
+
+  /** A recording, played once through the master level. Returns its length. */
+  #recorded(audio) {
+    const src = this.#ctx.createBufferSource();
+    src.buffer = audio;
+    src.connect(this.#master);
+    src.start(this.#ctx.currentTime);
+    src.onended = () => { src.disconnect(); };
+    return audio.duration;
   }
 
   /* --- the six voices. Each returns its duration in seconds. ------------ */

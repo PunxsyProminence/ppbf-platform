@@ -8,7 +8,7 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import WallDisplay from './WallDisplay';
+import WallDisplay, { WALL_BELL_RECORDING_URL } from './WallDisplay';
 import type { WallBoard } from '@/src/server/pilot/wallDisplay';
 
 type Status = 'off' | 'arming' | 'on' | 'unavailable';
@@ -21,9 +21,12 @@ const sound = {
   setEnabled: jest.fn(async (on: boolean) => on),
 };
 
+const setGymRecording = jest.fn();
+
 jest.mock('./useGymSound', () => ({
   __esModule: true,
   default: () => sound,
+  setGymRecording: (...args: unknown[]) => setGymRecording(...args),
 }));
 
 function board(): WallBoard {
@@ -78,6 +81,7 @@ beforeEach(() => {
   setSound('off');
   sound.play.mockClear();
   sound.setEnabled.mockClear();
+  setGymRecording.mockClear();
 });
 
 afterEach(() => {
@@ -94,6 +98,24 @@ describe('the TV sound control', () => {
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     expect(screen.queryByRole('button', { name: 'Test bell' })).toBeNull();
     expect(sound.play).not.toHaveBeenCalled();
+  });
+
+  test('hands the engine the boxing-bell recording on a paired screen, and takes it back when unpaired (issue 1792 item 4)', async () => {
+    // Jason 2026-10-21, "A: Free boxing-bell recording (Rec.)". The engine keeps its own bell until
+    // the file loads, so a missing file changes nothing (ppbfSoundRecording.test.ts).
+    expect(WALL_BELL_RECORDING_URL).toBe('/sounds/boxing-bell.wav');
+    global.fetch = pairedFetch() as unknown as typeof fetch;
+    const view = render(<WallDisplay />);
+    await settle();
+    expect(setGymRecording).toHaveBeenCalledWith('bell', WALL_BELL_RECORDING_URL);
+    view.unmount();
+    expect(setGymRecording).toHaveBeenLastCalledWith('bell', null);
+
+    setGymRecording.mockClear();
+    global.fetch = unpairedFetch() as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    expect(setGymRecording).not.toHaveBeenCalled();
   });
 
   test('is absent on an unpaired screen, where the pair box stays the only control', async () => {

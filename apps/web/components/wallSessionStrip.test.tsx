@@ -117,7 +117,6 @@ describe('the session on a paired TV', () => {
     const current = tiles.filter((tile) => tile.getAttribute('aria-current') === 'step');
     expect(current).toHaveLength(1);
     expect(current[0].dataset.state).toBe('now');
-    expect(current[0].textContent).toContain('Drill');
     expect(tiles.map((tile) => tile.dataset.state)).toEqual(['done', 'done', 'now', 'next', 'next', 'next', 'next']);
     for (const tile of tiles) expect(tile.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
 
@@ -127,6 +126,20 @@ describe('the session on a paired TV', () => {
 
     expect(screen.getByRole('region', { name: 'On the floor' }).textContent).toContain('A.B.');
     expect(screen.queryByRole('region', { name: 'Today' })).toBeNull();
+  });
+
+  it('names each tile with its own block label, and keeps the time range whole (issue 1792 item 3)', async () => {
+    global.fetch = paired({ session: session(), board: board(), quotes: [] }) as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    const tiles = strip(container);
+    // The pictogram says the kind; the word is the plan's name for the block, never "Drill" seven times.
+    expect(tiles.map((tile) => tile.querySelector('.wall-strip-word')?.textContent)).toEqual(LABELS.slice(1));
+    expect(tiles[2].querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    // The numbers sit in one unbreakable run; only the unit may wrap under them.
+    expect(tiles.map((tile) => tile.querySelector('.wall-strip-range')?.textContent)).toEqual(
+      BLOCKS.slice(1).map((b) => `${b.start_offset_min}–${b.end_offset_min}`),
+    );
   });
 
   it('says Paused and holds the plan time while the coach has paused', async () => {
@@ -163,6 +176,41 @@ describe('the session on a paired TV', () => {
     });
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the workout-ready board on a paired TV with no session sent (issue 1792 item 5)', async () => {
+    global.fetch = paired({ session: null, board: board(), quotes: [] }) as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    // Jason 2026-10-21, "A: Workout-ready board (Rec.)": the round clock at READY, "Waiting for
+    // coach", today's classes and who is on the floor.
+    const clock = screen.getByRole('region', { name: 'Round clock' });
+    expect(clock.querySelector('.wall-ready-word')?.textContent).toBe('Ready');
+    expect(clock.textContent).toContain('Waiting for coach');
+    expect(screen.getByRole('region', { name: 'Today' }).textContent).toContain('Open Gym');
+    expect(screen.getByRole('region', { name: 'On the floor' }).textContent).toContain('A.B.');
+    expect(screen.queryByRole('region', { name: 'Now' })).toBeNull();
+    expect(strip(container)).toHaveLength(0);
+  });
+
+  it('keeps the public wall as it was on an unpaired TV: no ready board', async () => {
+    global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/api/pilot/tv/session')) {
+        return { ok: false, status: 401, json: async () => ({ error: 'TV_NOT_PAIRED' }) } as unknown as Response;
+      }
+      const { generated_at, gym_day, time_zone, sessions, on_floor_total, notice } = board();
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, board: { scope: 'public', generated_at, gym_day, time_zone, sessions, on_floor_total, notice } }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    render(<WallDisplay />);
+    await settle();
+    expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
+    expect(screen.queryByText('Waiting for coach')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Today' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'On the floor' }).textContent).toContain('2 people training');
   });
 
   it('keeps the thirty-second poll when no session is up', async () => {

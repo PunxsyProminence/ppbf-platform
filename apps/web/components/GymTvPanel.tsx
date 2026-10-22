@@ -88,6 +88,15 @@ const STATUS_LABEL: Record<GymTvListItem['status'], { glyph: string; label: stri
 };
 const UNKNOWN_STATUS = { glyph: '◌', label: 'UNKNOWN STATE', badge: 'badge badge--filed' };
 
+/**
+ * A TV that can show nothing (#1792 item 8): its row is dimmed and dashed and says so in words, so
+ * an old "Tablet" stuck at CODE EXPIRED does not read like a TV on the wall.
+ */
+export const NOT_CONNECTED_LINE: Partial<Record<GymTvListItem['status'], string>> = {
+  expired: 'Not connected: its code ran out before the TV used it. Make a new code to pair a TV.',
+  disconnected: 'Not connected: it was disconnected. Make a new code to pair it again.',
+};
+
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   const body = (await response.json().catch(() => ({}))) as unknown;
   return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
@@ -378,10 +387,12 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
                 const anyBusy = busyTvId !== null;
                 const usable = tv.status === 'paired';
                 const error = actionError && actionError.tvId === tv.tv_id ? actionError.text : '';
+                const notConnected = NOT_CONNECTED_LINE[tv.status];
                 return (
                   <li
                     key={tv.tv_id}
-                    className="space-y-[var(--s3)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]"
+                    data-connected={notConnected ? 'no' : undefined}
+                    className={`space-y-[var(--s3)] rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]${notConnected ? ' border-dashed opacity-70' : ''}`}
                   >
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">
                       <p className="font-semibold">{tv.tv_name}</p>
@@ -390,6 +401,7 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
                     <p className="t-muted">
                       Last seen: {tv.last_seen_at ? formatGymDateTimeShort(tv.last_seen_at) ?? tv.last_seen_at : 'never'}
                     </p>
+                    {notConnected && <p>{notConnected}</p>}
                     {usable && (
                       <p>
                         <span aria-hidden="true">{session.glyph} </span>{session.text}
