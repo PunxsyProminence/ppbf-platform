@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { PilotError } from './errors';
 import { query, queryOne } from './db';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 
 // pilot.clearance_types, pilot.person_clearances,
 // pilot.activity_clearance_requirements and the view pilot.v_clearance_status
@@ -406,7 +407,9 @@ export async function listPersonClearancesForVerification(organizationId: string
   return query<CredentialQueueRow>(
     `select
        pc.organization_id, pc.clearance_id, pc.person_account_id,
-       a.login_email as person_login_email, ap.staff_display_name as person_display_name, a.role as person_role,
+       a.login_email as person_login_email,
+       ${storedStaffNameSql('pc.organization_id', 'pc.person_account_id')} as person_display_name,
+       a.role as person_role,
        pc.clearance_type_id, ct.name as clearance_name, ct.issuing_authority, ct.validity_months,
        pc.status, pc.issued_on, pc.expires_on, pc.document_ref,
        pc.verified_by_account_id, pc.verified_at, pc.verification_note,
@@ -416,8 +419,6 @@ export async function listPersonClearancesForVerification(organizationId: string
        on ct.organization_id = pc.organization_id and ct.clearance_type_id = pc.clearance_type_id
      join pilot.accounts a
        on a.organization_id = pc.organization_id and a.account_id = pc.person_account_id
-     left join pilot.account_profiles ap
-       on ap.organization_id = pc.organization_id and ap.account_id = pc.person_account_id
      where pc.organization_id = $1
      order by pc.status = 'submitted' desc, pc.expires_on nulls last, a.login_email`,
     [organizationId],
@@ -488,12 +489,11 @@ export async function listStaffCredentialStatus(
 ): Promise<StaffCredentialStatusRow[]> {
   return query<StaffCredentialStatusRow>(
     `select
-       a.account_id, a.role, a.login_email, ap.staff_display_name,
+       a.account_id, a.role, a.login_email,
+       ${storedStaffNameSql('a.organization_id', 'a.account_id')} as staff_display_name,
        ct.clearance_type_id, ct.name as clearance_name, ct.issuing_authority,
        coalesce(pc.status, 'not_started') as status, pc.expires_on
      from pilot.accounts a
-     left join pilot.account_profiles ap
-       on ap.organization_id = a.organization_id and ap.account_id = a.account_id
      cross join pilot.clearance_types ct
      left join pilot.person_clearances pc
        on pc.organization_id = a.organization_id

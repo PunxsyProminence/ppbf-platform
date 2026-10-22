@@ -31,6 +31,7 @@
 import { coachDisplayNameFor } from '@/src/shared/coachDisplayName';
 
 import { query } from './db';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 
 export interface AthleteCoachMessage {
   note_id: string;
@@ -50,12 +51,10 @@ export async function listAthleteCoachMessages(
             co.note_text,
             to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at,
             a.login_email,
-            ap.staff_display_name,
+            ${storedStaffNameSql('co.organization_id', 'co.coach_account_id')} as staff_display_name,
             co.author_role
        from pilot.coach_observations co
        left join pilot.accounts a on a.account_id = co.coach_account_id
-       left join pilot.account_profiles ap
-         on ap.organization_id = co.organization_id and ap.account_id = co.coach_account_id
       where co.organization_id = $1
         and co.athlete_id = $2
         and co.note_type = 'athlete_message'
@@ -91,12 +90,10 @@ export async function listGuardianCopiesOfAthleteMessages(
             co.note_text,
             to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_at,
             a.login_email,
-            ap.staff_display_name,
+            ${storedStaffNameSql('co.organization_id', 'co.coach_account_id')} as staff_display_name,
             co.author_role
        from pilot.coach_observations co
        left join pilot.accounts a on a.account_id = co.coach_account_id
-       left join pilot.account_profiles ap
-         on ap.organization_id = co.organization_id and ap.account_id = co.coach_account_id
       where co.organization_id = $1
         and co.athlete_id = any($2::text[])
         and co.note_type = 'athlete_message'

@@ -23,6 +23,7 @@
 import { assertActorCanAccessAthlete, isOrganizationAdminRole, type ActorIdentity } from './access';
 import { query, queryOne } from './db';
 import { accountNotDeletedSql } from './deletedAthletes';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 import { guardianLinkEnded } from './guardianAccess';
 import {
   normalizeCorner,
@@ -173,10 +174,9 @@ export async function getSubjectIdentity(
     staff_display_name: string | null;
     created_at: string;
   }>(
-    `select a.account_id, a.athlete_id, a.login_email, ap.staff_display_name, a.created_at
+    `select a.account_id, a.athlete_id, a.login_email,
+            ${storedStaffNameSql('a.organization_id', 'a.account_id')} as staff_display_name, a.created_at
      from pilot.accounts a
-     left join pilot.account_profiles ap
-       on ap.organization_id = a.organization_id and ap.account_id = a.account_id
      where a.organization_id = $1 and a.account_id = $2
        -- Scope B: a deleted person is nobody here. The same predicate the
        -- portrait review queue reads (listPendingReviewPortraits): the login

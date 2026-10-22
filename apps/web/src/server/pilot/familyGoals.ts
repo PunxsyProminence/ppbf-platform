@@ -34,6 +34,7 @@ import { query, queryOne } from './db';
 import { NotFoundError, ValidationError } from './errors';
 import { isGuardianLinkedToAthlete } from './guardianAccess';
 import { staffFacingAuthorName } from './parentTasks';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 import { coachDisplayNameFor } from '@/src/shared/coachDisplayName';
 
 export const FAMILY_GOAL_TITLE_MAX = 200;
@@ -86,11 +87,10 @@ const SELECT_GOAL = `
          to_char(g.target_date, 'YYYY-MM-DD') as target_date,
          g.state,
          to_char(g.completed_at at time zone 'UTC', ${ISO_UTC}) as completed_at,
-         g.created_by_account_id, g.created_by_role, a.login_email, ap.staff_display_name
+         g.created_by_account_id, g.created_by_role, a.login_email,
+         ${storedStaffNameSql('g.organization_id', 'g.created_by_account_id')} as staff_display_name
     from pilot.family_goals g
-    left join pilot.accounts a on a.account_id = g.created_by_account_id
-    left join pilot.account_profiles ap
-      on ap.organization_id = g.organization_id and ap.account_id = g.created_by_account_id`;
+    left join pilot.accounts a on a.account_id = g.created_by_account_id`;
 
 function present(row: GoalRow, accountId: string): FamilyGoalForGuardian {
   const mine = row.created_by_role === 'parent' && row.created_by_account_id === accountId;

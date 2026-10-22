@@ -286,6 +286,11 @@ describe('the name the gym typed (Q1 part B) is read behind the same gate', () =
   });
 
   test('each gym reads its own typed name; a name another gym typed is never borrowed', async () => {
+    // Homed at OTHER_ORG; the fixture gives a membership at HOME_ORG only.
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+      [VISITING_COACH, OTHER_ORG],
+    );
     await typed(OTHER_ORG, VISITING_COACH, 'Mike Away');
     expect(await getCoachDisplayName(HOME_ORG, VISITING_COACH)).toBe('Coach M Okafor');
     expect(await getCoachDisplayName(OTHER_ORG, VISITING_COACH)).toBe('Coach Mike Away');
@@ -305,7 +310,27 @@ describe('the name the gym typed (Q1 part B) is read behind the same gate', () =
   });
 
   test('a coach with no login address is named once the gym types a name', async () => {
+    // The People screen only names someone with a membership here (setStaffDisplayName), so the fixture gives one.
+    await client.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+      [UNADDRESSED_COACH, HOME_ORG],
+    );
     await typed(HOME_ORG, UNADDRESSED_COACH, 'Lee Park');
     expect(await getCoachDisplayName(HOME_ORG, UNADDRESSED_COACH)).toBe('Coach Lee Park');
+  });
+
+  test('a name typed while the person was staff is not read once their membership here is a guardian', async () => {
+    await typed(HOME_ORG, LOCAL_COACH, 'Jordan Rivera');
+    await client.query(
+      `update pilot.organization_memberships set role = 'parent' where account_id = $1 and organization_id = $2`,
+      [LOCAL_COACH, HOME_ORG],
+    );
+    expect(await getCoachDisplayName(HOME_ORG, LOCAL_COACH)).toBe('Coach J Rivera');
+    expect(await getStaffDisplayName(HOME_ORG, LOCAL_COACH)).toBe('J Rivera');
+  });
+
+  test('a coach homed here with no membership row keeps the name from the login, not a typed one', async () => {
+    await typed(HOME_ORG, UNADDRESSED_COACH, 'Lee Park');
+    expect(await getCoachDisplayName(HOME_ORG, UNADDRESSED_COACH)).toBe('Your coach');
   });
 });

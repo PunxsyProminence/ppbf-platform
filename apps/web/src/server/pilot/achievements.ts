@@ -19,6 +19,7 @@ import {
 import { query, queryOne } from './db';
 import type { PoolClient } from 'pg';
 import { accountDeletedSql } from './deletedAccountSignIn';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 
 /**
  * ACHIEVEMENT PERSISTENCE — goals somebody set for themselves, a coach catching
@@ -393,14 +394,13 @@ async function memberName(
    * cleanup script (scripts/lib/account-cleanup-plan.mjs) or by hand. The
    * family screens read this function (OD-2026-10-06-025 ruling 2), and a
    * name is not something a deleted person keeps lending to records. */
-  /* THE NAME THE GYM TYPED (Q1 part B) is read for THIS organization only, and
-   * only behind the same gate: a coach who has left, or was never here, is not
-   * named by a name an earlier gym typed. */
+  /* THE NAME THE GYM TYPED (Q1 part B) is read for THIS organization only,
+   * and storedStaffNameSql narrows further: an active membership here in a
+   * role that may carry a name. A coach homed here with no membership row
+   * keeps the name from the login. */
   return queryOne<{ login_email: string | null; staff_display_name: string | null }>(
-    `select a.login_email, ap.staff_display_name
+    `select a.login_email, ${storedStaffNameSql('$1', 'a.account_id')} as staff_display_name
      from pilot.accounts a
-     left join pilot.account_profiles ap
-       on ap.organization_id = $1 and ap.account_id = a.account_id
      where a.account_id = $2
        and not ${accountDeletedSql('a')}
        and (

@@ -2,6 +2,7 @@ import { staffDisplayNameFor } from '@/src/shared/coachDisplayName';
 import { gymDayIso } from '@/src/lib/gymTime';
 
 import { STAFF_AUTHOR_NAME_FLOOR } from './achievements';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 import { query, queryOne } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
 import { ConflictError, ForbiddenError, ValidationError } from './errors';
@@ -68,7 +69,8 @@ export async function listSupportForStaff(organizationId: string, athleteId: str
   const rows = await query<Omit<StaffSupportRow, 'recorded_by_name'> & { recorder_email: string | null; recorder_display_name: string | null }>(
     `select r.record_id::text as record_id, r.support_kind, r.provided_on::text as provided_on,
             r.created_at::text as created_at, acc.login_email as recorder_email,
-            ap.staff_display_name as recorder_display_name
+            -- The name the gym typed (Q1 part B), only for a recorder the join below still names.
+            ${storedStaffNameSql('r.organization_id', 'acc.account_id')} as recorder_display_name
        from pilot.family_support_records r
        join pilot.athletes ath
          on ath.organization_id = r.organization_id and ath.athlete_id = r.athlete_id and ath.deleted_at is null
@@ -77,9 +79,6 @@ export async function listSupportForStaff(organizationId: string, athleteId: str
         and (acc.organization_id = r.organization_id or exists (
               select 1 from pilot.organization_memberships om
                where om.account_id = acc.account_id and om.organization_id = r.organization_id and om.active_flag))
-       -- The name the gym typed (Q1 part B), only for a recorder the join above still names.
-       left join pilot.account_profiles ap
-         on acc.account_id is not null and ap.organization_id = r.organization_id and ap.account_id = acc.account_id
       where r.organization_id = $1 and r.athlete_id = $2 and r.retired_at is null
       order by r.provided_on desc, r.created_at desc, r.record_id`,
     [organizationId, athleteId],

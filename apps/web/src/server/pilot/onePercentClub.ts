@@ -9,6 +9,7 @@ import { earnedMilestoneKeys, isMilestoneKey } from '@/src/shared/achievementPat
 import { query, queryOne } from './db';
 import { accountNotDeletedSql } from './deletedAthletes';
 import { ConflictError, ValidationError } from './errors';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 
 // The 1% Club (register module 127). Owner design, verbatim: "1,2,3 with the
 // majority of coach and admin on the list vote to confirm".
@@ -160,9 +161,7 @@ export async function resolveActorDisplayName(input: {
   }
 
   const account = await queryOne<{ login_email: string | null; staff_display_name: string | null }>(
-    `select a.login_email, ap.staff_display_name from pilot.accounts a
-     left join pilot.account_profiles ap
-       on ap.organization_id = a.organization_id and ap.account_id = a.account_id
+    `select a.login_email, ${storedStaffNameSql('$1', 'a.account_id')} as staff_display_name from pilot.accounts a
      where a.organization_id = $1 and a.account_id = $2 and ${accountNotDeletedSql('a')}`,
     [input.organizationId, input.accountId],
   );

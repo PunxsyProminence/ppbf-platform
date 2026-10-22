@@ -2,6 +2,7 @@ import { isOrganizationAdminRole } from './access';
 import { coachDisplayNameFor } from '@/src/shared/coachDisplayName';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
+import { storedStaffNameSql } from './staffDisplayNameRead';
 
 /**
  * DUE-AND-DONE STATE FOR A PARENT-SUPPORT TASK.
@@ -291,14 +292,14 @@ export async function listFamilyNotesForStaff(
   const rows = await query<FamilyNoteRow>(
     `select co.note_id::text as note_id, co.note_text,
             to_char(co.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as posted_at,
-            a.login_email as author_login, ap.staff_display_name as author_display_name, co.author_role,
+            a.login_email as author_login,
+            ${storedStaffNameSql('co.organization_id', 'co.coach_account_id')} as author_display_name,
+            co.author_role,
             (t.note_id is not null) as has_task,
             t.due_date::text as due_date,
             to_char(t.completed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as completed_at
        from pilot.coach_observations co
        join pilot.accounts a on a.account_id = co.coach_account_id
-       left join pilot.account_profiles ap
-         on ap.organization_id = co.organization_id and ap.account_id = co.coach_account_id
        left join pilot.parent_task_state t
          on t.organization_id = co.organization_id and t.note_id = co.note_id
       where co.organization_id = $1

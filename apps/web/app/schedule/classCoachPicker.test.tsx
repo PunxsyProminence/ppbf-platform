@@ -50,7 +50,7 @@ const CLASSES = [{
   registered_count: 0,
 }];
 
-function installFetchMock(role: 'organization_admin' | 'coach', staffOk = true): jest.Mock {
+function installFetchMock(role: 'organization_admin' | 'coach', staffOk = true, members: unknown[] = MEMBERS): jest.Mock {
   const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const json = (payload: unknown, ok = true) => Promise.resolve({ ok, json: () => Promise.resolve(payload) } as Response);
@@ -58,7 +58,7 @@ function installFetchMock(role: 'organization_admin' | 'coach', staffOk = true):
     if (url.endsWith('/api/pilot/auth/session')) return json({ authenticated: true, role, athlete_id: null });
     if (url.endsWith('/api/pilot/athletes/list')) return json({ items: [{ athlete_id: 'athlete-1', full_name: 'My Athlete' }] });
     if (url.endsWith('/api/pilot/admin/staff')) {
-      return staffOk ? json({ ok: true, members: MEMBERS }) : json({ error: 'Forbidden' }, false);
+      return staffOk ? json({ ok: true, members }) : json({ error: 'Forbidden' }, false);
     }
     if (url.endsWith('/api/pilot/scheduler') && init?.method === 'POST') return json({ ok: true });
     if (url.endsWith('/api/pilot/scheduler')) {
@@ -118,6 +118,22 @@ describe('the class coach picker (lane L31 P6)', () => {
     const created = posts(fetchMock).filter((post) => post.action === 'create_class');
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ action: 'create_class', title: 'Youth Boxing', coach_account_id: 'acct-sam' });
+  });
+
+  test('the name the gym typed for a coach (Q1 part B) names them in the picker and on the class row', async () => {
+    installFetchMock('organization_admin', true, [{ ...MEMBERS[0], staff_display_name: 'Jordan Rivera' }, ...MEMBERS.slice(1)]);
+    await renderPage();
+    await fillClass();
+
+    const picker = await screen.findByLabelText('Class coach');
+    await within(picker).findByRole('option', { name: 'Coach Jordan Rivera' });
+    expect(Array.from((picker as HTMLSelectElement).options).map((option) => option.textContent)).toEqual([
+      'Select the coach who runs it',
+      'Coach Jordan Rivera',
+      'Coach Sam Ruiz',
+    ]);
+    expect(await screen.findByText(/Coach: Coach Jordan Rivera/)).toBeTruthy();
+    expect(screen.queryByText(/Coach Jane Doe/)).toBeNull();
   });
 
   test('with the coach list unreadable, the admin cannot schedule and is told why', async () => {
