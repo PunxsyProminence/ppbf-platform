@@ -60,6 +60,45 @@ describe('coach-pair calibration', () => {
     expect(degenerate?.calibrated).toBe(false);
   });
 
+  describe('pooled count, recent agreement (R4: a pair falls below)', () => {
+    const bar = { minimumAgreement: 0.8, minimumKappa: 0.6, minimumPairedJudgments: 30 };
+    const opposite = (polarity: ObservationPolarity): ObservationPolarity => (polarity === 'occurrence' ? 'counterexample' : 'occurrence');
+    const judged = (index: number, a: ObservationPolarity, b: ObservationPolarity) => {
+      const observedAt = new Date(Date.parse('2026-01-01T00:00:00.000Z') + index * 86_400_000).toISOString();
+      return [{ ...coded(index, 'coach-a', a), observedAt }, { ...coded(index, 'coach-b', b), observedAt }];
+    };
+    // 90 agreed judgments, half present; and 30 that split on half of them.
+    const agreed = (offset: number) => Array.from({ length: 90 }, (_, k) => {
+      const polarity: ObservationPolarity = k % 2 ? 'occurrence' : 'counterexample';
+      return judged(offset + k, polarity, polarity);
+    }).flat();
+    const drifted = (offset: number) => Array.from({ length: 30 }, (_, k) => {
+      const polarity: ObservationPolarity = k % 2 ? 'occurrence' : 'counterexample';
+      return judged(offset + k, polarity, k < 15 ? polarity : opposite(polarity));
+    }).flat();
+
+    test('a long good record does not cover a pair that has drifted apart lately', () => {
+      const pair = assessPairCalibration([...agreed(0), ...drifted(90)], bar).get(pairKey('coach-a', 'coach-b'));
+      // Pooled, they would pass: 105 of 120, kappa .75.
+      expect(pair?.pairedJudgments).toBe(120);
+      expect(pair?.observedAgreement).toBeCloseTo(0.875, 10);
+      expect(pair?.kappa).toBeCloseTo(0.75, 10);
+      // Their latest 30: half.
+      expect(pair?.recent.pairedJudgments).toBe(30);
+      expect(pair?.recent.observedAgreement).toBeCloseTo(0.5, 10);
+      expect(pair?.calibrated).toBe(false);
+    });
+
+    test('a pair that agrees again over its latest judgments is calibrated again, whatever the input order', () => {
+      const readings = [...drifted(0), ...agreed(30)];
+      for (const order of [readings, [...readings].reverse()]) {
+        const pair = assessPairCalibration(order, bar).get(pairKey('coach-a', 'coach-b'));
+        expect(pair?.recent.observedAgreement).toBe(1);
+        expect(pair?.calibrated).toBe(true);
+      }
+    });
+  });
+
   test('readings with no attempt key, or from a model, never pair', () => {
     const unkeyed = readings.map((reading) => ({ ...reading, opportunityKey: null }));
     expect(assessPairCalibration(unkeyed, { minimumAgreement: 0, minimumKappa: 0, minimumPairedJudgments: 1 }).size).toBe(0);
