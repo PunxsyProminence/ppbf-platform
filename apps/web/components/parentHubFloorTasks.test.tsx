@@ -378,7 +378,7 @@ describe('ticking a task off', () => {
       fireEvent.click(within(row).getByRole('checkbox', { name: 'Done' }));
     });
 
-    expect(await within(card()).findByRole('alert')).toHaveTextContent('That tick did not save -- Not found: no such task for your children.');
+    expect(await within(card()).findByRole('alert')).toHaveTextContent('That tick did not save — Not found: no such task for your children.');
     expect(within(row).getByRole('checkbox', { name: 'Done' })).not.toBeChecked();
     expect(card().textContent).toContain('1 of 4 done this week');
 

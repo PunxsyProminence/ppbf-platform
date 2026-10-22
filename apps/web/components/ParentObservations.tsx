@@ -133,7 +133,7 @@ export default function ParentObservations({ athleteId }: { readonly athleteId: 
       setMessage({
         athleteId: forAthlete,
         tone: 'failed',
-        text: `That did not save -- ${error instanceof Error && error.message ? error.message : 'the gym could not be reached'}. What you wrote is still in the box.`,
+        text: `That did not save — ${error instanceof Error && error.message ? error.message : 'the gym could not be reached'}. What you wrote is still in the box.`,
       });
     } finally {
       setSending(false);

@@ -86,13 +86,44 @@ describe('the parent digest', () => {
     expect(await screen.findByText('Worked the whole round without dropping her hands.')).toBeTruthy();
     expect(screen.getByText(/Coach Neale/)).toBeTruthy();
     expect(screen.getByText(/13 sessions on the card/i)).toBeTruthy();
-    expect(screen.getByText('sessions 13')).toBeTruthy();
+    expect(screen.getByText('Sessions 13')).toBeTruthy();
     // F-051: a known milestone reads in the catalogue's family wording, and an
     // unknown one loses its dot rather than printing "conditioning.not_in...".
     expect(screen.getByText('Worked three rounds straight through')).toBeTruthy();
-    expect(screen.getByText('conditioning not in the catalogue')).toBeTruthy();
+    expect(screen.getByText('Conditioning not in the catalogue')).toBeTruthy();
     expect(screen.queryByText(/conditioning\.three_rounds/)).toBeNull();
     expect(screen.getByText(/Alex.s corner/)).toBeTruthy();
+  });
+
+  // Parent walk 2026-10-19 item 12: the overview printed milestone titles In
+  // Every Word Capitalised (a CSS `capitalize` on the title) while /print shows
+  // the catalogue's own sentence case. Both must read the same sentence.
+  it('shows a milestone title in the catalogue sentence case, not with every word capitalised', async () => {
+    installFetch((url) => {
+      if (url.includes('/achievements/recognition')) return jsonResponse({ ok: true, items: [] });
+      return jsonResponse({
+        ok: true,
+        completed_sessions: 0,
+        items: [
+          { milestone_key: 'conditioning.three_rounds', awarded_by_role: 'coach', note: '', awarded_at: '2026-08-03T00:00:00Z' },
+          { milestone_key: 'conditioning.not_in_the_catalogue', awarded_by_role: 'coach', note: '', awarded_at: '2026-08-04T00:00:00Z' },
+        ],
+      });
+    });
+
+    await act(async () => {
+      render(<ParentDigest athleteId="ath-1" childName="Alex" />);
+    });
+
+    const known = await screen.findByText('Worked three rounds straight through');
+    // The words are the same sentence /print shows (milestone.family) ...
+    expect(known.textContent).toBe('Worked three rounds straight through');
+    // ... and nothing styles them back into Title Case.
+    expect(known.className).not.toMatch(/\bcapitalize\b/);
+    // A key the catalogue does not know gets a capital first letter and no more.
+    const unknown = screen.getByText('Conditioning not in the catalogue');
+    expect(unknown.className).not.toMatch(/\bcapitalize\b/);
+    expect(screen.queryByText('Conditioning Not In The Catalogue')).toBeNull();
   });
 
   it('does not claim to show what changed since the parent last looked', async () => {

@@ -581,7 +581,7 @@ export function SaveNote({ state }: { state: SaveState | undefined }) {
 
 const PROGRAM_LABEL: Readonly<Record<Program, string>> = {
   fitness: 'Fitness',
-  youth: 'Youth programme',
+  youth: 'Youth program',
   recreational: 'Boxing, for me',
   competitive: 'Competing',
 };

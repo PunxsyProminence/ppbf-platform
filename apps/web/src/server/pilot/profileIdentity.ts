@@ -80,11 +80,11 @@ export const PROGRAM_CHOICES: readonly ProgramChoice[] = [
  * you failed to be.
  */
 export const PROGRAM_LABEL: Readonly<Record<ProgramChoice, string>> = {
-  fitness: 'Fitness Programme',
-  recreational: 'Adult Recreational Programme',
-  youth_mentorship: 'Youth Mentorship Programme',
-  competitive: 'Competitive Programme',
-  unstated: 'Programme not recorded',
+  fitness: 'Fitness Program',
+  recreational: 'Adult Recreational Program',
+  youth_mentorship: 'Youth Mentorship Program',
+  competitive: 'Competitive Program',
+  unstated: 'Program not recorded',
 };
 
 export function normalizeProgram(raw: unknown): ProgramChoice {

@@ -324,9 +324,24 @@ test('Check again clears an earlier decision message', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
 
-  expect(await screen.findByText('Loading…')).toBeInTheDocument();
+  expect(await screen.findByText('Loading consent status…')).toBeInTheDocument();
   expect(screen.queryByText('Consent granted.')).toBeNull();
-  expect(screen.queryByRole('status')).toBeNull();
+  // The only status on the page is the loading one, not the old decision.
+  expect(screen.getByRole('status')).toHaveTextContent('Loading consent status…');
+});
+
+// Parent walk 2026-10-19 item 13: a bare "Loading…" stood for 2 to 5 seconds
+// and read like the empty state. It now names what is loading, says it can take
+// a few seconds, and is a status region so it is announced.
+test('while the read is open the page names what it is loading and says it can take a few seconds', async () => {
+  global.fetch = jest.fn(() => new Promise<Response>(() => undefined)) as unknown as typeof fetch;
+
+  render(<GuardianMediaConsentPage />);
+
+  const status = await screen.findByRole('status');
+  expect(status).toHaveTextContent('Loading consent status…');
+  expect(status).toHaveTextContent('This can take a few seconds.');
+  expect(screen.queryByText('No linked children found')).toBeNull();
 });
 
 // UXB-13: a failed read offers Check again, which re-reads; while it does,
@@ -344,7 +359,7 @@ test('a failed load offers Check again, which reads Loading and then the answer'
 
   fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
 
-  expect(await screen.findByText('Loading…')).toBeInTheDocument();
+  expect(await screen.findByText('Loading consent status…')).toBeInTheDocument();
   expect(screen.queryByText('Consent status could not be loaded')).toBeNull();
   expect(fetchMock).toHaveBeenCalledTimes(2);
 

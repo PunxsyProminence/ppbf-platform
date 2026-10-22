@@ -73,13 +73,13 @@ describe('choosing what you came here for', () => {
     write = 'pending';
     await renderPanel();
     await act(async () => {
-      fireEvent.click(programButton(/youth programme/i));
+      fireEvent.click(programButton(/youth program/i));
     });
     expect(screen.getByRole('status')).toHaveTextContent('Saving...');
     await act(async () => {
       release();
     });
-    await waitFor(() => expect(programButton(/youth programme/i)).toHaveAttribute('aria-pressed', 'true'));
+    await waitFor(() => expect(programButton(/youth program/i)).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.queryByText('Saving...')).toBeNull();
     expect(screen.queryByText('That did not save. Try again.')).toBeNull();
   });
@@ -88,11 +88,11 @@ describe('choosing what you came here for', () => {
     write = outcome;
     await renderPanel();
     await act(async () => {
-      fireEvent.click(programButton(/youth programme/i));
+      fireEvent.click(programButton(/youth program/i));
     });
     expect(screen.getByRole('status')).toHaveTextContent('That did not save. Try again.');
     expect(programButton(/fitness/i)).toHaveAttribute('aria-pressed', 'true');
-    expect(programButton(/youth programme/i)).toHaveAttribute('aria-pressed', 'false');
+    expect(programButton(/youth program/i)).toHaveAttribute('aria-pressed', 'false');
   });
 });
 

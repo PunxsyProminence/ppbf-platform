@@ -49,10 +49,10 @@ describe('every programme is a finished statement, not a lesser version of anoth
   });
 
   it('gives fitness the same shape of label as competitive', () => {
-    expect(PROGRAM_LABEL.fitness).toMatch(/Programme$/);
-    expect(PROGRAM_LABEL.competitive).toMatch(/Programme$/);
-    expect(PROGRAM_LABEL.recreational).toMatch(/Programme$/);
-    expect(PROGRAM_LABEL.youth_mentorship).toMatch(/Programme$/);
+    expect(PROGRAM_LABEL.fitness).toMatch(/Program$/);
+    expect(PROGRAM_LABEL.competitive).toMatch(/Program$/);
+    expect(PROGRAM_LABEL.recreational).toMatch(/Program$/);
+    expect(PROGRAM_LABEL.youth_mentorship).toMatch(/Program$/);
   });
 
   it('never infers a programme from an unknown value', () => {
@@ -211,8 +211,8 @@ describe('the card', () => {
     expect(Object.keys(fitness).sort()).toEqual(Object.keys(competitor).sort());
     expect(Object.values(fitness).filter((v) => v === null).length)
       .toBe(Object.values(competitor).filter((v) => v === null).length);
-    expect(fitness.programLabel).toBe('Fitness Programme');
-    expect(competitor.programLabel).toBe('Competitive Programme');
+    expect(fitness.programLabel).toBe('Fitness Program');
+    expect(competitor.programLabel).toBe('Competitive Program');
   });
 
   it('carries initials for the plate whether or not a photo is available', () => {
