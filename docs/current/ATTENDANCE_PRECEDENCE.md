@@ -155,8 +155,9 @@ no new method), written by `schedulerDb.ts` like every other register mark, so
 it reaches the view through rank 2 and is counted once. Nothing reads the
 session list as attendance; the tap writes the register, and the register is
 what counts. An untied (open gym) session writes no register
-(OD-2026-10-13-016). The rules (Absent turned Present, undo only if untouched,
-the no-shows offer at End Session) are in `sessionRunClass.ts`.
+(OD-2026-10-13-016). The rules (Absent turned Present, undo only if untouched)
+are in `sessionRunClass.ts`; the no-shows offer at End Session (ruling 3) comes
+in a later change.
 
 ## What this deliberately does not do
 

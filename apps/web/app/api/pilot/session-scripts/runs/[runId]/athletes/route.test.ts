@@ -207,10 +207,15 @@ describe('POST', () => {
     }
     expect(mockHold).toHaveBeenCalledWith('coach', 'org-1', 'ath-1');
     mockHold.mockClear();
-    for (const register of [{ effect: 'already_present' }, { effect: 'skipped', reason: 'class_cancelled' }, { effect: 'removed' }, { effect: 'kept' }]) {
+    for (const register of [{ effect: 'already_present' }, { effect: 'skipped', reason: 'class_cancelled' }]) {
       mockSet.mockResolvedValueOnce({ outcome: 'marked', register });
       const response = await post({ athlete_id: 'ath-1', present: true });
       await expect(response.json()).resolves.toEqual({ outcome: 'marked', athlete_id: 'ath-1', present: true, register });
+    }
+    for (const register of [{ effect: 'removed' }, { effect: 'kept' }, { effect: 'unchanged' }]) {
+      mockSet.mockResolvedValueOnce({ outcome: 'unmarked', register });
+      const response = await post({ athlete_id: 'ath-1', present: false });
+      await expect(response.json()).resolves.toEqual({ outcome: 'unmarked', athlete_id: 'ath-1', present: false, register });
     }
     expect(mockHold).not.toHaveBeenCalled();
   });

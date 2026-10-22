@@ -787,7 +787,9 @@ export async function writeSessionRegisterPresent(
     );
     previous = rows[0]?.status;
   }
-  if (!previous || previous === 'present') return { effect: 'already_present' };
+  // Inserted by nobody and found by nobody, twice: never answer "Present" for a mark not there.
+  if (!previous) throw new Error('SESSION_REGISTER_WRITE_RACE');
+  if (previous === 'present') return { effect: 'already_present' };
   await client.query(
     `update pilot.scheduler_attendance
         set status = 'present', method = $4, checked_in_by_role = $5, checked_in_by_account_id = $6,

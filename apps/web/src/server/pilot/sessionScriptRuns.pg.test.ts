@@ -274,6 +274,18 @@ beforeAll(async () => {
     client,
     await fs.readFile(path.join(INFRA_DIR, PLAIN_MIGRATION_FILE), 'utf8'),
   );
+  // D4: the module reads and writes class_id (session-run-class), which alters session_run_athletes
+  // (session-run-athletes), which widens session_staff_notes (session-staff-notes). Each through
+  // its own runner, in that order.
+  for (const slug of ['session-staff-notes', 'session-run-athletes', 'session-run-class']) {
+    const runner = await nativeDynamicImport(
+      pathToFileURL(path.resolve(__dirname, `../../../scripts/pilot-apply-${slug}-migration.mjs`)).href,
+    );
+    await (runner.applyMigrationTransaction as (c: Client, sql: string) => Promise<void>)(
+      client,
+      await fs.readFile(path.join(INFRA_DIR, `pilot_slice_postgres_${slug.replace(/-/g, '_')}_migration.sql`), 'utf8'),
+    );
+  }
 
   for (const [org, coach] of [[ORG_A, COACH_A], [ORG_B, COACH_B]]) {
     await client.query(

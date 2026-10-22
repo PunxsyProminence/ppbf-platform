@@ -27,7 +27,8 @@ import type { StaffNoteRole } from './sessionStaffNotes';
 //             the coach no longer running it: the session mark stands, the register is skipped and
 //             the coach is told. A later register change wins: a standing mark is never re-copied.
 //   untap     the register mark the tap created is removed only if nobody changed it since, and
-//             the removal is audited (ruling 2).
+//             the removal is audited (ruling 2); a mark the tap did not create is left alone
+//             ('unchanged', so the coach can be told the register still stands).
 // An UNTIED (open gym) session writes no register: its marks stay session detail (OD-2026-10-13-016).
 // Session auto-close finishes runs and never comes here, so it never writes the register.
 //
@@ -67,7 +68,9 @@ export async function lockTieableClass(client: PoolClient, actor: Tier, classId:
 }
 
 export type RegisterResult =
-  | { effect: 'created' | 'already_present' | 'removed' | 'kept' }
+  // 'unchanged': an untap on a tied session whose tap created no register mark (it was Present
+  // already, or turned Absent/Excused into Present, or was skipped); the register is left as it is.
+  | { effect: 'created' | 'already_present' | 'removed' | 'kept' | 'unchanged' }
   | { effect: 'flipped'; previous_status: 'absent' | 'excused' }
   | { effect: 'skipped'; reason: 'class_cancelled' | 'not_your_class' };
 
@@ -130,7 +133,7 @@ export async function copyTapToRegister(client: PoolClient, tap: TapOnRegister):
   const result: RegisterResult = written.effect === 'flipped'
     ? { effect: 'flipped', previous_status: written.previous_status }
     : { effect: written.effect };
-  if (result.effect !== 'already_present') await auditRegister(client, tap, result);
+  if (result.effect === 'created' || result.effect === 'flipped') await auditRegister(client, tap, result);
   return result;
 }
 

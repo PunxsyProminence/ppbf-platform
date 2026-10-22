@@ -79,7 +79,7 @@ jest.mock('./db', () => ({
 
 import type { ActorIdentity } from './access';
 import type { PilotRole } from './contracts';
-import { FAMILY_ATTENDANCE_UPSERT_SQL } from './schedulerDb';
+import { ATTENDANCE_UPSERT_SQL, FAMILY_ATTENDANCE_UPSERT_SQL, attendanceUpsertParams } from './schedulerDb';
 import { setRunAthletePresent } from './sessionRunAthletes';
 import { startSessionScriptRun } from './sessionScriptRuns';
 
@@ -465,6 +465,9 @@ describe('a "here" tap on a tied session writes the class register', () => {
     expect(await register(gym, gym.ada)).toBeUndefined();
     expect(await register(gym, gym.ben)).toBeUndefined();
     expect(await pointer(gym, runId, gym.ada)).toMatchObject({ removed: false, register_class_id: null });
+    // Nothing was written, so nothing is audited on the register, and an untap leaves it alone.
+    expect(await registerAudit(gym)).toEqual([]);
+    expect(await tap(gym.coach, runId, gym.ada, false)).toEqual({ outcome: 'unmarked', register: { effect: 'unchanged' } });
   });
 
   test('an untied session writes no register (OD-2026-10-13-016)', async () => {
@@ -524,8 +527,23 @@ describe('an untap on a tied session', () => {
     await staffMark(gym, gym.ada, 'absent');
     const { run_id: runId } = await start(gym, gym.coach);
     await tap(gym.coach, runId, gym.ada);
-    expect(await tap(gym.coach, runId, gym.ada, false)).toEqual({ outcome: 'unmarked' });
+    expect(await tap(gym.coach, runId, gym.ada, false)).toEqual({ outcome: 'unmarked', register: { effect: 'unchanged' } });
     expect(await register(gym, gym.ada)).toMatchObject({ status: 'present' });
+  });
+
+  test('keeps it when the same coach has since re-marked it Present on the register itself', async () => {
+    const gym = await newGym('same-coach');
+    const { run_id: runId } = await start(gym, gym.coach);
+    await tap(gym.coach, runId, gym.ada);
+    // The scheduler's own register write, by the same coach, same status and method: only the time moves.
+    const later = new Date(Date.now() + 1000).toISOString();
+    await client.query(ATTENDANCE_UPSERT_SQL, attendanceUpsertParams(gym.organizationId, [{
+      attendance_id: 'att-register-tap', class_id: gym.klass, athlete_id: gym.ada, status: 'present',
+      method: 'coach_override', checked_in_by_role: 'coach', checked_in_by_account_id: gym.coach.accountId,
+      note: '', checked_in_at: later, updated_at: later,
+    }]));
+    expect(await tap(gym.coach, runId, gym.ada, false)).toEqual({ outcome: 'unmarked', register: { effect: 'kept' } });
+    expect(await register(gym, gym.ada)).toMatchObject({ status: 'present', by: gym.coach.accountId });
   });
 });
 

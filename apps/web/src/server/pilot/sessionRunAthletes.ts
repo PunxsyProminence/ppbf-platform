@@ -177,6 +177,8 @@ export async function setRunAthletePresent(input: {
         register: await undoTapOnRegister(client, { ...tap, classId: pointer.register_class_id }, pointer.register_written_at),
       };
     }
+    // Tied, but this mark created no register mark: the register stands as it is.
+    if (outcome === 'unmarked' && owned.class_id) return { outcome, register: { effect: 'unchanged' } };
     return { outcome };
   });
 }
