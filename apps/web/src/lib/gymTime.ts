@@ -377,3 +377,15 @@ export function parseInstantAsGymTime(value: string): Date | null {
   // inside the solve would skew the offset. Added back afterwards.
   return new Date(gymWallClockToUtc(naive.getTime()).getTime() + millis);
 }
+
+/**
+ * The instant `days` calendar days after `instant` at the same time on the
+ * GYM's clock. Adding days * 24 hours is an hour out after the clocks change
+ * (a 6:00 pm class repeated across the first Sunday of November would land at
+ * 5:00 pm); this moves the wall clock instead and solves for the instant, as
+ * parseInstantAsGymTime does.
+ */
+export function addGymDays(instant: Date, days: number): Date {
+  const naive = gymWallFields(instant) + days * 86_400_000;
+  return new Date(gymWallClockToUtc(naive).getTime() + instant.getUTCMilliseconds());
+}
