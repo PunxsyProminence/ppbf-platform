@@ -249,11 +249,11 @@ and should not try to.
 
 ---
 
-## OD-2026-10-19-014 -- Gym TV live-workout screen: "fix thos first"; "no i need the code and for you to do a mock workout on it" (REPORTED)
+## OD-2026-10-19-014 -- Gym TV live-workout screen: "fix thos first"; "no i need the code and for you to do a mock workout on it"
 
-**Provenance: REPORTED.** Jason typed these in the lane "Pilot walkthrough: admin, coach, athlete day (signed in)" (local_59900f1a-bc0d-4cb7-a6da-185bb46c00df), not in overwatch. The lane relayed them to overwatch (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; line 10424, 2026-10-19T23:37:21.811Z), opening: "LA2 -> Overwatch: Jason says "fix thos first" about the gym TV live-workout screen. LA2 builds nothing, so this needs a FIX LANE from you (screens, Sonnet)." and closing: "WRITES (production): W-TV1 TV paired; W-TV2 plan run dfcf6432 started/sent to TV/ended abandoned. Jason: "no i need the code and for you to do a mock workout on it"." Item 5 of its fix list carries a third quote: "A paired TV shows the wall, not a workout screen, until a session is sent (Jason: "this should be a workk out screen")." Read by script (records lane, 2026-10-20, at Overwatch's request). The quotes are the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
+**Provenance: PRIMARY for his words; RECONSTRUCTED for the context.** His words were verified on 2026-10-21 in the lane's own transcript (`~/.claude/projects/C--Dev/8ed68c06-bed3-43b0-9034-d77a820a9c12.jsonl`; session "Pilot walkthrough: admin, coach, athlete day (signed in)"): "fix thos first" at line 1173 (2026-10-19T23:36:47.625Z), "no i need the code and for you to do a mock workout on it" at line 912 (23:27:07.504Z), and "this should be a workk out screen" as part of line 985 (23:30:07.783Z), which reads in full "bell is just a ding not a boxing bell, this should be a workk out screen,". The rest comes from the lane's relay. Jason typed these in the lane "Pilot walkthrough: admin, coach, athlete day (signed in)" (local_59900f1a-bc0d-4cb7-a6da-185bb46c00df), not in overwatch. The lane relayed them to overwatch (transcript `~/.claude/projects/C--Dev/8ecfd4e9-9ffc-43e2-8264-b84a0135a2d2.jsonl`; line 10424, 2026-10-19T23:37:21.811Z), opening: "LA2 -> Overwatch: Jason says "fix thos first" about the gym TV live-workout screen. LA2 builds nothing, so this needs a FIX LANE from you (screens, Sonnet)." and closing: "WRITES (production): W-TV1 TV paired; W-TV2 plan run dfcf6432 started/sent to TV/ended abandoned. Jason: "no i need the code and for you to do a mock workout on it"." Item 5 of its fix list carries a third quote: "A paired TV shows the wall, not a workout screen, until a session is sent (Jason: "this should be a workk out screen")." Read by script (records lane, 2026-10-20, at Overwatch's request). The quotes are the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
 
-Jason (REPORTED): *"fix thos first"*; *"no i need the code and for you to do a mock workout on it"*; *"this should be a workk out screen"*
+Jason: *"fix thos first"*; *"no i need the code and for you to do a mock workout on it"*; *"this should be a workk out screen"*
 
 **Ruling (as the lane read it):** the gym TV live-workout screen's defects from the signed-in pilot walkthrough are fixed before the pilot, ahead of the rest of the walk's findings; the proof he wants is the code change plus a mock workout run on a paired TV, not a description. A paired TV that has no session sent to it should show a workout screen, not the wall.
 
@@ -261,7 +261,9 @@ Jason (REPORTED): *"fix thos first"*; *"no i need the code and for you to do a m
 
 **Acted on (Overwatch, 2026-10-20):** after his *"tmy main claude account usage has reset, lets get these lanes closed out updat the git hub, and use the fable useage for somthing appropiate to it model before i switch"* (line 10450, 2026-10-20T17:50:10.636Z), Overwatch opened GitHub issue #1792, "Gym TV live-workout screen: overlapping layout, unnamed strip, bell, idle screen (pilot walkthrough LA2)" (line 10492; created 2026-10-20T17:51:39Z, OPEN, gh issue view), and chip "Fix gym TV live-workout screen (#1792)" (line 10498), whose brief sends item 5 (the idle paired TV) to the existing rulings OD-2026-10-17-028 and OD-2026-10-18-001 first and to Overwatch if not covered, keeps item 6 with Overwatch, and lists the mock workout on the paired production TV "ZZ-AUDIT LA2 test screen" as the final step for Overwatch and Jason after a release.
 
-**Status:** ruled (REPORTED); issue open, fix lane started as a chip; nothing fixed yet.
+**Supersedes (the idle paired TV):** item 5 of this entry (a paired TV with no session sent shows a workout screen, not the wall) supersedes the paired-idle wall view among the screenshots OD-2026-10-17-028 approved (`2-paired-idle.png`). For the idle paired TV this entry controls over OD-2026-10-17-028 and OD-2026-10-18-001, and OD-2026-10-21-003 later ruled what it shows ("A: Workout-ready board (Rec.)").
+
+**Status:** ruled; issue open, fix lane started as a chip; nothing fixed yet.
 
 ---
 
@@ -286,11 +288,11 @@ Jason (REPORTED): *"fix thos first"*; *"no i need the code and for you to do a m
 
 ---
 
-## OD-2026-10-19-012 -- The pilot walkthrough uses existing logins, no new test people: "use neeko" (REPORTED)
+## OD-2026-10-19-012 -- The pilot walkthrough uses existing logins, no new test people: "use neeko"
 
-**Provenance: REPORTED.** Jason typed this in the lane "Pilot walkthrough: admin, coach, athlete day (signed in)" (local_59900f1a-bc0d-4cb7-a6da-185bb46c00df), not in overwatch. The lane relayed it to overwatch (transcript as in OD-2026-10-19-014; line 10224, a queued cross-session message, 2026-10-19T22:56:16.306Z): "LA2: Jason ruled "use neeko" (after "those work i dont want to create new emails"). The cost was stated once: Neeko's real history gets ZZ-AUDIT test records. So no new people (W1-W4 dropped). Item 5 becomes a check that the existing logins work: coach@punxsyprominence.org (coach), Neeko Neale (athlete), [Jason's parent login email] (parent of Neeko). W6-W13 go on Neeko/coach@ with the ZZ-AUDIT LA2 2026-10-19 prefix, and every record goes in the table for the audit-data lane. Signed in as ppbf@ (GYM ADMIN pill, profile/me checked). Starting item 6 now." (address redacted; the relay is otherwise quoted exactly). Read by script (records lane, 2026-10-20, at Overwatch's request). The quotes are the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
+**Provenance: PRIMARY for his words; RECONSTRUCTED for the context.** His words were verified on 2026-10-21 in the lane's own transcript (`~/.claude/projects/C--Dev/8ed68c06-bed3-43b0-9034-d77a820a9c12.jsonl`): "those work i dont want to create new emails" at line 238 (2026-10-19T20:40:37.450Z) and "use neeko" at line 252 (22:56:03.821Z). The rest comes from the lane's relay. Jason typed this in the lane "Pilot walkthrough: admin, coach, athlete day (signed in)" (local_59900f1a-bc0d-4cb7-a6da-185bb46c00df), not in overwatch. The lane relayed it to overwatch (transcript as in OD-2026-10-19-014; line 10224, a queued cross-session message, 2026-10-19T22:56:16.306Z): "LA2: Jason ruled "use neeko" (after "those work i dont want to create new emails"). The cost was stated once: Neeko's real history gets ZZ-AUDIT test records. So no new people (W1-W4 dropped). Item 5 becomes a check that the existing logins work: coach@punxsyprominence.org (coach), Neeko Neale (athlete), [Jason's parent login email] (parent of Neeko). W6-W13 go on Neeko/coach@ with the ZZ-AUDIT LA2 2026-10-19 prefix, and every record goes in the table for the audit-data lane. Signed in as ppbf@ (GYM ADMIN pill, profile/me checked). Starting item 6 now." (address redacted; the relay is otherwise quoted exactly). Read by script (records lane, 2026-10-20, at Overwatch's request). The quotes are the lane's; this records pass did not read that session's transcript. New; edits no earlier entry.
 
-Jason (REPORTED): *"those work i dont want to create new emails"*, then *"use neeko"*
+Jason: *"those work i dont want to create new emails"*, then *"use neeko"*
 
 **What it answered.** The walkthrough was briefed to use three made-up test people. Overwatch (line 9531, 2026-10-19T18:44:45.460Z) asked him to "Pick 3 email addresses you control (aliases are fine) for a test coach, a test adult athlete and a test parent", and to sign in as ppbf@ in the in-app browser; his *"open it in the in app browser"* (line 9554, 18:45:29.359Z) answered Overwatch's reminder at line 9550 that the walkthrough was waiting for that sign-in (a reading from the timing: reminder 18:45:24.793Z, his message enqueued 18:45:29.333Z). In the lane he then chose the existing logins over new ones.
 
@@ -298,7 +300,7 @@ Jason (REPORTED): *"those work i dont want to create new emails"*, then *"use ne
 
 **Acted on (Overwatch, line 10232):** "Noted: Jason's "use neeko" rules out new test people, and the cost was stated once. GO on W6-W13 against Neeko, coach@ and the parent login, ZZ-AUDIT prefixed and every record tabled. Keep reading-only on any other athlete." The gym TV findings of that walk are OD-2026-10-19-014.
 
-**Status:** ruled (REPORTED); the walk was running when this was written.
+**Status:** ruled; the walk was running when this was written.
 
 ---
 
@@ -763,6 +765,8 @@ Jason (REPORTED): *"go with your recomendation on everything"*
 **Acted on (applied by Overwatch 2026-10-17):** Overwatch told lane L39 (line 16833): "Mark #1705 ready and post GREEN on its current head." and to bring #1706 and #1708 to GREEN in order as each base merges.
 
 **Status:** ruled; whether #1705, #1706 and #1708 merged was not checked by this records pass.
+
+**Status (2026-10-21):** the paired-idle wall view in these screenshots (`2-paired-idle.png`) is superseded: Jason later said the idle paired TV "should be a workk out screen" (OD-2026-10-19-014) and chose "A: Workout-ready board (Rec.)" (OD-2026-10-21-003). The rest of look B stands.
 
 ---
 
