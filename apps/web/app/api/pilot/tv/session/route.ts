@@ -18,7 +18,9 @@ export const runtime = 'nodejs';
  *
  * Unauthenticated by construction: the TV has no session and never gets one. The credential is
  * the device key in the httpOnly cookie that /api/pilot/tv/pair set, resolved by hash; it opens
- * this read and nothing else. The payload is two things:
+ * this read and nothing else. (The read has one side effect and returns nothing of it: with a
+ * session on this TV it first settles the gym's live runs idle for three hours, OD-2026-10-21-001
+ * ruling 2, so a forgotten session drops off.) The payload is two things:
  *
  *   session  the fixed allowlist in gymTvs.ts (the plan's blocks, times and drill names, where
  *            the coach is, the server clock), no person field: no coach notes, no names, no

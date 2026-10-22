@@ -329,3 +329,97 @@ export function assessSingleCaseDesign(
 /** Re-exported so callers can hold one import for the inference lane. */
 export type { PatternInferencePolicy };
 export { assertPatternInferencePolicy };
+
+// ── Conservative dual-criterion (lane L49; approved bar W4, W6) ─────────────
+//
+// Fisher, Kelley & Lomas (2003), as the approved research report describes it
+// (W4): draw the baseline's mean line and its least-squares trend line, shift
+// both by `shiftSd` baseline standard deviations in the direction of
+// improvement, and count the after-lesson points beyond BOTH lines; the effect
+// holds when that count is improbable for a coin flip (one-tailed binomial at
+// `alpha`). Plus immediacy: the first `immediacyFirstPoints` after-points sit,
+// on average, beyond the last as many baseline points (the report's "visible
+// jump in the first 3 points", read as WWC's last-3-against-first-3
+// comparison). The baseline trend screen (W6): the last three baseline points
+// against the earlier ones by NAP; above the bar, the athlete was already
+// improving and the lesson cannot take the credit.
+
+export interface DualCriterionRule {
+  readonly baselinePoints: number;
+  readonly afterPoints: number;
+  readonly shiftSd: number;
+  readonly alpha: number;
+  readonly immediacyFirstPoints: number;
+  readonly baselineTrendScreenMaxNap: number;
+}
+
+export type DualCriterionVerdict = 'effect' | 'no_effect' | 'too_few_points' | 'baseline_already_improving';
+
+export interface DualCriterionResult {
+  readonly verdict: DualCriterionVerdict;
+  readonly pointsBeyondBothLines: number;
+  readonly afterPoints: number;
+  /** One-tailed P(X >= pointsBeyondBothLines) for X ~ Binomial(afterPoints, 0.5). */
+  readonly pValue: number | null;
+  readonly immediacy: boolean | null;
+  /** NAP of the last three baseline points against the earlier ones, toward improvement. */
+  readonly baselineTrendNap: number | null;
+}
+
+/** P(X >= successes) for X ~ Binomial(trials, 0.5), exactly. */
+export function binomialUpperTail(successes: number, trials: number): number {
+  let tail = 0;
+  let coefficient = 1;
+  for (let k = 0; k <= trials; k += 1) {
+    if (k > 0) coefficient = (coefficient * (trials - k + 1)) / k;
+    if (k >= successes) tail += coefficient;
+  }
+  return tail / 2 ** trials;
+}
+
+export function conservativeDualCriterion(
+  baseline: readonly number[],
+  after: readonly number[],
+  direction: ImprovementDirection,
+  rule: DualCriterionRule,
+): DualCriterionResult {
+  const none = { pointsBeyondBothLines: 0, afterPoints: after.length, pValue: null, immediacy: null };
+  // The screen compares the last three baseline points with the earlier ones,
+  // so a baseline shorter than four cannot be screened at all.
+  if (baseline.length < Math.max(rule.baselinePoints, 4) || after.length < rule.afterPoints) {
+    return Object.freeze({ verdict: 'too_few_points' as const, ...none, baselineTrendNap: null });
+  }
+  const trendNap = nonoverlapOfAllPairs(baseline.slice(0, -3), baseline.slice(-3), direction).nap;
+  if (trendNap > rule.baselineTrendScreenMaxNap) {
+    return Object.freeze({ verdict: 'baseline_already_improving' as const, ...none, baselineTrendNap: trendNap });
+  }
+
+  const n = baseline.length;
+  const mean = baseline.reduce((sum, value) => sum + value, 0) / n;
+  const sd = Math.sqrt(baseline.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (n - 1));
+  const xMean = (n - 1) / 2;
+  const sxx = baseline.reduce((sum, _value, x) => sum + (x - xMean) ** 2, 0);
+  const slope = baseline.reduce((sum, value, x) => sum + (x - xMean) * (value - mean), 0) / sxx;
+  const shift = (direction === 'decrease' ? -1 : 1) * rule.shiftSd * sd;
+  const beyond = (value: number, line: number) => (direction === 'decrease' ? value < line : value > line);
+
+  const pointsBeyondBothLines = after.filter((value, index) => {
+    const trendLine = mean + slope * (n + index - xMean) + shift;
+    return beyond(value, mean + shift) && beyond(value, trendLine);
+  }).length;
+  const pValue = binomialUpperTail(pointsBeyondBothLines, after.length);
+
+  const k = Math.min(rule.immediacyFirstPoints, after.length, n);
+  const lastBaseline = baseline.slice(-k).reduce((sum, value) => sum + value, 0) / k;
+  const firstAfter = after.slice(0, k).reduce((sum, value) => sum + value, 0) / k;
+  const immediacy = beyond(firstAfter, lastBaseline);
+
+  return Object.freeze({
+    verdict: pValue <= rule.alpha && immediacy ? ('effect' as const) : ('no_effect' as const),
+    pointsBeyondBothLines,
+    afterPoints: after.length,
+    pValue,
+    immediacy,
+    baselineTrendNap: trendNap,
+  });
+}

@@ -30,8 +30,10 @@ import {
   summarizeEvidence,
   toProvenance,
 } from './evidence';
+import { collapseToEpisodes, withReadingDimensions } from './episodes';
 import { assertPatternFormationPolicy, policyParameters, type PatternFormationPolicy } from './policy';
 import { assessStratifiedAttribution, type StratifiedAttributionAssessment } from './inference/attribution';
+import type { PatternReasonCode as ReasonCode } from './types';
 import { assessDrift, type DriftAssessment } from './inference/drift';
 import { assessRecurrence, type RecurrenceAssessment } from './inference/recurrence';
 import type { PatternInferencePolicy } from './inference/policy';
@@ -149,10 +151,16 @@ export function evaluatePatternCandidate(
   // Admission applies asOf, so every count, statistic and the candidate key
   // below see only what had been observed by the evaluation instant.
   const { admitted, excluded } = admitObservations(scope, input.observations, asOf);
-  const evidence = summarizeEvidence(admitted);
-  const contextDiversity = summarizeContextDiversity(admitted);
-  const attribution = summarizeAttribution(admitted);
-  const counterEvidence = summarizeCounterEvidence(admitted);
+  // COUNTED PER ATTEMPT (episodes.ts): readings of one attempt are one
+  // episode, so two coaches scoring the same rep are one occurrence, not two.
+  // Who looked -- observers, person or model, film -- is still read from every
+  // reading, as are disagreement, video contradiction and reliability below.
+  const collapse = collapseToEpisodes(admitted);
+  const { episodes } = collapse;
+  const evidence = withReadingDimensions(summarizeEvidence(episodes), collapse);
+  const contextDiversity = summarizeContextDiversity(episodes);
+  const attribution = summarizeAttribution(episodes);
+  const counterEvidence = summarizeCounterEvidence(episodes);
 
   const ledger = new ReasonLedger();
 
@@ -221,6 +229,12 @@ export function evaluatePatternCandidate(
     ledger.add('SOURCE_QUALITY_WARNING', false);
   }
 
+  // An attempt read both ways -- by two people, by one person twice, or by a
+  // person and a model -- is counted as neither (episodes.ts), and is never
+  // dropped silently: it contests the candidate, as a disagreement does.
+  if (collapse.disputedEpisodeKeys.length > 0) {
+    ledger.add('ATTEMPT_DISPUTED', true);
+  }
   const observerDisagreement = detectObserverDisagreement(admitted);
   if (observerDisagreement) {
     ledger.add('OBSERVER_DISAGREEMENT', true);
@@ -231,10 +245,13 @@ export function evaluatePatternCandidate(
   }
 
   // ── attribution ──────────────────────────────────────────────────────────
-  if (attribution.tally.coach_cue > 0) ledger.add('COACH_CUE_IMPLICATED', false);
-  if (attribution.tally.task_design > 0) ledger.add('TASK_DESIGN_IMPLICATED', false);
-  if (attribution.tally.partner_role > 0) ledger.add('PARTNER_ROLE_IMPLICATED', false);
-  if (attribution.uncertainCount > 0) ledger.add('ATTRIBUTION_UNCERTAIN', false);
+  // Named from every reading: any coach who saw the cue, the drill or the
+  // partner implicated is worth a reviewer's look, whoever else looked too.
+  const readingAttribution = summarizeAttribution(admitted);
+  if (readingAttribution.tally.coach_cue > 0) ledger.add('COACH_CUE_IMPLICATED', false);
+  if (readingAttribution.tally.task_design > 0) ledger.add('TASK_DESIGN_IMPLICATED', false);
+  if (readingAttribution.tally.partner_role > 0) ledger.add('PARTNER_ROLE_IMPLICATED', false);
+  if (readingAttribution.uncertainCount > 0) ledger.add('ATTRIBUTION_UNCERTAIN', false);
 
   if (
     evidence.occurrenceCount > 0
@@ -262,7 +279,7 @@ export function evaluatePatternCandidate(
   }
 
   // ── time ─────────────────────────────────────────────────────────────────
-  const recentOccurrences = recentOccurrenceCount(admitted, asOf, policy.evidenceStaleAfterDays);
+  const recentOccurrences = recentOccurrenceCount(episodes, asOf, policy.evidenceStaleAfterDays);
   if (evidence.occurrenceCount > 0 && recentOccurrences === 0) {
     ledger.add('NO_RECENT_EVIDENCE', true);
     ledger.add('EVIDENCE_STALE', false);
@@ -279,14 +296,22 @@ export function evaluatePatternCandidate(
   let inference: PatternInferenceReport | null = null;
   if (input.inferencePolicy) {
     const inferencePolicy = input.inferencePolicy;
-    // Trials are OPPORTUNITIES: occurrences plus counterexamples. Sessions
-    // where nobody recorded anything are not failures -- see recurrence.ts.
+    // Trials are OPPORTUNITIES: occurrences plus counterexamples, one per
+    // attempt (a disputed attempt is neither). Sessions where nobody recorded
+    // anything are not failures -- see recurrence.ts.
     const recurrence = assessRecurrence(
-      { trials: admitted.length, occurrences: evidence.occurrenceCount },
+      { trials: episodes.length, occurrences: evidence.occurrenceCount },
       inferencePolicy,
     );
-    const stratified = assessStratifiedAttribution(admitted, inferencePolicy);
-    const drift = assessDrift(admitted, inferencePolicy);
+    // Contextual strata (task, constraint, fatigue) count ATTEMPTS, like
+    // every other volume here: one rep watched by three coaches must not
+    // fill a stratum or tip a load comparison. The observer stratum compares
+    // the people, so it reads every reading.
+    const stratified = stratifyAttemptsAndReaders(
+      assessStratifiedAttribution(episodes, inferencePolicy),
+      assessStratifiedAttribution(admitted, inferencePolicy),
+    );
+    const drift = assessDrift(episodes, inferencePolicy);
 
     if (recurrence.posteriorTooWide) ledger.add('POSTERIOR_TOO_WIDE', true);
     if (recurrence.verdict === 'reject') ledger.add('SEQUENTIAL_TEST_REJECTED', true);
@@ -326,6 +351,7 @@ export function evaluatePatternCandidate(
   const state = resolveState({
     hasAdmitted: admitted.length > 0,
     occurrenceCount: evidence.occurrenceCount,
+    disputedAttempts: collapse.disputedEpisodeKeys.length,
     distinctTaskContexts: evidence.distinctTaskContexts,
     previouslyEstablished: input.previouslyEstablished === true,
     // A charted decline retires an established pattern the same way silence
@@ -333,6 +359,7 @@ export function evaluatePatternCandidate(
     noRecentEvidence: ledger.has('NO_RECENT_EVIDENCE') || ledger.has('PATTERN_FADING'),
     contested:
       ledger.has('OBSERVER_DISAGREEMENT')
+      || ledger.has('ATTEMPT_DISPUTED')
       || ledger.has('VIDEO_CONTRADICTS_OBSERVER')
       || ledger.has('COUNTEREVIDENCE_DOMINATES')
       || ledger.has('COUNTEREVIDENCE_RIVALS_OCCURRENCE'),
@@ -404,9 +431,38 @@ export function evaluatePatternCandidate(
  * precedes staleness so that a one-drill artefact is named as an artefact
  * rather than as a pattern that faded.
  */
+/** Contextual axes from the attempts, the observer axis from the readings. */
+function stratifyAttemptsAndReaders(
+  byAttempt: StratifiedAttributionAssessment,
+  byReading: StratifiedAttributionAssessment,
+): StratifiedAttributionAssessment {
+  const strata = [
+    ...byAttempt.strata.filter((stratum) => stratum.axis !== 'observer'),
+    ...byReading.strata.filter((stratum) => stratum.axis === 'observer'),
+  ];
+  const disagreeingAxes = [
+    ...byAttempt.disagreeingAxes.filter((axis) => axis !== 'observer'),
+    ...byReading.disagreeingAxes.filter((axis) => axis === 'observer'),
+  ];
+  const disagreement = disagreeingAxes.length > 0;
+  const reasons = new Set<ReasonCode>(byAttempt.reasons);
+  if (disagreement) reasons.add('STRATA_DISAGREEMENT');
+  else reasons.delete('STRATA_DISAGREEMENT');
+  return Object.freeze({
+    strata: Object.freeze(strata),
+    eligibleStrataCount: strata.filter((stratum) => stratum.eligible).length,
+    disagreeingAxes: Object.freeze(disagreeingAxes),
+    disagreement,
+    loadImplicated: byAttempt.loadImplicated,
+    reasons: Object.freeze([...reasons]),
+  });
+}
+
 function resolveState(input: {
   hasAdmitted: boolean;
   occurrenceCount: number;
+  /** Attempts read both ways: neither occurrence nor counterexample, but attempts all the same. */
+  disputedAttempts: number;
   distinctTaskContexts: number;
   previouslyEstablished: boolean;
   noRecentEvidence: boolean;
@@ -414,7 +470,13 @@ function resolveState(input: {
   attributionUnresolved: boolean;
   blockerCount: number;
 }): PatternEpistemicState {
-  if (!input.hasAdmitted || input.occurrenceCount === 0) return 'INSUFFICIENT_EVIDENCE';
+  if (!input.hasAdmitted) return 'INSUFFICIENT_EVIDENCE';
+  // Two or more attempts that are in dispute are a contested candidate, even
+  // when the dispute leaves fewer than two undisputed occurrences -- the
+  // readers disagreeing is the finding. One attempt is one attempt, disputed
+  // or not.
+  if (input.contested && input.occurrenceCount + input.disputedAttempts >= 2) return 'CONTESTED';
+  if (input.occurrenceCount === 0) return 'INSUFFICIENT_EVIDENCE';
   // One rep is one rep, whatever else is true of it. Stated methodology, not
   // a tunable: a policy cannot lower this and neither can a spectacular rep.
   if (input.occurrenceCount === 1) return 'INSUFFICIENT_EVIDENCE';

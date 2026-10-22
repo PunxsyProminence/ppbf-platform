@@ -56,6 +56,8 @@ interface SoundEngine {
   enable(): Promise<boolean>;
   setEnabled(on: boolean): Promise<boolean>;
   play(name: GymVoice): boolean;
+  /** A recording to ring in place of a synthesized voice, or null for the synthesized one. */
+  setRecording?(name: GymVoice, url: string | null): void;
 }
 
 declare global {
@@ -98,6 +100,8 @@ let snapshot: GymSoundSnapshot = OFF;
 let hydrated = false;
 let armInFlight: Promise<boolean> | null = null;
 const listeners = new Set<() => void>();
+/** Recordings a surface asked to ring in place of a synthesized voice (the gym TV's bell, #1792). */
+const recordings = new Map<GymVoice, string>();
 
 function publish(next: GymSoundSnapshot): void {
   snapshot = next;
@@ -132,6 +136,7 @@ function getEngine(): SoundEngine | null {
   try {
     const Ctor = typeof window === 'undefined' ? undefined : window.PPBFSound;
     engine = Ctor ? new Ctor() : null;
+    for (const [name, url] of recordings) engine?.setRecording?.(name, url);
   } catch {
     engine = null;
   }
@@ -251,6 +256,21 @@ export function playGymSound(name: GymVoice): boolean {
   }
 }
 
+/**
+ * Ring a recording in place of a synthesized voice, or pass null to go back to the synthesized one.
+ * The engine fetches the file once audio is live; until it has loaded, or if it never does, the
+ * synthesized voice plays as before (ppbf-sound.js setRecording).
+ */
+export function setGymRecording(name: GymVoice, url: string | null): void {
+  if (url) recordings.set(name, url);
+  else recordings.delete(name);
+  try {
+    engine?.setRecording?.(name, url);
+  } catch {
+    /* the synthesized voice stays */
+  }
+}
+
 /** Test seam. Nothing in the app calls this. */
 export function resetGymSoundForTests(): void {
   engine = null;
@@ -258,6 +278,7 @@ export function resetGymSoundForTests(): void {
   hydrated = false;
   armInFlight = null;
   listeners.clear();
+  recordings.clear();
 }
 
 export interface GymSound {

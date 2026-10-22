@@ -27,6 +27,7 @@ jest.mock('./useGymSound', () => ({
     played.push(voice);
     return true;
   },
+  setGymRecording: () => {},
 }));
 
 const T0 = Date.parse('2026-10-12T18:00:00.000Z');
@@ -194,10 +195,16 @@ describe('the round clock on a paired TV', () => {
     expect(sessionReads()).toBe(afterEnd + 1);
   });
 
-  test('no timer: no round clock and the usual thirty-second poll', async () => {
+  test('no timer: the round clock waits at READY, counts nothing, and the poll stays at thirty seconds', async () => {
     render(<WallDisplay />);
     await settle();
-    expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
+    // A paired TV with nothing sent is the workout-ready board (issue 1792; Jason 2026-10-21, "A:
+    // Workout-ready board (Rec.)"): one round clock, reading READY, with no time on it.
+    const clocks = screen.getAllByRole('region', { name: 'Round clock' });
+    expect(clocks).toHaveLength(1);
+    expect(clocks[0]).toHaveTextContent('Ready');
+    expect(clocks[0]).toHaveTextContent('Waiting for coach');
+    expect(clocks[0].textContent).not.toMatch(/\d:\d\d/);
     const start = sessionReads();
     await seconds(WALL_ROUND_POLL_MS / 1000);
     expect(sessionReads()).toBe(start);

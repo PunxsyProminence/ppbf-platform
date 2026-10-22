@@ -21,6 +21,9 @@ export type {
   CounterEvidenceSummary,
   FatigueContext,
   InterpretationOrigin,
+  InterventionAdherence,
+  InterventionHypothesisResult,
+  InterventionPerformanceResult,
   InterventionMatchState,
   InterventionOutcomeReview,
   ObservationAttribution,
@@ -62,6 +65,22 @@ export {
   type ObservationAdmission,
   type ObservationScope,
 } from './evidence';
+
+export {
+  collapseToEpisodes,
+  episodeKeyOf,
+  withReadingDimensions,
+  type EpisodeCollapse,
+} from './episodes';
+
+export {
+  evaluatePatternTiers,
+  type EvaluatePatternTiersInput,
+  type PatternTierEvaluation,
+  type TierCounts,
+  type TierShortfall,
+  type TierStanding,
+} from './tiers';
 
 export {
   evaluatePatternCandidate,
@@ -128,6 +147,11 @@ export type { PatternInferenceReport } from './promotion';
 export {
   assertSingleCaseDesignPolicy,
   assessSingleCaseDesign,
+  binomialUpperTail,
+  conservativeDualCriterion,
+  type DualCriterionResult,
+  type DualCriterionRule,
+  type DualCriterionVerdict,
   exactMannWhitneyP,
   kendallTau,
   nonoverlapOfAllPairs,
@@ -143,6 +167,10 @@ export {
 export {
   assertObserverReliabilityPolicy,
   assessObserverReliability,
+  assessPairCalibration,
+  pairKey,
+  type PairCalibration,
+  type PairCalibrationBar,
   type CoRatedItem,
   type ObserverDeviation,
   type ObserverReliabilityAssessment,

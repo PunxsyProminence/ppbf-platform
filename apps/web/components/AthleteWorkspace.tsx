@@ -8,6 +8,7 @@ import AthleteAttemptLog from './AthleteAttemptLog';
 import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import AthleteCyclePanel from './AthleteCyclePanel';
 import AthleteMediaConsentPanel from './AthleteMediaConsentPanel';
+import { ENJOYMENT_LEVELS, ENJOYMENT_QUESTION, type EnjoymentLevel, enjoymentLabel } from '@/src/shared/enjoyment';
 import { SESSION_TYPES, SESSION_TYPE_QUESTION, type SessionType } from '@/src/shared/sessionTypes';
 import SparringSymptomCheck from './SparringSymptomCheck';
 import Chalkboard from './Chalkboard';
@@ -1257,6 +1258,8 @@ export default function AthleteWorkspace() {
   const [postSessionMinutesDraft, setPostSessionMinutesDraft] = useState<{ sessionId: string; draft: string } | null>(null);
   // The session-type tag (Jason 2026-10-18), keyed to the session the same way.
   const [postSessionType, setPostSessionType] = useState<{ sessionId: string; value: SessionType } | null>(null);
+  // The enjoyment tap (OD-2026-10-17-026 (a)), keyed to the session the same way.
+  const [postSessionEnjoyment, setPostSessionEnjoyment] = useState<{ sessionId: string; value: EnjoymentLevel } | null>(null);
   // True after a check-out of a session tagged Sparring, so the after-sparring
   // symptom check asks even if its status read fails. After a refresh the
   // server's after_sparring_due brings it back until it is answered.
@@ -1386,6 +1389,10 @@ export default function AthleteWorkspace() {
   const answeredSessionType = postSessionType !== null && activeSessionRecord !== null
     && postSessionType.sessionId === activeSessionRecord.sessionId
     ? postSessionType.value
+    : null;
+  const answeredEnjoyment = postSessionEnjoyment !== null && activeSessionRecord !== null
+    && postSessionEnjoyment.sessionId === activeSessionRecord.sessionId
+    ? postSessionEnjoyment.value
     : null;
   const minutesDraft = postSessionMinutesDraft !== null && activeSessionRecord !== null
     && postSessionMinutesDraft.sessionId === activeSessionRecord.sessionId
@@ -2361,6 +2368,7 @@ export default function AthleteWorkspace() {
     // Read once, so the value and its method cannot disagree in the body.
     const rpe = answeredEffort;
     const sessionType = answeredSessionType;
+    const enjoyment = answeredEnjoyment;
     // An invalid minutes entry holds check-out (the button is disabled too);
     // a typed answer is never thrown away in favour of "not recorded".
     if (parsedMinutes.status === 'invalid') {
@@ -2405,6 +2413,9 @@ export default function AthleteWorkspace() {
           // The athlete's tag, or null for "not said" -- sent explicitly so
           // check-out is the one write that sets it, like the minutes.
           session_type: sessionType,
+          // The athlete's 1-5 enjoyment, or null for "not answered" -- sent
+          // explicitly so check-out is the one write that sets it.
+          enjoyment,
           // The last PUBLISHED value, replayed unchanged: check-out never
           // reads the box, so checking out neither publishes a draft nor
           // erases what was shared. Read AFTER the wait above, so a
@@ -2430,6 +2441,7 @@ export default function AthleteWorkspace() {
       // keeps the answer on screen for the retry (see the catch below).
       setPostSessionEffort(null);
       setPostSessionType(null);
+      setPostSessionEnjoyment(null);
       setAfterSparringCheck(sessionType === 'sparring');
       setPostSessionMinutesDraft(null);
       const effortLine = rpe === null ? '' : ` Your effort, ${rpe} of 10, is on it too.`;
@@ -2438,6 +2450,8 @@ export default function AthleteWorkspace() {
       const typeLine = sessionType === null
         ? ''
         : ` Tagged: ${SESSION_TYPES.find((type) => type.key === sessionType)?.label ?? sessionType}.`;
+      // Said back too: no session read sends enjoyment to the athlete.
+      const enjoymentLine = enjoyment === null ? '' : ` Enjoyment: ${enjoymentLabel(enjoyment)} (${enjoyment} of 5).`;
       // Session load is shown only when both of the athlete's own answers are
       // there, and labelled for what it is: arithmetic, not a verdict.
       const loadLine = rpe === null || durationMinutes === null
@@ -2448,7 +2462,7 @@ export default function AthleteWorkspace() {
       // same lie in the other direction.
       setBackendSyncMessage((isSystemCheckInNote(storedNote)
         ? "Logged. That one is on your card."
-        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + typeLine + loadLine);
+        : "Logged. What you shared is on the session for your coach to read.") + effortLine + minutesLine + typeLine + enjoymentLine + loadLine);
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
@@ -3272,6 +3286,45 @@ export default function AthleteWorkspace() {
                           className="btn btn--ghost"
                         >
                           Clear my answer
+                        </button>
+                      )}
+                    </fieldset>
+                    {/* ENJOYMENT (OD-2026-10-17-026 (a)). Five choices, nothing
+                        selected until the athlete taps; skippable; only Check
+                        Out writes it. Copy PROPOSED. */}
+                    <fieldset className="space-y-[var(--s2)]">
+                      <legend className="t-label mb-[var(--s2)]">{ENJOYMENT_QUESTION}</legend>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-[var(--s2)]">
+                        {ENJOYMENT_LEVELS.map((level) => {
+                          const selected = answeredEnjoyment === level.value;
+                          return (
+                            <button
+                              key={level.value}
+                              type="button"
+                              aria-label={`${ENJOYMENT_QUESTION} ${level.value}, ${level.label}`}
+                              aria-pressed={selected}
+                              disabled={isCheckingOut}
+                              onClick={() => setPostSessionEnjoyment({ sessionId: activeSessionRecord.sessionId, value: level.value })}
+                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+                            >
+                              {/* No inline size: the kiosk type floor (--t-md) sets it on the floor. */}
+                              <span className="t-data">{level.value}</span> {level.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {answeredEnjoyment === null ? (
+                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                          Not tapped — you can skip this. It goes on the session when you check out, and your coach sees it.
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPostSessionEnjoyment(null)}
+                          disabled={isCheckingOut}
+                          className="btn btn--ghost"
+                        >
+                          Clear enjoyment
                         </button>
                       )}
                     </fieldset>

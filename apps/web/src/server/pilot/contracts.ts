@@ -1,3 +1,4 @@
+import type { EnjoymentLevel } from '@/src/shared/enjoyment';
 import type { SessionType } from '@/src/shared/sessionTypes';
 
 export type PilotRole =
@@ -90,6 +91,11 @@ export interface PilotSession {
   // sessionTypes.ts). Optional on a write like duration_minutes: an absent key
   // leaves the stored tag unchanged; null is "not said".
   session_type?: SessionType | null;
+  // The athlete's own 1-5 answer to "How much did you enjoy it?", tapped at
+  // check-out (src/shared/enjoyment.ts; athlete-metrics migration). Optional
+  // like session_type: an absent key leaves the stored answer unchanged; null
+  // is "not answered".
+  enjoyment?: EnjoymentLevel | null;
   notes: string;
   completed_flag: boolean;
   created_at: string;
@@ -239,6 +245,7 @@ export const SESSION_FIELDS = [
 export const SESSION_OPTIONAL_FIELDS = [
   'duration_minutes',
   'session_type',
+  'enjoyment',
 ] as const;
 
 export const COACH_REVIEW_FIELDS = [
