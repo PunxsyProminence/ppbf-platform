@@ -159,6 +159,8 @@ what counts. An untied (open gym) session writes no register
 are in `sessionRunClass.ts`; the no-shows offer at End Session (ruling 3) comes
 in a later change.
 
+**A cancelled class** (OD-2026-10-22-001; migration `attendance-reconciled-cancelled`): rank 2 reads no mark on a class whose `status` is `cancelled`, so for that day an `activity_log` boxing row still wins, else the day's held classes, else legacy, else there is no row; every `scheduler_attendance` row is kept and staff still see it on `/schedule` and `/admin/attendance`.
+
 ## What this deliberately does not do
 
 - **Does not drop, truncate, or alter either legacy table.** Both hold real
