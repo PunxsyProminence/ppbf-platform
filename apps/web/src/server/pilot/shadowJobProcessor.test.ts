@@ -14,6 +14,7 @@ import {
   ShadowRateLimitExceeded,
   type ShadowRateLimitReceipt,
 } from './shadowRateLimit';
+import { LIBRARY_HAS_NOTHING_YET } from './shadowNoAnswer';
 
 jest.mock('./shadowJobQueue', () => ({
   claimNextJob: jest.fn(),
@@ -177,7 +178,7 @@ describe('background Heavy Bag completion parity with the synchronous path', () 
   // must grade the same, not Experimental.
   test('an uncited answer that says the Library has nothing on it grades Research Needed', async () => {
     mockClaimNextJob.mockResolvedValue(heavyBagJob());
-    llmReply('The Library has nothing on that yet. Ask your coach how they want the rotation drilled.');
+    llmReply(`Short answer: ${LIBRARY_HAS_NOTHING_YET}. Ask your coach how they want the rotation drilled.`);
 
     await processNextShadowJob();
 

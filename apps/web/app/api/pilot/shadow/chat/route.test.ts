@@ -41,6 +41,7 @@ import {
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { assertShadowRuntimeReadiness } from '@/src/server/pilot/shadowReadiness';
 import { fileUnansweredShadowQuestion } from '@/src/server/pilot/shadowResearchFiling';
+import { LIBRARY_HAS_NOTHING_YET } from '@/src/server/pilot/shadowNoAnswer';
 import { ShadowRuntimeUnavailableError } from '@/src/server/pilot/shadowRuntimeError';
 import {
   detectShadowDisclosure,
@@ -2788,7 +2789,7 @@ describe('unsupported answers and an empty Library', () => {
   // The bundle tells the model to say so in LIBRARY_HAS_NOTHING_YET's words
   // and cite nothing; the route has to read that answer as the honest "no
   // answer" path (Research Needed, the notice, a research request), not as an
-  // Experimental answer with an unrelated "Strongest source" behind it.
+  // Experimental answer with no notice and nothing filed.
   describe('an answer that says the Library has nothing on the question (F-161 (d))', () => {
     const OFF_TOPIC_ID = '00000000-0000-4000-8000-000000000301';
     function offTopicBundle() {
@@ -2816,7 +2817,7 @@ describe('unsupported answers and an empty Library', () => {
 
     test('an uncited answer in the prompt\'s own words grades Research Needed and files the question', async () => {
       offTopicBundle();
-      answerWith(`The Library has nothing on that yet. Ask your coach what they look for at rest.`);
+      answerWith(`Short answer: ${LIBRARY_HAS_NOTHING_YET}. Ask your coach what they look for at rest.`);
 
       const payload = await (await POST(postRequest({ message: 'What is a good resting heart rate for a boxer?' }))).json();
 
@@ -2849,7 +2850,7 @@ describe('unsupported answers and an empty Library', () => {
     // with a Sources list must not be told "No verified Library evidence
     // matched this question" -- whichever no-answer words it uses.
     test.each([
-      ['the prompt\'s own words', 'the Library has nothing on that yet'],
+      ['the prompt\'s own words', LIBRARY_HAS_NOTHING_YET],
       ['an older no-answer phrase', 'I do not have enough context'],
     ])('a cited answer that uses %s for one point keeps its grade and gets no notice', async (_label, phrase) => {
       offTopicBundle();
