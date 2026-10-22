@@ -462,7 +462,7 @@ test('the header names the four tracked waivers and keeps "what your child can s
   const header = screen.getByRole('heading', { name: 'Safety Status' }).closest('header') as HTMLElement;
   const copy = header.textContent ?? '';
   expect(copy).toContain(
-    'their standing against the gym’s safety checks -- the same information your child can see about themselves, nothing more.',
+    'their standing against the gym’s safety checks — the same information your child can see about themselves, nothing more.',
   );
   expect(copy).toContain(
     'the status of the four waivers the gym tracks: general, medical release, photo & media and travel.',
@@ -474,13 +474,58 @@ test('the header names the four tracked waivers and keeps "what your child can s
   expect(copy).toContain('Not on file means the gym has no signed waiver of that kind yet, and the row says what to do.');
   // Owner decision 2026-10-04: guardians read their child's injury record, so the header says so.
   expect(copy).toContain(
-    'Then your child’s injury record: each injury the gym recorded, where and what kind, who reported it and when they are expected back -- the same record your child sees, without staff notes.',
+    'Then your child’s injury record: each injury the gym recorded, where and what kind, who reported it and when they are expected back — the same record your child sees, without staff notes.',
   );
   expect(copy).not.toContain('each of their waivers');
   // The claim sentence ends before the waivers are mentioned.
   const claimEnd = copy.indexOf('nothing more.');
   expect(claimEnd).toBeGreaterThan(-1);
   expect(copy.slice(0, claimEnd).toLowerCase()).not.toContain('waiver');
+});
+
+// Parent walk 2026-10-19 item 14: the page opened with three long paragraphs
+// before the status. LAYOUT ONLY: the claim paragraph stays up top, the two that
+// explain the injury record and the waivers sit in a closed disclosure one tap
+// away, and every word is still in the header, in the same order.
+test('the header leads with the one claim and keeps the other two paragraphs one tap away, every word kept', async () => {
+  await renderCard(athleteWith({ general: 'signed', medical_release: 'signed', photo_media: 'signed', travel: 'signed' }));
+
+  const header = screen.getByRole('heading', { name: 'Safety Status' }).closest('header') as HTMLElement;
+  const paragraphs = Array.from(header.querySelectorAll('p.t-body'));
+  expect(paragraphs).toHaveLength(3);
+
+  const disclosure = header.querySelector('details') as HTMLDetailsElement;
+  expect(disclosure).not.toBeNull();
+  expect(disclosure.open).toBe(false);
+  // The claim stays outside; the injury and waiver paragraphs are inside.
+  expect(paragraphs[0].closest('details')).toBeNull();
+  expect(paragraphs[0].textContent).toContain('the same information your child can see about themselves, nothing more.');
+  expect(paragraphs[1].closest('details')).toBe(disclosure);
+  expect(paragraphs[1].textContent).toContain('your child’s injury record');
+  expect(paragraphs[2].closest('details')).toBe(disclosure);
+  expect(paragraphs[2].textContent).toContain('Not on file means the gym has no signed waiver of that kind yet');
+
+  // The control carries the page's tap floor (the layout wraps this page in a
+  // kiosk surface), and a label that says what is inside.
+  const summary = disclosure.querySelector('summary') as HTMLElement;
+  expect(summary.className).toContain('min-h-[var(--tap)]');
+  expect(summary.textContent).toBe('How to read the injury record and the waivers');
+
+  // Item 12: the doubled hyphens in this copy are dashes now.
+  expect(header.textContent).not.toContain('--');
+  expect(header.textContent).toContain('safety checks — the same information');
+});
+
+// Parent walk 2026-10-19 item 13.
+test('while the read is open the page names what it is loading and says it can take a few seconds', async () => {
+  global.fetch = jest.fn(() => new Promise<Response>(() => undefined)) as unknown as typeof fetch;
+
+  render(<GuardianSafetyPage />);
+
+  const status = await screen.findByRole('status');
+  expect(status).toHaveTextContent('Loading safety status…');
+  expect(status).toHaveTextContent('This can take a few seconds.');
+  expect(screen.queryByText('No linked children found')).not.toBeInTheDocument();
 });
 
 test('adding waivers leaves the hold and the safety checks as they were', async () => {
@@ -539,7 +584,7 @@ test('a failed load offers Check again, which reads Loading and then the answer'
 
   fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
 
-  expect(await screen.findByText('Loading…')).toBeInTheDocument();
+  expect(await screen.findByText('Loading safety status…')).toBeInTheDocument();
   expect(screen.queryByText('Safety status could not be loaded')).toBeNull();
   expect(fetchMock).toHaveBeenCalledTimes(2);
 

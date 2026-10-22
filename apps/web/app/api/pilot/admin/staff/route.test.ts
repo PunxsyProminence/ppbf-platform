@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 
-import { DELETE, GET, POST } from './route';
+import { DELETE, GET, PATCH, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import {
   createOrUpdateMicrosoftStaffAccount,
@@ -13,6 +13,7 @@ import {
   requireMicrosoftAuthenticatedPrincipal,
   requireMicrosoftOrAttestedLocalPinPrincipal,
 } from '@/src/server/pilot/http';
+import { setStaffDisplayName } from '@/src/server/pilot/profileDb';
 
 // requireGuardianLinkForParentInvite and the role vocabulary stay real: the
 // refusal of an unlinked parent invite is the behaviour under test, and a
@@ -27,12 +28,20 @@ jest.mock('@/src/server/pilot/staffProvisioning', () => ({
   removeGuardianLink: jest.fn(),
 }));
 
+jest.mock('@/src/server/pilot/profileDb', () => ({
+  setStaffDisplayName: jest.fn(),
+}));
+
 jest.mock('@/src/server/pilot/http', () => ({
   requireMicrosoftAuthenticatedPrincipal: jest.fn(),
   requireMicrosoftOrAttestedLocalPinPrincipal: jest.fn(),
   jsonError: (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.startsWith('Unauthorized')
+    // A PilotError carries its own status, as the real jsonError reads it.
+    const carried = (error as { status?: unknown }).status;
+    const status = typeof carried === 'number'
+      ? carried
+      : message.startsWith('Unauthorized')
       ? 401
       : message.startsWith('Forbidden')
         ? 403
@@ -60,6 +69,7 @@ const mockOrganizationName = jest.mocked(getOrganizationName);
 const mockListGuardianLinks = jest.mocked(listOrganizationGuardianLinks);
 const mockRemoveLink = jest.mocked(removeGuardianLink);
 const mockAudit = jest.mocked(writePilotAuditEvent);
+const mockSetName = jest.mocked(setStaffDisplayName);
 
 function principal(role = 'organization_admin', overrides: Record<string, unknown> = {}) {
   return {
@@ -187,6 +197,7 @@ describe('writes stay Microsoft-only', () => {
   test.each([
     ['POST', () => POST(jsonRequest('POST', { login_email: 'coach@example.com', role: 'coach' }))],
     ['DELETE', () => DELETE(jsonRequest('DELETE', { account_id: 'dana@example.com', athlete_id: 'ath-2' }))],
+    ['PATCH', () => PATCH(jsonRequest('PATCH', { account_id: 'coach-1', display_name: 'Mike Neale' }))],
   ])('%s refuses an attested local organization admin at the credential gate', async (_method, call) => {
     mockRequireAttested.mockResolvedValue(attestedLocal());
     mockRequireMicrosoft.mockRejectedValue(MICROSOFT_ONLY);
@@ -200,6 +211,7 @@ describe('writes stay Microsoft-only', () => {
     expect(mockRequireAttested).not.toHaveBeenCalled();
     expect(mockProvision).not.toHaveBeenCalled();
     expect(mockRemoveLink).not.toHaveBeenCalled();
+    expect(mockSetName).not.toHaveBeenCalled();
     expect(mockAudit).not.toHaveBeenCalled();
   });
 });
@@ -429,5 +441,100 @@ describe('DELETE', () => {
 
     expect(response.status).toBe(400);
     expect(mockRemoveLink).not.toHaveBeenCalled();
+  });
+});
+
+describe('PATCH (staff display name, Q1 part B)', () => {
+  const STAFF_ROLES = ['coach', 'staff', 'organization_admin', 'admin', 'volunteer'];
+
+  test("sets the name as normalised, in the session's own organization, for staff roles only, and audits it", async () => {
+    mockSetName.mockResolvedValue(true);
+
+    const response = await PATCH(
+      jsonRequest('PATCH', { account_id: ' coach-1 ', display_name: '  Mike \t Neale ', organization_id: 'org-2' }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({ ok: true, account_id: 'coach-1', staff_display_name: 'Mike Neale' });
+    expect(mockSetName).toHaveBeenCalledWith('org-1', 'coach-1', 'Mike Neale', STAFF_ROLES);
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'update',
+        organization_id: 'org-1',
+        entity_type: 'account',
+        entity_id: 'coach-1',
+        details: { action: 'organization_admin_set_staff_display_name', staff_display_name: 'Mike Neale' },
+      }),
+    );
+  });
+
+  test('a blank name clears it, and the audit row says cleared', async () => {
+    mockSetName.mockResolvedValue(true);
+
+    const response = await PATCH(jsonRequest('PATCH', { account_id: 'coach-1', display_name: '   ' }));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).staff_display_name).toBeNull();
+    expect(mockSetName).toHaveBeenCalledWith('org-1', 'coach-1', null, STAFF_ROLES);
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: { action: 'organization_admin_clear_staff_display_name', staff_display_name: null },
+      }),
+    );
+  });
+
+  test('an account that is not staff in this gym answers 404 and nothing is audited', async () => {
+    mockSetName.mockResolvedValue(false);
+
+    const response = await PATCH(jsonRequest('PATCH', { account_id: 'athlete-1', display_name: 'Someone' }));
+
+    expect(response.status).toBe(404);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('a name the rule refuses answers 400 and writes nothing', async () => {
+    for (const displayName of ['m'.repeat(61), 'Mike\u0007', 42]) {
+      const response = await PATCH(jsonRequest('PATCH', { account_id: 'coach-1', display_name: displayName }));
+      expect(response.status).toBe(400);
+    }
+    expect(mockSetName).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test("the database check's refusal answers 400; any other database error stays a server error", async () => {
+    mockSetName.mockRejectedValueOnce(
+      Object.assign(new Error('new row violates check constraint'), {
+        code: '23514',
+        constraint: 'pilot_account_profiles_staff_display_name_check',
+      }),
+    );
+    const refused = await PATCH(jsonRequest('PATCH', { account_id: 'coach-1', display_name: 'Mike Neale' }));
+    expect(refused.status).toBe(400);
+    expect((await refused.json()).error).toBe(
+      'That name cannot be saved. Use letters, numbers, spaces and ordinary punctuation.',
+    );
+
+    mockSetName.mockRejectedValueOnce(
+      Object.assign(new Error('new row violates check constraint'), { code: '23514', constraint: 'some_other_check' }),
+    );
+    expect((await PATCH(jsonRequest('PATCH', { account_id: 'coach-1', display_name: 'Mike Neale' }))).status).toBe(500);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  test('missing account_id or display_name answers 400', async () => {
+    expect((await PATCH(jsonRequest('PATCH', { display_name: 'Mike' }))).status).toBe(400);
+    expect((await PATCH(jsonRequest('PATCH', { account_id: 'coach-1' }))).status).toBe(400);
+    expect(mockSetName).not.toHaveBeenCalled();
+  });
+
+  test('refuses a caller who is not an organization admin', async () => {
+    mockRequireMicrosoft.mockResolvedValue(principal('coach'));
+
+    const response = await PATCH(jsonRequest('PATCH', { account_id: 'coach-1', display_name: 'Mike' }));
+
+    expect(response.status).toBe(403);
+    expect(mockSetName).not.toHaveBeenCalled();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 });

@@ -264,6 +264,7 @@
     "test:migrations:learning-loop": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/learningLoopMigration.pg.test.ts --testTimeout=180000",
     "test:migrations:intervention-execution-request-key": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/interventionExecutionRequestKey.pg.test.ts --testTimeout=180000",
     "test:migrations:staff-display-name": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/staffDisplayName.pg.test.ts --testTimeout=180000",
+    "test:migrations:staff-display-name-write": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/staffDisplayNameWrite.pg.test.ts --testTimeout=180000",
     "test:migrations:intervention-execution-replay": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/interventionExecutionReplay.pg.test.ts --testTimeout=180000",
     "test:migrations:milestone-undo-app": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/milestoneUndo.pg.test.ts --testTimeout=180000",
     "test:migrations:learning-policies": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/learningPolicies.pg.test.ts --testTimeout=180000",
