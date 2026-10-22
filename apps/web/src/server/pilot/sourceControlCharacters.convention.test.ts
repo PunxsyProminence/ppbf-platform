@@ -67,7 +67,7 @@ const SCANNED_ROOTS = ['apps/web', 'packages'];
  * scan until its extension is added here, which is a decision somebody makes on
  * purpose rather than a gap nobody notices.
  */
-const BINARY_EXTENSIONS = new Set(['.ico', '.jpg', '.png', '.woff2']);
+const BINARY_EXTENSIONS = new Set(['.ico', '.jpg', '.png', '.wav', '.woff2']);
 
 const TAB = 0x09;
 const LINE_FEED = 0x0a;
