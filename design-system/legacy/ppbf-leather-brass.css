@@ -2618,10 +2618,12 @@ body.ppbf.on-canvas {
                     background: rgba(0,0,0,.5); border: 1px solid rgb(var(--brass-400-rgb) / .3);
                     color: var(--brass-200); }
 /* On a phone the word stays and the chord goes (parent walk 2026-10-19 item 11).
+   639px is the width just under Tailwind's `sm` (640px), where the session bar's
+   other phone-only changes (the caption and the surface name) also switch.
    "⌘K" is a keyboard shortcut and a phone has no ⌘ key, so the chip read as a
    stray symbol; the button's own name, "Jump", says what it does. It was the
    other way round: the label hid and the chord stayed. */
-@media (max-width: 620px) { .catalog-hint kbd { display: none; } }
+@media (max-width: 639px) { .catalog-hint kbd { display: none; } }
 
 /* ============================================================== IN PROGRESS ===
    The system could say "empty" and "done" but had no word for "working on it",

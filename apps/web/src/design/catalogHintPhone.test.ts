@@ -3,7 +3,7 @@ import { DESIGN_SYSTEM_ENTRY, readDesignSystemCss } from './readDesignSystemCss'
 /**
  * PARENT PORTAL WALK 2026-10-19, ITEM 11: the top bar showed a "⌘K" chip on a
  * phone. A phone has no ⌘ key, and the button's word, "Jump", was the part the
- * phone width hid. It is the other way round now: below 620px the keyboard chord
+ * phone width hid. It is the other way round now: below 640px the keyboard chord
  * goes and the word stays.
  *
  * jsdom compiles no CSS, so the rule is read from the resolved sheet, the way
@@ -11,21 +11,22 @@ import { DESIGN_SYSTEM_ENTRY, readDesignSystemCss } from './readDesignSystemCss'
  */
 const SHEET = readDesignSystemCss(DESIGN_SYSTEM_ENTRY).replace(/\/\*[\s\S]*?\*\//g, ' ');
 
-/** The bodies of every `@media (max-width: 620px) { ... }` block that names the Jump button. */
+/** The bodies of every `@media (max-width: 639px) { ... }` block that names the Jump button
+ *  (639px: just under Tailwind's `sm`, where the rest of the phone bar switches). */
 function phoneBlocks(): string[] {
   const blocks: string[] = [];
-  for (const match of SHEET.matchAll(/@media\s*\(max-width:\s*620px\)\s*\{([^{}]*\{[^{}]*\}\s*)+\}/g)) {
+  for (const match of SHEET.matchAll(/@media\s*\(max-width:\s*639px\)\s*\{([^{}]*\{[^{}]*\}\s*)+\}/g)) {
     if (match[0].includes('.catalog-hint')) blocks.push(match[0]);
   }
   return blocks;
 }
 
-test('below 620px the keyboard chord is hidden', () => {
+test('below 640px the keyboard chord is hidden', () => {
   const hides = phoneBlocks().some((block) => /\.catalog-hint\s+kbd\s*\{[^}]*display:\s*none/.test(block));
   expect(hides).toBe(true);
 });
 
-test('below 620px the word "Jump" is not hidden', () => {
+test('below 640px the word "Jump" is not hidden', () => {
   const hidesLabel = phoneBlocks().some((block) => /\.catalog-hint-lbl\s*\{[^}]*display:\s*none/.test(block));
   expect(hidesLabel).toBe(false);
   // And nothing elsewhere in the sheet hides it unconditionally.

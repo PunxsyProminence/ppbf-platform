@@ -307,7 +307,7 @@ export default function GuardianSafetyPage() {
           {isLoading ? (
             /* Names what is loading and says it can take a few seconds (parent
                walk 2026-10-19 item 13: a bare "Loading…" stood for 2 to 5
-               seconds). A status region, so it is announced. The sheet's
+               seconds). A status region. The sheet's
                `.working` cue is not used: it pins 11px and this is a kiosk
                page with a 19.1px type floor. Wording PROPOSED. */
             <div className="empty mt-[var(--s5)]" role="status">

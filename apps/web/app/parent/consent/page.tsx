@@ -181,8 +181,7 @@ export default function GuardianMediaConsentPage() {
 
           {isLoading ? (
             /* Names what is loading and says it can take a few seconds (parent
-               walk 2026-10-19 item 13). A status region, so it is announced.
-               Wording PROPOSED. */
+               walk 2026-10-19 item 13). A status region. Wording PROPOSED. */
             <div className="empty mt-[var(--s5)]" role="status">
               <div className="empty-glyph" aria-hidden="true">◌</div>
               <div className="empty-title">Loading consent status…</div>
