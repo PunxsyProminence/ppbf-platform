@@ -821,3 +821,53 @@ export async function undoSessionRegisterPresent(
   );
   return rows.length > 0;
 }
+
+/*
+ * The End Session no-shows offer on a tied session (OD-2026-10-21-004 ruling 3, "A: Offer it
+ * (Rec.)"): ONE TAP by the coach marks Absent every athlete signed up for the class who has no
+ * register mark at all. Never automatic: only that tap calls this. An athlete with any mark
+ * (Present, Absent, Excused, a family's own check-in) is left as they are, and so is anyone in
+ * `exceptAthleteIds` (marked here on the session). A mark landing at the same moment wins: the
+ * insert does nothing on a conflict. Returns the athletes it marked.
+ */
+export async function markClassNoShowsAbsent(
+  client: PoolClient,
+  organizationId: string,
+  mark: Pick<SchedulerAttendance, 'class_id' | 'method' | 'checked_in_by_role' | 'checked_in_by_account_id'>,
+  exceptAthleteIds: readonly string[],
+  now: string,
+): Promise<string[]> {
+  const { rows } = await client.query<{ athlete_id: string }>(
+    `insert into pilot.scheduler_attendance (
+       organization_id, attendance_id, class_id, athlete_id, status, method,
+       checked_in_by_role, checked_in_by_account_id, note, checked_in_at, updated_at
+     )
+     select $1, gen_random_uuid()::text, $2, signed_up.athlete_id, 'absent', $3, $4, $5, '', $6::timestamptz, $6::timestamptz
+       from (select distinct r.athlete_id
+               from pilot.scheduler_registrations r
+              where r.organization_id = $1 and r.class_id = $2 and r.status = 'registered'
+                and ${athleteNotDeletedSql('r')}
+                and r.athlete_id <> all($7::text[])) signed_up
+     on conflict (organization_id, class_id, athlete_id) do nothing
+     returning athlete_id`,
+    [organizationId, mark.class_id, mark.method, mark.checked_in_by_role, mark.checked_in_by_account_id, now, [...exceptAthleteIds]],
+  );
+  return rows.map((row) => row.athlete_id).sort();
+}
+
+/** How many athletes the no-shows tap would mark now: signed up, no register mark, not excepted. */
+export async function countClassNoShows(organizationId: string, classId: string, exceptAthleteIds: readonly string[]): Promise<number> {
+  const row = await queryOne<{ n: number }>(
+    `select count(distinct r.athlete_id)::int as n
+       from pilot.scheduler_registrations r
+      where r.organization_id = $1 and r.class_id = $2 and r.status = 'registered'
+        and ${athleteNotDeletedSql('r')}
+        and r.athlete_id <> all($3::text[])
+        and not exists (
+          select 1 from pilot.scheduler_attendance a
+           where a.organization_id = r.organization_id and a.class_id = r.class_id and a.athlete_id = r.athlete_id
+        )`,
+    [organizationId, classId, [...exceptAthleteIds]],
+  );
+  return row?.n ?? 0;
+}

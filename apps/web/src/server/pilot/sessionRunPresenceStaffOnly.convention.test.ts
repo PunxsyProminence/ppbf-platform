@@ -45,7 +45,7 @@ const ALL_SOURCE = ['app', 'components', 'lib', 'src'].flatMap((dir) => filesUnd
 
 /** What reaches the records: the presence module (either quote style), and each read or writer by name. */
 const REACHES =
-  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday)\b/;
+  /sessionRunAthletes['"]|\b(setRunAthletePresent|listPresentAthletes|staffPermittedAthleteIds|staffPermittedAthletes|listRunStaffNotes|createRunStaffNote|listSettledRunsForOrganization|isSessionRunningForAthleteToday|setSessionRunClass|markSessionNoShowsAbsent|describeRunClass)\b/;
 
 /** Either table, named in a file's own text (inline SQL included). */
 const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
@@ -54,6 +54,8 @@ const NAMES_A_TABLE = /session_run_athletes|session_staff_notes/;
 const STAFF_ROUTES = [
   'app/api/pilot/coach/session-staff-notes/route.ts',
   'app/api/pilot/session-scripts/runs/[runId]/athletes/route.ts',
+  // tie_class and mark_no_shows (D4): a tie answers which of the run's marked athletes it copied.
+  'app/api/pilot/session-scripts/runs/[runId]/route.ts',
   'app/api/pilot/session-scripts/runs/route.ts',
 ];
 
@@ -70,6 +72,7 @@ const SESSION_NOTE_READERS = [
 const DEFINING_MODULES = [
   'src/server/pilot/privacyTiers.ts',
   'src/server/pilot/sessionRunAthletes.ts',
+  'src/server/pilot/sessionRunClass.ts',
   'src/server/pilot/sessionScriptRuns.ts',
   'src/server/pilot/sessionStaffNotes.ts',
 ];
@@ -84,8 +87,9 @@ const DEFINING_MODULES = [
 // table; its only callers are the coach routes behaviour-observations and
 // behaviour-keys, gated to coach, organization_admin and admin.
 // sessionRunClass.ts (D4) sets one mark's register pointer after a tap on a
-// session tied to a class wrote the register; it reads nothing back from the
-// table, and its only caller is setRunAthletePresent.
+// session tied to a class wrote the register, and reads a run's standing marks
+// (ids) to copy them when the session is tied mid-way and to skip them in the
+// no-shows tap; its callers are setRunAthletePresent and the staff run routes.
 // sessionScriptRuns.ts reads one timestamp from each table, inside the SQL
 // that closes a live run idle for three hours (OD-2026-10-21-001 ruling 2,
 // Jason: "A: Yes, after 3 hours (Rec.)"): the newest mark, unmark or
@@ -195,7 +199,7 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     const client = ALL_SOURCE.filter((file) => /\.tsx$/.test(file) && !/^src\//.test(relative(file)));
     expect(client.length).toBeGreaterThan(50);
     // A type-only import is erased at build time and carries no data; a value import would not be.
-    const valueImport = /^import (?!type\b)[^;]*from ['"]@\/src\/server\/pilot\/(sessionRunAthletes|sessionStaffNotes|sessionScriptRuns)['"];/m;
+    const valueImport = /^import (?!type\b)[^;]*from ['"]@\/src\/server\/pilot\/(sessionRunAthletes|sessionStaffNotes|sessionScriptRuns|sessionRunClass)['"];/m;
     expect(client.filter((file) => valueImport.test(source(file))).map(relative)).toEqual([]);
   });
 });

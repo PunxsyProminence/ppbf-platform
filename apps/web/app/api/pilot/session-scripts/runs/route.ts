@@ -3,7 +3,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
 import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { listPresentAthletes, staffPermittedAthleteIds } from '@/src/server/pilot/sessionRunAthletes';
-import { SESSION_CLASS_MESSAGES, SessionRunClassError } from '@/src/server/pilot/sessionRunClass';
+import {
+  SESSION_CLASS_MESSAGES,
+  SessionRunClassError,
+  describeRunClass,
+  listTieableClasses,
+} from '@/src/server/pilot/sessionRunClass';
 import {
   SessionScriptRunError,
   getLiveRunForCoach,
@@ -39,6 +44,12 @@ export const runtime = 'nodejs';
 // the live athletes of the caller's own gym, filtered in SQL (sessionRunAthletes.ts). Same role
 // gate: end notes and presence are staff records with no athlete or parent view
 // (OD-2026-10-10-003 items 3 and 4).
+//
+// With ?classes=today it answers "which classes can I tie a session to now" (D4,
+// OD-2026-10-21-002): today's classes, by the gym's day, that the caller runs (an organization
+// admin: all), not cancelled, each saying whether another live session already holds it. A live
+// run tied to a class also carries `class`: its title, times and status, and how many signed-up
+// athletes have no mark yet (the End Session no-shows offer, OD-2026-10-21-004 ruling 3).
 //
 // platform_owner is refused on every verb here and on runs/[runId]: running a session is gym
 // work, done from the gym's own accounts (OD-2026-10-08-003 R2 and PLAN-3).
@@ -88,8 +99,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ runs }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
+    if (request.nextUrl.searchParams.get('classes') === 'today') {
+      return NextResponse.json({ classes: await listTieableClasses(principal) }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
     const run = await getLiveRunForCoach(principal.organizationId, principal.accountId);
-    return NextResponse.json({ run });
+    const tied = run?.class_id ? await describeRunClass(principal.organizationId, run.run_id, run.class_id) : null;
+    return NextResponse.json(tied ? { run, class: tied } : { run });
   } catch (error) {
     return jsonError(error);
   }

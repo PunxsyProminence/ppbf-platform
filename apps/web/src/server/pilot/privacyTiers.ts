@@ -539,6 +539,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'sessionRunAthletes.ts#staffPermittedAthleteIds',
       'sessionRunAthletes.ts#staffPermittedAthletes',
       'sessionNotes.ts#isSessionRunningForAthleteToday',
+      'sessionRunClass.ts#setSessionRunClass',
+      'sessionRunClass.ts#markSessionNoShowsAbsent',
+      'sessionRunClass.ts#describeRunClass',
     ],
     note:
       'Which athletes a coach marked present in one session run (audit finding F-067). Staff only: '
