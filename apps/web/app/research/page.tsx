@@ -10,6 +10,12 @@ import { apiBase } from '@/lib/apiBase';
 import { newIntakeRequestId } from '@/src/client/libraryTextIntake';
 import LibraryTextIntakePanel, { SHELF_WORDS, type LibraryTextIntakeSource } from './LibraryTextIntakePanel';
 import LibrarySourcePicker, { LIBRARY_SOURCE_PICKER_CAP } from './LibrarySourcePicker';
+import ProvenanceFields from './ProvenanceFields';
+import {
+  EMPTY_PROVENANCE_DRAFT,
+  buildProvenanceRegistration,
+  savedProvenanceLines,
+} from './researchProvenanceForm';
 import {
   RESEARCH_CLASSIFICATION_DOMAINS,
   researchClassificationLabel,
@@ -127,7 +133,10 @@ interface LibrarySourceOption {
   source_id: string;
   title: string;
   source_type: string;
-  metadata?: { general_research?: boolean; classification_domain?: string };
+  metadata?: { general_research?: boolean; classification_domain?: string; provenance?: unknown };
+  /** The journal and the full publication date (#345 R29); shown read-only on a general source. */
+  publisher?: string | null;
+  publication_date?: string | null;
   /** Passed through to the intake panel (#1468). */
   excerpt_budget?: LibraryTextIntakeSource['excerpt_budget'];
   /** The source's own evidence review, as /research/review shows it. */
@@ -267,6 +276,9 @@ export default function ResearchIntakePage() {
   const [generalDraft, setGeneralDraft] = useState({
     title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '',
   });
+  // #345 R29: the optional provenance block (collapsed; opened when it holds a refused value).
+  const [provenanceDraft, setProvenanceDraft] = useState(EMPTY_PROVENANCE_DRAFT);
+  const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [generalBusy, setGeneralBusy] = useState(false);
   const [generalMessage, setGeneralMessage] = useState('');
   // One id per registration, kept until the server confirms it (L54). A retry
@@ -492,6 +504,13 @@ export default function ResearchIntakePage() {
       if (generalDraft.doi.trim()) provenance.doi_or_pmid = generalDraft.doi.trim();
       if (generalDraft.provider.trim()) provenance.provider = generalDraft.provider.trim();
       if (generalDraft.filename.trim()) provenance.original_filename = generalDraft.filename.trim();
+      // The contract's own check (researchProvenance.ts), before anything is sent.
+      const registration = buildProvenanceRegistration(provenanceDraft, provenance);
+      if (!registration.ok) {
+        setGeneralMessage(registration.error);
+        setProvenanceOpen(true);
+        return;
+      }
       generalRequestIdRef.current ??= newIntakeRequestId();
 
       let response: Response;
@@ -507,8 +526,9 @@ export default function ResearchIntakePage() {
             metadata: {
               general_research: true,
               classification_domain: generalDraft.classification,
-              provenance,
+              provenance: registration.provenance,
             },
+            ...registration.fields,
             request_id: generalRequestIdRef.current,
             ...shelfBody,
           }),
@@ -548,6 +568,7 @@ export default function ResearchIntakePage() {
       generalRequestIdRef.current = null;
       setGeneralUnconfirmed(false);
       setGeneralDraft({ title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '' });
+      setProvenanceDraft(EMPTY_PROVENANCE_DRAFT);
       setGeneralMessage(payload.recovered === true
         ? SOURCE_REGISTRATION_WORDS.recovered
         : 'Source registered and classified. Evidence review still decides what becomes citable.');
@@ -1381,6 +1402,13 @@ export default function ResearchIntakePage() {
                 <input className="input" value={generalDraft.filename} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, filename: event.target.value }))} />
               </label>
+              <ProvenanceFields
+                draft={provenanceDraft}
+                onChange={setProvenanceDraft}
+                disabled={generalUnconfirmed}
+                open={provenanceOpen}
+                onOpenChange={setProvenanceOpen}
+              />
             </div>
             <div className="flex flex-wrap items-center gap-[var(--s4)]">
               <button type="button" className="btn" disabled={generalBusy} onClick={() => void handleRegisterGeneral()}>
@@ -1410,6 +1438,9 @@ export default function ResearchIntakePage() {
                         {researchClassificationLabel(source.metadata?.classification_domain ?? '')}
                       </span>
                     </div>
+                    {savedProvenanceLines(source).map((line) => (
+                      <p key={line.label} className="t-muted mt-[var(--s1)]">{`${line.label}: ${line.value}`}</p>
+                    ))}
                     <label className="field mt-[var(--s3)]">
                       <span className="t-label">Correct classification</span>
                       <select
