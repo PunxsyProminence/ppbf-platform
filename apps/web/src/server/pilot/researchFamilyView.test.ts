@@ -342,7 +342,8 @@ describe('an asker-filed unanswered question', () => {
 // (Recommended)") applied by Overwatch 2026-10-23 under "asked once, ruled
 // once" to the learning loop's research rows. An athlete's or parent's note on
 // a SHADOW answer is read by the organization admin and its author; a coach
-// sees only that feedback was filed. A coach's or admin's own note is unchanged.
+// sees only that feedback was filed. A coach's or admin's own note, and the
+// note of an adult seat the ruling does not name, is unchanged.
 describe('a learning-loop note filed by an athlete or parent', () => {
   const NOTE = 'his coach yells at him and the advice made it worse';
   const AUTHOR = 'parent.one@gym.example.test';
@@ -366,11 +367,15 @@ describe('a learning-loop note filed by an athlete or parent', () => {
     ...overrides,
   });
 
-  test('is recognized by its event and a filer outside research staff, as the F-054 row is', () => {
+  test('is recognized by its event and an athlete, parent or unknown filer, not by metadata', () => {
     expect(isMemberFiledLearningNote(noted())).toBe(true);
     expect(isMemberFiledLearningNote(noted({ created_by_role: 'athlete' }))).toBe(true);
-    expect(isMemberFiledLearningNote(noted({ created_by_role: '' }))).toBe(true);
-    for (const role of ['coach', 'organization_admin', 'admin']) {
+    // A role this code does not know, or none, keeps the words out.
+    for (const role of ['', 'Athlete', 'PARENT', 'guardian', 'board']) {
+      expect(isMemberFiledLearningNote(noted({ created_by_role: role }))).toBe(true);
+    }
+    // Research staff, and the adult seats the ruling does not name.
+    for (const role of ['coach', 'organization_admin', 'admin', 'volunteer', 'staff', 'platform_owner']) {
       expect(isMemberFiledLearningNote(noted({ created_by_role: role }))).toBe(false);
     }
     expect(isMemberFiledLearningNote(noted({ source_event_name: 'SHADOW_INTAKE_CASE_APPROVED' }))).toBe(false);
@@ -414,7 +419,7 @@ describe('a learning-loop note filed by an athlete or parent', () => {
     expect(JSON.stringify(row)).not.toContain(AUTHOR);
   });
 
-  test.each(['coach', 'organization_admin', 'admin'] as const)("a %s's own note stays whole for a coach", (role) => {
+  test.each(['coach', 'organization_admin', 'admin', 'volunteer', 'staff', 'platform_owner'] as const)("a %s's own note stays whole for a coach", (role) => {
     const own = noted({ created_by_role: role, created_by_account_id: COACH_ID });
     expect(wholeResearchRowFor('coach', own)).toBe(own);
     const list = [own];

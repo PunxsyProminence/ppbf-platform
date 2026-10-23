@@ -32,6 +32,7 @@ import { isOrganizationAdminRole } from './access';
 import type { PilotRole } from './contracts';
 import { isResearchStaff, type ShadowResearchRequirementRow } from './shadowResearch';
 import type { ResearchSubmissionRow } from './shadowResearchSubmissions';
+import { SHADOW_PROJECTION_READ_ROLES } from './shadowRoleSets';
 
 export interface ResearchReader {
   accountId: string;
@@ -163,9 +164,15 @@ export function isAskerFiledQuestion(
  * (shadowLearningLoop.ts, createResearchRequirementFromNegativeSignal). The
  * same ruling reaches it (OD-2026-10-13-018, applied by Overwatch 2026-10-23
  * under "asked once, ruled once": the words are a kid's or parent's own, typed
- * into SHADOW), so it takes the same split and the same test of who filed:
- * a coach's or admin's own note stays whole, anyone else's reaches a coach as
- * this sentence. PROPOSED copy. */
+ * into SHADOW), so it takes the same split, told apart by who filed it.
+ *
+ * WHO FILED decides, and the ruling names the people: an athlete's or
+ * parent's note reaches a coach as this sentence. Unlike the F-054 row, adult
+ * seats outside research staff can rate SHADOW too (feedback POST admits
+ * volunteer, staff and platform_owner), and their notes are not the ruling's,
+ * so they stay as they are, like a coach's or admin's own. A role this code
+ * does not know, or none, is treated as an athlete's: the words stay out.
+ * PROPOSED copy. */
 export const LEARNING_NOTE_EVENT = 'shadow_learning_negative_outcome';
 export const LEARNING_NOTE_COACH_SENTENCE =
   'Feedback on a SHADOW answer, filed for research. The gym administrator can read it.';
@@ -173,8 +180,10 @@ export const LEARNING_NOTE_COACH_SENTENCE =
 export function isMemberFiledLearningNote(
   row: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
 ): boolean {
-  return row.source_event_name === LEARNING_NOTE_EVENT
-    && !isResearchStaff(row.created_by_role as PilotRole);
+  if (row.source_event_name !== LEARNING_NOTE_EVENT) return false;
+  const filer = row.created_by_role;
+  return filer === 'athlete' || filer === 'parent'
+    || !(SHADOW_PROJECTION_READ_ROLES as readonly string[]).includes(filer);
 }
 
 /** A row a coach receives without the words in it (F-054, F-183). */
