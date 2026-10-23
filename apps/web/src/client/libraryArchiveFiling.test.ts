@@ -1,4 +1,5 @@
 import {
+  classifyLibrarySource,
   fileLibraryPdfOriginal,
   linkableOriginal,
   readArchiveFilingStatus,
@@ -117,6 +118,33 @@ describe('fileLibraryPdfOriginal', () => {
 
     const malformed = answering(201, { ok: true, status: 'filed', archived_original: { archived_original_id: 'arc_x' } });
     expect(await fileLibraryPdfOriginal('', pdf(), FIELDS, { fetchImpl: malformed.impl })).toMatchObject({ ok: false, status: 201 });
+  });
+});
+
+describe('classifyLibrarySource (lane LR6)', () => {
+  it('PATCHes the sources route with the source and the subject, and names the platform shelf only for it', async () => {
+    const gym = answering(200, { ok: true });
+    expect(await classifyLibrarySource('https://app.test', { sourceId: 'source_a', classificationDomain: 'boxing_athlete_development' }, { fetchImpl: gym.impl })).toEqual({ ok: true });
+    expect(gym.seen[0].url).toBe('https://app.test/api/pilot/shadow/library/sources');
+    expect(gym.seen[0].init?.method).toBe('PATCH');
+    expect(gym.seen[0].init?.credentials).toBe('include');
+    expect(JSON.parse(String(gym.seen[0].init?.body))).toEqual({ source_id: 'source_a', classification_domain: 'boxing_athlete_development' });
+
+    const platform = answering(200, { ok: true });
+    await classifyLibrarySource('', { sourceId: 'source_a', classificationDomain: 'ai_ml_data_science', shelf: 'platform' }, { fetchImpl: platform.impl });
+    expect(JSON.parse(String(platform.seen[0].init?.body))).toMatchObject({ shelf: 'platform' });
+  });
+
+  it('keeps the server sentence on a refusal, and never throws', async () => {
+    const refused = answering(403, { error: 'Only a curator can classify a source.' });
+    expect(await classifyLibrarySource('', { sourceId: 'source_a', classificationDomain: 'boxing_athlete_development' }, { fetchImpl: refused.impl }))
+      .toEqual({ ok: false, status: 403, serverMessage: 'Only a curator can classify a source.' });
+
+    const down = (async () => {
+      throw new Error('offline');
+    }) as unknown as typeof fetch;
+    expect(await classifyLibrarySource('', { sourceId: 'source_a', classificationDomain: 'boxing_athlete_development' }, { fetchImpl: down }))
+      .toEqual({ ok: false, status: 0, serverMessage: null });
   });
 });
 
