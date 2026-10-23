@@ -157,12 +157,42 @@ export function isAskerFiledQuestion(
     && !isResearchStaff(row.created_by_role as PilotRole);
 }
 
-/** The stored row as a COACH receives it when it is an asker's question.
+/* AN ATHLETE'S OR PARENT'S NOTE ON A SHADOW ANSWER (F-183). The learning loop
+ * files a negative rating as a research row whose knowledge_gap and
+ * metadata.note are the rater's own note, under their account and role
+ * (shadowLearningLoop.ts, createResearchRequirementFromNegativeSignal). The
+ * same ruling reaches it (OD-2026-10-13-018, applied by Overwatch 2026-10-23
+ * under "asked once, ruled once": the words are a kid's or parent's own, typed
+ * into SHADOW), so it takes the same split and the same test of who filed:
+ * a coach's or admin's own note stays whole, anyone else's reaches a coach as
+ * this sentence. PROPOSED copy. */
+export const LEARNING_NOTE_EVENT = 'shadow_learning_negative_outcome';
+export const LEARNING_NOTE_COACH_SENTENCE =
+  'Feedback on a SHADOW answer, filed for research. The gym administrator can read it.';
+
+export function isMemberFiledLearningNote(
+  row: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
+): boolean {
+  return row.source_event_name === LEARNING_NOTE_EVENT
+    && !isResearchStaff(row.created_by_role as PilotRole);
+}
+
+/** A row a coach receives without the words in it (F-054, F-183). */
+export function carriesMemberWords(
+  row: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
+): boolean {
+  return isAskerFiledQuestion(row) || isMemberFiledLearningNote(row);
+}
+
+/** The stored row as a COACH receives it when it carries a member's words.
  *  Built from NAMED fields, like the family view: a column a later writer adds
  *  stays out until someone names it here. The kind of asker (created_by_role),
  *  the key, the account id, the label and the metadata are not named; a
  *  closing note is replaced, not copied. */
 export function toCoachAskerQuestion(row: ShadowResearchRequirementRow): ShadowResearchRequirementRow {
+  const sentence = row.source_event_name === LEARNING_NOTE_EVENT
+    ? LEARNING_NOTE_COACH_SENTENCE
+    : ASKER_QUESTION_COACH_SENTENCE;
   const meta = row.metadata ?? {};
   const closing: Record<string, unknown> = {};
   if (coachNote(meta.closing_note)) closing.closing_note = ASKER_QUESTION_NOTE_SENTENCE;
@@ -173,8 +203,8 @@ export function toCoachAskerQuestion(row: ShadowResearchRequirementRow): ShadowR
     source_event_name: row.source_event_name,
     source_entity_type: row.source_entity_type,
     source_entity_id: String(row.research_requirement_id),
-    research_requirement: ASKER_QUESTION_COACH_SENTENCE,
-    knowledge_gap: ASKER_QUESTION_COACH_SENTENCE,
+    research_requirement: sentence,
+    knowledge_gap: sentence,
     evidence_label: null,
     source_status: row.source_status,
     source_confidence_tier: row.source_confidence_tier,
@@ -190,13 +220,13 @@ export function toCoachAskerQuestion(row: ShadowResearchRequirementRow): ShadowR
 }
 
 /** A stored row for a research-staff reader: whole, except a coach's view of
- *  an asker's question. */
+ *  a row that carries a member's words. */
 export function wholeResearchRowFor(
   role: PilotRole | null | undefined,
   row: ShadowResearchRequirementRow,
 ): ShadowResearchRequirementRow {
   if (role && isOrganizationAdminRole(role)) return row;
-  return isAskerFiledQuestion(row) ? toCoachAskerQuestion(row) : row;
+  return carriesMemberWords(row) ? toCoachAskerQuestion(row) : row;
 }
 
 export function researchRequirementsForReader(
@@ -206,9 +236,10 @@ export function researchRequirementsForReader(
   if (!readsWholeResearchRows(reader.role)) {
     return rows.map((row) => toFamilyResearchRequirement(reader, row));
   }
-  // Staff get the stored rows themselves; only a coach's view of an asker's
-  // question is rebuilt, so a list with none comes back as it was read.
-  return rows.some(isAskerFiledQuestion) ? rows.map((row) => wholeResearchRowFor(reader.role, row)) : rows;
+  // Staff get the stored rows themselves; only a coach's view of a row that
+  // carries a member's words is rebuilt, so a list with none comes back as it
+  // was read.
+  return rows.some(carriesMemberWords) ? rows.map((row) => wholeResearchRowFor(reader.role, row)) : rows;
 }
 
 /** A submission on an asker's question as a COACH receives it: the source,
@@ -234,8 +265,8 @@ export function toCoachAskerSubmission(row: ResearchSubmissionRow): ResearchSubm
 }
 
 /** `requirement` is the stored row the submissions hang off, as the route
- *  read it to scope the request: whether it is an asker's question is a fact
- *  about that row, not about the submissions. */
+ *  read it to scope the request: whether it carries a member's words is a
+ *  fact about that row, not about the submissions. */
 export function researchSubmissionsForReader(
   reader: Pick<ResearchReader, 'role'>,
   rows: ResearchSubmissionRow[],
@@ -244,5 +275,5 @@ export function researchSubmissionsForReader(
 ): Array<ResearchSubmissionRow | FamilyResearchSubmission> {
   if (!readsWholeResearchSubmissions(reader.role, onPlatformShelf)) return rows.map(toFamilyResearchSubmission);
   if (reader.role && isOrganizationAdminRole(reader.role)) return rows;
-  return isAskerFiledQuestion(requirement) ? rows.map(toCoachAskerSubmission) : rows;
+  return carriesMemberWords(requirement) ? rows.map(toCoachAskerSubmission) : rows;
 }

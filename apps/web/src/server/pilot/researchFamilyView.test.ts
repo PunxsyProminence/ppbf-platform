@@ -3,6 +3,8 @@ import {
   ASKER_QUESTION_COACH_SENTENCE,
   ASKER_QUESTION_NOTE_SENTENCE,
   isAskerFiledQuestion,
+  isMemberFiledLearningNote,
+  LEARNING_NOTE_COACH_SENTENCE,
   readsWholeResearchRows,
   readsWholeResearchSubmissions,
   researchRequirementsForReader,
@@ -332,6 +334,143 @@ describe('an asker-filed unanswered question', () => {
     test("a coach receives an ordinary requirement's submissions and a coach-filed question's whole", () => {
       expect(researchSubmissionsForReader({ role: 'coach' }, noted, false, requirement())).toBe(noted);
       expect(researchSubmissionsForReader({ role: 'coach' }, noted, false, asked({ created_by_role: 'coach' }))).toBe(noted);
+    });
+  });
+});
+
+// F-183: OD-2026-10-13-018 (Jason 2026-10-13, "A: Office + asker
+// (Recommended)") applied by Overwatch 2026-10-23 under "asked once, ruled
+// once" to the learning loop's research rows. An athlete's or parent's note on
+// a SHADOW answer is read by the organization admin and its author; a coach
+// sees only that feedback was filed. A coach's or admin's own note is unchanged.
+describe('a learning-loop note filed by an athlete or parent', () => {
+  const NOTE = 'his coach yells at him and the advice made it worse';
+  const AUTHOR = 'parent.one@gym.example.test';
+  const MESSAGE_ID = '0b9f6f3e-5d0c-4f43-9a51-3c1e2a7d4b10';
+  const noted = (overrides: Partial<ShadowResearchRequirementRow> = {}) => requirement({
+    source_event_name: 'shadow_learning_negative_outcome',
+    source_entity_type: 'shadow_learning_event',
+    source_entity_id: MESSAGE_ID,
+    research_requirement: "Strengthen SHADOW guidance for topic 'mindset' after outcome 'thumbs_down'.",
+    knowledge_gap: NOTE,
+    evidence_label: 'Learning loop escalation (thumbs_down)',
+    source_status: 'weak',
+    source_confidence_tier: 'LIMITED',
+    source_verification_state: 'unverified',
+    status: 'open',
+    resolved_at: null,
+    created_by_account_id: AUTHOR,
+    created_by_role: 'parent',
+    metadata: { sessionType: 'quick_round', outcome: 'thumbs_down', topic: 'mindset', note: NOTE },
+    subject_id: null,
+    ...overrides,
+  });
+
+  test('is recognized by its event and a filer outside research staff, as the F-054 row is', () => {
+    expect(isMemberFiledLearningNote(noted())).toBe(true);
+    expect(isMemberFiledLearningNote(noted({ created_by_role: 'athlete' }))).toBe(true);
+    expect(isMemberFiledLearningNote(noted({ created_by_role: '' }))).toBe(true);
+    for (const role of ['coach', 'organization_admin', 'admin']) {
+      expect(isMemberFiledLearningNote(noted({ created_by_role: role }))).toBe(false);
+    }
+    expect(isMemberFiledLearningNote(noted({ source_event_name: 'SHADOW_INTAKE_CASE_APPROVED' }))).toBe(false);
+    expect(isMemberFiledLearningNote(noted({ metadata: {} }))).toBe(true);
+    // The F-054 test is untouched by this one.
+    expect(isAskerFiledQuestion(noted())).toBe(false);
+  });
+
+  test.each(['athlete', 'parent'] as const)('filed by a %s, it reaches a coach with no words, key or author', (role) => {
+    const stored = noted({ created_by_role: role });
+    const [row] = researchRequirementsForReader({ accountId: COACH_ID, role: 'coach' }, [stored]) as ShadowResearchRequirementRow[];
+    const text = JSON.stringify(row);
+    expect(text).not.toContain('yells');
+    expect(text).not.toContain(AUTHOR);
+    expect(text).not.toContain(MESSAGE_ID);
+    expect(row).toEqual({
+      ...stored,
+      source_entity_id: '7',
+      research_requirement: LEARNING_NOTE_COACH_SENTENCE,
+      knowledge_gap: LEARNING_NOTE_COACH_SENTENCE,
+      evidence_label: null,
+      created_by_account_id: '',
+      created_by_role: '',
+      metadata: {},
+      subject_id: null,
+    });
+    expect(wholeResearchRowFor('coach', stored)).toEqual(row);
+  });
+
+  test.each(['organization_admin', 'admin'] as const)('a %s receives it whole', (role) => {
+    const stored = [noted(), noted({ created_by_role: 'athlete' })];
+    const read = researchRequirementsForReader({ accountId: ADMIN_ID, role }, stored);
+    expect(read).toHaveLength(2);
+    read.forEach((row, index) => expect(row).toBe(stored[index]));
+    expect(wholeResearchRowFor(role, stored[0])).toBe(stored[0]);
+  });
+
+  test('its author reads their own words through the family view, with no account id', () => {
+    const [row] = researchRequirementsForReader({ accountId: AUTHOR, role: 'parent' }, [noted()]);
+    expect(row).toMatchObject({ knowledge_gap: NOTE, is_mine: true });
+    expect(JSON.stringify(row)).not.toContain(AUTHOR);
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)("a %s's own note stays whole for a coach", (role) => {
+    const own = noted({ created_by_role: role, created_by_account_id: COACH_ID });
+    expect(wholeResearchRowFor('coach', own)).toBe(own);
+    const list = [own];
+    expect(researchRequirementsForReader({ accountId: 'coach.two@gym.example.test', role: 'coach' }, list)).toBe(list);
+  });
+
+  test('a closed one gives the coach the note sentence in place of the closing note', () => {
+    const row = wholeResearchRowFor('coach', noted({
+      status: 'resolved',
+      metadata: { note: NOTE, closing_note: 'Spoke to his dad about the yelling.', closing_submission_id: 'sub-1' },
+    }));
+    expect(row.metadata).toEqual({ closing_note: ASKER_QUESTION_NOTE_SENTENCE, closing_submission_id: 'sub-1' });
+    expect(JSON.stringify(row)).not.toContain('yelling');
+  });
+
+  test('beside an F-054 question and an ordinary row, each reaches a coach as its own kind does', () => {
+    const asker = requirement({
+      research_requirement_id: 8,
+      source_event_name: 'shadow_unanswered_question',
+      source_entity_type: 'shadow_asker_question',
+      research_requirement: 'is it ok to cut weight before a first bout',
+      created_by_account_id: 'athlete.one@gym.example.test',
+      created_by_role: 'athlete',
+      subject_id: null,
+      metadata: {},
+    });
+    const ordinary = requirement({ research_requirement_id: 9 });
+    const [learning, question, plain] = researchRequirementsForReader(
+      { accountId: COACH_ID, role: 'coach' },
+      [noted(), asker, ordinary],
+    ) as ShadowResearchRequirementRow[];
+    expect(learning.knowledge_gap).toBe(LEARNING_NOTE_COACH_SENTENCE);
+    expect(question.research_requirement).toBe(ASKER_QUESTION_COACH_SENTENCE);
+    expect(question.knowledge_gap).toBe(ASKER_QUESTION_COACH_SENTENCE);
+    expect(plain).toBe(ordinary);
+  });
+
+  describe('its submissions', () => {
+    const notes = [submission({ submission_note: 'Source on a coach who yells at kids.', review_note: 'Answers the dad.' })];
+
+    test('a coach receives the source and the verdict and the note sentence in place of each note', () => {
+      const [row] = researchSubmissionsForReader({ role: 'coach' }, notes, false, noted()) as ResearchSubmissionRow[];
+      expect(row).toEqual({
+        ...notes[0],
+        provenance: {},
+        submission_note: ASKER_QUESTION_NOTE_SENTENCE,
+        review_note: ASKER_QUESTION_NOTE_SENTENCE,
+      });
+      expect(JSON.stringify(row)).not.toContain('yells');
+    });
+
+    test('the organization admin and admin receive them whole, and a coach-filed note keeps them whole', () => {
+      for (const role of ['organization_admin', 'admin'] as const) {
+        expect(researchSubmissionsForReader({ role }, notes, false, noted())).toBe(notes);
+      }
+      expect(researchSubmissionsForReader({ role: 'coach' }, notes, false, noted({ created_by_role: 'coach' }))).toBe(notes);
     });
   });
 });
