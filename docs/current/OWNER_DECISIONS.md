@@ -164,6 +164,28 @@ and should not try to.
 
 ---
 
+## OD-2026-10-23-001 -- Overwatch's application of OD-2026-10-13-018 (F-054), NOT a new ruling of Jason's: a learning-loop note filed outside research staff reaches a coach without its words (F-183)
+
+**Provenance: RECONSTRUCTED for the application, not his words; PRIMARY for his "ship it now".** Overwatch applied a ruling already recorded here; Jason did not answer a question on F-183. His words quoted here are OD-2026-10-13-018's pick (PRIMARY there, line 2582) and his release go-ahead (line 29190). Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`): Overwatch's brief to lane LLP (line 28783, 2026-10-23T12:49:18.293Z) and its message to this records lane (line 28785, 12:49:22.110Z). Read by script (housekeeping lane HK, 2026-10-23, at Overwatch's request). The id carries 2026-10-23 because these UTC times are 08:49 on 2026-10-23 Eastern. New; edits no earlier entry. It follows from OD-2026-10-13-018 and OD-2026-10-13-013.
+
+**The finding** (register F-183, from lane LR3's privacy reviewer, the code re-read by HK on main `9e0b4736`): a negative learning-loop outcome files a research row whose knowledge_gap and metadata.note are the person's own note (`shadowLearningLoop.ts:864-883`), and F-054's coach split covered only the unanswered-question rows, so coaches read the note whole. The same rows had been reported as F-143 and closed on 2026-10-19 under OD-2026-10-06-003 ("Staff only") without weighing F-054's later carve-out.
+
+**The ruling applied** (OD-2026-10-13-018, his pick): *"A: Office + asker (Recommended)"*. Its ruling, as recorded there: the org admin and the person who asked read the words of a filed question from a kid or parent; coaches see only that a question went unanswered.
+
+**Overwatch, as written** (line 28785): "Jason's F-054 ruling (OD-2026-10-13-018, "A: Office + asker (Recommended)") covers these rows by its own principle: the words are a kid's or parent's own, typed into SHADOW, and coaches see only that something was filed." and "Under "asked once, ruled once", I'm applying it, not asking Jason again; lane LLP (Opus) is building the redaction for learning-loop rows filed by an athlete or parent (staff-filed rows unchanged)." Its brief to the lane (line 28783) adds: "This is NOT a new ruling and you must not widen or narrow it: do not touch the F-054 row type's behaviour."
+
+**What was built** (lane LLP, PR #1866, merged `fabeb7bef2bcbf35b3d7e042bea158af90bc8593`; read on main `fabeb7be`): a learning-loop row (event shadow_learning_negative_outcome) filed by anyone outside research staff (coach, organization admin) reaches a coach as a fixed sentence without the person's words; a row a coach or organization admin filed stays whole; the unanswered-question rows (F-054) are unchanged. `apps/web/src/server/pilot/researchFamilyView.ts:176-185` (LEARNING_NOTE_EVENT, isMemberFiledLearningNote), `:188-192` (carriesMemberWords) and `:199-202` (toCoachAskerQuestion picks the sentence); tests `apps/web/src/server/pilot/researchFamilyView.test.ts:346` and `apps/web/app/api/pilot/shadow/research-requirements/route.test.ts:1293`. The build hides notes from volunteer, staff and platform_owner seats too, not only athletes and parents: the lane's reason, in the code (`:172`), is that a teen may hold such a seat (OD-2026-10-17-014) and the seat carries no date of birth. That reach is the lane's design, wider than Overwatch's "filed by an athlete or parent (staff-filed rows unchanged)"; it is not his words.
+
+Minors' privacy note: a child's or parent's feedback note on a SHADOW answer no longer reaches the coaching staff; the org admin still reads it.
+
+**Not ruled here:** nothing new from him. The Library claim-gap rows (register F-184) carry members' questions the same way and are not covered by this build.
+
+**Shipped at his word.** Overwatch, as written (line 29186, 13:35:49.644Z): "Minors' privacy: tell me if you'd rather ship it now. It's a small release with no database change, one staging look and one deploy click." Jason (line 29190, 13:37:13.789Z): *"ship it now"*. #1866 went out as Release 35 (see PRODUCTION_STATE).
+
+**Status:** applied 2026-10-23; built by #1866; released as Release 35.
+
+---
+
 ## OD-2026-10-22-002 -- The PPBF Research project gets the same drive and repo access as the other Claude accounts: "i want it to have all the same acess that the other claude accounts do where you comnicate throurgh drives and repo"
 
 **Provenance: PRIMARY for his words; the role reading and the applied details are the side session's, labelled.** Source: Overwatch's side session that set the project up (transcript `~/.claude/projects/C--Dev/d503d36d-fdb4-49c4-a3b4-5352496c38bb.jsonl`). His typed messages that carry the ruling: line 130 (2026-10-22T08:35:16.139Z), line 279 (09:01:20.158Z) and line 1266 (09:20:12.940Z). Line 264 (08:59:36.522Z) is the source for the Claude app project. His other typed messages in that session (lines 588, 626 and 698) were about which screen the setup ran on. The request reached the side session in Overwatch's brief (line 4), which quotes him: "i want to set up cluade research app, so that it can help with the app build content research and design wise" (Overwatch's relay, REPORTED). Read by script, each quote asserted against its line; spelling kept. The id carries 2026-10-22 because 09:20Z is 05:20 Eastern. New; edits no earlier entry. That it changes OD-2026-09-28-001 item 4 ("No other AI holds a standing lane") for this project is the side session's reading.
