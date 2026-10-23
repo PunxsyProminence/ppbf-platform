@@ -15,7 +15,7 @@ import {
   researchClassificationLabel,
 } from '@/src/shared/researchClassification';
 import {
-  evidenceReviewLabel,
+  evidenceReviewLine,
   requirementRecordLine,
   type EvidenceApprovalState,
   type EvidenceVerificationState,
@@ -328,9 +328,10 @@ export default function ResearchIntakePage() {
 
   const sourceTitle = (sourceId: string) =>
     curatorSources?.find((source) => source.source_id === sourceId)?.title ?? sourceId;
+  // A submitted source's own evidence review (#345). PROPOSED copy (the " · " join).
   const sourceEvidenceReview = (sourceId: string) => {
-    const review = evidenceReviewLabel(curatorSources?.find((source) => source.source_id === sourceId));
-    return review ? ` · Evidence review: ${review}` : '';
+    const review = evidenceReviewLine(curatorSources?.find((source) => source.source_id === sourceId));
+    return review ? ` · ${review}` : '';
   };
 
   const loadRequirementsPage = async (cursor: string | null) => {

@@ -7,7 +7,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { fetchAllResearchRequirements } from '@/client/researchRequirementsList';
-import { evidenceReviewLabel, type EvidenceApprovalState, type EvidenceVerificationState } from '../researchLabels';
+import { evidenceReviewLine, type EvidenceApprovalState, type EvidenceVerificationState } from '../researchLabels';
 
 // The missing surface for issue #345's submission-review lifecycle. The
 // requirement/gap workspace (/research) already lets a curator SUBMIT a
@@ -350,7 +350,7 @@ export default function ResearchSubmissionReviewPage() {
                     ? `${source.title} (${source.source_type})`
                     : submission.source_id ? `Source ${submission.source_id}` : 'Unnamed source';
                   const provenanceLine = formatProvenance(submission.provenance);
-                  const evidenceReview = evidenceReviewLabel(source);
+                  const evidenceReview = evidenceReviewLine(source);
                   const busy = busySubmissionId === submission.submission_id;
                   const message = submissionMessages[submission.submission_id];
                   return (
@@ -366,7 +366,7 @@ export default function ResearchSubmissionReviewPage() {
                           </p>
                           {evidenceReview ? (
                             <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
-                              Evidence review: {evidenceReview}{' '}
+                              {evidenceReview}{' '}
                               <Link href="/evidence" className="underline">Open Evidence Review</Link>
                             </p>
                           ) : null}

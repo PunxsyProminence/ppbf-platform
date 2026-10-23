@@ -1541,6 +1541,22 @@ describe('Needs Evidence shows the record of each requirement (#345 section 1)',
       research_requirement: 'A row typed with the id as its type',
       subject_id: ATHLETE_ID,
     },
+    {
+      // A type whose labels are shown, with a label that holds the id.
+      ...REQUIREMENT,
+      research_requirement_id: 27,
+      source_entity_type: 'evidence_claim',
+      research_requirement: 'Is the jab drill load right?',
+      evidence_label: `VERIFIED EVIDENCE for ${ATHLETE_ID}`,
+      subject_id: ATHLETE_ID,
+    },
+    {
+      ...REQUIREMENT,
+      research_requirement_id: 28,
+      source_entity_type: 'evidence_claim',
+      research_requirement: 'Does skipping rope build footwork?',
+      evidence_label: 'VERIFIED EVIDENCE',
+    },
   ];
 
   const SUBMISSIONS = [
@@ -1646,6 +1662,8 @@ describe('Needs Evidence shows the record of each requirement (#345 section 1)',
         'Created: Aug 10, 2026 | Context: Question from an athlete or parent',
         'Created: Aug 10, 2026 | Context: Manual note about an athlete',
         'Created: Aug 10, 2026',
+        'Created: Aug 10, 2026 | Context: Evidence claim about an athlete',
+        'Created: Aug 10, 2026 | Context: Evidence claim | Evidence label: VERIFIED EVIDENCE',
       ]);
       const page = document.body.innerHTML;
       expect(page).not.toContain(ATHLETE_ID);

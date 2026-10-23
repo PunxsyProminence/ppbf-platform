@@ -1,6 +1,7 @@
 import {
   displayableEvidenceLabel,
   evidenceReviewLabel,
+  evidenceReviewLine,
   requirementContextLabel,
   requirementRecordLine,
 } from './researchLabels';
@@ -13,19 +14,21 @@ import {
 
 const ATHLETE = 'athlete-41';
 
-describe('evidenceReviewLabel', () => {
+describe('evidenceReviewLabel and evidenceReviewLine', () => {
   test.each([
     [{ approval_state: 'pending_review', verification_state: 'unverified' }, 'Pending Review · Unverified'],
     [{ approval_state: 'approved', verification_state: 'verified' }, 'Approved · Verified'],
     [{ approval_state: 'rejected', verification_state: 'unverified' }, 'Rejected · Unverified'],
   ] as const)('%o reads %s', (source, label) => {
     expect(evidenceReviewLabel(source)).toBe(label);
+    expect(evidenceReviewLine(source)).toBe(`Evidence review: ${label}`);
   });
 
   test('a source not read, or read without both fields, has no label', () => {
     expect(evidenceReviewLabel(undefined)).toBeNull();
     expect(evidenceReviewLabel({ approval_state: 'approved' })).toBeNull();
     expect(evidenceReviewLabel({ verification_state: 'verified' })).toBeNull();
+    expect(evidenceReviewLine(null)).toBeNull();
   });
 
   test('a value outside the ladder is not looked up on the object prototype', () => {
@@ -43,6 +46,8 @@ describe('requirementContextLabel', () => {
     ['shadow_learning_event', 'SHADOW feedback'],
     ['formula_id', 'Formula'],
     ['manual_note', 'Manual note'],
+    ['evidence_claim', 'Evidence claim'],
+    ['shadow_intake', 'Intake upload'],
     ['research_import_row', 'research import row'],
   ])('%s reads %s', (type, label) => {
     expect(requirementContextLabel({ source_entity_type: type })).toBe(label);
@@ -75,12 +80,25 @@ describe('displayableEvidenceLabel', () => {
     expect(displayableEvidenceLabel({ source_entity_type: 'shadow_library_claim', evidence_label: ATHLETE })).toBeNull();
   });
 
-  test('a label that is or holds an athlete or account id the row names is not shown', () => {
-    expect(displayableEvidenceLabel({ evidence_label: ATHLETE, subject_id: ATHLETE })).toBeNull();
-    expect(displayableEvidenceLabel({ evidence_label: `see ${ATHLETE}`, metadata: { athlete_id: ATHLETE } })).toBeNull();
-    expect(displayableEvidenceLabel({ evidence_label: ATHLETE, metadata: { asker_athlete_id: ATHLETE } })).toBeNull();
-    expect(displayableEvidenceLabel({ evidence_label: 'staff-17', created_by_account_id: 'staff-17' })).toBeNull();
-    expect(displayableEvidenceLabel({ evidence_label: 'filed by coach@example.org' })).toBeNull();
+  test('a label is shown only for a type named as carrying one', () => {
+    expect(displayableEvidenceLabel({ source_entity_type: 'manual_note', evidence_label: 'hand wraps' })).toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: 'intake_case', evidence_label: 'case note' })).toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: 'a_new_writer', evidence_label: 'anything' })).toBeNull();
+    expect(displayableEvidenceLabel({ evidence_label: 'no type at all' })).toBeNull();
+  });
+
+  test('a label of a named type that is or holds an athlete or account id the row names is not shown', () => {
+    const type = 'evidence_claim';
+    expect(displayableEvidenceLabel({ source_entity_type: type, evidence_label: ATHLETE, subject_id: ATHLETE })).toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: type, evidence_label: `see ${ATHLETE}`, metadata: { athlete_id: ATHLETE } }))
+      .toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: type, evidence_label: ATHLETE, metadata: { subject_id: ATHLETE } })).toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: type, evidence_label: ATHLETE, metadata: { asker_athlete_id: ATHLETE } }))
+      .toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: 'formula_id', evidence_label: 'staff-17', created_by_account_id: 'staff-17' }))
+      .toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: 'shadow_learning_event', evidence_label: 'filed by coach@example.org' }))
+      .toBeNull();
   });
 
   test("the writers' own labels are shown", () => {
@@ -89,11 +107,13 @@ describe('displayableEvidenceLabel', () => {
     expect(displayableEvidenceLabel({ source_entity_type: 'formula_id', evidence_label: 'acwr_v1', subject_id: null })).toBe('acwr_v1');
     expect(displayableEvidenceLabel({ source_entity_type: 'shadow_learning_event', evidence_label: 'Learning loop escalation (negative)' }))
       .toBe('Learning loop escalation (negative)');
+    expect(displayableEvidenceLabel({ source_entity_type: 'evidence_claim', evidence_label: 'VERIFIED EVIDENCE' })).toBe('VERIFIED EVIDENCE');
+    expect(displayableEvidenceLabel({ source_entity_type: 'shadow_intake', evidence_label: 'medical_form' })).toBe('medical_form');
   });
 
   test('no label, or a blank one, is nothing', () => {
-    expect(displayableEvidenceLabel({ evidence_label: null })).toBeNull();
-    expect(displayableEvidenceLabel({ evidence_label: '   ' })).toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: 'evidence_claim', evidence_label: null })).toBeNull();
+    expect(displayableEvidenceLabel({ source_entity_type: 'evidence_claim', evidence_label: '   ' })).toBeNull();
   });
 });
 
