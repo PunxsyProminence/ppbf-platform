@@ -151,8 +151,12 @@ describe('what each answer means', () => {
     ['no_supported_answer', 422],
     ['source_unavailable', 422],
     ['invalid_generated_candidate', 422],
+    ['filtered_draft', 422],
+    ['limits_not_set', 422],
     ['evidence_unavailable', 503],
     ['generation_unavailable', 503],
+    ['limits_unavailable', 503],
+    ['preview_unavailable', 503],
   ] as const)('abstention %s is %i with no preview in the body', async (reason, status) => {
     mockPreview.mockResolvedValue({ kind: 'abstain', reason });
     const response = await post(draftBody);

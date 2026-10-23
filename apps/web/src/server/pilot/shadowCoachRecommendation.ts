@@ -6,14 +6,17 @@
 // which every Library search writes, and the route's count of the request in
 // the coach's SHADOW rate-limit buckets.
 // Jason: "Yes opti I n A" (2026-10-17).
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, hkdfSync, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import type { ActorIdentity } from './access';
 import { buildAzureAiChatCompletionsUrl, getAzureAiRuntimeConfig } from './azureAiRuntime';
 import { query, withTransaction } from './db';
 import { listLatestFormulaResultsPerOutput } from './formulas/repository';
 import type { FormulaResult } from './formulas/types';
+import { MINOR_LIMIT_TYPES } from './athleteMinorLimits';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
+import { loadShadowAthleteLimits, validateShadowResponse } from './shadowChat';
+import { buildAthleteLimitsSection, type ShadowAthleteLimits } from './shadowContextBuilder';
 import { searchShadowLibrary, type ShadowLibrarySearchResult } from './shadowLibrary';
 import { indicatesInsufficientContext, LIBRARY_HAS_NOTHING_YET } from './shadowNoAnswer';
 import { readMedicalStatusOnFile, type ShadowRecommendationRow } from './shadowRecommendations';
@@ -30,10 +33,18 @@ export const MAX_PREVIEW_TOKEN_LENGTH = 65_536;
 // when the score-gap gate (F-161, shadowLibrary.ts) abstained.
 // no_supported_answer: passages came back, but the model said none of them
 // supports a proposal (F-161 (d), shadowNoAnswer.ts).
+// filtered_draft: the proposal failed SHADOW chat's response validator (in-app
+// AI never diagnoses); none of its text is returned or kept.
+// limits_not_set: the athlete is a minor and a coach-set limit is not set
+// ("If a limit is missing, the AI asks for it. It does not fill in a
+// default." OWNER_DECISIONS, limits for minors); limits_unavailable: the
+// limits could not be read, so they cannot be applied.
+// preview_unavailable: no server-only key to sign a preview with.
 export type DraftStopReason =
   | 'invalid_request' | 'source_not_found' | 'source_unavailable'
   | 'no_eligible_evidence' | 'evidence_unavailable'
-  | 'generation_unavailable' | 'no_supported_answer' | 'invalid_generated_candidate';
+  | 'generation_unavailable' | 'no_supported_answer' | 'invalid_generated_candidate'
+  | 'filtered_draft' | 'limits_not_set' | 'limits_unavailable' | 'preview_unavailable';
 
 export interface FormulaChoice {
   resultId: string;
@@ -92,6 +103,8 @@ export interface DraftModelInput {
   coachQuestion: string;
   result: FormulaResult;
   evidence: readonly ShadowLibrarySearchResult[];
+  /** The coach-set limits lines SHADOW chat gives a coach (buildAthleteLimitsSection). */
+  limitsLines: readonly string[];
 }
 
 export interface DraftModelOutput {
@@ -248,6 +261,9 @@ export async function generateCoachDraft(input: DraftModelInput): Promise<DraftM
     'Return ONLY a JSON object with recommendationText, expectedOutcome, citedChunkIds.',
     'CitedChunkIds must name the exact provided chunk IDs supporting the proposal.',
     'The expectedOutcome must be observable, not an invented prediction.',
+    'The coach-set limits are the gym\'s records for this athlete: follow their directive and draft inside every limit that is set.',
+    'In-app AI never diagnoses: do not name an injury or condition, direct medication, treatment or rest, or say the athlete is cleared. The coach decides.',
+    'Do not write research findings, percentages or case counts as claims in the text, except a coach-set limit written with its [E:...] id; the cited passages carry the sources.',
   ].join('\n');
   const evidence = input.evidence.map((row) => ({
     chunkId: row.chunk_id,
@@ -268,6 +284,7 @@ export async function generateCoachDraft(input: DraftModelInput): Promise<DraftM
       })),
     },
     approvedEvidence: evidence,
+    coachSetLimits: input.limitsLines,
   });
   try {
     const response = await fetch(buildAzureAiChatCompletionsUrl(runtime.config), {
@@ -311,31 +328,49 @@ export async function generateCoachDraft(input: DraftModelInput): Promise<DraftM
   }
 }
 
-// Authenticated session's opaque high-entropy cookie is used as the signing
-// key for a short-lived, session-bound preview: no deployment secret and no
-// stored preview row. What that does and does not prove: another session,
-// another coach, another athlete or gym, an expired preview and an edited
-// payload all fail. The key is the coach's own session, though, so a coach who
-// copies their own cookie out of the browser could sign a payload of their
-// own; the save still rechecks the formula and every citation, but the "f2"
-// block's text and model name are then attested by that coach's session, not
-// proven by the server. A server-only signing key would close that; it is a
-// new deployment secret, so it is Overwatch's call (lane LF2).
+// THE PREVIEW KEY: server-only AND session-bound, with no new deployment
+// secret (Overwatch, LF2 round 2). HKDF-SHA256 with the deployment's existing
+// server-only Microsoft sign-in client secret as input key material (the
+// secret is only ever HKDF input: never used as a key itself, never logged,
+// never returned), the session token as salt, and this purpose as info. The
+// coach holds the session cookie but not the secret, so a coach cannot sign a
+// payload of their own; another session derives a different key. No secret
+// (local dev, an unset slot) means no key: drafts are unavailable (fail
+// closed), never signed with something weaker. Rotating the secret only ends
+// open previews, which live 15 minutes.
+const PREVIEW_KEY_SECRET_ENV = 'PPBF_MS_CLIENT_SECRET';
+const PREVIEW_KEY_INFO = 'ppbf/shadow-f2-preview/v1';
+
+export function previewSigningKey(
+  sessionToken: string,
+  env: Record<string, string | undefined> = process.env,
+): Buffer | null {
+  const ikm = env[PREVIEW_KEY_SECRET_ENV]?.trim() ?? '';
+  if (!ikm || !sessionToken) return null;
+  return Buffer.from(hkdfSync('sha256', ikm, sessionToken, PREVIEW_KEY_INFO, 32));
+}
+
+function previewMac(key: Buffer, data: string): Buffer {
+  return createHmac('sha256', key).update('SHADOW_F2_V1.' + data).digest();
+}
+
 export function sealCoachDraft(draft: SignedDraft, sessionToken: string): string {
-  if (!sessionToken) throw new Error('Missing authenticated session');
+  const key = previewSigningKey(sessionToken);
+  if (!key) throw new CoachDraftUnavailableError(SIGNING_UNAVAILABLE);
   const data = Buffer.from(JSON.stringify(draft), 'utf8').toString('base64url');
-  const mac = createHmac('sha256', sessionToken).update('SHADOW_F2_V1.' + data).digest('base64url');
-  return data + '.' + mac;
+  return data + '.' + previewMac(key, data).toString('base64url');
 }
 
 export type OpenedCoachDraft =
   | { status: 'valid'; draft: SignedDraft }
   | { status: 'expired' }
-  | { status: 'invalid' };
+  | { status: 'invalid' }
+  | { status: 'unavailable' };
 
 // Expiry is told apart from a bad token only AFTER the signature and the
 // payload's shape check out, so "expired" never answers for a forged token.
 export function openCoachDraft(token: string, sessionToken: string, now = Date.now()): OpenedCoachDraft {
+  if (!previewSigningKey(sessionToken)) return { status: 'unavailable' };
   const draft = unsealCoachDraft(token, sessionToken, Number.NaN);
   if (!draft) return { status: 'invalid' };
   if (draft.issuedAt > now || draft.expiresAt < now) return { status: 'expired' };
@@ -346,9 +381,11 @@ export function openCoachDraft(token: string, sessionToken: string, now = Date.n
 // check still runs.
 export function unsealCoachDraft(token: string, sessionToken: string, now = Date.now()): SignedDraft | null {
   if (!sessionToken || !token || token.length > MAX_PREVIEW_TOKEN_LENGTH) return null;
+  const key = previewSigningKey(sessionToken);
+  if (!key) return null;
   const parts = token.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
-  const expected = createHmac('sha256', sessionToken).update('SHADOW_F2_V1.' + parts[0]).digest();
+  const expected = previewMac(key, parts[0]);
   let received: Buffer;
   try { received = Buffer.from(parts[1], 'base64url'); } catch { return null; }
   if (received.length !== expected.length || !timingSafeEqual(received, expected)) return null;
@@ -388,9 +425,19 @@ export async function previewCoachDraft(input: {
     || !input.question?.trim() || input.question.length > MAX_QUESTION) {
     return { kind: 'abstain', reason: 'invalid_request' };
   }
+  // Fail closed before any read or model call: no key, no preview.
+  if (!previewSigningKey(input.sessionToken)) return { kind: 'abstain', reason: 'preview_unavailable' };
   const result = await currentResult(input.actor.organizationId, input.athleteId, input.resultId);
   if (!result) return { kind: 'abstain', reason: 'source_not_found' };
   if (!eligibleFormula(result)) return { kind: 'abstain', reason: 'source_unavailable' };
+
+  // The coach-set limits, read and worded exactly as SHADOW chat gives them
+  // to a coach. For a minor, a missing limit stops the draft before any
+  // search or model call: the AI asks, it does not fill in a default.
+  const limitsReading = await loadShadowAthleteLimits(input.actor, input.athleteId);
+  const limitsStop = limitsStopReason(limitsReading);
+  if (limitsStop) return { kind: 'abstain', reason: limitsStop };
+  const limits = buildAthleteLimitsSection(limitsReading!);
 
   let evidence: ShadowLibrarySearchResult[];
   try {
@@ -402,12 +449,18 @@ export async function previewCoachDraft(input: {
   if (evidence.length === 0) return { kind: 'abstain', reason: 'no_eligible_evidence' };
 
   const proposed = await (input.generate ?? generateCoachDraft)({
-    coachQuestion: input.question.trim(), result, evidence,
+    coachQuestion: input.question.trim(), result, evidence, limitsLines: limits.lines,
   });
   if (!proposed) return { kind: 'abstain', reason: 'generation_unavailable' };
   if (isNoSupportedAnswer(proposed)) return { kind: 'abstain', reason: 'no_supported_answer' };
   if (!validModelCandidate(proposed, evidence)) {
     return { kind: 'abstain', reason: 'invalid_generated_candidate' };
+  }
+  // In-app AI never diagnoses: the same response validator SHADOW chat runs,
+  // on both pieces of text the coach could save. The only citation ids it
+  // accepts are the coach-set limit ids the model was shown, as in chat.
+  if (draftTextFiltered(proposed, limits.evidenceIds)) {
+    return { kind: 'abstain', reason: 'filtered_draft' };
   }
   const citations = [...new Set(proposed.citedChunkIds)].map((id) =>
     publicCitation(evidence.find((row) => row.chunk_id === id)!));
@@ -459,13 +512,43 @@ export class StaleCoachDraftError extends Error {
   }
 }
 
-// The evidence recheck could not run (the Library search failed). Nothing
-// changed and nothing was saved; the route answers 503.
+// The save could not run: the evidence recheck failed (the Library search),
+// or there is no server-only key to open the preview with. Nothing changed and
+// nothing was saved; the route answers 503.
 export class CoachDraftUnavailableError extends Error {
-  constructor() {
-    super('The evidence search is unavailable. Nothing was saved.');
+  constructor(message = 'The evidence search is unavailable. Nothing was saved.') {
+    super(message);
     this.name = 'CoachDraftUnavailableError';
   }
+}
+
+const SIGNING_UNAVAILABLE = 'SHADOW drafts are unavailable right now. Nothing was saved.';
+
+/**
+ * Why the coach-set limits stop a draft, or null when they do not.
+ *  - null reading: the limits modules refused this coach (no active staff
+ *    membership here); nothing can be applied, so nothing is drafted.
+ *  - 'unavailable': the read failed, so neither the athlete's age nor the
+ *    limits are known.
+ *  - A minor with any coach-set limit not set: heat time, weight cut,
+ *    supervision (athleteMinorLimits) or contact level (the sparring cap's
+ *    highest stage). An adult's limits go to the model as data, set or not.
+ */
+export function limitsStopReason(reading: ShadowAthleteLimits | null): 'limits_not_set' | 'limits_unavailable' | null {
+  if (!reading || reading.minorLimits === 'unavailable') return 'limits_unavailable';
+  if (!reading.minorLimits.athleteIsMinor) return null;
+  if (reading.contactCap === 'unavailable') return 'limits_unavailable';
+  const limits = reading.minorLimits.limits;
+  const missing = MINOR_LIMIT_TYPES.some((type) => limits[type] === null)
+    || reading.contactCap === null
+    || reading.contactCap.highest_allowed_stage === null;
+  return missing ? 'limits_not_set' : null;
+}
+
+/** Either piece of saveable text fails SHADOW chat's response validator. */
+export function draftTextFiltered(candidate: DraftModelOutput, allowedEvidenceIds: readonly string[]): boolean {
+  return [candidate.recommendationText, candidate.expectedOutcome]
+    .some((text) => validateShadowResponse(text, { allowedEvidenceIds: [...allowedEvidenceIds] }).filtered);
 }
 
 // Exactly-once persistence for concurrent saves of the SAME signed preview:
@@ -477,6 +560,7 @@ export async function saveCoachDraft(input: {
 }): Promise<ShadowRecommendationRow | null> {
   if (input.actor.role !== 'coach') return null;
   const opened = openCoachDraft(input.previewToken, input.sessionToken);
+  if (opened.status === 'unavailable') throw new CoachDraftUnavailableError(SIGNING_UNAVAILABLE);
   if (opened.status === 'invalid') return null;
   const draft = opened.status === 'valid' ? opened.draft : null;
   // An expired preview of this session is out of date, not "not found". Its

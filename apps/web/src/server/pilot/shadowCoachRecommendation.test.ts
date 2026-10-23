@@ -1,8 +1,16 @@
+import { createHmac, hkdfSync } from 'node:crypto';
+
 jest.mock('./db', () => ({ query: jest.fn(), withTransaction: jest.fn() }));
 jest.mock('./formulas/repository', () => ({ listLatestFormulaResultsPerOutput: jest.fn() }));
 jest.mock('./shadowLibrary', () => ({ searchShadowLibrary: jest.fn() }));
 jest.mock('./shadowAuditEntries', () => ({ writeShadowAuditEntry: jest.fn() }));
 jest.mock('./shadowRecommendations', () => ({ readMedicalStatusOnFile: jest.fn() }));
+// The chat module stays real (validateShadowResponse is the rule under test);
+// only its limits READ is replaced, since it reads the database.
+jest.mock('./shadowChat', () => {
+  const actual = jest.requireActual('./shadowChat');
+  return { ...actual, loadShadowAthleteLimits: jest.fn() };
+});
 
 import { query, withTransaction } from './db';
 import { listLatestFormulaResultsPerOutput } from './formulas/repository';
@@ -10,10 +18,12 @@ import type { FormulaResult } from './formulas/types';
 import { searchShadowLibrary } from './shadowLibrary';
 import { readMedicalStatusOnFile } from './shadowRecommendations';
 import { writeShadowAuditEntry } from './shadowAuditEntries';
+import { loadShadowAthleteLimits } from './shadowChat';
+import { buildAthleteLimitsSection, type ShadowAthleteLimits } from './shadowContextBuilder';
 import {
-  CoachDraftUnavailableError, eligibleFormula, generateCoachDraft, getCoachDraftOrigins, isNoSupportedAnswer,
-  listCoachDraftChoices, openCoachDraft, previewCoachDraft, saveCoachDraft,
-  sealCoachDraft, StaleCoachDraftError, unsealCoachDraft, validModelCandidate,
+  CoachDraftUnavailableError, draftTextFiltered, eligibleFormula, generateCoachDraft, getCoachDraftOrigins,
+  isNoSupportedAnswer, limitsStopReason, listCoachDraftChoices, openCoachDraft, previewCoachDraft,
+  previewSigningKey, saveCoachDraft, sealCoachDraft, StaleCoachDraftError, unsealCoachDraft, validModelCandidate,
   type DraftModelOutput,
 } from './shadowCoachRecommendation';
 import { LIBRARY_HAS_NOTHING_YET } from './shadowNoAnswer';
@@ -24,6 +34,36 @@ const mockWithTransaction = jest.mocked(withTransaction);
 const mockMedical = jest.mocked(readMedicalStatusOnFile);
 const mockAudit = jest.mocked(writeShadowAuditEntry);
 const mockQuery = jest.mocked(query);
+const mockLimits = jest.mocked(loadShadowAthleteLimits);
+
+// A test-only stand-in for the deployment's server-only secret (HKDF input).
+const TEST_IKM = 'test-only-ikm-not-a-real-secret';
+const IKM_ENV = 'PPBF_MS_CLIENT_SECRET';
+let savedIkm: string | undefined;
+
+const LIMIT_IDS = {
+  heat: '11111111-1111-4111-8111-111111111111',
+  cut: '22222222-2222-4222-8222-222222222222',
+  supervision: '33333333-3333-4333-8333-333333333333',
+  cap: '44444444-4444-4444-8444-444444444444',
+};
+const SET_AT = '2026-10-10T12:00:00.000Z';
+/** A minor with every coach-set limit set (the reading chat's helper returns). */
+const minorAllSet: ShadowAthleteLimits = {
+  athleteId: 'athlete-a',
+  minorLimits: {
+    athleteIsMinor: true,
+    limits: {
+      heat_exposure_minutes_per_session: { limit_id: LIMIT_IDS.heat, value_number: 20, value_text: null, set_at: SET_AT, set_by_role: 'coach' },
+      weight_cut_max_percent_body_weight: { limit_id: LIMIT_IDS.cut, value_number: 2, value_text: null, set_at: SET_AT, set_by_role: 'coach' },
+      supervision: { limit_id: LIMIT_IDS.supervision, value_number: null, value_text: 'Coach on the floor', set_at: SET_AT, set_by_role: 'coach' },
+    },
+  },
+  contactCap: {
+    cap_id: LIMIT_IDS.cap, highest_allowed_stage: 'light_technical',
+    max_hard_open_sessions_per_7_days: null, set_at: SET_AT, set_by_role: 'coach',
+  },
+};
 
 const actor = {
   organizationId: 'gym-a', accountId: 'coach-a', athleteId: null, role: 'coach' as const,
@@ -64,6 +104,14 @@ beforeEach(() => {
     medicalStatusOnFile: 'no_record', medicalStatusId: null, medicalStatusExpiresAt: null,
   });
   mockAudit.mockResolvedValue(undefined);
+  mockLimits.mockResolvedValue(minorAllSet);
+  savedIkm = process.env[IKM_ENV];
+  process.env[IKM_ENV] = TEST_IKM;
+});
+
+afterEach(() => {
+  if (savedIkm === undefined) delete process.env[IKM_ENV];
+  else process.env[IKM_ENV] = savedIkm;
 });
 
 describe('SHADOW F2 coach-requested drafts', () => {
@@ -242,7 +290,7 @@ describe('SHADOW F2 coach-requested drafts', () => {
     const original = process.env.AZURE_AI_ENDPOINT;
     try {
       delete process.env.AZURE_AI_ENDPOINT;
-      const r = await generateCoachDraft({ coachQuestion: 'Review', result: formula, evidence: [passage] });
+      const r = await generateCoachDraft({ coachQuestion: 'Review', result: formula, evidence: [passage], limitsLines: [] });
       expect(r).toBeNull();
     } finally {
       if (original === undefined) delete process.env.AZURE_AI_ENDPOINT;
@@ -404,7 +452,7 @@ describe('generateCoachDraft against a stubbed provider (no real model call)', (
     }
   });
 
-  const input = { coachQuestion: 'Review', result: formula, evidence: [passage] };
+  const input = { coachQuestion: 'Review', result: formula, evidence: [passage], limitsLines: ['COACH-SET LIMITS line'] };
   const FENCE = '`'.repeat(3);
 
   it('asks for the Library-has-nothing words and no citations when nothing supports a proposal', async () => {
@@ -526,5 +574,205 @@ describe('SHADOW F2 save: what the signed preview binds, and what each refusal m
       generate: async () => modelCandidate,
     });
     expect(r).toEqual({ kind: 'abstain', reason: 'invalid_generated_candidate' });
+  });
+});
+
+// LF2 round 2 (Overwatch): the preview key is server-only and session-bound;
+// the draft text passes chat's response validator; a minor's coach-set limits
+// are data the draft is held to, and a missing one stops it.
+describe('SHADOW F2 preview key: HKDF over a server-only secret, salted by the session', () => {
+  const draftFields = (now: number) => ({
+    version: 1 as const, draftId: 'draft-k', issuedAt: now, expiresAt: now + 15 * 60 * 1000,
+    organizationId: 'gym-a', athleteId: 'athlete-a', requestedByAccountId: 'coach-a',
+    question: 'Q', resultId: 'formula-result-a', formulaFingerprint: 'f', formulaId: 'MVP-03',
+    modelUsed: 'm', recommendationText: 'R', expectedOutcome: 'O',
+    citations: [{ chunkId: 'chunk-a', sourceTitle: 'S', documentName: 'D', contentHash: 'h' }],
+  });
+
+  it('the key is HKDF-SHA256(secret, salt = session token, info = ppbf/shadow-f2-preview/v1)', () => {
+    const key = previewSigningKey('session-a');
+    expect(key).toEqual(Buffer.from(hkdfSync('sha256', TEST_IKM, 'session-a', 'ppbf/shadow-f2-preview/v1', 32)));
+    expect(previewSigningKey('session-b')).not.toEqual(key);
+    expect(key?.toString('utf8')).not.toContain(TEST_IKM);
+  });
+
+  it('a holder of only the session token cannot make a token that opens', () => {
+    const data = Buffer.from(JSON.stringify(draftFields(Date.now())), 'utf8').toString('base64url');
+    // #1727's scheme: HMAC keyed by the session token itself.
+    const sessionKeyed = data + '.' + createHmac('sha256', 'session-a').update('SHADOW_F2_V1.' + data).digest('base64url');
+    // HKDF with the session token but without the server's secret.
+    const guessedKey = Buffer.from(hkdfSync('sha256', '', 'session-a', 'ppbf/shadow-f2-preview/v1', 32));
+    const noSecret = data + '.' + createHmac('sha256', guessedKey).update('SHADOW_F2_V1.' + data).digest('base64url');
+    for (const forged of [sessionKeyed, noSecret]) {
+      expect(openCoachDraft(forged, 'session-a')).toEqual({ status: 'invalid' });
+      expect(unsealCoachDraft(forged, 'session-a')).toBeNull();
+    }
+  });
+
+  it('a token sealed in one session does not open in another; the token never carries the secret', () => {
+    const token = sealCoachDraft(draftFields(Date.now()), 'session-a');
+    expect(openCoachDraft(token, 'session-a').status).toBe('valid');
+    expect(openCoachDraft(token, 'session-b')).toEqual({ status: 'invalid' });
+    expect(Buffer.from(token.split('.')[0], 'base64url').toString('utf8')).not.toContain(TEST_IKM);
+    expect(token).not.toContain(TEST_IKM);
+  });
+
+  it('a token still opens inside its 15 minutes, and is out of date after', () => {
+    const now = Date.now();
+    const token = sealCoachDraft(draftFields(now), 'session-a');
+    expect(openCoachDraft(token, 'session-a', now + 14 * 60 * 1000).status).toBe('valid');
+    expect(openCoachDraft(token, 'session-a', now + 16 * 60 * 1000)).toEqual({ status: 'expired' });
+  });
+
+  it('with the secret unset: no preview (before any read), no save, nothing opens', async () => {
+    const token = sealCoachDraft(draftFields(Date.now()), 'session-a');
+    delete process.env[IKM_ENV];
+    expect(previewSigningKey('session-a')).toBeNull();
+    expect(() => sealCoachDraft(draftFields(Date.now()), 'session-a')).toThrow(CoachDraftUnavailableError);
+    expect(openCoachDraft(token, 'session-a')).toEqual({ status: 'unavailable' });
+    const generate = jest.fn(async () => modelCandidate);
+    expect(await previewCoachDraft({
+      actor, athleteId: 'athlete-a', resultId: 'formula-result-a', question: 'Review', sessionToken: 'session-a', generate,
+    })).toEqual({ kind: 'abstain', reason: 'preview_unavailable' });
+    expect(mockFormula).not.toHaveBeenCalled();
+    expect(mockSearch).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    await expect(saveCoachDraft({
+      actor, athleteId: 'athlete-a', previewToken: token, sessionToken: 'session-a',
+    })).rejects.toBeInstanceOf(CoachDraftUnavailableError);
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('SHADOW F2 draft text: the same response validator as SHADOW chat', () => {
+  const ask = (candidate: DraftModelOutput) => previewCoachDraft({
+    actor, athleteId: 'athlete-a', resultId: 'formula-result-a', question: 'Review', sessionToken: 'session-a',
+    generate: async () => candidate,
+  });
+
+  it('a diagnosis in the proposal abstains, with none of its text returned', async () => {
+    const r = await ask({ ...modelCandidate, recommendationText: 'The athlete has a concussion, so keep drills light.' });
+    expect(r).toEqual({ kind: 'abstain', reason: 'filtered_draft' });
+    expect(JSON.stringify(r)).not.toContain('concussion');
+  });
+
+  it('a diagnosis or treatment directive in the expected outcome abstains too', async () => {
+    expect(await ask({ ...modelCandidate, expectedOutcome: 'You should ice the wrist for 20 minutes after each round.' }))
+      .toEqual({ kind: 'abstain', reason: 'filtered_draft' });
+  });
+
+  it('an uncited percentage abstains; a coach-set limit stated with its id passes', async () => {
+    expect(await ask({ ...modelCandidate, recommendationText: 'Accuracy rises 30% with this drill.' }))
+      .toEqual({ kind: 'abstain', reason: 'filtered_draft' });
+    const r = await ask({
+      ...modelCandidate,
+      recommendationText: `Keep any weight cut to 2% [E:${LIMIT_IDS.cut}] and repeat the task with feedback.`,
+    });
+    expect(r.kind).toBe('draft');
+    expect(draftTextFiltered(modelCandidate, [])).toBe(false);
+  });
+});
+
+describe('SHADOW F2 and the coach-set limits (chat helper, missing means ask)', () => {
+  const missingHeat: ShadowAthleteLimits = {
+    ...minorAllSet,
+    minorLimits: {
+      athleteIsMinor: true,
+      limits: { ...(minorAllSet.minorLimits as Exclude<ShadowAthleteLimits['minorLimits'], 'unavailable'>).limits, heat_exposure_minutes_per_session: null },
+    },
+  };
+  const adultNoLimits: ShadowAthleteLimits = {
+    athleteId: 'athlete-a',
+    minorLimits: {
+      athleteIsMinor: false,
+      limits: { heat_exposure_minutes_per_session: null, weight_cut_max_percent_body_weight: null, supervision: null },
+    },
+    contactCap: null,
+  };
+
+  it('reads the limits with chat\'s own helper, as this coach, for this athlete', async () => {
+    await previewCoachDraft({
+      actor, athleteId: 'athlete-a', resultId: 'formula-result-a', question: 'Review', sessionToken: 'session-a',
+      generate: async () => modelCandidate,
+    });
+    expect(mockLimits).toHaveBeenCalledWith(actor, 'athlete-a');
+  });
+
+  it('a minor with a limit not set gets no draft, no search and no model call', async () => {
+    mockLimits.mockResolvedValue(missingHeat);
+    const generate = jest.fn(async () => modelCandidate);
+    expect(await previewCoachDraft({
+      actor, athleteId: 'athlete-a', resultId: 'formula-result-a', question: 'Review', sessionToken: 'session-a', generate,
+    })).toEqual({ kind: 'abstain', reason: 'limits_not_set' });
+    expect(mockSearch).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('each of the four limits counts for a minor: heat, weight cut, supervision, contact level', () => {
+    const base = minorAllSet.minorLimits as Exclude<ShadowAthleteLimits['minorLimits'], 'unavailable'>;
+    for (const type of ['heat_exposure_minutes_per_session', 'weight_cut_max_percent_body_weight', 'supervision'] as const) {
+      expect(limitsStopReason({ ...minorAllSet, minorLimits: { ...base, limits: { ...base.limits, [type]: null } } })).toBe('limits_not_set');
+    }
+    expect(limitsStopReason({ ...minorAllSet, contactCap: null })).toBe('limits_not_set');
+    expect(limitsStopReason({
+      ...minorAllSet,
+      contactCap: { ...(minorAllSet.contactCap as NonNullable<Exclude<ShadowAthleteLimits['contactCap'], 'unavailable'>>), highest_allowed_stage: null },
+    })).toBe('limits_not_set');
+    expect(limitsStopReason(minorAllSet)).toBeNull();
+  });
+
+  it('limits that could not be read, or a refused read, stop the draft as unavailable', () => {
+    expect(limitsStopReason(null)).toBe('limits_unavailable');
+    expect(limitsStopReason({ ...minorAllSet, minorLimits: 'unavailable' })).toBe('limits_unavailable');
+    expect(limitsStopReason({ ...minorAllSet, contactCap: 'unavailable' })).toBe('limits_unavailable');
+  });
+
+  it('a minor with every limit set: the model is given the limits exactly as chat words them', async () => {
+    let seen: string[] = [];
+    const r = await previewCoachDraft({
+      actor, athleteId: 'athlete-a', resultId: 'formula-result-a', question: 'Review', sessionToken: 'session-a',
+      generate: async (modelInput) => { seen = [...modelInput.limitsLines]; return modelCandidate; },
+    });
+    expect(r.kind).toBe('draft');
+    expect(seen).toEqual(buildAthleteLimitsSection(minorAllSet).lines);
+    expect(seen.join('\n')).toContain(`[E:${LIMIT_IDS.heat}]`);
+  });
+
+  it('an adult with no limits set still gets a draft; the model is told none is set', async () => {
+    mockLimits.mockResolvedValue(adultNoLimits);
+    let seen: string[] = [];
+    const r = await previewCoachDraft({
+      actor, athleteId: 'athlete-a', resultId: 'formula-result-a', question: 'Review', sessionToken: 'session-a',
+      generate: async (modelInput) => { seen = [...modelInput.limitsLines]; return modelCandidate; },
+    });
+    expect(r.kind).toBe('draft');
+    expect(seen.join('\n')).toContain('No limit set');
+  });
+
+  it('the model request carries the limits and the never-diagnose line (stubbed provider)', async () => {
+    const realFetch = global.fetch;
+    const ENV = ['AZURE_AI_ENDPOINT', 'AZURE_AI_KEY', 'AZURE_AI_DEPLOYMENT_NAME'] as const;
+    const saved = ENV.map((key) => process.env[key]);
+    let body: { messages: Array<{ content: string }> } | null = null;
+    try {
+      process.env.AZURE_AI_ENDPOINT = 'https://stub.invalid';
+      process.env.AZURE_AI_KEY = 'stub-key';
+      process.env.AZURE_AI_DEPLOYMENT_NAME = 'stub-deployment';
+      global.fetch = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body));
+        return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(modelCandidate) } }] }) } as Response;
+      }) as unknown as typeof fetch;
+      const lines = buildAthleteLimitsSection(minorAllSet).lines;
+      await generateCoachDraft({ coachQuestion: 'Review', result: formula, evidence: [passage], limitsLines: lines });
+      const [system, user] = body!.messages;
+      expect(system.content).toContain('In-app AI never diagnoses');
+      expect(JSON.parse(user.content).coachSetLimits).toEqual(lines);
+    } finally {
+      global.fetch = realFetch;
+      ENV.forEach((key, index) => {
+        if (saved[index] === undefined) delete process.env[key];
+        else process.env[key] = saved[index];
+      });
+    }
   });
 });
