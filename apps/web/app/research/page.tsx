@@ -193,8 +193,21 @@ const SOURCE_REGISTRATION_WORDS = {
   recovered: 'Source registered. The first answer was lost; the retry found the saved source instead of adding a second one.',
   unconfirmed: 'The Library did not confirm the registration. Press Register general research again: it finds the saved source instead of adding a second one.',
   urlTaken: (title: string) => `This URL is already registered as "${title}". Choose it from the source list.`,
+  // PROPOSED (#345 D2): the paper's DOI or PMID is already on the shelf.
+  publicationTaken: (title: string) =>
+    `This paper is already registered as "${title}" (same DOI or PMID). Choose it from the source list.`,
   // PROPOSED (L54 review): unlocks the form for a different registration.
   startOver: 'Start a different registration',
+};
+
+// PROPOSED (#345 PR "F"): the doors under Answer a Gap. Registering and filing
+// are the curators' (OD-2026-10-08-005 A-Q13); a coach only attaches.
+const GAP_DOOR_WORDS = {
+  register: 'Register a new source for this gap',
+  registerHelp: 'Registers the source in the Library and chooses it above. It answers nothing until you submit it and evidence review says so.',
+  filePdf: 'File its PDF',
+  chooseHeld: 'Choose that source instead',
+  chosen: (title: string) => `"${title}" is chosen above. Submit it to attach it to this gap; it answers nothing until evidence review says so.`,
 };
 
 export default function ResearchIntakePage() {
@@ -264,7 +277,20 @@ export default function ResearchIntakePage() {
   const [curatorSources, setCuratorSources] = useState<LibrarySourceOption[] | null>(null);
   // True when the shelf holds more sources than the picker loaded.
   const [curatorSourcesTruncated, setCuratorSourcesTruncated] = useState(false);
-  const [answeringId, setAnsweringId] = useState<number | null>(null);
+  // #345 PR "F": the door open under the card being answered, and the source a
+  // refused registration says the shelf already holds (offered as the choice).
+  const [gapDoor, setGapDoor] = useState<{ forId: number; kind: 'register' | 'file' } | null>(null);
+  const [heldSource, setHeldSource] = useState<{ forId: number; source_id: string; title: string } | null>(null);
+  const [answeringId, setAnsweringIdState] = useState<number | null>(null);
+  // Mirrors answeringId for the async registration: a source registered under
+  // one card is chosen only if that card is still the one being answered.
+  const answeringIdRef = useRef<number | null>(null);
+  const setAnsweringId = (id: number | null) => {
+    answeringIdRef.current = id;
+    setAnsweringIdState(id);
+    setGapDoor(null);
+    setHeldSource(null);
+  };
   const [answerDraft, setAnswerDraft] = useState({ sourceId: '', doi: '', provider: '', note: '' });
   const [answerBusy, setAnswerBusy] = useState(false);
   // Scoped to one requirement so a message from card A never renders under
@@ -493,7 +519,33 @@ export default function ResearchIntakePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionReady, onPlatformShelf]);
 
-  async function handleRegisterGeneral() {
+  // Open one door under the card being answered, or close it when pressed again.
+  function toggleGapDoor(forId: number, kind: 'register' | 'file') {
+    setGapDoor((open) => (open?.forId === forId && open.kind === kind ? null : { forId, kind }));
+    setHeldSource(null);
+    // A message left from the other tab must not greet the form; an unconfirmed one must stay.
+    if (!generalUnconfirmed) setGeneralMessage('');
+  }
+
+  // Choose a source under Answer a Gap (#345 PR "F"): one just registered, or
+  // the one a refusal says the shelf already holds. Only while that card is
+  // still the one being answered; the list gets the source if its read missed it.
+  function chooseGapSource(forRequirementId: number, source: LibrarySourceOption, recovered = false) {
+    if (answeringIdRef.current !== forRequirementId) return;
+    setCuratorSources((current) => (
+      current && !current.some((item) => item.source_id === source.source_id) ? [source, ...current] : current
+    ));
+    setAnswerDraft((current) => ({ ...current, sourceId: source.source_id }));
+    setHeldSource(null);
+    setGapDoor(null);
+    setAnswerMessage({
+      forId: forRequirementId,
+      text: recovered ? `${GAP_DOOR_WORDS.chosen(source.title)} ${SOURCE_REGISTRATION_WORDS.recovered}` : GAP_DOOR_WORDS.chosen(source.title),
+    });
+  }
+
+  // forRequirementId is set when the form was opened under Answer a Gap (#345 PR "F").
+  async function handleRegisterGeneral(forRequirementId?: number) {
     if (!generalDraft.title.trim() || !generalDraft.classification) {
       setGeneralMessage('A title and a classification domain are required.');
       return;
@@ -543,16 +595,28 @@ export default function ResearchIntakePage() {
         error?: string;
         code?: string;
         recovered?: boolean;
-        existing_source?: { title?: unknown } | null;
+        existing_source?: { source_id?: unknown; title?: unknown } | null;
+        source?: { source_id?: unknown; title?: unknown; source_type?: unknown } | null;
       };
       const heldTitle = payload.existing_source?.title;
-      const takenBy = payload.code === 'SHADOW_LIBRARY_SOURCE_URL_TAKEN' && typeof heldTitle === 'string' ? heldTitle : null;
+      const heldId = payload.existing_source?.source_id;
+      const publicationTaken = payload.code === 'SHADOW_LIBRARY_PUBLICATION_TAKEN';
+      const takenBy = (payload.code === 'SHADOW_LIBRARY_SOURCE_URL_TAKEN' || publicationTaken) && typeof heldTitle === 'string'
+        ? heldTitle
+        : null;
       if (response.status === 409 && takenBy !== null) {
-        // Another registration holds the URL; this request id saved nothing
-        // (a retry of a saved one is answered as recovered before any insert).
+        // Another registration holds the URL or the paper; this request id
+        // saved nothing (a retry of a saved one is answered as recovered
+        // before either check).
         generalRequestIdRef.current = null;
         setGeneralUnconfirmed(false);
-        setGeneralMessage(SOURCE_REGISTRATION_WORDS.urlTaken(takenBy));
+        setGeneralMessage(publicationTaken
+          ? SOURCE_REGISTRATION_WORDS.publicationTaken(takenBy)
+          : SOURCE_REGISTRATION_WORDS.urlTaken(takenBy));
+        // Under Answer a Gap the held source is offered as the choice.
+        if (forRequirementId !== undefined && typeof heldId === 'string') {
+          setHeldSource({ forId: forRequirementId, source_id: heldId, title: takenBy });
+        }
         await refreshCuratorSources();
         await refreshGeneralSources();
         return;
@@ -574,6 +638,15 @@ export default function ResearchIntakePage() {
         : 'Source registered and classified. Evidence review still decides what becomes citable.');
       await refreshCuratorSources();
       await refreshGeneralSources();
+      // Under Answer a Gap the new source becomes the one to link; the link
+      // call (Submit source) stays the only thing that makes a submission.
+      if (forRequirementId !== undefined && typeof payload.source?.source_id === 'string') {
+        chooseGapSource(forRequirementId, {
+          source_id: payload.source.source_id,
+          title: typeof payload.source.title === 'string' ? payload.source.title : generalDraft.title.trim(),
+          source_type: typeof payload.source.source_type === 'string' ? payload.source.source_type : generalDraft.sourceType,
+        }, payload.recovered === true);
+      }
     } catch (error) {
       setGeneralMessage(error instanceof Error ? error.message : 'Unable to register the source.');
     } finally {
@@ -772,6 +845,88 @@ export default function ResearchIntakePage() {
   const mayGeneralResearch = curatorSources !== null && mayCurateLibrary(session.role);
   const visibleTabs = RESEARCH_TABS.filter((item) => item.key !== 'general_research' || mayGeneralResearch);
   const shownTab: ResearchTab = tab === 'general_research' && !mayGeneralResearch ? 'needs_evidence' : tab;
+
+  // The General Research form: one implementation, shown on the General Research
+  // tab and, for curators, under Answer a Gap (#345 PR "F"; forRequirementId).
+  const renderRegistrationForm = (forRequirementId?: number) => (
+    <>
+      <div className="grid gap-[var(--s3)] md:grid-cols-2">
+        <label className="field md:col-span-2">
+          <span className="t-label">Title</span>
+          <input className="input" value={generalDraft.title} disabled={generalUnconfirmed}
+            onChange={(event) => setGeneralDraft((current) => ({ ...current, title: event.target.value }))} />
+        </label>
+        <label className="field">
+          <span className="t-label">Source type</span>
+          <select className="select" value={generalDraft.sourceType} disabled={generalUnconfirmed}
+            onChange={(event) => setGeneralDraft((current) => ({ ...current, sourceType: event.target.value }))}>
+            {GENERAL_SOURCE_TYPES.map((type) => (
+              <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="t-label">Classification domain</span>
+          <select aria-label="Classification domain" className="select" value={generalDraft.classification} disabled={generalUnconfirmed}
+            onChange={(event) => setGeneralDraft((current) => ({ ...current, classification: event.target.value }))}>
+            <option value="">Choose a domain…</option>
+            {RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => (
+              <option key={domain.key} value={domain.key}>{domain.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field md:col-span-2">
+          <span className="t-label">URL (optional)</span>
+          <input className="input" value={generalDraft.url} disabled={generalUnconfirmed}
+            onChange={(event) => setGeneralDraft((current) => ({ ...current, url: event.target.value }))} />
+        </label>
+        <label className="field">
+          <span className="t-label">DOI / PMID</span>
+          <input className="input" value={generalDraft.doi} disabled={generalUnconfirmed}
+            onChange={(event) => setGeneralDraft((current) => ({ ...current, doi: event.target.value }))} />
+        </label>
+        <label className="field">
+          <span className="t-label">Provider</span>
+          <input className="input" value={generalDraft.provider} disabled={generalUnconfirmed}
+            onChange={(event) => setGeneralDraft((current) => ({ ...current, provider: event.target.value }))} />
+        </label>
+        <label className="field md:col-span-2">
+          <span className="t-label">Original filename</span>
+          <input className="input" value={generalDraft.filename} disabled={generalUnconfirmed}
+            onChange={(event) => setGeneralDraft((current) => ({ ...current, filename: event.target.value }))} />
+        </label>
+        <ProvenanceFields
+          draft={provenanceDraft}
+          onChange={setProvenanceDraft}
+          disabled={generalUnconfirmed}
+          open={provenanceOpen}
+          onOpenChange={setProvenanceOpen}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-[var(--s4)]">
+        <button type="button" className="btn" disabled={generalBusy} onClick={() => void handleRegisterGeneral(forRequirementId)}>
+          {generalBusy ? 'Registering…' : 'Register general research'}
+        </button>
+        {generalUnconfirmed && !generalBusy ? (
+          <button type="button" className="btn btn--ghost"
+            onClick={() => {
+              generalRequestIdRef.current = null;
+              setGeneralUnconfirmed(false);
+              setGeneralMessage('');
+            }}>
+            {SOURCE_REGISTRATION_WORDS.startOver}
+          </button>
+        ) : null}
+        {generalMessage ? <p className="t-muted" role="status">{generalMessage}</p> : null}
+        {forRequirementId !== undefined && heldSource?.forId === forRequirementId ? (
+          <button type="button" className="btn btn--ghost"
+            onClick={() => chooseGapSource(forRequirementId, { source_id: heldSource.source_id, title: heldSource.title, source_type: '' })}>
+            {GAP_DOOR_WORDS.chooseHeld}
+          </button>
+        ) : null}
+      </div>
+    </>
+  );
 
   const stats = [
     { label: 'Mode', value: 'Research Projection' },
@@ -1256,7 +1411,9 @@ export default function ResearchIntakePage() {
                 ) : null}
                 {/* Not for the platform owner: requirements are the gym's, and a
                     gym-shelf submission from it is refused (D3). */}
-                {requirement.status === 'open' && !onPlatformShelf && curatorSources && curatorSources.length > 0 ? (
+                {/* A curator whose shelf is still empty is offered the panel too: registering the
+                    first source is what the door below is for (#345 PR "F"). */}
+                {requirement.status === 'open' && !onPlatformShelf && curatorSources && (curatorSources.length > 0 || mayGeneralResearch) ? (
                   <div className="mt-[var(--s3)]">
                     {answeringId === requirement.research_requirement_id ? (
                       <div className="mat-paper rounded-[var(--r-sm)] p-[var(--s4)] space-y-[var(--s3)]">
@@ -1271,6 +1428,23 @@ export default function ResearchIntakePage() {
                           showType
                           labelClassName={PAPER_LABEL}
                         />
+                        {/* Curators only (the General Research tab's own gate): a coach attaches. */}
+                        {mayGeneralResearch ? (
+                          <div className="flex flex-wrap items-center gap-[var(--s3)]">
+                            <button type="button" className="btn btn--ghost"
+                              aria-expanded={gapDoor?.forId === requirement.research_requirement_id && gapDoor.kind === 'register'}
+                              onClick={() => toggleGapDoor(requirement.research_requirement_id, 'register')}>
+                              {GAP_DOOR_WORDS.register}
+                            </button>
+                            {answerDraft.sourceId ? (
+                              <button type="button" className="btn btn--ghost"
+                                aria-expanded={gapDoor?.forId === requirement.research_requirement_id && gapDoor.kind === 'file'}
+                                onClick={() => toggleGapDoor(requirement.research_requirement_id, 'file')}>
+                                {GAP_DOOR_WORDS.filePdf}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <div className="grid gap-[var(--s3)] md:grid-cols-2">
                           <label className="field">
                             <span className={PAPER_LABEL}>DOI / PMID</span>
@@ -1315,6 +1489,24 @@ export default function ResearchIntakePage() {
                           ? <p className="t-muted" role="status">{answerMessage.text}</p> : null}
                       </div>
                     )}
+                    {gapDoor?.forId === requirement.research_requirement_id && gapDoor.kind === 'register' ? (
+                      <section aria-label={GAP_DOOR_WORDS.register}
+                        className="mat-leather rounded-[var(--r-md)] p-[var(--s4)] mt-[var(--s3)] space-y-[var(--s3)]">
+                        <p className="t-body text-[color:var(--bone-300)]">{GAP_DOOR_WORDS.registerHelp}</p>
+                        {renderRegistrationForm(requirement.research_requirement_id)}
+                      </section>
+                    ) : null}
+                    {gapDoor?.forId === requirement.research_requirement_id && gapDoor.kind === 'file' && answerDraft.sourceId ? (
+                      <div className="mt-[var(--s3)]">
+                        <LibraryTextIntakePanel
+                          key={answerDraft.sourceId}
+                          sources={curatorSources}
+                          truncated={curatorSourcesTruncated}
+                          initialSourceId={answerDraft.sourceId}
+                          onSaved={() => void refreshCuratorSources()}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </article>
@@ -1357,75 +1549,7 @@ export default function ResearchIntakePage() {
               correct — it changes no gate, no tier, no review state. A general source becomes linkable to a
               requirement later through Answer a Gap, and citable only through evidence review.
             </p>
-            <div className="grid gap-[var(--s3)] md:grid-cols-2">
-              <label className="field md:col-span-2">
-                <span className="t-label">Title</span>
-                <input className="input" value={generalDraft.title} disabled={generalUnconfirmed}
-                  onChange={(event) => setGeneralDraft((current) => ({ ...current, title: event.target.value }))} />
-              </label>
-              <label className="field">
-                <span className="t-label">Source type</span>
-                <select className="select" value={generalDraft.sourceType} disabled={generalUnconfirmed}
-                  onChange={(event) => setGeneralDraft((current) => ({ ...current, sourceType: event.target.value }))}>
-                  {GENERAL_SOURCE_TYPES.map((type) => (
-                    <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span className="t-label">Classification domain</span>
-                <select aria-label="Classification domain" className="select" value={generalDraft.classification} disabled={generalUnconfirmed}
-                  onChange={(event) => setGeneralDraft((current) => ({ ...current, classification: event.target.value }))}>
-                  <option value="">Choose a domain…</option>
-                  {RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => (
-                    <option key={domain.key} value={domain.key}>{domain.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field md:col-span-2">
-                <span className="t-label">URL (optional)</span>
-                <input className="input" value={generalDraft.url} disabled={generalUnconfirmed}
-                  onChange={(event) => setGeneralDraft((current) => ({ ...current, url: event.target.value }))} />
-              </label>
-              <label className="field">
-                <span className="t-label">DOI / PMID</span>
-                <input className="input" value={generalDraft.doi} disabled={generalUnconfirmed}
-                  onChange={(event) => setGeneralDraft((current) => ({ ...current, doi: event.target.value }))} />
-              </label>
-              <label className="field">
-                <span className="t-label">Provider</span>
-                <input className="input" value={generalDraft.provider} disabled={generalUnconfirmed}
-                  onChange={(event) => setGeneralDraft((current) => ({ ...current, provider: event.target.value }))} />
-              </label>
-              <label className="field md:col-span-2">
-                <span className="t-label">Original filename</span>
-                <input className="input" value={generalDraft.filename} disabled={generalUnconfirmed}
-                  onChange={(event) => setGeneralDraft((current) => ({ ...current, filename: event.target.value }))} />
-              </label>
-              <ProvenanceFields
-                draft={provenanceDraft}
-                onChange={setProvenanceDraft}
-                disabled={generalUnconfirmed}
-                open={provenanceOpen}
-                onOpenChange={setProvenanceOpen}
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-[var(--s4)]">
-              <button type="button" className="btn" disabled={generalBusy} onClick={() => void handleRegisterGeneral()}>
-                {generalBusy ? 'Registering…' : 'Register general research'}
-              </button>
-              {generalUnconfirmed && !generalBusy ? (
-                <button type="button" className="btn btn--ghost"
-                  onClick={() => {
-                    generalRequestIdRef.current = null;
-                    setGeneralUnconfirmed(false);
-                    setGeneralMessage('');
-                  }}>
-                  {SOURCE_REGISTRATION_WORDS.startOver}
-                </button>
-              ) : null}
-              {generalMessage ? <p className="t-muted" role="status">{generalMessage}</p> : null}
-            </div>
+            {renderRegistrationForm()}
 
             {generalSources.length > 0 ? (
               <div className="space-y-[var(--s3)]">
