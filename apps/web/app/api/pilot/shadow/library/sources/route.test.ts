@@ -6,6 +6,7 @@ import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import {
   createShadowLibrarySource,
   listShadowLibrarySources,
+  ShadowLibraryPublicationTakenError,
   updateShadowLibrarySourceClassification,
 } from '@/src/server/pilot/shadowLibrary';
 
@@ -22,11 +23,17 @@ jest.mock('@/src/server/pilot/libraryIntakeRecovery', () => ({
 }));
 const mockFindByUrl = jest.mocked(findLibrarySourceByUrl);
 
-jest.mock('@/src/server/pilot/shadowLibrary', () => ({
-  createShadowLibrarySource: jest.fn(),
-  listShadowLibrarySources: jest.fn(),
-  updateShadowLibrarySourceClassification: jest.fn(),
-}));
+jest.mock('@/src/server/pilot/shadowLibrary', () => {
+  const actual = jest.requireActual('@/src/server/pilot/shadowLibrary');
+  return {
+    createShadowLibrarySource: jest.fn(),
+    listShadowLibrarySources: jest.fn(),
+    updateShadowLibrarySourceClassification: jest.fn(),
+    // #345 D2: the route answers this error by its type.
+    SHADOW_LIBRARY_PUBLICATION_TAKEN_CODE: actual.SHADOW_LIBRARY_PUBLICATION_TAKEN_CODE,
+    ShadowLibraryPublicationTakenError: actual.ShadowLibraryPublicationTakenError,
+  };
+});
 
 const mockRequirePrincipal = requirePrincipal as jest.MockedFunction<typeof requirePrincipal>;
 const mockCreate = createShadowLibrarySource as jest.MockedFunction<typeof createShadowLibrarySource>;
@@ -364,6 +371,30 @@ describe('POST /api/pilot/shadow/library/sources', () => {
       existing_source: { source_id: 'source_held', title: 'The Paper Already Here' },
     }));
     expect(mockFindByUrl).toHaveBeenCalledWith('org-real', 'https://example.org/a');
+  });
+
+  // #345 D2 (Q2): a paper whose DOI or PMID is already on the shelf.
+  test('a paper already on the shelf is a 409 that names the held source', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal());
+    mockCreate.mockRejectedValueOnce(
+      new ShadowLibraryPublicationTakenError({ source_id: 'source_held', title: 'The Paper Already Here' }),
+    );
+
+    const response = await POST(postRequest({
+      ...validBody,
+      metadata: { general_research: true, provenance: { doi_or_pmid: '10.1000/held' } },
+    }));
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toEqual({
+      ok: false,
+      code: 'SHADOW_LIBRARY_PUBLICATION_TAKEN',
+      existing_source: { source_id: 'source_held', title: 'The Paper Already Here' },
+      error: expect.stringContaining('"The Paper Already Here" (source_held)'),
+    });
+    expect(body.error).toContain('same DOI or PMID');
+    expect(mockFindByUrl).not.toHaveBeenCalled();
   });
 
   test('a retry of a registration already saved answers 200 recovered', async () => {

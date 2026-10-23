@@ -7,6 +7,8 @@ import { resolveLibraryShelf } from '@/src/server/pilot/libraryShelf';
 import {
   createShadowLibrarySource,
   listShadowLibrarySources,
+  SHADOW_LIBRARY_PUBLICATION_TAKEN_CODE,
+  ShadowLibraryPublicationTakenError,
   type ShadowLibrarySourceStatus,
   type ShadowLibrarySourceType,
   updateShadowLibrarySourceClassification,
@@ -265,6 +267,19 @@ export async function POST(request: NextRequest) {
     if (recovered) return NextResponse.json({ ok: true, source, recovered: true }, { status: 200 });
     return NextResponse.json({ ok: true, source }, { status: 201 });
   } catch (error) {
+    // #345 D2: the paper's DOI or PMID is already on this shelf. Refused like
+    // a taken URL, naming the source that holds it.
+    if (error instanceof ShadowLibraryPublicationTakenError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: error.message,
+          code: SHADOW_LIBRARY_PUBLICATION_TAKEN_CODE,
+          existing_source: error.existingSource,
+        },
+        { status: 409 },
+      );
+    }
     // shadow_library_sources has unique (organization_id, url). Re-registering
     // the same URL is a caller conflict, not a server fault. The answer names
     // the source that holds it, so the curator can choose that one.

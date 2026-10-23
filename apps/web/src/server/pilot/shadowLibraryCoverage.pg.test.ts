@@ -49,7 +49,13 @@ import {
   listShadowCapabilityCoverage,
   recomputeShadowCapabilityCoverage,
 } from './shadowLibrary';
-import { publicationKey, PUBLICATION_KEY_SQL, type PublicationKeySource } from './shadowPublicationKey';
+import {
+  publicationIdentifiers,
+  PUBLICATION_IDENTIFIERS_SQL,
+  publicationKey,
+  PUBLICATION_KEY_SQL,
+  type PublicationKeySource,
+} from './shadowPublicationKey';
 import { resolveShadowResearchRequirement } from './shadowResearch';
 
 jest.setTimeout(180_000);
@@ -1518,8 +1524,11 @@ describe('coverage counts publications, not source ids (F-136)', () => {
 
   // DRIFT GUARD: the claim path keys in JS (publicationKey), coverage keys in
   // SQL (PUBLICATION_KEY_SQL). If the two rules diverge, a claim and a
-  // coverage count would disagree about what one paper is.
-  test('PUBLICATION_KEY_SQL agrees with publicationKey on every shape', async () => {
+  // coverage count would disagree about what one paper is. The same for the
+  // registration check (#345 D2): JS lists the new source's identifiers
+  // (publicationIdentifiers), SQL lists each stored row's
+  // (PUBLICATION_IDENTIFIERS_SQL), and a drift would let one paper in twice.
+  test('PUBLICATION_KEY_SQL and PUBLICATION_IDENTIFIERS_SQL agree with publicationKey and publicationIdentifiers on every shape', async () => {
     const src = (id: string, url: string | null = null, metadata: Record<string, unknown> | null = null): PublicationKeySource =>
       ({ source_id: id, url, metadata });
     const box = (id: string, value: unknown, url: string | null = null, extra: Record<string, unknown> = {}) =>
@@ -1597,6 +1606,22 @@ describe('coverage counts publications, not source ids (F-136)', () => {
       box('s-box-pmid-vs-url', 'PMID: 123', 'https://example.com/paper'),
       box('s-box-doi-vs-url-doi', '10.1000/box', 'https://doi.org/10.1000/url2'),
       box('s-box-pmid-vs-pubmed-url', 'PMID: 1', 'https://pubmed.ncbi.nlm.nih.gov/2/'),
+      // #345 D2: sources that carry more than one identifier.
+      src('s-lr1-gr', 'https://pubmed.ncbi.nlm.nih.gov/27217246/', {
+        general_research: true,
+        provenance: { doi_or_pmid: '10.1177/1745691616635591' },
+      }),
+      src('s-lr1-seed', null, { identifier_kind: 'pmid', identifier: '27217246' }),
+      src('s-every-place', 'https://doi.org/10.1000/URL.', {
+        doi: 'DOI: 10.1000/Field',
+        pmid: 456,
+        identifier_kind: 'doi',
+        identifier: '10.1000/ident',
+        provenance: { doi_or_pmid: 'PMID: 789' },
+      }),
+      src('s-kind-pmid-and-url', 'https://www.ncbi.nlm.nih.gov/pubmed/43?dopt=Abstract', { identifier_kind: 'pmid', identifier: '41' }),
+      box('s-same-twice', 'https://doi.org/10.1000/abc', 'https://doi.org/10.1000/ABC', { doi: '10.1000/abc.' }),
+      box('s-box-pubmed-and-meta-pmid', 'https://pubmed.ncbi.nlm.nih.gov/5/', null, { pmid: '6' }),
     ];
     const client = await freshDatabase('coverage_key_drift');
     activeClient = client;
@@ -1614,6 +1639,17 @@ describe('coverage counts publications, not source ids (F-136)', () => {
       const sqlKeys = Object.fromEntries(rows.rows.map((row) => [row.source_id, row.key]));
       const jsKeys = Object.fromEntries(shapes.map((shape) => [shape.source_id, publicationKey(shape)]));
       expect(sqlKeys).toEqual(jsKeys);
+
+      const identifierRows = await client.query<{ source_id: string; identifiers: string[] }>(
+        `select s.source_id, ${PUBLICATION_IDENTIFIERS_SQL('s')} as identifiers from pilot.shadow_library_sources s order by s.source_id`,
+      );
+      const sqlIdentifiers = Object.fromEntries(
+        identifierRows.rows.map((row) => [row.source_id, [...new Set(row.identifiers)].sort()]),
+      );
+      const jsIdentifiers = Object.fromEntries(shapes.map((shape) => [shape.source_id, publicationIdentifiers(shape)]));
+      expect(sqlIdentifiers).toEqual(jsIdentifiers);
+      // The guard is only worth having if some shapes carry several.
+      expect(Object.values(jsIdentifiers).filter((identifiers) => identifiers.length > 1).length).toBeGreaterThanOrEqual(5);
     } finally {
       await client.end();
     }
