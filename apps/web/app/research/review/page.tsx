@@ -7,6 +7,7 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { fetchAllResearchRequirements } from '@/client/researchRequirementsList';
+import { evidenceReviewLabel, type EvidenceApprovalState, type EvidenceVerificationState } from '../researchLabels';
 
 // The missing surface for issue #345's submission-review lifecycle. The
 // requirement/gap workspace (/research) already lets a curator SUBMIT a
@@ -81,20 +82,9 @@ interface LibrarySourceOption {
   /* The source's own evidence review on /evidence. A submission's verdict here
      says whether it answers the question; only these say whether SHADOW may
      cite it. */
-  approval_state?: 'pending_review' | 'approved' | 'rejected';
-  verification_state?: 'unverified' | 'verified';
+  approval_state?: EvidenceApprovalState;
+  verification_state?: EvidenceVerificationState;
 }
-
-const EVIDENCE_APPROVAL_LABEL: Record<NonNullable<LibrarySourceOption['approval_state']>, string> = {
-  pending_review: 'Pending Review',
-  approved: 'Approved',
-  rejected: 'Rejected',
-};
-
-const EVIDENCE_VERIFICATION_LABEL: Record<NonNullable<LibrarySourceOption['verification_state']>, string> = {
-  unverified: 'Unverified',
-  verified: 'Verified',
-};
 
 function formatProvenance(provenance: Record<string, unknown> | undefined): string | null {
   const entries = Object.entries(provenance ?? {}).filter(([, value]) => typeof value === 'string' && value.trim());
@@ -360,6 +350,7 @@ export default function ResearchSubmissionReviewPage() {
                     ? `${source.title} (${source.source_type})`
                     : submission.source_id ? `Source ${submission.source_id}` : 'Unnamed source';
                   const provenanceLine = formatProvenance(submission.provenance);
+                  const evidenceReview = evidenceReviewLabel(source);
                   const busy = busySubmissionId === submission.submission_id;
                   const message = submissionMessages[submission.submission_id];
                   return (
@@ -373,9 +364,9 @@ export default function ResearchSubmissionReviewPage() {
                           <p className="t-typed text-[length:var(--t-md)] font-bold">
                             {sourceLabel}
                           </p>
-                          {source?.approval_state && source.verification_state ? (
+                          {evidenceReview ? (
                             <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
-                              Evidence review: {EVIDENCE_APPROVAL_LABEL[source.approval_state]} · {EVIDENCE_VERIFICATION_LABEL[source.verification_state]}{' '}
+                              Evidence review: {evidenceReview}{' '}
                               <Link href="/evidence" className="underline">Open Evidence Review</Link>
                             </p>
                           ) : null}
