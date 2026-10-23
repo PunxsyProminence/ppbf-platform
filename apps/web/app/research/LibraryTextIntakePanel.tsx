@@ -144,16 +144,20 @@ export default function LibraryTextIntakePanel({
   sources,
   shelf = 'gym',
   truncated = false,
+  initialSourceId = '',
   onSaved,
 }: {
   readonly sources: readonly LibraryTextIntakeSource[];
   readonly shelf?: IntakeShelf;
   readonly truncated?: boolean;
+  /** The source chosen when the panel opens (#345 PR "F": the "File its PDF" door
+   *  under Answer a Gap). Only the starting choice; the picker still changes it. */
+  readonly initialSourceId?: string;
   /** Called after text was saved (whole or in part), so the page can read
    *  the sources list again and the excerpt counts stay current. */
   readonly onSaved?: () => void;
 }) {
-  const [draft, setDraft] = useState(EMPTY_DRAFT);
+  const [draft, setDraft] = useState({ ...EMPTY_DRAFT, sourceId: initialSourceId });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   // Set while a document exists without all of its chunks. The form is locked
