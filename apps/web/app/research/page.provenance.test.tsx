@@ -78,7 +78,7 @@ async function register() {
 }
 
 const PROVENANCE_LABELS = [
-  'Institutional source ID', 'Authors', 'Year', 'Journal', 'Publication date', 'Study design',
+  'Institutional source ID', 'Authors (separate with semicolons)', 'Year', 'Journal', 'Publication date', 'Study design',
   'Population', 'Age range', 'Sex', 'Transfer status', 'Boxing specificity',
 ];
 
@@ -140,7 +140,7 @@ describe('the provenance fields on the General Research form', () => {
     await fillRequired();
     await act(async () => {
       fill('Study design', '   ');
-      fill('Authors', ' ; ');
+      fill('Authors (separate with semicolons)', ' ; ');
       fill('Journal', '  ');
       fireEvent.click(screen.getByLabelText('Medical'));
       fireEvent.click(screen.getByLabelText('Medical'));
@@ -159,7 +159,7 @@ describe('the provenance fields on the General Research form', () => {
     await fillRequired();
     await act(async () => {
       fill('Institutional source ID', ' PSU-2041 ');
-      fill('Authors', 'Smith J; Jones K\nLee M');
+      fill('Authors (separate with semicolons)', 'Smith J; Jones K\nLee M');
       fill('Year', '2019');
       fill('Journal', 'Journal of Strength and Conditioning Research');
       fill('Publication date', '2019-05-17');
@@ -216,6 +216,27 @@ describe('the provenance fields on the General Research form', () => {
     await register();
     expect(posts).toHaveLength(0);
     expect(screen.getByText(/population must be \d+ characters or fewer/)).toBeTruthy();
+  });
+
+  test('a block the curator closed is opened again by the next refusal', async () => {
+    global.fetch = mockLibrary({ posts: [] });
+    await openForm();
+    await fillRequired();
+    await act(async () => {
+      fill('Year', 'abc');
+    });
+    await register();
+    const block = screen.getByText('More provenance (optional)').closest('details') as HTMLDetailsElement;
+    expect(block.open).toBe(true);
+
+    // The curator closes it (the browser flips `open` and fires toggle) and tries again.
+    await act(async () => {
+      block.open = false;
+      fireEvent(block, new Event('toggle'));
+    });
+    expect(block.open).toBe(false);
+    await register();
+    expect(block.open).toBe(true);
   });
 
   test('a 400 from the route shows the route\'s message and keeps what was typed', async () => {

@@ -41,12 +41,11 @@ export const PROVENANCE_INPUTS: ReadonlyArray<{
   label: string;
   type?: 'date';
   inputMode?: 'numeric';
-  hint?: string;
   /** A pasted one-name-per-line list needs a field that keeps its line breaks. */
   multiline?: true;
 }> = [
   { draft: 'institutionalId', label: 'Institutional source ID' },
-  { draft: 'authors', label: 'Authors', hint: 'Separate names with semicolons or new lines', multiline: true },
+  { draft: 'authors', label: 'Authors (separate with semicolons)', multiline: true },
   { draft: 'year', label: 'Year', inputMode: 'numeric' },
   { draft: 'journal', label: 'Journal' },
   { draft: 'publicationDate', label: 'Publication date', type: 'date' },
@@ -142,8 +141,8 @@ function shown(value: unknown): string | null {
 
 /**
  * What a registered source already carries, one line per field that is set.
- * Read-only and defensive: older rows may hold anything, and a value of the
- * wrong shape is left out rather than shown.
+ * Read-only and defensive: older rows may hold anything, and a value that is
+ * not text (or, for a DOI/PMID, a whole number) is left out rather than shown.
  */
 export function savedProvenanceLines(
   source: { publisher?: unknown; publication_date?: unknown; metadata?: unknown },

@@ -33,8 +33,9 @@ export default function ProvenanceFields({
 }) {
   return (
     <details className="md:col-span-2" open={open} onToggle={(event) => onOpenChange(event.currentTarget.open)}>
-      {/* PROPOSED copy: the block's name. */}
-      <summary className="t-label flex min-h-[var(--tap)] cursor-pointer items-center">More provenance (optional)</summary>
+      {/* PROPOSED copy: the block's name and the "Not stated" option below. The summary stays a
+          list-item (no flex) so the browser keeps its open/close marker. */}
+      <summary className="t-label min-h-[var(--tap)] cursor-pointer py-[var(--s3)]">More provenance (optional)</summary>
       <div className="grid gap-[var(--s3)] pt-[var(--s3)] md:grid-cols-2">
         {PROVENANCE_INPUTS.map((input) => (
           <label key={input.draft} className="field">
@@ -43,7 +44,6 @@ export default function ProvenanceFields({
               <textarea
                 className="textarea"
                 rows={2}
-                placeholder={input.hint}
                 value={draft[input.draft]}
                 disabled={disabled}
                 onChange={(event) => onChange({ ...draft, [input.draft]: event.target.value })}
