@@ -422,6 +422,7 @@ describe('the #345 acceptance chain (real database, Graph faked)', () => {
       submission_id: submissionId, applicability_state: 'responsive', review_note: 'answers the question',
     }));
     expect(reviewed.status).toBe(200);
+    expect(await answerState()).toBe('partially_answered');
     expect(await requirementStatus()).toBe('open');
 
     as(COACH, 'coach');
