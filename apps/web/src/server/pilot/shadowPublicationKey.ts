@@ -11,6 +11,15 @@
  * www., no trailing slash, no fragment, no utm_* query params), else its
  * source_id.
  *
+ * Where each is read, first found wins: the DOI from metadata.doi, then
+ * metadata.provenance.doi_or_pmid, then identifier_kind 'doi', then the URL;
+ * the PMID the same way from metadata.pmid, the provenance box, identifier_kind
+ * 'pmid', then a PubMed URL. provenance.doi_or_pmid is General Research's one
+ * "DOI or PMID" box (app/research/page.tsx), so it may hold either: a DOI
+ * anywhere in it (before any ? or #, as in a URL, so a pasted doi.org link
+ * keys as it would in the URL field), or the whole box a PMID ("31452104",
+ * "PMID: 31452104") or a PubMed link.
+ *
  * publicationKey() keys the claim path in JS; PUBLICATION_KEY_SQL() is the same
  * rule as a Postgres expression for capability coverage. They must agree:
  * shadowLibraryCoverage.pg.test.ts compares them row by row.
@@ -30,8 +39,14 @@ const PUBMED_URL_PATTERN =
 // different sets, and the two keys must agree byte for byte.
 const EDGE_SPACE = /^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g;
 
-// A string, or a non-negative whole number (a PMID stored as a number). Any
-// other JSON value -- object, array, boolean, fraction -- is absent, as in SQL.
+// The whole provenance box as a PMID, optionally labelled. Letters are spelled
+// out and digits are [0-9]: a case-insensitive flag or \d can fold or match
+// non-ASCII characters differently in Postgres, and the keys must agree.
+const PMID_BOX_PATTERN = /^(?:[Pp][Mm][Ii][Dd][ \t\n\r\f\v]*:?[ \t\n\r\f\v]*)?([0-9]+)$/;
+
+// A string, or a non-negative whole number (a PMID stored as a number) that
+// JS holds exactly. Any other JSON value -- object, array, boolean, fraction,
+// a number past 2^53 -- is absent, as in SQL.
 function text(value: unknown): string | null {
   const raw = typeof value === 'string'
     ? value
@@ -45,11 +60,21 @@ function doiFrom(value: string | null): string | null {
   return match ? match[0] : null;
 }
 
+// General Research's "DOI or PMID" box: metadata.provenance.doi_or_pmid.
+function provenanceIdOf(meta: Record<string, unknown>): string | null {
+  const provenance = meta.provenance;
+  return typeof provenance === 'object' && provenance !== null && !Array.isArray(provenance)
+    ? text((provenance as Record<string, unknown>).doi_or_pmid)
+    : null;
+}
+
 function doiOf(source: PublicationKeySource): string | null {
   const meta = source.metadata ?? {};
   const url = text(source.url);
+  const box = provenanceIdOf(meta);
   const found =
     doiFrom(text(meta.doi)) ??
+    doiFrom(box ? box.replace(/[?#][\s\S]*$/, '') : null) ??
     doiFrom(meta.identifier_kind === 'doi' ? text(meta.identifier) : null) ??
     doiFrom(url ? url.replace(/[?#][\s\S]*$/, '') : null);
   return found ? found.replace(/[.,;:]+$/, '').toLowerCase() : null;
@@ -62,8 +87,10 @@ function digitsOnly(value: string | null): string | null {
 function pmidOf(source: PublicationKeySource): string | null {
   const meta = source.metadata ?? {};
   const url = text(source.url);
+  const box = provenanceIdOf(meta);
   return (
     digitsOnly(text(meta.pmid)) ??
+    (box ? (PMID_BOX_PATTERN.exec(box)?.[1] ?? PUBMED_URL_PATTERN.exec(box)?.[1] ?? null) : null) ??
     digitsOnly(meta.identifier_kind === 'pmid' ? text(meta.identifier) : null) ??
     (url ? (PUBMED_URL_PATTERN.exec(url)?.[1] ?? null) : null)
   );
@@ -100,26 +127,38 @@ export function publicationKey(source: PublicationKeySource): string {
  */
 export function PUBLICATION_KEY_SQL(alias: string): string {
   const trim = (expr: string) => String.raw`nullif(regexp_replace(${expr}, '^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$', '', 'g'), '')`;
-  // text() above: a JSON string, or a non-negative whole number; else null.
-  const field = (key: string) => trim(`case jsonb_typeof(${alias}.metadata->'${key}')
-      when 'string' then ${alias}.metadata->>'${key}'
-      when 'number' then case when (${alias}.metadata->'${key}')::numeric >= 0
-        and (${alias}.metadata->'${key}')::numeric = trunc((${alias}.metadata->'${key}')::numeric)
-        then trunc((${alias}.metadata->'${key}')::numeric)::text end
+  // text() above: a JSON string, or a non-negative whole number up to 2^53-1;
+  // else null. `json` is a jsonb expression.
+  const jsonText = (json: string) => trim(`case jsonb_typeof(${json})
+      when 'string' then ${json} #>> '{}'
+      when 'number' then case when (${json})::numeric >= 0
+        and (${json})::numeric = trunc((${json})::numeric)
+        and (${json})::numeric <= 9007199254740991
+        then trunc((${json})::numeric)::text end
     end`);
+  const field = (key: string) => jsonText(`${alias}.metadata->'${key}'`);
+  // provenanceIdOf() above. When provenance is not an object, -> yields null.
+  const box = jsonText(`${alias}.metadata->'provenance'->'doi_or_pmid'`);
   const url = trim(`${alias}.url`);
   const kind = (k: string) =>
     `case when ${alias}.metadata->>'identifier_kind' = '${k}' then ${field('identifier')} end`;
-  const doiRe = String.raw`'10\.\d{4,9}/[^[:space:];,\]"''<>]+'`;
+  // JS's \s spelled out, and [0-9] for JS's \d: [:space:] and \d here follow
+  // the database locale, JS's do not (a no-break space ended a DOI in JS and
+  // not here).
+  const doiRe = String.raw`'10\.[0-9]{4,9}/[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff;,\]"''<>]+'`;
   const doi = String.raw`lower(regexp_replace(coalesce(
       substring(${field('doi')} from ${doiRe}),
+      substring(regexp_replace(${box}, '[?#].*$', '') from ${doiRe}),
       substring(${kind('doi')} from ${doiRe}),
       substring(regexp_replace(${url}, '[?#].*$', '') from ${doiRe})
     ), '[.,;:]+$', ''))`;
-  const digits = (expr: string) => String.raw`case when ${expr} ~ '^\d+$' then ${expr} end`;
-  const pubmedRe = String.raw`'(?i)^(?:https?://)?(?:pubmed\.ncbi\.nlm\.nih\.gov|(?:www\.)?ncbi\.nlm\.nih\.gov/pubmed)/(\d+)(?:[/?#]|$)'`;
+  const digits = (expr: string) => String.raw`case when ${expr} ~ '^[0-9]+$' then ${expr} end`;
+  const pubmedRe = String.raw`'(?i)^(?:https?://)?(?:pubmed\.ncbi\.nlm\.nih\.gov|(?:www\.)?ncbi\.nlm\.nih\.gov/pubmed)/([0-9]+)(?:[/?#]|$)'`;
+  const pmidBoxRe = String.raw`'^(?:[Pp][Mm][Ii][Dd][ \t\n\r\f\v]*:?[ \t\n\r\f\v]*)?([0-9]+)$'`;
   const pmid = `coalesce(
       ${digits(field('pmid'))},
+      substring(${box} from ${pmidBoxRe}),
+      substring(${box} from ${pubmedRe}),
       ${digits(kind('pmid'))},
       substring(${url} from ${pubmedRe})
     )`;
