@@ -31,10 +31,17 @@ interface Origin {
 }
 
 const ENDPOINT = '/api/pilot/shadow/recommendations/draft';
-const REASONS: Record<string, string> = {
+// Copy PROPOSED (lane LF2), not yet approved. The two "nothing" answers say it
+// in the words SHADOW chat uses (shadowNoAnswer.ts) and cite nothing.
+const LIBRARY_HAS_NOTHING = 'The Library has nothing on that yet, so SHADOW made no draft and cited nothing.';
+const DRAFT_STOP_MESSAGES: Record<string, string> = {
   source_not_found: 'The selected measurement is no longer current. Refresh.',
   source_unavailable: 'The selected measurement cannot support a draft.',
-  no_eligible_evidence: 'No matching approved Library evidence was found. No draft created.',
+  // The Library search returned no evidence, including a search whose best
+  // match did not stand out (the score-gap gate).
+  no_eligible_evidence: LIBRARY_HAS_NOTHING,
+  // Passages came back, and SHADOW said none of them supports a proposal.
+  no_supported_answer: LIBRARY_HAS_NOTHING,
   evidence_unavailable: 'The evidence search is unavailable. No draft created.',
   generation_unavailable: 'SHADOW could not generate a draft. No recommendation was saved.',
   invalid_generated_candidate: 'SHADOW did not return an adequately sourced draft.',
@@ -45,7 +52,7 @@ async function readResponse(response: Response): Promise<Record<string, unknown>
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid SHADOW response.');
   const result = data as Record<string, unknown>;
   if (!response.ok || result.ok !== true) {
-    const reason = typeof result.reason === 'string' ? REASONS[result.reason] : undefined;
+    const reason = typeof result.reason === 'string' ? DRAFT_STOP_MESSAGES[result.reason] : undefined;
     throw new Error(reason ?? (typeof result.error === 'string' ? result.error : 'SHADOW request failed.'));
   }
   return result;
@@ -62,6 +69,9 @@ export default function ShadowCoachRecommendationDraft({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  // The route answers 404 to anyone but a coach who reaches this athlete (the
+  // Decision Loop page also opens for gym admins): the panel then stays away.
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,6 +83,10 @@ export default function ShadowCoachRecommendationDraft({
         const response = await fetch(apiBase() + ENDPOINT + '?athleteId=' + encodeURIComponent(athleteId), {
           credentials: 'include', signal: controller.signal,
         });
+        if (response.status === 404) {
+          if (!controller.signal.aborted) setHidden(true);
+          return;
+        }
         const data = await readResponse(response);
         if (!Array.isArray(data.choices) || !data.origins || typeof data.origins !== 'object') {
           throw new Error('The SHADOW measurement list was incomplete.');
@@ -129,6 +143,7 @@ export default function ShadowCoachRecommendationDraft({
       setBusy(false);
     }
   }
+  if (hidden) return null;
   return (
     <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] mt-[var(--s3)] space-y-[var(--s3)]">
       <h3 className="t-label">Ask SHADOW for a draft</h3>
