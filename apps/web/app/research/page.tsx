@@ -14,6 +14,12 @@ import {
   RESEARCH_CLASSIFICATION_DOMAINS,
   researchClassificationLabel,
 } from '@/src/shared/researchClassification';
+import {
+  evidenceReviewLine,
+  requirementRecordLine,
+  type EvidenceApprovalState,
+  type EvidenceVerificationState,
+} from './researchLabels';
 
 interface ShadowResearchItem {
   event_id: number;
@@ -39,8 +45,11 @@ interface ShadowResearchRequirement {
   source_verification_state: string;
   status: 'open' | 'resolved';
   created_at: string;
+  /** Staff rows only; read to keep an athlete's id off the page (researchLabels.ts). */
+  subject_id?: string | null;
+  created_by_account_id?: string;
   /** The closing record the server wrote on resolve (#1467). */
-  metadata?: { closing_note?: string | null; closing_submission_id?: string | null };
+  metadata?: { closing_note?: string | null; closing_submission_id?: string | null; [key: string]: unknown };
 }
 
 /* Only coaches and organization admins close a research requirement (Jason
@@ -121,6 +130,9 @@ interface LibrarySourceOption {
   metadata?: { general_research?: boolean; classification_domain?: string };
   /** Passed through to the intake panel (#1468). */
   excerpt_budget?: LibraryTextIntakeSource['excerpt_budget'];
+  /** The source's own evidence review, as /research/review shows it. */
+  approval_state?: EvidenceApprovalState;
+  verification_state?: EvidenceVerificationState;
 }
 
 // The sources route returns at most this many rows per request.
@@ -316,6 +328,11 @@ export default function ResearchIntakePage() {
 
   const sourceTitle = (sourceId: string) =>
     curatorSources?.find((source) => source.source_id === sourceId)?.title ?? sourceId;
+  // A submitted source's own evidence review (#345). PROPOSED copy (the " · " join).
+  const sourceEvidenceReview = (sourceId: string) => {
+    const review = evidenceReviewLine(curatorSources?.find((source) => source.source_id === sourceId));
+    return review ? ` · ${review}` : '';
+  };
 
   const loadRequirementsPage = async (cursor: string | null) => {
     const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
@@ -1066,6 +1083,11 @@ export default function ResearchIntakePage() {
                 <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                   Source: {requirement.source_status} | Confidence: {requirement.source_confidence_tier} | Verification: {requirement.source_verification_state}
                 </p>
+                {/* #345: created date, context and evidence label -- never an athlete's or account's id. */}
+                {(() => {
+                  const record = requirementRecordLine(requirement);
+                  return record ? <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">{record}</p> : null;
+                })()}
                 {requirement.status === 'open' && answerStates[String(requirement.research_requirement_id)] ? (
                   (() => {
                     const ladder = ANSWER_STATE_BADGES[answerStates[String(requirement.research_requirement_id)]];
@@ -1119,6 +1141,7 @@ export default function ResearchIntakePage() {
                               <li key={submission.submission_id} className="t-body">
                                 {sourceTitle(submission.source_id)} — {APPLICABILITY_LABEL[submission.applicability_state]}
                                 {submission.review_note ? ` (${submission.review_note})` : ''}
+                                {sourceEvidenceReview(submission.source_id)}
                               </li>
                             ))}
                           </ul>
