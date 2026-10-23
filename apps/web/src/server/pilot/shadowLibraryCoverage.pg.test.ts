@@ -1444,12 +1444,88 @@ describe('coverage counts publications, not source ids (F-136)', () => {
     }
   });
 
+  // #345 D1: General Research saves its "DOI or PMID" box at
+  // metadata.provenance.doi_or_pmid, with no URL required.
+  test('two no-URL General Research registrations of one DOI leave a two-source rule partial', async () => {
+    const client = await freshDatabase('coverage_box_same_doi');
+    activeClient = client;
+    try {
+      await seedRule(client, 'cap-two-papers', { minimumSourceCount: 2 });
+      await seedSource(client, 'src-gr-1');
+      await seedSource(client, 'src-gr-2');
+      await client.query(
+        `update pilot.shadow_library_sources
+            set metadata = '{"general_research":true,"provenance":{"doi_or_pmid":"10.1000/ABC.1"}}'::jsonb
+          where source_id = 'src-gr-1'`,
+      );
+      await client.query(
+        `update pilot.shadow_library_sources
+            set metadata = '{"general_research":true,"provenance":{"doi_or_pmid":"doi: 10.1000/abc.1"}}'::jsonb
+          where source_id = 'src-gr-2'`,
+      );
+
+      const result = await recomputeShadowCapabilityCoverage({
+        organizationId: ORG_ID,
+        actorAccountId: ADMIN_ID,
+        actorRole: 'organization_admin',
+      });
+
+      const rule = result.find((row) => row.capability_key === 'cap-two-papers');
+      expect(rule?.matched_sources).toBe(1);
+      expect(rule?.coverage_state).toBe('partial');
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a General Research PMID and the seeded record of that PMID are one paper; another DOI is a second', async () => {
+    const client = await freshDatabase('coverage_box_pmid_seed');
+    activeClient = client;
+    try {
+      await seedRule(client, 'cap-two-papers', { minimumSourceCount: 2 });
+      await seedSource(client, 'src-gr-pmid');
+      await seedSource(client, 'src-seed-pmid');
+      await seedSource(client, 'src-gr-other');
+      await client.query(
+        `update pilot.shadow_library_sources
+            set metadata = '{"general_research":true,"provenance":{"doi_or_pmid":"PMID: 27217246"}}'::jsonb
+          where source_id = 'src-gr-pmid'`,
+      );
+      await client.query(
+        `update pilot.shadow_library_sources
+            set metadata = '{"identifier_kind":"pmid","identifier":"27217246"}'::jsonb
+          where source_id = 'src-seed-pmid'`,
+      );
+      await client.query(
+        `update pilot.shadow_library_sources
+            set metadata = '{"general_research":true,"provenance":{"doi_or_pmid":"10.1000/other"}}'::jsonb
+          where source_id = 'src-gr-other'`,
+      );
+
+      const result = await recomputeShadowCapabilityCoverage({
+        organizationId: ORG_ID,
+        actorAccountId: ADMIN_ID,
+        actorRole: 'organization_admin',
+      });
+
+      const rule = result.find((row) => row.capability_key === 'cap-two-papers');
+      expect(rule?.matched_sources).toBe(2);
+      expect(rule?.coverage_state).toBe('covered');
+    } finally {
+      await client.end();
+    }
+  });
+
   // DRIFT GUARD: the claim path keys in JS (publicationKey), coverage keys in
   // SQL (PUBLICATION_KEY_SQL). If the two rules diverge, a claim and a
   // coverage count would disagree about what one paper is.
   test('PUBLICATION_KEY_SQL agrees with publicationKey on every shape', async () => {
     const src = (id: string, url: string | null = null, metadata: Record<string, unknown> | null = null): PublicationKeySource =>
       ({ source_id: id, url, metadata });
+    const box = (id: string, value: unknown, url: string | null = null, extra: Record<string, unknown> = {}) =>
+      src(id, url, { general_research: true, provenance: { doi_or_pmid: value }, ...extra });
+    const NBSP = String.fromCharCode(0xa0);
+    const ARABIC_123 = String.fromCharCode(0x661, 0x662, 0x663);
     const shapes: PublicationKeySource[] = [
       src('s-doi-meta', null, { doi: '10.1000/ABC.1' }),
       src('s-doi-url', 'https://doi.org/10.1000/abc.1'),
@@ -1478,6 +1554,49 @@ describe('coverage counts publications, not source ids (F-136)', () => {
       src('s-pmid-fraction', null, { pmid: 123.5 }),
       src('s-pmid-bool', null, { pmid: true }),
       src('s-url-inner-newline', 'https://example.com/p?x=1\n#frag'),
+      // #345 D1: a JSON number JS cannot hold exactly is absent in both; a
+      // no-break space ends a DOI in both.
+      src('s-pmid-huge', null, { pmid: 1e20 }),
+      src('s-pmid-max-safe', null, { pmid: 9007199254740991 }),
+      src('s-pmid-past-safe', null, { pmid: 9007199254740992 }),
+      src('s-doi-nbsp', null, { doi: `10.6000/nb${NBSP}sp` }),
+      // Non-ASCII digits are not digits in JS; the SQL classes are [0-9] too.
+      src('s-pmid-arabic-digits', null, { pmid: ARABIC_123 }),
+      src('s-url-pubmed-arabic-digits', `https://pubmed.ncbi.nlm.nih.gov/${ARABIC_123}/`),
+      // #345 D1: General Research's "DOI or PMID" box.
+      box('s-box-doi', '10.1000/BOX.1'),
+      box('s-box-doi-prefix', 'doi:10.1000/box.1'),
+      box('s-box-doi-url', 'https://doi.org/10.1000/box.1.'),
+      box('s-box-doi-nbsp', `10.1000/box.1${NBSP}(2019)`),
+      box('s-box-doi-query', 'https://doi.org/10.1000/box.1?utm_source=x'),
+      box('s-box-doi-fragment', 'https://doi.org/10.1000/box.1#methods\nmore'),
+      box('s-box-pmid', '27217246'),
+      box('s-box-pmid-label', 'PMID: 27217246'),
+      box('s-box-pmid-lower', 'pmid 27217246'),
+      box('s-box-pmid-tight', 'PMID:27217246'),
+      box('s-box-pmid-tabbed', '\t PMID 99 \n'),
+      box('s-box-pmid-num', 27217246),
+      box('s-box-pmid-url', 'https://pubmed.ncbi.nlm.nih.gov/27217246/'),
+      box('s-box-pmid-arabic-url', `https://pubmed.ncbi.nlm.nih.gov/${ARABIC_123}/`),
+      box('s-box-pmc', 'PMC1234567'),
+      box('s-box-pmid-trailing', 'PMID: 123 (2019)'),
+      box('s-box-blank', '  '),
+      box('s-box-null', null),
+      box('s-box-fraction', 12.5),
+      box('s-box-huge', 1e20),
+      box('s-box-max-safe', 9007199254740991),
+      box('s-box-past-safe', 9007199254740992),
+      src('s-box-not-object', null, { provenance: 'PMID 123' }),
+      src('s-box-array', null, { provenance: ['10.1000/x'] }),
+      box('s-box-vs-doi', '10.1000/box', null, { doi: '10.1000/field' }),
+      box('s-box-doi-vs-pmid', '10.1000/box', null, { pmid: '123' }),
+      box('s-box-pmid-vs-url-doi', 'PMID: 123', 'https://doi.org/10.1000/url'),
+      box('s-box-vs-kind', '10.1000/box', null, { identifier_kind: 'doi', identifier: '10.1000/ident' }),
+      box('s-box-pmid-vs-kind', 'PMID: 123', null, { identifier_kind: 'pmid', identifier: '456' }),
+      box('s-box-pmid-vs-meta', 'PMID: 123', null, { pmid: '789' }),
+      box('s-box-pmid-vs-url', 'PMID: 123', 'https://example.com/paper'),
+      box('s-box-doi-vs-url-doi', '10.1000/box', 'https://doi.org/10.1000/url2'),
+      box('s-box-pmid-vs-pubmed-url', 'PMID: 1', 'https://pubmed.ncbi.nlm.nih.gov/2/'),
     ];
     const client = await freshDatabase('coverage_key_drift');
     activeClient = client;

@@ -73,3 +73,88 @@ describe('publicationKey (F-136)', () => {
     expect(publicationKey(src('x', null, { pmid: 'PMID: abc' }))).toBe('source:x');
   });
 });
+
+// #345 D1: General Research saves its one "DOI or PMID" box at
+// metadata.provenance.doi_or_pmid (app/research/page.tsx). "Same paper counted
+// once, however it was entered" (OD-2026-10-18-005).
+describe('publicationKey reads the General Research DOI/PMID box (#345)', () => {
+  const box = (id: string, value: unknown, url: string | null = null, extra: Record<string, unknown> = {}) =>
+    src(id, url, { general_research: true, provenance: { doi_or_pmid: value, provider: 'Penn State Library' }, ...extra });
+
+  it('a DOI in the box, in any case or form, is the DOI key', () => {
+    const keys = [
+      publicationKey(box('a', '10.1000/abc.1')),
+      publicationKey(box('b', '10.1000/ABC.1')),
+      publicationKey(box('c', 'doi:10.1000/abc.1')),
+      publicationKey(box('d', 'DOI: 10.1000/ABC.1.')),
+      publicationKey(box('e', 'https://doi.org/10.1000/abc.1')),
+      publicationKey(box('f', `  10.1000/abc.1${String.fromCharCode(0xa0)}(2019)`)),
+      // A pasted link loses its query and fragment, as in the URL field.
+      publicationKey(box('g', 'https://doi.org/10.1000/abc.1?utm_source=x')),
+      publicationKey(box('h', 'https://doi.org/10.1000/abc.1#methods')),
+      publicationKey(src('i', 'https://doi.org/10.1000/abc.1?utm_source=x')),
+    ];
+    expect(new Set(keys)).toEqual(new Set(['doi:10.1000/abc.1']));
+  });
+
+  it('a PMID in the box, bare, labelled, as a number or a PubMed link, is the PMID key', () => {
+    const keys = [
+      publicationKey(box('a', '31452104')),
+      publicationKey(box('b', 'PMID: 31452104')),
+      publicationKey(box('c', 'pmid 31452104')),
+      publicationKey(box('d', 'PMID:31452104')),
+      publicationKey(box('e', ' PMID31452104 ')),
+      publicationKey(box('f', 31452104)),
+      publicationKey(box('g', 'https://pubmed.ncbi.nlm.nih.gov/31452104/')),
+    ];
+    expect(new Set(keys)).toEqual(new Set(['pmid:31452104']));
+  });
+
+  it('a box that is blank, not a DOI and not a whole PMID identifies nothing', () => {
+    for (const value of ['', '   ', 'PMC1234567', 'PMID: 123 (2019)', 'Penn State', 'PMID: abc', null, true, 12.5, -3, 1e20]) {
+      expect(publicationKey(box('x', value))).toBe('source:x');
+    }
+    expect(publicationKey(src('y', null, { provenance: 'PMID 123' }))).toBe('source:y');
+    expect(publicationKey(src('z', null, { provenance: ['10.1000/abc'] }))).toBe('source:z');
+  });
+
+  it('precedence: DOI before PMID before URL; within each, the explicit field before the box before identifier', () => {
+    // An explicit metadata.doi beats a different DOI in the box.
+    expect(publicationKey(box('a', '10.1000/box', null, { doi: '10.1000/field' }))).toBe('doi:10.1000/field');
+    // A DOI in the box beats any PMID.
+    expect(publicationKey(box('b', '10.1000/box', null, { pmid: '123' }))).toBe('doi:10.1000/box');
+    expect(publicationKey(box('c', '10.1000/box', 'https://pubmed.ncbi.nlm.nih.gov/123/'))).toBe('doi:10.1000/box');
+    // A DOI anywhere beats a PMID in the box.
+    expect(publicationKey(box('d', 'PMID: 123', 'https://doi.org/10.1000/url'))).toBe('doi:10.1000/url');
+    // The box beats identifier_kind/identifier.
+    expect(publicationKey(box('e', '10.1000/box', null, { identifier_kind: 'doi', identifier: '10.1000/ident' }))).toBe(
+      'doi:10.1000/box',
+    );
+    expect(publicationKey(box('f', 'PMID: 123', null, { identifier_kind: 'pmid', identifier: '456' }))).toBe('pmid:123');
+    // An explicit metadata.pmid beats a different PMID in the box.
+    expect(publicationKey(box('g', 'PMID: 123', null, { pmid: '789' }))).toBe('pmid:789');
+    // Either beats a plain URL.
+    expect(publicationKey(box('h', 'PMID: 123', 'https://example.com/paper'))).toBe('pmid:123');
+    expect(publicationKey(box('i', '10.1000/box', 'https://example.com/paper'))).toBe('doi:10.1000/box');
+    // The box beats the URL within a tier.
+    expect(publicationKey(box('j', '10.1000/box', 'https://doi.org/10.1000/url2'))).toBe('doi:10.1000/box');
+    expect(publicationKey(box('k', 'PMID: 1', 'https://pubmed.ncbi.nlm.nih.gov/2/'))).toBe('pmid:1');
+  });
+
+  it('two registrations of one paper count once, whichever field holds its id', () => {
+    const doiPaper = [
+      box('gr-1', '10.1000/abc.1'),
+      box('gr-2', 'doi:10.1000/ABC.1'),
+      src('seed', null, { identifier_kind: 'doi', identifier: '10.1000/abc.1' }),
+      src('url', 'https://doi.org/10.1000/abc.1'),
+    ];
+    expect(new Set(doiPaper.map(publicationKey)).size).toBe(1);
+    const pmidPaper = [
+      box('gr-1', 'PMID: 27217246'),
+      src('seed', 'https://pubmed.ncbi.nlm.nih.gov/27217246/', { identifier_kind: 'pmid', identifier: '27217246' }),
+      src('meta', null, { pmid: 27217246 }),
+    ];
+    expect(new Set(pmidPaper.map(publicationKey)).size).toBe(1);
+    expect(publicationKey(box('gr-3', '10.1000/abc.2'))).not.toBe(publicationKey(box('gr-4', '10.1000/abc.1')));
+  });
+});
