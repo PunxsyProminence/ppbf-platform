@@ -9,6 +9,7 @@ import FamilyObservations from '@/components/FamilyObservations';
 import FamilyGoalsForStaff from '@/components/FamilyGoalsForStaff';
 import MessageAthlete from '@/components/MessageAthlete';
 import ArmedButton from '@/components/ArmedButton';
+import ShadowCoachRecommendationDraft from '@/components/ShadowCoachRecommendationDraft';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
@@ -1520,6 +1521,14 @@ export default function DecisionLoopReviewPage() {
                 {doneLines.recommendation && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.recommendation}</p>}
                 {errorUnder('recommendation')}
               </section>
+
+              {athleteId && (
+                <ShadowCoachRecommendationDraft
+                  key={athleteId}
+                  athleteId={athleteId}
+                  onSaved={() => { void refreshAll(athleteId); }}
+                />
+              )}
 
               {/* Decisions */}
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
