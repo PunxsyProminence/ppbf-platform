@@ -637,7 +637,7 @@
     "test:migrations:personal-goal-undo": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/personalGoalUndo.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
-    "@azure/identity": "^4.13.1",
+    "@azure/identity": "^4.14.0",
     "@azure/storage-blob": "^12.34.0",
     "googleapis": "^176.0.0",
     "jose": "^6.2.12",
