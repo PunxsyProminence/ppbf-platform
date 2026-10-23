@@ -13535,6 +13535,56 @@
     }
   },
   {
+    "path": "/api/pilot/shadow/recommendations/draft",
+    "gate": "requirePrincipal (coach only) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": []
+    },
+    "id": "app/api/pilot/shadow/recommendations/draft/route.ts#GET",
+    "method": "GET",
+    "writes": false,
+    "notes": "coachForAthlete gets the authenticated principal, enforces role coach and assertActorCanAccessAthlete before any stored result or F2-origin read; no writes. Current eligible formula choices and persisted audit provenance only."
+  },
+  {
+    "path": "/api/pilot/shadow/recommendations/draft",
+    "gate": "requirePrincipal (coach only) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": []
+    },
+    "id": "app/api/pilot/shadow/recommendations/draft/route.ts#POST",
+    "method": "POST",
+    "writes": true,
+    "notes": "coachForAthlete gets principal, enforces role coach and assertActorCanAccessAthlete (a refusal is 404, a failed check 500). Explicit draft request counts against the SHADOW chat rate limits (429), signs only with a server-only HKDF key (503 when the deployment secret is absent), reads the athlete's coach-set limits through SHADOW chat's own helper (a minor with a limit not set gets no draft), reads scoped formula + approved Library (score-gap gate applies; the search logs its usual shadow.library.search telemetry row) and calls the Azure model, then runs SHADOW chat's response validator on the draft text, but stores no recommendation, audit entry or evidence; explicit save rechecks formula and evidence (that search logs telemetry too), locks the live athlete row, and inserts one provisional recommendation with same-transaction audit attribution."
+  },
+  {
     "id": "app/api/pilot/shadow/recommendations/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/recommendations",

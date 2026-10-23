@@ -359,6 +359,7 @@
     "test:migrations:research-lifecycle": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchLifecycle.pg.test.ts --testTimeout=180000",
     "test:migrations:research-ladder": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchLadder.pg.test.ts --testTimeout=180000",
     "test:migrations:shadow-passage-display": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowPassageDisplay.pg.test.ts --testTimeout=180000",
+    "test:migrations:shadow-coach-draft-save": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowCoachDraftSave.pg.test.ts --testTimeout=180000",
     "test:migrations:asker-question-deletion": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/askerQuestionDeletion.pg.test.ts --testTimeout=180000",
     "test:migrations:subject-research-purge": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/subjectResearchPurge.pg.test.ts --testTimeout=180000",
     "test:migrations:library-document-purge": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/libraryDocumentPurge.pg.test.ts --testTimeout=180000",
