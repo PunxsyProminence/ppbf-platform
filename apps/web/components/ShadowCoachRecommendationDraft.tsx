@@ -42,6 +42,13 @@ const DRAFT_STOP_MESSAGES: Record<string, string> = {
   no_eligible_evidence: LIBRARY_HAS_NOTHING,
   // Passages came back, and SHADOW said none of them supports a proposal.
   no_supported_answer: LIBRARY_HAS_NOTHING,
+  // SHADOW chat's response validator withheld the draft (in-app AI never
+  // diagnoses); the coach is told the same plain line, and none of its text.
+  filtered_draft: LIBRARY_HAS_NOTHING,
+  // A minor with a coach-set limit not set: missing means ask.
+  limits_not_set: 'This athlete\'s coach-set limits are not all set yet (heat time, weight cut, supervision, contact level), so SHADOW made no draft. Set them on the Athlete Limits and Sparring Caps pages.',
+  limits_unavailable: 'This athlete\'s coach-set limits could not be read, so SHADOW made no draft.',
+  preview_unavailable: 'SHADOW drafts are unavailable right now. No draft was made.',
   evidence_unavailable: 'The evidence search is unavailable. No draft created.',
   generation_unavailable: 'SHADOW could not generate a draft. No recommendation was saved.',
   invalid_generated_candidate: 'SHADOW did not return an adequately sourced draft.',

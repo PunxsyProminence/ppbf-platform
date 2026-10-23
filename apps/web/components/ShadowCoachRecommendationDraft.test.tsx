@@ -60,7 +60,7 @@ test("reads this athlete's current measurements", async () => {
   expect(gets).toEqual([`${ENDPOINT}?athleteId=ath-1`]);
 });
 
-test.each(['no_eligible_evidence', 'no_supported_answer'])(
+test.each(['no_eligible_evidence', 'no_supported_answer', 'filtered_draft'])(
   'a %s answer says the Library has nothing, shows no citation and offers no Save',
   async (reason) => {
     serve(() => respond({ ok: false, state: 'no_draft', reason }, 422));
@@ -106,4 +106,16 @@ test('stays away for anyone the route does not admit (404), such as a gym admin'
   const { container } = render(<ShadowCoachRecommendationDraft athleteId="ath-1" onSaved={() => {}} />);
   await waitFor(() => expect(container.innerHTML).toBe(''));
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test.each([
+  ['limits_not_set', 'coach-set limits are not all set yet', 422],
+  ['limits_unavailable', 'coach-set limits could not be read', 503],
+  ['preview_unavailable', 'SHADOW drafts are unavailable right now', 503],
+] as const)('a %s answer says so plainly and offers no Save', async (reason, words, status) => {
+  serve(() => respond({ ok: false, state: 'no_draft', reason }, status));
+  render(<ShadowCoachRecommendationDraft athleteId="ath-1" onSaved={() => {}} />);
+  await askForDraft();
+  expect((await screen.findByRole('alert')).textContent).toContain(words);
+  expect(screen.queryByRole('button', { name: 'Save as provisional' })).toBeNull();
 });
