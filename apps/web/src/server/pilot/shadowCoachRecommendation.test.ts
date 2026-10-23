@@ -199,7 +199,7 @@ describe('SHADOW F2 coach-requested drafts', () => {
       version: 1 as const, draftId: 'draft-a',
       issuedAt: 1_000, expiresAt: 901_000, organizationId: 'gym-a',
       athleteId: 'athlete-a', requestedByAccountId: 'coach-a',
-      question: 'Q', resultId: 'res', formulaFingerprint: 'hash', formulaId: 'MVP-03',
+      question: 'Q', resultId: 'res', formulaFingerprint: 'hash', formulaId: 'MVP-03', limitsFingerprint: 'l', coachSetLimitIds: [],
       modelUsed: 'model-a', recommendationText: 'R', expectedOutcome: 'O',
       citations: [{ chunkId: 'chunk-a', sourceTitle: 'Source', documentName: 'Document', contentHash: 'hash' }],
     };
@@ -527,7 +527,7 @@ describe('SHADOW F2 save: what the signed preview binds, and what each refusal m
     const token = sealCoachDraft({
       version: 1, draftId: 'draft-old', issuedAt: 1_000, expiresAt: 1_000 + 15 * 60 * 1000,
       organizationId: 'gym-a', athleteId: 'athlete-a', requestedByAccountId: 'coach-a',
-      question: 'Q', resultId: 'formula-result-a', formulaFingerprint: 'f', formulaId: 'MVP-03',
+      question: 'Q', resultId: 'formula-result-a', formulaFingerprint: 'f', formulaId: 'MVP-03', limitsFingerprint: 'l', coachSetLimitIds: [],
       modelUsed: 'm', recommendationText: 'R', expectedOutcome: 'O',
       citations: [{ chunkId: 'chunk-a', sourceTitle: 'S', documentName: 'D', contentHash: 'h' }],
     }, 'session-a');
@@ -584,7 +584,7 @@ describe('SHADOW F2 preview key: HKDF over a server-only secret, salted by the s
   const draftFields = (now: number) => ({
     version: 1 as const, draftId: 'draft-k', issuedAt: now, expiresAt: now + 15 * 60 * 1000,
     organizationId: 'gym-a', athleteId: 'athlete-a', requestedByAccountId: 'coach-a',
-    question: 'Q', resultId: 'formula-result-a', formulaFingerprint: 'f', formulaId: 'MVP-03',
+    question: 'Q', resultId: 'formula-result-a', formulaFingerprint: 'f', formulaId: 'MVP-03', limitsFingerprint: 'l', coachSetLimitIds: [],
     modelUsed: 'm', recommendationText: 'R', expectedOutcome: 'O',
     citations: [{ chunkId: 'chunk-a', sourceTitle: 'S', documentName: 'D', contentHash: 'h' }],
   });
@@ -774,5 +774,73 @@ describe('SHADOW F2 and the coach-set limits (chat helper, missing means ask)', 
         else process.env[key] = saved[index];
       });
     }
+  });
+});
+
+// Round-2 review: the save holds the draft to the limits it was written under.
+describe('SHADOW F2 save rechecks the coach-set limits', () => {
+  async function preview() {
+    const r = await previewCoachDraft({
+      actor, athleteId: 'athlete-a', resultId: 'formula-result-a', question: 'Review', sessionToken: 'session-a',
+      generate: async () => modelCandidate,
+    });
+    if (r.kind !== 'draft') throw Error('Expected preview');
+    return r.preview;
+  }
+  const save = (previewToken: string) => saveCoachDraft({
+    actor, athleteId: 'athlete-a', previewToken, sessionToken: 'session-a',
+  });
+  const base = minorAllSet.minorLimits as Exclude<ShadowAthleteLimits['minorLimits'], 'unavailable'>;
+
+  it('a limit changed since the preview makes it out of date; nothing is written', async () => {
+    const draft = await preview();
+    mockLimits.mockResolvedValue({
+      ...minorAllSet,
+      minorLimits: {
+        ...base,
+        limits: {
+          ...base.limits,
+          heat_exposure_minutes_per_session: {
+            limit_id: '55555555-5555-4555-8555-555555555555', value_number: 10, value_text: null, set_at: SET_AT, set_by_role: 'coach',
+          },
+        },
+      },
+    });
+    await expect(save(draft.previewToken)).rejects.toBeInstanceOf(StaleCoachDraftError);
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+
+  it('a minor\'s limit cleared since the preview stops the save as out of date', async () => {
+    const draft = await preview();
+    mockLimits.mockResolvedValue({ ...minorAllSet, minorLimits: { ...base, limits: { ...base.limits, supervision: null } } });
+    await expect(save(draft.previewToken)).rejects.toBeInstanceOf(StaleCoachDraftError);
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+
+  it('limits that cannot be read at save mean nothing is saved (unavailable)', async () => {
+    const draft = await preview();
+    mockLimits.mockResolvedValue({ ...minorAllSet, minorLimits: 'unavailable' });
+    await expect(save(draft.previewToken)).rejects.toBeInstanceOf(CoachDraftUnavailableError);
+    expect(mockWithTransaction).not.toHaveBeenCalled();
+  });
+
+  it('the audit entry records the limit rows the draft was written under', async () => {
+    const draft = await preview();
+    const record = { recommendation_id: 'rec-l', athlete_id: 'athlete-a', status: 'provisional', expires_at: SET_AT };
+    const clientQuery = jest.fn(async (sql: string) => {
+      if (sql.includes('for update')) return { rows: [{ athlete_id: 'athlete-a' }] };
+      if (sql.includes('insert into pilot.shadow_recommendations')) return { rows: [record] };
+      return { rows: [] };
+    });
+    mockWithTransaction.mockImplementation(async (callback) => callback({ query: clientQuery } as never));
+    expect((await save(draft.previewToken))?.recommendation_id).toBe('rec-l');
+    expect(mockAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      afterState: expect.objectContaining({
+        f2: expect.objectContaining({
+          coachSetLimitIds: buildAthleteLimitsSection(minorAllSet).evidenceIds,
+          limitsFingerprint: expect.any(String),
+        }),
+      }),
+    }));
   });
 });

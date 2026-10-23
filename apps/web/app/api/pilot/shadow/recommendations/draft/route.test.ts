@@ -53,6 +53,7 @@ const mockOrigins = jest.mocked(getCoachDraftOrigins);
 const mockPreview = jest.mocked(previewCoachDraft);
 const mockSave = jest.mocked(saveCoachDraft);
 const mockRateLimit = jest.mocked(enforceShadowRateLimit);
+let savedIkm: string | undefined;
 
 const URL_BASE = 'http://localhost/api/pilot/shadow/recommendations/draft';
 
@@ -85,6 +86,13 @@ beforeEach(() => {
   mockOrigins.mockResolvedValue({});
   mockPreview.mockResolvedValue({ kind: 'abstain', reason: 'no_eligible_evidence' });
   mockRateLimit.mockResolvedValue(undefined);
+  savedIkm = process.env.PPBF_MS_CLIENT_SECRET;
+  process.env.PPBF_MS_CLIENT_SECRET = 'test-only-ikm-not-a-real-secret';
+});
+
+afterEach(() => {
+  if (savedIkm === undefined) delete process.env.PPBF_MS_CLIENT_SECRET;
+  else process.env.PPBF_MS_CLIENT_SECRET = savedIkm;
 });
 
 describe('who reaches the F2 draft route', () => {
@@ -185,6 +193,18 @@ describe('what each answer means', () => {
     expect(limited.status).toBe(429);
     expect(limited.headers.get('Retry-After')).toBe('42');
     expect(mockPreview).not.toHaveBeenCalled();
+  });
+
+  it('with the server-only secret unset: 503 before any read, spend, model call or save', async () => {
+    delete process.env.PPBF_MS_CLIENT_SECRET;
+    const draft = await post(draftBody);
+    expect(draft.status).toBe(503);
+    expect(await draft.json()).toEqual({ ok: false, state: 'no_draft', reason: 'preview_unavailable' });
+    expect((await post(saveBody)).status).toBe(503);
+    expect(mockReadiness).not.toHaveBeenCalled();
+    expect(mockRateLimit).not.toHaveBeenCalled();
+    expect(mockPreview).not.toHaveBeenCalled();
+    expect(mockSave).not.toHaveBeenCalled();
   });
 
   it('saving and reading do not spend the chat buckets', async () => {

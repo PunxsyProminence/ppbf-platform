@@ -77,6 +77,9 @@ interface SignedDraft {
   resultId: string;
   formulaFingerprint: string;
   formulaId: string;
+  /** The coach-set limits the draft was written under, as worded to the model. */
+  limitsFingerprint: string;
+  coachSetLimitIds: string[];
   modelUsed: string;
   recommendationText: string;
   expectedOutcome: string;
@@ -262,7 +265,7 @@ export async function generateCoachDraft(input: DraftModelInput): Promise<DraftM
     'CitedChunkIds must name the exact provided chunk IDs supporting the proposal.',
     'The expectedOutcome must be observable, not an invented prediction.',
     'The coach-set limits are the gym\'s records for this athlete: follow their directive and draft inside every limit that is set.',
-    'In-app AI never diagnoses: do not name an injury or condition, direct medication, treatment or rest, or say the athlete is cleared. The coach decides.',
+    'In-app AI never diagnoses: do not name an injury or condition, direct medication, treatment or rest for an injury, or say the athlete is cleared. The coach decides.',
     'Do not write research findings, percentages or case counts as claims in the text, except a coach-set limit written with its [E:...] id; the cited passages carry the sources.',
   ].join('\n');
   const evidence = input.evidence.map((row) => ({
@@ -402,6 +405,8 @@ export function unsealCoachDraft(token: string, sessionToken: string, now = Date
       || typeof draft.requestedByAccountId !== 'string'
       || typeof draft.question !== 'string' || typeof draft.resultId !== 'string'
       || typeof draft.formulaFingerprint !== 'string' || typeof draft.formulaId !== 'string'
+      || typeof draft.limitsFingerprint !== 'string'
+      || !Array.isArray(draft.coachSetLimitIds) || !draft.coachSetLimitIds.every((id) => typeof id === 'string')
       || typeof draft.modelUsed !== 'string'
       || typeof draft.recommendationText !== 'string' || typeof draft.expectedOutcome !== 'string'
       || !Array.isArray(draft.citations) || draft.citations.length === 0
@@ -458,7 +463,9 @@ export async function previewCoachDraft(input: {
   }
   // In-app AI never diagnoses: the same response validator SHADOW chat runs,
   // on both pieces of text the coach could save. The only citation ids it
-  // accepts are the coach-set limit ids the model was shown, as in chat.
+  // accepts are the coach-set limit ids the model was shown (stricter than
+  // chat, which also accepts Library and near-miss ids: here the Library
+  // citations travel in citedChunkIds, checked above).
   if (draftTextFiltered(proposed, limits.evidenceIds)) {
     return { kind: 'abstain', reason: 'filtered_draft' };
   }
@@ -476,6 +483,8 @@ export async function previewCoachDraft(input: {
     question: input.question.trim(),
     resultId: result.resultId,
     formulaFingerprint: resultFingerprint(result),
+    limitsFingerprint: limitsFingerprint(limits.lines),
+    coachSetLimitIds: [...limits.evidenceIds],
     formulaId: result.formulaId,
     modelUsed: proposed.modelUsed,
     recommendationText: proposed.recommendationText.trim(),
@@ -523,6 +532,12 @@ export class CoachDraftUnavailableError extends Error {
 }
 
 const SIGNING_UNAVAILABLE = 'SHADOW drafts are unavailable right now. Nothing was saved.';
+const LIMITS_UNREADABLE = 'This athlete\'s coach-set limits could not be read. Nothing was saved.';
+
+/** The limits as the model was shown them; any change to a limit changes it. */
+function limitsFingerprint(lines: readonly string[]): string {
+  return hash(lines.join('\n'));
+}
 
 /**
  * Why the coach-set limits stop a draft, or null when they do not.
@@ -593,6 +608,15 @@ export async function saveCoachDraft(input: {
       || row.sourceTitle !== citation.sourceTitle
       || row.documentName !== citation.documentName) throw new StaleCoachDraftError();
   }
+  // The coach-set limits must still be the ones the draft was written under:
+  // a limit set, changed or cleared since the preview makes it out of date,
+  // and for a minor a limit that is now missing stops it, as at preview.
+  const limitsNow = await loadShadowAthleteLimits(input.actor, input.athleteId);
+  const limitsStop = limitsStopReason(limitsNow);
+  if (limitsStop === 'limits_unavailable') throw new CoachDraftUnavailableError(LIMITS_UNREADABLE);
+  if (limitsStop || limitsFingerprint(buildAthleteLimitsSection(limitsNow!).lines) !== draft.limitsFingerprint) {
+    throw new StaleCoachDraftError();
+  }
 
   const onFile = await readMedicalStatusOnFile(input.actor.organizationId, input.athleteId);
   return withTransaction(async (client) => {
@@ -652,6 +676,9 @@ export async function saveCoachDraft(input: {
           inputObservationIds: result.inputObservationIds,
           citations: draft.citations.map(({ chunkId, sourceTitle, documentName, contentHash }) =>
             ({ chunkId, sourceTitle, documentName, contentHash })),
+          // The coach-set limit rows the draft was written under.
+          coachSetLimitIds: draft.coachSetLimitIds,
+          limitsFingerprint: draft.limitsFingerprint,
           semanticSupportVerified: false,
         },
       },

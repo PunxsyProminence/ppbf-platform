@@ -15,6 +15,7 @@ import {
   listCoachDraftChoices,
   MAX_PREVIEW_TOKEN_LENGTH,
   previewCoachDraft,
+  previewSigningKey,
   saveCoachDraft,
   StaleCoachDraftError,
 } from '@/src/server/pilot/shadowCoachRecommendation';
@@ -83,6 +84,13 @@ export async function POST(request: NextRequest) {
     // signed with it, so it opens only in the session that asked for it.
     const sessionToken = principal.sessionToken;
     if (!sessionToken) return NextResponse.json({ ok: false, error: 'Session unavailable.' }, { status: 401 });
+    // Fail closed before any read or any spend of the coach's SHADOW buckets:
+    // without the server-only key nothing can be signed or opened.
+    if (!previewSigningKey(sessionToken)) {
+      return body.action === 'draft'
+        ? NextResponse.json({ ok: false, state: 'no_draft', reason: 'preview_unavailable' }, { status: 503 })
+        : NextResponse.json({ ok: false, error: 'SHADOW drafts are unavailable right now. Nothing was saved.' }, { status: 503 });
+    }
     await assertShadowRuntimeReadiness({
       requiredTables: ['shadow_formula_results', 'shadow_formula_observations',
         'shadow_recommendations', 'shadow_audit_entries', 'shadow_library_chunks',

@@ -336,6 +336,8 @@ describe('SHADOW F2 against a real database', () => {
       draftId: draft.draftId, generatedBy: 'SHADOW', modelUsed: 'stub-model',
       requestedByAccountId: COACH, sourceFormulaResultId: resultId, semanticSupportVerified: false,
     }));
+    // The four coach-set limit rows (heat, weight cut, supervision, contact cap) it was written under.
+    expect(audit.f2.coachSetLimitIds).toHaveLength(4);
 
     // The screen's read of it: provenance, no account id, no passage hash.
     const origins = await f2.getCoachDraftOrigins(ORG, ATHLETE);
@@ -353,6 +355,24 @@ describe('SHADOW F2 against a real database', () => {
     )).rows[0].result_id;
     const draft = await preview(ATHLETE, resultId);
     await formulaResult(ATHLETE, '2026-10-21T10:00:00.000Z');
+    const before = await writeCounts();
+    await expect(f2.saveCoachDraft({
+      actor: coach, athleteId: ATHLETE, previewToken: draft.previewToken, sessionToken: SESSION,
+    })).rejects.toBeInstanceOf(f2.StaleCoachDraftError);
+    expect(await writeCounts()).toEqual(before);
+  });
+
+  test('a coach-set limit changed between preview and save makes it out of date; nothing is saved', async () => {
+    const resultId = (await db.query<{ result_id: string }>(
+      `select result_id from pilot.shadow_formula_results where athlete_id = $1 order by computed_at desc limit 1`, [ATHLETE],
+    )).rows[0].result_id;
+    const draft = await preview(ATHLETE, resultId);
+    await db.query(
+      `insert into pilot.athlete_minor_limits
+         (organization_id, limit_id, athlete_id, limit_type, value_number, value_text, unit, note, set_by_account_id, set_by_role)
+       values ($1, gen_random_uuid(), $2, 'heat_exposure_minutes_per_session', 15, null, 'minutes', '', $3, 'coach')`,
+      [ORG, ATHLETE, COACH],
+    );
     const before = await writeCounts();
     await expect(f2.saveCoachDraft({
       actor: coach, athleteId: ATHLETE, previewToken: draft.previewToken, sessionToken: SESSION,
