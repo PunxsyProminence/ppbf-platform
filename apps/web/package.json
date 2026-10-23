@@ -360,6 +360,7 @@
     "test:migrations:research-lifecycle": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchLifecycle.pg.test.ts --testTimeout=180000",
     "test:migrations:research-ladder": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/researchLadder.pg.test.ts --testTimeout=180000",
     "test:migrations:shadow-passage-display": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowPassageDisplay.pg.test.ts --testTimeout=180000",
+    "test:migrations:shadow-coach-draft-save": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/shadowCoachDraftSave.pg.test.ts --testTimeout=180000",
     "test:migrations:asker-question-deletion": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/askerQuestionDeletion.pg.test.ts --testTimeout=180000",
     "test:migrations:subject-research-purge": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/subjectResearchPurge.pg.test.ts --testTimeout=180000",
     "test:migrations:library-document-purge": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/libraryDocumentPurge.pg.test.ts --testTimeout=180000",
@@ -637,14 +638,14 @@
     "test:migrations:personal-goal-undo": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/personalGoalUndo.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
-    "@azure/identity": "^4.13.1",
+    "@azure/identity": "^4.14.0",
     "@azure/storage-blob": "^12.34.0",
     "googleapis": "^176.0.0",
     "jose": "^6.2.12",
     "next": "16.3.8",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
-    "pg": "^8.23.0",
+    "pg": "^8.23.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -661,14 +662,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19.2.5",
     "async-exit-hook": "^2.0.1",
-    "csv-parse": "^7.0.2",
+    "csv-parse": "^7.0.3",
     "embedded-postgres": "18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "jest": "^30.5.2",
     "jest-environment-jsdom": "^30.4.1",
     "tailwindcss": "^4.3.3",
-    "ts-jest": "^29.4.14",
+    "ts-jest": "^29.4.15",
     "tsx": "^4.23.15",
     "typescript": "^5"
   }
