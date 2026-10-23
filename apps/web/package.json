@@ -645,8 +645,8 @@
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.19.1",
     "pg": "^8.23.1",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
@@ -659,7 +659,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
-    "@types/react-dom": "^19.2.5",
+    "@types/react-dom": "^19.3.0",
     "async-exit-hook": "^2.0.1",
     "csv-parse": "^7.0.3",
     "embedded-postgres": "18.4.0-beta.17",
