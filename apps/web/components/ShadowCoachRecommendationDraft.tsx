@@ -31,9 +31,15 @@ interface Origin {
 }
 
 const ENDPOINT = '/api/pilot/shadow/recommendations/draft';
-// Copy PROPOSED (lane LF2), not yet approved. The two "nothing" answers say it
-// in the words SHADOW chat uses (shadowNoAnswer.ts) and cite nothing.
+// Copy PROPOSED (lane LF2), not yet approved.
+// When the Library search found nothing: in the words SHADOW chat uses
+// (shadowNoAnswer.ts).
 const LIBRARY_HAS_NOTHING = 'The Library has nothing on that yet, so SHADOW made no draft and cited nothing.';
+// When passages came back but no draft can be offered: the model said none of
+// them supports a proposal, or chat's validator withheld the draft. One line
+// for both (Overwatch: the same wording), and it says nothing that would be
+// false for either: the Library did return passages here.
+const NO_DRAFT_TO_OFFER = 'SHADOW has no draft it can offer for this question, so it made none and cited nothing.';
 const DRAFT_STOP_MESSAGES: Record<string, string> = {
   source_not_found: 'The selected measurement is no longer current. Refresh.',
   source_unavailable: 'The selected measurement cannot support a draft.',
@@ -41,10 +47,10 @@ const DRAFT_STOP_MESSAGES: Record<string, string> = {
   // match did not stand out (the score-gap gate).
   no_eligible_evidence: LIBRARY_HAS_NOTHING,
   // Passages came back, and SHADOW said none of them supports a proposal.
-  no_supported_answer: LIBRARY_HAS_NOTHING,
+  no_supported_answer: NO_DRAFT_TO_OFFER,
   // SHADOW chat's response validator withheld the draft (in-app AI never
-  // diagnoses); the coach is told the same plain line, and none of its text.
-  filtered_draft: LIBRARY_HAS_NOTHING,
+  // diagnoses); none of its text is shown.
+  filtered_draft: NO_DRAFT_TO_OFFER,
   // A minor with a coach-set limit not set: missing means ask.
   limits_not_set: 'This athlete\'s coach-set limits are not all set yet (heat time, weight cut, supervision, contact level), so SHADOW made no draft. Set them on the Athlete Limits and Sparring Caps pages.',
   limits_unavailable: 'This athlete\'s coach-set limits could not be read, so SHADOW made no draft.',

@@ -60,15 +60,18 @@ test("reads this athlete's current measurements", async () => {
   expect(gets).toEqual([`${ENDPOINT}?athleteId=ath-1`]);
 });
 
-test.each(['no_eligible_evidence', 'no_supported_answer', 'filtered_draft'])(
-  'a %s answer says the Library has nothing, shows no citation and offers no Save',
-  async (reason) => {
+test.each([
+  ['no_eligible_evidence', 'The Library has nothing on that yet, so SHADOW made no draft and cited nothing.'],
+  // Passages came back for these two, so the screen must not say the Library has nothing.
+  ['no_supported_answer', 'SHADOW has no draft it can offer for this question, so it made none and cited nothing.'],
+  ['filtered_draft', 'SHADOW has no draft it can offer for this question, so it made none and cited nothing.'],
+] as const)(
+  'a %s answer says so plainly, shows no citation and offers no Save',
+  async (reason, words) => {
     serve(() => respond({ ok: false, state: 'no_draft', reason }, 422));
     render(<ShadowCoachRecommendationDraft athleteId="ath-1" onSaved={() => {}} />);
     await askForDraft();
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'The Library has nothing on that yet, so SHADOW made no draft and cited nothing.',
-    );
+    expect((await screen.findByRole('alert')).textContent).toBe(words);
     expect(posts).toEqual([{ action: 'draft', athleteId: 'ath-1', formulaResultId: 'res-1', coachQuestion: 'What next?' }]);
     expect(screen.queryByRole('button', { name: 'Save as provisional' })).toBeNull();
     expect(screen.queryByText(/Cited sources/)).toBeNull();
