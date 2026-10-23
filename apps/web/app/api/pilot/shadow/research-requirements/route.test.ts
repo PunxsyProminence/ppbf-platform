@@ -16,6 +16,7 @@ import {
   type ShadowResearchRequirementRow,
 } from '@/src/server/pilot/shadowResearch';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
+import { LEARNING_NOTE_COACH_SENTENCE } from '@/src/server/pilot/researchFamilyView';
 import { deletedAthleteIdsAmong } from '@/src/server/pilot/deletedAthletes';
 import * as pilotDb from '@/src/server/pilot/db';
 
@@ -1283,6 +1284,85 @@ describe('research questions that name no athlete (CL-A3 / CL-C14)', () => {
       expect(body.items.map((item) => item.research_requirement_id)).toEqual([30, 31, 32, 33]);
     },
   );
+
+  // F-183: OD-2026-10-13-018 ("A: Office + asker (Recommended)") applied by
+  // Overwatch 2026-10-23 under "asked once, ruled once" to the learning loop's
+  // rows: an athlete's or parent's note reaches a coach as a sentence, the
+  // organization admin and the author read the words, and a coach's own note
+  // is unchanged.
+  describe('a learning-loop note on the list (F-183)', () => {
+    const PARENT_NOTE = row({
+      research_requirement_id: 35,
+      source_event_name: 'shadow_learning_negative_outcome',
+      source_entity_type: 'shadow_learning_event',
+      source_entity_id: '6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f',
+      created_by_account_id: 'acct-parent-note',
+      created_by_role: 'parent',
+      knowledge_gap: 'my daughter cried after the coach yelled',
+      metadata: { topic: 'mindset', note: 'my daughter cried after the coach yelled' },
+    });
+    const COACH_NOTE = row({
+      research_requirement_id: 36,
+      source_event_name: 'shadow_learning_negative_outcome',
+      source_entity_type: 'shadow_learning_event',
+      created_by_account_id: 'acct-coach-note',
+      created_by_role: 'coach',
+      knowledge_gap: 'the drill progression skipped the footwork step',
+      metadata: { topic: 'technique', note: 'the drill progression skipped the footwork step' },
+    });
+
+    async function listWith(reader: PilotPrincipal) {
+      mockRequirePrincipal.mockResolvedValue(reader);
+      mockAccessibleAthleteIds.mockResolvedValue(new Set());
+      mockList.mockResolvedValue([FEEDBACK_NOTE, PARENT_NOTE, COACH_NOTE]);
+      const response = await GET(new NextRequest('http://localhost/api/pilot/shadow/research-requirements'));
+      expect(response.status).toBe(200);
+      return response.text();
+    }
+
+    test('a coach sees each athlete or parent note was filed, without its words, author or key', async () => {
+      const raw = await listWith(principal('coach'));
+      const body = JSON.parse(raw) as { items: ShadowResearchRequirementRow[] };
+
+      expect(body.items.map((item) => item.research_requirement_id)).toEqual([32, 35, 36]);
+      expect(raw).not.toContain('anxiety');
+      expect(raw).not.toContain('cried');
+      expect(raw).not.toContain('acct-other-family');
+      expect(raw).not.toContain('acct-parent-note');
+      expect(raw).not.toContain('6f1c2d3e');
+      for (const item of body.items.slice(0, 2)) {
+        expect(item).toMatchObject({
+          source_entity_type: 'shadow_learning_event',
+          status: 'open',
+          knowledge_gap: LEARNING_NOTE_COACH_SENTENCE,
+          research_requirement: LEARNING_NOTE_COACH_SENTENCE,
+          created_by_role: '',
+          metadata: {},
+        });
+      }
+      // A coach's own note is the coach's, and stays whole.
+      expect(body.items[2]).toEqual(COACH_NOTE);
+    });
+
+    test.each(['organization_admin', 'admin'] as const)('a %s reads every note whole', async (role) => {
+      const body = JSON.parse(await listWith(principal(role))) as { items: ShadowResearchRequirementRow[] };
+
+      expect(body.items).toEqual([FEEDBACK_NOTE, PARENT_NOTE, COACH_NOTE]);
+    });
+
+    test('the parent who wrote one reads their own words and nobody else\'s', async () => {
+      const raw = await listWith({ ...principal('parent'), accountId: 'acct-parent-note' });
+      const body = JSON.parse(raw) as { items: Array<{ research_requirement_id: number; knowledge_gap: string; is_mine: boolean }> };
+
+      expect(body.items).toEqual([expect.objectContaining({
+        research_requirement_id: 35,
+        knowledge_gap: 'my daughter cried after the coach yelled',
+        is_mine: true,
+      })]);
+      expect(raw).not.toContain('anxiety');
+      expect(raw).not.toContain('acct-parent-note');
+    });
+  });
 
   function resolveAs(
     role: PilotPrincipal['role'],

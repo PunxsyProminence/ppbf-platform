@@ -717,6 +717,77 @@ describe('the submissions on an asker-filed question', () => {
   });
 });
 
+// F-183: the same split on a learning-loop note an athlete or parent filed
+// (OD-2026-10-13-018 applied by Overwatch 2026-10-23, "asked once, ruled once").
+describe('the submissions on a learning-loop note an athlete or parent filed', () => {
+  const NOTED = {
+    organization_id: 'org-1',
+    submission_id: 'sub-1',
+    research_requirement_id: 7,
+    source_id: 'src-1',
+    document_id: null,
+    provenance: { found_via: 'ZEBRA-PROVENANCE search for coach yelling' },
+    submission_note: 'ZEBRA-SUBMISSION answers his note about the coach',
+    applicability_state: 'responsive',
+    reviewed_by_account_id: 'admin.one@gym.example.test',
+    reviewed_at: '2026-10-02T00:00:00.000Z',
+    review_note: 'ZEBRA-REVIEW covers what he wrote',
+    submitted_by_account_id: 'coach.one@gym.example.test',
+    created_at: '2026-10-01T00:00:00.000Z',
+    updated_at: '2026-10-02T00:00:00.000Z',
+  };
+  const NOTE_ROW = {
+    research_requirement_id: 7,
+    organization_id: 'org-1',
+    source_event_name: 'shadow_learning_negative_outcome',
+    source_entity_type: 'shadow_learning_event',
+    created_by_account_id: 'athlete.one@gym.example.test',
+    created_by_role: 'athlete',
+    subject_id: null,
+    metadata: { topic: 'mindset', note: 'ZEBRA-NOTE the coach yelled at me' },
+  };
+
+  beforeEach(() => {
+    mockGetRequirement.mockResolvedValue(NOTE_ROW);
+    mockRequirementStatus.mockResolvedValue('resolved');
+    mockList.mockResolvedValue([NOTED]);
+  });
+
+  test.each(['athlete', 'parent'] as const)('filed by a %s, a coach by-id read carries the note sentence and no free text', async (role) => {
+    mockGetRequirement.mockResolvedValue({ ...NOTE_ROW, created_by_role: role });
+    mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'coach.two@gym.example.test', role: 'coach' }));
+
+    const response = await GET(getRequest('research_requirement_id=7'));
+    const text = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(text).not.toContain('ZEBRA');
+    expect(JSON.parse(text).items).toEqual([{
+      ...NOTED,
+      provenance: {},
+      submission_note: 'The gym administrator can read this note.',
+      review_note: 'The gym administrator can read this note.',
+    }]);
+  });
+
+  test.each(['organization_admin', 'admin'] as const)('a %s by-id read carries every note', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+    const payload = await (await GET(getRequest('research_requirement_id=7'))).json();
+
+    expect(payload.items).toEqual([NOTED]);
+  });
+
+  test("a coach reads a coach-filed note's submissions whole", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+    mockGetRequirement.mockResolvedValue({ ...NOTE_ROW, created_by_role: 'coach', created_by_account_id: 'coach.one@gym.example.test' });
+
+    const payload = await (await GET(getRequest('research_requirement_id=7'))).json();
+
+    expect(payload.items).toEqual([NOTED]);
+  });
+});
+
 // Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
 // the curator got a 500 for what is their own malformed request.
 describe('malformed JSON bodies (CL-C24)', () => {
