@@ -109,8 +109,12 @@ export async function POST(request: NextRequest) {
         sessionToken,
       });
       if (result.kind === 'abstain') {
+        // Something the server could not do right now: 503. Everything else
+        // is an answer about this request (422).
         const degraded = result.reason === 'evidence_unavailable'
-          || result.reason === 'generation_unavailable';
+          || result.reason === 'generation_unavailable'
+          || result.reason === 'limits_unavailable'
+          || result.reason === 'preview_unavailable';
         return NextResponse.json({
           ok: false, state: 'no_draft', reason: result.reason,
         }, { status: degraded ? 503 : 422 });

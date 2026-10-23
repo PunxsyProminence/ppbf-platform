@@ -60,6 +60,9 @@ const ORG = 'org-f2-1';
 const COACH = 'acct-f2-coach';
 const ATHLETE = 'ath-f2-1';
 const GONE_ATHLETE = 'ath-f2-gone';
+const NO_LIMITS_ATHLETE = 'ath-f2-no-limits';
+// A test-only stand-in for the deployment's server-only secret (HKDF input).
+const TEST_IKM = 'test-only-ikm-not-a-real-secret';
 const QUESTION = 'southpaw footwork pivot';
 const SESSION = 'session-token-f2';
 
@@ -174,11 +177,39 @@ beforeAll(async () => {
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'coach', $2, 'microsoft')`,
     [COACH, ORG],
   );
-  for (const athleteId of [ATHLETE, GONE_ATHLETE]) {
+  // The coach's staff membership: the limits modules read limits only for
+  // active staff of this gym.
+  await db.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'coach', true)`,
+    [COACH, ORG],
+  );
+  // All three are minors (born 2012). The first two have every coach-set
+  // limit set; NO_LIMITS_ATHLETE has none.
+  for (const athleteId of [ATHLETE, GONE_ATHLETE, NO_LIMITS_ATHLETE]) {
     await db.query(
       `insert into pilot.athletes
          (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
        values ($1, $2, 'Test Athlete', '2012-04-03', 'youth-60', 'active', 'Guardian', true, $3, now(), now())`,
+      [ORG, athleteId, COACH],
+    );
+  }
+  for (const athleteId of [ATHLETE, GONE_ATHLETE]) {
+    for (const [type, valueNumber, valueText, unit] of [
+      ['heat_exposure_minutes_per_session', 20, null, 'minutes'],
+      ['weight_cut_max_percent_body_weight', 2, null, 'percent_body_weight'],
+      ['supervision', null, 'Coach on the floor', 'text'],
+    ] as const) {
+      await db.query(
+        `insert into pilot.athlete_minor_limits
+           (organization_id, limit_id, athlete_id, limit_type, value_number, value_text, unit, note, set_by_account_id, set_by_role)
+         values ($1, gen_random_uuid(), $2, $3, $4, $5, $6, '', $7, 'coach')`,
+        [ORG, athleteId, type, valueNumber, valueText, unit, COACH],
+      );
+    }
+    await db.query(
+      `insert into pilot.athlete_contact_caps
+         (organization_id, cap_id, athlete_id, highest_allowed_stage, max_hard_open_sessions_per_7_days, note, set_by_account_id, set_by_role)
+       values ($1, gen_random_uuid(), $2, 'light_technical', null, '', $3, 'coach')`,
       [ORG, athleteId, COACH],
     );
   }
@@ -207,6 +238,7 @@ beforeAll(async () => {
   // Keyword path only: no embedding deployment, so no embedding call either.
   delete process.env.AZURE_AI_ENDPOINT;
   delete process.env.AZURE_AI_KEY;
+  process.env.PPBF_MS_CLIENT_SECRET = TEST_IKM;
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
   f2 = await import('./shadowCoachRecommendation');
@@ -326,6 +358,22 @@ describe('SHADOW F2 against a real database', () => {
       actor: coach, athleteId: ATHLETE, previewToken: draft.previewToken, sessionToken: SESSION,
     })).rejects.toBeInstanceOf(f2.StaleCoachDraftError);
     expect(await writeCounts()).toEqual(before);
+  });
+
+  test('a minor with no coach-set limits gets no draft: nothing searched, nothing written', async () => {
+    const resultId = await formulaResult(NO_LIMITS_ATHLETE, '2026-10-20T10:00:00.000Z');
+    const before = await writeCounts();
+    const telemetryBefore = await count('pilot.shadow_telemetry_events');
+    let modelCalled = false;
+    const result = await f2.previewCoachDraft({
+      actor: coach, athleteId: NO_LIMITS_ATHLETE, resultId, question: QUESTION, sessionToken: SESSION,
+      generate: async () => { modelCalled = true; return stubModel(); },
+    });
+    expect(result).toEqual({ kind: 'abstain', reason: 'limits_not_set' });
+    expect(modelCalled).toBe(false);
+    expect(await writeCounts()).toEqual(before);
+    // No Library search ran (its telemetry row would be here).
+    expect(await count('pilot.shadow_telemetry_events')).toBe(telemetryBefore);
   });
 
   test('an athlete deleted after the preview gets nothing saved', async () => {
