@@ -13582,7 +13582,7 @@
     "id": "app/api/pilot/shadow/recommendations/draft/route.ts#POST",
     "method": "POST",
     "writes": true,
-    "notes": "coachForAthlete gets principal, enforces role coach and assertActorCanAccessAthlete. Explicit draft request reads scoped formula + approved Library, calls Azure model but does not persist; explicit save inserts provisional recommendation and same-transaction audit attribution."
+    "notes": "coachForAthlete gets principal, enforces role coach and assertActorCanAccessAthlete (a refusal is 404, a failed check 500). Explicit draft request counts against the SHADOW chat rate limits (429), reads scoped formula + approved Library (score-gap gate applies; the search logs its usual shadow.library.search telemetry row) and calls the Azure model, but stores no recommendation, audit entry or evidence; explicit save rechecks formula and evidence (that search logs telemetry too), locks the live athlete row, and inserts one provisional recommendation with same-transaction audit attribution."
   },
   {
     "id": "app/api/pilot/shadow/recommendations/route.ts#GET",
