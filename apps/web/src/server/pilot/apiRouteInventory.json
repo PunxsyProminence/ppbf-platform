@@ -13535,6 +13535,56 @@
     }
   },
   {
+    "path": "/api/pilot/shadow/recommendations/draft",
+    "gate": "requirePrincipal (coach only) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": []
+    },
+    "id": "app/api/pilot/shadow/recommendations/draft/route.ts#GET",
+    "method": "GET",
+    "writes": false,
+    "notes": "coachForAthlete gets the authenticated principal, enforces role coach and assertActorCanAccessAthlete before any stored result or F2-origin read; no writes. Current eligible formula choices and persisted audit provenance only."
+  },
+  {
+    "path": "/api/pilot/shadow/recommendations/draft",
+    "gate": "requirePrincipal (coach only) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach"
+    ],
+    "athleteData": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": []
+    },
+    "id": "app/api/pilot/shadow/recommendations/draft/route.ts#POST",
+    "method": "POST",
+    "writes": true,
+    "notes": "coachForAthlete gets principal, enforces role coach and assertActorCanAccessAthlete. Explicit draft request reads scoped formula + approved Library, calls Azure model but does not persist; explicit save inserts provisional recommendation and same-transaction audit attribution."
+  },
+  {
     "id": "app/api/pilot/shadow/recommendations/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/shadow/recommendations",
