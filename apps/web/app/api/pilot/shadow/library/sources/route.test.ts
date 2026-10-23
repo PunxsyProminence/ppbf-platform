@@ -266,7 +266,16 @@ describe('POST /api/pilot/shadow/library/sources', () => {
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
-    test.each([['null', null], ['a list', []], ['text', 'Smith 2019']])('refuses provenance given as %s', async (_label, value) => {
+    test('a null provenance is absence: the source registers without one', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({ ...validBody, metadata: { general_research: true, provenance: null } }));
+
+      expect(response.status).toBe(201);
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ metadata: { general_research: true } }));
+    });
+
+    test.each([['a list', []], ['text', 'Smith 2019']])('refuses provenance given as %s', async (_label, value) => {
       mockRequirePrincipal.mockResolvedValueOnce(principal());
 
       const response = await POST(postRequest({ ...validBody, metadata: { provenance: value } }));
@@ -276,16 +285,18 @@ describe('POST /api/pilot/shadow/library/sources', () => {
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
-    test('a year that contradicts publication_date is refused; one that agrees is stored', async () => {
+    // An online date in December and an issue year of the next January are both
+    // true of one paper, so the two are not cross-checked.
+    test('year and publication_date are independent: a year different from the date registers', async () => {
       mockRequirePrincipal.mockResolvedValueOnce(principal());
-      const clash = await POST(postRequest({ ...validBody, publication_date: '2018-05-01', metadata: { provenance: { year: 2019 } } }));
-      expect(clash.status).toBe(400);
-      expect((await clash.json()).error).toBe('metadata.provenance.year must match the year of publication_date');
-      expect(mockCreate).not.toHaveBeenCalled();
 
-      mockRequirePrincipal.mockResolvedValueOnce(principal());
-      const agree = await POST(postRequest({ ...validBody, publication_date: '2019-05-01', metadata: { provenance: { year: 2019 } } }));
-      expect(agree.status).toBe(201);
+      const response = await POST(postRequest({ ...validBody, publication_date: '2019-12-20', metadata: { provenance: { year: 2020 } } }));
+
+      expect(response.status).toBe(201);
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+        publicationDate: '2019-12-20',
+        metadata: { provenance: { year: 2020 } },
+      }));
     });
 
     // boxing_specificity on a chunk is the evidence tier rule's input; here it
@@ -298,6 +309,19 @@ describe('POST /api/pilot/shadow/library/sources', () => {
       const stored = (mockCreate.mock.calls[0][0] as { metadata: Record<string, unknown> }).metadata;
       expect(Object.keys(stored)).toEqual(['provenance']);
       for (const key of Object.keys(provenance)) expect(stored).not.toHaveProperty(key);
+    });
+
+    test('the classification taxonomy is still enforced beside a valid provenance', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({
+        ...validBody,
+        metadata: { classification_domain: 'astrology', provenance: { year: 2019 } },
+      }));
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe('Unsupported classification_domain');
+      expect(mockCreate).not.toHaveBeenCalled();
     });
 
     test('the reserved importer keys are still refused beside a valid provenance', async () => {
@@ -384,9 +408,10 @@ describe('GET /api/pilot/shadow/library/sources', () => {
   });
 
   // Issue #345 provenance. It sits in the source's metadata, which the list
-  // returns whole to the roles that may read the list (curators and coaches,
-  // staff). Family readers never reach this route, and the family research
-  // answers are built from named fields (researchFamilyView.ts).
+  // returns whole (select s.*) to the roles that may read the list: curators
+  // and coaches. Athlete, parent, board, volunteer and staff-tier readers are
+  // refused by the role check, and the family research answers are built from
+  // named fields (researchFamilyView.ts).
   test('staff read a source with its provenance as stored', async () => {
     const provenance = { year: 2019, boxing_specificity: 'transferred', protected_domains: { contact: true } };
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
@@ -401,11 +426,11 @@ describe('GET /api/pilot/shadow/library/sources', () => {
     'a %s is refused the list, so no provenance reaches a family reader',
     async (role) => {
       mockRequirePrincipal.mockResolvedValueOnce(principal(role));
-      mockList.mockResolvedValueOnce([{ source_id: 'source_1', metadata: { provenance: { year: 2019 } } }] as never);
 
       const response = await GET(getRequest());
 
       expect(response.status).toBe(403);
+      expect(mockList).not.toHaveBeenCalled();
       expect(JSON.stringify(await response.json())).not.toContain('provenance');
     },
   );

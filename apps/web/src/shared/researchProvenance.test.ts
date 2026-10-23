@@ -47,6 +47,20 @@ describe('parseResearchProvenance', () => {
     expect(result).toEqual({ ok: true, provenance: { provider: 'Penn State library' } });
   });
 
+  test('a blank year, authors or protected_domains is absence too, as a form that sends empty inputs would', () => {
+    expect(parseResearchProvenance({ year: '', authors: '  ', protected_domains: '' }, NOW)).toEqual({ ok: true, provenance: {} });
+  });
+
+  // doi_or_pmid is stored as the form sent it (another lane reads it for the
+  // publication key); a bare PMID may arrive as a number, as that reader allows.
+  test('doi_or_pmid is kept exactly as given, and a numeric PMID is allowed', () => {
+    expect(parseResearchProvenance({ doi_or_pmid: ' 10.1000/XYZ ' }, NOW)).toEqual({ ok: true, provenance: { doi_or_pmid: ' 10.1000/XYZ ' } });
+    expect(parseResearchProvenance({ doi_or_pmid: 31234567 }, NOW)).toEqual({ ok: true, provenance: { doi_or_pmid: 31234567 } });
+    for (const bad of [-1, 1.5, true, ['31234567']]) {
+      expect(parseResearchProvenance({ doi_or_pmid: bad }, NOW)).toEqual({ ok: false, error: 'metadata.provenance.doi_or_pmid must be a string' });
+    }
+  });
+
   test('blank author entries are dropped, and a list of only blanks is left out', () => {
     expect(parseResearchProvenance({ authors: [' Smith J ', '', '  '] }, NOW)).toEqual({ ok: true, provenance: { authors: ['Smith J'] } });
     expect(parseResearchProvenance({ authors: ['', ' '] }, NOW)).toEqual({ ok: true, provenance: {} });
@@ -121,6 +135,14 @@ describe('parseResearchProvenance', () => {
     expect(parseResearchProvenance({ ...FULL, ...input }, NOW)).toEqual({ ok: false, error: message });
   });
 
+  test('prototype-shaped keys from parsed JSON are refused as unknown, not stored', () => {
+    for (const json of ['{"__proto__":{"polluted":true}}', '{"constructor":{"prototype":{}}}']) {
+      const result = parseResearchProvenance(JSON.parse(json), NOW);
+      expect(result.ok).toBe(false);
+    }
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   test('an unknown key hidden beside valid ones is not stored by being ignored', () => {
     const result = parseResearchProvenance({ population: 'adult boxers', evidence_tier: 'PROVEN' }, NOW);
     expect(result.ok).toBe(false);
@@ -141,7 +163,7 @@ describe('parseResearchProvenance', () => {
 // (shadowEvidenceTier.ts). The same name here describes the source and must
 // never be written to a chunk, so the code that writes chunks must not reach
 // this contract.
-describe('provenance never reaches chunk metadata', () => {
+describe('the code that writes chunks does not use the provenance contract', () => {
   const root = join(__dirname, '..', '..');
 
   test.each([

@@ -214,20 +214,18 @@ export async function POST(request: NextRequest) {
 
     // What a curator knows about the study (researchProvenance.ts): checked for
     // shape, unknown keys refused, and the cleaned copy is what is stored. It
-    // goes on this SOURCE row only; this route writes no chunk.
+    // goes on this SOURCE row only; this route writes no chunk. A null
+    // provenance is absence and is left out.
     let metadata = body.metadata as Record<string, unknown> | undefined;
     if (metadata !== undefined && metadata.provenance !== undefined) {
-      const checked = parseResearchProvenance(metadata.provenance);
-      if (!checked.ok) return NextResponse.json({ ok: false, error: checked.error }, { status: 400 });
-      // One home for the year: a year that contradicts publication_date is refused.
-      const dateYear = typeof body.publication_date === 'string' ? Number(body.publication_date.slice(0, 4)) : null;
-      if (checked.provenance.year !== undefined && dateYear !== null && checked.provenance.year !== dateYear) {
-        return NextResponse.json(
-          { ok: false, error: 'metadata.provenance.year must match the year of publication_date' },
-          { status: 400 },
-        );
+      const { provenance: sent, ...rest } = metadata;
+      if (sent === null) {
+        metadata = rest;
+      } else {
+        const checked = parseResearchProvenance(sent);
+        if (!checked.ok) return NextResponse.json({ ok: false, error: checked.error }, { status: 400 });
+        metadata = { ...rest, provenance: checked.provenance };
       }
-      metadata = { ...metadata, provenance: checked.provenance };
     }
 
     // The classification taxonomy is a shared contract aligned to the

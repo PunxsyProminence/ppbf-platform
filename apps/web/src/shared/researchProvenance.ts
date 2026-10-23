@@ -5,7 +5,9 @@
 // WHERE IT LIVES. `metadata.provenance` on the SOURCE row. Journal is the
 // existing `publisher` column and the full publication date the existing
 // `publication_date` column; `year` is here because a year alone is not a date
-// and must not be stored as one (no invented month or day).
+// and must not be stored as one (no invented month or day). The two are not
+// cross-checked: an online date in December and an issue year of the next
+// January are both true of one paper.
 //
 // WHERE IT MUST NEVER GO. Chunk metadata. The research importer writes
 // population, age_range, sex, study_design, boxing_specificity and
@@ -25,8 +27,9 @@
 // never a person in the gym: no free-text note field is offered.
 //
 // `doi_or_pmid`, `provider` and `original_filename` are the three keys the
-// General Research form already sends. They stay accepted; how `doi_or_pmid`
-// is READ (the publication key) is not decided here.
+// General Research form already sends. They stay accepted. `doi_or_pmid` is
+// stored exactly as given (not trimmed; a bare numeric PMID is allowed, as the
+// publication key's reader allows it): how it is READ is not decided here.
 
 import type { ShadowBoxingSpecificity } from '@/src/server/pilot/shadowEvidenceTier';
 
@@ -74,7 +77,8 @@ const MAX_AUTHORS = 100;
 const MAX_AUTHOR_LENGTH = 200;
 const EARLIEST_YEAR = 1800;
 
-export interface ResearchProvenance extends Partial<Record<TextKey, string>> {
+export interface ResearchProvenance extends Partial<Record<Exclude<TextKey, 'doi_or_pmid'>, string>> {
+  doi_or_pmid?: string | number;
   authors?: string[];
   year?: number;
   boxing_specificity?: ShadowBoxingSpecificity;
@@ -124,15 +128,20 @@ export function parseResearchProvenance(input: unknown, now: Date = new Date()):
   for (const key of Object.keys(TEXT_LIMITS) as TextKey[]) {
     const value = input[key];
     if (isAbsent(value)) continue;
+    if (key === 'doi_or_pmid' && typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+      out[key] = value;
+      continue;
+    }
     if (typeof value !== 'string') return fail(`metadata.provenance.${key} must be a string`);
     const trimmed = value.trim();
     if (trimmed.length > TEXT_LIMITS[key]) {
       return fail(`metadata.provenance.${key} must be ${TEXT_LIMITS[key]} characters or fewer`);
     }
-    out[key] = trimmed;
+    if (key === 'doi_or_pmid') out[key] = value;
+    else out[key] = trimmed;
   }
 
-  if (input.authors !== undefined && input.authors !== null) {
+  if (!isAbsent(input.authors)) {
     const authors = input.authors;
     if (!Array.isArray(authors) || authors.length > MAX_AUTHORS) {
       return fail(`metadata.provenance.authors must be a list of at most ${MAX_AUTHORS} names`);
@@ -140,7 +149,8 @@ export function parseResearchProvenance(input: unknown, now: Date = new Date()):
     const names: string[] = [];
     for (const author of authors) {
       if (isAbsent(author)) continue;
-      if (typeof author !== 'string' || author.trim().length > MAX_AUTHOR_LENGTH) {
+      if (typeof author !== 'string') return fail('metadata.provenance.authors must be a list of names');
+      if (author.trim().length > MAX_AUTHOR_LENGTH) {
         return fail(`metadata.provenance.authors must be names of ${MAX_AUTHOR_LENGTH} characters or fewer`);
       }
       names.push(author.trim());
@@ -148,7 +158,7 @@ export function parseResearchProvenance(input: unknown, now: Date = new Date()):
     if (names.length > 0) out.authors = names;
   }
 
-  if (input.year !== undefined && input.year !== null) {
+  if (!isAbsent(input.year)) {
     const latest = now.getUTCFullYear() + 1; // an in-press paper may be dated next year
     if (!Number.isSafeInteger(input.year) || (input.year as number) < EARLIEST_YEAR || (input.year as number) > latest) {
       return fail(`metadata.provenance.year must be a whole year from ${EARLIEST_YEAR} to ${latest}`);
@@ -164,7 +174,7 @@ export function parseResearchProvenance(input: unknown, now: Date = new Date()):
     out.boxing_specificity = value.trim() as ShadowBoxingSpecificity;
   }
 
-  if (input.protected_domains !== undefined && input.protected_domains !== null) {
+  if (!isAbsent(input.protected_domains)) {
     const flags = input.protected_domains;
     if (!isPlainObject(flags)) return fail('metadata.provenance.protected_domains must be an object');
     const kept: Partial<Record<ResearchProtectedDomain, boolean>> = {};
