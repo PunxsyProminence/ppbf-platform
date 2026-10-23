@@ -537,7 +537,8 @@ export default function ResearchIntakePage() {
     ));
     setAnswerDraft((current) => ({ ...current, sourceId: source.source_id }));
     setHeldSource(null);
-    setGapDoor(null);
+    // The form closes; a File panel the curator has since opened stays as it is.
+    setGapDoor((open) => (open?.kind === 'register' ? null : open));
     setAnswerMessage({
       forId: forRequirementId,
       text: recovered ? `${GAP_DOOR_WORDS.chosen(source.title)} ${SOURCE_REGISTRATION_WORDS.recovered}` : GAP_DOOR_WORDS.chosen(source.title),
@@ -1499,7 +1500,6 @@ export default function ResearchIntakePage() {
                     {gapDoor?.forId === requirement.research_requirement_id && gapDoor.kind === 'file' && answerDraft.sourceId ? (
                       <div className="mt-[var(--s3)]">
                         <LibraryTextIntakePanel
-                          key={answerDraft.sourceId}
                           sources={curatorSources}
                           truncated={curatorSourcesTruncated}
                           initialSourceId={answerDraft.sourceId}

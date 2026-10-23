@@ -56,6 +56,8 @@ interface Capture {
   sourcePosts: Array<Record<string, unknown>>;
   submissions: Array<Record<string, unknown>>;
   requirementPosts: Array<Record<string, unknown>>;
+  /** Reads of the sources list so far. */
+  sourceReads: number;
 }
 
 function mockLibrary(options: {
@@ -92,6 +94,7 @@ function mockLibrary(options: {
       return { ok: true, status: 201, json: async () => ({ ok: true, source: saved }) } as Response;
     }
     if (url.includes('/library/sources')) {
+      options.capture.sourceReads += 1;
       return { ok: true, json: async () => ({ sources }) } as Response;
     }
     if (url.includes('/research-requirements') && init?.method === 'POST') {
@@ -106,7 +109,7 @@ function mockLibrary(options: {
 }
 
 function newCapture(): Capture {
-  return { sourcePosts: [], submissions: [], requirementPosts: [] };
+  return { sourcePosts: [], submissions: [], requirementPosts: [], sourceReads: 0 };
 }
 
 async function openAnswerPanel(fetchMock: typeof fetch, which = 0) {
@@ -271,13 +274,45 @@ describe('registering a new source from the requirement', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Answer this gap' }));
     });
+
+    // The registration runs to its end -- the list is read again -- before anything is asserted.
+    await waitFor(() => expect(capture.sourcePosts).toHaveLength(1));
+    const readsBefore = capture.sourceReads;
     await act(async () => {
       release();
     });
-
-    await waitFor(() => expect(capture.sourcePosts).toHaveLength(1));
+    await waitFor(() => expect(capture.sourceReads).toBeGreaterThanOrEqual(readsBefore + 2));
+    await act(async () => undefined);
     expect(chosenSource()).toBe('');
     expect(screen.queryByText(/is chosen above/)).toBeNull();
+  });
+
+  test('a registration finished while the File panel is open leaves that panel as it is', async () => {
+    const capture = newCapture();
+    let release: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    await openAnswerPanel(mockLibrary({ capture, hold }));
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Library source'), { target: { value: 'src-1' } });
+    });
+    const door = await openRegisterDoor();
+    await fillAndRegister(door, 'Slow registration');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'File its PDF' }));
+    });
+    const panel = screen.getByRole('region', { name: 'Add source text to the Library' });
+
+    const readsBefore = capture.sourceReads;
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(capture.sourceReads).toBeGreaterThanOrEqual(readsBefore + 2));
+    await act(async () => undefined);
+
+    // The new source is chosen above; the panel in use is not closed or switched under the curator.
+    expect(chosenSource()).toBe('src-new');
+    expect(screen.getByRole('region', { name: 'Add source text to the Library' })).toBe(panel);
+    expect((within(panel).getByLabelText('Registered source') as HTMLSelectElement).value).toBe('src-1');
   });
 });
 
