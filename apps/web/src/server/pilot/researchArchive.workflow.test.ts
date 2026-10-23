@@ -152,11 +152,21 @@ const CANDIDATES: Record<Name, string[]> = {
     'EXAMPLE.SharePoint.com,AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE,ffffffff-0000-1111-2222-333333333333',
     'example.sharepoint.com,11111111-2222-3333-4444-555555555555',
     'example.sharepoint.com,11111111-2222-3333-4444-55555555555g,66666666-7777-8888-9999-000000000000',
+    'example.sharepoint.com,11111111-2222-3333-4444-55555555555,66666666-7777-8888-9999-000000000000',
+    'example.sharepoint.com,11111111-2222-3333-4444-555555555555,66666666-7777-8888-9999-0000000000000',
+    'example.sharepoint.com:443,11111111-2222-3333-4444-555555555555,66666666-7777-8888-9999-000000000000',
+    'example.sharepoint.com,11111111-2222-3333-4444-555555555555,66666666-7777-8888-9999-000000000000,x',
+    ',11111111-2222-3333-4444-555555555555,66666666-7777-8888-9999-000000000000',
     'example.sharepoint.com/sites/x,11111111-2222-3333-4444-555555555555,66666666-7777-8888-9999-000000000000',
     'secretref:azure-ai-key',
   ],
-  RESEARCH_ARCHIVE_DRIVE_ID: [VALID.RESEARCH_ARCHIVE_DRIVE_ID, 'b!x', 'B!abc', 'b!', 'b!abc/def', 'b!abc;rm', 'secretref:ppbf-ms-client-secret'],
-  RESEARCH_ARCHIVE_ROOT_ITEM_ID: [VALID.RESEARCH_ARCHIVE_ROOT_ITEM_ID, 'abc123', 'root-item', '01_ROOT', '../root', 'a=b', 'secretref:x'],
+  RESEARCH_ARCHIVE_DRIVE_ID: [
+    VALID.RESEARCH_ARCHIVE_DRIVE_ID, 'b!x', 'B!abc', 'b!', 'b!abc/def', 'b!abc;rm', 'b!a:b', 'b!a.b', 'b!a+b', 'b!a=b',
+    'secretref:ppbf-ms-client-secret',
+  ],
+  RESEARCH_ARCHIVE_ROOT_ITEM_ID: [
+    VALID.RESEARCH_ARCHIVE_ROOT_ITEM_ID, 'abc123', 'root-item', '01_ROOT', '../root', 'a=b', 'a:b', 'a.b', 'secretref:x',
+  ],
   RESEARCH_ARCHIVE_ORGANIZATION_IDS: [
     VALID.RESEARCH_ARCHIVE_ORGANIZATION_IDS,
     'punxsy_prominence',
@@ -165,11 +175,44 @@ const CANDIDATES: Record<Name, string[]> = {
     ',example_gym',
     'example_gym,,__platform__',
     'org.id',
+    'a:b',
     'a"b',
     "a'b",
     'secretref:ppbf-pilot-default-org-id',
   ],
 };
+
+/** The SHAPE_* patterns a step's own script tests values against. */
+function workflowShapes(file: string): Record<Name, RegExp> {
+  const shapes: Partial<Record<Name, RegExp>> = {};
+  for (const line of runScript(file, PRODUCTION_STEP).split('\n')) {
+    const match = /^\s*SHAPE_([A-Z_]+)='([^']*)'$/.exec(line);
+    if (match) shapes[`RESEARCH_ARCHIVE_${match[1]}` as Name] = new RegExp(match[2]);
+  }
+  expect(Object.keys(shapes).sort()).toEqual([...NAMES].sort());
+  return shapes as Record<Name, RegExp>;
+}
+
+/**
+ * Every one-character edit of a valid value: each printable, non-space ASCII
+ * character inserted at every position or put in place of every character,
+ * and every character deleted or doubled (a GUID one short or one long).
+ */
+function oneCharacterEdits(value: string): string[] {
+  const printable = Array.from({ length: 0x7e - 0x21 + 1 }, (_, offset) => String.fromCharCode(0x21 + offset));
+  const edits = new Set<string>();
+  for (let at = 0; at <= value.length; at += 1) {
+    for (const character of printable) {
+      edits.add(value.slice(0, at) + character + value.slice(at));
+      if (at < value.length) edits.add(value.slice(0, at) + character + value.slice(at + 1));
+    }
+    if (at < value.length) {
+      edits.add(value.slice(0, at) + value.slice(at + 1));
+      edits.add(value.slice(0, at) + value[at] + value.slice(at));
+    }
+  }
+  return [...edits];
+}
 
 describe('how the Research Archive settings reach the production app', () => {
   test('the workflows deploy the same four names the app reads', () => {
@@ -211,6 +254,23 @@ describe('how the Research Archive settings reach the production app', () => {
     }
   });
 
+  test('none set, both production deploy steps hand the app the same list', () => {
+    // A one-sided edit of the static list would otherwise pass every test here.
+    const [direct, release] = DEPLOY_STEPS.map(({ file }) => deploy(file, {}).args);
+    expect(direct.length).toBeGreaterThan(10);
+    expect(release).toEqual(direct);
+  });
+
+  test('no staging deploy mentions them at all', () => {
+    const releaseFile = readWorkflow('release-one-approval.yml');
+    const releaseStaging = releaseFile.slice(releaseFile.indexOf('\n  staging:\n'), releaseFile.indexOf('\n  production:\n'));
+    expect(releaseStaging.length).toBeGreaterThan(1000);
+    expect(releaseStaging).toMatch(/- name: Deploy to Azure Container App\n/);
+    for (const [label, text] of [['deploy-staging.yml', readWorkflow('deploy-staging.yml')], ['release-one-approval staging job', releaseStaging]]) {
+      expect({ label, mentions: text.includes('RESEARCH_ARCHIVE') }).toEqual({ label, mentions: false });
+    }
+  });
+
   test.each(DEPLOY_STEPS)('$label: all four set, they are four more assignments and nothing else moves', ({ file }) => {
     const unset = deploy(file, {});
     const set = deploy(file, VALID);
@@ -223,16 +283,40 @@ describe('how the Research Archive settings reach the production app', () => {
   });
 
   test.each(DEPLOY_STEPS)('$label: some but not all set stops before az, naming the ones not set', ({ file }) => {
-    for (const present of PARTIAL) {
-      const run = deploy(file, Object.fromEntries(present.map((name) => [name, VALID[name]])));
-      const notSet = NAMES.filter((name) => !present.includes(name));
-      expect({ present, status: run.status, azCalls: run.azCalls })
-        .toEqual({ present, status: 1, azCalls: 0 });
-      expect(run.output).toContain(`Not set: ${notSet.join(' ')}.`);
-      // Names, never values.
-      for (const name of present) expect(run.output).not.toContain(VALID[name]);
+    // GitHub hands a variable that does not exist to the step as '' -- the
+    // case that matters -- and the shell sees an absent one the same way.
+    for (const absent of [undefined, '']) {
+      for (const present of PARTIAL) {
+        const notSet = NAMES.filter((name) => !present.includes(name));
+        const run = deploy(file, Object.fromEntries(NAMES.map((name) => [name, present.includes(name) ? VALID[name] : absent])));
+        expect({ absent, present, status: run.status, azCalls: run.azCalls })
+          .toEqual({ absent, present, status: 1, azCalls: 0 });
+        expect(run.output).toContain(`Not set: ${notSet.join(' ')}.`);
+        // Names, never values.
+        for (const name of present) expect(run.output).not.toContain(VALID[name]);
+      }
     }
-  }, 60_000);
+  }, 120_000);
+
+  test.each(DEPLOY_STEPS)('$label: its shapes accept exactly what the app accepts, one character either side', ({ file }) => {
+    // Plain JavaScript over the patterns the step's script holds, so every
+    // one-character edit of every valid value is affordable; the bash corpus
+    // below runs the same question through the real interpreter.
+    const shapes = workflowShapes(file);
+    for (const name of NAMES) {
+      const disagreements: string[] = [];
+      let accepted = 0;
+      let refused = 0;
+      for (const candidate of oneCharacterEdits(VALID[name])) {
+        const app = readResearchArchiveSetup({ ...VALID, [name]: candidate }, token).state === 'ready';
+        if (shapes[name].test(candidate) !== app) disagreements.push(candidate);
+        if (app) accepted += 1;
+        else refused += 1;
+      }
+      expect({ name, disagreements }).toEqual({ name, disagreements: [] });
+      expect({ name, both: accepted > 100 && refused > 100 }).toEqual({ name, both: true });
+    }
+  });
 
   test.each(DEPLOY_STEPS)('$label: refuses exactly what the app refuses, naming the variable, never the value', ({ file }) => {
     for (const name of NAMES) {
@@ -275,4 +359,13 @@ describe('how the Research Archive settings reach the production app', () => {
         .toEqual({ name, status: 1, azCalls: 0, said: true });
     }
   }, 60_000);
+
+  test('the local template carries the names, empty', () => {
+    // environmentInventory.workflow.test.ts cannot hold these to the template:
+    // its parser stops at the first appended array.
+    const template = fs.readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8').split(/\r?\n/);
+    for (const name of NAMES) {
+      expect({ name, lines: template.filter((line) => line.startsWith(`${name}=`)) }).toEqual({ name, lines: [`${name}=`] });
+    }
+  });
 });
