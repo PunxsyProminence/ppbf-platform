@@ -659,7 +659,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19.2.5",
     "async-exit-hook": "^2.0.1",
-    "csv-parse": "^7.0.2",
+    "csv-parse": "^7.0.3",
     "embedded-postgres": "18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
