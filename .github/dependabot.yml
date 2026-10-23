@@ -7,3 +7,22 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Default is 5 open version-update PRs; once 5 sit unreviewed Dependabot
+    # raises nothing newer (2026-10-08 bumps blocked it for two weeks).
+    open-pull-requests-limit: 10
+    groups:
+      # react and react-dom are exact-pinned together in apps/web/package.json
+      # and @types/react{,-dom} track them, so all four must move in ONE PR
+      # (#1355, a react-only bump, failed its validate check).
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react*"
+    ignore:
+      # Never raise a @types/node major: web runs Node 22 (Dockerfile, engines)
+      # and apps/research-bridge runs Node 24 (Dockerfile.research-bridge), so
+      # a newer major types APIs those runtimes lack (#1357 was 22 -> 26; the
+      # same kind of bump was closed as #533). Minor and patch updates flow.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
