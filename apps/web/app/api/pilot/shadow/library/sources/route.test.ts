@@ -188,6 +188,155 @@ describe('POST /api/pilot/shadow/library/sources', () => {
     },
   );
 
+  // Issue #345 provenance (researchProvenance.ts). Stored on the source row's
+  // metadata.provenance, checked for shape, never a chunk's metadata.
+  describe('metadata.provenance', () => {
+    const provenance = {
+      doi_or_pmid: '10.1000/xyz123',
+      provider: 'Penn State library',
+      institutional_source_id: 'PSU-ILL-004417',
+      authors: ['Smith J', 'Ortega M'],
+      year: 2019,
+      population: 'Amateur boxers, club level',
+      age_range: '18-35',
+      sex: 'male',
+      study_design: 'Cross-sectional laboratory study',
+      boxing_specificity: 'boxing_specific',
+      transfer_status: 'Not transferred: studied in boxers',
+      protected_domains: { contact: true, sparring: false },
+    };
+
+    test('a full record is stored on the source, with journal and date in their own columns', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({
+        ...validBody,
+        publisher: 'Journal of Boxing Science',
+        publication_date: '2019-03-01',
+        metadata: { general_research: true, provenance },
+      }));
+
+      expect(response.status).toBe(201);
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+        publisher: 'Journal of Boxing Science',
+        publicationDate: '2019-03-01',
+        metadata: { general_research: true, provenance },
+      }));
+    });
+
+    test('a partial record, an empty one, and none at all are all accepted', async () => {
+      for (const metadata of [{ provenance: { year: 2026 } }, { provenance: {} }, { general_research: true }]) {
+        mockRequirePrincipal.mockResolvedValueOnce(principal());
+        expect((await POST(postRequest({ ...validBody, metadata }))).status).toBe(201);
+      }
+      expect(mockCreate).toHaveBeenCalledTimes(3);
+    });
+
+    test('the keys the General Research form sends today still register', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+      const sent = { doi_or_pmid: '31234567', provider: 'Penn State library', original_filename: 'a.pdf' };
+
+      const response = await POST(postRequest({ ...validBody, metadata: { general_research: true, provenance: sent } }));
+
+      expect(response.status).toBe(201);
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ metadata: { general_research: true, provenance: sent } }));
+    });
+
+    test('what is stored is the cleaned copy: trimmed, blanks left out', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      await POST(postRequest({ ...validBody, metadata: { provenance: { population: ' adult boxers ', sex: '', year: null } } }));
+
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ metadata: { provenance: { population: 'adult boxers' } } }));
+    });
+
+    test.each([
+      ['an unknown key', { journal_impact: 4 }, 'metadata.provenance.journal_impact is not a provenance field'],
+      ['a boxing_specificity outside the importer set', { boxing_specificity: 'boxing' }, 'metadata.provenance.boxing_specificity must be one of boxing_specific, partly_boxing_specific, ppbf_specific, transferred'],
+      ['a year that is not plausible', { year: 3019 }, expect.stringMatching(/^metadata\.provenance\.year must be a whole year/)],
+      ['a text field over its bound', { population: 'x'.repeat(301) }, 'metadata.provenance.population must be 300 characters or fewer'],
+      ['a protected-domain flag that is not a boolean', { protected_domains: { contact: 'yes' } }, 'metadata.provenance.protected_domains.contact must be true or false'],
+    ])('refuses %s with a 400 that says why, and writes nothing', async (_label, bad, message) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({ ...validBody, metadata: { provenance: bad } }));
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toEqual(message);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    test('a null provenance is absence: the source registers without one', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({ ...validBody, metadata: { general_research: true, provenance: null } }));
+
+      expect(response.status).toBe(201);
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ metadata: { general_research: true } }));
+    });
+
+    test.each([['a list', []], ['text', 'Smith 2019']])('refuses provenance given as %s', async (_label, value) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({ ...validBody, metadata: { provenance: value } }));
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe('metadata.provenance must be an object');
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    // An online date in December and an issue year of the next January are both
+    // true of one paper, so the two are not cross-checked.
+    test('year and publication_date are independent: a year different from the date registers', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({ ...validBody, publication_date: '2019-12-20', metadata: { provenance: { year: 2020 } } }));
+
+      expect(response.status).toBe(201);
+      expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({
+        publicationDate: '2019-12-20',
+        metadata: { provenance: { year: 2020 } },
+      }));
+    });
+
+    // boxing_specificity on a chunk is the evidence tier rule's input; here it
+    // is a description of the source and sits only under metadata.provenance.
+    test('provenance is stored under metadata.provenance only: no study field leaks to the top level of the metadata', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      await POST(postRequest({ ...validBody, publication_date: '2019-03-01', metadata: { provenance } }));
+
+      const stored = (mockCreate.mock.calls[0][0] as { metadata: Record<string, unknown> }).metadata;
+      expect(Object.keys(stored)).toEqual(['provenance']);
+      for (const key of Object.keys(provenance)) expect(stored).not.toHaveProperty(key);
+    });
+
+    test('the classification taxonomy is still enforced beside a valid provenance', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({
+        ...validBody,
+        metadata: { classification_domain: 'astrology', provenance: { year: 2019 } },
+      }));
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe('Unsupported classification_domain');
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    test('the reserved importer keys are still refused beside a valid provenance', async () => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal());
+
+      const response = await POST(postRequest({
+        ...validBody,
+        metadata: { copied_from_source_id: 'src_6563c68e39047128', provenance: { year: 2026 } },
+      }));
+
+      expect(response.status).toBe(400);
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+  });
+
   test('reports a repeated url as a conflict rather than a server fault', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());
     mockCreate.mockRejectedValueOnce(
@@ -257,6 +406,34 @@ describe('GET /api/pilot/shadow/library/sources', () => {
     expect((await GET(getRequest())).status).toBe(403);
     expect(mockList).not.toHaveBeenCalled();
   });
+
+  // Issue #345 provenance. It sits in the source's metadata, which the list
+  // returns whole (select s.*) to the roles that may read the list: curators
+  // and coaches. Athlete, parent, board, volunteer and staff-tier readers are
+  // refused by the role check, and the family research answers are built from
+  // named fields (researchFamilyView.ts).
+  test('staff read a source with its provenance as stored', async () => {
+    const provenance = { year: 2019, boxing_specificity: 'transferred', protected_domains: { contact: true } };
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+    mockList.mockResolvedValueOnce([{ source_id: 'source_1', metadata: { provenance } }] as never);
+
+    const payload = await (await GET(getRequest())).json();
+
+    expect(payload.items[0].metadata.provenance).toEqual(provenance);
+  });
+
+  test.each(['athlete', 'parent', 'board', 'volunteer', 'staff'] as const)(
+    'a %s is refused the list, so no provenance reaches a family reader',
+    async (role) => {
+      mockRequirePrincipal.mockResolvedValueOnce(principal(role));
+
+      const response = await GET(getRequest());
+
+      expect(response.status).toBe(403);
+      expect(mockList).not.toHaveBeenCalled();
+      expect(JSON.stringify(await response.json())).not.toContain('provenance');
+    },
+  );
 
   test('returns items under the key the seed script reads', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal());

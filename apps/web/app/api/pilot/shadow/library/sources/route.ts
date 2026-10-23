@@ -21,6 +21,7 @@ import {
 } from '@/src/server/pilot/shadowLibraryRights';
 import { SHADOW_LIBRARY_CURATOR_ROLES, SHADOW_SOURCE_ATTACH_ROLES } from '@/src/server/pilot/shadowRoleSets';
 import { isResearchClassificationDomain } from '@/src/shared/researchClassification';
+import { parseResearchProvenance } from '@/src/shared/researchProvenance';
 
 export const runtime = 'nodejs';
 
@@ -211,6 +212,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: reservedProvenanceMessage(reservedKey) }, { status: 400 });
     }
 
+    // What a curator knows about the study (researchProvenance.ts): checked for
+    // shape, unknown keys refused, and the cleaned copy is what is stored. It
+    // goes on this SOURCE row only; this route writes no chunk. A null
+    // provenance is absence and is left out.
+    let metadata = body.metadata as Record<string, unknown> | undefined;
+    if (metadata !== undefined && metadata.provenance !== undefined) {
+      const { provenance: sent, ...rest } = metadata;
+      if (sent === null) {
+        metadata = rest;
+      } else {
+        const checked = parseResearchProvenance(sent);
+        if (!checked.ok) return NextResponse.json({ ok: false, error: checked.error }, { status: 400 });
+        metadata = { ...rest, provenance: checked.provenance };
+      }
+    }
+
     // The classification taxonomy is a shared contract aligned to the
     // governed R01-R19 subject archive. Registration and correction use the
     // same validator, so no route can file a source outside the controlled
@@ -241,7 +258,7 @@ export async function POST(request: NextRequest) {
       publicationDate: (body.publication_date as string | null | undefined) ?? null,
       status: body.status as ShadowLibrarySourceStatus | undefined,
       rightsStatus: body.rights_status as ShadowLibraryRightsStatus | undefined,
-      metadata: body.metadata as Record<string, unknown> | undefined,
+      metadata,
       requestId,
     });
 
