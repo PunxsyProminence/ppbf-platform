@@ -683,6 +683,47 @@ export async function fileLibraryPdfOriginal(
   }
 }
 
+// A single row update, so far shorter than a filing.
+const CLASSIFY_TIMEOUT_MS = 30_000;
+
+// The filing route's refusal for a source with no R01-R19 subject yet
+// (researchArchiveFiling.ts SOURCE_NOT_CLASSIFIED; not imported, so this client
+// module carries no server import).
+export const SOURCE_NOT_CLASSIFIED_CODE = 'SOURCE_NOT_CLASSIFIED';
+
+export type ClassifySourceResult = { ok: true } | { ok: false; status: number; serverMessage: string | null };
+
+/**
+ * Saves the subject (an R01-R19 classification key) on a registered source:
+ * the same PATCH the General Research tab's "Correct classification" makes
+ * (sources route, curator roles only). Never throws.
+ */
+export async function classifyLibrarySource(
+  apiBaseUrl: string,
+  fields: { sourceId: string; classificationDomain: string; shelf?: IntakeShelf },
+  options: { fetchImpl?: typeof fetch } = {},
+): Promise<ClassifySourceResult> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  try {
+    const response = await fetchImpl(`${apiBaseUrl}/api/pilot/shadow/library/sources`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_id: fields.sourceId,
+        classification_domain: fields.classificationDomain,
+        ...(fields.shelf === 'platform' ? { shelf: 'platform' } : {}),
+      }),
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(CLASSIFY_TIMEOUT_MS) : undefined,
+    });
+    if (response.ok) return { ok: true };
+    const payload: unknown = await response.json().catch(() => null);
+    return { ok: false, status: response.status, serverMessage: serverError(payload).error };
+  } catch {
+    return { ok: false, status: 0, serverMessage: null };
+  }
+}
+
 /**
  * The filed original an excerpt may be linked to: only one filed for the
  * excerpt's own source, from the very bytes the pages were read from.
