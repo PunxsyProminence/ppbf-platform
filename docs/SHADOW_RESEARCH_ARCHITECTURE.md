@@ -59,10 +59,17 @@ recorded here so the target can be addressed by stable Graph identity rather tha
 by a path a reorganisation can break. They are the values of the production settings
 `RESEARCH_ARCHIVE_SITE_ID`, `RESEARCH_ARCHIVE_DRIVE_ID` and `RESEARCH_ARCHIVE_ROOT_ITEM_ID`
 (`apps/web/src/server/pilot/researchArchiveConfig.ts`; lane L57). The create-only write
-(`researchArchiveWrite.ts`) signs in as the app's managed identity, which Jason is to grant write
-on this folder only (not done as of 2026-10-18), and addresses everything by item id: the subject folder is the one child of
-the root item whose name starts `R## - ` (the folders are named `R19 - Measurement and
-Assessment Instruments` and so on, read 2026-10-17); it never creates a folder.
+(`researchArchiveWrite.ts`) signs in as the app's managed identity, and addresses everything by
+item id: the subject folder is the one child of the root item whose name starts `R## - ` (the
+folders are named `R19 - Measurement and Assessment Instruments` and so on, read 2026-10-17); it
+never creates a folder.
+
+**The write grant is done (2026-10-19).** Jason clicked the consent and ran the grant query himself
+(OD-2026-10-19-002); Microsoft Graph answered 201 Created, giving the app's production identity
+`write` on the Research Archive folder (the root item above) only. Issue #345's status comment of
+2026-10-19 adds that the identity also holds `ListItems.SelectedOperations.Selected` and that Jason
+clicked both. The grant is what lets the create-only write succeed; it does not switch the app's
+filing on, which still needs the four `RESEARCH_ARCHIVE_*` settings (see the end of this document).
 
 ### 1.1 The temporary migration source — OneDrive
 
@@ -449,7 +456,8 @@ root folder, and stable IDs have not yet been verified". That premise no longer 
 paragraph closes. It stayed a draft, on a base since superseded, and is retired as a route to
 `main` rather than as a record — what it decided is preserved here and in §1.
 
-**BUILT, NOT YET DEMONSTRATED — the archive-to-SHADOW handoff (lane L57, #345).** The
+**BUILT; THE SHAREPOINT LEG DEMONSTRATED 2026-10-19; FILING OFF IN PRODUCTION — the
+archive-to-SHADOW handoff (lane L57, #345).** The
 research-specific, idempotent handoff now exists: the `archive-original` route hashes the PDF,
 finds the same bytes already recorded, or already in the target folder under the hash-suffixed
 name the app files by, files it create-only under the
@@ -458,9 +466,26 @@ an excerpt saved from it is linked (`archived_original_id`, same source and shel
 key) and lands pending review like any other. Filing approves nothing; a filing that fails
 records nothing and the excerpt saves unlinked, saying so. Graph is mocked in every test.
 
-It is not demonstrated until the one supervised synthetic-PDF write in production (lane L57
-plan section 7) has run after Jason's grant, and no retrieval, citation or evidence behaviour
-may depend on archive custody (§3).
+**Demonstrated — 2026-10-19 (OD-2026-10-19-002; issue #345 status comment).** After Jason's write
+grant (§1.0), one synthetic PDF was filed in the real Research Archive, in folder R19, and a
+second create to the same name returned 409 (create-only). That test was SharePoint-only: no
+library record was written ("Graph-only proof, no DB row", as OD-2026-10-19-002 quotes Overwatch).
+Jason deletes the test file himself in SharePoint (OD-2026-10-19-007); whether he has was not
+checked when this was written.
+
+**Not yet demonstrated.**
+
+- The database legs on a real deployment together with the real archive: hashing the PDF, the
+  already-filed check, the archived-original row carrying its SharePoint identity, and an excerpt
+  linked to it that lands pending review.
+- Filing from the app. It is OFF in production because the four `RESEARCH_ARCHIVE_*` settings are
+  not set: neither `deploy-production.yml` nor `release-one-approval.yml` carries them (read on
+  `main`, 2026-10-23). Switching it on is a release and needs Jason's yes. The intended live check is
+  the first real open-licence paper filed through the app, not a made-up PDF in the real Library
+  (Overwatch's application of Jason's standing instruction to apply its recommended option,
+  OD-2026-10-21-005; not a ruling of his on this point).
+
+No retrieval, citation or evidence behaviour may depend on archive custody (§3).
 
 **Closed — owner decision, 2026-08-19.** The `warmup_decay` stop rules (§8) are **confirmed and
 stay**. Jason Neale reconfirmed the 2026-08-08 decision on 2026-08-19, through the primary
