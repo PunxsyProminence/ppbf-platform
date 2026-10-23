@@ -1,23 +1,30 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import {
   ARCHIVE_ACQUISITION_CHANNELS,
   ARCHIVE_VERSION_KINDS,
+  SOURCE_NOT_CLASSIFIED_CODE,
+  classifyLibrarySource,
   fileLibraryPdfOriginal,
   type ArchiveAcquisitionChannel,
+  type ArchiveFilingResult,
   type ArchiveVersionKind,
   type FiledOriginal,
   type IntakeShelf,
 } from '@/src/client/libraryTextIntake';
+import { RESEARCH_CLASSIFICATION_DOMAINS } from '@/src/shared/researchClassification';
 
 /* Lane L57 (issue #345): files the PDF read in the Add Source Text panel in the
    SharePoint Research Archive, in the folder for its source's subject, and
    records where it went. The app keeps no copy of the PDF (OD-2026-10-02-013
    4A). Shown only where filing is on for the shelf (the archive-original
    route's GET). If filing fails, excerpts still save, unlinked, and the box
-   says so (Overwatch Q3, 2026-10-18). The panel mounts one box per PDF read. */
+   says so (Overwatch Q3, 2026-10-18). The panel mounts one box per PDF read.
+   Lane LR6 (PR "I"): a source with no R01-R19 subject is refused filing, so the
+   box then offers the subject picker in place, saves the pick through the same
+   sources PATCH as the General Research tab, and files once more. */
 
 /** Why an excerpt saved now is, or is not, linked to what was filed. */
 export type ArchiveLinkState = 'linked' | 'other_source' | 'different_file';
@@ -61,6 +68,12 @@ export const FILING_WORDS = {
   // The write may have landed and its answer been lost; the server says to retry with the same file.
   mayNotBeFiled: (reason: string) => `May not be filed: ${reason} Excerpts you save now are not linked to a filed original.`,
   failed: 'the Research Archive did not answer. Try again with the same file.',
+  // PROPOSED wording, lane LR6: the subject picker shown when a source has none yet.
+  classifyLabel: 'Subject of this source',
+  classifyPlaceholder: 'Choose a subject…',
+  // The sources route's own sentences carry no full stop ("Forbidden"), so one is set here.
+  notClassified: (reason: string) => `Not classified: ${reason.replace(/[.\s]+$/, '')}. Nothing was filed.`,
+  classifyFailed: 'the Library did not answer. Try again.',
 };
 
 export default function ArchiveFilingBox({
@@ -89,33 +102,73 @@ export default function ArchiveFilingBox({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [alreadyFiled, setAlreadyFiled] = useState(false);
+  // The source the archive refused for want of a subject; the picker is for that source only.
+  const [unclassifiedId, setUnclassifiedId] = useState<string | null>(null);
+  // Set at once, where state is not yet: one request at a time, whatever fires twice.
+  const working = useRef(false);
+
+  function attemptFiling(forSourceId: string): Promise<ArchiveFilingResult> {
+    return fileLibraryPdfOriginal(apiBase(), file, {
+      sourceId: forSourceId,
+      acquisitionProvider: provider,
+      acquisitionChannel: channel,
+      versionKind: version,
+      acquiredAt,
+      ...(shelf === 'platform' ? { shelf } : {}),
+    });
+  }
+
+  function settle(result: ArchiveFilingResult, forSourceId: string) {
+    if (result.ok) {
+      setUnclassifiedId(null);
+      setAlreadyFiled(result.alreadyFiled);
+      onFiled(result.original, file);
+      return;
+    }
+    // A refusal (4xx) is definite; no answer or a server error may have landed.
+    const definite = result.status >= 400 && result.status < 500;
+    const reason = result.serverMessage ?? FILING_WORDS.failed;
+    setUnclassifiedId(result.code === SOURCE_NOT_CLASSIFIED_CODE ? forSourceId : null);
+    setMessage(definite ? FILING_WORDS.notFiled(reason) : FILING_WORDS.mayNotBeFiled(reason));
+  }
 
   async function handleFile() {
     if (!sourceId) {
       setMessage(FILING_WORDS.chooseSource);
       return;
     }
+    if (working.current) return;
+    working.current = true;
     setBusy(true);
     setMessage(null);
     try {
-      const result = await fileLibraryPdfOriginal(apiBase(), file, {
-        sourceId,
-        acquisitionProvider: provider,
-        acquisitionChannel: channel,
-        versionKind: version,
-        acquiredAt,
+      settle(await attemptFiling(sourceId), sourceId);
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
+  }
+
+  // The pick is saved on the source the archive refused, then the filing is tried once more.
+  async function handleClassify(classificationDomain: string) {
+    if (!unclassifiedId || !classificationDomain || working.current) return;
+    working.current = true;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const saved = await classifyLibrarySource(apiBase(), {
+        sourceId: unclassifiedId,
+        classificationDomain,
         ...(shelf === 'platform' ? { shelf } : {}),
       });
-      if (result.ok) {
-        setAlreadyFiled(result.alreadyFiled);
-        onFiled(result.original, file);
-      } else {
-        // A refusal (4xx) is definite; no answer or a server error may have landed.
-        const definite = result.status >= 400 && result.status < 500;
-        const reason = result.serverMessage ?? FILING_WORDS.failed;
-        setMessage(definite ? FILING_WORDS.notFiled(reason) : FILING_WORDS.mayNotBeFiled(reason));
+      if (!saved.ok) {
+        setMessage(FILING_WORDS.notClassified(saved.serverMessage ?? FILING_WORDS.classifyFailed));
+        return;
       }
+      setUnclassifiedId(null);
+      settle(await attemptFiling(unclassifiedId), unclassifiedId);
     } finally {
+      working.current = false;
       setBusy(false);
     }
   }
@@ -174,6 +227,18 @@ export default function ArchiveFilingBox({
             {busy ? FILING_WORDS.filing : FILING_WORDS.file}
           </button>
           {message ? <p className="t-body" role="alert">{message}</p> : <p className="t-muted">{FILING_WORDS.notYet}</p>}
+          {unclassifiedId !== null && unclassifiedId === sourceId ? (
+            <label className="field">
+              <span className="t-label">{FILING_WORDS.classifyLabel}</span>
+              <select aria-label={FILING_WORDS.classifyLabel} className="select" value="" disabled={disabled || busy}
+                onChange={(event) => void handleClassify(event.target.value)}>
+                <option value="">{FILING_WORDS.classifyPlaceholder}</option>
+                {RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => (
+                  <option key={domain.key} value={domain.key}>{domain.label}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </>
       )}
     </div>

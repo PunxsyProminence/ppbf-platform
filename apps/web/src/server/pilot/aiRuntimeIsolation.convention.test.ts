@@ -51,6 +51,10 @@ const ALLOWED_FILES = new Set([
   'src/server/pilot/azureAiRuntime.ts',
   'src/server/pilot/shadowJobProcessor.ts',
   'src/server/pilot/shadowHeavyBag.ts',
+  // Coach-requested SHADOW recommendation generation (no operational/core caller).
+  // The draft GET reads formulas without invoking Azure, and the POST failure
+  // returns an unavailable draft rather than blocking the coach's core work.
+  'src/server/pilot/shadowCoachRecommendation.ts',
   'src/server/pilot/pilotOpsReadiness.ts',
 ]);
 

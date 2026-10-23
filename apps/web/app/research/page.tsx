@@ -10,10 +10,22 @@ import { apiBase } from '@/lib/apiBase';
 import { newIntakeRequestId } from '@/src/client/libraryTextIntake';
 import LibraryTextIntakePanel, { SHELF_WORDS, type LibraryTextIntakeSource } from './LibraryTextIntakePanel';
 import LibrarySourcePicker, { LIBRARY_SOURCE_PICKER_CAP } from './LibrarySourcePicker';
+import ProvenanceFields from './ProvenanceFields';
+import {
+  EMPTY_PROVENANCE_DRAFT,
+  buildProvenanceRegistration,
+  savedProvenanceLines,
+} from './researchProvenanceForm';
 import {
   RESEARCH_CLASSIFICATION_DOMAINS,
   researchClassificationLabel,
 } from '@/src/shared/researchClassification';
+import {
+  evidenceReviewLine,
+  requirementRecordLine,
+  type EvidenceApprovalState,
+  type EvidenceVerificationState,
+} from './researchLabels';
 
 interface ShadowResearchItem {
   event_id: number;
@@ -39,8 +51,11 @@ interface ShadowResearchRequirement {
   source_verification_state: string;
   status: 'open' | 'resolved';
   created_at: string;
+  /** Staff rows only; read to keep an athlete's id off the page (researchLabels.ts). */
+  subject_id?: string | null;
+  created_by_account_id?: string;
   /** The closing record the server wrote on resolve (#1467). */
-  metadata?: { closing_note?: string | null; closing_submission_id?: string | null };
+  metadata?: { closing_note?: string | null; closing_submission_id?: string | null; [key: string]: unknown };
 }
 
 /* Only coaches and organization admins close a research requirement (Jason
@@ -118,9 +133,15 @@ interface LibrarySourceOption {
   source_id: string;
   title: string;
   source_type: string;
-  metadata?: { general_research?: boolean; classification_domain?: string };
+  metadata?: { general_research?: boolean; classification_domain?: string; provenance?: unknown };
+  /** The journal and the full publication date (#345 R29); shown read-only on a general source. */
+  publisher?: string | null;
+  publication_date?: string | null;
   /** Passed through to the intake panel (#1468). */
   excerpt_budget?: LibraryTextIntakeSource['excerpt_budget'];
+  /** The source's own evidence review, as /research/review shows it. */
+  approval_state?: EvidenceApprovalState;
+  verification_state?: EvidenceVerificationState;
 }
 
 // The sources route returns at most this many rows per request.
@@ -255,6 +276,9 @@ export default function ResearchIntakePage() {
   const [generalDraft, setGeneralDraft] = useState({
     title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '',
   });
+  // #345 R29: the optional provenance block (collapsed; opened when it holds a refused value).
+  const [provenanceDraft, setProvenanceDraft] = useState(EMPTY_PROVENANCE_DRAFT);
+  const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [generalBusy, setGeneralBusy] = useState(false);
   const [generalMessage, setGeneralMessage] = useState('');
   // One id per registration, kept until the server confirms it (L54). A retry
@@ -316,6 +340,11 @@ export default function ResearchIntakePage() {
 
   const sourceTitle = (sourceId: string) =>
     curatorSources?.find((source) => source.source_id === sourceId)?.title ?? sourceId;
+  // A submitted source's own evidence review (#345). PROPOSED copy (the " · " join).
+  const sourceEvidenceReview = (sourceId: string) => {
+    const review = evidenceReviewLine(curatorSources?.find((source) => source.source_id === sourceId));
+    return review ? ` · ${review}` : '';
+  };
 
   const loadRequirementsPage = async (cursor: string | null) => {
     const query = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
@@ -475,6 +504,13 @@ export default function ResearchIntakePage() {
       if (generalDraft.doi.trim()) provenance.doi_or_pmid = generalDraft.doi.trim();
       if (generalDraft.provider.trim()) provenance.provider = generalDraft.provider.trim();
       if (generalDraft.filename.trim()) provenance.original_filename = generalDraft.filename.trim();
+      // The contract's own check (researchProvenance.ts), before anything is sent.
+      const registration = buildProvenanceRegistration(provenanceDraft, provenance);
+      if (!registration.ok) {
+        setGeneralMessage(registration.error);
+        setProvenanceOpen(true);
+        return;
+      }
       generalRequestIdRef.current ??= newIntakeRequestId();
 
       let response: Response;
@@ -490,8 +526,9 @@ export default function ResearchIntakePage() {
             metadata: {
               general_research: true,
               classification_domain: generalDraft.classification,
-              provenance,
+              provenance: registration.provenance,
             },
+            ...registration.fields,
             request_id: generalRequestIdRef.current,
             ...shelfBody,
           }),
@@ -531,6 +568,7 @@ export default function ResearchIntakePage() {
       generalRequestIdRef.current = null;
       setGeneralUnconfirmed(false);
       setGeneralDraft({ title: '', sourceType: 'peer_reviewed', url: '', classification: '', doi: '', provider: '', filename: '' });
+      setProvenanceDraft(EMPTY_PROVENANCE_DRAFT);
       setGeneralMessage(payload.recovered === true
         ? SOURCE_REGISTRATION_WORDS.recovered
         : 'Source registered and classified. Evidence review still decides what becomes citable.');
@@ -1066,6 +1104,11 @@ export default function ResearchIntakePage() {
                 <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">
                   Source: {requirement.source_status} | Confidence: {requirement.source_confidence_tier} | Verification: {requirement.source_verification_state}
                 </p>
+                {/* #345: created date, context and evidence label -- never an athlete's or account's id. */}
+                {(() => {
+                  const record = requirementRecordLine(requirement);
+                  return record ? <p className="t-data mt-[var(--s2)] text-[color:var(--bone-300)]">{record}</p> : null;
+                })()}
                 {requirement.status === 'open' && answerStates[String(requirement.research_requirement_id)] ? (
                   (() => {
                     const ladder = ANSWER_STATE_BADGES[answerStates[String(requirement.research_requirement_id)]];
@@ -1119,6 +1162,7 @@ export default function ResearchIntakePage() {
                               <li key={submission.submission_id} className="t-body">
                                 {sourceTitle(submission.source_id)} — {APPLICABILITY_LABEL[submission.applicability_state]}
                                 {submission.review_note ? ` (${submission.review_note})` : ''}
+                                {sourceEvidenceReview(submission.source_id)}
                               </li>
                             ))}
                           </ul>
@@ -1358,6 +1402,13 @@ export default function ResearchIntakePage() {
                 <input className="input" value={generalDraft.filename} disabled={generalUnconfirmed}
                   onChange={(event) => setGeneralDraft((current) => ({ ...current, filename: event.target.value }))} />
               </label>
+              <ProvenanceFields
+                draft={provenanceDraft}
+                onChange={setProvenanceDraft}
+                disabled={generalUnconfirmed}
+                open={provenanceOpen}
+                onOpenChange={setProvenanceOpen}
+              />
             </div>
             <div className="flex flex-wrap items-center gap-[var(--s4)]">
               <button type="button" className="btn" disabled={generalBusy} onClick={() => void handleRegisterGeneral()}>
@@ -1387,6 +1438,9 @@ export default function ResearchIntakePage() {
                         {researchClassificationLabel(source.metadata?.classification_domain ?? '')}
                       </span>
                     </div>
+                    {savedProvenanceLines(source).map((line) => (
+                      <p key={line.label} className="t-muted mt-[var(--s1)]">{`${line.label}: ${line.value}`}</p>
+                    ))}
                     <label className="field mt-[var(--s3)]">
                       <span className="t-label">Correct classification</span>
                       <select

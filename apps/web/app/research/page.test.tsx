@@ -1472,3 +1472,203 @@ describe("/research as #345's three workflows", () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Projection Unavailable');
   });
 });
+
+describe('Needs Evidence shows the record of each requirement (#345 section 1)', () => {
+  // Ids shaped like the real writers': a Library claim puts the athlete in
+  // evidence_label and source_entity_id (shadowLibrary.ts), a staff question
+  // about an athlete keys on it (researchQuestionKey.ts), and an athlete's or
+  // parent's own question keys on their account (shadowResearchFiling.ts).
+  const ATHLETE_ID = 'athlete-7f3c-unseen';
+  const ACCOUNT_ID = 'asker.parent@example.org';
+  const ID_ROWS = [
+    {
+      ...REQUIREMENT,
+      research_requirement_id: 21,
+      source_event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+      source_entity_type: 'shadow_library_claim',
+      source_entity_id: `subject:${ATHLETE_ID}:2b0f4c1e`,
+      research_requirement: 'Strengthen SHADOW Library evidence for subject claim',
+      evidence_label: ATHLETE_ID,
+      subject_id: ATHLETE_ID,
+      metadata: { question: 'Is sparring at 12 safe?', scope: 'subject', subject_id: ATHLETE_ID },
+    },
+    {
+      ...REQUIREMENT,
+      research_requirement_id: 22,
+      source_event_name: 'SHADOW_INTAKE_CASE_APPROVED',
+      source_entity_type: 'intake_case',
+      source_entity_id: 'intake-case-9',
+      research_requirement: 'Follow up the approved intake',
+      subject_id: ATHLETE_ID,
+      metadata: { action: 'approve', athlete_id: ATHLETE_ID },
+    },
+    {
+      ...REQUIREMENT,
+      research_requirement_id: 23,
+      source_event_name: 'shadow_unanswered_question',
+      source_entity_type: 'shadow_question',
+      source_entity_id: `athlete:${ATHLETE_ID}:how long should a 12 year old rest`,
+      research_requirement: 'How long should a 12 year old rest?',
+      subject_id: ATHLETE_ID,
+      created_by_role: 'coach',
+    },
+    {
+      // An asker's own question as an organization admin reads it: whole.
+      ...REQUIREMENT,
+      research_requirement_id: 24,
+      source_event_name: 'shadow_unanswered_question',
+      source_entity_type: 'shadow_asker_question',
+      source_entity_id: `acct:${ACCOUNT_ID}:9d1e77`,
+      research_requirement: 'Can my son cut weight?',
+      created_by_account_id: ACCOUNT_ID,
+      created_by_role: 'parent',
+      metadata: { asked_in: 'shadow', asker_athlete_id: ATHLETE_ID },
+    },
+    {
+      // A staff note whose label quotes the athlete's id.
+      ...REQUIREMENT,
+      research_requirement_id: 25,
+      source_entity_type: 'manual_note',
+      source_entity_id: ATHLETE_ID,
+      research_requirement: 'Check the hand-wrap guidance',
+      evidence_label: `see ${ATHLETE_ID}`,
+      metadata: { athlete_id: ATHLETE_ID },
+    },
+    {
+      ...REQUIREMENT,
+      research_requirement_id: 26,
+      source_entity_type: ATHLETE_ID,
+      research_requirement: 'A row typed with the id as its type',
+      subject_id: ATHLETE_ID,
+    },
+    {
+      // A type whose labels are shown, with a label that holds the id.
+      ...REQUIREMENT,
+      research_requirement_id: 27,
+      source_entity_type: 'evidence_claim',
+      research_requirement: 'Is the jab drill load right?',
+      evidence_label: `VERIFIED EVIDENCE for ${ATHLETE_ID}`,
+      subject_id: ATHLETE_ID,
+    },
+    {
+      ...REQUIREMENT,
+      research_requirement_id: 28,
+      source_entity_type: 'evidence_claim',
+      research_requirement: 'Does skipping rope build footwork?',
+      evidence_label: 'VERIFIED EVIDENCE',
+    },
+  ];
+
+  const SUBMISSIONS = [
+    { submission_id: 'sub-a', source_id: 'src-1', applicability_state: 'responsive', review_note: '' },
+    { submission_id: 'sub-b', source_id: 'src-2', applicability_state: 'unreviewed', review_note: '' },
+  ];
+  const REVIEWED_SOURCES = [
+    { ...SOURCE, approval_state: 'approved', verification_state: 'verified' },
+    {
+      source_id: 'src-2',
+      title: 'Rest intervals in youth boxing',
+      source_type: 'peer_reviewed',
+      approval_state: 'pending_review',
+      verification_state: 'unverified',
+    },
+  ];
+
+  async function renderWith(role: string, requirements: Array<Record<string, unknown>>) {
+    const base = mockFetch({ curator: true, role, requirements });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/research-submissions?research_requirement_id=')) {
+        return { ok: true, json: async () => ({ items: SUBMISSIONS }) } as Response;
+      }
+      if (url.includes('/library/sources')) {
+        return { ok: true, json: async () => ({ sources: REVIEWED_SOURCES }) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+    await screen.findByText(String(requirements[0].research_requirement));
+  }
+
+  function recordLines() {
+    return Array.from(document.querySelectorAll('p'))
+      .map((line) => line.textContent ?? '')
+      .filter((line) => line.startsWith('Created:'));
+  }
+
+  test('each row shows its created date in the gym time zone, its context and its evidence label', async () => {
+    // 02:30 UTC on Aug 11 is the evening of Aug 10 at the gym.
+    await renderWith('coach', [
+      {
+        ...REQUIREMENT,
+        created_at: '2026-08-11T02:30:00.000Z',
+        source_entity_type: 'shadow_library_capability_map',
+        evidence_label: 'boxing.footwork',
+      },
+      { ...SECOND_REQUIREMENT, source_entity_type: 'intake_case', subject_id: 'ath-2' },
+    ]);
+    expect(recordLines()).toEqual([
+      'Created: Aug 10, 2026 | Context: Library capability check | Evidence label: boxing.footwork',
+      'Created: Aug 10, 2026 | Context: Intake case about an athlete',
+    ]);
+  });
+
+  test("a family reader's row, which carries no context or label, shows its created date only", async () => {
+    // The shape researchFamilyView.ts sends a reader outside research staff.
+    const familyRow = {
+      research_requirement_id: 7,
+      source_event_name: 'question',
+      research_requirement: 'Is RPE reliable at age 12?',
+      knowledge_gap: 'adolescent RPE reliability',
+      source_status: 'active',
+      source_confidence_tier: 'tier_2',
+      source_verification_state: 'unverified',
+      status: 'open',
+      created_at: '2026-08-10T12:00:00.000Z',
+      resolved_at: null,
+      is_mine: false,
+      metadata: { closing_note: null },
+    };
+    await renderWith('parent', [familyRow]);
+    expect(recordLines()).toEqual(['Created: Aug 10, 2026']);
+  });
+
+  test('each submitted source shows its own evidence review beside the applicability verdict', async () => {
+    await renderWith('coach', [REQUIREMENT]);
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Submitted sources' }));
+    });
+    const list = await screen.findByRole('list', { name: 'Submitted sources' });
+    expect(Array.from(list.querySelectorAll('li')).map((item) => item.textContent)).toEqual([
+      'RPE reliability in adolescents — Responsive · Evidence review: Approved · Verified',
+      'Rest intervals in youth boxing — Unreviewed · Evidence review: Pending Review · Unverified',
+    ]);
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'])(
+    'a %s, who reads whole rows, never sees an athlete or account id, only what kind of row it is',
+    async (role) => {
+      await renderWith(role, ID_ROWS);
+      await act(async () => {
+        for (const button of screen.getAllByRole('button', { name: 'Submitted sources' })) fireEvent.click(button);
+      });
+      await screen.findAllByRole('list', { name: 'Submitted sources' });
+      expect(recordLines()).toEqual([
+        'Created: Aug 10, 2026 | Context: Library claim about an athlete',
+        'Created: Aug 10, 2026 | Context: Intake case about an athlete',
+        'Created: Aug 10, 2026 | Context: Question asked in SHADOW about an athlete',
+        'Created: Aug 10, 2026 | Context: Question from an athlete or parent',
+        'Created: Aug 10, 2026 | Context: Manual note about an athlete',
+        'Created: Aug 10, 2026',
+        'Created: Aug 10, 2026 | Context: Evidence claim about an athlete',
+        'Created: Aug 10, 2026 | Context: Evidence claim | Evidence label: VERIFIED EVIDENCE',
+      ]);
+      const page = document.body.innerHTML;
+      expect(page).not.toContain(ATHLETE_ID);
+      expect(page).not.toContain(ACCOUNT_ID);
+      expect(page).not.toContain('intake-case-9');
+    },
+  );
+});
