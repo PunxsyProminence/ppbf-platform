@@ -111,6 +111,7 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/shared/parentObservations.ts',
   'apps/web/src/shared/pilotRoleRouting.ts',
   'apps/web/src/shared/researchClassification.ts',
+  'apps/web/src/shared/researchProvenance.ts',
   'apps/web/src/shared/researchQuestionKey.ts',
   'apps/web/src/shared/sessionNoteSemantics.ts',
   'apps/web/src/shared/sessionTypes.ts',
