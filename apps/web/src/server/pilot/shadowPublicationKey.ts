@@ -23,6 +23,15 @@
  * publicationKey() keys the claim path in JS; PUBLICATION_KEY_SQL() is the same
  * rule as a Postgres expression for capability coverage. They must agree:
  * shadowLibraryCoverage.pg.test.ts compares them row by row.
+ *
+ * publicationIdentifiers() and PUBLICATION_IDENTIFIERS_SQL() read the same
+ * places with the same helpers but keep EVERY DOI and PMID, not the first: the
+ * registration check (#345 D2) refuses a paper whose DOI or PMID is already on
+ * the shelf. The same drift guard compares those two. Neither changes the key.
+ *
+ * Both twins assume ASCII DOIs when lowercasing: JS toLowerCase() folds every
+ * letter, Postgres lower() follows the database locale. Real DOIs are ASCII;
+ * a non-ASCII one could key or match differently in the two (fails open).
  */
 
 export type PublicationKeySource = {
@@ -68,32 +77,50 @@ function provenanceIdOf(meta: Record<string, unknown>): string | null {
     : null;
 }
 
-function doiOf(source: PublicationKeySource): string | null {
+// Every place a DOI can live, in the key's precedence order (null where it is
+// absent), before normalisation. publicationKey() takes the first;
+// publicationIdentifiers() takes them all.
+function doiCandidates(source: PublicationKeySource): (string | null)[] {
   const meta = source.metadata ?? {};
   const url = text(source.url);
   const box = provenanceIdOf(meta);
-  const found =
-    doiFrom(text(meta.doi)) ??
-    doiFrom(box ? box.replace(/[?#][\s\S]*$/, '') : null) ??
-    doiFrom(meta.identifier_kind === 'doi' ? text(meta.identifier) : null) ??
-    doiFrom(url ? url.replace(/[?#][\s\S]*$/, '') : null);
-  return found ? found.replace(/[.,;:]+$/, '').toLowerCase() : null;
+  return [
+    doiFrom(text(meta.doi)),
+    doiFrom(box ? box.replace(/[?#][\s\S]*$/, '') : null),
+    doiFrom(meta.identifier_kind === 'doi' ? text(meta.identifier) : null),
+    doiFrom(url ? url.replace(/[?#][\s\S]*$/, '') : null),
+  ];
+}
+
+function normalizeDoi(found: string): string {
+  return found.replace(/[.,;:]+$/, '').toLowerCase();
+}
+
+function doiOf(source: PublicationKeySource): string | null {
+  const found = doiCandidates(source).find((candidate) => candidate !== null);
+  return found ? normalizeDoi(found) : null;
 }
 
 function digitsOnly(value: string | null): string | null {
   return value !== null && /^\d+$/.test(value) ? value : null;
 }
 
-function pmidOf(source: PublicationKeySource): string | null {
+// Every place a PMID can live, in the key's precedence order.
+function pmidCandidates(source: PublicationKeySource): (string | null)[] {
   const meta = source.metadata ?? {};
   const url = text(source.url);
   const box = provenanceIdOf(meta);
-  return (
-    digitsOnly(text(meta.pmid)) ??
-    (box ? (PMID_BOX_PATTERN.exec(box)?.[1] ?? PUBMED_URL_PATTERN.exec(box)?.[1] ?? null) : null) ??
-    digitsOnly(meta.identifier_kind === 'pmid' ? text(meta.identifier) : null) ??
-    (url ? (PUBMED_URL_PATTERN.exec(url)?.[1] ?? null) : null)
-  );
+  return [
+    digitsOnly(text(meta.pmid)),
+    box ? (PMID_BOX_PATTERN.exec(box)?.[1] ?? null) : null,
+    box ? (PUBMED_URL_PATTERN.exec(box)?.[1] ?? null) : null,
+    digitsOnly(meta.identifier_kind === 'pmid' ? text(meta.identifier) : null),
+    url ? (PUBMED_URL_PATTERN.exec(url)?.[1] ?? null) : null,
+  ];
+}
+
+function pmidOf(source: PublicationKeySource): string | null {
+  return pmidCandidates(source).find((candidate) => candidate !== null) ?? null;
 }
 
 export function normalizePublicationUrl(rawUrl: string | null): string | null {
@@ -122,10 +149,26 @@ export function publicationKey(source: PublicationKeySource): string {
 }
 
 /**
- * The same key as a SQL expression over `<alias>.url`, `<alias>.metadata` and
- * `<alias>.source_id`. Keep in step with publicationKey above.
+ * Every DOI and every PMID the source carries, read from every place
+ * publicationKey() reads one, as `doi:<doi>` / `pmid:<pmid>` (normalised the
+ * same way, deduplicated, sorted). The key keeps only the first; this keeps
+ * them all, because one paper can key by its DOI on one row and by its PMID on
+ * another (a PubMed URL plus a DOI in the box, beside a seeded PMID-only
+ * record). Registration (#345 D2) refuses a new source that shares ANY of
+ * these with a source already on its shelf. A source with no DOI or PMID has
+ * none and matches nothing; its URL is the unique (organization_id, url)
+ * constraint's business.
  */
-export function PUBLICATION_KEY_SQL(alias: string): string {
+export function publicationIdentifiers(source: PublicationKeySource): string[] {
+  const identifiers = new Set<string>();
+  for (const doi of doiCandidates(source)) if (doi !== null) identifiers.add(`doi:${normalizeDoi(doi)}`);
+  for (const pmid of pmidCandidates(source)) if (pmid !== null) identifiers.add(`pmid:${pmid}`);
+  return [...identifiers].sort();
+}
+
+// The SQL twin's pieces: the same places, in the same order, as
+// doiCandidates() and pmidCandidates() above.
+function candidateSql(alias: string): { url: string; doi: string[]; pmid: string[] } {
   const trim = (expr: string) => String.raw`nullif(regexp_replace(${expr}, '^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$', '', 'g'), '')`;
   // text() above: a JSON string, or a non-negative whole number up to 2^53-1;
   // else null. `json` is a jsonb expression.
@@ -146,21 +189,41 @@ export function PUBLICATION_KEY_SQL(alias: string): string {
   // the database locale, JS's do not (a no-break space ended a DOI in JS and
   // not here).
   const doiRe = String.raw`'10\.[0-9]{4,9}/[^\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff;,\]"''<>]+'`;
-  const doi = String.raw`lower(regexp_replace(coalesce(
-      substring(${field('doi')} from ${doiRe}),
-      substring(regexp_replace(${box}, '[?#].*$', '') from ${doiRe}),
-      substring(${kind('doi')} from ${doiRe}),
-      substring(regexp_replace(${url}, '[?#].*$', '') from ${doiRe})
-    ), '[.,;:]+$', ''))`;
   const digits = (expr: string) => String.raw`case when ${expr} ~ '^[0-9]+$' then ${expr} end`;
   const pubmedRe = String.raw`'(?i)^(?:https?://)?(?:pubmed\.ncbi\.nlm\.nih\.gov|(?:www\.)?ncbi\.nlm\.nih\.gov/pubmed)/([0-9]+)(?:[/?#]|$)'`;
   const pmidBoxRe = String.raw`'^(?:[Pp][Mm][Ii][Dd][ \t\n\r\f\v]*:?[ \t\n\r\f\v]*)?([0-9]+)$'`;
+  return {
+    url,
+    doi: [
+      `substring(${field('doi')} from ${doiRe})`,
+      `substring(regexp_replace(${box}, '[?#].*$', '') from ${doiRe})`,
+      `substring(${kind('doi')} from ${doiRe})`,
+      `substring(regexp_replace(${url}, '[?#].*$', '') from ${doiRe})`,
+    ],
+    pmid: [
+      digits(field('pmid')),
+      `substring(${box} from ${pmidBoxRe})`,
+      `substring(${box} from ${pubmedRe})`,
+      digits(kind('pmid')),
+      `substring(${url} from ${pubmedRe})`,
+    ],
+  };
+}
+
+// normalizeDoi() above.
+const normalizeDoiSql = (expr: string) => `lower(regexp_replace(${expr}, '[.,;:]+$', ''))`;
+
+/**
+ * The same key as a SQL expression over `<alias>.url`, `<alias>.metadata` and
+ * `<alias>.source_id`. Keep in step with publicationKey above.
+ */
+export function PUBLICATION_KEY_SQL(alias: string): string {
+  const { url, doi: doiCandidates, pmid: pmidCandidates } = candidateSql(alias);
+  const doi = normalizeDoiSql(`coalesce(
+      ${doiCandidates.join(',\n      ')}
+    )`);
   const pmid = `coalesce(
-      ${digits(field('pmid'))},
-      substring(${box} from ${pmidBoxRe}),
-      substring(${box} from ${pubmedRe}),
-      ${digits(kind('pmid'))},
-      substring(${url} from ${pubmedRe})
+      ${pmidCandidates.join(',\n      ')}
     )`;
   const rest = String.raw`nullif(regexp_replace(regexp_replace(${url}, '#.*$', ''), '^[A-Za-z][A-Za-z0-9+.-]*://', ''), '')`;
   const host = `lower(substring(${rest} from '^[^/?]*'))`;
@@ -179,4 +242,22 @@ export function PUBLICATION_KEY_SQL(alias: string): string {
       'url:' || ${urlKey},
       'source:' || ${alias}.source_id
     )`;
+}
+
+/**
+ * publicationIdentifiers() above as a SQL text[] over `<alias>.url` and
+ * `<alias>.metadata`: every `doi:` and `pmid:` the row carries (it may repeat
+ * one; compare as a set, e.g. with &&). Keep in step with
+ * publicationIdentifiers: shadowLibraryCoverage.pg.test.ts compares them row
+ * by row, beside the key.
+ */
+export function PUBLICATION_IDENTIFIERS_SQL(alias: string): string {
+  const { doi, pmid } = candidateSql(alias);
+  const elements = [
+    ...doi.map((candidate) => `'doi:' || ${normalizeDoiSql(candidate)}`),
+    ...pmid.map((candidate) => `'pmid:' || ${candidate}`),
+  ];
+  return `array_remove(array[
+      ${elements.join(',\n      ')}
+    ]::text[], null)`;
 }
