@@ -1289,7 +1289,7 @@ describe('research questions that name no athlete (CL-A3 / CL-C14)', () => {
   // Overwatch 2026-10-23 under "asked once, ruled once" to the learning loop's
   // rows: an athlete's or parent's note reaches a coach as a sentence, the
   // organization admin and the author read the words, and a coach's own note
-  // (or a volunteer's, staff seat's or platform owner's) is unchanged.
+  // is unchanged.
   describe('a learning-loop note on the list (F-183)', () => {
     const PARENT_NOTE = row({
       research_requirement_id: 35,

@@ -342,8 +342,7 @@ describe('an asker-filed unanswered question', () => {
 // (Recommended)") applied by Overwatch 2026-10-23 under "asked once, ruled
 // once" to the learning loop's research rows. An athlete's or parent's note on
 // a SHADOW answer is read by the organization admin and its author; a coach
-// sees only that feedback was filed. A coach's or admin's own note, and the
-// note of an adult seat the ruling does not name, is unchanged.
+// sees only that feedback was filed. A coach's or admin's own note is unchanged.
 describe('a learning-loop note filed by an athlete or parent', () => {
   const NOTE = 'his coach yells at him and the advice made it worse';
   const AUTHOR = 'parent.one@gym.example.test';
@@ -367,15 +366,15 @@ describe('a learning-loop note filed by an athlete or parent', () => {
     ...overrides,
   });
 
-  test('is recognized by its event and an athlete, parent or unknown filer, not by metadata', () => {
+  test('is recognized by its event and a filer outside research staff, as the F-054 row is, not by metadata', () => {
     expect(isMemberFiledLearningNote(noted())).toBe(true);
     expect(isMemberFiledLearningNote(noted({ created_by_role: 'athlete' }))).toBe(true);
-    // A role this code does not know, or none, keeps the words out.
-    for (const role of ['', 'Athlete', 'PARENT', 'guardian', 'board']) {
+    // A volunteer or staff seat may be a teen's (OD-2026-10-17-014), and a role
+    // this code does not know, or none, keeps the words out the same way.
+    for (const role of ['volunteer', 'staff', 'platform_owner', 'board', '', 'Athlete', 'PARENT', 'guardian']) {
       expect(isMemberFiledLearningNote(noted({ created_by_role: role }))).toBe(true);
     }
-    // Research staff, and the adult seats the ruling does not name.
-    for (const role of ['coach', 'organization_admin', 'admin', 'volunteer', 'staff', 'platform_owner']) {
+    for (const role of ['coach', 'organization_admin', 'admin']) {
       expect(isMemberFiledLearningNote(noted({ created_by_role: role }))).toBe(false);
     }
     expect(isMemberFiledLearningNote(noted({ source_event_name: 'SHADOW_INTAKE_CASE_APPROVED' }))).toBe(false);
@@ -419,7 +418,18 @@ describe('a learning-loop note filed by an athlete or parent', () => {
     expect(JSON.stringify(row)).not.toContain(AUTHOR);
   });
 
-  test.each(['coach', 'organization_admin', 'admin', 'volunteer', 'staff', 'platform_owner'] as const)("a %s's own note stays whole for a coach", (role) => {
+  test.each(['volunteer', 'staff', 'platform_owner'] as const)(
+    "a %s seat's note reaches a coach as the sentence too, and the organization admin whole",
+    (role) => {
+      const stored = noted({ created_by_role: role });
+      const coachView = wholeResearchRowFor('coach', stored);
+      expect(coachView.knowledge_gap).toBe(LEARNING_NOTE_COACH_SENTENCE);
+      expect(JSON.stringify(coachView)).not.toContain('yells');
+      expect(wholeResearchRowFor('organization_admin', stored)).toBe(stored);
+    },
+  );
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)("a %s's own note stays whole for a coach", (role) => {
     const own = noted({ created_by_role: role, created_by_account_id: COACH_ID });
     expect(wholeResearchRowFor('coach', own)).toBe(own);
     const list = [own];
