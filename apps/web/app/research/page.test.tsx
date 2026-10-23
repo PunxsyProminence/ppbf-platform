@@ -436,6 +436,38 @@ describe('general research intake', () => {
       expect(screen.getByText('This URL is already registered as "The Paper Already Here". Choose it from the source list.')).toBeTruthy();
     });
 
+    // #345 D2 (Q2): the paper's DOI or PMID is already on the shelf.
+    test('a paper already on the shelf names the source that holds it, and the next try is a new registration', async () => {
+      const posts: Array<Record<string, unknown>> = [];
+      global.fetch = mockRegistration([
+        {
+          status: 409,
+          json: {
+            ok: false,
+            error: 'This paper is already registered on this shelf as "The Paper Already Here" (source_held): it has the same DOI or PMID.',
+            code: 'SHADOW_LIBRARY_PUBLICATION_TAKEN',
+            existing_source: { source_id: 'source_held', title: 'The Paper Already Here' },
+          },
+        },
+        { status: 201, json: { ok: true, source: { source_id: 'source_new' } } },
+      ], posts);
+
+      await fillAndRegister();
+
+      expect(screen.getByText(
+        'This paper is already registered as "The Paper Already Here" (same DOI or PMID). Choose it from the source list.',
+      )).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'A different paper' } });
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Register general research' }));
+      });
+      expect(posts).toHaveLength(2);
+      expect(posts[1].request_id).not.toBe(posts[0].request_id);
+    });
+
     test('a confirmed registration starts the next one with a new request id', async () => {
       const posts: Array<Record<string, unknown>> = [];
       global.fetch = mockRegistration([

@@ -12,7 +12,12 @@ import { SERVABLE_GYM_WIDE_LIBRARY_DOCUMENT_SQL, SERVABLE_LIBRARY_SOURCE_SQL } f
 import { libraryRetrievalOrganizationIds } from './platformLibraryScope';
 import { cosineSimilarity, embedText, getEmbeddingDeploymentName, isSemanticLibrarySearchEnabled } from './shadowEmbeddings';
 import { emitShadowEvent } from './shadowEvents';
-import { publicationKey, PUBLICATION_KEY_SQL } from './shadowPublicationKey';
+import {
+  publicationIdentifiers,
+  PUBLICATION_IDENTIFIERS_SQL,
+  publicationKey,
+  PUBLICATION_KEY_SQL,
+} from './shadowPublicationKey';
 import { reservedProvenanceKey, reservedProvenanceMessage, type ShadowLibraryRightsStatus } from './shadowLibraryRights';
 import {
   buildCapabilityGapResearchFields,
@@ -640,6 +645,48 @@ async function lockLibraryRequest(client: PoolClient, kind: string, organization
   ]);
 }
 
+// #345 D2 (Q2, applied by Overwatch under Jason's "go with your
+// recommendation"): a paper whose DOI or PMID is already on the shelf is
+// refused, naming the source that holds it, as a taken URL is. Any shared
+// identifier counts, not only the publication key: a PubMed URL plus a DOI
+// keys by the DOI, beside a seeded record that has only the PMID (F-136,
+// OD-2026-10-18-005: a duplicate is not corroboration).
+export const SHADOW_LIBRARY_PUBLICATION_TAKEN_CODE = 'SHADOW_LIBRARY_PUBLICATION_TAKEN';
+
+export class ShadowLibraryPublicationTakenError extends ConflictError {
+  constructor(readonly existingSource: { source_id: string; title: string }) {
+    super(
+      `This paper is already registered on this shelf as "${existingSource.title}" (${existingSource.source_id}): `
+        + 'it has the same DOI or PMID. Choose that source instead of registering it again.',
+      SHADOW_LIBRARY_PUBLICATION_TAKEN_CODE,
+    );
+  }
+}
+
+/**
+ * The oldest source on this shelf that shares any of `identifiers`
+ * (publicationIdentifiers() strings), or null. Every row on the shelf counts,
+ * whatever its status, as for the unique URL; a deleted row is gone. Reads
+ * the shelf's rows through the organization_id index and evaluates
+ * PUBLICATION_IDENTIFIERS_SQL on each: a scan of one shelf, which at the
+ * pilot's size (hundreds of sources) needs no index of its own.
+ */
+export async function findShadowLibrarySourceByPublication(
+  client: Pick<PoolClient, 'query'>,
+  organizationId: string,
+  identifiers: readonly string[],
+): Promise<{ source_id: string; title: string } | null> {
+  if (identifiers.length === 0) return null;
+  const result = await client.query<{ source_id: string; title: string }>(
+    `select s.source_id, s.title from pilot.shadow_library_sources s
+      where s.organization_id = $1 and ${PUBLICATION_IDENTIFIERS_SQL('s')} && $2::text[]
+      order by s.created_at, s.source_id
+      limit 1`,
+    [organizationId, [...identifiers]],
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function createShadowLibrarySource(input: {
   organizationId: string;
   actorAccountId: string;
@@ -687,6 +734,19 @@ export async function createShadowLibrarySource(input: {
       );
       if (existing.rows[0]) return { ...existing.rows[0], recovered: true as const };
     }
+
+    // After recovery (a retry of a saved registration finds its own row, not
+    // a conflict), before the insert. Read from what is stored. Each
+    // identifier is locked, in sorted order, so two registrations of one
+    // paper cannot both pass: the second waits, then sees the first.
+    const identifiers = publicationIdentifiers({ source_id: sourceId, url: input.url?.trim() || null, metadata });
+    for (const identifier of identifiers) {
+      await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `shadow_library_publication:${input.organizationId}:${identifier}`,
+      ]);
+    }
+    const held = await findShadowLibrarySourceByPublication(client, input.organizationId, identifiers);
+    if (held) throw new ShadowLibraryPublicationTakenError(held);
 
     const inserted = await client.query<ShadowLibrarySourceRow>(
       `insert into pilot.shadow_library_sources

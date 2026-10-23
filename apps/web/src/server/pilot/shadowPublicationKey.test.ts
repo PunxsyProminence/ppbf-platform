@@ -1,4 +1,4 @@
-import { publicationKey, type PublicationKeySource } from './shadowPublicationKey';
+import { publicationIdentifiers, publicationKey, type PublicationKeySource } from './shadowPublicationKey';
 
 // F-136: Jason 2026-10-18, "A: DOI/PMID/URL key (Rec.)".
 function src(
@@ -156,5 +156,83 @@ describe('publicationKey reads the General Research DOI/PMID box (#345)', () => 
     ];
     expect(new Set(pmidPaper.map(publicationKey)).size).toBe(1);
     expect(publicationKey(box('gr-3', '10.1000/abc.2'))).not.toBe(publicationKey(box('gr-4', '10.1000/abc.1')));
+  });
+});
+
+// #345 D2: registration refuses a paper whose DOI or PMID is already on the
+// shelf, matching on ANY shared identifier (Q2, applied by Overwatch; F-136,
+// OD-2026-10-18-005). The key keeps one; these keep them all.
+describe('publicationIdentifiers: every DOI and PMID a source carries (#345 D2)', () => {
+  const box = (id: string, value: unknown, url: string | null = null, extra: Record<string, unknown> = {}) =>
+    src(id, url, { general_research: true, provenance: { doi_or_pmid: value }, ...extra });
+  const shares = (a: PublicationKeySource, b: PublicationKeySource) =>
+    publicationIdentifiers(a).some((identifier) => publicationIdentifiers(b).includes(identifier));
+
+  it('LR1 edge pair: a PubMed URL plus a DOI in the box shares the PMID with a seeded PMID-only record', () => {
+    const generalResearch = {
+      source_id: 'gr',
+      url: 'https://pubmed.ncbi.nlm.nih.gov/27217246/',
+      metadata: { general_research: true, provenance: { doi_or_pmid: '10.1177/1745691616635591' } },
+    };
+    const seeded = { source_id: 'seed', url: null, metadata: { identifier_kind: 'pmid', identifier: '27217246' } };
+    // The keys still differ (the key is not changed here) ...
+    expect(publicationKey(generalResearch)).toBe('doi:10.1177/1745691616635591');
+    expect(publicationKey(seeded)).toBe('pmid:27217246');
+    // ... but the identifiers meet.
+    expect(publicationIdentifiers(generalResearch)).toEqual(['doi:10.1177/1745691616635591', 'pmid:27217246']);
+    expect(publicationIdentifiers(seeded)).toEqual(['pmid:27217246']);
+    expect(shares(generalResearch, seeded)).toBe(true);
+  });
+
+  it('reads every place: metadata, the box, identifier_kind and the URL, each normalised as the key is', () => {
+    expect(publicationIdentifiers(box('c', '10.1000/box', 'https://pubmed.ncbi.nlm.nih.gov/123/'))).toEqual([
+      'doi:10.1000/box',
+      'pmid:123',
+    ]);
+    expect(publicationIdentifiers(src('all', 'https://doi.org/10.1000/URL.', {
+      doi: 'DOI: 10.1000/Field',
+      pmid: 456,
+      identifier_kind: 'doi',
+      identifier: '10.1000/ident',
+      provenance: { doi_or_pmid: 'PMID: 789' },
+    }))).toEqual(['doi:10.1000/field', 'doi:10.1000/ident', 'doi:10.1000/url', 'pmid:456', 'pmid:789']);
+    expect(publicationIdentifiers(src('kind', 'https://www.ncbi.nlm.nih.gov/pubmed/42?dopt=Abstract', {
+      identifier_kind: 'pmid',
+      identifier: '41',
+    }))).toEqual(['pmid:41', 'pmid:42']);
+  });
+
+  it('one identifier found twice is listed once', () => {
+    expect(publicationIdentifiers(box('same', 'https://doi.org/10.1000/abc', 'https://doi.org/10.1000/ABC', { doi: '10.1000/abc.' })))
+      .toEqual(['doi:10.1000/abc']);
+  });
+
+  it('a source with no DOI or PMID has none and shares nothing, even with another such source', () => {
+    const plain = [
+      src('bare'),
+      src('url-only', 'https://example.com/paper/1'),
+      src('blank', '   ', { doi: '  ', pmid: '', identifier_kind: 'doi', identifier: ' ' }),
+      box('pmc', 'PMC1234567'),
+      box('not-whole', 'PMID: 123 (2019)'),
+      src('not-object', null, { provenance: 'PMID 123' }),
+    ];
+    for (const source of plain) expect(publicationIdentifiers(source)).toEqual([]);
+    expect(shares(plain[0], plain[1])).toBe(false);
+    expect(shares(src('same-url', 'https://example.com/paper/1'), plain[1])).toBe(false);
+  });
+
+  it('different papers share nothing', () => {
+    expect(shares(box('a', '10.1000/a'), box('b', '10.1000/b'))).toBe(false);
+    expect(shares(box('a', 'PMID: 1'), src('b', 'https://pubmed.ncbi.nlm.nih.gov/2/'))).toBe(false);
+  });
+
+  it('the key is always one of the identifiers when the key is a DOI or a PMID', () => {
+    const sources = [
+      box('a', '10.1000/box', 'https://pubmed.ncbi.nlm.nih.gov/123/'),
+      box('b', 'PMID: 123', 'https://doi.org/10.1000/url'),
+      src('c', null, { identifier_kind: 'pmid', identifier: '777' }),
+      src('d', 'https://doi.org/10.1000/abc.1'),
+    ];
+    for (const source of sources) expect(publicationIdentifiers(source)).toContain(publicationKey(source));
   });
 });

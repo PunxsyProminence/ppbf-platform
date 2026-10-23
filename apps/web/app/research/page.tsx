@@ -184,6 +184,9 @@ const SOURCE_REGISTRATION_WORDS = {
   recovered: 'Source registered. The first answer was lost; the retry found the saved source instead of adding a second one.',
   unconfirmed: 'The Library did not confirm the registration. Press Register general research again: it finds the saved source instead of adding a second one.',
   urlTaken: (title: string) => `This URL is already registered as "${title}". Choose it from the source list.`,
+  // PROPOSED (#345 D2): the paper's DOI or PMID is already on the shelf.
+  publicationTaken: (title: string) =>
+    `This paper is already registered as "${title}" (same DOI or PMID). Choose it from the source list.`,
   // PROPOSED (L54 review): unlocks the form for a different registration.
   startOver: 'Start a different registration',
 };
@@ -526,13 +529,19 @@ export default function ResearchIntakePage() {
         existing_source?: { title?: unknown } | null;
       };
       const heldTitle = payload.existing_source?.title;
-      const takenBy = payload.code === 'SHADOW_LIBRARY_SOURCE_URL_TAKEN' && typeof heldTitle === 'string' ? heldTitle : null;
+      const publicationTaken = payload.code === 'SHADOW_LIBRARY_PUBLICATION_TAKEN';
+      const takenBy = (payload.code === 'SHADOW_LIBRARY_SOURCE_URL_TAKEN' || publicationTaken) && typeof heldTitle === 'string'
+        ? heldTitle
+        : null;
       if (response.status === 409 && takenBy !== null) {
-        // Another registration holds the URL; this request id saved nothing
-        // (a retry of a saved one is answered as recovered before any insert).
+        // Another registration holds the URL or the paper; this request id
+        // saved nothing (a retry of a saved one is answered as recovered
+        // before either check).
         generalRequestIdRef.current = null;
         setGeneralUnconfirmed(false);
-        setGeneralMessage(SOURCE_REGISTRATION_WORDS.urlTaken(takenBy));
+        setGeneralMessage(publicationTaken
+          ? SOURCE_REGISTRATION_WORDS.publicationTaken(takenBy)
+          : SOURCE_REGISTRATION_WORDS.urlTaken(takenBy));
         await refreshCuratorSources();
         await refreshGeneralSources();
         return;
