@@ -7,25 +7,27 @@
 // app user reaches, so a break BETWEEN the pieces (a hash dropped on the way, a link not written,
 // a close that quietly approved) passed every suite. This is that one run:
 //
-//   register a classified source
-//     (0) with the four RESEARCH_ARCHIVE_* settings unset, filing is off and touches nothing
-//     (1) the PDF is hashed: the recorded hash is the SHA-256 of the bytes SharePoint received
-//     (2) the same bytes again are "already filed": same row, no second file, no Graph call
-//     (3) the filed row carries the SharePoint identity, and the source is still unreviewed
-//     (4) an excerpt linked to that original lands pending and is NOT retrievable
-//     (5) source + document go through the EXISTING review gate, and only then it is retrievable
-//     (6) closing a research requirement on a submission approves and resolves nothing by itself
-//   plus: an unclassified source is refused, with nothing filed.
+//   a classified source is registered, then (the numbers are this file's test numbers):
+//     0. with the four RESEARCH_ARCHIVE_* settings unset, filing is off and touches nothing
+//     1. the PDF is hashed: the recorded hash is the SHA-256 of the bytes SharePoint received
+//     2. the same bytes again are "already filed": same row, no second file, no Graph call
+//     3. the filed row carries the SharePoint identity, and the source is still unreviewed
+//     4. an unclassified source is refused, with nothing filed
+//     5. an excerpt linked to that original is pending and is NOT retrievable
+//     6. the EXISTING review gate (source, document indexing, document) is what makes it retrievable
+//     7. a submission and its review resolve nothing; a person's close resolves the requirement and
+//        approves nothing in the Library
 //
 // WHAT IS REAL AND WHAT IS FAKED. Real: embedded Postgres with the full schema, and the route
 // handlers (archive-original, sources, documents, chunks, evidence/review, research-requirements,
 // research-submissions) and searchShadowLibrary. Faked: only requirePrincipal, the managed-identity
 // token, and Microsoft Graph, which is reached with plain fetch (researchArchiveWrite.ts), so the
-// fake is a stateful SharePoint behind global.fetch: create-only (a second PUT to a name answers
-// 409 nameAlreadyExists), folder names as the live archive has them. Its URL and response shapes
-// mirror researchArchiveFiling.pg.test.ts. What real SharePoint does with these requests was
-// shown on 2026-10-19 (docs/SHADOW_RESEARCH_ARCHITECTURE.md section 10); this file proves the
-// app's own steps. The PDF reader's hash (pdf-text/route.ts) is not run here.
+// fake is a stateful SharePoint behind global.fetch: it wants the bearer token, serves the subject
+// folders under the names the live archive has, and is create-only (a PUT to a taken name answers
+// 409 nameAlreadyExists; this chain never reaches that branch, researchArchiveFiling.pg.test.ts
+// drives it). Its URL and response shapes mirror that suite. What real SharePoint does with these
+// requests was shown on 2026-10-19 (issue #345 status comment, OD-2026-10-19-002); this file proves
+// the app's own steps. The PDF reader's hash (pdf-text/route.ts) is not run here.
 // It never connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
@@ -80,6 +82,11 @@ const FOLDER_19 = 'FOLDER19';
 const PDF_ONE = Buffer.from('%PDF-1.4 acceptance chain paper one, synthetic, not research');
 const PDF_TWO = Buffer.from('%PDF-1.4 acceptance chain paper two, synthetic, not research');
 const PDF_THREE = Buffer.from('%PDF-1.4 acceptance chain paper three, synthetic, not research');
+// What this suite sets in process.env, put back in afterAll. AZURE_AI_* are pinned unset so search is
+// the keyword path whatever the developer's shell holds.
+const ENV_TOUCHED = [...Object.keys(SETTINGS), 'AZURE_POSTGRES_CONNECTION_STRING', 'PPBF_POSTGRES_DISABLE_SSL', 'AZURE_AI_ENDPOINT', 'AZURE_AI_KEY'];
+const envBefore = Object.fromEntries(ENV_TOUCHED.map((name) => [name, process.env[name]]));
+const fetchBefore = global.fetch;
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const PASSAGE_ONE = 'Marmoset inter-rater agreement for the guarded stance checklist was substantial.';
 const PASSAGE_TWO = 'Wallaroo test-retest reliability of the footwork screen was excellent.';
@@ -101,12 +108,13 @@ let submissionsPost: Handler;
 let submissionsPatch: Handler;
 
 // ---- the fake SharePoint: one R19 subject folder, create-only ----
-const sharepoint = { files: new Map<string, { id: string; name: string; bytes: Buffer }>(), requests: [] as string[] };
+const sharepoint = { files: new Map<string, { id: string; name: string; webUrl: string; bytes: Buffer }>(), requests: [] as string[] };
 const reply = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) }) as unknown as Response;
 
 function fakeGraph(url: string, init?: RequestInit): Response {
   const method = init?.method ?? 'GET';
   sharepoint.requests.push(`${method} ${url}`);
+  if ((init?.headers as Record<string, string> | undefined)?.Authorization !== 'Bearer test-token') throw new Error(`No bearer token on ${method} ${url}`);
   const rest = url.startsWith(`${BASE}/items/`) ? url.slice(`${BASE}/items/`.length) : null;
   if (rest === null) throw new Error(`Unexpected request to ${url}`);
   const inFolder = [...sharepoint.files.values()];
@@ -116,9 +124,11 @@ function fakeGraph(url: string, init?: RequestInit): Response {
     if (inFolder.some((file) => file.name.toLowerCase() === name.toLowerCase())) {
       return reply(409, { error: { code: 'nameAlreadyExists', message: 'exists' } });
     }
-    const file = { id: `ITEM${sharepoint.files.size + 1}`, name, bytes: Buffer.from(init?.body as Uint8Array) };
+    if ((init?.headers as Record<string, string>)['Content-Type'] !== 'application/pdf') throw new Error('PUT without Content-Type application/pdf');
+    const webUrl = `https://ppbf.sharepoint.com/synthetic/${FOLDER_19}/${encodeURIComponent(name)}`;
+    const file = { id: `ITEM${sharepoint.files.size + 1}`, name, webUrl, bytes: Buffer.from(init?.body as Uint8Array) };
     sharepoint.files.set(file.id, file);
-    return reply(201, { id: file.id, webUrl: `https://ppbf.sharepoint.com/Research%20Archive/R19/${encodeURIComponent(name)}`, parentReference: { id: FOLDER_19 } });
+    return reply(201, { id: file.id, webUrl, parentReference: { id: FOLDER_19 } });
   }
   if (rest.startsWith('ROOTITEM/children?')) {
     return reply(200, { value: [
@@ -254,6 +264,8 @@ beforeAll(async () => {
   process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB);
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
   Object.assign(process.env, SETTINGS);
+  delete process.env.AZURE_AI_ENDPOINT;
+  delete process.env.AZURE_AI_KEY;
   global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => fakeGraph(String(input), init)) as unknown as typeof fetch;
 
   archive = await import('@/app/api/pilot/shadow/library/archive-original/route');
@@ -270,7 +282,11 @@ beforeAll(async () => {
 beforeEach(() => as(ADMIN, 'organization_admin'));
 
 afterAll(async () => {
-  for (const name of Object.keys(SETTINGS)) delete process.env[name];
+  for (const [name, value] of Object.entries(envBefore)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  global.fetch = fetchBefore;
   const { closePool } = await import('./db');
   await closePool().catch(() => {});
   await new Promise<void>((resolve) => {
@@ -345,7 +361,7 @@ describe('the #345 acceptance chain (real database, Graph faked)', () => {
     const [filed] = [...sharepoint.files.values()];
     expect(row).toEqual({
       provider: 'sharepoint', site_id: SETTINGS.RESEARCH_ARCHIVE_SITE_ID, drive_id: SETTINGS.RESEARCH_ARCHIVE_DRIVE_ID,
-      item_id: filed.id, web_url: expect.stringMatching(/^https:\/\/ppbf\.sharepoint\.com\/Research%20Archive\/R19\//),
+      item_id: filed.id, web_url: filed.webUrl,
       archive_root_item_id: 'ROOTITEM', archive_domain_code: 'R19', archive_filename: filed.name, original_filename: 'Paper One.pdf',
       content_sha256: sha256(PDF_ONE), byte_size: PDF_ONE.length, acquisition_channel: 'library_database',
       created_by_account_id: ADMIN, source_id: paperOne,
@@ -376,33 +392,43 @@ describe('the #345 acceptance chain (real database, Graph faked)', () => {
     expect(await retrievable('marmoset agreement stance')).toEqual([]);
   });
 
-  test('6. the existing gate: source approved, document indexed, document approved; only then it is retrievable', async () => {
+  test('6. the existing gate: source approval, document indexing and document approval are each needed to be retrievable', async () => {
+    const question = 'marmoset agreement stance';
     expect((await review('source', paperOne, { action: 'review', approvalState: 'approved' })).status).toBe(200);
-    expect(await retrievable('marmoset agreement stance')).toEqual([]);
+    expect(await retrievable(question)).toEqual([]);
 
     expect((await review('document', excerptOne, { action: 'complete_indexing' })).status).toBe(200);
     // Indexed, but nobody has approved the document: still not served.
-    expect(await retrievable('marmoset agreement stance')).toEqual([]);
+    expect(await retrievable(question)).toEqual([]);
 
     expect((await review('document', excerptOne, { action: 'review', approvalState: 'approved' })).status).toBe(200);
-    const served = await retrievable('marmoset agreement stance');
+    // The positive control for every empty answer above and below: this query CAN find the passage.
+    const served = await retrievable(question);
     expect(served).toHaveLength(1);
     expect(served[0]).toMatchObject({ document_id: excerptOne, source_id: paperOne, text_content: PASSAGE_ONE });
     const [row] = await sql('select archived_original_id from pilot.shadow_library_documents where document_id = $1', [excerptOne]);
     expect(row.archived_original_id).toBe(originalOne);
+
+    // The source gate on its own: with the source's approval taken back, the approved, indexed excerpt is not served.
+    expect((await review('source', paperOne, { action: 'review', approvalState: 'pending_review' })).status).toBe(200);
+    expect(await retrievable(question)).toEqual([]);
+    expect((await review('source', paperOne, { action: 'review', approvalState: 'approved' })).status).toBe(200);
+    expect(await retrievable(question)).toHaveLength(1);
   });
 
-  test('7. closing a requirement on a submission approves nothing and resolves nothing by itself', async () => {
-    // A second paper, filed and linked, and left in review on purpose.
+  test("7. a submission and its review resolve nothing; a person's close resolves the requirement and approves nothing in the Library", async () => {
+    // A second paper, filed, linked and indexed, and left unapproved on purpose.
     const paperTwo = await registerSource('Paper Two', true);
     const filed = await upload(paperTwo, PDF_TWO, 'Paper Two.pdf');
     expect(filed.status).toBe(201);
     const excerptTwo = await savePdfExcerpt(paperTwo, (await filed.json()).archived_original.archived_original_id, PASSAGE_TWO);
+    expect((await review('document', excerptTwo, { action: 'complete_indexing' })).status).toBe(200);
 
     const created = await requirementsPost(json('/api/pilot/shadow/research-requirements', 'POST', {
       action: 'create', source_event_name: 'MANUAL_RESEARCH_NOTE', source_entity_type: 'manual_note', source_entity_id: 'accept-footwork',
       research_requirement: 'Is the footwork screen reliable?', knowledge_gap: 'footwork screen reliability',
     }));
+    expect(created.status).toBe(200);
     const requirementId = (await created.json()).research_requirement_id as number;
     const answerState = async () => (await (await submissionsGet(new NextRequest(
       `http://localhost/api/pilot/shadow/research-submissions?research_requirement_ids=${requirementId}`,
@@ -433,12 +459,17 @@ describe('the #345 acceptance chain (real database, Graph faked)', () => {
     expect(await requirementStatus()).toBe('resolved');
     expect(await answerState()).toBe('resolved');
 
-    // The close approved nothing: the source and the excerpt are exactly as review left them (unreviewed),
-    // and neither is served.
+    // The close approved nothing: the source is unreviewed, the excerpt is indexed but unapproved, and it is not served.
     expect(await reviewState('sources', 'source_id', paperTwo)).toEqual(UNREVIEWED);
-    expect(await reviewState('documents', 'document_id', excerptTwo)).toMatchObject({ ...UNREVIEWED, index_completed_at: null });
+    expect(await reviewState('documents', 'document_id', excerptTwo)).toMatchObject({ ...UNREVIEWED, ingest_state: 'indexed' });
     expect(await retrievable('wallaroo reliability footwork')).toEqual([]);
     // Nor did it disturb what review had approved.
     expect(await retrievable('marmoset agreement stance')).toHaveLength(1);
+
+    // Positive control: the same query is served once the gate itself approves both, so the empty answer above was the gate.
+    as(ADMIN, 'organization_admin');
+    expect((await review('source', paperTwo, { action: 'review', approvalState: 'approved' })).status).toBe(200);
+    expect((await review('document', excerptTwo, { action: 'review', approvalState: 'approved' })).status).toBe(200);
+    expect(await retrievable('wallaroo reliability footwork')).toEqual([expect.objectContaining({ document_id: excerptTwo, text_content: PASSAGE_TWO })]);
   });
 });
