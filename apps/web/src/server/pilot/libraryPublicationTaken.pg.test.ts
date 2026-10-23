@@ -314,14 +314,24 @@ describe('registering a paper already on the shelf is refused (#345 D2, real dat
     expect(doiOnly.json.existing_source).toEqual({ source_id: heldId, title: 'URL plus DOI first' });
   });
 
-  test('a held source counts whatever its status, as a held URL does', async () => {
-    const heldId = await registered('Archived paper', '10.1000/archived.1');
-    await rawQuery(`update pilot.shadow_library_sources set status = 'archived' where source_id = $1`, [heldId]);
+  test.each([
+    ['archived', `status = 'archived'`],
+    ['rejected', `status = 'rejected'`],
+    ['quarantined', `status = 'quarantined'`],
+    [
+      'suppressed for retraction',
+      `retrieval_suppressed = true, suppression_reason = 'Retracted by the journal', suppressed_at = now(),
+       suppressed_by_account_id = '${CURATOR}'`,
+    ],
+  ])('a held source counts when it is %s, as a held URL does', async (label, assignment) => {
+    const doi = `10.1000/held-${label.replace(/\W+/g, '-')}`;
+    const heldId = await registered(`Held ${label} paper`, doi);
+    await rawQuery(`update pilot.shadow_library_sources set ${assignment} where source_id = $1`, [heldId]);
 
-    const second = await register(generalResearch('Archived paper, again', '10.1000/archived.1'));
+    const second = await register(generalResearch(`Held ${label} paper, again`, doi));
 
     expect(second.status).toBe(409);
-    expect(second.json.existing_source).toEqual({ source_id: heldId, title: 'Archived paper' });
+    expect(second.json.existing_source).toEqual({ source_id: heldId, title: `Held ${label} paper` });
   });
 });
 
@@ -336,6 +346,17 @@ describe('what the check must not refuse (real database)', () => {
     expect(platform.status).toBe(201);
     expect(await sourcesTitled(OTHER_GYM_ID, 'Other gym copy')).toBe(1);
     expect(await sourcesTitled(PLATFORM_LIBRARY_ORGANIZATION_ID, 'Platform copy')).toBe(1);
+  });
+
+  test('a paper the platform shelf holds first, which every gym reads, is still not on the gym shelf', async () => {
+    const platformFirst = await register(
+      { ...generalResearch('Platform holds it first', 'PMID: 55555555'), shelf: 'platform' },
+      OWNER_PRINCIPAL,
+    );
+    const gymSecond = await register(generalResearch('Gym registers it second', null, 'https://pubmed.ncbi.nlm.nih.gov/55555555/'));
+
+    expect(platformFirst.status).toBe(201);
+    expect(gymSecond.status).toBe(201);
   });
 
   test('a deleted source is not counted', async () => {
@@ -374,18 +395,24 @@ describe('what the check must not refuse (real database)', () => {
 describe('two registrations of one paper at once (real database)', () => {
   test('one is saved and the other refused: the second waits for the first and then sees it', async () => {
     // Holds the first transaction open after its insert and before its commit,
-    // so the second must overlap it. Without the per-identifier lock the
-    // second cannot see the uncommitted row and saves its own.
+    // and starts the second only once the first is there, so the second must
+    // overlap it. Without the per-identifier lock the second cannot see the
+    // uncommitted row and saves its own.
     const actualEmit = jest.requireActual('./shadowEvents').emitShadowEvent as typeof emitShadowEvent;
+    let firstIsInside!: () => void;
+    const firstInside = new Promise<void>((resolve) => {
+      firstIsInside = resolve;
+    });
     mockEmit.mockImplementationOnce(async (...args: Parameters<typeof emitShadowEvent>) => {
+      firstIsInside();
       await new Promise((resolve) => setTimeout(resolve, 500));
       return actualEmit(...args);
     });
 
-    const [first, second] = await Promise.all([
-      register(generalResearch('Race paper A', '10.1000/race.1')),
-      new Promise((resolve) => setTimeout(resolve, 100)).then(() => register(generalResearch('Race paper B', 'PMID: 7', 'https://doi.org/10.1000/race.1'))),
-    ]);
+    const firstAnswer = register(generalResearch('Race paper A', '10.1000/race.1'));
+    await firstInside;
+    const second = await register(generalResearch('Race paper B', 'PMID: 7', 'https://doi.org/10.1000/race.1'));
+    const first = await firstAnswer;
 
     expect([first.status, second.status]).toEqual([201, 409]);
     expect(second.json.existing_source).toEqual({ source_id: (first.json.source as { source_id: string }).source_id, title: 'Race paper A' });

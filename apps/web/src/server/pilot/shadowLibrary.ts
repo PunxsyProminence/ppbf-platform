@@ -666,10 +666,11 @@ export class ShadowLibraryPublicationTakenError extends ConflictError {
 /**
  * The oldest source on this shelf that shares any of `identifiers`
  * (publicationIdentifiers() strings), or null. Every row on the shelf counts,
- * whatever its status, as for the unique URL; a deleted row is gone. Reads
- * the shelf's rows through the organization_id index and evaluates
- * PUBLICATION_IDENTIFIERS_SQL on each: a scan of one shelf, which at the
- * pilot's size (hundreds of sources) needs no index of its own.
+ * whatever its status, as for the unique URL; a deleted row is gone. The
+ * planner picks an organization_id index or a scan of the small table; either
+ * way the organization filter is cheap and PUBLICATION_IDENTIFIERS_SQL runs
+ * only on this shelf's rows, which at the pilot's size (hundreds of sources)
+ * needs no index of its own.
  */
 export async function findShadowLibrarySourceByPublication(
   client: Pick<PoolClient, 'query'>,

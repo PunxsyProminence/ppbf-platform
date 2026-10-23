@@ -28,6 +28,10 @@
  * places with the same helpers but keep EVERY DOI and PMID, not the first: the
  * registration check (#345 D2) refuses a paper whose DOI or PMID is already on
  * the shelf. The same drift guard compares those two. Neither changes the key.
+ *
+ * Both twins assume ASCII DOIs when lowercasing: JS toLowerCase() folds every
+ * letter, Postgres lower() follows the database locale. Real DOIs are ASCII;
+ * a non-ASCII one could key or match differently in the two (fails open).
  */
 
 export type PublicationKeySource = {
