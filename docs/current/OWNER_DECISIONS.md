@@ -164,6 +164,37 @@ and should not try to.
 
 ---
 
+## OD-2026-10-22-002 -- The PPBF Research project gets the same drive and repo access as the other Claude accounts: "i want it to have all the same acess that the other claude accounts do where you comnicate throurgh drives and repo"
+
+**Provenance: PRIMARY for his words; the role reading and the applied details are the side session's, labelled.** Source: Overwatch's side session that set the project up (transcript `~/.claude/projects/C--Dev/d503d36d-fdb4-49c4-a3b4-5352496c38bb.jsonl`). His typed messages that carry the ruling: line 130 (2026-10-22T08:35:16.139Z), line 279 (09:01:20.158Z) and line 1266 (09:20:12.940Z). Line 264 (08:59:36.522Z) is the source for the Claude app project. His other typed messages in that session (lines 588, 626 and 698) were about which screen the setup ran on. The request reached the side session in Overwatch's brief (line 4), which quotes him: "i want to set up cluade research app, so that it can help with the app build content research and design wise" (Overwatch's relay, REPORTED). Read by script, each quote asserted against its line; spelling kept. The id carries 2026-10-22 because 09:20Z is 05:20 Eastern. New; edits no earlier entry. That it changes OD-2026-09-28-001 item 4 ("No other AI holds a standing lane") for this project is the side session's reading.
+
+**His words**
+
+- line 130: *"you may be mistaken i have the claude science app that i need help setting up it logged in currently to this account"*
+- line 264: *"im also setting p a project in the claude app"*
+- line 279: *"im logged into it i give youo permission to do the initial set up so we have the apprpiate connectors set up"*
+- line 1266: *"i want it to have all the same acess that the other claude accounts do where you comnicate throurgh drives and repo"*
+
+**What line 1266 answered (the side session's reading of the timing).** The side session had put a question card to him (line 249, 08:37:12.593Z; not answered, he sent other messages), then a report repeating the question in other words. The card's role question ended, as written: "A (Rec.): Yes, standing research role. B: No standing role; use it only when you ask." He replied with line 1266.
+
+**Ruling:** it gets the same drive and repo access the other Claude accounts use to communicate. Reading "it" as the PPBF Research project, the Claude Science project together with the Claude app project, is the side session's reading, his to correct. That this makes it a standing role (content and design research for the app) is also the side session's reading, INFERRED from line 1266 and the question it followed.
+
+**Applied (the side session's applications, not his words):**
+
+1. Surface: the Claude Science desktop app on Windows, signed in as punxsy.prominence.boxing@gmail.com (Max plan; OBSERVED in its account menu), project "PPBF Research"; and the Claude app project Jason is setting up himself (line 264; its account not confirmed).
+2. Read: a read-only clone of GitHub main at `C:\Dev\research-mirror\ppbf-platform` (push URL disabled; Overwatch refreshes it), `Documents\PPBF-overwatch`, and OneDrive (admin@) `AI_GOVERNANCE` and `PPBF-AI-Lanes`.
+3. Write: its own outboxes only, `Documents\PPBF-overwatch\research\claude-research-project\findings\` and OneDrive `PPBF-AI-Lanes\Research\`. It does not edit other sessions' files; Overwatch's live handover keeps one writer.
+4. Repo: pull requests that add research files under `docs/research/`, and comments, once Jason creates a GitHub token and enters it himself. It never merges; Overwatch merges (OD-2026-09-30-003). The token was created by Jason on 2026-10-22 on the punxsyprominenceboxing-cloud login (classic; `public_repo`, `notifications`, `read:project`; expires 2027-01-20), not on PunxsyProminence, which approves production; its pull requests come from the fork punxsyprominenceboxing-cloud/ppbf-platform. The repository is public, so reading main needs no token.
+5. It does not change the app's code, database, migrations, workflows or production, and sends no email or chat. Keeping app code with the build lanes is the side session's recommendation, not his words; he can widen it.
+6. Minors' privacy (standing floor): its access reaches places that hold athlete records. It does not open athlete, family or footage records for research, and copies no real person's identifying data into research files, pull requests or chats.
+7. Its findings are NOT APP SOURCE until Jason approves them; Overwatch checks sources and labels and recommends.
+
+The project's instructions are `Documents\PPBF-overwatch\research\claude-research-project\INSTRUCTIONS.md` (v2), saved in the Claude Science project and read back equal.
+
+**Status:** applied 2026-10-22. A setup check in the project read all five folders and wrote and read back a test file in both outboxes (OBSERVED on disk). Its first pull request, #1834 (one README under `docs/research/claude-science/`, draft), was opened from the fork by punxsyprominenceboxing-cloud and passed its checks after one body fix (OBSERVED with gh).
+
+---
+
 ## OD-2026-10-22-001 -- Classes can be cancelled after they start: "then classes need to be able to be canceled" (replaces the "After start" half of OD-2026-10-14-001); with Overwatch's applications of OD-2026-10-21-005 to lane LRA's Q1 and Q3, NOT new rulings of Jason's
 
 **Provenance: PRIMARY for his words; RECONSTRUCTED for the context, the applied details and the applications.** Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`). His one typed message was enqueued at line 24701 (2026-10-22T06:34:28.062Z) as a human prompt (line 24703) and delivered into Overwatch's running turn (line 24707). The rest comes from the plan agent's result with its "5. Questions for Jason" (line 24591, 06:30:07.061Z), Overwatch's "Applied rulings" block written into the plan (line 24620, 06:30:53.166Z), its report to him (line 24654, 06:31:26.862Z), its brief to lane LC (line 24801, 06:35:48.959Z) and its message to this records lane (line 24803, 06:35:53.604Z). The plan is `Documents\PPBF-overwatch\research\RETIRE-AUDIT-DATA-PLAN-2026-10-22.md` (lane LRA, plan only, outside the repo; its code read is origin/main `0a9415d6`). Read by script (housekeeping lane HK, 2026-10-22, at Overwatch's request). His words quoted here are the 06:34 message, OD-2026-10-21-005's (line 22865) and, inside the plan agent's Q3, "use neeko" (OD-2026-10-19-012); they are quoted exactly, spelling kept. The questions are quoted as the plan agent wrote them, and the applications as Overwatch wrote them. The id carries 2026-10-22 because these UTC times are 02:30 to 02:36 on 2026-10-22 Eastern; it is placed by his message. It supersedes the "After start" half of OD-2026-10-14-001; the rest of that entry stands. New; edits no earlier entry. It follows from OD-2026-10-21-005 and OD-2026-10-13-013.
@@ -10372,6 +10403,11 @@ organised among themselves: the housekeeping thread is overwatch -- general
 contractor of the other Claude threads (lanes), liaison to ChatGPT, and
 deployment lead. Claude Code is still the only builder, and ChatGPT still the
 architect and reviewer.
+
+Status (2026-10-22): OD-2026-10-22-002 records his words: the PPBF Research
+project gets the same drive and repo access as the other Claude accounts.
+The research-only limits (no app code, pull requests under `docs/research/`,
+never merges) are the side session's applications, set out in that entry.
 
 ---
 
