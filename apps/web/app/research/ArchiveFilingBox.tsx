@@ -71,7 +71,8 @@ export const FILING_WORDS = {
   // PROPOSED wording, lane LR6: the subject picker shown when a source has none yet.
   classifyLabel: 'Subject of this source',
   classifyPlaceholder: 'Choose a subject…',
-  notClassified: (reason: string) => `Not classified: ${reason} Nothing was filed.`,
+  // The sources route's own sentences carry no full stop ("Forbidden"), so one is set here.
+  notClassified: (reason: string) => `Not classified: ${reason.replace(/[.\s]+$/, '')}. Nothing was filed.`,
   classifyFailed: 'the Library did not answer. Try again.',
 };
 
@@ -106,9 +107,9 @@ export default function ArchiveFilingBox({
   // Set at once, where state is not yet: one request at a time, whatever fires twice.
   const working = useRef(false);
 
-  function attemptFiling(): Promise<ArchiveFilingResult> {
+  function attemptFiling(forSourceId: string): Promise<ArchiveFilingResult> {
     return fileLibraryPdfOriginal(apiBase(), file, {
-      sourceId,
+      sourceId: forSourceId,
       acquisitionProvider: provider,
       acquisitionChannel: channel,
       versionKind: version,
@@ -117,7 +118,7 @@ export default function ArchiveFilingBox({
     });
   }
 
-  function settle(result: ArchiveFilingResult) {
+  function settle(result: ArchiveFilingResult, forSourceId: string) {
     if (result.ok) {
       setUnclassifiedId(null);
       setAlreadyFiled(result.alreadyFiled);
@@ -127,7 +128,7 @@ export default function ArchiveFilingBox({
     // A refusal (4xx) is definite; no answer or a server error may have landed.
     const definite = result.status >= 400 && result.status < 500;
     const reason = result.serverMessage ?? FILING_WORDS.failed;
-    setUnclassifiedId(result.code === SOURCE_NOT_CLASSIFIED_CODE ? sourceId : null);
+    setUnclassifiedId(result.code === SOURCE_NOT_CLASSIFIED_CODE ? forSourceId : null);
     setMessage(definite ? FILING_WORDS.notFiled(reason) : FILING_WORDS.mayNotBeFiled(reason));
   }
 
@@ -141,7 +142,7 @@ export default function ArchiveFilingBox({
     setBusy(true);
     setMessage(null);
     try {
-      settle(await attemptFiling());
+      settle(await attemptFiling(sourceId), sourceId);
     } finally {
       working.current = false;
       setBusy(false);
@@ -165,7 +166,7 @@ export default function ArchiveFilingBox({
         return;
       }
       setUnclassifiedId(null);
-      settle(await attemptFiling());
+      settle(await attemptFiling(unclassifiedId), unclassifiedId);
     } finally {
       working.current = false;
       setBusy(false);

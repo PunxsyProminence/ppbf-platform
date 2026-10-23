@@ -683,6 +683,9 @@ export async function fileLibraryPdfOriginal(
   }
 }
 
+// A single row update, so far shorter than a filing.
+const CLASSIFY_TIMEOUT_MS = 30_000;
+
 // The filing route's refusal for a source with no R01-R19 subject yet
 // (researchArchiveFiling.ts SOURCE_NOT_CLASSIFIED; not imported, so this client
 // module carries no server import).
@@ -711,6 +714,7 @@ export async function classifyLibrarySource(
         classification_domain: fields.classificationDomain,
         ...(fields.shelf === 'platform' ? { shelf: 'platform' } : {}),
       }),
+      signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(CLASSIFY_TIMEOUT_MS) : undefined,
     });
     if (response.ok) return { ok: true };
     const payload: unknown = await response.json().catch(() => null);

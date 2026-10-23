@@ -128,8 +128,11 @@ describe('ArchiveFilingBox: classifying an unclassified source in place (lane LR
     expect(subjects.map((option) => option.value)).toEqual(RESEARCH_CLASSIFICATION_DOMAINS.map((domain) => domain.key));
     expect(subjects).toHaveLength(19);
     expect(options[0].textContent).toBe(FILING_WORDS.classifyPlaceholder);
-    const text = subjects.map((option) => `${option.value} ${option.textContent}`).join('\n');
-    expect(text).not.toMatch(/R00|R98|unsorted|duplicate/i);
+    // Each rendered subject is a folder R01-R19; the workflow states R00 and R98 are not among them.
+    const codes = subjects.map((option) => RESEARCH_CLASSIFICATION_DOMAINS.find((domain) => domain.key === option.value)?.archiveCode);
+    expect(codes).toEqual(Array.from({ length: 19 }, (_unused, index) => `R${String(index + 1).padStart(2, '0')}`));
+    expect(codes).not.toContain('R00');
+    expect(codes).not.toContain('R98');
   });
 
   it('saves the pick through the sources PATCH, then files once more, once', async () => {
@@ -164,13 +167,15 @@ describe('ArchiveFilingBox: classifying an unclassified source in place (lane LR
     const onFiled = jest.fn();
     const calls = installFetch({
       post: [NOT_CLASSIFIED],
-      patch: [{ status: 403, json: { error: 'Only a curator can classify a source.' } }],
+      patch: [{ status: 403, json: { error: 'Forbidden' } }],
     });
     renderBox({ onFiled });
     await fileIt();
     await pick('boxing_athlete_development');
 
-    expect(screen.getByRole('alert').textContent).toBe(FILING_WORDS.notClassified('Only a curator can classify a source.'));
+    // The route's own sentence has no full stop; the box sets one.
+    expect(screen.getByRole('alert').textContent).toBe('Not classified: Forbidden. Nothing was filed.');
+    expect(FILING_WORDS.notClassified('A sentence that has its stop.')).toBe('Not classified: A sentence that has its stop. Nothing was filed.');
     expect(filingCalls(calls)).toHaveLength(1);
     expect(classifyCalls(calls)).toHaveLength(1);
     expect(onFiled).not.toHaveBeenCalled();
