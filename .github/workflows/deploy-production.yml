@@ -678,6 +678,18 @@ jobs:
           # While it has never been set, the app is given nothing new and the
           # form keeps using PPBF_PILOT_DEFAULT_ORG_ID.
           PPBF_PUBLIC_INTEREST_ORG_ID: ${{ vars.PPBF_PUBLIC_INTEREST_ORG_ID }}
+          # Optional, and all four or none: where the in-app Research Archive
+          # files original research PDFs (the SharePoint site, drive and archive
+          # root item) and which organizations' Library shelves may file there
+          # (readResearchArchiveSetup in researchArchiveConfig.ts). They are ids,
+          # not credentials -- the app signs in with its managed identity -- so
+          # these are environment VARIABLES, not secrets. Production only: no
+          # staging step reads them. While none is set, the app is given nothing
+          # new and filing stays off.
+          RESEARCH_ARCHIVE_SITE_ID: ${{ vars.RESEARCH_ARCHIVE_SITE_ID }}
+          RESEARCH_ARCHIVE_DRIVE_ID: ${{ vars.RESEARCH_ARCHIVE_DRIVE_ID }}
+          RESEARCH_ARCHIVE_ROOT_ITEM_ID: ${{ vars.RESEARCH_ARCHIVE_ROOT_ITEM_ID }}
+          RESEARCH_ARCHIVE_ORGANIZATION_IDS: ${{ vars.RESEARCH_ARCHIVE_ORGANIZATION_IDS }}
         run: |
           if [ -z "$PPBF_APP_ORIGIN" ]; then
             echo "Required production variable 'PPBF_APP_ORIGIN' is not configured."
@@ -704,6 +716,47 @@ jobs:
               exit 1
             fi
             PUBLIC_INTEREST_ENV=("PPBF_PUBLIC_INTEREST_ORG_ID=$PPBF_PUBLIC_INTEREST_ORG_ID")
+          fi
+
+          # The Research Archive: all four RESEARCH_ARCHIVE_* variables, or none.
+          # None set: nothing is appended and the command below is exactly as it
+          # was. Some but not all: the deploy stops here naming the ones not set,
+          # because the app reads a half-set archive as "incomplete" and refuses
+          # every filing. All four: each must have the shape the app accepts
+          # (SHAPES in researchArchiveConfig.ts -- each value goes into a Graph
+          # URL, and none can then read as secretref:), then all four are
+          # appended. Messages name variables, never values.
+          #
+          # As with the variable above, a deployed value stays on the app if the
+          # variables are later deleted: deleting them does not switch filing off.
+          RESEARCH_ARCHIVE_ENV=()
+          RESEARCH_ARCHIVE_UNSET=()
+          for name in RESEARCH_ARCHIVE_SITE_ID RESEARCH_ARCHIVE_DRIVE_ID RESEARCH_ARCHIVE_ROOT_ITEM_ID RESEARCH_ARCHIVE_ORGANIZATION_IDS; do
+            if [ -n "${!name}" ]; then
+              RESEARCH_ARCHIVE_ENV+=("$name=${!name}")
+            else
+              RESEARCH_ARCHIVE_UNSET+=("$name")
+            fi
+          done
+          if [ "${#RESEARCH_ARCHIVE_ENV[@]}" -gt 0 ]; then
+            if [ "${#RESEARCH_ARCHIVE_UNSET[@]}" -gt 0 ]; then
+              echo "::error::The Research Archive needs all four RESEARCH_ARCHIVE_* variables or none. Not set: ${RESEARCH_ARCHIVE_UNSET[*]}."
+              exit 1
+            fi
+            SHAPE_SITE_ID='^[A-Za-z0-9.-]+,[0-9A-Fa-f-]{36},[0-9A-Fa-f-]{36}$'
+            SHAPE_DRIVE_ID='^b![A-Za-z0-9_-]+$'
+            SHAPE_ROOT_ITEM_ID='^[A-Za-z0-9]+$'
+            SHAPE_ORGANIZATION_IDS='^[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*$'
+            MALFORMED=()
+            for part in SITE_ID DRIVE_ID ROOT_ITEM_ID ORGANIZATION_IDS; do
+              name="RESEARCH_ARCHIVE_$part"
+              shape="SHAPE_$part"
+              [[ "${!name}" =~ ${!shape} ]] || MALFORMED+=("$name")
+            done
+            if [ "${#MALFORMED[@]}" -gt 0 ]; then
+              echo "::error::Not in the shape the app accepts (SHAPES in researchArchiveConfig.ts): ${MALFORMED[*]}."
+              exit 1
+            fi
           fi
 
           az containerapp update \
@@ -736,7 +789,8 @@ jobs:
               AZURE_AI_VISION_DEPLOYMENT_NAME=gpt-5-vision-shadow \
               PPBF_VIDEO_CONTENT_SCAN=vision \
               PPBF_DURABLE_RATE_LIMIT=true \
-              "${PUBLIC_INTEREST_ENV[@]}"
+              "${PUBLIC_INTEREST_ENV[@]}" \
+              "${RESEARCH_ARCHIVE_ENV[@]}"
 
       # `az containerapp update` returns when the new revision is CREATED, not
       # when it is serving. Staging learned this on run 30503641552 (its checks
