@@ -164,6 +164,102 @@ and should not try to.
 
 ---
 
+## OD-2026-10-27-001 -- The backbone takes precedence when it conflicts with the app, and the hand-off is a rebuild: "So claude science will take precedence when conflict arise, we are basically rebuilding everything that we have done so that it flows and connects"
+
+**Provenance: PRIMARY.** Jason's typed messages in the Claude desktop session
+that answered the PPBF backbone build's questions (session
+`89fa643b-bdcc-44a3-a436-1a528f3aa45d`; transcript
+`~/.claude/projects/C--Dev/89fa643b-bdcc-44a3-a436-1a528f3aa45d.jsonl`, lines
+1111, 1144 and 1155; timestamps UTC), read from the transcript by that session
+before this entry was written. New; supersedes OD-2026-10-06-026 ruling 1 as
+stated under ruling 1 below; edits no earlier entry.
+
+**Context.** Jason set the session read-only for a question-and-answer pass
+(line 844, 12:32:45.128Z: *"Don't write or build any thing, id like to do a QA
+with you where you reply to my questions with sourced answers no guessing or
+gap filling"*; line 858, 12:34:20.849Z: *"I want you to use outside sources as
+well to validate what we have as well"*) and asked (line 885, 12:36:24.538Z):
+*"Review what we re doing in claude science, suggest ways to get that into tha
+live app"*. The review (Claude Code, in that session) covered the backbone in
+OneDrive PPBF-AI-Lanes\Research\Backbone (`data/spine/spine.json`, 18 stages;
+174 content records for the FT1 class track; `docs/SCHEMA_PROPOSAL.md` P1-P22,
+approved by Jason at checkpoint 1 on 2026-10-24; `RULES.md`), the app's intake
+and pathway code on main `6ab8f547`, and five outside sources. It named four
+places where the app's own behaviour conflicts with the backbone's RULES
+section 0 (Jason, 2026-10-23, as RULES.md quotes him: "we don't withhold
+anything because of medical, legal or safety at all") and section 1 (hard rules
+stored as defaults a coach, parent or leadership member can override, every
+override recorded):
+
+1. block safety gates have no override path by design
+   (`apps/web/src/server/pilot/safetyGateMatrix.ts:21-25`: "A coach/admin
+   override parameter is not something to add later -- it is something this
+   module must keep refusing to have"; repeated at
+   `apps/web/src/server/pilot/competitionSafetyGates.ts:81-85`);
+2. SHADOW chat refuses weight-cut questions
+   (`apps/web/src/server/pilot/shadowAuthority.ts:58`);
+3. a definite machine refusal on an uploaded video is never overturned by a
+   person (`apps/web/app/api/pilot/video/[videoId]/release/route.ts:38-51`);
+4. chokes on minors are not recorded (OD-2026-10-06-026 ruling 1, his pick
+   *"Don't record chokes on minors"*).
+
+The review's question, as written: "Route A (recommended), B or C for the
+hand-off, and do you want the four policy conflicts put to you as one question
+card before lane 2?" Route A: contract and pathway catalog first, then load the
+FT1 track through the existing content-package intake, in lanes; B: load now
+with the label columns dropped; C: a separate backbone schema.
+
+**Jason, whole message** (line 1111, 12:58:39.715Z): *"So claude science will
+take precedence when conflict arise, we are basically rebuilding everything
+that we have done so that it flows and connects"*
+
+Claude Code's reading, put back to him as written: (1) the four conflicts
+resolve the backbone's way, reversing the no-override design, the weight-cut
+refusal, the never-overturned video refusal and his own OD-2026-10-06-026
+ruling 1; (2) the backbone becomes the app's design source for pathway,
+content, gates, defaults and evidence, with its own source order kept (RULES
+section 3: DOC-027 and DOC-072 lead, the Long Road fills gaps, checked
+research sets the tier); (3) the hand-off is a rebuild, not a patch (P1-P22
+plus the code P11 names), keeping the repo parts `docs/REPO_INVENTORY.md`
+lists under "What the backbone can reuse as is". Cost, stated once, as
+written: "Two of the reversals touch the hard floor. Letting a person overturn
+a machine video refusal covers the minors' content screen and the malware
+verdict; malware should stay unoverturnable or it can reach the gym's devices.
+Overridable block gates and recorded chokes add records; they do not remove
+safety. You decide; I build what you choose." Jason (line 1144,
+13:04:54.013Z): *"Control check is correct"*. Asked, official form: "Record
+the ruling now in OWNER_DECISIONS.md by PR, quoting your words (recommended),
+or keep this session read-only and record it later?" Jason (line 1155,
+13:06:31.787Z): *"Yes record it now"*.
+
+**Rulings:**
+
+1. **Precedence.** Where the backbone (OneDrive PPBF-AI-Lanes\Research\Backbone:
+   `RULES.md`, `data/spine/spine.json`, `docs/SCHEMA_PROPOSAL.md`,
+   `working/design-2026-10-25/DATA_MODEL.md` and the decision register)
+   conflicts with the app as built or with an earlier entry here, the backbone
+   wins. The four conflicts above resolve its way: block gates get an
+   override-with-reason path; SHADOW answers weight-cut questions; a person can
+   overturn a machine video refusal; chokes on minors are recorded. This
+   supersedes OD-2026-10-06-026 ruling 1 and the no-override design recorded in
+   `safetyGateMatrix.ts`.
+2. **Rebuild.** The hand-off is a rebuild of pathway, content, gates, defaults
+   and evidence around the backbone so the pieces flow and connect, not a
+   patch. The backbone's schema proposal (P1-P22, approved at checkpoint 1) and
+   data model are the design source; the repo parts the backbone lists as
+   "reuse as is" are kept.
+3. **Source order inside the backbone is unchanged** (RULES section 3, his
+   ruling of 2026-10-23 recorded there).
+
+**Not ruled here:** which route (A, B or C) the hand-off takes, and the lane
+order; whether the malware verdict stays unoverturnable (the cost note above
+was put once; he did not answer it separately); the backbone's own open items
+(Youth Fundamentals, Novice, the first 90 days, the evidence pass).
+
+**Status:** recorded 2026-10-27 by the same session, by PR; nothing built.
+
+---
+
 ## OD-2026-10-23-001 -- Overwatch's application of OD-2026-10-13-018 (F-054), NOT a new ruling of Jason's: a learning-loop note filed outside research staff reaches a coach without its words (F-183)
 
 **Provenance: RECONSTRUCTED for the application, not his words; PRIMARY for his "ship it now".** Overwatch applied a ruling already recorded here; Jason did not answer a question on F-183. His words quoted here are OD-2026-10-13-018's pick (PRIMARY there, line 2582) and his release go-ahead (line 29190). Source: the new overwatch session ("Overwatch (new, 2026-10-13)"; transcript `~/.claude/projects/C--Dev/01bcba1d-a862-4581-9b1e-769ff91d23fb.jsonl`): Overwatch's brief to lane LLP (line 28783, 2026-10-23T12:49:18.293Z) and its message to this records lane (line 28785, 12:49:22.110Z). Read by script (housekeeping lane HK, 2026-10-23, at Overwatch's request). The id carries 2026-10-23 because these UTC times are 08:49 on 2026-10-23 Eastern. New; edits no earlier entry. It follows from OD-2026-10-13-018 and OD-2026-10-13-013.
