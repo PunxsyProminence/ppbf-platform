@@ -164,6 +164,49 @@ and should not try to.
 
 ---
 
+## OD-2026-10-28-001 -- A separate lead, not named Overwatch, runs the gym-tv-timer plug-back: "1 and open a new over watch for this  however name it somthing different"
+
+**Provenance: PRIMARY.** Jason's answer to a question card in the gym-tv-timer session ("Gym TV timer core repo", `local_d6c7eb34`; transcript `~/.claude/projects/C--Dev/01925d31-aed6-4409-bebc-09dc7702b2a7.jsonl`, question line 1034, answer line 1040, 2026-10-28T16:12:10.868Z), read from the transcript by script. Spelling and the double space kept. New; edits no earlier entry.
+
+**What it answered.** That session had sent its "GTT-01 and GTT-02 are ready" note to "Backbone claude science", a main-app build session, by mistake. The question, as written: "The note went to the wrong session, and no Overwatch session is open right now: the last one, "Overwatch (new, 2026-10-13)", is archived. What should happen with the note and the misdirected copy?" Option 1, as written: "Retract, hold briefs (Recommended)": "Send the Backbone session one line: disregard the GTT note, it was sent to you by mistake. The briefs stay in lane-briefs for whoever runs Overwatch next."
+
+**Jason:** *"1 and open a new over watch for this  however name it somthing different"*
+
+**Ruling:**
+
+1. The misdirected note is retracted (option 1).
+2. A new lead session does Overwatch's job for this work only, the gym-tv-timer plug-back (lanes GTT-01 and GTT-02, then the release), under a name that is not "Overwatch". The session opened for it is titled "TV Timer Lead (gym-tv-timer plug-back)". "For this" reaching only the plug-back is the opening session's reading, his to correct; nothing else of Overwatch's moves to it.
+
+**Not ruled here:** the 2026-10-23 stopping point ("we are not building anything else", `Documents\PPBF-overwatch\STOPPING-POINT-2026-10-23.md`) is lifted for the plug-back only, as the opening session read this answer; no other hold changes.
+
+**Status:** applied 2026-10-28; the lead opened the same day.
+
+---
+
+## OD-2026-10-27-002 -- The gym TV timer core is its own public repo and plugs back into ppbf-platform as a GitHub dependency pinned to a commit: "i want to build it in such a way to easily drop it back into the app"; "A: GitHub dependency pinned to a commit (Recommended)"
+
+**Provenance: PRIMARY for lines 438, 543 and 729; REPORTED for the work order's two decisions.** Source: the gym-tv-timer session ("Gym TV timer core repo", `local_d6c7eb34`; transcript `~/.claude/projects/C--Dev/01925d31-aed6-4409-bebc-09dc7702b2a7.jsonl`), read by script, each quote asserted against its line. The id carries 2026-10-27 because these UTC times (2026-10-28 01:59Z to 02:28Z) are 21:59 to 22:28 on 2026-10-27 Eastern. New; edits no earlier entry.
+
+**The work order (line 4, 01:59:50.458Z).** Jason pasted a step-1 work order that states, under "Owner decisions already made (Jason, 2026-10-27)": *"its own repo, under the PunxsyProminence GitHub org, PUBLIC."* It also says, as a context line: *"The core must later plug back into ppbf-platform as a dependency, so it holds no storage, auth, database, or Next.js code."* These are the work order's words, not a message he typed; who wrote the work order is not recorded in the transcript.
+
+**His words**
+
+- line 438 (02:12:09.922Z), typed: *"i want to build it in such a way to easily drop it back into the app"*
+- line 543 (02:16:20.719Z), his pick on the question "How should ppbf-platform pull in gym-tv-timer?" (line 529; the other option was "B: GitHub release file. Build the drop-in shape plus a release workflow in gym-tv-timer and push to main."): *"A: GitHub dependency pinned to a commit (Recommended). Build the drop-in shape in gym-tv-timer and push to main."*
+- line 729 (02:28:23.674Z), on "Write the ppbf-platform plug-back lane brief for Overwatch?" (line 716): *"Yes, write the ppbf-platform plug-back lane brief for Overwatch to open."*
+
+**Rulings:**
+
+1. The gym TV timer's pure logic (round clock, the TV's bell and knock rules, pairing-code checks, sayings, the bell recording) lives in its own public repo, `PunxsyProminence/gym-tv-timer`, with no storage, auth, database or Next.js code.
+2. ppbf-platform takes it back as a GitHub dependency pinned to a full commit SHA (`"gym-tv-timer": "github:PunxsyProminence/gym-tv-timer#<full sha>"` in `apps/web/package.json`). To update the code ppbf runs, the pin moves to a new SHA.
+3. The plug-back is built as lanes from briefs (`Documents\PPBF-overwatch\lane-briefs\GTT-01.md` and `GTT-02.md`). The drop-in shape was built at `d24b44d123cf31b42699ee150d219479106ec474` (gym-tv-timer CI run 40620685799, green).
+
+**Not ruled here (reported to him already, not re-asked):** the gym-tv-timer license; whether the package keeps a copy of `security.ts`; the gymSayings LibraryQuote adapter flag; PunxsyProminence being a user account rather than an organization.
+
+**Status:** recorded 2026-10-28; the plug-back lanes GTT-01 and GTT-02 follow.
+
+---
+
 ## OD-2026-10-27-001 -- The backbone takes precedence when it conflicts with the app, and the hand-off is a rebuild: "So claude science will take precedence when conflict arise, we are basically rebuilding everything that we have done so that it flows and connects"
 
 **Provenance: PRIMARY.** Jason's typed messages in the Claude desktop session
