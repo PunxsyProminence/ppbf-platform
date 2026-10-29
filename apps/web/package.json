@@ -642,7 +642,7 @@
     "@azure/storage-blob": "^12.34.0",
     "googleapis": "^176.0.0",
     "gym-tv-timer": "github:PunxsyProminence/gym-tv-timer#d24b44d123cf31b42699ee150d219479106ec474",
-    "jose": "^6.2.12",
+    "jose": "^6.2.13",
     "next": "16.4.2",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.20.2",
