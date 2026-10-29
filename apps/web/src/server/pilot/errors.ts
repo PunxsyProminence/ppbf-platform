@@ -31,25 +31,13 @@
   ShadowRuntimeUnavailableError, rather than inventing a new mechanism.
 */
 
-export class PilotError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    /**
-     * The ALL_CAPS machine code, when the throw site had one. It belongs
-     * here rather than in the message prefix -- several existing messages
-     * read `SAFETY_FLAG_NOT_FOUND: prose`, which put the code exactly where
-     * the status matcher was looking and the prose exactly where nobody
-     * would see it.
-     */
-    readonly code?: string,
-  ) {
-    super(message);
-    // Subclasses report their own name, so a log line says ValidationError
-    // rather than PilotError for all four.
-    this.name = new.target.name;
-  }
-}
+import { PilotError } from 'gym-tv-timer/errors';
+
+// PilotError itself now lives in the gym-tv-timer package, and this module re-exports that one
+// class rather than defining its own. There must be exactly one: the package's GymTvError extends
+// the package's PilotError, and jsonError (http.ts) tests `instanceof PilotError` against this
+// export, so a second class here would answer every GymTvError as an opaque 500.
+export { PilotError };
 
 /** A precondition the caller can fix by sending different input. */
 export class ValidationError extends PilotError {

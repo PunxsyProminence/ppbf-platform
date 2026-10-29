@@ -1,13 +1,28 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import { query, queryOne, withTransaction } from './db';
-import { PilotError } from './errors';
 import { listLiveQuotes, type QuoteShown } from './orgQuotes';
 import { ROUND_TIMER_FIELDS, deriveRoundTimer, type RoundTimerRow, type RoundTimerView } from './roundTimers';
 import { createOpaqueToken, hashToken } from './security';
 import { sweepIdleRuns } from './sessionScriptRuns';
 import type { WallBoard, WallNameMode } from './wallDisplay';
 import { loadWallBoard } from './wallDisplayDb';
+import {
+  GymTvError,
+  PAIR_CODE_LIFETIME_MS,
+  PAIR_CODE_MINT_LIMIT,
+  PAIR_CODE_MINT_WINDOW_MS,
+  isWellFormedPairCode,
+  newPairCode,
+  normalizePairCode,
+  validateTvName,
+} from 'gym-tv-timer/gymTvs';
+
+// The pure part of pairing (the code and name limits, GymTvError, normalizePairCode,
+// isWellFormedPairCode, newPairCode, validateTvName) now lives in the gym-tv-timer package; every
+// name this module exported before is still exported from here. GymTvError extends the package's
+// PilotError, which is the one errors.ts re-exports, so jsonError still answers it with its status.
+export * from 'gym-tv-timer/gymTvs';
 
 // Gym TVs: pairing from the coach dashboard, and the TV's own device key.
 //
@@ -45,16 +60,6 @@ import { loadWallBoard } from './wallDisplayDb';
 // existing in that environment. The TV read, the Paired TVs list and the in-use check all apply
 // the same liveness condition (LIVE_SHOWN_RUN), so a stale pointer reads as "nothing on this TV".
 
-export const PAIR_CODE_LENGTH = 6;
-export const PAIR_CODE_LIFETIME_MS = 5 * 60 * 1000;
-// No 0/O/1/I: a code is typed with a TV remote, where those four are indistinguishable at a
-// distance, and a mistyped code is a failed attempt against the budget.
-export const PAIR_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-// How many codes one coach may have minted in the last ten minutes. A coach pairing two TVs and
-// mistyping once is three; this is a brake on a script, not on a person.
-export const PAIR_CODE_MINT_LIMIT = 5;
-export const PAIR_CODE_MINT_WINDOW_MS = 10 * 60 * 1000;
-export const TV_NAME_MAX_LENGTH = 60;
 // How long a disconnected TV stays on the coaches' Gym TVs list (retire audit gap G4, 2026-10-22:
 // a disconnected row stayed on every coach's panel forever). After this many days from revoked_at
 // the list leaves it out. Read only: the row and its revoked_at stay in the table.
@@ -76,12 +81,6 @@ export const GYM_TV_READ_MAX_PER_ADDRESS = 600;
 export const GYM_TV_READ_MAX_PER_KEY = 60;
 // The cookie is scoped to the TV routes, so the key never travels with any other request.
 export const GYM_TV_DEVICE_COOKIE_PATH = '/api/pilot/tv';
-
-export class GymTvError extends PilotError {
-  constructor(status: number, code: string) {
-    super(status, code, code);
-  }
-}
 
 export interface GymTvRow {
   organization_id: string;
@@ -124,37 +123,6 @@ function statusOf(row: { paired_at: string | null; revoked_at: string | null; co
   if (row.revoked_at) return 'disconnected';
   if (row.paired_at) return 'paired';
   return row.code_expired ? 'expired' : 'pending';
-}
-
-export function normalizePairCode(raw: string): string {
-  return raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
-}
-
-export function isWellFormedPairCode(code: string): boolean {
-  if (code.length !== PAIR_CODE_LENGTH) return false;
-  for (const ch of code) {
-    if (!PAIR_CODE_ALPHABET.includes(ch)) return false;
-  }
-  return true;
-}
-
-export function newPairCode(): string {
-  let code = '';
-  for (let i = 0; i < PAIR_CODE_LENGTH; i += 1) {
-    code += PAIR_CODE_ALPHABET[randomInt(PAIR_CODE_ALPHABET.length)];
-  }
-  return code;
-}
-
-export function validateTvName(raw: unknown): string {
-  if (typeof raw !== 'string') {
-    throw new GymTvError(400, 'TV_NAME_REQUIRED');
-  }
-  const name = raw.trim();
-  if (name.length === 0 || name.length > TV_NAME_MAX_LENGTH) {
-    throw new GymTvError(400, 'TV_NAME_LENGTH');
-  }
-  return name;
 }
 
 export interface MintedPairCode {
