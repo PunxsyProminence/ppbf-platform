@@ -32,6 +32,8 @@ import WallDisplay, {
 } from './WallDisplay';
 import type { WallBoard, WallPublicBoard } from '@/src/server/pilot/wallDisplay';
 import * as sayings from './gymSayings';
+// The app's gymSayings re-exports the package through non-configurable getters, so the spy goes on the package itself.
+import * as packageSayings from 'gym-tv-timer/gymSayings';
 import { GYM_SAYINGS } from './gymSayings';
 
 function board(over: Partial<WallBoard> = {}): WallBoard {
@@ -730,7 +732,7 @@ describe('empty states', () => {
   it('falls back to the ladder rather than an empty band if the gym has no lines', async () => {
     // gymSayings.ts is built to render nothing rather than borrow somebody
     // else's words, and a blank strip across a television is not an option.
-    const spy = jest.spyOn(sayings, 'pickSaying').mockReturnValue(null);
+    const spy = jest.spyOn(packageSayings, 'pickSaying').mockReturnValue(null);
     try {
       await renderBoard({});
       expect(screen.getByText('5 · 13 · 34 · 89 · 233')).toBeTruthy();
