@@ -1,5 +1,5 @@
-action,chunk_id,organization_id,claim_id,evidence
-CORRECT_CHUNK_TEXT,chk_39fac3160bf60743,punxsy_prominence,A8-071,#1003: the sparring log flow and its START_ROUND stamps were designed and never built; the stamp design was retired 2026-09-28 (OD-2026-09-28-008)
-CORRECT_CHUNK_TEXT,chk_3ca9344108b270a1,__platform__,A5-132,#1887: PubMed 27173991 gives J Sports Sci 2017;35(8):719-726 (online 2016); the Source line dated it 2016
-CORRECT_CHUNK_TEXT,chk_473c8284ef33ff26,punxsy_prominence,A3-117,"#1003: the sparring log specified START_ROUND stamps that were never built (retired 2026-09-28, OD-2026-09-28-008)"
-CORRECT_CHUNK_TEXT,chk_f4cf693a55fe0315,__platform__,A7-054,#1887: PubMed 40059405 lists Ricci AA first and no Jagim among its 18 authors; the Source line named Jagim AR
+action,chunk_id,organization_id,claim_id,text_sha256,evidence
+CORRECT_CHUNK_TEXT,chk_39fac3160bf60743,punxsy_prominence,A8-071,cce2ac6779726492a51f24f8573870aadb0bd3e15109a42aae67b9f4243a4e14,#1003: the sparring log flow and its START_ROUND stamps were designed and never built; the stamp design was retired 2026-09-28 (OD-2026-09-28-008)
+CORRECT_CHUNK_TEXT,chk_3ca9344108b270a1,__platform__,A5-132,dde38ec2d804f64145dc19117cf60afdf0dcca82b1d1460ae55e4949f9262d04,#1887: PubMed 27173991 gives J Sports Sci 2017;35(8):719-726 (online 2016); the Source line dated it 2016
+CORRECT_CHUNK_TEXT,chk_473c8284ef33ff26,punxsy_prominence,A3-117,7bfa0eca1b9c849c8a869e2e48aa6787e972617a32c793b0bb9c2b32b7186abe,"#1003: the sparring log specified START_ROUND stamps that were never built (retired 2026-09-28, OD-2026-09-28-008)"
+CORRECT_CHUNK_TEXT,chk_f4cf693a55fe0315,__platform__,A7-054,d5166eb6dc32d3de9187c2dddc4898696df40145b2957bac69b4ee983b81e9de,#1887: PubMed 40059405 lists Ricci AA first and no Jagim among its 18 authors; the Source line named Jagim AR

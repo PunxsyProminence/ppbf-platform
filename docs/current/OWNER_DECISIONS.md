@@ -179,8 +179,9 @@ and should not try to.
 
 1. The repair tool may write `text_content` for the chunks the committed `repairs/2026-11-05_text_correction_log.csv` names, and only where a chunk still holds its imported text. This adds a production write type to the tool Jason approved on 2026-09-29 (Q1-Q4). Each production run still needs his approval in GitHub.
 2. A text-correction row may name `punxsy_prominence` as well as `__platform__`, and no other organization. The organization is fixed in the committed log, not chosen at dispatch. Every other action of the tool stays `__platform__`-only.
+3. As planned: the corrected chunks' embeddings are left as they are, and the Zubac source row's `publication_date` stays 2016-01-01.
 
-**Status:** built 2026-11-05 by PR; production run pending.
+**Status:** built 2026-11-05 by PR; production run pending. Staging cannot rehearse the gym rows, because the policy shelf never moved there: both staging `move-policy-shelf` runs failed, 36606833607 and 36760879516. The real-database rehearsal is the CI Postgres suite (`docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md`).
 
 ---
 

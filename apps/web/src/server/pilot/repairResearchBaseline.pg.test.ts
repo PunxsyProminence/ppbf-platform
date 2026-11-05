@@ -661,10 +661,18 @@ describe('apply (real database)', () => {
       expect(changedTables).toEqual(['audit_events', 'shadow_library_chunks', 'shadow_library_sources']);
       expect(await outsidePlatform(client)).toEqual(outsideBefore);
 
+      // The full record in __platform__, and the gym's own trail names its two
+      // corrected chunks.
       const audit = await auditRows(client);
-      expect(audit).toHaveLength(1);
-      expect(audit[0].organization_id).toBe(PLATFORM);
+      expect(audit.map((a) => a.organization_id)).toEqual([PLATFORM, GYM]);
       expect(audit[0].details).toMatchObject({ plan_fingerprint: dry.plan_fingerprint, state_before: 'PRE_REPAIR' });
+      expect(audit[1].details).toMatchObject({
+        plan_fingerprint: dry.plan_fingerprint,
+        text_corrections: [
+          { chunk_id: 'chk_39fac3160bf60743', organization_id: GYM },
+          { chunk_id: 'chk_473c8284ef33ff26', organization_id: GYM },
+        ],
+      });
     } finally {
       await client.end();
     }
@@ -691,7 +699,7 @@ describe('apply (real database)', () => {
       expect(stale).toMatchObject({ status: 'refused', reason: 'PLAN_FINGERPRINT_MISMATCH' });
 
       expect(await snapshot(client)).toEqual(between);
-      expect(await auditRows(client)).toHaveLength(1);
+      expect(await auditRows(client)).toHaveLength(2);
     } finally {
       await client.end();
     }

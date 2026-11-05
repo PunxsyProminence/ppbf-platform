@@ -313,23 +313,33 @@ Production ran steps 1-6 on 2026-09-30 (apply run 36731274457; REPAIRED on 2026-
 third log, `repairs/2026-11-05_text_correction_log.csv`, adds a `text` action for them (Jason
 2026-11-05, "Yes, build it"): A7-054 and A5-132 in `__platform__` (#1887), and A8-071 and A3-117 on
 the gym's policy shelf in `punxsy_prominence` (#1003; Jason 2026-11-05, "A: All four, one run
-(Recommended)"). A text row names its chunk's organization in the committed log; only those two
-organizations are allowed, and nothing is chosen at dispatch. Each text is written only where the
-row still holds the imported text, and only those rows name `text_content`, so the full-text rights
-trigger runs on them alone; the dry run blocks with `TEXT_NOT_PERMITTED` if it would refuse. The
-dry run prints both texts in full under `changes.text`, and each chunk's document rights under
-`text_rights`.
+(Recommended)"). A text row names its chunk's organization and the sha256 of the text it writes in
+the committed log; only those two organizations are allowed, nothing is chosen at dispatch, and a
+seed text that no longer matches its pinned hash makes the plan invalid. Each text is written only
+where the row still holds the imported text, and only those rows name `text_content`, so the
+full-text rights trigger runs on them alone; the dry run blocks with `TEXT_NOT_PERMITTED` if it
+would refuse, and the apply rolls back (`text_row_changed`) if the write changed a corrected chunk's
+kind, locator or document rights. The dry run prints both texts in full under `changes.text`, each
+chunk's document rights under `text_rights`, and under `history` how many past SHADOW answers cite
+each corrected chunk: once the text changes, a cited passage that overlaps the correction shows as
+its citation's title alone (the citation stays). The apply writes the usual audit row in
+`__platform__` and a second in `punxsy_prominence` naming the gym's two chunks.
 
 Dispatch order, the same workflow and inputs as above:
 
-1. Staging dry run. Staging ran the 2026-09-30 repair too (runs 36721260945, 36722378826,
-   36722550670), so expect `PARTIAL` with `counts.text.pending` 4 and every other action pending 0.
-   Anything else: stop and report.
-2. Staging apply with that fingerprint, then a staging dry run: `REPAIRED`.
-3. Production dry run. **Stop unless** the state is `PARTIAL`, `counts.text.pending` is exactly 4,
-   every other action's pending is 0, and there are no blockers.
-4. Production apply with that fingerprint; Jason approves the run in GitHub.
-5. A production dry run: `REPAIRED`.
+1. Staging dry run, as a smoke test of the workflow only. The policy shelf never moved on staging
+   (both staging `move-policy-shelf` runs failed: 36606833607, 36760879516; the only successful
+   apply is production run 39077227359), so staging's two gym chunks are not in
+   `punxsy_prominence`. Expect `DRIFTED` with exactly one blocker, `LISTED_ROW_OUTSIDE_PLATFORM`,
+   naming `chk_39fac3160bf60743` and `chk_473c8284ef33ff26` (expected `punxsy_prominence`), and
+   `counts.text` 2 pending for the platform chunks. Any other blocker: stop and report. Staging
+   cannot be applied (a `DRIFTED` plan refuses whole), so the real-database rehearsal of the gym
+   writes is `repairResearchBaseline.pg.test.ts` in CI.
+2. Production dry run. **Stop unless** the state is `PARTIAL`, `counts.text.pending` is exactly 4,
+   every other action's pending is 0, there are no blockers, and `changes.text` shows the four
+   intended corrections.
+3. Production apply with that fingerprint; Jason approves the run in GitHub.
+4. A production dry run: `REPAIRED`.
 
 ---
 

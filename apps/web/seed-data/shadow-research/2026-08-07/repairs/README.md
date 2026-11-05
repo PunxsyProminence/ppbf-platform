@@ -90,7 +90,9 @@ same first author, same date, same opening sentence of the abstract).
 One `CORRECT_CHUNK_TEXT` row per chunk whose `text_content` the seed corrected
 after the import: the tool sets the seed's text where the row still holds the
 imported text (Jason 2026-11-05, "Yes, build it"). Columns: `chunk_id` (one
-id), `organization_id`, `claim_id`, `evidence`.
+id), `organization_id`, `claim_id`, `text_sha256` (sha256 of the UTF-8 text the
+row writes; the tool refuses the plan if the seed's text no longer matches it),
+`evidence`.
 
 | chunk | claim | organization | correction |
 |---|---|---|---|
@@ -104,7 +106,9 @@ documents (the `ppbf_policy` scope), which move-policy-shelf moved to the gym on
 2026-10-17; a text row may name `__platform__` or `punxsy_prominence` and nothing
 else (Jason 2026-11-05, "A: All four, one run (Recommended)"), and the tool
 looks the row up in that organization's seed scope. The chunk's embedding is
-left as it is.
+left as it is. Staging never received the policy-shelf move, so a staging dry
+run reports the two gym rows outside their organization; see
+`docs/SHADOW_RESEARCH_IMPORT_RUNBOOK.md`.
 
 ## pre_repair_values.csv
 

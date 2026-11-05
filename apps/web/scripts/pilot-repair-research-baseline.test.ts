@@ -20,6 +20,7 @@
 // pattern as pilot-move-policy-shelf.test.ts.
 
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -64,6 +65,10 @@ type Spec = {
   verifyOverride?: Record<string, number>;
   failOn?: string;
   planThrows?: boolean;
+  // Stand-in for the rights trigger turning a full-text row into an excerpt
+  // as it lets the text write through.
+  textKindOnWrite?: boolean;
+  evidenceItems?: Row[];
 };
 type Call = { text: string; values?: unknown[] };
 type ToolResult = {
@@ -225,14 +230,19 @@ function runTool(spec: Spec): Outcome {
         if (/^select\\s+\\(select count\\(\\*\\)::int from pilot\\.shadow_evidence_items/i.test(t)) {
           return ok([{ evidence_items: 0, citation_checks: 0, retraction_checks: 0 }]);
         }
-        if (/^select c\\.chunk_id, c\\.text_kind, d\\.source_id as document_source_id, s\\.rights_status/i.test(t)) {
+        if (/^select c\\.chunk_id, c\\.text_kind, c\\.excerpt_locator, d\\.source_id as document_source_id, s\\.rights_status/i.test(t)) {
           return ok(db.chunks.filter((c) => values[0].includes(c.chunk_id))
             .sort((a, b) => (a.chunk_id < b.chunk_id ? -1 : 1))
             .map((c) => {
               const d = db.documents.find((x) => x.document_id === c.document_id);
               const s = d ? db.sources.find((x) => x.source_id === d.source_id) : undefined;
-              return { chunk_id: c.chunk_id, text_kind: c.text_kind ?? 'full_text', document_source_id: d?.source_id ?? null, rights_status: s?.rights_status ?? null };
+              return { chunk_id: c.chunk_id, text_kind: c.text_kind ?? 'full_text', excerpt_locator: c.excerpt_locator ?? null, document_source_id: d?.source_id ?? null, rights_status: s?.rights_status ?? null };
             }));
+        }
+        if (/^select chunk_id, count\\(\\*\\)::int as evidence_items/i.test(t)) {
+          const counts = {};
+          for (const e of spec.evidenceItems ?? []) if (values[0].includes(e.chunk_id)) counts[e.chunk_id] = (counts[e.chunk_id] ?? 0) + 1;
+          return ok(Object.keys(counts).sort().map((chunk_id) => ({ chunk_id, evidence_items: counts[chunk_id] })));
         }
         if (/^update pilot\\.shadow_library_chunks c\\s+set text_content = x\\.after_text/i.test(t)) {
           const hit = [];
@@ -242,7 +252,11 @@ function runTool(spec: Spec): Outcome {
             if (row) hit.push({ row, x });
           }
           const applied = short('chunks_text', hit);
-          for (const { row, x } of applied) { row.text_content = x.after_text; row.updated = true; }
+          for (const { row, x } of applied) {
+            row.text_content = x.after_text;
+            row.updated = true;
+            if (spec.textKindOnWrite) { row.text_kind = 'excerpt'; row.excerpt_locator = 'p. 1'; }
+          }
           return ok(applied.map(({ row }) => ({ chunk_id: row.chunk_id })));
         }
         if (/^select c\\.chunk_id, c\\.source_id, s\\.title as source_title/i.test(t)) {
@@ -697,6 +711,7 @@ describe('apply', () => {
 // (chk_g). Jason 2026-11-05, "Yes, build it" and "A: All four, one run".
 const GYM = 'punxsy_prominence';
 const TEXT_LOG = '2026-11-05_text_correction_log.csv';
+const sha = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
 function textInputs(): Inputs {
   const base = inputs();
@@ -705,8 +720,8 @@ function textInputs(): Inputs {
     seedChunks: base.seedChunks.map((c) => (c.chunk_id === 'chk_a' ? { ...c, text_content: 'A2-076 corrected' } : c)),
     policySeedChunks: [{ chunk_id: 'chk_g', source_id: 'src_pol', text_content: 'gym corrected', metadata: { claim_id: 'A8-071' } }],
     logs: [...base.logs, { name: TEXT_LOG, rows: [
-      { action: 'CORRECT_CHUNK_TEXT', chunk_id: 'chk_a', organization_id: PLATFORM, claim_id: 'A2-076' },
-      { action: 'CORRECT_CHUNK_TEXT', chunk_id: 'chk_g', organization_id: GYM, claim_id: 'A8-071' },
+      { action: 'CORRECT_CHUNK_TEXT', chunk_id: 'chk_a', organization_id: PLATFORM, claim_id: 'A2-076', text_sha256: sha('A2-076 corrected') },
+      { action: 'CORRECT_CHUNK_TEXT', chunk_id: 'chk_g', organization_id: GYM, claim_id: 'A8-071', text_sha256: sha('gym corrected') },
     ] }],
     preRepairValues: [
       ...base.preRepairValues,
@@ -784,6 +799,9 @@ describe('text corrections', () => {
     ['an imported text for a chunk no text row names', (i) => ({ ...i, preRepairValues: [...i.preRepairValues, { table: 'chunk', row_id: 'chk_b', field: 'text_content', before_json: '"x"' }] }), /PRE_REPAIR_TEXT_FOR_UNCORRECTED_CHUNK:chk_b/],
     ['a chunk corrected twice', (i) => withTextRows(i, [...textLog(i).rows, textLog(i).rows[1]]), /CHUNK_TEXT_CORRECTED_TWICE:chk_g/],
     ['a text row naming two chunks', (i) => withTextRows(i, [{ ...textLog(i).rows[1], chunk_id: 'chk_g|chk_b' }]), /TEXT_ROW_MALFORMED/],
+    ['a text row with no pinned hash', (i) => withTextRows(i, textLog(i).rows.map((r) => (r.chunk_id === 'chk_g' ? { ...r, text_sha256: '' } : r))), /TEXT_ROW_MALFORMED/],
+    // The seed changed after the log was reviewed: the new words must not ride along.
+    ['a seed text that is not the one the log pins', (i) => ({ ...i, policySeedChunks: [{ ...i.policySeedChunks![0], text_content: 'gym corrected, then edited' }] }), /TEXT_DISAGREES_WITH_LOG:chk_g/],
   ];
 
   test.each(invalid)('refuses %s: PLAN_INVALID', (_label, change, pattern) => {
@@ -792,8 +810,8 @@ describe('text corrections', () => {
     expect(out.error).toMatch(pattern);
   });
 
-  test('a dry run prints both texts in full, and the rights each will be written under', () => {
-    const out = runTool({ ...textSpec(), options: dryRunOptions() });
+  test('a dry run prints both texts in full, the rights each will be written under, and the past answers citing each', () => {
+    const out = runTool({ ...textSpec({ evidenceItems: [{ chunk_id: 'chk_g' }, { chunk_id: 'chk_g' }, { chunk_id: 'chk_other' }] }), options: dryRunOptions() });
     expect(out.result).toMatchObject({ status: 'dry-run', state: 'PRE_REPAIR', blockers: [], counts: { text: { planned: 2, pending: 2, done: 0, drifted: 0 } } });
     expectRolledBackWithoutWrites(out);
     const plan = planEvent(out);
@@ -802,9 +820,17 @@ describe('text corrections', () => {
       { chunk_id: 'chk_g', state: 'pending', before: 'gym as imported', after: 'gym corrected' },
     ]);
     expect(plan.text_rights).toEqual([
-      { chunk_id: 'chk_a', text_kind: 'full_text', document_source_id: 'src_prog', rights_status: 'ppbf_owned' },
-      { chunk_id: 'chk_g', text_kind: 'full_text', document_source_id: 'src_prog_copy', rights_status: 'ppbf_owned' },
+      { chunk_id: 'chk_a', text_kind: 'full_text', excerpt_locator: null, document_source_id: 'src_prog', rights_status: 'ppbf_owned' },
+      { chunk_id: 'chk_g', text_kind: 'full_text', excerpt_locator: null, document_source_id: 'src_prog_copy', rights_status: 'ppbf_owned' },
     ]);
+    expect((plan.history as Record<string, unknown>).evidence_items_citing_corrected_chunks).toEqual([{ chunk_id: 'chk_g', evidence_items: 2 }]);
+  });
+
+  test('a corrected row the write turned into an excerpt rolls back: END_STATE_MISMATCH', () => {
+    const out = runTool({ ...textSpec({ textKindOnWrite: true }), options: applyOptions() });
+    expect(out.result).toMatchObject({ status: 'refused', reason: 'END_STATE_MISMATCH' });
+    expect(out.result!.mismatches).toEqual(['text_row_changed=chk_a', 'text_row_changed=chk_g']);
+    expect(texts(out)).not.toContain('commit');
   });
 
   test('apply writes each text in its own organization, only over the imported text, after the chunk metadata and before the sources', () => {
@@ -823,6 +849,7 @@ describe('text corrections', () => {
       'update pilot.shadow_library_sources s set authority_tier',
       'update pilot.shadow_library_sources',
       'insert into pilot.audit_events',
+      'insert into pilot.audit_events',
     ]);
     const update = out.calls.find((c) => /set text_content = x\.after_text/.test(c.text))!;
     expect(update.text).toMatch(/c\.organization_id = x\.organization_id and x\.organization_id = any\(\$1::text\[\]\)/);
@@ -832,10 +859,23 @@ describe('text corrections', () => {
       { chunk_id: 'chk_a', organization_id: PLATFORM, before_text: 'A2-076 as imported', after_text: 'A2-076 corrected' },
       { chunk_id: 'chk_g', organization_id: GYM, before_text: 'gym as imported', after_text: 'gym corrected' },
     ]);
-    const audit = out.calls.find((c) => /^insert into pilot\.audit_events/i.test(c.text))!;
-    expect(JSON.parse(audit.values![1] as string)).toMatchObject({
+    // One audit row in __platform__ with everything, and one in the gym's own
+    // trail naming only its own chunk.
+    const audits = out.calls.filter((c) => /^insert into pilot\.audit_events/i.test(c.text));
+    expect(audits.map((a) => a.values![0])).toEqual([PLATFORM, GYM]);
+    expect(JSON.parse(audits[0].values![1] as string)).toMatchObject({
       text_corrections: [{ chunk_id: 'chk_a', organization_id: PLATFORM }, { chunk_id: 'chk_g', organization_id: GYM }],
     });
+    expect(JSON.parse(audits[1].values![1] as string)).toMatchObject({
+      text_corrections: [{ chunk_id: 'chk_g', organization_id: GYM }],
+      full_record_organization_id: PLATFORM,
+    });
+  });
+
+  test('with no gym text to write, there is no gym audit row', () => {
+    const out = runTool({ ...withChunk(onlyTextPending(), 'chk_g', { text_content: 'gym corrected' }), options: applyOptions() });
+    expect(out.result).toMatchObject({ status: 'applied', written: { chunks_text: 1 } });
+    expect(out.calls.filter((c) => /^insert into pilot\.audit_events/i.test(c.text)).map((a) => a.values![0])).toEqual([PLATFORM]);
   });
 
   test('production\'s case: with the 2026-09-30 repair in place, only the texts are pending, and apply writes only them', () => {
@@ -851,7 +891,7 @@ describe('text corrections', () => {
       written: { chunks_repointed: 0, chunks_metadata: 0, chunks_text: 2, sources_tier_and_metadata: 0, sources_archived: 0 },
     });
     expect(writes(out).map((t) => /^(update|insert into) pilot\.\w+/.exec(t)![0])).toEqual([
-      'update pilot.shadow_library_chunks', 'insert into pilot.audit_events',
+      'update pilot.shadow_library_chunks', 'insert into pilot.audit_events', 'insert into pilot.audit_events',
     ]);
     expect(out.finalChunks!.filter((c) => c.updated).map((c) => c.chunk_id).sort()).toEqual(['chk_a', 'chk_g']);
   });
