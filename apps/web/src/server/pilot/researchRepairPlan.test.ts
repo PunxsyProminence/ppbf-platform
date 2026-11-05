@@ -20,9 +20,8 @@ import { parse } from 'csv-parse/sync';
 //      the seed's, every repointed chunk's target is a live row of the seed;
 //   3. pre_repair_values.csv IS the seed production imported (commit
 //      95f3c79e, the last seed before #1008), and every difference between that
-//      seed and today's is in the plan -- except the text-only chunk
-//      corrections listed in TEXT_ONLY_CHANGES, which no log carries and this
-//      tool does not write.
+//      seed and today's is in the plan, the corrected chunk texts included
+//      (2026-11-05_text_correction_log.csv).
 // Uses git history for 3 (ci.yml checks out with fetch-depth: 0).
 
 const WEB_DIR = path.resolve(__dirname, '../../..');
@@ -32,31 +31,34 @@ const IMPORTER_URL = pathToFileURL(path.join(WEB_DIR, 'scripts/import-shadow-res
 const SEED_PATH = 'apps/web/seed-data/shadow-research/2026-08-07';
 // The seed production imported: the last commit to touch it before #1008.
 const IMPORTED_SEED_COMMIT = '95f3c79e';
-// Text-only corrections to chunk text_content. They are not tier, source or
-// metadata data; no repair log names them and the tool does not write text.
-// - chk_39fac3160bf60743, chk_473c8284ef33ff26: #1003 corrected two sentences.
+// The chunk texts the seed corrected after the import, by organization:
 // - chk_f4cf693a55fe0315 (A7-054): the "Source:" line named the ISSN 2025
 //   stand's first author as Jagim AR; PubMed 40059405 lists Ricci AA first and
-//   no Jagim among its 18 authors.
+//   no Jagim among its 18 authors (#1887).
 // - chk_3ca9344108b270a1 (A5-132): the "Source:" line dated Zubac et al. 2016
-//   (online-first year); PubMed 27173991 gives J Sports Sci 2017;35(8):719-726.
-const TEXT_ONLY_CHANGES = [
-  'chk_39fac3160bf60743',
-  'chk_473c8284ef33ff26',
-  'chk_f4cf693a55fe0315',
-  'chk_3ca9344108b270a1',
-];
+//   (online-first year); PubMed 27173991 gives J Sports Sci 2017;35(8):719-726
+//   (#1887).
+// - chk_39fac3160bf60743, chk_473c8284ef33ff26: #1003 corrected two sentences.
+//   PPBF house documents, on the gym's policy shelf since 2026-10-17.
+const TEXT_CORRECTIONS: Record<string, string> = {
+  chk_f4cf693a55fe0315: '__platform__',
+  chk_3ca9344108b270a1: '__platform__',
+  chk_39fac3160bf60743: 'punxsy_prominence',
+  chk_473c8284ef33ff26: 'punxsy_prominence',
+};
 
 type Field = { field: string; before: string | null; after: string | null };
 type Plan = {
   sources: Array<{ source_id: string; retire: boolean; fields: Field[] }>;
-  chunks: Array<{ chunk_id: string; fields: Field[] }>;
+  chunks: Array<{ chunk_id: string; organization_id: string; fields: Field[] }>;
   retireIds: string[];
   liveSources: string[];
+  textChunkIds: string[];
   expected: Record<string, { fields: number; sources: number; chunks: number }>;
   managedKeys: string[];
   seedSources: Array<Record<string, unknown> & { source_id: string; status: string; metadata: Record<string, unknown> }>;
   seedChunks: Array<Record<string, unknown> & { chunk_id: string; source_id: string }>;
+  policySeedChunks: Array<{ chunk_id: string; metadata: Record<string, unknown> }>;
   logs: Array<{ name: string; rows: Array<Record<string, string>> }>;
 };
 
@@ -70,12 +72,14 @@ function loadPlan(): Plan {
     import { loadSeedPackage, DEFAULT_SEED_DIR } from ${JSON.stringify(IMPORTER_URL)};
     const plan = await tool.loadRepairPlan();
     const seed = await loadSeedPackage({ organizationId: '__platform__', accountId: 'x', scope: 'platform_baseline' });
+    const policy = await loadSeedPackage({ organizationId: 'punxsy_prominence', accountId: 'x', scope: 'ppbf_policy' });
     const logs = tool.REPAIR_LOG_FILES.map((name) => ({ name, rows: parse(fs.readFileSync(path.join(tool.DEFAULT_REPAIR_DIR, name), 'utf8'), { bom: true, columns: true }) }));
     process.stdout.write(JSON.stringify({
       ...plan,
       managedKeys: tool.MANAGED_METADATA_KEYS,
       seedSources: seed.sources.map(({ source_id, status, authority_tier, metadata }) => ({ source_id, status, authority_tier, metadata })),
       seedChunks: seed.chunks.map(({ chunk_id, source_id }) => ({ chunk_id, source_id })),
+      policySeedChunks: policy.chunks.map(({ chunk_id, metadata }) => ({ chunk_id, metadata })),
       logs,
     }));
   `;
@@ -116,10 +120,32 @@ describe('the plan the tool builds from the committed files', () => {
       retire: { fields: 213, sources: 213, chunks: 0 },
       retier: { fields: 65, sources: 11, chunks: 32 },
       metadata: { fields: 706, sources: 224, chunks: 71 },
+      text: { fields: 4, sources: 0, chunks: 4 },
     });
     expect(plan.sources).toHaveLength(437);
-    expect(plan.chunks).toHaveLength(247);
+    // 247 listed by the 2026-09-28/29 logs, plus the two gym-shelf chunks only
+    // the text log names.
+    expect(plan.chunks).toHaveLength(249);
     expect(plan.retireIds).toHaveLength(213);
+  });
+
+  it('corrects exactly the four texts, each in the organization it lives in, and its claim is the one the log names', () => {
+    const textLog = plan.logs.find((l) => l.name === '2026-11-05_text_correction_log.csv')!;
+    expect(Object.fromEntries(textLog.rows.map((r) => [r.chunk_id, r.organization_id]))).toEqual(TEXT_CORRECTIONS);
+    const corrected = plan.chunks.filter((c) => c.fields.some((f) => f.field === 'text_content'));
+    expect(Object.fromEntries(corrected.map((c) => [c.chunk_id, c.organization_id]))).toEqual(TEXT_CORRECTIONS);
+    expect(plan.textChunkIds).toEqual(Object.keys(TEXT_CORRECTIONS).sort());
+    // The gym rows are in the ppbf_policy scope and the platform rows are not.
+    const policyIds = new Set(plan.policySeedChunks.map((c) => c.chunk_id));
+    for (const [id, organization] of Object.entries(TEXT_CORRECTIONS)) {
+      expect([id, policyIds.has(id)]).toEqual([id, organization === 'punxsy_prominence']);
+    }
+    // A mistyped id would correct some other claim's text.
+    const claimOf = new Map(readCurrent('seed_shadow_library_chunks.csv')
+      .map((c) => [c.chunk_id, (JSON.parse(c.metadata || '{}') as Record<string, unknown>).claim_id]));
+    for (const row of textLog.rows) {
+      expect([row.chunk_id, row.claim_id]).toEqual([row.chunk_id, claimOf.get(row.chunk_id)]);
+    }
   });
 
   it('retires exactly the MERGE_DUPLICATE and DELETE_DEAD_BOGUS_SOURCE rows of both logs, as archived', () => {
@@ -146,7 +172,7 @@ describe('the committed logs and seed agree', () => {
       const planned = plan.sources.find((s) => s.source_id === row.source_id)!;
       if (planned.fields.find((f) => f.field === 'authority_tier')!.after !== row.tier_to) wrong.push(`${row.source_id} plan`);
       if (String(seedSources.get(row.source_id)?.authority_tier) !== row.tier_to) wrong.push(`${row.source_id} seed`);
-      for (const chunk of plan.chunks.filter((c) => c.fields.find((f) => f.field === 'source_id')!.after === JSON.stringify(row.source_id))) {
+      for (const chunk of plan.chunks.filter((c) => c.fields.find((f) => f.field === 'source_id')?.after === JSON.stringify(row.source_id))) {
         if (chunk.fields.find((f) => f.field === 'metadata.authority_tier')!.after !== row.tier_to) wrong.push(chunk.chunk_id);
       }
     }
@@ -156,8 +182,9 @@ describe('the committed logs and seed agree', () => {
   it('every repointed chunk\'s target is a live row of the platform seed, and every target the tool checks is one', () => {
     const seedSources = new Map(plan.seedSources.map((s) => [s.source_id, s]));
     const retired = new Set(plan.retireIds);
+    // A chunk only the text log names carries no source_id field.
     const targets = plan.chunks
-      .map((c) => c.fields.find((f) => f.field === 'source_id')!)
+      .flatMap((c) => c.fields.filter((f) => f.field === 'source_id'))
       .filter((f) => f.before !== f.after)
       .map((f) => JSON.parse(f.after!) as string);
     expect(targets).toHaveLength(221);
@@ -188,6 +215,8 @@ describe('pre_repair_values.csv is the seed production imported', () => {
       return key in metadata ? canonical(metadata[key]) : null;
     }
     if (field === 'authority_tier') return canonical(Number(row.authority_tier));
+    // The importer trims text before it writes it.
+    if (field === 'text_content') return canonical(row.text_content.trim());
     return canonical(row[field]);
   }
 
@@ -213,15 +242,15 @@ describe('pre_repair_values.csv is the seed production imported', () => {
 
   /**
    * Every difference between an imported seed and a current one that the plan
-   * does not carry (`unplanned`), and the TEXT_ONLY_CHANGES it lets through
-   * (`excepted`). Takes the rows as arguments so the negative control below can
-   * hand it a seed with differences injected.
+   * does not carry (`unplanned`), and the text changes it does carry
+   * (`textPlanned`). Takes the rows as arguments so the negative control below
+   * can hand it a seed with differences injected.
    */
   function seedDiff(imported: { sources: Rows; chunks: Rows }, current: { sources: Rows; chunks: Rows }) {
     const plannedSource = new Map(plan.sources.map((s) => [s.source_id, new Set(s.fields.filter((f) => f.before !== f.after).map((f) => f.field))]));
     const plannedChunk = new Map(plan.chunks.map((c) => [c.chunk_id, new Set(c.fields.filter((f) => f.before !== f.after).map((f) => f.field))]));
     const unplanned: string[] = [];
-    const excepted: string[] = [];
+    const textPlanned: string[] = [];
 
     for (const [id, importedRow] of imported.sources) {
       const currentRow = current.sources.get(id);
@@ -248,8 +277,11 @@ describe('pre_repair_values.csv is the seed production imported', () => {
       if (!currentRow) { unplanned.push(`chunk ${id} removed`); continue; }
       const fields = plannedChunk.get(id) ?? new Set<string>();
       for (const column of Object.keys(importedRow).filter((k) => k !== 'metadata')) {
-        if (importedRow[column] === currentRow[column] || fields.has(column)) continue;
-        if (column === 'text_content' && TEXT_ONLY_CHANGES.includes(id)) { excepted.push(id); continue; }
+        if (importedRow[column] === currentRow[column]) continue;
+        if (fields.has(column)) {
+          if (column === 'text_content') textPlanned.push(id);
+          continue;
+        }
         unplanned.push(`chunk ${id} ${column}`);
       }
       const a = JSON.parse(importedRow.metadata || '{}') as Record<string, unknown>;
@@ -262,45 +294,46 @@ describe('pre_repair_values.csv is the seed production imported', () => {
     }
     for (const id of current.chunks.keys()) if (!imported.chunks.has(id)) unplanned.push(`chunk ${id} added`);
 
-    return { unplanned, excepted };
+    return { unplanned, textPlanned };
   }
 
-  it('every difference between the imported seed and today\'s is in the plan, except the text-only corrections', () => {
-    const { unplanned, excepted } = seedDiff(
+  it('every difference between the imported seed and today\'s is in the plan, the corrected texts included', () => {
+    const { unplanned, textPlanned } = seedDiff(
       { sources: importedSources, chunks: importedChunks },
       { sources: currentSources, chunks: currentChunks },
     );
     expect(unplanned).toEqual([]);
-    // Positive control: the diff does see real differences. The listed
-    // text-only corrections are the only text changes, so it must have found
-    // exactly them.
-    expect([...excepted].sort()).toEqual([...TEXT_ONLY_CHANGES].sort());
+    // Positive control: the diff does see real differences. The four
+    // corrected texts are the only text changes, so it must have found exactly
+    // them, each carried by the plan.
+    expect([...textPlanned].sort()).toEqual(Object.keys(TEXT_CORRECTIONS).sort());
   });
 
   it('negative control: a difference the plan does not carry is reported', () => {
-    // One unlisted source and one unlisted chunk, each changed where no log
-    // row reaches: the diff must name both, and nothing else.
+    // One unlisted source, one unlisted chunk's metadata and another unlisted
+    // chunk's text, each changed where no log row reaches: the diff must name
+    // all three, and nothing else.
     const listedSources = new Set(plan.sources.map((s) => s.source_id));
     const listedChunks = new Set(plan.chunks.map((c) => c.chunk_id));
     const sourceId = [...currentSources.keys()].sort().find((id) => !listedSources.has(id))!;
-    const chunkId = [...currentChunks.keys()].sort().find((id) => !listedChunks.has(id) && !TEXT_ONLY_CHANGES.includes(id))!;
+    const [chunkId, textChunkId] = [...currentChunks.keys()].sort().filter((id) => !listedChunks.has(id));
     const sources = new Map(currentSources);
     const chunks = new Map(currentChunks);
     const source = sources.get(sourceId)!;
     sources.set(sourceId, { ...source, authority_tier: source.authority_tier === '1' ? '2' : '1' });
     const chunk = chunks.get(chunkId)!;
     chunks.set(chunkId, { ...chunk, metadata: JSON.stringify({ ...JSON.parse(chunk.metadata || '{}'), authority_tier: 9 }) });
+    const textChunk = chunks.get(textChunkId)!;
+    chunks.set(textChunkId, { ...textChunk, text_content: `${textChunk.text_content} (edited)` });
 
     const { unplanned } = seedDiff(
       { sources: importedSources, chunks: importedChunks },
       { sources, chunks },
     );
-    expect(unplanned.sort()).toEqual([`chunk ${chunkId} metadata.authority_tier`, `source ${sourceId} authority_tier`]);
-  });
-
-  it('the text-only exceptions are exactly the listed corrections, and still differ', () => {
-    for (const id of TEXT_ONLY_CHANGES) {
-      expect(importedChunks.get(id)!.text_content).not.toBe(currentChunks.get(id)!.text_content);
-    }
+    expect(unplanned.sort()).toEqual([
+      `chunk ${chunkId} metadata.authority_tier`,
+      `chunk ${textChunkId} text_content`,
+      `source ${sourceId} authority_tier`,
+    ].sort());
   });
 });

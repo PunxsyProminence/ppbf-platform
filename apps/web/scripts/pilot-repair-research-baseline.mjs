@@ -3,8 +3,9 @@
 /**
  * Repairs the research baseline a database imported and approved before the
  * 2026-08-07 corpus was corrected: repoints mis-cited and duplicate claims to
- * their real paper, retires the wrong-paper and duplicate sources, and sets
- * the tiers and citation metadata the corrected seed carries.
+ * their real paper, retires the wrong-paper and duplicate sources, sets the
+ * tiers and citation metadata the corrected seed carries, and writes the
+ * chunk texts corrected since the import.
  *
  * WHY THIS EXISTS
  *
@@ -22,7 +23,9 @@
  * Nothing about the repair is decided here.
  *   - WHICH rows: the committed logs in
  *     seed-data/shadow-research/2026-08-07/repairs/ (2026-09-28_repair_log.csv,
- *     then 2026-09-29_followup_log.csv), exactly as validated.
+ *     then 2026-09-29_followup_log.csv), exactly as validated, and
+ *     2026-11-05_text_correction_log.csv for the chunk texts corrected after
+ *     the 2026-09-30 production run (Jason 2026-11-05, "Yes, build it").
  *   - WHAT each row ends as: the committed seed CSVs, read through the
  *     importer's own loadSeedPackage with the platform_baseline scope ("the
  *     seed files are the authority", the rescope precedent).
@@ -34,8 +37,25 @@
  * For every listed row it manages these fields, and only these:
  *   source   status, authority_tier, metadata.<key> for MANAGED_METADATA_KEYS
  *   chunk    source_id, metadata.<key> for MANAGED_METADATA_KEYS
+ *   chunk    text_content, only for a chunk the text-correction log names
  * Every other column and every other metadata key is left exactly as it is
  * (metadata is edited with jsonb `-` and `||`, never replaced).
+ *
+ *   text      a corrected chunk's text_content is set to the seed's text, only
+ *             where it still holds the imported text (the pre-repair value).
+ *             The log pins the sha256 of each text it writes; the end-state
+ *             check refuses if the write changed the chunk's kind, locator or
+ *             document rights; a gym text also gets an audit row in the gym's
+ *             own organization.
+ *             Only those rows are updated, so the full-text rights trigger
+ *             (shadow_library_chunk_rights_guard, which fires on any UPDATE
+ *             that names text_content) runs on them alone, and the dry run
+ *             reports a TEXT_NOT_PERMITTED blocker before it would refuse.
+ *             The chunk's embedding is left as it is: the corrections are a
+ *             name, a year and a clause, and the only re-embedding tool
+ *             (pilot-backfill-chunk-embeddings.mjs) has no workflow.
+ *             Text-only rows are not repoint targets: their source's review
+ *             state is not checked here.
  *
  *   repoint   a chunk on a wrong-paper or duplicate source moves to the source
  *             the seed puts it on. FIRST: chunks -> sources is ON DELETE
@@ -67,12 +87,19 @@
  *   DRIFTED     any field drifted, a listed row missing or outside
  *               __platform__, a repoint target not live (status active,
  *               approved, verified, not suppressed), a chunk or document
- *               NOT in the plan sitting on a source it would retire
+ *               NOT in the plan sitting on a source it would retire, a
+ *               pending text correction the rights trigger would refuse
+ *               (TEXT_NOT_PERMITTED)
  *                                                -> apply refuses
  *
  *   SCOPE           organization `__platform__` only, fixed, not an input.
  *                   A listed id found in any other organization is a blocker,
- *                   and every UPDATE is scoped to `__platform__`.
+ *                   and every UPDATE is scoped to `__platform__`. One
+ *                   exception, also fixed: a CORRECT_CHUNK_TEXT row names its
+ *                   chunk's organization, `__platform__` or the gym's
+ *                   `punxsy_prominence` (TEXT_ORGANIZATIONS), in the committed
+ *                   log; the chunk must be found there, and its UPDATE is
+ *                   scoped to it.
  *   TARGET GUARD    PPBF_EXPECTED_POSTGRES_HOSTNAME / _DATABASE must match the
  *                   connection string (scripts/lib/postgres-write-target.mjs).
  *   READ-ONLY BY    A plain run opens `begin transaction read only`, prints the
@@ -116,11 +143,20 @@ import { DEFAULT_SEED_DIR, loadSeedPackage } from './import-shadow-research.mjs'
 import { assertDeclaredWriteTargetFromEnv } from './lib/postgres-write-target.mjs';
 
 export const PLATFORM_ORGANIZATION_ID = '__platform__';
+// The gym's policy shelf, moved out of the baseline on 2026-10-17
+// (move-policy-shelf, OD-2026-09-28-011 item 6). A text correction may name it
+// (Jason 2026-11-05, "A: All four, one run (Recommended)"); nothing else may.
+export const GYM_ORGANIZATION_ID = 'punxsy_prominence';
+export const TEXT_ORGANIZATIONS = Object.freeze([PLATFORM_ORGANIZATION_ID, GYM_ORGANIZATION_ID]);
 export const CONFIRM_PHRASE = 'REPAIR RESEARCH BASELINE';
 export const FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 export const DEFAULT_REPAIR_DIR = path.join(DEFAULT_SEED_DIR, 'repairs');
 // Applied in this order; a chunk may be moved by only one of them.
-export const REPAIR_LOG_FILES = Object.freeze(['2026-09-28_repair_log.csv', '2026-09-29_followup_log.csv']);
+export const REPAIR_LOG_FILES = Object.freeze([
+  '2026-09-28_repair_log.csv',
+  '2026-09-29_followup_log.csv',
+  '2026-11-05_text_correction_log.csv',
+]);
 export const PRE_REPAIR_VALUES_FILE = 'pre_repair_values.csv';
 export const LIVE_STATUS = 'active';
 export const RETIRED_STATUS = 'archived';
@@ -136,14 +172,19 @@ export const MANAGED_METADATA_KEYS = Object.freeze([
 ]);
 export const SOURCE_FIELDS = Object.freeze(['status', 'authority_tier', ...MANAGED_METADATA_KEYS.map((k) => `metadata.${k}`)]);
 export const CHUNK_FIELDS = Object.freeze(['source_id', ...MANAGED_METADATA_KEYS.map((k) => `metadata.${k}`)]);
-export const ACTIONS = Object.freeze(['repoint', 'retire', 'retier', 'metadata']);
+// Managed only on a chunk a CORRECT_CHUNK_TEXT row names.
+export const TEXT_FIELD = 'text_content';
+// The rights a document's source needs for its chunks to hold full text
+// (pilot_slice_postgres_source_rights_migration.sql).
+export const FULL_TEXT_RIGHTS = Object.freeze(['ppbf_owned', 'open_licence']);
+export const ACTIONS = Object.freeze(['repoint', 'retire', 'retier', 'metadata', 'text']);
 // The claim the runbook spot-checks: after the repair it cites "Quantifying
 // head impacts and neurocognitive performance in collegiate boxers".
 export const SPOT_CHECK_CLAIM_ID = 'A2-076';
 
 const KNOWN_LOG_ACTIONS = new Set([
   'REPOINT_MISRESOLVED', 'MERGE_DUPLICATE', 'DELETE_DEAD_BOGUS_SOURCE',
-  'SET_TIER_BY_SPEC', 'CLEAR_MISRESOLVED_VERIFIED_TITLE',
+  'SET_TIER_BY_SPEC', 'CLEAR_MISRESOLVED_VERIFIED_TITLE', 'CORRECT_CHUNK_TEXT',
 ]);
 const RETIRING_LOG_ACTIONS = new Set(['MERGE_DUPLICATE', 'DELETE_DEAD_BOGUS_SOURCE']);
 const MOVING_LOG_ACTIONS = new Set(['REPOINT_MISRESOLVED', 'MERGE_DUPLICATE']);
@@ -186,6 +227,7 @@ export function fieldValue(row, field) {
 /** Which of the four repair actions a field belongs to. */
 export function actionOf(table, field) {
   if (table === 'chunk' && field === 'source_id') return 'repoint';
+  if (table === 'chunk' && field === TEXT_FIELD) return 'text';
   if (table === 'source' && field === 'status') return 'retire';
   if (field === 'authority_tier' || field === 'metadata.authority_tier' || field === 'metadata.evidence_tier') {
     return 'retier';
@@ -197,6 +239,13 @@ function splitList(value) {
   return value ? String(value).split('|').filter(Boolean) : [];
 }
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/** sha256 hex of a chunk text's UTF-8 bytes: what a text-correction row pins. */
+export function textSha256Of(text) {
+  return crypto.createHash('sha256').update(String(text ?? ''), 'utf8').digest('hex');
+}
+
 /**
  * The plan, from the files alone -- no database. Pure, so the fast guard and
  * the stub test can build one from small inputs.
@@ -205,11 +254,13 @@ function splitList(value) {
  *                             platform_baseline scope)
  *   logs                      [{ name, rows }] in apply order
  *   preRepairValues           rows of pre_repair_values.csv
+ *   policySeedChunks          chunk rows of the ppbf_policy scope, where a
+ *                             text correction naming the gym finds its text
  *
  * Throws PLAN_INVALID with every problem when the files disagree with each
  * other -- a plan that is not internally true is not run.
  */
-export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues }) {
+export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues, policySeedChunks = [] }) {
   const problems = [];
   const seedSourceById = new Map(seedSources.map((row) => [row.source_id, row]));
   const seedChunkById = new Map(seedChunks.map((row) => [row.chunk_id, row]));
@@ -220,11 +271,31 @@ export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues
   const moves = new Map(); // chunk_id -> { from, to, log, action }
   const tierRows = [];
   const clearRows = [];
+  const textChunks = new Map(); // chunk id a CORRECT_CHUNK_TEXT row names -> { organizationId, textSha256 }
 
   for (const { name, rows } of logs) {
     for (const row of rows) {
       if (!KNOWN_LOG_ACTIONS.has(row.action)) {
         problems.push(`UNKNOWN_ACTION:${name}:${row.action}`);
+        continue;
+      }
+      // A text correction names exactly one chunk, its organization and the
+      // sha256 of the text it writes, and nothing else: it moves, retires and
+      // retiers nothing, so it is kept out of the listed rows. The hash pins
+      // the reviewed text the way a repoint's target_source_id pins its
+      // destination: a later seed edit cannot ride along unreviewed.
+      if (row.action === 'CORRECT_CHUNK_TEXT') {
+        const ids = splitList(row.chunk_id);
+        if (ids.length !== 1 || row.source_id || row.target_source_id || !SHA256_HEX.test(String(row.text_sha256 ?? ''))) {
+          problems.push(`TEXT_ROW_MALFORMED:${name}:${row.chunk_id ?? ''}`);
+        }
+        if (!TEXT_ORGANIZATIONS.includes(row.organization_id)) {
+          problems.push(`TEXT_ORGANIZATION_NOT_ALLOWED:${row.chunk_id ?? ''}:${row.organization_id ?? ''}`);
+        }
+        for (const chunkId of ids) {
+          if (textChunks.has(chunkId)) problems.push(`CHUNK_TEXT_CORRECTED_TWICE:${chunkId}`);
+          textChunks.set(chunkId, { organizationId: row.organization_id, textSha256: row.text_sha256 });
+        }
         continue;
       }
       if (row.source_id) listedSources.add(row.source_id);
@@ -248,13 +319,17 @@ export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues
   const before = new Map(); // `${table}|${id}|${field}` -> canonical JSON or null
   for (const row of preRepairValues) {
     const table = row.table;
-    const known = table === 'source' ? SOURCE_FIELDS : table === 'chunk' ? CHUNK_FIELDS : null;
-    if (!known || !known.includes(row.field)) {
-      problems.push(`PRE_REPAIR_VALUE_UNKNOWN_FIELD:${table}:${row.row_id}:${row.field}`);
-      continue;
+    if (table === 'chunk' && row.field === TEXT_FIELD) {
+      if (!textChunks.has(row.row_id)) problems.push(`PRE_REPAIR_TEXT_FOR_UNCORRECTED_CHUNK:${row.row_id}`);
+    } else {
+      const known = table === 'source' ? SOURCE_FIELDS : table === 'chunk' ? CHUNK_FIELDS : null;
+      if (!known || !known.includes(row.field)) {
+        problems.push(`PRE_REPAIR_VALUE_UNKNOWN_FIELD:${table}:${row.row_id}:${row.field}`);
+        continue;
+      }
+      const listed = table === 'source' ? listedSources : listedChunks;
+      if (!listed.has(row.row_id)) problems.push(`PRE_REPAIR_VALUE_FOR_UNLISTED_ROW:${table}:${row.row_id}`);
     }
-    const listed = table === 'source' ? listedSources : listedChunks;
-    if (!listed.has(row.row_id)) problems.push(`PRE_REPAIR_VALUE_FOR_UNLISTED_ROW:${table}:${row.row_id}`);
     const key = `${table}|${row.row_id}|${row.field}`;
     if (before.has(key)) problems.push(`PRE_REPAIR_VALUE_TWICE:${key}`);
     before.set(key, row.before_json === '' ? null : canonicalJson(JSON.parse(row.before_json)));
@@ -324,8 +399,35 @@ export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues
     } else if (sourceField.before !== sourceField.after) {
       problems.push(`CHUNK_MOVED_WITHOUT_A_LOG_ROW:${chunkId}`);
     }
-    chunks.push({ chunk_id: chunkId, fields });
+    chunks.push({ chunk_id: chunkId, organization_id: PLATFORM_ORGANIZATION_ID, fields });
   }
+
+  // Text corrections: the seed's text replaces the imported text, which
+  // pre_repair_values.csv must state (it is the precondition). The seed row is
+  // looked up in the scope of the organization the log names, so a row cannot
+  // name the gym for a platform chunk or the other way round. A chunk the
+  // other logs also list keeps its fields and gains this one.
+  const policySeedChunkById = new Map(policySeedChunks.map((row) => [row.chunk_id, row]));
+  for (const [chunkId, { organizationId, textSha256 }] of [...textChunks].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const seedRow = organizationId === GYM_ORGANIZATION_ID
+      ? policySeedChunkById.get(chunkId)
+      : organizationId === PLATFORM_ORGANIZATION_ID ? seedChunkById.get(chunkId) : undefined;
+    if (!seedRow) {
+      problems.push(`CORRECTED_CHUNK_NOT_IN_ITS_ORGANIZATION_SEED:${chunkId}:${organizationId ?? ''}`);
+      continue;
+    }
+    const key = `chunk|${chunkId}|${TEXT_FIELD}`;
+    if (!before.has(key) || before.get(key) === null) {
+      problems.push(`CORRECTED_TEXT_WITHOUT_PRE_REPAIR_VALUE:${chunkId}`);
+      continue;
+    }
+    if (textSha256Of(seedRow.text_content) !== textSha256) problems.push(`TEXT_DISAGREES_WITH_LOG:${chunkId}`);
+    const field = { field: TEXT_FIELD, before: before.get(key), after: fieldValue(seedRow, TEXT_FIELD) };
+    const listed = chunks.find((c) => c.chunk_id === chunkId);
+    if (listed) listed.fields.push(field);
+    else chunks.push({ chunk_id: chunkId, organization_id: organizationId, fields: [field] });
+  }
+  chunks.sort((a, b) => (a.chunk_id < b.chunk_id ? -1 : a.chunk_id > b.chunk_id ? 1 : 0));
 
   const sourceById = new Map(sources.map((s) => [s.source_id, s]));
   const chunkById = new Map(chunks.map((c) => [c.chunk_id, c]));
@@ -384,6 +486,7 @@ export function buildRepairPlan({ seedSources, seedChunks, logs, preRepairValues
     chunks,
     retireIds: sources.filter((s) => s.retire).map((s) => s.source_id),
     liveSources: [...liveSources].sort(),
+    textChunkIds: [...textChunks.keys()].sort(),
     expected,
   };
 }
@@ -406,6 +509,13 @@ export async function loadRepairPlan({ seedDir = DEFAULT_SEED_DIR, repairDir } =
     accountId: 'research-repair-plan',
     scope: 'platform_baseline',
   });
+  // The gym's shelf, for text corrections that name it. Same files, other scope.
+  const policySeed = await loadSeedPackage({
+    seedDir,
+    organizationId: GYM_ORGANIZATION_ID,
+    accountId: 'research-repair-plan',
+    scope: 'ppbf_policy',
+  });
   const logs = [];
   const files = {};
   for (const name of REPAIR_LOG_FILES) {
@@ -421,6 +531,7 @@ export async function loadRepairPlan({ seedDir = DEFAULT_SEED_DIR, repairDir } =
   }
   const plan = buildRepairPlan({
     seedSources: seed.sources, seedChunks: seed.chunks, logs, preRepairValues: values.rows,
+    policySeedChunks: policySeed.chunks,
   });
   return { ...plan, files };
 }
@@ -484,7 +595,7 @@ export async function readRepairState(client, plan, { lock = false } = {}) {
     [sourceIds],
   )).rows;
   const chunkRows = (await client.query(
-    `select chunk_id, organization_id, document_id, source_id, metadata
+    `select chunk_id, organization_id, document_id, source_id, metadata, text_content
        from pilot.shadow_library_chunks
       where chunk_id = any($1::text[])
       order by chunk_id${forUpdate}`,
@@ -523,6 +634,32 @@ export async function readRepairState(client, plan, { lock = false } = {}) {
       order by c.chunk_id`,
     [PLATFORM_ORGANIZATION_ID, SPOT_CHECK_CLAIM_ID],
   )).rows;
+  // What the full-text rights trigger will check when a corrected chunk's
+  // text is written: its kind, and the rights of its DOCUMENT's source. Not
+  // locked (FOR SHARE cannot take the nullable side of an outer join); the
+  // trigger checks again, under its own locks, at the write.
+  const textChunkIds = plan.textChunkIds ?? [];
+  const textRights = textChunkIds.length === 0 ? [] : (await client.query(
+    `select c.chunk_id, c.text_kind, c.excerpt_locator, d.source_id as document_source_id, s.rights_status
+       from pilot.shadow_library_chunks c
+       left join pilot.shadow_library_documents d on d.document_id = c.document_id
+       left join pilot.shadow_library_sources s on s.source_id = d.source_id
+      where c.chunk_id = any($1::text[])
+      order by c.chunk_id`,
+    [textChunkIds],
+  )).rows;
+  // Past SHADOW answers that cite a corrected chunk re-show their passage by
+  // matching its stored hash against the chunk's current text; once the text
+  // changes, a passage that overlaps the correction shows as the citation's
+  // title alone. Reported, not blocking.
+  const citingCorrected = textChunkIds.length === 0 ? [] : (await client.query(
+    `select chunk_id, count(*)::int as evidence_items
+       from pilot.shadow_evidence_items
+      where chunk_id = any($1::text[])
+      group by chunk_id
+      order by chunk_id`,
+    [textChunkIds],
+  )).rows;
 
   const sourceById = new Map(sourceRows.map((row) => [row.source_id, row]));
   const chunkById = new Map(chunkRows.map((row) => [row.chunk_id, row]));
@@ -532,13 +669,13 @@ export async function readRepairState(client, plan, { lock = false } = {}) {
   const drifted = [];
   const fields = [];
 
-  function evaluate(table, id, row, plannedFields) {
+  function evaluate(table, id, row, plannedFields, expectedOrganization = PLATFORM_ORGANIZATION_ID) {
     if (!row) {
       missing.push({ table, id });
       return;
     }
-    if (row.organization_id !== PLATFORM_ORGANIZATION_ID) {
-      outside.push({ table, id, organization_id: row.organization_id });
+    if (row.organization_id !== expectedOrganization) {
+      outside.push({ table, id, organization_id: row.organization_id, expected_organization_id: expectedOrganization });
       return;
     }
     for (const f of plannedFields) {
@@ -554,7 +691,7 @@ export async function readRepairState(client, plan, { lock = false } = {}) {
     }
   }
   for (const s of plan.sources) evaluate('source', s.source_id, sourceById.get(s.source_id), s.fields);
-  for (const c of plan.chunks) evaluate('chunk', c.chunk_id, chunkById.get(c.chunk_id), c.fields);
+  for (const c of plan.chunks) evaluate('chunk', c.chunk_id, chunkById.get(c.chunk_id), c.fields, c.organization_id);
 
   const notLive = plan.liveSources
     .map((id) => sourceById.get(id) ?? { source_id: id, missing: true })
@@ -579,6 +716,13 @@ export async function readRepairState(client, plan, { lock = false } = {}) {
   }
   if (retiringDocuments.length > 0) {
     blockers.push({ code: 'DOCUMENTS_ON_RETIRING_SOURCES', count: retiringDocuments.length, documents: retiringDocuments.slice(0, SAMPLE_LIMIT) });
+  }
+  // Only a correction still to be written can be refused by the trigger.
+  const pendingText = new Set(fields.filter((e) => e.action === 'text' && e.state === 'pending').map((e) => e.id));
+  const notPermitted = textRights.filter((row) => pendingText.has(row.chunk_id)
+    && row.text_kind !== 'excerpt' && !FULL_TEXT_RIGHTS.includes(row.rights_status));
+  if (notPermitted.length > 0) {
+    blockers.push({ code: 'TEXT_NOT_PERMITTED', count: notPermitted.length, chunks: notPermitted.slice(0, SAMPLE_LIMIT) });
   }
 
   const counts = Object.fromEntries(ACTIONS.map((action) => [action, {
@@ -611,6 +755,7 @@ export async function readRepairState(client, plan, { lock = false } = {}) {
     }),
     unplanned_chunks_on_retiring_sources: unplannedChunks.map((row) => [row.chunk_id, row.organization_id, row.source_id]),
     documents_on_retiring_sources: retiringDocuments.map((row) => [row.document_id, row.organization_id, row.source_id]),
+    text_rights: textRights.map(textRowKey),
   });
   const fingerprint = `sha256:${crypto.createHash('sha256').update(fingerprintMaterial).digest('hex')}`;
 
@@ -630,9 +775,16 @@ export async function readRepairState(client, plan, { lock = false } = {}) {
       evidence_items_citing_retiring_sources: Number(history.evidence_items ?? 0),
       citation_checks_on_retiring_sources: Number(history.citation_checks ?? 0),
       retraction_checks_on_retiring_sources: Number(history.retraction_checks ?? 0),
+      evidence_items_citing_corrected_chunks: citingCorrected.map((row) => ({ chunk_id: row.chunk_id, evidence_items: Number(row.evidence_items) })),
     },
     spotCheck: spotCheck.map((row) => ({ claim_id: SPOT_CHECK_CLAIM_ID, ...row })),
+    textRights,
   };
+}
+
+/** A corrected chunk's kind, locator and document rights: what must not move when its text is written. */
+function textRowKey(row) {
+  return [row.chunk_id, row.text_kind ?? null, row.excerpt_locator ?? null, row.document_source_id ?? null, row.rights_status ?? null];
 }
 
 /** What a reviewer reads: every repoint, retire and tier change by id, metadata by key. */
@@ -650,6 +802,13 @@ function describeChanges(fields) {
     retire: changes.filter((e) => e.action === 'retire').map((e) => `${e.id} [${e.state}]`),
     retier: changes.filter((e) => e.action === 'retier').map((e) => `${e.table} ${e.field} ${line(e)}`),
     metadata_by_key: metadataByKey,
+    // The whole text, before and after: the reviewer approves these words.
+    text: changes.filter((e) => e.action === 'text').map((e) => ({
+      chunk_id: e.id,
+      state: e.state,
+      before: e.before === null ? null : JSON.parse(e.before),
+      after: e.after === null ? null : JSON.parse(e.after),
+    })),
   };
 }
 
@@ -706,6 +865,7 @@ export async function repairResearchBaseline(client, options, { log = defaultLog
       blockers: current.blockers,
       history: current.history,
       spot_check: current.spotCheck,
+      text_rights: current.textRights,
       files: plan.files ?? null,
       changes: describeChanges(current.fields),
     };
@@ -810,6 +970,28 @@ export async function repairResearchBaseline(client, options, { log = defaultLog
       [PLATFORM_ORGANIZATION_ID, JSON.stringify(chunkEdits)], chunkEdits.length);
     if (stop) return stop;
 
+    // 2b. Corrected chunk text. Only the pending rows, and only where the row
+    //     still holds the reviewed before-text; the rights trigger fires on
+    //     these rows alone. The embedding is not touched (see the header).
+    //     Each row is scoped to the organization its log row names, which
+    //     must be one of TEXT_ORGANIZATIONS.
+    const chunkOrganization = new Map(plan.chunks.map((c) => [c.chunk_id, c.organization_id ?? PLATFORM_ORGANIZATION_ID]));
+    const textEdits = pending.filter((e) => e.action === 'text').map((e) => ({
+      chunk_id: e.id,
+      organization_id: chunkOrganization.get(e.id),
+      before_text: JSON.parse(e.before),
+      after_text: JSON.parse(e.after),
+    }));
+    stop = await checkedUpdate('chunks_text',
+      `update pilot.shadow_library_chunks c
+          set text_content = x.after_text, updated_at = now()
+         from jsonb_to_recordset($2::jsonb) as x(chunk_id text, organization_id text, before_text text, after_text text)
+        where c.organization_id = x.organization_id and x.organization_id = any($1::text[])
+          and c.chunk_id = x.chunk_id and c.text_content = x.before_text
+        returning c.chunk_id`,
+      [[...TEXT_ORGANIZATIONS], JSON.stringify(textEdits)], textEdits.length);
+    if (stop) return stop;
+
     // 3. Source tiers and metadata.
     const sourceMetadata = metadataEdits('source');
     const sourceTiers = new Map(pending
@@ -862,6 +1044,13 @@ export async function repairResearchBaseline(client, options, { log = defaultLog
     for (const [sourceId, columns] of Object.entries(current.reviewColumns)) {
       if (JSON.stringify(after.reviewColumns[sourceId]) !== JSON.stringify(columns)) mismatches.push(`review_columns_changed=${sourceId}`);
     }
+    // The rights trigger may rewrite a full-text row into an excerpt while it
+    // lets the text through: a corrected chunk's kind, locator and document
+    // rights must be exactly what the reviewed plan read.
+    const textRowsAfter = new Map(after.textRights.map((row) => [row.chunk_id, JSON.stringify(textRowKey(row))]));
+    for (const row of current.textRights) {
+      if (textRowsAfter.get(row.chunk_id) !== JSON.stringify(textRowKey(row))) mismatches.push(`text_row_changed=${row.chunk_id}`);
+    }
     if (mismatches.length > 0) {
       return await refuseInside('END_STATE_MISMATCH', { mismatches: mismatches.slice(0, SAMPLE_LIMIT), blockers: after.blockers });
     }
@@ -875,10 +1064,26 @@ export async function repairResearchBaseline(client, options, { log = defaultLog
         state_before: current.state,
         written,
         counts_before: current.counts,
+        text_corrections: textEdits.map(({ chunk_id, organization_id }) => ({ chunk_id, organization_id })),
         files: plan.files ?? null,
-        rulings: 'Jason 2026-09-29 Q1 (tool, logs as the pinned plan), Q2 (retire as archived), Q3 (tiers by the spec), Q4 (tiers on source row and chunk metadata)',
+        rulings: 'Jason 2026-09-29 Q1 (tool, logs as the pinned plan), Q2 (retire as archived), Q3 (tiers by the spec), Q4 (tiers on source row and chunk metadata); Jason 2026-11-05 "Yes, build it" (corrected chunk text, 2026-11-05_text_correction_log.csv)',
       })],
     );
+    // A text written outside __platform__ is also recorded in that
+    // organization's own audit trail, which is what its admins read.
+    for (const organizationId of [...new Set(textEdits.map((e) => e.organization_id))].filter((id) => id !== PLATFORM_ORGANIZATION_ID).sort()) {
+      await client.query(
+        `insert into pilot.audit_events
+           (event_type, organization_id, entity_type, entity_id, details)
+         values ('update', $1, 'shadow_library_research_repair', $1, $2::jsonb)`,
+        [organizationId, JSON.stringify({
+          plan_fingerprint: current.fingerprint,
+          text_corrections: textEdits.filter((e) => e.organization_id === organizationId).map(({ chunk_id }) => ({ chunk_id, organization_id: organizationId })),
+          full_record_organization_id: PLATFORM_ORGANIZATION_ID,
+          rulings: 'Jason 2026-11-05 "Yes, build it"; "A: All four, one run (Recommended)" (OD-2026-11-05-001)',
+        })],
+      );
+    }
 
     await client.query('commit');
     open = false;

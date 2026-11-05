@@ -269,7 +269,7 @@ The dry run reports one of four states:
 | `PRE_REPAIR` | every planned change still holds its pre-repair value | repairs |
 | `PARTIAL` | some changes in place, the rest pre-repair | resumes (writes only what is pending) |
 | `REPAIRED` | every planned field holds the seed's value | nothing |
-| `DRIFTED` | a field in neither state, a listed row missing or outside `__platform__`, a repoint target not live (active, approved, verified, not suppressed), or a chunk or document the plan does not know on a source it would retire | refuses |
+| `DRIFTED` | a field in neither state, a listed row missing or outside its organization (`__platform__`, or the one a text row names), a repoint target not live (active, approved, verified, not suppressed), a chunk or document the plan does not know on a source it would retire, or a pending text the full-text rights rule would refuse | refuses |
 
 Dispatch the `repair-research-baseline` workflow in this order:
 
@@ -302,10 +302,44 @@ fingerprint and the sha256 of every plan file. It refuses: a missing `__platform
 fingerprint that does not match, a `DRIFTED` state, and any update that touches a different number
 of rows than planned.
 
-Not changed by the repair: the two chunk sentences #1003 corrected (text, not in any log), the
-capability map's coverage counts (computed while duplicates inflated them), documents, and history
-rows that cite the retired sources (`shadow_evidence_items`, citation and retraction checks; the
-dry run counts them under `history`).
+Not changed by the repair: the capability map's coverage counts (computed while duplicates inflated
+them), documents, chunk embeddings, and history rows that cite the retired sources
+(`shadow_evidence_items`, citation and retraction checks; the dry run counts them under `history`).
+
+### Corrected chunk text (2026-11-05)
+
+Production ran steps 1-6 on 2026-09-30 (apply run 36731274457; REPAIRED on 2026-10-01, run
+36806464883). That run wrote no text, so four chunks still held the text production imported. The
+third log, `repairs/2026-11-05_text_correction_log.csv`, adds a `text` action for them (Jason
+2026-11-05, "Yes, build it"): A7-054 and A5-132 in `__platform__` (#1887), and A8-071 and A3-117 on
+the gym's policy shelf in `punxsy_prominence` (#1003; Jason 2026-11-05, "A: All four, one run
+(Recommended)"). A text row names its chunk's organization and the sha256 of the text it writes in
+the committed log; only those two organizations are allowed, nothing is chosen at dispatch, and a
+seed text that no longer matches its pinned hash makes the plan invalid. Each text is written only
+where the row still holds the imported text, and only those rows name `text_content`, so the
+full-text rights trigger runs on them alone; the dry run blocks with `TEXT_NOT_PERMITTED` if it
+would refuse, and the apply rolls back (`text_row_changed`) if the write changed a corrected chunk's
+kind, locator or document rights. The dry run prints both texts in full under `changes.text`, each
+chunk's document rights under `text_rights`, and under `history` how many past SHADOW answers cite
+each corrected chunk: once the text changes, a cited passage that overlaps the correction shows as
+its citation's title alone (the citation stays). The apply writes the usual audit row in
+`__platform__` and a second in `punxsy_prominence` naming the gym's two chunks.
+
+Dispatch order, the same workflow and inputs as above:
+
+1. Staging dry run, as a smoke test of the workflow only. The policy shelf never moved on staging
+   (both staging `move-policy-shelf` runs failed: 36606833607, 36760879516; the only successful
+   apply is production run 39077227359), so staging's two gym chunks are not in
+   `punxsy_prominence`. Expect `DRIFTED` with exactly one blocker, `LISTED_ROW_OUTSIDE_PLATFORM`,
+   naming `chk_39fac3160bf60743` and `chk_473c8284ef33ff26` (expected `punxsy_prominence`), and
+   `counts.text` 2 pending for the platform chunks. Any other blocker: stop and report. Staging
+   cannot be applied (a `DRIFTED` plan refuses whole), so the real-database rehearsal of the gym
+   writes is `repairResearchBaseline.pg.test.ts` in CI.
+2. Production dry run. **Stop unless** the state is `PARTIAL`, `counts.text.pending` is exactly 4,
+   every other action's pending is 0, there are no blockers, and `changes.text` shows the four
+   intended corrections.
+3. Production apply with that fingerprint; Jason approves the run in GitHub.
+4. A production dry run: `REPAIRED`.
 
 ---
 
