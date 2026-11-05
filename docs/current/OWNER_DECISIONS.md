@@ -164,6 +164,26 @@ and should not try to.
 
 ---
 
+## OD-2026-11-05-001 -- The research repair tool writes the four corrected chunk texts, two of them on the gym's policy shelf, in one gated run: "Yes, build it"; "A: All four, one run (Recommended)"
+
+**Provenance: PRIMARY.** Jason's words in the Overwatch session, 2026-11-05, answering its next-step box and then a question card. New; edits no earlier entry's text.
+
+**What was put to him.** (1) A plan to fix the live SHADOW text of four chunks whose seed text was corrected after the 2026-08-13 import (A7-054 and A5-132, #1887; A8-071 and A3-117, #1003). Production's research repair (run 36731274457, 2026-09-30) never wrote text. The plan was to extend `apps/web/scripts/pilot-repair-research-baseline.mjs` with a text step: the same dry run, reviewed fingerprint, one transaction and audit row, and his approval of each production run. Leave the chunk embeddings as they are. Leave the Zubac source row's publication date (2016-01-01) unchanged. The box asked: "Build the passage-text fix as planned?" (2) While building, the two #1003 chunks turned out not to be in `__platform__`. They are PPBF house documents on the gym's policy shelf in `punxsy_prominence`, which move-policy-shelf moved there in production on 2026-10-17 (run 39077227359). The tool is built to touch only `__platform__`. The card offered two options. A: each text-correction row names its organization, `__platform__` or `punxsy_prominence`, fixed in the committed log and never a dispatch input. B: fix only the two platform chunks now.
+
+**Jason:**
+
+- *"Yes, build it"*
+- *"A: All four, one run (Recommended)"*
+
+**Rulings:**
+
+1. The repair tool may write `text_content` for the chunks the committed `repairs/2026-11-05_text_correction_log.csv` names, and only where a chunk still holds its imported text. This adds a production write type to the tool Jason approved on 2026-09-29 (Q1-Q4). Each production run still needs his approval in GitHub.
+2. A text-correction row may name `punxsy_prominence` as well as `__platform__`, and no other organization. The organization is fixed in the committed log, not chosen at dispatch. Every other action of the tool stays `__platform__`-only.
+
+**Status:** built 2026-11-05 by PR; production run pending.
+
+---
+
 ## OD-2026-10-28-002 -- The hand-off takes route A, and the malware verdict on uploaded video stays unoverturnable: "(A) Route A, catalog first, then lanes (Recommended)"; "(A) Malware stays unoverturnable (Recommended)"
 
 **Provenance: RECONSTRUCTED.** Jason answered these as cards on 2026-10-28 (US Eastern) in the backbone session "PPBF Integrity Check" (plan step "Owner review of minimum done", backbone action A-24). That transcript is not readable from this repo's sessions. The card labels are copied from the record the backbone session wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\docs\DECISION_CHECKS.md`, "Thirty-seventh round (2026-10-28)", and the register `working/drift/DECISION_REGISTER.json`, ids D-HO01 and D-HO03 (also `RULES.md` section 9, "Checkpoint-3 answers"). Uncertain: the full question text on each card; the record keeps the labels and the backbone's own wording of each answer. He told this session to record both on 2026-11-04: *"Yes, record them"*, in reply to "Record D-HO01 and D-HO03 in OWNER_DECISIONS.md by PR?" New; answers two items OD-2026-10-27-001 lists as "Not ruled here" and edits no earlier entry's text.

@@ -5,7 +5,8 @@ name: repair-research-baseline
 # mis-cited and duplicate claims to their real paper, retires the wrong-paper
 # and duplicate sources (status 'archived', review columns untouched), and
 # sets the tiers and citation metadata the corrected seed carries, on the
-# source row and on its chunks.
+# source row and on its chunks. Since 2026-11-05 it also writes the chunk texts
+# corrected after the import (repairs/2026-11-05_text_correction_log.csv).
 #
 # Jason said yes to the tool on 2026-09-29 (Q1-Q4): the committed repair logs
 # are the pinned plan, the committed seed holds the target values, retire as
@@ -25,7 +26,9 @@ name: repair-research-baseline
 # REPAIRED one it writes nothing.
 #
 # There is deliberately no organization input: the tool only ever touches
-# __platform__, and refuses a listed row it finds anywhere else.
+# __platform__, and refuses a listed row it finds anywhere else. The one
+# exception is fixed in the committed text-correction log, not chosen here: a
+# text row may name the gym's punxsy_prominence (Jason 2026-11-05).
 #
 # Dispatch-only for the reason in scripts/lib/postgres-write-target.mjs: the
 # alternative is an operator holding a production connection string on a laptop,

@@ -269,7 +269,7 @@ The dry run reports one of four states:
 | `PRE_REPAIR` | every planned change still holds its pre-repair value | repairs |
 | `PARTIAL` | some changes in place, the rest pre-repair | resumes (writes only what is pending) |
 | `REPAIRED` | every planned field holds the seed's value | nothing |
-| `DRIFTED` | a field in neither state, a listed row missing or outside `__platform__`, a repoint target not live (active, approved, verified, not suppressed), or a chunk or document the plan does not know on a source it would retire | refuses |
+| `DRIFTED` | a field in neither state, a listed row missing or outside its organization (`__platform__`, or the one a text row names), a repoint target not live (active, approved, verified, not suppressed), a chunk or document the plan does not know on a source it would retire, or a pending text the full-text rights rule would refuse | refuses |
 
 Dispatch the `repair-research-baseline` workflow in this order:
 
@@ -302,10 +302,34 @@ fingerprint and the sha256 of every plan file. It refuses: a missing `__platform
 fingerprint that does not match, a `DRIFTED` state, and any update that touches a different number
 of rows than planned.
 
-Not changed by the repair: the two chunk sentences #1003 corrected (text, not in any log), the
-capability map's coverage counts (computed while duplicates inflated them), documents, and history
-rows that cite the retired sources (`shadow_evidence_items`, citation and retraction checks; the
-dry run counts them under `history`).
+Not changed by the repair: the capability map's coverage counts (computed while duplicates inflated
+them), documents, chunk embeddings, and history rows that cite the retired sources
+(`shadow_evidence_items`, citation and retraction checks; the dry run counts them under `history`).
+
+### Corrected chunk text (2026-11-05)
+
+Production ran steps 1-6 on 2026-09-30 (apply run 36731274457; REPAIRED on 2026-10-01, run
+36806464883). That run wrote no text, so four chunks still held the text production imported. The
+third log, `repairs/2026-11-05_text_correction_log.csv`, adds a `text` action for them (Jason
+2026-11-05, "Yes, build it"): A7-054 and A5-132 in `__platform__` (#1887), and A8-071 and A3-117 on
+the gym's policy shelf in `punxsy_prominence` (#1003; Jason 2026-11-05, "A: All four, one run
+(Recommended)"). A text row names its chunk's organization in the committed log; only those two
+organizations are allowed, and nothing is chosen at dispatch. Each text is written only where the
+row still holds the imported text, and only those rows name `text_content`, so the full-text rights
+trigger runs on them alone; the dry run blocks with `TEXT_NOT_PERMITTED` if it would refuse. The
+dry run prints both texts in full under `changes.text`, and each chunk's document rights under
+`text_rights`.
+
+Dispatch order, the same workflow and inputs as above:
+
+1. Staging dry run. Staging ran the 2026-09-30 repair too (runs 36721260945, 36722378826,
+   36722550670), so expect `PARTIAL` with `counts.text.pending` 4 and every other action pending 0.
+   Anything else: stop and report.
+2. Staging apply with that fingerprint, then a staging dry run: `REPAIRED`.
+3. Production dry run. **Stop unless** the state is `PARTIAL`, `counts.text.pending` is exactly 4,
+   every other action's pending is 0, and there are no blockers.
+4. Production apply with that fingerprint; Jason approves the run in GitHub.
+5. A production dry run: `REPAIRED`.
 
 ---
 

@@ -1,11 +1,13 @@
 # Research corpus repairs: the pinned plan for production
 
-Two logs of what was changed in this package's seed CSVs after it was imported
-and approved in production (organization `__platform__`, 2026-08-13). They are
-the plan the owner-gated production repair tool applies, in this order:
+Three logs of what was changed in this package's seed CSVs after it was
+imported and approved in production (organization `__platform__`, 2026-08-13).
+They are the plan the owner-gated production repair tool applies, in this order:
 
 1. `2026-09-28_repair_log.csv` (#1008)
 2. `2026-09-29_followup_log.csv` (this follow-up)
+3. `2026-11-05_text_correction_log.csv` (corrected chunk text; production ran
+   logs 1 and 2 on 2026-09-30, run 36731274457)
 
 **The seed CSVs in this directory hold the target values.** The logs say what
 happens to which rows; the value a row ends at (a source's `authority_tier`, a
@@ -83,6 +85,27 @@ carries) and `src_ad951938a95719ec` (the Med Sci Sports Exerc title, PubMed
 / ACSM position statement this J Acad Nutr Diet row, PubMed 26920240, carries:
 same first author, same date, same opening sentence of the abstract).
 
+## 2026-11-05_text_correction_log.csv
+
+One `CORRECT_CHUNK_TEXT` row per chunk whose `text_content` the seed corrected
+after the import: the tool sets the seed's text where the row still holds the
+imported text (Jason 2026-11-05, "Yes, build it"). Columns: `chunk_id` (one
+id), `organization_id`, `claim_id`, `evidence`.
+
+| chunk | claim | organization | correction |
+|---|---|---|---|
+| `chk_f4cf693a55fe0315` | A7-054 | `__platform__` | Source line: Ricci AA, not Jagim AR (#1887) |
+| `chk_3ca9344108b270a1` | A5-132 | `__platform__` | Source line: Zubac et al. 2017;35(8):719-726 (#1887) |
+| `chk_39fac3160bf60743` | A8-071 | `punxsy_prominence` | the sparring log flow was designed, never built (#1003) |
+| `chk_473c8284ef33ff26` | A3-117 | `punxsy_prominence` | the same (#1003) |
+
+`organization_id` is where the chunk lives now. The last two are PPBF house
+documents (the `ppbf_policy` scope), which move-policy-shelf moved to the gym on
+2026-10-17; a text row may name `__platform__` or `punxsy_prominence` and nothing
+else (Jason 2026-11-05, "A: All four, one run (Recommended)"), and the tool
+looks the row up in that organization's seed scope. The chunk's embedding is
+left as it is.
+
 ## pre_repair_values.csv
 
 The value every field the repair changes held in the seed production imported
@@ -91,13 +114,12 @@ values): one row per `(table, row_id, field)`, `before_json` the value as JSON,
 empty when the metadata key was absent. It is the "before" half of the tool's
 state check -- the lane SQL's preconditions, made exact for every field -- so a
 production dry run can say PRE_REPAIR, PARTIAL, REPAIRED or DRIFTED rather than
-guess. It holds only fields that change (1,205 rows: 221 chunk `source_id`, 213
-source `status`, 11 source `authority_tier`, and the managed metadata keys);
-every other managed field of a listed row is expected to already hold the seed
-value. `researchRepairPlan.test.ts` re-derives it from `95f3c79e` on every CI run
-and fails if any difference between that seed and today's is not in the plan
-(the two chunk sentences #1003 corrected are the only exception: text, not
-citation or tier data, and not written by the tool).
+guess. It holds only fields that change (1,209 rows: 221 chunk `source_id`, 213
+source `status`, 11 source `authority_tier`, the managed metadata keys, and the
+4 corrected chunks' `text_content`, appended last); every other managed field of
+a listed row is expected to already hold the seed value.
+`researchRepairPlan.test.ts` re-derives it from `95f3c79e` on every CI run and
+fails if any difference between that seed and today's is not in the plan.
 
 The tool is `apps/web/scripts/pilot-repair-research-baseline.mjs`, dispatched by
 the `repair-research-baseline` workflow; the order of runs is in

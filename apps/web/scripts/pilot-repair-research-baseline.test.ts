@@ -49,6 +49,7 @@ type Inputs = {
   seedChunks: Row[];
   logs: Array<{ name: string; rows: Row[] }>;
   preRepairValues: Row[];
+  policySeedChunks?: Row[];
 };
 type Spec = {
   entry?: 'repair' | 'run' | 'plan';
@@ -224,6 +225,26 @@ function runTool(spec: Spec): Outcome {
         if (/^select\\s+\\(select count\\(\\*\\)::int from pilot\\.shadow_evidence_items/i.test(t)) {
           return ok([{ evidence_items: 0, citation_checks: 0, retraction_checks: 0 }]);
         }
+        if (/^select c\\.chunk_id, c\\.text_kind, d\\.source_id as document_source_id, s\\.rights_status/i.test(t)) {
+          return ok(db.chunks.filter((c) => values[0].includes(c.chunk_id))
+            .sort((a, b) => (a.chunk_id < b.chunk_id ? -1 : 1))
+            .map((c) => {
+              const d = db.documents.find((x) => x.document_id === c.document_id);
+              const s = d ? db.sources.find((x) => x.source_id === d.source_id) : undefined;
+              return { chunk_id: c.chunk_id, text_kind: c.text_kind ?? 'full_text', document_source_id: d?.source_id ?? null, rights_status: s?.rights_status ?? null };
+            }));
+        }
+        if (/^update pilot\\.shadow_library_chunks c\\s+set text_content = x\\.after_text/i.test(t)) {
+          const hit = [];
+          for (const x of JSON.parse(values[1])) {
+            const row = db.chunks.find((r) => r.organization_id === x.organization_id && values[0].includes(x.organization_id)
+              && r.chunk_id === x.chunk_id && r.text_content === x.before_text);
+            if (row) hit.push({ row, x });
+          }
+          const applied = short('chunks_text', hit);
+          for (const { row, x } of applied) { row.text_content = x.after_text; row.updated = true; }
+          return ok(applied.map(({ row }) => ({ chunk_id: row.chunk_id })));
+        }
         if (/^select c\\.chunk_id, c\\.source_id, s\\.title as source_title/i.test(t)) {
           return ok(db.chunks.filter((c) => c.organization_id === values[0] && c.metadata.claim_id === values[1]).map((c) => {
             const s = db.sources.find((x) => x.source_id === c.source_id);
@@ -372,6 +393,7 @@ describe('the plan the files describe', () => {
       retier: { fields: 3, sources: 1, chunks: 1 },
       // src_clear x3, src_target merged ids, src_tier tier_conflict; chk_a x2.
       metadata: { fields: 7, sources: 3, chunks: 1 },
+      text: { fields: 0, sources: 0, chunks: 0 },
     });
   });
 
@@ -667,6 +689,208 @@ describe('apply', () => {
     const out = runTool({ ...baseSpec(), organizationExists: false, options: applyOptions({ expectFingerprint: OTHER_FINGERPRINT }) });
     expect(out.result).toMatchObject({ status: 'refused', reason: 'PLATFORM_ORGANIZATION_NOT_FOUND' });
     expectRolledBackWithoutWrites(out);
+  });
+});
+
+// The 2026-11-05 text corrections: one on a chunk the other logs also list
+// (chk_a, platform), one only the text log names, on the gym's policy shelf
+// (chk_g). Jason 2026-11-05, "Yes, build it" and "A: All four, one run".
+const GYM = 'punxsy_prominence';
+const TEXT_LOG = '2026-11-05_text_correction_log.csv';
+
+function textInputs(): Inputs {
+  const base = inputs();
+  return {
+    ...base,
+    seedChunks: base.seedChunks.map((c) => (c.chunk_id === 'chk_a' ? { ...c, text_content: 'A2-076 corrected' } : c)),
+    policySeedChunks: [{ chunk_id: 'chk_g', source_id: 'src_pol', text_content: 'gym corrected', metadata: { claim_id: 'A8-071' } }],
+    logs: [...base.logs, { name: TEXT_LOG, rows: [
+      { action: 'CORRECT_CHUNK_TEXT', chunk_id: 'chk_a', organization_id: PLATFORM, claim_id: 'A2-076' },
+      { action: 'CORRECT_CHUNK_TEXT', chunk_id: 'chk_g', organization_id: GYM, claim_id: 'A8-071' },
+    ] }],
+    preRepairValues: [
+      ...base.preRepairValues,
+      { table: 'chunk', row_id: 'chk_a', field: 'text_content', before_json: '"A2-076 as imported"' },
+      { table: 'chunk', row_id: 'chk_g', field: 'text_content', before_json: '"gym as imported"' },
+    ],
+  };
+}
+
+function textSpec(extra: Partial<Spec> = {}): Spec {
+  const db = preRepair();
+  return {
+    inputs: textInputs(),
+    sources: [
+      ...db.sources!,
+      // The documents' sources: house material, so full text is allowed.
+      { source_id: 'src_prog', organization_id: PLATFORM, status: 'active', rights_status: 'ppbf_owned', metadata: {} },
+      { source_id: 'src_prog_copy', organization_id: GYM, status: 'active', rights_status: 'ppbf_owned', metadata: {} },
+    ],
+    chunks: [
+      ...db.chunks!.map((c) => (c.chunk_id === 'chk_a' ? { ...c, text_content: 'A2-076 as imported' } : c)),
+      { chunk_id: 'chk_g', organization_id: GYM, document_id: 'doc_g', source_id: 'src_pol', text_content: 'gym as imported', metadata: { claim_id: 'A8-071' } },
+    ],
+    documents: [
+      { document_id: 'doc_1', organization_id: PLATFORM, source_id: 'src_prog' },
+      { document_id: 'doc_g', organization_id: GYM, source_id: 'src_prog_copy' },
+    ],
+    ...extra,
+  };
+}
+
+/** Production on 2026-11-05: the 2026-09-30 repair in place, the texts still as imported. */
+function onlyTextPending(): Spec {
+  const out = runTool({ ...textSpec(), options: applyOptions() });
+  expect(out.result!.status).toBe('applied');
+  const strip = (row: Row) => Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'updated'));
+  const imported: Record<string, string> = { chk_a: 'A2-076 as imported', chk_g: 'gym as imported' };
+  return {
+    ...textSpec(),
+    sources: out.finalSources!.map(strip),
+    chunks: out.finalChunks!.map(strip).map((c) => (imported[c.chunk_id as string] ? { ...c, text_content: imported[c.chunk_id as string] } : c)),
+  };
+}
+
+describe('text corrections', () => {
+  test('the plan carries each correction in its organization, and a text-only chunk is no repoint target', () => {
+    const out = runTool({ entry: 'plan', inputs: textInputs() });
+    expect(out.error).toBeUndefined();
+    const plan = out.result as unknown as {
+      expected: Record<string, { fields: number; sources: number; chunks: number }>;
+      liveSources: string[]; textChunkIds: string[];
+      chunks: Array<{ chunk_id: string; organization_id: string; fields: Array<{ field: string; before: string | null; after: string | null }> }>;
+    };
+    expect(plan.expected.text).toEqual({ fields: 2, sources: 0, chunks: 2 });
+    expect(plan.textChunkIds).toEqual(['chk_a', 'chk_g']);
+    expect(plan.liveSources).toEqual(['src_target', 'src_tier']);
+    const chunk = (id: string) => plan.chunks.find((c) => c.chunk_id === id)!;
+    expect(chunk('chk_g')).toEqual({
+      chunk_id: 'chk_g', organization_id: GYM,
+      fields: [{ field: 'text_content', before: '"gym as imported"', after: '"gym corrected"' }],
+    });
+    expect(chunk('chk_a').organization_id).toBe(PLATFORM);
+    expect(chunk('chk_a').fields.map((f) => f.field)).toContain('source_id');
+    expect(chunk('chk_a').fields.find((f) => f.field === 'text_content')).toEqual({ field: 'text_content', before: '"A2-076 as imported"', after: '"A2-076 corrected"' });
+  });
+
+  const textLog = (i: Inputs) => i.logs.find((l) => l.name === TEXT_LOG)!;
+  const withTextRows = (i: Inputs, rows: Row[]) => ({ ...i, logs: i.logs.map((l) => (l.name === TEXT_LOG ? { ...l, rows } : l)) });
+  const invalid: Array<[string, (i: Inputs) => Inputs, RegExp]> = [
+    ['an organization outside the two allowed', (i) => withTextRows(i, textLog(i).rows.map((r) => (r.chunk_id === 'chk_g' ? { ...r, organization_id: 'ppbf-default-org' } : r))), /TEXT_ORGANIZATION_NOT_ALLOWED:chk_g:ppbf-default-org/],
+    ['a platform chunk named as the gym\'s', (i) => withTextRows(i, textLog(i).rows.map((r) => (r.chunk_id === 'chk_a' ? { ...r, organization_id: GYM } : r))), /CORRECTED_CHUNK_NOT_IN_ITS_ORGANIZATION_SEED:chk_a:punxsy_prominence/],
+    ['a gym chunk named as the platform\'s', (i) => withTextRows(i, textLog(i).rows.map((r) => (r.chunk_id === 'chk_g' ? { ...r, organization_id: PLATFORM } : r))), /CORRECTED_CHUNK_NOT_IN_ITS_ORGANIZATION_SEED:chk_g:__platform__/],
+    ['a correction with no imported text to start from', (i) => ({ ...i, preRepairValues: i.preRepairValues.filter((r) => !(r.row_id === 'chk_g' && r.field === 'text_content')) }), /CORRECTED_TEXT_WITHOUT_PRE_REPAIR_VALUE:chk_g/],
+    ['a correction whose imported text is the seed text', (i) => ({ ...i, preRepairValues: i.preRepairValues.map((r) => (r.row_id === 'chk_g' && r.field === 'text_content' ? { ...r, before_json: '"gym corrected"' } : r)) }), /PRE_REPAIR_VALUE_EQUALS_SEED:chunk\|chk_g\|text_content/],
+    ['an imported text for a chunk no text row names', (i) => ({ ...i, preRepairValues: [...i.preRepairValues, { table: 'chunk', row_id: 'chk_b', field: 'text_content', before_json: '"x"' }] }), /PRE_REPAIR_TEXT_FOR_UNCORRECTED_CHUNK:chk_b/],
+    ['a chunk corrected twice', (i) => withTextRows(i, [...textLog(i).rows, textLog(i).rows[1]]), /CHUNK_TEXT_CORRECTED_TWICE:chk_g/],
+    ['a text row naming two chunks', (i) => withTextRows(i, [{ ...textLog(i).rows[1], chunk_id: 'chk_g|chk_b' }]), /TEXT_ROW_MALFORMED/],
+  ];
+
+  test.each(invalid)('refuses %s: PLAN_INVALID', (_label, change, pattern) => {
+    const out = runTool({ entry: 'plan', inputs: change(textInputs()) });
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(pattern);
+  });
+
+  test('a dry run prints both texts in full, and the rights each will be written under', () => {
+    const out = runTool({ ...textSpec(), options: dryRunOptions() });
+    expect(out.result).toMatchObject({ status: 'dry-run', state: 'PRE_REPAIR', blockers: [], counts: { text: { planned: 2, pending: 2, done: 0, drifted: 0 } } });
+    expectRolledBackWithoutWrites(out);
+    const plan = planEvent(out);
+    expect((plan.changes as { text: unknown }).text).toEqual([
+      { chunk_id: 'chk_a', state: 'pending', before: 'A2-076 as imported', after: 'A2-076 corrected' },
+      { chunk_id: 'chk_g', state: 'pending', before: 'gym as imported', after: 'gym corrected' },
+    ]);
+    expect(plan.text_rights).toEqual([
+      { chunk_id: 'chk_a', text_kind: 'full_text', document_source_id: 'src_prog', rights_status: 'ppbf_owned' },
+      { chunk_id: 'chk_g', text_kind: 'full_text', document_source_id: 'src_prog_copy', rights_status: 'ppbf_owned' },
+    ]);
+  });
+
+  test('apply writes each text in its own organization, only over the imported text, after the chunk metadata and before the sources', () => {
+    const out = runTool({ ...textSpec(), options: applyOptions() });
+    expect(out.result).toMatchObject({ status: 'applied', state_after: 'REPAIRED', written: { chunks_text: 2, chunks_repointed: 2 } });
+    const chunk = (id: string) => out.finalChunks!.find((c) => c.chunk_id === id)!;
+    expect(chunk('chk_a')).toMatchObject({ organization_id: PLATFORM, text_content: 'A2-076 corrected', source_id: 'src_target' });
+    expect(chunk('chk_g')).toMatchObject({ organization_id: GYM, text_content: 'gym corrected', source_id: 'src_pol', metadata: { claim_id: 'A8-071' } });
+    expect(chunk('chk_other')).not.toHaveProperty('updated');
+
+    const shapes = writes(out).map((t) => /^(update|insert into) pilot\.\w+(?: \w+\s+set \w+)?/.exec(t)![0].replace(/\s+/g, ' '));
+    expect(shapes).toEqual([
+      'update pilot.shadow_library_chunks c set source_id',
+      'update pilot.shadow_library_chunks c set metadata',
+      'update pilot.shadow_library_chunks c set text_content',
+      'update pilot.shadow_library_sources s set authority_tier',
+      'update pilot.shadow_library_sources',
+      'insert into pilot.audit_events',
+    ]);
+    const update = out.calls.find((c) => /set text_content = x\.after_text/.test(c.text))!;
+    expect(update.text).toMatch(/c\.organization_id = x\.organization_id and x\.organization_id = any\(\$1::text\[\]\)/);
+    expect(update.text).toMatch(/c\.text_content = x\.before_text/);
+    expect(update.values![0]).toEqual([PLATFORM, GYM]);
+    expect(JSON.parse(update.values![1] as string)).toEqual([
+      { chunk_id: 'chk_a', organization_id: PLATFORM, before_text: 'A2-076 as imported', after_text: 'A2-076 corrected' },
+      { chunk_id: 'chk_g', organization_id: GYM, before_text: 'gym as imported', after_text: 'gym corrected' },
+    ]);
+    const audit = out.calls.find((c) => /^insert into pilot\.audit_events/i.test(c.text))!;
+    expect(JSON.parse(audit.values![1] as string)).toMatchObject({
+      text_corrections: [{ chunk_id: 'chk_a', organization_id: PLATFORM }, { chunk_id: 'chk_g', organization_id: GYM }],
+    });
+  });
+
+  test('production\'s case: with the 2026-09-30 repair in place, only the texts are pending, and apply writes only them', () => {
+    const spec = onlyTextPending();
+    const dry = runTool({ ...spec, options: dryRunOptions() });
+    expect(dry.result).toMatchObject({
+      state: 'PARTIAL', would_apply: true, blockers: [],
+      counts: { text: { pending: 2, done: 0 }, repoint: { pending: 0, done: 2 }, retire: { pending: 0, done: 3 } },
+    });
+    const out = runTool({ ...spec, options: applyOptions() });
+    expect(out.result).toMatchObject({
+      status: 'applied', state_before: 'PARTIAL', state_after: 'REPAIRED',
+      written: { chunks_repointed: 0, chunks_metadata: 0, chunks_text: 2, sources_tier_and_metadata: 0, sources_archived: 0 },
+    });
+    expect(writes(out).map((t) => /^(update|insert into) pilot\.\w+/.exec(t)![0])).toEqual([
+      'update pilot.shadow_library_chunks', 'insert into pilot.audit_events',
+    ]);
+    expect(out.finalChunks!.filter((c) => c.updated).map((c) => c.chunk_id).sort()).toEqual(['chk_a', 'chk_g']);
+  });
+
+  const blocked: Array<[string, string, (s: Spec) => Spec]> = [
+    ['a document source whose rights do not allow full text', 'TEXT_NOT_PERMITTED', (s) => withSource(s, 'src_prog_copy', { rights_status: 'unknown' })],
+    ['a corrected chunk with no document source at all', 'TEXT_NOT_PERMITTED', (s) => ({ ...s, documents: s.documents!.filter((d) => d.document_id !== 'doc_g') })],
+    ['a corrected text that is neither the imported nor the seed text', 'FIELD_DRIFTED', (s) => withChunk(s, 'chk_g', { text_content: 'edited by hand' })],
+    ['a gym chunk found in another organization', 'LISTED_ROW_OUTSIDE_PLATFORM', (s) => withChunk(s, 'chk_g', { organization_id: 'ppbf-default-org' })],
+    ['a gym chunk that is not there', 'LISTED_ROW_MISSING', (s) => ({ ...s, chunks: s.chunks!.filter((c) => c.chunk_id !== 'chk_g') })],
+  ];
+
+  test.each(blocked)('DRIFTED on %s (%s), and apply writes nothing', (_label, code, drift) => {
+    const spec = drift(onlyTextPending());
+    const dry = runTool({ ...spec, options: dryRunOptions() });
+    expect(dry.result).toMatchObject({ state: 'DRIFTED', would_apply: false });
+    expect(dry.result!.blockers).toContain(code);
+    const out = runTool({ ...spec, options: applyOptions() });
+    expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_DRIFTED' });
+    expectRolledBackWithoutWrites(out);
+  });
+
+  test('an excerpt, and a text already corrected, are not refused on rights', () => {
+    const excerpt = runTool({ ...withChunk(withSource(onlyTextPending(), 'src_prog_copy', { rights_status: 'unknown' }), 'chk_g', { text_kind: 'excerpt' }), options: dryRunOptions() });
+    expect(excerpt.result).toMatchObject({ state: 'PARTIAL', blockers: [] });
+    const done = runTool({ ...withChunk(withSource(onlyTextPending(), 'src_prog_copy', { rights_status: 'unknown' }), 'chk_g', { text_content: 'gym corrected' }), options: dryRunOptions() });
+    expect(done.result).toMatchObject({ state: 'PARTIAL', blockers: [] });
+  });
+
+  test('the fingerprint moves when a corrected chunk\'s rights move', () => {
+    const a = runTool({ ...onlyTextPending(), options: dryRunOptions() }).result!.plan_fingerprint;
+    const b = runTool({ ...withSource(onlyTextPending(), 'src_prog_copy', { rights_status: 'open_licence' }), options: dryRunOptions() }).result!.plan_fingerprint;
+    expect(b).not.toBe(a);
+  });
+
+  test('a text update touching fewer rows than planned rolls back: PLAN_APPLY_COUNT_MISMATCH', () => {
+    const out = runTool({ ...onlyTextPending(), shortUpdate: 'chunks_text', options: applyOptions() });
+    expect(out.result).toMatchObject({ status: 'refused', reason: 'PLAN_APPLY_COUNT_MISMATCH', update: 'chunks_text', planned: 2, updated: 1 });
+    expect(texts(out)).not.toContain('commit');
   });
 });
 

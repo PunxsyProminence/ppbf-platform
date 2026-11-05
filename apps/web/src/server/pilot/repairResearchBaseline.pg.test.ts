@@ -69,7 +69,8 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 type Field = { field: string; before: string | null; after: string | null };
 type Plan = {
   sources: Array<{ source_id: string; retire: boolean; fields: Field[] }>;
-  chunks: Array<{ chunk_id: string; fields: Field[] }>;
+  chunks: Array<{ chunk_id: string; organization_id: string; fields: Field[] }>;
+  textChunkIds: string[];
   retireIds: string[];
   liveSources: string[];
   expected: Record<string, { fields: number; sources: number; chunks: number }>;
@@ -197,6 +198,24 @@ async function rewindToPreRepair(target: Client): Promise<void> {
       where s.source_id = x.source_id`,
     [JSON.stringify(sourceEdits)],
   );
+
+  // The corrected chunks back to the text as imported, in whichever
+  // organization each lives in (two are on the gym's policy shelf). Only these
+  // rows name text_content, so the rights trigger runs on them alone.
+  await target.query(
+    `update pilot.shadow_library_chunks c
+        set text_content = x.text_content
+       from jsonb_to_recordset($1::jsonb) as x(chunk_id text, organization_id text, text_content text)
+      where c.chunk_id = x.chunk_id and c.organization_id = x.organization_id`,
+    [JSON.stringify(textRewind())],
+  );
+}
+
+/** Each corrected chunk with the text production imported. */
+function textRewind(): Array<{ chunk_id: string; organization_id: string; text_content: string }> {
+  return plan.chunks.flatMap((c) => c.fields
+    .filter((f) => f.field === 'text_content')
+    .map((f) => ({ chunk_id: c.chunk_id, organization_id: c.organization_id, text_content: JSON.parse(f.before!) as string })));
 }
 
 /** What pilot-approve-library-baseline.mjs left in production on 2026-08-13. */
@@ -276,14 +295,20 @@ async function snapshot(target: Client): Promise<Record<string, string>> {
   return out;
 }
 
-/** Every library row outside the platform baseline, hashed per organization and table. */
+/**
+ * Every library row outside the platform baseline, hashed per organization and
+ * table -- except the chunks a text correction names, whose own before/after
+ * is asserted where they are written.
+ */
 async function outsidePlatform(target: Client): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const table of ['shadow_library_sources', 'shadow_library_documents', 'shadow_library_chunks']) {
+    const exceptCorrected = table === 'shadow_library_chunks' ? 'and not (chunk_id = any($2::text[]))' : '';
     const rows = (await target.query<{ organization_id: string; n: number; h: string }>(
       `select organization_id, count(*)::int as n, md5(string_agg(t::text, '|' order by t::text)) as h
-         from pilot.${table} t where organization_id <> $1 group by organization_id order by organization_id`,
-      [PLATFORM],
+         from pilot.${table} t where organization_id <> $1 ${exceptCorrected}
+        group by organization_id order by organization_id`,
+      table === 'shadow_library_chunks' ? [PLATFORM, plan.textChunkIds] : [PLATFORM],
     )).rows;
     for (const row of rows) out[`${table}:${row.organization_id}`] = `${row.n}:${row.h}`;
   }
@@ -296,7 +321,11 @@ type SourceRow = {
   approved_by_account_id: string | null; approved_at: string | null;
   verified_by_account_id: string | null; verified_at: string | null; updated_at: string; title: string;
 };
-type ChunkRow = { chunk_id: string; organization_id: string; source_id: string; metadata: Record<string, unknown>; updated_at: string; text_content: string };
+type ChunkRow = {
+  chunk_id: string; organization_id: string; source_id: string; document_id: string; ordinal: number;
+  metadata: Record<string, unknown>; updated_at: string; text_content: string;
+  embedding: unknown; embedding_model: string | null; text_kind: string;
+};
 
 async function sourcesById(target: Client): Promise<Map<string, SourceRow>> {
   const rows = (await target.query<SourceRow>(
@@ -310,7 +339,8 @@ async function sourcesById(target: Client): Promise<Map<string, SourceRow>> {
 
 async function chunksById(target: Client): Promise<Map<string, ChunkRow>> {
   const rows = (await target.query<ChunkRow>(
-    `select chunk_id, organization_id, source_id, metadata, updated_at::text as updated_at, text_content
+    `select chunk_id, organization_id, source_id, document_id, ordinal, metadata, updated_at::text as updated_at,
+            text_content, embedding, embedding_model, text_kind
        from pilot.shadow_library_chunks`,
   )).rows;
   return new Map(rows.map((row) => [row.chunk_id, row]));
@@ -475,7 +505,7 @@ describe('dry run (real database)', () => {
 
       expect(first).toMatchObject({ status: 'dry-run', state: 'PRE_REPAIR', would_apply: true, blockers: [] });
       expect(second.plan_fingerprint).toBe(first.plan_fingerprint);
-      for (const action of ['repoint', 'retire', 'retier', 'metadata']) {
+      for (const action of ['repoint', 'retire', 'retier', 'metadata', 'text']) {
         expect(first.counts![action]).toMatchObject({ planned: plan.expected[action].fields, pending: plan.expected[action].fields, done: 0, drifted: 0 });
       }
       expect(first.counts!.repoint.pending).toBe(221);
@@ -532,6 +562,7 @@ describe('apply (real database)', () => {
         written: {
           chunks_repointed: 221,
           chunks_metadata: chunkMetadataRows.length,
+          chunks_text: 4,
           sources_tier_and_metadata: 224,
           sources_archived: 213,
         },
@@ -570,19 +601,44 @@ describe('apply (real database)', () => {
       }
 
       // Every platform chunk ends on the seed's source with the seed's managed
-      // metadata; its text and every other key are what they were.
+      // metadata; its text and every other key are what they were, except the
+      // four corrected texts, which end at the seed's text.
       for (const seedRow of seed.chunks) {
         const row = chunksAfter.get(seedRow.chunk_id as string)!;
         if (row.source_id !== seedRow.source_id) wrong.push(`${row.chunk_id} source`);
         if (managed(row.metadata) !== managed(seedRow.metadata)) wrong.push(`${row.chunk_id} managed metadata`);
       }
+      const correctedText = new Map(plan.chunks.flatMap((c) => c.fields
+        .filter((f) => f.field === 'text_content')
+        .map((f) => [c.chunk_id, JSON.parse(f.after!) as string] as const)));
+      expect(correctedText.size).toBe(4);
       for (const [id, row] of chunksAfter) {
         const was = chunksBefore.get(id)!;
-        if (row.organization_id !== was.organization_id || row.text_content !== was.text_content) wrong.push(`${id} changed outside the plan`);
+        const text = correctedText.get(id) ?? was.text_content;
+        if (row.organization_id !== was.organization_id || row.text_content !== text) wrong.push(`${id} changed outside the plan`);
+        for (const column of ['document_id', 'ordinal', 'text_kind', 'embedding_model'] as const) {
+          if (row[column] !== was[column]) wrong.push(`${id} ${column} changed`);
+        }
+        if (canonicalJson(row.embedding ?? null) !== canonicalJson(was.embedding ?? null)) wrong.push(`${id} embedding changed`);
         if (withoutManaged(row.metadata) !== withoutManaged(was.metadata)) wrong.push(`${id} unmanaged metadata changed`);
         const touched = touchedChunkIds.has(id);
         if (touched === (row.updated_at === was.updated_at)) wrong.push(`${id} updated_at ${touched ? 'not advanced' : 'moved'}`);
       }
+      // The two gym-shelf corrections were made where they live, under the
+      // full-text rule, without moving them.
+      const gymCorrected = plan.chunks.filter((c) => c.organization_id === GYM).map((c) => c.chunk_id).sort();
+      expect(gymCorrected).toEqual(['chk_39fac3160bf60743', 'chk_473c8284ef33ff26']);
+      for (const id of gymCorrected) {
+        expect([id, chunksAfter.get(id)!.organization_id, chunksAfter.get(id)!.text_kind]).toEqual([id, GYM, 'full_text']);
+      }
+      const rights = await client.query<{ chunk_id: string; rights_status: string }>(
+        `select c.chunk_id, s.rights_status from pilot.shadow_library_chunks c
+           join pilot.shadow_library_documents d on d.document_id = c.document_id
+           join pilot.shadow_library_sources s on s.source_id = d.source_id
+          where c.chunk_id = any($1::text[]) order by c.chunk_id`,
+        [[...correctedText.keys()]],
+      );
+      expect(rights.rows.map((r) => r.rights_status)).toEqual(['ppbf_owned', 'ppbf_owned', 'ppbf_owned', 'ppbf_owned']);
       expect(wrong).toEqual([]);
 
       // No claim sits on an archived source; every chunk in the baseline joins a
@@ -624,7 +680,7 @@ describe('apply (real database)', () => {
       const again = await repair(client, dryRun(), { log: silent, plan });
       expect(again).toMatchObject({ status: 'dry-run', state: 'REPAIRED', would_apply: false, blockers: [] });
       expect(again.plan_fingerprint).not.toBe(dry.plan_fingerprint);
-      for (const action of ['repoint', 'retire', 'retier', 'metadata']) {
+      for (const action of ['repoint', 'retire', 'retier', 'metadata', 'text']) {
         expect(again.counts![action]).toMatchObject({ pending: 0, done: plan.expected[action].fields, drifted: 0 });
       }
 
@@ -683,6 +739,49 @@ describe('apply (real database)', () => {
       await client.end();
     }
   });
+
+  test('production on 2026-11-05: the 2026-09-30 repair in place and only the four texts pending, so apply writes only them', async () => {
+    const client = await freshDatabase();
+    try {
+      const dry = await repair(client, dryRun(), { log: silent, plan });
+      await repair(client, applyWith(dry.plan_fingerprint), { log: silent, plan });
+      // Back to the imported text: what the 2026-09-30 run left, since it
+      // never wrote text.
+      await client.query(
+        `update pilot.shadow_library_chunks c set text_content = x.text_content
+           from jsonb_to_recordset($1::jsonb) as x(chunk_id text, organization_id text, text_content text)
+          where c.chunk_id = x.chunk_id and c.organization_id = x.organization_id`,
+        [JSON.stringify(textRewind())],
+      );
+      const sourcesBefore = await snapshot(client);
+
+      const partial = await repair(client, dryRun(), { log: silent, plan });
+      expect(partial).toMatchObject({ status: 'dry-run', state: 'PARTIAL', would_apply: true, blockers: [] });
+      expect(partial.counts!.text).toMatchObject({ planned: 4, pending: 4, done: 0, drifted: 0 });
+      for (const action of ['repoint', 'retire', 'retier', 'metadata']) {
+        expect(partial.counts![action]).toMatchObject({ pending: 0, drifted: 0 });
+      }
+
+      const result = await repair(client, applyWith(partial.plan_fingerprint), { log: silent, plan });
+      expect(result).toMatchObject({
+        status: 'applied', state_before: 'PARTIAL', state_after: 'REPAIRED',
+        written: { chunks_repointed: 0, chunks_metadata: 0, chunks_text: 4, sources_tier_and_metadata: 0, sources_archived: 0 },
+      });
+      const after = await snapshot(client);
+      const changed = Object.keys(after).filter((t) => after[t] !== sourcesBefore[t]).sort();
+      expect(changed).toEqual(['audit_events', 'shadow_library_chunks']);
+      const texts = await client.query<{ chunk_id: string; organization_id: string; text_content: string }>(
+        'select chunk_id, organization_id, text_content from pilot.shadow_library_chunks where chunk_id = any($1::text[]) order by chunk_id',
+        [plan.textChunkIds],
+      );
+      const expected = plan.chunks.flatMap((c) => c.fields.filter((f) => f.field === 'text_content')
+        .map((f) => ({ chunk_id: c.chunk_id, organization_id: c.organization_id, text_content: JSON.parse(f.after!) as string })));
+      expect(texts.rows).toEqual(expected.sort((a, b) => (a.chunk_id < b.chunk_id ? -1 : 1)));
+      expect(texts.rows.some((r) => /Jagim AR|\(2016\)\. Fluid balance|documents a live sparring/.test(r.text_content))).toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
 });
 
 describe('DRIFTED: apply refuses and writes nothing', () => {
@@ -714,6 +813,12 @@ describe('DRIFTED: apply refuses and writes nothing', () => {
     }],
     ['a listed source that sits in another organization', 'LISTED_ROW_OUTSIDE_PLATFORM', async (client) => {
       await client.query('update pilot.shadow_library_sources set organization_id = $2 where source_id = $1', [plan.retireIds[0], GYM]);
+    }],
+    ['a corrected gym text edited since the plan was written', 'FIELD_DRIFTED', async (client) => {
+      await client.query(
+        "update pilot.shadow_library_chunks set text_content = text_content || ' (edited)' where chunk_id = 'chk_39fac3160bf60743' and organization_id = $1",
+        [GYM],
+      );
     }],
   ];
 
