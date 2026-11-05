@@ -164,6 +164,30 @@ and should not try to.
 
 ---
 
+## OD-2026-10-28-002 -- The hand-off takes route A, and the malware verdict on uploaded video stays unoverturnable: "(A) Route A, catalog first, then lanes (Recommended)"; "(A) Malware stays unoverturnable (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these as cards on 2026-10-28 (US Eastern) in the backbone session "PPBF Integrity Check" (plan step "Owner review of minimum done", backbone action A-24). That transcript is not readable from this repo's sessions. The card labels are copied from the record the backbone session wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\docs\DECISION_CHECKS.md`, "Thirty-seventh round (2026-10-28)", and the register `working/drift/DECISION_REGISTER.json`, ids D-HO01 and D-HO03 (also `RULES.md` section 9, "Checkpoint-3 answers"). Uncertain: the full question text on each card; the record keeps the labels and the backbone's own wording of each answer. He told this session to record both on 2026-11-04: *"Yes, record them"*, in reply to "Record D-HO01 and D-HO03 in OWNER_DECISIONS.md by PR?" New; answers two items OD-2026-10-27-001 lists as "Not ruled here" and edits no earlier entry's text.
+
+**What was put to him.** The three things OD-2026-10-27-001 left open (backbone `working/overwatch/ACTIONS.md` A-24, as written): "the hand-off route (A: contract and pathway catalog first, then load through the content-package intake in lanes; B: load now with label columns dropped; C: a separate backbone schema), the lane order, and whether the malware verdict on uploaded video stays unoverturnable (the cost note was put once and not answered)". The cost note is OD-2026-10-27-001's: "malware should stay unoverturnable or it can reach the gym's devices."
+
+**Jason (card labels, as recorded):**
+
+- route: *"(A) Route A, catalog first, then lanes (Recommended)"*
+- malware: *"(A) Malware stays unoverturnable (Recommended)"*
+
+**Rulings, in the backbone register's words:**
+
+1. **Route (D-HO01).** "the hand-off takes route A: contract and pathway catalog first, then the FT1 track through the existing content-package intake, in lanes".
+2. **Malware (D-HO03).** "the malware verdict on uploaded video stays unoverturnable; other machine video refusals (the minors' content screen) can be overturned by a person with a recorded reason". This narrows OD-2026-10-27-001 ruling 1 ("a person can overturn a machine video refusal"): the malware verdict is the one machine video refusal no person can overturn.
+
+**Evidence it rested on:** OD-2026-10-27-001's cost note and route list (main `48531200`, read by the backbone session); the malware check is cited there as `apps/web/app/api/pilot/video/[videoId]/release/route.ts` lines 38-51 (not re-read for this entry).
+
+**Not carried here:** the lane order. The same cards answered it (backbone D-HO02: "FT1 first; rest proposed at hand-off"), but the backbone's hand-over to this repo (its action A-38) named only D-HO01 and D-HO03.
+
+**Status:** recorded 2026-11-04 by PR; nothing built.
+
+---
+
 ## OD-2026-10-28-001 -- A separate lead, not named Overwatch, runs the gym-tv-timer plug-back: "1 and open a new over watch for this  however name it somthing different"
 
 **Provenance: PRIMARY.** Jason's answer to a question card in the gym-tv-timer session ("Gym TV timer core repo", `local_d6c7eb34`; transcript `~/.claude/projects/C--Dev/01925d31-aed6-4409-bebc-09dc7702b2a7.jsonl`, question line 1034, answer line 1040, 2026-10-28T16:12:10.868Z), read from the transcript by script. Spelling and the double space kept. New; edits no earlier entry.
@@ -300,6 +324,8 @@ was put once; he did not answer it separately); the backbone's own open items
 (Youth Fundamentals, Novice, the first 90 days, the evidence pass).
 
 **Status:** recorded 2026-10-27 by the same session, by PR; nothing built.
+
+**Status (2026-11-04):** the route and the malware verdict are now ruled in OD-2026-10-28-002 (route A; malware stays unoverturnable, other machine video refusals can be overturned with a recorded reason). The lane order is still not recorded in this file.
 
 ---
 
