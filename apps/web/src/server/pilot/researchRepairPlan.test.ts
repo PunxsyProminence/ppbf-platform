@@ -20,8 +20,9 @@ import { parse } from 'csv-parse/sync';
 //      the seed's, every repointed chunk's target is a live row of the seed;
 //   3. pre_repair_values.csv IS the seed production imported (commit
 //      95f3c79e, the last seed before #1008), and every difference between that
-//      seed and today's is in the plan -- except the two chunk sentences #1003
-//      corrected, which no log carries and this tool does not write.
+//      seed and today's is in the plan -- except the text-only chunk
+//      corrections listed in TEXT_ONLY_CHANGES, which no log carries and this
+//      tool does not write.
 // Uses git history for 3 (ci.yml checks out with fetch-depth: 0).
 
 const WEB_DIR = path.resolve(__dirname, '../../..');
@@ -31,9 +32,20 @@ const IMPORTER_URL = pathToFileURL(path.join(WEB_DIR, 'scripts/import-shadow-res
 const SEED_PATH = 'apps/web/seed-data/shadow-research/2026-08-07';
 // The seed production imported: the last commit to touch it before #1008.
 const IMPORTED_SEED_COMMIT = '95f3c79e';
-// #1003 corrected these two sentences in the seed. They are text, not citation
-// or tier data; no repair log names them and the tool does not write text.
-const TEXT_ONLY_CHANGES = ['chk_39fac3160bf60743', 'chk_473c8284ef33ff26'];
+// Text-only corrections to chunk text_content. They are not tier, source or
+// metadata data; no repair log names them and the tool does not write text.
+// - chk_39fac3160bf60743, chk_473c8284ef33ff26: #1003 corrected two sentences.
+// - chk_f4cf693a55fe0315 (A7-054): the "Source:" line named the ISSN 2025
+//   stand's first author as Jagim AR; PubMed 40059405 lists Ricci AA first and
+//   no Jagim among its 18 authors.
+// - chk_3ca9344108b270a1 (A5-132): the "Source:" line dated Zubac et al. 2016
+//   (online-first year); PubMed 27173991 gives J Sports Sci 2017;35(8):719-726.
+const TEXT_ONLY_CHANGES = [
+  'chk_39fac3160bf60743',
+  'chk_473c8284ef33ff26',
+  'chk_f4cf693a55fe0315',
+  'chk_3ca9344108b270a1',
+];
 
 type Field = { field: string; before: string | null; after: string | null };
 type Plan = {
@@ -201,7 +213,7 @@ describe('pre_repair_values.csv is the seed production imported', () => {
 
   /**
    * Every difference between an imported seed and a current one that the plan
-   * does not carry (`unplanned`), and the #1003 sentences it lets through
+   * does not carry (`unplanned`), and the TEXT_ONLY_CHANGES it lets through
    * (`excepted`). Takes the rows as arguments so the negative control below can
    * hand it a seed with differences injected.
    */
@@ -253,14 +265,15 @@ describe('pre_repair_values.csv is the seed production imported', () => {
     return { unplanned, excepted };
   }
 
-  it('every difference between the imported seed and today\'s is in the plan, except #1003\'s two sentences', () => {
+  it('every difference between the imported seed and today\'s is in the plan, except the text-only corrections', () => {
     const { unplanned, excepted } = seedDiff(
       { sources: importedSources, chunks: importedChunks },
       { sources: currentSources, chunks: currentChunks },
     );
     expect(unplanned).toEqual([]);
-    // Positive control: the diff does see real differences. #1003's two
-    // sentences are the only text change, so it must have found exactly them.
+    // Positive control: the diff does see real differences. The listed
+    // text-only corrections are the only text changes, so it must have found
+    // exactly them.
     expect([...excepted].sort()).toEqual([...TEXT_ONLY_CHANGES].sort());
   });
 
@@ -285,7 +298,7 @@ describe('pre_repair_values.csv is the seed production imported', () => {
     expect(unplanned.sort()).toEqual([`chunk ${chunkId} metadata.authority_tier`, `source ${sourceId} authority_tier`]);
   });
 
-  it('the text-only exceptions are exactly #1003\'s, and still differ', () => {
+  it('the text-only exceptions are exactly the listed corrections, and still differ', () => {
     for (const id of TEXT_ONLY_CHANGES) {
       expect(importedChunks.get(id)!.text_content).not.toBe(currentChunks.get(id)!.text_content);
     }
