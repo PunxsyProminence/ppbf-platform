@@ -1346,3 +1346,84 @@ describe('audit 2026-10-17: version names, the template under lock, and renderin
     ]);
   });
 });
+
+describe('backbone labels across an in-app edit that writes a new version', () => {
+  async function labelRows(gym: Gym, lineage: string) {
+    const { rows } = await client.query(
+      `select target_version, field_labels, evidence, backbone_version, import_id from pilot.content_record_labels
+        where organization_id = $1 and target_kind = 'session_script' and target_lineage_id = $2 order by target_version`,
+      [gym.organizationId, lineage],
+    );
+    return rows;
+  }
+  async function linkRows(gym: Gym, lineage: string) {
+    const { rows } = await client.query(
+      `select stage_key, superseded_at from pilot.content_stage_links
+        where organization_id = $1 and target_kind = 'session_script' and target_lineage_id = $2 order by stage_key`,
+      [gym.organizationId, lineage],
+    );
+    return rows;
+  }
+  async function labelled(label: string) {
+    const gym = await newGym(label);
+    await insertTemplate(gym);
+    const created = await create(gym);
+    await client.query(
+      `insert into pilot.content_record_labels
+         (organization_id, target_kind, target_lineage_id, target_version, field_labels, evidence, backbone_version,
+          import_id, recorded_by_account_id, recorded_by_role)
+       values ($1, 'session_script', $2, 1, '{"name":"authored"}'::jsonb, '[{"source":"manual"}]'::jsonb, 'bb-1', 'imp_l1', $3, 'organization_admin')`,
+      [gym.organizationId, created.lineage_id, gym.coachId],
+    );
+    await client.query(
+      `insert into pilot.pathway_stages (organization_id, stage_key, segment, ordinal, name, contact_default)
+       values ($1, 'Y1', 'youth', 1, 'Introduction', 'none')`,
+      [gym.organizationId],
+    );
+    await client.query(
+      `insert into pilot.content_stage_links (organization_id, target_kind, target_lineage_id, stage_key, import_id, recorded_by_account_id, recorded_by_role)
+       values ($1, 'session_script', $2, 'Y1', 'imp_l1', $3, 'organization_admin')`,
+      [gym.organizationId, created.lineage_id, gym.coachId],
+    );
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed' });
+    return { gym, created };
+  }
+
+  test('a script with a run, edited to version 2, keeps its labels; its stage links stay as they were', async () => {
+    const { gym, created } = await labelled('labels-carry');
+    const before = await labelRows(gym, created.lineage_id);
+    const linksBefore = await linkRows(gym, created.lineage_id);
+
+    const result = await edit(gym, created.script_id, { name: 'Renamed after a run' });
+
+    expect(result).toMatchObject({ outcome: 'new_version', version: 2 });
+    const after = await labelRows(gym, created.lineage_id);
+    expect(after).toHaveLength(2);
+    expect(after[0]).toEqual(before[0]);
+    expect(after[1]).toEqual({ ...before[0], target_version: 2 });
+    expect(await linkRows(gym, created.lineage_id)).toEqual(linksBefore);
+  });
+
+  test('a script without labels gets none invented; an in-place edit (no run) writes no label row', async () => {
+    const gym = await newGym('labels-none');
+    await insertTemplate(gym);
+    const created = await create(gym);
+    const run = await startSessionScriptRun(gym.organizationId, gym.coachId, { scriptId: created.script_id });
+    await finishSessionScriptRun(gym.organizationId, gym.coachId, run.run_id, { runState: 'completed' });
+    expect(await edit(gym, created.script_id, { name: 'Unlabelled v2' })).toMatchObject({ version: 2 });
+    expect(await labelRows(gym, created.lineage_id)).toEqual([]);
+
+    const second = await newGym('labels-inplace');
+    await insertTemplate(second);
+    const plain = await create(second);
+    await client.query(
+      `insert into pilot.content_record_labels
+         (organization_id, target_kind, target_lineage_id, target_version, field_labels, import_id, recorded_by_account_id, recorded_by_role)
+       values ($1, 'session_script', $2, 1, '{"name":"x"}'::jsonb, 'imp_l1', $3, 'organization_admin')`,
+      [second.organizationId, plain.lineage_id, second.coachId],
+    );
+    expect(await edit(second, plain.script_id, { name: 'In place' })).toMatchObject({ outcome: 'updated', version: 1 });
+    expect((await labelRows(second, plain.lineage_id)).map((row) => row.target_version)).toEqual([1]);
+  });
+});

@@ -92,8 +92,13 @@ const OUTCOME_MARK: Record<PlanUnitView['outcome'], { glyph: '✓' | '◉' | '�
   reject: { glyph: '✕', label: 'REJECT' },
 };
 
-function OutcomeBadge({ outcome }: { readonly outcome: PlanUnitView['outcome'] }) {
-  const mark = OUTCOME_MARK[outcome];
+/* A retirement is a new_version in the plan's counts, but it is not a revision:
+   the files leave the item out and it is kept, marked inactive (the CLI prints
+   the same). ◉, the mark of ABSENT: it leaves use, it does not go in. */
+const RETIRE_MARK = { glyph: '◉', label: 'RETIRE' } as const;
+
+function OutcomeBadge({ outcome, retires }: { readonly outcome: PlanUnitView['outcome']; readonly retires?: true }) {
+  const mark = retires ? RETIRE_MARK : OUTCOME_MARK[outcome];
   return (
     <span className="badge badge--filed">
       <i aria-hidden="true">{mark.glyph}</i>
@@ -155,8 +160,10 @@ function UnitList({ units, title, note }: { readonly units: PlanUnitView[]; read
       <ul className="t-body space-y-[var(--s2)]">
         {units.map((unit) => (
           <li key={`${unit.dataset}-${unit.key}`} className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
-            <OutcomeBadge outcome={unit.outcome} />{' '}
+            <OutcomeBadge outcome={unit.outcome} retires={unit.retires} />{' '}
             {datasetLabel(unit.dataset)}: {unitName(unit)}
+            {unit.retires ? ' ' : null}
+            {unit.retires ? <span className="t-muted">left out of the file; kept, marked inactive</span> : null}
             {unit.outcome === 'new_version' && unit.from_version !== undefined && unit.to_version !== undefined
               ? <span className="t-data"> (history v{unit.from_version} → v{unit.to_version})</span>
               : null}
@@ -300,7 +307,8 @@ function ContentImportScreen() {
 
   const blocking = plan?.blocking ?? [];
   const canApply = plan !== null && !applied && blocking.length === 0 && plan.changes > 0 && busy === null;
-  const byOutcome = (outcome: PlanUnitView['outcome']) => (plan?.units ?? []).filter((unit) => unit.outcome === outcome);
+  const byOutcome = (outcome: PlanUnitView['outcome']) => (plan?.units ?? []).filter((unit) => unit.outcome === outcome && !unit.retires);
+  const retiring = (plan?.units ?? []).filter((unit) => unit.retires);
 
   return (
     /* data-surface="kiosk" -- Law 5, as on data-deletion/page.tsx: the 55px
@@ -531,6 +539,7 @@ function ContentImportScreen() {
             <UnitList units={byOutcome('reject')} title="Cannot be loaded" />
             <UnitList units={byOutcome('new')} title="New" />
             <UnitList units={byOutcome('new_version')} title="New version (the old one is kept)" />
+            <UnitList units={retiring} title="Retire (left out of the file; kept, marked inactive)" />
             <UnitList
               units={byOutcome('absent')}
               title="Absent"

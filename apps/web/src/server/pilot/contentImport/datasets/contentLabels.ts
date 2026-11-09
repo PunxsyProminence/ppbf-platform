@@ -202,3 +202,31 @@ export async function writeItemLabels(
     }
   }
 }
+
+/**
+ * An in-app edit that writes a new version of a labelled item (an edited script
+ * that has a run) carries the CURRENT version's field_labels and evidence to the
+ * new version, in the caller's transaction; stage links are by lineage and stay.
+ * Only when a label row exists for the old version: nothing is invented.
+ */
+export async function carryLabelsToNewVersion(
+  client: DbClient,
+  organizationId: string,
+  dataset: DatasetName,
+  lineageId: string,
+  fromVersion: number,
+  toVersion: number,
+): Promise<boolean> {
+  if (!(await labelTablesExist(client))) return false;
+  const carried = await client.query(
+    `insert into pilot.content_record_labels
+       (organization_id, target_kind, target_lineage_id, target_version, field_labels, evidence, backbone_version,
+        import_id, recorded_by_account_id, recorded_by_role)
+     select organization_id, target_kind, target_lineage_id, $5, field_labels, evidence, backbone_version,
+            import_id, recorded_by_account_id, recorded_by_role
+       from pilot.content_record_labels
+      where organization_id = $1 and target_kind = $2 and target_lineage_id = $3 and target_version = $4`,
+    [organizationId, labelTargetKind(dataset), lineageId, fromVersion, toVersion],
+  );
+  return (carried.rowCount ?? 0) > 0;
+}

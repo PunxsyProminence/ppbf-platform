@@ -375,6 +375,34 @@ test('every outcome is a .badge with one of the contract\'s four glyphs and an u
   }
 });
 
+test('a retirement is a RETIRE badge with the CLI wording and its versions, never NEW VERSION, and still obeys Law 3', async () => {
+  reply = {
+    status: 200,
+    body: planBody({
+      units: [
+        { dataset: 'drill-library', key: 'drl_0000000000000b', outcome: 'new_version', label: 'Slip Line', from_version: 1, to_version: 2 },
+        { dataset: 'drill-library', key: 'drl_0000000000000f', outcome: 'new_version', label: 'Old Stage', from_version: 3, to_version: 4, retires: true },
+      ],
+    }),
+  };
+  render(<ContentImportPage />);
+  await chooseFiles([new File([DRILLS_CSV], 'seed_drill_library.csv', { type: 'text/csv' })]);
+  await checkFiles();
+
+  const plan = screen.getByRole('region', { name: 'Plan' });
+  const badges = Array.from(plan.querySelectorAll('.badge'));
+  expect(badges.map((badge) => badge.textContent)).toEqual(['✓NEW VERSION', '◉RETIRE']);
+  for (const badge of badges) {
+    expect(badge.className).toBe('badge badge--filed');
+    expect(['✓', '◉', '▲', '✕']).toContain(badge.querySelector('i')?.textContent);
+  }
+  const retire = badges[1].closest('li') as HTMLElement;
+  expect(retire.textContent).toContain('Old Stage');
+  expect(retire.textContent).toContain('left out of the file; kept, marked inactive');
+  expect(retire.textContent).toContain('history v3 → v4');
+  expect((badges[0].closest('li') as HTMLElement).textContent).not.toContain('left out of the file');
+});
+
 test('choosing other files clears the plan, so Apply can never run against files no longer on screen', async () => {
   render(<ContentImportPage />);
   await chooseFiles([new File([DRILLS_CSV], 'seed_drill_library.csv', { type: 'text/csv' })]);

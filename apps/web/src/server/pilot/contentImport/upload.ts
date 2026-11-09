@@ -278,6 +278,8 @@ export interface PlanUnitView {
   from_version?: number;
   to_version?: number;
   reasons?: string[];
+  /** The revision only retires the item: the files leave it out, so it is kept and marked inactive. Counted as a new_version in `counts`. */
+  retires?: true;
 }
 
 export interface PlanView {
@@ -338,6 +340,7 @@ export function planView(plan: ImportPlan, files: Readonly<Record<string, string
         ...(unit.fromVersion !== undefined ? { from_version: unit.fromVersion } : {}),
         ...(unit.toVersion !== undefined ? { to_version: unit.toVersion } : {}),
         ...(unit.reasons?.length ? { reasons: unit.reasons } : {}),
+        ...(unit.retires ? { retires: true as const } : {}),
       };
     }),
     blocking: plan.blocking,
