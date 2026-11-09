@@ -5,6 +5,7 @@ import { rootFileSpec } from '../specs';
 import type { ColumnSpec, DatasetSpec, FileSpec, Finding, ParsedFile, ParsedRow, RowValues } from '../types';
 import { newIdKindOf, rowKey, type MintedIds, type ValidationResult } from '../validate';
 import { integerText, normalizeCell, numberText, parseBoolean, splitList } from '../values';
+import { isTableContent, overlayStoredLabels, withStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
 
 // THE VERSIONED UNITS OF IMP-08: a workout template with its items, and a
@@ -240,7 +241,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       const missing = columns.filter((column) => !info.get(name)?.has(column));
       if (missing.length > 0) throw new Error(`content-import: pilot.${name} has no column(s) ${missing.join(', ')} that the ${config.dataset.name} engine writes`);
     };
-    check(config.table, [idColumn, 'lineage_id', 'version', 'created_by_account_id', ...rootSpec.columns.filter(isContentColumn).map((c) => c.name)]);
+    check(config.table, [idColumn, 'lineage_id', 'version', 'created_by_account_id', ...rootSpec.columns.filter(isTableContent).map((c) => c.name)]);
     for (const child of config.children) {
       check(child.table, [child.idColumn, child.spec.parent?.column ?? '', ...child.spec.columns.filter(isContentColumn).map((c) => c.name)]);
     }
@@ -501,6 +502,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       }
 
       const heads = await readHeads(ctx);
+      await overlayStoredLabels(ctx, config.dataset.name, [...heads.values()].map((head) => ({ lineage: head.lineageId, version: head.version, row: head.row })));
       const named = await versionsNamed(ctx, keys.filter((key) => !heads.has(key)));
       const versions = await maxVersions(ctx, keys.filter((key) => heads.has(key)));
       const storedChildren = await readChildren(
@@ -525,7 +527,10 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           findings.push({ code: 'bad_id', file: from.file, column: rootSpec.key[0], key, message });
         }
 
-        const root = packageRoot?.cells ?? (head ? rootCells(head.row) : undefined);
+        // A label column the root file leaves out keeps the stored value (contentLabels.ts).
+        const root = packageRoot
+          ? withStoredLabels((rootFile as ParsedFile).header, packageRoot.cells, head?.row)
+          : head ? rootCells(head.row) : undefined;
         if (!root && reasons.length === 0) {
           // The validator reports a child row whose parent is nowhere as an
           // orphan; this is the backstop if it ever does not.
@@ -576,7 +581,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       return { dataset: config.dataset.name, units: items.map((item) => item.unit), findings, state };
     },
 
-    async apply(ctx, plan): Promise<DatasetWriteResult> {
+    async apply(ctx, plan, write): Promise<DatasetWriteResult> {
       const state = plan.state as VersionedState;
       const result: DatasetWriteResult = { inserted: [], updated: [], ledgerRows: 0 };
       const writes = state.items.filter((item) => item.unit.outcome === 'new' || item.unit.outcome === 'new_version');
@@ -624,7 +629,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           ['version', unit.toVersion],
           ['created_by_account_id', ctx.actor.accountId],
         ]);
-        for (const column of rootSpec.columns.filter(isContentColumn)) {
+        for (const column of rootSpec.columns.filter(isTableContent)) {
           values.set(ident(column.name), databaseValue(column, root[column.name] ?? '', info(config.table, column)));
         }
         const overrides = config.rootOverrides({ outcome: isNew ? 'new' : 'new_version', head, actorRole: ctx.actor.role });
@@ -663,6 +668,13 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
         if (isNew) result.inserted.push(unit.key);
         else result.updated.push(`${id} (v${unit.toVersion} of ${unit.key})`);
       }
+      await writeItemLabels(
+        ctx,
+        config.dataset.name,
+        write.importId,
+        writes.map((item) => ({ lineage: item.unit.key, version: item.unit.toVersion as number, cells: item.root ?? {} })),
+        result,
+      );
       return result;
     },
   };

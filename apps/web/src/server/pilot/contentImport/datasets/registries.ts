@@ -1,10 +1,11 @@
-import { type CellInput, canonicalRow, isContentColumn, unitContentHash } from '../canonical';
+import { type CellInput, canonicalRow, unitContentHash } from '../canonical';
 import { isNewId } from '../ids';
 import { appendLedgerRow, ledgerHeads, planLedgerVersions, type LedgerVersionPlan } from '../ledger';
 import { datasetSpec, rootFileSpec } from '../specs';
 import type { ColumnSpec, DatasetSpec, FileSpec, Finding, ParsedFile, ParsedRow, RowValues } from '../types';
 import type { ValidationResult } from '../validate';
 import { integerText, normalizeCell, numberText, parseBoolean, splitList } from '../values';
+import { isTableContent, overlayStoredLabels, withStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
 
 // THE THREE KEYED REGISTRIES: disciplines, competence levels, cohort
@@ -119,7 +120,8 @@ function registryEngine(config: RegistryConfig): DatasetEngine {
   }
   const table = `pilot.${ident(config.table)}`;
   const keyColumn = ident(spec.key[0]);
-  const stored = spec.columns.filter((column) => column.role !== 'placeholder');
+  // The label columns are stored beside the row (contentLabels.ts), not in the table.
+  const stored = spec.columns.filter((column) => column.role !== 'placeholder' && column.role !== 'annotation');
 
   async function columnInfo(ctx: EngineContext): Promise<Map<string, ColumnInfo>> {
     const { rows } = await ctx.client.query<{ column_name: string; is_nullable: string }>(
@@ -197,6 +199,12 @@ function registryEngine(config: RegistryConfig): DatasetEngine {
       const resolve = (raw: string) => (isNewId(raw) && mintKind ? input.validation.minted.get(mintKind)?.get(raw) ?? raw : raw);
       const keys = file.rows.map((row) => resolve(row.values[keyColumn]));
       const heads = await ledgerHeads(ctx.client, ctx.organizationId, config.ledgerDataset, [...new Set(keys)]);
+      // A registry row's labels are stored by its history-ledger version.
+      await overlayStoredLabels(
+        ctx,
+        config.dataset.name,
+        [...database.entries()].filter(([key]) => keys.includes(key)).map(([key, row]) => ({ lineage: key, version: heads.get(key)?.version, row })),
+      );
 
       const findings: Finding[] = [];
       const items: RegistryItem[] = [];
@@ -208,9 +216,11 @@ function registryEngine(config: RegistryConfig): DatasetEngine {
         const raw = row.values[keyColumn];
         const unit: UnitPlan = { dataset: config.dataset.name, key, outcome: 'reject' };
         if (raw !== key) unit.packageKey = raw;
-        const fileContent = canonicalRow(spec, row.values);
-        unit.fileSha256 = unitHash(row.values);
         const existing = database.get(key);
+        // A label column the file leaves out keeps the stored value (contentLabels.ts).
+        const values = withStoredLabels(file.header, row.values, existing);
+        const fileContent = canonicalRow(spec, values);
+        unit.fileSha256 = unitHash(values);
         const databaseContent = existing ? canonicalRow(spec, existing) : undefined;
         if (existing) unit.databaseSha256 = unitHash(existing);
 
@@ -241,7 +251,7 @@ function registryEngine(config: RegistryConfig): DatasetEngine {
           unit.toVersion = ledger.toVersion;
           if (ledger.recordBefore) unit.recordsBefore = true;
         }
-        items.push({ unit, values: row.values, fileContent, databaseContent, ledger });
+        items.push({ unit, values, fileContent, databaseContent, ledger });
       });
 
       for (const key of database.keys()) {
@@ -313,7 +323,7 @@ function registryEngine(config: RegistryConfig): DatasetEngine {
         // Content columns only: the key is the identity and never changes
         // here, and a system column (cohort active_flag) belongs to its own
         // action, not to a content revision.
-        const updated = stored.filter(isContentColumn);
+        const updated = stored.filter(isTableContent);
         const params: unknown[] = [ctx.organizationId, unit.key];
         const sets = updated.map((column) => {
           params.push(databaseValue(column, values[column.name] ?? '', info(column)));
@@ -331,6 +341,15 @@ function registryEngine(config: RegistryConfig): DatasetEngine {
         result.updated.push(unit.key);
         await record(unit.key, ledger.toVersion, item.fileContent, unit.fileSha256);
       }
+      await writeItemLabels(
+        ctx,
+        config.dataset.name,
+        write.importId,
+        state.items
+          .filter((item) => (item.unit.outcome === 'new' || item.unit.outcome === 'new_version') && item.values)
+          .map((item) => ({ lineage: item.unit.key, version: item.unit.toVersion as number, cells: item.values as RowValues })),
+        result,
+      );
       return result;
     },
   };

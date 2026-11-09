@@ -31,7 +31,41 @@ export function isContentColumn(column: ColumnSpec): boolean {
   return !EXCLUDED_ROLES.has(column.role);
 }
 
+/** JSON with object keys sorted at every depth: what jsonb hands back has its own key order. */
+function sortedJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(sortedJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${sortedJson((value as Record<string, unknown>)[key])}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * A backbone label cell (role 'annotation', P19). JSON is compared parsed and
+ * key-sorted, because the database stores it as jsonb; stage keys as a sorted
+ * set, because the links are rows with no order. Unparsable JSON is kept as
+ * written (the validator refuses it as bad_json).
+ */
+function canonicalAnnotation(column: ColumnSpec, value: CellInput): string {
+  if (value === null || value === undefined) return '';
+  if (column.list) {
+    const elements = Array.isArray(value) ? value : [String(value)];
+    const keys = elements.flatMap((element) => splitList(normalizeCell(String(element)), column.list as string));
+    return [...new Set(keys)].sort().join(column.list);
+  }
+  if (typeof value === 'object') return sortedJson(value);
+  const text = normalizeCell(String(value));
+  if (!text) return '';
+  try {
+    return sortedJson(JSON.parse(text));
+  } catch {
+    return text;
+  }
+}
+
 export function canonicalCell(column: ColumnSpec, value: CellInput): string {
+  if (column.role === 'annotation') return canonicalAnnotation(column, value);
   if (column.list) {
     if (value === null || value === undefined) return '';
     const elements = Array.isArray(value) ? value : [String(value)];
@@ -56,12 +90,19 @@ export function canonicalCell(column: ColumnSpec, value: CellInput): string {
   return text;
 }
 
-/** Content columns only, canonical, in spec order. */
+/**
+ * Content columns only, canonical, in spec order. A BLANK label cell (role
+ * 'annotation') is left out entirely, so an item without labels hashes exactly
+ * as it did before the label columns existed; a filled one counts, and a label
+ * change is a new version (labels are stored by version).
+ */
 export function canonicalRow(spec: FileSpec, row: Readonly<Record<string, CellInput>>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const column of spec.columns) {
     if (!isContentColumn(column)) continue;
-    out[column.name] = canonicalCell(column, row[column.name]);
+    const cell = canonicalCell(column, row[column.name]);
+    if (column.role === 'annotation' && !cell) continue;
+    out[column.name] = cell;
   }
   return out;
 }

@@ -1,5 +1,6 @@
 import type { DatasetName, DatasetSpec, FileSpec } from '../types';
 import { assessmentProtocolsDataset } from './assessmentProtocols';
+import { labelColumns } from './common';
 import { cohortDefinitionsDataset, competenceLevelsDataset } from './competence';
 import { disciplinesDataset } from './disciplines';
 import { drillLibraryDataset } from './drills';
@@ -16,6 +17,16 @@ import { universalStopRulesDataset } from './universalStopRules';
 // Order is dependency order: a dataset only references datasets above it
 // (transfer claims point at drills and scripts, cohorts at disciplines).
 
+// Every dataset's ROOT file (the one holding its items) also takes the
+// backbone's label columns (SCHEMA_PROPOSAL P19), added here once so no
+// dataset can miss them. Child files do not: a label describes the item.
+function withLabelColumns(dataset: DatasetSpec): DatasetSpec {
+  return {
+    ...dataset,
+    files: dataset.files.map((file) => (file.parent ? file : { ...file, columns: [...file.columns, ...labelColumns()] })),
+  };
+}
+
 export const DATASETS: readonly DatasetSpec[] = [
   disciplinesDataset,
   competenceLevelsDataset,
@@ -26,7 +37,7 @@ export const DATASETS: readonly DatasetSpec[] = [
   sessionScriptsDataset,
   transferClaimsDataset,
   assessmentProtocolsDataset,
-];
+].map(withLabelColumns);
 
 export const FILE_SPECS: readonly FileSpec[] = DATASETS.flatMap((dataset) => dataset.files);
 
