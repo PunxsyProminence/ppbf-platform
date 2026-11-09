@@ -63,7 +63,7 @@ function bash(script: string, values: Record<string, string>): { status: number 
   const result = spawnSync(BASH, ['--noprofile', '--norc', '-e', '-s'], {
     input: script,
     // Deliberately NOT process.env: only what this call sets is present.
-    env: { PATH: process.env.PATH ?? '', ...values } as NodeJS.ProcessEnv,
+    env: { PATH: process.env.PATH ?? '', ...values } as unknown as NodeJS.ProcessEnv,
     encoding: 'utf8',
   });
   if (result.error) throw result.error;
