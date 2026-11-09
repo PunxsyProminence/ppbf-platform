@@ -1,0 +1,64 @@
+{
+  "meta": { "counts": { "default_rules": 3 } },
+  "gates": [{ "not": "exported" }],
+  "default_rules": [
+    {
+      "default_id": "dft_d8e8cc1831f1f0",
+      "scope": "Y1",
+      "default_key": "sparring_rounds_per_7d_max",
+      "kind": "default_rule",
+      "display_text": "Max 2 rounds, 7 days, \"technical\" only",
+      "value_max": 2,
+      "value_min": 0.5,
+      "unit": "rounds",
+      "window_days": 7,
+      "sparring_type": "technical",
+      "composite_parent": "LR-140",
+      "evidence": [
+        { "evidence_label": "CONVENTION", "evidence_category": "convention", "check_state": "unchecked", "basis": "fixture, kept as written", "zeta_extra": [3, 1] },
+        { "evidence_category": "research", "evidence_label": "EMERGING", "check_state": "checked", "source_key": "FIX-2", "quotes": ["QUOTED-EXCERPT-TEXT"],
+          "beside": [{ "source": "FIX-3", "location": "Table 1", "evidence_label": "n/a", "role": "related", "quotes": ["NESTED-EXCERPT-TEXT"] }] }
+      ],
+      "status": "REPORTED",
+      "sources": ["LR-140", "FIX-1"],
+      "field_labels": { "unit": "INFERRED (read from the source text)", "value_max": "INFERRED (read from the source text)" },
+      "override": { "allowed": true },
+      "decision": "D-FIX",
+      "from_spine_default": "not exported"
+    },
+    {
+      "default_id": "dft_d2df806b992416",
+      "scope": "lane:non_contact",
+      "default_key": "contact_level_ceiling",
+      "kind": "default_rule",
+      "value_text": "light_technical",
+      "value_vocabulary": "none|light_technical",
+      "display_text": "Non-contact lane: contact held at none or light_technical.",
+      "evidence": [{ "evidence_category": "owner_decision", "evidence_label": "CONVENTION", "check_state": "unchecked" }],
+      "status": "INFERRED",
+      "sources": ["FIX-1"]
+    },
+    {
+      "default_id": "dft_7229a7f8553bd2",
+      "scope": "RC1",
+      "default_key": "recreation_lane_track",
+      "kind": "owner_rule",
+      "display_text": "Recreation lane, contact track.",
+      "phases": [{ "months_in_stage": "0-12", "value_max": 0 }, { "value_max": 2, "months_in_stage": "12+" }],
+      "evidence": [],
+      "status": "OBSERVED",
+      "sources": ["Owner 2026-10-24"],
+      "note": "not exported"
+    },
+    {
+      "default_id": "dft_b8c1b8001eea2b",
+      "scope": "EX1",
+      "default_key": "insurance_information",
+      "kind": "information",
+      "display_text": "HELD-ROW-TEXT",
+      "evidence": [],
+      "status": "REPORTED",
+      "sources": ["FIX-1", "FIX-RB (edition in force; a note in the key)"]
+    }
+  ]
+}

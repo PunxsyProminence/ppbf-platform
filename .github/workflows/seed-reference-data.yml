@@ -101,6 +101,7 @@ on:
           - drill-library
           - workout-templates
           - session-scripts
+          - pathway-catalog
       mode:
         description: Rehearse inside a rolled-back transaction, or write for real
         required: true

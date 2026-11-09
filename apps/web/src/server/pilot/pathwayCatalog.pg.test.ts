@@ -561,3 +561,69 @@ describe('a pathway-catalog package', () => {
     expect((await stageRows(GYM)).filter((row) => row.stage_key !== 'RC1').map((row) => row.name)).toEqual(['Introduction / Movement', 'Edited elsewhere']);
   });
 });
+
+// Lane BB-1c: the COMMITTED package (seed-data/pathway-catalog), exported from
+// the Backbone by scripts/backbone-export-pathway-catalog.mjs.
+describe('the committed pathway-catalog package (Backbone snapshot)', () => {
+  const GYM = 'gym_snapshot';
+  let admin: string;
+  const committed = () => readDatasetFiles(SEED_DATA_DIR, ['pathway-catalog']);
+  const committedRows = (file: string) => {
+    const table = readCsv(committed()[file]);
+    return table.records.map((record) => Object.fromEntries(table.header.map((name, index) => [name, record.cells[index]])));
+  };
+
+  beforeAll(async () => {
+    admin = await createGym(GYM);
+  });
+
+  // Pinned to the 2026-11-09 snapshot (Overwatch, PR #1895 Q1, Q3, Q5): 2918 default_rules less the 5 held for a
+  // source key holding a list separator. A regenerated snapshot changes these on purpose.
+  it('validates offline with no blocking finding: 18 stages, 74 links, 2913 defaults, every row one Backbone snapshot', () => {
+    const files = committed();
+    expect(Object.keys(files).sort()).toEqual([DEFAULTS, LINKS, STAGES]);
+    const result = validatePackage(Object.entries(files).map(([file, text]) => ({ path: file, text })), { references: loadOfflineReferenceSets(SEED_DATA_DIR) });
+    expect(result.blocking).toEqual([]);
+    expect(committedRows(STAGES)).toHaveLength(18);
+    expect(committedRows(LINKS)).toHaveLength(74);
+    expect(committedRows(DEFAULTS)).toHaveLength(2913);
+    const kinds: Record<string, number> = {};
+    for (const row of committedRows(LINKS)) kinds[row.link_kind] = (kinds[row.link_kind] ?? 0) + 1;
+    expect(kinds).toEqual({ exit: 17, lateral: 34, branch: 12, progression: 11 });
+    const versions = new Set([STAGES, LINKS, DEFAULTS].flatMap((file) => committedRows(file).map((row) => row.backbone_version)));
+    expect(versions.size).toBe(1);
+    expect([...versions][0]).toMatch(/^spine [0-9a-f]{16} \/ catalogs [0-9a-f]{16} \/ \S+Z, \S+Z$/);
+  });
+
+  it('plans every row new, with no unlabelled-stages line (every stage carries field_labels), applies, and re-plans all unchanged', async () => {
+    const files = committed();
+    const counts = { stages: committedRows(STAGES).length, links: committedRows(LINKS).length, defaults: committedRows(DEFAULTS).length };
+    const shown = await plan(GYM, admin, files);
+    expect(shown.blocking).toEqual([]);
+    expect(shown.totals).toEqual({ new: counts.stages + counts.links + counts.defaults, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
+    expect(formatPlan(shown)).toContain('  pathway-catalog: 3005 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
+    const unlabelled = shown.warnings.filter((warning) => warning.code === 'unlabelled_catalog_rows');
+    expect(unlabelled.filter((warning) => warning.file?.endsWith('seed_pathway_stages.csv'))).toEqual([]);
+
+    await load(GYM, admin, files);
+    const loaded = await client.query(
+      `select (select count(*)::int from pilot.pathway_stages where organization_id = $1 and active_flag and field_labels is not null) as stages,
+              (select count(*)::int from pilot.pathway_stage_links where organization_id = $1 and active_flag) as links,
+              (select count(*)::int from pilot.pathway_stage_defaults where organization_id = $1 and active_flag) as defaults,
+              (select count(*)::int from pilot.reference_content_revisions where organization_id = $1 and dataset like 'pathway%' and version = 1) as ledger`,
+      [GYM],
+    );
+    expect(loaded.rows[0]).toEqual({ ...counts, ledger: counts.stages + counts.links + counts.defaults });
+    // What is stored is what the file says: a stage's labels and a default's evidence list, compared as JSON.
+    const y3 = committedRows(STAGES).find((row) => row.stage_key === 'Y3') as Record<string, string>;
+    const stored = (await client.query('select name, ppbf_name, field_labels from pilot.pathway_stages where organization_id = $1 and stage_key = $2', [GYM, 'Y3'])).rows[0];
+    expect(stored).toEqual({ name: y3.name, ppbf_name: y3.ppbf_name, field_labels: JSON.parse(y3.field_labels) });
+    const withEvidence = committedRows(DEFAULTS).find((row) => row.evidence) as Record<string, string>;
+    const evidence = (await client.query('select evidence, sources from pilot.pathway_stage_defaults where organization_id = $1 and default_id = $2', [GYM, withEvidence.default_id])).rows[0];
+    expect(evidence).toEqual({ evidence: JSON.parse(withEvidence.evidence), sources: withEvidence.sources.split('|') });
+
+    const again = await plan(GYM, admin, committed());
+    expect(again.blocking).toEqual([]);
+    expect(again.totals).toEqual({ new: 0, new_version: 0, unchanged: counts.stages + counts.links + counts.defaults, absent: 0, reject: 0 });
+  });
+});

@@ -22,16 +22,22 @@ import { parsePackage } from './validate';
  * (the roster route's rule, roster-import/route.ts:41-47: a silent truncation
  * is material that vanished with nothing to say it was ever sent).
  *
- *   files         the contract knows FILE_SPECS.length files (16 today), each
+ * RAISED 2026-11-09 so the admin screen carries the Backbone pathway catalog
+ * (Jason, "rais caps, otherwise all the back bone work was for nothing";
+ * lane BB-1c, PR #1895).
+ *
+ *   files         the contract knows FILE_SPECS.length files (19 today), each
  *                 once (validate.ts 'duplicate_file'), so a whole package fits
- *                 with room for a stray README the core then ignores.
- *   rows          data rows across every CSV. Everything committed today is
- *                 1,765 rows (the 119-drill library is 1,409 of them, stop
- *                 rules alone 674), so this is about five times that.
- *   packageBytes  UTF-8 bytes of every file's text. The 119-drill package is
- *                 587,228 bytes (library 240,053 + scale levels 173,600 + stop
- *                 rules 110,215 + cues 63,279 + secondary skills 81); all of
- *                 seed-data outside research is under 700 KB.
+ *                 with room for stray files the core then ignores.
+ *   rows          data rows across every CSV. Everything committed today
+ *                 outside research is 4,770 rows (the pathway catalog's
+ *                 defaults are 2,913 of them, the 119-drill library 1,409),
+ *                 so this is about five times that.
+ *   packageBytes  UTF-8 bytes of every file's text. Everything committed today
+ *                 outside research is 4,944,348 bytes; the pathway catalog's
+ *                 defaults file alone is 4,236,364 (its evidence lists), the
+ *                 119-drill package 587,228. This is about three times that,
+ *                 for a Backbone that is still growing.
  *   bodyBytes     the request body as sent. JSON writes a quote or a line
  *                 break inside a CSV as two characters, so twice the package
  *                 plus room for the envelope. It is enforced WHILE the body is
@@ -39,14 +45,14 @@ import { parsePackage } from './validate';
  *                 without first being held in memory whole.
  *
  * NOT VERIFIED: whether Azure Container Apps ingress admits a body this size.
- * The route's own reading is measured in contentImportUpload.pg.test.ts; the
- * ingress is only shown by a POST to staging.
+ * The route's own reading is measured in contentImportUpload.pg.test.ts; that
+ * ingress admits a body up to 34 MB is only shown by a signed-in POST to staging.
  */
 export const UPLOAD_LIMITS = {
-  files: 20,
-  rows: 10_000,
-  packageBytes: 3_000_000,
-  bodyBytes: 6_500_000,
+  files: 32,
+  rows: 25_000,
+  packageBytes: 16_000_000,
+  bodyBytes: 34_000_000,
 } as const;
 
 export interface UploadFile {

@@ -122,7 +122,7 @@ Research releases have their own contract (not in this file yet).
 
 The backbone's pathway stages, the links between them and the defaults each stage or lane starts from (SCHEMA_PROPOSAL P1, P2, P7). Describes the pathway; never restricts where a coach places a member. Each file is a whole snapshot of its table: a changed row is revised in place with the old content kept in the history ledger, and a row the file leaves out is retired (kept, marked inactive), never deleted. A file the package leaves out leaves its table alone. Content items name stages in their stage_keys column; at plan each must be an active stage of this catalog. field_labels and evidence are stored on the catalog row itself, and each version of the row, labels included, in the history ledger.
 
-Loaded today: Nothing committed yet: the content-import core loads a package an organization admin hands over (lane BB-1c exports the backbone snapshot).
+Loaded today: A PROVISIONAL Backbone snapshot is committed (seed-data/pathway-catalog: 18 stages, 74 links, 2913 defaults; backbone_version "spine c9a5b0158362c230 / catalogs 876ac31f5c677584 / 2026-11-09T04:18:17Z, 2026-11-09T13:32:02Z"), exported by scripts/backbone-export-pathway-catalog.mjs, which regenerates it at the final Backbone hand-off. It loads through the seed path or the admin content-import screen; no screen shows the catalog yet.
 
 #### pathway-catalog/seed_pathway_stages.csv
 
