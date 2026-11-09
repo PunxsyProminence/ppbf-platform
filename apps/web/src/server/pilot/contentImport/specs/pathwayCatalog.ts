@@ -199,7 +199,7 @@ export const pathwayCatalogDataset: DatasetSpec = {
     'A PROVISIONAL Backbone snapshot is committed (seed-data/pathway-catalog: 18 stages, 74 links, 2913 defaults; '
     + 'backbone_version "spine c9a5b0158362c230 / catalogs 876ac31f5c677584 / 2026-11-09T04:18:17Z, 2026-11-09T13:32:02Z"), '
     + 'exported by scripts/backbone-export-pathway-catalog.mjs, which regenerates it at the final Backbone hand-off. '
-    + 'It loads through the seed path; no screen shows the catalog yet.',
+    + 'It loads through the seed path or the admin content-import screen; no screen shows the catalog yet.',
   files: [stagesFile, linksFile, defaultsFile],
 };
 
