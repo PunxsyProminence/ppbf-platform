@@ -11,6 +11,7 @@ import {
 import { FILE_SPECS, fileSpecByName, UNIVERSAL_SYSTEM_COLUMNS } from './specs';
 import {
   type ColumnSpec,
+  EVIDENCE_LABELS,
   type FileSpec,
   type Finding,
   type FindingCode,
@@ -19,10 +20,12 @@ import {
   type ParsedFile,
   type ParsedPackage,
   type ParsedRow,
+  RECORD_STATUSES,
   type ReferenceSets,
   type ReferenceTarget,
   type RowContext,
   type RowValues,
+  STAGE_KEYS,
   type Warning,
 } from './types';
 import { integerText, isIntegerText, isNumberText, normalizeCell, parseBoolean, splitList } from './values';
@@ -261,6 +264,94 @@ function checkItem(file: ParsedFile, row: ParsedRow, column: ColumnSpec, item: s
   }
 }
 
+// THE BACKBONE LABEL COLUMNS (P19). Refused, each by name: JSON that does
+// not parse or is not the shape the backbone writes, a record status outside
+// the four, an evidence label outside the eight, a stage key outside the 18.
+// Nothing else: the backbone's evidence entries carry many more keys (source,
+// covers, citation, ...), and they are kept as written.
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Every status in a field_labels object. A field's label may hold labels for
+ * its own parts beside its status and sources (the backbone writes
+ * owner_passages.placement.status), so every object is walked; an object under
+ * the key 'status' is a field that happens to be named status.
+ */
+function badStatuses(node: unknown, path: string, out: string[]): void {
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => badStatuses(item, `${path}[${index}]`, out));
+    return;
+  }
+  if (!isPlainObject(node)) return;
+  for (const [key, value] of Object.entries(node)) {
+    const at = path ? `${path}.${key}` : key;
+    if (key === 'status' && !isPlainObject(value)) {
+      if (!(RECORD_STATUSES as readonly unknown[]).includes(value)) out.push(`${at} is ${JSON.stringify(value)}`);
+    } else {
+      badStatuses(value, at, out);
+    }
+  }
+}
+
+function checkAnnotation(file: ParsedFile, row: ParsedRow, column: ColumnSpec, value: string, out: Finding[]): void {
+  if (column.annotation === 'stage_keys') {
+    if (/[;,]/.test(value)) {
+      out.push(finding(file, row, column.name, 'bad_separator', `separate stage keys with | only ('${value}')`));
+      return;
+    }
+    for (const key of splitList(value, '|')) {
+      if (!(STAGE_KEYS as readonly string[]).includes(key)) {
+        out.push(finding(file, row, column.name, 'unknown_stage_key', `'${key}' is not a pathway stage. Allowed: ${STAGE_KEYS.join(' | ')}`));
+      }
+    }
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    out.push(finding(file, row, column.name, 'bad_json', `${column.name} is not readable JSON: ${error instanceof Error ? error.message : String(error)}`));
+    return;
+  }
+
+  if (column.annotation === 'field_labels') {
+    if (!isPlainObject(parsed)) {
+      out.push(finding(file, row, column.name, 'bad_json', 'field_labels must be a JSON object: field name -> {"status": ..., "sources": [...]}'));
+      return;
+    }
+    const bad: string[] = [];
+    badStatuses(parsed, '', bad);
+    for (const problem of bad) {
+      out.push(finding(file, row, column.name, 'unknown_status', `status ${problem}. Allowed: ${RECORD_STATUSES.join(' | ')}`));
+    }
+    return;
+  }
+
+  // evidence: one entry, or a list of entries (the backbone writes a list).
+  const entries = Array.isArray(parsed) ? parsed : [parsed];
+  if (!entries.every(isPlainObject)) {
+    out.push(finding(file, row, column.name, 'bad_json', 'evidence must be a JSON object or a JSON list of objects'));
+    return;
+  }
+  entries.forEach((entry, index) => {
+    if (!('evidence_label' in entry)) return;
+    if (!(EVIDENCE_LABELS as readonly unknown[]).includes(entry.evidence_label)) {
+      const where = Array.isArray(parsed) ? `entry ${index + 1}: ` : '';
+      out.push(finding(
+        file,
+        row,
+        column.name,
+        'unknown_evidence_label',
+        `${where}evidence_label ${JSON.stringify(entry.evidence_label)} is not allowed. Allowed: ${EVIDENCE_LABELS.join(' | ')}`,
+      ));
+    }
+  });
+}
+
 function checkCell(file: ParsedFile, row: ParsedRow, column: ColumnSpec, out: Finding[]): void {
   const value = row.values[column.name] ?? '';
 
@@ -312,6 +403,11 @@ function checkCell(file: ParsedFile, row: ParsedRow, column: ColumnSpec, out: Fi
 
   if (!value) {
     if (column.required) out.push(finding(file, row, column.name, 'missing_required', `${column.name} is required`));
+    return;
+  }
+
+  if (column.role === 'annotation') {
+    checkAnnotation(file, row, column, value, out);
     return;
   }
 

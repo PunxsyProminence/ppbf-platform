@@ -1,8 +1,9 @@
-import { type CellInput, isContentColumn, sha256Hex, unitContentHash } from '../canonical';
+import { type CellInput, sha256Hex, unitContentHash } from '../canonical';
 import { isNewId, MINT } from '../ids';
 import { datasetSpec, rootFileSpec } from '../specs';
 import type { FileSpec, Finding, ParsedFile, ParsedRow } from '../types';
 import type { ValidationResult } from '../validate';
+import { isTableContent, overlayStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
 import {
   assertColumns,
@@ -101,7 +102,7 @@ function notStored(spec: FileSpec): ReadonlySet<string> {
 
 /** The columns a row's content is written to: canonical.ts's content columns, minus the ones not stored. */
 function contentColumns(spec: FileSpec, skip: ReadonlySet<string>) {
-  return spec.columns.filter((column) => isContentColumn(column) && !skip.has(column.name));
+  return spec.columns.filter((column) => isTableContent(column) && !skip.has(column.name));
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +316,7 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
     const keyOf = (file: ParsedFile, row: ParsedRow) => resolve(row.values[file.spec.parent?.column ?? ROOT.key[0]] ?? '');
 
     const heads = await readHeads(ctx);
+    await overlayStoredLabels(ctx, DATASET.name, [...heads.values()].map((head) => ({ lineage: head.lineageId, version: head.version, row: head.row })));
     const { children, transfers } = await readHeadChildren(ctx, [...heads.values()].map((head) => head.drillId));
     const everyVersion = await ctx.client.query<{ drill_id: string; lineage_id: string; version: number }>(
       'select drill_id, lineage_id, version from pilot.drill_library where organization_id = $1',
@@ -519,7 +521,7 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
   },
 
   // No history-ledger rows: the versions live in the table itself.
-  async apply(ctx, plan): Promise<DatasetWriteResult> {
+  async apply(ctx, plan, write): Promise<DatasetWriteResult> {
     const state = plan.state as DrillState;
     const result: DatasetWriteResult = { inserted: [], updated: [], ledgerRows: 0 };
     const writes = state.items.filter((item) => item.unit.outcome === 'new' || item.unit.outcome === 'new_version');
@@ -605,6 +607,13 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
       });
     }
     await insertRows(ctx.client, 'transfer_claims', transferColumns, transferRows);
+    await writeItemLabels(
+      ctx,
+      DATASET.name,
+      write.importId,
+      writes.map((item) => ({ lineage: item.unit.key, version: item.unit.toVersion as number, cells: item.effective?.root ?? {} })),
+      result,
+    );
     return result;
   },
 };

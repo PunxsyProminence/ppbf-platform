@@ -105,7 +105,12 @@ describe('discipline seeds ownership', () => {
     // null where the other path puts a value. The loader's columns are its
     // spec's (contentImport/specs/disciplines.ts), the one source the seed
     // workflow loads through since the per-dataset loaders were retired.
-    const specColumns = rootFileSpec(datasetSpec('disciplines')).columns.map((column) => column.name);
+    // The backbone label columns (role 'annotation', P19) are stored beside
+    // the row, in pilot.content_record_labels and pilot.content_stage_links,
+    // never in pilot.disciplines, so they are not registry columns.
+    const specColumns = rootFileSpec(datasetSpec('disciplines')).columns
+      .filter((column) => column.role !== 'annotation')
+      .map((column) => column.name);
     const columns = [
       'organization_id', 'discipline', 'display_name', 'lane', 'exposure_model',
       'governing_body', 'age_policy_source', 'youth_permitted', 'adult_permitted',

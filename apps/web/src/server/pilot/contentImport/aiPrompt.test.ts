@@ -77,7 +77,8 @@ describe('the workout intake prompt asks for what the upload accepts', () => {
       expect(header).toEqual(written.map((column) => column.name));
       const toolDecided = spec.columns.filter((column) => !header.includes(column.name));
       expect(toolDecided.map((column) => column.role).sort()).toEqual(
-        toolDecided.map(() => expect.stringMatching(/^(system|placeholder|lineage|child_id)$/)),
+        // annotation: the backbone label columns, which the prompt does not ask for (promptColumns).
+        toolDecided.map(() => expect.stringMatching(/^(system|placeholder|lineage|child_id|annotation)$/)),
       );
       for (const column of spec.columns.filter((c) => c.required)) expect(header).toContain(column.name);
     }

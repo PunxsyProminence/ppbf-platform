@@ -65,9 +65,14 @@ export function promptDrills(
   }));
 }
 
-/** The columns the assistant is asked to write, in file order. */
+/**
+ * The columns the assistant is asked to write, in file order. Not the backbone
+ * label columns (role 'annotation', P19): they record where content came from
+ * and how it was checked, which an assistant turning a written workout into
+ * rows cannot know. The prompt asks for what it asked before P19.
+ */
 export function promptColumns(spec: FileSpec): ColumnSpec[] {
-  return spec.columns.filter((column) => !TOOL_DECIDED.includes(column.role));
+  return spec.columns.filter((column) => !TOOL_DECIDED.includes(column.role) && column.role !== 'annotation');
 }
 
 function boundText(column: ColumnSpec): string {

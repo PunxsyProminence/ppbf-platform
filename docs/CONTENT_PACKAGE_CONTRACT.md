@@ -142,6 +142,9 @@ One row = one discipline. Identity: discipline.
 | mixed_age_permitted | yes | true or false | Adults and youth may train it together. |
 | evidence_note |  | text | Evidence behind the entry, with claim ids. |
 | active |  | true or false | The discipline is offered. Blank means true. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 ### 2. Competence levels
 
@@ -161,6 +164,9 @@ One row = one level. Identity: level_key.
 | display_name | yes | text | The name people see. |
 | observable_test | yes | text | What the coach must SEE to place an athlete here. |
 | typical_scale |  | `A`, `B`, `C` | The scale level athletes at this level usually work at. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 Rules:
 
@@ -193,6 +199,9 @@ One row = one cohort. Identity: cohort_id.
 | requires_coach_approval |  | true or false | A coach must approve each athlete into the cohort. Blank means true. |
 | notes |  | text | Coach notes. |
 | active_flag |  | blank or `true` | Decided by the tool: retiring a cohort is a separate action. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 Rules:
 
@@ -242,6 +251,9 @@ One row = one drill. Identity: drill_id.
 | difficulty | yes | `beginner`, `intermediate`, `advanced`, `elite` | What the drill REQUIRES to be attempted at all (not the scale level). |
 | grounding_claim_ids |  | a list separated by `\|`; each item: a capital letter, a capital letter or digit, a hyphen, three digits (A1-001, PS-001); must be a claim in the LOADED research package | Research claims behind the drill, from the LOADED research package, separated by \|. |
 | field_provenance | yes | `PPBF source manual v3`, `LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION`, `COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION`, `PPBF owner-authored` | How the fields were authored. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 Rules:
 
@@ -341,6 +353,9 @@ One row = one gym-wide stop condition. Identity: universal_rule_id.
 | condition_text | yes | text | Stop when ... |
 | rule_kind | yes | `technique_degradation`, `fatigue`, `safety`, `intent_drift`, `coach_judgment`, `warmup_decay` | What kind of stop. |
 | applies_to_contact_levels |  | a list separated by `\|`; each item: `none`, `light_technical`, `conditioned`, `controlled_sparring`, `open_sparring` | Drill contact levels the rule applies to, separated by \|. Blank means every drill. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 Rules:
 
@@ -375,6 +390,9 @@ One row = one template. Identity: template_id.
 | requires_coach_authorization |  | true or false | A coach must authorize it. Blank means false. |
 | active |  | blank or `true` | Decided by the tool: withdrawing a template is a separate action. |
 | created_by_account_id |  | `{{SEED_ACCOUNT_ID}}` or blank | The account that runs the load is recorded as the author. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 Rules:
 
@@ -437,6 +455,9 @@ One row = one session script. Identity: script_id.
 | authoring_state |  | `draft`, `coach_reviewed`, `in_use`, `retired` | How far it has been reviewed. Lifecycle, not content: a change here alone makes no new version and writes nothing; a new script, or the new version a content change makes, takes this value. Blank means draft. |
 | source_document |  | text | Which PPBF document it came from. |
 | created_by_account_id |  | `{{SEED_ACCOUNT_ID}}` or blank | The account that runs the load is recorded as the author. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 Rules:
 
@@ -514,6 +535,9 @@ One row = one claim about one drill, script or script block. Identity: transfer_
 | source_document |  | text | Which PPBF document it came from. |
 | athlete_facing |  | true or false | Athletes may see it. Blank means true. |
 | public_facing |  | true or false | It may be shown outside the gym. Blank means false. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 Rules:
 
@@ -554,6 +578,9 @@ One row = one protocol. Identity: protocol_id.
 | minimal_detectable_change |  | number | Smallest change that is not measurement error. Blank means unknown until PPBF's reliability study supplies it. |
 | human_authority_required |  | true or false | A qualified person must administer or interpret it. Blank means true. |
 | active |  | blank or `true` | Decided by the tool: retiring a protocol is a separate action. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links. |
 
 Rules:
 

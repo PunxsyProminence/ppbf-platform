@@ -1,9 +1,10 @@
 import type { DbClient } from '../actor';
-import { type CellInput, isContentColumn, unitContentHash } from '../canonical';
+import { type CellInput, unitContentHash } from '../canonical';
 import { isNewId, MINT } from '../ids';
 import { datasetSpec, rootFileSpec } from '../specs';
 import type { Finding, ParsedFile, ParsedRow } from '../types';
 import type { ValidationResult } from '../validate';
+import { isTableContent, overlayStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, UnitPlan } from './index';
 import {
   assertColumns,
@@ -37,7 +38,7 @@ import {
 const DATASET = datasetSpec('universal-stop-rules');
 const SPEC = rootFileSpec(DATASET);
 const TABLE = 'universal_stop_rules';
-const CONTENT = SPEC.columns.filter(isContentColumn);
+const CONTENT = SPEC.columns.filter(isTableContent);
 
 type DbRow = Record<string, CellInput> & Record<string, unknown>;
 
@@ -124,6 +125,7 @@ export const UNIVERSAL_STOP_RULES_ENGINE: DatasetEngine = {
     const keyOf = (_file: ParsedFile, row: ParsedRow) => resolve(row.values[keyColumn] ?? '');
     const reasons = reasonsByItem([file], input.validation.blocking, keyOf);
     const heads = await readHeads(ctx.client, ctx.organizationId);
+    await overlayStoredLabels(ctx, DATASET.name, [...heads.values()].map((head) => ({ lineage: head.lineageId, version: head.version, row: head.row })));
     const everyVersion = await ctx.client.query<{ universal_rule_id: string; lineage_id: string; version: number }>(
       'select universal_rule_id, lineage_id, version from pilot.universal_stop_rules where organization_id = $1',
       [ctx.organizationId],
@@ -206,7 +208,7 @@ export const UNIVERSAL_STOP_RULES_ENGINE: DatasetEngine = {
   },
 
   // No history-ledger rows: the versions live in the table itself.
-  async apply(ctx, plan): Promise<DatasetWriteResult> {
+  async apply(ctx, plan, write): Promise<DatasetWriteResult> {
     const state = plan.state as RuleState;
     const result: DatasetWriteResult = { inserted: [], updated: [], ledgerRows: 0 };
     const writes = state.items.filter((item) => item.unit.outcome === 'new' || item.unit.outcome === 'new_version');
@@ -252,6 +254,13 @@ export const UNIVERSAL_STOP_RULES_ENGINE: DatasetEngine = {
       }),
     );
     result.inserted.push(...writes.map((item) => item.ruleId as string));
+    await writeItemLabels(
+      ctx,
+      DATASET.name,
+      write.importId,
+      writes.map((item) => ({ lineage: item.unit.key, version: item.unit.toVersion as number, cells: item.content as Record<string, string> })),
+      result,
+    );
     return result;
   },
 };
