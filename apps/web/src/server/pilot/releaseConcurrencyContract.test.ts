@@ -164,6 +164,8 @@ const OUTSIDE_THE_LOCK = [
   'session-token-cleanup.yml',
   // A twelfth (RR-1): the intake research-requirement cleanup, with a group of its own.
   'cleanup-intake-research-requirements.yml',
+  // A thirteenth (RR-2): the intake upload audit redaction, with a group of its own.
+  'redact-intake-upload-audit.yml',
   // Three more that take a target. Not classified here as writers or readers.
   'backup.yml',
   'check-database.yml',
