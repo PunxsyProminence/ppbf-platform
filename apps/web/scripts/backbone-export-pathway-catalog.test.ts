@@ -264,7 +264,9 @@ describe('backbone-export-pathway-catalog', () => {
   });
 
   it('refuses a missing or extra argument with the usage line, and a folder without the two files', () => {
-    for (const args of [[], [dir, dir], [dir, '--bogus']]) {
+    // Every case names a temporary --out, so a broken argument check can never write into seed-data.
+    const out = tempDir();
+    for (const args of [['--out', out], [dir, dir, '--out', out], [dir, '--bogus', '--out', out]]) {
       const result = run(args);
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('usage: node scripts/backbone-export-pathway-catalog.mjs <backbone-folder>');
