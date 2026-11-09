@@ -302,6 +302,10 @@ export function formatPlan(plan: ImportPlan): string[] {
           lines.push(`    new ${label}: history v${unit.toVersion}`);
           break;
         case 'new_version':
+          if (unit.retires) {
+            lines.push(`    retire ${label}: history v${unit.fromVersion} -> v${unit.toVersion} (left out of the file; kept, marked inactive)`);
+            break;
+          }
           lines.push(
             `    new version ${label}: history v${unit.fromVersion} -> v${unit.toVersion}`
             + (unit.recordsBefore ? ` (v${unit.fromVersion} records the row as it stands now)` : ''),

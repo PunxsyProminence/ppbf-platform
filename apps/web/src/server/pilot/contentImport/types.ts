@@ -4,6 +4,7 @@ import type { BoundName, ConstraintRef, VocabularyName } from './vocabularies';
 // The shapes every part of the content-import core shares. No logic here.
 
 export type DatasetName =
+  | 'pathway-catalog'
   | 'disciplines'
   | 'competence-levels'
   | 'cohort-definitions'
@@ -264,7 +265,9 @@ export type WarningCode =
   | 'adoption_readiness'
   | 'unmapped_skill_code'
   | 'legacy_universal_stop_rule'
-  | 'ignored_file';
+  | 'ignored_file'
+  // Information only (Overwatch, PR #1894): pathway catalog rows a plan would load with no labels.
+  | 'unlabelled_catalog_rows';
 
 export interface Warning {
   code: WarningCode;

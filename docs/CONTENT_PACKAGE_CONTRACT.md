@@ -118,7 +118,105 @@ Research releases have their own contract (not in this file yet).
 
 ## The material types
 
-### 1. Disciplines
+### 1. Pathway catalog
+
+The backbone's pathway stages, the links between them and the defaults each stage or lane starts from (SCHEMA_PROPOSAL P1, P2, P7). Describes the pathway; never restricts where a coach places a member. Each file is a whole snapshot of its table: a changed row is revised in place with the old content kept in the history ledger, and a row the file leaves out is retired (kept, marked inactive), never deleted. A file the package leaves out leaves its table alone. Content items name stages in their stage_keys column; at plan each must be an active stage of this catalog. field_labels and evidence are stored on the catalog row itself, and each version of the row, labels included, in the history ledger.
+
+Loaded today: Nothing committed yet: the content-import core loads a package an organization admin hands over (lane BB-1c exports the backbone snapshot).
+
+#### pathway-catalog/seed_pathway_stages.csv
+
+One row = one pathway stage. Identity: stage_key.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| stage_key | yes | text | The stage key in its human form (Y1 ... EX1). Keep it on a revision. |
+| segment | yes | `youth`, `trunk`, `amateur`, `pro`, `recreational`, `exit` | The part of the pathway the stage belongs to. |
+| ordinal | yes | whole number 1 or more | The stage's place in the printed order (1 = first). |
+| name | yes | text | What the stage is called (the descriptor, e.g. Technical Development). |
+| who_text |  | text | Who the stage is for. A guide, never a gate. |
+| develops_text |  | text | What the stage develops. |
+| typical_duration_text |  | text | How long members usually spend in it. |
+| contact_default | yes | `none`, `light_technical`, `conditioned`, `controlled_sparring`, `open_sparring` | The contact level the stage starts from (a default a coach may change). |
+| competition_text |  | text | Competition at this stage, and whose rules apply on which route. |
+| age_band_guide_text |  | text | The age band as a guide; placement uses age, experience and ability (the placement rule). |
+| ppbf_name |  | text | The PPBF name of the stage (e.g. CRESCENS). |
+| ppbf_name_meaning |  | text | What the PPBF name means. |
+| ppbf_name_language |  | text | The language the PPBF name comes from. |
+| backbone_version |  | text | The backbone snapshot the row comes from (e.g. draft-1). A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- stage_key is a stage key in its human form: capital letters then digits (Y3, AM1).
+- stage_keys stays blank: a stage is its own key, a link names its two stages, a default names its scope.
+
+#### pathway-catalog/seed_pathway_stage_links.csv
+
+One row = one next-stage link. Identity: from_stage_key + to_stage_key.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| from_stage_key | yes | text | The stage the link starts from: a stage in seed_pathway_stages.csv (or, without that file, the loaded catalog). |
+| to_stage_key | yes | text | The stage the link leads to, named the same way. |
+| link_kind | yes | `progression`, `branch`, `lateral`, `exit` | What kind of move the link is. A link describes the map; it never restricts where a coach places anyone. |
+| backbone_version |  | text | The backbone snapshot the row comes from (e.g. draft-1). A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- from_stage_key is a stage key in its human form: capital letters then digits (Y3, AM1).
+- to_stage_key is a stage key in its human form: capital letters then digits (Y3, AM1).
+- A link joins two different stages.
+- stage_keys stays blank: a stage is its own key, a link names its two stages, a default names its scope.
+
+#### pathway-catalog/seed_pathway_stage_defaults.csv
+
+One row = one stage or lane default. Identity: default_id.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| default_id | yes | text | The backbone's own id: 'dft_' + first 14 hex of sha256(scope + ':' + default_key). Kept as given, never re-minted. |
+| scope | yes | text | A stage key (in seed_pathway_stages.csv, or the loaded catalog) or a lane: lane:non_contact. |
+| default_key | yes | text | What the default is about (e.g. contact_level_default). One per scope. |
+| kind | yes | `default_rule`, `owner_rule`, `rule_reference`, `reference`, `information` | What sort of entry it is. |
+| value_text |  | text | A worded value (e.g. light_technical). |
+| value_vocabulary |  | text | The list value_text is drawn from, separated by \|. |
+| value_min |  | number | The lowest number the default allows. |
+| value_max |  | number | The highest number the default allows. |
+| unit |  | text | What value_min and value_max count (e.g. rounds). |
+| window_days |  | whole number 1 or more | The window value_min and value_max count over, in days. |
+| sparring_type |  | text | The sparring type a sparring default counts. |
+| composite_parent |  | text | The wider default this one is part of. |
+| phases |  | text | JSON list: values that change within the stage (e.g. by months in stage). |
+| display_text |  | text | The default as a coach reads it. |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| backbone_version |  | text | The backbone snapshot the row comes from (e.g. draft-1). A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- default_id is 'dft_' and 14 lowercase hex.
+- default_id is the backbone's id for its scope and default_key: 'dft_' + first 14 hex of sha256(scope + ':' + default_key).
+- scope is a stage key (capital letters then digits) or lane:non_contact.
+- value_min is not above value_max.
+- phases, when set, is a JSON list.
+- stage_keys stays blank: a stage is its own key, a link names its two stages, a default names its scope.
+
+### 2. Disciplines
 
 The sports the gym teaches. Other files name a discipline by its key. Five tables point at the key, so under R2 the planned revision is an in-place update with the old row kept in a history ledger.
 
@@ -146,7 +244,7 @@ One row = one discipline. Identity: discipline.
 | evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
 | stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
 
-### 2. Competence levels
+### 3. Competence levels
 
 The ladder a coach places an athlete on in each domain. Cohorts qualify athletes by a level ORDINAL, so changing a level's ordinal changes which athletes every cohort admits. Other tables point at level_key, so under R2 the planned revision is an in-place update with the old row kept in a history ledger.
 
@@ -172,7 +270,7 @@ Rules:
 
 - ordinal is unique (the database refuses a second level at the same position).
 
-### 3. Cohort definitions
+### 4. Cohort definitions
 
 The rooms athletes are grouped into, by competence and time in the programme (never by age, except where a rulebook binds it). The table has no version columns, so under R2 the planned revision is an in-place update with the old row kept in a history ledger.
 
@@ -210,7 +308,7 @@ Rules:
 - Sparring cohorts (controlled_sparring, open_sparring) require coach approval.
 - A new:<short-name> cohort_id becomes 'coh_' + first 14 hex of sha256(cohort_name).
 
-### 4. Drills
+### 5. Drills
 
 A drill and its rows in the four child files are ONE unit: under R2 a change anywhere makes a new drill version and the old version is kept (and stays live for gyms that adopted it). A child file replaces the full set of rows only for drills that have at least one row in it; a drill with no rows there keeps what it has.
 
@@ -335,7 +433,7 @@ Rules:
 - The drill has a primary skill_id, and the secondary skill is not that same code.
 - expected_primary_skill_id, when given, equals the drill's primary skill_id.
 
-### 5. Universal stop rules
+### 6. Universal stop rules
 
 The few stop conditions that apply to EVERY drill (injury and the like), stored once. A drill's own rules go in seed_drill_stop_rules.csv. Under R2 a changed rule becomes a new version.
 
@@ -362,7 +460,7 @@ Rules:
 - ordinal is unique across the set.
 - A new:<short-name> universal_rule_id becomes 'ust_' + first 14 hex of sha256(condition_text).
 
-### 6. Workout templates
+### 7. Workout templates
 
 Reusable session plans. A template and its items are one unit: under R2 a change to either makes a new template version and the old one is kept. Items listed for a template replace all of its items.
 
@@ -424,7 +522,7 @@ Rules:
 - Contact above light_technical carries no duration or rep count.
 - A blank item_id is filled with 'wti_' + first 14 hex of sha256(template_id + ':' + ordinal) (an existing row keeps its id).
 
-### 7. Session scripts
+### 8. Session scripts
 
 A whole coached session, minute by minute, with the words to say. A script, its blocks and its renderings are one unit: under R2 a change makes a new version and the old one is kept. Blocks (or renderings) listed for a script replace all of its blocks (or renderings).
 
@@ -510,7 +608,7 @@ Rules:
 
 - A blank rendering_id is filled with 'rnd_' + first 14 hex of sha256(script_id + format) (an existing row keeps its id).
 
-### 8. Transfer claims
+### 9. Transfer claims
 
 What a drill or a script block is claimed to develop beyond the sport, and how strong the evidence is. A claim is part of its drill's or script's material.
 
@@ -546,7 +644,7 @@ Rules:
 - A public claim that names a brain structure must be EVIDENCE-SUPPORTED.
 - A blank transfer_id takes the id of the committed row whose content gives the same 'txf_' + first 14 hex of sha256(target id + ':' + claim_kind + ':' + statement), else it is filled with that formula. Two rows that come to the same id are refused as a duplicate.
 
-### 9. Assessment protocols
+### 10. Assessment protocols
 
 Physical tests, skill rubrics and questionnaires the gym administers, with their retest guidance and measurement properties. Under R2 a changed protocol becomes the next protocol_version; a recorded result keeps pointing at the version it was taken with (pilot_assessments_protocol_fk).
 

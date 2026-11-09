@@ -30,6 +30,8 @@ import type { DatasetWriteResult, EngineContext } from './index';
 // cells out of the hash, so it plans exactly as it did before P19.
 
 const KIND: Record<DatasetName, string> = {
+  // Never written here: the catalog keeps its labels natively (datasets/pathwayCatalog.ts).
+  'pathway-catalog': 'pathway_catalog',
   disciplines: 'discipline',
   'competence-levels': 'competence_level',
   'cohort-definitions': 'cohort_definition',

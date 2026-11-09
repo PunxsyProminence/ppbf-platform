@@ -9,6 +9,7 @@ import {
   SKILL_FAMILY_PREFIX,
 } from './ids';
 import { FILE_SPECS, fileSpecByName, UNIVERSAL_SYSTEM_COLUMNS } from './specs';
+import { pathwayStageReferenceFindings } from './specs/pathwayCatalog';
 import {
   type ColumnSpec,
   EVIDENCE_LABELS,
@@ -939,6 +940,10 @@ export function validateParsed(
     checkRules(file, context, blocking);
   }
   checkDrillsAgainstCommittedSteps(parsed, options.references, blocking);
+  // Pathway link ends and default scopes name a stage of the package's own
+  // stage file. Without one, the plan stage checks them against the
+  // organization's loaded catalog (datasets/pathwayCatalog.ts).
+  blocking.push(...pathwayStageReferenceFindings(parsed));
   const minted = mintIds(parsed, options.baseline, blocking);
   const blankKeyIds = resolveBlankKeys(parsed, options.baseline, minted, blocking);
 

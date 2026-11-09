@@ -25,6 +25,7 @@ import { readDatasetFiles, runApply } from './contentImport/cli';
 import { readCsv, writeCsv } from './contentImport/csv';
 import { type ImportPlan, planImport } from './contentImport/plan';
 import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './contentImport/referenceSets';
+import { STAGE_KEYS } from './contentImport/types';
 
 jest.setTimeout(300_000);
 
@@ -148,6 +149,16 @@ async function createGym(organizationId: string): Promise<string> {
     `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, 'organization_admin', true)`,
     [account, organizationId],
   );
+  // The 18 backbone stages: content_stage_links.stage_key references the
+  // organization's pathway catalog (pathway_catalog migration, lane BB-1b).
+  await client.query(
+    `insert into pilot.pathway_stages (organization_id, stage_key, segment, ordinal, name, contact_default)
+     select $1, key, case substring(key from '^[A-Z]+') when 'Y' then 'youth' when 'T' then 'trunk' when 'AM' then 'amateur'
+                     when 'PR' then 'pro' when 'EX' then 'exit' else 'recreational' end,
+            ordinal::int, key, 'none'
+       from unnest($2::text[]) with ordinality as stage(key, ordinal)`,
+    [organizationId, [...STAGE_KEYS]],
+  );
   return account;
 }
 
@@ -251,14 +262,15 @@ describe('the content_labels migration', () => {
     expect(rows[0]).toEqual({ labels: true, links: true });
   });
 
-  it('refuses a stage key outside the 18 and a label row with nothing in it; role is free text, written NULL by the engine', async () => {
+  it('refuses a stage key outside the catalog and a label row with nothing in it; role is free text, written NULL by the engine', async () => {
     await createGym('gym_checks');
     const link = (stage: string, role: string | null) => client.query(
       `insert into pilot.content_stage_links (organization_id, target_kind, target_lineage_id, stage_key, role, import_id, recorded_by_account_id, recorded_by_role)
        values ('gym_checks', 'drill', 'drl_00000000000000', $1, $2, 'imp_test', 'admin@gym_checks', 'organization_admin')`,
       [stage, role],
     );
-    await expect(link('T3', null)).rejects.toMatchObject({ code: '23514' });
+    // A foreign key to the pathway catalog since lane BB-1b (was the 18-key CHECK).
+    await expect(link('T3', null)).rejects.toMatchObject({ code: '23503' });
     await expect(link('T1', 'core')).resolves.toBeDefined();
     await expect(link('T1', null)).rejects.toMatchObject({ code: '23505' }); // one current link per item and stage
     await expect(client.query(

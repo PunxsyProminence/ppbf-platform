@@ -1,8 +1,9 @@
 import type { DbClient, ImportActor } from '../actor';
 import { DATASETS } from '../specs';
-import type { DatasetName, DatasetSpec, Finding, ParsedFile } from '../types';
+import type { DatasetName, DatasetSpec, Finding, ParsedFile, Warning } from '../types';
 import type { ValidationResult } from '../validate';
 import { DRILL_LIBRARY_ENGINE } from './drills';
+import { PATHWAY_CATALOG_ENGINE } from './pathwayCatalog';
 import { REGISTRY_ENGINES } from './registries';
 import { sessionScriptsEngine } from './sessionScripts';
 import { workoutTemplatesEngine } from './templates';
@@ -38,6 +39,8 @@ export interface UnitPlan {
   toVersion?: number;
   /** A revision first records the database row as fromVersion, because the ledger does not hold that content yet. */
   recordsBefore?: boolean;
+  /** The revision only retires the row: the file leaves it out, so it is kept and marked inactive (pathway catalog). */
+  retires?: true;
   /** For a reject: why, in plain English. */
   reasons?: string[];
 }
@@ -55,6 +58,8 @@ export interface DatasetPlan {
   findings: Finding[];
   /** Whatever the dataset module needs to write this plan; opaque to plan.ts and apply.ts. */
   state: unknown;
+  /** Information for the person approving; never blocks. */
+  warnings?: Warning[];
 }
 
 export interface DatasetWriteResult {
@@ -78,6 +83,7 @@ export interface DatasetEngine {
 // references datasets above it), whatever order the modules register in, so
 // cohorts are written after the disciplines they point at in an 'all' load.
 export const DATASET_ENGINES: readonly DatasetEngine[] = [
+  PATHWAY_CATALOG_ENGINE,
   ...REGISTRY_ENGINES,
   DRILL_LIBRARY_ENGINE,
   UNIVERSAL_STOP_RULES_ENGINE,
