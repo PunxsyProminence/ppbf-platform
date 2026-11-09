@@ -539,6 +539,24 @@ describe('refusals write nothing', () => {
     await refusesUnchanged(applyWith(scopeAll(), fingerprint), 'PLAN_FINGERPRINT_MISMATCH');
   });
 
+  test('a different scope over the very same rows: the fingerprint binds the approved organization input', async () => {
+    const dropB = async (c: Client) => {
+      await c.query('delete from pilot.shadow_research_requirements where research_requirement_id = $1', [ids.taggedOpenB]);
+    };
+    const { client } = await freshDatabase();
+    let fingerprint: string;
+    try {
+      await dropB(client);
+      const a = await cleanup(client, dryRun(scopeA()), { log: () => {} });
+      const all = await cleanup(client, dryRun(scopeAll()), { log: () => {} });
+      expect(all.research_requirement_ids).toEqual(a.research_requirement_ids);
+      fingerprint = a.plan_fingerprint!;
+    } finally {
+      await client.end();
+    }
+    await refusesUnchanged(applyWith(scopeAll(), fingerprint), 'PLAN_FINGERPRINT_MISMATCH', dropB);
+  });
+
   test('a row tagged after the review', async () => {
     const { client } = await freshDatabase();
     let fingerprint: string;
