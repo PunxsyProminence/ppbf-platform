@@ -4,7 +4,7 @@ import { isNewId, MINT } from '../ids';
 import { datasetSpec, rootFileSpec } from '../specs';
 import type { Finding, ParsedFile, ParsedRow } from '../types';
 import type { ValidationResult } from '../validate';
-import { isTableContent, overlayStoredLabels, writeItemLabels } from './contentLabels';
+import { isTableContent, overlayStoredLabels, withStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, UnitPlan } from './index';
 import {
   assertColumns,
@@ -142,7 +142,8 @@ export const UNIVERSAL_STOP_RULES_ENGINE: DatasetEngine = {
       const unit: UnitPlan = { dataset: DATASET.name, key, outcome: 'reject' };
       if (raw !== key) unit.packageKey = raw;
       const head = heads.get(key);
-      const content = storedContent(SPEC, row.values);
+      // A label column the file leaves out keeps the stored value (contentLabels.ts).
+      const content = storedContent(SPEC, withStoredLabels(file.header, row.values, head?.row));
       unit.fileSha256 = hashOf(content);
       if (head) unit.databaseSha256 = hashOf(storedContent(SPEC, head.row));
       const item: RuleItem = { unit, head, content };

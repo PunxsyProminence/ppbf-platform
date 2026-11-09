@@ -43,6 +43,7 @@ const SEED_DATA_DIR = path.join(WEB_DIR, 'seed-data');
 const DISCIPLINES = 'multidiscipline/seed_disciplines.csv';
 const DRILLS = 'drill-library/seed_drill_library.csv';
 const CUES = 'drill-library/seed_drill_cues.csv';
+const TEMPLATES = 'workout-templates/seed_workout_templates.csv';
 
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
@@ -401,5 +402,68 @@ describe('a package with the label columns', () => {
     await expect(client.query(`update pilot.content_stage_links set stage_key = 'T2' where organization_id = $1 and superseded_at is null`, [ORG])).rejects.toMatchObject({ code: '23001' });
     await expect(client.query(`delete from pilot.content_stage_links where organization_id = $1`, [ORG])).rejects.toMatchObject({ code: '23001' });
     await expect(client.query(`update pilot.content_stage_links set superseded_at = null where organization_id = $1 and superseded_at is not null`, [ORG])).rejects.toMatchObject({ code: '23001' });
+  });
+
+  // LEFT OUT IS NOT BLANK (Overwatch review, PR #1893): a root file without
+  // the label columns -- every package written before P19 -- does not state
+  // labels, so it must neither revise a labelled item nor strip its labels.
+  // State here: boxing holds links AM1, T1 (no label row at its current
+  // version); the drill holds evidence at its current version and links AM1, T1.
+  it('a root file WITHOUT the label columns repeating labelled items plans all unchanged and writes nothing', async () => {
+    const files = committed();
+    const again = await plan(ORG, admin, { [DISCIPLINES]: files[DISCIPLINES], [DRILLS]: files[DRILLS] });
+    expect(again.blocking).toEqual([]);
+    expect(outcomes(again)).toEqual({ unchanged: again.units.length - again.totals.absent, ...(again.totals.absent ? { absent: again.totals.absent } : {}) });
+    expect(again.changes).toBe(0);
+  });
+
+  it('a root file WITHOUT the label columns revising labelled items writes the new versions WITH their stored labels, and keeps their links', async () => {
+    const files = committed();
+    const before = await linkRows(ORG);
+    const edit = (text: string, keyColumn: string, key: string, column: string) => {
+      const table = readCsv(text);
+      const at = table.header.indexOf(column);
+      const rows = table.records.map((record) => (record.cells[table.header.indexOf(keyColumn)] === key
+        ? record.cells.map((cell, index) => (index === at ? `${cell} (revised)` : cell))
+        : record.cells));
+      return writeCsv(table.header, rows);
+    };
+    const result = await applyCommitted(ORG, admin, {
+      [DISCIPLINES]: edit(files[DISCIPLINES], 'discipline', 'boxing', 'governing_body'),
+      [DRILLS]: edit(files[DRILLS], 'drill_id', drillKey, 'purpose'),
+    });
+    const drillUnit = result.plan.units.find((unit) => unit.key === drillKey);
+    expect(drillUnit?.outcome).toBe('new_version');
+    expect(result.plan.units.find((unit) => unit.key === 'boxing')?.outcome).toBe('new_version');
+    expect(result.written['drill-library']?.inserted).toContain(`labels ${drillKey} v${drillUnit?.toVersion}`);
+    for (const written of [result.written.disciplines, result.written['drill-library']]) {
+      expect([...(written?.inserted ?? []), ...(written?.updated ?? [])].filter((entry) => entry.startsWith('stage link'))).toEqual([]);
+    }
+    expect(await linkRows(ORG)).toEqual(before);
+    const drill = (await labelRows(ORG)).filter((row) => row.target_lineage_id === drillKey);
+    expect(drill[drill.length - 1]).toMatchObject({ target_version: drillUnit?.toVersion, field_labels: null, evidence: JSON.parse(EVIDENCE) });
+    // And the revised items, sent again without the columns, are unchanged.
+    const again = await plan(ORG, admin, {
+      [DISCIPLINES]: edit(files[DISCIPLINES], 'discipline', 'boxing', 'governing_body'),
+      [DRILLS]: edit(files[DRILLS], 'drill_id', drillKey, 'purpose'),
+    });
+    expect(again.changes).toBe(0);
+  });
+
+  // The versioned template engine (templateScriptVersions.ts): its own head
+  // rule and version numbering, the same label behaviour.
+  it('workout templates: labels land at the version written, read back unchanged, and a file without the columns keeps them', async () => {
+    const files = readDatasetFiles(SEED_DATA_DIR, ['workout-templates']);
+    await applyCommitted(ORG, admin, files);
+    const key = firstKey(files[TEMPLATES], 'template_id');
+    const labelledFiles = { ...files, [TEMPLATES]: withLabels(files[TEMPLATES], 'template_id', { [key]: { field_labels: FIELD_LABELS, stage_keys: 'T1|FT1' } }) };
+    const result = await applyCommitted(ORG, admin, labelledFiles);
+    const unit = result.plan.units.find((candidate) => candidate.key === key);
+    expect(unit?.outcome).toBe('new_version');
+    const version = await client.query(`select max(version)::int as v from pilot.workout_templates where organization_id = $1 and lineage_id = $2`, [ORG, key]);
+    expect(unit?.toVersion).toBe(version.rows[0].v);
+    expect(result.written['workout-templates']?.inserted).toEqual([`labels ${key} v${unit?.toVersion}`, `stage link ${key} FT1`, `stage link ${key} T1`]);
+    expect((await plan(ORG, admin, labelledFiles)).changes).toBe(0);
+    expect((await plan(ORG, admin, files)).changes).toBe(0);
   });
 });

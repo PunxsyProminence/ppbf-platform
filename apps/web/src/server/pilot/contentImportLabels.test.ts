@@ -106,6 +106,11 @@ describe('content:validate on a package carrying the label columns', () => {
     expect(result.code).toBe(0);
   });
 
+  it("does not read a status inside a field's sources as a record status", () => {
+    const sourced = JSON.stringify({ display_name: { status: 'REPORTED', sources: [{ id: 'LR-114', status: 'checked' }] } });
+    expect(validateFolder({ ...BOXING, field_labels: sourced }).code).toBe(0);
+  });
+
   it('accepts a single evidence object, and labels left blank', () => {
     expect(validateFolder({ ...BOXING, evidence: JSON.stringify(JSON.parse(EVIDENCE)[0]) }).code).toBe(0);
     expect(validateFolder({ ...BOXING }).code).toBe(0);

@@ -3,7 +3,7 @@ import { isNewId, MINT } from '../ids';
 import { datasetSpec, rootFileSpec } from '../specs';
 import type { FileSpec, Finding, ParsedFile, ParsedRow } from '../types';
 import type { ValidationResult } from '../validate';
-import { isTableContent, overlayStoredLabels, writeItemLabels } from './contentLabels';
+import { isTableContent, overlayStoredLabels, withStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
 import {
   assertColumns,
@@ -358,7 +358,8 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
 
       const packageRoot = packageRoots.get(key);
       const effective: UnitContentRows = {
-        root: packageRoot ? storedContent(ROOT, packageRoot.values) : database?.root ?? null,
+        // A label column the file leaves out keeps the stored value (contentLabels.ts).
+        root: packageRoot ? storedContent(ROOT, withStoredLabels((rootFile as ParsedFile).header, packageRoot.values, head?.row)) : database?.root ?? null,
         children: new Map(),
         transfers: database?.transfers ?? [],
       };

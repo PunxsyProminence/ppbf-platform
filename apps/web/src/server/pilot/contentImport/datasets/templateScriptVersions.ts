@@ -5,7 +5,7 @@ import { rootFileSpec } from '../specs';
 import type { ColumnSpec, DatasetSpec, FileSpec, Finding, ParsedFile, ParsedRow, RowValues } from '../types';
 import { newIdKindOf, rowKey, type MintedIds, type ValidationResult } from '../validate';
 import { integerText, normalizeCell, numberText, parseBoolean, splitList } from '../values';
-import { isTableContent, overlayStoredLabels, writeItemLabels } from './contentLabels';
+import { isTableContent, overlayStoredLabels, withStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
 
 // THE VERSIONED UNITS OF IMP-08: a workout template with its items, and a
@@ -527,7 +527,10 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           findings.push({ code: 'bad_id', file: from.file, column: rootSpec.key[0], key, message });
         }
 
-        const root = packageRoot?.cells ?? (head ? rootCells(head.row) : undefined);
+        // A label column the root file leaves out keeps the stored value (contentLabels.ts).
+        const root = packageRoot
+          ? withStoredLabels((rootFile as ParsedFile).header, packageRoot.cells, head?.row)
+          : head ? rootCells(head.row) : undefined;
         if (!root && reasons.length === 0) {
           // The validator reports a child row whose parent is nowhere as an
           // orphan; this is the backstop if it ever does not.

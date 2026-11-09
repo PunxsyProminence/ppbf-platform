@@ -20,6 +20,12 @@ import type { DatasetWriteResult, EngineContext } from './index';
 //      (isTableContent);
 //   3. after writing a version, writes that version's labels and brings the
 //      item's current links to the set the package names (writeItemLabels).
+// LEFT OUT IS NOT BLANK. A label column missing from the root file's header
+// is not stated: the item's stored value stands in for it (withStoredLabels),
+// so an older package that repeats a labelled item plans `unchanged`, and one
+// that revises it writes the new version WITH its stored labels and leaves its
+// links alone. A column present and blank means none. Without this, any
+// package written before P19 would strip the labels of every item it revised.
 // An item without labels does none of this: canonical.ts leaves blank label
 // cells out of the hash, so it plans exactly as it did before P19.
 
@@ -51,6 +57,25 @@ async function labelTablesExist(client: DbClient): Promise<boolean> {
         and to_regclass('pilot.content_stage_links') is not null as ready`,
   );
   return rows[0]?.ready === true;
+}
+
+const LABEL_COLUMNS = ['field_labels', 'evidence', 'stage_keys'] as const;
+
+/**
+ * A package root row with every label column its FILE does not carry (not in
+ * `header`) taken from the item's stored labels (`stored`: its database row
+ * after overlayStoredLabels; undefined for a new item, which has none).
+ */
+export function withStoredLabels(
+  header: readonly string[],
+  values: Readonly<Record<string, string>>,
+  stored: Readonly<Record<string, CellInput>> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = { ...values };
+  for (const name of LABEL_COLUMNS) {
+    if (!header.includes(name)) out[name] = text(stored?.[name]);
+  }
+  return out;
 }
 
 export interface LabelHead {

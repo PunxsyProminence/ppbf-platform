@@ -119,7 +119,7 @@ export function labelColumns(): ColumnSpec[] {
         'JSON object: per field, {"status": one of ' + RECORD_STATUSES.join(', ')
         + ', "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. '
         + 'Stored by item version.',
-      blankMeans: 'no field labels',
+      blankMeans: 'no field labels. A file without this column leaves the stored field labels of each item as they are',
     },
     {
       name: 'evidence',
@@ -130,7 +130,7 @@ export function labelColumns(): ColumnSpec[] {
         'JSON object, or a JSON list of them: evidence_category, evidence_label (one of ' + EVIDENCE_LABELS.join(', ')
         + '), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. '
         + 'Stored by item version.',
-      blankMeans: 'no evidence entry',
+      blankMeans: 'no evidence entry. A file without this column leaves the stored evidence of each item as it is',
     },
     {
       name: 'stage_keys',
@@ -141,7 +141,7 @@ export function labelColumns(): ColumnSpec[] {
       description:
         'The pathway stages the item serves, separated by | (' + STAGE_KEYS.join(', ')
         + '). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs.',
-      blankMeans: 'no stage links',
+      blankMeans: 'no stage links (current links are ended). A file without this column leaves the links of each item as they are',
     },
   ];
 }

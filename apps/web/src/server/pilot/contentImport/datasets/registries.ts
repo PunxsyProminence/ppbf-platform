@@ -5,7 +5,7 @@ import { datasetSpec, rootFileSpec } from '../specs';
 import type { ColumnSpec, DatasetSpec, FileSpec, Finding, ParsedFile, ParsedRow, RowValues } from '../types';
 import type { ValidationResult } from '../validate';
 import { integerText, normalizeCell, numberText, parseBoolean, splitList } from '../values';
-import { isTableContent, overlayStoredLabels, writeItemLabels } from './contentLabels';
+import { isTableContent, overlayStoredLabels, withStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
 
 // THE THREE KEYED REGISTRIES: disciplines, competence levels, cohort
@@ -216,9 +216,11 @@ function registryEngine(config: RegistryConfig): DatasetEngine {
         const raw = row.values[keyColumn];
         const unit: UnitPlan = { dataset: config.dataset.name, key, outcome: 'reject' };
         if (raw !== key) unit.packageKey = raw;
-        const fileContent = canonicalRow(spec, row.values);
-        unit.fileSha256 = unitHash(row.values);
         const existing = database.get(key);
+        // A label column the file leaves out keeps the stored value (contentLabels.ts).
+        const values = withStoredLabels(file.header, row.values, existing);
+        const fileContent = canonicalRow(spec, values);
+        unit.fileSha256 = unitHash(values);
         const databaseContent = existing ? canonicalRow(spec, existing) : undefined;
         if (existing) unit.databaseSha256 = unitHash(existing);
 
@@ -249,7 +251,7 @@ function registryEngine(config: RegistryConfig): DatasetEngine {
           unit.toVersion = ledger.toVersion;
           if (ledger.recordBefore) unit.recordsBefore = true;
         }
-        items.push({ unit, values: row.values, fileContent, databaseContent, ledger });
+        items.push({ unit, values, fileContent, databaseContent, ledger });
       });
 
       for (const key of database.keys()) {
