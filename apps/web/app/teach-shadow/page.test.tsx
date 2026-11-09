@@ -308,7 +308,7 @@ test('every coverage count is rendered from the payload, not from a constant in 
   expect(valueFor('Files captured')).toBe('37');
   expect(valueFor('Takes recorded')).toBe('19 in 5 sessions');
   // Numbers and the screen's own reason keys, as plain text: no badge, no link.
-  expect(valueFor('Files refused by the content screen')).toBe(
+  expect(valueFor('Files blocked by the content screen or a reviewer')).toBe(
     '8: CONTENT_SCREEN_REFUSED 6, FIXTURE_SECOND_REASON 2; 3 awaiting human review',
   );
   expect(valueFor('Takes with more than one file')).toBe('11');
@@ -332,14 +332,14 @@ test('with nothing refused the figure reads zero, with no breakdown', async () =
   render(<TeachShadowHomePage />);
   await screen.findByText('Takes with more than one file');
 
-  expect(valueFor('Files refused by the content screen')).toBe('0');
+  expect(valueFor('Files blocked by the content screen or a reviewer')).toBe('0');
 });
 
 test('the refused figure is plain text: no link and no badge inside it', async () => {
   mockCoverageFetch(() => jsonResponse({ ok: true, coverage: COVERAGE }));
 
   render(<TeachShadowHomePage />);
-  const label = await screen.findByText('Files refused by the content screen');
+  const label = await screen.findByText('Files blocked by the content screen or a reviewer');
   const group = label.parentElement as HTMLElement;
 
   expect(group.querySelector('a, button, .badge, [class*="badge"]')).toBeNull();

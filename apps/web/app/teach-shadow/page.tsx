@@ -700,12 +700,12 @@ export default function TeachShadowHomePage() {
                 <div>
                   {/* Files the content screen turned away: numbers and the
                       screen's own reason keys, never a file or a person. */}
-                  <dt className="t-eyebrow">Files refused by the content screen</dt>
+                  <dt className="t-eyebrow">Files blocked by the content screen or a reviewer</dt>
                   <dd className="t-body">
                     {coverage.refused.files}
                     {coverage.refused.by_reason.length > 0
                       ? `: ${coverage.refused.by_reason
-                        .map((entry) => `${entry.reason ?? 'reason not recorded'} ${entry.files}`)
+                        .map((entry) => `${entry.reason || 'reason not recorded'} ${entry.files}`)
                         .join(', ')}`
                       : ''}
                     {coverage.refused.awaiting_human_review > 0

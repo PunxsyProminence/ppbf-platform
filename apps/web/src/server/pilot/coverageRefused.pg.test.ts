@@ -235,19 +235,20 @@ describe('coverage.refused', () => {
     const other = await readTeachShadowCoverage(OTHER_ORG);
     expect(other.refused.files).toBe(1);
 
-    // Archived footage is not counted anywhere else here either, and a
-    // refused file does not inflate the capture ledger's accepted figures.
+    // The capture ledger counts held and blocked footage by design (not
+    // archived, has a take): 3 blocked + the accepted one.
     const cap = await readTeachShadowCoverage(ORG);
     expect(cap.capture.captured_files).toBe(4);
   });
 
   test('ties on file count sort by reason', async () => {
-    for (const [id, reason] of [['vid-z', 'ZZZ'], ['vid-a', 'AAA']] as const) {
+    for (const [id, reason] of [['vid-z', 'ZZZ'], ['vid-a', 'AAA'], ['vid-free', 'free text, not a key']] as const) {
       await insertVideo(client, {
         id, org: ORG, takeId: `take-${ORG}`, status: 'quarantined', scanState: 'blocked', detail: { reason },
       });
     }
     const { refused } = await readTeachShadowCoverage(ORG);
-    expect(refused.by_reason.map((r) => r.reason)).toEqual(['AAA', 'ZZZ']);
+    expect(refused.by_reason.map((r) => r.reason)).toEqual([null, 'AAA', 'ZZZ']);
+    expect(refused.files).toBe(3);
   });
 });

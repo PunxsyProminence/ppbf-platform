@@ -60,7 +60,7 @@ export interface DefenseEvidenceCell {
 }
 
 export interface RefusedReasonCount {
-  /** scan_detail.reason as stored; null only when a blocked row carries none. */
+  /** scan_detail.reason as stored when it is an upper-snake key like videoScan's; else null. */
   reason: string | null;
   files: number;
 }
@@ -180,7 +180,9 @@ export interface TeachShadowCoverage {
  * make a number move.
  */
 /*
- * REFUSED FILES (the `refused` block). A refused file is one that never got in,
+ * REFUSED FILES (the `refused` block). 'blocked' is the scan_state both the
+ * content screen's refusal and an administrator's block write, so the figure
+ * is "blocked", and a human-blocked row keeps whatever reason it had. A refused file is one that never got in,
  * so it is counted by the same ORGANIZATION and NOT ARCHIVED rules as every
  * figure here, but it is NOT required to have a clip, label or take-backed
  * evidence. It does still carry capture_take_id: the sweep itself decides a
@@ -253,7 +255,8 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       [organizationId],
     ),
     query<{ reason: string | null; files: number; awaiting: number }>(
-      `select scan_detail->>'reason' as reason,
+      `select case when scan_detail->>'reason' ~ '^[A-Z][A-Z0-9_]*$'
+                   then scan_detail->>'reason' end as reason,
               count(*)::int as files,
               (count(*) filter (
                 where status = 'quarantined' and not (scan_detail ? 'human_review')
@@ -384,7 +387,12 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
 
   const by_reason: RefusedReasonCount[] = refusedRows
     .map((row) => ({ reason: row.reason, files: row.files }))
-    .sort((a, b) => b.files - a.files || String(a.reason ?? '').localeCompare(String(b.reason ?? '')));
+    .sort((a, b) => {
+      if (b.files !== a.files) return b.files - a.files;
+      const ar = a.reason ?? '';
+      const br = b.reason ?? '';
+      return ar < br ? -1 : ar > br ? 1 : 0;
+    });
   const refused = {
     files: refusedRows.reduce((sum, row) => sum + row.files, 0),
     awaiting_human_review: refusedRows.reduce((sum, row) => sum + row.awaiting, 0),
