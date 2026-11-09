@@ -143,7 +143,9 @@ describe('a package without the label columns hashes exactly as before they exis
   });
   const baseline = readCommittedBaseline(SEED_DATA);
 
-  it.each(DATASETS.map((dataset) => [dataset.name, dataset] as const))('%s: every committed unit', (_name, dataset) => {
+  // Not the pathway catalog: its committed package carries labels from birth (lane BB-1b ruling), so they are its content.
+  const predatingLabels = DATASETS.filter((dataset) => dataset.name !== 'pathway-catalog');
+  it.each(predatingLabels.map((dataset) => [dataset.name, dataset] as const))('%s: every committed unit', (_name, dataset) => {
     const units = datasetUnits(dataset, baseline);
     for (const unit of units.values()) {
       expect(unitContentHash(dataset, unit)).toBe(unitContentHash(withoutLabels(dataset), unit));

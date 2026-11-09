@@ -11,8 +11,8 @@ import { FILE_SPECS } from '../src/server/pilot/contentImport/specs';
 import { validatePackage } from '../src/server/pilot/contentImport/validate';
 
 // Lane BB-1c: the Backbone -> pathway-catalog exporter, over a small fixture
-// Backbone (3 stages, 3 links, 3 defaults; one lane:non_contact default; one
-// stage field without status, one with neither status nor sources).
+// Backbone (3 stages, 3 links, 3 defaults and one held out; one lane:non_contact
+// default; one stage field without status, one with neither status nor sources).
 
 const SCRIPT = path.resolve(__dirname, 'backbone-export-pathway-catalog.mjs');
 const FIXTURE = path.resolve(__dirname, '__fixtures__/backbone-mini');
@@ -113,7 +113,17 @@ describe('backbone-export-pathway-catalog', () => {
   it('prints the counts and the backbone_version, and stamps that version on every row', () => {
     const result = run([dir, '--out', tempDir()]);
     expect(result.stdout).toContain(`backbone_version: ${VERSION}`);
-    expect(result.stdout).toContain('stages 3, links 3, defaults 3');
+    expect(result.stdout).toContain('stages 3, links 3, defaults 3 (1 held)');
+    // Held by rule: a sources key holding a list separator (PR #1895 Q5); printed with its id, not exported.
+    expect(result.stdout).toContain('held (a sources key holds a list separator | ; or ,): 1 rows: dft_b8c1b8001eea2b');
+    expect(files[DEFAULTS]).not.toContain('dft_b8c1b8001eea2b');
+    expect(files[DEFAULTS]).not.toContain('HELD-ROW-TEXT');
+    // A default's field labels that are not {status, sources} (here two strings) are left blank and counted, never mapped.
+    expect(result.stdout).toContain('field_labels not in {status, sources} shape: 1 rows, 2 cells, left blank');
+    // Licensed excerpts never reach the public repository (OD-2026-10-02-013 2A; PR #1895 Q6).
+    expect(result.stdout).toContain("evidence 'quotes' (licensed excerpts, OD-2026-10-02-013 2A) not carried: 2 keys on 1 rows");
+    expect(files[DEFAULTS]).not.toContain('QUOTED-EXCERPT-TEXT');
+    expect(files[DEFAULTS]).not.toContain('NESTED-EXCERPT-TEXT');
     for (const row of [...stages, ...links, ...defaults]) {
       expect(row.backbone_version).toBe(VERSION);
       expect(row.organization_id).toBe('{{PPBF_ORG_ID}}');
@@ -172,24 +182,24 @@ describe('backbone-export-pathway-catalog', () => {
     for (const row of links) expect([row.field_labels, row.evidence]).toEqual(['', '']);
   });
 
-  it('link_kind: exit to EX1; lateral into RC1/FT1 from outside recreational or within a segment at one order; branch for more than one other; else progression', () => {
-    const stage = (stage_id: string, segment: string, order: number, next_stages: string[]) => ({ stage_id, segment, order, next_stages });
+  it('link_kind: exit to EX1; lateral within one segment and lane, or into RC1/FT1 from outside recreational; branch for more than one other; else progression', () => {
+    const stage = (stage_id: string, segment: string, next_stages: string[], lane?: string) => ({ stage_id, segment, next_stages, ...(lane ? { lane } : {}) });
     const kinds = evaluate(`m.linkKinds(${JSON.stringify([
-      stage('Y5', 'youth', 5, ['T2', 'AM1', 'RC1', 'EX1', 'FT1']),
-      stage('T1', 'trunk', 6, ['T2', 'RC1']),
-      stage('T2', 'trunk', 7, ['AM1']),
-      stage('X1', 'trunk', 7, ['T2']),
-      stage('RC1', 'recreational', 16, ['T1', 'FT1']),
-      stage('FT1', 'recreational', 17, ['RC1']),
-      stage('EX1', 'exit', 18, ['RC1', 'FT1']),
+      stage('Y4', 'youth', ['Y5', 'RC1', 'EX1']),
+      stage('Y5', 'youth', ['T2', 'AM1', 'RC1', 'EX1', 'FT1']),
+      stage('T2', 'trunk', ['AM1']),
+      stage('RC1', 'recreational', ['T1', 'T2', 'FT1', 'EX1'], 'Recreation'),
+      stage('FT1', 'recreational', ['RC1', 'T1'], 'Recreation'),
+      stage('EX1', 'exit', ['RC1', 'FT1']),
     ])})`);
     expect(kinds.map((link: { from: string; to: string; kind: string }) => `${link.from}>${link.to} ${link.kind}`)).toEqual([
+      // Same segment, no lane: a progression, not a lateral move.
+      'Y4>Y5 progression', 'Y4>RC1 lateral', 'Y4>EX1 exit',
       'Y5>T2 branch', 'Y5>AM1 branch', 'Y5>RC1 lateral', 'Y5>EX1 exit', 'Y5>FT1 lateral',
-      'T1>T2 progression', 'T1>RC1 lateral',
       'T2>AM1 progression',
-      'X1>T2 lateral',
-      'RC1>T1 branch', 'RC1>FT1 branch',
-      'FT1>RC1 progression',
+      // RC1 and FT1: the same segment and the same lane, lateral to each other (PR #1895 Q3 B).
+      'RC1>T1 branch', 'RC1>T2 branch', 'RC1>FT1 lateral', 'RC1>EX1 exit',
+      'FT1>RC1 lateral', 'FT1>T1 progression',
       'EX1>RC1 lateral', 'EX1>FT1 lateral',
     ]);
   });
@@ -210,11 +220,15 @@ describe('backbone-export-pathway-catalog', () => {
     for (const text of ['not exported', 'D-FIX', 'allowed']) expect(files[DEFAULTS]).not.toContain(text);
   });
 
-  it('defaults: evidence is the row\'s whole list, every entry and key kept as written, key-sorted; an empty list is blank', () => {
+  it('defaults: evidence is the row\'s whole list, every entry and every key but quotes kept as written, key-sorted; an empty list is blank', () => {
     const [rc1, , y1] = defaults;
     expect(JSON.parse(y1.evidence)).toEqual([
       { evidence_label: 'CONVENTION', evidence_category: 'convention', check_state: 'unchecked', basis: 'fixture, kept as written', zeta_extra: [3, 1] },
-      { evidence_category: 'research', evidence_label: 'EMERGING', check_state: 'checked', source_key: 'FIX-2' },
+      {
+        evidence_category: 'research', evidence_label: 'EMERGING', check_state: 'checked', source_key: 'FIX-2',
+        // A nested part passes through as written, its "n/a" label included (PR #1895 Q8); only its quotes are dropped.
+        beside: [{ source: 'FIX-3', location: 'Table 1', evidence_label: 'n/a', role: 'related' }],
+      },
     ]);
     expect(y1.evidence.startsWith('[{"basis":"fixture, kept as written","check_state"')).toBe(true);
     expect(rc1.evidence).toBe('');
@@ -245,17 +259,12 @@ describe('backbone-export-pathway-catalog', () => {
     expect(empty.stderr).toContain('not found');
   });
 
-  it('refuses, by name and without mapping, a status or evidence_label outside the vocabularies and a field label not shaped {status, sources}', () => {
+  it('refuses, by name and without mapping, a status or evidence_label outside the vocabularies, and a non-number', () => {
     const cases: [Parameters<typeof backbone>[0], string][] = [
       [{ spine: (data) => { data.stages[1].who.status = 'Reported'; } }, 'stage Y1 who: status "Reported" is not one of OBSERVED, REPORTED, INFERRED, UNVERIFIED'],
       [{ catalogs: (data) => { data.default_rules[1].status = 'CONFIRMED'; } }, 'default dft_d2df806b992416: status "CONFIRMED" is not one of'],
       [{ catalogs: (data) => { data.default_rules[0].evidence[1].evidence_label = 'STRONG'; } }, 'default dft_d8e8cc1831f1f0: evidence entry 2 evidence_label "STRONG" is not one of'],
-      [
-        { catalogs: (data) => { data.default_rules[0].field_labels = { unit: 'INFERRED (read from the source)' }; } },
-        'default dft_d8e8cc1831f1f0: field_labels.unit is "INFERRED (read from the source)", not {status, sources}',
-      ],
       [{ catalogs: (data) => { data.default_rules[0].field_labels = { unit: { status: 'GUESS' } }; } }, 'field_labels.unit: status "GUESS" is not one of'],
-      [{ catalogs: (data) => { data.default_rules[2].sources = ['A|B']; } }, "source key \"A|B\" holds '|'"],
       [{ catalogs: (data) => { data.default_rules[0].value_max = '2'; } }, 'default dft_d8e8cc1831f1f0 value_max is "2", not a number'],
     ];
     for (const [edit, message] of cases) {

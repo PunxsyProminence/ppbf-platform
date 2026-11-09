@@ -71,6 +71,9 @@ const REGISTRY_COUNTS = { disciplines: DISCIPLINE_ROWS, levels: LEVEL_ROWS, coho
 const DRILL_ROWS = committedRowCount('drill-library/seed_drill_library.csv');
 const TEMPLATE_ROWS = committedRowCount('workout-templates/seed_workout_templates.csv');
 const SCRIPT_ROWS = committedRowCount('session-scripts/seed_session_scripts.csv');
+/** The committed Backbone snapshot (lane BB-1c): one history row per catalog row on a first load. */
+const PATHWAY_ROWS = ['seed_pathway_stages.csv', 'seed_pathway_stage_links.csv', 'seed_pathway_stage_defaults.csv']
+  .reduce((sum, file) => sum + committedRowCount(`pathway-catalog/${file}`), 0);
 
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
@@ -869,6 +872,7 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     expect(planBlock(dry.stdout)).toEqual(shown);
     expect(shown).toContain(`  disciplines: ${DISCIPLINE_ROWS} new, 0 new version, 0 unchanged, 0 absent, 0 reject`);
     expect(shown).toContain(`  drill-library: ${DRILL_ROWS} new, 0 new version, 0 unchanged, 0 absent, 0 reject`);
+    expect(shown).toContain(`  pathway-catalog: ${PATHWAY_ROWS} new, 0 new version, 0 unchanged, 0 absent, 0 reject`);
     expect(shown).toContain('BLOCKING: 0');
     expect(dry.stdout).toContain('RESULT: DRY RUN -- applied inside the transaction and ROLLED BACK');
     // It really applied: the rows were written, then rolled back.
@@ -885,10 +889,10 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     // hold, in ONE transaction -- one import, one audit row: the drills'
     // discipline foreign key is satisfied by disciplines written earlier in
     // it, and the template items' drill foreign key by the drills.
-    expect(applied.stdout).toContain(`RESULT: COMMITTED -- ${REGISTRY_ROWS + DRILL_ROWS + TEMPLATE_ROWS + SCRIPT_ROWS} item(s) written`);
+    expect(applied.stdout).toContain(`RESULT: COMMITTED -- ${PATHWAY_ROWS + REGISTRY_ROWS + DRILL_ROWS + TEMPLATE_ROWS + SCRIPT_ROWS} item(s) written`);
     expect(applied.stdout).toContain(`  workout-templates: inserted ${TEMPLATE_ROWS}`);
     expect(applied.stdout).toContain(`  session-scripts: inserted ${SCRIPT_ROWS}`);
-    expect(await committedCounts('gym_cli')).toEqual({ ...REGISTRY_COUNTS, ledger: REGISTRY_ROWS, audit: 1, shadowEvents: 1 });
+    expect(await committedCounts('gym_cli')).toEqual({ ...REGISTRY_COUNTS, ledger: REGISTRY_ROWS + PATHWAY_ROWS, audit: 1, shadowEvents: 1 });
     const imports = await observer.query(
       "select count(distinct import_id)::int as n from pilot.reference_content_revisions where organization_id = 'gym_cli'",
     );
@@ -901,6 +905,7 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     const again = await runCli(['plan', '--dataset', 'all'], env);
     expect(again.code).toBe(0);
     expect(planBlock(again.stdout)).toContain(`  cohort-definitions: 0 new, 0 new version, ${COHORT_ROWS} unchanged, 0 absent, 0 reject`);
+    expect(planBlock(again.stdout)).toContain(`  pathway-catalog: 0 new, 0 new version, ${PATHWAY_ROWS} unchanged, 0 absent, 0 reject`);
     expect(planBlock(again.stdout)).toContain(`  drill-library: 0 new, 0 new version, ${DRILL_ROWS} unchanged, 0 absent, 0 reject`);
     expect(planBlock(again.stdout)).toContain(`  workout-templates: 0 new, 0 new version, ${TEMPLATE_ROWS} unchanged, 0 absent, 0 reject`);
     expect(planBlock(again.stdout)).toContain(`  session-scripts: 0 new, 0 new version, ${SCRIPT_ROWS} unchanged, 0 absent, 0 reject`);

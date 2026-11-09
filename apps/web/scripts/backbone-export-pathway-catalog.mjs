@@ -22,6 +22,28 @@
 // CSVs (rows in a fixed order, LF, UTF-8 without BOM, writeCsv's quoting).
 // This is what regenerates the catalog at the final Backbone hand-off.
 //
+// link_kind IS DERIVED HERE, not copied: the spine's next_stages are bare key
+// lists and SCHEMA_PROPOSAL P2 names the four kinds without assigning them per
+// link (linkKinds below; Overwatch, PR #1895 Q3). If the Backbone later gives
+// each link its kind, its value replaces this rule and the snapshot regenerates.
+//
+// A default's field_labels in any shape but {status, sources} (2026-11-09: 572
+// rows hold strings) are left blank and counted on one printed line, never
+// mapped to a status (Overwatch, PR #1895 Q2); the row keeps its record-level
+// status, sources and evidence.
+//
+// A default whose `sources` holds a key containing a list separator (| ; ,) is
+// HELD OUT of the snapshot, by that rule and never by id, and printed with its
+// id (2026-11-09: 5 rows carry one key with a note written into it; Overwatch,
+// PR #1895 Q5). The next export after the Backbone fixes the key brings them in.
+//
+// LICENSED EXCERPTS STAY OUT OF THIS PUBLIC REPOSITORY: the `quotes` key
+// (verbatim passages from research papers and rule books) is dropped from every
+// evidence entry, at any depth (an entry's beside[] and rule_lines[] carry it
+// too), by rule, and counted on one printed line (OD-2026-10-02-013 answer 2A;
+// Overwatch, PR #1895 Q6). The citation itself (source key, location, claim,
+// basis, labels) stays whole.
+//
 // It describes the pathway. Nothing reads the catalog to compute, change or
 // restrict where a coach places anyone.
 
@@ -90,6 +112,8 @@ export function writeCsv(header, rows) {
   return `${[header, ...rows].map((cells) => cells.map(quote).join(',')).join('\n')}\n`;
 }
 
+const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
 const sha16 = (bytes) => createHash('sha256').update(bytes).digest('hex').slice(0, 16);
 const isoSeconds = (date) => date.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
@@ -116,10 +140,10 @@ function checkSources(sources, where) {
   if (!Array.isArray(sources) || !sources.every((source) => typeof source === 'string')) {
     throw new ExportError(`${where}: sources must be a list of source keys`);
   }
-  for (const source of sources) {
-    if (source.includes('|')) throw new ExportError(`${where}: source key ${JSON.stringify(source)} holds '|', the list separator`);
-  }
 }
+
+/** A sources key holding a list separator cannot sit in the '|' list column (validate.ts refuses ';' and ','). */
+const LIST_SEPARATOR = /[|;,]/;
 
 /** A spine field's own label: {status, sources} as the field gives them; null when it gives neither. */
 function fieldLabel(field, where) {
@@ -146,6 +170,9 @@ function checkEvidence(evidence, where) {
   if (!Array.isArray(evidence) || !evidence.every((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))) {
     throw new ExportError(`${where}: evidence must be a list of entries`);
   }
+  // The entry's own evidence_label, as the content contract checks it (validate.ts checkAnnotation).
+  // Nested parts (beside[], rule_lines[]) pass through as written; 28 rows carry "n/a" on a
+  // role: related cross-reference there (Backbone drift; Overwatch, PR #1895 Q8).
   evidence.forEach((entry, index) => {
     if ('evidence_label' in entry && !EVIDENCE_LABELS.includes(entry.evidence_label)) {
       throw new ExportError(
@@ -182,10 +209,12 @@ function stageRow(stage, version) {
 }
 
 /**
- * What kind of move a next-stage link is (lane BB-1c brief, item 1):
+ * What kind of move a next-stage link is (lane BB-1c brief, item 1, with
+ * Overwatch's reading of its same-slot clause, PR #1895 Q3 B):
  *   exit        the target is EX1
- *   lateral     both stages share a segment at the same order, or the target is
- *               RC1 or FT1 from a stage outside the recreational segment
+ *   lateral     both stages are in the same segment and the same lane (RC1 and
+ *               FT1: recreational, lane Recreation), or the target is RC1 or FT1
+ *               from a stage outside the recreational segment
  *   branch      the stage has more than one link that is neither exit nor lateral
  *   progression otherwise
  */
@@ -196,7 +225,7 @@ export function linkKinds(stages) {
     const first = stage.next_stages.map((to) => {
       const target = byKey.get(to);
       if (to === 'EX1') return { to, kind: 'exit' };
-      const sameSlot = target && target.segment === stage.segment && target.order === stage.order;
+      const sameSlot = Boolean(target && stage.lane && target.segment === stage.segment && target.lane === stage.lane);
       const intoLifelong = (to === 'RC1' || to === 'FT1') && stage.segment !== 'recreational';
       return { to, kind: sameSlot || intoLifelong ? 'lateral' : null };
     });
@@ -206,7 +235,29 @@ export function linkKinds(stages) {
   return out;
 }
 
-function defaultRow(rule, version) {
+/** Excerpt keys never committed (OD-2026-10-02-013 2A): stored privately, never in the public repository. */
+const EXCERPT_KEYS = ['quotes'];
+
+/** The value with every excerpt key removed at any depth; `count.keys` counts the keys removed. */
+function stripExcerpts(value, count) {
+  if (Array.isArray(value)) return value.map((item) => stripExcerpts(item, count));
+  if (!isObject(value)) return value;
+  const out = {};
+  for (const [key, inner] of Object.entries(value)) {
+    if (EXCERPT_KEYS.includes(key)) count.keys += 1;
+    else out[key] = stripExcerpts(inner, count);
+  }
+  return out;
+}
+
+function withoutExcerpts(evidence, dropped) {
+  const before = dropped.keys;
+  const out = evidence.map((entry) => stripExcerpts(entry, dropped));
+  if (dropped.keys > before) dropped.rows += 1;
+  return out;
+}
+
+function defaultRow(rule, version, notShaped, dropped) {
   const where = `default ${rule.default_id ?? '(no default_id)'}`;
   const cells = { organization_id: ORG_PLACEHOLDER, backbone_version: version, active_flag: 'true', stage_keys: '' };
   for (const key of DEFAULT_TEXT_KEYS) cells[key] = textCell(rule[key], `${where} ${key}`);
@@ -221,24 +272,28 @@ function defaultRow(rule, version) {
     cells.phases = '';
   }
   checkEvidence(rule.evidence, where);
-  cells.evidence = rule.evidence.length ? sortedJson(rule.evidence) : '';
-  cells.field_labels = defaultFieldLabels(rule, where);
+  const evidence = withoutExcerpts(rule.evidence, dropped);
+  cells.evidence = evidence.length ? sortedJson(evidence) : '';
+  cells.field_labels = defaultFieldLabels(rule, where, notShaped);
   return cells;
 }
 
 /**
  * A default's field_labels: blank unless the row carries per-field labels
- * (Overwatch, PR #1894). Each entry must be {status, sources?} with a status
- * of the four; any other shape is refused by name, never reshaped.
+ * (Overwatch, PR #1894). Each entry {status, sources?} with a status of the
+ * four is kept; a status outside the four is refused by name. A row whose
+ * labels are not in that shape at all is left blank and counted, never mapped
+ * (PR #1895 Q2).
  */
-function defaultFieldLabels(rule, where) {
+function defaultFieldLabels(rule, where, notShaped) {
   if (rule.field_labels === undefined) return '';
   const labels = rule.field_labels;
-  if (!labels || typeof labels !== 'object' || Array.isArray(labels)) throw new ExportError(`${where}: field_labels must be an object`);
+  if (!isObject(labels) || !Object.values(labels).every(isObject)) {
+    notShaped.rows += 1;
+    notShaped.cells += isObject(labels) ? Object.values(labels).filter((label) => !isObject(label)).length : 1;
+    return '';
+  }
   for (const [field, label] of Object.entries(labels)) {
-    if (!label || typeof label !== 'object' || Array.isArray(label)) {
-      throw new ExportError(`${where}: field_labels.${field} is ${JSON.stringify(label)}, not {status, sources} (refused, not mapped)`);
-    }
     checkStatus(label.status, `${where} field_labels.${field}`);
     if (label.sources !== undefined) checkSources(label.sources, `${where} field_labels.${field}`);
   }
@@ -284,12 +339,23 @@ export function exportPathwayCatalog(backboneDir) {
       active_flag: 'true',
     }))
     .sort((a, b) => compare(a.from_stage_key, b.from_stage_key) || compare(a.to_stage_key, b.to_stage_key));
-  const defaultRows = rules.map((rule) => defaultRow(rule, backboneVersion)).sort((a, b) => compare(a.default_id, b.default_id));
+  const notShaped = { rows: 0, cells: 0 };
+  const dropped = { rows: 0, keys: 0 };
+  const isHeld = (rule) => Array.isArray(rule.sources) && rule.sources.some((source) => typeof source === 'string' && LIST_SEPARATOR.test(source));
+  const held = rules.filter(isHeld).map((rule) => String(rule.default_id)).sort(compare);
+  const defaultRows = rules.filter((rule) => !isHeld(rule)).map((rule) => defaultRow(rule, backboneVersion, notShaped, dropped))
+    .sort((a, b) => compare(a.default_id, b.default_id));
 
   const table = (name, rows) => writeCsv(HEADERS[name], rows.map((row) => HEADERS[name].map((column) => row[column] ?? '')));
   return {
     backboneVersion,
-    counts: { stages: stageRows.length, links: linkRows.length, defaults: defaultRows.length },
+    counts: { stages: stageRows.length, links: linkRows.length, defaults: defaultRows.length, held: held.length },
+    held,
+    notices: [
+      ...(held.length ? [`held (a sources key holds a list separator | ; or ,): ${held.length} rows: ${held.join(', ')}`] : []),
+      ...(dropped.rows ? [`evidence 'quotes' (licensed excerpts, OD-2026-10-02-013 2A) not carried: ${dropped.keys} keys on ${dropped.rows} rows`] : []),
+      ...(notShaped.rows ? [`field_labels not in {status, sources} shape: ${notShaped.rows} rows, ${notShaped.cells} cells, left blank`] : []),
+    ],
     files: {
       'seed_pathway_stages.csv': table('seed_pathway_stages.csv', stageRows),
       'seed_pathway_stage_links.csv': table('seed_pathway_stage_links.csv', linkRows),
@@ -333,7 +399,8 @@ function main() {
     fs.mkdirSync(out, { recursive: true });
     for (const [name, text] of Object.entries(result.files)) fs.writeFileSync(path.join(out, name), text, 'utf8');
     console.log(`backbone_version: ${result.backboneVersion}`);
-    console.log(`stages ${result.counts.stages}, links ${result.counts.links}, defaults ${result.counts.defaults} -> ${out}`);
+    console.log(`stages ${result.counts.stages}, links ${result.counts.links}, defaults ${result.counts.defaults} (${result.counts.held} held) -> ${out}`);
+    for (const notice of result.notices) console.log(notice);
   } catch (error) {
     if (error instanceof ExportError) {
       console.error(`backbone-export-pathway-catalog: ${error.message}`);

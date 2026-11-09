@@ -16,10 +16,12 @@
       "composite_parent": "LR-140",
       "evidence": [
         { "evidence_label": "CONVENTION", "evidence_category": "convention", "check_state": "unchecked", "basis": "fixture, kept as written", "zeta_extra": [3, 1] },
-        { "evidence_category": "research", "evidence_label": "EMERGING", "check_state": "checked", "source_key": "FIX-2" }
+        { "evidence_category": "research", "evidence_label": "EMERGING", "check_state": "checked", "source_key": "FIX-2", "quotes": ["QUOTED-EXCERPT-TEXT"],
+          "beside": [{ "source": "FIX-3", "location": "Table 1", "evidence_label": "n/a", "role": "related", "quotes": ["NESTED-EXCERPT-TEXT"] }] }
       ],
       "status": "REPORTED",
       "sources": ["LR-140", "FIX-1"],
+      "field_labels": { "unit": "INFERRED (read from the source text)", "value_max": "INFERRED (read from the source text)" },
       "override": { "allowed": true },
       "decision": "D-FIX",
       "from_spine_default": "not exported"
@@ -47,6 +49,16 @@
       "status": "OBSERVED",
       "sources": ["Owner 2026-10-24"],
       "note": "not exported"
+    },
+    {
+      "default_id": "dft_b8c1b8001eea2b",
+      "scope": "EX1",
+      "default_key": "insurance_information",
+      "kind": "information",
+      "display_text": "HELD-ROW-TEXT",
+      "evidence": [],
+      "status": "REPORTED",
+      "sources": ["FIX-1", "FIX-RB (edition in force; a note in the key)"]
     }
   ]
 }
