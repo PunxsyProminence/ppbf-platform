@@ -83,6 +83,7 @@ const SYSTEM_JOBS: readonly SystemJob[] = [
   { file: 'move-policy-shelf.yml', name: 'move-policy-shelf', purpose: "Moves one organization's policy shelf to another organization.", runsOn: ['manual'] },
   { file: 'package-integrity.yml', name: 'package-integrity', purpose: 'Checks the package manifest and lockfile.', runsOn: ['pull request', 'push', 'manual'] },
   { file: 'pre-release-migrations.yml', name: 'pre-release-migrations', purpose: 'Pre-release migration check, run before apply-migrations.', runsOn: ['manual', 'schedule'] },
+  { file: 'redact-intake-upload-audit.yml', name: 'redact-intake-upload-audit', purpose: 'Removes the intake file names from the upload audit rows written before 2026-10-03, dry run first.', runsOn: ['manual'] },
   { file: 'release-one-approval.yml', name: 'release-one-approval', purpose: 'Staging, migrations and production for one commit, under one approval.', runsOn: ['manual'] },
   { file: 'repair-research-baseline.yml', name: 'repair-research-baseline', purpose: 'Repairs the platform SHADOW research baseline.', runsOn: ['manual'] },
   { file: 'rescope-library-baseline.yml', name: 'rescope-library-baseline', purpose: "Moves an imported research corpus off a gym's shelf onto the platform baseline.", runsOn: ['manual'] },

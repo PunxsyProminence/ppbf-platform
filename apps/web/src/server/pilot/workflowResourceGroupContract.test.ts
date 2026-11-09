@@ -52,6 +52,7 @@ const COVERED = [
   'import-shadow-research.yml',
   'load-licensed-excerpts.yml',
   'move-policy-shelf.yml',
+  'redact-intake-upload-audit.yml',
   'repair-research-baseline.yml',
   'rescope-library-baseline.yml',
   'retention-cleanup.yml',
