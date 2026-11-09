@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 
 import { writePilotAuditEvent } from './audit';
+import { carryLabelsToNewVersion } from './contentImport/datasets/contentLabels';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
 import { BLOCK_RENDERED_FORMATS, FROM_TEMPLATE, explainLine, templateSectionWords } from '@/src/lib/sessionScriptWords';
@@ -541,6 +542,8 @@ export async function editSessionScript(
           where organization_id = $1 and script_id = $2`,
         [params.organizationId, script.script_id, newScriptId],
       );
+      // The new version keeps the backbone labels of the one it replaces (lineage-wide stage links stay as they are).
+      await carryLabelsToNewVersion(client, params.organizationId, 'session-scripts', script.lineage_id, script.version, version);
       rerendered = await rerenderFromBlocks(client, params.organizationId, newScriptId, name, blocks);
       result = { outcome: 'new_version', script_id: newScriptId, version };
     }
