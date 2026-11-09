@@ -69,6 +69,11 @@ const LABELLING_ROW = {
   gold_candidates: 3,
 };
 
+const REFUSED_ROWS = [
+  { reason: 'CONTENT_SCREEN_REFUSED', files: 2, awaiting: 1 },
+  { reason: 'FIXTURE_SECOND_REASON', files: 1, awaiting: 0 },
+];
+
 /** Statements the mock did not recognise. Asserted empty, so an unmatched
  *  query names itself instead of arriving as an opaque 500. */
 let unmatchedSql: string[] = [];
@@ -78,6 +83,7 @@ function installQueryMock(options: { punchRows?: PunchRow[]; defenseRows?: Defen
 
   mockQuery.mockImplementation(async (text: string) => {
     if (text.includes('as recording_sessions')) return [CAPTURE_ROW];
+    if (text.includes("scan_state = 'blocked'")) return REFUSED_ROWS;
     if (text.includes('as clips_cut')) return [LABELLING_ROW];
     if (text.includes("e.event_class = 'punch'")) return punchRows;
     if (text.includes("e.event_class = 'defense'")) return defenseRows;
@@ -161,6 +167,14 @@ test('a coach gets the coverage summary', async () => {
   expect(body.ok).toBe(true);
   expect(body.coverage.capture).toEqual(CAPTURE_ROW);
   expect(body.coverage.labelling).toEqual(LABELLING_ROW);
+  expect(body.coverage.refused).toEqual({
+    files: 3,
+    awaiting_human_review: 1,
+    by_reason: [
+      { reason: 'CONTENT_SCREEN_REFUSED', files: 2 },
+      { reason: 'FIXTURE_SECOND_REASON', files: 1 },
+    ],
+  });
   expect(body.coverage.ontology_version).toBe('boxing-ontology-0.1');
 });
 
@@ -177,12 +191,12 @@ test('the legacy admin spelling reaches the same surface as organization_admin',
 });
 
 /*
- * THE ORG SCOPING. Every one of the four statements is parameterised with the
+ * THE ORG SCOPING. Every one of the five statements is parameterised with the
  * SESSION's organization, and the id the caller put in the query string
  * reaches no statement at all.
  *
  * Asserted over every call rather than the first, because the leak this
- * guards against is one statement out of four losing its filter -- which
+ * guards against is one statement out of five losing its filter -- which
  * mixes another gym's counts into this gym's totals and looks like nothing
  * but a bigger number.
  */
@@ -192,9 +206,9 @@ test('every statement is scoped to the session organization, never to the caller
   const response = await GET(request());
 
   expect(response.status).toBe(200);
-  expect(mockQuery).toHaveBeenCalledTimes(4);
+  expect(mockQuery).toHaveBeenCalledTimes(5);
   for (const [, params] of mockQuery.mock.calls) {
-    // $1 is the organization on every statement. Three of the four also take
+    // $1 is the organization on every statement. Four of the five also take
     // the ontology version as $2, so the shape varies and only the first
     // position is pinned here -- the version has its own test below.
     expect(params[0]).toBe('org-principal');
@@ -224,7 +238,10 @@ test('no count treats footage that was not recorded to teach Shadow as corpus ev
 
   const statements = mockQuery.mock.calls.map(([text]) => String(text));
   const capture = statements.filter((text) => text.includes('as recording_sessions'));
-  const corpus = statements.filter((text) => !text.includes('as recording_sessions'));
+  const refused = statements.filter((text) => text.includes("scan_state = 'blocked'"));
+  const corpus = statements.filter(
+    (text) => !text.includes('as recording_sessions') && !text.includes("scan_state = 'blocked'"),
+  );
 
   expect(capture).toHaveLength(1);
   expect(corpus).toHaveLength(3);
@@ -234,6 +251,11 @@ test('no count treats footage that was not recorded to teach Shadow as corpus ev
   // The capture side needs no join: capture_take_id is on the video row it
   // already counts.
   expect(capture[0]).toContain('capture_take_id is not null');
+  // The refused read carries the same discriminator (the scan's own
+  // isTeaching rule) so Film Study refusals are never reported as Teach Shadow's.
+  expect(refused).toHaveLength(1);
+  expect(refused[0]).toContain('capture_take_id is not null');
+  expect(refused[0]).toContain("status <> 'archived'");
 });
 
 test('a gold record is one that was promoted, not one that was nominated or excluded', async () => {

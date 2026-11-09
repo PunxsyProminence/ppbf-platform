@@ -123,6 +123,14 @@ const COVERAGE = {
     captured_files: 37,
     takes_with_multiple_files: 11,
   },
+  refused: {
+    files: 8,
+    awaiting_human_review: 3,
+    by_reason: [
+      { reason: 'CONTENT_SCREEN_REFUSED', files: 6 },
+      { reason: 'FIXTURE_SECOND_REASON', files: 2 },
+    ],
+  },
   labelling: {
     clips_cut: 64,
     submitted_sets: 41,
@@ -299,6 +307,10 @@ test('every coverage count is rendered from the payload, not from a constant in 
    */
   expect(valueFor('Files captured')).toBe('37');
   expect(valueFor('Takes recorded')).toBe('19 in 5 sessions');
+  // Numbers and the screen's own reason keys, as plain text: no badge, no link.
+  expect(valueFor('Files refused by the content screen')).toBe(
+    '8: CONTENT_SCREEN_REFUSED 6, FIXTURE_SECOND_REASON 2; 3 awaiting human review',
+  );
   expect(valueFor('Takes with more than one file')).toBe('11');
   // TS-ANON-01: removed on purpose. An anonymous corpus cannot honestly
   // report how many unique people are in it, and a number that looked
@@ -311,6 +323,26 @@ test('every coverage count is rendered from the payload, not from a constant in 
   // PROMOTED and CANDIDATE are different states and the panel must not merge
   // them: a candidate is adjudicated and deliberately not in the dataset.
   expect(valueFor('Gold records promoted')).toBe('13, with 6 still a candidate');
+});
+
+test('with nothing refused the figure reads zero, with no breakdown', async () => {
+  const empty = { ...COVERAGE, refused: { files: 0, awaiting_human_review: 0, by_reason: [] } };
+  mockCoverageFetch(() => jsonResponse({ ok: true, coverage: empty }));
+
+  render(<TeachShadowHomePage />);
+  await screen.findByText('Takes with more than one file');
+
+  expect(valueFor('Files refused by the content screen')).toBe('0');
+});
+
+test('the refused figure is plain text: no link and no badge inside it', async () => {
+  mockCoverageFetch(() => jsonResponse({ ok: true, coverage: COVERAGE }));
+
+  render(<TeachShadowHomePage />);
+  const label = await screen.findByText('Files refused by the content screen');
+  const group = label.parentElement as HTMLElement;
+
+  expect(group.querySelector('a, button, .badge, [class*="badge"]')).toBeNull();
 });
 
 test('the thinnest evidence is listed first, and a cell with nothing in it says so in words', async () => {
