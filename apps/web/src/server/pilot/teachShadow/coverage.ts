@@ -59,6 +59,12 @@ export interface DefenseEvidenceCell {
   clips: number;
 }
 
+export interface RefusedReasonCount {
+  /** scan_detail.reason as stored when it is an upper-snake key like videoScan's; else null. */
+  reason: string | null;
+  files: number;
+}
+
 export interface TeachShadowCoverage {
   ontology_version: string;
   capture: {
@@ -77,6 +83,18 @@ export interface TeachShadowCoverage {
      * file.
      */
     takes_with_multiple_files: number;
+  };
+  /*
+   * FILES THE CONTENT SCREEN TURNED AWAY (scan_state 'blocked'). Numbers and
+   * reason keys only -- never a file name, title, note or id. See the REFUSED
+   * FILES paragraph below for what it counts and why.
+   */
+  refused: {
+    files: number;
+    /** Of those, still quarantined with no administrator decision recorded. */
+    awaiting_human_review: number;
+    /** videoScan's own reason keys as written to scan_detail.reason, never reworded. */
+    by_reason: RefusedReasonCount[];
   };
   labelling: {
     clips_cut: number;
@@ -161,6 +179,19 @@ export interface TeachShadowCoverage {
  * labels back into these counts exactly as they were. Nothing is deleted to
  * make a number move.
  */
+/*
+ * REFUSED FILES (the `refused` block). 'blocked' is the scan_state both the
+ * content screen's refusal and an administrator's block write, so the figure
+ * is "blocked", and a human-blocked row keeps whatever reason it had. A refused file is one that never got in,
+ * so it is counted by the same ORGANIZATION and NOT ARCHIVED rules as every
+ * figure here, but it is NOT required to have a clip, label or take-backed
+ * evidence. It does still carry capture_take_id: the sweep itself decides a
+ * row is teaching footage by `capture_take_id is not null`
+ * (captureParticipants.ts resolveScanSubject), and the same sweep screens Film
+ * Study uploads too (videoScanSweep.ts), whose refusals are about an athlete's
+ * footage and are not Teach Shadow's to report. So the discriminator is the
+ * scan's own. Information only: no stage, gate or warning is computed from it.
+ */
 const TEACHING_SOURCE_JOIN = (alias: string) => `
   join pilot.calibration_clips cc
     on cc.calibration_clip_id = ${alias}.calibration_clip_id
@@ -189,7 +220,7 @@ const SUBMITTED_EVENTS_FROM = `
    and s.ontology_version = $2`;
 
 export async function readTeachShadowCoverage(organizationId: string): Promise<TeachShadowCoverage> {
-  const [capture, labelling, punchRows, defenseRows] = await Promise.all([
+  const [capture, refusedRows, labelling, punchRows, defenseRows] = await Promise.all([
     query<{
       recording_sessions: number;
       capture_takes: number;
@@ -221,6 +252,20 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
             having count(*) >= 2
           ) t)
            as takes_with_multiple_files`,
+      [organizationId],
+    ),
+    query<{ reason: string | null; files: number; awaiting: number }>(
+      `select case when scan_detail->>'reason' ~ '^[A-Z][A-Z0-9_]*$'
+                   then scan_detail->>'reason' end as reason,
+              count(*)::int as files,
+              (count(*) filter (
+                where status = 'quarantined' and not (scan_detail ? 'human_review')
+              ))::int as awaiting
+         from pilot.video_sessions
+        where organization_id = $1 and capture_take_id is not null
+          and scan_state = 'blocked'
+          and status <> 'archived'
+        group by 1`,
       [organizationId],
     ),
     query<{
@@ -340,6 +385,20 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
     clips: defenseCounts.get(defenseType)?.clips ?? 0,
   }));
 
+  const by_reason: RefusedReasonCount[] = refusedRows
+    .map((row) => ({ reason: row.reason, files: row.files }))
+    .sort((a, b) => {
+      if (b.files !== a.files) return b.files - a.files;
+      const ar = a.reason ?? '';
+      const br = b.reason ?? '';
+      return ar < br ? -1 : ar > br ? 1 : 0;
+    });
+  const refused = {
+    files: refusedRows.reduce((sum, row) => sum + row.files, 0),
+    awaiting_human_review: refusedRows.reduce((sum, row) => sum + row.awaiting, 0),
+    by_reason,
+  };
+
   return {
     ontology_version: BOXING_ONTOLOGY_VERSION_0_1,
     capture: capture[0] ?? {
@@ -348,6 +407,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       captured_files: 0,
       takes_with_multiple_files: 0,
     },
+    refused,
     labelling: labelling[0] ?? {
       clips_cut: 0,
       submitted_sets: 0,
