@@ -164,6 +164,54 @@ and should not try to.
 
 ---
 
+## OD-2026-11-09-001 -- The in-app timer and a standalone "Prominence Round Timer" are built on shared logic in gym-tv-timer, led by TV Timer Lead: "all 3"; "will add run in the free + subscription"; "Free remote (Rec.)"; "Pro + Supporter (Rec.)"; "Public"; "Reuse TV Timer Lead (Rec.)"; "Yes, start 1 and 2 (Rec.)"
+
+**Provenance: PRIMARY.** Jason's answers to question cards in the gym-tv-timer session ("Gym TV timer core repo", `local_d6c7eb34`; transcript `~/.claude/projects/C--Dev/01925d31-aed6-4409-bebc-09dc7702b2a7.jsonl`): questions at lines 2956, 2961, 3030 and 3063, answers at lines 2957, 2968, 3031 and 3064 (`toolUseResult.answers`), 2026-11-09T17:56:16Z to 18:07:31Z (12:56 to 13:07 EST). Each quote below was asserted against its line by script before writing; spelling kept. Earlier typed messages that set the subject, `origin.kind` human: line 1573, *"ok lets focus on the in app and out of app timer"*; line 1799, *"i have a duns i want these apps to finace the gym and its programs"*; line 2938, *"ok lets get back and focus on building the in app and stand alone timer ask me qestions"*. New; adds a status line under OD-2026-10-28-001 and edits no earlier entry's text.
+
+**What was put to him, and his answers.** "(Rec.)" marks the option recommended to him. Where he typed his own answer, the options are listed.
+
+| # | Question (header) | His answer |
+|---|---|---|
+| 1 | Platforms: "which store build ships first?" Options "Android + Fire TV (Rec.)", "Web link first", "Android, Fire TV and Apple" | *"all 3"* (typed) |
+| 2 | Control: how the standalone timer is driven | *"Free alone, paid remote (Rec.)"*, replaced by row 9 |
+| 3 | Money: "how does the standalone timer earn for the gym?" Options "Free + subscription (Rec.)", "Paid up front", "Free + one-time unlock" | *"will add run in the free + subscription"* (typed) |
+| 4 | Features, for both timers. Options "Saved workouts", "Mixed intervals", "Voice and sound options", "Stations / circuits" | *"all maybe make it add paid/donation tier add on or whatever will get people to contribute money"* (typed) |
+| 5 | Store name | *"Prominence Round Timer (Rec.)"* |
+| 6 | Free vs paid. The recommended option, "Gym clock free (Rec.)", read: "Free: everything the gym TV does today (rounds, bell, knocks, +30, repeat) plus 3 saved workouts. Subscription: phone remote, unlimited saved workouts, mixed intervals, stations, voice options." | *"validate what people actually would payfor from outside source"* (typed; he did not pick that option) |
+| 7 | Look. Option text: "Default is the PPBF gym-TV look (dark, gold, gym feel) so it advertises the gym; extra themes sold as add-ons, another way to earn." | *"PPBF look + paid themes (Rec.)"* |
+| 8 | Accounts. Option text: "Nobody signs up. Purchases restore through the app store; the phone pairs to the TV with a code, like the gym TV today." | *"No accounts (Rec.)"* |
+| 9 | Remote, after the outside check (free phone-to-TV remotes in PushPress Workout Timer, Marune Timer and HYFN Gym Timer). Option text: "Remote is free so we match competitors and get downloads; the subscription sells saved workouts, mixed intervals, stations, voice options and themes instead. The server cost is paid out of subscriptions." | *"Free remote (Rec.)"* |
+| 10 | Prices (SmartWOD Timer, Boxing Timer Pro and Seconds Pro prices and the Adapty 2026 annual-plan share were in the question). Option text: "Pro $2.99/month or $14.99/year. Supporter $4.99/month or $29.99/year: same features, and the store page says it backs the gym's youth programs." | *"Pro + Supporter (Rec.)"* |
+| 11 | Repo for the standalone app, public or private. Recommended "Private (Rec.)"; the option he picked read: "Anyone can read the code, like gym-tv-timer. Others could copy the paid features." | *"Public"* |
+| 12 | Lead: "who runs the timer build lanes and merges them?" Option text: "Widen the session that ran the plug-back to cover this build. It already knows the timer repos and release steps." | *"Reuse TV Timer Lead (Rec.)"* |
+| 13 | Start: "begin with step 1 (record today's decisions in OWNER_DECISIONS) and step 2 (shared timer logic lane in gym-tv-timer)?" Option text: "Records PR plus the first build lane. Nothing reaches the app or production until reviewed, merged and released." | *"Yes, start 1 and 2 (Rec.)"* |
+
+**Rulings:**
+
+1. Two timers: the in-app gym TV timer in ppbf-platform, and a standalone app named "Prominence Round Timer" (rows 5, 13).
+2. The standalone app ships on all three platform options put to him: web link, Android with Fire TV, and Apple (iPhone, iPad, Apple TV) (row 1).
+3. Both timers get all four features: saved workouts, mixed intervals, voice and sound options, stations/circuits (row 4).
+4. The standalone app runs alone on any screen, and the phone-to-TV remote is free; row 9 replaces row 2 (row 9).
+5. Money: a free app with a subscription, priced Pro $2.99/month or $14.99/year and Supporter $4.99/month or $29.99/year (same features; the store page says it backs the gym's youth programs), plus a way to give more (*"add paid/donation tier add on or whatever will get people to contribute money"*) (rows 3, 4, 10). The subscription sells saved workouts, mixed intervals, stations, voice options and themes (row 9's option text).
+6. Look: the PPBF gym-TV look by default; extra themes are sold (row 7).
+7. No accounts: purchases restore through the stores, and the phone pairs to the TV with a code (row 8).
+8. The standalone app gets its own new GitHub repo, public (row 11). This went against the recommendation (private); the cost, as put to him in the option: others could copy the paid features. Not re-asked.
+9. TV Timer Lead leads the timer build: it writes the lane briefs and merges the lanes (row 12). This widens OD-2026-10-28-001, which kept that session to the plug-back.
+10. Steps 1 and 2 start now: this record, then one lane in `gym-tv-timer` for the shared timer logic both apps import (row 13).
+
+**Readings, his to correct (not rulings):**
+
+- a. *"will add run in the free + subscription"* is read as the recommended option, "Free + subscription (Rec.)".
+- b. Themes are sold as add-ons (row 7) and also included in Pro; row 9's option text lists themes among what the subscription sells.
+
+**Not ruled here:** how many saved workouts are free (the "3 saved workouts" figure was in row 6's recommended option, which he did not pick, and row 9's option text lists saved workouts among what the subscription sells); the standalone repo's name; the remote relay's host and cost (priced before it is built); store developer accounts, the Relay bank account and the donation path; the order of build steps 3 to 7. The technical approach (shared logic in `gym-tv-timer`, Expo for the standalone app) is the plan's call, not his.
+
+**Evidence it rested on:** the outside price and competitor check written into rows 9 and 10's questions (App Store pages and reports read 2026-11-09), and the plan `C:\Dev\timer-build\TIMER_BUILD_PLAN.md` (draft, NOT APP SOURCE).
+
+**Status:** recorded by PR; step 2's lane opens in `PunxsyProminence/gym-tv-timer`. Nothing reaches ppbf-platform or production from this entry.
+
+---
+
 ## OD-2026-11-08-001 -- The backbone crossover's first step is three lanes, 1a, 1b and 1c, from the approved lane-1 brief: "Approve as drafted"
 
 **Provenance: PRIMARY.** Jason's reply "Approve as drafted", 2026-11-08 about 22:43 EST (transcript timestamp 2026-11-09T03:42:21.120Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 656, `origin.kind` human), checked against the file by script before writing. The question put to him is line 645 (the `wrap_up` `ask`): "Approve the lane-1 brief draft (three lanes 1a, 1b, 1c on VS Code neeko@, org-scoped catalog)?" The brief is `C:\Users\jason\Documents\PPBF-overwatch\backbone-crossover\LANE1_BRIEF_DRAFT.md`, section "What Jason approved". New; edits no earlier entry's text, but adds a status line under OD-2026-10-28-002.
@@ -259,6 +307,8 @@ and should not try to.
 **Not ruled here:** the 2026-10-23 stopping point ("we are not building anything else", `Documents\PPBF-overwatch\STOPPING-POINT-2026-10-23.md`) is lifted for the plug-back only, as the opening session read this answer; no other hold changes.
 
 **Status:** applied 2026-10-28; the lead opened the same day.
+
+Status (2026-11-09): widened by OD-2026-11-09-001. Jason, on "who runs the timer build lanes and merges them?": *"Reuse TV Timer Lead (Rec.)"*. TV Timer Lead now also leads the in-app timer and Prominence Round Timer build.
 
 ---
 
