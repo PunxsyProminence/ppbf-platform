@@ -1,0 +1,54 @@
+{
+  "meta": { "version": "fixture-1" },
+  "stages": [
+    {
+      "stage_id": "EX1",
+      "name": "Exit",
+      "segment": "exit",
+      "order": 3,
+      "who": { "value": "Anyone leaving", "sources": ["FIX-1"], "status": "REPORTED" },
+      "develops": { "value": "Transition" },
+      "entry_gate": { "value": "not exported", "sources": ["FIX-1"], "status": "REPORTED" },
+      "typical_duration": { "value": "open", "sources": ["FIX-1"], "status": "INFERRED" },
+      "contact_default": { "value": "none", "note": "not exported", "sources": ["FIX-1"], "status": "REPORTED" },
+      "competition": { "value": "none", "sources": ["FIX-1"] },
+      "defaults": [],
+      "next_stages": ["RC1"],
+      "conflicts": [],
+      "ppbf_name": { "value": "LUMEN", "sources": ["Owner 2026-10-24"], "status": "REPORTED" }
+    },
+    {
+      "stage_id": "Y1",
+      "name": "  Café Introduction  ",
+      "segment": "youth",
+      "order": 1,
+      "who": { "value": "Ages 5-8, \"a guide\", never a gate", "sources": ["FIX-1", "Owner 2026-10-23"], "status": "OBSERVED" },
+      "develops": { "value": "Movement, coordination", "sources": ["FIX-1"], "status": "REPORTED" },
+      "typical_duration": { "value": "not stated", "sources": ["FIX-1"], "status": "REPORTED" },
+      "contact_default": { "value": "none", "note": "not exported", "sources": ["FIX-1"], "status": "REPORTED" },
+      "competition": { "value": "none", "sources": ["FIX-1"], "status": "REPORTED" },
+      "defaults": [],
+      "next_stages": ["RC1", "EX1"],
+      "conflicts": ["not exported"],
+      "external_checks": [],
+      "ppbf_name": { "value": "AURORA", "meaning": "dawn", "language": "Latin", "sources": ["Owner 2026-10-24"], "status": "REPORTED" }
+    },
+    {
+      "stage_id": "RC1",
+      "name": "Recreational",
+      "segment": "recreational",
+      "order": 2,
+      "who": { "value": "Adults and teens", "sources": ["FIX-1"], "status": "REPORTED" },
+      "develops": { "value": "Lifelong boxing", "sources": ["FIX-1"], "status": "REPORTED" },
+      "typical_duration": { "value": "lifelong", "sources": ["FIX-1"], "status": "REPORTED" },
+      "contact_default": { "value": "light_technical", "sources": ["FIX-1"], "status": "INFERRED" },
+      "competition": { "value": "none", "sources": ["FIX-1"], "status": "REPORTED" },
+      "defaults": [],
+      "next_stages": [],
+      "conflicts": [],
+      "lane": "Recreation-lane",
+      "track": "contact-track",
+      "ppbf_name": { "value": "CONSTANS", "meaning": "steadfast", "language": "Latin", "sources": ["Owner 2026-10-24"], "status": "INFERRED" }
+    }
+  ]
+}
