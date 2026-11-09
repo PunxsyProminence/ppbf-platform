@@ -210,6 +210,7 @@ One row = one stage or lane default. Identity: default_id.
 Rules:
 
 - default_id is 'dft_' and 14 lowercase hex.
+- default_id is the backbone's id for its scope and default_key: 'dft_' + first 14 hex of sha256(scope + ':' + default_key).
 - scope is a stage key (capital letters then digits) or lane:non_contact.
 - value_min is not above value_max.
 - phases, when set, is a JSON list.

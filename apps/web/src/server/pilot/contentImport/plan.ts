@@ -101,6 +101,8 @@ function computePlanHash(organizationId: string, actor: ImportActor, datasets: D
     unit.fromVersion ?? null,
     unit.toVersion ?? null,
     unit.recordsBefore ?? false,
+    // Only when set, so every plan without a retirement hashes as before.
+    ...(unit.retires ? ['retires'] : []),
   ]);
   const findingRows = blocking
     .map((finding) => JSON.stringify([finding.code, finding.file, finding.line ?? null, finding.column ?? null, finding.key ?? null, finding.message]))
@@ -168,7 +170,7 @@ export async function planWithState(request: ImportRequest, checkedActor?: Impor
     counts,
     totals,
     blocking,
-    warnings: validation.warnings,
+    warnings: [...validation.warnings, ...datasetPlans.flatMap((datasetPlan) => datasetPlan.warnings ?? [])],
     changes: totals.new + totals.new_version,
     planHash: computePlanHash(organizationId, actor, datasets, units, blocking),
   };

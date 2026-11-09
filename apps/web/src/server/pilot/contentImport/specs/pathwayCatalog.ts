@@ -1,3 +1,4 @@
+import { hex14 } from '../ids';
 import type { ColumnSpec, DatasetSpec, FileSpec, Finding, ParsedFile, ParsedPackage, RowRule } from '../types';
 import { integer, number, organizationColumn, systemColumn, text, vocabulary } from './common';
 
@@ -144,6 +145,17 @@ const defaultsFile: FileSpec = {
       check: (row) => (row.default_id && !/^dft_[0-9a-f]{14}$/.test(row.default_id) ? `default_id '${row.default_id}' is not 'dft_' and 14 lowercase hex` : null),
     },
     {
+      // Checked, never re-minted: the id the package gives is the id stored.
+      // A mismatch means the row and its id disagree; loading it would make a
+      // second default for the same scope and key.
+      description: "default_id is the backbone's id for its scope and default_key: 'dft_' + first 14 hex of sha256(scope + ':' + default_key).",
+      check: (row) => {
+        if (!/^dft_[0-9a-f]{14}$/.test(row.default_id ?? '') || !row.scope || !row.default_key) return null;
+        const expected = `dft_${hex14(`${row.scope}:${row.default_key}`)}`;
+        return row.default_id === expected ? null : `default_id '${row.default_id}' is not the id of ${row.scope}:${row.default_key} (${expected})`;
+      },
+    },
+    {
       description: `scope is a stage key (capital letters then digits) or ${DEFAULT_LANE_SCOPES.join(', ')}.`,
       mirrors: { table: 'pathway_stage_defaults', constraint: 'pilot_pathway_stage_defaults_scope_check' },
       check: (row) =>
@@ -196,15 +208,17 @@ function fileOf(parsed: ParsedPackage, name: string): ParsedFile | undefined {
 /**
  * Link ends and default scopes against the stages they may name: the
  * package's own seed_pathway_stages.csv when it carries one (that file is the
- * whole catalog after this load), otherwise `fallback` -- offline the 18
- * backbone stage keys, at plan the organization's active stages
- * (datasets/pathwayCatalog.ts). Each unknown stage is refused by name.
- * A malformed key has its own finding and is not compared.
+ * whole catalog after this load), otherwise `fallback` -- at plan, the
+ * organization's active stages (datasets/pathwayCatalog.ts). Offline there is
+ * no fallback: without a stage file the plan stage decides. Each unknown
+ * stage is refused by name. A malformed key has its own finding and is not
+ * compared.
  */
-export function pathwayStageReferenceFindings(parsed: ParsedPackage, fallback: (stageKey: string) => boolean, where: string): Finding[] {
+export function pathwayStageReferenceFindings(parsed: ParsedPackage, fallback?: (stageKey: string) => boolean, where = ''): Finding[] {
   const stages = fileOf(parsed, PATHWAY_STAGES_FILE);
+  if (!stages && !fallback) return [];
   const inFile = new Set(stages?.rows.map((row) => row.values.stage_key).filter(Boolean));
-  const known = (key: string) => (stages ? inFile.has(key) : fallback(key));
+  const known = (key: string) => (stages ? inFile.has(key) : fallback?.(key) === true);
   const source = stages ? `${PATHWAY_STAGES_FILE} of this package` : where;
   const out: Finding[] = [];
   const check = (file: ParsedFile, line: number, column: string, value: string, what: string) => {

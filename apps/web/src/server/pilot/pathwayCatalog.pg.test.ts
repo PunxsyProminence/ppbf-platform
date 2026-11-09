@@ -19,10 +19,11 @@ import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
 import { applyImport } from './contentImport/apply';
-import { readDatasetFiles, runApply } from './contentImport/cli';
+import { formatPlan, readDatasetFiles, runApply } from './contentImport/cli';
 import { readCsv, writeCsv } from './contentImport/csv';
 import { type ImportPlan, planImport } from './contentImport/plan';
 import { loadOfflineReferenceSets } from './contentImport/referenceSets';
+import { hex14 } from './contentImport/ids';
 import { validatePackage } from './contentImport/validate';
 
 jest.setTimeout(300_000);
@@ -150,14 +151,15 @@ async function createGym(organizationId: string): Promise<string> {
 }
 
 const ORG = '{{PPBF_ORG_ID}}';
+const PINNED_BASE_HASH = 'bba5875f46eef7c5b61ea8f9de1ea7ba216a5ecae01f7676ffde1e39a35219ab';
 const LABELS = JSON.stringify({ name: { status: 'REPORTED', sources: ['DOC-156'] }, who_text: { status: 'INFERRED', sources: ['inference'] } });
 const EVIDENCE = JSON.stringify([
   { evidence_category: 'convention', evidence_label: 'CONVENTION', check_state: 'unchecked', basis: 'PPBF owner-system practice' },
   { evidence_category: 'research', evidence_label: 'EMERGING', check_state: 'verified', source_key: 'EXT-TEST' },
 ]);
-// A dft_ id is the backbone's own, kept as given; these two are made up for the test.
-const DFT_Y1 = 'dft_0000000000a001';
-const DFT_LANE = 'dft_0000000000a002';
+// A dft_ id is the backbone's own ('dft_' + hex14(scope:default_key)), kept as given and checked, never re-minted.
+const DFT_Y1 = `dft_${hex14('Y1:sparring_rounds_per_7d_max')}`;
+const DFT_LANE = `dft_${hex14('lane:non_contact:contact_level_ceiling')}`;
 
 const STAGE_HEADER = ['organization_id', 'stage_key', 'segment', 'ordinal', 'name', 'who_text', 'contact_default', 'ppbf_name', 'backbone_version', 'field_labels'];
 const LINK_HEADER = ['organization_id', 'from_stage_key', 'to_stage_key', 'link_kind', 'backbone_version'];
@@ -291,11 +293,39 @@ describe('the pathway_catalog migration', () => {
     await expect(insertDefault('lane:non_contact')).resolves.toBeDefined();
     await expect(client.query(`delete from pilot.pathway_stage_defaults where organization_id = 'gym_db'`)).rejects.toMatchObject({ code: '23001' });
     await expect(client.query(`delete from pilot.pathway_stages where organization_id = 'gym_db'`)).rejects.toMatchObject({ code: '23001' });
-    // The owning organization's own deletion still removes its catalog.
+    // The owning organization's own deletion still removes its catalog, through
+    // every stage key that names it: a link, a stage-scoped default, a content link.
+    await client.query(
+      `insert into pilot.pathway_stages (organization_id, stage_key, segment, ordinal, name, contact_default) values ('gym_db', 'Y2', 'youth', 2, 'Foundations', 'none')`,
+    );
+    await client.query(`insert into pilot.pathway_stage_links (organization_id, from_stage_key, to_stage_key, link_kind) values ('gym_db', 'Y1', 'Y2', 'progression')`);
+    await client.query(
+      `insert into pilot.pathway_stage_defaults (organization_id, default_id, scope, default_key, kind, status) values ('gym_db', 'dft_00000000000b02', 'Y2', 'k', 'information', 'REPORTED')`,
+    );
+    await client.query(
+      `insert into pilot.content_stage_links (organization_id, target_kind, target_lineage_id, stage_key, import_id, recorded_by_account_id, recorded_by_role)
+       values ('gym_db', 'drill', 'drl_00000000000000', 'Y1', 'imp_test', 'admin@gym_db', 'organization_admin')`,
+    );
     await client.query(`delete from pilot.organization_memberships where organization_id = 'gym_db'`);
     await client.query(`delete from pilot.accounts where organization_id = 'gym_db'`);
     await client.query(`delete from pilot.organizations where organization_id = 'gym_db'`);
-    expect((await client.query(`select count(*)::int as n from pilot.pathway_stages where organization_id = 'gym_db'`)).rows[0].n).toBe(0);
+    const left = await client.query(
+      `select (select count(*) from pilot.pathway_stages where organization_id = 'gym_db')
+            + (select count(*) from pilot.pathway_stage_links where organization_id = 'gym_db')
+            + (select count(*) from pilot.pathway_stage_defaults where organization_id = 'gym_db')
+            + (select count(*) from pilot.content_stage_links where organization_id = 'gym_db') as n`,
+    );
+    expect(Number(left.rows[0].n)).toBe(0);
+  });
+});
+
+describe('the plan hash of a plan with no retirement', () => {
+  it('is what it was before this lane: a committed disciplines package for a new gym', async () => {
+    const admin = await createGym('gym_hash');
+    const shown = await plan('gym_hash', admin, readDatasetFiles(SEED_DATA_DIR, ['disciplines']));
+    expect(shown.blocking).toEqual([]);
+    // Pinned from the same plan made at base 00ec726b (before `retires` existed).
+    expect(shown.planHash).toBe(PINNED_BASE_HASH);
   });
 });
 
@@ -322,24 +352,30 @@ describe('a pathway-catalog package', () => {
     ).blocking.map((finding) => `${finding.code} ${finding.message}`);
     const withKeys = [...STAGE_HEADER, 'stage_keys'];
     expect(findings({ [STAGES]: csv(withKeys, [{ ...Y1, stage_keys: 'Y2' }, { ...Y2, stage_key: 'y2' }]) })).toEqual([
-      expect.stringMatching(/^row_rule stage_keys is for content items; leave it blank on a pathway catalog row \('Y2'\)/),
       expect.stringMatching(/^row_rule stage_key 'y2' is not a stage key/),
+      expect.stringMatching(/^row_rule stage_keys is for content items; leave it blank on a pathway catalog row \('Y2'\)/),
     ]);
     expect(findings(catalog([Y1, Y2], [{ ...Y1_Y2, to_stage_key: 'Y1' }], [
       { ...D_Y1, default_id: 'dft_ABC' },
       { ...D_LANE, value_min: '4', value_max: '3', phases: '{"months": 1}' },
-    ]))).toEqual([
+      { ...D_LANE, default_id: 'dft_0000000000a002', default_key: 'other_key' },
+    ]))).toEqual(expect.arrayContaining([
       expect.stringMatching(/^row_rule a link joins two different stages \(Y1 to itself\)/),
       expect.stringMatching(/^row_rule default_id 'dft_ABC' is not 'dft_' and 14 lowercase hex/),
+      expect.stringMatching(/^row_rule default_id 'dft_0000000000a002' is not the id of lane:non_contact:other_key \(dft_[0-9a-f]{14}\)/),
       expect.stringMatching(/^row_rule value_min 4 is above value_max 3/),
       expect.stringMatching(/^row_rule phases must be a JSON list/),
-    ]);
+    ]));
   });
 
   it('plans all new, and the dry run lists every row and writes nothing', async () => {
     const shown = await plan(GYM, admin, FIXTURE());
     expect(shown.blocking).toEqual([]);
     expect(outcomes(shown)).toEqual({ Y1: 'new', Y2: 'new', 'Y1>Y2': 'new', [DFT_Y1]: 'new', [DFT_LANE]: 'new' });
+    // Information only: what the snapshot carries without labels. Never blocks.
+    expect(shown.warnings.filter((warning) => warning.code === 'unlabelled_catalog_rows').map((warning) => [warning.file, warning.message])).toEqual([
+      [STAGES, '1 of 2 stages carry no field_labels; they load without them (information only).'],
+    ]);
 
     const dir = mkdtempSync(path.join(os.tmpdir(), 'ppbf-pathway-seed-'));
     try {
@@ -368,19 +404,20 @@ describe('a pathway-catalog package', () => {
       { stage_key: 'Y2', name: 'Foundations', active_flag: true, field_labels: null },
     ]);
     expect(await linkRows(GYM)).toEqual([{ from_stage_key: 'Y1', to_stage_key: 'Y2', link_kind: 'progression', active_flag: true }]);
-    expect(await defaultRows(GYM)).toEqual([
-      {
+    // The lane default's stage_key is NULL (generated from its scope) and the foreign key accepts it.
+    expect(Object.fromEntries((await defaultRows(GYM)).map((row) => [row.default_id, row]))).toEqual({
+      [DFT_Y1]: {
         default_id: DFT_Y1, scope: 'Y1', stage_key: 'Y1', value_max: '2', window_days: 7, phases: [{ months_in_stage: '0-12', value_max: 0 }],
         sources: ['LR-140', 'DOC-156'], evidence: JSON.parse(EVIDENCE), status: 'REPORTED', active_flag: true,
       },
-      {
+      [DFT_LANE]: {
         default_id: DFT_LANE, scope: 'lane:non_contact', stage_key: null, value_max: null, window_days: null, phases: null,
         sources: ['DOC-156', 'inference'], evidence: null, status: 'INFERRED', active_flag: true,
       },
-    ]);
-    expect(await ledger(GYM)).toEqual([
-      `pathway_stage_defaults ${DFT_Y1} v1 true`,
+    });
+    expect((await ledger(GYM)).sort()).toEqual([
       `pathway_stage_defaults ${DFT_LANE} v1 true`,
+      `pathway_stage_defaults ${DFT_Y1} v1 true`,
       'pathway_stage_links Y1>Y2 v1 true',
       'pathway_stages Y1 v1 true',
       'pathway_stages Y2 v1 true',
@@ -395,6 +432,12 @@ describe('a pathway-catalog package', () => {
     const shown = await plan(GYM, admin, second);
     expect(shown.blocking).toEqual([]);
     expect(outcomes(shown)).toEqual({ Y1: 'new_version', Y2: 'new_version', 'Y1>Y2': 'new_version', [DFT_Y1]: 'new_version', [DFT_LANE]: 'unchanged' });
+    // A retirement is shown as one, not as an ordinary revision.
+    expect(shown.units.filter((unit) => unit.retires).map((unit) => unit.key).sort()).toEqual(['Y1>Y2', 'Y2']);
+    const printed = formatPlan(shown);
+    expect(printed).toContain('    retire Y2: history v1 -> v2 (left out of the file; kept, marked inactive)');
+    expect(printed).toContain('    retire Y1>Y2: history v1 -> v2 (left out of the file; kept, marked inactive)');
+    expect(printed).toContain('    new version Y1: history v1 -> v2');
     const result = await load(GYM, admin, second);
     expect([...(result.written['pathway-catalog']?.updated ?? [])].sort()).toEqual(['Y1', 'Y1>Y2 retired', 'Y2 retired', DFT_Y1].sort());
     expect(await stageRows(GYM)).toEqual([
@@ -402,7 +445,7 @@ describe('a pathway-catalog package', () => {
       { stage_key: 'Y2', name: 'Foundations', active_flag: false, field_labels: null },
     ]);
     expect(await linkRows(GYM)).toEqual([{ from_stage_key: 'Y1', to_stage_key: 'Y2', link_kind: 'progression', active_flag: false }]);
-    expect((await defaultRows(GYM)).map((row) => [row.default_id, row.value_max])).toEqual([[DFT_Y1, '3'], [DFT_LANE, null]]);
+    expect(Object.fromEntries((await defaultRows(GYM)).map((row) => [row.default_id, row.value_max]))).toEqual({ [DFT_Y1]: '3', [DFT_LANE]: null });
     const versions = await ledger(GYM);
     expect(versions).toEqual(expect.arrayContaining([
       `pathway_stage_defaults ${DFT_Y1} v2 true`,
@@ -432,11 +475,11 @@ describe('a pathway-catalog package', () => {
     expect(codes(badEnd)).toEqual([expect.stringMatching(/^orphan_reference to_stage_key the link names stage 'Y9', which is not in seed_pathway_stages.csv/)]);
     expect(badEnd.units.find((unit) => unit.key === 'Y1>Y9')?.outcome).toBe('reject');
 
-    const badScope = await plan(GYM, admin, catalog([Y1, Y2], [Y1_Y2], [{ ...D_LANE, scope: 'lane:contact' }]));
+    const badScope = await plan(GYM, admin, catalog([Y1, Y2], [Y1_Y2], [{ ...D_LANE, scope: 'lane:contact', default_id: `dft_${hex14('lane:contact:contact_level_ceiling')}` }]));
     expect(codes(badScope)).toEqual([expect.stringMatching(/^row_rule {2}scope 'lane:contact' is neither a stage key nor lane:non_contact/)]);
 
-    const noStage = await plan(GYM, admin, catalog([Y1, Y2], [Y1_Y2], [{ ...D_Y1, scope: 'T1' }]));
-    expect(codes(noStage)).toEqual([expect.stringMatching(/^orphan_reference scope default dft_0000000000a001 names stage 'T1'/)]);
+    const noStage = await plan(GYM, admin, catalog([Y1, Y2], [Y1_Y2], [{ ...D_Y1, scope: 'T1', default_id: `dft_${hex14('T1:sparring_rounds_per_7d_max')}` }]));
+    expect(codes(noStage)).toEqual([expect.stringMatching(/^orphan_reference scope default dft_[0-9a-f]{14} names stage 'T1'/)]);
 
     // Without a stage file, the loaded catalog is the one the ends must name.
     const loadedOnly = await plan(GYM, admin, { [LINKS]: csv(LINK_HEADER, [Y1_Y2, { ...Y1_Y2, from_stage_key: 'Y2', to_stage_key: 'Y3' }]) });
@@ -461,7 +504,7 @@ describe('a pathway-catalog package', () => {
 
     const unknown = await plan(GYM, admin, { [DISCIPLINES]: withStages('Y1|AM1') });
     expect(unknown.blocking.map((finding) => [finding.code, finding.column, finding.message])).toEqual([
-      ['unknown_stage_key', 'stage_keys', "'AM1' is not an active stage in this organization's pathway catalog (pilot.pathway_stages)"],
+      ['unknown_stage_key', 'stage_keys', "'AM1' is not a stage in this organization's pathway catalog (pilot.pathway_stages)"],
     ]);
     // A key outside the 18 keeps its offline finding, not repeated at plan.
     const offline = await plan(GYM, admin, { [DISCIPLINES]: withStages('Y1|Z1') });
@@ -474,5 +517,47 @@ describe('a pathway-catalog package', () => {
     await load(GYM, admin, { [DISCIPLINES]: withStages('Y1|Y2') });
     expect(await rows('select stage_key from pilot.content_stage_links where organization_id = $1 and superseded_at is null order by 1', GYM))
       .toEqual([{ stage_key: 'Y1' }, { stage_key: 'Y2' }]);
+
+    // A retired stage is kept, so content already linked to it re-imports (the foreign key accepts it too).
+    await client.query(
+      `insert into pilot.pathway_stages (organization_id, stage_key, segment, ordinal, name, contact_default, active_flag)
+       values ($1, 'RC1', 'recreational', 16, 'Recreational Boxing', 'light_technical', false)`,
+      [GYM],
+    );
+    expect((await plan(GYM, admin, { [DISCIPLINES]: withStages('Y1|RC1') })).blocking).toEqual([]);
+  });
+
+  it('defaults: one the snapshot leaves out is retired with its evidence kept, and comes back as a new version', async () => {
+    const without = { [DEFAULTS]: csv(DEFAULT_HEADER, [{ ...D_Y1, value_max: '3' }]) };
+    expect(outcomes(await plan(GYM, admin, without))).toEqual({ [DFT_Y1]: 'unchanged', [DFT_LANE]: 'new_version' });
+    await load(GYM, admin, without);
+    const lane = async () => (await defaultRows(GYM)).find((row) => row.default_id === DFT_LANE);
+    expect(await lane()).toMatchObject({ active_flag: false, status: 'INFERRED', sources: ['DOC-156', 'inference'] });
+    const withLane = { [DEFAULTS]: csv(DEFAULT_HEADER, [{ ...D_Y1, value_max: '3', evidence: '' }, { ...D_LANE, evidence: EVIDENCE }]) };
+    await load(GYM, admin, withLane);
+    expect(await lane()).toMatchObject({ active_flag: true, evidence: JSON.parse(EVIDENCE) });
+    expect((await defaultRows(GYM)).find((row) => row.default_id === DFT_Y1)?.evidence).toBeNull(); // present and blank = none
+    // Retiring the evidence-carrying default again keeps its evidence on the row.
+    await load(GYM, admin, { [DEFAULTS]: csv(DEFAULT_HEADER, [{ ...D_Y1, value_max: '3', evidence: '' }]) });
+    expect(await lane()).toMatchObject({ active_flag: false, evidence: JSON.parse(EVIDENCE) });
+  });
+
+  it('a stage file alone that would retire a stage a loaded default names is refused by name', async () => {
+    const orphaning = await plan(GYM, admin, { [STAGES]: csv(STAGE_HEADER, [Y2]) });
+    expect(codes(orphaning)).toEqual(expect.arrayContaining([
+      expect.stringMatching(new RegExp(`^orphan_reference {2}this file would retire stage 'Y1', but the loaded default ${DFT_Y1} still names it`)),
+    ]));
+  });
+
+  it('a plan the database moved under is refused at apply, and nothing is written', async () => {
+    const files = { [STAGES]: csv(STAGE_HEADER, [{ ...Y1, name: 'Introduction / Movement', who_text: 'Ages 5-8' }, Y2]) };
+    const shown = await plan(GYM, admin, files);
+    expect(shown.blocking).toEqual([]);
+    await client.query(`update pilot.pathway_stages set name = 'Edited elsewhere' where organization_id = $1 and stage_key = 'Y2'`, [GYM]);
+    await client.query('BEGIN');
+    await expect(applyImport({ client, organizationId: GYM, actorAccountId: admin, files, expectedPlanHash: shown.planHash }))
+      .rejects.toThrow(/changed after the plan was made/);
+    await client.query('ROLLBACK');
+    expect((await stageRows(GYM)).filter((row) => row.stage_key !== 'RC1').map((row) => row.name)).toEqual(['Introduction / Movement', 'Edited elsewhere']);
   });
 });

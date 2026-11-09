@@ -8,7 +8,7 @@ import {
   PATHWAY_STAGES_FILE,
   pathwayStageReferenceFindings,
 } from '../specs/pathwayCatalog';
-import { type ColumnSpec, type FileSpec, type Finding, type ParsedFile, type ParsedPackage, STAGE_KEYS } from '../types';
+import { type ColumnSpec, type FileSpec, type Finding, type ParsedFile, type ParsedPackage, STAGE_KEYS, type Warning } from '../types';
 import { integerText, normalizeCell, numberText, splitList } from '../values';
 import { withStoredLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
@@ -136,21 +136,19 @@ async function databaseRows(ctx: EngineContext, table: Table): Promise<Map<strin
   }));
 }
 
-/** The organization's active stage keys; empty before the pathway-catalog migration. */
-export async function loadedStageKeys(client: DbClient, organizationId: string): Promise<Set<string>> {
-  if (!(await tablesExist(client))) return new Set();
-  const { rows } = await client.query<{ stage_key: string }>(
-    'select stage_key from pilot.pathway_stages where organization_id = $1 and active_flag',
-    [organizationId],
-  );
+/** Every stage key the organization's catalog holds, retired ones included (a link to one is still a valid foreign key). */
+async function keptStageKeys(client: DbClient, organizationId: string): Promise<Set<string>> {
+  const { rows } = await client.query<{ stage_key: string }>('select stage_key from pilot.pathway_stages where organization_id = $1', [organizationId]);
   return new Set(rows.map((row) => row.stage_key));
 }
 
 /**
  * THE PLAN-STAGE STAGE-KEY CHECK (plan.ts). Every stage a content item names
- * in stage_keys must be an active stage of the catalog it will be linked to:
- * the package's own seed_pathway_stages.csv when it carries one, otherwise
- * this organization's loaded catalog. Refused by name before any write. A key
+ * in stage_keys must be in the catalog it will be linked to: this
+ * organization's loaded stages (a retired stage is kept and still counts, so
+ * an item already linked to one is not refused on re-import) plus the
+ * package's own seed_pathway_stages.csv. Refused by name before any write --
+ * exactly what content_stage_links' foreign key would refuse at apply. A key
  * outside the 18 already has its offline finding (validate.ts) and is not
  * repeated.
  */
@@ -158,17 +156,18 @@ export async function stageKeyFindings(client: DbClient, organizationId: string,
   const files = parsed.files.filter((file) => file.spec.dataset !== 'pathway-catalog' && file.spec.columns.some((c) => c.annotation === 'stage_keys'));
   const named = files.some((file) => file.rows.some((row) => row.values.stage_keys));
   if (!named) return [];
+  const ready = await tablesExist(client);
   const stagesFile = parsed.files.find((file) => file.spec.file === PATHWAY_STAGES_FILE);
-  const known = stagesFile
-    ? new Set(stagesFile.rows.map((row) => row.values.stage_key))
-    : await loadedStageKeys(client, organizationId);
-  const source = stagesFile ? `${PATHWAY_STAGES_FILE} of this package` : "this organization's pathway catalog (pilot.pathway_stages)";
+  const known = new Set([...(stagesFile?.rows.map((row) => row.values.stage_key) ?? []), ...(ready ? await keptStageKeys(client, organizationId) : [])]);
+  const source = ready
+    ? `this organization's pathway catalog (pilot.pathway_stages)${stagesFile ? ` or ${PATHWAY_STAGES_FILE} of this package` : ''}`
+    : 'any pathway catalog: pilot.pathway_stages does not exist in this database; apply the pathway-catalog migration first';
   const out: Finding[] = [];
   for (const file of files) {
     for (const row of file.rows) {
       for (const key of splitList(row.values.stage_keys ?? '', '|')) {
         if (known.has(key) || !(STAGE_KEYS as readonly string[]).includes(key)) continue;
-        out.push({ code: 'unknown_stage_key', file: file.path, line: row.line, column: 'stage_keys', message: `'${key}' is not an active stage in ${source}` });
+        out.push({ code: 'unknown_stage_key', file: file.path, line: row.line, column: 'stage_keys', message: `'${key}' is not a stage in ${source}` });
       }
     }
   }
@@ -216,7 +215,7 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
     // package's rows; what is left is a LOADED link or default that a file
     // the package leaves out still names, and the package's stage file would
     // retire its stage. Without one, the package's rows against the loaded
-    // active stages (a key outside the 18 has its offline finding already).
+    // active stages.
     const stagesTable = TABLES[0];
     if (present(stagesTable)) {
       const kept = new Set(present(stagesTable)?.rows.map((row) => row.values.stage_key));
@@ -241,9 +240,7 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
       const loaded = new Set(
         [...(database.get(stagesTable)?.values() ?? [])].filter((row) => row.active_flag !== false).map((row) => String(row.stage_key)),
       );
-      // A key outside the 18 is the validator's finding; it is not repeated.
-      const known = (key: string) => loaded.has(key) || !(STAGE_KEYS as readonly string[]).includes(key);
-      findings.push(...pathwayStageReferenceFindings({ files: [...input.files] }, known, "this organization's active pathway stages (pilot.pathway_stages)"));
+      findings.push(...pathwayStageReferenceFindings({ files: [...input.files] }, (key) => loaded.has(key), "this organization's active pathway stages (pilot.pathway_stages)"));
     }
 
     const items: Item[] = [];
@@ -292,11 +289,33 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
           dataset: dataset.name,
           key,
           outcome: 'new_version',
+          retires: true,
           fileSha256: rowHash(table, row, false),
           databaseSha256: rowHash(table, row, true),
         };
         const ledger = planLedgerVersions(heads.get(key), unit.databaseSha256);
         items.push({ table, unit, cells: row, active: false, databaseCells: row, ledger });
+      }
+    }
+
+    // INFORMATION, never a refusal (Overwatch, PR #1894): how many rows this
+    // load carries with no labels at all, so the approver sees what the
+    // snapshot is missing. A link's provenance is its backbone_version.
+    const warnings: Warning[] = [];
+    const unlabelled: [Table, string, (cells: Record<string, CellInput>) => boolean][] = [
+      [TABLES[0], 'stages carry no field_labels', (cells) => !cells.field_labels],
+      [TABLES[2], 'defaults carry no sources', (cells) => !cells.sources || (Array.isArray(cells.sources) && cells.sources.length === 0)],
+    ];
+    for (const [table, what, bare] of unlabelled) {
+      const carried = items.filter((item) => item.table === table && item.active && item.cells && item.unit.outcome !== 'reject');
+      const count = carried.filter((item) => bare(item.cells as Record<string, CellInput>)).length;
+      if (count > 0) {
+        warnings.push({
+          code: 'unlabelled_catalog_rows',
+          file: present(table)?.path,
+          count,
+          message: `${count} of ${carried.length} ${what}; they load without them (information only).`,
+        });
       }
     }
 
@@ -307,7 +326,7 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
         if (item.ledger.recordBefore) item.unit.recordsBefore = true;
       }
     }
-    return { dataset: dataset.name, units: items.map((item) => item.unit), findings, state: { items } satisfies State };
+    return { dataset: dataset.name, units: items.map((item) => item.unit), findings, warnings, state: { items } satisfies State };
   },
 
   async apply(ctx, plan, write): Promise<DatasetWriteResult> {

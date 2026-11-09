@@ -265,7 +265,9 @@ export type WarningCode =
   | 'adoption_readiness'
   | 'unmapped_skill_code'
   | 'legacy_universal_stop_rule'
-  | 'ignored_file';
+  | 'ignored_file'
+  // Information only (Overwatch, PR #1894): pathway catalog rows a plan would load with no labels.
+  | 'unlabelled_catalog_rows';
 
 export interface Warning {
   code: WarningCode;

@@ -80,7 +80,7 @@ const READINESS_QUERY = `
        and confrelid = to_regclass('pilot.organizations')
        and conrelid in (to_regclass('pilot.pathway_stages'), to_regclass('pilot.pathway_stage_links'), to_regclass('pilot.pathway_stage_defaults'))
     ) = 3 as organization_cascade_ready,
-    (select count(*) from c where contype = 'f' and confrelid = to_regclass('pilot.pathway_stages') and conname in (
+    (select count(*) from c where contype = 'f' and confdeltype = 'a' and confrelid = to_regclass('pilot.pathway_stages') and conname in (
        'pilot_pathway_stage_links_from_fkey', 'pilot_pathway_stage_links_to_fkey',
        'pilot_pathway_stage_defaults_stage_fkey', 'pilot_content_stage_links_stage_fkey')
     ) = 4 as stage_keys_reference_catalog_ready,
@@ -107,6 +107,21 @@ function assertReadiness(row) {
     throw new Error('PATHWAY_CATALOG_NOT_READY');
   }
 }
+
+// Whether content_stage_links' stage key is validated yet, and how many of
+// its rows name no catalog stage (migration (4)): the key stays NOT VALID
+// until that count is 0 and the migration runs again. Printed, so the release
+// record says which it is.
+export const STAGE_KEY_STATE_QUERY = `
+  select
+    (select convalidated from pg_constraint
+      where conname = 'pilot_content_stage_links_stage_fkey'
+        and conrelid = 'pilot.content_stage_links'::regclass) as validated,
+    (select count(*)::int from pilot.content_stage_links l
+      where not exists (
+        select 1 from pilot.pathway_stages s
+         where s.organization_id = l.organization_id and s.stage_key = l.stage_key)) as rows_without_stage
+`;
 
 export async function applyMigrationTransaction(client, sql) {
   await client.query('BEGIN');
@@ -146,6 +161,8 @@ export async function run() {
   await client.connect();
   try {
     await applyMigrationTransaction(client, sql);
+    const state = (await client.query(STAGE_KEY_STATE_QUERY)).rows[0];
+    console.log(`content_stage_links stage key validated: ${state.validated} (rows naming no catalog stage: ${state.rows_without_stage})`);
   } finally {
     await client.end();
   }

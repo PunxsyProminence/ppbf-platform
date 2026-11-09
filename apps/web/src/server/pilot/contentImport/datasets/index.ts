@@ -1,6 +1,6 @@
 import type { DbClient, ImportActor } from '../actor';
 import { DATASETS } from '../specs';
-import type { DatasetName, DatasetSpec, Finding, ParsedFile } from '../types';
+import type { DatasetName, DatasetSpec, Finding, ParsedFile, Warning } from '../types';
 import type { ValidationResult } from '../validate';
 import { DRILL_LIBRARY_ENGINE } from './drills';
 import { PATHWAY_CATALOG_ENGINE } from './pathwayCatalog';
@@ -39,6 +39,8 @@ export interface UnitPlan {
   toVersion?: number;
   /** A revision first records the database row as fromVersion, because the ledger does not hold that content yet. */
   recordsBefore?: boolean;
+  /** The revision only retires the row: the file leaves it out, so it is kept and marked inactive (pathway catalog). */
+  retires?: true;
   /** For a reject: why, in plain English. */
   reasons?: string[];
 }
@@ -56,6 +58,8 @@ export interface DatasetPlan {
   findings: Finding[];
   /** Whatever the dataset module needs to write this plan; opaque to plan.ts and apply.ts. */
   state: unknown;
+  /** Information for the person approving; never blocks. */
+  warnings?: Warning[];
 }
 
 export interface DatasetWriteResult {
