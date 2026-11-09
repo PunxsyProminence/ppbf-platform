@@ -13,6 +13,8 @@
 // widened CHECK that is not copied here, or a value added here that the
 // database would refuse, fails that suite.
 
+import { RECORD_STATUSES } from './types';
+
 export interface ConstraintRef {
   table: string;
   constraint: string;
@@ -47,6 +49,8 @@ export const VOCABULARIES = {
       { table: 'sparring_exposure', constraint: 'pilot_sparring_exposure_contact_stage_check' },
       // A step of an issued workout keeps the template item's contact level.
       { table: 'workout_issue_steps', constraint: 'pilot_workout_issue_steps_contact_level_check' },
+      // The contact a pathway stage starts from (P1; pathway_catalog migration).
+      { table: 'pathway_stages', constraint: 'pilot_pathway_stages_contact_default_check' },
     ],
   ),
   // competence_cohorts :123-124. Narrower than contact_level on purpose: a
@@ -163,6 +167,25 @@ export const VOCABULARIES = {
     ['physical_test', 'skill_rubric', 'wellness', 'questionnaire', 'other'],
     [{ table: 'assessment_protocols', constraint: 'assessment_protocols_measure_kind_check' }],
   ),
+  // The pathway catalog (SCHEMA_PROPOSAL P1, P2, P7; pathway_catalog migration).
+  pathway_segment: vocab(
+    ['youth', 'trunk', 'amateur', 'pro', 'recreational', 'exit'],
+    [{ table: 'pathway_stages', constraint: 'pilot_pathway_stages_segment_check' }],
+  ),
+  pathway_link_kind: vocab(
+    ['progression', 'branch', 'lateral', 'exit'],
+    [{ table: 'pathway_stage_links', constraint: 'pilot_pathway_stage_links_kind_check' }],
+  ),
+  // The kinds the backbone's default_rules[] carry (design_catalogs.json).
+  pathway_default_kind: vocab(
+    ['default_rule', 'owner_rule', 'rule_reference', 'reference', 'information'],
+    [{ table: 'pathway_stage_defaults', constraint: 'pilot_pathway_stage_defaults_kind_check' }],
+  ),
+  // A record's status (backbone RULES section 10; types.ts RECORD_STATUSES).
+  record_status: vocab(
+    RECORD_STATUSES,
+    [{ table: 'pathway_stage_defaults', constraint: 'pilot_pathway_stage_defaults_status_check' }],
+  ),
 } as const satisfies Record<string, Vocabulary>;
 
 export type VocabularyName = keyof typeof VOCABULARIES;
@@ -187,6 +210,8 @@ export const BOUNDS = {
       { table: 'workout_template_items', constraint: 'workout_template_items_ordinal_check', column: 'ordinal' },
       { table: 'workout_template_items', constraint: 'workout_template_items_rep_count_check', column: 'rep_count' },
       { table: 'session_script_blocks', constraint: 'session_script_blocks_block_order_check', column: 'block_order' },
+      { table: 'pathway_stages', constraint: 'pilot_pathway_stages_ordinal_check', column: 'ordinal' },
+      { table: 'pathway_stage_defaults', constraint: 'pilot_pathway_stage_defaults_window_check', column: 'window_days' },
       { table: 'assessment_protocols', constraint: 'assessment_protocols_retest_interval_days_check', column: 'retest_interval_days' },
       {
         table: 'assessment_protocols',

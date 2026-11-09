@@ -4,6 +4,7 @@ import type { BoundName, ConstraintRef, VocabularyName } from './vocabularies';
 // The shapes every part of the content-import core shares. No logic here.
 
 export type DatasetName =
+  | 'pathway-catalog'
   | 'disciplines'
   | 'competence-levels'
   | 'cohort-definitions'

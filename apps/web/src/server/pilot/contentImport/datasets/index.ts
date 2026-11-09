@@ -3,6 +3,7 @@ import { DATASETS } from '../specs';
 import type { DatasetName, DatasetSpec, Finding, ParsedFile } from '../types';
 import type { ValidationResult } from '../validate';
 import { DRILL_LIBRARY_ENGINE } from './drills';
+import { PATHWAY_CATALOG_ENGINE } from './pathwayCatalog';
 import { REGISTRY_ENGINES } from './registries';
 import { sessionScriptsEngine } from './sessionScripts';
 import { workoutTemplatesEngine } from './templates';
@@ -78,6 +79,7 @@ export interface DatasetEngine {
 // references datasets above it), whatever order the modules register in, so
 // cohorts are written after the disciplines they point at in an 'all' load.
 export const DATASET_ENGINES: readonly DatasetEngine[] = [
+  PATHWAY_CATALOG_ENGINE,
   ...REGISTRY_ENGINES,
   DRILL_LIBRARY_ENGINE,
   UNIVERSAL_STOP_RULES_ENGINE,

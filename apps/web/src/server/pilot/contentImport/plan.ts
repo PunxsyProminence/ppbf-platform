@@ -9,6 +9,7 @@ import {
   type UnitOutcome,
   type UnitPlan,
 } from './datasets';
+import { stageKeyFindings } from './datasets/pathwayCatalog';
 import { loadDatabaseReferenceSets } from './referenceSetsDb';
 import { DATASETS } from './specs';
 import type { DatasetName, Finding, PackageFileInput, ParsedFile, Warning } from './types';
@@ -145,7 +146,10 @@ export async function planWithState(request: ImportRequest, checkedActor?: Impor
   }
 
   const units = datasetPlans.flatMap((plan) => plan.units).sort(compareUnits);
-  const blocking = [...validation.blocking, ...unloadable, ...datasetPlans.flatMap((plan) => plan.findings)];
+  // The stages content items name (stage_keys) against the pathway catalog
+  // they will be linked to; offline only the backbone's 18 are known (validate.ts).
+  const stageKeys = await stageKeyFindings(client, organizationId, parsed);
+  const blocking = [...validation.blocking, ...unloadable, ...stageKeys, ...datasetPlans.flatMap((plan) => plan.findings)];
   const datasets = engines.map((engine) => engine.spec.name);
 
   const counts: Partial<Record<DatasetName, OutcomeCounts>> = {};
