@@ -124,6 +124,13 @@ describe(`${FILE}: what a dispatch can ask for`, () => {
     }, { inRun: false, lines: [] }).lines;
     expect(runBodies.length).toBeGreaterThan(20);
     expect(runBodies.filter((line) => line.includes('${{'))).toEqual([]);
+    // A one-line `run:` is a run block too.
+    expect(text.split('\n').filter((line) => /^\s+run: (?!\|).*\$\{\{/.test(line))).toEqual([]);
+  });
+
+  test('the tool step runs under bash with pipefail, so a refused run fails the job through tee', () => {
+    expect(stepText(TOOL_STEP)).toContain('        shell: bash\n');
+    expect(stepText(TOOL_STEP)).toMatch(/\| tee -a \/tmp\/tool-output\.txt$/m);
   });
 
   test('the phrase and the environment names agree with the tool', () => {

@@ -36,6 +36,11 @@ Dispatch the `cleanup-intake-research-requirements` workflow:
    from step 2. The job runs in the `production` environment, where Jason approves it in GitHub.
 4. A production dry run with the same `organization`: `counts.requirements` 0.
 
+The target guard is real only when the staging and production GitHub environments carry
+`PPBF_EXPECTED_POSTGRES_HOSTNAME` and `PPBF_EXPECTED_POSTGRES_DATABASE`; on 2026-11-09 neither did.
+Until then the workflow derives both from the connection string it checks, as
+`repair-research-baseline.yml` does.
+
 Staging may be applied the same way first if Overwatch wants a rehearsal on a real database; the CI
 suite `cleanupIntakeResearchRequirements.pg.test.ts` is the rehearsal otherwise.
 

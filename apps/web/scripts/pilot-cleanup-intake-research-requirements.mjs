@@ -276,10 +276,8 @@ export async function cleanupIntakeResearchRequirements(client, options, { log =
   try {
     await client.query(apply ? 'begin' : 'begin transaction read only');
     open = true;
-    if (apply) {
-      await client.query("set local lock_timeout = '10s'");
-      await client.query("set local statement_timeout = '5min'");
-    }
+    await client.query("set local lock_timeout = '10s'");
+    await client.query("set local statement_timeout = '5min'");
 
     if (options.allOrganizations !== true) {
       const found = (await client.query(
@@ -368,15 +366,28 @@ export async function cleanupIntakeResearchRequirements(client, options, { log =
       return await refuseInside('DELETE_COUNT_MISMATCH', { table: 'shadow_research_requirements', planned: plan.requirementIds.length, deleted: requirementsDeleted });
     }
 
+    // End state, on the planned rows only: the app may write untagged rows
+    // while this runs, so the whole-table count is reported, not checked.
     const after = await readCleanupPlan(client, options, { lock: false });
+    const plannedLeft = Number((await client.query(
+      'select count(*)::int as n from pilot.shadow_research_requirements where research_requirement_id = any($1::bigint[])',
+      [plan.requirementIds],
+    )).rows[0]?.n ?? 0);
     const mismatches = [];
+    if (plannedLeft !== 0) mismatches.push(`planned_rows_left=${plannedLeft}`);
     if (after.counts.requirements !== 0) mismatches.push(`tagged_rows_left=${after.counts.requirements}`);
-    if (after.tableTotal !== plan.tableTotal - requirementsDeleted) {
-      mismatches.push(`table_rows_total=${after.tableTotal}!=${plan.tableTotal - requirementsDeleted}`);
-    }
     if (mismatches.length > 0) return await refuseInside('END_STATE_MISMATCH', { mismatches });
 
-    for (const organization of plan.byOrganization) {
+    // Every organization that lost a row gets the record in its own trail,
+    // including one whose submission was linked to another organization's
+    // tagged row (nothing in the schema stops that link).
+    const auditOrganizations = [...new Set([
+      ...plan.byOrganization.map((entry) => entry.organization_id),
+      ...plan.submissions.map((row) => row.organization_id),
+    ])].sort(byText);
+    for (const organizationId of auditOrganizations) {
+      const organization = plan.byOrganization.find((entry) => entry.organization_id === organizationId)
+        ?? { organization_id: organizationId, total: 0, open: 0, resolved: 0 };
       await client.query(
         `insert into pilot.audit_events (event_type, organization_id, entity_type, entity_id, details)
          values ($1, $2, $3, $2, $4::jsonb)`,
@@ -450,8 +461,11 @@ export async function run(env = process.env, argv = process.argv.slice(2), { cre
   }
 
   const client = createClient(connectionString);
-  await client.connect();
+  // An idle connection dropping emits 'error'; unhandled, Node prints the
+  // whole error object. The failure is reported by the catch below instead.
+  client.on?.('error', () => {});
   try {
+    await client.connect();
     return await cleanupIntakeResearchRequirements(client, parsed.options, { log });
   } catch (error) {
     // Name, code and constraint only: a database error's message or detail

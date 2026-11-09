@@ -179,6 +179,9 @@ async function buildTemplate(target: Client): Promise<void> {
   ids.askerA = await insertRequirement(target, { org: ORG_A, event: 'shadow_unanswered_question', entity: 'shadow_asker_question', entityId: 'question-a-1' });
   ids.nearMissEntityA = await insertRequirement(target, { org: ORG_A, event: TAG_EVENT, entity: 'intake_case', entityId: 'intake-a-3' });
   ids.nearMissEventA = await insertRequirement(target, { org: ORG_A, event: 'SHADOW_INTAKE_REVIEWED', entity: TAG_ENTITY, entityId: 'intake-a-4' });
+  // Case and whitespace variants of the tag: not the tag.
+  ids.nearMissCaseA = await insertRequirement(target, { org: ORG_A, event: TAG_EVENT, entity: 'Shadow_Intake', entityId: 'intake-a-5' });
+  ids.nearMissSpaceA = await insertRequirement(target, { org: ORG_A, event: `${TAG_EVENT} `, entity: TAG_ENTITY, entityId: 'intake-a-6' });
   ids.taggedOpenB = await insertRequirement(target, { org: ORG_B, event: TAG_EVENT, entity: TAG_ENTITY, entityId: 'intake-b-1' });
   await insertSubmission(target, ORG_A, 'sub-on-tagged', ids.taggedOpenA);
   await insertSubmission(target, ORG_A, 'sub-on-asker', ids.askerA);
@@ -316,7 +319,7 @@ describe('dry run', () => {
       expect(result.counts).toEqual({ requirements: 2, open: 1, resolved: 1, linked_submissions: 1 });
       expect(result.by_organization).toEqual([{ organization_id: ORG_A, total: 2, open: 1, resolved: 1 }]);
       expect(sorted(result.research_requirement_ids!)).toEqual(sorted([ids.taggedOpenA, ids.taggedResolvedA]));
-      expect(result.table_rows_total).toBe(6);
+      expect(result.table_rows_total).toBe(8);
       expect(result.plan_fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(result.created_at_range).toEqual({ earliest: expect.any(String), latest: expect.any(String) });
       expect(out.text()).toContain(result.plan_fingerprint!);
@@ -377,9 +380,11 @@ describe('apply', () => {
       expect(result.status).toBe('applied');
       expect(result.requirements_deleted).toBe(2);
       expect(result.submissions_deleted).toBe(1);
-      expect(result.before).toEqual({ table_rows_total: 6, tagged_in_scope: 2 });
-      expect(result.after).toEqual({ table_rows_total: 4, tagged_in_scope: 0 });
-      expect(sorted(await requirementIds(client))).toEqual(sorted([ids.askerA, ids.nearMissEntityA, ids.nearMissEventA, ids.taggedOpenB]));
+      expect(result.before).toEqual({ table_rows_total: 8, tagged_in_scope: 2 });
+      expect(result.after).toEqual({ table_rows_total: 6, tagged_in_scope: 0 });
+      expect(sorted(await requirementIds(client))).toEqual(sorted([
+        ids.askerA, ids.nearMissEntityA, ids.nearMissEventA, ids.nearMissCaseA, ids.nearMissSpaceA, ids.taggedOpenB,
+      ]));
       expect(await submissionIds(client)).toEqual(['sub-on-asker']);
 
       const after = await snapshot(client);
@@ -414,10 +419,70 @@ describe('apply', () => {
       const result = await cleanup(client, applyWith(scopeAll(), dry.plan_fingerprint), { log: out.log });
       expect(result.status).toBe('applied');
       expect(result.requirements_deleted).toBe(3);
-      expect(sorted(await requirementIds(client))).toEqual(sorted([ids.askerA, ids.nearMissEntityA, ids.nearMissEventA]));
+      expect(sorted(await requirementIds(client))).toEqual(sorted([
+        ids.askerA, ids.nearMissEntityA, ids.nearMissEventA, ids.nearMissCaseA, ids.nearMissSpaceA,
+      ]));
       const audit = await auditRows(client);
       expect(audit.map((row) => [row.organization_id, row.details.requirements_deleted])).toEqual([[ORG_A, 2], [ORG_B, 1]]);
       expect((audit[1].details.research_requirement_ids as string[])).toEqual([ids.taggedOpenB]);
+      expect(out.text()).not.toContain(SENTINEL);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test("another organization's submission on a tagged row goes too, and that organization gets its own audit row", async () => {
+    const { client } = await freshDatabase();
+    try {
+      // Nothing in the schema ties a submission's organization to its
+      // requirement's; the cascade would remove this row uncounted.
+      await insertSubmission(client, ORG_B, 'sub-b-on-a-tagged', ids.taggedResolvedA);
+      const dry = await cleanup(client, dryRun(scopeA()), { log: () => {} });
+      expect(dry.counts).toEqual({ requirements: 2, open: 1, resolved: 1, linked_submissions: 2 });
+      const result = await cleanup(client, applyWith(scopeA(), dry.plan_fingerprint), { log: () => {} });
+      expect(result).toMatchObject({ status: 'applied', requirements_deleted: 2, submissions_deleted: 2 });
+      expect(await submissionIds(client)).toEqual(['sub-on-asker']);
+      const audit = await auditRows(client);
+      expect(audit.map((row) => [row.organization_id, row.details.requirements_deleted, row.details.submissions_deleted])).toEqual([
+        [ORG_A, 2, 1],
+        [ORG_B, 0, 1],
+      ]);
+      expect(audit[1].details.submission_ids).toEqual(['sub-b-on-a-tagged']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('a failure after the first delete rolls everything back, and its message is not printed', async () => {
+    const { client, name } = await freshDatabase();
+    try {
+      // The audit insert is the last write before commit; make it fail with a
+      // message that carries the sentinel, as a database error quoting a
+      // row's value would.
+      await client.query(`
+        create function pilot.rr_test_refuse_audit() returns trigger language plpgsql as $$
+        begin
+          if new.entity_type = 'intake_research_requirement_cleanup' then
+            raise exception 'refused %', '${SENTINEL}' using detail = '${SENTINEL}';
+          end if;
+          return new;
+        end $$;
+        create trigger rr_test_refuse_audit before insert on pilot.audit_events
+          for each row execute function pilot.rr_test_refuse_audit();`);
+      const dry = await cleanup(client, dryRun(scopeA()), { log: () => {} });
+      const before = await snapshot(client);
+      const out = recorder();
+      const result = await runTool({
+        AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(name),
+        PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+        PPBF_EXPECTED_POSTGRES_DATABASE: name,
+        PPBF_INTAKE_RR_CLEANUP_APPLY: 'true',
+        PPBF_INTAKE_RR_CLEANUP_CONFIRM: PHRASE,
+        PPBF_INTAKE_RR_CLEANUP_EXPECT_FINGERPRINT: dry.plan_fingerprint!,
+      }, ['--organization', ORG_A], { log: out.log });
+      expect(result).toMatchObject({ status: 'failed', code: 'P0001' });
+      expect(await snapshot(client)).toEqual(before);
+      expect(out.text()).toContain('"failed"');
       expect(out.text()).not.toContain(SENTINEL);
     } finally {
       await client.end();
