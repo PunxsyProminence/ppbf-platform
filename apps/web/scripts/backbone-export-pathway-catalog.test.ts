@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { readCsv } from '../src/server/pilot/contentImport/csv';
+import { readCsv, writeCsv } from '../src/server/pilot/contentImport/csv';
 import { loadOfflineReferenceSets } from '../src/server/pilot/contentImport/referenceSets';
 import { FILE_SPECS } from '../src/server/pilot/contentImport/specs';
 import { validatePackage } from '../src/server/pilot/contentImport/validate';
@@ -234,6 +234,21 @@ describe('backbone-export-pathway-catalog', () => {
     expect(rc1.evidence).toBe('');
   });
 
+  it('writes each file exactly as contentImport/csv.ts writeCsv would (what content:prepare commits)', () => {
+    for (const text of Object.values(files)) {
+      const table = readCsv(text);
+      expect(writeCsv(table.header, table.records.map((record) => record.cells))).toBe(text);
+    }
+  });
+
+  it('holds out, by rule, a default whose sources key holds any list separator: | ; or ,', () => {
+    for (const key of ['FIX|A', 'FIX;A', 'FIX,A']) {
+      const result = run([backbone({ catalogs: (data) => { data.default_rules[2].sources = ['FIX-1', key]; } }), '--out', tempDir()]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('2 rows: dft_7229a7f8553bd2, dft_b8c1b8001eea2b');
+    }
+  });
+
   it('is deterministic: two runs over the same files are byte-identical, LF only, UTF-8 without BOM', () => {
     const again = exported(dir);
     expect(again).toEqual(files);
@@ -274,9 +289,11 @@ describe('backbone-export-pathway-catalog', () => {
     }
   });
 
-  it('a default carrying per-field labels in the {status, sources} shape keeps them, key-sorted', () => {
-    const labelled = exported(backbone({ catalogs: (data) => { data.default_rules[0].field_labels = { value_max: { sources: ['LR-140'], status: 'INFERRED' } }; } }));
+  it('a default carrying per-field labels in the {status, sources} shape keeps them, key-sorted (sources alone too, as on a stage)', () => {
+    const labelled = exported(backbone({
+      catalogs: (data) => { data.default_rules[0].field_labels = { value_max: { sources: ['LR-140'], status: 'INFERRED' }, unit: { sources: ['LR-140'] } }; },
+    }));
     const row = rowsOf(labelled[DEFAULTS]).find((r) => r.default_id === 'dft_d8e8cc1831f1f0');
-    expect(row?.field_labels).toBe('{"value_max":{"sources":["LR-140"],"status":"INFERRED"}}');
+    expect(row?.field_labels).toBe('{"unit":{"sources":["LR-140"]},"value_max":{"sources":["LR-140"],"status":"INFERRED"}}');
   });
 });

@@ -18,8 +18,10 @@
 // is mapped: a status outside the four or an evidence_label outside the eight
 // stops the export, by name.
 //
-// THE OUTPUT IS A WHOLE SNAPSHOT: the same two input files give byte-identical
-// CSVs (rows in a fixed order, LF, UTF-8 without BOM, writeCsv's quoting).
+// THE OUTPUT IS A WHOLE SNAPSHOT: the same two input files, with the same
+// modification times (backbone_version carries them), give byte-identical CSVs
+// (rows in a fixed order, LF, UTF-8 without BOM, writeCsv's quoting). A copy or
+// re-sync that changes only a file's time changes backbone_version on every row.
 // This is what regenerates the catalog at the final Backbone hand-off.
 //
 // link_kind IS DERIVED HERE, not copied: the spine's next_stages are bare key
@@ -294,7 +296,8 @@ function defaultFieldLabels(rule, where, notShaped) {
     return '';
   }
   for (const [field, label] of Object.entries(labels)) {
-    checkStatus(label.status, `${where} field_labels.${field}`);
+    // As on a stage: a label may give sources without a status; a status given must be one of the four.
+    if (label.status !== undefined) checkStatus(label.status, `${where} field_labels.${field}`);
     if (label.sources !== undefined) checkSources(label.sources, `${where} field_labels.${field}`);
   }
   return Object.keys(labels).length ? sortedJson(labels) : '';
