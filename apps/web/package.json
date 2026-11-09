@@ -117,6 +117,7 @@
     "content:describe": "tsx scripts/pilot-content-import.ts describe",
     "content:plan": "tsx scripts/pilot-content-import.ts plan",
     "content:apply": "tsx scripts/pilot-content-import.ts apply",
+    "backbone:export": "node scripts/backbone-export-pathway-catalog.mjs",
     "pilot:cleanup-deleted-data": "node scripts/pilot-cleanup-deleted-data.mjs",
     "pilot:cleanup-accounts": "node scripts/pilot-cleanup-accounts.mjs",
     "pilot:cleanup-membership-orphans": "node scripts/pilot-cleanup-membership-orphans.mjs",

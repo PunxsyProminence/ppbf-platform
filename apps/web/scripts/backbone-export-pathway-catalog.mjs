@@ -2,6 +2,7 @@
 // BACKBONE -> PATHWAY CATALOG PACKAGE (lane BB-1c; OD-2026-11-08-001).
 //
 //   node scripts/backbone-export-pathway-catalog.mjs <backbone-folder> [--out <folder>]
+//   npm run backbone:export -- <backbone-folder> [--out <folder>]
 //
 // Reads ONLY two files of the Backbone folder, read-only:
 //   data/spine/spine.json                              stages[]
@@ -397,8 +398,10 @@ function main() {
   let args;
   try {
     args = parseArgs(process.argv.slice(2));
-    const result = exportPathwayCatalog(path.resolve(args.backboneDir));
-    const out = path.resolve(args.out ?? path.join(here, '..', 'seed-data', 'pathway-catalog'));
+    // npm runs scripts from apps/web; INIT_CWD is where the command was typed, so a relative folder means what the person meant.
+    const typedIn = process.env.INIT_CWD ?? process.cwd();
+    const result = exportPathwayCatalog(path.resolve(typedIn, args.backboneDir));
+    const out = args.out ? path.resolve(typedIn, args.out) : path.join(here, '..', 'seed-data', 'pathway-catalog');
     fs.mkdirSync(out, { recursive: true });
     for (const [name, text] of Object.entries(result.files)) fs.writeFileSync(path.join(out, name), text, 'utf8');
     console.log(`backbone_version: ${result.backboneVersion}`);
