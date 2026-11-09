@@ -2,8 +2,11 @@ import type { IdKind } from '../ids';
 import {
   ACCOUNT_PLACEHOLDER,
   type ColumnSpec,
+  EVIDENCE_LABELS,
   ORG_PLACEHOLDER,
+  RECORD_STATUSES,
   type ReferenceTarget,
+  STAGE_KEYS,
 } from '../types';
 import type { BoundName, VocabularyName } from '../vocabularies';
 
@@ -95,4 +98,50 @@ export function referenceColumn(
   options: Options & { idKind?: IdKind; allowNew?: boolean; list?: '|' | ',' } = {},
 ): ColumnSpec {
   return { name, role: 'reference', type: 'text', references: target, description, ...options };
+}
+
+/**
+ * The backbone's three label columns (SCHEMA_PROPOSAL P19, SP-11), on every
+ * dataset's root file. Optional: a package without them loads as it did
+ * before, and its items hash exactly as before (canonical.ts). Stored beside
+ * the item, not in its table: pilot.content_record_labels (field_labels,
+ * evidence, by item version) and pilot.content_stage_links (stage_keys, by
+ * lineage), content_labels migration.
+ */
+export function labelColumns(): ColumnSpec[] {
+  return [
+    {
+      name: 'field_labels',
+      role: 'annotation',
+      annotation: 'field_labels',
+      type: 'text',
+      description:
+        'JSON object: per field, {"status": one of ' + RECORD_STATUSES.join(', ')
+        + ', "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. '
+        + 'Stored by item version.',
+      blankMeans: 'no field labels',
+    },
+    {
+      name: 'evidence',
+      role: 'annotation',
+      annotation: 'evidence',
+      type: 'text',
+      description:
+        'JSON object, or a JSON list of them: evidence_category, evidence_label (one of ' + EVIDENCE_LABELS.join(', ')
+        + '), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. '
+        + 'Stored by item version.',
+      blankMeans: 'no evidence entry',
+    },
+    {
+      name: 'stage_keys',
+      role: 'annotation',
+      annotation: 'stage_keys',
+      type: 'text',
+      list: '|',
+      description:
+        'The pathway stages the item serves, separated by | (' + STAGE_KEYS.join(', ')
+        + '). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs.',
+      blankMeans: 'no stage links',
+    },
+  ];
 }

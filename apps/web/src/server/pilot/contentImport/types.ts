@@ -23,6 +23,10 @@ export type DatasetName =
  *   lineage     must be blank or equal to the key (the key IS the lineage key)
  *   placeholder only its {{...}} placeholder or blank; the real value is decided at load
  *   system      decided by the tool; blank or today's default only
+ *   annotation  a backbone label on the item (field_labels, evidence,
+ *               stage_keys; SCHEMA_PROPOSAL P19). Optional; stored beside the
+ *               item (pilot.content_record_labels, pilot.content_stage_links),
+ *               never in its own table, and part of its hash only when filled
  *   content     everything else -- the material itself
  */
 export type ColumnRole =
@@ -33,6 +37,7 @@ export type ColumnRole =
   | 'lineage'
   | 'placeholder'
   | 'system'
+  | 'annotation'
   | 'content';
 
 export type ReferenceTarget =
@@ -48,6 +53,22 @@ export type ReferenceTarget =
 export const ORG_PLACEHOLDER = '{{PPBF_ORG_ID}}';
 export const ACCOUNT_PLACEHOLDER = '{{SEED_ACCOUNT_ID}}';
 export type Placeholder = typeof ORG_PLACEHOLDER | typeof ACCOUNT_PLACEHOLDER;
+
+// THE BACKBONE'S LABEL VOCABULARIES (P19), as the backbone states them.
+// Record status: RULES.md section 10. Evidence label:
+// working/design-2026-10-25/EVIDENCE_VOCABULARY.md:74-83. Stage keys:
+// docs/SCHEMA_PROPOSAL.md:47-71 (R-ID-7 keeps their human form). The stage
+// list moves to the loaded pathway catalog once lane 1b builds it.
+export const RECORD_STATUSES = ['OBSERVED', 'REPORTED', 'INFERRED', 'UNVERIFIED'] as const;
+export const EVIDENCE_LABELS = [
+  'PROVEN', 'EMERGING', 'EXPERIMENTAL', 'RESEARCH_NEEDED', 'RULE', 'CONVENTION', 'FRAMEWORK', 'UNTIERED',
+] as const;
+export const STAGE_KEYS = [
+  'Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'T1', 'T2', 'AM1', 'AM2', 'AM3', 'PR1', 'PR2', 'PR3', 'PR4', 'PR5', 'RC1', 'FT1', 'EX1',
+] as const;
+
+/** What an annotation column holds: JSON text (field_labels, evidence) or a '|' list of stage keys. */
+export type AnnotationKind = 'field_labels' | 'evidence' | 'stage_keys';
 
 export interface ColumnSpec {
   name: string;
@@ -82,6 +103,8 @@ export interface ColumnSpec {
    * a source document). Not reported as repeated text.
    */
   label?: boolean;
+  /** Set on role 'annotation' columns: what the cell holds and how it is checked. */
+  annotation?: AnnotationKind;
 }
 
 /** A value read from one row: normalized text by column name. */
@@ -214,6 +237,11 @@ export type FindingCode =
   | 'skill_family_in_skill_column'
   | 'scale_rule'
   | 'row_rule'
+  // The backbone label columns (P19):
+  | 'bad_json'
+  | 'unknown_status'
+  | 'unknown_evidence_label'
+  | 'unknown_stage_key'
   // Raised by the database plan stage (plan.ts, datasets/), never offline:
   // they compare a package with what the target organization already holds.
   | 'ordinal_change'
