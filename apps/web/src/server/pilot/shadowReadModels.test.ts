@@ -1,5 +1,6 @@
 import { query, queryOne } from './db';
 import { FAMILY_HIDDEN_EVENT_NAMES, FAMILY_HIDDEN_METRIC_NAMES, FAMILY_READABLE_ENTITY_ID_TYPES, listShadowEvents, listShadowTelemetry, listShadowAuthorityChecks, getShadowReviewProjection, getShadowResearchProjection, getShadowKnowledgeProjection } from './shadowReadModels';
+import { LIBRARY_QUESTION_COACH_SENTENCE } from './researchFamilyView';
 import type { ShadowReadContext } from './shadowReadModels';
 import type { PilotRole } from './contracts';
 import { COACH_ALLOWED_AUDIT_ENTITY_TYPES, FAMILY_ALLOWED_AUDIT_ENTITY_TYPES } from './auditReadAllowlist';
@@ -646,6 +647,69 @@ describe('actor_account_id in the telemetry feed (staff only)', () => {
 
     expect(rows[0].actor_account_id).toBe('coach-acct-secret');
   });
+
+  // F-184: a Library claim writes shadow.library.claim and shadow.library.search
+  // under its asker as it files the question, so their actor would tell a
+  // coach who asked the question the research list shows as a sentence.
+  describe('Library metrics a member wrote (F-184)', () => {
+    function libraryMetricRow(metric_name: string, actor_role: string | null) {
+      return {
+        shadow_telemetry_event_id: 4,
+        organization_id: 'org-1',
+        metric_name,
+        actor_account_id: 'acct-asker-secret',
+        actor_role,
+        dimensions: { scope: 'subject', status: 'unsupported' },
+        created_at: '2026-10-06T00:00:00.000Z',
+      };
+    }
+
+    test.each([
+      ['shadow.library.claim', 'athlete'],
+      ['shadow.library.claim', 'parent'],
+      ['shadow.library.search', 'volunteer'],
+      ['shadow.library.search', 'athlete'],
+      ['shadow.library.claim', null],
+    ])('%s by %p reaches a coach with no actor', async (metric, askerRole) => {
+      answerCoachRoster([]);
+      mockQuery.mockResolvedValueOnce([libraryMetricRow(metric, askerRole)]);
+
+      const rows = await listShadowTelemetry(context({ actorRole: 'coach' }));
+
+      expect(rows[0].actor_account_id).toBeNull();
+      expect(rows[0].actor_role).toBeNull();
+      expect(rows[0].dimensions).toEqual({ scope: 'subject', status: 'unsupported' });
+    });
+
+    test('a coach still reads the actor on a Library metric a coach or admin wrote', async () => {
+      answerCoachRoster([]);
+      mockQuery.mockResolvedValueOnce([libraryMetricRow('shadow.library.claim', 'organization_admin')]);
+
+      const rows = await listShadowTelemetry(context({ actorRole: 'coach' }));
+
+      expect(rows[0].actor_account_id).toBe('acct-asker-secret');
+      expect(rows[0].actor_role).toBe('organization_admin');
+    });
+
+    test('the organization admin reads the actor on a member\'s Library metric', async () => {
+      mockQuery.mockResolvedValueOnce([libraryMetricRow('shadow.library.claim', 'athlete')]);
+
+      const rows = await listShadowTelemetry(context({ actorRole: 'organization_admin' }));
+
+      expect(rows[0].actor_account_id).toBe('acct-asker-secret');
+      expect(rows[0].actor_role).toBe('athlete');
+    });
+
+    test('a coach still reads the actor on a metric that is not a Library question', async () => {
+      answerCoachRoster([]);
+      mockQuery.mockResolvedValueOnce([libraryMetricRow('shadow.chat.turn', 'athlete')]);
+
+      const rows = await listShadowTelemetry(context({ actorRole: 'coach' }));
+
+      expect(rows[0].actor_account_id).toBe('acct-asker-secret');
+      expect(rows[0].actor_role).toBe('athlete');
+    });
+  });
 });
 
 describe('Library question text in the events feed (CL-A3, staff only)', () => {
@@ -726,17 +790,21 @@ describe('Library question text in the events feed (CL-A3, staff only)', () => {
   });
 
   // Every role, typed as a Record so a role added to PilotRole fails to compile
-  // here until someone decides which side of the ruling it is on.
-  const READS_LIBRARY_QUESTIONS: Record<PilotRole, boolean> = {
-    coach: true,
-    organization_admin: true,
-    admin: true,
-    platform_owner: false,
-    staff: false,
-    volunteer: false,
-    board: false,
-    parent: false,
-    athlete: false,
+  // here until someone decides which side of the ruling it is on. The row is a
+  // PARENT's question: since F-184 (OD-2026-10-13-018, "A: Office + asker
+  // (Recommended)") a coach reads that a member asked, not the words; CL-A3's
+  // "Staff only" still decides every other role, and a coach still reads a
+  // question a coach or admin asked (the staff-asked block below).
+  const MEMBER_QUESTION_READ: Record<PilotRole, 'whole' | 'sentence' | 'operational'> = {
+    coach: 'sentence',
+    organization_admin: 'whole',
+    admin: 'whole',
+    platform_owner: 'operational',
+    staff: 'operational',
+    volunteer: 'operational',
+    board: 'operational',
+    parent: 'operational',
+    athlete: 'operational',
   };
   const OPERATIONAL_KEYS = [
     'scope',
@@ -749,9 +817,9 @@ describe('Library question text in the events feed (CL-A3, staff only)', () => {
     'research_requirement',
   ];
 
-  test.each(Object.entries(READS_LIBRARY_QUESTIONS) as [PilotRole, boolean][])(
-    '%s: reads the question text on a Library claim event = %s',
-    async (actorRole, readsQuestions) => {
+  test.each(Object.entries(MEMBER_QUESTION_READ) as [PilotRole, 'whole' | 'sentence' | 'operational'][])(
+    '%s: a member\'s question on a Library claim event reads as %s',
+    async (actorRole, reads) => {
       // The roles whose scope is resolved by a lookup answer it first (empty):
       // a coach's roster, a parent's guardian links. The row is fed to the
       // mocked events query either way -- this pins the payload filter, not
@@ -763,17 +831,129 @@ describe('Library question text in the events feed (CL-A3, staff only)', () => {
 
       const rows = await listShadowEvents(context({ actorRole }));
 
-      if (readsQuestions) {
+      if (reads === 'whole') {
         expect(rows[0].payload.knowledge_gap).toBe(QUESTION);
         expect(rows[0].payload.question).toBeDefined();
-      } else {
-        expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
-        for (const key of Object.keys(rows[0].payload)) {
-          expect(OPERATIONAL_KEYS).toContain(key);
-        }
+        return;
+      }
+      expect(JSON.stringify(rows[0].payload)).not.toContain('headaches');
+      for (const key of Object.keys(rows[0].payload)) {
+        expect([...OPERATIONAL_KEYS, ...(reads === 'sentence' ? ['knowledge_gap'] : [])]).toContain(key);
+      }
+      if (reads === 'sentence') {
+        expect(rows[0].payload.knowledge_gap).toBe(LIBRARY_QUESTION_COACH_SENTENCE);
       }
     },
   );
+
+  // F-184: who ASKED decides, read from the event row's actor_role column, with
+  // the F-054 / F-183 test (isResearchStaff): any filer outside coach,
+  // organization_admin and admin, including a role this code does not know or
+  // none, is a member whose words a coach does not receive.
+  describe('a coach and a member-asked Library question (F-184)', () => {
+    test.each(['athlete', 'parent', 'volunteer', 'staff', 'platform_owner', 'board', '', null, 'Coach', 'guardian'])(
+      'asked by %p: a coach gets the operational keys and the sentence, never the words',
+      async (askerRole) => {
+        answerCoachRoster([]);
+        const row = claimGapRow();
+        row.actor_role = askerRole as string;
+        // An athlete's claim is forced to their own athlete id.
+        row.payload = { ...row.payload, subject_id: 'ath-asker', detail: { text: 'headaches' } } as unknown as typeof row.payload;
+        mockQuery.mockResolvedValueOnce([row]);
+
+        const rows = await listShadowEvents(context({ actorRole: 'coach' }));
+
+        expect(JSON.stringify(rows[0])).not.toContain('headaches');
+        expect(JSON.stringify(rows[0])).not.toContain('acct-parent');
+        // Who asked goes with the words, as the research list's coach view
+        // blanks the asker's account and role.
+        expect(rows[0].actor_account_id).toBeNull();
+        expect(rows[0].actor_role).toBeNull();
+        // Neither the subject (the asker or their child) nor the row id that
+        // ties the event to the row and to other events on the same question.
+        expect(JSON.stringify(rows[0])).not.toContain('ath-asker');
+        expect(rows[0].payload).toEqual({
+          scope: 'scoped',
+          status: 'unsupported',
+          evidence_count: 0,
+          confidence_level: 'none',
+          distinct_source_count: 0,
+          research_requirement: 'Strengthen SHADOW Library evidence for scoped claim',
+          knowledge_gap: LIBRARY_QUESTION_COACH_SENTENCE,
+        });
+      },
+    );
+
+    test.each(['coach', 'organization_admin', 'admin'])('asked by a %s: a coach reads it whole, as before', async (askerRole) => {
+      answerCoachRoster([]);
+      const row = { ...claimGapRow(), actor_role: askerRole, actor_account_id: 'acct-staff' };
+      mockQuery.mockResolvedValueOnce([row]);
+
+      const rows = await listShadowEvents(context({ actorRole: 'coach' }));
+
+      expect(rows[0].payload).toEqual(row.payload);
+      expect(rows[0].actor_account_id).toBe('acct-staff');
+      expect(rows[0].actor_role).toBe(askerRole);
+    });
+
+    test.each(['organization_admin', 'admin'] as const)('a %s reads a member-asked question whole, with its asker', async (actorRole) => {
+      mockQuery.mockResolvedValueOnce([claimGapRow()]);
+
+      const rows = await listShadowEvents(context({ actorRole }));
+
+      expect(rows[0].payload).toEqual(claimGapRow().payload);
+      expect(rows[0].actor_account_id).toBe('acct-parent');
+      expect(rows[0].actor_role).toBe('parent');
+    });
+
+    test('a coach still reads who wrote an event that is not a Library claim', async () => {
+      answerCoachRoster([]);
+      mockQuery.mockResolvedValueOnce([
+        { ...claimGapRow(), event_name: 'SHADOW_INTAKE_CASE_APPROVED', entity_type: 'intake_case', payload: {} },
+      ]);
+
+      const rows = await listShadowEvents(context({ actorRole: 'coach' }));
+
+      expect(rows[0].actor_account_id).toBe('acct-parent');
+      expect(rows[0].actor_role).toBe('parent');
+    });
+
+    test('a supported claim a member asked carries no gap text, and the coach gets no sentence in its place', async () => {
+      answerCoachRoster([]);
+      const row = { ...claimGapRow(), event_name: 'SHADOW_LIBRARY_CLAIM_SUPPORTED' };
+      row.payload = { ...row.payload, status: 'supported', knowledge_gap: null } as unknown as typeof row.payload;
+      mockQuery.mockResolvedValueOnce([row]);
+
+      const rows = await listShadowEvents(context({ actorRole: 'coach' }));
+
+      expect(rows[0].payload).not.toHaveProperty('knowledge_gap');
+      expect(rows[0].payload).not.toHaveProperty('question');
+      expect(rows[0].payload.status).toBe('supported');
+    });
+
+    test('the research panel shows a coach the sentence for a member-asked question', async () => {
+      answerCoachRoster([]);
+      mockQuery.mockResolvedValueOnce([claimGapRow()]);
+
+      const items = await getShadowResearchProjection(context({ actorRole: 'coach' }));
+
+      expect(items).toHaveLength(1);
+      expect(items[0].requirement).toBe('Strengthen SHADOW Library evidence for scoped claim');
+      expect(items[0].knowledge_gap).toBe(LIBRARY_QUESTION_COACH_SENTENCE);
+      expect(JSON.stringify(items)).not.toContain('headaches');
+    });
+
+    test('an event that is not a Library claim keeps its payload for a coach, whoever wrote it', async () => {
+      answerCoachRoster([]);
+      mockQuery.mockResolvedValueOnce([
+        { ...claimGapRow(), event_name: 'SHADOW_JOB_FAILED', entity_type: 'shadow_job', payload: { job_id: 'j-1', error: 'timeout' } },
+      ]);
+
+      const rows = await listShadowEvents(context({ actorRole: 'coach' }));
+
+      expect(rows[0].payload).toEqual({ job_id: 'j-1', error: 'timeout' });
+    });
+  });
 
   test('platform_owner gets only operational keys on a Library claim event, so a key added later cannot carry the question', async () => {
     const row = claimGapRow();

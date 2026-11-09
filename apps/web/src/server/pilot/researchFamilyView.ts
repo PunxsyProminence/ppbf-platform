@@ -184,11 +184,43 @@ export function isMemberFiledLearningNote(
     && !isResearchStaff(row.created_by_role as PilotRole);
 }
 
-/** A row a coach receives without the words in it (F-054, F-183). */
+/* A MEMBER'S SHADOW LIBRARY QUESTION THE LIBRARY COULD NOT ANSWER WELL
+ * (F-184). Every gym member role may ask the Library a claim
+ * (library/claims, SHADOW_PROJECTION_READ_ROLES); an unsupported or weak one
+ * files a research row whose knowledge_gap quotes the question and whose
+ * metadata.question is the question, under the asker's account and role
+ * (shadowLibrary.ts, ensureClaimResearchRequirement). Only the server writes
+ * this event name (research-requirements route, SERVER_WRITTEN_EVENT_NAMES),
+ * so the stored role is the asker's. The same ruling reaches it
+ * (OD-2026-10-13-018, "A: Office + asker (Recommended)"): the words are a
+ * kid's or parent's own, typed into SHADOW. Same test as F-054 and F-183: a
+ * coach's or admin's question stays whole; any other filer's reaches a coach
+ * as this sentence, for the reason F-183 gives (a teen may hold a volunteer
+ * or staff seat). The claim's SHADOW event carries the same words and is
+ * split the same way in shadowReadModels.ts (sanitizeEventPayload).
+ * PROPOSED copy. */
+export const LIBRARY_QUESTION_EVENT = 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED';
+export const LIBRARY_QUESTION_COACH_SENTENCE =
+  'A Library question from a gym member that the Library could not answer well. The gym administrator can read it.';
+
+export function isMemberFiledLibraryQuestion(
+  row: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
+): boolean {
+  return row.source_event_name === LIBRARY_QUESTION_EVENT
+    && !isResearchStaff(row.created_by_role as PilotRole);
+}
+
+/** A row a coach receives without the words in it (F-054, F-183, F-184). */
 export function carriesMemberWords(
   row: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
 ): boolean {
-  return isAskerFiledQuestion(row) || isMemberFiledLearningNote(row);
+  return isAskerFiledQuestion(row) || isMemberFiledLearningNote(row) || isMemberFiledLibraryQuestion(row);
+}
+
+function coachSentenceFor(row: Pick<ShadowResearchRequirementRow, 'source_event_name'>): string {
+  if (row.source_event_name === LEARNING_NOTE_EVENT) return LEARNING_NOTE_COACH_SENTENCE;
+  if (row.source_event_name === LIBRARY_QUESTION_EVENT) return LIBRARY_QUESTION_COACH_SENTENCE;
+  return ASKER_QUESTION_COACH_SENTENCE;
 }
 
 /** The stored row as a COACH receives it when it carries a member's words.
@@ -197,9 +229,7 @@ export function carriesMemberWords(
  *  the key, the account id, the label and the metadata are not named; a
  *  closing note is replaced, not copied. */
 export function toCoachAskerQuestion(row: ShadowResearchRequirementRow): ShadowResearchRequirementRow {
-  const sentence = row.source_event_name === LEARNING_NOTE_EVENT
-    ? LEARNING_NOTE_COACH_SENTENCE
-    : ASKER_QUESTION_COACH_SENTENCE;
+  const sentence = coachSentenceFor(row);
   const meta = row.metadata ?? {};
   const closing: Record<string, unknown> = {};
   if (coachNote(meta.closing_note)) closing.closing_note = ASKER_QUESTION_NOTE_SENTENCE;
@@ -281,6 +311,11 @@ export function researchSubmissionsForReader(
   requirement: Pick<ShadowResearchRequirementRow, 'source_event_name' | 'created_by_role'>,
 ): Array<ResearchSubmissionRow | FamilyResearchSubmission> {
   if (!readsWholeResearchSubmissions(reader.role, onPlatformShelf)) return rows.map(toFamilyResearchSubmission);
-  if (reader.role && isOrganizationAdminRole(reader.role)) return rows;
+  // The split is a coach's view (OD-2026-10-13-018). The platform owner reads
+  // its own shelf's submissions whole as that shelf's curator
+  // (readsWholeResearchSubmissions); its own Library questions there are
+  // platform_owner-filed, so testing the row alone handed it the coach view
+  // once F-184 made those rows carry member words.
+  if (reader.role !== 'coach') return rows;
   return carriesMemberWords(requirement) ? rows.map(toCoachAskerSubmission) : rows;
 }

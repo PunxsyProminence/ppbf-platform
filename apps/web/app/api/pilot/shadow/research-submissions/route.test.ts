@@ -786,6 +786,52 @@ describe('the submissions on a learning-loop note an athlete or parent filed', (
 
     expect(payload.items).toEqual([NOTED]);
   });
+
+  // F-184: the same split on a member's Library question the Library could
+  // not answer well (OD-2026-10-13-018, "A: Office + asker (Recommended)").
+  describe('on a Library question a member asked (F-184)', () => {
+    const QUESTION_ROW = {
+      ...NOTE_ROW,
+      source_event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+      source_entity_type: 'shadow_library_claim',
+      metadata: { question: 'ZEBRA-QUESTION is my son ready to spar', scope: 'organization', subject_id: null },
+    };
+
+    test.each(['athlete', 'parent', 'volunteer'] as const)('asked by a %s, a coach by-id read carries the note sentence and no free text', async (role) => {
+      mockGetRequirement.mockResolvedValue({ ...QUESTION_ROW, created_by_role: role });
+      mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'coach.two@gym.example.test', role: 'coach' }));
+
+      const response = await GET(getRequest('research_requirement_id=7'));
+      const text = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(text).not.toContain('ZEBRA');
+      expect(JSON.parse(text).items).toEqual([{
+        ...NOTED,
+        provenance: {},
+        submission_note: 'The gym administrator can read this note.',
+        review_note: 'The gym administrator can read this note.',
+      }]);
+    });
+
+    test.each(['organization_admin', 'admin'] as const)('a %s by-id read carries every note', async (role) => {
+      mockGetRequirement.mockResolvedValue(QUESTION_ROW);
+      mockRequirePrincipal.mockResolvedValue(principal({ role }));
+
+      const payload = await (await GET(getRequest('research_requirement_id=7'))).json();
+
+      expect(payload.items).toEqual([NOTED]);
+    });
+
+    test("a coach reads a coach-asked question's submissions whole", async () => {
+      mockRequirePrincipal.mockResolvedValue(principal({ role: 'coach' }));
+      mockGetRequirement.mockResolvedValue({ ...QUESTION_ROW, created_by_role: 'coach', created_by_account_id: 'coach.one@gym.example.test' });
+
+      const payload = await (await GET(getRequest('research_requirement_id=7'))).json();
+
+      expect(payload.items).toEqual([NOTED]);
+    });
+  });
 });
 
 // Audit CL-C24: an unreadable or non-object body was an unhandled throw, and
