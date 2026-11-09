@@ -288,9 +288,10 @@ function badStatuses(node: unknown, path: string, out: string[]): void {
   if (!isPlainObject(node)) return;
   for (const [key, value] of Object.entries(node)) {
     const at = path ? `${path}.${key}` : key;
-    // A field's sources are source keys, not labels: a 'status' inside a
-    // source entry is that source's own business, never a record status.
-    if (key === 'sources') continue;
+    // A field's sources (a list) are source keys, not labels: a 'status'
+    // inside a source entry is never a record status. A FIELD named sources
+    // (an object) is walked like any other field.
+    if (key === 'sources' && Array.isArray(value)) continue;
     if (key === 'status' && !isPlainObject(value)) {
       if (!(RECORD_STATUSES as readonly unknown[]).includes(value)) out.push(`${at} is ${JSON.stringify(value)}`);
     } else {

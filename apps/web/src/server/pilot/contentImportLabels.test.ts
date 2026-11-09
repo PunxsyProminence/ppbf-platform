@@ -123,6 +123,7 @@ describe('content:validate on a package carrying the label columns', () => {
     ['evidence holding a bare string', { evidence: '["CONVENTION"]' }, 'bad_json'],
     ['a field status outside the four', { field_labels: '{"display_name": {"status": "VERIFIED", "sources": []}}' }, 'unknown_status'],
     ['a nested part status outside the four', { field_labels: '{"evidence_note": {"status": "REPORTED", "placement": {"status": "observed"}}}' }, 'unknown_status'],
+    ['a bad status on a field that is itself named sources', { field_labels: '{"sources": {"status": "BOGUS", "sources": []}}' }, 'unknown_status'],
     ['an evidence label outside the eight', { evidence: '[{"evidence_category": "research", "evidence_label": "STRONG"}]' }, 'unknown_evidence_label'],
     ['a stage key outside the 18', { stage_keys: 'T1|T3' }, 'unknown_stage_key'],
     ['a lowercase stage key', { stage_keys: 't1' }, 'unknown_stage_key'],
