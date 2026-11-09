@@ -162,7 +162,7 @@ const DFT_LANE = 'dft_0000000000a002';
 const STAGE_HEADER = ['organization_id', 'stage_key', 'segment', 'ordinal', 'name', 'who_text', 'contact_default', 'ppbf_name', 'backbone_version', 'field_labels'];
 const LINK_HEADER = ['organization_id', 'from_stage_key', 'to_stage_key', 'link_kind', 'backbone_version'];
 const DEFAULT_HEADER = [
-  'organization_id', 'default_id', 'scope', 'default_key', 'kind', 'value_text', 'value_max', 'unit', 'window_days', 'phases',
+  'organization_id', 'default_id', 'scope', 'default_key', 'kind', 'value_text', 'value_min', 'value_max', 'unit', 'window_days', 'phases',
   'display_text', 'status', 'sources', 'backbone_version', 'evidence',
 ];
 
@@ -313,6 +313,27 @@ describe('a pathway-catalog package', () => {
       { references: loadOfflineReferenceSets(SEED_DATA_DIR) },
     );
     expect(result.blocking).toEqual([]);
+  });
+
+  it('refuses malformed catalog rows offline, each by name', () => {
+    const findings = (files: Record<string, string>) => validatePackage(
+      Object.entries(files).map(([p, text]) => ({ path: p, text })),
+      { references: loadOfflineReferenceSets(SEED_DATA_DIR) },
+    ).blocking.map((finding) => `${finding.code} ${finding.message}`);
+    const withKeys = [...STAGE_HEADER, 'stage_keys'];
+    expect(findings({ [STAGES]: csv(withKeys, [{ ...Y1, stage_keys: 'Y2' }, { ...Y2, stage_key: 'y2' }]) })).toEqual([
+      expect.stringMatching(/^row_rule stage_keys is for content items; leave it blank on a pathway catalog row \('Y2'\)/),
+      expect.stringMatching(/^row_rule stage_key 'y2' is not a stage key/),
+    ]);
+    expect(findings(catalog([Y1, Y2], [{ ...Y1_Y2, to_stage_key: 'Y1' }], [
+      { ...D_Y1, default_id: 'dft_ABC' },
+      { ...D_LANE, value_min: '4', value_max: '3', phases: '{"months": 1}' },
+    ]))).toEqual([
+      expect.stringMatching(/^row_rule a link joins two different stages \(Y1 to itself\)/),
+      expect.stringMatching(/^row_rule default_id 'dft_ABC' is not 'dft_' and 14 lowercase hex/),
+      expect.stringMatching(/^row_rule value_min 4 is above value_max 3/),
+      expect.stringMatching(/^row_rule phases must be a JSON list/),
+    ]);
   });
 
   it('plans all new, and the dry run lists every row and writes nothing', async () => {
