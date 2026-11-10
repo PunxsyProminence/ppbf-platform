@@ -164,6 +164,55 @@ and should not try to.
 
 ---
 
+## OD-2026-11-09-003 -- The old upload audit rows keep their rows and lose the intake file name: "Redact the names"
+
+**Provenance: PRIMARY.** Jason's reply "Redact the names", 2026-11-09T17:25:01.842Z (12:25 EST), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 5013, `origin.kind` human), asserted against the file by script before writing. The question put to him is line 5002 (the `wrap_up` `ask`, buttons "Redact the names" and "Leave them") with the options written out at line 5009. New; edits no earlier entry's text.
+
+**What was put to him.** Line 5002: "The pre-October audit rows holding intake file names: delete, redact, or leave?" Line 5009: "Options: A, redact the file-name field in those rows' details and keep the rows (recommended: the audit trail stays, the child's name goes); B, leave them; C, delete the rows." The rows are `pilot.audit_events` rows of `event_type` `shadow_research_upload_requirement`, written by every athlete intake upload before PR #1122 (merged 2026-10-03); their `details.research_requirement` copied the uploaded file's name, often the child's. They are outside OD-2026-10-03-002 section 1, which covers the research-requirement table only.
+
+**Jason:** *"Redact the names"*
+
+**Rulings:**
+
+1. Those audit rows are kept. The file-name text in their details is replaced by a fixed marker. Option A as recommended; the rows are not deleted and not left as they were.
+2. The redaction is done by a dry-run-first tool with the same controls as the delete tool of OD-2026-10-03-002 section 1 (target check, read-only dry run, reviewed fingerprint, one transaction), and a production apply needs his word for that run.
+
+**Readings, his to correct (not rulings):**
+
+- a. "The file-name field" is read as `details.research_requirement` only. `details.knowledge_gap` is left as written: REPORTED by lane RR-2 from the removed insert (`git show 40df6e742^`, `apps/web/app/api/pilot/shadow/upload/route.ts` :241-262, and `shadow.ts` `inferKnowledgeGap`), it is a fixed sentence chosen by document type and carries no file name. Overwatch's first note of this ruling named both keys; the tool as built and merged redacts the one.
+- b. Each redacted row gains `redacted_at` and `redacted_fields`, and the run records itself in `pilot.audit_events` as an `update` event per organization; the audit vocabulary has no redaction value and none was added.
+
+**Not ruled here:** the same file-name text also sits in `pilot.shadow_events` payloads, `pilot.shadow_authority_checks.metadata` and the intake tables (REPORTED by lane RR-2 from `40df6e742^` route.ts :115-119 and :196-217; no production count taken). The intake system's own audit rows (`shadow_classification`, `shadow_routing`, document creates) are outside this ruling.
+
+**Evidence it rested on:** Overwatch's review of PR #1897, which found the audit rows while reading what PR #1122 removed; OD-2026-10-02-015 D4 (athlete intake files stay out of research) and OD-2026-10-03-002 section 1.
+
+**Status:** tool built and merged, PR #1900 (`60e450cdb`, lane RR-2): `apps/web/scripts/pilot-redact-intake-upload-audit.mjs` and the `redact-intake-upload-audit` workflow; run order in `docs/INTAKE_UPLOAD_AUDIT_REDACTION_RUNBOOK.md`. Staging: dry run 42685325719 found 570 rows, all `ppbf-default-org`; apply 42685627587 redacted 570 (after: 0 unredacted, 570 redacted). Production: dry run 42685722237, approved by Jason in GitHub, found 0 rows of that event type, so there is nothing to redact in production and no apply was run.
+
+---
+
+## OD-2026-11-09-002 -- The admin upload screen carries the Backbone catalog; its size caps are raised: "rais caps, otherwise all the back bone work was for nothing"
+
+**Provenance: PRIMARY.** Jason's typed message, 2026-11-09T15:11:05.666Z (10:11 EST), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 3672, `origin.kind` human), asserted against the file by script before writing; spelling kept. What was put to him is the report at line 3644. New; edits no earlier entry's text.
+
+**What was put to him.** Line 3644, on PR #1895 failing a test that uploads every committed dataset through the admin content-import screen: "I ruled not to raise the caps in this lane. The catalog loads by the seed workflow, and a 10 MB request through Azure ingress is unverified." and "Owner call for you, no rush: whether the in-app upload screen should ever carry the Backbone catalog, which means raising the caps to about 12 MB, or whether the catalog stays seed-path only."
+
+**Jason:** *"rais caps, otherwise all the back bone work was for nothing"*
+
+**Rulings:**
+
+1. The in-app admin content-import screen must be able to carry the Backbone pathway catalog. The catalog is not seed-path only.
+2. The upload caps are raised to fit it. This went against Overwatch's ruling in the lane (do not raise the caps); the cost was stated once in that exchange and is not re-asked: a request body of that size through Azure ingress is unverified; the admin route now accepts up to 34 MB per request; a whole-snapshot retirement is reachable from the upload screen.
+
+**As built (not his words):** `UPLOAD_LIMITS` in `apps/web/src/server/pilot/contentImport/upload.ts` went from files 20, rows 10,000, packageBytes 3,000,000, bodyBytes 6,500,000 (at `6c97415c`) to files 32, rows 25,000, packageBytes 16,000,000, bodyBytes 34,000,000 (PR #1895, `3e265a4e`). The numbers are the lane's, sized to the committed catalog (18 stages, 74 links, 2,913 defaults); he ruled the direction, not the figures. PR #1896 (`fa8f72f7`) then made the screen show a retirement as RETIRE.
+
+**Not ruled here:** caps for any other upload route; whether a 34 MB body passes Azure ingress (UNVERIFIED until a signed-in upload of the full catalog on staging).
+
+**Evidence it rested on:** PR #1895's failing `route.test.ts` case and the committed catalog size (about 4.2 MB); OD-2026-11-08-001 (route A step 1).
+
+**Status:** built and merged in PR #1895; on staging since deploy run 42646704468 (`3e265a4e`). Not in production (Release 36, `7b2001d6`). The staging upload of the full catalog through the screen is still owed.
+
+---
+
 ## OD-2026-11-09-001 -- The in-app timer and a standalone "Prominence Round Timer" are built on shared logic in gym-tv-timer, led by TV Timer Lead: "all 3"; "will add run in the free + subscription"; "Free remote (Rec.)"; "Pro + Supporter (Rec.)"; "Public"; "Reuse TV Timer Lead (Rec.)"; "Yes, start 1 and 2 (Rec.)"
 
 **Provenance: PRIMARY.** Jason's answers to question cards in the gym-tv-timer session ("Gym TV timer core repo", `local_d6c7eb34`; transcript `~/.claude/projects/C--Dev/01925d31-aed6-4409-bebc-09dc7702b2a7.jsonl`): questions at lines 2956, 2961, 3030 and 3063, answers at lines 2957, 2968, 3031 and 3064 (`toolUseResult.answers`), 2026-11-09T17:56:16Z to 18:07:31Z (12:56 to 13:07 EST). Each quote below was asserted against its line by script before writing; spelling kept. Earlier typed messages that set the subject, `origin.kind` human: line 1573, *"ok lets focus on the in app and out of app timer"*; line 1799, *"i have a duns i want these apps to finace the gym and its programs"*; line 2938, *"ok lets get back and focus on building the in app and stand alone timer ask me qestions"*. New; adds a status line under OD-2026-10-28-001 and edits no earlier entry's text.
