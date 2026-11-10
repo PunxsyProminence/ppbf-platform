@@ -30,15 +30,21 @@
 // link (linkKinds below; Overwatch, PR #1895 Q3). If the Backbone later gives
 // each link its kind, its value replaces this rule and the snapshot regenerates.
 //
-// A default's field_labels in any shape but {status, sources} (2026-11-09: 572
-// rows hold strings) are left blank and counted on one printed line, never
+// A default's field_labels cell whose value is exactly the sentence
+// INFERRED_SENTENCE (the frozen Backbone's 1,406 cells on 572 rows) is read as
+// {status: INFERRED, sources: the row's own sources} (hand-off note section 4
+// item 3; PK-200 option A; lane BB-2a). Any other field_labels in a shape but
+// {status, sources} is left blank and counted on one printed line, never
 // mapped to a status (Overwatch, PR #1895 Q2); the row keeps its record-level
 // status, sources and evidence.
 //
 // A default whose `sources` holds a key containing a list separator (| ; ,) is
 // HELD OUT of the snapshot, by that rule and never by id, and printed with its
-// id (2026-11-09: 5 rows carry one key with a note written into it; Overwatch,
-// PR #1895 Q5). The next export after the Backbone fixes the key brings them in.
+// id (Overwatch, PR #1895 Q5). One exact key is first normalised (hand-off note
+// section 4 item 4; lane BB-2a): NOTED_SOURCE_KEY becomes NOTED_SOURCE_KEY_FIXED
+// and the whole original string is kept, as written, in a `source_note` key of the
+// row's evidence entry (docs/CONTENT_PACKAGE_CONTRACT.md: "Other keys are kept as written").
+// Any other key holding a separator is still held.
 //
 // LICENSED EXCERPTS STAY OUT OF THIS PUBLIC REPOSITORY: the `quotes` key
 // (verbatim passages from research papers and rule books) is dropped from every
@@ -143,6 +149,30 @@ function checkSources(sources, where) {
   if (!Array.isArray(sources) || !sources.every((source) => typeof source === 'string')) {
     throw new ExportError(`${where}: sources must be a list of source keys`);
   }
+}
+
+/** The frozen Backbone's sentence in place of a field label (hand-off note section 4 item 3). */
+export const INFERRED_SENTENCE = 'INFERRED (read from the source text by the drafting session)';
+/** The one source key with a note written into it, its fixed form and the note (hand-off note section 4 item 4). */
+export const NOTED_SOURCE_KEY = 'EXT-USAB-RB2026 (edition in force; the cited provisions are present)';
+export const NOTED_SOURCE_KEY_FIXED = 'EXT-USAB-RB2026';
+const NOTED_SOURCE_NOTE = NOTED_SOURCE_KEY; // the whole original string, so the note names the source it is about
+
+/**
+ * The rule with NOTED_SOURCE_KEY normalised: the key fixed, the note kept in `source_note`
+ * of the evidence entry that cites the key (its text names it) or, when none does and the
+ * row has exactly one entry, of that entry (all five frozen rows: the hand-off's "the row's
+ * evidence entry"). No entry is created; with several entries and none citing, the note is
+ * not placed. Any other rule is returned as it is.
+ */
+function withFixedSourceKey(rule) {
+  if (!Array.isArray(rule.sources) || !rule.sources.includes(NOTED_SOURCE_KEY)) return rule;
+  const evidence = Array.isArray(rule.evidence) ? rule.evidence.map((entry) => ({ ...entry })) : [];
+  const citing = evidence.filter((entry) => JSON.stringify(entry).includes(NOTED_SOURCE_KEY_FIXED));
+  for (const entry of citing.length ? citing : evidence.length === 1 ? evidence : []) {
+    entry.source_note = typeof entry.source_note === 'string' && entry.source_note ? `${entry.source_note}; ${NOTED_SOURCE_NOTE}` : NOTED_SOURCE_NOTE;
+  }
+  return { ...rule, sources: rule.sources.map((source) => (source === NOTED_SOURCE_KEY ? NOTED_SOURCE_KEY_FIXED : source)), evidence };
 }
 
 /** A sources key holding a list separator cannot sit in the '|' list column (validate.ts refuses ';' and ','). */
@@ -290,7 +320,15 @@ function defaultRow(rule, version, notShaped, dropped) {
  */
 function defaultFieldLabels(rule, where, notShaped) {
   if (rule.field_labels === undefined) return '';
-  const labels = rule.field_labels;
+  let labels = rule.field_labels;
+  if (isObject(labels)) {
+    // The frozen Backbone's sentence: INFERRED, with the row's own sources (hand-off note section 4 item 3).
+    const rowSources = (rule.sources ?? []).map((source) => source.normalize('NFC').trim());
+    labels = Object.fromEntries(Object.entries(labels).map(([field, label]) => [
+      field,
+      typeof label === 'string' && label.normalize('NFC').trim() === INFERRED_SENTENCE ? { status: 'INFERRED', sources: rowSources } : label,
+    ]));
+  }
   if (!isObject(labels) || !Object.values(labels).every(isObject)) {
     notShaped.rows += 1;
     notShaped.cells += isObject(labels) ? Object.values(labels).filter((label) => !isObject(label)).length : 1;
@@ -345,9 +383,10 @@ export function exportPathwayCatalog(backboneDir) {
     .sort((a, b) => compare(a.from_stage_key, b.from_stage_key) || compare(a.to_stage_key, b.to_stage_key));
   const notShaped = { rows: 0, cells: 0 };
   const dropped = { rows: 0, keys: 0 };
+  const fixedRules = rules.map(withFixedSourceKey);
   const isHeld = (rule) => Array.isArray(rule.sources) && rule.sources.some((source) => typeof source === 'string' && LIST_SEPARATOR.test(source));
-  const held = rules.filter(isHeld).map((rule) => String(rule.default_id)).sort(compare);
-  const defaultRows = rules.filter((rule) => !isHeld(rule)).map((rule) => defaultRow(rule, backboneVersion, notShaped, dropped))
+  const held = fixedRules.filter(isHeld).map((rule) => String(rule.default_id)).sort(compare);
+  const defaultRows = fixedRules.filter((rule) => !isHeld(rule)).map((rule) => defaultRow(rule, backboneVersion, notShaped, dropped))
     .sort((a, b) => compare(a.default_id, b.default_id));
 
   const table = (name, rows) => writeCsv(HEADERS[name], rows.map((row) => HEADERS[name].map((column) => row[column] ?? '')));
