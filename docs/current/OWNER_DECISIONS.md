@@ -164,6 +164,870 @@ and should not try to.
 
 ---
 
+## OD-2026-11-10-001 -- The Backbone build rules (RULES.md sections 0 to 11) are folded in here word for word at the repo hand-off; the OneDrive Backbone is frozen: cards Q-207 A, PK-202 A, PK-203 A
+
+**Provenance: RECONSTRUCTED.** Jason answered these as cards in Backbone sessions whose transcripts are not readable from this repo's sessions: Q-207 (card RH-Q01, side job "PPBF Side Job Repo Handoff Prep", answered by 2026-11-09 14:25 machine clock) and PK-202 and PK-203 (session "PPBF Backbone Wave 2 Repo Handoff", answered by 2026-11-10 08:39). The answers are copied from the Backbone register `working/drift/DECISION_REGISTER.json` (v1.84, 652 decisions, sha256[:16] `ff49eba2369e1c3d`; now `docs/backbone/DECISION_REGISTER.json`), ids D-OQ207, D-OQ209, D-PK202 and D-PK203. Uncertain: the label he pressed on each card; the register keeps "option A" and the Backbone's wording of each option. In this session (Overwatch; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 6504, 2026-11-10T15:25:10.084Z) he pasted the Backbone Overwatch's hand-off work order, which names this fold as its step 3; the paste carries no typed words of his own. The block below is the frozen `RULES.md` (sha256[:16] `19ad68136ff70538`, 148,852 bytes, 844 lines), lines 11 to 844, copied by script in byte mode and re-hashed part by part against the hand-off package's `RULES_FOLD_MAP.json` (`696824502b5acd4f`): 12 sections and 125 section-9 items, all matching. New; edits no earlier entry's text.
+
+**The cards, in the register's words:**
+
+1. **The fold (D-OQ207, Q-207).** "option A: one new OD entry, provenance RECONSTRUCTED, RULES.md sections 0 to 11 word for word as one block, naming DECISION_REGISTER.json and DECISION_CHECKS.md; RULES.md then retired."
+2. **The fold rules nothing (D-OQ209, Q-209).** "option A: the fold changes no wording and rules nothing; the overlap goes into the handoff note as 'not ruled', for the app repo's Overwatch to put to Jason before any lane builds hold or medical-restriction behaviour."
+3. **The package (D-PK202).** "option A, approve the package as written: working/repo-handoff-2026-11-10/ (HANDOFF_NOTE.md, PACKAGE_MANIFEST.json, RULES_FOLD_MAP.json, PR_DESCRIPTION_DRAFT.md) is what Claude Code brings into ppbf-platform by pull requests under route A".
+4. **The freeze (D-PK203).** "option A, freeze now, at the end of this step": the OneDrive Backbone folder is an archive from 2026-11-10 (`FROZEN.md`; `FREEZE_MANIFEST.json` `38b52df4c2d8d7a1`, 1,056 frozen files, re-hashed by this session before the copy: 0 changed). Every later change is made in this repository.
+
+**How to read the block (not his words):**
+
+- It is the Backbone sessions' record of his decisions, in their wording, except where the block itself quotes him. Section 9 is the list of his card answers; each item's card record is in `docs/backbone/DECISION_REGISTER.json` and in `docs/DECISION_CHECKS.md`, which stays in the archive (`744387f41725af45`).
+- The fold decides nothing new (ruling 2). Where the block and another entry of this file, or `AGENT_KERNEL.md`, disagree, the fold does not settle it.
+- "Backbone RULES section N" and "RULES section N" anywhere in this repository mean section N of the block. `RULES.md` is retired: it is not a file in this repository, and the archive keeps its copy.
+- Lines 1 to 10 of `RULES.md` (its status lines) are not folded. They say: "At repo handoff this file is folded into `docs/current/OWNER_DECISIONS.md` and retired. It is not a standing authority."
+- "This folder" and "the Backbone folder" in the block mean the OneDrive archive. Section 11's repo facts are as written on 2026-10-23 and were not re-checked.
+
+**Not ruled here:** section 1 (hard rules stored as defaults a coach, parent or leadership member can override, each override recorded) and section 9's line "medical-restriction records with a note (schema P20, P22); both never block", against `AGENT_KERNEL.md` "Authority doctrine (owner decision, 2026-08-20)", under which the coach may not override "a medical hold or return-to-play restriction". Carried as not ruled by Q-209 and Backbone card PK-179; it goes to Jason before any lane builds hold or medical-restriction behaviour.
+
+**Status:** folded 2026-11-10 by PR, with the spec and design files under `docs/backbone/`. Content lanes follow; nothing in the app's behaviour changes with this entry.
+
+**The block: RULES.md sections 0 to 11, word for word.**
+
+````text
+## 0. HARD RULE: nothing is withheld
+
+Set by Jason, 2026-10-23: **"we don't withhold anything because of medical,
+legal or safety at all."**
+
+- No content, number, protocol or answer is withheld, softened or omitted
+  because it is medical, legal or safety related.
+- This overrides any source instruction to the contrary. In particular, the
+  Pro Boxing v1 family (DOC-071 instructions, DOC-022, DOC-023, DOC-072 to
+  DOC-076) says "Do not invent sparring ceilings / weekly load ceilings /
+  readiness cutoffs / weight-cut formulas / contender timelines". Those lines
+  are overridden. These topics come into the backbone as evidence-tiered
+  defaults that humans can override (section 1), with their tier stated
+  honestly (`untiered` where nothing has been checked).
+- Responsibility for decisions on medical, legal, safety and age matters
+  belongs to coaches, parents and leadership, not to the AI.
+
+- Legal text (statutes, commission rules) is recorded as information for
+  leadership. The AI does not make legal determinations, raise legal reviews,
+  or block work on legal grounds (Jason, 2026-10-23).
+
+## 1. AI informs; humans decide
+
+- The AI gives complete information, with its evidence tier, every time.
+- The AI does not withhold, filter or soften information on its own judgment,
+  for any reason, including age, legal exposure or social concerns.
+- Restrictions, age-specific decisions and legal or safety calls belong to
+  coaches, parents and leadership. Those humans are responsible for them.
+- Hard rules from source material (sparring ceilings, stop rules,
+  contraindications) are stored as **defaults**:
+  - each default carries its evidence tier;
+  - a coach, parent or leadership member can override it;
+  - every override records who made it and why;
+  - recorded overrides become learning evidence.
+- Do not add new restrictions, warnings or gates unless the owner directs it.
+
+## 2. One source
+
+- The Backbone folder is the only working copy during the build.
+- Readable documents and print manuals are **generated from the data files**,
+  never edited as separate copies.
+- After repo handoff, the repo is the only live copy and this folder is frozen
+  as an archive.
+
+## 3. Source priority (when sources disagree)
+
+Set by Jason, 2026-10-23:
+
+1. **Owner system leads:** DOC-027 (Punxsy Master Source Manual v1) and
+   DOC-072 (Pro Boxing Skill System Master Registry).
+2. **The Long Road (DOC-001) fills gaps** and supplies the multi-year phase
+   structure.
+3. **Checked research sets the evidence tier on everything.** Where checked
+   evidence conflicts with the owner system, the conflict is flagged for the
+   owner; it is not silently resolved in either direction.
+
+Conflicts this order does not settle are listed for the owner. Cowork's
+conflict register (workbook v69, K-01 to K-95) is the starting list.
+
+## 4. Evidence
+
+- Only sources retrieved and checked (title, authors, year, DOI or equivalent)
+  count as grounding.
+- The Long Road was co-written with AI, so every reference in it is unverified
+  until checked.
+- The Evidence Synthesis is an unreviewed Claude Research export (2026-10-22,
+  confirmed by the header of its Word copy). Its tier tags are AI proposals and
+  are checked like any other claim. The markdown copy in `inputs/` is the
+  complete version; the Word copy lacks the 10-entry Sources list and is not
+  kept as a separate input.
+- Items without checked evidence are labelled `untiered`. No item gets a
+  tier it has not earned.
+- Evidence vocabulary (set at checkpoint 1, Jason 2026-10-24;
+  working/design-2026-10-25/EVIDENCE_VOCABULARY.md). Each claim carries a category
+  (research, rule, convention, framework, owner_decision, information, unassigned) and one
+  label: PROVEN, EMERGING, EXPERIMENTAL or RESEARCH_NEEDED for checked research (the app's
+  rule), shown with both scales and a slash (Strong / High, Moderate / Moderate, Limited /
+  Low, Not assignable / Very low; the pairing is approximate); RULE (with its route);
+  CONVENTION; FRAMEWORK; or UNTIERED (nothing checked yet). UNTIERED is the default.
+  Sparring ceilings are CONVENTION. Owner decisions are shown as CONVENTION. Status
+  (section 10) and evidence are separate labels.
+- How sources were found and checked is logged in `docs/METHODS.md`.
+
+## 5. Triage tests (what is kept)
+
+Each section of source material is tested:
+
+1. A small gym can actually do it (staff, equipment, testing on hand).
+2. The AI can use it (it yields a drill, session, test, gate or default).
+3. A member needs it in the first 1-2 years.
+
+Fails all three: cut. Passes 1 and 2 but not 3: defer to wave 2.
+Otherwise: keep. The owner approves the triage before conversion.
+
+## 6. Minimum done (wave 1)
+
+1. Data model approved by the owner.
+2. **The full career spine** (updated 2026-10-23): every stage from age 5 to
+   retirement, with entry and exit gates, overridable defaults and branch
+   points, across all lanes: recreational/fitness, amateur, pro, and the
+   non-contact lane that runs across every stage. Stage-based, not age-based:
+   age sets bands and defaults; a member enters at the stage that fits (an
+   adult beginner enters at Novice).
+3. Content converted for: Youth Fundamentals (from age 5), Novice, one
+   fitness or mixed-level class track, and the first 90 days. Other stages
+   carry structure and gates; their detailed content is wave 2.
+4. AI passes the acceptance test on hypothetical athletes, judged by the owner.
+5. Starter print manual generated from the spine and slice data.
+6. Evidence checked for what the slice uses, with a methods note.
+
+Everything else is wave 2 and needs the owner's go-ahead.
+
+## 7. Contributions
+
+Coaches submit modules (exercises, drills, sessions, programs). The owner
+approves them into the core library. Personal versions are allowed for a
+member's own use.
+
+Approvals record the approver and whether they acted as the named proxy (section 9).
+States: proposed, under review, adopted, declined, superseded, and not required (personal
+versions). The proxy does not approve their own submission.
+
+## 8. Members
+
+All members are hypothetical. No real personal data enters the backbone.
+Source files about individual people (for example the individual-athlete camp
+sets in the Cowork export, DOC-139 to DOC-150) may supply generic training structure
+only. No names, records or personal details are carried over.
+
+## 9. Owner decisions recorded during the build
+
+2026-10-23, answered by Jason in this build session:
+
+- **Data model seed:** extend the structure of DOC-072 (Pro Boxing Skill System
+  Master Registry: skill index, drill, cue and evidence registries, progression
+  map, do-not-duplicate list). Do not design a parallel scheme.
+- **Backbone leads the app (updated 2026-10-23):** everything in the app is
+  built off the backbone. Where the repo's existing schema (drill library v3,
+  programs and phases, pathway stages, development blocks, session scripts,
+  workout templates, assessment and intervention protocols, evidence tables)
+  supports the backbone, reuse it as is. Where it does not, the backbone wins
+  and a schema change is proposed for Claude Code.
+- **App seed drills:** 114 of the 119 drills seeded in the repo are AI drafts
+  (106 literature-grounded, 8 coaching-craft). They rank below the owner system
+  and the Long Road under section 3. The 5 drills from the PPBF source manual v3
+  are owner system.
+- **Starting point and base text:** the Long Road pathway is the spine
+  (first edition `boxing-development-program.md`, "from zero experience to
+  elite/champion-tier contention"). The Second Edition is the base text: a
+  measured comparison found 61% of its 41,017 added words actionable, 21%
+  explanation, 11% cited evidence, 8% filler. Its added material is less well
+  cited (cited share 16% to 13%), so it gets the evidence pass. Filler is not
+  carried into the backbone.
+- **Spine extended:** down to age 5 (youth stages from owner youth material
+  DOC-039, DOC-151 to DOC-155; USA Boxing rules as below) and out through
+  retirement, branching into recreational/fitness, amateur and pro (pro stages
+  from DOC-023), plus a non-contact lane across all stages.
+- **Youth age bands (Jason, 2026-10-23):** youth stages follow the owner
+  Pathway bands 5-8 / 8-12 / 12-14 / 14-16 / 16-18; PPBF youth entry starts at
+  age 5 (settles Cowork conflict K-95).
+- **Placement (Jason, 2026-10-23):** a member's stage is set by age,
+  experience and athletic ability together (intake assessment); age bands are a
+  guide, not a gate. Competition age classes come from the governing body of
+  the route, since different competitions use different ages.
+- **Fitness vs recreational (Jason, 2026-10-23):** Fitness is non-contact
+  (spine stage FT1). Recreational boxing includes contact (RC1), without
+  required competition.
+- **USA Boxing rules (Jason, 2026-10-23):** they govern the USA Boxing amateur
+  competition route only. A member on that route stays compliant, so those rules
+  are requirements there (age classes, bout lengths, registration and similar).
+  Every other lane (youth non-competitive, recreational/fitness, non-contact,
+  pro) may use USA Boxing rules as a reference baseline, but they are not hard
+  set there; those lanes use overridable defaults. The pro branch follows its
+  own commission and sanctioning rules.
+- **Other lanes are vetted against their governing body (Jason, 2026-10-23):**
+  each lane's defaults are checked against the governing body it falls under,
+  for example the Pennsylvania state athletic commission for pro bouts in
+  Pennsylvania, or another state or sanctioning body where the activity takes
+  place. Where that body's rules legally apply to the activity, they are
+  requirements for that route. Where no body governs the activity (in-gym
+  recreational, fitness and non-contact training), the rules stay overridable
+  defaults, checked for consistency. Which body governs which lane is
+  confirmed in the evidence pass, with sources; it is not assumed.
+- **Scope:** medical and safety, sparring dose and ceilings, weight cutting,
+  youth content and nutrition are all IN scope, as evidence-tiered information
+  and overridable defaults. Coaches, parents and leadership decide. (This
+  reverses the Cowork Phase 1 exclusions.)
+- **Cowork run:** Cowork stops at workbook VERSION 69. This build takes over
+  its remaining work (open questions, unread folders the backbone needs,
+  close-out). The v69 workbook is the final inventory; it is not continued as
+  a second record.
+- **Masters (Jason, 2026-10-23):** the spine has a Masters stage (AM3) using
+  the USA Boxing definition.
+- **Maturation in placement (Jason, 2026-10-23):** placement also weighs
+  maturation (developmental age) and sex, through the intake assessment.
+- **Youth gates (Jason, 2026-10-23):** youth exit gates use numbers (the Long
+  Road 27-item scorecard), with a coach override to progress or hold back. Overrides in
+  any direction use the gate-override process (below; checkpoint-1 answer Q-12).
+- **DOC-023 cautions (Jason, 2026-10-23):** worded strongly as defaults ("default:
+  no hard sparring in this stage"), overridable with a recorded reason.
+- **Pro sparring ceilings (Jason, 2026-10-23):** pro stages start from the Long
+  Road's amateur numbers as defaults until pro-specific numbers are found.
+- **Validation changes (Jason, 2026-10-24):** adopt A-E from
+  `docs/VALIDATION_REVIEW.md`: per-athlete exposure logging, seeded wrong
+  recommendations in the acceptance test with status and tier shown on every
+  recommendation, two-coach youth gate scoring with anchor clips, a separate
+  rule/convention/framework label, and the face-validity note.
+  (Seeded part withdrawn 2026-10-27, D-SEED01: no seeded wrong recommendations or catch test; status and tier stay shown.)
+- **Pathway schema (Jason, 2026-10-24), `docs/SCHEMA_PROPOSAL.md`:**
+  - D1: the 18-stage spine replaces the four adult stages (supersedes the
+    2026-10-03 "Use as-is" decision).
+  - D2: Foundation to T1, Intermediate to T2, Advanced to AM1, Elite to AM2.
+  - D3: no minor allowance for Y1-Y5, FT1 and RC1; placing an under-18 in any
+    other stage asks the coach for a short reason, then saves.
+  - D4: sparring defaults are written in rounds, per sparring type (hard, play,
+    technical, game, conditioned/constraint-based), not hard rounds only. Time
+    under impact is still logged.
+  - D5: placing against a gate result asks the coach for a short reason; no
+    second approval.
+    (Superseded 2026-10-24 by Gate overrides, below: head coach check and two blind
+    staff votes.)
+- **Outside checks on owner answers (Jason, 2026-10-24):** from now on, every
+  owner answer is checked against outside sources and cited in
+  `docs/DECISION_CHECKS.md`. The check informs; Jason decides.
+- **PPBF is a registered USA Boxing club (Jason, 2026-10-24).**
+- **USA Boxing in the gym (Jason, 2026-10-24):** PPBF is a registered USA Boxing club
+  and also runs other programs. USA Boxing members spar only with USA Boxing members.
+  Members of other programs follow PPBF defaults (and their own governing body where
+  one applies). Fitness members do no contact (FT1).
+- **Pro sparring defaults (Jason, 2026-10-24):** the Long Road amateur ceilings stay
+  as defaults, with typical pro practice shown beside them as convention. Overriding
+  them requires a signed release (waiver) and a signed risk acknowledgment. Professionals do not spar USA Boxing members.
+- **Stage names (Jason, 2026-10-24):** T1 is Foundation, AM2 is International
+  Amateur. The USA Boxing class (Novice or Open, from the bout log) is a separate field.
+- **Gate overrides (Jason, 2026-10-24):** (1) the coach submits a reason: a preset
+  from the gate's pick-list, with comments, plus an open free-text script; (2) the
+  head coach checks that it makes sense; (3) if the head coach approves, the training
+  staff hold a blind vote on the app during a training meeting, with staff
+  discussion; (4) the head coach has the final say and records a reason if he
+  disagrees with the vote. The placement stays as it is until the final decision.
+  Vote timing (Jason, 2026-10-24): two blind votes, one before and one after the
+  discussion; the head coach's approval is hidden until the first vote; the head
+  coach speaks last.
+- **Stages and ranks (Jason, 2026-10-24):** two layers. A spine stage is the route.
+  A rank is PPBF's Latin ladder from Progrm Direction.docx: TIRO, DISCIPULUS, PUGIL
+  NOVUS, PUGIL PERITUS (renamed from PUGIL SCIENTIA), PUGIL FORTIS, PUGIL PRAECEPTOR.
+  Ranks are earned on five domains, not age or time, and are carried in any lane.
+  Rank advancements use the gate-override process.
+- **Stage names (Jason, 2026-10-24):** per-lane arcs built on prominence as rising to
+  the next level. Youth: AURORA, ORIENS, CRESCENS, LUCENS, ARDENS. Foundation: RADIX,
+  SURGENS. Amateur: EMINENS, EXCELSIOR, PERENNIS. Pro (Greek): DIABASIS, AGON, KLIMAX,
+  KLEOS, AKME. Lifelong: CONSTANS (recreational), EUEXIA (fitness), LUMEN (exit). Stage
+  codes (Y1, T1, AM1 ...) stay as IDs; English descriptors stay alongside.
+- **Liability documents and insurance (Jason, 2026-10-24):** every member signs a
+  release (waiver) and a risk acknowledgment that names the specific risks of their
+  activity; insurance is USA Boxing membership insurance. Wording is for PPBF's attorney.
+  Check notes (information, not rules): one parent's signature does not bind the other
+  parent; a release and a research consent cannot share a document; USA Boxing insurance
+  does not reach professionals, non-members, contact work on a fitness membership, or
+  Commission events, and the app shows that as a note, not a block (DECISION_CHECKS
+  ninth round).
+- **Recreation lane (Jason, 2026-10-24):** one Recreation lane with two tracks, RC1
+  CONSTANS (contact) and FT1 EUEXIA (fitness). Members switch freely with no gate; a
+  member who does both sits on the contact track and logs fitness sessions as no contact.
+  In the USA Boxing program the contact track needs an athlete or Masters membership and
+  the fitness track uses a fitness membership. USA Boxing insurance reaches members who do
+  not compete outside USA Boxing (professional or unsanctioned contests), within the
+  limits in DECISION_CHECKS tenth round.
+- **App notes (Jason, 2026-10-24):** notes never block; the coach decides and the session
+  saves either way. "No current physical on file" shows whenever a member on any stage is
+  logged for contact work; "under 8" shows on the contact track. Each note has a one-tap
+  "seen" that records who saw it and when, with no reason required.
+- **Older members (Jason, 2026-10-24):** members over 40 doing contact work hold USA Boxing
+  (Masters) membership and its insurance. The app shows a Masters check note (membership,
+  Masters physical within 12 months, exercise EKG within 5 years at 45+); never a block.
+- **Approval proxy (Jason, 2026-10-24):** when Jason is unavailable, a named proxy may
+  approve coach submissions. Each approval records who approved and whether they acted
+  as proxy.
+- **Physicals (Jason, 2026-10-24):** one USA Boxing-style physical within 12 months for
+  everyone doing contact work, professionals included; a professional's Commission annual
+  physical is recorded separately. Notes only, never blocks.
+- **First class track (Jason, 2026-10-24):** the 8-Week Non-Contact Program planning grid,
+  run as an all-ages fitness track (FT1); the youth ad pack stays a marketing variant.
+- **Plan v5 (Jason, 2026-10-24):** amend the plan for the drift check (age 5; four more
+  test athletes; defaults step becomes a consolidation; class track set; waiver, insurance
+  and naming work recorded as done information).
+- **Checkpoint 1 answers, first batch (Jason, 2026-10-25):** (Q-01) "contact work" for
+  notes means sparring only. (Q-03) Two-coach scores: mean when within 1 point, otherwise
+  discuss and re-score. (Q-12) The gate-override process applies in every direction:
+  moving early, holding back after a gate is met, moving back down a stage, and rank
+  demotion (confirmed 2026-10-25). (Q-14) A pro override with a missing signed
+  release or acknowledgment saves with a note. (Q-17) Personal versions: no approval,
+  visible to the member and their coaches, used by the AI only for that member; coaches may
+  keep personal versions too. (Q-18) Named proxy, no end date, no self-approval. (Q-22)
+  Jason reviews the acceptance test alone, blind, current mix. (Q-26) Full note once per
+  member per week, then a badge.
+- **Checkpoint 1 answers, second batch (Jason, 2026-10-25):** (Q-02) the under-8 note shows
+  on any stage when a member under 8 is logged for sparring. (Q-04) Single-rater scores
+  show, labelled "single rater". (Q-05) Ratings by a coach with out-of-date calibration are
+  used, labelled. (Q-06) Anchor clips: adults for live items; guardian-consented youth
+  footage for Y1-Y2 non-contact items. (Q-07) Jason and the head coach set gold scores
+  independently, then agree. (Q-08) Recalibration as drafted. (Q-09) Target shown: good
+  (0.75). (Q-10) Draft coachability anchors accepted for now. (Q-11) Long Road scale wording
+  kept; non-contact scores capped at 3.
+- **Checkpoint 1 answers, third batch (Jason, 2026-10-25):** (Q-15) the Long Road absolute
+  sparring ceiling is an overridable default on every stage with sparring. (Q-16) No
+  numbers yet for non-hard sparring types; counts shown; hard incidents recorded; sparring
+  etiquette on file (docs/SPARRING_ETIQUETTE.md). (Q-19) Exercises live in the drill
+  library. (Q-20) Add a "masters" membership value. (Q-21) T2 key items 5, 6, 17, 19.
+  (Q-23) Y2 contact readiness is its own gate. (Q-25) Research labels show both scales with a slash (PAGAC / GRADE,
+  for example "Limited / Low"); the pairing is approximate (DECISION_CHECKS eighteenth round).
+  Incident records add mouthpiece worn, days lost and body area (IOC 2020). The override
+  pick-list is editable and versioned, reviewed at about 3 months; original reasons are kept.
+  (Q-24) Only value defaults are overridable per athlete, with a reason; owner rules change
+  only when Jason updates RULES; references and information rows are shown, not overridden.
+  Hard-incident log approved (six types, never blocks; docs/SPARRING_ETIQUETTE.md section 4).
+  (Q-13) Standard override pick-list approved: R01-R16 plus R99 Other, tagged up, hold,
+  down or move (lane or track change); conduct applies to stage gates as well as ranks
+  (working/design-2026-10-25/GATE_OVERRIDE_PICKLIST.md). All 26 checkpoint-1 questions
+  are now answered.
+- **USA Boxing 2026 documents (Jason, 2026-10-25):** read in full (inputs/usa-boxing). Membership
+  for club training and sparring is Rule 1.2 (was 1.1); new Rule 1.1 bars unsanctioned
+  competition (30-day medical suspension). The app stores physical details, not documents
+  (Rule 5.1(4)). Details in DECISION_CHECKS eighteenth round, part 3.
+  Approved: a reminder note on H2-H4 incidents with a 'report filed' date, and USA Boxing
+  medical-restriction records with a note (schema P20, P22); both never block.
+- **Decision freeze (Jason, 2026-10-24):** after checkpoint 1, no new design decisions through
+  plan phases 3-4 (sample conversion, slice, acceptance test, starter manual) unless a decision
+  blocks wave-1 content. Other ideas go on `working/PARKING_LIST.md` and are reviewed at
+  checkpoint 3. (DECISION_CHECKS 18.26)
+- **Checkpoint 1 review (Jason, 2026-10-24):** all 29 PROPOSED_CHANGES items decided (26
+  accepted, some amended, reworded or narrowed; RC-2 closed as done; SC-6 declined; SC-7 left
+  out). Owner decisions are shown as CONVENTION (PK-06). The approval proxy is the head coach
+  (a role; the person is linked through their app account, section 8). The whole Long Road
+  triage is approved (262 sections): LR-081 re-marked (spine stage structure now, content in
+  wave 2, exit stage) and LR-177 kept as backbone data (age-based defaults at intake).
+  TA-01-R1 names the gate-override process (PK-07). All nine expected outcomes are confirmed
+  (TA-01, TA-03 and TA-08 with wording changes). The data model (DATA_MODEL.md,
+  entities.schema.json) is approved. The schema proposal (P1-P22 with the accepted
+  corrections) is approved; at handoff Claude Code first does a read-only check of open pull
+  requests, reports any conflict with tables the proposal touches, and builds only after
+  that; the docs revamp stays after the backbone. Register D-RC01 to D-RV07; DECISION_CHECKS
+  nineteenth round.
+- **Checkpoint 1 follow-ups (Jason, 2026-10-24):** (PK-14) TA-04-R4's claim that USA Boxing
+  rules are requirements on the USA Boxing route keeps the label RULE (it restates a
+  governing-body rule; the evidence pass adds the rule-book source). (PK-15) The spine's default
+  tier summary also names owner decisions as CONVENTION. (PK-16) The data model's evidence item
+  carries the six provenance fields of SP-10; inference class stays out. (PK-17) The schema
+  proposal's P6 and P14 follow the settled score and note decisions. (PK-18) Confirmed expected
+  outcomes keep status INFERRED, with the confirmation as a source. Register D-PK14 to D-PK18;
+  DECISION_CHECKS twentieth round.
+- **Sample conversion answers (Jason, 2026-10-25):** collected by Overwatch as cards
+  (working/overwatch/ANSWERS_2026-10-25.md), with three follow-ups. (PK-20) A DOC-123 cell with a
+  close committed drill becomes a session item that links that drill, with the cell text as coach
+  note; every other cell becomes a new drill; each close match is listed for Jason's sign-off.
+  (PK-21) Fields DOC-123 does not give come from DOC-027 or the Long Road where a matching passage
+  exists, labelled per field; Jason or the head coach writes the rest and sets session length.
+  (PK-22) DOC-123 is 'PPBF owner-authored' and ranks with the owner system (section 3). (PK-24) One
+  training block per DOC-123 week; the Tuesday to Thursday cells are A/B/C scale levels of Monday's
+  drill, each level INFERRED until Jason signs it off. (PK-23) Partner work in the non-contact track
+  is contact level none unless the partner touches the athlete, then light_technical; Jason or the
+  head coach says, drill by drill, where the partner touches. (PK-25) The DOC-091 Week 2 Monday
+  script links to youth stages Y3-Y5 by age, for the contact hour and the non-contact hour, with the
+  non-contact hour first as the documents say; the repo '&amp;' text defect is reported to Overwatch
+  as a repo finding; its three block contact levels stay. (Layout) Content records stay one JSON
+  file per record under data/content/. (PK-26) Owner-decision source keys stay 'Jason <date>'.
+  (PK-04) The non-contact cap at 3 covers the Long Road items (PP-T01) only. (PK-05) H3 concussion
+  information is a ninth app note; it never blocks. (Merge rule) Questions from parallel jobs stay
+  in their own PARKING_NOTES files until Jason asks for a merge (option C; Overwatch A-11 on hold).
+  Register D-PK20 to D-PK26, D-OQ07, D-PK04, D-PK05, D-MRG01; DECISION_CHECKS twenty-first round.
+- **Sample sign-offs (Jason, 2026-10-25):** (PK-27) A DOC-123 Monday cell that closely matches a
+  committed drill links that drill; its Tuesday to Thursday cells become coach notes on items that
+  prefer one of its levels, and the committed level text stays. (Levels) Tuesday is level A,
+  Wednesday B, Thursday C; Monday's cell is the drill itself and the Monday session leaves the level
+  to the coach. Week 1 levels approved for footwork, defense and punch integration; in head
+  movement, Tuesday's slip becomes its own drill with Wednesday and Thursday as its levels, and the
+  Monday neck mobility and chin tuck drill has no levels. (Partner touch, Week 1) The partner checks
+  in the high-guard drill touch the athlete (light_technical); the partner feed in the slip drill
+  does not (none). (Length) The 8-week class runs 45 minutes, Monday to Friday. (Close matches,
+  Week 1) None of the four listed pairs is the same drill; each DOC-123 cell is its own drill. Nothing
+  from working/tools-wave1/ or working/evidence/ is merged in this session. Register D-PK27,
+  D-OQ10 to D-OQ13; DECISION_CHECKS twenty-second round.
+  (Week 1 levels superseded by PK-30, D-PK30: Week 1 aligned with Weeks 2-8; see 'Weeks 6-8 sign-offs and Week 1
+  alignment' below.)
+- **Week 2 sign-offs (Jason, 2026-10-25, slice build):** (Q-14, levels) the twelve Week 2 Tuesday to
+  Thursday cells are different skills: twelve drills of their own, not levels of the Monday drills, so Week 2 has
+  sixteen DOC-123 drills and none of them has levels. (Q-15, Q-17, close matches) none of the listed pairs is the
+  same drill; every Week 2 cell is its own DOC-123 drill. (Q-16, partner touch) in the partner-observation slip,
+  the live-feed slip-roll and the parry-catch-hold cells the athletes physically touch the partner's gloves:
+  light_technical. Register D-OQ14 to D-OQ17; DECISION_CHECKS twenty-third round.
+- **Week 3 sign-offs and two parked items (Jason, 2026-10-25, slice build):** (Q-18, levels) the twelve Week 3
+  Tuesday to Thursday cells are drills of their own, as in Week 2, so Week 3 has sixteen DOC-123 drills with no levels.
+  (Q-19, Q-20, close matches) none of the six listed pairs is the same drill. (Q-21, partner touch) the partner-fed
+  single attacks, the partner escalation and the Tuesday and Thursday counter cells touch (light_technical); the
+  optional uppercut 'light controlled introduction' does not (none). (PK-28) A: Jason or the head coach writes the A/B/C
+  levels and stop rules a DOC-123 drill lacks; each drill lists them as gaps. (PK-29) no conflict: 'Breath-hold at
+  stop points' is a breathing exercise, while the DOC-027 watch point is about holding breath during a punch; both
+  stand as written. Register D-OQ18 to D-OQ21, D-PK28, D-PK29; DECISION_CHECKS twenty-fourth round.
+- **Week 4 sign-offs (Jason, 2026-10-25, slice build):** (Q-24, levels) the twelve Week 4 Tuesday to Thursday cells
+  are drills of their own, as in Weeks 2 and 3. (Q-25, close matches) none of the listed pairs is the same drill. (Q-26,
+  partner touch) none: no Week 4 cell touches, including the partner, counter, mitt and target cells (contact level
+  none). Register D-OQ24 to D-OQ26; DECISION_CHECKS twenty-fifth round.
+- **Week 5 sign-offs (Jason, 2026-10-25, slice build):** (Q-27, levels) "none of these have been the same drill": the
+  twelve Week 5 Tuesday to Thursday cells are drills of their own. (Q-28, close matches) none of the listed pairs is the
+  same drill. (Q-29, partner touch) the incoming attack and feed cells touch (light_technical); the partner cells and
+  the counter cells do not (none). Register D-OQ27 to D-OQ29; DECISION_CHECKS twenty-sixth round.
+- **Weeks 6-8 sign-offs and Week 1 alignment (Jason, 2026-10-25, slice build; recorded 2026-10-26):** (Q-30, levels)
+  after the slice build explained the repo's A/B/C (same-lesson versions a coach picks per athlete) against the grid's
+  day-by-day progression: A, the 36 Week 6-8 Tuesday to Thursday cells are drills of their own. (Q-31, close matches)
+  none of the listed pairs is the same drill. (Q-32, partner touch) only the live-work and pressure cells touch
+  (light_technical); the partner, counter and mitt cells do not (none). (PK-30) B: Week 1 is aligned with Weeks 2-8 now:
+  its Tuesday to Thursday cells become drills of their own, and its three Monday drills and the slip drill carry no grid
+  levels; A/B/C are written later under D-PK28. This supersedes the Week 1 levels in 'Sample sign-offs' (D-OQ10).
+  (Q-34, Week 1 close matches) none of the listed pairs is the same drill. Register D-OQ30 to D-OQ32, D-PK30, D-OQ34;
+  DECISION_CHECKS twenty-seventh round.
+- **Slice scope: Youth Fundamentals, Novice and the first 90 days (Jason, 2026-10-26, slice build 3):** (PK-31) Youth
+  Fundamentals content comes from DOC-151 Fully Scripted, the 48-session youth manual (12 weeks, Mon-Thu, 60 minutes,
+  non-contact, changing by 4-week phase); ULTRA and DOC-153 are not converted. (PK-32) The youth track links to Y1 and Y2
+  by age; the coach adapts it for ages 5-7 with the DOC-027 Age Appropriate Coaching Standard. (PK-33) The DOC-123 rules
+  apply to DOC-151 and the Long Road section 6 (D-PK20, D-PK21, D-PK23, D-PK28); DOC-151 is 'PPBF owner-authored'; one
+  training block per 4-week phase; Long Road day rows become day templates with the row text as the item; Long Road text
+  keeps its Long Road label. (PK-34) The Long Road section 6 'The First 90 Days' (LR-197 to LR-201) becomes a 12-week T1
+  track and is the wave-1 Novice content; LR-050 and LR-051 wait for the later conversion step. (PK-35) The five DOC-027
+  sections go verbatim on the tracks their use cases name; the Baseline Movement Assessment is the week-1 check on both
+  tracks; the Base 60 Minute Session Template shapes the Long Road 60-minute boxing sessions; DOC-151 keeps its own five
+  blocks, with the difference shown as information. Register D-PK31 to D-PK35; DECISION_CHECKS twenty-eighth round.
+- **DOC-151 sign-offs (Jason, 2026-10-27, slice build 3):** (Q-40, Q-42, Q-43, close matches) none of the nine listed pairs
+  is the same drill (Q-41's three pairs were not answered and stay open). (Q-44) A: the four Technical Block lines of each phase
+  become drills; the Warm-Up, Applied Rounds, Conditioning and Character Integration lines stay verbatim as free-text items
+  of the phase template. Register D-OQ40, D-OQ42 to D-OQ44; DECISION_CHECKS twenty-ninth round.
+- **Evidence-job answers (Jason, 2026-10-26; recorded 2026-10-27, acceptance test session):** (PN-13, card in the third
+  evidence session) A: the Association of Ringside Physicians concussion consensus (Neidecker et al. 2019, draft evidence item
+  DEI-09) is classed HYPOTHESIS REQUIRING TESTING, shown EXPERIMENTAL "Limited / Low"; whether it is shown beside PR5, AM2 and
+  AM3 is parked (PK-38). (PN-01 to PN-04, Overwatch 6 cards) PN-01 A: the reference check adds only what records use, the PK-08
+  DOIs and the references of any seed drill a backbone record links. PN-02, remaining part, A: the 17 default rows sourced only
+  from Long Road practice text stay UNTIERED, with a "Long Road practice" source note. PN-03 A: the stop rules touched by USA
+  Boxing 2026 Rule 5.4 show a second line, RULE (a requirement on the USA Boxing route), beside their label. PN-04 A: the
+  unsourced "about 16.7 rounds a week" is dropped; the Stiller et al. 2014 and Boxing News camp descriptions are shown with
+  their sources. The evidence job applies these in working/evidence/ (Overwatch A-20); the backbone takes them at the evidence
+  merge. Register D-PN13, D-PN01 to D-PN04; DECISION_CHECKS thirtieth round.
+- **Parking answers PK-01, PK-02, PK-03, PK-10 (Jason, 2026-10-27, Overwatch 8 cards; recorded 2026-10-27):** (PK-01) the
+  note week (D-Q26) is a rolling 7 days, and `app_note_events` records whether a note showed in full or as a badge. (PK-02) The
+  AI may use a coach's own personal version for that coach's athletes, shown labelled "personal version" with the core version
+  beside it; a member's personal version is still used only for that member (D-Q17; section 7 is not reworded). (PK-03) When
+  the after-discussion re-scores still differ by 2 or more, the gate indicator shows both scores and "head coach decides"; it
+  shows as unresolved, never as passed or as a single score. (PK-10) The release checklist is used at the phase-6 handoff once
+  "escalate" is defined against section 0; that definition is still open. Register D-PK01, D-PK02, D-PK03, D-PK10;
+  DECISION_CHECKS thirtieth round.
+- **Outside owner decision OD-2026-10-27-001 (Jason, 2026-10-27; information only, Overwatch A-23):** recorded in the app repo
+  (ppbf-platform docs/current/OWNER_DECISIONS.md, main 48531200, PR #1868). Where the backbone conflicts with the app, the
+  backbone wins; the hand-off is a rebuild, not a patch; RULES.md, spine.json, SCHEMA_PROPOSAL, DATA_MODEL and the decision
+  register are named as the app's design source; the source order in section 3 is unchanged. Its precedence ruling resolves the
+  four conflicts in section 11 the backbone's way. No backbone content changes. Not ruled there (Overwatch A-24, Jason's): the
+  hand-off route, the lane order, and whether the malware verdict on uploaded video stays unoverturnable.
+- **Acceptance-test answers (Jason, 2026-10-27, acceptance test session cards):** (Q-41) none of the three DOC-151 pairs is
+  the same drill; each stays a DOC-151 drill. (Q-40) Jason's added last words, "those name a drill the a set of drills", do not
+  change his answer. (Overwatch A-11) closed with no merge; parallel-job questions stay in their own files (D-MRG01); the
+  tools-job answers TW-01 to TW-05 (2026-10-25: marks file, catch judgement after the review, answer-key fields read as they
+  are, integrity-check readings) are recorded. (Scorer) working/tools-wave1/acceptance_score.py scores the blind review,
+  run read-only from its folder. (PK-38) DEI-09 is shown at checkpoint 3 beside PR5, AM2 and AM3 with its label "Limited /
+  Low". (PK-39) the blind review runs on the packet as drafted; its layout weakness is reported with the scores. (PK-40)
+  inside the Recreation lane, contact and fitness track switches stay free with no gate; pick-list R16 is not used for them.
+  Register D-OQ41, D-OQ40 (amended), D-MRG02, D-TW01 to D-TW05, D-SCR01, D-PK38 to D-PK40; DECISION_CHECKS thirty-first round.
+- **Acceptance-test parking answers (Jason, 2026-10-27):** (PK-41) USA Boxing Rule 1.6(2) (2026 rule book: a boxer who has
+  competed as a professional is not eligible to compete as an athlete in USA Boxing) is shown as a RULE line on the pro stages,
+  USA Boxing route, at checkpoint 3; Jason's words: "you cant compete pro then go back to usa boxing". (PK-42) The weight-cut
+  content and its outside sources (ACSM 2021, ISSN 2025) start now through the evidence job, before the starter manual; the other
+  acceptance-test proposals stay parked. Register D-PK41, D-PK42; DECISION_CHECKS thirty-second round.
+- **Seeded test withdrawn (Jason, 2026-10-27; Overwatch A-30):** "lets not run those they need removed". The seeded wrong
+  recommendations and the blind catch test leave the test athletes (test_athletes.json, TEST_ATHLETES.md); the 17 correct
+  recommendations, the expected outcomes and the note tables stay; the 2026-10-27 review files are binned; the acceptance test is
+  the AI's own recommendations against the expected outcomes and note tables. The plan step "Integrity check on slice data" still
+  runs. Register D-SEED01 (supersedes D-Q22 and the seeded part of change B); DECISION_CHECKS thirty-third round.
+- **Integrity-check answers (Jason, 2026-10-27 to 28, PPBF Integrity Check cards; Overwatch A-26, A-28):** (A-26) A:
+  working/evidence/METHODS_DRAFT.md stays in working/evidence/ until Jason asks for the evidence merge (D-MRG01); docs/METHODS.md
+  (section 4) is not written yet. (A-28) A: working/tools-wave1/integrity_check.py runs the plan step "Integrity check on slice
+  data", read-only from its own folder and unchanged, on the 204 slice records with spine.json and design_catalogs.json loaded;
+  its report goes to a new working/integrity-<date>/ folder; nothing is copied into the main folders; the main session
+  cross-checks its counts. Register D-MTH01, D-INT01; DECISION_CHECKS thirty-fourth round.
+- **Integrity-check parking answers (Jason, 2026-10-28, PPBF Integrity Check cards; decided now, not at checkpoint 3):**
+  (PK-43) A: `concussion_information` joins the app-note list in entities.schema.json now. (PK-44) A: catalog defaults, gates
+  and scorecard items carry their tier in the schema's `evidence` entry, as content records do; each default row's
+  `evidence_tier` value moves into it; spine gates and defaults take their tier from the catalog row with the same ID; applied at
+  the evidence merge. (PK-45) A: content stage-link `target_kind` values are drill, session, program_track and exercise; the 53
+  links that say template, session_script or track are renamed at the evidence merge. Register D-PK43 to D-PK45;
+  DECISION_CHECKS thirty-fifth round.
+- **Starter-manual timing (Jason, 2026-10-28, PPBF Manual 2 card):** (PK-46) A: the starter manual runs after Overwatch A-29
+  (D-PK42) closes and is built from data/spine/spine.json and data/content/ as they stand. The weight-cut content stays in
+  working/evidence/ until Jason asks for the evidence merge (D-MRG01) and reaches the manual then, by a rebuild. Register D-PK46;
+  DECISION_CHECKS thirty-sixth round.
+- **Checkpoint-3 answers (Jason, 2026-10-28, cards in the session running plan step "Owner review of minimum done"):** (A-24)
+  what OD-2026-10-27-001 left open: the hand-off takes route A (contract and pathway catalog first, then the FT1 track through the
+  existing content-package intake, in lanes); the FT1 track is the first lane and Overwatch proposes the order of the later lanes in
+  the phase-6 hand-off plan for Jason's approval; the malware verdict on uploaded video stays unoverturnable, while other machine
+  video refusals can be overturned by a person with a recorded reason (section 1). (Section 6 item 4) The AI passes the acceptance
+  test for wave 1, on face validity; the same run is repeated once after the evidence merge. (Integrity) The integrity result is
+  accepted; integrity_check.py runs again after the evidence merge. Register D-HO01 to D-HO03, D-ACC01, D-INT02; DECISION_CHECKS
+  thirty-seventh round.
+- **Evidence-job answer PN-21 (Jason, 2026-10-28, session "PPBF Weight-Cut Evidence Pass"; recorded 2026-10-28, Overwatch A-37):**
+  A: when a checked source tests a slice claim, the claim keeps its label (CONVENTION or UNTIERED, with its source note) and the
+  checked research is shown beside it as a second evidence line with its own label, population and a 'transferred' note; MIXED and
+  CONTRADICTED claims show the conflict. The evidence job applies it in working/evidence/ (PN05_SEARCH_2026-10-28.json); the backbone
+  takes it at the evidence merge (D-MRG01). Register D-PN21; DECISION_CHECKS thirty-eighth round.
+- **Checkpoint-3 review (Jason, 2026-10-28, cards in session "PPBF Starter Manual 3", plan step "Owner review of minimum done"):**
+  (Q1) Wave-1 minimum done (section 6) is met; item 6 is completed at the evidence merge, when docs/METHODS.md and the evidence
+  labels land. (Q2) The evidence merge runs now, in the next main session, once the evidence job has stopped (D-MRG01's 'when Jason
+  asks'); then the acceptance and integrity re-runs and a manual rebuild. (Q3) The eight open parking items (PK-08, PK-09, PK-11,
+  PK-12, PK-13, PK-19, PK-36, PK-37) carry into wave-2 planning unchanged. (Q4) The wave-2 go-ahead is decided after the evidence
+  merge. Register D-MD01, D-MRG03, D-PKC01, D-W2G01; DECISION_CHECKS thirty-ninth round.
+- **Evidence-job answers PN-05 to PN-20 (Jason, 2026-10-25 to 28; recorded 2026-10-29 at the evidence merge, D-MRG03):** answers
+  given in working/evidence/PARKING_NOTES.md, entered now. (PN-05) A: one targeted search, registry first, then the literature (it
+  ran on the slice on 2026-10-28, Overwatch A-36). (PN-06) A: owner-system practice shows CONVENTION; with PN-10 A this is PN-02's first
+  part. (PN-07) A: FRAMEWORK only where the source document names the model. (PN-08) A: the Stiller et al. 2014 finding is shown
+  beside the sparring ceilings and exposure logging as research information with its limits. (PN-09) A: the references of any
+  committed AI-draft drill a backbone record links are checked in the next evidence pass. (PN-10) A: DOC-091, DOC-156 and DOC-023 are
+  PPBF owner-authored. (PN-11) A: the CSI 148 change point is EXPERIMENTAL 'Limited / Low'; the association is EMERGING. (PN-12) C: the
+  evidence pass runs as re-runnable scripts, once over the settled records. (PN-14) A: the 22 unread fields join the claims run.
+  (PN-16) A: per-statement classes for the weight-cut statements. (PN-17) A, re-confirmed: LR-158 and LR-159 are converted at the
+  evidence merge, each claim with its label and the ISSN, ACSM, USA Boxing and Pennsylvania lines beside it, conflicts shown. (PN-18) A:
+  the ACSM 2021 minors line is shown as information on youth stages and on weight-cut answers for members under 18; never a block, no
+  new default. (PN-19) A: the TA-08 fixture line is reworded at the merge with Jason's sign-off. (PN-20) A: the Lakicevic 2022 and
+  Zhong 2024 youth lines are shown beside the ACSM minors line, same display. Register D-PN05 to D-PN12, D-PN14, D-PN16 to D-PN20;
+  DECISION_CHECKS fortieth round.
+- **Evidence-merge parking answers (Jason, 2026-10-29, cards in the session running plan step "Owner review of minimum done"):**
+  (PK-47) A: the converted LR-158 and LR-159 claims are two shown-only 'information' entries (one per section) in the spine defaults
+  of every stage where a member may compete (Y2-Y5, T1, T2, AM1-AM3, PR1-PR5), mirrored by catalog rows; the ACSM minors line with
+  the youth lines is one information entry on Y1-Y5; never a block, no value default. (PK-48) A: each second evidence line is one
+  more entry in the record's or catalog row's evidence list, carrying the draft's own fields. (PK-49) A: the PN-05 lines merge now;
+  docs/METHODS.md takes the methods draft's sections 1-11 and says section 12 (the PN-05 search) is not written yet. (PK-50) A: the
+  weight lines take the weight pass's labels and slice claims keep theirs with research beside; the difference is listed for
+  wave-2 planning. Register D-PK47 to D-PK50; DECISION_CHECKS fortieth round.
+- **TA-08 sign-off and Stiller 2014 placement (Jason, 2026-10-29, cards in the evidence-merge session):** (PK-51) A: the TA-08
+  fixture wording is signed off as shown (D-PN19): checked ACSM 2021 and ISSN 2025 lines with their labels and conflict, the PR3
+  weight information, and the Pennsylvania 24-hour weigh-in (RULE); the T2 '3% or less' line shows EMERGING. (PK-52) A: the Stiller
+  et al. 2014 items DEI-07 and DEI-08 are shown beside the six sparring-ceiling keys on every stage that has them (77 catalog rows);
+  exposure logging gets them when it has a record (wave 2). Register D-PK51, D-PK52; DECISION_CHECKS forty-first round.
+- **Manual layout for the weight sections (Jason, 2026-10-29, card in the evidence-merge session):** (PK-53) B: the starter manual
+  prints each weight information section once, in its own part, and each stage's defaults row points to it by page; the data stays
+  as D-PK47; build_manual.py is edited for this. Register D-PK53; DECISION_CHECKS forty-second round.
+- **Manual print of the merged evidence entries (Jason, 2026-10-29, card in the evidence-merge session):** (PK-54) B: each record card
+  prints every evidence entry's own fields, and each distinct research source of the second lines prints once in its own part, with page
+  pointers; build_manual.py is edited for this. Register D-PK54; DECISION_CHECKS forty-third round.
+- **Wave-2 go-ahead (Jason, 2026-10-29, card in the evidence-merge session, plan step "Owner review of minimum done"):** A: wave 2
+  goes ahead once Overwatch's checkpoint-3 check passes, starting with plan v7's next step "Convert remaining kept content into
+  structured records"; the D-PKC01 parking items and the D-PK50 label-style difference go into wave-2 planning. The rebuilt starter
+  manual (2026-10-29, 506 pages) is approved and replaces the copy in manual/. Register D-W2G02; DECISION_CHECKS forty-fourth round.
+- **Wave-2 planning (Jason, 2026-10-30, cards in session "PPBF Backbone Wave 2 Records", plan step "Convert remaining kept content
+  into structured records"):** plan in working/wave2-2026-10-30/WAVE2_PLAN.md. (PK-55) A: the wave-1 conversion rules (D-PK20, D-PK21,
+  D-PK23, D-PK28, D-PK33) apply to every wave-2 source; stage links are proposed per batch and signed off; RC1 is linked where a
+  non-competing member fits; the non-contact lane is served by records at contact level none or light_technical; EX1 keeps structure
+  and information. (PK-56) A: youth Y3-Y5 content from DOC-091 and DOC-152, pro PR1-PR5 from DOC-023 with DOC-022 for gaps; authorship
+  labels not yet recorded are asked when their batch starts. (PK-57) A: gate, test, scorecard and default passages are stored as verbatim
+  text on the record; no new catalog rows in this step; PK-36 and these cases are decided at 'Final owner acceptance review'. (PK-58) A:
+  wave-2 claims follow D-PN21; the weight lines and the T2 line stay as recorded. (PK-59) A: Overwatch proposes a wave-2 evidence step
+  for Jason's approval. (PK-60) A: the other planning items stay open until their step. Register D-PK55 to D-PK60; DECISION_CHECKS
+  forty-fifth round.
+- **Batch B1 sign-offs (Jason, 2026-10-30, cards in session "PPBF Backbone Wave 2 Conversion", plan step "Convert remaining kept
+  content into structured records"):** (Q-45) A: Long Road Part 3 Phase 1 becomes one T1 track, 'Phase 1 — Foundation / Novice', 78
+  weeks, in three blocks by LR-047 period (13, 26 and 39 weeks); blocks 2 and 3 repeat the Scenario B and C weeks; Scenario A is the
+  track's limited-availability week; block 1 points to the First 90 Days track for its sessions; the LR-051 examples sit on block 2
+  and LR-220 on block 3; deload every 4th week is a track rule. (Q-46) A: LR-202 is a month-by-month table on that track. (Q-47) A:
+  all B1 records link T1; RC1 also on the four example sessions and the two LR-051 drills. (Q-48) A: the five sparring rows are
+  controlled_sparring. (Q-49) none of the five listed pairs is the same drill. (Q-50) A: neither LR-051 drill touches the athlete.
+  (PK-61) A: LR-048 and the catalog's LR-139 T1 rows both stand as written, the difference shown on the track as information, decided
+  with PK-36 and PK-57 at 'Final owner acceptance review'. Register D-OQ45 to D-OQ50, D-PK61; DECISION_CHECKS forty-sixth round.
+- **Owner passages in wave 2 (Jason, 2026-10-30, card in session "PPBF Backbone Wave 2 Conversion"):** (PK-62) A: the Long Road text
+  stays the record's text; each DOC-027 or DOC-072 passage the triage names is read, fills the fields the Long Road lacks (labelled per
+  field, D-PK21) and, where it covers the same ground, goes verbatim on the record beside the Long Road text with any disagreement shown
+  (section 3, owner leads), as wave 1 did (D-PK35); the 31 B1 records get this pass first. Register D-PK62; DECISION_CHECKS forty-seventh round.
+- **B1 owner-passage sign-offs (Jason, 2026-10-30, cards in session "PPBF Backbone Wave 2 Owner Passages"):** (Q-51) A: 23 owner passages
+  go verbatim in owner_passages on 5 B1 records, week- and phase-level ones once on the Phase 1 track; no field filled. (Q-52) A: neither LR-051
+  drill is a DOC-072 drill. (Q-53) free text: the DOC-027 Universal Stop Rules are generic and do not fill stop_rules; drill-specific stop
+  rules from checked outside sources are sought at 'Compile gap list and research agenda'. (PK-63) B: Jason decides each of the nine
+  owner/Long Road differences now (freeze lifted for these nine; asked in the next session). Register D-OQ51 to D-OQ53, D-PK63;
+  DECISION_CHECKS forty-eighth round.
+- **The nine B1 differences (Jason, 2026-10-30, nine cards in the same session, all A; owner system leads):** sparring and first-year
+  technical progressions move on by behaviour or gate, months as typical timing (D-PK61 stands); day templates gain DOC-027 day roles and
+  conditioning items DOC-027 categories; Scenario C's Thursday sprint intervals move away from the day after sparring; the coach may drop
+  the buffering block in heavy sparring weeks; the 90-minute skill session gains an evaluate-and-reset step and one focus for its bag
+  rounds; both LR-051 drills gain exit-condition and correction-path gaps. Register D-PK63-1 to D-PK63-9; DECISION_CHECKS forty-ninth round.
+- **B1 PK-63 sign-offs (Jason, 2026-10-30, six cards in session "PPBF Backbone Wave 2 Conversion Session", plan step "Convert remaining kept content into
+  structured records"):** (Q-54) A: the 21 day templates carry DOC-027 day roles as drafted, 'optional support' and 'off day' from the
+  Weekly Build Pattern Standard for strength, conditioning and rest days. (Q-55) A: aerobic base and easy running are Category 5
+  restoration conditioning; intervals, sprint intervals and buffering Category 3 burst conditioning. (Q-56) A: Scenario C Thursday
+  morning becomes restoration work; the sprint intervals move to Saturday morning and the Saturday boxing + conditioning session to the
+  afternoon. (Q-57) A: 'Evaluate → Reset' is the last step, inside the cool-down's 10 minutes; no Long Road minutes change. (Q-58) A: the
+  coach picks the bag-round themes that carry the session's one focus and keeps their KPIs. (PK-64) A: categories for the day-template
+  and example-session conditioning items are decided at 'Final owner acceptance review'. The Long Road text stays on each record as
+  source text (D-PK62). Register D-OQ54 to D-OQ58, D-PK64; DECISION_CHECKS fiftieth round.
+- **Batch B2 sign-offs (Jason, 2026-10-31, fifteen cards in session "PPBF Backbone Wave 2 Conversion Continue", plan step "Convert remaining kept content into
+  structured records"):** (Q-59) A: Long Road Part 3 Phase 2 (LR-056, LR-058, LR-059, LR-062) and Part 6 Tier 3 (LR-111) become one T2 track, 'Phase 2 —
+  Competitive Amateur', 130 weeks, no blocks; the LR-061 and LR-218 sessions are its example sessions. (Q-60) A: T2 on all B2 records; AM1 also on the LR-218
+  session; RC1 also on the strength, buffering and LR-218 sessions and the new drills. (Q-61) the LR-061 corner escape is committed 'Corner Escape' (linked, the
+  Long Road line as coach note); the Pivot-out drill and the ropes escape are new drills. (Q-62) A: 'Uppercut on entry' and 'Frame-and-reset' are not committed
+  or DOC-072 drills. (Q-63) Uppercut on entry and Frame-and-reset light_technical, the others none. (Q-64) A: the constrained-live blocks are controlled_sparring.
+  (Q-65) A: 35 owner passages verbatim beside the Long Road text, no field filled. (PK-65) A: LR-058's '≤6–8' and the spine's T2 ceilings both stand, shown as
+  information, decided at 'Final owner acceptance review'. (PK-66) all A, owner leads: each defence trained with its return, exit or reset allowed; the
+  five-layer defence order; archetype partner roles by one or two problem behaviours; one main coaching response per bout review, up to one technical and one
+  tactical fix; the buffering session may be dropped in heavy sparring weeks; exit-condition and correction-path gaps on the new drills; Evaluate → Reset inside
+  the LR-218 cool-down. The Long Road text stays on each record as source text (D-PK62). Register D-OQ59 to D-OQ65, D-PK65, D-PK66-1 to D-PK66-7;
+  DECISION_CHECKS fifty-first round.
+- **Batch B3 sign-offs (Jason, 2026-10-31, seven cards in session "PPBF Backbone Wave 2 B3 Conversion", plan step "Convert remaining kept content into
+  structured records"):** (Q-66) A: Long Road Part 4 Phases 3 and 4 and the camp material become four tracks: 'Phase 3 — Advanced' (AM1, 156 weeks;
+  LR-068 to LR-074 with its LR-072 week and the two LR-073 sessions), 'Phase 4 — Elite / Champion-tier' (LR-078 with its LR-079 week), 'Eight-week
+  camp' (one block per LR-235 week; the LR-080 taper rows on weeks 7 and 8; the LR-080 and LR-088 taper text; the LR-230 warm-up as its bout-day
+  session) and 'Block Templates — Copy and Adapt' (LR-231, LR-234); LR-219 is a library session on no track; the 16 LR-068 drill lines are 16 drills;
+  where the Long Road's camp timelines differ the camp track follows LR-235 and LR-070 stays as written, shown as information. (Q-67) A: AM1 on the
+  Phase 3 records and the drills; AM2 and AM3 on the Phase 4 records; T2, AM1 to AM3 and PR1 to PR5 on the camp, block-template, LR-219 and LR-230
+  records; RC1 also on the six drills at contact none. (Q-68) none of the four listed pairs is the same drill. (Q-69) A: competition-representative
+  sparring open_sparring; constrained-live and live drill rounds controlled_sparring; partner-reaction drills none. (Q-70) A: 74 owner passages
+  verbatim beside the Long Road text on 24 records, no field filled. (PK-67) A, owner leads on all six: feint drills one family at a time, each with
+  its expected read and next choice; camp phases move on by behaviour, the Long Road weeks as typical timing; LR-219's partner plays one or two
+  archetype habits; the buffering block may be dropped in heavy sparring weeks; exit-condition and correction-path gaps on the 16 drills; DOC-027 day
+  roles on the 28 day templates. (PK-68) A: the camp and weekly round counts and the spine's weekly ceilings both stand, shown as information, decided
+  at 'Final owner acceptance review'. The Long Road text stays on each record as source text (D-PK62). Register D-OQ66 to D-OQ70, D-PK67-1 to
+  D-PK67-6, D-PK68; DECISION_CHECKS fifty-second round.
+- **Batch B5 part 1 sign-offs (Jason, 2026-11-01, eight cards in session "PPBF Backbone Wave 2 B3 Conversion Session", plan step "Convert remaining kept content into
+  structured records"):** B5 is split at the Part boundary; part 1 is Long Road Part 9 (LR-209 to LR-216, LR-236, LR-237). (Q-71) A: one library
+  track 'Drill Library — Organized by Target Outcome' (LR-209 verbatim, one group per drill table, the warm-up and cool-down as its session refs); the 68
+  table rows are 68 drills with the Long Road names; LR-236 and LR-237 are session templates, one item per phase row; a row judged the same as an existing
+  drill becomes a link on the track with the row as coach note. (Q-72) A: Setup → standard_setup, Target → target_behavior, Prescription → prescription
+  (its rung tag also → coupling_rung), Failure mode → common_errors, Head-impact cost → head_impact_cost, KPI → kpi. (Q-73) A: T1, T2, AM1 to AM3, PR1 to
+  PR5 and RC1 on all 71 records. (Q-74) A: 12 light_technical, 19 controlled_sparring, 1 open_sparring (Post-conditioning sparring), 36 none; protocol
+  items none. (Q-75, Q-76) none of the listed pairs is the same drill. (Q-77) A: 225 owner passages verbatim beside the Long Road text, no field filled.
+  (PK-69) A, owner leads on all five: exit-condition and correction-path gaps on the 68 drills; the owner's movement and decision activation inside the
+  warm-up's phase 5; the fatigued-technique drills run once the day's main behaviour is stable; defence trained with its return, exit or reset allowed on
+  two LR-213 drills; Evaluate → Reset inside the cool-down. The Long Road text stays on each record as source text (D-PK62). Register D-OQ71 to D-OQ77,
+  D-PK69-1 to D-PK69-5; DECISION_CHECKS fifty-third round.
+- **Batch B5 part 2a sign-offs (Jason, 2026-11-01, eight cards in session "PPBF Backbone Wave 2 B5 Part 2", plan step "Convert remaining kept content into
+  structured records"):** B5 part 2 is split at the chapter boundary between Part 6 sections 5 and 6; part 2a is LR-113 to LR-126. (Q-78) A: one library track per
+  Part 6 chapter, named from the chapter heading ('Practice Design: How to Actually Teach This', 'Combination Architecture', 'Defense — Layering and Coupling',
+  'Distance Management — The Full Curriculum'), each section a group with its text and tables verbatim; 32 drills (19 LR-114 constraint rows, the 12 LR-119
+  sequences, LR-125 'Know their ranges'); LR-116 as a session template on the section-2 track; a line called the same drill becomes a link with the line as
+  coach note. (Q-79) A: Constraint → standard_setup, Target behavior → target_behavior; Purpose, Range, Exit and the 'How to train them' line on the combinations;
+  rung and head-impact cost left as gaps. (Q-80) A: T1, T2, AM1 to AM3, PR1 to PR5 and RC1 on all 37 records. (Q-81) A: 17 controlled_sparring, 2 open_sparring,
+  4 light_technical, 9 none. (Q-82) A: the 22 Long Road repeats are the same drill as their Part 9, B2 or B3 records (links, no new drill). (Q-83) none of the 31
+  listed pairs is the same drill. (Q-84) A: 126 owner passages verbatim beside the Long Road text, no field filled. (PK-70) A, owner leads on all seven:
+  exit-condition and correction-path gaps on the 32 drills; a live cue is the shortest phrase, an approved cue family first; the coach is silent in sparring
+  rounds except to interrupt for safety, total drift or repeated wrong-pattern practice; one correction or one reinforcement in the coach's 15 seconds;
+  Evaluate → Reset inside the LR-116 cool-down; a defence leads into a counter sequence when structure allows, reset or reposition a good outcome; the fatigued
+  block and tired sparring only once the day's main behaviour is stable. The Long Road text stays on each record as source text (D-PK62). Register D-OQ78 to
+  D-OQ84, D-PK70-1 to D-PK70-7; DECISION_CHECKS fifty-fourth round.
+- **Batch B5 part 2b sign-offs (Jason, 2026-11-01, eight cards in session "PPBF Backbone Wave 2 B5 Part 2b", plan step "Convert remaining kept content into
+  structured records"):** part 2b is Long Road Part 6 sections 6-9 (LR-128 to LR-143). (Q-85) A: one library track per chapter ('Styles: Development and
+  Adaptability', 'Fight IQ and Film Study', 'Ring Generalship', 'The Sparring Continuum'), each section a group with its text and tables verbatim, the safety
+  protocol included; 5 new drills (Deprivation rounds, Partner solves the primary weapon, Using the ropes deliberately, Herding, Managing the clinch); no
+  session templates. (Q-86) A: the LR-129 and LR-130 lines → execution; LR-134 Component → name, Skill → target_behavior, Drill → standard_setup; the rest
+  gaps. (Q-87) A: chapters 6 to 8 on T1, T2, AM1 to AM3, PR1 to PR5 and RC1; the sparring track on the 14 sparring stages, Y3 to Y5 included. (Q-88) A: 3
+  controlled_sparring, Herding none, Managing the clinch light_technical. (Q-89) A: the 24 Long Road repeats are the same drill (links, no new drill). (Q-90)
+  none of the 19 pairs is the same drill. (Q-91) A: 73 owner passages verbatim beside the Long Road text, no field filled. (PK-71) A, owner leads on all
+  twelve: exit-condition and correction-path gaps on the 5 drills; film review pass 2 tags representative moments and each review ends with one main coaching
+  response (up to one technical and one tactical fix carry forward); role rounds reproduce one or two opponent habits; on the ropes the boxer holds only
+  briefly, then exits, pivots or denies; the return level after a layoff, injury, bad experience or concussion is set by the owner's reentry assessment; a
+  session that goes past the agreement is stopped at once, then downgraded, reframed or ended, with no restart until the cause is corrected; partners rotate
+  once the lesson is stable; the corner is silent except to interrupt for safety, total drift or repeated wrong-pattern practice; one correction or one
+  reinforcement in the coach's 15 seconds; the post-sparring 15 minutes go to the earliest useful break in the chain; 'better than you' rounds only when the
+  coach controls the picture and the stronger partner serves the lesson. The Long Road text stays on each record as source text (D-PK62). Register D-OQ85 to
+  D-OQ91, D-PK71-1 to D-PK71-12; DECISION_CHECKS fifty-fifth round.
+
+- **Batch B6 part 1 sign-offs (Jason, 2026-11-02, eight cards in session "PPBF Backbone Wave 2 B6 Conversion", plan step "Convert remaining kept content into
+  structured records"):** B6 is split at the Part 5 section 2/3 boundary; part 1 is Long Road Part 5 sections 1.5, 2.1, 2.2, 2.5 and 2.8 and Part 9 §9.7 (LR-087,
+  LR-090, LR-091, LR-094, LR-097, LR-223); part 2 (LR-099 to LR-105, LR-225) follows. (Q-92) A: one library track per chapter ('Periodization Architecture',
+  'Strength and Power Programming'), each section a group with its text, tables and the plyometric pathway verbatim; 34 exercise drills (category exercise,
+  D-Q19); the session template 'Strength session B — upper explosive + power, 70 min' on the strength track; no training blocks or day templates. (Q-93) A:
+  each labelled piece of an exercise line into its field verbatim; discipline conditioning. (Q-94) A: 32 none, 2 light_technical (neck manual resistance,
+  pre-activation). (Q-95) A: all on the 11 adult stages, RC1 included. (Q-96) A: the 3 Long Road repeats link the LR-212 drills. (Q-97) A: 3 committed pairs
+  are the same drill (Rotational Medicine Ball Throw, Anti-Rotation Hold, Loaded Carry); 10 pairs stay new drills. (Q-98) A: 119 owner passages verbatim
+  beside the Long Road text, no field filled. (PK-72) A, owner leads on all four: exit-condition and correction-path gaps on the 34 drills; when the LR-087
+  camp week is used, the owner's weekly roles apply (recovery day and anchor day protected, the day before the anchor a primer with no added load); on each
+  drill the owner's check, stop-or-regress line and log (DOC-072 PHYS-02, -03, -04), the Long Road prescription staying the starting default (RULES s0, s1);
+  the owner's post-strength check at the end of the LR-223 cool-down. Register D-OQ92 to D-OQ98, D-PK72-1 to D-PK72-4 (v1.42); DECISION_CHECKS fifty-sixth round.
+- **Efficiency set (Jason, 2026-11-02, option A, Overwatch session "PPBF Overwatch18"; recorded by the main build session for ACTIONS A-45):** plan v9 adds
+  the read-only side job 'PPBF Side Job Merge Prep' (step 'Pre-sort Cowork sources for the merge') and runs 'Re-run evidence scripts on wave-2 records' in
+  two passes (pass 1 as 'PPBF Side Job Evidence 2 Pass 1' on the finished batches); side jobs (names with "Side Job") write only their own folder and may
+  run alongside a main build session (the start check stops only for another main build session); every stop prompt carries the grouped-write line (write
+  each group of files in one step, one at a time, drift check after each, stop at the first FAIL) and the early sign-off line (before stopping, draft the
+  next batch in working/ and ask its cards; nothing into data/ before its card is answered); RESUME.md's session histories move word for word to
+  RESUME_HISTORY.md at the next main build session's start (A-46). Register D-EFF01 (v1.43); DECISION_CHECKS fifty-seventh round.
+- **Batch B6 part 2 sign-offs (Jason, 2026-11-02, eight cards in session "PPBF Backbone Wave 2 B6 Part 2", plan step "Convert remaining kept content into
+  structured records"):** part 2 is Long Road Part 5 sections 3.2 to 3.8 and Part 9 §9.9 (LR-099 to LR-105, LR-225). (Q-99) A: one library track
+  'Conditioning: Energy System Development', each section a group with its text and tables verbatim (the LR-104 phase table stays text, no training blocks);
+  7 conditioning drills (category conditioning) and 3 links; the session template 'Conditioning session A — SIT, 45 min' on the track, its main set linked
+  to the SIT drill. (Q-100) A: each piece into its field verbatim; methods discipline conditioning, LR-103 rows discipline boxing; LR-101's 15% output stop
+  stays in coaching_notes. (Q-101) A: all 7 contact none. (Q-102) A: all on the 11 adult stages, RC1 included. (Q-103) A: the 2 Long Road repeats link the
+  LR-216 drills. (Q-104) A: Method D is the committed 'Continuous Aerobic Base' (link); the other pairs stay new drills. (Q-105) A: 41 owner passages
+  verbatim beside the Long Road text, no field filled. (PK-73) A, owner leads on all three: exit-condition and correction-path gaps on the 7 drills; on each
+  drill the owner's check, stop-or-regress line and log (DOC-072 PHYS-01-B or -01-C), the Long Road protocol staying the starting default (RULES s0, s1);
+  the owner's fresh and same technical checks around the LR-225 main set. Register D-OQ99 to D-OQ105, D-PK73-1 to D-PK73-3 (v1.44); DECISION_CHECKS
+  fifty-eighth round.
+- **Batch drafts (Jason, 2026-11-02, option A, PC-01, Overwatch session "PPBF Overwatch 19"; recorded by the main build session for ACTIONS A-49):** plan v10
+  adds the phase-5 'Batch drafts' track: side jobs 'PPBF Side Job B7 Draft' and 'PPBF Side Job B8 Draft' draft batches B7 and B8 (owner-passage passes and
+  sign-off cards) in their own folders while the main build does B6 part 2; nothing goes into data/ from them; the main build merges the drafts in batch
+  order (B6 part 2, then B7, then B8) once each HANDOVER.md shows the draft done and its cards answered (close matches re-run, final IDs, Q- and PK- numbers,
+  answers recorded, data/ written file by file with a drift check after each); at its stops it drafts only a batch no side job holds; B9 stays with the main
+  build, last. Register D-PC01 (v1.45); DECISION_CHECKS fifty-ninth round.
+- **Batch B7 sign-offs (Jason, 2026-11-02, nine cards in side job 'PPBF Side Job B7 Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 B7 Merge", 2026-11-03, with Q-113 and PK-76 asked there; plan step "Convert remaining kept content into structured records"; ACTIONS A-50, D-PC01):**
+  B7 is Long Road Part 7 (mental skills, nutrition, recovery and medical; 23 sections, LR-146 to LR-174). (Q-106) A: one unit, 27 records: one library track per chapter ('Mental Performance Curriculum',
+  'Nutrition, Body Composition and Supplementation', 'Recovery, Sleep and Load Management', 'Injury Risk Management and Medical Care'), each section a group with its text verbatim; 22 new drills, 16 links
+  plus 5 LR-151 schedule links; the LR-171 permanent circuit a session template on the injury track. (Q-107) A: field mapping as listed. (Q-108) A: 18 none, 2 controlled_sparring, 2 open_sparring; circuit
+  item 1 light_technical; session non_contact. (Q-109) A: tracks, session and the 18 non-sparring drills on all 18 stages; the 4 sparring drills on the 14 sparring stages. (Q-110) A: the 17 Long Road repeats
+  link (no new drill). (Q-111) A: four pairs are the same drill ('Imagery Rehearsal', 'Audience watching', 'Post-conditioning sparring', 'Wrap Under Supervision'); the other pairs stay new drills. (Q-112) A:
+  80 owner passages verbatim beside the Long Road text, no field filled. (Q-113) A: the merge re-run's two new close-match candidates are not the same record. (PK-74) A, owner leads on all seven:
+  exit-condition and correction-path gaps on the 22 drills; instructional self-talk cues chosen the owner's way (LR-149); supplement use logged with the owner's fields, the LR-160 doses staying as
+  information and defaults; sleep and recovery logged with the owner's fields and the numbers never clearance rules or readiness thresholds (LR-163); the cool-down keeps the owner's downshift (LR-164);
+  reentry in the owner's order beside LR-174's criteria, which stay; the owner's W-PHYS-04-A check, stop line and log on the two robustness exercise drills. (PK-75) A: the three finished gap lines that called
+  B7 not converted name the B7 track and group. (PK-76) A: the B7 records' own three matching lines, the B5 part-1 warm-up's review note on the circuit and the B6 part-2 'Part 7 §2.6' gap line are
+  updated the same way. The Long Road text stays on each record as source text (D-PK62). Register D-OQ106 to D-OQ113, D-PK74-1 to D-PK74-7, D-PK75, D-PK76-1 to D-PK76-3 (v1.46); DECISION_CHECKS
+  sixtieth round.
+- **Batch drafts B9, B10 and B4 (Jason, 2026-11-03, option A, PC-02, Overwatch session "PPBF Overwatch 19"; recorded by the main build session for ACTIONS A-52):** plan v11
+  extends the 'Batch drafts' step: side jobs 'PPBF Side Job B9 Draft' (working/b9-draft-2026-11-03/), 'PPBF Side Job B10 Draft' (youth Y3 to Y5 from DOC-091 and DOC-152;
+  working/b10-draft-2026-11-03/) and 'PPBF Side Job B4 Draft' (pro PR1 to PR5 from DOC-023 with DOC-022; working/b4-draft-2026-11-03/) draft those batches under D-PK56, each asking
+  its authorship-label cards (DOC-152, DOC-022) and PK-37 at its start; the main build merges them in order after B7 and B8 by the A-50 method (D-PC01) and drafts no batch at its stops
+  while a side job holds one; the drill stop-rule, exit-condition and correction-path search (A-40, A-10) starts now as read-only side job 'PPBF Side Job Evidence Gaps'
+  (working/evidence/gaps-2026-11-03/) and merges at 'Compile gap list and research agenda'. Register D-PC02 (v1.47); DECISION_CHECKS sixty-first round.
+- **Batch B8 sign-offs (Jason, asked 2026-11-02 and answered 2026-11-03, nine cards in side job 'PPBF Side Job B8 Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 B8 Merge", 2026-11-03, with Q-120, PK-80 and PK-81 asked there; plan step "Convert remaining kept content into structured records"; ACTIONS A-50, D-PC01):**
+  B8 is Long Road Part 2 (assessment and monitoring) and the Part 10 appendices (27 sections, LR-024 to LR-041 and LR-241 to LR-251). (Q-114) A: six library tracks ('Medical Screening and Clearance', 'The Physical Test Battery', 'The Technical Scorecard', 'Tactical KPIs — the notational
+  analysis system', 'Daily and Weekly Monitoring', 'Reference Appendices'), each section a group with its text, tables and printed sheet lines verbatim. (Q-115) A: no drill, session, block or catalog row (D-PK57). (Q-116) A: 12 references to catalog rows the batch repeats; the catalog
+  unchanged. (Q-117) A: all six on the 11 adult stages. (Q-118) A: none of the nine test-line close matches is the same drill. (Q-119) A: 59 owner passages verbatim beside the Long Road text, no field filled. (Q-120) A: the merge re-run's new close-match pair is not the same record.
+  (PK-77) A, owner leads on all six: the owner's simple behavioural KPIs, three-pass review with one main coaching response, one weekly adjustment with its reason, the owner's downgrade and block-end stops beside every Long Road stop line, the coach's readiness scan, and one
+  dominant and one preserving gameplan priority, as 11 owner rules; the Long Road text stays as source text and starting default (RULES s0, s1, s3). (PK-78) A: items 1, 2, 3 and 5 (gate values, OER, the AM1 scorecard row, the screening list) both stand as information to 'Final owner
+  acceptance review' with PK-36 and PK-57; item 4: the spine's checked USA Boxing line is the requirement on the USA Boxing route, Appendix B stays as Long Road text. (PK-79) A: a repeats note on the LR-249 and LR-250 groups. (PK-80) A: the two finished gap lines that named B8 as
+  not converted (LR-133, LR-152) name the B8 KPI track and group. (PK-81) A: the B8 records take the B7 merged form (register IDs on labels; drafted_under in place of the draft line). Register D-OQ114 to D-OQ120, D-PK77-1 to D-PK77-6, D-PK78-1 to D-PK78-5, D-PK79, D-PK80, D-PK81 (v1.48);
+  DECISION_CHECKS sixty-second round.
+- **Batch B9 sign-offs (Jason, answered 2026-11-03, ten cards in side job 'PPBF Side Job B9 Draft', numbered and recorded at the merge by session "PPBF Build" (wave-2 session 14), 2026-11-04, with Q-128, PK-85 and PK-86 asked there; plan step "Convert remaining kept content into structured records"; ACTIONS A-52, D-PC02, A-50 method):**
+  B9 is the Long Road front matter, Part 1 and Part 8 (principles, individualisation and manual text; 21 sections, LR-003 to LR-022 and LR-176 to LR-206). (Q-121) A: seven library tracks ('Front Matter: How to Use, Summary and Safety', 'Needs Analysis: What the Sport Actually Demands', 'Governing Principles, In Depth', 'Individualization', 'The Master Bottleneck Table', 'The Fifteen Most Common Pitfalls', 'Money, Logistics and the Boring Realities'), each section a group with its text, bullets and tables verbatim.
+  (Q-122) A: no drill, session, block or catalog row (D-PK57). (Q-123) A: 7 references to catalog rows, spine notes and weight-pass claims; the weight-pass labels stay as recorded. (Q-124) A: all seven on all 18 stages. (Q-125) A: none of the 8 name pairs is the same; no link.
+  (Q-126) A: 80 owner passages verbatim beside the Long Road text, no field filled. (Q-127) A: a repeats note on the LR-020, LR-183, LR-184 and LR-185 groups, information, no link. (Q-128) A: LR-181's 'Part 7 §2.8' entry names the B7 track trk_2df60b2c5aec82 and group LR-161 '2.8 Female-specific
+  considerations'; the Long Road text unchanged, no structural link. (PK-82) A, owner leads on all nine (corrections, variability, rounds, progression gates, stops, readiness scan, defence exits, intake first, one main adjustment): 13 owner rules on 10 groups; every Long Road line stays as source text and starting
+  default (RULES s0, s1, s3). (PK-83) A: the three Long Road/backbone differences (LR-006 clearance against the physicals rule; LR-016 against LR-019 on sparring near quality sessions; LR-177's Phase 1 compression against the spine's T1 months) stand as information to 'Final owner acceptance review' with PK-36 and PK-57.
+  (PK-84) A: the two finished gap lines that named B9 as not converted (trk_2cabcc9d54af23 LR-021, trk_9529aeb3af7743 LR-016) name the B9 track and group. (PK-85) A: the B9 records take the B7/B8 merged form (register IDs on labels; drafted_under in place of the draft line); the B8 side-job card mentions name their PK- numbers
+  and register IDs; the repeat-check location lines read data/content. (PK-86) A, asked twice (the first card misstated B10 part 2 as still being drafted; its answer, B4 first, is replaced): after B9 the main build merges B10 part 1, then B10 part 2, then B4 (ACTIONS A-53). Register D-OQ121 to D-OQ128, D-PK82-1 to D-PK82-9,
+  D-PK83-1 to D-PK83-3, D-PK84, D-PK85-1 to D-PK85-3, D-PK86 (v1.49); DECISION_CHECKS sixty-third round.
+- **Batch B10 part 1 sign-offs (Jason, answered 2026-11-03, ten cards in side job 'PPBF Side Job B10 Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 Merge B10 B4" (wave-2 session 15), 2026-11-05, with PK-89 asked there; plan step "Convert remaining kept content into structured records"; ACTIONS A-52, A-53, D-PC02, D-PK86, A-50 method):**
+  B10 part 1 is DOC-152 (youth Y3 to Y5: the 'Youth Sparring Drill Manual' and the 'USA Boxing Youth Development Coach Manual'). (Q-129) A: B10 split at the source-document boundary (part 1 DOC-152; part 2 DOC-091 with the after-school files, drafted by side job 'PPBF Side Job B10 Part 2 Draft'); two library tracks ('Youth Sparring Drill Manual', 12 groups pointing to the drills; 'USA Boxing Youth Development Coach Manual', seven groups verbatim, D-PK57) and 12 drills; every record on Y3, Y4 and Y5, the spine contact defaults staying defaults beside them.
+  (Q-130) A: DOC-152 (both files) is 'PPBF owner-authored'; its practice claims CONVENTION (D-PK58); its USA Boxing lines its own text, not RULE. (Q-131) A: the three after-school files go in B10 part 2 as DOC-091 members. (Q-132) A: field mapping as drafted, with two new drill fields, neurological_development (uncited, UNTIERED) and life_skill_transfer. (Q-133) A: drills 1 and 5 none, 4 light_technical, the other nine controlled_sparring. (Q-134) A: none of the 22 close-match pairs is the same drill.
+  (Q-135) A: 43 owner passages beside the DOC-152 text; 'Three and Out' fills three fields of the '3-Punch Limit Drill' (D-PK21). (PK-37) A: the three DOC-152 text diagrams go verbatim into the standard_setup of the DOC-151 drills drl_79538b5ffad0d9, drl_1e5bca7ee0270c and drl_e27266e197f9b4; execution and equipment stay gaps. (PK-87) A: the adult advanced contact sparring pre-manual (a DOC-091 member) is not a B10 record; left for 'Merge Cowork and Claude Code exports'.
+  (PK-88) A: both DOC-152 differences (the unnamed phase of the head-contact line; reset after each exchange against DOC-027's immediate exit after the third punch) stand as written and are shown as information (as D-PK35); no rule, note or block (RULES s1). (PK-89) A: the 14 records and the three PK-37 edits take the B7 to B9 merged form (register IDs on labels; the draft line removed; the PK-37 edit line dated); card-ID mentions in free text stay.
+  Register D-OQ129 to D-OQ135, D-PK37, D-PK87, D-PK88-1, D-PK88-2, D-PK89-1, D-PK89-2 (v1.50); DECISION_CHECKS sixty-fourth round.
+- **Parallel finish (Jason, 2026-11-04, option A, PC-03, Overwatch session "PPBF Overwatch 20"; recorded by the main build session for ACTIONS A-55):** plan v12 keeps every remaining step; side jobs 'PPBF Side Job Cowork Merge Draft'
+  (working/cowork-merge-draft-2026-11-04/) and 'PPBF Side Job Tracks Draft' (working/tracks-draft-2026-11-04/) draft 'Merge Cowork and Claude Code exports' and 'Draft fitness, class and personal-use tracks'; the main build merges them after B4 by the A-50 method, the Cowork merge draft first, then the
+  tracks draft, each once its HANDOVER.md shows the draft done and its cards answered; 'Re-run evidence scripts on wave-2 records' pass 2, 'Tier remaining kept claims' and 'Compile gap list and research agenda' run as one evidence side job ('PPBF Side Job Evidence 2 Pass 2') once RESUME.md shows B10 and B4 in
+  data/, its output merging at 'Compile gap list and research agenda'; Jason answers his open items (A-25, A-31, A-34, A-38, A-47, A-54) on cards; the main build drafts no batch at a stop while a side job holds one. Register D-PC03 (v1.51); DECISION_CHECKS sixty-fifth round.
+- **Batch B10 part 2 sign-offs (Jason, answered 2026-11-04, seven cards in side job 'PPBF Side Job B10 Part 2 Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 Merge B10P2 B4" (wave-2 session 16), 2026-11-08, with PK-91 asked there; plan step "Convert remaining kept content into structured records"; ACTIONS A-52, A-53, D-PC02, D-PK86, A-50 method):**
+  B10 part 2 is DOC-091 with the three after-school files (youth Y3 to Y5; Q-129 A, Q-131 A). (Q-136) A: 31 records, the mirror coaching sheet included: two library tracks ('Coach Scripts and Session Plans', the six DOC-091 sessions, the Week 2 Monday link and the mirror drill; 'After-School Program Coach Manual', the manual's six sections and the checklist's intro and four sections verbatim, D-PK57, and the Defense Day session), 7 session templates and 22 drills, all on Y3, Y4 and Y5. (Q-137) A: field mapping as drafted, with three new fields (use_when on drills; source_sections and print_ready_layout on sessions).
+  (Q-138) A: drills 7 controlled_sparring, 5 light_technical, 10 none; the Friday open sparring item open_sparring; the Wednesday Technical Spar and Situational Spar controlled_sparring; every other session item none. (Q-139) A: none of the 43 close-match pairs is the same record. (Q-140) A: the Week 2 Monday Training and FULL_INSTRUCTION_SET files are versions of scr_e2ed38b1a19670: no new record; their text verbatim on the track group that links it, the five differences shown as information.
+  (Q-141) A: 92 owner passages beside the DOC-091 text; 'Touch to Reposition' fills three fields of 'CONTINUOUS TOUCH → EXIT' (D-PK21). (PK-90) A: the Friday sheet's 'Non contact athletes are unsupervised during the sparring block.' and the coach manual's 'Observers remain seated and supervised.' both stand as written, shown as information (as D-PK35); no rule, note or block (RULES s1). (PK-91) A: the 31 records take the merged form (register IDs on labels; the draft line removed; the part line names part 1 in data/); card-ID mentions in free text stay; trk_b9dcfffb58f852's after-school gap line names the part-2 track.
+  Register D-OQ136 to D-OQ141, D-PK90-1, D-PK91-1, D-PK91-2, D-PK91-3 (v1.52); DECISION_CHECKS sixty-sixth round.
+- **RESUME history at each stop (Jason, 2026-11-08, option A, Overwatch 21, session "PPBF Overwatch First Visit", visit 1; recorded by the main build session for ACTIONS A-57):** At every stop, before the stop record, RESUME.md's session subsections older than the last two move word for word to RESUME_HISTORY.md by the A-46 method (nothing deleted or reworded; RESUME.md keeps its top sections, the last two session subsections and each moved session's 'gaps and own mistakes' lines; every moved line checked by script in RESUME_HISTORY.md; a drift check after each file; the before and after sizes reported in RESUME.md), carried as a standing line in each NEXT_SESSION_PROMPT.md written at a stop; first at the stop of 'PPBF Backbone Wave 2 Merge B10P2 B4' (sessions 9 to 14 move then). Register D-RH01 (v1.53); DECISION_CHECKS sixty-seventh round.
+- **Batch B4 sign-offs (Jason, answered 2026-11-03, nine cards in side job 'PPBF Side Job B4 Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 Merge B10P2 B4" (wave-2 session 16), 2026-11-08, with PK-94 and PK-95 asked there; plan step "Convert remaining kept content into structured records"; ACTIONS A-52, D-PC02, D-PK86, A-50 method):**
+  B4 is the pro stages PR1 to PR5 from DOC-023 with DOC-022 for what DOC-023 lacks (D-PK56). (Q-142) A: seven library tracks, 12 drills, 5 mitt session templates; PR1 to PR5 on all 24 records, no RC1. (Q-143) A: DOC-022 'PPBF owner-authored', as DOC-023 (D-PN10); its fields CONVENTION. (Q-144) A: field mapping as drafted, with three new keys (pass_fail, log, source_evidence_grade). (Q-145) A: drills 5 none, 6 light_technical, 1 controlled_sparring; mitt templates A and D none, B, C and E light_technical.
+  (Q-146) A: two links ('Three-and-out' to the committed seed 'Three and Out' drl_2d0193a7c52e58; 'Catch-jab return' to the B5 drill 'Catch-and-return' drl_d45a13b4456944), the rest new. (Q-147) A: the 19 DOC-072 Skill_Index placements. (Q-148) A: references and information notes as drafted. (PK-92) A: the bounded DOC-072 owner-passage pass; the full pass a gap for 'Final owner acceptance review'.
+  (PK-93) A: the five DOC-072 / DOC-023 scope differences shown as information, both stand, decided with PK-36 and PK-57 at 'Final owner acceptance review'. (PK-94) A: none of the six close-match pairs found at the merge (against B10 records) is the same record; no record changed. (PK-95) A: the 24 records take the merged form (register IDs on labels; the draft line removed); card-ID mentions in free text stay.
+  Register D-OQ142 to D-OQ148, D-PK92, D-PK93-1 to D-PK93-5, D-PK94, D-PK95-1, D-PK95-2 (v1.54); DECISION_CHECKS sixty-eighth round.
+- **content_tools.py and stop rules without a kind (Jason, 2026-11-08, PK-96, session "PPBF Backbone Wave 2 Merge B10P2 B4" (wave-2 session 16), after the B4 merge):** option A: the next main session changes working/content_tools.py line 80 so that a stop rule without rule_kind prints 'rule kind: not in source (gap)' (an unknown never looks complete), reads working/manual-wave1/build_manual.py for the same key without changing it, regenerates working/sample-conversion-2026-10-25/CONTENT_SAMPLE.md and runs the drift check; nothing else in the script changes and no record changes. Register D-PK96 (v1.55); DECISION_CHECKS sixty-ninth round.
+- **A-58 parking answers (Jason, 2026-11-08, five cards in Overwatch 21, session "PPBF Overwatch First Visit"; recorded by the main build session "PPBF Backbone Wave 2 Cowork Merge" (wave-2 session 17) for ACTIONS A-58):** (PK-08) A: all 9 candidate references from inputs/boxing-coach (Alevras 2022, Neidecker 2018, McKay 2024, Krabben 2019, Zhang 2022, Finlay 2022, Davis 2018, Liu 2024, Cinarli 2026) go to 'PPBF Side Job Evidence 2 Pass 2' as candidates; each backs a record claim only after the claim is checked against the paper (RULES s4), with design, population and boxing-specific or transferred stated (the 'transferred' note of RULES s9 'Evidence-job answer PN-21', D-PN21); Finlay 2022's statistics (SMD 0.33, p = 0.21, 95% CI 0.19 to 0.85, as the Validation Report flags) are checked before any use; a paper that matches no claim goes to the gap list. (PK-12) B: reopening D-PK16 on one point (its 'inference class stays out'; the six provenance fields stand): an inference class field (inference_class) is added to the backbone evidence item in docs/SCHEMA_PROPOSAL.md P18 (SP-10), beside the six D-PK16 fields; 'PPBF Side Job Evidence 2 Pass 2' reads the field's value list from the Boxing Coach Operational Gaps s4.2 'Claim-level provenance record' (inputs/boxing-coach) and fills it for each claim it checks; the app-side schema change (DATA_MODEL.md entity 9, entities.schema.json) travels with the handoff; P18 edited by the recording session. (PK-11) A: the research agenda (plan step 'Compile gap list and research agenda') gets a 'how it could be studied' section: for each top-priority gap a design that fits a small club (single-case designs first; a club experiment with a prespecified estimand and a hierarchical model only where athlete numbers allow), each paired with its reporting standard (CONSORT 2025, STROBE, TRIPOD+AI, PRISMA 2020, RoB 2) and FAIR as the data-handling note; all labelled FUTURE; every method source (Southey 2025 and the standards) checked before it is cited (RULES s4); no study runs without Jason's approval and consent (for minors, parent or guardian consent and the child's assent). (PK-19) A: on a second card (the first card was answered with a question, whether the AI and ML need formulas to work; Overwatch answered that the data model already logs the raw inputs, session_load RPE x minutes, sparring_exposure segments and bout_records, with a 7- and 28-day exposure view, and keeps 'no damage score, no cumulative risk index, no clearance', DATA_MODEL s7): the research agenda lists ACWR, the fitness-fatigue model, change-score error and the mechanics identities as FUTURE derived-metric definitions, each with the log inputs it needs, its source, the documents' caution (proposals, not boxer-specific; ratios do not set sparring limits, Impellizzeri 2020, checked before it is cited) and the validation it would need; nothing goes into data/ and nothing is computed; whether the app computes any of them is an app-side decision after handoff. (PK-13) A: answered '1', the first option: PK-13 is closed in the Backbone; the session that does 'Prepare repo handoff and freeze OneDrive copy' puts one FUTURE line in the handoff note for the app repo's Overwatch: pose tracking of gym footage for youth scorecard items and anchor-clip help, with its preconditions (the app's video pipeline, media consent with parent or guardian consent for minors, suitable hardware, validation against coach scoring); no footage or member data enters the Backbone. Register D-PK08, D-PK12, D-PK11, D-PK19, D-PK13 (v1.56); DECISION_CHECKS seventieth round.
+- **Cowork merge sign-offs (Jason, answered 2026-11-04 and 2026-11-05, nineteen cards in side job 'PPBF Side Job Cowork Merge Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 Cowork Merge" (wave-2 session 17), 2026-11-08, with PK-100 to PK-102 asked there; plan step "Merge Cowork and Claude Code exports"; ACTIONS A-55, A-47, D-PC03, A-50 method):** the merge maps the Cowork v69 inventory (157 documents, 95 conflicts and five more sheets) into the backbone model from the Merge Prep proposals; working/cowork-merge-draft-2026-11-04/COWORK_MERGE_DRAFT.json is the working map (Q-149). (Q-149) A: the Cowork merge is recorded as owner decisions only (register, RULES s9, DECISION_CHECKS one row per key); COWORK_MERGE_DRAFT.json stays the working map those entries cite, not a second inventory (RULES s9 'Cowork run'); the map writes no data/ record; record edits a card answer asks for are written the A-50 way after A-47 is closed. (Q-150) A: the 21 covered-by, duplicate-of and cut proposals confirmed: the covering or kept document stays the cited source and the other is not cited separately (RULES s3); cut documents give no record; the three chained ones follow their kept source's answer. (Q-151) A: the ten owner v3 sources DOC-027 does not compile (DOC-040 to DOC-042, DOC-126 to DOC-132) are owner-authored (CONVENTION), ranked with the owner system under RULES s3 item 1 as members of DOC-027's own v3 family; a difference from DOC-027 is listed for Jason; mapped for the conversion step (PK-98). (Q-152) A: five more individual-person sources (DOC-024, DOC-043, DOC-036, DOC-051, DOC-094) give generic training structure only, as DOC-139 to DOC-150 (RULES s8); not opened or converted in this step. (Q-153) A: the 26 AI-authored documents (the ChatGPT-built Pro v2/v3 family included) are AI drafts below the owner system and the Long Road, as the seed drills; their claims are claims to check (RULES s4); not a content source now; conflicts that turn on them stay moot. (Q-154) A: the 27 evidence inputs ground a claim only once retrieved and checked; listed for the evidence step ('Re-run evidence scripts on wave-2 records', 'Compile gap list and research agenda'); not a content source. (Q-155) A: the 19 documents whose authorship is not stated are held as unresolved, each listed with what is known; Jason names the authorship at the conversion step (PK-98). (Q-156) A: the Pro v1 family members DOC-073 to DOC-076 and DOC-115 are the same family as DOC-072, the registry controls; no separate rank; their lines RULES s0 overrides stay overridden; not converted now. (Q-157) A: the 12 hold-list documents are held as unresolved, listed in the gap list with the reason; the two DOC-156-pack files go to the Tracks Draft side job's list. (Q-158) A: the other five sheets as drafted: lineage is information only; cut where Cowork's reason stands; covered and duplicate as named in MERGE_PREP.json; scope-class and not-reached rows unresolved, listed for the conversion step (PK-98); shared sources to the evidence step unless already named in the evidence files. (Q-159) A, items 1 to 5: K-49 exchange length cap: owner leads; one owner rule where the Long Road combination text stands (drl_45e3aa3d653dec and trk_050f0684b77f53 record.exchange_cap_rule; trk_34c0aad2adc1c0 groups LR-117 and LR-119); the Long Road text stays as source text and starting default; K-53 must every defence carry a counter: settled as recorded (D-PK66-1 already on trk_050f0684b77f53; D-PK69-4, D-PK70-6, D-PK82-7); nothing edited; K-54 opponent plan size: owner leads; one owner rule on trk_121725aee9676f group LR-133, as D-PK77-6 on the Appendix F group; K-59 default camp length: as D-PK67-2, no length chosen; the owner line already stands on trk_a5e16184502c0f; nothing edited; carried to 'Final owner acceptance review'; K-60 stress order in camp: owner leads on the weekly behavioural emphasis; one owner rule on trk_e5b8bb2f3ea9b8 (record.camp_weekly_emphasis_rule); the Long Road loading order stays as source text and starting default. (Q-160) A: the readings of the nine conflicts routed to wave-2 cards (K-46, K-47, K-48, K-50, K-51, K-56, K-57, K-58, K-61) confirmed; the parts no card asked (K-46 on LR-013, K-47's philosophy, K-50 outside the 90-minute session, K-51's standard length, K-58) stay as information, carried to 'Final owner acceptance review' with PK-36 and PK-57; nothing edited. (Q-161) A: all twelve INFERRED readings confirmed (K-45, K-52, K-55, K-65, K-69, K-70, K-71, K-73, K-74, K-82, K-86, K-88; K-86 follows Q-151). (Q-162) A: the fourteen differences internal to the Long Road (K-07, K-13, K-14, K-15, K-18, K-21, K-22, K-25, K-30 to K-35): both statements stand as written; no record edited; all fourteen carried to 'Final owner acceptance review' with PK-36 and PK-57. (Q-163) A: the conflicts with one side in backbone use as drafted (K-64 both stand, to 'Final owner acceptance review' with PK-36 and PK-57; K-76 and K-78 DOC-072 controls or leads; K-92 and K-93 generic structure only, RULES s8; K-94 settled on the USA Boxing route); K-85 skipped (class material). (Q-164) A: the wording of the three CM-Q11 owner rules as drafted (K-49, K-54, K-60), each with its owner lines verbatim beside it as owner_text. (PK-97) A: the DOC-091 advanced contact sparring pre-manual is held by the Tracks Draft side job; the Cowork merge lists it as skipped, and B10-PK01's 'left for the merge step' (D-PK87) counts as met by that hand-over. (PK-98) A: mapped Cowork documents that no batch or step converts are not converted in this step; the merge lists each with its class, and Overwatch proposes a conversion step (or a later-wave item) for Jason's approval, as PK-59. (PK-99) A: Overwatch sets the check for A-47 step (2); the side job changes nothing (overtaken by A-47's 2026-11-08 re-decision and MP-05: merge_prep.py is never re-run). (PK-100) A: both older OneDrive versions (merge_prep.py before 2026-11-08; MERGE_PREP.json about 00:54 on 2026-11-02) are deleted, as Jason's statement; the Cowork merge goes ahead in this session on his word; Overwatch closes A-47 after the session. (PK-101) A: fix at plan step 'Generate full print manual from backbone data': the session that runs it makes working/manual-wave1/build_manual.py print a stop rule without rule_kind as 'rule kind: not in source (gap)' before building; no script change now. (PK-102) A, items 1 and 2: the six CM-Q11 edits take the merged form: changed_by and the field-label source read 'Jason 2026-11-04 (<item ID>, wording D-OQ164)' (D-OQ159-1 for K-49, D-OQ159-3 for K-54, D-OQ159-5 for K-60) in place of the side-job placeholder; each of the five edited files gets one conversion.updated line naming the edit, its register IDs, the merging session and the plan step (as the PK-37 edits; the list created where a file has none); nothing else in any record changes. Register D-OQ149 to D-OQ158, D-OQ159-1 to D-OQ159-5, D-OQ160 to D-OQ164, D-PK97 to D-PK101, D-PK102-1, D-PK102-2 (v1.57); DECISION_CHECKS seventy-first round.
+- **Merge Prep parking answers MP-01 to MP-05 (Jason, cards in side jobs 'PPBF Side Job Merge Prep' (MP-01 to MP-03, 2026-11-02), 'PPBF Side Job Merge Prep 2' (MP-04, 2026-11-02) and 'PPBF Side Job Merge Prep 3' (MP-05, 2026-11-08); recorded by the main build session "PPBF Backbone Wave 2 Cowork Merge" (wave-2 session 17) at the Cowork merge, as the evidence job's PN items were):** (MP-01) A: the evidence job re-checks LRB-015 (K-36) against the Library Intake R01 PDF and the journal record at plan step 'Compile gap list and research agenda'; LRB-015 stays not_found until then. (MP-02) A: the backbone decisions stand; CF-35 and CF-31 are recorded as overtaken by D-PK20, D-PK22, D-PK24 and D-PN10, and the files stay in use as now. (MP-03) A: the five owner/Long Road differences in converted sections (K-49, K-53, K-54, K-59, K-60) are asked at plan step 'Merge Cowork and Claude Code exports' as one card, owner text beside Long Road text (asked as CM-Q11, recorded as Q-159). (MP-04) A: the __pycache__ folder in working/merge-prep-2026-11-02/ is removed (done by 'PPBF Side Job Merge Prep 2' the same day with the delete-with-approval prompt: 1 trashed, 0 failed; merge_prep.py and its list not touched, A-47; ACTIONS A-48). (MP-05) A: the Merge Prep HANDOVER.md 'Session 3' says its item 3 (re-run merge_prep.py) is replaced by A-47 and why, with one pointer line under item 3; no other change to session 2's text and no further change to merge_prep.py (applied by 'PPBF Side Job Merge Prep 3'). Register D-MP01 to D-MP05 (v1.57); DECISION_CHECKS seventy-first round.
+- **Session length (Jason, 2026-11-08, option B, Overwatch 21, session "PPBF Overwatch First Visit", visit 4; recorded by the main build session "PPBF Backbone Wave 2 Tracks Merge" (wave-2 session 18) for ACTIONS A-61):** Build sessions and side jobs stop at a clean point by about 320 messages, at most about 350, or when the step or scope is done (the platform count, host.frames(frame_id=<this session>)['total_messages'], checked at each step); the Overwatch restarts past about 350; carried as a standing line in every NEXT_SESSION_PROMPT.md written at a stop, in place of 'Stop at a clean point by about 170 messages'; replaces the 2026-11-01 option B of about 200 messages (the OVERWATCH_PROMPT.md templates, updated by Overwatch 21). Register D-SL01 (v1.58); DECISION_CHECKS seventy-second round.
+- **Tracks draft sign-offs (Jason, answered 2026-11-04 and 2026-11-05, sixteen cards in side job 'PPBF Side Job Tracks Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 Tracks Merge" (wave-2 session 18), 2026-11-08, with PK-105 to PK-107 asked there; plan step "Draft fitness, class and personal-use tracks"; ACTIONS A-55, D-PC03, A-50 method):**
+  25 records: four DOC-027 library tracks (the class and room manuals), the DOC-089 iso/plyo track with 8 exercise drills and its 60-minute session, the DOC-089 active recovery session, six DOC-136 home sessions, the DOC-156 youth class session, the DOC-091 adult pre-manual session, and two AI-assembled tracks. (Q-165) A: owner material first; held material skipped. (Q-166) A: DOC-089 'PPBF owner-authored', CONVENTION; its uncited 'science' lines UNTIERED. (Q-167) A: DOC-136 outside practice (USA Boxing High-Performance Coach Education as printed), CONVENTION, field_provenance left out.
+  (Q-168) A: the AI-drafted part is links only. (Q-169) A: field mapping as drafted. (Q-170) A: contact none throughout. (Q-171) A: stage links as drafted (DOC-027 tracks and personal-use records on all 18 stages; iso/plyo on FT1 and the 11 adult stages; youth class Y1 to Y5; the RC1 track on RC1). (Q-172) A: none of the close-match pairs is the same record. (Q-173) A: 20 DOC-027 owner passages on 10 records, verbatim beside. (Q-174) A: the AI-drafted links as listed.
+  (Q-175) A: the DOC-091 pre-manual as one 90-minute session (sections 4 and 5 not drafted; no example name or initials carried). (Q-176) A: its contact levels (drill rounds controlled_sparring at 40%, 50%, 60%; the capped block open_sparring at 70%). (Q-177) A: on RC1, T2 and AM1 to AM3, not T1. (Q-178) A: not the B3 competition-simulation session.
+  (PK-103) A: an AI-assembled record carries field_provenance 'COACHING-CRAFT DRAFT', status INFERRED, evidence UNTIERED and 'AI-drafted until checked by Jason or the head coach'; the tag comes off only through a recorded check. (PK-104) A: the six owner-text differences (four DOC-089 positions, the ladder's week-6 overlap, the DOC-156 age bands) shown as information; both texts stay; the spine bands stand.
+  (PK-105) A: the merged form (register IDs on labels; the draft line removed); free-text card-ID mentions stay. (PK-106) A: 'COACHING-CRAFT DRAFT' kept; every field_provenance value mapped to the repo's exact strings at 'Prepare repo handoff and freeze OneDrive copy'. (PK-107) A: the merge copy's privacy check by sha256; the side-job copy for Overwatch.
+  Register D-OQ165 to D-OQ178, D-PK103, D-PK104-1 to D-PK104-6, D-PK105-1, D-PK105-2, D-PK106, D-PK107 (v1.59); DECISION_CHECKS seventy-third round.
+- **Final-review answers (A-60) (Jason, 2026-11-08, cards in Overwatch 21, session "PPBF Overwatch First Visit", visit 2; recorded by the main build session "PPBF Backbone Wave 2 Tracks Merge" (wave-2 session 18) for ACTIONS A-60, with PK-108 to PK-110 asked there):** each answer replaces the 'decided at final review' part of its D-PK decision.
+  (PK-09) C: no wave-2 acceptance re-run; wave 1's result stands (D-ACC01); the blinded expert benchmark goes to the research agenda as FUTURE. (PK-61) A: LR-048's timing becomes the T1 default (0 hard rounds in months 0-12; at most 3 a week in fight-specific weeks in months 12-18; Stages 4-6 from month 7; a bout before month 12 is a coach override with its reason logged; CONVENTION); drafted with the spine, the catalog, SPINE_MAP.md and the Phase 1 lines as one set (PK-110 A).
+  (PK-65) A: resolved as consistent (0-6 planned under the ceiling of 8). (PK-68) A: the spine ceiling of 8 hard rounds a week governs in every week, camp included; Long Road weekly counts are all sparring rounds, all types; rounds above 8 need a coach override with its reason logged. (PK-83 item 2) A: at least 24 hours between hard sparring and a quality session; 48 hours the more cautious choice. (PK-78 item 5, PK-83 item 1) A: Jason's physicals rule governs, unchanged; the fuller screen is information.
+  (PK-78 items 1 and 2) A: the spine exit gates stay the values the app checks; Long Road values are targets (information). (PK-83 item 3) A: T1 'Months 0-18' stays; the shorter Phase 1 for starters aged 23-27 is information. (PK-64) A: a main build session drafts DOC-027 conditioning categories for the LR-050 and LR-051 items, asks them on one card set, then writes the category field only.
+  (PK-36, PK-57, PK-78 item 3) B: every gate, test, scorecard and default passage the wave-2 triage names is drafted as catalog rows by side job 'PPBF Side Job Catalog Rows Draft' and merged after the tracks draft; an existing catalog or spine row governs where a draft row conflicts, except T1 hard sparring (PK-61); a medical clearance or return-to-sport passage (LR-172 included) is never a catalog gate.
+  (PK-108) A: the A-60 record wording as drafted. (PK-109) A: labels, label sources and one update line per edited file. (PK-110) A: PK-61 as one set next session.
+  Register D-PK09, D-PK36, D-PK57-FR, D-PK61-FR, D-PK64-FR, D-PK65-FR, D-PK68-FR, D-PK78-1-FR, D-PK78-2-FR, D-PK78-3-FR, D-PK78-5-FR, D-PK83-1-FR, D-PK83-2-FR, D-PK83-3-FR, D-PK108, D-PK109, D-PK110 (v1.60); DECISION_CHECKS seventy-fourth round.
+- **PK-61 edit set (PK-111) (Jason, 2026-11-08, four cards in session "PPBF Backbone Wave 2 Tracks Merge" (wave-2 session 18), after PK-110 A):** written by the next main session by the A-50 method: the spine T1 hard-round default and contact note and the two catalog T1 rows take LR-048's timing ('0 hard rounds/wk months 0-12; at most 3 hard rounds/wk in fight-specific weeks, months 12-18 (LR-048); a bout before month 12 is a coach override with its reason logged'; 'LR-048: sparring-continuum Stages 1-3 in months 0-7; Stages 4-6 from month 7 (constrained live, then open controlled two-way at 40-60%, coach-supervised); zero hard sparring through month 12'), the catalog phases 0-12 and 12-18; the Phase 1 track's two lines say the same; SPINE_MAP.md regenerated. (PK-111.2) A: the T1 contact value stays light_technical. (PK-111.3) A: the test_athletes.json snapshot updated, no re-run. (PK-111.4) A: DEFAULTS_AND_CONTRIBUTIONS.md left as dated history. Register D-PK111-1 to D-PK111-4 (v1.61); DECISION_CHECKS seventy-fifth round.
+- **PK-61 set record lines (PK-112) (Jason, 2026-11-08, three cards in session "PPBF Backbone Wave 2 A-60 Edits" (wave-2 session 19)):** (PK-112.1) A: the Phase 1 track's review note as drafted ('Information, resolved (RULES s3; Jason 2026-11-08, D-PK61-FR): LR-048's timing is the T1 default: 0 hard rounds through month 12 and '≤3/wk, fight-specific weeks only' in months 12–18, with Stages 4–6 from month 7. The spine T1 default and the catalog's T1 rows (dft_b70c39d91a8f3a, dft_77ba1e542080f2) say the same; a bout before month 12 is a coach override with its reason logged (parking list PK-61).'). (PK-112.2) A: LR-048 first on the spine T1 and catalog T1 sources, existing sources kept (hard-round pair LR-048, LR-139; contact pair LR-048, LR-139, LR-137). (PK-112.3) A: a conversion.updated line and a label source on the Phase 1 track, a meta.decisions_applied entry in design_catalogs.json, no line inside spine.json; D-PK61-FR gets the target design_catalogs.json (the new hard-round text required, the two old T1 texts forbidden). Register D-PK112-1 to D-PK112-3 (v1.62); DECISION_CHECKS seventy-sixth round.
+- **Conditioning categories (PK-113) (Jason, 2026-11-08, five cards in session "PPBF Backbone Wave 2 A-60 Edits" (wave-2 session 19), for D-PK64-FR):** DOC-027 Conditioning Category Structure categories on 14 item parts of 11 LR-050 and LR-051 session records, written as record.conditioning_categories (item text verbatim). (PK-113.1) A: Category 3 on six interval items. (PK-113.2) A: Category 5 on four easy aerobic or mobility items. (PK-113.3) A: one entry per part on two mixed items (bag intervals 1, distance games 2; aerobic intervals 3, easy long run and mobility 5). (PK-113.4) A: rest, film, warm-up, cool-down and record items and the LR-051 bag-work block get none. (PK-113.5) A: the record-level list as on the LR-047 blocks, with item_id. Register D-PK113-1 to D-PK113-5 (v1.62); DECISION_CHECKS seventy-seventh round.
+- **Integrity follow-up and merge timing (PK-114, PK-115) (Jason, cards in session "PPBF Backbone Wave 2 A-60 Edits" (wave-2 session 19), asked 2026-11-08 about 23:30 (machine clock); the platform keeps no answer time; answered before the session resumed 2026-11-09 07:40):** (PK-114) A: the PK-64 entries point to their session item with the key for_item_id (was item_id, D-PK113-5), so integrity_check.py does not read them as session items; one update line per file. (PK-115) A: the catalog-rows merge is prepared in this session (cr_draft.py and cr_answers.json copied under merge names, re-run and compared with CR_DRAFT.json, merge cards drafted and asked) and written by the next main session by the A-50 method; nothing into the catalog in session 19. Register D-PK114, D-PK115 (v1.64); DECISION_CHECKS seventy-eighth round.
+- **Catalog-rows merge cards (PK-116 to PK-119) (Jason, 2026-11-09, four cards in session "PPBF Backbone Wave 2 A-60 Edits" (wave-2 session 19), PK-115 A):** applied by the next main session at the merge, by the A-50 method. (PK-116) B: CR-141 and CR-142 do not replace the PK-61 wording, phases or sources of dft_b70c39d91a8f3a and dft_77ba1e542080f2; LR-048's table text is attached to both rows as a separate source-text field. (PK-117) A: the 28 out-of-date 'PK-36 and PK-57 parked' lines on 26 records are reworded to the merged state, exact before and after on one card first. (PK-118) A: the 45 new protocols take PP-T03 to PP-T47 in draft-row order, the new scorecard item an sci_ id, and the assessment_protocols list carries PP-T01 and PP-T02 from YOUTH_GATE_PROTOCOL.md section 2. (PK-119) A: CR-245 merges as signed, a scorecard item marked not scorable until a scale is set, no protocol link. Register D-PK116 to D-PK119 (v1.65); DECISION_CHECKS seventy-ninth round.
+- **Auto-start (Jason, 2026-11-09, option A, standing OK, Overwatch 22 card, session "PPBF Overwatch First Visit"; recorded by the main build session "PPBF Backbone Wave 2 Catalog Rows Merge" (wave-2 session 20) for ACTIONS A-64):** the Overwatch may start the next main build session and side jobs Jason has already approved as its own sub-agents (profile PPBF_BUILD), at most 1 main build and 2 side jobs at a time, sessions Jason opened himself counted; it runs its check when each finishes and starts the next; it still writes only working/overwatch/, never answers a card or approval (they go to Jason) and never marks a step from a session's claim alone; unapproved work (a new side job, a plan change) still needs Jason's card (text: working/overwatch/OVERWATCH_PROMPT.md 'Auto-start'). Register D-AS01 (v1.66); DECISION_CHECKS eightieth round.
+- **Cowork documents no batch converts, second answer on PK-98 (Jason, 2026-11-09, option B, Overwatch 22, reply to the Overwatch's D-PK98 proposal; recorded by the main build session "PPBF Backbone Wave 2 Catalog Rows Merge" (wave-2 session 20) for ACTIONS A-63):** side job 'PPBF Side Job Cowork Docs Draft' (writing only working/cowork-docs-draft-2026-11-09/) drafts records now for the 13 mapped Cowork documents no batch converts that are not about athletes: DOC-039, DOC-040 to DOC-042, DOC-110, DOC-126 to DOC-132, DOC-154; the twelve individual-athlete sets DOC-139 to DOC-150 stay out (RULES s8; privacy floor); a main build merges the draft by the A-50 method before 'Generate full print manual from backbone data' (plan v14). Register D-PK98-2 (v1.66); DECISION_CHECKS eightieth round.
+- **Catalog rows draft sign-offs (Jason, answered 2026-11-08 22:35, 21 cards in side job 'PPBF Side Job Catalog Rows Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 Catalog Rows Merge" (wave-2 session 20), 2026-11-09, with PK-125 to PK-128 asked there; plan step 'Draft catalog rows for Long Road gate, test, scorecard and default passages' (plan v13; ACTIONS A-60, D-PK36, D-PK57-FR, D-PK78-3-FR); A-50 method):** the draft (working/catalog-rows-draft-2026-11-09/CR_DRAFT.json) holds 334 draft rows from 121 of the 125 in-scope Long Road sections (the 124 whose wave-2 triage names a gate, test, scorecard or default, plus LR-201). (Q-179 to Q-194) A: batches CRB-01 to CRB-16 signed off as drafted. (PK-120) A: tests as assessment_protocol rows in a new 'assessment_protocols' list (a listed design change). (PK-121) A: LR-201 as a new T1 gate kind checkpoint_90_days, informs only (a schema P5 change, listed). (PK-122) A: row scope as drafted. (PK-123) A: the PK-83.2 and PK-65 'stays as text' passages as information rows. (PK-124) A: information rows UNTIERED ('Long Road practice'). CR-PN06 (Long Road internal differences: LR-022 against LR-040, LR-039 against LR-022 and LR-040, LR-047 against LR-094, LR-051 against LR-100, LR-024 against LR-202, LR-056 against scorecard item 6, LR-202 against LR-048) goes to 'Final owner acceptance review' with the Q-162 set; no card. Register D-OQ179 to D-OQ194, D-PK120 to D-PK124 (v1.67); DECISION_CHECKS eighty-first round.
+- **Catalog-rows merge cards asked at the merge (PK-125 to PK-128) (Jason, 2026-11-09, four cards in session "PPBF Backbone Wave 2 Catalog Rows Merge" (wave-2 session 20), with PK-116 to PK-119):** (PK-125) A: the 28 PK-117 rewordings as drafted (working/wave2-2026-10-30/PK117_EDITS.md). (PK-126) A: the write plan (CRM_MERGE_PLAN.md): LR-048's table text in a new 'source_texts' field on the two PK-61 rows, their wording kept; the other 87 same-id rows unchanged; a decision id on every written row; the new gate's standard fields; meta counts and one decisions_applied entry; a drift guard on the new register decisions. (PK-127) A: the 44 drafted protocols take PP-T03 to PP-T46 (PK-118's '45' counted CR-245's scorecard item). (PK-128) A: CR-245's id from the identity string 'LR-131:fight_iq_components' (sci_98fe7063b799ea), with an id note. Register D-PK125 to D-PK128 (v1.67); DECISION_CHECKS eighty-second round.
+- **Cowork docs merge card (PK-129) (Jason, 2026-11-09, one card in session "PPBF Backbone Wave 2 Catalog Rows Merge" (wave-2 session 20), ACTIONS A-63):** A: the 12 Cowork-docs track records (side job 'PPBF Side Job Cowork Docs Draft') take the merged form at their merge, as PK-105: labels and label sources take the register IDs (CD-Q01 to CD-Q08 = Q-195 to Q-202; CD-PK01 = PK-130), the conversion 'draft' line removed, 'applied' and 'drafted_under' name the numbers and ACTIONS A-63; free-text card-ID mentions stay. Written by the next main session by the A-50 method. Register D-PK129 (v1.69); DECISION_CHECKS eighty-third round.
+- **Cowork docs draft sign-offs (Jason, answered 2026-11-09 07:40 and 08:05, nine cards in side job 'PPBF Side Job Cowork Docs Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 Cowork Docs Merge" (wave-2 session 21), 2026-11-09, with PK-131 asked there; plan v14 step 'Draft records for the 13 mapped Cowork documents no batch converts'; ACTIONS A-63, D-PK98-2, A-50 method):**
+  12 library tracks: the nine owner v3 manuals DOC-040, DOC-042, DOC-126 to DOC-132; DOC-039 from DOC-027's compiled text; the DOC-110 rank briefing; DOC-154's two fight-week sheets. (Q-195) A: one verbatim library track per document; no drill, session, block or catalog row. (Q-196) A: the v3 tracks 'PPBF source manual v3', DOC-110 and DOC-154 'PPBF owner-authored', all CONVENTION; their USA Boxing lines their own text, not RULE.
+  (Q-197) A: DOC-110's 'Rank Progression Briefing for Parents & Athletes' section only; the spine rank_ladder governs (R4 PERITUS); nothing from the governance, fee, incentive, timetable or form parts. (Q-198) A: DOC-039 from DOC-027 (same title, INFERRED); DOC-041 and DOC-154's weigh-in sheet are gaps. (Q-199) A: field mapping as drafted. (Q-200) A: stage links as drafted (18 stages; the 14 sparring stages for DOC-129; the 14 competing stages for DOC-130 to DOC-132; Y1 to Y5 for DOC-039; Y2 to Y5 for DOC-154).
+  (Q-201) A: where the draft meets an existing record, catalog row or spine row, the existing row governs, shown as information; nothing edited. (Q-202) A: none of the 3 name pairs is the same record. (PK-130.1, PK-130.2) A: the three 'Reset' wordings (DOC-127, DOC-128, DOC-027; K-86) stand as written, shown as information; to 'Final owner acceptance review' with K-86.
+  (PK-131) A: the merged form as PK-105: the side-job sign-off text takes the register ID wherever it appears (labels, label sources and 171 free-text strings); the other free-text card-ID mentions stay. Register D-OQ195 to D-OQ202, D-PK130-1, D-PK130-2, D-PK131 (v1.70); DECISION_CHECKS eighty-fourth round.
+- **Next main build step (PK-132) (Jason, 2026-11-09, one card in session "PPBF Backbone Wave 2 Cowork Docs Merge" (wave-2 session 21), at its stop):** A: the Evidence 2 merge ('PPBF Side Job Evidence 2 Pass 2' with 'PPBF Side Job Evidence 2 Tracks', at plan step 'Compile gap list and research agenda', with ACTIONS A-65's cards) comes before 'Generate full print manual from backbone data', so the manual prints the checked evidence labels; plan v14 unchanged (only the order of two of its steps). Register D-PK132 (v1.71); DECISION_CHECKS eighty-fifth round.
+- **Evidence 2 parked items numbered at the merge (PN-22, PN-23; EP2-01, EP2-02 and EP3-01 as PK-133 to PK-135) (Jason: PN-22 and PN-23 answered 2026-11-02 in side job 'PPBF Side Job Evidence 2 Pass 1'; EP2-01 2026-11-08 and EP2-02 2026-11-09 in 'PPBF Side Job Evidence 2 Pass 2' and its finish job; EP3-01 2026-11-09 in 'PPBF Side Job Evidence 2 Tracks'; recorded by the main build session "PPBF Backbone Wave 2 Evidence 2 Merge" (wave-2 session 22), 2026-11-09, ACTIONS A-65, D-MRG01):** (PN-22) B: the status-check method stays as it is; fields not found verbatim stay REPORTED and the build session checks them at merge. (PN-23) A: as PN-14 A, pass 1's 59 content fields join claim_fields (claim types INFERRED, reviewable; titles stay out; owner-passage lines labelled by their own source), the wave-1 run checked to reproduce, one claims run on all wave-2 records at pass 2. (PK-133 = EP2-01) A: the 17 later text fields join claim_fields the same way; IDs, references, titles, enums and converter readings stay out. (PK-134 = EP2-02) A: a follow-on side job ('PPBF Side Job Evidence 2 Tracks') runs the pass on the 25 Tracks Draft records and merges with pass 2 at 'Compile gap list and research agenda'. (PK-135 = EP3-01) A: the merge adds DOC-089 (owner, D-OQ166) and DOC-136 (outside practice, D-OQ167) to the rules and re-runs the claims run on the 25 records; its DOC-136 part is carried out as PK-141 A. Register D-PN22, D-PN23, D-PK133 to D-PK135 (v1.72); DECISION_CHECKS eighty-sixth round.
+- **Evidence 2 merge cards (PK-136 to PK-143) (Jason, 2026-11-09, eight cards in session "PPBF Backbone Wave 2 Evidence 2 Merge" (wave-2 session 22), ACTIONS A-65; plan step 'Compile gap list and research agenda'):** (PK-136) A: the merge goes on with the pass-2 run folder as it stands (27 files) and applies CORRECTIONS_2026-11-09.md's two wordings in the merged copies only; the side-job folder stays unedited. (PK-137) A: the Evidence 2 merge: the 42 records changed after pass 2's INPUTS are re-run first (claims run, status check, each under its own --date); on the 374 pass-2 and 25 tracks records the claims-run entries replace the conversion-time evidence entries, the proposed OBSERVED statuses are set, fields not found verbatim stay REPORTED (PN-22 B), and 547 second evidence lines are shown beside their 260 claims (PN-21 A); docs/METHODS.md gains sections 13 and 14; the merged gap list and research agenda go to docs/GAP_LIST_AND_AGENDA.json with docs/GAP_LIST_AND_AGENDA.md rendered from it (agenda FUTURE). (PK-138) A: one truth-label rule for all nine search tracks (verdicts INFERRED; T3b's OBSERVED kept beside). (PK-139) A: conflict C9 is shown both ways: the 3 wave-2 lines keep EMERGING with a 'C9 conflict' note naming PN-05's EXPERIMENTAL; wave-1 entries unchanged; C9 stays on the gap list. (PK-140) A: the tracks job's six declared departures are accepted as declared and written into METHODS section 14 and the gap list. (PK-141) A: an EVIDENCE_RULES v4 copy adds DOC-089 ('owner') and DOC-136 ('outside_practice'); a merge copy of the claims script adds one label-rule-4 branch giving CONVENTION 'outside practice, not PPBF, not research evidence' (D-OQ167). (PK-142) A: the 12 Cowork docs tracks stay out of this merge with their CONVENTION entry; a follow-on side job runs their full pass and merges before 'Generate full print manual from backbone data'. (PK-143) A: each record's UNTIERED entry is split into a 'Long Road practice' entry (with the note, PN-02 A) and a 'no checked evidence yet' entry. Register D-PK136 to D-PK143 (v1.72); DECISION_CHECKS eighty-seventh round.
+- **Evidence 2 Cowork tracks merge cards (PK-144 to PK-147) (Jason, 2026-11-09: CT-PK01 answered in side job 'PPBF Side Job Evidence 2 Cowork Tracks' and numbered PK-144 at the merge; PK-145 to PK-147, three cards in session "PPBF Backbone Wave 2 Evidence 2 Cowork Merge" (wave-2 session 23), asked and answered by 11:54 (machine clock); plan step 'Tier remaining kept claims'; PK-142 A, D-MRG01, A-50 method):** (PK-144 = CT-PK01) A: the rules v5 copy adds DOC-127 to DOC-131 as well as the eight listed documents (13 entries, authorship 'owner' by D-OQ151 and D-OQ196; DOC-039 also D-OQ198); the claims run on it reads all 996 claims CONVENTION. (PK-145) A: the side job is merged as drafted by ev2m_merge.py's method (merge copy working/wave2-2026-10-30/ctm_merge.py): the claims-run entries replace each record's conversion-time CONVENTION entry; the 30 second evidence lines are shown beside their 13 claims (PN-21 A), those on the two CT-C01 claims with a conflict note naming CT-C01 (RULES s3); the side job's 4 proposed OBSERVED statuses are set, and the 29 'no configured source text' fields are checked at merge by the status-check rule against the Library Intake files (PN-22 B) and set OBSERVED where found verbatim; G-CT01 to G-CT08 join docs/GAP_LIST_AND_AGENDA.json under the gaps they extend (G-CT06 with the merge-time check's result), the PK-142 merge note is replaced by the draft's text, and docs/METHODS.md gains section 15 with the side job's declared reductions as written. (PK-146) A: each merged line keeps the side job's source truth label ('ppbf_label') as 'source_read_label'. (PK-147) A: working/wave2-2026-10-30/gen_gap_list_and_agenda_md.py labels gap rows by their 'addendum' key, renders the Cowork docs tracks addendum as section 3.12, names it in the title, and names the pass-2 search files by their own date (2026-11-08) in section 6. Register D-PK144 to D-PK147 (v1.73); DECISION_CHECKS eighty-eighth round.
+- **Full manual cards (PK-148 to PK-154) (Jason, 2026-11-09, seven cards in session "PPBF Backbone Wave 2 Full Manual" (wave-2 session 24), asked and answered by 13:15 (machine clock); plan step 'Generate full print manual from backbone data', D-PK46 method):** (PK-148) A: the full manual keeps the starter manual's Parts 1 to 7 in order, names the four tracks with blocks by record id (Phase 1 — Foundation / Novice printed in full in Part 3), follows each track with the blocks and sessions that name it and the drills those sessions use first, prints the tracks without blocks in Part 8 (ordered by first source id) and the drills on no track or session in Part 9 (grouped by recorded content class and library group); Appendix A keeps what is left and Appendix B indexes all drills; another track with blocks stops the build. (PK-149) A: characters the main font lacks print in Segoe UI Symbol as recorded; U+007F prints as the marker [U+007F]; characters above U+FFFF are written to the PDF text layer as UTF-16 surrogate pairs. (PK-150) A: Part 7 prints a source once, with each read depth and its records where they differ. (PK-151) A: five layout fixes: D-PK101's 'rule kind: not in source (gap)'; session refs without week and day as a list; an item cell too tall for a page printed below its table; a linked record not in data/content marked with no page pointer and one dangling-reference warning; nested values as field: value pairs. (PK-152) A: 'PPBF Full Manual', PPBF_Full_Manual.pdf, built into working/manual-full-2026-11-09/ by a copy of working/manual-wave1/build_manual.py with these changes; working/manual-wave1/ and manual/ unchanged; nothing copied to manual/ before Jason's card. (PK-153) A: working/design-2026-10-25/design_catalogs.json prints read-only as Part 10, every value verbatim and in the verbatim check. (PK-154) A: docs/GAP_LIST_AND_AGENDA.md is not printed; the 'How to read' page points to it. (PK-155, asked after the build and answered by 14:01 (machine clock)) C: the built full manual stays in working/manual-full-2026-11-09/ until 'Final owner acceptance review' approves it, then is copied into manual/; manual/ keeps the approved starter manual. Register D-PK148 to D-PK154 (v1.74) and D-PK155 (v1.75); DECISION_CHECKS eighty-ninth round.
+- **A-40 before the integrity step (PK-156) (Jason, 2026-11-09, one card in session "PPBF Backbone Wave 2 Integrity" (wave-2 session 25), asked and answered by 14:25 (machine clock); ACTIONS A-40, due before plan step 'Run integrity checks on full backbone data'):** A: A-40 is closed here from the checked searches already on file (the Evidence Gaps drill map in working/evidence/gaps-2026-11-03/GAP_SEARCH.json, pass 2's drill section and the tracks addendum): no checked outside source gives a stop rule, exit condition or correction path for drl_4b07e8c1f3c6b1, drl_07afeb6383daab or any other mapped drill by name; the gaps stay on the drills and in docs/GAP_LIST_AND_AGENDA G-03 and G-T01 for Jason or the head coach (D-OQ53, D-PK63-9); no new search; data/ unchanged, so the full manual is not rebuilt; RESUME.md records the counts and Overwatch marks A-40 closed. Register D-PK156 (v1.76); DECISION_CHECKS ninetieth round.
+- **Final review cards (PK-157 to PK-185) (Jason, 2026-11-09, 29 cards in session "PPBF Backbone Wave 2 Final Review" (wave-2 session 26): PK-157 to PK-173 asked after 16:55 and answered by 18:06, PK-174 to PK-185 asked and answered by 18:08 (machine clock); plan step 'Final owner acceptance review', from the side job's packet working/final-review-draft-2026-11-09/ (87 items) and the items added since):** (PK-157) A: the two are compared now, read-only, with the Y3 to Y5 entry and exit gates; the comparison is written to working/; each difference is asked on a follow-up card; data/ changes only if a follow-up card says so. (PK-158) A: K-13, K-15 and K-57 are closed by D-PK78-1-FR and D-PK78-2-FR (the spine exit gates are what the app checks; Long Road values are targets, information); K-14 and K-61's LR-033 part by D-PK78-3-FR; K-93 by D-PK68-FR (8 hard rounds a week governs every week; camp sets give generic structure only, RULES s8); K-34 by D-PK61-FR (no bout before month 12 without a logged coach override); no record edited; the Long Road lines stay as information. (PK-159) A: D-PK83-2-FR's reading (at least 24 hours between hard sparring and a quality session; 48 hours the more cautious choice) covers heavy strength as a quality session; the same-day 6-hour option and the Tuesday template stay verbatim as Long Road information; no new default; no record edited. (PK-160) A: both statements stand as information; no default; the coach chooses within 15 to 20 minutes. (PK-161) A: LR-013's records stay as converted; the D-PK63-5 condition is not copied to them; nothing edited. (PK-162) A: no length chosen (D-PK67-2's camp_phase_rule stands); both lines stay on the records; closed. (PK-163) A: all three stand; closed; no record edited. (PK-164) A: the fifteen close as information: both statements stay on the records and catalog rows; where a spine or catalog row exists it governs (D-PK57-FR); K-31's pointer (Part 0 to Part 8 s5; the 90-day start is s6) goes into the handoff note for automated linking; no edit. (PK-165) B (not as recommended, A): full pass now: a side job drafts the full owner-passage pass (DOC-072 registries and maps by family; the DOC-027 v3 passages) on the B4 pro records at the B1 to B9 depth; it is merged by card; then the full manual is rebuilt and an integrity run follows (how the review finishes: PK-174). (PK-166) A: both stand; DOC-023's line stays the record's text and starting default; DOC-072 shown as information; closed; nothing edited. (PK-167) A: closed as information; nothing edited. (PK-168) A: all three stand as written; closed; nothing edited. (PK-169) A: the spine name PUGIL PERITUS governs; DOC-110's SCIENTIA line stays as information; closed; nothing edited. (PK-170) A: both stay gaps; the handoff note names them for a session with Google Drive and SharePoint access after the handoff. (PK-171) A: the pointer line stays; the handoff note says section 12 is not written and where its method, deviations and audits are. (PK-172) A: no shared copy is chosen in the Backbone; each run keeps its own; the handoff note names v5 as the newest for the app side to choose. (PK-173) A: PK-156's close stands; the gaps stay on the drills and in G-03 and G-T01 for Jason or the head coach; no new search. (PK-174) A: this session settles every other item; STEP-1 (the full manual's approval and its copy into manual/, D-PK155) waits for the B4 side job, its merge, the rebuild and integrity run 8, done by the next main build; this session asks Overwatch to start the side job; plan step 'Final owner acceptance review' stays open. (PK-175) A: the 21 lines are reworded by exact-match script (as PK-117) in the session that merges the B4 owner pass, so one rebuild and one integrity run cover both. (PK-176) A: all 14 confirmed as this review's answers; they stand as applied; nothing edited. (PK-177) A: this session replaces '{ANS}' with '14:25' in the PK-156 row (one exact-match edit, the time RULES s9 and D-PK156 record); FRP-06, FRP-07 and FRP-08 stay Overwatch checks (FRP-08 is ACTIONS A-75); RESUME's A-34/A-38 line is corrected under A-74 at the handoff step. (PK-178) A: all stay due at the handoff step as ACTIONS lists them; this session lists its own handoff-note lines in the stop record. (PK-179) A: RH-Q03 A stands: no wording changes; the handoff note carries the overlap as 'not ruled' for the app side to put to Jason before any lane builds hold or medical-restriction behaviour. (PK-180) A: this session checks, read-only, whether the 12 characters are in the track's Library Intake source; the result goes on a follow-up card; any data fix needs its own card and goes with the B4 merge's edits. (PK-181) A: run 7 and its explanations stand as the integrity result that run 8 (after the B4 merge) is compared against; nothing fixed. (PK-182) A: closed by session 24's cards and MANUAL_BUILD_REPORT.md. (PK-183) A: the evidence status of the 615 records is accepted as recorded; UNTIERED stays the default where nothing was checked; open evidence items as PK-170 to PK-173; lines the B4 owner pass adds are labelled at its merge by the method on record. (PK-184) A: accepted; this session changes the label's '(owner review pending)' to say Jason reviewed it on 2026-11-09 (PK-184), priorities still INFERRED, and regenerates the .md with working/wave2-2026-10-30/gen_gap_list_and_agenda_md.py; no data change. (PK-185) A: all seven stand as recorded. Register D-PK157 to D-PK185 (v1.77); DECISION_CHECKS ninety-first round.
+- **Final review follow-ups and next-batch sign-off (PK-186 to PK-192) (Jason, 2026-11-09, seven cards in session "PPBF Backbone Wave 2 Final Review" (wave-2 session 26): PK-186 to PK-191 asked after 18:15 and answered by 18:19 (machine clock); PK-192 answered before the session paused for a platform restart (time not logged); plan step 'Final owner acceptance review'; checks in working/final-review-2026-11-09/FINAL_REVIEW_NOTES.md):** (PK-186) A: both stand: the spine gates stay what the app checks; DOC-152's list stays verbatim on trk_b9dcfffb58f852 as information; nothing edited. (PK-187) A: the rubric stays verbatim on the DOC-152 track; not a scored instrument; nothing edited. (PK-188) A: the phases and checklists stay verbatim on the after-school track as a program inside Y3 to Y5; no spine gate changes; attendance, round-count and community-service checks stay program checks; nothing edited. (PK-189) A: the 12 become U+2022 in the B4 merge's edit batch (5 strings), and the record's source_check line gains one sentence naming the page and pdfium check; the manual then prints the bullet. (PK-190) A: with the B4 merge, the next main build drafts a DOC-027 Conditioning Category Structure category for each uncategorized conditioning item on the 17 records, asks them on one card set, writes the category field only (text verbatim), then rewords the 17 lines; PK-175 A now covers the 4 FRP-04 lines only. (PK-191) A: reworded in the same edit batch as PK-175's 4 lines: the 6 PK-93 lines to 'decided at final review (Jason 2026-11-09, D-PK166, option A): both stand, closed (D-PK93)', the K-64 line to 'both stand (Q-163 A); decided at final review (Jason 2026-11-09, D-PK163, option A): closed'. (PK-192) A: the merging session applies the 17 edits as drafted (4 FRP-04 notes, 6 PK-93 lines, the K-64 line, 5 strings with the 12 U+007F, the source_check sentence), one record file per write with a drift check after each, before the rebuild; an edit whose 'before' text has changed is re-drafted and asked again, not forced. PK-190 corrects PK-175's FRP-05 part (D-PK175 now covers the 4 FRP-04 lines only). Register D-PK186 to D-PK192 (v1.78); DECISION_CHECKS ninety-second round.
+- **Standing answer on cards (Jason, 2026-11-09 23:29 US Eastern, message in Overwatch 23, frame 68155db6; recorded by the main build session "PPBF Backbone Wave 2 B4 Owner Pass Merge" (wave-2 session 27) for ACTIONS A-78):** on each card a session would ask Jason, it takes the option it marks Recommended, records the answer as 'Jason standing answer 2026-11-09' (register, DECISION_CHECKS, PARKING_LIST or OPEN_QUESTIONS as usual) and lists every such card in its stop record and its reply. It still asks Jason on a card when: (1) the card has no Recommended option; (2) the answer would change safety for minors, a medical hold, a sparring contact level or a gate; (3) STEP-1, approving the rebuilt manual and copying it into manual/; (4) the repo handoff and the OneDrive freeze. Jason can withdraw it at any time. His words: "just go wit your recomendations on everything you have been real accurate frome here on out"; the four exceptions are Overwatch 23's recommendation under the same instruction. Register D-SA01 (v1.79); DECISION_CHECKS ninety-third round.
+- **B4 owner-pass draft sign-offs (Jason, answered 2026-11-09 by 22:13 (B4P-PK01) and by 23:28:59 (the other six), seven cards in side job 'PPBF Side Job B4 Owner Pass Draft', numbered and recorded at the merge by session "PPBF Backbone Wave 2 B4 Owner Pass Merge" (wave-2 session 27), 2026-11-09; plan step 'Final owner acceptance review'; PK-165 B, ACTIONS A-76, A-50 method):** the full owner-passage pass on the 24 B4 records (12 drills, 7 tracks, 5 mitt templates; 389 passages). (PK-193) A: full by family, placed once: each SKILL family's rows in Drill_Registry, Cue_Registry, Progression_Map and Workout_Map (252) beside the B4 drill of that family (SKILL-10's beside the 'Body shots' group), not repeated on the punch groups; rows naming several or physical families, Overlap_Map and Do_Not_Duplicate read for disagreements only and listed as not placed; the 40 Evidence_Map rows naming a family on the sources track trk_a0d6b9f3aca248 as information; DOC-027: the Drill Library 'Drill Design Rules' and 'Universal Stop Rules' on each drill plus the standards of the manuals DOC-023 names covering its module, on the mitt templates and track groups the same, a manual DOC-023 does not name only where no named manual covers a section. (PK-194) A: one review note on trk_a0d6b9f3aca248 naming the two DOC-027 title lines (line 2656 'Rhythm, Timing, and Feint Source Manual v3', OBSERVED; line 476 'Core Source Manual v3', read as Punxsy_System_Core_Source_v3, INFERRED); the doc027_manuals list stays as written. (PK-195.1) A: both stand as information: DOC-023's core loop 'position -> perception -> decision -> action -> defense -> exit -> reset' stays the record's text on trk_24e2dcbf4b0edc; DOC-027 Boxing Workflow v4 Core's 'Core loop: Observe → Decide → Execute → Evaluate → Reset' is shown beside it; no owner rule. (PK-195.2) A: both stand as information: DOC-023's 8-, 10- and 12-week camps in week blocks stay the record's text and starting default on trk_083fd5e2e97e7a; DOC-027 Camp Planning Framework's 'Five Part Camp Structure' (read beyond DOC-023's list) is shown beside them; no owner rule. (OQ-203) A: the drafted owner passages on the 24 B4 records: 389 passages, all verbatim (DOC-072 292: Drill_Registry 66, Cue_Registry 82, Progression_Map 39, Workout_Map 65 by family, Evidence_Map 40 on the sources track; DOC-027 97), one evidence entry, review note and conversion 'updated' line per record, labels extended; readings INFERRED. (OQ-204) A: items 1 to 3 the same drill (Reset Under Noise = DOC-072 S01-003 'Reset On Command'; Defense Gives the Punch = S06-001 'Single Straight Defend Return'; Feint-Read-Punish = S09-003 'Feint-To-Owner Answer'): the row's Pass_Standard and Fail_Trigger fill what_good_looks_like and what_bad_looks_like, labelled per field; items 4 to 13 not the same (information). (OQ-205) A: no contact level changes: the three same-drill rows agree with the records (1 'non-contact' with none; 2 'touch/light' and 3 'non-contact/touch' with light_technical); the agreement stays in the placed rows' reading notes. (OQ-206) A: the 15 gap lines on the 12 drills reworded as drafted: the 12 'full passage pass is for Final owner acceptance review' lines say the pass is done and name the three DOC-023 manuals not in DOC-027 (Punxsy_Drill_Assignment_Matrix_Source_v3, Punxsy_Sparring_Architecture_Source_v3, Punxsy_Competition_Execution_Source_v3); the three what_good/what_bad lines say 'filled from DOC-072 Sxx-xxx'. Register D-PK193, D-PK194, D-PK195-1, D-PK195-2, D-OQ203 to D-OQ206 (v1.80); DECISION_CHECKS ninety-fourth round.
+- **B4 owner-pass merge cards (PK-196 to PK-198) (Jason standing answer 2026-11-09, ACTIONS A-78, D-SA01; drafted and answered under it by session "PPBF Backbone Wave 2 B4 Owner Pass Merge" (wave-2 session 27), 2026-11-09 about 23:49 (machine clock); texts working/wave2-2026-10-30/B4PM_CARDS.md; plan step 'Final owner acceptance review'; PK-190 A, ACTIONS A-77):** (PK-196) A: the merged form, as PK-131 and PK-95: the 59 side-job sign-off strings take the register ID ('Jason 2026-11-09 (<register ID>)'; B4P-PK03's items D-PK195-1 and D-PK195-2); the 24 conversion 'updated' lines end 'merged <date> by wave-2 session 27 ...; side-job cards numbered Q-203 to Q-206 and PK-193 to PK-195 (A-50 method; merged form D-PK196).'; the 547 other free-text card-ID mentions stay, OPEN_QUESTIONS and PARKING_LIST map them. (PK-197) A: no edit in this step: PK-156's close stands for the search; this re-check is recorded (drl_44d4c0b52f4dbd, drl_47c74661807ae5, drl_f9bd51a246ea63, DOC-123, stage FT1: DOC-123 stop rules, no exit_condition and no correction_path and no gap line for either; 151 drills have no exit_condition and 190 no correction_path with no gap line, the three among them); the handoff note gets one line naming the pattern so the app side shows the two fields as not written. (PK-198.1) A: Category 3 on the 12 buffering, HIIT and speed-endurance entries. (PK-198.2) A: Category 5 on the 4 aerobic-base and recovery entries. (PK-198.3) A: one entry per part on the two texts naming two kinds of work (week 1 'Aerobic' Category 5 and 'buffering intro' Category 3; the LR-079 Wednesday recovery item's 'pool, mobility, soft tissue' Category 5, the sauna part no category). (PK-198.4) A: none on the items looked at and not categorized (technical, tactical, nap and feed items; warm-up and cool-down; the LR-231 strength and sparring lines; the track's two method lines). (PK-198.5) A: record.conditioning_categories on each of the 17 records (blocks and the track {plan_item, covers, category, category_text}; day templates {for_item_id, ...}), field label OBSERVED with 'Jason 2026-11-09 (D-PK190)', the PK-198 items and DOC-027, the record source 'Jason 2026-11-09 (D-PK190)', one review note and one conversion.updated line per file; text unchanged. (PK-198.6) A: the 17 FRP-05 lines reworded to 'decided at final review (Jason 2026-11-09, D-PK190, option A; categories <D-PK198 items>): in conditioning_categories ...' (the track's reading note likewise). Register D-PK196, D-PK197, D-PK198-1 to D-PK198-6 (v1.81); DECISION_CHECKS ninety-fifth round.
+- **STEP-1, the full manual (PK-199) (Jason, card in session "PPBF Backbone Wave 2 B4 Owner Pass Merge" (wave-2 session 27), asked about 00:03 on 2026-11-10 and answered by 06:44 (machine clock; the session resumed then after a kernel restart; the platform keeps no answer time); plan step 'Final owner acceptance review'; D-PK155, PK-174 A; asked under A-78 exception 3):** A: approve and copy: working/manual-full-2026-11-09/PPBF_Full_Manual.pdf (5,078 pages, sha256[:16] 1db91a3ee9c7effa, built 2026-11-10 00:02) is copied into manual/ beside PPBF_Starter_Manual_wave1.pdf, which stays; MANUAL_BUILD_REPORT.md stays in working/; plan step 'Final owner acceptance review' is done; the next step is 'Prepare repo handoff and freeze OneDrive copy'. Register D-PK199 (v1.82); DECISION_CHECKS ninety-sixth round.
+- **Repo handoff step records (Q-207 to Q-210, A-25, A-31, PK-200, PK-201) (recorded by the main build session "PPBF Backbone Wave 2 Repo Handoff" (wave-2 session 28), 2026-11-10; plan step 'Prepare repo handoff and freeze OneDrive copy'; ACTIONS A-73, A-74):** (OQ-207 = RH-Q01; Jason, side job 'PPBF Side Job Repo Handoff Prep', answered by 2026-11-09 14:25) A: one new OD entry, provenance RECONSTRUCTED, RULES.md sections 0 to 11 word for word as one block, naming DECISION_REGISTER.json and DECISION_CHECKS.md; RULES.md then retired. (OQ-208 = RH-Q02; Jason, side job 'PPBF Side Job Repo Handoff Prep', answered by 2026-11-09 14:25) A: the exporters drop every research 'quote' and 'quotes' key and keep citations whole; those quotes reach the app later only by the private excerpt path; owner passages go as Jason's own material. (OQ-209 = RH-Q03; Jason, side job 'PPBF Side Job Repo Handoff Prep', answered by 2026-11-09 14:25) A: the fold changes no wording and rules nothing; the overlap goes into the handoff note as 'not ruled', for the app repo's Overwatch to put to Jason before any lane builds hold or medical-restriction behaviour. (OQ-210 = RH-Q04; Jason, side job 'PPBF Side Job Repo Handoff Prep', answered by 2026-11-09 14:25) A: the handoff session, with Claude Code, proposes repo paths for the spec and design-source files in the phase-6 hand-off plan (D-HO02) and lists every other file as archive-only; Jason approves that plan. (A-25; Jason, 'PPBF Overwatch 20' card, 2026-11-04) A, as answered: 'escalate' means the app shows the full information and also alerts the responsible person (the athlete's coach; for a minor also the parent or guardian), the alert logged and attributable; it never means withholding, blocking or the AI deciding; a failure to escalate is a safety test scenario where no alert reaches that person; whether the app can send alerts is not checked. With it D-PK10's condition is met: the PK-10 release checklist is used at the handoff (the handoff note carries it). (A-31; Jason, 'PPBF Overwatch 20' card, 2026-11-04) A, as answered: CHECKPOINT1_PACKET.md, DEFAULTS_AND_CONTRIBUTIONS.md, DESIGN_CHECKS.md, PROPOSED_CHANGES.md, QUESTIONS_FOR_JASON.md, docs/VALIDATION_REVIEW.md and working/tools-wave1/acceptance_score.py are kept as history with a one-line 'withdrawn 2026-10-27 (D-SEED01)' note each; the seeded-test parts are removed only from DATA_MODEL.md and the entities.schema.json answer_key verdict enum (app design source under OD-2026-10-27-001); DATA_MODEL.md holds no seeded-test text (searched by this session for seeded errors, catch rate, error types, answer key and blind packet), so it stays unchanged; done at the handoff step. (PK-200, Jason standing answer 2026-11-09, ACTIONS A-78, D-SA01; the app side's drift items, ACTIONS A-73) (item 1) A, one dated status line under P7 in docs/SCHEMA_PROPOSAL.md: the data is authoritative where P7 differs (2,918 default rows; value_min / value_max, no value_number; also window_days, sparring_type, composite_parent, phases); P7's own wording unchanged. (item 2) A, one dated status line under SP-1 (principle 3) in docs/SCHEMA_PROPOSAL.md naming the three granularities as the data has them (spine stage fields per field; next_stages links unlabelled; default rows at record level, 572 also with field_labels); no label added. (item 3) A, no catalog edit; the handoff note reads each 'INFERRED (read from the source text by the drafting session)' cell (1,406 on 572 rows) as status INFERRED with the row's own sources (INFERRED), for the app side to map or leave blank. (item 4) A, no catalog edit; the handoff note gives the app side's exporter the fix for the 5 PR1 to PR5 rows: source key 'EXT-USAB-RB2026', the parenthesis as a note in the row's evidence entry. (item 5) A, no edit; the handoff note says 'n/a' on the 28 cross-references means no label was set on the pointer; the app side omits the key or passes it through. (item 6) A, no spine edit; the app's derived link kinds stand for the map; the handoff note records that T2 to RC1 and T2 to FT1 are lateral by the app's rule and branch points in P2's wording, for the app repo's Overwatch to put to Jason if a screen or rule comes to depend on the kind. (item 7) A, no edit; the 101 'checked in the weight pass' check_state values (22 rows) and scorecard item sci_98fe7063b799ea's missing protocol_id and item_number are listed in the handoff note for the app side. (PK-201, Jason standing answer 2026-11-09) A, the mapping goes in the handoff note and no record is edited: drills 'PPBF owner-authored' as is; the DOC-023 form as 'PPBF owner-authored' (detail stays in field_labels); 'Long Road practice' (190) has no repo value, so the app side adds 'Long Road practice' to the vocabulary and the drill_library check (a repo change Jason approves in the drill lane); tracks and sessions have no repo column and their values travel in the packages for the lanes that build those tables, 'COACHING-CRAFT DRAFT' as the repo's full string (D-PK106); the 194 records with none keep none (D-OQ167). Register D-OQ207 to D-OQ210, D-ESC01, D-SEED02, D-PK200-1 to D-PK200-7, D-PK201 (v1.83); DECISION_CHECKS ninety-seventh round.
+- **Repo handoff and OneDrive freeze (PK-202, PK-203) (Jason, two cards in session "PPBF Backbone Wave 2 Repo Handoff" (wave-2 session 28), asked about 07:48 and answered by 08:39 on 2026-11-10 (machine clock); plan step 'Prepare repo handoff and freeze OneDrive copy'; asked under A-78 exception 4):** (PK-202) A, approve the package as written: working/repo-handoff-2026-11-10/ (HANDOFF_NOTE.md, PACKAGE_MANIFEST.json, RULES_FOLD_MAP.json, PR_DESCRIPTION_DRAFT.md) is what Claude Code brings into ppbf-platform by pull requests under route A; the app repo's Overwatch is pointed to the folder by Overwatch's paste note or by Jason; Claude Code does D-RV07's read-only PR check first; the proposed docs/backbone/ paths stand unless Claude Code proposes others in its PR (Q-210's plan part); nothing is pushed or opened on GitHub from the Backbone. (PK-203) A, freeze now, at the end of this step: after this card is recorded the session writes FREEZE_MANIFEST.json (sha256[:16] of every Backbone file) and FROZEN.md at the Backbone root; from then no session edits any Backbone file except the closing records (RESUME.md, RESUME_HISTORY.md, working/wave2-2026-10-30/NEXT_SESSION_PROMPT.md, working/drift/DRIFT_REPORT.md as each drift run rewrites it, and Overwatch's working/overwatch/); the lanes export from the frozen files and check them against the manifest; every later change is made in the repo (RULES s2; OD-2026-09-28-003); status lines stay as written; no new drift baseline; setting the OneDrive folder read-only is Jason's own option. Register D-PK202, D-PK203 (v1.84); DECISION_CHECKS ninety-eighth round.
+## 10. Labels and status (Jason, 2026-10-23)
+
+- Every backbone data record carries its sources and a **status**:
+  OBSERVED (read directly in a source, or recorded directly from the owner),
+  REPORTED (a source says it, not yet checked quote by quote), INFERRED
+  (reasoning, no source), UNVERIFIED (no source). REPORTED is upgraded to
+  OBSERVED when the evidence pass checks it against the source text.
+- OBSERVED is given only to Jason's direct decisions, or to a document claim
+  after a quote-by-quote check against the source text. A citation to RULES.md
+  or to any document is REPORTED until checked. Anything marked "to be
+  confirmed" is never OBSERVED.
+- Status is separate from the evidence tier (how strong the research is).
+- Hypothetical fixture records (test athletes) carry status INFERRED and the source
+  'hypothetical fixture (RULES section 8)'.
+- Labels go on data records, not on every sentence of chat or prose; readable
+  documents are generated from the labelled data.
+- Every backbone document opens with one line:
+  `Status: DRAFT, not app source until handoff (RULES.md)`.
+
+## 11. Repo facts from Claude Code (2026-10-23, repo main 6ab8f547)
+
+- **Skill layer:** the owner's 12 skill families (SKILL-01 to SKILL-12, from
+  DOC-072 Skill_Index, confirmed by Jason 2026-10-03) with family-level
+  prerequisites are owner system. The 67 SK-* skill codes arrived with the
+  AI-drafted seed drills (18 unmapped to a family); they rank as AI drafts.
+  There is no 67-node prerequisite graph in code.
+- **App behaviour that conflicts with section 0 or 1, for the schema proposal
+  and the docs revamp:** (a) SHADOW chat refuses weight-cut questions;
+  (b) a machine refusal on video uploads is never overturnable by a person;
+  (c) chokes on minors are not recorded at all; (d) blocking gates have no
+  override-with-reason path by design ("must keep refusing to have").
+  Most other refusals rest on a human-set condition (holds, waivers,
+  allowances) and fit section 1.
+````
+
+---
+
 ## OD-2026-11-09-003 -- The old upload audit rows keep their rows and lose the intake file name: "Redact the names"
 
 **Provenance: PRIMARY.** Jason's reply "Redact the names", 2026-11-09T17:25:01.842Z (12:25 EST), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 5013, `origin.kind` human), asserted against the file by script before writing. The question put to him is line 5002 (the `wrap_up` `ask`, buttons "Redact the names" and "Leave them") with the options written out at line 5009. New; edits no earlier entry's text.

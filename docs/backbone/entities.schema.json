@@ -1,0 +1,1968 @@
+{
+ "x-status_line": "Status: DRAFT, not app source until handoff (RULES.md)",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "ppbf-backbone/entities.schema.json",
+ "title": "PPBF training backbone entities (DRAFT)",
+ "description": "Status: DRAFT, not app source until handoff (RULES.md). Machine-readable companion to DATA_MODEL.md. Backbone master files are JSON with labelled fields; the repo hand-off is content-package CSV per docs/CONTENT_PACKAGE_CONTRACT.md. Data model (DATA_MODEL.md with this file) approved by Jason at the checkpoint-1 review, 2026-10-24 (D-RV06).",
+ "$defs": {
+  "status": {
+   "enum": [
+    "OBSERVED",
+    "REPORTED",
+    "INFERRED",
+    "UNVERIFIED"
+   ],
+   "description": "RULES.md section 10. Separate from evidence."
+  },
+  "stage_key": {
+   "enum": [
+    "Y1",
+    "Y2",
+    "Y3",
+    "Y4",
+    "Y5",
+    "T1",
+    "T2",
+    "AM1",
+    "AM2",
+    "AM3",
+    "PR1",
+    "PR2",
+    "PR3",
+    "PR4",
+    "PR5",
+    "RC1",
+    "FT1",
+    "EX1"
+   ]
+  },
+  "contact_level": {
+   "enum": [
+    "none",
+    "light_technical",
+    "conditioned",
+    "controlled_sparring",
+    "open_sparring"
+   ]
+  },
+  "sparring_type": {
+   "enum": [
+    "hard",
+    "play",
+    "technical",
+    "game",
+    "conditioned"
+   ]
+  },
+  "evidence_category": {
+   "enum": [
+    "research",
+    "rule",
+    "convention",
+    "framework",
+    "owner_decision",
+    "information",
+    "unassigned"
+   ],
+   "description": "EVIDENCE_VOCABULARY.md section 3."
+  },
+  "evidence_label": {
+   "enum": [
+    "PROVEN",
+    "EMERGING",
+    "EXPERIMENTAL",
+    "RESEARCH_NEEDED",
+    "RULE",
+    "CONVENTION",
+    "FRAMEWORK",
+    "UNTIERED"
+   ],
+   "description": "What the coach sees. Research tiers come from the repo rule (shadowEvidenceTier.ts) and only after a check."
+  },
+  "check_state": {
+   "enum": [
+    "unchecked",
+    "verified",
+    "corrected",
+    "not_found"
+   ]
+  },
+  "labelled": {
+   "type": "object",
+   "required": [
+    "value",
+    "status",
+    "sources"
+   ],
+   "properties": {
+    "value": {},
+    "status": {
+     "$ref": "#/$defs/status"
+    },
+    "sources": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   }
+  },
+  "field_labels": {
+   "type": "object",
+   "additionalProperties": {
+    "type": "object",
+    "required": [
+     "status",
+     "sources"
+    ],
+    "properties": {
+     "status": {
+      "$ref": "#/$defs/status"
+     },
+     "sources": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "description": "Per-field status and sources (proposed column field_labels jsonb; PROPOSED_CHANGES SP-1)."
+  },
+  "evidence_ref": {
+   "type": "object",
+   "properties": {
+    "evidence_category": {
+     "$ref": "#/$defs/evidence_category"
+    },
+    "evidence_label": {
+     "$ref": "#/$defs/evidence_label"
+    },
+    "check_state": {
+     "$ref": "#/$defs/check_state"
+    },
+    "evidence_item_ids": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "pattern": "^evi_[0-9a-f]{14}$"
+     }
+    },
+    "registry_claim_ids": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]-\\d{3}$"
+     }
+    }
+   }
+  },
+  "record_meta": {
+   "type": "object",
+   "description": "Fields every backbone record carries.",
+   "properties": {
+    "organization_id": {
+     "type": "string",
+     "description": "'{{PPBF_ORG_ID}}' in files (contract rule)."
+    },
+    "status": {
+     "$ref": "#/$defs/status"
+    },
+    "sources": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "field_labels": {
+     "$ref": "#/$defs/field_labels"
+    },
+    "field_provenance": {
+     "type": "string",
+     "description": "Repo authoring label (drill_library: 4 allowed values)."
+    },
+    "source_ref": {
+     "type": "string"
+    },
+    "content_class": {
+     "type": "string"
+    },
+    "backbone_version": {
+     "type": "string"
+    },
+    "active": {
+     "type": "boolean"
+    },
+    "stage_keys": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/stage_key"
+     }
+    },
+    "evidence": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/evidence_ref"
+     }
+    }
+   },
+   "required": [
+    "status",
+    "sources"
+   ]
+  },
+  "versioned": {
+   "type": "object",
+   "properties": {
+    "lineage_id": {
+     "type": "string"
+    },
+    "version": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "superseded_at": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "description": "v1 id IS the lineage id; version n>=2 id = prefix + '_' + first 14 hex of sha256(lineage_id + '#v' + n) (repo ids.ts drillVersion rule)."
+  },
+  "exercise": {
+   "description": "A single strength, conditioning or movement exercise. Decided (D-Q19): stored in drill_library with discipline conditioning or general and category 'exercise'; no separate exercise table. Repo: drill_library v3 (reuse).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    },
+    {
+     "$ref": "#/$defs/versioned"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "drill_id": {
+     "type": "string",
+     "pattern": "^drl_[0-9a-f]{14}$"
+    },
+    "name": {
+     "type": "string"
+    },
+    "discipline": {
+     "enum": [
+      "conditioning",
+      "general"
+     ]
+    },
+    "category": {
+     "const": "exercise"
+    },
+    "contact_level": {
+     "$ref": "#/$defs/contact_level"
+    },
+    "assessment_protocol_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "drill_id",
+    "name",
+    "discipline"
+   ]
+  },
+  "drill": {
+   "description": "A coached drill. Repo: drill_library v3 + drill_cues, drill_scale_levels, drill_stop_rules (reuse).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    },
+    {
+     "$ref": "#/$defs/versioned"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "drill_id": {
+     "type": "string",
+     "pattern": "^drl_[0-9a-f]{14}$"
+    },
+    "name": {
+     "type": "string"
+    },
+    "discipline": {
+     "type": "string"
+    },
+    "category": {
+     "type": "string"
+    },
+    "skill_id": {
+     "type": "string",
+     "pattern": "^SK-[A-Z]+-\\d{2}$"
+    },
+    "contact_level": {
+     "$ref": "#/$defs/contact_level"
+    },
+    "difficulty": {
+     "enum": [
+      "beginner",
+      "intermediate",
+      "advanced",
+      "elite"
+     ]
+    },
+    "grounding_claim_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "scorecard_item_ids": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "pattern": "^sci_[0-9a-f]{14}$"
+     }
+    },
+    "supersedes_drill_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "drill_id",
+    "name",
+    "discipline",
+    "contact_level"
+   ]
+  },
+  "session": {
+   "description": "A session plan (workout template) or a minute-by-minute script. Repo: workout_templates + workout_template_items; session_scripts + session_script_blocks + renderings (reuse; add stage link P9).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    },
+    {
+     "$ref": "#/$defs/versioned"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "session_kind": {
+     "enum": [
+      "template",
+      "script"
+     ]
+    },
+    "template_id": {
+     "type": "string",
+     "pattern": "^wtp_[0-9a-f]{14}$"
+    },
+    "script_id": {
+     "type": "string",
+     "pattern": "^scr_[0-9a-f]{14}$"
+    },
+    "name": {
+     "type": "string"
+    },
+    "contact_structure": {
+     "enum": [
+      "non_contact",
+      "contact",
+      "split_non_contact_then_contact",
+      "observation_only"
+     ]
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "item_id": {
+        "type": "string",
+        "pattern": "^wti_[0-9a-f]{14}$"
+       },
+       "block_id": {
+        "type": "string",
+        "pattern": "^blk_[0-9a-f]{14}$"
+       },
+       "drill_id": {
+        "type": "string",
+        "pattern": "^drl_[0-9a-f]{14}$"
+       },
+       "contact_level": {
+        "$ref": "#/$defs/contact_level"
+       }
+      }
+     }
+    }
+   },
+   "required": [
+    "session_kind",
+    "name"
+   ]
+  },
+  "training_block": {
+   "description": "An ordered multi-week unit inside a track (not a session_script_block). Repo: NEW pilot.track_blocks; per-athlete instance = athlete_development_blocks + source_track_block_id (PROPOSED_CHANGES SP-9).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    },
+    {
+     "$ref": "#/$defs/versioned"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "track_block_id": {
+     "type": "string",
+     "pattern": "^trb_[0-9a-f]{14}$"
+    },
+    "track_id": {
+     "type": "string",
+     "pattern": "^trk_[0-9a-f]{14}$"
+    },
+    "block_order": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "title": {
+     "type": "string"
+    },
+    "weeks": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "session_refs": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "week": {
+        "type": "integer"
+       },
+       "day": {
+        "type": "string"
+       },
+       "template_id": {
+        "type": "string",
+        "pattern": "^wtp_[0-9a-f]{14}$"
+       },
+       "script_id": {
+        "type": "string",
+        "pattern": "^scr_[0-9a-f]{14}$"
+       }
+      }
+     }
+    }
+   },
+   "required": [
+    "track_block_id",
+    "track_id",
+    "block_order"
+   ]
+  },
+  "program_track": {
+   "description": "A named training track or program (e.g. the 8-Week Non-Contact Program as FT1 class track). Repo: NEW pilot.training_tracks; enrollment groups stay in programs/program_memberships.",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    },
+    {
+     "$ref": "#/$defs/versioned"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "pattern": "^trk_[0-9a-f]{14}$"
+    },
+    "name": {
+     "type": "string"
+    },
+    "lane": {
+     "enum": [
+      "standard",
+      "non_contact"
+     ]
+    },
+    "track": {
+     "enum": [
+      "contact",
+      "fitness",
+      null
+     ]
+    },
+    "duration_weeks": {
+     "type": "integer"
+    },
+    "delivered_to_program_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "track_id",
+    "name"
+   ]
+  },
+  "assessment_protocol": {
+   "description": "A test or rubric. Repo: assessment_protocols (reuse; results in pilot.assessments).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "protocol_id": {
+     "type": "string",
+     "pattern": "^[A-Z][A-Z0-9]-T\\d{2}$"
+    },
+    "protocol_version": {
+     "type": "integer"
+    },
+    "name": {
+     "type": "string"
+    },
+    "measure_kind": {
+     "enum": [
+      "physical_test",
+      "skill_rubric",
+      "wellness",
+      "questionnaire",
+      "other"
+     ]
+    },
+    "reliability_status": {
+     "type": "string"
+    },
+    "validity_status": {
+     "type": "string"
+    },
+    "human_authority_required": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "protocol_id",
+    "name",
+    "measure_kind"
+   ]
+  },
+  "scorecard_item": {
+   "description": "One item of a scorecard protocol. Repo: NEW pilot.scorecard_items (P6).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "scorecard_item_id": {
+     "type": "string",
+     "pattern": "^sci_[0-9a-f]{14}$"
+    },
+    "protocol_id": {
+     "type": "string"
+    },
+    "item_number": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "group": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "definition": {
+     "type": "string"
+    },
+    "scorable_contexts": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "drill",
+       "shadow",
+       "partner",
+       "constrained_live",
+       "live"
+      ]
+     }
+    }
+   },
+   "required": [
+    "scorecard_item_id",
+    "protocol_id",
+    "item_number",
+    "name"
+   ]
+  },
+  "gate_criterion": {
+   "description": "One criterion of a phase gate.",
+   "type": "object",
+   "properties": {
+    "criterion_id": {
+     "type": "string",
+     "pattern": "^pgc_[0-9a-f]{14}$"
+    },
+    "ordinal": {
+     "type": "integer"
+    },
+    "kind": {
+     "enum": [
+      "scorecard_min",
+      "stage_completed",
+      "gate_met",
+      "bout_count",
+      "assessment_min",
+      "text"
+     ]
+    },
+    "scorecard_item_ids": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "pattern": "^sci_[0-9a-f]{14}$"
+     }
+    },
+    "min_score": {
+     "type": "number"
+    },
+    "contexts": {
+     "type": "array"
+    },
+    "combine": {
+     "enum": [
+      "all",
+      "any"
+     ]
+    },
+    "text": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "criterion_id",
+    "kind"
+   ]
+  },
+  "phase_gate": {
+   "description": "Entry, exit or contact-readiness gate of a stage. Informs only; never moves anyone. Repo: NEW pilot.pathway_gates + pathway_gate_criteria (P5).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "gate_id": {
+     "type": "string",
+     "pattern": "^pgt_[0-9a-f]{14}$"
+    },
+    "stage_key": {
+     "$ref": "#/$defs/stage_key"
+    },
+    "gate_kind": {
+     "enum": [
+      "entry",
+      "exit",
+      "contact_readiness",
+      "checkpoint_90_days"
+     ],
+     "description": "checkpoint_90_days: the T1 90-day check, informs only (D-PK121, PK-121 A, schema P5 change; added 2026-11-10 at the repo handoff step, ACTIONS A-74)."
+    },
+    "criteria": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/gate_criterion"
+     }
+    },
+    "informs_only": {
+     "const": true
+    }
+   },
+   "required": [
+    "gate_id",
+    "stage_key",
+    "gate_kind",
+    "criteria"
+   ]
+  },
+  "evidence_item": {
+   "description": "One checked statement from one source. Repo: NEW pilot.backbone_evidence_items; research registry claim ids kept as links (SP-10). Carries the six SP-10 provenance fields (source version and access date, support location, population, estimate and uncertainty, limitations, reviewer and date via checked_on); inference class not included (D-PK16). Status 2026-11-10: inference_class added (D-PK12, PK-12 B, reopening D-PK16 on that point; ACTIONS A-74).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "evidence_item_id": {
+     "type": "string",
+     "pattern": "^evi_[0-9a-f]{14}$"
+    },
+    "source_key": {
+     "type": "string"
+    },
+    "statement": {
+     "type": "string"
+    },
+    "evidence_category": {
+     "$ref": "#/$defs/evidence_category"
+    },
+    "evidence_class": {
+     "type": "string"
+    },
+    "authority_tier": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 5
+    },
+    "boxing_specificity": {
+     "enum": [
+      "boxing_specific",
+      "partly_boxing_specific",
+      "ppbf_specific",
+      "transferred"
+     ]
+    },
+    "study_design": {
+     "type": "string"
+    },
+    "synthesis_tag": {
+     "enum": [
+      "SR/MA",
+      "PS",
+      "GB",
+      "CC",
+      "AI-H",
+      null
+     ]
+    },
+    "check_state": {
+     "$ref": "#/$defs/check_state"
+    },
+    "checked_on": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "supports": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "source_version": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Document version or edition of the source (SP-10 provenance; D-PK16)."
+    },
+    "source_accessed_on": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Date the source was accessed (SP-10 provenance; D-PK16)."
+    },
+    "support_location": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Section, table or excerpt where the source supports the statement (SP-10 provenance; D-PK16)."
+    },
+    "population": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Population the evidence comes from (SP-10 provenance; D-PK16)."
+    },
+    "estimate": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Reported estimate, only when published or correctly calculated (SP-10 provenance; D-PK16)."
+    },
+    "uncertainty": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Uncertainty of the estimate, for example a confidence interval (SP-10 provenance; D-PK16)."
+    },
+    "limitations": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Limitations and applicability limits (SP-10 provenance; D-PK16)."
+    },
+    "reviewed_by": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Reviewer of the check; the date is checked_on (SP-10 provenance; D-PK16)."
+    },
+    "inference_class": {
+     "enum": [
+      "descriptive",
+      "associative",
+      "causal",
+      "theoretical",
+      "proposed",
+      null
+     ],
+     "description": "Inference class of the checked claim; values from the Boxing Coach Operational Gaps s4.2 'Claim-level provenance record' (inputs/boxing-coach) (D-PK12)."
+    }
+   },
+   "required": [
+    "evidence_item_id",
+    "source_key",
+    "statement",
+    "evidence_category",
+    "check_state"
+   ]
+  },
+  "default_rule": {
+   "description": "A stage or lane default. Informs; a human may override with a recorded reason. Repo: NEW pilot.pathway_stage_defaults (P7).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "default_id": {
+     "type": "string",
+     "pattern": "^dft_[0-9a-f]{14}$"
+    },
+    "scope": {
+     "type": "string"
+    },
+    "default_key": {
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "default_rule",
+      "reference",
+      "owner_rule",
+      "rule_reference",
+      "information"
+     ]
+    },
+    "value_number": {
+     "type": "number"
+    },
+    "value_min": {
+     "type": "number"
+    },
+    "value_max": {
+     "type": "number"
+    },
+    "value_text": {
+     "type": "string"
+    },
+    "unit": {
+     "type": "string"
+    },
+    "window_days": {
+     "type": "integer"
+    },
+    "sparring_type": {
+     "type": "string"
+    },
+    "display_text": {
+     "type": "string"
+    },
+    "evidence_category": {
+     "$ref": "#/$defs/evidence_category"
+    },
+    "override": {
+     "type": "object",
+     "properties": {
+      "allowed": {
+       "type": "boolean"
+      },
+      "who": {
+       "type": "array"
+      },
+      "reason_required": {
+       "type": "boolean"
+      },
+      "extra_condition": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "required": [
+    "default_id",
+    "scope",
+    "default_key",
+    "kind",
+    "display_text"
+   ]
+  },
+  "default_override": {
+   "description": "A per-athlete override of a default. Repo: NEW pilot.athlete_default_overrides (P7).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "override_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "athlete_id": {
+     "type": "string"
+    },
+    "default_id": {
+     "type": "string",
+     "pattern": "^dft_[0-9a-f]{14}$"
+    },
+    "new_value": {
+     "type": "object"
+    },
+    "reason": {
+     "type": "string",
+     "minLength": 1
+    },
+    "set_by_account_id": {
+     "type": "string"
+    },
+    "set_by_role": {
+     "enum": [
+      "coach",
+      "parent",
+      "organization_admin",
+      "admin"
+     ]
+    },
+    "set_at": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "override_id",
+    "athlete_id",
+    "default_id",
+    "reason",
+    "set_by_account_id",
+    "set_by_role"
+   ]
+  },
+  "contribution": {
+   "description": "A coach submission of new or changed content. Repo: drill_change_proposals (drills, propchg_<uuid>); generalized table proposed (SP-8).",
+   "allOf": [
+    {
+     "$ref": "#/$defs/record_meta"
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "contribution_id": {
+     "type": "string"
+    },
+    "target_kind": {
+     "enum": [
+      "exercise",
+      "drill",
+      "session",
+      "training_block",
+      "program_track",
+      "assessment_protocol",
+      "scorecard_item",
+      "phase_gate",
+      "default_rule",
+      "evidence_item"
+     ]
+    },
+    "target_lineage_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "based_on_version_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "scope": {
+     "enum": [
+      "core",
+      "personal"
+     ]
+    },
+    "owner_account_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "proposed_by_account_id": {
+     "type": "string"
+    },
+    "proposed_by_role": {
+     "type": "string"
+    },
+    "rationale": {
+     "type": "string",
+     "minLength": 1
+    },
+    "proposed_change": {
+     "type": "object"
+    },
+    "review_state": {
+     "enum": [
+      "proposed",
+      "under_review",
+      "adopted",
+      "declined",
+      "superseded",
+      "not_required"
+     ]
+    },
+    "reviewed_by_account_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "acting_as_proxy": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "proxy_for_account_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "reviewed_at": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "review_note": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "resulting_record_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "contribution_id",
+    "target_kind",
+    "scope",
+    "proposed_by_account_id",
+    "rationale",
+    "review_state"
+   ]
+  },
+  "sparring_exposure": {
+   "description": "One sparring segment (reused table, column names verbatim). Repo: pilot.sparring_exposure (reuse as is; change A).",
+   "type": "object",
+   "properties": {
+    "exposure_id": {
+     "type": "string"
+    },
+    "activity_id": {
+     "type": "string"
+    },
+    "athlete_id": {
+     "type": "string"
+    },
+    "segment_number": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "sparring_type": {
+     "$ref": "#/$defs/sparring_type"
+    },
+    "time_under_impact_sec": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 1800
+    },
+    "round_equivalent": {
+     "type": [
+      "number",
+      "null"
+     ]
+    },
+    "partner_athlete_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "headgear_worn": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "glove_oz": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 8,
+     "maximum": 20
+    },
+    "coach_observed_intensity": {
+     "enum": [
+      "light",
+      "moderate",
+      "firm",
+      "unclear"
+     ]
+    },
+    "coach_observed_head_contact": {
+     "enum": [
+      "none",
+      "incidental",
+      "regular",
+      "frequent",
+      "unclear"
+     ]
+    },
+    "athlete_presentation": {
+     "enum": [
+      "normal",
+      "slowed",
+      "unsteady",
+      "withdrawn",
+      "other_concern",
+      null
+     ]
+    },
+    "supervising_coach_account_id": {
+     "type": "string"
+    },
+    "stopped_early": {
+     "type": "boolean"
+    },
+    "stop_reason": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "mouthpiece_worn": {
+     "enum": [
+      "yes",
+      "no",
+      "unknown",
+      null
+     ],
+     "description": "Added beside headgear_worn (schema P20; D-X01)."
+    }
+   },
+   "required": [
+    "exposure_id",
+    "activity_id",
+    "athlete_id",
+    "segment_number",
+    "sparring_type",
+    "time_under_impact_sec",
+    "coach_observed_intensity",
+    "coach_observed_head_contact",
+    "supervising_coach_account_id"
+   ]
+  },
+  "session_load": {
+   "description": "Split physical and cognitive RPE (reused table). Repo: pilot.session_load (reuse as is; change A).",
+   "type": "object",
+   "properties": {
+    "load_id": {
+     "type": "string"
+    },
+    "activity_id": {
+     "type": "string"
+    },
+    "athlete_id": {
+     "type": "string"
+    },
+    "rpe_physical": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": 0,
+     "maximum": 10
+    },
+    "rpe_cognitive": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": 0,
+     "maximum": 10
+    },
+    "rpe_scale": {
+     "type": "string"
+    },
+    "rated_by": {
+     "enum": [
+      "athlete",
+      "coach_proxy"
+     ]
+    }
+   },
+   "required": [
+    "load_id",
+    "activity_id",
+    "athlete_id",
+    "rated_by"
+   ]
+  },
+  "bout_record": {
+   "description": "One bout. Repo: NEW bout_records (P8).",
+   "type": "object",
+   "properties": {
+    "bout_id": {
+     "type": "string"
+    },
+    "athlete_id": {
+     "type": "string"
+    },
+    "entry_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "bout_date": {
+     "type": "string"
+    },
+    "sanctioning_body": {
+     "type": "string"
+    },
+    "scheduled_rounds": {
+     "type": "integer"
+    },
+    "round_length_sec": {
+     "type": "integer"
+    },
+    "rounds_completed": {
+     "type": "integer"
+    },
+    "result": {
+     "type": "string"
+    },
+    "method": {
+     "enum": [
+      "decision",
+      "stoppage",
+      "KO",
+      "DQ",
+      "other"
+     ]
+    },
+    "headgear": {
+     "type": [
+      "boolean",
+      "null"
+     ]
+    },
+    "glove_oz": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "outside_suspension": {
+     "type": [
+      "object",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "bout_id",
+    "athlete_id",
+    "bout_date",
+    "sanctioning_body",
+    "rounds_completed"
+   ]
+  },
+  "scorecard_rating": {
+   "description": "One rater's score on one item in one scoring event. Repo: NEW scorecard_ratings (P6); scoring event = pilot.assessments.",
+   "type": "object",
+   "properties": {
+    "rating_id": {
+     "type": "string"
+    },
+    "assessment_id": {
+     "type": "string"
+    },
+    "athlete_id": {
+     "type": "string"
+    },
+    "scorecard_item_id": {
+     "type": "string",
+     "pattern": "^sci_[0-9a-f]{14}$"
+    },
+    "score": {
+     "type": "number",
+     "minimum": 1,
+     "maximum": 5
+    },
+    "rater_account_id": {
+     "type": "string"
+    },
+    "context": {
+     "enum": [
+      "drill",
+      "shadow",
+      "partner",
+      "constrained_live",
+      "live"
+     ]
+    },
+    "blind_to_other_rater": {
+     "type": "boolean"
+    },
+    "rater_calibration_current": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "rating_id",
+    "assessment_id",
+    "athlete_id",
+    "scorecard_item_id",
+    "score",
+    "rater_account_id",
+    "context"
+   ]
+  },
+  "anchor_clip_spec": {
+   "description": "What the gym films for one item, level and context class.",
+   "type": "object",
+   "properties": {
+    "anchor_spec_id": {
+     "type": "string",
+     "pattern": "^acs_[0-9a-f]{14}$"
+    },
+    "scorecard_item_id": {
+     "type": "string",
+     "pattern": "^sci_[0-9a-f]{14}$"
+    },
+    "item_number": {
+     "type": "integer"
+    },
+    "level": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 5
+    },
+    "context_class": {
+     "enum": [
+      "non_contact",
+      "live"
+     ]
+    },
+    "used_by_gates": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/stage_key"
+     }
+    },
+    "priority": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "anchor_spec_id",
+    "scorecard_item_id",
+    "level",
+    "context_class"
+   ]
+  },
+  "recommendation": {
+   "description": "An AI recommendation as shown to the coach (change B). Repo: shadow_recommendations + P15 fields.",
+   "type": "object",
+   "properties": {
+    "recommendation_id": {
+     "type": "string"
+    },
+    "test_athlete_id": {
+     "type": "string"
+    },
+    "kind": {
+     "type": "string"
+    },
+    "recommendation_text": {
+     "type": "string"
+    },
+    "shown": {
+     "type": "object",
+     "required": [
+      "record_status",
+      "evidence",
+      "reasons",
+      "alternatives",
+      "defaults_referenced",
+      "app_notes",
+      "decision"
+     ],
+     "properties": {
+      "record_status": {
+       "$ref": "#/$defs/status"
+      },
+      "evidence": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "required": [
+         "claim",
+         "evidence_label",
+         "evidence_category",
+         "status",
+         "sources"
+        ],
+        "properties": {
+         "evidence_label": {
+          "$ref": "#/$defs/evidence_label"
+         },
+         "evidence_category": {
+          "$ref": "#/$defs/evidence_category"
+         },
+         "status": {
+          "$ref": "#/$defs/status"
+         }
+        }
+       }
+      },
+      "reasons": {
+       "type": "array"
+      },
+      "alternatives": {
+       "type": "array"
+      },
+      "defaults_referenced": {
+       "type": "array"
+      },
+      "app_notes": {
+       "type": "array",
+       "items": {
+        "enum": [
+         "no_current_physical",
+         "under_8_contact",
+         "not_covered_usab",
+         "usab_pairing",
+         "masters_check",
+         "pro_override_docs",
+         "usab_incident_report",
+         "usab_medical_restriction",
+         "concussion_information"
+        ],
+        "description": "The nine note keys in spine.json app_notes (pro_override_docs: D-Q14; usab_incident_report and usab_medical_restriction: D-X03; concussion_information: D-PK05, added to this list by D-PK43)."
+       }
+      },
+      "decision": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "required": [
+    "recommendation_id",
+    "recommendation_text",
+    "shown"
+   ]
+  },
+  "test_athlete": {
+   "type": "object",
+   "required": [
+    "test_athlete_id",
+    "label",
+    "hypothetical",
+    "status",
+    "sources",
+    "records",
+    "scenarios",
+    "expected_outcome"
+   ],
+   "properties": {
+    "test_athlete_id": {
+     "type": "string",
+     "pattern": "^tat_[0-9a-f]{14}$"
+    },
+    "hypothetical": {
+     "const": true
+    },
+    "status": {
+     "$ref": "#/$defs/status"
+    },
+    "sources": {
+     "type": "array"
+    },
+    "records": {
+     "type": "object",
+     "required": [
+      "athlete",
+      "membership",
+      "placement",
+      "sparring_exposure",
+      "session_load",
+      "exposure_summary"
+     ],
+     "properties": {
+      "placement": {
+       "type": "object",
+       "required": [
+        "stage_key"
+       ],
+       "properties": {
+        "stage_key": {
+         "$ref": "#/$defs/stage_key"
+        }
+       }
+      },
+      "sparring_exposure": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/sparring_exposure"
+       }
+      },
+      "session_load": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/session_load"
+       }
+      },
+      "bouts": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/bout_record"
+       }
+      },
+      "scorecard_ratings": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/scorecard_rating"
+       }
+      },
+      "default_overrides": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/default_override"
+       }
+      },
+      "hard_incidents": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/hard_incident"
+       }
+      },
+      "medical_restrictions": {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/medical_restriction"
+       }
+      }
+     }
+    },
+    "expected_outcome": {
+     "type": "object",
+     "required": [
+      "status_label",
+      "text"
+     ],
+     "properties": {
+      "status_label": {
+       "const": "Confirmed by Jason (2026-10-24)",
+       "description": "All nine expected outcomes confirmed at the checkpoint-1 review (D-RV05)."
+      }
+     }
+    }
+   }
+  },
+  "test_athletes_file": {
+   "type": "object",
+   "required": [
+    "status_line",
+    "athletes",
+    "recommendations",
+    "answer_key"
+   ],
+   "properties": {
+    "status_line": {
+     "const": "Status: DRAFT, not app source until handoff (RULES.md)"
+    },
+    "athletes": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/test_athlete"
+     },
+     "minItems": 9,
+     "maxItems": 9
+    },
+    "recommendations": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/recommendation"
+     }
+    },
+    "answer_key": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "recommendation_id",
+       "verdict"
+      ],
+      "properties": {
+       "verdict": {
+        "enum": [
+         "correct"
+        ],
+        "description": "seeded_error removed: the seeded-error test was withdrawn 2026-10-27 (D-SEED01); removed 2026-11-10 (D-SEED02, ACTIONS A-31)."
+       }
+      }
+     }
+    }
+   }
+  },
+  "design_catalogs_file": {
+   "type": "object",
+   "required": [
+    "status_line",
+    "gates",
+    "default_rules",
+    "scorecard_items",
+    "anchor_clip_specs"
+   ],
+   "properties": {
+    "status_line": {
+     "const": "Status: DRAFT, not app source until handoff (RULES.md)"
+    },
+    "gates": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/phase_gate"
+     }
+    },
+    "default_rules": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/default_rule"
+     }
+    },
+    "scorecard_items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/scorecard_item"
+     }
+    },
+    "anchor_clip_specs": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/anchor_clip_spec"
+     }
+    },
+    "assessment_protocols": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/assessment_protocol"
+     },
+     "description": "Assessment protocols list in the catalog, a listed design change (D-PK120, PK-120 A; added to this schema 2026-11-10 at the repo handoff step, ACTIONS A-74)."
+    }
+   }
+  },
+  "hard_incident": {
+   "description": "One hard incident on a sparring segment. Repo: NEW pilot.sparring_incidents (schema P20; D-X01). Never holds a save. Round, partner, stopped_early and stop_reason come from the linked sparring_exposure row.",
+   "type": "object",
+   "properties": {
+    "incident_id": {
+     "type": "string"
+    },
+    "exposure_id": {
+     "type": "string"
+    },
+    "incident_type": {
+     "enum": [
+      "H1_harder_than_agreed",
+      "H2_knockdown_or_count",
+      "H3_stopped_head_or_suspected_concussion",
+      "H4_first_aid_injury",
+      "H5_etiquette_breach",
+      "H6_gear_failure"
+     ]
+    },
+    "involved": {
+     "enum": [
+      "athlete",
+      "partner",
+      "both"
+     ]
+    },
+    "body_area": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "IOC 2020 Table 4 categories (injuries)."
+    },
+    "days_lost": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0,
+     "description": "Filled at follow-up; IOC 2020 time-loss count; same- or next-day return = 0."
+    },
+    "coach_note": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "follow_up_note": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "usab_report_filed_on": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "description": "Filled by the one tap on the usab_incident_report note (H2-H4; D-X03)."
+    },
+    "recorded_by": {
+     "type": "string"
+    },
+    "recorded_at": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "incident_id",
+    "exposure_id",
+    "incident_type",
+    "involved",
+    "recorded_by",
+    "recorded_at"
+   ]
+  },
+  "medical_restriction": {
+   "description": "A USA Boxing medical restriction record. Repo: NEW pilot.medical_restrictions (schema P22; D-X03). Drives the usab_medical_restriction note; never holds a save.",
+   "type": "object",
+   "properties": {
+    "restriction_id": {
+     "type": "string"
+    },
+    "athlete_id": {
+     "type": "string"
+    },
+    "source": {
+     "enum": [
+      "ringside_restriction_affidavit",
+      "training_knockout_or_concussion",
+      "other"
+     ]
+    },
+    "loss_of_consciousness": {
+     "enum": [
+      "none",
+      "under_1_minute",
+      "over_1_minute",
+      "unknown"
+     ]
+    },
+    "start_date": {
+     "type": "string"
+    },
+    "minimum_end_date": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "medical_release_signed_on": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "lbc_informed_on": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "linked_incident_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "note": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "recorded_by": {
+     "type": "string"
+    },
+    "recorded_at": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "restriction_id",
+    "athlete_id",
+    "source",
+    "start_date",
+    "recorded_by",
+    "recorded_at"
+   ]
+  },
+  "override_reason": {
+   "description": "One reason in a versioned override reason set. Repo: NEW override_reason_sets and override_reasons (schema P21; D-X02; standard list R01-R16 plus R99, D-Q13). Owner edits create a new set version; retired codes stay readable.",
+   "type": "object",
+   "properties": {
+    "set_version": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "key": {
+     "type": "string",
+     "pattern": "^R\\d{2}$"
+    },
+    "label": {
+     "type": "string"
+    },
+    "directions": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "UP",
+       "HOLD",
+       "DOWN",
+       "MOVE"
+      ]
+     },
+     "minItems": 1
+    },
+    "basis": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "retired_on": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "required": [
+    "set_version",
+    "key",
+    "label",
+    "directions"
+   ]
+  }
+ },
+ "oneOf": [
+  {
+   "$ref": "#/$defs/test_athletes_file"
+  },
+  {
+   "$ref": "#/$defs/design_catalogs_file"
+  }
+ ],
+ "x-decisions_applied": {
+  "folded": "2026-10-24 (US Eastern; decision records labelled 2026-10-25)",
+  "entries": [
+   {
+    "id": "D-Q19",
+    "where": "$defs.exercise.description"
+   },
+   {
+    "id": "D-Q14",
+    "where": "$defs.recommendation shown.app_notes enum (pro_override_docs)"
+   },
+   {
+    "id": "D-X01",
+    "where": "$defs.hard_incident; $defs.sparring_exposure.mouthpiece_worn; test_athlete.records.hard_incidents"
+   },
+   {
+    "id": "D-X02",
+    "where": "$defs.override_reason"
+   },
+   {
+    "id": "D-X03",
+    "where": "$defs.medical_restriction; app_notes enum (usab_incident_report, usab_medical_restriction); test_athlete.records.medical_restrictions"
+   },
+   {
+    "id": "D-RV05",
+    "where": "test_athlete expected_outcome.status_label const (confirmed)"
+   },
+   {
+    "id": "D-RV06",
+    "where": "top-level description (data model approved)"
+   },
+   {
+    "id": "D-PK16",
+    "where": "$defs.evidence_item: source_version, source_accessed_on, support_location, population, estimate, uncertainty, limitations, reviewed_by"
+   },
+   {
+    "id": "D-PK120",
+    "where": "$defs.design_catalogs_file.properties.assessment_protocols (2026-11-10)"
+   },
+   {
+    "id": "D-PK121",
+    "where": "$defs.phase_gate.properties.gate_kind enum checkpoint_90_days (2026-11-10)"
+   },
+   {
+    "id": "D-PK12",
+    "where": "$defs.evidence_item.properties.inference_class (2026-11-10)"
+   },
+   {
+    "id": "D-SEED02",
+    "where": "$defs.test_athletes_file answer_key verdict enum: seeded_error removed (2026-11-10)"
+   }
+  ]
+ }
+}
