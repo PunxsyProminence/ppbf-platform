@@ -601,7 +601,7 @@ describe('the committed pathway-catalog package (Backbone snapshot)', () => {
     const shown = await plan(GYM, admin, files);
     expect(shown.blocking).toEqual([]);
     expect(shown.totals).toEqual({ new: counts.stages + counts.links + counts.defaults, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
-    expect(formatPlan(shown)).toContain('  pathway-catalog: 3005 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
+    expect(formatPlan(shown)).toContain('  pathway-catalog: 3010 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
     const unlabelled = shown.warnings.filter((warning) => warning.code === 'unlabelled_catalog_rows');
     expect(unlabelled.filter((warning) => warning.file?.endsWith('seed_pathway_stages.csv'))).toEqual([]);
 
