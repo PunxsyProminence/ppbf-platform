@@ -327,14 +327,14 @@ describe('backbone-export-pathway-catalog', () => {
     expect(row?.sources).toBe('FIX-1|EXT-USAB-RB2026');
     const evidence = JSON.parse(row?.evidence ?? '');
     // The fixture row has two entries and none cites the key: no entry is created and none is guessed.
-    expect(evidence.some((entry: Record<string, unknown>) => 'source_note' in entry)).toBe(false);
+    expect(evidence.some((entry: Record<string, unknown>) => 'source_key_note' in entry)).toBe(false);
     // One entry on the row: it carries the note, verbatim, and the key survives the package round trip.
     const one = exported(backbone({ catalogs: (data) => { data.default_rules[0].sources = ['FIX-1', NOTED]; data.default_rules[0].evidence = data.default_rules[0].evidence.slice(0, 1); } }));
-    expect(JSON.parse(rowsOf(one[DEFAULTS]).find((r) => r.default_id === 'dft_d8e8cc1831f1f0')?.evidence ?? '')[0].source_note).toBe(NOTED);
+    expect(JSON.parse(rowsOf(one[DEFAULTS]).find((r) => r.default_id === 'dft_d8e8cc1831f1f0')?.evidence ?? '')[0].source_key_note).toBe(NOTED);
     // Two entries, the second citing the key: the note goes on the citing entry.
     const citing = exported(backbone({ catalogs: (data) => { data.default_rules[0].sources = ['FIX-1', NOTED]; data.default_rules[0].evidence[1].source_key = 'EXT-USAB-RB2026'; } }));
     const entries = JSON.parse(rowsOf(citing[DEFAULTS]).find((r) => r.default_id === 'dft_d8e8cc1831f1f0')?.evidence ?? '');
-    expect(entries.map((entry: Record<string, unknown>) => entry.source_note)).toEqual([undefined, NOTED]);
+    expect(entries.map((entry: Record<string, unknown>) => entry.source_key_note)).toEqual([undefined, NOTED]);
     expect(result.stdout).not.toContain(NOTED);
     // Another key with a note in it is not touched by the rule.
     const other = run([backbone({ catalogs: (data) => { data.default_rules[0].sources = ['FIX-1', 'EXT-USAB-RB2026 (some other note; held)']; } }), '--out', tempDir()]);

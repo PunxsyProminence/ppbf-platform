@@ -42,7 +42,7 @@
 // HELD OUT of the snapshot, by that rule and never by id, and printed with its
 // id (Overwatch, PR #1895 Q5). One exact key is first normalised (hand-off note
 // section 4 item 4; lane BB-2a): NOTED_SOURCE_KEY becomes NOTED_SOURCE_KEY_FIXED
-// and the whole original string is kept, as written, in a `source_note` key of the
+// and the whole original string is kept, as written, in a `source_key_note` key of the
 // row's evidence entry (docs/CONTENT_PACKAGE_CONTRACT.md: "Other keys are kept as written").
 // Any other key holding a separator is still held.
 //
@@ -159,7 +159,7 @@ export const NOTED_SOURCE_KEY_FIXED = 'EXT-USAB-RB2026';
 const NOTED_SOURCE_NOTE = NOTED_SOURCE_KEY; // the whole original string, so the note names the source it is about
 
 /**
- * The rule with NOTED_SOURCE_KEY normalised: the key fixed, the note kept in `source_note`
+ * The rule with NOTED_SOURCE_KEY normalised: the key fixed, the note kept in `source_key_note`
  * of the evidence entry that cites the key (its text names it) or, when none does and the
  * row has exactly one entry, of that entry (all five frozen rows: the hand-off's "the row's
  * evidence entry"). No entry is created; with several entries and none citing, the note is
@@ -170,7 +170,7 @@ function withFixedSourceKey(rule) {
   const evidence = Array.isArray(rule.evidence) ? rule.evidence.map((entry) => ({ ...entry })) : [];
   const citing = evidence.filter((entry) => JSON.stringify(entry).includes(NOTED_SOURCE_KEY_FIXED));
   for (const entry of citing.length ? citing : evidence.length === 1 ? evidence : []) {
-    entry.source_note = typeof entry.source_note === 'string' && entry.source_note ? `${entry.source_note}; ${NOTED_SOURCE_NOTE}` : NOTED_SOURCE_NOTE;
+    entry.source_key_note = typeof entry.source_key_note === 'string' && entry.source_key_note ? `${entry.source_key_note}; ${NOTED_SOURCE_NOTE}` : NOTED_SOURCE_NOTE;
   }
   return { ...rule, sources: rule.sources.map((source) => (source === NOTED_SOURCE_KEY ? NOTED_SOURCE_KEY_FIXED : source)), evidence };
 }
