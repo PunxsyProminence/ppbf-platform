@@ -31,7 +31,7 @@ import { parsePackage } from './validate';
  *                 with room for stray files the core then ignores.
  *   rows          data rows across every CSV. Everything committed today
  *                 outside research is 4,770 rows (the pathway catalog's
- *                 defaults are 2,913 of them, the 119-drill library 1,409),
+ *                 defaults are 2,918 of them, the 119-drill library 1,409),
  *                 so this is about five times that.
  *   packageBytes  UTF-8 bytes of every file's text. Everything committed today
  *                 outside research is 4,944,348 bytes; the pathway catalog's
