@@ -54,56 +54,10 @@ online-only writes until the offline-storage decision is made).
 
 ## Standing owner directions (2026-08-15/16)
 
-Carried verbatim from the 2026-08-15/16 batches. They are not yet entries in
-`docs/current/OWNER_DECISIONS.md`. Items 2, 3, 5 and 6 of the 2026-08-16 batch
-shipped; item 3 still carries a boundary, below.
-
-- **Merch** (owner, 2026-08-15): merchandise sales are Program-lane revenue
-  when payments go live -- earned income like class fees, settling to the
-  Program account. The gear catalog/vendor records that exist already carry the
-  inventory half; no new lane and no schema change needed.
-- **Register bar** (2026-08-16, item 1) -- narrow-but-real slices promote to
-  DONE per the playbook rule ("DONE means slice shipped in code"), each with a
-  slice line naming exactly what exists and what is future work.
-- **Coach Cue Library (114)** (2026-08-16, item 2) -- build the read-only
-  browse/search over cues already stored in drill records. No invented
-  content; authoring is a later decision. *Shipped* in `3a4b1632`
-  (2026-08-16): `apps/web/app/coach/cue-library/page.tsx` over
-  `apps/web/app/api/pilot/coach/cue-library/route.ts` (checked on `main`
-  2026-09-28).
-- **Phase 2 thin clients** (2026-08-16, item 4) -- the goal is every role
-  (coach, athlete, admin, parent, board members, staff), not one favored role.
-  Build order is the builder's sequencing call; current sequence: athlete
-  check-in first (it generates the data the other views read), then parent,
-  coach, admin, board, staff.
-- **Engines unlock as data gathers** (2026-08-16, item 7) -- build the
-  remaining "engine" modules so each states explicit DATA PREREQUISITES and
-  stays visibly locked until the org's/athlete's own records satisfy them --
-  an unlock is an honesty gate, not a gamification score. Athlete-facing "rank
-  up" means unlocking richer views of their OWN record (never cross-athlete
-  comparison); org-level unlocks mean an organization earns engine activation
-  by accumulating real data. Design to be proposed per-engine as slices come
-  up.
-- **Coach Intelligence Engine (111)** (2026-08-16, item 3) -- v1 ("The
-  Morning Read") shipped, commit `c05c8c68`. Widening it further is a new,
-  separate decision, not a resumption of this one.
-
-### Shipped with constraints that still bind (2026-08-15 queue)
-
-The 2026-08-15 queue shipped (release `3d2308ed`). Retired owner-decision
-constraints remain binding on any change to those surfaces:
-
-- deterministic gap suggestions: the coach confirms or dismisses; nothing
-  reaches an athlete unconfirmed;
-- the sports-medicine clearance board: clearance + holds only;
-- the issue #345 research workspace: submission never resolves a
-  requirement, structurally;
-- both competition skeletons (#376/#377): deliberately skeletal by owner
-  decision;
-- the payment slot (#378): CAP-012 stays BLOCKED. The slot is no longer
-  empty -- the connect flow (`/api/pilot/payments/connect/start` and
-  `/callback`, the webhook) and `/admin/payments` are built on it (checked on
-  `main` 2026-09-28); charging is not. See the Stripe row under BLOCKED.
+Recorded word for word on 2026-11-11 as OD-2026-11-11-002 in
+`docs/current/OWNER_DECISIONS.md` (Jason's ruling M1, OD-2026-11-11-001); that
+entry is now the record, including "Shipped with constraints that still bind
+(2026-08-15 queue)", which still binds.
 
 ## Last recorded build queue: video calibration lab (recorded 2026-08-29; re-checked 2026-09-21)
 
@@ -246,7 +200,7 @@ until the check or search it asked for has finished.
 | Should adopting a change proposal on a retired lineage be refused? Today it brings the drill back under a new operational id, a second path around Restore. | OD-2026-09-19-001, same list. Not re-checked. |
 | May a coach reinstate an earlier version of a drill, or only the newest? The build allows only the newest. | OD-2026-09-19-001, same list. Not re-checked. |
 | Should adopting a newer reference version go through the adopted drill (OD-2026-09-16-001 clause 5) rather than promote a separate operational drill? | OD-2026-09-19-001, same list; latent while no reference row has been superseded. Not re-checked. Put again 2026-09-29 as IMP-15 in the content-intake plan: A, retire the gym's drill and promote the new version fresh; B (recommended), an "Update to newer version" step on the gym's drill. Not answered. See `BACKLOG-superseded-reference-promotion`. |
-| What does `pilot.drill_library.source_ref` mean? The cue ruling (OD-2026-09-15-001) does not extend to it. | `docs/current/OWNER_DECISIONS.md`, "Open questions -- NOT decided". |
+| What does `pilot.drill_library.source_ref` mean? The cue ruling (OD-2026-09-15-001) does not extend to it. | OD-2026-09-15-001 ruled on `pilot.drill_cues.source_ref` and deliberately did not extend to the drill column, which carries the same name across 119 drills under the migration's three-way comment -- "provenance: source manual, lineage, or registry claim". Until it is ruled, the same column name is documented two ways: precisely for cues, disjunctively for drills. Do not assume the cue ruling governs it, and do not change either the drill column or its comment on the strength of the cue ruling alone. (Moved here 2026-11-11 from `docs/current/OWNER_DECISIONS.md`, "Open questions -- NOT decided"; OD-2026-11-11-001 C2.) |
 | Who may write platform library rows, beyond an operator running the importer? Answered 2026-10-02 (recorded 2026-10-03), "1 b" (OD-2026-10-02-013 answer 1): the platform owner (Admin@), through an in-app screen; OD-2026-10-02-015 D2 makes that screen the existing `/research` and `/evidence` pages, and D3 stops Admin@ writing a gym's shelf from `/research`. Not built. | `docs/PLATFORM_EVIDENCE_BASELINE_HANDOFF.md`, "Open decisions the owner has not made", item 4. Not re-checked. |
 | Account cleanup: does `coach@` stay, and what happens to each held identity? | `docs/PLATFORM_EVIDENCE_BASELINE_HANDOFF.md`, same section, item 7, which names the held identities; the cleanup run had not been made when it was written. Not re-checked. |
 | The DONE modules with no screen: build each missing screen, or accept API-only? | Documentation review 2026-09-28 (F72): each needs an owner decision that is not tracked. The rest of that finding, the modules with no ManualVerification row, is answered ("9a. B", OD-2026-09-29-002 item 9a; see "Verification debt" below). The current list is `docs/capabilities/SIGN_OFF_WALKTHROUGH.md`, "Nothing to try yet" (updated 2026-10-16): 042 and 159 have no screen, 128's page cannot add an entry, and parts of 001, 116, 133 and 170 are API-only. 027 has had a screen since (`/coach/assessments`), and 135 is no longer DONE (MAPPED, 2026-10-16). The older list, `docs/current/SIGN_OFF_GUIDE.md:497-504`, is archived (`docs/archive/2026-10-16/current/SIGN_OFF_GUIDE.md`). |
@@ -292,7 +246,7 @@ until the check or search it asked for has finished.
 | `BACKLOG-wearables` | Owner "add all" decision 2026-08-16 deliberately EXCLUDED wearables/HR streams: biometric hardware for minors needs a consent, privacy, and device-ownership decision no code can make. | The owner selects a device approach and records the consent/privacy posture for minors' biometric data; integration then reads into the attempts/readiness spine. |
 | `BACKLOG-quickbooks-sync` | Owner request 2026-08-15 ("Treasurer also needs the QuickBooks login"): the treasurer's QuickBooks access itself is an Intuit-side action (invite as accountant user), not platform work. The platform half — pushing the payment mirror ledger into QuickBooks so nobody keys in donations by hand — is the Revenue Center's "QuickBooks Placeholder \| Future Integration" row and stays parked until money actually flows. | The payment lanes are live (CAP-012 flipped) and real transactions exist in `pilot.payment_transactions` to sync; the integration then gets its own compliance review per the placeholder's own label. |
 | `BACKLOG-engine-unlock-proposals` (added 2026-09-28) | Fourteen engine-unlock proposals under `docs/capabilities/proposals/engine-unlock/` (modules 015, 016, 017, 018, 021, 023, 024, 025, 029, 030, 031, 032, 033, 035), each marked PROPOSAL and awaiting owner approval since 2026-08-16. Parked as one row and otherwise left untouched (OD-2026-09-28-010 item 20). The 036 proposal and the 036a design are not among them. | Jason takes up a named proposal. |
-| `BACKLOG-general-discipline-row` (added 2026-09-28) | `docs/current/OWNER_DECISIONS.md`, "Open questions -- NOT decided": what to do with a real `general` discipline row. That list recorded on 2026-08-28 (#791) that none existed in production or in any seed or fixture, and that the foreign key refuses `general`, so one could only arrive by a write that predates the key. Not re-checked. | A `general` row is found anywhere. |
+| `BACKLOG-general-discipline-row` (added 2026-09-28) | What to do with a real `general` discipline row. The text moved here 2026-11-11 from `docs/current/OWNER_DECISIONS.md`, "Open questions -- NOT decided" (OD-2026-11-11-001 C2): "None exists in production or in any seed or fixture today. `general` is refused by the foreign key, so one could only arrive by a write that predates the key." That list recorded on 2026-08-28 (#791) that none existed in production or in any seed or fixture, and that the foreign key refuses `general`, so one could only arrive by a write that predates the key. Not re-checked. | A `general` row is found anywhere. |
 | `BACKLOG-superseded-reference-promotion` (added 2026-09-28; rewritten 2026-09-30) | The coach's move to a newer reference version (IMP-15 in the content-intake plan) waits on Jason's A/B answer: A, retire the gym's drill and promote the new version fresh; B (recommended), an "Update to newer version" step on the gym's drill. Since #1032 (`d100e6bd`), promoting a newer version of a lineage the gym already runs is refused, 409 `NEWER_VERSION_UPDATE_NOT_BUILT` (`apps/web/app/api/pilot/drills/promote/route.ts:150`), and the coach drill page marks it ("Newer version of this gym's drill", `apps/web/app/coach/drills/page.tsx:52`). Since #1031 (`07010d65`), a revised reference drill is inserted as the next version and the old one stays active for gyms that adopted it (status line under OD-2026-09-17-001). Still latent in data: no `seed-reference-data` run since 2026-09-16, so nothing has loaded through the seed path; upload-screen loads on staging are UNVERIFIED. | Jason answers the A/B question (the open owner question on adopting a newer reference version, above). |
 | `BACKLOG-release-deferred-2026-08` (added 2026-09-28) | Items the release record deferred in August and `docs/current/AI_RELEASE_CONTROL.md` routes here: the coach roster row click (held for #606, closed unmerged 2026-08-25); #602's `path.relative` Windows separators (the guard fails loud, and CI runs on Linux); rendering of UNKNOWN-method historical RPE (measure production data first); the track-assignments silent autosave; the athlete "Messages 0" tile. Original wording: `docs/archive/2026-09-21_AI_RELEASE_CONTROL_before_condense.md`, DEFERRED. Not re-checked since. | A change touches one of those surfaces; re-check that item's state first. |
 | `BACKLOG-button-size-collision` (added 2026-09-29) | Jason, "9c. B" (OD-2026-09-29-002): parked until the look-board redesign. The CSS `.btn`/`--tap` repair (R1; documentation review 2026-09-28, F9). Checked 2026-09-28: `apps/web/scripts/css-layer-collisions.mjs` reports 101 BROKEN collisions (a utility class the unlayered sheet silently overrides). Whether 23 `.btn` sites render at 44px instead of the 55px of law 5 is UNVERIFIED; the scanner may be masking them. | The look-board redesign (OD-2026-09-28-012) starts. |

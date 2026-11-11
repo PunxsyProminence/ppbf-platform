@@ -49,7 +49,7 @@ look. When one of them governs new work, record it here as a new entry quoting
 the source.
 
 - `docs/current/ACTIVE_WORK.md`, "Standing owner directions (2026-08-15/16)" --
-  not yet entries here.
+  recorded here on 2026-11-11 as OD-2026-11-11-002; that section is now a pointer.
 - `docs/PLATFORM_AUDIT_2026-07-31_DECISIONS_MADE.md` -- the 2026-07-31 audit
   decisions, as made.
 - `docs/VISUAL-RESET-PHASE-1-PLAN.md`, section 11 "Owner decisions -- ANSWERED
@@ -86,9 +86,12 @@ the source.
   comment -- owner decisions of 2026-09-22 on cancelling assigned work: cancel
   only (no edit, no delete, no undo or reopen), open work only, and "Coaches
   with access" may cancel. See the Status line on OD-2026-09-19-002.
-- Test headers that carry the ruling they enforce:
-  `apps/web/src/design/legacyVisualVocabulary.test.ts` (2026-08-23, Leather &
-  Brass retired as the look, with its type voices). The 2026-08-19 safety-red
+- The 2026-08-23 ruling (Leather & Brass retired as the look, with its type
+  voices): `docs/GOLDEN-ERA-V1-CONTRACT.md`, "Retired 2026-08-23 by owner
+  decision". It was carried in the header of
+  `apps/web/src/design/legacyVisualVocabulary.test.ts` until #1093 (`00a42d6a`,
+  2026-10-02) deleted that test (pointer fixed 2026-11-11, OD-2026-11-11-001 C3).
+  The 2026-08-19 safety-red
   reservation was stated in the header of the now-deleted
   `apps/web/src/design/safeguardingRedReservation.test.ts` and restated in the
   code and docs that OD-2026-09-29-001 lists; that entry supersedes it. The
@@ -161,6 +164,110 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-11-002 -- The standing owner directions of 2026-08-15/16 are recorded here word for word, moved from ACTIVE_WORK: "M1"
+
+**Provenance: RECONSTRUCTED.** The directions are Jason's, from his 2026-08-15 and 2026-08-16 batches; those messages are not readable from this session. The text is `docs/current/ACTIVE_WORK.md`, "Standing owner directions (2026-08-15/16)", lines 57 to 106 at main `1bdb31c6`, which says of itself that it is "Carried verbatim from the 2026-08-15/16 batches"; the section has stood in this form since commit `11946231` (2026-09-21, "Condense ACTIVE_WORK.md to blocked, parked and standing directions"). It is moved here by his ruling M1 (OD-2026-11-11-001), copied by script in byte mode and compared line for line with the source before the source was replaced by a pointer. New; edits no earlier entry's text.
+
+**How to read the block (not his words):**
+
+- Its first paragraph is as it stood in ACTIVE_WORK, so its sentence "They are not yet entries in `docs/current/OWNER_DECISIONS.md`" was true until this entry.
+- The shipped notes inside it (commits, "checked on `main` 2026-09-28") are as written then and were not re-checked.
+- The constraints under "Shipped with constraints that still bind (2026-08-15 queue)" still bind.
+
+**The block: ACTIVE_WORK.md lines 57 to 106, word for word.**
+
+````text
+Carried verbatim from the 2026-08-15/16 batches. They are not yet entries in
+`docs/current/OWNER_DECISIONS.md`. Items 2, 3, 5 and 6 of the 2026-08-16 batch
+shipped; item 3 still carries a boundary, below.
+
+- **Merch** (owner, 2026-08-15): merchandise sales are Program-lane revenue
+  when payments go live -- earned income like class fees, settling to the
+  Program account. The gear catalog/vendor records that exist already carry the
+  inventory half; no new lane and no schema change needed.
+- **Register bar** (2026-08-16, item 1) -- narrow-but-real slices promote to
+  DONE per the playbook rule ("DONE means slice shipped in code"), each with a
+  slice line naming exactly what exists and what is future work.
+- **Coach Cue Library (114)** (2026-08-16, item 2) -- build the read-only
+  browse/search over cues already stored in drill records. No invented
+  content; authoring is a later decision. *Shipped* in `3a4b1632`
+  (2026-08-16): `apps/web/app/coach/cue-library/page.tsx` over
+  `apps/web/app/api/pilot/coach/cue-library/route.ts` (checked on `main`
+  2026-09-28).
+- **Phase 2 thin clients** (2026-08-16, item 4) -- the goal is every role
+  (coach, athlete, admin, parent, board members, staff), not one favored role.
+  Build order is the builder's sequencing call; current sequence: athlete
+  check-in first (it generates the data the other views read), then parent,
+  coach, admin, board, staff.
+- **Engines unlock as data gathers** (2026-08-16, item 7) -- build the
+  remaining "engine" modules so each states explicit DATA PREREQUISITES and
+  stays visibly locked until the org's/athlete's own records satisfy them --
+  an unlock is an honesty gate, not a gamification score. Athlete-facing "rank
+  up" means unlocking richer views of their OWN record (never cross-athlete
+  comparison); org-level unlocks mean an organization earns engine activation
+  by accumulating real data. Design to be proposed per-engine as slices come
+  up.
+- **Coach Intelligence Engine (111)** (2026-08-16, item 3) -- v1 ("The
+  Morning Read") shipped, commit `c05c8c68`. Widening it further is a new,
+  separate decision, not a resumption of this one.
+
+### Shipped with constraints that still bind (2026-08-15 queue)
+
+The 2026-08-15 queue shipped (release `3d2308ed`). Retired owner-decision
+constraints remain binding on any change to those surfaces:
+
+- deterministic gap suggestions: the coach confirms or dismisses; nothing
+  reaches an athlete unconfirmed;
+- the sports-medicine clearance board: clearance + holds only;
+- the issue #345 research workspace: submission never resolves a
+  requirement, structurally;
+- both competition skeletons (#376/#377): deliberately skeletal by owner
+  decision;
+- the payment slot (#378): CAP-012 stays BLOCKED. The slot is no longer
+  empty -- the connect flow (`/api/pilot/payments/connect/start` and
+  `/callback`, the webhook) and `/admin/payments` are built on it (checked on
+  `main` 2026-09-28); charging is not. See the Stripe row under BLOCKED.
+````
+
+**Status:** recorded 2026-11-11 by PR; the ACTIVE_WORK section is now a pointer to this entry.
+
+---
+
+## OD-2026-11-11-001 -- Governance consolidation: an index for this file, one source-order list, and three clean-ups, with no decision text changed: "G1 A, G2 A, M1, C2, C3"
+
+**Provenance: PRIMARY.** Jason's typed reply "G1 A, G2 A, M1, C2, C3", 2026-11-11T18:35:48.601Z (13:35 EST), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 7769, `origin.kind` human), asserted against the file by script before writing. The question was put at line 7758 (the `wrap_up` ask, "Which governance option set do you approve?") with the options written out at line 7765. The options are those of the research lane's proposal, `C:\Users\jason\Documents\PPBF-overwatch\research\claude-research-project\findings\2026-11-11-governance-consolidation.md` (sha256[:16] `d3401f718b2c336d`), written for card OW24-02 (Backbone ACTIONS A-80) and checked by Overwatch against main `63f57e89` before it was put to him. New; edits no earlier entry's text.
+
+**What was put to him** (line 7765, as written):
+
+- G1: "Official: A (recommended) add an index of current rulings and change no decision text; B split by date; C rewrite as a digest; D defer."
+- G2: "Official: A (recommended) README keeps only its pointer to the kernel list; B keep both and make them match."
+- G3: "Official: A records only; B fold its live texts into the repo and retire it; C leave it."
+- M1, C2, C3: "Official: record the standing owner directions as one entry, move the two open questions into `ACTIVE_WORK.md`, and fix the broken pointer (recommended, all three)."
+
+**Jason:** *"G1 A, G2 A, M1, C2, C3"*
+
+**Rulings, in the proposal's words:**
+
+1. **G1 A.** "**A (Recommended): index plus cuts, no decision text changed.** Keep the single file and every entry word for word. Add an index at the top with one row per OD id: date, topic, and status (in force / partly replaced by … / replaced by … / has "Not ruled here" items). Cut only the non-decision duplicates listed under Cut below."
+2. **G2 A.** "**A (Recommended):** README keeps one line pointing to AGENT_KERNEL.md "Source hierarchy" and drops its own seven-item list."
+3. **M1.** "M1. Record the ACTIVE_WORK "Standing owner directions (2026-08-15/16)" (F9) as one RECONSTRUCTED OWNER_DECISIONS entry quoting the section, then replace the section with a pointer."
+4. **C2.** "C2. OWNER_DECISIONS "Open questions -- NOT decided" becomes a pointer, after its two paragraphs move into the two ACTIVE_WORK rows that cite it (F8)."
+5. **C3.** "C3. Fix the broken pointer (F10). GOLDEN-ERA-V1-CONTRACT.md still describes Leather & Brass as retired, so the pointer can name that file or the deleting PR #1093."
+
+**Readings, his to correct (not rulings):**
+
+- a. G1 A also carries the proposal's M2, which is how the index is built: "M2. Add the OWNER_DECISIONS index (G1 A). It could be generated from the headings plus each entry's Status lines and checked in CI. The "replaced by" column needs a person to check each link (F4)." The index columns, the generator and the CI check are Overwatch's design (the proposal leaves them to Claude Code). The "replaced by" status is read only from dated Status lines a person adds to an entry after checking the link, never from a keyword search, because most replacements here are partial.
+- b. M1 is OD-2026-11-11-002. C2's pointer keeps the rule that a session needing an open question answered says so and stops.
+- c. G2 A drops README's list, including its links to the domain and capability contracts; the kernel's list is the one list.
+
+**Not ruled here:** G3 (where the OneDrive `AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/` folder ranks; his workspace rules name it as the governance source, and Overwatch's check found the proposal's option A misstates what `AGENT_KERNEL.md` says about it); C4 (that folder's duplicate files, his own to clean); the proposal's deferred items D1 to D5, which stay deferred as proposed.
+
+**Evidence it rested on:** the proposal's findings F7 to F10, re-checked by Overwatch at `63f57e89`: README's seven-item list differs from the kernel's "Source hierarchy"; the open-questions section is mirrored by two ACTIVE_WORK rows; the standing directions sat outside this file; `legacyVisualVocabulary.test.ts` was deleted by #1093 (`00a42d6a`).
+
+**Status:** M1, C2, C3 and G2 A done 2026-11-11 by PR. G1 A (the index) is a lane.
 
 ---
 
@@ -13821,20 +13928,8 @@ minutes.
 
 # Open questions -- NOT decided
 
-A session that needs one of these answered must say so and stop. Do not resolve
-them by building. Both also appear, with every other open owner question, in
-`docs/current/ACTIVE_WORK.md` under "Open owner questions" and PARKED; that
-list is the one kept current.
-
-- **A real `general` row, should one ever appear.** None exists in production
-  or in any seed or fixture today. `general` is refused by the foreign key, so
-  one could only arrive by a write that predates the key.
-
-- **What `pilot.drill_library.source_ref` means.** OD-2026-09-15-001 ruled on
-  `pilot.drill_cues.source_ref` and deliberately did not extend to the drill
-  column, which carries the same name across 119 drills under the migration's
-  three-way comment -- "provenance: source manual, lineage, or registry claim".
-  Until it is ruled, the same column name is documented two ways: precisely for
-  cues, disjunctively for drills. Do not assume the cue ruling governs it, and do
-  not change either the drill column or its comment on the strength of the cue
-  ruling alone.
+Moved 2026-11-11 (OD-2026-11-11-001, C2). Open owner questions are kept in one
+place: `docs/current/ACTIVE_WORK.md`, "Open owner questions" and PARKED. The two
+that stood here are its rows on `pilot.drill_library.source_ref` and
+`BACKLOG-general-discipline-row`, with their text. A session that needs one of
+them answered must say so and stop; do not resolve them by building.
