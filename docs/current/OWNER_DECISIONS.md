@@ -164,6 +164,59 @@ and should not try to.
 
 ---
 
+## OD-2026-11-10-003 -- After FT1, the hand-off lanes go drill library first, then sessions, blocks and tracks by stage group: "Drills first, then by stage"
+
+**Provenance: RECONSTRUCTED.** Jason answered this as a card on 2026-11-10 20:09 US Eastern in the Backbone Overwatch thread ("Overwatch 24", frame bfa765e0). That transcript is not readable from this repo's sessions. The card label and the ruling are copied from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\ACTIONS.md`, row A-81 (file sha256[:16] `11791366ae8819c3` when read; it is a closing record and may change), and `OVERWATCH_HANDOFF.md` in the same folder: "Jason answered cards OW24-01 (medical restriction: contact hard gate), OW24-02 (governance consolidation: research lane) and OW24-03 (lanes after FT1: drills first, then by stage), each the Recommended option." Uncertain: the question text and the other options on the card; the record keeps only the label. In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 7209, 2026-11-11T02:28:48.872Z) he pasted the Backbone Overwatch's note asking for this entry; the paste carries no typed words of his own. Asserted against the files by script before writing. New; it completes OD-2026-11-08-001's lane order (Backbone D-HO02) and edits no earlier entry's text.
+
+**What it answers.** Backbone D-HO02: "the FT1 track is the first lane; Overwatch proposes the order of the later lanes in the phase-6 hand-off plan for Jason's approval". The Backbone Overwatch put the later order to him as card OW24-03. This session had put its own order to him the same day (FT1, then drills, sessions, blocks and remaining tracks, then gates, scorecards and assessment protocols, then evidence items and stage links); he did not answer that one, and this ruling replaces it.
+
+**Jason (card label, as recorded):** *"Drills first, then by stage"* (the option marked Recommended)
+
+**Ruling, in the Backbone record's words (ACTIONS A-81):** "FT1 first (unchanged); lane 2 the rest of the drill library, carrying the 'Long Road practice' vocabulary value (PK-201, for Jason's approval in that lane); then sessions, blocks and tracks by stage group: youth Y1-Y5, recreational RC1, amateur T1-T2 and AM1-AM3, pro PR1-PR5, exit EX1; a track that spans groups goes in the first lane that uses it; one lane, one PR."
+
+**Reading it (not his words):**
+
+1. Lane 1 is the FT1 track, unchanged.
+2. Lane 2 is the rest of the drill library. The 'Long Road practice' provenance value (190 drills; Backbone PK-201) is proposed in that lane and still needs his approval there; this ruling does not approve it.
+3. Then one lane per stage group, in this order: youth Y1 to Y5; recreational RC1; amateur T1 and T2, then AM1 to AM3; pro PR1 to PR5; exit EX1. Each carries that group's sessions, blocks and tracks.
+4. A track that spans groups goes in the first lane that uses it.
+5. One lane, one PR, as OD-2026-11-08-001 decision 2. Where a lane is over the size Overwatch splits at, how it is split is not ruled here.
+
+**Not ruled here:** where the gates, scorecard items, assessment protocols, anchor-clip specs, evidence items and content stage links go in this order (the record names sessions, blocks and tracks only); whether "amateur T1-T2 and AM1-AM3" is one lane or two.
+
+**Evidence it rested on:** the Backbone hand-off package (`docs/backbone/HANDOFF_NOTE.md` section 1) and D-HO02; not re-read for this entry.
+
+**Status:** recorded 2026-11-10 by PR. No content lane has started; FT1 is next and needs its brief.
+
+---
+
+## OD-2026-11-10-002 -- A USA Boxing medical restriction is a hard gate on contact entries: "Contact hard gate"
+
+**Provenance: RECONSTRUCTED.** Jason answered this as a card on 2026-11-10 20:09 US Eastern in the Backbone Overwatch thread ("Overwatch 24", frame bfa765e0). That transcript is not readable from this repo's sessions. The card label and the ruling are copied from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\ACTIONS.md`, row A-79 (file sha256[:16] `11791366ae8819c3` when read; it is a closing record and may change), and `OVERWATCH_HANDOFF.md` in the same folder: "Jason answered cards OW24-01 (medical restriction: contact hard gate), OW24-02 (governance consolidation: research lane) and OW24-03 (lanes after FT1: drills first, then by stage), each the Recommended option." Uncertain: the question text and the other options on the card; the record keeps only the label. In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 7209, 2026-11-11T02:28:48.872Z) he pasted the Backbone Overwatch's note asking for this entry; the paste carries no typed words of his own. Asserted against the files by script before writing. New; it rules the item OD-2026-11-10-001 carries as "Not ruled here" and edits no earlier entry's text.
+
+**What it answers.** OD-2026-11-10-001, "Not ruled here": Backbone RULES section 1 (hard rules stored as defaults a coach, parent or leadership member can override) and section 9's line "medical-restriction records with a note (schema P20, P22); both never block", against `AGENT_KERNEL.md` "Authority doctrine (owner decision, 2026-08-20)", under which the coach may not override "a medical hold or return-to-play restriction". Backbone Q-209 and PK-179 sent it to him "before any lane builds hold or medical-restriction behaviour".
+
+**Jason (card label, as recorded):** *"Contact hard gate"* (the option marked Recommended)
+
+**Ruling, in the Backbone record's words (ACTIONS A-79):** "contact hard gate. During a USA Boxing medical restriction (Backbone P22), or after it with no release on file, the app does not save sparring or other contact entries for that member and names the restriction as the reason; non-contact training still saves and shows the note; the coach may still stop, reduce or defer; every other Backbone note still never blocks. Settles RULES s1/s9 against AGENT_KERNEL.md for P22 records only; building the gate is a separate lane Jason approves."
+
+**Reading it (not his words):**
+
+1. While a P22 medical restriction is in force for a member, or after its end with no release on file, the app refuses to save a sparring or other contact entry for that member, and says the restriction is why.
+2. Non-contact training still saves, and shows the note.
+3. The coach may still stop, reduce or defer, as the authority doctrine says. Nothing here lets a coach, parent or leadership member override the gate; that is the doctrine's existing rule, and for P22 records RULES section 1's override does not apply.
+4. Every other Backbone note still never blocks. The P20 incident-report note is one of those.
+5. This changes the design text in `docs/backbone/SCHEMA_PROPOSAL.md` P22, which says the `usab_medical_restriction` note is driven "when the member is logged for training or sparring during the restriction, or after it with no release on file" and that "Neither note holds a save." For contact entries under P22, the save is now held. The file is not edited by this entry; the lane that builds P22 carries the change.
+6. Building the gate is a separate lane that he approves. Nothing is built by this entry, and `pilot.medical_restrictions` does not exist in the app yet.
+
+**Not ruled here:** which entry types count as "other contact entries" besides sparring; who may record the release that lifts the gate, and what counts as a release on file; what a member or parent sees; anything about medical holds that are not P22 records.
+
+**Evidence it rested on:** OD-2026-11-10-001 and the two texts it sets side by side; `docs/backbone/SCHEMA_PROPOSAL.md` P22 and `AGENT_KERNEL.md` lines 336 to 350 at main `2e4316b9`, re-read for this entry.
+
+**Status:** recorded 2026-11-10 by PR; nothing built.
+
+---
+
 ## OD-2026-11-10-001 -- The Backbone build rules (RULES.md sections 0 to 11) are folded in here word for word at the repo hand-off; the OneDrive Backbone is frozen: cards Q-207 A, PK-202 A, PK-203 A
 
 **Provenance: RECONSTRUCTED.** Jason answered these as cards in Backbone sessions whose transcripts are not readable from this repo's sessions: Q-207 (card RH-Q01, side job "PPBF Side Job Repo Handoff Prep", answered by 2026-11-09 14:25 machine clock) and PK-202 and PK-203 (session "PPBF Backbone Wave 2 Repo Handoff", answered by 2026-11-10 08:39). The answers are copied from the Backbone register `working/drift/DECISION_REGISTER.json` (v1.84, 652 decisions, sha256[:16] `ff49eba2369e1c3d`; now `docs/backbone/DECISION_REGISTER.json`), ids D-OQ207, D-OQ209, D-PK202 and D-PK203. Uncertain: the label he pressed on each card; the register keeps "option A" and the Backbone's wording of each option. In this session (Overwatch; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 6504, 2026-11-10T15:25:10.084Z) he pasted the Backbone Overwatch's hand-off work order, which names this fold as its step 3; the paste carries no typed words of his own. The block below is the frozen `RULES.md` (sha256[:16] `19ad68136ff70538`, 148,852 bytes, 844 lines), lines 11 to 844, copied by script in byte mode and re-hashed part by part against the hand-off package's `RULES_FOLD_MAP.json` (`696824502b5acd4f`): 12 sections and 125 section-9 items, all matching. New; edits no earlier entry's text.
