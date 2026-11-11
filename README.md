@@ -66,23 +66,6 @@ Setup, environment variables, run, and test commands are documented once:
 
 ## Documentation
 
-The authoritative hierarchy is deliberately small. The full order, including
-where a current request or work order sits and how a conflict is settled, is
+Which source wins when two disagree -- code, Jason's rules and decisions, the
+current request or work order, and every document below them -- is one list:
 [AGENT_KERNEL.md](AGENT_KERNEL.md), "Source hierarchy".
-
-1. **Current executable source, tests, and config** — the only description of
-   current behavior.
-2. **Jason's rules and decisions** — his user-level and workspace rules, kept
-   outside this repository, then
-   [docs/current/OWNER_DECISIONS.md](docs/current/OWNER_DECISIONS.md). They
-   outrank every document below.
-3. **[AGENT_KERNEL.md](AGENT_KERNEL.md)** — working rules for AI-assisted work.
-4. **This README** — orientation: what the platform is and how it operates.
-5. **Domain contracts** — [AUTH_CONTRACT.md](AUTH_CONTRACT.md),
-   [ORGANIZATION_ROLE_MODEL.md](ORGANIZATION_ROLE_MODEL.md),
-   [ORGANIZATION_ARCHITECTURE.md](ORGANIZATION_ARCHITECTURE.md), and peers —
-   read when the task touches their boundary.
-6. **Capability contracts** in [docs/capabilities/](docs/capabilities/) — read
-   for the capability being changed.
-7. **[docs/archive/](docs/archive/)** and research material — historical and
-   research-only; never current authority.
