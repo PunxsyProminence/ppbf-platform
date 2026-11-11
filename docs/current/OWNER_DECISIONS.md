@@ -124,7 +124,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 | OD-2026-10-13-005 | 2026-10-13 | Every test user is signed in | PRIMARY |  |  |
 | OD-2026-10-13-004 | 2026-10-13 | One live-audit chip per signed-in user | PRIMARY |  |  |
 | OD-2026-10-13-003 | 2026-10-13 | Build faster now the weekly usage has reset | PRIMARY |  |  |
-| OD-2026-10-13-002 | 2026-10-13 | Release 22: "Says it waiting on you go"; "Yes" (it failed at the schema check; superseded by Release 23) | PRIMARY |  |  |
+| OD-2026-10-13-002 | 2026-10-13 | Release 22: "Says it waiting on you go"; "Yes" (it failed at the schema check; superseded by Release 23) | PRIMARY | replaced by OD-2026-10-13-007 (2026-11-11) |  |
 | OD-2026-10-13-001 | 2026-10-13 | Release 21: "Yes and deloy"; "Done"; "Yes"; "Clicked what's left" | PRIMARY |  |  |
 | OD-2026-10-12-024 | 2026-10-12 | A child's two guardians each see only their own replies to the coach: "A: No, each sees only their own (Recommended)" (work orders FC-02, FC-03 on #1542) | PRIMARY |  |  |
 | OD-2026-10-12-023 | 2026-10-12 | The round timer: "A: Yes (Recommended)" (PR #1494 and the stack #1496, #1499, #1504) | PRIMARY |  |  |
@@ -348,7 +348,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 | OD-2026-09-28-013 | 2026-09-28 | The ring canvas keeps its IRON CITY lettering in plates | PRIMARY |  |  |
 | OD-2026-09-28-012 | 2026-09-28 | One merged look: the real gym in the early gritty style, starting with a look board built around The Floor | PRIMARY |  |  |
 | OD-2026-09-28-011 | 2026-09-28 | Operations answers: the policy shelf move, the Companion check, placeholders, end-of-build items, and two admin screens | PRIMARY |  |  |
-| OD-2026-09-28-010 | 2026-09-28 | Capability tracker, SHADOW spec, and process defaults from the documentation review | PRIMARY | partly replaced by OD-2026-09-29-002 (item 17, the tracker-disagreement check) (2026-11-11) |  |
+| OD-2026-09-28-010 | 2026-09-28 | Capability tracker, SHADOW spec, and process defaults from the documentation review | PRIMARY |  |  |
 | OD-2026-09-28-009 | 2026-09-28 | Visual rules under Golden Era | PRIMARY |  |  |
 | OD-2026-09-28-008 | 2026-09-28 | Attendance has one system of record; retention describes what exists | PRIMARY |  |  |
 | OD-2026-09-28-007 | 2026-09-28 | The operating organization is `punxsy_prominence` | PRIMARY |  |  |
@@ -359,7 +359,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 | OD-2026-09-28-002 | 2026-09-28 | Claude says what it can and cannot do before it builds | PRIMARY |  |  |
 | OD-2026-09-28-001 | 2026-09-28 | Claude Code is the only builder; ChatGPT is the architect and reviewer | PRIMARY |  |  |
 | OD-2026-09-26-002 | 2026-09-26 | Near-miss records are coach and organization-admin chat context only | PRIMARY |  |  |
-| OD-2026-09-26-001 | 2026-09-26 | Visual design is not one lane's; anyone who makes a good one owns it |  |  |  |
+| OD-2026-09-26-001 | 2026-09-26 | Visual design is not one lane's; anyone who makes a good one owns it |  | partly replaced by OD-2026-09-28-001 (who implements an image in this repository) (2026-11-11) |  |
 | OD-2026-09-25-003 | 2026-09-25 | Any coach or admin in the organization may read an athlete's session note | PRIMARY |  |  |
 | OD-2026-09-25-002 | 2026-09-25 | LANES are agent roles; the four subject areas are WORK DOMAINS | PRIMARY | partly replaced by OD-2026-09-28-001 (the lane list) (2026-11-11) |  |
 | OD-2026-09-25-001 | 2026-09-25 | A session note is retractable from the coach's view | PRIMARY |  |  |
@@ -374,7 +374,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 | OD-2026-08-29-007 | 2026-08-29 | A nomination is deleted with the athlete it names | PRIMARY |  |  |
 | OD-2026-08-29-006 | 2026-08-29 | The build lane merges its own green work and drives staging; production stays the owner's |  |  |  |
 | OD-2026-08-29-005 | 2026-08-29 | A superseded adjudication is marked by a revision integer, and a collision is explained rather than dumped |  |  |  |
-| OD-2026-08-29-004 | 2026-08-29 | A second adjudication of the same pair is a correction, and supersedes |  | partly replaced by OD-2026-08-29-005 (its open question) (2026-11-11) |  |
+| OD-2026-08-29-004 | 2026-08-29 | A second adjudication of the same pair is a correction, and supersedes |  |  |  |
 | OD-2026-08-29-003 | 2026-08-29 | With three or more submitted sets, the adjudicator picks the pair |  |  |  |
 | OD-2026-08-29-002 | 2026-08-29 | An annotator may not adjudicate a clip they annotated |  |  |  |
 | OD-2026-08-29-001 | 2026-08-29 | `Admin@punxsyprominence.org` is the primary owner email |  |  |  |
@@ -3506,6 +3506,8 @@ Overwatch sent him the other three PR 1 screenshots and asked lane L39 for an Op
 **Acted on:** Release 22 was re-staged (deploy-staging run 38444960283 success, REPORTED, handover 18:20 UTC entry) and deploy-production run 38445860846 was dispatched for main `65dffdf27c33258c3ff44851ebb861ac6b248d10`. That run completed with conclusion failure at 2026-10-13T19:49:35Z (OBSERVED, `gh`). The handover (REPORTED, 20:20 UTC entry) says it failed at "Verify Production Schema Matches This Commit": the commit held a migration file (`family_message_replies`) not yet applied to production. Production was untouched and stayed on Release 21 (REPORTED).
 
 **Status:** superseded. The release carrying the same work is Release 23 (OD-2026-10-13-007).
+
+**Status, 2026-11-11:** replaced by OD-2026-10-13-007. First quote is this entry's own Status line above: "superseded. The release carrying the same work is Release 23 (OD-2026-10-13-007)." The newer entry's own words: "It follows on from OD-2026-10-13-002, whose Release 22 failed."
 
 ---
 
@@ -11921,8 +11923,6 @@ checks that DONE modules cite code stay. Item 26 -- the `/admin/import` door
 goes to organization admins and coaches, and the import page and API open to
 coaches, *"9d. B"* (OD-2026-09-29-002 item 9d).
 
-**Status, 2026-11-11:** partly replaced by OD-2026-09-29-002 (item 17, the tracker-disagreement check). The newer entry's own words: "remove the check that compares the module files with the old index, `expanded-200-index.json` (history under OD-2026-09-28-010 item 17)"
-
 ---
 
 ## OD-2026-09-28-009 -- Visual rules under Golden Era
@@ -12422,6 +12422,8 @@ re-reads every session said visual work was not its to do, while the owner's
 instruction to design lived only in chat. This file's own preamble names that
 failure mode.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-09-28-001 (who implements an image in this repository). The newer entry's own words: "narrows OD-2026-09-26-001: anyone may design or generate an image, but implementing it in this repository is Claude's."
+
 ## OD-2026-09-25-003 -- Any coach or admin in the organization may read an athlete's session note
 
 **Provenance: PRIMARY** for the owner's quoted words, as carried in the
@@ -12534,7 +12536,7 @@ detailed Jason / ChatGPT / Claude / Grok agent-role model, and
 resolves the separate four-subject-area vocabulary without changing those
 authorities.
 
-**Status, 2026-11-11:** partly replaced by OD-2026-09-28-001 (the lane list). The newer entry's own words: "Supersedes OD-2026-09-25-002 (the lane list)"
+**Status, 2026-11-11:** partly replaced by OD-2026-09-28-001 (the lane list). The newer entry's own words: "**Supersedes** OD-2026-09-25-002 (the lane list)"
 
 ---
 
@@ -13742,8 +13744,6 @@ adjudication.ts`, which exposes `recordAdjudication` and `getAdjudication` and
 no update path. PR #900, which flagged the question and deliberately did not
 answer it.
 
-**Status, 2026-11-11:** partly replaced by OD-2026-08-29-005 (its open question). The newer entry's own words: "This supersedes the open question in OD-2026-08-29-004"
-
 ---
 
 ## OD-2026-08-29-003 -- With three or more submitted sets, the adjudicator picks the pair
@@ -14317,7 +14317,7 @@ nothing -- when Jason says so, for that run. The kernel lines cited above
 (#791, 2026-08-28, the commit that added this entry); the kernel has been
 rewritten since, and those line numbers no longer point there.
 
-**Status, 2026-11-11:** partly replaced by OD-2026-09-28-010 (item 8: a build lane does not dispatch run-checks against production). The newer entry's own words: "Supersedes OD-2026-08-28-001 to the extent it says a build lane does not dispatch `run-checks` against production (item 8)."
+**Status, 2026-11-11:** partly replaced by OD-2026-09-28-010 (item 8: a build lane does not dispatch run-checks against production). The newer entry's own words: "**Supersedes** OD-2026-08-28-001 to the extent it says a build lane does not dispatch `run-checks` against production (item 8)."
 
 ---
 
