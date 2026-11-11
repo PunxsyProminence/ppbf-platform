@@ -45,6 +45,7 @@ does not drive-by fix another area's surface.
 | SHADOW / statistics | SHADOW model behavior, evidence statistics, measurement gates | Stacked PRs merge in dependency order; do not start new work that touches a surface an open stack PR owns. |
 | Design / visuals | Design-system and page-visual work. The 2026-08-17 park of the whole area is lifted (OD-2026-09-28-009 item 2); the build order is `docs/ROOM-MAP.md` (item 3). | Blocked on owner-supplied assets stays blocked; do not substitute invented assets. |
 | Ops / deploy | Staging, production, migrations, releases | Human-gated for production (OD-2026-08-29-006). |
+| Owner decisions index | The generated index of rulings at the top of `docs/current/OWNER_DECISIONS.md` (OD-2026-11-11-001, G1 A; lane G1A) | A PR that adds an entry or a fixed-form Status line runs `node scripts/owner-decisions-index.mjs --write`; CI runs `--check`. |
 
 Phase plan (2026-08-29): **Phase 1** -- every operations-radar row reads
 `EXISTS` or is PARKED here with a re-open condition. **Phase 2** --
