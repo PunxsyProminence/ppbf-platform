@@ -3,6 +3,394 @@
 The record of decisions Jason has actually made, in his own words, with the
 evidence each was made on.
 
+## Index of rulings
+
+<!-- owner-decisions-index:start -->
+<!-- Generated. Do not edit between these markers; run `node scripts/owner-decisions-index.mjs --write`. -->
+
+One row per `## OD-` entry, generated from the entries below by `scripts/owner-decisions-index.mjs`;
+CI fails if it is out of date. This table is a table of contents, not a second record
+(OD-2026-09-28-003): the entries below are the record, word for word.
+
+**Status** is read only from a fixed-form dated line in the entry:
+`**Status, YYYY-MM-DD:** replaced by OD-...`, `partly replaced by OD-... (<part>)` or `withdrawn ...`.
+No keyword search sets it. **A blank status means "no checked replacement recorded". It is not a claim that the entry is in force.**
+**Not ruled here** is "yes" when the entry has a `**Not ruled here` paragraph.
+Cost: every PR that adds an entry, or a fixed-form Status line, must run `node scripts/owner-decisions-index.mjs --write` and commit the result.
+
+| Id | Date | Topic | Provenance | Status | Not ruled here |
+| --- | --- | --- | --- | --- | --- |
+| OD-2026-11-11-002 | 2026-11-11 | The standing owner directions of 2026-08-15/16 are recorded here word for word, moved from ACTIVE_WORK | RECONSTRUCTED |  |  |
+| OD-2026-11-11-001 | 2026-11-11 | Governance consolidation: an index for this file, one source-order list, and three clean-ups, with no decision text changed | PRIMARY |  | yes |
+| OD-2026-11-10-003 | 2026-11-10 | After FT1, the hand-off lanes go drill library first, then sessions, blocks and tracks by stage group | RECONSTRUCTED |  | yes |
+| OD-2026-11-10-002 | 2026-11-10 | A USA Boxing medical restriction is a hard gate on contact entries | RECONSTRUCTED |  | yes |
+| OD-2026-11-10-001 | 2026-11-10 | The Backbone build rules (RULES.md sections 0 to 11) are folded in here word for word at the repo hand-off; the OneDrive Backbone is frozen: cards Q-207 A, PK-202 A, PK-203 A | RECONSTRUCTED |  | yes |
+| OD-2026-11-09-003 | 2026-11-09 | The old upload audit rows keep their rows and lose the intake file name | PRIMARY |  | yes |
+| OD-2026-11-09-002 | 2026-11-09 | The admin upload screen carries the Backbone catalog; its size caps are raised | PRIMARY |  | yes |
+| OD-2026-11-09-001 | 2026-11-09 | The in-app timer and a standalone "Prominence Round Timer" are built on shared logic in gym-tv-timer, led by TV Timer Lead: "all 3"; "will add run in the free + subscription"; "Free remote (Rec.)"; "Pro + Supporter (Rec.)"; "Public"; "Reuse TV Timer Lead (Rec.)"; "Yes, start 1 and 2 (Rec.)" | PRIMARY |  | yes |
+| OD-2026-11-08-001 | 2026-11-08 | The backbone crossover's first step is three lanes, 1a, 1b and 1c, from the approved lane-1 brief | PRIMARY |  |  |
+| OD-2026-11-05-001 | 2026-11-05 | The research repair tool writes the four corrected chunk texts, two of them on the gym's policy shelf, in one gated run: "Yes, build it"; "A: All four, one run (Recommended)" | PRIMARY |  |  |
+| OD-2026-10-28-002 | 2026-10-28 | The hand-off takes route A, and the malware verdict on uploaded video stays unoverturnable: "(A) Route A, catalog first, then lanes (Recommended)"; "(A) Malware stays unoverturnable (Recommended)" | RECONSTRUCTED |  |  |
+| OD-2026-10-28-001 | 2026-10-28 | A separate lead, not named Overwatch, runs the gym-tv-timer plug-back | PRIMARY |  | yes |
+| OD-2026-10-27-002 | 2026-10-27 | The gym TV timer core is its own public repo and plugs back into ppbf-platform as a GitHub dependency pinned to a commit: "i want to build it in such a way to easily drop it back into the app"; "A: GitHub dependency pinned to a commit (Recommended)" | PRIMARY |  | yes |
+| OD-2026-10-27-001 | 2026-10-27 | The backbone takes precedence when it conflicts with the app, and the hand-off is a rebuild | PRIMARY |  | yes |
+| OD-2026-10-23-001 | 2026-10-23 | Overwatch's application of OD-2026-10-13-018 (F-054), NOT a new ruling of Jason's: a learning-loop note filed outside research staff reaches a coach without its words (F-183) | RECONSTRUCTED |  | yes |
+| OD-2026-10-22-002 | 2026-10-22 | The PPBF Research project gets the same drive and repo access as the other Claude accounts | PRIMARY |  |  |
+| OD-2026-10-22-001 | 2026-10-22 | Classes can be cancelled after they start: "then classes need to be able to be canceled" (replaces the "After start" half of OD-2026-10-14-001); with Overwatch's applications of OD-2026-10-21-005 to lane LRA's Q1 and Q3, NOT new rulings of Jason's | PRIMARY |  | yes |
+| OD-2026-10-21-005 | 2026-10-21 | Standing: apply the recommended option on pilot-readiness questions ("go with all recomendations to get pilot rnning") | PRIMARY |  |  |
+| OD-2026-10-21-004 | 2026-10-21 | D4 details, tying live sessions to classes: "A: Here wins (Rec.)"; "A: Undo if untouched (Rec.)"; "A: Offer it (Rec.)" | PRIMARY |  |  |
+| OD-2026-10-21-003 | 2026-10-21 | The gym TV bell and the idle paired TV (#1792): "A: Free boxing-bell recording (Rec.)"; "A: Workout-ready board (Rec.)" | PRIMARY |  |  |
+| OD-2026-10-21-002 | 2026-10-21 | Test pilot decisions D4 and D6: "A: Tie them (Rec.)"; "C: Both" | PRIMARY |  |  |
+| OD-2026-10-21-001 | 2026-10-21 | Test pilot decisions D1, D2, D3, D5: "C: Whole gym", not the recommended "A: Smallest group (Rec.)"; "A: Yes, after 3 hours (Rec.)"; "A: On for athletes (Rec.)"; "A: TV in the pilot" | PRIMARY |  |  |
+| OD-2026-10-20-001 | 2026-10-20 | Release 32: "A: Ship it (Rec.)", then "I approved it" twice; shipped 12f3bde7 | PRIMARY |  |  |
+| OD-2026-10-19-014 | 2026-10-19 | Gym TV live-workout screen: "fix thos first"; "no i need the code and for you to do a mock workout on it" | PRIMARY |  |  |
+| OD-2026-10-19-013 | 2026-10-19 | Release 32: "yes stage release 32"; staged at 12f3bde7, production not yet shipped | PRIMARY |  |  |
+| OD-2026-10-19-012 | 2026-10-19 | The pilot walkthrough uses existing logins, no new test people | PRIMARY |  |  |
+| OD-2026-10-19-011 | 2026-10-19 | Parent portal item 9, an old unanswered coaching request | PRIMARY |  |  |
+| OD-2026-10-19-010 | 2026-10-19 | Parent portal item 8, the fight card's "NO CORNER CHOSEN" | PRIMARY |  |  |
+| OD-2026-10-19-009 | 2026-10-19 | Parent portal item 5, tasks past their due date: "A: "Past due" badge (Rec.)" | PRIMARY |  |  |
+| OD-2026-10-19-008 | 2026-10-19 | Parent portal item 6, a coach named "Coach Coach" | PRIMARY |  |  |
+| OD-2026-10-19-007 | 2026-10-19 | #345 test file: Jason deletes it himself; more pilot chips ("Go with your recommendations and what other chips do we need") | PRIMARY |  |  |
+| OD-2026-10-19-006 | 2026-10-19 | Start the chips for the coach/athlete pilot ("start the chips necessary to get the coach athelete  pilot ready") | PRIMARY |  |  |
+| OD-2026-10-19-005 | 2026-10-19 | Start the curator screen lane; Graph Explorer in Chrome ("Yes start the curator screen lane ...") | PRIMARY |  |  |
+| OD-2026-10-19-004 | 2026-10-19 | Parent portal flaw list: split into lanes, items 1-4 first ("A go with your recommendation") | PRIMARY |  |  |
+| OD-2026-10-19-003 | 2026-10-19 | #1172: the lane enters the 8 papers itself in the in-app browser ("you do it open in in app browser") | PRIMARY |  |  |
+| OD-2026-10-19-002 | 2026-10-19 | The 9 GitHub issues: close 7, open lanes for #1172 and #345 ("Go with your recommendations") | PRIMARY |  |  |
+| OD-2026-10-19-001 | 2026-10-19 | Release 31: "staging OK", then production | PRIMARY |  |  |
+| OD-2026-10-18-010 | 2026-10-18 | SHADOW relevance-bar calibration: the AI judges it ("have the Ai figure it out while i sleep") | PRIMARY |  |  |
+| OD-2026-10-18-009 | 2026-10-18 | SHADOW Library search | PRIMARY |  |  |
+| OD-2026-10-18-008 | 2026-10-18 | GPU Phase 2: the AI judges the answer key ("go with your recomendation on everything") | PRIMARY |  |  |
+| OD-2026-10-18-007 | 2026-10-18 | GPU Phase 2 answer key | PRIMARY |  |  |
+| OD-2026-10-18-006 | 2026-10-18 | Behaviour report against a session run | PRIMARY |  |  |
+| OD-2026-10-18-005 | 2026-10-18 | F-136, publication identity for SHADOW corroboration | PRIMARY |  |  |
+| OD-2026-10-18-004 | 2026-10-18 | Production migration at cfa2f89b | PRIMARY |  |  |
+| OD-2026-10-18-003 | 2026-10-18 | Who ratifies the coaching pattern bar | PRIMARY |  |  |
+| OD-2026-10-18-002 | 2026-10-18 | Release 30: unfreeze, ship tomorrow ("A: Unfreeze, ship tomorrow (Rec.)"); shipped fe3c6bee | PRIMARY |  |  |
+| OD-2026-10-18-001 | 2026-10-18 | The coach live-session screen in look B is approved | PRIMARY |  |  |
+| OD-2026-10-17-035 | 2026-10-17 | The daily check-in's short form: motivation moves behind "Add more detail" (his typed "Go with you recommendation ") | PRIMARY |  |  |
+| OD-2026-10-17-034 | 2026-10-17 | How Release 30 goes | PRIMARY |  |  |
+| OD-2026-10-17-033 | 2026-10-17 | Cycle tracking data when an athlete's account is deleted | PRIMARY |  |  |
+| OD-2026-10-17-032 | 2026-10-17 | The +30 SEC false-bell edge case | PRIMARY |  |  |
+| OD-2026-10-17-031 | 2026-10-17 | CI is backed up | PRIMARY |  |  |
+| OD-2026-10-17-030 | 2026-10-17 | The gym TV coach screen's +30 SEC button | PRIMARY |  |  |
+| OD-2026-10-17-029 | 2026-10-17 | The sparring symptom flag's defaults: "A: Their coach (Rec.)"; "A: Not yet, leave blank (Rec.)"; then his typed "Approve the rest" | PRIMARY |  |  |
+| OD-2026-10-17-028 | 2026-10-17 | The gym TV look B is approved for merge | PRIMARY | partly replaced by OD-2026-10-19-014 (the paired-idle wall view) (2026-11-11) |  |
+| OD-2026-10-17-027 | 2026-10-17 | Habit and lesson thresholds from the research report: "A: Adopt as written (Rec.)"; "A: Those three (Rec.)"; "A: Not until calibrated (Rec.)" | PRIMARY |  |  |
+| OD-2026-10-17-026 | 2026-10-17 | More athlete metrics from the research report: "A: All three (Rec.)"; "A: 20-m shuttle (Rec.)"; "A: That order (Rec.)"; the skip list: his typed "Keep", then "Keep them in the app", not the recommended "A: Keep them out (Rec.)" | PRIMARY |  |  |
+| OD-2026-10-17-025 | 2026-10-17 | SHADOW F2 integration work order: *"Ok I approve"* (as relayed from ChatGPT), then withdrawn: *"Nvm chat gpt was confused it will handle m it"* | RECONSTRUCTED |  |  |
+| OD-2026-10-17-024 | 2026-10-17 | SHADOW F2, the recommendation producer: ChatGPT owns it (*"Yes you do recommendations and give me a prompt telling claude what you are doing"*), and Option A (*"Yes opti I n A"*), both as relayed from ChatGPT | RECONSTRUCTED |  |  |
+| OD-2026-10-17-023 | 2026-10-17 | The daily check-in from the research draft: four additions and his typed "Research if there are other useful metrics"; baseline rule "Yes, all three (Rec.)"; cycle tracking "C: Now", not the recommended "A: Later, private (Rec.)"; devices "Yes, adult pilot later (Rec.)" | PRIMARY |  |  |
+| OD-2026-10-17-022 | 2026-10-17 | The habit and lesson engine (lane L49): "A: Shared growing list (Rec.)"; "A: Staff only (Rec.)"; the habit bar: his typed "Needs to be backed by research" | PRIMARY |  |  |
+| OD-2026-10-17-021 | 2026-10-17 | Freeing the laptop: "Close non-app programs", not the recommended "Archive 4 waiting lanes (Rec.)" | PRIMARY |  |  |
+| OD-2026-10-17-020 | 2026-10-17 | Personal baseline and data completeness: "Sleep (Recommended)", "Energy", "Soreness" and his typed "What else can we put in if we need research do n it"; "80% / 50% (Recommended)" | PRIMARY |  |  |
+| OD-2026-10-17-019 | 2026-10-17 | Punch counts go on the sparring log now: "B: Longer sparring form", not the recommended "A: Wait for video (Recommended)" | PRIMARY |  | yes |
+| OD-2026-10-17-018 | 2026-10-17 | No weekly contact-exposure number; the coach's floor record stays counts only | PRIMARY |  |  |
+| OD-2026-10-17-017 | 2026-10-17 | The Focus Attainment Rate counts the last 28 days | PRIMARY |  |  |
+| OD-2026-10-17-016 | 2026-10-17 | SHADOW's evidence badge names its strongest source and lists the weaker ones | PRIMARY |  |  |
+| OD-2026-10-17-015 | 2026-10-17 | New athlete sign-in IDs are not the child's real name | PRIMARY |  |  |
+| OD-2026-10-17-014 | 2026-10-17 | No age rule on staff roles; the gym decides who it makes a coach | PRIMARY |  |  |
+| OD-2026-10-17-013 | 2026-10-17 | New chips to start: "Small fixes bundle", "Milestone Undo", "Privacy if-real checks", "Records pass", and his typed "A continual housekeeping l ing and clean up o chip" | PRIMARY |  |  |
+| OD-2026-10-17-012 | 2026-10-17 | Release 29 | PRIMARY |  |  |
+| OD-2026-10-17-011 | 2026-10-17 | The gym TV look (#1705): "B: Push further (Recommended)", after his typed "Show what the options look l ike" | PRIMARY |  |  |
+| OD-2026-10-17-010 | 2026-10-17 | The +30 SEC and REPEAT timer buttons: "A" (yes, after the restyle) | PRIMARY |  |  |
+| OD-2026-10-17-009 | 2026-10-17 | Payments and Danielle's HIIT are off the pilot launch list | PRIMARY |  |  |
+| OD-2026-10-17-008 | 2026-10-17 | Style cards for the gym TV: "A: Coach screen only (Recommended)"; "Both"; "1 and add it to the approved list" | PRIMARY |  |  |
+| OD-2026-10-17-007 | 2026-10-17 | A lane to move the look of the pages toward his style pictures, gym TV / floor board first: "Can we start a lane ..."; "A" | PRIMARY |  |  |
+| OD-2026-10-17-006 | 2026-10-17 | The gym-admin live check: "A: Now", not the recommended "B: After Release 29 (Recommended)" | PRIMARY |  |  |
+| OD-2026-10-17-005 | 2026-10-17 | What the athlete home's "Active Goals" number counts (UXB-18) | PRIMARY |  |  |
+| OD-2026-10-17-004 | 2026-10-17 | What a guardian of an under-18 athlete sees about programs and support (PH-13) | PRIMARY |  |  |
+| OD-2026-10-17-003 | 2026-10-17 | Athlete "I did it" on a goal or milestone (UXB-19) | PRIMARY |  |  |
+| OD-2026-10-17-002 | 2026-10-17 | Policy-shelf move: "A: Detach + narrow hold (Recommended)"; SUPERSEDES OD-2026-10-08-009 D22 | PRIMARY |  |  |
+| OD-2026-10-17-001 | 2026-10-17 | UX coherence cards: "A: Use these words (Recommended)"; "A: Rename + I'm here on Today (Recommended)"; "A: Cross-link now (Recommended)"; "B: Keep one", corrected to "Im Ment A" | PRIMARY |  |  |
+| OD-2026-10-15-002 | 2026-10-15 | Overwatch's application of an existing ruling, NOT a new pick of Jason's: F-076, a child's disclosure of harm typed into SHADOW chat is an athlete-scoped high-risk SHADOW message under OD-2026-10-01-008 section 3; "You just asked me that are you fucking with me now"; "I already answered it ..." | DERIVED |  | yes |
+| OD-2026-10-15-001 | 2026-10-15 | Overwatch's application of an existing ruling, NOT a new ruling of Jason's: F-081, a person's SHADOW learning-loop notes are de-identified at the purge (OD-2026-10-06-012) | DERIVED |  | yes |
+| OD-2026-10-14-003 | 2026-10-14 | Release 25 | PRIMARY |  |  |
+| OD-2026-10-14-002 | 2026-10-14 | Overwatch's application of an existing ruling, NOT a new ruling of Jason's: FC-06 Q-2, guardians of an athlete under 18 read, read-only, what a coach writes to that athlete | DERIVED |  | yes |
+| OD-2026-10-14-001 | 2026-10-14 | Cancelling a class (#1550): "A: Its coaches + office (Recommended)"; "A: No, not after start (Recommended)" | PRIMARY | partly replaced by OD-2026-10-22-001 (the "After start" half) (2026-11-11) |  |
+| OD-2026-10-13-019 | 2026-10-13 | F-019, the "not built yet" notes on working pages | PRIMARY |  |  |
+| OD-2026-10-13-018 | 2026-10-13 | F-054, who reads the words of a kid's or parent's SHADOW question filed for research | PRIMARY |  |  |
+| OD-2026-10-13-017 | 2026-10-13 | Release 23 approval card | PRIMARY |  |  |
+| OD-2026-10-13-016 | 2026-10-13 | Overwatch's applications of existing rulings, NOT new rulings of Jason's: F-067 B, Q-4 and Q-5 closed without asking him | DERIVED |  | yes |
+| OD-2026-10-13-015 | 2026-10-13 | "You need to ope the stuff the old over watch had in it in app browser" | PRIMARY |  | yes |
+| OD-2026-10-13-014 | 2026-10-13 | Start the lanes and audit chips that are needed: "Start any chips you need"; "start the chips" | PRIMARY |  |  |
+| OD-2026-10-13-013 | 2026-10-13 | Asked once, ruled once: "Why does it feel like I keep getting the same questions asked over and over again"; "No ive have answered  the same questions multiple times usually when I go against your recommendation "; "Add it" | PRIMARY |  |  |
+| OD-2026-10-13-012 | 2026-10-13 | Danielle's HIIT and "hiit fit": "A A" (answers to H-1 and H-2) | PRIMARY |  | yes |
+| OD-2026-10-13-011 | 2026-10-13 | Danielle's HIIT stays as a program in the gym | PRIMARY |  | yes |
+| OD-2026-10-13-010 | 2026-10-13 | Check the lanes and archive the ones whose scope is met: "Check lames"; "And before we do the overwatch card check lanes"; "If scope is met archive them" | PRIMARY |  |  |
+| OD-2026-10-13-009 | 2026-10-13 | Families read no system log lines about the child in their feed: "Explaim", then "Explain in lay,mandarin terms", then "A" (SHADOW feed; lane L4 item two, PR #1573) | PRIMARY |  |  |
+| OD-2026-10-13-008 | 2026-10-13 | Intake saves in a family's feed | PRIMARY |  |  |
+| OD-2026-10-13-007 | 2026-10-13 | Release 23, the two family-message migrations and the deploy | PRIMARY |  |  |
+| OD-2026-10-13-006 | 2026-10-13 | Emergency contacts on a child's intake record, what a parent receives: "A: Relationship only (Recommended)" (lane L4, PR #1567) | PRIMARY |  |  |
+| OD-2026-10-13-005 | 2026-10-13 | Every test user is signed in | PRIMARY |  |  |
+| OD-2026-10-13-004 | 2026-10-13 | One live-audit chip per signed-in user | PRIMARY |  |  |
+| OD-2026-10-13-003 | 2026-10-13 | Build faster now the weekly usage has reset | PRIMARY |  |  |
+| OD-2026-10-13-002 | 2026-10-13 | Release 22: "Says it waiting on you go"; "Yes" (it failed at the schema check; superseded by Release 23) | PRIMARY |  |  |
+| OD-2026-10-13-001 | 2026-10-13 | Release 21: "Yes and deloy"; "Done"; "Yes"; "Clicked what's left" | PRIMARY |  |  |
+| OD-2026-10-12-024 | 2026-10-12 | A child's two guardians each see only their own replies to the coach: "A: No, each sees only their own (Recommended)" (work orders FC-02, FC-03 on #1542) | PRIMARY |  |  |
+| OD-2026-10-12-023 | 2026-10-12 | The round timer: "A: Yes (Recommended)" (PR #1494 and the stack #1496, #1499, #1504) | PRIMARY |  |  |
+| OD-2026-10-12-022 | 2026-10-12 | Overwatch may wake an idle cloud lane with a queue prompt | PRIMARY |  |  |
+| OD-2026-10-12-021 | 2026-10-12 | The gym saying that replaces "Steel Town": "AMPLECTERE MISERIAM" (issues #1462, #1491, #1512) | PRIMARY |  |  |
+| OD-2026-10-12-020 | 2026-10-12 | "Pass t he rest to VS": the VS Code lane owns the rest of the family communication track (issue #1542) | PRIMARY |  | yes |
+| OD-2026-10-12-019 | 2026-10-12 | Family communication starts: "Ok start next one" (issue #1542) | PRIMARY |  | yes |
+| OD-2026-10-12-018 | 2026-10-12 | Release 20: "Yes" to the session-run-plain migration and the release; "Clicked what can we buikd" | PRIMARY |  |  |
+| OD-2026-10-12-017 | 2026-10-12 | Release 19: "Yes" to dispatching the production deploy for acad305b; "Yes" to the approval | PRIMARY |  |  |
+| OD-2026-10-12-016 | 2026-10-12 | A youth's body mass follows the whole-gym coach rule: "Any coach all coaches coach all athletes" (PR #1506) | PRIMARY |  |  |
+| OD-2026-10-12-015 | 2026-10-12 | "No keep this open": the two HIIT gyms are left alone and the session keeps working | PRIMARY |  | yes |
+| OD-2026-10-12-014 | 2026-10-12 | Direction to keep working through the last of the weekly usage: "Ok that fine keep working run out the last %"; "Ok keep working"; "Keep building let add as ,such n as we can to those releases"; "Keep going"; "If we lose usage it resets tomorrow,  work hard" | PRIMARY |  | yes |
+| OD-2026-10-12-013 | 2026-10-12 | "Sign out everywhere" test on the test athlete: "No I not at ther terminal"; the test-coach invite address was supplied (not recorded) | PRIMARY |  | yes |
+| OD-2026-10-12-012 | 2026-10-12 | Operations work orders start with family communication | PRIMARY |  |  |
+| OD-2026-10-12-011 | 2026-10-12 | An athlete's goals show to the coach and the parent: "A: Coach and parent (Recommended)" (issue #1527) | PRIMARY |  |  |
+| OD-2026-10-12-010 | 2026-10-12 | A coach can start a plain session with no workout script: "A: Yes, allow a plain session (Recommended)" (issue #1523) | PRIMARY |  |  |
+| OD-2026-10-12-009 | 2026-10-12 | The office can record a signed waiver: "A: Yes, build it (Recommended)" (issue #1526) | PRIMARY |  |  |
+| OD-2026-10-12-008 | 2026-10-12 | Codex stays a reviewer | PRIMARY |  |  |
+| OD-2026-10-12-007 | 2026-10-12 | Parent observations (PH-04) categories approved | PRIMARY |  |  |
+| OD-2026-10-12-006 | 2026-10-12 | Family attendance is a same-day self check-in only: "A: Self check-in, same day only (Recommended)" (issue #1524) | PRIMARY |  |  |
+| OD-2026-10-12-005 | 2026-10-12 | Pain reports show the number only: "A: Show the number only (Recommended)" (issue #1528) | PRIMARY |  |  |
+| OD-2026-10-12-004 | 2026-10-12 | Audit checks held back may run as the test users | PRIMARY |  |  |
+| OD-2026-10-12-003 | 2026-10-12 | Consent withdrawal hides only the withdrawing child's own clips | PRIMARY |  |  |
+| OD-2026-10-12-002 | 2026-10-12 | A flagged guardian chat about a child who left first goes with the child: "A: With the child (Recommended)" (#1493) | PRIMARY |  |  |
+| OD-2026-10-12-001 | 2026-10-12 | Release 18: "A: Yes, release (Recommended)"; "I clicked it" | PRIMARY |  |  |
+| OD-2026-10-11-010 | 2026-10-11 | "ok send more tasks to idle AI if they can acess git hub let them do some building"; "keeo VS busy its probably one of the more powerful builder" | PRIMARY |  | yes |
+| OD-2026-10-11-009 | 2026-10-11 | Eight numbered questions | PRIMARY |  |  |
+| OD-2026-10-11-008 | 2026-10-11 | Remaining coach-written text is stripped for family readers: "strip them" (PR #1479) | PRIMARY |  |  |
+| OD-2026-10-11-007 | 2026-10-11 | A coach's reach is the whole gym: "lets make it coaches to whole gym" (issue #1480) | PRIMARY |  |  |
+| OD-2026-10-11-006 | 2026-10-11 | Restore the retired drills | PRIMARY |  | yes |
+| OD-2026-10-11-005 | 2026-10-11 | A workout template issues with untested drills | PRIMARY |  |  |
+| OD-2026-10-11-004 | 2026-10-11 | Audit scope | PRIMARY |  | yes |
+| OD-2026-10-11-003 | 2026-10-11 | The five signed-in live users are test users | PRIMARY |  |  |
+| OD-2026-10-11-002 | 2026-10-11 | One relay session for the outside AIs | PRIMARY |  |  |
+| OD-2026-10-11-001 | 2026-10-11 | Drill update in place: "A: Start clean (Recommended)"; "A: Update while issuing (Recommended)" (issue #1431, PR #1453) | PRIMARY |  |  |
+| OD-2026-10-10-007 | 2026-10-10 | "Blocking and flagging stuff can cause more damage then knowledge"; "A: No banner (Recommended)"; overwatch stops putting safety and legal questions to Jason | PRIMARY |  |  |
+| OD-2026-10-10-006 | 2026-10-10 | "Those are coach calls not AI"; "B: SHADOW answers": athlete and parent messages about going without food or water, or being made to cut, reach SHADOW like any weight-cut question | PRIMARY |  |  |
+| OD-2026-10-10-005 | 2026-10-10 | SHADOW reply checker: "Your sneaking safety back into things again"; "let the coach make those assements"; no reply is withheld for weight-cut teaching; overwatch adds no safety gates on its own judgment | PRIMARY |  | yes |
+| OD-2026-10-10-004 | 2026-10-10 | SHADOW filters relaxed for everyone ("B: Relax for everyone"); past a set limit SHADOW names it and the coach decides; platform owner off nine more routes; organization admin reads coach notes on an admin page; templates: "Fix or build it"; "Im not using the app until everything is built" | PRIMARY |  | yes |
+| OD-2026-10-10-003 | 2026-10-10 | "A on all, go with your recommendations": enquiries setting on both environments, lane briefs as GitHub issues, staff notes staff-only, org admin withdraws a departed coach's capacity note, storage role for the retention job | PRIMARY |  | yes |
+| OD-2026-10-10-002 | 2026-10-10 | VS Code runs build lanes on neeko@ ("B: Keep neeko@ in VS Code"); admin@ takes the browser cloud lanes; VS Code Claude in panel mode | PRIMARY |  | yes |
+| OD-2026-10-10-001 | 2026-10-10 | Three Claude accounts on this PC; Overwatch runs on the personal Max account | PRIMARY |  | yes |
+| OD-2026-10-09-004 | 2026-10-09 | Draft goals: "Hide them (Recommended)"; draft or cancelled objectives inside an active block are hidden from athlete and parent | PRIMARY |  |  |
+| OD-2026-10-09-003 | 2026-10-09 | Public use: "Keep admin box (Recommended)"; public use is recorded only by an admin from a guardian's signed paper form | PRIMARY |  |  |
+| OD-2026-10-09-002 | 2026-10-09 | Portraits: "A: view-first for kids (Recommended)"; a coach must view a child's portrait before releasing it; self-approval unchanged | PRIMARY |  |  |
+| OD-2026-10-09-001 | 2026-10-09 | Competition entries: "A"; the R1 gym-wide exception includes each entry's result and loss lesson note | PRIMARY |  |  |
+| OD-2026-10-08-015 | 2026-10-08 | Adult media consent (PLAN-5): "A: adult consents for themselves (Recommended)"; guardian-era consent stops counting at 18 for new publications | PRIMARY |  |  |
+| OD-2026-10-08-014 | 2026-10-08 | Untagged team video: "B: keep scanning"; untagged, unattributed non-teaching video keeps going to the automated vision safety scan | PRIMARY |  | yes |
+| OD-2026-10-08-013 | 2026-10-08 | "Build all" scope re-answered: "2 it doesn't have to be necessarily at the user level if they dont interact with it but it would be nice to have a visual of everthing" (row Q-E); SUPERSEDES OD-2026-10-07-012 ruling 4 | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-012 | 2026-10-08 | Build plan approved: "Approve, start wave 0 + 1a (Recommended)"; housekeeping: "Yes, both (Recommended)" (rows PLAN-1, PLAN-2) | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-011 | 2026-10-08 | Whole-app look and the UI lane: "Be" (read as B, every page); "No go with your best guess"; "A"; "cont"; "Next"; "Remember nothing should restrict" | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-010 | 2026-10-08 | Visual lane: Teach room, image-generator history, plain clinic/board/file (V1-V3); and five 2026-10-02 plate rulings not filed before | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-009 | 2026-10-08 | Second question round, part 2 (D13-D24): schedule, floor cards, purge, test logins, punch map, SHADOW model, sayings, API routes, engine unlocks, policy shelf, quotes, plate rules | RECONSTRUCTED | partly replaced by OD-2026-10-17-002 (D22) (2026-11-11) | yes |
+| OD-2026-10-08-008 | 2026-10-08 | Second question round, part 1 (D1-D12): drill versions, content import, stop rules, equipment, parent drill view, sparring wording, staging checks | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-007 | 2026-10-08 | Read-back of the 15 inferred defaults: "Confirm all 15 (Recommended)" (row GO-RECS-CONFIRMED) | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-006 | 2026-10-08 | Product questions A-Q15 to A-Q22 and PLAN-4: Parent Hub tabs, Messages tab, Message Home, mock screens, one "cleared tonight" answer, draft blocks, roster export, top-bar count and second gym | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-005 | 2026-10-08 | Teach, SHADOW and research questions A-Q10a/b/c, A-Q11 to A-Q14: Fighter 1 / Fighter 2, late angles, punch match window, passage text, the "20 passages" limit, closing a research requirement, "Allow public use" | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-004 | 2026-10-08 | Publications library is gym-wide ("Gym-wide (Recommended)", row Q-D); SUPERSEDES OD-2026-10-07-012 ruling 3 | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-003 | 2026-10-08 | Route survey Q1 to Q4 re-answered (R1-R4) and extended (PLAN-3): coach gym-wide reads kept with a recorded exception; platform owner off the gym routes; athlete rows hidden; family wording only; R1 SUPERSEDES OD-2026-10-07-011 Question 1 | RECONSTRUCTED |  | yes |
+| OD-2026-10-08-002 | 2026-10-08 | Waiting-list confirmation: "I confirm themthings in the list that is waiting on me to confirm" (row C1); the five items as read back in section E | RECONSTRUCTED | partly replaced by OD-2026-10-11-005 (ruling 3) (2026-11-11) | yes |
+| OD-2026-10-08-001 | 2026-10-08 | Release 13 production approvals ("yo make the clicks this one time to review anf deploy"); the account switch uses the handover file | PRIMARY |  | yes |
+| OD-2026-10-07-013 | 2026-10-07 | "Life releas e freeze"; archive lanes that met scope; "stage and deploy what's ready" | PRIMARY |  | yes |
+| OD-2026-10-07-012 | 2026-10-07 | Question card 5 (no-screen plan Q-A, Q-B, Q-D, Q-E): template issue adopts an unadopted drill; publications library own athletes only; "build all" is people-facing only; the nine modules not ruled | PRIMARY | partly replaced by OD-2026-10-08-013 (ruling 4) (2026-11-11); partly replaced by OD-2026-10-08-004 (ruling 3) (2026-11-11) | yes |
+| OD-2026-10-07-011 | 2026-10-07 | Question card 4 (route survey Q1 to Q4): coach gym-wide reads split; platform owner off six gym routes; athlete rows hidden on the platform staff list; gap numbers withheld from families | PRIMARY | partly replaced by OD-2026-10-08-003 (Question 1, ruling 1) (2026-11-11) | yes |
+| OD-2026-10-07-010 | 2026-10-07 | Question card 3 (audit Q5, Q7, Q8, Q9): training days from the class register; the nightly run deletes old public enquiries itself; tracks kept for real athletes; the organization admin posts behavior standards | PRIMARY |  | yes |
+| OD-2026-10-07-009 | 2026-10-07 | Question card 2 (audit Q3, Q4, Q6): organization admin deactivates departed staff; paper photo form off the register; a guardian record with no sign-in; the organization admin reads the one flagged SHADOW exchange | PRIMARY |  |  |
+| OD-2026-10-07-008 | 2026-10-07 | Question card 1 (O18 wall questions; audit Q1, Q2): initials only on a paired gym TV; "Everywhere" is members only; the guardian link goes dormant at 18; the coach running a class takes the register for the whole class and walk-ins | PRIMARY |  |  |
+| OD-2026-10-07-007 | 2026-10-07 | Order of work | PRIMARY |  |  |
+| OD-2026-10-07-006 | 2026-10-07 | "Ok go with your recommendations": stage Release 13 now; new studies use the 23-point list; start the database lane for a same-person blind re-mark | PRIMARY |  | yes |
+| OD-2026-10-07-005 | 2026-10-07 | Limits for adult athletes: "A"; then "Yes goes with those" to the interest form's own organization setting, the first five audit fix chips and the teach-AI lanes | PRIMARY |  | yes |
+| OD-2026-10-07-004 | 2026-10-07 | Lane sequencing: "retire one that met scope"; "dont start anything new yet close currents first"; "lets pick back up i have lots of usage accross thre account to burn through" | PRIMARY |  |  |
+| OD-2026-10-07-003 | 2026-10-07 | A separate audit lead | PRIMARY |  |  |
+| OD-2026-10-07-002 | 2026-10-07 | How work is run: "start chips"; "you dont run backround agents you run scoped chips" | PRIMARY |  |  |
+| OD-2026-10-07-001 | 2026-10-07 | Check the lanes and the repo ("check lanes check repo ..."); "merge, and A on the excerpt cap": per-source excerpt cap of 20 passages / 30,000 characters | PRIMARY |  | yes |
+| OD-2026-10-03-022 | 2026-10-03 | Teach-AI: "i will only use adults"; "a week is too long" for the repeat marking, which is by "another set of eyes" or Jason "on different screens different lighting and enviroments" | PRIMARY |  |  |
+| OD-2026-10-03-021 | 2026-10-03 | Teach-AI first run: Jason is the one annotator ("for now at least the first run it will just be me") | PRIMARY |  |  |
+| OD-2026-10-03-020 | 2026-10-03 | Teach-AI training location: Jason's laptop, option "A" ("its my lap top and is physically locked when i dont use it") | PRIMARY |  | yes |
+| OD-2026-10-03-019 | 2026-10-03 | Teach-AI training uses adults only for now, children later if needed ("can we train it on adults only"); training continues step by step as more is added to recognize | PRIMARY |  |  |
+| OD-2026-10-06-027 | 2026-10-06 | AI data at deletion: name scrub "Gym-wide"; flagged AI chats kept "2 years after deletion" | PRIMARY |  |  |
+| OD-2026-10-06-026 | 2026-10-06 | Chokes on minors: "Don't record chokes on minors"; drill cues "Required except conditioning"; 114 drafts "Coach validates each first"; label "PPBF owner-authored" | PRIMARY | partly replaced by OD-2026-10-27-001 (ruling 1) (2026-11-11) |  |
+| OD-2026-10-06-025 | 2026-10-06 | Video notes visible to athlete and parent; "Show coach name, hide ID"; no-screen features: "Build all"; session notes editable only by the writer | PRIMARY |  | yes |
+| OD-2026-10-06-024 | 2026-10-06 | Holds: "Warn only, both places"; minors' limits stored as data ("Yes, build it"); Stripe setup "Later"; check-out: Jason's free-text answer (20 minutes of inactivity) | PRIMARY |  | yes |
+| OD-2026-10-06-023 | 2026-10-06 | AI data at deletion, the five details: delete their own messages and keep AI replies; flagged chats kept until retention ends; rewrite Azure backups; anonymous receipt; keep coaching records de-identified, delete medical and body mass | PRIMARY |  | yes |
+| OD-2026-10-06-022 | 2026-10-06 | Gym TV access: each TV is paired once with a code from the coach dashboard ("Pair with code (Recommended)") | PRIMARY |  |  |
+| OD-2026-10-06-021 | 2026-10-06 | Release 12: "staging OK" and "ran all 3"; production deployed from main `411333a2`; "bothe work" (Admin@ and ppbf@ Microsoft sign-in after the identity binding) | PRIMARY |  |  |
+| OD-2026-10-06-020 | 2026-10-06 | "how bout we clean house first", then "i want scratch polders gon": remove old worktree folders, scratch folders included | PRIMARY |  |  |
+| OD-2026-10-06-019 | 2026-10-06 | Route survey: Jason proposed "a mass of small model agenegts out under a fable" (multi-agent opt-in for the route list) | PRIMARY |  |  |
+| OD-2026-10-06-018 | 2026-10-06 | Route access checks cover one gym | PRIMARY |  |  |
+| OD-2026-10-06-017 | 2026-10-06 | "yes merge 1300 then stage": merge the CI time-limit PR, then stage Release 12 | PRIMARY |  |  |
+| OD-2026-10-06-016 | 2026-10-06 | CL-A19 recovery: who may reset a person's Microsoft link ("A: admin + platform + key (Recommended)"), and the reset signs out their devices ("Yes, sign out devices (Recommended)") | PRIMARY |  |  |
+| OD-2026-10-06-015 | 2026-10-06 | Release 11: "looks good lets deploy" and "staging OK"; production deployed from main `42b6025d` | PRIMARY |  |  |
+| OD-2026-10-06-014 | 2026-10-06 | Gym TV: coach switch per session; sound from the TV; round timer with bells and wood knocks after the session display; a coach-dashboard capability; pairing lasts "Until disconnected"; TV tied to the coach; any coach may use any gym TV ("A") | PRIMARY |  |  |
+| OD-2026-10-06-013 | 2026-10-06 | Close-out: "lets focus on getting lanes closed" so another account can pick up where this one leaves off | PRIMARY |  |  |
+| OD-2026-10-06-012 | 2026-10-06 | AI data at deletion: delete anything that personally identifies the person; keep data that makes the AI and ML better | PRIMARY |  |  |
+| OD-2026-10-06-011 | 2026-10-06 | Overwatch checks every PR's scope and archives each lane when its scope is met | PRIMARY |  |  |
+| OD-2026-10-06-010 | 2026-10-06 | Library questions about a specific child: the athlete and their parents may read them; only coaches and org admins may close them (option "Family reads, staff closes") | PRIMARY |  |  |
+| OD-2026-10-06-009 | 2026-10-06 | Auto-fix is authorized for lanes | PRIMARY |  |  |
+| OD-2026-10-06-008 | 2026-10-06 | Production sign-in address: PPBF_APP_ORIGIN set to https://www.punxsyprominence.org in GitHub and the running app ("A", "Approve the production changes"); Jason ran the app change in Cloud Shell | PRIMARY |  |  |
+| OD-2026-10-06-007 | 2026-10-06 | "Approve merges": overwatch may merge #1275 (main's red-check fix) when its checks pass | PRIMARY |  |  |
+| OD-2026-10-06-006 | 2026-10-06 | CL-A21: a child whose parent chose photo-only or withdrew consent: no one watches the quarantined flagged video, reviewers included (option "No one watches it") | PRIMARY |  |  |
+| OD-2026-10-06-005 | 2026-10-06 | CL-A20: staff may approve or block their own staff portrait photo; no change (option "Leave as is") | PRIMARY |  |  |
+| OD-2026-10-06-004 | 2026-10-06 | Public inquiry retention: every public inquiry older than 12 months is deleted, joined or not (option "Delete all after 12 mo") | PRIMARY |  |  |
+| OD-2026-10-06-003 | 2026-10-06 | CL-A3 Library research questions: staff only; members and athletes see only their own (option "Staff only") | PRIMARY |  |  |
+| OD-2026-10-06-002 | 2026-10-06 | CL-A14 coach review edits: only the review's author or an org admin may edit it; another coach writes their own (option "Author + org admin") | PRIMARY |  |  |
+| OD-2026-10-06-001 | 2026-10-06 | Overwatch moved to the new account: session "Overwatch lane" acts as OVERWATCH until the old account resets on Oct 8, with model, effort and agents "wide open" | PRIMARY |  |  |
+| OD-2026-10-05-026 | 2026-10-05 | Production re-home: Jason overrode the "Jason runs the script" clause of OD-2026-10-05-008 for this run and authorized the lane to run prod-rehome-test-login.cjs (dry run, then --apply) | PRIMARY |  |  |
+| OD-2026-10-05-025 | 2026-10-05 | Merges before review: #1258 may merge before the ChatGPT review, and #1261/#1262 may merge before the Codex review (two "Yes" answers) | PRIMARY |  |  |
+| OD-2026-10-05-024 | 2026-10-05 | Audit owner questions, batch of eight: "Go with all recommendations" (hold, coach reads, chat safety queue, co-guardians, disputed completions, withdrawn competition entry, excerpt size limit, research bridge) | PRIMARY |  |  |
+| OD-2026-10-05-023 | 2026-10-05 | A deleted guardian's media consent choice keeps restricting the child's media (option "Keep the 'no'") | PRIMARY |  |  |
+| OD-2026-10-05-022 | 2026-10-05 | Photo-only consent means no video use: the automated video safety scan skips that child's video, treated as P0 (option "Skip scan") | PRIMARY |  |  |
+| OD-2026-10-05-021 | 2026-10-05 | A guardian grant that downgrades an athlete from video to photo-only retracts that athlete's already-published video publications (option A, Retract) | PRIMARY |  |  |
+| OD-2026-10-05-020 | 2026-10-05 | Codex and Claude talk through a shared local folder, not through an app | RECONSTRUCTED |  |  |
+| OD-2026-10-05-019 | 2026-10-05 | Usage billing: use only subscription-covered surfaces; Codex counts as covered by Jason's ChatGPT plan | PRIMARY |  |  |
+| OD-2026-10-05-018 | 2026-10-05 | Overwatch role split: the old overwatch becomes the LIAISON (ChatGPT/Codex relay); a new Overwatch owns lanes, merges and releases | PRIMARY |  |  |
+| OD-2026-10-05-017 | 2026-10-05 | Skill Path skills 02-12: the drafted drill-code crosswalk is approved as drafted (43 codes mapped, 18 left unmapped), and the map must stay extendable as more skills become available (option 1) | PRIMARY |  |  |
+| OD-2026-10-05-016 | 2026-10-05 | Admin video-compliance queue: the consent check applies to playback; no playback link for withdrawn or photo-only consent (option B) | PRIMARY |  |  |
+| OD-2026-10-05-015 | 2026-10-05 | Load-flag family wording: athletes and parents read a plainer sentence when a coach confirms "load_jumped" (option A, draft wording approved as written) | PRIMARY |  |  |
+| OD-2026-10-05-014 | 2026-10-05 | Quarantined clips in the staff clip list keep a placeholder title, "Awaiting safety check", until released (option A) | PRIMARY |  |  |
+| OD-2026-10-05-013 | 2026-10-05 | Skill Path skills 02-12: progress comes from a drill-code crosswalk Jason approves once (option A, "Crosswalk") | PRIMARY |  |  |
+| OD-2026-10-05-012 | 2026-10-05 | Coach-set competence level: the "Set a level" screen wording approved as written, and the three technical calls overwatch relayed to the lane | PRIMARY |  |  |
+| OD-2026-10-05-011 | 2026-10-05 | Once the intake case's primary_athlete_id is written, guardians and athletes see their own child's intake cases (option A, keep) | PRIMARY |  |  |
+| OD-2026-10-05-010 | 2026-10-05 | Licensed excerpts: the excerpt's location is any locator (page, section or timestamp), not a page number only (option A) | PRIMARY |  |  |
+| OD-2026-10-05-009 | 2026-10-05 | Licensed excerpts: the private location the operator excerpt-loading workflow reads from is an Azure private blob container (option A) | PRIMARY |  |  |
+| OD-2026-10-05-008 | 2026-10-05 | The test organization's admin login is re-homed to Punxsy Prominence as a parent, through a reviewed dry-run-first script Jason runs | PRIMARY |  |  |
+| OD-2026-10-05-007 | 2026-10-05 | F-003 board-only stamp line approved as written | PRIMARY |  |  |
+| OD-2026-10-05-006 | 2026-10-05 | Release 9 authorized, and overwatch's standing recommendations at that moment accepted (not the open items) | PRIMARY |  |  |
+| OD-2026-10-05-005 | 2026-10-05 | Film Study refusal wording approved as written; the refusal does not name another athlete | PRIMARY |  |  |
+| OD-2026-10-05-004 | 2026-10-05 | Clip tags link to one sparring entry, the link is optional, and it is wired behind the scenes now | PRIMARY |  |  |
+| OD-2026-10-05-003 | 2026-10-05 | Production audit: "you have full control and acess" for browser switching, and the audit's documentation-write authorization | PRIMARY |  |  |
+| OD-2026-10-05-002 | 2026-10-05 | Archive the retired overwatch session local_1b22c98a | PRIMARY |  |  |
+| OD-2026-10-05-001 | 2026-10-05 | Release 9 waits until the adult pathway screens (B2b, #1222) merge | PRIMARY |  |  |
+| OD-2026-10-04-030 | 2026-10-04 | PR #1206, #1207 and #1208 (started in the Fable session): reviewed and merged from the overwatch thread, after the current release | PRIMARY |  |  |
+| OD-2026-10-04-029 | 2026-10-04 | Body mass: the athlete or their coach may correct a mistyped weight; the original stays on record (extends OD-2026-10-04-016) | PRIMARY |  |  |
+| OD-2026-10-04-028 | 2026-10-04 | Mental skills: an athlete's removed entry is hidden from everyone with no marker, and removing the current cue brings back the previous one (extends OD-2026-10-04-023) | PRIMARY |  |  |
+| OD-2026-10-04-027 | 2026-10-04 | Adult pathway: a date-of-birth correction flags and freezes the placement; the coach screen wording, helper labels and the under-18 line are approved (extends OD-2026-10-04-010, -018 and -019) | PRIMARY |  |  |
+| OD-2026-10-04-026 | 2026-10-04 | Mental skills: the three "who can see this" lines are approved as written (extends OD-2026-10-04-023) | PRIMARY |  |  |
+| OD-2026-10-04-023 | 2026-10-04 | Mental skills track: the athlete-facing imagery steps and the self-talk explainer are approved as written, and athletes may remove their own entries (extends OD-2026-10-04-011) | PRIMARY |  |  |
+| OD-2026-10-04-024 | 2026-10-04 | Body-point ontology 0.4: not annotatable yet, and older marks are kept exactly as made under their own version (extends OD-2026-10-04-021) | PRIMARY |  |  |
+| OD-2026-10-04-020 | 2026-10-04 | Jump tests: both CMJ height and broad jump, best of 3, a coach records either or both (settles OD-2026-10-04-007's open Q1) | PRIMARY |  |  |
+| OD-2026-10-04-021 | 2026-10-04 | Body points: drop the ankles from the app's point list in a new ontology version | PRIMARY |  |  |
+| OD-2026-10-04-022 | 2026-10-04 | PR #941 (drill library "cabinet") closed; the #1197 release check is run by Jason | PRIMARY |  |  |
+| OD-2026-10-04-025 | 2026-10-04 | New lane sessions ("chips") are started from the Fable session on the Fable account, so lanes run on its budget; overwatch still merges | PRIMARY |  |  |
+| OD-2026-10-04-019 | 2026-10-04 | Adult pathway write roles: coaches and organization admins may place stages, tick goals and switch the minor allowance (extends OD-2026-10-04-002 to organization admins) | PRIMARY |  |  |
+| OD-2026-10-04-018 | 2026-10-04 | Adult pathway: switching a minor's allowance off ends their placement automatically, with who and when recorded (extends OD-2026-10-04-010) | PRIMARY |  |  |
+| OD-2026-10-04-017 | 2026-10-04 | Sparring cap editor: its own coach page, not the Sports Medicine board (supersedes the placement part of OD-2026-10-04-013) | PRIMARY |  |  |
+| OD-2026-10-04-016 | 2026-10-04 | Body mass fast-change flag: the flag sentence has no disclaimer, and it also fires on any two weigh-ins within 7 days that differ by more than 5% (extends OD-2026-10-04-006) | PRIMARY |  |  |
+| OD-2026-10-04-015 | 2026-10-04 | Load-up plus wellness-down coach prompt (Rule 7): energy or soreness is the "down" signal, "Consider whether a lighter week fits" wording, new "recovery" gap type, database change first | PRIMARY |  |  |
+| OD-2026-10-04-014 | 2026-10-04 | Strength and conditioning block templates: coach-chosen templates lift the "no suggested plan" ruling; %1RM ranges shown labelled [AI-H]; hidden for minors unless the coach ticks an unsaved box | PRIMARY |  |  |
+| OD-2026-10-04-013 | 2026-10-04 | Sparring cap staff note: it stays on the clearance board, labelled as holding no medical details | PRIMARY | partly replaced by OD-2026-10-04-017 (the placement part) (2026-11-11) |  |
+| OD-2026-10-04-012 | 2026-10-04 | Weekly training-load "look at this athlete" flag: raised at 2.0x the athlete's usual week, and the coach sees both the numbers and the multiple | PRIMARY |  |  |
+| OD-2026-10-04-011 | 2026-10-04 | Mental skills track: imagery from the Imagery Rehearsal drill, athletes type their own self-talk cues, minors may use it and linked guardians read the log | PRIMARY |  |  |
+| OD-2026-10-04-010 | 2026-10-04 | Adult pathway placement: minors only with a coach flag; the coach gives a reason; no date of birth counts as a minor | PRIMARY |  |  |
+| OD-2026-10-04-009 | 2026-10-04 | Tagged clips: staff clip lists hide the title and note of a clip whose playback a consent block stops | PRIMARY |  |  |
+| OD-2026-10-04-008 | 2026-10-04 | Injury family view: athletes and guardians keep all the built fields (training or competition, who reported it, expected and actual return); staff notes stay hidden | PRIMARY |  |  |
+| OD-2026-10-04-007 | 2026-10-04 | Jump test and coach skill ratings: 1-5 rating wording draft approved; jump test choice not settled | PRIMARY |  |  |
+| OD-2026-10-04-006 | 2026-10-04 | Body mass at check-in: everyone may log it, youth entries limited; flag a change of more than 5% in 7 days; the organization admin keeps access | PRIMARY |  |  |
+| OD-2026-10-04-005 | 2026-10-04 | Technique order on the athlete pathway: the 00_MASTER_SKILL_REGISTRY.xlsx Skill_Index prerequisites are the source, and the registry order wins | PRIMARY |  |  |
+| OD-2026-10-04-004 | 2026-10-04 | Sparring over a coach-set cap: warn only, record the entry, the coach decides | PRIMARY |  |  |
+| OD-2026-10-04-003 | 2026-10-04 | Tagged sparring/bout clips: staff only, any consent block blocks the whole clip, a coach may review if any athlete is theirs, a coach may untag unless consent blocks | PRIMARY |  |  |
+| OD-2026-10-04-002 | 2026-10-04 | Adult pathway stages: coach-set, named Foundation / Intermediate / Advanced / Elite, checkpoint goals and caveat wording approved | PRIMARY |  |  |
+| OD-2026-10-04-001 | 2026-10-04 | Injury records: athletes and linked guardians read their own, staff notes hidden; the coach injury log is its own page, the Sports Medicine board's 2026-08-15 rule stays | PRIMARY |  |  |
+| OD-2026-10-03-018 | 2026-10-03 | Lanes put their questions to Jason in their own lane | PRIMARY |  |  |
+| OD-2026-10-03-017 | 2026-10-03 | Pain reports: critical pain no longer wears the medical-stop colour either; "no restriction on building because of the red color" (PR #1119) | PRIMARY |  |  |
+| OD-2026-10-03-016 | 2026-10-03 | Jason can start chips through a remote desktop app; new work goes up as chips again | PRIMARY |  |  |
+| OD-2026-10-03-015 | 2026-10-03 | The chalkboard and the gym TV show boxing quotes too; a lane gathers attributed quotes for his approval; an in-app quotes library to add, edit and pull quotes from | PRIMARY |  |  |
+| OD-2026-10-03-014 | 2026-10-03 | Overwatch assigns Fable's work through GitHub issues labelled "fable"; Fable builds and opens PRs and stops merging (supersedes the merging half of OD-2026-10-03-004); speed bar 100 ms; guardian move kept as built; "not visible" learned from each point's own location | PRIMARY |  |  |
+| OD-2026-10-03-013 | 2026-10-03 | SHADOW's coach chat gets the stricter Library search too | PRIMARY |  |  |
+| OD-2026-10-03-011 | 2026-10-03 | Release 6 to production: "Reply production" started the release; production moved to revision 0000164 (run 37139084060); the word "Green" came after the run had finished | PRIMARY |  |  |
+| OD-2026-10-03-012 | 2026-10-03 | Between the two Claude Code accounts: overwatch assigns lanes, the Fable session writes the code; briefs are lane assignments, not designs | PRIMARY |  |  |
+| OD-2026-10-03-010 | 2026-10-03 | The chalkboard and the gym TV: when there is nothing real to show, a quote with a status line under it (batch 8, PR #1144) | PRIMARY |  |  |
+| OD-2026-10-03-009 | 2026-10-03 | Moving a guardian to a new email's login (OD-2026-09-29-004 R4): organization admins only, the new login is made in the same step, the old login is switched off when it is empty, the contact email follows, nothing is sent (PR #1151) | PRIMARY |  |  |
+| OD-2026-10-03-008 | 2026-10-03 | Intake promotion: merge #1143 as it is and put the rest of the writes in one transaction in a new lane (OD-2026-10-03-002 section 5, option A) | PRIMARY |  |  |
+| OD-2026-10-03-007 | 2026-10-03 | The GPU: this PC is set up for ML work; the tablet speed bar is the tighter one (live speed); gate 3 readiness is built on fake data | PRIMARY |  |  |
+| OD-2026-10-03-006 | 2026-10-03 | Body points belong to the person whose own event it is (supersedes the opponent marking of OD-2026-10-02-008 9A); a new "received punch" event class is wanted; the stance label "neutral" is confirmed | PRIMARY |  |  |
+| OD-2026-10-03-005 | 2026-10-03 | The Library chat: when nothing relevant is found, show the closest passages with a confidence level and file a research request for the gap (not yet built) | PRIMARY |  |  |
+| OD-2026-10-03-004 | 2026-10-03 | The Fable thread merges its own PRs; when its usage runs out its lanes return to overwatch | PRIMARY | partly replaced by OD-2026-10-03-014 (ruling B, the first ruling) (2026-11-11) |  |
+| OD-2026-10-03-003 | 2026-10-03 | UI problems are logged as found and a UI lane fixes one screen at a time after that file's other work merges; release 6 shipped the coach page as it was | PRIMARY |  |  |
+| OD-2026-10-03-002 | 2026-10-03 | The intake audit's owner questions: old research-requirement rows deleted; licensed excerpts loaded by the screen and by a workflow from a private location; four rights values; a coach issues a template in one action; a coach sets the competence level; one transaction around intake's writes; the AI prompt's drill list stays as built; the duplicate drill copy not in use is deleted; document-ingest and the laptop seeder retired; callerless routes parked, not deleted | PRIMARY |  |  |
+| OD-2026-10-03-001 | 2026-10-03 | Tablet hand-over for labelling (TEACH-LABELLER-HANDOFF-01): H1-H4 A; full app access needs the coach's own sign-in; H6 A plus an email reset; 60 minutes; no durable failed-PIN record | PRIMARY |  |  |
+| OD-2026-10-02-019 | 2026-10-02 | The Label Agreement screen: the "Still to do" line is left as is; its readability is to be fixed before production (release 5 then shipped without the fix, on his later word) | PRIMARY |  |  |
+| OD-2026-10-02-018 | 2026-10-02 | The floor screens' layout: away from columns; the words he gave the UI lane on the look | PRIMARY |  |  |
+| OD-2026-10-02-017 | 2026-10-02 | A stand-in architect while ChatGPT is out of usage: a Claude design session drafts the teach-AI plans; the two waiting jobs start | PRIMARY |  |  |
+| OD-2026-10-02-016 | 2026-10-02 | Teach-AI: the seven open items go with the recommendations (D2 A, D3 A, T4 A, T5 A, T6 A, T7 A, T8 B); stop raising safety and legal items already covered | PRIMARY |  |  |
+| OD-2026-10-02-015 | 2026-10-02 | Research intake part 2: the platform shelf is worked from the existing pages; Admin@ stops writing the gym shelf; admin uploads are not linked to the Library; archive wiring later; a submission still never resolves a requirement | PRIMARY |  |  |
+| OD-2026-10-02-014 | 2026-10-02 | Named stance types are labelled too, once per event, by sanctioning body | PRIMARY |  |  |
+| OD-2026-10-02-013 | 2026-10-02 | Research intake: the platform owner writes the platform shelf in the app; licensed excerpts stay private; platform material on the platform shelf, gym material on the gym shelf; curator-chosen excerpts only; approval as today | PRIMARY |  |  |
+| OD-2026-10-02-012 | 2026-10-02 | Workout intake: the AI prompt is to link steps to the gym's own drills (a second item, after #1103) | PRIMARY |  |  |
+| OD-2026-10-02-011 | 2026-10-02 | PPBF builds its own pose model from nothing; coaches hand-mark every point until it exists (replaces pick 8A); it runs inside the app on the gym's own devices; all 24 points at three moments on every event (replaces the click range). The agreement screen's opening sentence | PRIMARY |  |  |
+| OD-2026-10-02-010 | 2026-10-02 | Two "Yes" answers: the look-pin tests are covered by "remove anything that will hinder this"; the Label Agreement screen, what coaches see on it, and the tablet hand-over | PRIMARY | partly replaced by OD-2026-10-02-011 (the example sentence of section 2 item 1) (2026-11-11) |  |
+| OD-2026-10-02-009 | 2026-10-02 | "Remove anything that will hinder this": read as removing now the tests that pin a look | PRIMARY |  |  |
+| OD-2026-10-02-008 | 2026-10-02 | Teaching the recognizer body points: positions clicked at set moments; a 24-point list with glove and chin; a click range; a pose tool that pre-fills; the agreement report is built now | PRIMARY | partly replaced by OD-2026-10-02-011 (pick 8A and the click range) (2026-11-11); partly replaced by OD-2026-10-03-006 (section 3 item 9A) (2026-11-11) |  |
+| OD-2026-10-02-007 | 2026-10-02 | Law 2's palette limit no longer binds; nothing about the look binds | PRIMARY |  |  |
+| OD-2026-10-02-006 | 2026-10-02 | Teaching the recognizer: TEACH-DATA-01 approved; the agreement report is next and is for coaches and organization admins; labelling is to cover the body parts of the movement. Research intake stores the source's own words | PRIMARY |  |  |
+| OD-2026-10-02-005 | 2026-10-02 | The write log lists durable writes only; session scratch files are not listed | PRIMARY |  |  |
+| OD-2026-10-02-004 | 2026-10-02 | Nothing in the UI is tied down: the old look-and-flow standards stop binding, and their wording is changed, not labelled as history | PRIMARY |  |  |
+| OD-2026-10-02-003 | 2026-10-02 | The ring canvas reads IRON CITY BEER, the second sponsor is KO NATION, and the ring corners are steel I-beams | PRIMARY |  |  |
+| OD-2026-10-02-002 | 2026-10-02 | Releases 3, 4 and 5 to production; lane close-outs, and overwatch does not archive the visual lane; overwatch lands UI work but does not direct its design; a stand-in reviewer is fine; ChatGPT does not hold anything up | PRIMARY |  |  |
+| OD-2026-10-02-001 | 2026-10-02 | Real marks on real equipment are allowed in a plate; invented or garbled lettering is not | PRIMARY |  |  |
+| OD-2026-10-01-008 | 2026-10-01 | Recorded write defects accepted for merge, and from now a disclosed, recorded write defect does not block a merge; when the act-now line appears; who a SHADOW safety alert reaches; the act-now sentence; no humour in an acute answer | PRIMARY |  |  |
+| OD-2026-10-01-007 | 2026-10-01 | Parent passwords: a board seat does not block one; a person on both sides uses two emails; a stored password is cleared when its holder becomes ineligible. Release 3 started. The hold-placement sentence and the lapsed-clearance wording approved | PRIMARY |  |  |
+| OD-2026-10-01-006 | 2026-10-01 | SHADOW: educate, do not restrict; coach notification is part of the intended safety handling; emergency reviews get a separate hourly allowance; the #1036 replacement re-cut | PRIMARY |  |  |
+| OD-2026-10-01-005 | 2026-10-01 | The floor takes photographs again, and the two it used to carry were the wrong building | PRIMARY |  |  |
+| OD-2026-10-01-004 | 2026-10-01 | The visuals lane: plate variety comes from doors, not new rooms; a declared format conversion is allowed and the original must be kept; board and file get light plates behind a new contrast guard | PRIMARY |  |  |
+| OD-2026-10-01-003 | 2026-10-01 | His later answers of 2026-10-01 (afternoon): the coach-board control and failure line approved; working files; plates and who owns the visual lane; observation ids; the knockout cases; release 3 staged then cancelled | PRIMARY |  |  |
+| OD-2026-10-01-002 | 2026-10-01 | His later answers of 2026-10-01: what "pair" means; records and read-only checks and staging migrations without asking; the hold screens; the parent password starts; the Lane S rulings confirmed; the cross-athlete draft bug | PRIMARY |  |  |
+| OD-2026-10-01-001 | 2026-10-01 | Lanes finish and close; closed lanes are archived; the safety fix lanes; parents get a password; a second approver login, timing his; release 2 | PRIMARY |  |  |
+| OD-2026-09-30-007 | 2026-09-30 | What Jason authorized overwatch to do (lane questions, spending, the staging app) and his 2026-09-30 / 10-01 answers | PRIMARY |  |  |
+| OD-2026-09-30-006 | 2026-09-30 | High-risk chat questions get education, not a refusal; acute reports get education plus an act-now line | PRIMARY |  |  |
+| OD-2026-09-30-005 | 2026-09-30 | Safety outranks runtime readiness and the global chat limits; the review-queue write gets its own bound | PRIMARY |  |  |
+| OD-2026-09-30-004 | 2026-09-30 | Answers to the housekeeping question batch (2026-09-30) | PRIMARY |  |  |
+| OD-2026-09-30-003 | 2026-09-30 | The housekeeping thread is overwatch: general contractor, ChatGPT liaison, deployment lead | PRIMARY | partly replaced by OD-2026-10-01-001 (G6) (2026-11-11) |  |
+| OD-2026-09-30-002 | 2026-09-30 | Teaching footage is withdrawn, never deleted; a withdrawal says why; and the teaching loop must be walkable by a coach | PRIMARY |  |  |
+| OD-2026-09-30-001 | 2026-09-30 | Migrate before deploying, and Claude may click the MIGRATION gate on a named run | PRIMARY |  |  |
+| OD-2026-09-29-006 | 2026-09-29 | Research baseline repair: the repo patch by PR, production by a pinned tool, archive not reject, tiers by the spec | PRIMARY |  |  |
+| OD-2026-09-29-005 | 2026-09-29 | Content intake: how gym material comes in, how revisions load, stop rules, scope, merging | PRIMARY |  |  |
+| OD-2026-09-29-004 | 2026-09-29 | Second "all recommended" and the P answers: research coverage, gap tickets, seat counts, guardian logins, the stale deploy, coaches and birth dates, guardian waivers, the waiver rule | PRIMARY |  |  |
+| OD-2026-09-29-003 | 2026-09-29 | "all recommended": the missing documents, athletes' birth dates, the waiver CHECK, guardian waiver statuses, the 20% floor, school grades, the Floor Card, the WRITES audit, deleted accounts at sign-in | PRIMARY |  |  |
+| OD-2026-09-29-002 | 2026-09-29 | The other answers of 2026-09-29: branches, PR #941, two production checks, untried modules, the roster door, athlete deletion, the tracker check | PRIMARY |  |  |
+| OD-2026-09-29-001 | 2026-09-29 | Red is not reserved; `--locked` still means a medical stop | PRIMARY |  |  |
+| OD-2026-09-28-014 | 2026-09-28 | Panels may be aged paper, dark glass, or both, each where it fits | PRIMARY |  |  |
+| OD-2026-09-28-013 | 2026-09-28 | The ring canvas keeps its IRON CITY lettering in plates | PRIMARY |  |  |
+| OD-2026-09-28-012 | 2026-09-28 | One merged look: the real gym in the early gritty style, starting with a look board built around The Floor | PRIMARY |  |  |
+| OD-2026-09-28-011 | 2026-09-28 | Operations answers: the policy shelf move, the Companion check, placeholders, end-of-build items, and two admin screens | PRIMARY |  |  |
+| OD-2026-09-28-010 | 2026-09-28 | Capability tracker, SHADOW spec, and process defaults from the documentation review | PRIMARY | partly replaced by OD-2026-09-29-002 (item 17, the tracker-disagreement check) (2026-11-11) |  |
+| OD-2026-09-28-009 | 2026-09-28 | Visual rules under Golden Era | PRIMARY |  |  |
+| OD-2026-09-28-008 | 2026-09-28 | Attendance has one system of record; retention describes what exists | PRIMARY |  |  |
+| OD-2026-09-28-007 | 2026-09-28 | The operating organization is `punxsy_prominence` | PRIMARY |  |  |
+| OD-2026-09-28-006 | 2026-09-28 | Teach Shadow: it teaches the machine, not people | PRIMARY |  |  |
+| OD-2026-09-28-005 | 2026-09-28 | The platform owner never opens an individual athlete record | PRIMARY |  |  |
+| OD-2026-09-28-004 | 2026-09-28 | Public repository: two accepted exposures | PRIMARY |  |  |
+| OD-2026-09-28-003 | 2026-09-28 | One record of decisions; merge and check rules | PRIMARY |  |  |
+| OD-2026-09-28-002 | 2026-09-28 | Claude says what it can and cannot do before it builds | PRIMARY |  |  |
+| OD-2026-09-28-001 | 2026-09-28 | Claude Code is the only builder; ChatGPT is the architect and reviewer | PRIMARY |  |  |
+| OD-2026-09-26-002 | 2026-09-26 | Near-miss records are coach and organization-admin chat context only | PRIMARY |  |  |
+| OD-2026-09-26-001 | 2026-09-26 | Visual design is not one lane's; anyone who makes a good one owns it |  |  |  |
+| OD-2026-09-25-003 | 2026-09-25 | Any coach or admin in the organization may read an athlete's session note | PRIMARY |  |  |
+| OD-2026-09-25-002 | 2026-09-25 | LANES are agent roles; the four subject areas are WORK DOMAINS | PRIMARY | partly replaced by OD-2026-09-28-001 (the lane list) (2026-11-11) |  |
+| OD-2026-09-25-001 | 2026-09-25 | A session note is retractable from the coach's view | PRIMARY |  |  |
+| OD-2026-09-21-001 | 2026-09-21 | Claude builds, ChatGPT designs and enforces standards; product direction; minors' limits are coach-set data | PRIMARY | partly replaced by OD-2026-09-28-001 (the role items) (2026-11-11); partly replaced by OD-2026-09-26-001 (the third numbered item) (2026-11-11); partly replaced by OD-2026-09-28-003 (the storage and ledger duties given to ChatGPT) (2026-11-11) |  |
+| OD-2026-09-19-002 | 2026-09-19 | Open assigned work keeps its drill instruction after the gym retires the drill | PRIMARY |  |  |
+| OD-2026-09-19-001 | 2026-09-19 | Drills are progressive instructional objects (W-D4 product ruling) | PRIMARY |  |  |
+| OD-2026-09-18-001 | 2026-09-18 | Every new assignment and Coach Card is built from an active operational drill | PRIMARY |  |  |
+| OD-2026-09-17-001 | 2026-09-17 | Athlete active-learning visibility for reference drills | PRIMARY |  |  |
+| OD-2026-09-16-001 | 2026-09-16 | Hybrid reference / operational drill model | PRIMARY |  |  |
+| OD-2026-09-15-001 | 2026-09-15 | `pilot.drill_cues.source_ref` is optional authoring lineage, not a wording citation | PRIMARY |  |  |
+| OD-2026-08-29-008 | 2026-08-29 | `pilot.waivers.status` is measured before it is constrained | PRIMARY |  |  |
+| OD-2026-08-29-007 | 2026-08-29 | A nomination is deleted with the athlete it names | PRIMARY |  |  |
+| OD-2026-08-29-006 | 2026-08-29 | The build lane merges its own green work and drives staging; production stays the owner's |  |  |  |
+| OD-2026-08-29-005 | 2026-08-29 | A superseded adjudication is marked by a revision integer, and a collision is explained rather than dumped |  |  |  |
+| OD-2026-08-29-004 | 2026-08-29 | A second adjudication of the same pair is a correction, and supersedes |  | partly replaced by OD-2026-08-29-005 (its open question) (2026-11-11) |  |
+| OD-2026-08-29-003 | 2026-08-29 | With three or more submitted sets, the adjudicator picks the pair |  |  |  |
+| OD-2026-08-29-002 | 2026-08-29 | An annotator may not adjudicate a clip they annotated |  |  |  |
+| OD-2026-08-29-001 | 2026-08-29 | `Admin@punxsyprominence.org` is the primary owner email |  |  |  |
+| OD-2026-08-28-009 | 2026-08-28 | `active` stays a browse filter; the write path is not narrowed to match |  |  |  |
+| OD-2026-08-28-008 | 2026-08-28 | Every route under `app/api` must declare its gate |  |  |  |
+| OD-2026-08-28-007 | 2026-08-28 | The calibration creator must be a live account, and the act must be recorded |  |  |  |
+| OD-2026-08-28-006 | 2026-08-28 | The three discipline foreign keys are to be validated |  |  |  |
+| OD-2026-08-28-005 | 2026-08-28 | The drill and cue read policy governs the content CLASS, not three named routes |  |  |  |
+| OD-2026-08-28-004 | 2026-08-28 | The schema verifier reads the real apply order |  |  |  |
+| OD-2026-08-28-003 | 2026-08-28 | drill-library-v3 keeps the CHECK, gated; the FK runner tripwire goes |  |  |  |
+| OD-2026-08-28-002 | 2026-08-28 | The drill library discipline CHECK is retired; the registry governs |  |  |  |
+| OD-2026-08-28-001 | 2026-08-28 | Production `run-checks` dispatch belongs to the release lane |  | partly replaced by OD-2026-09-28-010 (item 8: a build lane does not dispatch run-checks against production) (2026-11-11) |  |
+| OD-2026-08-27-001 | 2026-08-27 | Drill and cue library read policy | RECONSTRUCTED |  |  |
+
+<!-- owner-decisions-index:end -->
+
 This file exists because a decision that lives only in a chat log is not a
 decision any session can check. On 2026-08-27 the drill/cue read policy was
 ratified and written down nowhere. #754 merged the next day as `81e27e72`
@@ -23,6 +411,10 @@ refused, or abandoned. Until 2026-09-21 those were recorded in
 `docs/current/AI_RELEASE_CONTROL.md`; that record is now in
 `docs/archive/2026-09-21_AI_RELEASE_CONTROL_before_condense.md`. Release
 procedure is `docs/AI_DELIVERY_PIPELINE.md`.
+
+The index of rulings at the top is generated: every PR that adds an entry, or a
+fixed-form `**Status, YYYY-MM-DD:**` line, must run
+`node scripts/owner-decisions-index.mjs --write` and commit the result, or CI fails.
 
 Not here: work assignments, scope for a single ticket, or anything a session
 may decide for itself. `docs/current/ACTIVE_WORK.md` holds blocked and parked
@@ -2252,6 +2644,8 @@ Jason: *"go with your recomendation on everything"*
 
 **Status (2026-10-21):** the paired-idle wall view in these screenshots (`2-paired-idle.png`) is superseded: Jason later said the idle paired TV "should be a workk out screen" (OD-2026-10-19-014) and chose "A: Workout-ready board (Rec.)" (OD-2026-10-21-003). The rest of look B stands.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-10-19-014 (the paired-idle wall view). The newer entry's own words: "supersedes the paired-idle wall view among the screenshots OD-2026-10-17-028 approved"
+
 ---
 
 ## OD-2026-10-17-027 -- Habit and lesson thresholds from the research report: "A: Adopt as written (Rec.)"; "A: Those three (Rec.)"; "A: Not until calibrated (Rec.)"
@@ -2824,6 +3218,8 @@ Overwatch sent him the other three PR 1 screenshots and asked lane L39 for an Op
 **Status:** merged to main after Release 25; not live at the time of writing.
 
 **Status (2026-10-22):** the "After start" half is superseded by OD-2026-10-22-001 (Jason: "then classes need to be able to be canceled"); the "Who cancels" half stands, per Overwatch's reading recorded there.
+
+**Status, 2026-11-11:** partly replaced by OD-2026-10-22-001 (the "After start" half). The newer entry's own words: "It supersedes the "After start" half of OD-2026-10-14-001"
 
 ---
 
@@ -3995,6 +4391,8 @@ Question (log, short): "Build all" scope: people-facing features only, or every 
 
 **Status (2026-10-17):** D22 is superseded by OD-2026-10-17-002 (detach-then-move with a narrowed hold); the rest of this entry stands.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-10-17-002 (D22). The newer entry's own words: "This entry replaces D22 of OD-2026-10-08-009"
+
 ---
 
 ## OD-2026-10-08-008 -- Second question round, part 1 (D1-D12): drill versions, content import, stop rules, equipment, parent drill view, sparring wording, staging checks
@@ -4161,6 +4559,8 @@ Overwatch had listed five open items waiting on his confirmation. Jason: *"I con
 
 Status (2026-10-12): ruling 3 and item 2 are replaced by OD-2026-10-11-005 (*"B 2 not sure verify"*): a workout template now issues with untested drills, named to the coach before and after. The refusal of retired drills stays.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-10-11-005 (ruling 3). The newer entry's own words: "It replaces ruling 3 of OD-2026-10-08-002."
+
 ---
 
 ## OD-2026-10-08-001 -- Release 13 production approvals ("yo make the clicks this one time to review anf deploy"); the account switch uses the handover file
@@ -4221,6 +4621,10 @@ Context: Release 13 had been staged at `8e8f70e9` with merges paused (OD-2026-10
 
 **Not ruled here:** the nine modules (ruling 1). Also the follow-up overwatch put after ruling 2 and he has not answered: when the unadopted drill is an untested DRAFT, refuse and name it (overwatch's recommendation, because a draft stays a draft until a coach floor-tests it) or adopt it anyway.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-10-08-013 (ruling 4). The newer entry's own words: "The newer answer (2026-10-08) replaces the 2026-10-07 one"
+
+**Status, 2026-11-11:** partly replaced by OD-2026-10-08-004 (ruling 3). The newer entry's own words: "this entry replaces it"
+
 ---
 
 ## OD-2026-10-07-011 -- Question card 4 (route survey Q1 to Q4): coach gym-wide reads split; platform owner off six gym routes; athlete rows hidden on the platform staff list; gap numbers withheld from families
@@ -4244,6 +4648,8 @@ Context: Release 13 had been staged at `8e8f70e9` with merges paused (OD-2026-10
 **Note on ruling 1.** The card marked "Split" as recommended. The route survey file it came from (`Documents\PPBF-overwatch\lane-inbox\ROUTE-SURVEY-fix-batches-2026-10-07.md`, Q1) recommended keeping all eight and recording an exception; overwatch changed the recommendation on the card to fit his class-register answer (OD-2026-10-07-008 ruling 4). His pick is of the card as written.
 
 **Not ruled here:** which of the eight routes count as "names-and-status lists" beyond the card's own wording (the card lists the athlete list, floor groups, competition entries and the wrestling roster before the one-percent notes and the consent screen).
+
+**Status, 2026-11-11:** partly replaced by OD-2026-10-08-003 (Question 1, ruling 1). The newer entry's own words: "R1 replaces it: all eight stay gym-wide and the exception is recorded"
 
 ---
 
@@ -4508,6 +4914,8 @@ The lane's question, line 398 (2026-10-03T21:28:35.666Z), as written: "**Copies 
 2. Drill cues (Q10): technique drills need at least one coaching cue before they can be used; conditioning drills do not. Jason chose the recommended option.
 3. The 114 draft drills (Q11): the drills marked "REQUIRES FLOOR VALIDATION" stay drafts until a coach marks each one floor-tested. Jason chose the recommended option.
 4. Source label (Q12): the label "PPBF owner-authored" is added for Jason's own drills and material. Jason chose the recommended option.
+
+**Status, 2026-11-11:** partly replaced by OD-2026-10-27-001 (ruling 1). The newer entry's own words: "supersedes OD-2026-10-06-026 ruling 1 and the no-override design recorded in `safetyGateMatrix.ts`"
 
 ---
 
@@ -6133,6 +6541,8 @@ staff note stays on the clearance board, with the label "staff only - no medical
 details here".** The other options were "Drop note here (Recommended)" and "Move
 panel to own page".
 
+**Status, 2026-11-11:** partly replaced by OD-2026-10-04-017 (the placement part). The newer entry's own words: "Supersedes the placement part of OD-2026-10-04-013"
+
 ---
 
 ## OD-2026-10-04-012 -- Weekly training-load "look at this athlete" flag: raised at 2.0x the athlete's usual week, and the coach sees both the numbers and the multiple
@@ -7228,6 +7638,8 @@ usage runs out, the lanes it was running come back to overwatch, and
 overwatch checks in with them.** Recorder's reading, not his words: "its"
 is the Fable thread's, "those lanes" are its research, data and intake lanes.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-10-03-014 (ruling B, the first ruling). The newer entry's own words: "This supersedes OD-2026-10-03-004's ruling B"
+
 ---
 
 ## OD-2026-10-03-003 -- UI problems are logged as found and a UI lane fixes one screen at a time after that file's other work merges; release 6 shipped the coach page as it was
@@ -8196,6 +8608,8 @@ Options: A approve as written (recommended); B your wording." and, in plain
 words, "Say "yes" or give me the words you want." Jason, whole message
 (21:43:18Z): *"Yes"*. **The door wording is approved as written.**
 
+**Status, 2026-11-11:** partly replaced by OD-2026-10-02-011 (the example sentence of section 2 item 1). The newer entry's own words: "This replaces the example sentence of OD-2026-10-02-010 section 2 item 1"
+
 ---
 
 ## OD-2026-10-02-009 -- "Remove anything that will hinder this": read as removing now the tests that pin a look
@@ -8330,6 +8744,10 @@ As each option was put to him in the expanded write-up:
 
 8A replaces the "no pose model" line of the architect's first design; the
 design is the architect's to redo, for his approval.
+
+**Status, 2026-11-11:** partly replaced by OD-2026-10-02-011 (pick 8A and the click range). The newer entry's own words: "Section 2 replaces pick 8A, and section 3a replaces the click range, of OD-2026-10-02-008"
+
+**Status, 2026-11-11:** partly replaced by OD-2026-10-03-006 (section 3 item 9A). The newer entry's own words: "supersedes section 3 item 9A of OD-2026-10-02-008"
 
 ---
 
@@ -10684,6 +11102,8 @@ next one.
 ChatGPT the architect and reviewer, Jason owner and final authority. This entry
 adds how the Claude threads are organised among themselves.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-10-01-001 (G6). The newer entry's own words: "This replaces G6 of OD-2026-09-30-003"
+
 ---
 
 ## OD-2026-09-30-002 -- Teaching footage is withdrawn, never deleted; a withdrawal says why; and the teaching loop must be walkable by a coach
@@ -11501,6 +11921,8 @@ checks that DONE modules cite code stay. Item 26 -- the `/admin/import` door
 goes to organization admins and coaches, and the import page and API open to
 coaches, *"9d. B"* (OD-2026-09-29-002 item 9d).
 
+**Status, 2026-11-11:** partly replaced by OD-2026-09-29-002 (item 17, the tracker-disagreement check). The newer entry's own words: "remove the check that compares the module files with the old index, `expanded-200-index.json` (history under OD-2026-09-28-010 item 17)"
+
 ---
 
 ## OD-2026-09-28-009 -- Visual rules under Golden Era
@@ -12112,6 +12534,8 @@ detailed Jason / ChatGPT / Claude / Grok agent-role model, and
 resolves the separate four-subject-area vocabulary without changing those
 authorities.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-09-28-001 (the lane list). The newer entry's own words: "Supersedes OD-2026-09-25-002 (the lane list)"
+
 ---
 
 ## OD-2026-09-25-001 -- A session note is retractable from the coach's view
@@ -12231,6 +12655,12 @@ What that means as built:
 3. If a limit is missing, the AI asks for it. It does not fill in a default.
 4. No limits table exists yet. Building one is its own bounded slice and is
    not authorized by this entry.
+
+**Status, 2026-11-11:** partly replaced by OD-2026-09-28-001 (the role items). The newer entry's own words: "the role items of OD-2026-09-21-001 (ChatGPT designs and enforces standards; Grok keeps visual design and implementation)"
+
+**Status, 2026-11-11:** partly replaced by OD-2026-09-26-001 (the third numbered item). The newer entry's own words: "the third numbered item of OD-2026-09-21-001"
+
+**Status, 2026-11-11:** partly replaced by OD-2026-09-28-003 (the storage and ledger duties given to ChatGPT). The newer entry's own words: "the storage and ledger duties given to ChatGPT in the workspace rules and in OD-2026-09-21-001"
 
 ---
 
@@ -13312,6 +13742,8 @@ adjudication.ts`, which exposes `recordAdjudication` and `getAdjudication` and
 no update path. PR #900, which flagged the question and deliberately did not
 answer it.
 
+**Status, 2026-11-11:** partly replaced by OD-2026-08-29-005 (its open question). The newer entry's own words: "This supersedes the open question in OD-2026-08-29-004"
+
 ---
 
 ## OD-2026-08-29-003 -- With three or more submitted sets, the adjudicator picks the pair
@@ -13884,6 +14316,8 @@ nothing -- when Jason says so, for that run. The kernel lines cited above
 ("line 363", "lines 369-370") are as `AGENT_KERNEL.md` stood at `4e36547d`
 (#791, 2026-08-28, the commit that added this entry); the kernel has been
 rewritten since, and those line numbers no longer point there.
+
+**Status, 2026-11-11:** partly replaced by OD-2026-09-28-010 (item 8: a build lane does not dispatch run-checks against production). The newer entry's own words: "Supersedes OD-2026-08-28-001 to the extent it says a build lane does not dispatch `run-checks` against production (item 8)."
 
 ---
 
