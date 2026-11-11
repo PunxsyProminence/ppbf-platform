@@ -188,6 +188,8 @@ and should not try to.
 
 **Status:** recorded 2026-11-10 by PR. No content lane has started; FT1 is next and needs its brief.
 
+**Status, 2026-11-11:** the full card, as asked and answered, is in OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW24.md` (sha256[:16] `e482bf974a1a227c` when read; the Backbone Overwatch's working folder, so it may change), copied by script from the Backbone Overwatch transcript (frame bfa765e0) at 2026-11-11 13:23 US Eastern. It gives the question in official and plain form, every option in the order shown with its pros and cons, and his answer. The options were "Drills first, then by stage (Recommended)", "By stage, drills inside each" and "By record kind"; he answered "Drills first, then by stage (Recommended)". It settles the provenance line's "Uncertain" for the question and the other options. The entry's text above is unchanged. Added at the Backbone Overwatch's request, pasted by Jason in this session (transcript line 7509, 2026-11-11T18:29:12.851Z).
+
 ---
 
 ## OD-2026-11-10-002 -- A USA Boxing medical restriction is a hard gate on contact entries: "Contact hard gate"
@@ -214,6 +216,8 @@ and should not try to.
 **Evidence it rested on:** OD-2026-11-10-001 and the two texts it sets side by side; `docs/backbone/SCHEMA_PROPOSAL.md` P22 and `AGENT_KERNEL.md` lines 336 to 350 at main `2e4316b9`, re-read for this entry.
 
 **Status:** recorded 2026-11-10 by PR; nothing built.
+
+**Status, 2026-11-11:** the full card, as asked and answered, is in OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW24.md` (sha256[:16] `e482bf974a1a227c` when read; the Backbone Overwatch's working folder, so it may change), copied by script from the Backbone Overwatch transcript (frame bfa765e0) at 2026-11-11 13:23 US Eastern. It gives the question in official and plain form, every option in the order shown with its pros and cons, and his answer. The options were "Contact hard gate (Recommended)", "Full hard gate" and "Note only (keep Backbone rule)"; he answered "Contact hard gate (Recommended)". It settles the provenance line's "Uncertain" for the question and the other options. The entry's text above is unchanged. Added at the Backbone Overwatch's request, pasted by Jason in this session (transcript line 7509, 2026-11-11T18:29:12.851Z).
 
 ---
 
