@@ -2,7 +2,6 @@
 // BACKBONE -> FT1 TRACK PACKAGES (lane FT1b; OD-2026-11-11-003).
 //
 //   node scripts/backbone-export-ft1-track.mjs <backbone-folder> [--out <seed-data folder>]
-//   npm run backbone:export-ft1 -- <backbone-folder> [--out <seed-data folder>]
 //
 // The 8-week non-contact FT1 class track, from the frozen Backbone into three content packages:
 //   drill-library     131 drills + their cues and own stop rules   (rows ADDED to the committed CSVs)
