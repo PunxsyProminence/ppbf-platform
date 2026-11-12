@@ -1003,7 +1003,7 @@ describe('the committed drill library, loaded through the content-import core', 
   test('--dry-run applies every row and rolls it back: nothing is written', async () => {
     const admin = await createSeedingGym(seedDb, 'gym_drills_dry_run');
     const loaded = await loadReferenceContent(seedDb, {
-      organizationId: 'gym_drills_dry_run', actorAccountId: admin, datasets: 'disciplines,drill-library', dryRun: true,
+      organizationId: 'gym_drills_dry_run', actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library', dryRun: true,
     });
     expect(loaded.code).toBe(0);
     expect(loaded.lines).toContain(`  drill-library: ${LIBRARY.length} new, 0 new version, 0 unchanged, 0 absent, 0 reject`);
@@ -1014,7 +1014,7 @@ describe('the committed drill library, loaded through the content-import core', 
   test('a real load writes every committed drill and child row, placeholders substituted, stamped with the seed account', async () => {
     const organizationId = 'gym_drills_real';
     const admin = await createSeedingGym(seedDb, organizationId);
-    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' });
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library' });
     expect(loaded.code).toBe(0);
 
     const { rows } = await seedDb.query(
@@ -1064,9 +1064,9 @@ describe('the committed drill library, loaded through the content-import core', 
   test('loading it again writes nothing: every drill unchanged, no duplicate, no new version', async () => {
     const organizationId = 'gym_drills_again';
     const admin = await createSeedingGym(seedDb, organizationId);
-    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' })).code).toBe(0);
+    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library' })).code).toBe(0);
 
-    const again = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' });
+    const again = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library' });
     expect(again.code).toBe(0);
     expect(again.lines).toContain(`  drill-library: 0 new, 0 new version, ${LIBRARY.length} unchanged, 0 absent, 0 reject`);
     expect(again.lines).toContain('RESULT: NOTHING TO APPLY -- every item is unchanged or absent; nothing was written.');
@@ -1080,7 +1080,7 @@ describe('the committed drill library, loaded through the content-import core', 
     // operator types an id that resolves to nobody.
     const organizationId = 'gym_drills_no_account';
     const admin = await createSeedingGym(seedDb, organizationId);
-    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin.toUpperCase(), datasets: 'disciplines,drill-library' });
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin.toUpperCase(), datasets: 'disciplines,pathway-catalog,drill-library' });
     expect(loaded.code).toBe(1);
     expect(loaded.lines.find((line) => line.startsWith('RESULT:'))).toMatch(/^RESULT: REFUSED -- CONTENT_IMPORT_ACTOR_NOT_FOUND: /);
     expect(await drillCount(organizationId)).toBe(0);
@@ -1134,7 +1134,7 @@ describe('drill secondary skills, loaded through the content-import core', () =>
 
   async function gymWithLibrary(organizationId: string): Promise<string> {
     const admin = await createSeedingGym(seedDb, organizationId);
-    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' })).code).toBe(0);
+    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library' })).code).toBe(0);
     return admin;
   }
 
@@ -1153,7 +1153,7 @@ describe('drill secondary skills, loaded through the content-import core', () =>
   test('--dry-run applies the committed relationships and rolls them back', async () => {
     const organizationId = 'gym_secskill_dry_run';
     const admin = await createSeedingGym(seedDb, organizationId);
-    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library', dryRun: true });
+    const loaded = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library', dryRun: true });
     expect(loaded.code).toBe(0);
     expect(loaded.lines.some((line) => line.startsWith('RESULT: DRY RUN'))).toBe(true);
     expect(await relationRows(organizationId)).toEqual([]);
@@ -1166,7 +1166,7 @@ describe('drill secondary skills, loaded through the content-import core', () =>
       a.drill_id === b.drill_id ? a.skill_id.localeCompare(b.skill_id) : a.drill_id.localeCompare(b.drill_id));
     expect(await relationRows(organizationId)).toEqual(expected);
 
-    const again = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' });
+    const again = await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library' });
     expect(again.lines).toContain('RESULT: NOTHING TO APPLY -- every item is unchanged or absent; nothing was written.');
     expect(await relationRows(organizationId)).toEqual(expected);
   });

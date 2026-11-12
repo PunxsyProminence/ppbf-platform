@@ -190,8 +190,22 @@ const EVIDENCE = JSON.stringify([
   { evidence_category: 'convention', evidence_label: 'CONVENTION', check_state: 'unchecked', evidence_item_ids: [], registry_claim_ids: [], basis: 'coaching practice', source_note: 'Long Road practice' },
 ]);
 
+/**
+ * The committed files as a package WITHOUT the label columns: the FT1 drills now carry labels in the
+ * committed drill file (lane FT1b), so the three columns are taken out of every file that has them.
+ */
+function stripLabelColumns(files: Record<string, string>): Record<string, string> {
+  const labelColumns = ['field_labels', 'evidence', 'stage_keys'];
+  return Object.fromEntries(Object.entries(files).map(([name, text]) => {
+    const table = readCsv(text);
+    if (!table.header.some((column) => labelColumns.includes(column)) || name.startsWith('pathway-catalog/')) return [name, text];
+    const keep = table.header.map((column, index) => (labelColumns.includes(column) ? -1 : index)).filter((index) => index >= 0);
+    return [name, writeCsv(keep.map((index) => table.header[index]), table.records.map((record) => keep.map((index) => record.cells[index] ?? '')))];
+  }));
+}
+
 function committed(): Record<string, string> {
-  return readDatasetFiles(SEED_DATA_DIR, ['disciplines', 'drill-library']);
+  return stripLabelColumns(readDatasetFiles(SEED_DATA_DIR, ['disciplines', 'pathway-catalog', 'drill-library']));
 }
 
 /** A file with the label columns added to its header and set on the rows `labels` names (by key column). */
@@ -465,7 +479,7 @@ describe('a package with the label columns', () => {
   // The versioned template engine (templateScriptVersions.ts): its own head
   // rule and version numbering, the same label behaviour.
   it('workout templates: labels land at the version written, read back unchanged, and a file without the columns keeps them', async () => {
-    const files = readDatasetFiles(SEED_DATA_DIR, ['workout-templates']);
+    const files = stripLabelColumns(readDatasetFiles(SEED_DATA_DIR, ['workout-templates']));
     await applyCommitted(ORG, admin, files);
     const key = firstKey(files[TEMPLATES], 'template_id');
     const labelledFiles = { ...files, [TEMPLATES]: withLabels(files[TEMPLATES], 'template_id', { [key]: { field_labels: FIELD_LABELS, stage_keys: 'T1|FT1' } }) };

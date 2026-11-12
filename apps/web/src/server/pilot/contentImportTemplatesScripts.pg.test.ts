@@ -211,7 +211,7 @@ async function applyCommitted(
 /** A gym with its disciplines (the drills', templates' and scripts' foreign keys need them), loaded through the engine. */
 async function createGymWithDisciplines(organizationId: string): Promise<string> {
   const admin = await createGym(organizationId);
-  await applyCommitted(organizationId, admin, readDatasetFiles(SEED_DATA_DIR, ['disciplines']));
+  await applyCommitted(organizationId, admin, readDatasetFiles(SEED_DATA_DIR, ['disciplines', 'pathway-catalog']));
   return admin;
 }
 

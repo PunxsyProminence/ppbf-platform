@@ -54,7 +54,7 @@ const INFRA_DIR = path.resolve(WEB_DIR, '../../infra/azure');
 const FULL_SCHEMA_HELPER_PATH = path.join(WEB_DIR, 'scripts/lib/full-schema.mjs');
 const SEED_DATA_DIR = path.join(WEB_DIR, 'seed-data');
 
-const REGISTRIES: readonly DatasetName[] = ['disciplines', 'competence-levels', 'cohort-definitions'];
+const REGISTRIES: readonly DatasetName[] = ['disciplines', 'competence-levels', 'cohort-definitions', 'pathway-catalog'];
 const LIBRARY_CSV = 'drill-library/seed_drill_library.csv';
 const SCALE_CSV = 'drill-library/seed_drill_scale_levels.csv';
 const STOP_CSV = 'drill-library/seed_drill_stop_rules.csv';
@@ -495,7 +495,8 @@ describe('the shipped drill package', () => {
     const admin = await prepareGym('gym_first_drills');
     const first = await applyCommitted('gym_first_drills', admin, drillFiles());
     expect(first.plan.counts['drill-library']).toEqual({ new: DRILLS, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
-    expect(first.written['drill-library']?.inserted).toHaveLength(DRILLS);
+    // `inserted` lists the label and stage-link rows of labelled drills beside the drills themselves; the drills are the rest.
+    expect(first.written['drill-library']?.inserted.filter((entry) => !entry.startsWith('labels ') && !entry.startsWith('stage link '))).toHaveLength(DRILLS);
     expect(first.written['drill-library']?.ledgerRows).toBe(0);
     expect(await committedCounts('gym_first_drills')).toEqual({
       ...COMMITTED_COUNTS, transfer: 0, universal: 0, audit: 2,

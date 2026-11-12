@@ -481,7 +481,7 @@ describe('the committed transfer claims against the real drill library, through 
   test('reports how many committed claims resolve against real drill IDs, and refuses the rest before writing anything', async () => {
     const organizationId = 'gym_transfer_claims';
     const admin = await createSeedingGym(seedDb, organizationId);
-    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library' })).code).toBe(0);
+    expect((await loadReferenceContent(seedDb, { organizationId, actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library' })).code).toBe(0);
     const drillCount = await seedDb.query('select count(*)::int as n from pilot.drill_library where organization_id = $1', [organizationId]);
     expect(drillCount.rows[0].n).toBe(LIBRARY.length);
 

@@ -673,3 +673,12 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_a4223d1f7820e1,drl_f0b1aab1457617,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
 {{PPBF_ORG_ID}},stp_8690a9b4028822,drl_f9e5a58017fd10,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
 {{PPBF_ORG_ID}},stp_3cee96309e3d10,drl_ff1c5f67a3635b,6,"Re-warm before contact or maximal effort if more than ~20 minutes of inactivity has passed since the warm-up (ring wait, bout delay, late start). Warm-up benefit decays measurably across an inactive gap.",universal,warmup_decay
+{{PPBF_ORG_ID}},stp_7ae1a50beb4504,drl_44d4c0b52f4dbd,1,student loses stance integrity,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e821d08dae1038,drl_44d4c0b52f4dbd,2,rushes movements,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_272ec86be20466,drl_44d4c0b52f4dbd,3,stops responding to coaching cues,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_396ac06a1a8b10,drl_47c74661807ae5,1,student loses balance on stops,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f7a7331cbc3f1d,drl_47c74661807ae5,2,continues drifting after movement,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_c3fc47f483898f,drl_47c74661807ae5,3,demonstrates poor positional recovery,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7989a7410e6390,drl_f9bd51a246ea63,1,student throws without setting,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_34e07feffa768b,drl_f9bd51a246ea63,2,rushes the preparation phase,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_7bf1bf68a90056,drl_f9bd51a246ea63,3,demonstrates inconsistent position checks,drill_specific,technique_degradation
