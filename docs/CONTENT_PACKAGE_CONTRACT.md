@@ -608,7 +608,97 @@ Rules:
 
 - A blank rendering_id is filled with 'rnd_' + first 14 hex of sha256(script_id + format) (an existing row keeps its id).
 
-### 9. Transfer claims
+### 9. Training tracks
+
+Multi-week class tracks (SCHEMA_PROPOSAL P17): a track, its ordered blocks, and the workout templates each block lists by week and day. A track with its blocks and block sessions is one unit: under R2 a change to any of them makes a new track version, every block and block session re-minted under it, and the old version kept as it was; a block a later file leaves out is absent from the new version and kept on the old one. Rows listed for a track in a child file replace all of that track's rows in that file. A block session names a template LINEAGE, so a day opens its current version; the plan refuses, by name, a template with no current active version. Ids are the backbone's (trk_, trb_). details, sources and a block's labels are JSON cells; sources is a JSON list, not a | list, so a source holding a comma is carried whole.
+
+Loaded today: No committed package yet: lane FT1b exports the FT1 track from the Backbone. Loads through the content-import core (seed-reference-data workflow, dataset training-tracks, or the admin content-import screen); no screen shows a track yet.
+
+#### training-tracks/seed_training_tracks.csv
+
+One row = one training track. Identity: track_id.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| track_id | yes | text | The backbone's track id: 'trk_' and 14 lowercase hex. Kept on a revision. |
+| lineage_id |  | blank or the same as track_id | In a package track_id already is the lineage key. |
+| version |  | blank or `1` | Decided by the tool: a changed track becomes the next version at load. |
+| supersedes_track_id |  | blank | Decided by the tool: set when a new version is written. |
+| superseded_at |  | blank | Decided by the tool: set when a newer version is written. |
+| name | yes | text | The track name. |
+| lane | yes | `standard`, `non_contact` | The lane the track belongs to. |
+| track |  | `contact`, `fitness` | The recreation track (contact or fitness), when it has one. |
+| duration_weeks |  | whole number 1 or more | How many weeks the track runs. |
+| delivered_to_program_id |  | text | The enrollment group it is delivered to, when the backbone names one. |
+| age_band |  | text | Who it is for, as the backbone writes it (e.g. all ages). Blank means any. |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | text | The record's sources: a JSON list of source keys, e.g. ["DOC-123"]. A JSON list, not a \| list, so a source may hold any character. Blank means []. |
+| details |  | text | JSON object: every backbone field of the track with no column of its own, whole, by its backbone name. Blank means {}. |
+| active |  | blank or `true` | Decided by the tool: a revision keeps the current version's active flag; a superseded version is inactive. |
+| created_by_account_id |  | `{{SEED_ACCOUNT_ID}}` or blank | The account that runs the load is recorded as the author. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- track_id is 'trk_' and 14 lowercase hex.
+- sources, when set, is a JSON list of non-empty text (e.g. ["DOC-123"]).
+- details, when set, is a JSON object: every backbone field with no column of its own, by its backbone name.
+
+#### training-tracks/seed_track_blocks.csv
+
+One row = one block, in order, of one track. Identity: track_id + block_order. Rows belong to their track (track_id).
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| track_block_id |  | text | The backbone's block id (trb_), kept on a track's first load; a later version's block ids are minted. Blank: minted. |
+| block_lineage_id | yes | text | The backbone's block id (trb_), the same in every version of the track. |
+| track_id | yes | text | The track's id (trk_), in seed_training_tracks.csv of this package or already loaded. |
+| block_order | yes | whole number 1 or more | Position in the track; unique per track. |
+| title |  | text | The block title. |
+| weeks |  | whole number 1 or more | How many weeks the block runs. |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | text | The record's sources: a JSON list of source keys, e.g. ["DOC-123"]. A JSON list, not a \| list, so a source may hold any character. Blank means []. |
+| field_labels |  | text | The block's own field labels: JSON object, per field {"status", "sources"}. |
+| evidence |  | text | The block's own evidence: a JSON object, or a JSON list of them. |
+| stage_keys |  | text | The block's own stage keys: a JSON list, e.g. ["FT1"]. Kept on the block; the track's stage_keys make its stage links. Blank means []. |
+| details |  | text | JSON object: every backbone field of the block with no column of its own, whole, by its backbone name. Blank means {}. |
+
+Rules:
+
+- block_lineage_id is unique within its track (pilot_track_blocks_lineage_uq).
+- track_block_id is 'trb_' and 14 lowercase hex.
+- block_lineage_id is 'trb_' and 14 lowercase hex.
+- A track_block_id the file gives equals block_lineage_id: both are the backbone's block id.
+- sources, when set, is a JSON list of non-empty text (e.g. ["DOC-123"]).
+- field_labels, when set, is a JSON object of per-field {"status", "sources"}; every status is one of OBSERVED, REPORTED, INFERRED, UNVERIFIED.
+- evidence, when set, is a JSON object or a JSON list of them; an evidence_label is one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED.
+- stage_keys, when set, is a JSON list of pathway stages (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1).
+- details, when set, is a JSON object: every backbone field with no column of its own, by its backbone name.
+
+#### training-tracks/seed_track_block_sessions.csv
+
+One row = one session a block lists, in order. Identity: track_id + block_order + ordinal. Rows belong to their track (track_id).
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| block_session_id |  | text | Leave blank; the tool mints it (tbs_). |
+| track_id | yes | text | The track's id (trk_), in seed_training_tracks.csv of this package or already loaded. |
+| block_order | yes | whole number 1 or more | The block it belongs to: a block_order of the same track's blocks. |
+| ordinal | yes | whole number 1 or more | Position in the block's list; unique per block. |
+| week | yes | whole number 1 or more | The week of the track (not of the block), as the backbone writes it. |
+| day | yes | `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday`, `Sunday` | The day, as written. |
+| template_lineage_id | yes | wtp_ and 14 lowercase hex characters or new:<short-name>; must be a template in the package or the committed templates | The workout template's lineage key (wtp_), or the new:<short-name> of a template in this package. At plan it must have a current, active version in the organization. |
+
+Rules:
+
+- block_session_id is 'tbs_' and 14 lowercase hex.
+
+### 10. Transfer claims
 
 What a drill or a script block is claimed to develop beyond the sport, and how strong the evidence is. A claim is part of its drill's or script's material.
 
@@ -644,7 +734,7 @@ Rules:
 - A public claim that names a brain structure must be EVIDENCE-SUPPORTED.
 - A blank transfer_id takes the id of the committed row whose content gives the same 'txf_' + first 14 hex of sha256(target id + ':' + claim_kind + ':' + statement), else it is filled with that formula. Two rows that come to the same id are refused as a duplicate.
 
-### 10. Assessment protocols
+### 11. Assessment protocols
 
 Physical tests, skill rubrics and questionnaires the gym administers, with their retest guidance and measurement properties. Under R2 a changed protocol becomes the next protocol_version; a recorded result keeps pointing at the version it was taken with (pilot_assessments_protocol_fk).
 

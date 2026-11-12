@@ -184,7 +184,20 @@ export const VOCABULARIES = {
   // A record's status (backbone RULES section 10; types.ts RECORD_STATUSES).
   record_status: vocab(
     RECORD_STATUSES,
-    [{ table: 'pathway_stage_defaults', constraint: 'pilot_pathway_stage_defaults_status_check' }],
+    [
+      { table: 'pathway_stage_defaults', constraint: 'pilot_pathway_stage_defaults_status_check' },
+      { table: 'training_tracks', constraint: 'pilot_training_tracks_status_check' },
+      { table: 'track_blocks', constraint: 'pilot_track_blocks_status_check' },
+    ],
+  ),
+  // Training tracks (SCHEMA_PROPOSAL P17; training_tracks migration): the
+  // backbone schema's program_track lane and track enums, and a block
+  // session's day as the backbone writes it.
+  track_lane: vocab(['standard', 'non_contact'], [{ table: 'training_tracks', constraint: 'pilot_training_tracks_lane_check' }]),
+  track_kind: vocab(['contact', 'fitness'], [{ table: 'training_tracks', constraint: 'pilot_training_tracks_track_check' }]),
+  weekday: vocab(
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+    [{ table: 'track_block_sessions', constraint: 'pilot_track_block_sessions_day_check' }],
   ),
 } as const satisfies Record<string, Vocabulary>;
 
@@ -212,6 +225,11 @@ export const BOUNDS = {
       { table: 'session_script_blocks', constraint: 'session_script_blocks_block_order_check', column: 'block_order' },
       { table: 'pathway_stages', constraint: 'pilot_pathway_stages_ordinal_check', column: 'ordinal' },
       { table: 'pathway_stage_defaults', constraint: 'pilot_pathway_stage_defaults_window_check', column: 'window_days' },
+      { table: 'training_tracks', constraint: 'pilot_training_tracks_duration_check', column: 'duration_weeks' },
+      { table: 'track_blocks', constraint: 'pilot_track_blocks_order_check', column: 'block_order' },
+      { table: 'track_blocks', constraint: 'pilot_track_blocks_weeks_check', column: 'weeks' },
+      { table: 'track_block_sessions', constraint: 'pilot_track_block_sessions_ordinal_check', column: 'ordinal' },
+      { table: 'track_block_sessions', constraint: 'pilot_track_block_sessions_week_check', column: 'week' },
       { table: 'assessment_protocols', constraint: 'assessment_protocols_retest_interval_days_check', column: 'retest_interval_days' },
       {
         table: 'assessment_protocols',

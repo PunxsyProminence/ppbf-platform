@@ -136,6 +136,40 @@ export function versionId(prefix: string, lineageId: string, version: number): s
 
 interface ColumnInfo {
   nullable: boolean;
+  /** information_schema data_type: only 'jsonb' and 'ARRAY' change how a cell is read and written. */
+  dataType: string;
+}
+
+// JSONB AND TEXT[] COLUMNS (lane FT1a; Overwatch, option A). A table of this
+// engine may hold a jsonb column (a JSON cell) or a text[] column (a JSON-array
+// cell: a list whose items may hold any character, so no separator applies).
+// Only the LIVE column's data_type decides it; every other column takes the
+// path it took before. Both sides of the hash read the same text: a file cell
+// parsed and key-sorted, a stored value key-sorted -- jsonb hands its keys
+// back in its own order, and a text[] comes back as a JavaScript array.
+const isJsonColumn = (info: ColumnInfo | undefined) => info?.dataType === 'jsonb' || info?.dataType === 'ARRAY';
+
+/** JSON with object keys sorted at every depth (the canonical.ts sortedJson rule). */
+function sortedJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(sortedJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${sortedJson((value as Record<string, unknown>)[key])}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/** A jsonb or text[] value, or a JSON cell, as key-sorted JSON text. Unparsable text is kept as written (the spec refuses it). */
+function jsonText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value !== 'string') return sortedJson(value);
+  const text = normalizeCell(value);
+  if (!text) return '';
+  try {
+    return sortedJson(JSON.parse(text));
+  } catch {
+    return text;
+  }
 }
 
 /** Identifiers come from specs and constants, never input; this keeps it that way. */
@@ -144,7 +178,8 @@ function ident(name: string): string {
   return name;
 }
 
-function cellText(value: CellInput | Date, column: ColumnSpec | undefined): string {
+function cellText(value: CellInput | Date, column: ColumnSpec | undefined, info?: ColumnInfo): string {
+  if (isJsonColumn(info)) return jsonText(value);
   if (value === null || value === undefined) return '';
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') return String(value);
@@ -161,6 +196,15 @@ function cellText(value: CellInput | Date, column: ColumnSpec | undefined): stri
  */
 function databaseValue(column: ColumnSpec, value: string, info: ColumnInfo): unknown {
   const text = value || column.blankDefault || '';
+  if (info.dataType === 'ARRAY') {
+    if (!text) return info.nullable ? null : [];
+    const items: unknown = JSON.parse(text);
+    if (!Array.isArray(items) || !items.every((item) => typeof item === 'string')) {
+      throw new Error(`content-import: ${column.name} must be a JSON list of text to be written to a text[] column`);
+    }
+    return items;
+  }
+  if (info.dataType === 'jsonb') return text ? JSON.stringify(JSON.parse(text)) : null;
   if (!text) return info.nullable || column.type !== 'text' ? null : '';
   switch (column.type) {
     case 'boolean':
@@ -174,13 +218,17 @@ function databaseValue(column: ColumnSpec, value: string, info: ColumnInfo): unk
   }
 }
 
-/** A package row with every new:<short-name> it carries replaced by the id minted for it. */
-function resolvedCells(spec: FileSpec, values: RowValues, minted: MintedIds): Record<string, string> {
+/**
+ * A package row with every new:<short-name> it carries replaced by the id
+ * minted for it, and every jsonb or text[] cell of its table as key-sorted JSON.
+ */
+function resolvedCells(spec: FileSpec, values: RowValues, minted: MintedIds, table?: ReadonlyMap<string, ColumnInfo>): Record<string, string> {
   const cells: Record<string, string> = {};
   for (const column of spec.columns) {
     const value = values[column.name] ?? '';
     const kind = value && isNewId(value) ? newIdKindOf(spec, column) : undefined;
-    cells[column.name] = (kind && minted.get(kind)?.get(value)) || value;
+    const resolved = (kind && minted.get(kind)?.get(value)) || value;
+    cells[column.name] = isJsonColumn(table?.get(column.name)) ? jsonText(resolved) : resolved;
   }
   return cells;
 }
@@ -197,7 +245,7 @@ function withoutColumns(dataset: DatasetSpec, names: readonly string[]): Dataset
 
 type Cells = Record<string, string>;
 
-interface VersionedItem {
+export interface VersionedItem {
   unit: UnitPlan;
   /** The unit as it would be written: root cells and child cells per child file. */
   root?: Cells;
@@ -208,7 +256,7 @@ interface VersionedItem {
   childIds?: Map<FileSpec, string[]>;
 }
 
-interface VersionedState {
+export interface VersionedState {
   items: VersionedItem[];
   columns: Map<string, Map<string, ColumnInfo>>;
 }
@@ -227,14 +275,14 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
 
   async function columnInfo(ctx: EngineContext): Promise<Map<string, Map<string, ColumnInfo>>> {
     const tables = [config.table, ...config.children.map((child) => child.table)];
-    const { rows } = await ctx.client.query<{ table_name: string; column_name: string; is_nullable: string }>(
-      `select table_name, column_name, is_nullable
+    const { rows } = await ctx.client.query<{ table_name: string; column_name: string; is_nullable: string; data_type: string }>(
+      `select table_name, column_name, is_nullable, data_type
          from information_schema.columns
         where table_schema = 'pilot' and table_name = any($1::text[])`,
       [tables],
     );
     const info = new Map<string, Map<string, ColumnInfo>>(tables.map((name) => [name, new Map()]));
-    for (const row of rows) info.get(row.table_name)?.set(row.column_name, { nullable: row.is_nullable === 'YES' });
+    for (const row of rows) info.get(row.table_name)?.set(row.column_name, { nullable: row.is_nullable === 'YES', dataType: row.data_type });
     // The spec and the tables must agree on every column written; a column
     // the table lacks would otherwise fail mid-load.
     const check = (name: string, columns: readonly string[]) => {
@@ -285,7 +333,11 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
   }
 
   /** Child rows of the given version ids, as cells, with a stored drill_id replaced by its drill's LINEAGE key. */
-  async function readChildren(ctx: EngineContext, versionIds: readonly string[]): Promise<Map<FileSpec, Map<string, Cells[]>>> {
+  async function readChildren(
+    ctx: EngineContext,
+    versionIds: readonly string[],
+    columns: ReadonlyMap<string, ReadonlyMap<string, ColumnInfo>>,
+  ): Promise<Map<FileSpec, Map<string, Cells[]>>> {
     const out = new Map<FileSpec, Map<string, Cells[]>>();
     for (const child of config.children) {
       const byParent = new Map<string, Cells[]>();
@@ -305,7 +357,8 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       );
       for (const row of rows) {
         const cells: Cells = {};
-        for (const column of child.spec.columns) cells[column.name] = column.role === 'placeholder' ? '' : cellText(row[column.name], column);
+        const info = columns.get(child.table);
+        for (const column of child.spec.columns) cells[column.name] = column.role === 'placeholder' ? '' : cellText(row[column.name], column, info?.get(column.name));
         if (drillColumn && row.content_import_drill_lineage) cells[drillColumn] = String(row.content_import_drill_lineage);
         const parent = String(row[parentColumn]);
         byParent.set(parent, [...(byParent.get(parent) ?? []), cells]);
@@ -314,9 +367,10 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
     return out;
   }
 
-  function rootCells(row: Readonly<Record<string, CellInput>>): Cells {
+  function rootCells(row: Readonly<Record<string, CellInput>>, columns: ReadonlyMap<string, ReadonlyMap<string, ColumnInfo>>): Cells {
+    const info = columns.get(config.table);
     const cells: Cells = {};
-    for (const column of rootSpec.columns) cells[column.name] = column.role === 'placeholder' ? '' : cellText(row[column.name], column);
+    for (const column of rootSpec.columns) cells[column.name] = column.role === 'placeholder' ? '' : cellText(row[column.name], column, info?.get(column.name));
     return cells;
   }
 
@@ -415,8 +469,9 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       // what a package names, so it is what uniqueness and minted-id
       // collisions are judged against.
       const heads = await readHeads(ctx);
+      const columns = await columnInfo(ctx);
       const rows: ParsedRow[] = [...heads.values()].map((head) => {
-        const values = rootCells(head.row);
+        const values = rootCells(head.row, columns);
         values[rootSpec.key[0]] = head.lineageId;
         const raw = { ...values };
         // A row that does not hold its name under the partial unique index
@@ -479,7 +534,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
         }
       };
       for (const row of rootFile?.rows ?? []) {
-        const cells = resolvedCells(rootSpec, row.values, minted);
+        const cells = resolvedCells(rootSpec, row.values, minted, columns.get(config.table));
         const key = cells[rootSpec.key[0]];
         addKey(key, row.values[rootSpec.key[0]], (rootFile as ParsedFile).path);
         packageRoots.set(key, { cells, reasons: rowReasons(rootFile as ParsedFile, row) });
@@ -491,8 +546,9 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
         const byParent = new Map<string, Cells[]>();
         packageChildren.set(file.spec, byParent);
         const parentColumn = file.spec.parent?.column ?? '';
+        const table = columns.get(childByFile.get(file.spec)?.table ?? '');
         for (const row of file.rows) {
-          const cells = resolvedCells(file.spec, row.values, minted);
+          const cells = resolvedCells(file.spec, row.values, minted, table);
           childRowAt.set(cells, { file: file.path, line: row.line });
           const parent = cells[parentColumn];
           addKey(parent, row.values[parentColumn], file.path);
@@ -508,6 +564,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       const storedChildren = await readChildren(
         ctx,
         keys.map((key) => heads.get(key)?.id).filter((id): id is string => id !== undefined),
+        columns,
       );
 
       const findings: Finding[] = [];
@@ -530,7 +587,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
         // A label column the root file leaves out keeps the stored value (contentLabels.ts).
         const root = packageRoot
           ? withStoredLabels((rootFile as ParsedFile).header, packageRoot.cells, head?.row)
-          : head ? rootCells(head.row) : undefined;
+          : head ? rootCells(head.row, columns) : undefined;
         if (!root && reasons.length === 0) {
           // The validator reports a child row whose parent is nowhere as an
           // orphan; this is the backstop if it ever does not.
@@ -544,7 +601,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
 
         if (root) unit.fileSha256 = unitHash(root, children);
         if (head) {
-          const storedRoot = rootCells(head.row);
+          const storedRoot = rootCells(head.row, columns);
           const stored = new Map(config.children.map((child) => [child.spec, storedChildren.get(child.spec)?.get(head.id) ?? []]));
           unit.databaseSha256 = unitHash(storedRoot, stored);
         }
