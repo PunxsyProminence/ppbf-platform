@@ -74,7 +74,7 @@ test('unsupported claims are gone and Jason\'s figures replace them', async () =
   expect(text).not.toMatch(/hundreds of young people/i);
   expect(text).toContain('200+');
   expect(text).toContain('People have come through our doors since 2024');
-  expect(text).toContain('For youth. Adults $20 a month.');
+  expect(text).toContain('For youth. Suggested adult donation: $20 a month.');
   expect(text).toContain('IRS-recognized 501(c)(3)');
   expect(text).toContain('supported by donations');
   expect(text).not.toContain('run on donations');
@@ -197,9 +197,20 @@ test('programs and FAQ moved over, and the program intro no longer miscounts the
 test('the FAQ cost answer carries the adult figure, not "ask us"', async () => {
   const { container } = await renderPage();
   const faq = (container.querySelector('#public-faq')?.textContent ?? '').replace(/\s+/g, ' ');
-  expect(faq).toContain('Adults pay $20 a month.');
+  expect(faq).toContain('Adults are asked for a suggested donation of $20 a month.');
   expect(faq).toContain('Youth train free.');
   expect(faq).not.toMatch(/adults, ask us/i);
+});
+
+/* Jason 2026-11-12: "it needs to be a suggested donation not a fee". */
+test('the adult $20 reads as a suggested donation everywhere on the page, never a fee', async () => {
+  const { text } = await renderPage();
+  const flat = text.replace(/\s+/g, ' ');
+  expect(flat).not.toMatch(/adults pay/i);
+  expect(flat).not.toMatch(/adults \$20 a month/i);
+  expect(flat).not.toMatch(/\$20[^.]*\bfee\b/i);
+  expect(flat.match(/\$20 a month/g)?.length).toBe(2);
+  expect(flat.match(/suggested (adult )?donation/gi)?.length).toBe(2);
 });
 
 test('no claim on the page contradicts the registry facts', async () => {
