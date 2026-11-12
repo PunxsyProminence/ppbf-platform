@@ -588,7 +588,7 @@ The plain form of item 4 said: "4. This sentence is what makes the $20 truly a s
 
 **Not ruled here:** whether adults can train without paying (item 4's condition); written acknowledgments for gifts of $250 or more (item 5); sponsorship terms beyond "follow the written agreement".
 
-**Status:** recorded 2026-11-12 by PR; the page is on main, not yet in production.
+**Status:** recorded 2026-11-12 by PR; the page is in production since deploy-production run 43250985820 (2026-11-12, `9517bf11`).
 
 ---
 
@@ -605,7 +605,7 @@ The plain form of item 4 said: "4. This sentence is what makes the $20 truly a s
 
 **Not ruled here:** whether adults can train without paying (raised as a condition in OD-2026-11-12-003's item 4, not answered).
 
-**Status:** recorded 2026-11-12 by PR; the homepage change is on main, not yet in production.
+**Status:** recorded 2026-11-12 by PR; the homepage change is in production since deploy-production run 43250985820 (2026-11-12, `9517bf11`).
 
 ---
 
