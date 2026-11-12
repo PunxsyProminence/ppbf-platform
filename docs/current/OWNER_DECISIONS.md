@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-12-004 | 2026-11-12 | Cost is never a barrier to training; the adult $20 a month stays a suggested donation | PRIMARY |  | yes |
 | OD-2026-11-12-003 | 2026-11-12 | The public donation refund and cancellation policy uses the recommended terms (30 days, 3 business days, 5 business days) | PRIMARY |  | yes |
 | OD-2026-11-12-002 | 2026-11-12 | The adult $20 a month is a suggested donation, not a fee, on Stripe and on the website | PRIMARY |  | yes |
 | OD-2026-11-12-001 | 2026-11-12 | Backbone drills whose setup or steps are blank load with those fields blank; the drill import stops requiring them | PRIMARY |  | yes |
@@ -560,6 +561,34 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-12-004 -- Cost is never a barrier to training; the adult $20 a month stays a suggested donation: "ok it should not be a fee its a suggested donation part of the gym mission is that cost does not create a barrier"
+
+**Provenance: PRIMARY.** Jason's typed message, 2026-11-12 about 12:56 EST (transcript timestamp 2026-11-12T17:56:09.891Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 12288, a message queued while Overwatch worked, `origin.kind` human), checked against the file by script before writing. He sent it instead of answering the two-question card at line 12270 about homepage Donate buttons. New; edits no earlier entry's text.
+
+**What was put to him (line 12270, official form, quoted):**
+
+- Placement: "(A, recommended) two buttons in the Support section, plus one "Donate" button in the top section beside "Learn About Our Programs" and "Log In" that jumps down to them; (B) Support section only."
+- Wording: "(A, recommended) "Donate" for the one-time link and "Give $20 a month" for the monthly link; (B) "One-time donation" and "Monthly donation"." "Neither calls the $20 a fee or the monthly gift tax-deductible."
+
+**Jason:** *"ok it should not be a fee its a suggested donation part of the gym mission is that cost does not create a barrier"*
+
+**Rulings:**
+
+1. The adult $20 a month stays a suggested donation, not a fee (as OD-2026-11-12-002).
+2. Part of the gym's mission is that cost does not create a barrier to training.
+
+**Reading, not his words:**
+
+- Ruling 2 answers what OD-2026-11-12-003 left open, whether adults can train without paying: they can. So that entry's optional line "Giving is never a condition of training here." goes on /refund-policy.
+- Wording: the Donate lane labels the monthly button "Suggested monthly donation" (the Stripe link's own name) instead of "Give $20 a month", which reads like a fee. It adds under the buttons: "Cost is never a barrier to training here. Youth train free, and the adult $20 a month is a suggested donation, not a fee."
+- Placement: not picked; the lane uses the recommended option A, which he sees on staging before any release.
+
+**Not ruled here:** placement (option A applied as the default); written acknowledgments for gifts of $250 or more (OD-2026-11-12-003 item 5).
+
+**Status:** recorded 2026-11-12 by PR; the Donate-button lane builds it; nothing built yet.
 
 ---
 
