@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-12-003 | 2026-11-12 | The public donation refund and cancellation policy uses the recommended terms (30 days, 3 business days, 5 business days) | PRIMARY |  | yes |
+| OD-2026-11-12-002 | 2026-11-12 | The adult $20 a month is a suggested donation, not a fee, on Stripe and on the website | PRIMARY |  | yes |
 | OD-2026-11-12-001 | 2026-11-12 | Backbone drills whose setup or steps are blank load with those fields blank; the drill import stops requiring them | PRIMARY |  | yes |
 | OD-2026-11-11-003 | 2026-11-11 | The FT1 hand-off lane is split into FT1a (tables) and FT1b (content), and a read-only coach view of the track (FT1c) follows | PRIMARY |  | yes |
 | OD-2026-11-11-002 | 2026-11-11 | The standing owner directions of 2026-08-15/16 are recorded here word for word, moved from ACTIVE_WORK | RECONSTRUCTED |  |  |
@@ -558,6 +560,52 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-12-003 -- The public donation refund and cancellation policy uses the recommended terms (30 days, 3 business days, 5 business days): "go with your recommendations"
+
+**Provenance: PRIMARY.** Jason's reply "go with your recommendations", 2026-11-12 about 06:29 EST (transcript timestamp 2026-11-12T11:29:29.977Z), in the Claude Code session "Relay business checking account for gym" on the Overwatch account (transcript `~/.claude/projects/C--Dev/3143848b-eab8-42eb-bba2-2a87012b608d.jsonl`, line 6249, `origin.kind` human), checked against the file by script before writing. What was put to him is the drafted policy and its decision list at line 6245. His "you do it" at line 6483 (11:52:20Z) had that session send the work to Overwatch. New; edits no earlier entry's text.
+
+**What was put to him (line 6245, "Your decisions", official form, quoted):**
+
+- "1. Refund window for mistaken charges: 30 days (recommended) or another number."
+- "2. Notice needed to stop a monthly donation: 3 business days (recommended)."
+- "3. Promised reply time: 5 business days (recommended)."
+- "4. Optional line: "Giving is never a condition of training here." Add it only if it's true."
+- "5. Optional line: "For any single gift of $250 or more, we send a written acknowledgment for your tax records." Add it only if you'll do that every time."
+
+The plain form of item 4 said: "4. This sentence is what makes the $20 truly a suggested donation in the IRS's eyes. If adults can't train without paying, leave it out."
+
+**Jason:** *"go with your recommendations"*
+
+**Rulings:**
+
+1. Mistaken charges (wrong amount, duplicate, unauthorized) can be refunded within 30 days; monthly donations stop or change with 3 business days' notice; the gym promises a reply within 5 business days. These are the three recommended values.
+2. As built (PR #1914, merged `9517bf11`): the public page `/refund-policy`, linked from the homepage footer and listed in the sitemap, carries these terms; the gym's names, EIN and contact details come from its stored profile.
+
+**Reading, not his words:** items 4 and 5 carried no recommendation, so the relaying session left both optional lines out; the page carries neither.
+
+**Not ruled here:** whether adults can train without paying (item 4's condition); written acknowledgments for gifts of $250 or more (item 5); sponsorship terms beyond "follow the written agreement".
+
+**Status:** recorded 2026-11-12 by PR; the page is in production since deploy-production run 43250985820 (2026-11-12, `9517bf11`).
+
+---
+
+## OD-2026-11-12-002 -- The adult $20 a month is a suggested donation, not a fee, on Stripe and on the website: "it needs to be a suggested donation not a fee,  update website as well"
+
+**Provenance: PRIMARY.** Jason's typed message, 2026-11-12 about 06:00 EST (transcript timestamp 2026-11-12T11:00:49.998Z), in the Claude Code session "Relay business checking account for gym" on the Overwatch account (transcript `~/.claude/projects/C--Dev/3143848b-eab8-42eb-bba2-2a87012b608d.jsonl`, line 5937, `origin.kind` human), checked against the file by script before writing; spacing kept. It answered the Stripe business description drafted at line 5933, which read: "We accept donations and sponsorships that keep youth training free, and adults pay a $20 monthly fee for boxing and fitness training." New; edits no earlier entry's text.
+
+**Jason:** *"it needs to be a suggested donation not a fee,  update website as well"*
+
+**Rulings:**
+
+1. The adult $20 a month is described as a suggested donation, not a fee, in the gym's Stripe business description.
+2. The website says the same. As built (PR #1913, merged `7586a16c`): the homepage cost answer reads "Adults are asked for a suggested donation of $20 a month." and the price card reads "Suggested adult donation: $20 a month."
+
+**Not ruled here:** whether adults can train without paying (raised as a condition in OD-2026-11-12-003's item 4, not answered).
+
+**Status:** recorded 2026-11-12 by PR; the homepage change is in production since deploy-production run 43250985820 (2026-11-12, `9517bf11`).
 
 ---
 
