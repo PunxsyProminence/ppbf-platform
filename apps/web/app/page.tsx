@@ -650,6 +650,8 @@ export default async function HomePage() {
             </p>
             <p className="t-body">
               <Link href="/privacy">Privacy</Link>
+              {" "}&middot;{" "}
+              <Link href="/refund-policy">Donations, refunds and cancellations</Link>
             </p>
             <Link href="/login" className="btn btn--ghost mt-[var(--s2)]">
               Log In

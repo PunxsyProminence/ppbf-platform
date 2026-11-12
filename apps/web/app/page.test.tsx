@@ -229,8 +229,10 @@ test('the server page reads form labels from a plain module, never from the clie
   expect(options).not.toMatch(/^\s*['"]use client['"]/);
 });
 
-test('the footer links the privacy notice', async () => {
+test('the footer links the privacy notice and the donation refund policy', async () => {
   const { container } = await renderPage();
   const footerLinks = Array.from(container.querySelectorAll('footer a')).map((a) => a.getAttribute('href'));
   expect(footerLinks).toContain('/privacy');
+  // Stripe's website requirements: a refund and cancellation policy (Jason 2026-11-12).
+  expect(footerLinks).toContain('/refund-policy');
 });
