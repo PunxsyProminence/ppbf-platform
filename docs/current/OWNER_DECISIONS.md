@@ -24,6 +24,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 | OD-2026-11-12-003 | 2026-11-12 | The public donation refund and cancellation policy uses the recommended terms (30 days, 3 business days, 5 business days) | PRIMARY |  | yes |
 | OD-2026-11-12-002 | 2026-11-12 | The adult $20 a month is a suggested donation, not a fee, on Stripe and on the website | PRIMARY |  | yes |
 | OD-2026-11-12-001 | 2026-11-12 | Backbone drills whose setup or steps are blank load with those fields blank; the drill import stops requiring them | PRIMARY |  | yes |
+| OD-2026-11-11-004 | 2026-11-11 | The OneDrive AI_GOVERNANCE folder stays the governance source and its ACTIVE set is tidied (G3) | PRIMARY |  | yes |
 | OD-2026-11-11-003 | 2026-11-11 | The FT1 hand-off lane is split into FT1a (tables) and FT1b (content), and a read-only coach view of the track (FT1c) follows | PRIMARY |  | yes |
 | OD-2026-11-11-002 | 2026-11-11 | The standing owner directions of 2026-08-15/16 are recorded here word for word, moved from ACTIVE_WORK | RECONSTRUCTED |  |  |
 | OD-2026-11-11-001 | 2026-11-11 | Governance consolidation: an index for this file, one source-order list, and three clean-ups, with no decision text changed | PRIMARY |  | yes |
@@ -663,6 +664,32 @@ The plain form of item 4 said: "4. This sentence is what makes the $20 truly a s
 **Evidence it rested on:** `drills.ts` lines 56-57 on main `3ee46797` (`required: true` on both); `pilot_slice_postgres_drill_library_v3_migration.sql` lines 99-100 (`text not null`, no blank check); `drillAdoptionReadiness.ts` lines 84-85; the frozen Backbone `data/content/drills` (387 drills; the FT1 set 131, of which the 128 used by the 33 templates are blank on both fields; `FREEZE_MANIFEST.json` sha256[:16] `38b52df4c2d8d7a1`).
 
 **Status:** recorded 2026-11-12 by PR. Lane FT1b makes the spec change in its PR; nothing built or merged by this entry.
+
+---
+
+## OD-2026-11-11-004 -- The OneDrive AI_GOVERNANCE folder stays the governance source and its ACTIVE set is tidied (G3): "A. Keep it as the governance source and tidy its ACTIVE set (Recommended)"
+
+**Provenance: PRIMARY.** Jason's pick on a question card in the Claude Science research session "Governance Consolidation Proposal Research" (Claude Science database `~/.claude-science/orgs/170fa11b-befd-4c0a-9a6b-c2a15308661e/operon-cli.db`, frame `9a673c38-90be-45f9-8ebd-646443df0fea`; card at message 156, answer at message 157, an `ask_user` result with status "answered"), read read-only by script before writing. The card was put at 2026-11-12T03:57:46Z (2026-11-11 22:57 EST); the answer is stored with the same time, and the session's next step, which wrote it into the finding, is at 2026-11-12T04:21:29Z (23:21 EST), so the answer came on 2026-11-11 between those times, US Eastern. The research finding `Documents\PPBF-overwatch\research\claude-research-project\findings\2026-11-11-governance-consolidation.md` (sha256[:16] `b231de408960fab5`), section 2, "Question G3", carries the same answer and says it is not the record. Relayed for recording by the Backbone Overwatch (Overwatch 24, ACTIONS A-83). New; edits no earlier entry's text.
+
+**What was put to him (card "G3 (corrected)", quoted):** "G3 (re-asked, corrected 2026-11-12). Your L2 workspace rules say "GOVERNANCE: only OneDrive .../AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/", and AGENT_KERNEL.md says storage authority, promotion rules and the wider AI governance chain "are governed by" that folder. In that folder, MASTER v2 is still pending review ("Not ACTIVE until Jason explicitly promotes"), and the INSTALLED L1/L2 record says to log changes "in the ledger", which OD-2026-09-28-003 closed. My earlier card wrongly said the kernel treats the folder as records only; your answer to it is not recorded. What do you want for the folder? Plain English: your rules say AI governance lives in this folder. Keep it and clean it up, leave it, move it into the repo, or demote it? Only the last two change your rules."
+
+Options: "A. Keep it as the governance source and tidy its ACTIVE set (Recommended)" / "B. Leave everything as is" / "C. Fold its ACTIVE texts into the repo and retire the folder as an authority" / "D. Records only: below OWNER_DECISIONS unless you promote a file". Option A's description: "Kernel and L2 unchanged. You decide MASTER v2 and the ChatGPT setup packet (promote or mark superseded); the INSTALLED record's 'log it in the ledger' line points to OWNER_DECISIONS instead. One OD entry records your choice; OneDrive edits only by a session you name."
+
+**Jason:** *"A. Keep it as the governance source and tidy its ACTIVE set (Recommended)"*
+
+**Rulings:**
+
+1. The OneDrive `AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE/` folder stays the governance source. `AGENT_KERNEL.md` and his L2 workspace rules are unchanged.
+2. Its ACTIVE set is tidied as option A describes: Jason decides MASTER v2 and the ChatGPT setup packet (promote or mark superseded); the INSTALLED record's "log it in the ledger" line points to OWNER_DECISIONS; OneDrive edits only by a session he names.
+3. This entry is the one OD entry option A names. The repo changes nothing else for G3.
+
+**Settles:** the G3 point OD-2026-11-11-001 left open under "Not ruled here".
+
+**Not recorded:** his 2026-11-11 answer to the earlier G3 card. That card misstated what `AGENT_KERNEL.md` says about the folder (Overwatch's check, `Documents\PPBF-overwatch\backbone-crossover\STATUS.md`, 2026-11-11), and the research session withdrew it before re-asking.
+
+**Not ruled here:** whether MASTER v2 is promoted or marked superseded; the same for the ChatGPT manual setup packet; which session edits the OneDrive files (renaming those two, and repointing the INSTALLED record's ledger line).
+
+**Status:** recorded 2026-11-12 by PR; no OneDrive file changed by this entry.
 
 ---
 
