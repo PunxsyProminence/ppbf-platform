@@ -143,11 +143,17 @@ describe('a package without the label columns hashes exactly as before they exis
   });
   const baseline = readCommittedBaseline(SEED_DATA);
 
-  // Not the pathway catalog: its committed package carries labels from birth (lane BB-1b ruling), so they are its content.
-  const predatingLabels = DATASETS.filter((dataset) => dataset.name !== 'pathway-catalog');
-  it.each(predatingLabels.map((dataset) => [dataset.name, dataset] as const))('%s: every committed unit', (_name, dataset) => {
-    const units = datasetUnits(dataset, baseline);
-    for (const unit of units.values()) {
+  // Not the pathway catalog or the training tracks: their committed packages carry labels from birth (lanes BB-1b and
+  // FT1b), so the labels are their content.
+  const bornLabelled = ['pathway-catalog', 'training-tracks'];
+  const predatingLabels = DATASETS.filter((dataset) => !bornLabelled.includes(dataset.name));
+  // Only the items that predate labels: the committed drill and template files also hold the FT1 items (lane FT1b),
+  // which carry labels, so a unit counts here only when its three label cells are all blank.
+  const isUnlabelled = (unit: { root: Record<string, string> }) => ['field_labels', 'evidence', 'stage_keys'].every((column) => !unit.root[column]);
+  it.each(predatingLabels.map((dataset) => [dataset.name, dataset] as const))('%s: every committed unit that predates labels', (name, dataset) => {
+    const units = [...datasetUnits(dataset, baseline).values()].filter(isUnlabelled);
+    if (['drill-library', 'workout-templates'].includes(name)) expect(units.length).toBeGreaterThan(0);
+    for (const unit of units) {
       expect(unitContentHash(dataset, unit)).toBe(unitContentHash(withoutLabels(dataset), unit));
     }
   });
