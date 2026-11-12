@@ -691,7 +691,7 @@ One row = one session a block lists, in order. Identity: track_id + block_order 
 | block_order | yes | whole number 1 or more | The block it belongs to: a block_order of the same track's blocks. |
 | ordinal | yes | whole number 1 or more | Position in the block's list; unique per block. |
 | week | yes | whole number 1 or more | The week of the track (not of the block), as the backbone writes it. |
-| day | yes | `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday`, `Sunday` | The day, as written. |
+| day | yes | text | The day, exactly as the backbone writes it (e.g. Monday). |
 | template_lineage_id | yes | wtp_ and 14 lowercase hex characters or new:<short-name>; must be a template in the package or the committed templates | The workout template's lineage key (wtp_), or the new:<short-name> of a template in this package. At plan it must have a current, active version in the organization. |
 
 Rules:

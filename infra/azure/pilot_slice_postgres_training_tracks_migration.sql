@@ -137,8 +137,9 @@ comment on table pilot.track_blocks is
 
 -- (3) The sessions a block lists ---------------------------------------------------------
 -- week is the week of the track (FT1 block 6 lists week 6), as the backbone
--- writes it; day as written, Monday to Sunday. ordinal is the position in the
--- block's list.
+-- writes it; day exactly as written and never blank (the backbone writes
+-- Monday to Sunday, and one later ref says '1 (bout day)'; Overwatch, FT1a,
+-- decision 6 revised). ordinal is the position in the block's list.
 create table if not exists pilot.track_block_sessions (
   organization_id      text not null references pilot.organizations(organization_id) on delete cascade,
   block_session_id     text not null,
@@ -156,8 +157,7 @@ create table if not exists pilot.track_block_sessions (
   constraint pilot_track_block_sessions_id_check check (block_session_id ~ '^tbs_[0-9a-f]{14}$'),
   constraint pilot_track_block_sessions_ordinal_check check (ordinal > 0),
   constraint pilot_track_block_sessions_week_check check (week > 0),
-  constraint pilot_track_block_sessions_day_check
-    check (day in ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')),
+  constraint pilot_track_block_sessions_day_check check (length(btrim(day, E' \t\r\n\f\v')) > 0),
   constraint pilot_track_block_sessions_template_check check (template_lineage_id ~ '^wtp_[0-9a-f]{14}$')
 );
 

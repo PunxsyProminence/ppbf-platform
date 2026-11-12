@@ -329,9 +329,10 @@ describe('the training_tracks migration', () => {
       [gym, `tbs_${hex14(`${blockOrder}:${day}:${templateId}`)}`, TRACK, blockOrder, day, templateId],
     );
     await expect(sessionInsert(2, 'Monday')).rejects.toMatchObject({ code: '23503', constraint: 'pilot_track_block_sessions_block_fkey' });
-    await expect(sessionInsert(1, '1 (bout day)')).rejects.toMatchObject({ code: '23514', constraint: 'pilot_track_block_sessions_day_check' });
+    // day is stored as written; only a blank is refused.
+    await expect(sessionInsert(1, ' \t')).rejects.toMatchObject({ code: '23514', constraint: 'pilot_track_block_sessions_day_check' });
     await expect(sessionInsert(1, 'Monday', 'not-a-template')).rejects.toMatchObject({ code: '23514', constraint: 'pilot_track_block_sessions_template_check' });
-    await sessionInsert(1, 'Monday');
+    await sessionInsert(1, '1 (bout day)');
 
     await client.query('delete from pilot.organization_memberships where organization_id = $1', [gym]);
     await client.query('delete from pilot.accounts where organization_id = $1', [gym]);
@@ -364,7 +365,7 @@ describe('a training-tracks package: 1 track, 2 blocks, 3 block sessions', () =>
       ...trackFiles(
         [{ ...TRACK_ROW, sources: 'DOC-123|Jason 2026-10-24 (RULES s9, First class track)', details: '["not", "an object"]', lane: 'contact' }],
         [block(B1, '1', { block_lineage_id: B2, field_labels: '{"title": {"status": "CHECKED"}}', stage_keys: 'FT1' }), block('trb_short', '2')],
-        [session('1', '1', 'Funday', T_A), session('2', '1', 'Monday', `wtp_${hex14('nowhere')}`)],
+        [session('1', '1', '', T_A), session('2', '1', 'Monday', `wtp_${hex14('nowhere')}`)],
       ),
     });
     expect(findings).toEqual(expect.arrayContaining([
@@ -376,7 +377,7 @@ describe('a training-tracks package: 1 track, 2 blocks, 3 block sessions', () =>
       expect.stringMatching(/^row_rule {2}stage_keys is not readable JSON/),
       expect.stringMatching(/^row_rule {2}track_block_id 'trb_short' is not 'trb_' and 14 lowercase hex/),
       expect.stringMatching(/^row_rule {2}block_lineage_id 'trb_short' is not 'trb_' and 14 lowercase hex/),
-      expect.stringMatching(/^unknown_value day 'Funday' is not allowed/),
+      expect.stringMatching(/^missing_required day day is required/),
       expect.stringMatching(new RegExp(`^orphan_reference template_lineage_id template 'wtp_${hex14('nowhere')}' is in neither`)),
     ]));
     expect(findings).toHaveLength(10);

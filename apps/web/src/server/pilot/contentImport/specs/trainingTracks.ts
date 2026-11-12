@@ -271,7 +271,7 @@ const sessionsFile: FileSpec = {
     integer('block_order', "The block it belongs to: a block_order of the same track's blocks.", { required: true, bound: 'positive' }),
     integer('ordinal', 'Position in the block\'s list; unique per block.', { required: true, bound: 'positive' }),
     integer('week', 'The week of the track (not of the block), as the backbone writes it.', { required: true, bound: 'positive' }),
-    vocabulary('day', 'weekday', 'The day, as written.', { required: true }),
+    text('day', 'The day, exactly as the backbone writes it (e.g. Monday).', { required: true }),
     referenceColumn(
       'template_lineage_id',
       'template',

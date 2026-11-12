@@ -191,14 +191,9 @@ export const VOCABULARIES = {
     ],
   ),
   // Training tracks (SCHEMA_PROPOSAL P17; training_tracks migration): the
-  // backbone schema's program_track lane and track enums, and a block
-  // session's day as the backbone writes it.
+  // backbone schema's program_track lane and track enums.
   track_lane: vocab(['standard', 'non_contact'], [{ table: 'training_tracks', constraint: 'pilot_training_tracks_lane_check' }]),
   track_kind: vocab(['contact', 'fitness'], [{ table: 'training_tracks', constraint: 'pilot_training_tracks_track_check' }]),
-  weekday: vocab(
-    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-    [{ table: 'track_block_sessions', constraint: 'pilot_track_block_sessions_day_check' }],
-  ),
 } as const satisfies Record<string, Vocabulary>;
 
 export type VocabularyName = keyof typeof VOCABULARIES;
