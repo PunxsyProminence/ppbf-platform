@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { canonicalRow, datasetUnits, unitContentHash } from './contentImport/canonical';
+import { canonicalRow, datasetUnits, type UnitContent, unitContentHash } from './contentImport/canonical';
 import { runValidate } from './contentImport/cli';
 import { writeCsv } from './contentImport/csv';
 import { readCommittedBaseline } from './contentImport/referenceSets';
@@ -149,7 +149,7 @@ describe('a package without the label columns hashes exactly as before they exis
   const predatingLabels = DATASETS.filter((dataset) => !bornLabelled.includes(dataset.name));
   // Only the items that predate labels: the committed drill and template files also hold the FT1 items (lane FT1b),
   // which carry labels, so a unit counts here only when its three label cells are all blank.
-  const isUnlabelled = (unit: { root: Record<string, string> }) => ['field_labels', 'evidence', 'stage_keys'].every((column) => !unit.root[column]);
+  const isUnlabelled = (unit: UnitContent) => unit.root !== null && ['field_labels', 'evidence', 'stage_keys'].every((column) => !unit.root?.[column]);
   it.each(predatingLabels.map((dataset) => [dataset.name, dataset] as const))('%s: every committed unit that predates labels', (name, dataset) => {
     const units = [...datasetUnits(dataset, baseline).values()].filter(isUnlabelled);
     if (['drill-library', 'workout-templates'].includes(name)) expect(units.length).toBeGreaterThan(0);
