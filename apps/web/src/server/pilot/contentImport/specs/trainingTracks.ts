@@ -37,12 +37,42 @@ const TRACK_ID = /^trk_[0-9a-f]{14}$/;
 const BLOCK_ID = /^trb_[0-9a-f]{14}$/;
 const SESSION_ID = /^tbs_[0-9a-f]{14}$/;
 
-function parsed(value: string): { ok: true; value: unknown } | { ok: false; error: string } {
-  try {
-    return { ok: true, value: JSON.parse(value) };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+/**
+ * What the database could not hold as written, found before any write: a
+ * whole number past 2^53 (JavaScript would round it, so the value stored and
+ * hashed would not be the backbone's), and the NUL character (jsonb and text[]
+ * refuse it, so a clean plan would fail at apply).
+ */
+function unstorable(node: unknown, path: string): string | null {
+  if (typeof node === 'number') return Number.isInteger(node) && !Number.isSafeInteger(node) ? `${path || 'the value'} is a whole number too large to keep exactly (${node})` : null;
+  if (typeof node === 'string') return node.includes('\u0000') ? `${path || 'the value'} holds the NUL character (\\u0000), which the database cannot store` : null;
+  if (Array.isArray(node)) {
+    for (const [index, item] of node.entries()) {
+      const problem = unstorable(item, `${path}[${index}]`);
+      if (problem) return problem;
+    }
+    return null;
   }
+  if (isPlainObject(node)) {
+    for (const [key, item] of Object.entries(node)) {
+      if (key.includes('\u0000')) return `a key in ${path || 'the value'} holds the NUL character (\\u0000), which the database cannot store`;
+      const problem = unstorable(item, path ? `${path}.${key}` : key);
+      if (problem) return problem;
+    }
+  }
+  return null;
+}
+
+/** A JSON cell, read; `error` completes "<column> ..." when it cannot be stored as written. */
+function parsed(value: string): { ok: true; value: unknown } | { ok: false; error: string } {
+  let read: unknown;
+  try {
+    read = JSON.parse(value);
+  } catch (error) {
+    return { ok: false, error: `is not readable JSON: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  const problem = unstorable(read, '');
+  return problem ? { ok: false, error: `cannot be stored as written: ${problem}` } : { ok: true, value: read };
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -61,7 +91,7 @@ const SOURCES_RULE: RowRule = {
   check: (row) => {
     if (!row.sources) return null;
     const result = parsed(row.sources);
-    if (!result.ok) return `sources is not readable JSON: ${result.error}`;
+    if (!result.ok) return `sources ${result.error}`;
     if (!Array.isArray(result.value)) return 'sources must be a JSON list of source keys, e.g. ["DOC-123"]';
     const bad = result.value.findIndex((item) => typeof item !== 'string' || item.trim() === '');
     return bad >= 0 ? `sources item ${bad + 1} is not non-empty text (${JSON.stringify(result.value[bad])})` : null;
@@ -75,7 +105,7 @@ function detailsRule(mirrors: RowRule['mirrors']): RowRule {
     check: (row) => {
       if (!row.details) return null;
       const result = parsed(row.details);
-      if (!result.ok) return `details is not readable JSON: ${result.error}`;
+      if (!result.ok) return `details ${result.error}`;
       return isPlainObject(result.value) ? null : 'details must be a JSON object: backbone field name -> value';
     },
   };
@@ -107,7 +137,7 @@ const BLOCK_LABEL_RULES: RowRule[] = [
     check: (row) => {
       if (!row.field_labels) return null;
       const result = parsed(row.field_labels);
-      if (!result.ok) return `field_labels is not readable JSON: ${result.error}`;
+      if (!result.ok) return `field_labels ${result.error}`;
       if (!isPlainObject(result.value)) return 'field_labels must be a JSON object: field name -> {"status": ..., "sources": [...]}';
       const bad: string[] = [];
       badStatuses(result.value, '', bad);
@@ -120,7 +150,7 @@ const BLOCK_LABEL_RULES: RowRule[] = [
     check: (row) => {
       if (!row.evidence) return null;
       const result = parsed(row.evidence);
-      if (!result.ok) return `evidence is not readable JSON: ${result.error}`;
+      if (!result.ok) return `evidence ${result.error}`;
       const entries = Array.isArray(result.value) ? result.value : [result.value];
       if (!entries.every(isPlainObject)) return 'evidence must be a JSON object or a JSON list of objects';
       const bad = entries.findIndex((entry) => 'evidence_label' in entry && !(EVIDENCE_LABELS as readonly unknown[]).includes(entry.evidence_label));
@@ -134,7 +164,7 @@ const BLOCK_LABEL_RULES: RowRule[] = [
     check: (row) => {
       if (!row.stage_keys) return null;
       const result = parsed(row.stage_keys);
-      if (!result.ok) return `stage_keys is not readable JSON: ${result.error}`;
+      if (!result.ok) return `stage_keys ${result.error}`;
       if (!Array.isArray(result.value)) return 'stage_keys must be a JSON list of stage keys, e.g. ["FT1"]';
       const bad = result.value.filter((key) => !(STAGE_KEYS as readonly unknown[]).includes(key));
       return bad.length > 0 ? `stage_keys ${bad.map((key) => JSON.stringify(key)).join(', ')} not a pathway stage. Allowed: ${STAGE_KEYS.join(' | ')}` : null;

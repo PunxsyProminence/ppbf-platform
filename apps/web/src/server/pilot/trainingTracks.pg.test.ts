@@ -560,3 +560,51 @@ describe('refused at plan, by name', () => {
     ]);
   });
 });
+
+describe('JSON cells: blanks, and what the database could not store as written', () => {
+  const GYM = 'gym_tt_blank';
+  let admin: string;
+
+  beforeAll(async () => {
+    admin = await createGym(GYM);
+    await load(GYM, admin, PREREQUISITES());
+  });
+
+  it('blank sources, details and block labels load as their defaults and re-plan unchanged', async () => {
+    const files = trackFiles(
+      [{ ...TRACK_ROW, sources: '', details: '' }],
+      [block(B1, '1', { sources: '', field_labels: '', evidence: '', stage_keys: '', details: '' })],
+      [session('1', '1', 'Monday', T_A)],
+    );
+    await load(GYM, admin, files);
+    expect((await trackRows(GYM)).map((row) => [row.sources, row.details])).toEqual([[[], {}]]);
+    expect((await blockRows(GYM)).map((row) => [row.sources, row.field_labels, row.evidence, row.stage_keys, row.details])).toEqual([
+      [[], null, null, [], {}],
+    ]);
+    expect(outcomes(await plan(GYM, admin, files))).toEqual({ [TRACK]: 'unchanged' });
+    // A blank and its default written out are the same content.
+    const explicit = trackFiles(
+      [{ ...TRACK_ROW, sources: '[]', details: '{}' }],
+      [block(B1, '1', { sources: '[]', field_labels: '', evidence: '', stage_keys: '[]', details: '{}' })],
+      [session('1', '1', 'Monday', T_A)],
+    );
+    expect(outcomes(await plan(GYM, admin, explicit))).toEqual({ [TRACK]: 'unchanged' });
+  });
+
+  it('refuses offline, by name, a whole number past 2^53 and the NUL character', () => {
+    const findings = offline({
+      ...PREREQUISITES(),
+      ...trackFiles(
+        [{ ...TRACK_ROW, details: '{"week_titles": ["Week 1"], "count": 12345678901234567890}', sources: '["DOC-123", "bad\\u0000source"]' }],
+        [block(B1, '1', { evidence: '[{"evidence_label": "CONVENTION", "note": "a\\u0000b"}]' })],
+        [session('1', '1', 'Monday', T_A)],
+      ),
+    });
+    expect(findings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^row_rule {2}sources cannot be stored as written: \[1\] holds the NUL character/),
+      expect.stringMatching(/^row_rule {2}details cannot be stored as written: count is a whole number too large to keep exactly/),
+      expect.stringMatching(/^row_rule {2}evidence cannot be stored as written: \[0\]\.note holds the NUL character/),
+    ]));
+    expect(findings).toHaveLength(3);
+  });
+});

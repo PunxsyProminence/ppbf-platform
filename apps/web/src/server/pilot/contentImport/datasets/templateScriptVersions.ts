@@ -146,7 +146,9 @@ interface ColumnInfo {
 // Only the LIVE column's data_type decides it; every other column takes the
 // path it took before. Both sides of the hash read the same text: a file cell
 // parsed and key-sorted, a stored value key-sorted -- jsonb hands its keys
-// back in its own order, and a text[] comes back as a JavaScript array.
+// back in its own order, and a text[] comes back as a JavaScript array. A jsonb
+// cell is written as that key-sorted text (Postgres reads it into jsonb); a
+// text[] cell is written as the array it lists.
 const isJsonColumn = (info: ColumnInfo | undefined) => info?.dataType === 'jsonb' || info?.dataType === 'ARRAY';
 
 /** JSON with object keys sorted at every depth (the canonical.ts sortedJson rule). */
@@ -204,7 +206,6 @@ function databaseValue(column: ColumnSpec, value: string, info: ColumnInfo): unk
     }
     return items;
   }
-  if (info.dataType === 'jsonb') return text ? JSON.stringify(JSON.parse(text)) : null;
   if (!text) return info.nullable || column.type !== 'text' ? null : '';
   switch (column.type) {
     case 'boolean':
