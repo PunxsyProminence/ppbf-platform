@@ -300,6 +300,7 @@
     "test:migrations:content-labels": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentLabels.pg.test.ts --testTimeout=300000",
     "test:migrations:pathway-catalog": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/pathwayCatalog.pg.test.ts --testTimeout=300000",
     "test:migrations:training-tracks": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/trainingTracks.pg.test.ts --testTimeout=300000",
+    "test:migrations:ft1-content": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/ft1ContentPackage.pg.test.ts --testTimeout=300000",
     "test:migrations:video-clip-tags": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoClipTags.pg.test.ts --testTimeout=180000",
     "test:migrations:video-clip-tags-sparring-link": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/videoClipTagsSparringLink.pg.test.ts --testTimeout=180000",
     "test:migrations:athlete-minor-limits": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/athleteMinorLimits.pg.test.ts --testTimeout=180000",

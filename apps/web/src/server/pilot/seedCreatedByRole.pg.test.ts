@@ -217,7 +217,7 @@ describe('created_by_role is the verified actor role, on every row the seed path
     const admin = await createSeedingGym(client, organizationId, { role: 'admin' });
     const before = await rowCounts(organizationId);
 
-    const loaded = await loadReferenceContent(client, { organizationId, actorAccountId: admin, datasets: 'disciplines,drill-library,workout-templates' });
+    const loaded = await loadReferenceContent(client, { organizationId, actorAccountId: admin, datasets: 'disciplines,pathway-catalog,drill-library,workout-templates' });
     expect(loaded.code).toBe(0);
 
     const stamps = await stampsOfWrittenTables(organizationId, before);

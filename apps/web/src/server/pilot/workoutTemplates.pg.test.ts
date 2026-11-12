@@ -633,7 +633,7 @@ describe('the committed workout templates, loaded through the content-import cor
   let seedDb: Client;
   const TEMPLATES = committedRows('workout-templates/seed_workout_templates.csv');
   const ITEMS = committedRows('workout-templates/seed_workout_template_items.csv');
-  const DATASETS = 'disciplines,drill-library,workout-templates';
+  const DATASETS = 'disciplines,pathway-catalog,drill-library,workout-templates';
 
   beforeAll(async () => {
     seedDb = await openFullSchemaDatabase(Client, connectionStringFor, 'ppbf_test_wtpl_core_seed');

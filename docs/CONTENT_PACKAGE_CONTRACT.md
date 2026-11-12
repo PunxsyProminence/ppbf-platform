@@ -332,8 +332,8 @@ One row = one drill. Identity: drill_id.
 | skill_id |  | SK-, capital letters, a hyphen, two digits (SK-STANCE-01); should be listed in skillFamilies.ts (a warning otherwise) | The ONE primary skill code (SK-...), never a family id SKILL-01..12. |
 | target_behavior | yes | text | The lesson every scale level must still produce. |
 | purpose | yes | text | What the drill is for. |
-| standard_setup | yes | text | How to set it up. |
-| execution | yes | text | How it runs. |
+| standard_setup |  | text | How to set it up. |
+| execution |  | text | How it runs. |
 | what_good_looks_like |  | text | What good execution looks like. A drill without it cannot be adopted. |
 | what_bad_looks_like |  | text | What poor execution looks like. |
 | common_errors |  | text | Common errors. |
