@@ -7,6 +7,7 @@ import { PATHWAY_CATALOG_ENGINE } from './pathwayCatalog';
 import { REGISTRY_ENGINES } from './registries';
 import { sessionScriptsEngine } from './sessionScripts';
 import { workoutTemplatesEngine } from './templates';
+import { trainingTracksEngine } from './trainingTracks';
 import { UNIVERSAL_STOP_RULES_ENGINE } from './universalStopRules';
 
 // THE DATASET REGISTRY OF THE DATABASE HALF. Each dataset module turns the
@@ -89,6 +90,7 @@ export const DATASET_ENGINES: readonly DatasetEngine[] = [
   UNIVERSAL_STOP_RULES_ENGINE,
   workoutTemplatesEngine,
   sessionScriptsEngine,
+  trainingTracksEngine,
 ].sort((a, b) => DATASETS.indexOf(a.spec) - DATASETS.indexOf(b.spec));
 
 export function datasetEngine(name: DatasetName): DatasetEngine | undefined {

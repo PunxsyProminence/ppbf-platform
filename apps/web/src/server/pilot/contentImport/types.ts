@@ -12,6 +12,7 @@ export type DatasetName =
   | 'universal-stop-rules'
   | 'workout-templates'
   | 'session-scripts'
+  | 'training-tracks'
   | 'transfer-claims'
   | 'assessment-protocols';
 
@@ -156,7 +157,7 @@ export interface FileSpec {
   /** Identity of a row within the file. Rows with a blank key part are not compared. */
   key: readonly string[];
   /** Set on child files: the rows of one parent are replaced together. */
-  parent?: { column: string; target: 'drill' | 'template' | 'script' };
+  parent?: { column: string; target: 'drill' | 'template' | 'script' | 'track' };
   unique?: readonly UniqueRule[];
   rowRules?: readonly RowRule[];
   groupRules?: readonly GroupRule[];
@@ -246,7 +247,9 @@ export type FindingCode =
   // Raised by the database plan stage (plan.ts, datasets/), never offline:
   // they compare a package with what the target organization already holds.
   | 'ordinal_change'
-  | 'dataset_not_loadable';
+  | 'dataset_not_loadable'
+  // A training track block session naming a template whose current version is withdrawn.
+  | 'withdrawn_template';
 
 export interface Finding {
   code: FindingCode;
