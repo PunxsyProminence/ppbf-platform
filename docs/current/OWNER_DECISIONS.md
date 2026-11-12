@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-12-001 | 2026-11-12 | Backbone drills whose setup or steps are blank load with those fields blank; the drill import stops requiring them | PRIMARY |  | yes |
 | OD-2026-11-11-003 | 2026-11-11 | The FT1 hand-off lane is split into FT1a (tables) and FT1b (content), and a read-only coach view of the track (FT1c) follows | PRIMARY |  | yes |
 | OD-2026-11-11-002 | 2026-11-11 | The standing owner directions of 2026-08-15/16 are recorded here word for word, moved from ACTIVE_WORK | RECONSTRUCTED |  |  |
 | OD-2026-11-11-001 | 2026-11-11 | Governance consolidation: an index for this file, one source-order list, and three clean-ups, with no decision text changed | PRIMARY |  | yes |
@@ -557,6 +558,34 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-12-001 -- Backbone drills whose setup or steps are blank load with those fields blank; the drill import stops requiring them: "A: Load blanks"
+
+**Provenance: PRIMARY.** Jason's reply "A: Load blanks", 2026-11-12 about 04:49 EST (transcript timestamp 2026-11-12T09:49:23.081Z), a button in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 9779, `origin.kind` human), checked against the file by script before writing. The question is line 9620 (the `wrap_up` `ask`): "How should Backbone drills with blank setup and steps be handled?", with the buttons "A: Load blanks" and "C: Hold until written"; the same question stayed in the box at lines 9672, 9698 and 9755 while the lane worked. The options were set out in the closing message at line 9627. Raised by lane FT1b (step-1 report), checked by Overwatch against the frozen Backbone before it was put to him. New; edits no earlier entry's text.
+
+**What was put to him (closing message, line 9627, quoted):**
+
+- Reach: "Your answer will apply to every Backbone content lane, so you'll only be asked once."
+- The problem: "All 128 drills the FT1 track's 33 templates use have both fields blank in the frozen Backbone." "Across the whole Backbone, 359 of 387 drills have one or both of those fields blank." "The lane's option B (load only the 3 drills that are filled) would leave every template empty, so it's dropped."
+- **A (Recommended): load the blanks.** "Make the two fields optional in the import. The database already allows an empty value, so no database change is needed." "The app already refuses to let the gym adopt a drill with "no setup" or that "does not say how it runs"" (`drillAdoptionReadiness.ts:84-85`). "UNVERIFIED: whether a coach can still assign a template whose drills aren't adopted yet. The lane will confirm that in its PR."
+- **C: hold FT1b**, and the drill-library lane after it, until you or the head coach write setup and steps. That is 256 fields for FT1 alone.
+- In plain English: "A puts the drills, templates and the 8-week track into the app now, with setup and steps empty. The gym can't adopt a drill until someone fills those in." "C means nothing goes in until they're written."
+
+**Jason:** *"A: Load blanks"*
+
+**Rulings:**
+
+1. The drill-library import no longer requires `standard_setup` and `execution` (`apps/web/src/server/pilot/contentImport/specs/drills.ts`). A Backbone drill with either field blank loads with it blank, stored as an empty value. Option A as recommended.
+2. Adopting such a drill stays blocked by the app's existing adoption check (`apps/web/src/lib/drillAdoptionReadiness.ts`) until the fields are written. No new gate is added.
+3. Reach: every Backbone hand-off lane (FT1b now; the drill-library lane and the stage lanes of OD-2026-11-10-003 after it), as the question said.
+
+**Not ruled here:** who writes the missing setup and steps and when (the Backbone's D-PK21 option A: Jason or the head coach); whether a coach can assign a template whose drills are not yet adopted (UNVERIFIED when asked; lane FT1b reports it in its PR); any other required field that a later lane finds blank.
+
+**Evidence it rested on:** `drills.ts` lines 56-57 on main `3ee46797` (`required: true` on both); `pilot_slice_postgres_drill_library_v3_migration.sql` lines 99-100 (`text not null`, no blank check); `drillAdoptionReadiness.ts` lines 84-85; the frozen Backbone `data/content/drills` (387 drills; the FT1 set 131, of which the 128 used by the 33 templates are blank on both fields; `FREEZE_MANIFEST.json` sha256[:16] `38b52df4c2d8d7a1`).
+
+**Status:** recorded 2026-11-12 by PR. Lane FT1b makes the spec change in its PR; nothing built or merged by this entry.
 
 ---
 
