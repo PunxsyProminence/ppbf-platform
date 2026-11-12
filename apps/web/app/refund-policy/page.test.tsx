@@ -29,7 +29,7 @@ test("states Jason's terms as approved", async () => {
   const { text } = await renderWith();
   for (const line of [
     'Punxsy Prominence Boxing and Fitness · 501(c)(3) nonprofit · EIN 99-2073622',
-    'Youth train free. Donations, sponsorships and the suggested adult donation of $20 a month are what keep it that way. Card payments are processed by Stripe.',
+    'Youth train free. Donations, sponsorships and the suggested adult donation of $20 a month are what keep it that way. Giving is never a condition of training here. Card payments are processed by Stripe.',
     'Donations are generally not refundable. If a donation was made by mistake (the wrong amount, a duplicate charge, or a charge you did not authorize), email treasurer@punxsyprominence.org within 30 days and we will refund it to the card or account it came from.',
     'Refunds usually show up within 5 to 10 business days. A refunded donation is no longer a tax-deductible gift, and any receipt for it is void.',
     'You can stop or change a monthly donation at any time: email treasurer@punxsyprominence.org. A request we receive at least 3 business days before the next charge takes effect before that charge.',
@@ -43,11 +43,12 @@ test("states Jason's terms as approved", async () => {
   }
 });
 
-test('the $20 is a suggested donation, never a fee, and the unchosen optional lines are absent', async () => {
+test('the $20 is a suggested donation, never a fee, and giving is never a condition of training', async () => {
   const { text } = await renderWith();
   expect(text).not.toMatch(/\bfees?\b/i);
   expect(text).not.toMatch(/adults pay/i);
-  expect(text).not.toMatch(/condition of training/i);
+  // OD-2026-11-12-004 chose the optional line: giving is never a condition of training.
+  expect(text).toContain('Giving is never a condition of training here.');
   expect(text).not.toMatch(/\$250/);
 });
 

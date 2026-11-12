@@ -54,7 +54,7 @@ export default async function RefundPolicyPage() {
           </h2>
           <p className="t-body mt-[var(--s2)]">
             {gym.legalName} is an IRS-recognized 501(c)(3) nonprofit. Youth train free. Donations, sponsorships
-            and the suggested adult donation of $20 a month are what keep it that way. Card payments are
+            and the suggested adult donation of $20 a month are what keep it that way. Giving is never a condition of training here. Card payments are
             processed by Stripe.
           </p>
         </section>
