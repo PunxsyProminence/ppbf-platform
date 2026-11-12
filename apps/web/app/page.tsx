@@ -150,7 +150,9 @@ const programCards = [
 ];
 
 /* Moved from /public. The cost answer carries Jason's figure (adults $20 a
-   month, 2026-10-03), replacing the old "Adults, ask us". */
+   month, 2026-10-03), replacing the old "Adults, ask us". The $20 is a
+   suggested donation, not a fee (Jason 2026-11-12: "it needs to be a
+   suggested donation not a fee, update website as well"). */
 const faqItemsFor = (org: OrganizationProfile) => [
   {
     question: "Do I have to fight anybody?",
@@ -165,7 +167,7 @@ const faqItemsFor = (org: OrganizationProfile) => [
   {
     question: "What does it cost?",
     answer:
-      "Youth train free. Whether a child can train here is not decided by what their family can pay. Adults pay $20 a month.",
+      "Youth train free. Whether a child can train here is not decided by what their family can pay. Adults are asked for a suggested donation of $20 a month.",
   },
   {
     question: "When are you open?",
@@ -362,7 +364,7 @@ export default async function HomePage() {
             </div>
             <div className="rounded-[var(--r-md)] border-2 border-[color:rgb(var(--brass-400-rgb)_/_0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgb(var(--brass-400-rgb)_/_0.06)] to-transparent">
               <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>Free</p>
-              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>For youth. Adults $20 a month.</p>
+              <p className="t-body text-[color:var(--bone-600)] mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>For youth. Suggested adult donation: $20 a month.</p>
             </div>
             <div className="rounded-[var(--r-md)] border-2 border-[color:rgb(var(--brass-400-rgb)_/_0.5)] p-[var(--s5)] mat-paper bg-gradient-to-br from-[rgb(var(--brass-400-rgb)_/_0.06)] to-transparent">
               <p className="t-command text-[color:var(--brass-400)]" style={{ fontSize: 'var(--t-2xl)' }}>501(c)(3)</p>
