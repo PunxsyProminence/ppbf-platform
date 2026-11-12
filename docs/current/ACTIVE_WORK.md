@@ -46,6 +46,7 @@ does not drive-by fix another area's surface.
 | Design / visuals | Design-system and page-visual work. The 2026-08-17 park of the whole area is lifted (OD-2026-09-28-009 item 2); the build order is `docs/ROOM-MAP.md` (item 3). | Blocked on owner-supplied assets stays blocked; do not substitute invented assets. |
 | Ops / deploy | Staging, production, migrations, releases | Human-gated for production (OD-2026-08-29-006). |
 | Owner decisions index | The generated index of rulings at the top of `docs/current/OWNER_DECISIONS.md` (OD-2026-11-11-001, G1 A; lane G1A) | A PR that adds an entry or a fixed-form Status line runs `node scripts/owner-decisions-index.mjs --write`; CI runs `--check`. |
+| Donate buttons | Public homepage Donate buttons to the two Stripe links and the Support-section wording (OD-2026-11-12-002, -003, -004; lane donate-button) | Files: `app/page.tsx`, `app/refund-policy/page.tsx`, `src/shared/donationLinks.ts`. No payment code; no tax claim on the buttons. |
 
 Phase plan (2026-08-29): **Phase 1** -- every operations-radar row reads
 `EXISTS` or is PARKED here with a re-open condition. **Phase 2** --

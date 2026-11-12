@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import PhotoSlot from "@/components/PhotoSlot";
+import { DONATION_LINKS } from "@/src/shared/donationLinks";
 import PublicInterestForm from "@/components/PublicInterestForm";
 import { programInterestLabels } from "@/components/publicInterestOptions";
 import { gymPhotoSlotsFor } from "@/src/shared/gymPhotos";
@@ -252,6 +253,9 @@ export default async function HomePage() {
             <div className="mt-[var(--s5)] sm:mt-[var(--s6)] flex flex-wrap items-center justify-center gap-[var(--s3)] sm:gap-[var(--s4)]">
               <a href="#programs" className="btn text-sm sm:text-base">
                 Learn About Our Programs
+              </a>
+              <a href="#support" className="btn btn--ghost text-sm sm:text-base">
+                Donate
               </a>
               <Link href="/login" className="btn btn--ghost text-sm sm:text-base">
                 Log In
@@ -603,9 +607,10 @@ export default async function HomePage() {
           </dl>
         </section>
 
-        {/* Support. Two monitored addresses and no payment button: there is no
-            donation channel to point one at yet, and a button that goes nowhere
-            is the one thing this page must not ship. */}
+        {/* Support. Two Stripe-hosted donation links (src/shared/donationLinks.ts;
+            no payment code here) and two monitored addresses. The adult $20 is a
+            suggested donation, never a fee, and no tax claim is made on either
+            button (OD-2026-11-12-002, -004). */}
         <div className="flex justify-center">
           <div className="rope w-[var(--s8)]" />
         </div>
@@ -618,6 +623,30 @@ export default async function HomePage() {
           <h2 id="support-heading" className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
             Support {org.shortName}
           </h2>
+          <div className="mt-[var(--s5)] flex flex-wrap items-center gap-[var(--s3)] sm:gap-[var(--s4)]">
+            <a
+              href={DONATION_LINKS.oneTime}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn text-sm sm:text-base"
+            >
+              Donate
+            </a>
+            <a
+              href={DONATION_LINKS.monthly}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn--ghost text-sm sm:text-base"
+            >
+              Suggested monthly donation
+            </a>
+          </div>
+          <p className="t-body mt-[var(--s3)] max-w-[68ch]">
+            Cost is never a barrier to training here. Youth train free, and the adult $20 a month is a suggested donation, not a fee.
+          </p>
+          <p className="t-body mt-[var(--s2)]">
+            <Link href="/refund-policy">Donations, refunds and cancellations</Link>
+          </p>
           <dl className="mt-[var(--s5)] grid gap-[var(--s5)] md:grid-cols-2">
             <div>
               <dt className="t-label">Donations</dt>
