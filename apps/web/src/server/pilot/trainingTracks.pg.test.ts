@@ -608,3 +608,95 @@ describe('JSON cells: blanks, and what the database could not store as written',
     expect(findings).toHaveLength(3);
   });
 });
+
+describe('readiness: every clause it asserts is one a broken environment fails', () => {
+  const breakages: [string, string][] = [
+    ['a named check', 'alter table pilot.track_blocks drop constraint pilot_track_blocks_weeks_check'],
+    ['a session check', 'alter table pilot.track_block_sessions drop constraint pilot_track_block_sessions_week_check'],
+    ['a primary key', 'alter table pilot.track_block_sessions drop constraint pilot_track_block_sessions_pkey'],
+    [
+      "one table's organization cascade",
+      `alter table pilot.track_blocks drop constraint track_blocks_organization_id_fkey;
+       alter table pilot.track_blocks add constraint track_blocks_organization_id_fkey
+         foreign key (organization_id) references pilot.organizations(organization_id)`,
+    ],
+    [
+      'a text[] column the engine writes by type',
+      `alter table pilot.track_blocks alter column stage_keys drop default;
+       alter table pilot.track_blocks alter column stage_keys type text using array_to_string(stage_keys, '|')`,
+    ],
+    [
+      'a jsonb column the engine writes by type',
+      // The named check is put back on the text column, so only the type clause can fail.
+      `alter table pilot.training_tracks drop constraint pilot_training_tracks_details_check,
+         alter column details drop default, alter column details type text using details::text,
+         add constraint pilot_training_tracks_details_check check (details is not null)`,
+    ],
+  ];
+
+  it.each(breakages)('%s', async (_what, breakage) => {
+    const sql = await fs.readFile(MIGRATION_PATH, 'utf8');
+    // The runner opens its own transaction; inside this one, its ROLLBACK
+    // also undoes the breakage, so the next case starts from a whole schema.
+    await client.query('BEGIN');
+    try {
+      await client.query(breakage);
+      await expect(applyMigrationTransaction(client, sql)).rejects.toThrow('TRAINING_TRACKS_NOT_READY');
+    } finally {
+      await client.query('ROLLBACK').catch(() => {});
+    }
+    await applyMigrationTransaction(client, sql);
+  });
+});
+
+describe('a revision carried from the stored version', () => {
+  const GYM = 'gym_tt_rev';
+  let admin: string;
+
+  beforeAll(async () => {
+    admin = await createGym(GYM);
+    await load(GYM, admin, { ...PREREQUISITES(), ...TRACK_FILES() });
+  });
+
+  it('a sessions file alone revises the track against its stored blocks; a session naming a block it lacks is refused by name', async () => {
+    const more = { [SESSIONS]: csv(SESSION_HEADER, [...SESSION_ROWS, session('2', '2', 'Friday', T_B)]) };
+    expect(outcomes(await plan(GYM, admin, more))).toEqual({ [TRACK]: 'new_version' });
+    const orphan = { [SESSIONS]: csv(SESSION_HEADER, [...SESSION_ROWS, session('3', '1', 'Friday', T_B)]) };
+    expect(codes(await plan(GYM, admin, orphan))).toEqual([
+      `orphan_reference block_order track ${TRACK} block 3 session 1 names block_order 3, which ${TRACK} has no block for`,
+    ]);
+  });
+
+  it('a blocks file alone that drops a block the stored sessions use is refused by name, at the stored rows', async () => {
+    const shown = await plan(GYM, admin, { [BLOCKS]: csv(BLOCK_HEADER, [block(B1, '1')]) });
+    expect(shown.blocking.map((finding) => [finding.code, finding.file, finding.message])).toEqual([
+      [
+        'orphan_reference',
+        `database:pilot.track_block_sessions (track ${TRACK} v1)`,
+        `track ${TRACK} block 2 session 1 names block_order 2, which ${TRACK} has no block for`,
+      ],
+    ]);
+  });
+
+  it('a stored session naming a template since withdrawn is refused when the track is revised', async () => {
+    await client.query(`update pilot.workout_templates set active = false where organization_id = $1 and lineage_id = $2`, [GYM, T_B]);
+    try {
+      const shown = await plan(GYM, admin, { [BLOCKS]: csv(BLOCK_HEADER, [block(B1, '1', { title: 'Week 1, revised' }), block(B2, '2')]) });
+      expect(codes(shown)).toEqual([
+        `withdrawn_template template_lineage_id track ${TRACK} block 1 session 2 names template ${T_B}, whose current version in ${GYM} is withdrawn. Name an active template, or restore it first.`,
+      ]);
+    } finally {
+      await client.query(`update pilot.workout_templates set active = true where organization_id = $1 and lineage_id = $2`, [GYM, T_B]);
+    }
+  });
+
+  it("'1' and '1.0' are one block_order: refused by name at plan, not at the database", async () => {
+    const shown = await plan(GYM, admin, trackFiles([TRACK_ROW], [block(B1, '1'), block(B2, '1.0')], SESSION_ROWS.filter((row) => row.block_order === '1')));
+    expect(codes(shown)).toEqual(expect.arrayContaining([`duplicate_key block_order track ${TRACK} has two blocks at block_order 1`]));
+  });
+
+  it('an integer past the database integer is refused offline, by name', () => {
+    expect(offline({ ...PREREQUISITES(), ...trackFiles([TRACK_ROW], [block(B1, '1')], [{ ...session('1', '1', 'Monday', T_A), week: '3000000000' }]) }))
+      .toEqual([expect.stringMatching(/^row_rule {2}week 3000000000 is above 2147483647/)]);
+  });
+});

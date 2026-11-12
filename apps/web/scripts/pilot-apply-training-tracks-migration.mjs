@@ -54,11 +54,13 @@ function resolveSslConfig() {
   return { rejectUnauthorized: true };
 }
 
-// Asserts the three tables, each one's cascade from its organization, a block's
-// cascade from its track version and a block session's from its block, the
-// one-current-version-per-lineage index, the order and lineage uniques, and the
-// named shape checks, so an environment missing any piece cannot pass.
-// Constraints are found by name AND by table, so a same-named constraint
+// Asserts the three tables and their primary keys, each one's own cascade from
+// its organization, a block's cascade from its track version and a block
+// session's from its block, the one-current-version-per-lineage index, the
+// order and lineage uniques, every named check, and the jsonb and text[] types
+// of the columns the content-import engine reads and writes by type
+// (templateScriptVersions.ts), so an environment missing any piece cannot
+// pass. Constraints are found by name AND by table, so a same-named constraint
 // elsewhere cannot stand in.
 const READINESS_QUERY = `
   with c as (
@@ -73,9 +75,12 @@ const READINESS_QUERY = `
     to_regclass('pilot.training_tracks') is not null as tracks_ready,
     to_regclass('pilot.track_blocks') is not null as blocks_ready,
     to_regclass('pilot.track_block_sessions') is not null as sessions_ready,
-    (select count(*) from c where contype = 'f' and confdeltype = 'c'
+    (select count(distinct conrelid) from c where contype = 'f' and confdeltype = 'c'
        and confrelid = to_regclass('pilot.organizations')
     ) = 3 as organization_cascade_ready,
+    (select count(*) from c where contype = 'p' and conname in (
+       'pilot_training_tracks_pkey', 'pilot_track_blocks_pkey', 'pilot_track_block_sessions_pkey')
+    ) = 3 as primary_keys_ready,
     exists (
       select 1 from c where contype = 'f' and confdeltype = 'c' and conname = 'pilot_track_blocks_track_fkey'
         and conrelid = to_regclass('pilot.track_blocks') and confrelid = to_regclass('pilot.training_tracks')
@@ -89,12 +94,22 @@ const READINESS_QUERY = `
        'pilot_track_blocks_lineage_uq', 'pilot_track_block_sessions_ordinal_uq')
     ) = 4 as uniques_ready,
     (select count(*) from c where contype = 'c' and conname in (
-       'pilot_training_tracks_id_check', 'pilot_training_tracks_lineage_check', 'pilot_training_tracks_lane_check',
-       'pilot_training_tracks_track_check', 'pilot_training_tracks_status_check', 'pilot_training_tracks_details_check',
-       'pilot_track_blocks_id_check', 'pilot_track_blocks_lineage_check', 'pilot_track_blocks_status_check',
-       'pilot_track_blocks_field_labels_check', 'pilot_track_blocks_evidence_check', 'pilot_track_blocks_details_check',
-       'pilot_track_block_sessions_id_check', 'pilot_track_block_sessions_day_check', 'pilot_track_block_sessions_template_check')
-    ) = 15 as shape_checks_ready,
+       'pilot_training_tracks_id_check', 'pilot_training_tracks_lineage_check', 'pilot_training_tracks_version_check',
+       'pilot_training_tracks_name_check', 'pilot_training_tracks_lane_check', 'pilot_training_tracks_track_check',
+       'pilot_training_tracks_duration_check', 'pilot_training_tracks_status_check', 'pilot_training_tracks_details_check',
+       'pilot_track_blocks_id_check', 'pilot_track_blocks_lineage_check', 'pilot_track_blocks_order_check',
+       'pilot_track_blocks_weeks_check', 'pilot_track_blocks_status_check', 'pilot_track_blocks_field_labels_check',
+       'pilot_track_blocks_evidence_check', 'pilot_track_blocks_details_check',
+       'pilot_track_block_sessions_id_check', 'pilot_track_block_sessions_ordinal_check', 'pilot_track_block_sessions_week_check',
+       'pilot_track_block_sessions_day_check', 'pilot_track_block_sessions_template_check')
+    ) = 22 as checks_ready,
+    (select count(*) from information_schema.columns
+      where table_schema = 'pilot'
+        and ((table_name in ('training_tracks', 'track_blocks') and column_name = 'details' and data_type = 'jsonb')
+          or (table_name in ('training_tracks', 'track_blocks') and column_name = 'sources' and data_type = 'ARRAY')
+          or (table_name = 'track_blocks' and column_name in ('field_labels', 'evidence') and data_type = 'jsonb')
+          or (table_name = 'track_blocks' and column_name = 'stage_keys' and data_type = 'ARRAY'))
+    ) = 7 as typed_columns_ready,
     exists (
       select 1 from pg_index i
        where i.indexrelid = to_regclass('pilot.pilot_training_tracks_one_head_per_lineage')

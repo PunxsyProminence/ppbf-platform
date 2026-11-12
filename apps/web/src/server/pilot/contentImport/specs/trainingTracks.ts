@@ -9,6 +9,7 @@ import {
   text,
   vocabulary,
 } from './common';
+import { integerText, isIntegerText } from '../values';
 
 // TRAINING TRACKS (SCHEMA_PROPOSAL P17; training_tracks migration; lane FT1a).
 // A multi-week class track, its ordered blocks, and the sessions each block
@@ -76,6 +77,18 @@ function parsed(value: string): { ok: true; value: unknown } | { ok: false; erro
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** The integer columns hold a Postgres integer: past 2147483647 the insert fails (22003) after a clean plan. */
+const INTEGER_MAX = 2147483647;
+function integerFits(columns: readonly string[]): RowRule {
+  return {
+    description: `${columns.join(', ')} ${columns.length > 1 ? 'are' : 'is'} at most ${INTEGER_MAX} (a database integer).`,
+    check: (row) => {
+      const over = columns.filter((column) => row[column] && isIntegerText(row[column]) && Number(integerText(row[column])) > INTEGER_MAX);
+      return over.length > 0 ? over.map((column) => `${column} ${row[column]} is above ${INTEGER_MAX}`).join('; ') : null;
+    },
+  };
+}
 
 function idShape(column: string, pattern: RegExp, shape: string, mirrors?: RowRule['mirrors']): RowRule {
   return {
@@ -227,6 +240,7 @@ const tracksFile: FileSpec = {
   ],
   rowRules: [
     idShape('track_id', TRACK_ID, "'trk_' and 14 lowercase hex", { table: 'training_tracks', constraint: 'pilot_training_tracks_id_check' }),
+    integerFits(['duration_weeks']),
     SOURCES_RULE,
     detailsRule({ table: 'training_tracks', constraint: 'pilot_training_tracks_details_check' }),
   ],
@@ -274,6 +288,7 @@ const blocksFile: FileSpec = {
   rowRules: [
     idShape('track_block_id', BLOCK_ID, "'trb_' and 14 lowercase hex", { table: 'track_blocks', constraint: 'pilot_track_blocks_id_check' }),
     idShape('block_lineage_id', BLOCK_ID, "'trb_' and 14 lowercase hex", { table: 'track_blocks', constraint: 'pilot_track_blocks_lineage_check' }),
+    integerFits(['block_order', 'weeks']),
     {
       description: 'A track_block_id the file gives equals block_lineage_id: both are the backbone\'s block id.',
       check: (row) =>
@@ -311,6 +326,7 @@ const sessionsFile: FileSpec = {
   ],
   rowRules: [
     idShape('block_session_id', SESSION_ID, "'tbs_' and 14 lowercase hex", { table: 'track_block_sessions', constraint: 'pilot_track_block_sessions_id_check' }),
+    integerFits(['block_order', 'ordinal', 'week']),
   ],
 };
 

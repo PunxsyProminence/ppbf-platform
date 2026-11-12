@@ -644,6 +644,7 @@ One row = one training track. Identity: track_id.
 Rules:
 
 - track_id is 'trk_' and 14 lowercase hex.
+- duration_weeks is at most 2147483647 (a database integer).
 - sources, when set, is a JSON list of non-empty text (e.g. ["DOC-123"]).
 - details, when set, is a JSON object: every backbone field with no column of its own, by its backbone name.
 
@@ -672,6 +673,7 @@ Rules:
 - block_lineage_id is unique within its track (pilot_track_blocks_lineage_uq).
 - track_block_id is 'trb_' and 14 lowercase hex.
 - block_lineage_id is 'trb_' and 14 lowercase hex.
+- block_order, weeks are at most 2147483647 (a database integer).
 - A track_block_id the file gives equals block_lineage_id: both are the backbone's block id.
 - sources, when set, is a JSON list of non-empty text (e.g. ["DOC-123"]).
 - field_labels, when set, is a JSON object of per-field {"status", "sources"}; every status is one of OBSERVED, REPORTED, INFERRED, UNVERIFIED.
@@ -697,6 +699,7 @@ One row = one session a block lists, in order. Identity: track_id + block_order 
 Rules:
 
 - block_session_id is 'tbs_' and 14 lowercase hex.
+- block_order, ordinal, week are at most 2147483647 (a database integer).
 
 ### 10. Transfer claims
 

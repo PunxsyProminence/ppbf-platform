@@ -125,12 +125,37 @@ export const trainingTracksEngine: DatasetEngine = {
       }
       if (unit.outcome === 'unchanged') continue;
 
-      const blockOrders = new Set((item.children?.get(blocks) ?? []).map((cells) => order(cells.block_order)));
+      // The file key compares text, so '1' and '1.0' are two keys to the
+      // validator and one to the database (pilot_track_blocks_order_uq,
+      // pilot_track_block_sessions_ordinal_uq): refused here, by name.
+      const seenBlocks = new Set<string>();
+      for (const cells of item.children?.get(blocks) ?? []) {
+        const blockOrder = order(cells.block_order);
+        if (seenBlocks.has(blockOrder)) {
+          const message = `track ${unit.key} has two blocks at block_order ${blockOrder}`;
+          reject(item, message);
+          findings.push({ code: 'duplicate_key', file: input.files.find((file) => file.spec === blocks)?.path ?? rootPath ?? 'database:pilot.track_blocks', column: 'block_order', key: unit.key, message });
+        }
+        seenBlocks.add(blockOrder);
+      }
+      const seenSessions = new Set<string>();
+      for (const cells of item.children?.get(sessions) ?? []) {
+        const slot = `${order(cells.block_order)}:${order(cells.ordinal)}`;
+        if (seenSessions.has(slot)) {
+          const message = `track ${unit.key} has two sessions at block ${order(cells.block_order)} ordinal ${order(cells.ordinal)}`;
+          reject(item, message);
+          findings.push({ code: 'duplicate_key', file: sessionsPath ?? rootPath ?? 'database:pilot.track_block_sessions', column: 'ordinal', key: unit.key, message });
+        }
+        seenSessions.add(slot);
+      }
+
+      const blockOrders = seenBlocks;
       for (const cells of item.children?.get(sessions) ?? []) {
         const at = `track ${unit.key} block ${order(cells.block_order)} session ${order(cells.ordinal)}`;
-        // A session carried over from the stored version has no line; it is located at the file or the table.
-        const file = sessionsPath ?? rootPath ?? 'database:pilot.track_block_sessions';
+        // A session carried over from the stored version has no line: it is
+        // located at the table it was read from.
         const line = lineOf(unit.packageKey ?? unit.key, cells);
+        const file = line !== undefined && sessionsPath ? sessionsPath : `database:pilot.track_block_sessions (track ${unit.key} v${item.head?.version ?? '?'})`;
         if (!blockOrders.has(order(cells.block_order))) {
           const message = `${at} names block_order ${order(cells.block_order)}, which ${unit.key} has no block for`;
           reject(item, message);
