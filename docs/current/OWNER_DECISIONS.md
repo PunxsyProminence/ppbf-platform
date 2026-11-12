@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-11-003 | 2026-11-11 | The FT1 hand-off lane is split into FT1a (tables) and FT1b (content), and a read-only coach view of the track (FT1c) follows | PRIMARY |  | yes |
 | OD-2026-11-11-002 | 2026-11-11 | The standing owner directions of 2026-08-15/16 are recorded here word for word, moved from ACTIVE_WORK | RECONSTRUCTED |  |  |
 | OD-2026-11-11-001 | 2026-11-11 | Governance consolidation: an index for this file, one source-order list, and three clean-ups, with no decision text changed | PRIMARY |  | yes |
 | OD-2026-11-10-003 | 2026-11-10 | After FT1, the hand-off lanes go drill library first, then sessions, blocks and tracks by stage group | RECONSTRUCTED |  | yes |
@@ -556,6 +557,32 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-11-003 -- The FT1 hand-off lane is split into FT1a (tables) and FT1b (content), and a read-only coach view of the track (FT1c) follows: "Approve, A and A"
+
+**Provenance: PRIMARY.** Jason's reply "Approve, A and A", 2026-11-11 about 23:31 EST (transcript timestamp 2026-11-12T04:31:29.127Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 8725, `origin.kind` human), checked against the file by script before writing. The question put to him is line 8708 (the `wrap_up` `ask`): "Approve the FT1 brief as drafted (split A, screen A)?" The options were in the brief `C:\Users\jason\Documents\PPBF-overwatch\backbone-crossover\LANE_FT1_BRIEF.md`, section "For Jason to approve" (sha256[:16] `fa1c2319c92d3ffc` when read, after its header was marked approved; the two decisions are unchanged), and restated in plain words in the closing message at line 8721. The brief was drafted at the Backbone Overwatch's request (Overwatch 24, ACTIONS A-85, pasted by Jason). New; edits no earlier entry's text.
+
+**What was put to him.** The two numbered decisions of that section, as written there (each with a recommended option A):
+
+1. "The FT1 track needs three tables the app does not have (SCHEMA_PROPOSAL P17: `training_tracks`, `track_blocks`, `track_block_sessions`; `git grep` at main `3d9f7354` finds none) and a new material type in the intake, then the content itself. That is about twice L2's 400-line lane size. A: two lanes in sequence, one PR each, each closed before the next, as lane 1 was split into 1a, 1b and 1c (OD-2026-11-08-001 decision 2): **FT1a** the tables and the material type (a migration, so Opus, high effort, two adversarial reviewers, L2 USAGE), then **FT1b** the FT1 content exported from the frozen Backbone and loaded (Sonnet, medium effort, one reviewer). B: one lane, one PR, about 800 or more changed lines excluding tests (INFERRED from lanes 1b and 1c, +1240 and +426)."
+2. "Neither lane adds a screen. After FT1b the 131 drills and 33 session templates show in the existing drill library and `/coach/workout-templates` screens; the track and its eight weeks are stored but nothing shows them. A: add a third lane **FT1c** after FT1b, a read-only coach view of the track (week by week, day by day, each day opening its template). B: no screen now; the track waits for a later lane."
+
+**Jason:** *"Approve, A and A"*
+
+**Rulings:**
+
+1. Split: two lanes in sequence, one PR each, each closed before the next: FT1a, the three P17 tables (`training_tracks`, `track_blocks`, `track_block_sessions`) and the `training-tracks` material type in the content-package intake (a migration: Opus, high effort, two adversarial reviewers); then FT1b, the FT1 content exported from the frozen Backbone and loaded (Sonnet, medium effort, one reviewer). Option A as recommended.
+2. Screen: a third lane, FT1c, after FT1b: a read-only coach view of the track, week by week and day by day, each day opening its template. Option A as recommended.
+
+**Also in the brief he approved (Overwatch's reading of OD-2026-11-10-003 point 4, stated there as applied, not asked; he said nothing otherwise):** "Applied, not asked (OD-2026-11-10-003 point 4, his words: "a track that spans groups goes in the first lane that uses it"): the 23 tracks that list FT1 among other stages **wait for their stage lanes**. The rule sits in the stage-group clause; lane 1 is "the FT1 track" (D-HO02; P17 "First use: the 8-week FT1 class track"). 22 of them list all 18 stages, so they go in the youth Y1-Y5 lane; `trk_f383dfe66c396d` (Iso + Plyo Warm-Up System) lists no youth stage, so it goes in the recreational RC1 lane. Taking them into FT1 would add 30 tracks, 49 sessions, 6 blocks and 138 drills (about 1 MB of records), none shared with the FT1 set (OBSERVED, below). He can say otherwise in his approval."
+
+**Not ruled here:** FT1c's design beyond the words above, and who besides coaches sees the track; the field mappings each lane reports to Overwatch first (technical, Overwatch's); `athlete_development_blocks.source_track_block_id` (P17), which the brief leaves to the lane that starts an athlete on a track; where gates, scorecards, assessment protocols and evidence items go in the lane order (still not ruled under OD-2026-11-10-003).
+
+**Evidence it rested on:** the brief's "What FT1 is" table, read from the frozen Backbone files on 2026-11-11 (616 `data/` files equal to `FREEZE_MANIFEST.json`, sha256[:16] `38b52df4c2d8d7a1`), and main `3d9f7354` (no training-track tables; `git grep`).
+
+**Status:** recorded 2026-11-11 by PR. Lane FT1a issued the same night; nothing built or merged by this entry.
 
 ---
 
