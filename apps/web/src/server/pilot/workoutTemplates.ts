@@ -466,7 +466,7 @@ export async function listUntestedTemplateDrills(
     .sort((a, b) => Math.min(...a.steps) - Math.min(...b.steps));
 }
 
-interface TemplateIssuePlan {
+export interface TemplateIssuePlan {
   refused: TemplateIssueRefusedDrill[];
   /** reference drill id -> the gym's active operational drill id. */
   operational: Map<string, string>;
@@ -502,7 +502,7 @@ type AdoptableReference = DrillWithDetail & {
  * the write -- the window the promote route has between its checks and its
  * insert.
  */
-async function planTemplateIssue(
+export async function planTemplateIssue(
   organizationId: string,
   items: WorkoutTemplateItemWithDrillHead[],
 ): Promise<TemplateIssuePlan> {

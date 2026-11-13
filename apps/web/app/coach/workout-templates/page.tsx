@@ -682,6 +682,18 @@ function CoachWorkoutTemplates() {
     }
   }, []);
 
+  // A day on Class plans opens its template here: /coach/workout-templates?template=<id>.
+  // Read once on arrival, from the address (client only); without the
+  // parameter nothing changes. A template that cannot be opened says so in the
+  // same place a failed open does.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('template');
+    if (!requested) return;
+    void (async () => {
+      await openTemplate(requested);
+    })();
+  }, [openTemplate]);
+
   return (
     <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
