@@ -39,6 +39,7 @@ const KIND: Record<DatasetName, string> = {
   'universal-stop-rules': 'universal_stop_rule',
   'workout-templates': 'workout_template',
   'session-scripts': 'session_script',
+  'training-tracks': 'training_track',
   'transfer-claims': 'transfer_claim',
   'assessment-protocols': 'assessment_protocol',
 };

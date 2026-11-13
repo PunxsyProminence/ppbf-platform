@@ -104,6 +104,12 @@ jobs:
       - name: Check owner decision ids are unique
         run: node scripts/check-owner-decision-ids.mjs
 
+      # Also above the docs-only fast path: the index of rulings at the top of
+      # docs/current/OWNER_DECISIONS.md must match the entries (OD-2026-11-11-001).
+      # A PR that adds an entry runs `node scripts/owner-decisions-index.mjs --write`.
+      - name: Check owner decisions index is current
+        run: node scripts/owner-decisions-index.mjs --check
+
       # Also above the docs-only fast path: a capability module file is
       # documentation, so the PR that changes a module's status skips
       # `npm test`. One status per module, matching the code. No node_modules.

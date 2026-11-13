@@ -71,6 +71,21 @@ const REGISTRY_COUNTS = { disciplines: DISCIPLINE_ROWS, levels: LEVEL_ROWS, coho
 const DRILL_ROWS = committedRowCount('drill-library/seed_drill_library.csv');
 const TEMPLATE_ROWS = committedRowCount('workout-templates/seed_workout_templates.csv');
 const SCRIPT_ROWS = committedRowCount('session-scripts/seed_session_scripts.csv');
+/**
+ * A template file's `inserted` list also holds one `labels` entry per row with field labels or evidence and one
+ * `stage link` entry per stage key (lane FT1b: the 33 FT1 templates carry both), counted here from the file.
+ */
+const TEMPLATE_LABEL_ENTRIES = (() => {
+  const table = readCsv(readFileSync(path.join(SEED_DATA_DIR, 'workout-templates/seed_workout_templates.csv'), 'utf8'));
+  const at = (name: string) => table.header.indexOf(name);
+  return table.records.reduce((sum, record) => {
+    const labelled = record.cells[at('field_labels')] || record.cells[at('evidence')] ? 1 : 0;
+    const links = record.cells[at('stage_keys')] ? record.cells[at('stage_keys')].split('|').length : 0;
+    return sum + labelled + links;
+  }, 0);
+})();
+/** Training tracks (lane FT1b): one item per track; its blocks and block sessions are children of it, not items. */
+const TRACK_ROWS = committedRowCount('training-tracks/seed_training_tracks.csv');
 /** The committed Backbone snapshot (lane BB-1c): one history row per catalog row on a first load. */
 const PATHWAY_ROWS = ['seed_pathway_stages.csv', 'seed_pathway_stage_links.csv', 'seed_pathway_stage_defaults.csv']
   .reduce((sum, file) => sum + committedRowCount(`pathway-catalog/${file}`), 0);
@@ -889,8 +904,8 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     // hold, in ONE transaction -- one import, one audit row: the drills'
     // discipline foreign key is satisfied by disciplines written earlier in
     // it, and the template items' drill foreign key by the drills.
-    expect(applied.stdout).toContain(`RESULT: COMMITTED -- ${PATHWAY_ROWS + REGISTRY_ROWS + DRILL_ROWS + TEMPLATE_ROWS + SCRIPT_ROWS} item(s) written`);
-    expect(applied.stdout).toContain(`  workout-templates: inserted ${TEMPLATE_ROWS}`);
+    expect(applied.stdout).toContain(`RESULT: COMMITTED -- ${PATHWAY_ROWS + REGISTRY_ROWS + DRILL_ROWS + TEMPLATE_ROWS + SCRIPT_ROWS + TRACK_ROWS} item(s) written`);
+    expect(applied.stdout).toContain(`  workout-templates: inserted ${TEMPLATE_ROWS + TEMPLATE_LABEL_ENTRIES}`);
     expect(applied.stdout).toContain(`  session-scripts: inserted ${SCRIPT_ROWS}`);
     expect(await committedCounts('gym_cli')).toEqual({ ...REGISTRY_COUNTS, ledger: REGISTRY_ROWS + PATHWAY_ROWS, audit: 1, shadowEvents: 1 });
     const imports = await observer.query(

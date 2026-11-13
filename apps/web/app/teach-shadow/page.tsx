@@ -77,6 +77,11 @@ interface Coverage {
     takes_with_multiple_files: number;
 
   };
+  refused: {
+    files: number;
+    awaiting_human_review: number;
+    by_reason: { reason: string | null; files: number }[];
+  };
   labelling: {
     clips_cut: number;
     submitted_sets: number;
@@ -691,6 +696,22 @@ export default function TeachShadowHomePage() {
                 <div>
                   <dt className="t-eyebrow">Files captured</dt>
                   <dd className="t-body">{coverage.capture.captured_files}</dd>
+                </div>
+                <div>
+                  {/* Files the content screen turned away: numbers and the
+                      screen's own reason keys, never a file or a person. */}
+                  <dt className="t-eyebrow">Files blocked by the content screen or a reviewer</dt>
+                  <dd className="t-body">
+                    {coverage.refused.files}
+                    {coverage.refused.by_reason.length > 0
+                      ? `: ${coverage.refused.by_reason
+                        .map((entry) => `${entry.reason || 'reason not recorded'} ${entry.files}`)
+                        .join(', ')}`
+                      : ''}
+                    {coverage.refused.awaiting_human_review > 0
+                      ? `; ${coverage.refused.awaiting_human_review} awaiting human review`
+                      : ''}
+                  </dd>
                 </div>
                 <div>
                   <dt className="t-eyebrow">Takes recorded</dt>

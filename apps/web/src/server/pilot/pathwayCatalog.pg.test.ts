@@ -577,16 +577,16 @@ describe('the committed pathway-catalog package (Backbone snapshot)', () => {
     admin = await createGym(GYM);
   });
 
-  // Pinned to the 2026-11-09 snapshot (Overwatch, PR #1895 Q1, Q3, Q5): 2918 default_rules less the 5 held for a
-  // source key holding a list separator. A regenerated snapshot changes these on purpose.
-  it('validates offline with no blocking finding: 18 stages, 74 links, 2913 defaults, every row one Backbone snapshot', () => {
+  // Pinned to the committed snapshot (Overwatch, PR #1895 Q1, Q3; lane BB-2a): all 2918 default_rules, none held
+  // (the one noted source key is normalised by the exporter). A regenerated snapshot changes these on purpose.
+  it('validates offline with no blocking finding: 18 stages, 74 links, 2918 defaults, every row one Backbone snapshot', () => {
     const files = committed();
     expect(Object.keys(files).sort()).toEqual([DEFAULTS, LINKS, STAGES]);
     const result = validatePackage(Object.entries(files).map(([file, text]) => ({ path: file, text })), { references: loadOfflineReferenceSets(SEED_DATA_DIR) });
     expect(result.blocking).toEqual([]);
     expect(committedRows(STAGES)).toHaveLength(18);
     expect(committedRows(LINKS)).toHaveLength(74);
-    expect(committedRows(DEFAULTS)).toHaveLength(2913);
+    expect(committedRows(DEFAULTS)).toHaveLength(2918);
     const kinds: Record<string, number> = {};
     for (const row of committedRows(LINKS)) kinds[row.link_kind] = (kinds[row.link_kind] ?? 0) + 1;
     expect(kinds).toEqual({ exit: 17, lateral: 34, branch: 12, progression: 11 });
@@ -601,7 +601,7 @@ describe('the committed pathway-catalog package (Backbone snapshot)', () => {
     const shown = await plan(GYM, admin, files);
     expect(shown.blocking).toEqual([]);
     expect(shown.totals).toEqual({ new: counts.stages + counts.links + counts.defaults, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
-    expect(formatPlan(shown)).toContain('  pathway-catalog: 3005 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
+    expect(formatPlan(shown)).toContain('  pathway-catalog: 3010 new, 0 new version, 0 unchanged, 0 absent, 0 reject');
     const unlabelled = shown.warnings.filter((warning) => warning.code === 'unlabelled_catalog_rows');
     expect(unlabelled.filter((warning) => warning.file?.endsWith('seed_pathway_stages.csv'))).toEqual([]);
 

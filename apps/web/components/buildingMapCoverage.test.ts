@@ -45,6 +45,7 @@ const EXCLUDED: Record<string, string> = {
   '/change-pin': 'the way in',
   '/auth/link': 'the way in -- magic-link landing, arrived at from an email',
   '/privacy': 'public privacy notice, reached from the front page form and footer -- not a room of the building',
+  '/refund-policy': 'public donation refund and cancellation policy Stripe asks the website to carry, reached from the front page footer -- not a room of the building',
   '/public': 'permanent redirect to / (one front page, Jason 2026-10-03) -- the Public Page door points at / itself',
   '/coach': 'redirect to the coach home (getPilotRoleDestination) -- the door is the home itself, "Coach Workspace"',
   '/coach/dashboard': 'redirect to the coach home, as /coach -- every other role home is a /<role>/dashboard',

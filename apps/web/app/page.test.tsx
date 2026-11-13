@@ -56,14 +56,41 @@ test('the private office address is not published', async () => {
   expect(JSON.stringify(ld)).not.toContain('204');
 });
 
-test('support block links both monitored addresses and offers no payment button', async () => {
+test('support block links both monitored addresses and the two Stripe donation links', async () => {
   const { container, mailtos } = await renderPage();
   expect(mailtos).toEqual(expect.arrayContaining(['mailto:treasurer@punxsyprominence.org', 'mailto:grants@punxsyprominence.org']));
-  const support = container.querySelector('#support');
-  expect(support?.textContent).toMatch(/Donations/);
-  expect(support?.textContent).toMatch(/Grants and Funders/);
-  expect(support?.querySelectorAll('button, form').length).toBe(0);
-  expect(container.textContent).not.toMatch(/donate now|paypal|zeffy|givebutter|stripe/i);
+  const support = container.querySelector('#support') as HTMLElement;
+  expect(support.textContent).toMatch(/Donations/);
+  expect(support.textContent).toMatch(/Grants and Funders/);
+  expect(support.querySelectorAll('button, form').length).toBe(0);
+  const byText = (label: string) =>
+    Array.from(support.querySelectorAll('a')).find((a) => a.textContent?.trim() === label) as HTMLAnchorElement;
+  const donate = byText('Donate');
+  expect(donate.getAttribute('href')).toBe('https://donate.stripe.com/28E5kw6HV69t5AQaR8gQE00');
+  const monthly = byText('Suggested monthly donation');
+  expect(monthly.getAttribute('href')).toBe('https://donate.stripe.com/5kQ6oAeanapJbZe0cugQE01');
+  for (const a of [donate, monthly]) {
+    expect(a.getAttribute('target')).toBe('_blank');
+    expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(a.textContent).not.toMatch(/tax/i);
+  }
+  expect(support.textContent?.replace(/\s+/g, ' ')).toContain(
+    'Cost is never a barrier to training here. Youth train free, and the adult $20 a month is a suggested donation, not a fee.',
+  );
+  expect(byText('Donations, refunds and cancellations').getAttribute('href')).toBe('/refund-policy');
+  expect(support.textContent).not.toMatch(/tax-deductible/i);
+});
+
+test('the hero has a ghost Donate button between Programs and Log In that jumps to #support', async () => {
+  const { container } = await renderPage();
+  const links = Array.from(container.querySelectorAll('section a')).map((a) => a.textContent?.trim());
+  const i = links.indexOf('Learn About Our Programs');
+  expect(links.slice(i, i + 3)).toEqual(['Learn About Our Programs', 'Donate', 'Log In']);
+  const hero = Array.from(container.querySelectorAll('a')).find(
+    (a) => a.textContent?.trim() === 'Donate' && a.getAttribute('href') === '#support',
+  );
+  expect(hero).toBeTruthy();
+  expect(hero?.className).toContain('btn--ghost');
 });
 
 test('unsupported claims are gone and Jason\'s figures replace them', async () => {
@@ -74,7 +101,7 @@ test('unsupported claims are gone and Jason\'s figures replace them', async () =
   expect(text).not.toMatch(/hundreds of young people/i);
   expect(text).toContain('200+');
   expect(text).toContain('People have come through our doors since 2024');
-  expect(text).toContain('For youth. Adults $20 a month.');
+  expect(text).toContain('For youth. Suggested adult donation: $20 a month.');
   expect(text).toContain('IRS-recognized 501(c)(3)');
   expect(text).toContain('supported by donations');
   expect(text).not.toContain('run on donations');
@@ -197,9 +224,21 @@ test('programs and FAQ moved over, and the program intro no longer miscounts the
 test('the FAQ cost answer carries the adult figure, not "ask us"', async () => {
   const { container } = await renderPage();
   const faq = (container.querySelector('#public-faq')?.textContent ?? '').replace(/\s+/g, ' ');
-  expect(faq).toContain('Adults pay $20 a month.');
+  expect(faq).toContain('Adults are asked for a suggested donation of $20 a month.');
   expect(faq).toContain('Youth train free.');
   expect(faq).not.toMatch(/adults, ask us/i);
+});
+
+/* Jason 2026-11-12: "it needs to be a suggested donation not a fee". */
+test('the adult $20 reads as a suggested donation everywhere on the page, never a fee', async () => {
+  const { text } = await renderPage();
+  // The ruled sentence says "not a fee"; it is the one place the word is allowed.
+  const flat = text.replace(/\s+/g, ' ').replace('is a suggested donation, not a fee.', 'is a suggested donation.');
+  expect(flat).not.toMatch(/adults pay/i);
+  expect(flat).not.toMatch(/adults \$20 a month/i);
+  expect(flat).not.toMatch(/\$20[^.]*\bfee\b/i);
+  expect(flat.match(/\$20 a month/g)?.length).toBe(3);
+  expect(flat.match(/suggested (adult )?donation/gi)?.length).toBe(3);
 });
 
 test('no claim on the page contradicts the registry facts', async () => {
@@ -229,8 +268,10 @@ test('the server page reads form labels from a plain module, never from the clie
   expect(options).not.toMatch(/^\s*['"]use client['"]/);
 });
 
-test('the footer links the privacy notice', async () => {
+test('the footer links the privacy notice and the donation refund policy', async () => {
   const { container } = await renderPage();
   const footerLinks = Array.from(container.querySelectorAll('footer a')).map((a) => a.getAttribute('href'));
   expect(footerLinks).toContain('/privacy');
+  // Stripe's website requirements: a refund and cancellation policy (Jason 2026-11-12).
+  expect(footerLinks).toContain('/refund-policy');
 });

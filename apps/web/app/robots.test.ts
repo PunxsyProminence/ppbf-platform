@@ -12,9 +12,10 @@ test('robots allows the site and points at the sitemap on the www address', asyn
   });
 });
 
-test('sitemap lists the public homepage and the privacy notice, and nothing else', async () => {
+test('sitemap lists the public homepage, the privacy notice and the refund policy, and nothing else', async () => {
   expect(await sitemap()).toEqual([
     { url: 'https://www.punxsyprominence.org/' },
     { url: 'https://www.punxsyprominence.org/privacy' },
+    { url: 'https://www.punxsyprominence.org/refund-policy' },
   ]);
 });

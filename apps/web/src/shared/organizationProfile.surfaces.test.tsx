@@ -131,5 +131,6 @@ test('the privacy page, the site metadata, robots and the sitemap name the secon
   expect(await sitemap()).toEqual([
     { url: 'https://www.ridgeway-lantern.example/' },
     { url: 'https://www.ridgeway-lantern.example/privacy' },
+    { url: 'https://www.ridgeway-lantern.example/refund-policy' },
   ]);
 });

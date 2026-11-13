@@ -7,6 +7,7 @@ import { drillLibraryDataset } from './drills';
 import { pathwayCatalogDataset } from './pathwayCatalog';
 import { sessionScriptsDataset } from './sessionScripts';
 import { workoutTemplatesDataset } from './templates';
+import { trainingTracksDataset } from './trainingTracks';
 import { transferClaimsDataset } from './transferClaims';
 import { universalStopRulesDataset } from './universalStopRules';
 
@@ -16,7 +17,8 @@ import { universalStopRulesDataset } from './universalStopRules';
 // the doc and these specs disagree.
 //
 // Order is dependency order: a dataset only references datasets above it
-// (transfer claims point at drills and scripts, cohorts at disciplines; every
+// (transfer claims point at drills and scripts, cohorts at disciplines, training
+// tracks at workout templates; every
 // content item's stage_keys at the pathway catalog, so it comes first).
 
 // Every dataset's ROOT file (the one holding its items) also takes the
@@ -38,6 +40,7 @@ export const DATASETS: readonly DatasetSpec[] = [
   universalStopRulesDataset,
   workoutTemplatesDataset,
   sessionScriptsDataset,
+  trainingTracksDataset,
   transferClaimsDataset,
   assessmentProtocolsDataset,
 ].map(withLabelColumns);

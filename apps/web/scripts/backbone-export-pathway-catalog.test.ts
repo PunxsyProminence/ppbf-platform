@@ -298,4 +298,46 @@ describe('backbone-export-pathway-catalog', () => {
     const row = rowsOf(labelled[DEFAULTS]).find((r) => r.default_id === 'dft_d8e8cc1831f1f0');
     expect(row?.field_labels).toBe('{"unit":{"sources":["LR-140"]},"value_max":{"sources":["LR-140"],"status":"INFERRED"}}');
   });
+
+  it('maps the frozen Backbone INFERRED sentence in a default field_labels to {status INFERRED, the row own sources}; any other string stays blank and counted', () => {
+    const SENTENCE = 'INFERRED (read from the source text by the drafting session)';
+    const mapped = backbone({
+      catalogs: (data) => { data.default_rules[0].field_labels = { value_max: SENTENCE, unit: SENTENCE }; },
+    });
+    const result = run([mapped, '--out', tempDir()]);
+    const row = rowsOf(exported(mapped)[DEFAULTS]).find((r) => r.default_id === 'dft_d8e8cc1831f1f0');
+    expect(row?.sources).toBe('LR-140|FIX-1');
+    expect(JSON.parse(row?.field_labels ?? '')).toEqual({
+      unit: { status: 'INFERRED', sources: ['LR-140', 'FIX-1'] },
+      value_max: { status: 'INFERRED', sources: ['LR-140', 'FIX-1'] },
+    });
+    // Mapped cells are not counted as unshaped, and no new notice is printed for the mapping.
+    expect(result.stdout).not.toContain('field_labels not in');
+    // A sentence that is not exactly that one is not mapped: the row stays blank and is counted.
+    const other = run([backbone({ catalogs: (data) => { data.default_rules[0].field_labels = { value_max: `${SENTENCE} and more` }; } }), '--out', tempDir()]);
+    expect(other.stdout).toContain('field_labels not in {status, sources} shape: 1 rows, 1 cells, left blank');
+  });
+
+  it('normalises the one noted EXT-USAB-RB2026 source key: the row loads, the note is kept in an evidence entry that cites it, else the only entry on the row; any other key with a separator is still held', () => {
+    const NOTED = 'EXT-USAB-RB2026 (edition in force; the cited provisions are present)';
+    const fixed = backbone({ catalogs: (data) => { data.default_rules[0].sources = ['FIX-1', NOTED]; } });
+    const result = run([fixed, '--out', tempDir()]);
+    expect(result.stdout).toContain('defaults 3 (1 held)');
+    const row = rowsOf(exported(fixed)[DEFAULTS]).find((r) => r.sources.includes('EXT-USAB-RB2026'));
+    expect(row?.sources).toBe('FIX-1|EXT-USAB-RB2026');
+    const evidence = JSON.parse(row?.evidence ?? '');
+    // The fixture row has two entries and none cites the key: no entry is created and none is guessed.
+    expect(evidence.some((entry: Record<string, unknown>) => 'source_key_note' in entry)).toBe(false);
+    // One entry on the row: it carries the note, verbatim, and the key survives the package round trip.
+    const one = exported(backbone({ catalogs: (data) => { data.default_rules[0].sources = ['FIX-1', NOTED]; data.default_rules[0].evidence = data.default_rules[0].evidence.slice(0, 1); } }));
+    expect(JSON.parse(rowsOf(one[DEFAULTS]).find((r) => r.default_id === 'dft_d8e8cc1831f1f0')?.evidence ?? '')[0].source_key_note).toBe(NOTED);
+    // Two entries, the second citing the key: the note goes on the citing entry.
+    const citing = exported(backbone({ catalogs: (data) => { data.default_rules[0].sources = ['FIX-1', NOTED]; data.default_rules[0].evidence[1].source_key = 'EXT-USAB-RB2026'; } }));
+    const entries = JSON.parse(rowsOf(citing[DEFAULTS]).find((r) => r.default_id === 'dft_d8e8cc1831f1f0')?.evidence ?? '');
+    expect(entries.map((entry: Record<string, unknown>) => entry.source_key_note)).toEqual([undefined, NOTED]);
+    expect(result.stdout).not.toContain(NOTED);
+    // Another key with a note in it is not touched by the rule.
+    const other = run([backbone({ catalogs: (data) => { data.default_rules[0].sources = ['FIX-1', 'EXT-USAB-RB2026 (some other note; held)']; } }), '--out', tempDir()]);
+    expect(other.stdout).toContain('2 rows: dft_b8c1b8001eea2b, dft_d8e8cc1831f1f0');
+  });
 });

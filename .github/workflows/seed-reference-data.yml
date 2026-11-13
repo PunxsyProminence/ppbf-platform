@@ -102,6 +102,7 @@ on:
           - workout-templates
           - session-scripts
           - pathway-catalog
+          - training-tracks
       mode:
         description: Rehearse inside a rolled-back transaction, or write for real
         required: true
