@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-12-005 | 2026-11-12 | FT1c is "Class plans" for coaches and gym admins, and the FT1 drills are completed from AI drafts a coach approves: "A: Class plans (Rec.)"; "A: Coaches + admins (Rec.)"; "A: AI drafts, coach approves (Rec.)" | PRIMARY |  | yes |
 | OD-2026-11-12-004 | 2026-11-12 | Cost is never a barrier to training; the adult $20 a month stays a suggested donation | PRIMARY |  | yes |
 | OD-2026-11-12-003 | 2026-11-12 | The public donation refund and cancellation policy uses the recommended terms (30 days, 3 business days, 5 business days) | PRIMARY |  | yes |
 | OD-2026-11-12-002 | 2026-11-12 | The adult $20 a month is a suggested donation, not a fee, on Stripe and on the website | PRIMARY |  | yes |
@@ -562,6 +563,34 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-12-005 -- FT1c is "Class plans" for coaches and gym admins, and the FT1 drills are completed from AI drafts a coach approves: "A: Class plans (Rec.)"; "A: Coaches + admins (Rec.)"; "A: AI drafts, coach approves (Rec.)"
+
+**Provenance: PRIMARY.** Jason's answers to a three-question card in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`): card at line 13557 (2026-11-13T04:20:33.276Z), answers at line 13558 (2026-11-13T04:33:52.723Z, 2026-11-12 about 23:33 EST; the `AskUserQuestion` result, which carries his picks), checked against the file by script before writing. The card followed the staging FT1 load (seed run 43364219287, import `imp_5b338f0f-9b52-4d82-983b-5332568805b5`) and the Backbone Overwatch 24 note that asked for the FT1 issuing result to go to him with the FT1c questions. New; edits no earlier entry's text.
+
+**What was put to him (quoted):**
+
+- Screen name: "FT1c screen name. OFFICIAL: The app already uses "Tracks" for the athlete tracks admins set per person, and has "Program phases". (A, recommended) "Class plans" at /coach/class-plans; (B) "Training tracks"; (C) "Programs". PLAIN: what the menu calls the new 8-week plan page. Only the label changes." Options: "A: Class plans (Rec.)" / "B: Training tracks" / "C: Programs".
+- Who sees it: "FT1c: who can open it? OFFICIAL: (A, recommended) coaches and gym admins only, the same roles as the workout-templates page; (B) every role that may read coaching content, including athletes, parents, volunteers and staff. PLAIN: A keeps the 8-week plan a coaching tool. B would also let members and parents read it, and would need a member-facing page this lane does not build." Options: "A: Coaches + admins (Rec.)" / "B: All content readers".
+- Drill fill-in: "FT1 drills: how do they get completed? OFFICIAL: On staging, all 131 FT1 drills fail the app's readiness check (scaling 131, stop rule 128, setup 128, steps 128, what-good-looks-like 57), so 32 of the 40 days can't be issued. (A, recommended) a content lane drafts the missing fields from the Backbone sources, marked as drafts; you or the head coach approve them; they load as new drill versions. (B) you or the head coach write them, and Claude loads what you write. (C) leave them blank for now; coaches read the plan in FT1c and run classes from it. PLAIN: the 8-week plan is in the app, but the drills inside it are missing their how-to. A has AI write first drafts for a coach to check; B is your own writing; C waits." Options: "A: AI drafts, coach approves (Rec.)" / "B: You or head coach write" / "C: Leave blank for now". Option A's note: "Fastest; nothing loads until you or the head coach approve each draft."
+
+**Jason:** *"A: Class plans (Rec.)"*; *"A: Coaches + admins (Rec.)"*; *"A: AI drafts, coach approves (Rec.)"*
+
+**Rulings:**
+
+1. The read-only coach view of the FT1 track (FT1c, OD-2026-11-11-003 ruling 2) is named "Class plans", at `/coach/class-plans`.
+2. Only coaches and gym admins open it: the same roles as the workout-templates page (`RoleSessionGate allowedRoles={['coach','admin']}`).
+3. The missing fields of the 131 FT1 drills (setup, steps, what good looks like, A/B/C scaling with a starting point, a stop rule of its own) are drafted by a content lane from the Backbone sources and marked as drafts. Jason or the head coach approves each draft; nothing loads before that; approved drafts load as new drill versions.
+
+**Settles:** part of what OD-2026-11-12-001 left open ("who writes the missing setup and steps"): AI drafts, and Jason or the head coach approves.
+
+**Evidence it rested on (OBSERVED on staging, 2026-11-13 UTC):** the load's own readiness check flagged all 131 FT1 drills for reasons issuing does not waive (scaling 131, stop rule 128, setup 128, steps 128, what good looks like 57); 32 of the 33 FT1 templates contain drills and none has every drill ready, covering 32 of the 40 days. That issuing then refuses is read from `workoutTemplates.ts` (lines 589-598), not run.
+
+**Not ruled here:** when the drafts are due; the form the review takes; the other Backbone drills outside FT1 (the drill-library lane of OD-2026-11-10-003).
+
+**Status:** recorded 2026-11-12 by PR; FT1c and the drill-drafting lane are not built.
 
 ---
 
