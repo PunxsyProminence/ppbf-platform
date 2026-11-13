@@ -233,7 +233,7 @@ function beforeFiles(): Record<string, string> {
     [DRILLS_CSV]: reshape(committed[DRILLS_CSV], (row) => !ft1DrillIds.has(row.drill_id), LABEL_COLUMNS),
     [CUES_CSV]: reshape(committed[CUES_CSV], (row) => !ft1DrillIds.has(row.drill_id)),
     [STOPS_CSV]: reshape(committed[STOPS_CSV], (row) => !ft1DrillIds.has(row.drill_id)),
-    'drill-library/seed_drill_scale_levels.csv': committed['drill-library/seed_drill_scale_levels.csv'],
+    'drill-library/seed_drill_scale_levels.csv': reshape(committed['drill-library/seed_drill_scale_levels.csv'], (row) => !ft1DrillIds.has(row.drill_id)),
     'drill-library/seed_drill_secondary_skills.csv': committed['drill-library/seed_drill_secondary_skills.csv'],
     [TEMPLATES_CSV]: reshape(committed[TEMPLATES_CSV], (row) => !ft1TemplateIds.has(row.template_id), LABEL_COLUMNS),
     [ITEMS_CSV]: reshape(committed[ITEMS_CSV], (row) => !ft1TemplateIds.has(row.template_id)),
@@ -282,14 +282,15 @@ describe('FT1 content added to a loaded library', () => {
     await applyCommitted(ORG, admin, committed);
     const { rows } = await observer.query<{ nulls: string; blanks: string; total: string }>(
       `select count(*) filter (where standard_setup is null or execution is null) as nulls,
-              count(*) filter (where standard_setup = '' and execution = '') as blanks,
+              count(*) filter (where standard_setup = '' or execution = '') as blanks,
               count(*) as total
          from pilot.drill_library where organization_id = $1 and drill_id = any($2::text[])`,
       [ORG, [...ft1DrillIds]],
     );
     expect(Number(rows[0].total)).toBe(131);
     expect(Number(rows[0].nulls)).toBe(0);
-    expect(Number(rows[0].blanks)).toBe(128);
+    // No FT1 drill loads with a blank setup or steps: the drafts Jason approved fill them (OD-2026-11-12-005 ruling 3).
+    expect(Number(rows[0].blanks)).toBe(0);
     const again = await plan(ORG, admin, committed);
     expect(again.blocking).toEqual([]);
     expect(again.changes).toBe(0);

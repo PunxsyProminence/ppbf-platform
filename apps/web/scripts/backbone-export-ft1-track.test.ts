@@ -291,7 +291,7 @@ describe('the committed FT1 rows', () => {
       for (const row of others) expect([key, row.field_labels, row.evidence, row.stage_keys]).toEqual([key, '', '', '']);
     }
   });
-  it('are 131 drills, 131 cues, 9 stop rules, 33 templates, 131 items, 1 track, 8 blocks and 40 block sessions', () => {
+  it('are 131 drills, 131 cues, 235 stop rules, 33 templates, 131 items, 1 track, 8 blocks and 40 block sessions', () => {
     expect(count(DRILLS, (row) => row.stage_keys === 'FT1')).toBe(131);
     expect(count(TEMPLATES, (row) => row.stage_keys === 'FT1')).toBe(33);
     expect(rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, TRACKS), 'utf8'))).toHaveLength(1);
@@ -299,7 +299,8 @@ describe('the committed FT1 rows', () => {
     expect(rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, SESSIONS), 'utf8'))).toHaveLength(40);
     const drillIds = new Set(rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, DRILLS), 'utf8')).filter((row) => row.stage_keys === 'FT1').map((row) => row.drill_id));
     expect(count(CUES, (row) => drillIds.has(row.drill_id))).toBe(131);
-    expect(count(STOPS, (row) => drillIds.has(row.drill_id))).toBe(9);
+    // 9 exported from DOC-123, plus 226 AI-drafted under OD-2026-11-12-005 ruling 3 (lane FT1d; Jason approves before merge).
+    expect(count(STOPS, (row) => drillIds.has(row.drill_id))).toBe(235);
     const templateIds = new Set(rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, TEMPLATES), 'utf8')).filter((row) => row.stage_keys === 'FT1').map((row) => row.template_id));
     expect(count(ITEMS, (row) => templateIds.has(row.template_id))).toBe(131);
   });
