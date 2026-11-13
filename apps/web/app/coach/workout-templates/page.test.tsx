@@ -149,6 +149,23 @@ describe('coach workout templates page', () => {
     expect(screen.getByText(/Keep the room moving between blocks/)).toBeInTheDocument();
   });
 
+  it('opens the template named in ?template= on arrival (a Class plans day), and does nothing without it', async () => {
+    const fetchMock = mockFetch((url) => (url.includes('template_id')
+      ? jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] })
+      : jsonResponse({ templates: [BOXING_FUNDAMENTALS] })));
+    window.history.pushState({}, '', '/coach/workout-templates?template=wt-1');
+    const { unmount } = render(<CoachWorkoutTemplatesPage />);
+    expect(await screen.findByText('Rope intervals')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toContain('/api/pilot/workout-templates?template_id=wt-1');
+    unmount();
+
+    window.history.pushState({}, '', '/coach/workout-templates');
+    const plain = mockFetch(() => jsonResponse({ templates: [BOXING_FUNDAMENTALS] }));
+    render(<CoachWorkoutTemplatesPage />);
+    await screen.findByRole('button', { name: /open template/i });
+    expect(plain.mock.calls.some((call) => String(call[0]).includes('template_id'))).toBe(false);
+  });
+
   it('says when an item uses an older drill version, and only on that item', async () => {
     mockFetch((url) => (url.includes('template_id')
       ? jsonResponse({

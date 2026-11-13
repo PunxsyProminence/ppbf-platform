@@ -14707,6 +14707,35 @@
     }
   },
   {
+    "id": "app/api/pilot/training-tracks/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/training-tracks",
+    "gate": "requirePrincipal + requireRole(CLASS_PLAN_ROLES)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Class plans (OD-2026-11-12-005): read-only list of the organization's current training tracks; ?track=<track_id> returns one with its weeks, days and each day's template (name, state ready/not_ready/empty/withdrawn/missing, drills still to complete, read with planTemplateIssue, nothing written). Coaches and gym admins only, the issue route's list, narrower than COACHING_CONTENT_READER_ROLES on purpose (ruling 2). Role gate is the first statement after requirePrincipal. Reads the principal's organization only; no athlete table.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/tv/pair/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/tv/pair",
