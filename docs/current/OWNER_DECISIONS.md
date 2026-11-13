@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-12-006 | 2026-11-12 | The FT1d drill-drafting brief is approved and lane FT1d-1 (Week 1) starts | PRIMARY |  | yes |
 | OD-2026-11-12-005 | 2026-11-12 | FT1c is "Class plans" for coaches and gym admins, and the FT1 drills are completed from AI drafts a coach approves: "A: Class plans (Rec.)"; "A: Coaches + admins (Rec.)"; "A: AI drafts, coach approves (Rec.)" | PRIMARY |  | yes |
 | OD-2026-11-12-004 | 2026-11-12 | Cost is never a barrier to training; the adult $20 a month stays a suggested donation | PRIMARY |  | yes |
 | OD-2026-11-12-003 | 2026-11-12 | The public donation refund and cancellation policy uses the recommended terms (30 days, 3 business days, 5 business days) | PRIMARY |  | yes |
@@ -563,6 +564,25 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-12-006 -- The FT1d drill-drafting brief is approved and lane FT1d-1 (Week 1) starts: "Approve, start Week 1"
+
+**Provenance: PRIMARY.** Jason's reply, a button, 2026-11-12 about 23:49 EST (transcript timestamp 2026-11-13T04:49:29.985Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 13924, `origin.kind` human), checked against the file by script before writing. The question is line 13914 (the `wrap_up` `ask`): "Approve the FT1d brief and start the Week 1 lane?", with the buttons "Approve, start Week 1" and "Change something". The brief was sent to him as a file the same turn. New; edits no earlier entry's text.
+
+**Jason:** *"Approve, start Week 1"*
+
+**Rulings:**
+
+1. The brief `Documents/PPBF-overwatch/backbone-crossover/LANE_FT1D_DRILL_DRAFTS_BRIEF.md` is approved as written (sha256[:16] `a326d97440014cde` with its APPROVED header). It carries out OD-2026-11-12-005 ruling 3.
+2. Lane FT1d-1 drafts Week 1's FT1 drills first. Later weeks reuse the brief, one lane per batch, sized by Overwatch after Week 1's review.
+
+**What the brief applies, as written (not separately asked):** drill-level `field_provenance` stays "PPBF owner-authored", with each drafted field labelled in `field_labels` (INFERRED with sources, or UNVERIFIED), because a DRAFT label would add a floor-test gate that Backbone RULES section 1 bars without his direction; the review is one sheet per batch, answered in chat, and nothing merges or loads before he approves that batch.
+
+**Not ruled here:** the drafts themselves (each batch goes to him for approval); the form of the review beyond this default, which he may change; the batches after Week 1.
+
+**Status:** recorded 2026-11-12 by PR; lane FT1d-1 started 2026-11-13 UTC.
 
 ---
 
