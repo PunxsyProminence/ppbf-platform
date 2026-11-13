@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-12-007 | 2026-11-12 | The FT1 drill drafts cover all eight weeks in one batch, and the Class plans page is built complete, so Jason can review the whole | PRIMARY |  | yes |
 | OD-2026-11-12-006 | 2026-11-12 | The FT1d drill-drafting brief is approved and lane FT1d-1 (Week 1) starts | PRIMARY |  | yes |
 | OD-2026-11-12-005 | 2026-11-12 | FT1c is "Class plans" for coaches and gym admins, and the FT1 drills are completed from AI drafts a coach approves: "A: Class plans (Rec.)"; "A: Coaches + admins (Rec.)"; "A: AI drafts, coach approves (Rec.)" | PRIMARY |  | yes |
 | OD-2026-11-12-004 | 2026-11-12 | Cost is never a barrier to training; the adult $20 a month stays a suggested donation | PRIMARY |  | yes |
@@ -564,6 +565,23 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-12-007 -- The FT1 drill drafts cover all eight weeks in one batch, and the Class plans page is built complete, so Jason can review the whole: "build the whole thing i want to look at it as awhole"
+
+**Provenance: PRIMARY.** Jason's typed message, 2026-11-12 about 23:55 EST (transcript timestamp 2026-11-13T04:55:07.888Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 14119, a message queued while Overwatch worked, `origin.kind` human; the app attached a system notice about lane FT1c ahead of his text), checked against the file by script before writing; spelling kept. Two minutes earlier (line 14056, 2026-11-13T04:53:39.868Z) he wrote: *"start the class plans lane, im going to bed so finish the whole instructions while i sleep"*. New; edits no earlier entry's text.
+
+**Jason:** *"build the whole thing i want to look at it as awhole"*
+
+**Reading, not his words (Overwatch applied it the same night, as the work he asked to be finished while he slept):**
+
+1. Lane FT1d drafts all 131 FT1 drills, Weeks 1 to 8, in one PR with one review sheet per week, instead of Week 1 first and later batches. This changes OD-2026-11-12-006 ruling 2 for that lane. The 400-line lane split is waived for this PR. Everything else in the approved brief stands, and nothing merges or loads until he approves the sheets.
+2. Lane FT1c builds the Class plans page complete, including a per-day "Ready to issue / Not ready" line computed with the app's existing readiness check (floor test taken as met, as at issue).
+
+**Not ruled here:** his approval of the drafts themselves; production releases (each needs his approval).
+
+**Status:** recorded 2026-11-12 by PR; both lanes running.
 
 ---
 
