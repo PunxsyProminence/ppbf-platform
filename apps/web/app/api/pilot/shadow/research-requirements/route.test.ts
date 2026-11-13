@@ -16,7 +16,7 @@ import {
   type ShadowResearchRequirementRow,
 } from '@/src/server/pilot/shadowResearch';
 import { accessibleAthleteIds, assertActorCanAccessAthlete } from '@/src/server/pilot/access';
-import { LEARNING_NOTE_COACH_SENTENCE } from '@/src/server/pilot/researchFamilyView';
+import { LEARNING_NOTE_COACH_SENTENCE, LIBRARY_QUESTION_COACH_SENTENCE } from '@/src/server/pilot/researchFamilyView';
 import { deletedAthleteIdsAmong } from '@/src/server/pilot/deletedAthletes';
 import * as pilotDb from '@/src/server/pilot/db';
 
@@ -1361,6 +1361,79 @@ describe('research questions that name no athlete (CL-A3 / CL-C14)', () => {
       })]);
       expect(raw).not.toContain('anxiety');
       expect(raw).not.toContain('acct-parent-note');
+    });
+  });
+
+  // F-184: the same ruling (OD-2026-10-13-018, "A: Office + asker
+  // (Recommended)") reaches a member's Library question: a coach sees that a
+  // member asked something the Library could not answer well, the
+  // organization admin and the asker read the words, and a coach's own
+  // question is unchanged. CL-A3 still decides who sees the row at all.
+  describe('a Library question on the list (F-184)', () => {
+    const COACH_QUESTION = row({
+      research_requirement_id: 37,
+      created_by_account_id: 'acct-coach-question',
+      created_by_role: 'coach',
+      knowledge_gap: 'Question lacks sufficient SHADOW Library evidence: how long should a novice hold a guard drill?.',
+      metadata: { question: 'how long should a novice hold a guard drill?', scope: 'organization', subject_id: null },
+    });
+
+    async function listWith(reader: PilotPrincipal) {
+      mockRequirePrincipal.mockResolvedValue(reader);
+      mockAccessibleAthleteIds.mockResolvedValue(new Set());
+      mockList.mockResolvedValue([MY_QUESTION, OTHER_FAMILY_QUESTION, COACH_QUESTION]);
+      const response = await GET(new NextRequest('http://localhost/api/pilot/shadow/research-requirements'));
+      expect(response.status).toBe(200);
+      return response.text();
+    }
+
+    test('a coach sees each member question was filed, without its words, asker or label', async () => {
+      const raw = await listWith(principal('coach'));
+      const body = JSON.parse(raw) as { items: ShadowResearchRequirementRow[] };
+
+      expect(body.items.map((item) => item.research_requirement_id)).toEqual([30, 31, 37]);
+      expect(raw).not.toContain('making weight');
+      expect(raw).not.toContain('headaches');
+      expect(raw).not.toContain('acct-other-family');
+      for (const item of body.items.slice(0, 2)) {
+        expect(item).toMatchObject({
+          source_event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+          source_entity_type: 'shadow_library_claim',
+          status: 'open',
+          knowledge_gap: LIBRARY_QUESTION_COACH_SENTENCE,
+          research_requirement: LIBRARY_QUESTION_COACH_SENTENCE,
+          created_by_account_id: '',
+          created_by_role: '',
+          evidence_label: null,
+          metadata: {},
+          subject_id: null,
+        });
+        expect(item.source_entity_id).toBe(String(item.research_requirement_id));
+        // toMatchObject passes any metadata for {}; the coach view sends none.
+        expect(item.metadata).toEqual({});
+      }
+      // A coach's own question is the coach's, and stays whole.
+      expect(body.items[2]).toEqual(COACH_QUESTION);
+    });
+
+    test.each(['organization_admin', 'admin'] as const)('a %s reads every question whole', async (role) => {
+      const body = JSON.parse(await listWith(principal(role))) as { items: ShadowResearchRequirementRow[] };
+
+      expect(body.items).toEqual([MY_QUESTION, OTHER_FAMILY_QUESTION, COACH_QUESTION]);
+    });
+
+    test('the parent who asked one reads their own words and nobody else\'s', async () => {
+      const raw = await listWith({ ...principal('parent'), accountId: 'acct-other-family' });
+      const body = JSON.parse(raw) as { items: Array<{ research_requirement_id: number; knowledge_gap: string; is_mine: boolean }> };
+
+      expect(body.items).toEqual([expect.objectContaining({
+        research_requirement_id: 31,
+        knowledge_gap: OTHER_FAMILY_QUESTION.knowledge_gap,
+        is_mine: true,
+      })]);
+      expect(raw).not.toContain('making weight');
+      expect(raw).not.toContain('novice hold a guard');
+      expect(raw).not.toContain('acct-other-family');
     });
   });
 

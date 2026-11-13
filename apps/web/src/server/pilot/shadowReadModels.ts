@@ -11,6 +11,8 @@ import { query } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { guardianAthleteIds } from './guardianAccess';
 import { PAIN_REPORT_PENDING_REVIEW_EVENT_NAME, classifyPainReporter, readPainReporter } from './formulas/painReportAlert';
+import { LIBRARY_QUESTION_COACH_SENTENCE } from './researchFamilyView';
+import { isResearchStaff } from './shadowResearch';
 
 export interface ShadowReadContext {
   organizationId: string;
@@ -425,15 +427,52 @@ const LIBRARY_CLAIM_OPERATIONAL_KEYS = [
   'research_requirement',
 ];
 
+/**
+ * A COACH AND A MEMBER'S LIBRARY QUESTION (F-184; OD-2026-10-13-018, "A:
+ * Office + asker (Recommended)"). A claim event a member outside research
+ * staff asked carries their question in knowledge_gap, which the research
+ * projection shows on its card. A coach gets the operational keys and, where
+ * the payload held the question, the sentence the research list gives a coach
+ * for the same row (researchFamilyView.ts). The test is the event's own actor
+ * role, the row's column and not a payload key, with F-054's rule: a coach's
+ * or admin's question stays whole for a coach. The organization admin and
+ * admin keep every payload whole.
+ */
+/* What a coach keeps of a member's claim event: the operational keys without
+ * subject_id (an athlete's own claim is forced to their athlete id, so it
+ * names the asker or the asker's child; the research list's coach view blanks
+ * it too) and without research_requirement_id (it ties the event to the row
+ * and to the other events about the same question). An allowlist, as above. */
+const COACH_MEMBER_QUESTION_KEYS = LIBRARY_CLAIM_OPERATIONAL_KEYS.filter(
+  (key) => key !== 'subject_id' && key !== 'research_requirement_id',
+);
+
+function coachReadsMemberLibraryQuestion(role: PilotRole, rowActorRole: unknown): boolean {
+  return role === 'coach' && !isResearchStaff(rowActorRole as PilotRole);
+}
+
+function isLibraryClaimEvent(eventName: string | null | undefined): boolean {
+  return (eventName ?? '').toUpperCase().startsWith('SHADOW_LIBRARY_CLAIM_');
+}
+
 function sanitizeEventPayload(
   payload: Record<string, unknown>,
   role: PilotRole,
   eventName: string,
   rowEntityType: string,
+  rowActorRole: unknown,
 ): Record<string, unknown> {
   if (roleCanViewSensitivePayload(role)) {
-    if (eventName.toUpperCase().startsWith('SHADOW_LIBRARY_CLAIM_') && !roleCanReadLibraryQuestions(role)) {
-      return pickSafeRecord(payload, LIBRARY_CLAIM_OPERATIONAL_KEYS);
+    if (isLibraryClaimEvent(eventName)) {
+      if (!roleCanReadLibraryQuestions(role)) {
+        return pickSafeRecord(payload, LIBRARY_CLAIM_OPERATIONAL_KEYS);
+      }
+      if (coachReadsMemberLibraryQuestion(role, rowActorRole)) {
+        const operational = pickSafeRecord(payload, COACH_MEMBER_QUESTION_KEYS);
+        return typeof payload.knowledge_gap === 'string'
+          ? { ...operational, knowledge_gap: LIBRARY_QUESTION_COACH_SENTENCE }
+          : operational;
+      }
     }
     return payload;
   }
@@ -683,21 +722,35 @@ export async function listShadowEvents(context: ShadowReadContext, filters: Shad
   const readable = auditMirrorReach(context.actorRole) === 'coach' ? await coachMayReadOwnedMirrors(context, rows) : rows;
 
   // named_athlete_count is the reader's own working column; it is not returned.
-  return readable.map((row) => ({
-    shadow_event_id: row.shadow_event_id,
-    organization_id: row.organization_id,
-    event_name: row.event_name,
-    entity_type: row.entity_type,
-    entity_id: entityIdForReader(context.actorRole, row.entity_type, row.entity_id),
-    actor_role: row.actor_role,
-    created_at: row.created_at,
-    // The row's own actor column is the identifier of whoever wrote the event,
-    // usually staff. The payload sanitizer never touched it, so every
-    // non-staff caller received staff account ids (intake lane review,
-    // 2026-10-06). actor_role stays: it is a label, not an identity.
-    actor_account_id: roleCanViewSensitivePayload(context.actorRole) ? row.actor_account_id : null,
-    payload: sanitizeEventPayload((row.payload ?? {}) as Record<string, unknown>, context.actorRole, row.event_name, row.entity_type),
-  }));
+  return readable.map((row) => {
+    // F-184: a coach sees that a member asked the Library something, not who
+    // asked, as the research list's coach view of the same question blanks the
+    // asker's account and role (researchFamilyView.ts, toCoachAskerQuestion).
+    const askerHidden = isLibraryClaimEvent(row.event_name)
+      && coachReadsMemberLibraryQuestion(context.actorRole, row.actor_role);
+    return {
+      shadow_event_id: row.shadow_event_id,
+      organization_id: row.organization_id,
+      event_name: row.event_name,
+      entity_type: row.entity_type,
+      entity_id: entityIdForReader(context.actorRole, row.entity_type, row.entity_id),
+      actor_role: askerHidden ? null : row.actor_role,
+      created_at: row.created_at,
+      // The row's own actor column is the identifier of whoever wrote the event,
+      // usually staff. The payload sanitizer never touched it, so every
+      // non-staff caller received staff account ids (intake lane review,
+      // 2026-10-06). actor_role stays (a label, not an identity), except where
+      // askerHidden blanks both.
+      actor_account_id: roleCanViewSensitivePayload(context.actorRole) && !askerHidden ? row.actor_account_id : null,
+      payload: sanitizeEventPayload(
+        (row.payload ?? {}) as Record<string, unknown>,
+        context.actorRole,
+        row.event_name,
+        row.entity_type,
+        row.actor_role,
+      ),
+    };
+  });
 }
 
 export async function listShadowTelemetry(context: ShadowReadContext, filters: ShadowListFilters = {}): Promise<ShadowTelemetryRow[]> {
@@ -772,15 +825,26 @@ export async function listShadowTelemetry(context: ShadowReadContext, filters: S
     ],
   );
 
-  return rows.map((row) => ({
-    ...row,
-    // Same leak as listShadowEvents: /api/pilot/shadow/telemetry admits every
-    // organization member, and the dimensions sanitizer never touched the
-    // row's actor column.
-    actor_account_id: roleCanViewSensitivePayload(context.actorRole) ? row.actor_account_id : null,
-    dimensions: sanitizeDimensions((row.dimensions ?? {}) as Record<string, unknown>, context.actorRole),
-  }));
+  return rows.map((row) => {
+    // F-184: the claim writes these two metrics under the asker at the moment
+    // it files the question, so their actor tells a coach who asked the
+    // question the research list and the events feed show as a sentence.
+    const askerHidden = LIBRARY_QUESTION_METRIC_NAMES.has(row.metric_name)
+      && coachReadsMemberLibraryQuestion(context.actorRole, row.actor_role);
+    return {
+      ...row,
+      actor_role: askerHidden ? null : row.actor_role,
+      // Same leak as listShadowEvents: /api/pilot/shadow/telemetry admits every
+      // organization member, and the dimensions sanitizer never touched the
+      // row's actor column.
+      actor_account_id: roleCanViewSensitivePayload(context.actorRole) && !askerHidden ? row.actor_account_id : null,
+      dimensions: sanitizeDimensions((row.dimensions ?? {}) as Record<string, unknown>, context.actorRole),
+    };
+  });
 }
+
+/** The Library metrics a claim writes under its asker (shadowLibrary.ts). */
+const LIBRARY_QUESTION_METRIC_NAMES: ReadonlySet<string> = new Set(['shadow.library.claim', 'shadow.library.search']);
 
 /**
  * The authority ledger, scoped the way its two siblings are.

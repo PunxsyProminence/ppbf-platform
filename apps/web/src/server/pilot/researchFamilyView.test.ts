@@ -4,7 +4,9 @@ import {
   ASKER_QUESTION_NOTE_SENTENCE,
   isAskerFiledQuestion,
   isMemberFiledLearningNote,
+  isMemberFiledLibraryQuestion,
   LEARNING_NOTE_COACH_SENTENCE,
+  LIBRARY_QUESTION_COACH_SENTENCE,
   readsWholeResearchRows,
   readsWholeResearchSubmissions,
   researchRequirementsForReader,
@@ -487,5 +489,141 @@ describe('a learning-loop note filed by an athlete or parent', () => {
       }
       expect(researchSubmissionsForReader({ role: 'coach' }, notes, false, noted({ created_by_role: 'coach' }))).toBe(notes);
     });
+  });
+});
+
+// F-184: OD-2026-10-13-018 (Jason 2026-10-13, "A: Office + asker
+// (Recommended)") reaches a member's SHADOW Library question the Library could
+// not answer well: the row quotes the question in knowledge_gap and
+// metadata.question, under the asker's account and role
+// (shadowLibrary.ts, ensureClaimResearchRequirement). A coach sees that a
+// member asked; the organization admin and the asker read the words; a coach's
+// or admin's own question is unchanged.
+describe('a Library question a member asked (F-184)', () => {
+  const WORDS = 'is it safe for my 12 year old to cut 5 pounds before a show';
+  const ASKER = 'parent.two@gym.example.test';
+  const asked = (overrides: Partial<ShadowResearchRequirementRow> = {}) => requirement({
+    research_requirement_id: 12,
+    source_event_name: 'SHADOW_LIBRARY_CLAIM_GAP_DETECTED',
+    source_entity_type: 'shadow_library_claim',
+    source_entity_id: 'athlete:ath-1:1f0e2d3c-4b5a-4968-8776-655443322110',
+    research_requirement: 'Strengthen SHADOW Library evidence for athlete claim',
+    knowledge_gap: `Question lacks sufficient SHADOW Library evidence: ${WORDS}. Evidence count: 0. Distinct sources: 0.`,
+    evidence_label: 'ath-1',
+    source_status: 'missing',
+    source_confidence_tier: 'INSUFFICIENT',
+    source_verification_state: 'unknown',
+    status: 'open',
+    resolved_at: null,
+    created_by_account_id: ASKER,
+    created_by_role: 'parent',
+    metadata: { question: WORDS, scope: 'athlete', subject_id: 'ath-1', evidence_count: 0, distinct_source_count: 0, status: 'unsupported' },
+    subject_id: 'ath-1',
+    ...overrides,
+  });
+
+  test('is recognized by its event and a filer outside research staff, not by metadata', () => {
+    expect(isMemberFiledLibraryQuestion(asked())).toBe(true);
+    for (const role of ['athlete', 'volunteer', 'staff', 'platform_owner', 'board', '', 'Coach', 'guardian']) {
+      expect(isMemberFiledLibraryQuestion(asked({ created_by_role: role }))).toBe(true);
+    }
+    for (const role of ['coach', 'organization_admin', 'admin']) {
+      expect(isMemberFiledLibraryQuestion(asked({ created_by_role: role }))).toBe(false);
+    }
+    expect(isMemberFiledLibraryQuestion(asked({ source_event_name: 'SHADOW_LIBRARY_CAPABILITY_GAP_DETECTED' }))).toBe(false);
+    expect(isMemberFiledLibraryQuestion(asked({ metadata: {} }))).toBe(true);
+    // The F-054 and F-183 tests are untouched by this one.
+    expect(isAskerFiledQuestion(asked())).toBe(false);
+    expect(isMemberFiledLearningNote(asked())).toBe(false);
+  });
+
+  test.each(['athlete', 'parent'] as const)('asked by a %s, it reaches a coach with no words, key, label or asker', (role) => {
+    const stored = asked({ created_by_role: role });
+    const [row] = researchRequirementsForReader({ accountId: COACH_ID, role: 'coach' }, [stored]) as ShadowResearchRequirementRow[];
+    const text = JSON.stringify(row);
+    expect(text).not.toContain('cut 5 pounds');
+    expect(text).not.toContain(ASKER);
+    expect(text).not.toContain('1f0e2d3c');
+    expect(row).toEqual({
+      ...stored,
+      source_entity_id: '12',
+      research_requirement: LIBRARY_QUESTION_COACH_SENTENCE,
+      knowledge_gap: LIBRARY_QUESTION_COACH_SENTENCE,
+      evidence_label: null,
+      created_by_account_id: '',
+      created_by_role: '',
+      metadata: {},
+      subject_id: null,
+    });
+    expect(wholeResearchRowFor('coach', stored)).toEqual(row);
+  });
+
+  test.each(['organization_admin', 'admin'] as const)('a %s receives it whole', (role) => {
+    const stored = [asked(), asked({ created_by_role: 'athlete' })];
+    const read = researchRequirementsForReader({ accountId: ADMIN_ID, role }, stored);
+    read.forEach((row, index) => expect(row).toBe(stored[index]));
+  });
+
+  test('its asker reads their own words through the family view, with no account id', () => {
+    const [row] = researchRequirementsForReader({ accountId: ASKER, role: 'parent' }, [asked()]);
+    expect(row).toMatchObject({ knowledge_gap: expect.stringContaining(WORDS), is_mine: true });
+    expect(JSON.stringify(row)).not.toContain(ASKER);
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as const)("a %s's own question stays whole for a coach", (role) => {
+    const own = asked({ created_by_role: role, created_by_account_id: COACH_ID });
+    expect(wholeResearchRowFor('coach', own)).toBe(own);
+    const list = [own];
+    expect(researchRequirementsForReader({ accountId: 'coach.two@gym.example.test', role: 'coach' }, list)).toBe(list);
+  });
+
+  test('a closed one gives the coach the note sentence in place of the closing note', () => {
+    const row = wholeResearchRowFor('coach', asked({
+      status: 'resolved',
+      metadata: { question: WORDS, closing_note: 'Told his mom no cut before 14.', closing_submission_id: 'sub-1' },
+    }));
+    expect(row.metadata).toEqual({ closing_note: ASKER_QUESTION_NOTE_SENTENCE, closing_submission_id: 'sub-1' });
+    expect(JSON.stringify(row)).not.toContain('cut');
+  });
+
+  test('beside the other two kinds and an ordinary row, each reaches a coach as its own kind does', () => {
+    const learning = requirement({
+      research_requirement_id: 13,
+      source_event_name: 'shadow_learning_negative_outcome',
+      created_by_role: 'athlete',
+    });
+    const ordinary = requirement({ research_requirement_id: 14 });
+    const [library, note, plain] = researchRequirementsForReader(
+      { accountId: COACH_ID, role: 'coach' },
+      [asked(), learning, ordinary],
+    ) as ShadowResearchRequirementRow[];
+    expect(library.knowledge_gap).toBe(LIBRARY_QUESTION_COACH_SENTENCE);
+    expect(note.knowledge_gap).toBe(LEARNING_NOTE_COACH_SENTENCE);
+    expect(plain).toBe(ordinary);
+  });
+
+  test('its submissions reach a coach with the note sentence in place of each note', () => {
+    const notes = [submission({ submission_note: 'Source on weight cuts at 12.', review_note: 'Answers the mom.' })];
+    const [row] = researchSubmissionsForReader({ role: 'coach' }, notes, false, asked()) as ResearchSubmissionRow[];
+    expect(row).toEqual({
+      ...notes[0],
+      provenance: {},
+      submission_note: ASKER_QUESTION_NOTE_SENTENCE,
+      review_note: ASKER_QUESTION_NOTE_SENTENCE,
+    });
+    expect(researchSubmissionsForReader({ role: 'organization_admin' }, notes, false, asked())).toBe(notes);
+    expect(researchSubmissionsForReader({ role: 'coach' }, notes, false, asked({ created_by_role: 'coach' }))).toBe(notes);
+  });
+
+  // The split is a coach's view. The platform owner curates the platform shelf
+  // and reads its submissions whole (OD-2026-10-02-013 answer 1B,
+  // OD-2026-10-02-015 D2); its own Library questions there are
+  // platform_owner-filed rows, which F-184 now counts as member words.
+  test('the platform owner reads its own platform-shelf question\'s submissions whole', () => {
+    const notes = [submission({ submission_note: 'Curator note.', review_note: 'Reviewer note.' })];
+    const own = asked({ created_by_role: 'platform_owner', created_by_account_id: 'owner@platform.example.test' });
+    expect(researchSubmissionsForReader({ role: 'platform_owner' }, notes, true, own)).toBe(notes);
+    // Off the platform shelf it is not a whole reader at all: the family view, as before.
+    expect(researchSubmissionsForReader({ role: 'platform_owner' }, notes, false, own)).toEqual([toFamilyResearchSubmission(notes[0])]);
   });
 });

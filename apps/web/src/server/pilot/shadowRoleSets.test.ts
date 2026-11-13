@@ -4,10 +4,28 @@ import {
   DECISION_LOOP_ROLES,
   MANUAL_OVERRIDE_ROLES,
   ORGANIZATION_MEMBER_ROLES,
+  RESEARCH_STAFF_ROLES,
   SHADOW_LIBRARY_CURATOR_ROLES,
   SHADOW_PHI_ROLES,
   SHADOW_PROJECTION_READ_ROLES,
 } from './shadowRoleSets';
+import { isResearchStaff } from './shadowResearch';
+import type { PilotRole } from './contracts';
+
+// F-184: the Library claim's duplicate lookup names the research staff in SQL,
+// and the coach view tests isResearchStaff. The two must be one line.
+describe('research staff list', () => {
+  it('is exactly the roles isResearchStaff accepts', () => {
+    // A Record, so a role added to PilotRole fails to compile here until
+    // someone decides which side of the line it is on.
+    const everyRole: Record<PilotRole, true> = {
+      coach: true, organization_admin: true, admin: true, platform_owner: true, staff: true,
+      volunteer: true, board: true, parent: true, athlete: true,
+    };
+    const roles = Object.keys(everyRole) as PilotRole[];
+    expect([...RESEARCH_STAFF_ROLES].sort()).toEqual(roles.filter((role) => isResearchStaff(role)).sort());
+  });
+});
 
 function actor(role: ActorIdentity['role']): ActorIdentity {
   return {

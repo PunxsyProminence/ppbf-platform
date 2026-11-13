@@ -38,6 +38,11 @@ export const SHADOW_PROJECTION_READ_ROLES: readonly PilotRole[] = [
   'platform_owner',
 ];
 
+// The research staff of shadowResearch.ts isResearchStaff, as a list for SQL
+// (F-184: the Library claim's duplicate lookup stays on the asker's side of
+// the staff line). Pinned equal to isResearchStaff by shadowRoleSets.test.ts.
+export const RESEARCH_STAFF_ROLES: readonly PilotRole[] = ['coach', 'organization_admin', 'admin'];
+
 // Routes that read or write clinical/administrative medical state.
 //
 // platform_owner is deliberately absent and must stay absent. Medical

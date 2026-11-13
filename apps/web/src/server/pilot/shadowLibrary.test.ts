@@ -1118,6 +1118,37 @@ describe('SHADOW library claim research requirement (CL-C15)', () => {
     ]));
   });
 
+  // F-184: a coach reads a member's question as a sentence and a staff
+  // member's whole, so the duplicate is looked for only on the asker's own
+  // side of that line (isResearchStaff).
+  it.each([
+    ['organization_admin', true],
+    ['coach', true],
+    ['admin', true],
+    ['athlete', false],
+    ['parent', false],
+    ['volunteer', false],
+    ['staff', false],
+    ['platform_owner', false],
+  ] as const)('a %s matches only duplicates on its own side of the staff line (staff = %s)', async (actorRole, staff) => {
+    await createShadowLibraryClaim({
+      organizationId: 'org-1',
+      actorAccountId: 'acct-1',
+      actorRole,
+      // An athlete asks only about themselves (normalizeSearchScope).
+      athleteId: actorRole === 'athlete' ? 'ath-1' : null,
+      question: 'Is there evidence for a claim nobody has written about?',
+    });
+
+    const lookup = mockQueryOne.mock.calls.find(([sql]) => /shadow_research_requirements/.test(String(sql)));
+    expect(lookup).toBeDefined();
+    const sql = String(lookup![0]).replace(/\s+/g, ' ');
+    expect(sql).toContain('coalesce(created_by_role = any($5::text[]), false) = $6::boolean');
+    const params = lookup![1] as unknown[];
+    expect([...(params[4] as string[])].sort()).toEqual(['admin', 'coach', 'organization_admin']);
+    expect(params[5]).toBe(staff);
+  });
+
   it('reuses the open duplicate the lookup finds and opens no new row', async () => {
     mockQueryOne.mockResolvedValue({ research_requirement_id: 77 } as never);
 

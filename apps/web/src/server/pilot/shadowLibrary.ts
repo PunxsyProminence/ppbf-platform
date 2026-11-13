@@ -27,6 +27,7 @@ import {
   resolveCoveredCapabilityGapRequirements,
   syncCapabilityGapRequirement,
 } from './shadowResearch';
+import { RESEARCH_STAFF_ROLES } from './shadowRoleSets';
 import { writeShadowTelemetryEvent } from './shadowTelemetry';
 
 // Below this cosine similarity, the best semantic match is noise rather than
@@ -502,6 +503,15 @@ async function ensureClaimResearchRequirement(input: {
 
   // The open duplicate, found by key in SQL (audit CL-C15). This used to read
   // every open requirement in the organization into memory on every claim.
+  //
+  // Only on the asker's own side of the staff line (F-184). A coach reads a
+  // member's question as a sentence (researchFamilyView.ts) and a staff
+  // member's whole, so one row shared across the line ties the two: a coach
+  // asking a member's exact question got the member's row id back (and so
+  // learned what it says), and a member's question merged into a coach's row
+  // was readable whole. Who counts as staff is RESEARCH_STAFF_ROLES, pinned
+  // equal to isResearchStaff, the test the coach view uses; a row with no
+  // role is a member's, as there.
   const duplicate = await queryOne<{ research_requirement_id: number }>(
     `select research_requirement_id
      from pilot.shadow_research_requirements
@@ -511,9 +521,17 @@ async function ensureClaimResearchRequirement(input: {
        and metadata->>'question' = $2
        and metadata->>'scope' = $3
        and (metadata->>'subject_id') is not distinct from $4::text
+       and coalesce(created_by_role = any($5::text[]), false) = $6::boolean
      order by created_at desc
      limit 1`,
-    [input.organizationId, input.question, input.scope, input.subjectId],
+    [
+      input.organizationId,
+      input.question,
+      input.scope,
+      input.subjectId,
+      [...RESEARCH_STAFF_ROLES],
+      RESEARCH_STAFF_ROLES.includes(input.actorRole),
+    ],
   );
 
   if (duplicate) {
