@@ -239,7 +239,7 @@ ${oldHeader.map((column) => old[column]).join(',')}
     expect(snapshot(refused.out)).toEqual(snapshot(first.out));
     const rerun = exportInto(changedDir, first.out, ['--allow-overwrite']);
     expect(rerun.status).toBe(2);
-    expect(rerun.stdout).toContain('--allow-overwrite: replaced 3 committed row(s)');
+    expect(rerun.stdout).toContain('--allow-overwrite: changed or removed 3 committed row(s)');
     expect(rowsOf(read(rerun.out, CUES)).filter((row) => row.drill_id === D1).map((row) => row.cue_text)).toEqual(['A reworded cue.']);
     expect(rowsOf(read(rerun.out, ITEMS)).filter((row) => row.template_id === T1)).toHaveLength(1);
     const foreign = fixture();
@@ -272,7 +272,7 @@ ${oldHeader.map((column) => old[column]).join(',')}
 
     const forced = exportInto(dir, seed, ['--allow-overwrite']);
     expect(forced.status).toBe(2);
-    expect(forced.stdout).toContain('--allow-overwrite: replaced 2 committed row(s)');
+    expect(forced.stdout).toContain('--allow-overwrite: changed or removed 2 committed row(s)');
     expect(rowsOf(read(forced.out, DRILLS)).find((row) => row.drill_id === D1)?.what_good_looks_like).toBe('');
     expect(rowsOf(read(forced.out, STOPS)).filter((row) => row.drill_id === D1)).toEqual([]);
     expect(snapshot(forced.out)).toEqual(snapshot(first.out));
@@ -289,6 +289,21 @@ ${oldHeader.map((column) => old[column]).join(',')}
     const refused = exportInto(dir, seed);
     expect(refused.status).toBe(1);
     expect(refused.stderr).toContain(`${TRACKS} track_id trk_00000000000099: removes the row\n`);
+  });
+
+  it('stops on an id the file would hold twice: twice in the export, or once in it and once on a committed row outside it', () => {
+    const twice = fixture();
+    (twice.drills[2].cues as Json[])[0].cue_id = 'cue_000000000000c1';
+    const dup = exportInto(backbone(twice));
+    expect(dup.status).toBe(1);
+    expect(dup.stderr).toContain(`${CUES}: the export has two rows with cue_id cue_000000000000c1`);
+    const seed = exportInto(dir).out;
+    fs.appendFileSync(path.join(seed, CUES), `${ORG},cue_000000000000c1,drl_0000000000aaaa,A moved cue.,,unspecified,,DOC-123
+`);
+    const moved = exportInto(dir, seed);
+    expect(moved.status).toBe(1);
+    expect(moved.stderr).toContain(`${CUES}: cue_id cue_000000000000c1 is a committed row of drill_id drl_0000000000aaaa, outside this export, and also a row of drill_id ${D1} in it`);
+    expect(snapshot(moved.out)).toEqual(snapshot(seed));
   });
 
   it('stops on a file whose hash differs from the manifest, or that the manifest does not list', () => {

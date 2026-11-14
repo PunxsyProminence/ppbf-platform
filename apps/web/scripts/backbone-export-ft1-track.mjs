@@ -416,16 +416,37 @@ function committedRows(existingText, header) {
   return table.rows.map((cells) => Object.fromEntries(header.map((name) => [name, index.has(name) ? (cells[index.get(name)] ?? '') : ''])));
 }
 
-/**
- * What writing `newRows` in place of the committed rows `replaced` would change or remove, by GUARD_KEYS:
- * [{ file, owner, id, removed, columns }]. A row with a blank identity cell is matched on all its cells.
- */
+/** A row's identity by GUARD_KEYS; a row with a blank identity cell is identified by all its cells. */
+function guardId(name, obj) {
+  const { row } = GUARD_KEYS[name];
+  return row.every((column) => (obj[column] ?? '') !== '')
+    ? row.map((column) => obj[column]).join('/')
+    : `\u0000${HEADERS[name].map((column) => obj[column] ?? '').join('\u0000')}`;
+}
+
+/** Stops when the file would hold one id twice: twice among the new rows, or a new row and a kept committed row. */
+function checkUniqueIds(name, kept, newRows) {
+  const { owner, row } = GUARD_KEYS[name];
+  const fresh = new Map();
+  for (const obj of newRows) {
+    const id = guardId(name, obj);
+    if (id.startsWith('\u0000')) continue;
+    if (fresh.has(id)) throw new ExportError(`${name}: the export has two rows with ${row.join('/')} ${id}`);
+    fresh.set(id, obj);
+  }
+  for (const obj of kept) {
+    const id = guardId(name, obj);
+    if (fresh.has(id)) {
+      throw new ExportError(`${name}: ${row.join('/')} ${id} is a committed row of ${owner} ${obj[owner]}, outside this export, and also a row of ${owner} ${fresh.get(id)[owner]} in it. Nothing was written; give the committed row its own id or move it back first.`);
+    }
+  }
+}
+
+/** What writing `newRows` in place of the committed rows `replaced` would change or remove: [{ file, owner, id, removed, columns }]. */
 function findOverwrites(name, replaced, newRows) {
   const { owner, row } = GUARD_KEYS[name];
   const header = HEADERS[name];
-  const idOf = (obj) => (row.every((column) => (obj[column] ?? '') !== '')
-    ? row.map((column) => obj[column]).join('/')
-    : `\u0000${header.map((column) => obj[column] ?? '').join('\u0000')}`);
+  const idOf = (obj) => guardId(name, obj);
   const fresh = new Map(newRows.map((obj) => [idOf(obj), obj]));
   const found = [];
   for (const old of replaced) {
@@ -495,8 +516,10 @@ export function exportFt1Track(backboneDir, existing = () => undefined, { allowO
   const put = (name, rows, replaces = null) => {
     const committed = committedRows(existing(name), HEADERS[name]);
     const replaced = replaces ? committed.filter(replaces) : committed;
+    const kept = replaces ? committed.filter((row) => !replaces(row)) : [];
+    checkUniqueIds(name, kept, rows);
     overwrites.push(...findOverwrites(name, replaced, rows));
-    files[name] = mergeCsv(replaces ? committed.filter((row) => !replaces(row)) : [], HEADERS[name], rows);
+    files[name] = mergeCsv(kept, HEADERS[name], rows);
   };
   const ofDrill = (row) => drillIdSet.has(row.drill_id);
   const ofTemplate = (row) => templateIdSet.has(row.template_id);
@@ -512,10 +535,10 @@ export function exportFt1Track(backboneDir, existing = () => undefined, { allowO
   const overwriteLines = describeOverwrites(overwrites);
   if (overwrites.length && !allowOverwrite) {
     throw new ExportError([
-      `refused: this run would change or remove ${overwrites.length} committed row(s) that differ from the frozen Backbone,`
-        + ' edits made in the repo since the export (for FT1: the drafted drill fields and stop rules, OD-2026-11-12-005). Nothing was written.',
+      `refused: this run would change or remove ${overwrites.length} committed row(s): edits made in the repo since the export`
+        + ' (for FT1: the drafted drill fields and stop rules, OD-2026-11-12-005), or rows of a file the export writes whole. Nothing was written.',
       ...overwriteLines,
-      'To put the frozen Backbone\'s values back on purpose, run again with --allow-overwrite.',
+      'To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.',
     ].join('\n'));
   }
 
@@ -533,7 +556,7 @@ export function exportFt1Track(backboneDir, existing = () => undefined, { allowO
       `session_type values: ${Object.entries(sessionTypes).map(([value, n]) => `${value} ${n}`).join(', ')}`,
       `licensed excerpt keys (${EXCERPT_KEYS.join(', ')}) dropped: ${dropped.keys}`,
       `record keys not carried (kind.key xcount): ${notCarried.join(', ')}`,
-      ...(overwrites.length ? [`--allow-overwrite: replaced ${overwrites.length} committed row(s) with the frozen Backbone's:`, ...overwriteLines] : []),
+      ...(overwrites.length ? [`--allow-overwrite: changed or removed ${overwrites.length} committed row(s):`, ...overwriteLines] : []),
       ...(differences.length ? [`COUNTS DIFFER FROM THE BRIEF: ${differences.join('; ')}`] : []),
     ],
   };
