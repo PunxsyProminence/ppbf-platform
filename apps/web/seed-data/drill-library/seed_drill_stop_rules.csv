@@ -682,3 +682,229 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_7989a7410e6390,drl_f9bd51a246ea63,1,student throws without setting,drill_specific,technique_degradation
 {{PPBF_ORG_ID}},stp_34e07feffa768b,drl_f9bd51a246ea63,2,rushes the preparation phase,drill_specific,intent_drift
 {{PPBF_ORG_ID}},stp_7bf1bf68a90056,drl_f9bd51a246ea63,3,demonstrates inconsistent position checks,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4f29c20bb1a442,drl_65b9bb5fb0ae72,1,"Stop the hold when the feet cross, narrow or square up, or the chin lifts, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fa0d6230bcef9b,drl_16474d27ad2e2b,1,Stop the hold when the chin lifts and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ebbb241c83aa5d,drl_89000197ac8ac9,1,Stop the hold when a hand drops out of its place under a light check and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9a956518c5ee92,drl_89000197ac8ac9,2,Stop the pair when the checker starts pushing or competing instead of checking.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a789dad691ff7d,drl_f8bc17e2f1477a,1,"Stop the hold when the athlete holds the breath or the shoulders rise and stay tight, and one cue does not bring the breath back.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7fff716ab87b10,drl_248b0c4e9b65bb,1,"Stop the set when the feet cross, bounce off both feet or narrow at the stop, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d71f7e38a293c0,drl_b7fefd1d00bf64,1,"Stop the rep when the slip gets big (over-slip) or the athlete does not get back to the line in stance, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0c6160d73444d4,drl_f06b8bfcc4e803,1,"Stop the set when the hands stay low after the stop or come back only when the coach says so, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a0633aa3708299,drl_f11ebd617116c5,1,"Stop the set when the athlete holds the breath through the shifts or the shoulders rise and stay tight, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_1c3a0e310d1182,drl_166bb3f59507ae,1,"Stop the sequence when the feet cross, narrow or square up at the freeze, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_39332374af529a,drl_166bb3f59507ae,2,"Stop the athlete's sequence when they rush it and stop holding the freeze, and one cue does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_891d90462ef617,drl_fb2e0145f160f4,1,"Stop the rep when the slip gets big or the athlete does not get back to stance before the next call, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_50e4fd455641cf,drl_fb2e0145f160f4,2,Stop the pair when the feeder speeds up or competes instead of giving the set picture.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_9d26c30148059a,drl_bae5f9fe620c2e,1,Stop the pattern when the hands drop out of the guard during the movement and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a908e9821b8e62,drl_055c716f79cb4f,1,"Stop the sequence when the athlete holds the breath through the actions or the shoulders rise and stay tight, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_efe3e5f7471b88,drl_6e7f02beb67617,1,"Stop the round when stance keeps collapsing (feet cross, narrow or square) and one cue no longer fixes it.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_d9d5c64a36352c,drl_6e7f02beb67617,2,Stop the round when the athlete can no longer re-set stance at the called freezes.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_fd42f047dec0c0,drl_d4fcaf8feca2db,1,"Stop the bout when the slips get big or the athlete stops returning to stance with the guard up, and one cue does not fix it.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_b6570e66fdba20,drl_a092995ff57bef,1,Stop the round when the guard keeps dropping and one cue no longer brings it back.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_5160f3a5045c36,drl_db6eb00e2893f6,1,Stop the bout when breathing becomes held or panicky and does not settle with one cue.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_da649f593b7416,drl_80d84e68fc04c3,1,"Stop the rep when the athlete drifts, sways or takes an extra step after the stop, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5a10a67796b714,drl_989a9ccf4d20d5,1,"Stop the rep when the slip gets big or the athlete drifts or takes an extra step instead of freezing, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4ada5afbe772c9,drl_75f1fbf4b9b6e7,1,"Stop the combination when a pivot ends square or collapsed, or the guard drops at the reset, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8fea9b304bed57,drl_2c47bf50f3319c,1,"Stop the set when the athlete holds the breath at the freeze or the shoulders rise and stay tight, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_1074c2b8b494c4,drl_e1d122595da5f1,1,"Stop the set when a pivot leaves the athlete square, crossed or off balance, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_90eb0b52c27029,drl_97147e99cea1e7,1,"Stop the sequence when the roll turns into a big dive or the athlete needs extra balance steps to come up, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0205b93acadeee,drl_97147e99cea1e7,2,"Stop the rep when the roll stops rotating under the punch and the weight no longer shifts to the rear foot, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9987815cd672fc,drl_8271fab3abbf1c,1,"Stop the rep when the catch or parry pulls the athlete out of stance or the other hand drops, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4530022704a0a8,drl_8271fab3abbf1c,2,Stop the pair when the jabs get faster or harder than the set pace (the feeder starts competing).,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_dbe18df3dbaa5a,drl_a9e9c8e7a2519c,1,"Stop the set when the athlete keeps holding the breath while moving, or the shoulders rise and stay tight at the stops, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_817d19804cc9f4,drl_e07eed95574f39,1,"Stop the combination when the feet cross, drift or over-step on a direction change, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_049573058304ed,drl_e07eed95574f39,2,"Stop the athlete's combination when they rush the calls and give up position for speed, and one cue does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_c0bb69b6be3344,drl_3137281f565d1e,1,"Stop the rep when the athlete backs straight out or freezes in a shell instead of slipping or rolling, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bd32b3c5499e78,drl_3137281f565d1e,2,Stop the pair when the feeds get faster or harder than the set pace (the feeder starts competing).,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_0efdc7e0b22d78,drl_2ae484acae2fb7,1,"Stop the chain when the hands drop or the posture collapses on a pivot, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d25d9bff985580,drl_ad47e3f2a65147,1,"Stop the flow when the athlete holds the breath through the actions or the shoulders rise and stay tight, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_24a20854759695,drl_9a7d4a896bd9b9,1,"Stop the round when the stops stop being clean (drift, extra steps, crossed feet) and one cue no longer fixes them.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_a77a594767acbe,drl_07b7cfec78e65f,1,"Stop the sequence when the athlete drifts off the spot or the movements get big, and one cue does not fix it.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_ba0cf11596ee28,drl_1f477ccb45843a,1,"Stop the combo when a defensive move ends out of shape (guard down, stance broken) and one cue does not fix it.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_19c3be029bedf2,drl_b4b28995635fa1,1,"Stop the block when breathing at the stops becomes panicky instead of recoverable, or the athlete can no longer reset with the intended structure.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_cb410c2cfbc92e,drl_e18c98d4d8a79d,1,Stop the punch when the athlete throws without setting or before approval; the drill continues as the set check alone.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_1b16e9614c5725,drl_e18c98d4d8a79d,2,"Stop the rep when the feet cross or square up on the stop, or the chin lifts, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bb6b028671b538,drl_2bc36663440bcc,1,"Stop the rep when the athlete counters from a broken base, over-slips, or shells up and does not recover, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7c864227ed1715,drl_2bc36663440bcc,2,"Stop the pair when the feeder adds attacks, speeds up or turns the drill into mini-sparring, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ebdd1820464b4f,drl_c08aba5603edbb,1,Stop the punch when the athlete throws without setting or rushes the load; the drill continues as the set and weight shift alone.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_db00764c2ae8af,drl_c08aba5603edbb,2,"Stop the rep when the athlete loses balance as the punch goes out (falls forward or the feet narrow), and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5f964e25502901,drl_1bb75a746b9006,1,"Stop the rep when the athlete holds the breath through the action, or the shoulders rise and stay up, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3dad63ac6707e9,drl_1bb75a746b9006,2,Stop the punch when the athlete executes without the pause and set check; the drill continues with breath and set only.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_8b4b9bc59b3a9b,drl_c2ebf0ee081771,1,Stop the punches when the athlete throws without completing the hold and check; the drill continues as timed holds.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_465a60a94ee554,drl_c2ebf0ee081771,2,"Stop the hold when the feet cross, narrow or square up, or the chin lifts, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_dd1cd06fc613b5,drl_62a6b727b9d473,1,"Stop the cycle when the athlete counters before the set, or from a broken base, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_559859ebfad77e,drl_62a6b727b9d473,2,"Stop the pair when the cycles turn into mini-sparring (feeder adding attacks or speed), and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_21ee91e8a0cf36,drl_61f70e344129a1,1,"Stop the punch when the athlete throws without the load being verified, or rushes the set; the drill continues as load verification alone.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_229985d83e3cae,drl_61f70e344129a1,2,"Stop the rep when the athlete falls forward on the transfer, or the rear heel plants or rises onto the toe, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ada0f670d2d5d2,drl_eb11ff26841455,1,"Stop the rep when the athlete holds the breath through the punch, or the shoulders rise and stay up, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_114ea7db02d74a,drl_eb11ff26841455,2,Stop the punch when the athlete throws before the set and the breath; the drill continues as set and breath only.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_626ef8f7a99cdd,drl_a275f9fb6f9811,1,"Stop the punches, and carry on with the position checks without them, when the athlete starts throwing before the position is set or verified.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_47ec6abb7b1939,drl_a275f9fb6f9811,2,"Stop the sequence when it finishes leaning, with the rear hand dropped or the feet narrow, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e3fbeb8eefb5dc,drl_08964a9e5da8b4,1,"Stop the escalation and go back to single feeds when the athlete guesses early, counters between attacks, or loses posture.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_08be17ae3c4cdb,drl_08964a9e5da8b4,2,"Stop the pair when the feeder escalates past what the coach called, or competes instead of feeding, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_acecfa7c42e69c,drl_2e88d61ccab1ed,1,"Stop the punches, and carry on with set checks and footwork without them, when the athlete starts a chain without setting.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_8657e64eddccb1,drl_2e88d61ccab1ed,2,Stop the rep when the same link breaks the set every time and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_43a90bffb9d8ac,drl_4a85860cb53e1c,1,"Stop the flow when the athlete holds the breath through the punches, or the shoulders rise and stay up, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_06fde95d97d0dd,drl_4a85860cb53e1c,2,Stop the punches when the athlete throws before setting; the drill continues as set and breath with a step.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ac13f60bcec319,drl_3c101d81e1d371,1,"Stop the punches, and carry on with the set checks without them, when speed replaces the set (combinations thrown before setting or finished off balance) and slower calls do not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6c104374f6a3ad,drl_3c101d81e1d371,2,Stop the round when fatigue makes the athlete rush and the set no longer returns after one cue.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_ac22392fcfcd42,drl_56ad4892501e40,1,"Stop the fatigued check when the set disappears: counters from a broken base, dead shells or no reset, and one cue does not bring it back.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_67b7914c11ab38,drl_56ad4892501e40,2,"Stop the pair when, under fatigue, the partner picture is no longer the one the drill was built around, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_260cce4bc1b4d7,drl_5be76200976f7b,1,Stop the round when the stance collapses or the guard is abandoned and stays that way after one cue.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_5bca90361187e1,drl_5be76200976f7b,2,Stop the punches when the athlete throws without setting; the athlete finishes the round with set checks and footwork.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f68b005c81d37a,drl_6a469dc081920c,1,"Stop the flow when the athlete holds the breath or stops setting before punches, and one breath reminder does not fix it.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_214138feca44ee,drl_6a469dc081920c,2,"Stop the flow when fatigue turns it into survival: rushing, flat feet or punches with no set.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_4c76aa8d469a72,drl_49c71b45d2097d,1,"Stop the rep when the athlete leans, drops the rear hand or narrows the feet on the punch, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0f8363878ebdc0,drl_49c71b45d2097d,2,Stop the set when the athlete speeds the punches up at the cost of the stance.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_891adda31a089f,drl_93b6b459d53b7b,1,"Stop the rep when the athlete counters from a broken base or over-slips, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_78b7c563f85e8a,drl_93b6b459d53b7b,2,"Stop the pair when the feeder starts competing, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a212abdfcbf9d2,drl_93b6b459d53b7b,3,"Stop the pair when a feed reaches the athlete, reset the distance and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_e30973ea9123cc,drl_4f85b148d496cc,1,"Stop the rep when the athlete leans, drops the rear hand, narrows the feet or takes the eyes off the target at the freeze, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_52731ea26a1cfa,drl_4f85b148d496cc,2,Stop the rep when the athlete pushes into the target or punches from a broken base to reach it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_50b8441b3eec85,drl_995c01024b7fd1,1,"Stop the cycle when the athlete holds the breath on the punch, or the shoulders rise and stay up, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a8cfeb8f4c4372,drl_995c01024b7fd1,2,"Stop the cycle when the reset no longer returns to stance (leaning, rear hand dropped, feet narrow).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e912c48239f814,drl_f2ae3305eecbd3,1,"Stop the rep when the athlete pushes the bag, leans, or punches from a broken base, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d15803fa5bf0c4,drl_f2ae3305eecbd3,2,Stop the set when the athlete skips the assessment and throws the next punch from an unchecked position.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_326fc4c26148c3,drl_93e4dd386a5d09,1,"Stop the rep when the athlete counters from a broken base, over-slips or shells up, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d2674feaf18a4f,drl_93e4dd386a5d09,2,"Stop the pair when the repetition turns into mini-sparring, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b11972ab66967f,drl_93e4dd386a5d09,3,"Stop the pair when a feed reaches the athlete, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a2f836956ce72a,drl_6a6ba18e74cd8c,1,"Stop the rep when the athlete pushes the target, leans into it or punches from a broken base, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_aba2c468772e61,drl_6a6ba18e74cd8c,2,Stop the set when the load check is skipped between punches.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3a6aba8fb713ab,drl_933367020418fa,1,"Stop the set when the athlete holds the breath on the punch, or the shoulders rise and stay up, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_92cd327790be2e,drl_933367020418fa,2,"Stop the set when the athlete punches before the return is complete or races the pace, trading position for speed.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_0234ba23b47373,drl_9851444d9d672e,1,"Stop the feed when the athlete reaches, leans or finishes square on the mitts, and rebuild the rep with one cue.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_38f3c326228505,drl_9851444d9d672e,2,Stop the round when sequences turn into flurrying with no finish in stance.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_faa262ab752a73,drl_4e41b10b1ff929,1,"Stop the rep when the athlete freezes after the defense, exits blind or counters into a covered line, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_513dc0bcf16585,drl_4e41b10b1ff929,2,"Stop the pair when the live feed turns into mini-sparring, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b767a699a2bc0b,drl_4e41b10b1ff929,3,"Stop the pair when a feed reaches the athlete, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3a206a20a83e92,drl_8a98f90d1aae77,1,"Stop the chain when the athlete leans, drops the rear hand or narrows the feet, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3a244072facb98,drl_8a98f90d1aae77,2,Stop the rep when the same link keeps breaking stance after one cue.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0d0a41ad86f7d2,drl_3b3138da14a69c,1,"Stop the action when the athlete holds the breath through the combination, or the shoulders rise and stay up, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a7686258faf686,drl_3b3138da14a69c,2,"Stop the rep when the hold at the end is lost (leaning, rear hand dropped, feet narrow) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f91a631b3fc5cf,drl_9355e97d01bc0e,1,"Stop the round when the stance collapses, the guard is abandoned or resets go blind, and it stays that way after one cue.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_e60b655e005599,drl_a00981153c82f6,1,"Stop the fatigued check when stance recovery disappears: counters from a broken base, dead shells or no reset, and one cue does not bring it back.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_186e551f896ecf,drl_a00981153c82f6,2,"Stop the pair when, under fatigue, the partner picture is no longer the one the drill was built around, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_450c21328cf2b6,drl_a00981153c82f6,3,"Stop the pair when a feed reaches the athlete, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_76afafd99ed268,drl_0b1820269d1cab,1,Stop the sequence when the stance collapses or the guard is abandoned and stays that way after one cue.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_7665a9bfa772d3,drl_0b1820269d1cab,2,"Stop the rep when the athlete pushes the bag, leans on it or punches from a broken base.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5f8772ed59a0d3,drl_3e601393f0859c,1,Stop the flow when the athlete starts combinations from a broken stance or stops responding to one cue.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_600ef90c4059de,drl_3e601393f0859c,2,Stop the flow when the athlete holds the breath through combinations and one breath reminder does not fix it.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_5daac31d5e55d4,drl_c03f5a5387fef1,1,"Stop the pass when the feet cross, the hips turn away, or the athlete backs up without looking, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6d11c3e96ca5d3,drl_c03f5a5387fef1,2,"Stop the pass when the athlete takes panic steps (several quick steps back, or bouncing off both feet) instead of one measured step.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f4d00000e56554,drl_f86bf508c9ed7f,1,"Stop the feed when the athlete's shoulders rise, the breath is held, or the head movement grows large, and one cue does not settle it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_72284ca0ca740c,drl_f86bf508c9ed7f,2,Stop the round when the feeder speeds up or lets feeds reach the athlete instead of feeding slow and stopping short.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a6246615287d4f,drl_8d011b7f8363d1,1,Stop the set when the athlete holds the breath through the touches and one breath reminder does not restart it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d21c6047fcafcb,drl_8d011b7f8363d1,2,"Stop the set when breathing turns shallow and the shoulders climb and stay tight, even after one cue.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8d24ca3b6c5296,drl_e0a2911de03a1f,1,"Stop the rep when the athlete counters before recovering stance and eyes, or counters every time whatever the picture.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_097c0bbeab5e2c,drl_e0a2911de03a1f,2,"Stop the rep when the athlete freezes after the defense and makes no choice, or leaves blind.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7173704836d5d8,drl_9bdfbd473dc228,1,"Stop the flow when the feet cross, drift or over-step, or the stance squares up on a direction change, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_153f8f6bd7ba3a,drl_9bdfbd473dc228,2,Stop the flow when the pace turns frantic and the athlete chases the partner's speed instead of moving calmly.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_5f915958be3a49,drl_18ad51de202998,1,"Stop the round when the head movement gets bigger and faster than the feeds need, or the stance breaks under it, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e42e81fec088e1,drl_18ad51de202998,2,Stop the round when the athlete speeds up or holds the breath on their own instead of matching the set tempo.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2c4ddf1e964ee8,drl_4a9018cbe21dbc,1,"Stop the rep when the guard adjustments get big (hands reaching, elbows flaring) or the hands stay away from home, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2f9b5dacea0a23,drl_4a9018cbe21dbc,2,Stop the round when the athlete shells and stops watching the feeder instead of adjusting.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ee84b48cbb0e2e,drl_49d3280f9912bd,1,"Stop the flow when the athlete holds the breath or the breath falls off the movement rhythm, and one reminder does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8061a9244642fd,drl_49d3280f9912bd,2,Stop the flow when the movement speeds up and gets sloppy to keep pace.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0531162c4dee8f,drl_9dc8b5c81e03e4,1,"Stop the sequence when the athlete crosses the feet, over-steps, or turns away blind to escape the touches.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_263062080f9dc5,drl_9dc8b5c81e03e4,2,"Stop the sequence when the athlete starts guessing the attack (moving before the partner does) or rushing, and one cue does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_9ac344cfd7b430,drl_e495a9def1d069,1,"Stop the exchange when the counters turn tense or wild (arm-only, breath held, falling in) as the pressure rises, and one cue does not settle them.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e8968ec6715eee,drl_e495a9def1d069,2,Stop the exchange when every defense becomes a counter whatever the picture.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_29030082707dad,drl_e495a9def1d069,3,Stop raising the pressure when the athlete is already breaking at the current step; go back to the last calm step.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_d09c51cd18d722,drl_11c347a25d9617,1,"Stop the run when the athlete backs straight to the edge, crosses it, or turns their back.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_330bdb89a8e2cb,drl_11c347a25d9617,2,Stop the run when the feet turn rushed or crossed under the pressure and one cue does not calm them.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5e8204753c6436,drl_4a209e8e7cd9ec,1,"Stop the round when the athlete holds the breath through the window or rushes the choice, and one breath reminder does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_03b0731bf21e77,drl_4a209e8e7cd9ec,2,Stop the round when the athlete freezes in the window and makes no choice.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_05e0004d09a68e,drl_b48b377e96a343,1,"Stop the round when fatigue turns the footwork into crossed or flat feet or blind backing, and one cue does not bring it back.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_d913f6a1cb8d28,drl_b48b377e96a343,2,Stop the round when the reset after each burst disappears.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_d915ef37dbe467,drl_a44d9edc222c13,1,"Stop the exchange when tiredness turns the counters into automatic or wild replies (from a broken base, or more punches than chosen).",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_421674af10d606,drl_a44d9edc222c13,2,Stop the exchange when fatigue breaks decision quality and the athlete is surviving rather than choosing.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_5b281ebee25ee4,drl_91f86714f57d30,1,"Stop the cycle when movement turns tight and big (shoulders up, wide movements, flat feet) and one cue does not loosen it.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_355d2e9e95cba0,drl_91f86714f57d30,2,Stop the cycle when the reset after actions disappears.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_898bd44c6f4e74,drl_5590822eb50ace,1,"Stop the scenario when the athlete holds the breath or breathing turns shallow under the pressure, and one breath reminder does not settle it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_759103f6b59b01,drl_5590822eb50ace,2,"Stop the scenario when composure goes (rushing, freezing, or backing straight out) as the pressure continues.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_e9be6cd760901e,drl_7a34dfdf933016,1,"Stop the run when the athlete drifts off the plan (extra steps, crossed feet, ending off the mark or square) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b234321b9f338b,drl_7a34dfdf933016,2,Stop the run when the athlete rushes the sequence and gives up stance for speed.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_fc58906c700aad,drl_7a4ff70fc0fe8c,1,Stop the rep when defense and counter blur into one rushed action with no recovery between.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_722ea59640fa5a,drl_7a4ff70fc0fe8c,2,"Stop the rep when the counter comes from a broken base (leaning, feet crossed) or the athlete is still off balance from the defense.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9ff2f7f30d9d69,drl_0d245008a3bc3a,1,Stop the rep when the athlete adds punches past the planned end or finishes standing still.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b458b50373df7a,drl_0d245008a3bc3a,2,"Stop the rep when the finish is crossed, square, tall or blind and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d50467193164ba,drl_d99734578fa40b,1,"Stop the sequence when the athlete holds the breath through a phase or skips the breath mark, and one reminder does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_46a0824dea6959,drl_d99734578fa40b,2,Stop the sequence when the phases run together with no clear beginning or end.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2368abf1ca90b8,drl_e536331dccd8bd,1,"Stop the pattern when steps drop out or change order, or the feet cross, drift or over-step, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_54fd030c9dd7ab,drl_e536331dccd8bd,2,Stop the pattern when the athlete speeds through it and gives up stance for speed.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_47c260a63a859d,drl_fd8ab0a761b558,1,Stop the chain when a counter is thrown from a broken base or before the head movement has finished.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9a3f5810aad854,drl_fd8ab0a761b558,2,Stop the chain when it turns into a rushed flurry with no stance shape between links.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b2a13af386aee3,drl_ed932ad70b5cd6,1,"Stop the sequence when the exit is random or blind (no named spot, crossed feet, square, eyes off the feeder).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b4dc16ee3dc24e,drl_ed932ad70b5cd6,2,Stop the sequence when the athlete skips or reorders the planned actions and one cue does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_fd7b2b7c2fa5dd,drl_0190c8c74acccc,1,"Stop the phrase when the athlete holds the breath inside it, and one reminder does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3489c6f63e6977,drl_0190c8c74acccc,2,"Stop the phrase when it loses its shape (actions run on with no end point, or stance breaks to keep up).",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_40168f3ca059ec,drl_7ef4b989d58c04,1,"Stop the athlete's sequence when they guess the call or move before it, and one cue does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_41c1b9f09e5bb8,drl_7ef4b989d58c04,2,"Stop the athlete's sequence when it ends in drift, crossed feet or an off-balance finish.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_c6ee205b057a15,drl_df744af9260a5c,1,"Stop the chain when the structure breaks under escalation (freezing, leaving blind, or countering into a covered line).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9c2fb9c5d29da4,drl_df744af9260a5c,2,Stop escalating when the athlete is already breaking at the current level; go back to the last level that held.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_eb886dc296a8ec,drl_df744af9260a5c,3,Stop the pair when the feeder starts competing instead of feeding.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b14125c61b9d23,drl_cd0114f916e5a9,1,Stop the grouping when punches spill past the called group or the athlete stands admiring the finish.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f2e904852b40a4,drl_cd0114f916e5a9,2,"Stop the grouping when pressure breaks the stance during or after it (leaning, rear hand dropped, feet narrow) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_437cc88e1ad77e,drl_6f381ad3920e1c,1,"Stop the scenario when the athlete holds the breath or the breathing goes shallow, and one reminder does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f121134ef641af,drl_6f381ad3920e1c,2,Stop the scenario when the athlete speeds up emotionally instead of on the called pace.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_6a4a3dd2b800b7,drl_a950c60e0de90a,1,"Stop the sequence when fatigue drops phases, scrambles the order, or breaks the stance (crossed or flat feet), and one cue does not fix it.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_8c6f51dbb8bfeb,drl_a950c60e0de90a,2,Stop the sequence when the reset at the end disappears.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_0e693c50899583,drl_5fff3b16444fa5,1,"Stop the sequence when fatigue makes the head movement big or out of order, or the stance breaks under it.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_03a0663a41c585,drl_5fff3b16444fa5,2,Stop the sequence when the return to stance at the end disappears.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_d3f70dd5439eed,drl_32cfe738651ded,1,"Stop the chain when punches blur together, extra punches creep in, or the finish disappears.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_39bcf534bbc89f,drl_32cfe738651ded,2,"Stop the chains when fatigue breaks the stance through them (leaning, rear hand dropped, feet narrow, eyes off target).",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_07d3ab45df03c2,drl_11f147a5df7845,1,Stop the flow when cardio stress scrambles the order or the finish and one cue does not restore it.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_99d6cac151bca9,drl_11f147a5df7845,2,Stop the flow when keeping the output up replaces the skill (flailing to stay busy).,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_aa1154bbdbb92a,drl_c4f9950bffb389,1,"Stop the rep when the athlete gives up position for speed (feet cross, the stance squares, the chin lifts or the hands are unavailable at the freeze) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_26673ef04b5550,drl_c4f9950bffb389,2,Stop when speed keeps rising while the freezes keep breaking; drop back to the last clean pace.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_abe2c8e47dba62,drl_2970403ca76ea3,1,"Stop the rep when head movement grows into big, panicky moves that leave the line unsolved or the stance broken, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_734e35d880b6ff,drl_2970403ca76ea3,2,Stop when the tempo rises but form keeps breaking; return to the last tempo that held.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_7ba1a25e396725,drl_7c4bb31c9915ba,1,"Stop the rep when speed pulls the athlete out of the set (leaning, the rear hand dropping, a blind reset or narrow feet) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b087d5ac6c017c,drl_8f1212cd382918,1,Stop the round when breathing turns into breath-holding or panicked gasping and the reset no longer restores it.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_96c84966cc6676,drl_8f1212cd382918,2,Stop the block when bursts start before the reset is done and the athlete can no longer work with the intended structure.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_dc0531b827b3bc,drl_72553da2dda34f,1,"Stop the sequence when the feet cross, drift or over-step, or the hips turn away at a transition, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6c1920adf7e03c,drl_d56c3466c5fd96,1,Stop the rep when the defence turns into over-slips or a dead shell and the defender cannot get back in shape before the next feed.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5960a8591484f3,drl_d56c3466c5fd96,2,Stop when the feeder starts competing or speeding past the pace the defender can hold.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_be62b3e784651c,drl_0cc5031949edc1,1,"Stop the combination when the athlete finishes crossed, square, tall or blind, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fc91d6ff4af644,drl_0cc5031949edc1,2,Stop the feed when the holder speeds the round up past what the athlete can hold in position.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a4009398ae98ed,drl_0f723715bf6176,1,"Stop the round when the athlete holds the breath through the cycles or the shoulders rise and stay tight, and one breath cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6ef697ac6fc5fa,drl_0f723715bf6176,2,Stop when the faster rate makes breathing panic-driven instead of recoverable.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_6fb5a8289098d8,drl_791571e22b71a6,1,"Stop the sequence when the athlete finishes tall, hands dropped, turned away or late to reset, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_cbc821f33ea236,drl_791571e22b71a6,2,"Stop when the partner's role goes beyond the assigned picture (chasing, pushing or turning it into sparring).",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_97a6a155bc76f4,drl_05fefb0dde0a32,1,"Stop the rep when counters come from a broken base, or automatically after every defence, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bcb816736f51fd,drl_05fefb0dde0a32,2,Stop when the feeder's pressure goes past the assigned picture and the defender is only surviving.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3b52b30a443c4b,drl_eb7919f3d68eee,1,"Stop the combination when speed turns the strikes sloppy or the athlete finishes standing still admiring the work, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0e665c4b3ed8b7,drl_eb7919f3d68eee,2,Stop when speed keeps rising while the finishes keep collapsing.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a31f8fca4232e7,drl_49210628cd02c5,1,Stop the flow when the athlete holds the breath through the actions and one breath cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d6333019cecb51,drl_49210628cd02c5,2,Stop when the high-speed flows make breathing panic-driven instead of recoverable.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_51c85d9d450f86,drl_21471eb3988596,1,"Stop the interval when the feet cross, go flat or turn blind and one cue does not bring stance back.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_cd9c1be0ecc263,drl_21471eb3988596,2,"Stop when fatigue has the athlete practising the very failure the drill is meant to remove (speed kept, position lost).",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_df23aa8f81c47c,drl_8bfd233f9969e9,1,"Stop the round when fatigue turns head movement into a dead shell, an early guess or no reset.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_964ad34537c0ba,drl_8bfd233f9969e9,2,Stop when the athlete no longer responds to one cue.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_74b59e131af85c,drl_af75f1ba763c5e,1,"Stop the set when stance keeps collapsing, the guard is abandoned or resets go blind.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_99d5d85411a804,drl_af75f1ba763c5e,2,Stop when fatigue breaks decision quality and the room is no longer learning the right lesson.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_92db84cc095a62,drl_4b30970a2f41f2,1,Stop the round when breathing becomes panic-driven or the athlete stops responding to cues.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_b199fc3e184eaa,drl_4b30970a2f41f2,2,Stop the block when the athlete can no longer punch with the intended form.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_48dd8e0cd0771b,drl_f71c195e47aed4,1,Stop the drill when the athlete cannot meet the standard twice in a row; go back to the simpler version.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_31c0cdbb92d950,drl_f71c195e47aed4,2,Stop when the coach has to keep adding words for the athlete to succeed.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_150212c3461e05,drl_f2457106a9a74e,1,"Stop the rep when the head movement turns big and panicky or stops recovering structure, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0eb387c2546e4a,drl_6bb81739aa4d60,1,"Stop the rep when the response ends in a dead shell or the guard comes back somewhere different, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_86ac5fbb8aea5f,drl_9356b87b9bb495,1,"Stop the round when breathing becomes inconsistent across actions (held, shallow or rushed) and one breath cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_57392f4f5ecde5,drl_5fa9e2642be19e,1,Stop the athlete at a drill when its theme keeps failing on repeat passes; work that drill on its own before rejoining.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_66174853a9df4a,drl_dd6d717a1e0b84,1,Stop the link when head movement keeps costing the feet or the guard and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_96fd5c66eaca5f,drl_ab12445c3cca05,1,"Stop an athlete at a station when the defence ends in a dead shell, a counter from a broken base or an over-slip, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b60a5dd98a1ce5,drl_3e747059993bbb,1,"Stop the round when the markers break (breath held, shoulders up and tight) and one cue does not bring them back.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_cc6f885175112a,drl_43056d78bdaaac,1,"Stop the combination when the finish is tall, hands dropped, turned away or late to reset, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5f02cd12223a79,drl_43056d78bdaaac,2,Stop when the athlete starts guessing the next call instead of answering it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2bfb421d9a0e0c,drl_7484b6c7469a54,1,"Stop the rep when a pace change or a new partner turns the head movement into big, panicky moves.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_45acf700224509,drl_7484b6c7469a54,2,Stop the pair when the feeder's role discipline is gone and the picture is no longer what was assigned.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_21efef19f7ccf7,drl_5c8883024d9b0f,1,"Stop the scenario when the athlete finishes unable to defend (crossed, square, tall or blind) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7ff628a63def3a,drl_25034a26c6d63a,1,"Stop the round when action and breathing come apart (breath held through the actions, or punches losing form as breathing rushes) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_702c5032a79ca8,drl_fa246bf3c4e076,1,"Stop the round when the feet cross, turn blind, retreat to the boundary or finish square, and one cue does not bring stance back.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_56793cf062e012,drl_fa246bf3c4e076,2,"Stop when the round stops testing the footwork standards (the test changes partway, or it turns into chasing volume).",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_ec025a3e20b38c,drl_ce5c7d3a093716,1,"Stop the round when maximum effort turns head movement into a dead shell, an early guess or no reset.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_eb31a782e6bc92,drl_ce5c7d3a093716,2,Stop when the athlete no longer responds to one cue.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_9fa6822dfea7f7,drl_41d9f3ac453d89,1,"Stop the test round when defence ends in a dead shell, a blind exit or no reset.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_ed0327f4a9aad4,drl_41d9f3ac453d89,2,Stop when the test changes partway or the round is chasing volume instead of checking the standard.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a90c0dd449adc8,drl_579f4c574ff8bb,1,Stop the round when breathing becomes panic-driven instead of recoverable.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_b80aa17fbbdad9,drl_579f4c574ff8bb,2,Stop the block when the athlete can no longer punch with the intended form.,drill_specific,technique_degradation
