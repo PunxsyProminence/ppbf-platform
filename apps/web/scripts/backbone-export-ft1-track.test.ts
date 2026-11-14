@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { readCsv } from '../src/server/pilot/contentImport/csv';
+import { readCsv, writeCsv } from '../src/server/pilot/contentImport/csv';
 import { FILE_SPECS } from '../src/server/pilot/contentImport/specs';
 
 // Lane FT1b: the Backbone -> FT1 track exporter, over a small fixture Backbone built here
@@ -113,11 +113,17 @@ function run(args: string[]) {
 }
 
 /** Run the exporter into a copy of `seed` (or an empty folder); returns the folder and the run. */
-function exportInto(dir: string, seed?: string) {
+function exportInto(dir: string, seed?: string, extra: string[] = []) {
   const out = tempDir();
   if (seed) fs.cpSync(seed, out, { recursive: true });
-  return { out, ...run([dir, '--out', out]) };
+  return { out, ...run([dir, '--out', out, ...extra]) };
 }
+/** Every package file of a folder, by name (absent = undefined), to show a refused run wrote nothing. */
+const snapshot = (out: string) => Object.fromEntries([
+  'drill-library/seed_drill_library.csv', 'drill-library/seed_drill_cues.csv', 'drill-library/seed_drill_stop_rules.csv',
+  'workout-templates/seed_workout_templates.csv', 'workout-templates/seed_workout_template_items.csv',
+  'training-tracks/seed_training_tracks.csv', 'training-tracks/seed_track_blocks.csv', 'training-tracks/seed_track_block_sessions.csv',
+].map((name) => [name, fs.existsSync(path.join(out, name)) ? fs.readFileSync(path.join(out, name), 'utf8') : undefined]));
 const read = (out: string, name: string) => fs.readFileSync(path.join(out, name), 'utf8');
 function rowsOf(text: string): Record<string, string>[] {
   const table = readCsv(text);
@@ -218,12 +224,22 @@ ${oldHeader.map((column) => old[column]).join(',')}
     expect(rowsOf(read(out, DRILLS))).toHaveLength(4);
   });
 
-  it('a rerun replaces the cues of a drill and the items of a template as a whole, and stops on a foreign organization_id or an inactive block', () => {
+  it('a rerun that would change committed rows stops, naming each, and writes nothing; with --allow-overwrite it replaces the cues of a drill and the items of a template as a whole; it stops on a foreign organization_id or an inactive block', () => {
     const changed = fixture();
     (changed.drills[0].cues as Json[])[0].cue_text = 'A reworded cue.';
     changed.templates[1].items = (changed.templates[1].items as Json[]).slice(0, 1);
     changed.blocks[1].optional_drill_refs = [D2]; // D2 stays reachable, now without its template item
-    const rerun = exportInto(backbone(changed), first.out);
+    const changedDir = backbone(changed);
+    const refused = exportInto(changedDir, first.out);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('refused: this run would change or remove 3 committed row(s)');
+    expect(refused.stderr).toContain(`${CUES} drill_id ${D1}: changes cue_text of cue_000000000000c1\n`);
+    expect(refused.stderr).toContain(`${ITEMS} template_id ${T1}: removes wti_000000000000d2\n`);
+    expect(refused.stderr).toContain(`${BLOCKS} track_id ${TRACK}: changes details of ${B2}\n`);
+    expect(snapshot(refused.out)).toEqual(snapshot(first.out));
+    const rerun = exportInto(changedDir, first.out, ['--allow-overwrite']);
+    expect(rerun.status).toBe(2);
+    expect(rerun.stdout).toContain('--allow-overwrite: changed or removed 3 committed row(s)');
     expect(rowsOf(read(rerun.out, CUES)).filter((row) => row.drill_id === D1).map((row) => row.cue_text)).toEqual(['A reworded cue.']);
     expect(rowsOf(read(rerun.out, ITEMS)).filter((row) => row.template_id === T1)).toHaveLength(1);
     const foreign = fixture();
@@ -232,6 +248,62 @@ ${oldHeader.map((column) => old[column]).join(',')}
     const inactive = fixture();
     inactive.blocks[0].active = false;
     expect(exportInto(backbone(inactive)).stderr).toContain('only an active block can be exported');
+  });
+
+  it('will not put the frozen blanks back over fields and stop rules filled in after the export (the FT1 drill drafts) unless --allow-overwrite', () => {
+    const seed = exportInto(dir).out;
+    const table = readCsv(read(seed, DRILLS));
+    const at = (name: string) => table.header.indexOf(name);
+    const rows = table.records.map((record) => [...record.cells]);
+    const d1 = rows.find((cells) => cells[at('drill_id')] === D1)!;
+    d1[at('what_good_looks_like')] = 'Feet are set before the hands move.';
+    d1[at('field_labels')] = JSON.stringify({ ...labels(['name', 'purpose']), what_good_looks_like: { status: 'INFERRED', sources: ['DOC-123'], draft: true } });
+    fs.writeFileSync(path.join(seed, DRILLS), writeCsv(table.header, rows));
+    fs.appendFileSync(path.join(seed, STOPS), `${ORG},stp_000000000000f1,${D1},1,Stop when the feet stop moving.,drill_specific,technique_degradation\n`);
+
+    const refused = exportInto(dir, seed);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('refused: this run would change or remove 2 committed row(s)');
+    expect(refused.stderr).toContain(`${DRILLS} drill_id ${D1}: changes what_good_looks_like, field_labels\n`);
+    expect(refused.stderr).toContain(`${STOPS} drill_id ${D1}: removes stp_000000000000f1\n`);
+    expect(refused.stderr).toContain('Nothing was written.');
+    expect(refused.stderr).not.toContain(D2);
+    expect(snapshot(refused.out)).toEqual(snapshot(seed));
+
+    const forced = exportInto(dir, seed, ['--allow-overwrite']);
+    expect(forced.status).toBe(2);
+    expect(forced.stdout).toContain('--allow-overwrite: changed or removed 2 committed row(s)');
+    expect(rowsOf(read(forced.out, DRILLS)).find((row) => row.drill_id === D1)?.what_good_looks_like).toBe('');
+    expect(rowsOf(read(forced.out, STOPS)).filter((row) => row.drill_id === D1)).toEqual([]);
+    expect(snapshot(forced.out)).toEqual(snapshot(first.out));
+  });
+
+  it('stops before writing over a row of another track in the training-tracks files, which are written whole', () => {
+    const seed = exportInto(dir).out;
+    const name = 'training-tracks/seed_training_tracks.csv';
+    const table = readCsv(read(seed, name));
+    const other = [...table.records[0].cells];
+    other[table.header.indexOf('track_id')] = 'trk_00000000000099';
+    other[table.header.indexOf('lineage_id')] = 'trk_00000000000099';
+    fs.writeFileSync(path.join(seed, name), writeCsv(table.header, [...table.records.map((record) => record.cells), other]));
+    const refused = exportInto(dir, seed);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`${TRACKS} track_id trk_00000000000099: removes the row\n`);
+  });
+
+  it('stops on an id the file would hold twice: twice in the export, or once in it and once on a committed row outside it', () => {
+    const twice = fixture();
+    (twice.drills[2].cues as Json[])[0].cue_id = 'cue_000000000000c1';
+    const dup = exportInto(backbone(twice));
+    expect(dup.status).toBe(1);
+    expect(dup.stderr).toContain(`${CUES}: the export has two rows with cue_id cue_000000000000c1`);
+    const seed = exportInto(dir).out;
+    fs.appendFileSync(path.join(seed, CUES), `${ORG},cue_000000000000c1,drl_0000000000aaaa,A moved cue.,,unspecified,,DOC-123
+`);
+    const moved = exportInto(dir, seed);
+    expect(moved.status).toBe(1);
+    expect(moved.stderr).toContain(`${CUES}: cue_id cue_000000000000c1 is a committed row of drill_id drl_0000000000aaaa, outside this export, and also a row of drill_id ${D1} in it`);
+    expect(snapshot(moved.out)).toEqual(snapshot(seed));
   });
 
   it('stops on a file whose hash differs from the manifest, or that the manifest does not list', () => {

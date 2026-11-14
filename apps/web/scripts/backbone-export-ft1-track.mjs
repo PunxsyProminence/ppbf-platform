@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // BACKBONE -> FT1 TRACK PACKAGES (lane FT1b; OD-2026-11-11-003).
 //
-//   node scripts/backbone-export-ft1-track.mjs <backbone-folder> [--out <seed-data folder>]
+//   node scripts/backbone-export-ft1-track.mjs <backbone-folder> [--out <seed-data folder>] [--allow-overwrite]
 //
 // The 8-week non-contact FT1 class track, from the frozen Backbone into three content packages:
 //   drill-library     131 drills + their cues and own stop rules   (rows ADDED to the committed CSVs)
@@ -10,6 +10,14 @@
 // --out defaults to apps/web/seed-data. Existing rows of the two committed packages are kept
 // exactly as they are; rows of the FT1 set already in a file are replaced, so a second run is
 // byte-identical.
+//
+// OVERWRITE GUARD (lane FT1-G). The repo is the only live copy (OD-2026-11-10-001): FT1 rows are
+// edited after the export (the drill drafts Jason approves, OD-2026-11-12-005 ruling 3, fill blank
+// setup, steps, what good looks like and labels, and add stop rules). A rerun would put the frozen
+// blanks back. So before anything is written, every committed row the run would replace is compared
+// with its new row (by GUARD_KEYS): a changed cell or a row that would disappear stops the export,
+// naming each file, drill (or template, or track) and field, and nothing is written. Rows the run
+// only adds are not listed. --allow-overwrite writes anyway and prints the same list.
 //
 // THE SET. The track's blocks, the templates they list, and the drills those templates and
 // the blocks' optional_drill_refs name. It must equal every record whose stage_keys is exactly
@@ -92,6 +100,19 @@ export const HEADERS = {
   'training-tracks/seed_track_blocks.csv': ['organization_id', 'track_block_id', 'block_lineage_id', 'track_id', 'block_order', 'title', 'weeks', 'status', 'sources',
     'field_labels', 'evidence', 'stage_keys', 'details'],
   'training-tracks/seed_track_block_sessions.csv': ['organization_id', 'block_session_id', 'track_id', 'block_order', 'ordinal', 'week', 'day', 'template_lineage_id'],
+};
+
+// The overwrite guard's row identity and owner, per file. The training-tracks files are written whole,
+// so every committed row in them is compared, whichever track it belongs to.
+export const GUARD_KEYS = {
+  'drill-library/seed_drill_library.csv': { owner: 'drill_id', row: ['drill_id'] },
+  'drill-library/seed_drill_cues.csv': { owner: 'drill_id', row: ['cue_id'] },
+  'drill-library/seed_drill_stop_rules.csv': { owner: 'drill_id', row: ['stop_rule_id'] },
+  'workout-templates/seed_workout_templates.csv': { owner: 'template_id', row: ['template_id'] },
+  'workout-templates/seed_workout_template_items.csv': { owner: 'template_id', row: ['item_id'] },
+  'training-tracks/seed_training_tracks.csv': { owner: 'track_id', row: ['track_id'] },
+  'training-tracks/seed_track_blocks.csv': { owner: 'track_id', row: ['track_block_id'] },
+  'training-tracks/seed_track_block_sessions.csv': { owner: 'track_id', row: ['track_id', 'block_order', 'ordinal'] },
 };
 
 /** JSON with object keys sorted at every depth (contentImport/canonical.ts sortedJson). */
@@ -386,28 +407,90 @@ function trackRows({ track, blocks }, version, dropped, tally) {
 
 // ---- merging into the committed files ----
 
-/** The committed file's rows, minus any row whose key cell is in `replace`, then the new rows; ordered new rows by `sortKey`. */
-function mergeCsv(existingText, header, newRows, keyColumns, replaceKeys) {
-  const keyOf = (obj) => keyColumns.map((column) => obj[column] ?? '').join('\u0000');
-  let kept = [];
-  if (existingText) {
-    const table = readCsv(existingText);
-    const index = new Map(table.header.map((name, position) => [name, position]));
-    for (const name of table.header) if (!header.includes(name)) throw new ExportError(`committed file has column ${name}, which the exporter does not know`);
-    for (const cells of table.rows) {
-      const obj = Object.fromEntries(header.map((name) => [name, index.has(name) ? (cells[index.get(name)] ?? '') : '']));
-      if (!replaceKeys.has(keyOf(obj))) kept.push(obj);
+/** A committed file's rows as objects over `header` (a column the file lacks is blank). */
+function committedRows(existingText, header) {
+  if (!existingText) return [];
+  const table = readCsv(existingText);
+  const index = new Map(table.header.map((name, position) => [name, position]));
+  for (const name of table.header) if (!header.includes(name)) throw new ExportError(`committed file has column ${name}, which the exporter does not know`);
+  return table.rows.map((cells) => Object.fromEntries(header.map((name) => [name, index.has(name) ? (cells[index.get(name)] ?? '') : ''])));
+}
+
+/** A row's identity by GUARD_KEYS; a row with a blank identity cell is identified by all its cells. */
+function guardId(name, obj) {
+  const { row } = GUARD_KEYS[name];
+  return row.every((column) => (obj[column] ?? '') !== '')
+    ? row.map((column) => obj[column]).join('/')
+    : `\u0000${HEADERS[name].map((column) => obj[column] ?? '').join('\u0000')}`;
+}
+
+/** Stops when the file would hold one id twice: twice among the new rows, or a new row and a kept committed row. */
+function checkUniqueIds(name, kept, newRows) {
+  const { owner, row } = GUARD_KEYS[name];
+  const fresh = new Map();
+  for (const obj of newRows) {
+    const id = guardId(name, obj);
+    if (id.startsWith('\u0000')) continue;
+    if (fresh.has(id)) throw new ExportError(`${name}: the export has two rows with ${row.join('/')} ${id}`);
+    fresh.set(id, obj);
+  }
+  for (const obj of kept) {
+    const id = guardId(name, obj);
+    if (fresh.has(id)) {
+      throw new ExportError(`${name}: ${row.join('/')} ${id} is a committed row of ${owner} ${obj[owner]}, outside this export, and also a row of ${owner} ${fresh.get(id)[owner]} in it. Nothing was written; give the committed row its own id or move it back first.`);
     }
   }
-  const all = [...kept, ...newRows];
-  return writeCsv(header, all.map((obj) => header.map((column) => obj[column] ?? '')));
+}
+
+/** What writing `newRows` in place of the committed rows `replaced` would change or remove: [{ file, owner, id, removed, columns }]. */
+function findOverwrites(name, replaced, newRows) {
+  const { owner, row } = GUARD_KEYS[name];
+  const header = HEADERS[name];
+  const idOf = (obj) => guardId(name, obj);
+  const fresh = new Map(newRows.map((obj) => [idOf(obj), obj]));
+  const found = [];
+  for (const old of replaced) {
+    const id = idOf(old);
+    const label = id.startsWith('\u0000') ? `a row with no ${row.join('/')}` : id;
+    const next = fresh.get(id);
+    if (!next) {
+      found.push({ file: name, owner: old[owner] ?? '', id: label, removed: true, columns: [] });
+      continue;
+    }
+    const columns = header.filter((column) => (old[column] ?? '') !== (next[column] ?? ''));
+    if (columns.length) found.push({ file: name, owner: old[owner] ?? '', id: label, removed: false, columns });
+  }
+  return found;
+}
+
+/** One line per file and owner: "  <file> <owner column> <id>: changes <fields>; removes <rows>". */
+export function describeOverwrites(found) {
+  const groups = new Map();
+  for (const item of found) {
+    const key = `${item.file} ${GUARD_KEYS[item.file].owner} ${item.owner}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  return [...groups].map(([key, items]) => {
+    const parts = items.filter((item) => !item.removed)
+      .map((item) => (item.id === item.owner ? `changes ${item.columns.join(', ')}` : `changes ${item.columns.join(', ')} of ${item.id}`));
+    const removed = items.filter((item) => item.removed);
+    if (removed.length) parts.push(`removes ${removed.map((item) => (item.id === item.owner ? 'the row' : item.id)).join(', ')}`);
+    return `  ${key}: ${parts.join('; ')}`;
+  });
+}
+
+/** The kept committed rows in their place, then the new rows. */
+function mergeCsv(kept, header, newRows) {
+  return writeCsv(header, [...kept, ...newRows].map((obj) => header.map((column) => obj[column] ?? '')));
 }
 
 /**
- * The packages for one Backbone folder: { files: { 'folder/file.csv': text }, counts, notices, backboneVersion }.
- * `existing(name)` returns a committed file's text, or undefined.
+ * The packages for one Backbone folder: { files: { 'folder/file.csv': text }, counts, notices, overwrites, backboneVersion }.
+ * `existing(name)` returns a committed file's text, or undefined. Throws, before any file is produced,
+ * when a committed row would be changed or removed, unless `allowOverwrite` (see OVERWRITE GUARD).
  */
-export function exportFt1Track(backboneDir, existing = () => undefined) {
+export function exportFt1Track(backboneDir, existing = () => undefined, { allowOverwrite = false } = {}) {
   const set = readFt1(backboneDir);
   const backboneVersion = `ft1 ${sha16(Buffer.from([...set.hashes].sort(compare).join('\n')))} (${set.hashes.length} files)`;
   const dropped = { keys: 0 };
@@ -428,19 +511,36 @@ export function exportFt1Track(backboneDir, existing = () => undefined) {
   const drillIdSet = new Set(lib.map((row) => row.drill_id));
   const templateIdSet = new Set(templateSet.rows.map((row) => row.template_id));
   const files = {};
-  const put = (name, keyColumns, replaceKeys, rows) => {
-    files[name] = mergeCsv(existing(name), HEADERS[name], rows, keyColumns, replaceKeys);
+  const overwrites = [];
+  // `replaces(row)`: the committed rows this run writes over; null = the whole file (written whole).
+  const put = (name, rows, replaces = null) => {
+    const committed = committedRows(existing(name), HEADERS[name]);
+    const replaced = replaces ? committed.filter(replaces) : committed;
+    const kept = replaces ? committed.filter((row) => !replaces(row)) : [];
+    checkUniqueIds(name, kept, rows);
+    overwrites.push(...findOverwrites(name, replaced, rows));
+    files[name] = mergeCsv(kept, HEADERS[name], rows);
   };
-  put('drill-library/seed_drill_library.csv', ['drill_id'], drillIdSet, lib);
+  const ofDrill = (row) => drillIdSet.has(row.drill_id);
+  const ofTemplate = (row) => templateIdSet.has(row.template_id);
+  put('drill-library/seed_drill_library.csv', lib, ofDrill);
   // Rows a drill (or template) lists replace ALL of its rows in a child file, as the importer does.
-  put('drill-library/seed_drill_cues.csv', ['drill_id'], drillIdSet, drillSet.cues.sort(ordinal('drill_id')));
-  put('drill-library/seed_drill_stop_rules.csv', ['drill_id'], drillIdSet, drillSet.stopRules.sort(ordinal('drill_id')));
-  put('workout-templates/seed_workout_templates.csv', ['template_id'], templateIdSet, templateSet.rows.sort(byId('template_id')));
-  put('workout-templates/seed_workout_template_items.csv', ['template_id'], templateIdSet, templateSet.items.sort(ordinal('template_id')));
-  const table = (name, rows) => writeCsv(HEADERS[name], rows.map((row) => HEADERS[name].map((column) => row[column] ?? '')));
-  files['training-tracks/seed_training_tracks.csv'] = table('training-tracks/seed_training_tracks.csv', [trackSet.trackCells]);
-  files['training-tracks/seed_track_blocks.csv'] = table('training-tracks/seed_track_blocks.csv', trackSet.blockCells);
-  files['training-tracks/seed_track_block_sessions.csv'] = table('training-tracks/seed_track_block_sessions.csv', trackSet.sessionCells);
+  put('drill-library/seed_drill_cues.csv', drillSet.cues.sort(ordinal('drill_id')), ofDrill);
+  put('drill-library/seed_drill_stop_rules.csv', drillSet.stopRules.sort(ordinal('drill_id')), ofDrill);
+  put('workout-templates/seed_workout_templates.csv', templateSet.rows.sort(byId('template_id')), ofTemplate);
+  put('workout-templates/seed_workout_template_items.csv', templateSet.items.sort(ordinal('template_id')), ofTemplate);
+  put('training-tracks/seed_training_tracks.csv', [trackSet.trackCells]);
+  put('training-tracks/seed_track_blocks.csv', trackSet.blockCells);
+  put('training-tracks/seed_track_block_sessions.csv', trackSet.sessionCells);
+  const overwriteLines = describeOverwrites(overwrites);
+  if (overwrites.length && !allowOverwrite) {
+    throw new ExportError([
+      `refused: this run would change or remove ${overwrites.length} committed row(s): edits made in the repo since the export`
+        + ' (for FT1: the drafted drill fields and stop rules, OD-2026-11-12-005), or rows of a file the export writes whole. Nothing was written.',
+      ...overwriteLines,
+      'To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.',
+    ].join('\n'));
+  }
 
   const sessionTypes = {};
   for (const row of templateSet.rows) sessionTypes[row.session_type] = (sessionTypes[row.session_type] ?? 0) + 1;
@@ -451,30 +551,34 @@ export function exportFt1Track(backboneDir, existing = () => undefined) {
     differences,
     sessionTypes,
     files,
+    overwrites,
     notices: [
       `session_type values: ${Object.entries(sessionTypes).map(([value, n]) => `${value} ${n}`).join(', ')}`,
       `licensed excerpt keys (${EXCERPT_KEYS.join(', ')}) dropped: ${dropped.keys}`,
       `record keys not carried (kind.key xcount): ${notCarried.join(', ')}`,
+      ...(overwrites.length ? [`--allow-overwrite: changed or removed ${overwrites.length} committed row(s):`, ...overwriteLines] : []),
       ...(differences.length ? [`COUNTS DIFFER FROM THE BRIEF: ${differences.join('; ')}`] : []),
     ],
   };
 }
 
-const USAGE = 'usage: node scripts/backbone-export-ft1-track.mjs <backbone-folder> [--out <seed-data folder>]';
+const USAGE = 'usage: node scripts/backbone-export-ft1-track.mjs <backbone-folder> [--out <seed-data folder>] [--allow-overwrite]';
 
 export function parseArgs(argv) {
   const positional = [];
   let out;
+  let allowOverwrite = false;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--out') {
       out = argv[i + 1];
       if (!out) throw new ExportError(`--out needs a folder\n${USAGE}`);
       i += 1;
-    } else if (argv[i].startsWith('--')) throw new ExportError(`unknown option ${argv[i]}\n${USAGE}`);
+    } else if (argv[i] === '--allow-overwrite') allowOverwrite = true;
+    else if (argv[i].startsWith('--')) throw new ExportError(`unknown option ${argv[i]}\n${USAGE}`);
     else positional.push(argv[i]);
   }
   if (positional.length !== 1) throw new ExportError(`give exactly one Backbone folder\n${USAGE}`);
-  return { backboneDir: positional[0], out };
+  return { backboneDir: positional[0], out, allowOverwrite };
 }
 
 function main() {
@@ -487,7 +591,7 @@ function main() {
       const file = path.join(out, name);
       return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
     };
-    const result = exportFt1Track(path.resolve(typedIn, args.backboneDir), existing);
+    const result = exportFt1Track(path.resolve(typedIn, args.backboneDir), existing, { allowOverwrite: args.allowOverwrite });
     for (const [name, text] of Object.entries(result.files)) {
       fs.mkdirSync(path.dirname(path.join(out, name)), { recursive: true });
       fs.writeFileSync(path.join(out, name), text, 'utf8');
