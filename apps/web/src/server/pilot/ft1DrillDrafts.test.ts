@@ -20,8 +20,12 @@ import { readCsv } from './contentImport/csv';
 //      INFERRED (with the source keys it was built from) or UNVERIFIED (no
 //      source), never OBSERVED or REPORTED. Scale levels and stop rules also
 //      carry a label per level and per rule, and each stop rule its evidence
-//      tier (Backbone RULES sections 1 and 10).
+//      tier (Backbone RULES sections 1 and 10). Jason approved all 131 drafts
+//      (OD-2026-11-14-001, "A"): every drafted label also carries the source
+//      APPROVAL below, and its status stays what the draft had.
 
+/** Jason's approval, as a source key (PK-26 form). It is not a source passage. */
+const APPROVAL = 'Jason 2026-11-14 (OD-2026-11-14-001)';
 const LIBRARY_DIR = path.resolve(__dirname, '../../../seed-data/drill-library');
 const DRAFTED_FIELDS = ['standard_setup', 'execution', 'what_good_looks_like', 'scale_levels', 'stop_rules'] as const;
 
@@ -56,10 +60,12 @@ function checkLabel(where: string, label: Label | undefined, problems: string[])
   }
   const sources = Array.isArray(label.sources) ? (label.sources as unknown[]) : null;
   if (!sources) problems.push(`${where}: sources is not a list`);
+  if (sources && !sources.includes(APPROVAL)) problems.push(`${where}: no approval source`);
+  const drafted = (sources ?? []).filter((source) => source !== APPROVAL);
   if (label.status === 'INFERRED') {
-    if (sources && sources.length === 0) problems.push(`${where}: INFERRED with no sources`);
+    if (drafted.length === 0) problems.push(`${where}: INFERRED with no source passage`);
   } else if (label.status === 'UNVERIFIED') {
-    if (sources && sources.length > 0) problems.push(`${where}: UNVERIFIED with sources`);
+    if (drafted.length > 0) problems.push(`${where}: UNVERIFIED with a source passage`);
   } else {
     problems.push(`${where}: a drafted field is ${JSON.stringify(label.status)} (INFERRED or UNVERIFIED only)`);
   }
