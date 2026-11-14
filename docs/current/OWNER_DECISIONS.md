@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-14-001 | 2026-11-14 | Jason approves all 131 FT1 drill drafts in PR #1923; they load on staging, then production on his click | PRIMARY |  | yes |
 | OD-2026-11-12-007 | 2026-11-12 | The FT1 drill drafts cover all eight weeks in one batch, and the Class plans page is built complete, so Jason can review the whole | PRIMARY |  | yes |
 | OD-2026-11-12-006 | 2026-11-12 | The FT1d drill-drafting brief is approved and lane FT1d-1 (Week 1) starts | PRIMARY |  | yes |
 | OD-2026-11-12-005 | 2026-11-12 | FT1c is "Class plans" for coaches and gym admins, and the FT1 drills are completed from AI drafts a coach approves: "A: Class plans (Rec.)"; "A: Coaches + admins (Rec.)"; "A: AI drafts, coach approves (Rec.)" | PRIMARY |  | yes |
@@ -565,6 +566,24 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-14-001 -- Jason approves all 131 FT1 drill drafts in PR #1923; they load on staging, then production on his click: "A"
+
+**Provenance: PRIMARY.** Jason's typed reply, 2026-11-14 about 16:09 EST (transcript timestamp 2026-11-14T21:09:27.409Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 15895, `origin.kind` human), checked against the file by script before writing. The question is Overwatch's message at line 15883 (2026-11-14T21:04:10.191Z), its answer to his line 15878 (2026-11-14T21:03:34.270Z): *"So what next then I feel like I'm running in circle with you and Claude science"*. No other typed message of his falls between. The combined review document `FT1_DRILL_REVIEW_ALL_WEEKS.md` (PR #1923's eight week sheets, flags first) was sent to him as a file on 2026-11-13. New; edits no earlier entry's text.
+
+**What was put to him (quoted; markdown emphasis removed):** "PR #1923, the 131 AI-drafted FT1 drills (OD-2026-11-12-005, ruling 3: drafts load only after you approve):" Options: "A. Approve all 131 (recommended). Skim the flags section at the top of `FT1_DRILL_REVIEW_ALL_WEEKS.md` first; it lists the contact cells, source conflicts, the Week 3 punch reading and the coach hand re-set." / "B. Approve all except the flagged drills, which stay held." / "C. Go through every drill, week by week." Plain English: "the app has the 8-week class plan, but most drills are missing their setup and step-by-step instructions. I drafted them, and your answer decides whether they go in. With A, everything goes in and the class plans become usable."
+
+**Jason:** *"A"*
+
+**Ruling:** every drafted field in PR #1923 is approved as drafted, flagged items included (contact cells, source conflicts, the Week 3 punch reading, the coach hand re-set): setup and steps for 128 drills, what good looks like for 57, A/B/C scale levels for all 131 (393 levels), and own stop rules for 128 (226 rules). This is the approval OD-2026-11-12-005 ruling 3 requires and OD-2026-11-12-007 left open.
+
+**Applied, as already agreed (not separately asked):** each drafted field's label gains the source "Jason 2026-11-14 (OD-2026-11-14-001)", the approval shape agreed with lane FT1d on 2026-11-13; label statuses and text are unchanged. Overwatch merges #1923, loads staging and checks readiness; the production load needs his approval click on the seed run (brief approved in OD-2026-11-12-006).
+
+**Not ruled here:** whether issuing should read a drill's newest version (it matters only where FT1 version 1 is already loaded, which is staging's punxsy_prominence); the production seed run itself; whether the drills read well on the gym floor, which only coaches running them will show.
+
+**Status:** recorded 2026-11-14 by PR; lane FT1d applying the approval labels to #1923.
 
 ---
 
