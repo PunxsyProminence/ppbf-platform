@@ -582,7 +582,7 @@ and should not try to.
 
 **Ruling:** on Class plans, a day whose template has only typed steps reads "Coach-run day: nothing to issue", not "Not ready"; coaches run it from the plan. No content changes; the Friday steps stay typed text and are still not issued.
 
-**Applied, as already agreed (not separately asked):** the same reading covers any template whose steps are all typed text (the ruling's plain principle). A template mixing typed steps with drills is not covered and still reads "Not ready", counting its typed steps.
+**Reach (the ruling's plain principle, not a separate approval):** the same reading covers any template whose steps are all typed text. A template mixing typed steps with drills is not covered and still reads "Not ready", counting its typed steps.
 
 **Not ruled here:** turning the Friday steps into library drills (option B, not chosen); whether the workout-template screen should say the same when a coach opens the Friday template.
 
