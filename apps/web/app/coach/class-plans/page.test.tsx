@@ -39,6 +39,7 @@ const DETAIL = {
       { block_session_id: 'tbs_2', ordinal: 2, day: 'Tuesday', template_lineage_id: 'wtp_2', template: { state: 'missing', template_id: null, name: null, drill_count: null, drills_to_complete: null } },
       { block_session_id: 'tbs_3', ordinal: 3, day: 'Wednesday', template_lineage_id: 'wtp_3', template: { state: 'withdrawn', template_id: 'wt-3', name: 'Old Day', drill_count: null, drills_to_complete: null } },
       { block_session_id: 'tbs_4', ordinal: 4, day: 'Thursday', template_lineage_id: 'wtp_4', template: { state: 'ready', template_id: 'wt-4', name: 'Ready Day', drill_count: 2, drills_to_complete: 0 } },
+      { block_session_id: 'tbs_5', ordinal: 5, day: 'Friday', template_lineage_id: 'wtp_5', template: { state: 'coach_run', template_id: 'wt-5', name: 'Friday Protocol', drill_count: 3, drills_to_complete: 0 } },
     ],
   }],
 };
@@ -64,6 +65,7 @@ describe('Class plans page', () => {
     expect(await screen.findByText('Week 1: Hold Position')).toBeInTheDocument();
     expect(screen.getByText('Not ready: 4 of 4 drills need completing')).toBeInTheDocument();
     expect(screen.getByText('Ready to issue')).toBeInTheDocument();
+    expect(screen.getByText('Coach-run day: nothing to issue')).toBeInTheDocument();
     expect(screen.getByText('Template missing')).toBeInTheDocument();
     expect(screen.getByText('Withdrawn')).toBeInTheDocument();
     const links = screen.getAllByRole('link', { name: 'Open template' }).map((a) => a.getAttribute('href'));
@@ -71,6 +73,7 @@ describe('Class plans page', () => {
       '/coach/workout-templates?template=wt-1',
       '/coach/workout-templates?template=wt-3',
       '/coach/workout-templates?template=wt-4',
+      '/coach/workout-templates?template=wt-5',
     ]);
     // Detail fields read-only, as text.
     expect(screen.getByText('Get set first.')).toBeInTheDocument();

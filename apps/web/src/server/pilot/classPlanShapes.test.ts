@@ -55,4 +55,9 @@ describe('readinessLine', () => {
     expect(readinessLine({ ...READY, state: 'withdrawn', drill_count: null, drills_to_complete: null })).toBeNull();
     expect(readinessLine({ ...READY, state: 'empty', drill_count: 0, drills_to_complete: 0 })).toBe('No steps in this template');
   });
+
+  it('says a day of typed steps only is coach-run, not not ready (OD-2026-11-15-001)', () => {
+    expect(readinessLine({ ...READY, state: 'coach_run', drill_count: 3, drills_to_complete: 0 }))
+      .toBe('Coach-run day: nothing to issue');
+  });
 });

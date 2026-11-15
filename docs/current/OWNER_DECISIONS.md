@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-15-001 | 2026-11-15 | Class plans shows the FT1 Friday Protocol days as coach-run, not "not ready" | PRIMARY |  | yes |
 | OD-2026-11-14-001 | 2026-11-14 | Jason approves all 131 FT1 drill drafts in PR #1923; they load on staging, then production on his click | PRIMARY |  | yes |
 | OD-2026-11-12-007 | 2026-11-12 | The FT1 drill drafts cover all eight weeks in one batch, and the Class plans page is built complete, so Jason can review the whole | PRIMARY |  | yes |
 | OD-2026-11-12-006 | 2026-11-12 | The FT1d drill-drafting brief is approved and lane FT1d-1 (Week 1) starts | PRIMARY |  | yes |
@@ -566,6 +567,26 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-15-001 -- Class plans shows the FT1 Friday Protocol days as coach-run, not "not ready": "A"
+
+**Provenance: PRIMARY.** Jason's typed reply, 2026-11-15 about 08:41 EST (transcript timestamp 2026-11-15T13:41:15.363Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 17712, `origin.kind` human), checked against the file by script before writing. The question is Overwatch's message at line 17708 (2026-11-15T13:02:22.075Z), after his line 17496 (2026-11-15T12:58:42.853Z): *"what is that for I wanted this put in to production im signed in"*. No other typed message of his falls between. New; edits no earlier entry's text.
+
+**Context (OBSERVED by Overwatch, signed in on production 2026-11-15):** `/coach/class-plans` read "Ready to issue" for Monday to Thursday of all 8 weeks and "Not ready: 3 of 3 drills need completing" for all 8 Fridays. Every Friday is the one template "8-Week Non-Contact Boxing Pilot Program -- Friday Protocol" (`wtp_f3d74ccca9cc85`), whose three steps are typed text (sparring observation, self-guided workouts, gym service), not library drills; OD-2026-09-18-001 builds every new assignment from an operational drill, so typed steps are never issued.
+
+**What was put to him (quoted; markdown emphasis removed):** "how should the 8 Friday Protocol days (template `wtp_f3d74ccca9cc85`) be handled?" Options: "A. Coach-run day (recommended). Class plans shows Fridays as "Coach-run day: nothing to issue" instead of "Not ready." This is a small code change, then a release; no content changes." / "B. Make them drills. I draft three library drills for the three steps, you approve them (OD-2026-11-12-005 ruling 3), and then Fridays can be issued to athletes." Plain English: "Fridays are observation, self-guided work and gym chores, so they aren't drills. A stops the page from calling Friday broken; coaches just run it. B lets you send Friday to athletes' phones, but it's more work and needs your review."
+
+**Jason:** *"A"*
+
+**Ruling:** on Class plans, a day whose template has only typed steps reads "Coach-run day: nothing to issue", not "Not ready"; coaches run it from the plan. No content changes; the Friday steps stay typed text and are still not issued.
+
+**Applied, as already agreed (not separately asked):** the same reading covers any template whose steps are all typed text (the ruling's plain principle). A template mixing typed steps with drills is not covered and still reads "Not ready", counting its typed steps.
+
+**Not ruled here:** turning the Friday steps into library drills (option B, not chosen); whether the workout-template screen should say the same when a coach opens the Friday template.
+
+**Status:** recorded 2026-11-15 in the PR that builds it.
 
 ---
 

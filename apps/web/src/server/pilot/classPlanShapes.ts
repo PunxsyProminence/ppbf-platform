@@ -1,7 +1,10 @@
 // Class plans: the shapes and the pure grouping behind GET /api/pilot/training-tracks
 // and /coach/class-plans. No server imports, so the page can import it.
 
-export type ClassPlanTemplateState = 'ready' | 'not_ready' | 'empty' | 'withdrawn' | 'missing';
+// 'coach_run': every step is typed text, not a drill from the library, so there is
+// nothing to issue; coaches run the day from the plan (Jason 2026-11-15, OD-2026-11-15-001).
+// Typed steps cannot be assigned (OD-2026-09-18-001), which is why such a day is not "not ready".
+export type ClassPlanTemplateState = 'ready' | 'not_ready' | 'coach_run' | 'empty' | 'withdrawn' | 'missing';
 
 /** What a day's template is to this gym right now. Never absent: a missing or withdrawn template says so. */
 export interface ClassPlanDayTemplate {
@@ -11,7 +14,7 @@ export interface ClassPlanDayTemplate {
   name: string | null;
   /** Reference drills (and typed steps) the template names; null when not asked (missing, withdrawn). */
   drill_count: number | null;
-  /** How many of them the issue refuses today; null when not asked. */
+  /** How many of them the issue refuses today; null when not asked; 0 on a coach-run day, which is not issued. */
   drills_to_complete: number | null;
 }
 
@@ -83,6 +86,7 @@ export function groupClassPlanWeeks(
 /** The line a day shows about readiness; null when readiness was not asked. */
 export function readinessLine(template: ClassPlanDayTemplate): string | null {
   if (template.state === 'ready') return 'Ready to issue';
+  if (template.state === 'coach_run') return 'Coach-run day: nothing to issue';
   if (template.state === 'empty') return 'No steps in this template';
   if (template.state === 'not_ready' && template.drill_count !== null && template.drills_to_complete !== null) {
     return `Not ready: ${template.drills_to_complete} of ${template.drill_count} drills need completing`;

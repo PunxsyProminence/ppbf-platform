@@ -3,7 +3,8 @@
 //
 // What this pins: the committed FT1 track reads back as 8 weeks with their
 // titles and 5 days each, every day resolved to its template by name; every day
-// is judged by the same readiness an issue applies (planTemplateIssue); a day
+// is judged by the same readiness an issue applies (planTemplateIssue), except a
+// day of typed steps only, which reads coach-run (OD-2026-11-15-001); a day
 // whose template lineage has no current row reads "missing" and a withdrawn one
 // "withdrawn", both still present; another gym sees nothing of this gym's track.
 //
@@ -270,16 +271,36 @@ describe('Class plans over the loaded FT1 track', () => {
     expect(Object.keys(track!.details)).toEqual(expect.arrayContaining(['primary_cue', 'decision_cycle', 'friday_protocol']));
   });
 
-  it('judges each day as an issue would: a day whose drills the issue refuses reads not ready, with counts', async () => {
+  it('judges each day as an issue would: Monday to Thursday ready, every Friday (typed steps only) coach-run', async () => {
     const days = (await getClassPlanTrack(ORG, trackId))!.weeks.flatMap((week) => week.days);
-    const notReady = days.filter((day) => day.template.state === 'not_ready');
-    expect(notReady.length).toBeGreaterThan(0);
-    for (const day of notReady) {
-      expect(day.template.drills_to_complete).toBeGreaterThan(0);
-      expect(day.template.drills_to_complete).toBeLessThanOrEqual(day.template.drill_count!);
+    const fridays = days.filter((day) => day.day === 'Friday');
+    expect(fridays).toHaveLength(8);
+    for (const day of fridays) {
+      expect(day.template).toMatchObject({ state: 'coach_run', drill_count: 3, drills_to_complete: 0 });
     }
-    for (const day of days.filter((d) => d.template.state === 'ready')) {
-      expect(day.template.drills_to_complete).toBe(0);
+    for (const day of days.filter((d) => d.day !== 'Friday')) {
+      expect(day.template).toMatchObject({ state: 'ready', drills_to_complete: 0 });
+    }
+  });
+
+  it('still reads not ready, with counts, where a template mixes a typed step with drills', async () => {
+    const monday = (await getClassPlanTrack(ORG, trackId))!.weeks[0].days[0];
+    expect(monday.template.state).toBe('ready');
+    await client.query('BEGIN');
+    try {
+      const changed = await client.query(
+        `update pilot.workout_template_items set drill_id = null, free_text_drill = 'Typed step'
+         where organization_id = $1 and template_id = $2
+           and ordinal = (select min(ordinal) from pilot.workout_template_items where organization_id = $1 and template_id = $2)`,
+        [ORG, monday.template.template_id],
+      );
+      expect(changed.rowCount).toBe(1);
+      const after = (await getClassPlanTrack(ORG, trackId))!.weeks[0].days[0];
+      expect(after.template.state).toBe('not_ready');
+      expect(after.template.drills_to_complete).toBe(1);
+      expect(after.template.drill_count).toBeGreaterThan(1);
+    } finally {
+      await client.query('ROLLBACK');
     }
   });
 
