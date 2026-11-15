@@ -72,6 +72,12 @@ async function readinessOf(organizationId: string, head: TemplateHead): Promise<
   if (!detail || detail.items.length === 0) {
     return { state: 'empty', ...base, drill_count: 0, drills_to_complete: 0 };
   }
+  // Only typed steps: nothing an issue could assign, so the day is coach-run, not
+  // "not ready" (OD-2026-11-15-001). A template mixing typed steps with drills is
+  // still judged below, and its typed steps still count as refused.
+  if (detail.items.every((item) => item.drill_id === null)) {
+    return { state: 'coach_run', ...base, drill_count: detail.items.length, drills_to_complete: 0 };
+  }
   const plan = await planTemplateIssue(organizationId, detail.items);
   // Counted the way the plan judges: one drill per resolved reference (the
   // newest version, or the gym's running one on fallback), so it matches plan.refused.
