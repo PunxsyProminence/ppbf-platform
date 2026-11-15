@@ -46,14 +46,17 @@ import {
 // getDrillWithDetail, which already returns all three levels together;
 // this module does not duplicate that read.
 //
-// AN ITEM KEEPS THE DRILL VERSION IT WAS WRITTEN AGAINST. item.drill_id
-// names one exact pilot.drill_library row, and a revised drill is a new row
-// in the same lineage (drill_library v3 migration :86-89), so a template can
-// point at a drill that has since been revised. The item is NOT repointed:
-// the template was authored against that version, and silently swapping the
-// drill under it is the in-place edit versioning exists to prevent. Instead
-// the read reports, per item, the lineage's head and whether the item is
-// behind it, so the coach sees it and decides.
+// AN ITEM KEEPS THE DRILL VERSION IT WAS WRITTEN AGAINST, AND ISSUING READS
+// THE NEWEST. item.drill_id names one exact pilot.drill_library row, and a
+// revised drill is a new row in the same lineage (drill_library v3 migration
+// :86-89), so a template can point at a drill that has since been revised. The
+// stored item is NOT repointed: the template was authored against that
+// version. The read reports, per item, the lineage's head and whether the item
+// is behind it. ISSUING (planTemplateIssue, listUntestedTemplateDrills,
+// issueWorkoutTemplate) treats a step on an older version as naming that head
+// (OD-2026-10-08-008 D1, "a newer reference drill version updates in place";
+// OD-2026-10-11-001 ruling 2), so no template needs editing when a drill is
+// revised (OD-2026-10-10-004 ruling 6: no interim swap control).
 
 export type WorkoutTemplateDifficulty = 'beginner' | 'intermediate' | 'advanced' | 'elite';
 export type WorkoutTemplateItemScaleLevel = 'A' | 'B' | 'C';
@@ -228,6 +231,15 @@ export async function getWorkoutTemplateWithItems(
 //   - the gym already runs the drill          -> its operational drill is
 //     assigned, even when its reference has since been withdrawn or superseded
 //     (an adopted drill is the gym's).
+//
+// A STEP NAMES THE NEWEST VERSION OF ITS DRILL. A step whose drill is not the
+// highest version of its lineage in this gym's library (the same head rule
+// getWorkoutTemplateWithItems reports as head_drill_id) is judged, and issued,
+// as naming that head (OD-2026-10-08-008 D1; OD-2026-10-11-001 ruling 2:
+// "updates the gym's drill to that version in the same action, then assigns
+// it. A retired drill is still refused and named."). Every rule below then
+// applies to the head unchanged; a head that is withdrawn or not ready refuses
+// the issue and is named with its own reason. The template row is not touched.
 //   - the gym has not adopted it, it is ready -> it is adopted in the same
 //     transaction (promoteReferenceDrill, audited as a promotion is), then
 //     assigned. "Ready" is adoptionReadiness, the check the promote route
@@ -246,7 +258,8 @@ export async function getWorkoutTemplateWithItems(
 //     (updateDrillToReferenceVersion, as the promote route does; Jason,
 //     question card 2026-10-11: "A: Update while issuing (Recommended)"), then
 //     the new version is assigned. A step naming an OLDER version than the
-//     gym's updated drill is the first case: the gym runs that drill.
+//     gym's updated drill resolves to the head (above), so it is this case or
+//     the first one, whichever the gym's drill is.
 //   - anything else                           -> the WHOLE issue is refused and
 //     every such drill is named with its reason. Nothing is written.
 //
@@ -267,6 +280,15 @@ export async function getWorkoutTemplateWithItems(
 // The operational ceiling the promote route enforces (drills/promote/route.ts
 // MAX_CUES): an adopted drill takes the reference's first twelve cues.
 const MAX_ADOPTED_CUES = 12;
+
+/**
+ * A step naming an older version of its drill names the lineage head
+ * (OD-2026-10-08-008 D1; OD-2026-10-11-001 ruling 2). Idempotent, and a step
+ * with no drill, or one whose head could not be read, is returned as it is.
+ */
+function namedByLineageHead<T extends { drill_id: string | null; head_drill_id?: string | null }>(item: T): T {
+  return item.drill_id !== null && item.head_drill_id ? { ...item, drill_id: item.head_drill_id } : item;
+}
 
 /** One drill (or typed step) that stopped a template from being issued. */
 export interface TemplateIssueRefusedDrill {
@@ -382,8 +404,9 @@ function refusalMessage(drills: TemplateIssueRefusedDrill[]): string {
  */
 export async function listUntestedTemplateDrills(
   organizationId: string,
-  items: readonly Pick<WorkoutTemplateItemWithDrillHead, 'drill_id' | 'ordinal'>[],
+  rawItems: readonly (Pick<WorkoutTemplateItemWithDrillHead, 'drill_id' | 'ordinal'> & { head_drill_id?: string | null })[],
 ): Promise<TemplateUntestedDrill[]> {
+  const items = rawItems.map(namedByLineageHead);
   const stepsByReference = new Map<string, number[]>();
   for (const item of items) {
     if (item.drill_id !== null) {
@@ -504,8 +527,10 @@ type AdoptableReference = DrillWithDetail & {
  */
 export async function planTemplateIssue(
   organizationId: string,
-  items: WorkoutTemplateItemWithDrillHead[],
+  rawItems: WorkoutTemplateItemWithDrillHead[],
 ): Promise<TemplateIssuePlan> {
+  // Each step is judged as naming its lineage's head (see the header).
+  const items = rawItems.map(namedByLineageHead);
   const plan: TemplateIssuePlan = {
     refused: [],
     operational: new Map(),
@@ -792,7 +817,10 @@ export async function issueWorkoutTemplate(params: {
   if (!detail) {
     return { outcome: 'not_found' };
   }
-  const { template, items } = detail;
+  const { template } = detail;
+  // The steps as issued: each names its lineage's head (see the header). The
+  // plan and the writer below read the same resolved ids.
+  const items = detail.items.map(namedByLineageHead);
 
   // Only a current template is issued: not a withdrawn one (the list read
   // leaves those out) and not one a newer version has replaced.

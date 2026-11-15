@@ -67,7 +67,7 @@ import { DrillNameTakenError, ReferenceDrillAlreadyPromotedError, promoteReferen
 import { ConflictError } from './errors';
 import { assertNewAssignmentMeetsCueRule } from './progression';
 import { findWorkoutIssueByRequestKey, recordWorkoutIssue, WorkoutIssueRequestKeyTakenError } from './workoutIssues';
-import { issueWorkoutTemplate, listUntestedTemplateDrills } from './workoutTemplates';
+import { issueWorkoutTemplate, listUntestedTemplateDrills, planTemplateIssue } from './workoutTemplates';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -1604,5 +1604,121 @@ describe('currentness is asked again inside the transaction', () => {
 
     await expect(issueWorkoutTemplate({ ...PARAMS, requestKey: 'key-1' })).rejects.toMatchObject({ code: 'WORKOUT_TEMPLATE_NOT_CURRENT' });
     expect(mockFindByKey).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a step pinned to an older drill version names the lineage head (FT1; OD-2026-10-08-008 D1, OD-2026-10-11-001 ruling 2)', () => {
+  // The template pins ref-1 (v1, superseded); the detail read reports ref-2 as the head.
+  const PINNED_V1 = () => item(1, { drill_id: 'ref-1', head_drill_id: 'ref-2', uses_older_drill_version: true });
+  const V1_ROW = () => reference('ref-1', { superseded_at: '2026-10-01T00:00:00.000Z' });
+
+  beforeEach(() => {
+    mockUpdate.mockImplementation(async (input: { referenceDrillId: string; content: { name: string } }) => ({
+      drill: { drill_id: `op-new-${input.referenceDrillId}`, name: input.content.name },
+      previous: { drill_id: 'op-old' },
+    }));
+  });
+
+  test('the gym has not adopted the lineage and the head is ready: the head is adopted and assigned, never the old version', async () => {
+    given({
+      items: [PINNED_V1()],
+      library: { 'ref-1': { state: 'superseded', row: V1_ROW() }, 'ref-2': { state: 'available' } },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'issued' });
+    expect(mockPromote.mock.calls.map(([params]) => params.referenceDrillId)).toEqual(['ref-2']);
+    expect(mockCard.mock.calls[0][0]).toMatchObject({ drillId: 'op-ref-2' });
+    // The re-check under lock asks about the head, not the old version.
+    expect(transactionClient.query.mock.calls[0][1][1]).toEqual(['ref-2']);
+  });
+
+  test("the gym runs v1: its drill is updated in place to the head, then the head is assigned", async () => {
+    given({
+      items: [PINNED_V1()],
+      library: {
+        'ref-1': { state: 'operational', operational: 'op-old', row: V1_ROW() },
+        'ref-2': { state: 'newer_version_available', operational: 'op-old' },
+      },
+      gymDrill: { lineage_id: 'lin-old', lineage_active: true },
+    });
+    mockOtherVersion.mockResolvedValue({ operational_drill_id: 'op-old', adopted_reference_drill_id: 'ref-1' });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [{ reference_drill_id: 'ref-2' }] });
+    expect(mockUpdate.mock.calls[0][0]).toMatchObject({ drillId: 'op-old', referenceDrillId: 'ref-2' });
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockCard.mock.calls[0][0]).toMatchObject({ drillId: 'op-new-ref-2' });
+  });
+
+  test('the gym already runs the head: its drill is assigned, nothing adopted or updated', async () => {
+    given({
+      items: [PINNED_V1()],
+      library: { 'ref-1': { state: 'superseded', row: V1_ROW() }, 'ref-2': { state: 'operational', operational: 'op-2' } },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [] });
+    expect(mockCard.mock.calls[0][0]).toMatchObject({ drillId: 'op-2' });
+  });
+
+  test('a withdrawn head refuses the issue and is named as withdrawn; nothing is written', async () => {
+    given({
+      items: [PINNED_V1()],
+      library: {
+        'ref-1': { state: 'superseded', row: V1_ROW() },
+        'ref-2': { state: 'unavailable', row: reference('ref-2', { name: 'Head Drill', active: false }) },
+      },
+    });
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toEqual({
+      outcome: 'refused',
+      message: 'Nothing was issued. Cannot be assigned as they stand: Head Drill.',
+      drills: [{ steps: [1], drill_id: 'ref-2', name: 'Head Drill', reason: 'The reference drill has been withdrawn.' }],
+    });
+    expectNothingWritten();
+  });
+
+  test("a head that is not ready refuses the issue and is named with the head's missing items", async () => {
+    given({
+      items: [PINNED_V1()],
+      library: {
+        'ref-1': { state: 'superseded', row: V1_ROW() },
+        'ref-2': { state: 'available', row: reference('ref-2', { name: 'Head Drill', stop_rules: [] }) },
+      },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'refused', drills: [{ steps: [1], drill_id: 'ref-2', name: 'Head Drill' }] });
+    if (result.outcome !== 'refused') return;
+    expect(result.drills[0].reason).toContain('It has no stop rules.');
+    expectNothingWritten();
+  });
+
+  test('class-plan readiness (planTemplateIssue): ready for a day pinned to v1 when v2 is ready, and it plans v2', async () => {
+    given({
+      items: [],
+      library: { 'ref-1': { state: 'superseded', row: V1_ROW() }, 'ref-2': { state: 'available' } },
+    });
+
+    const plan = await planTemplateIssue(ORG, [PINNED_V1() as never]);
+
+    expect(plan.refused).toEqual([]);
+    expect(plan.adoptions.map((drill) => drill.drill_id)).toEqual(['ref-2']);
+  });
+
+  test('a step with no head to read keeps its own drill (refused by name as before)', async () => {
+    given({
+      items: [item(1, { drill_id: 'ref-1', head_drill_id: null })],
+      library: { 'ref-1': { state: 'superseded', row: V1_ROW() } },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'refused', drills: [{ drill_id: 'ref-1' }] });
   });
 });
