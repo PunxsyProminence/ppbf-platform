@@ -86,7 +86,12 @@ import { issueCoachCard } from './coachCards';
 import { query, queryOne, withTransaction } from './db';
 import { markDrillFloorTested } from './drillFloorValidations';
 import { promoteReferenceDrill, updateDrill } from './drills';
-import { issueWorkoutTemplate, type TemplateIssueResult } from './workoutTemplates';
+import {
+  getWorkoutTemplateWithItems,
+  issueWorkoutTemplate,
+  planTemplateIssue,
+  type TemplateIssueResult,
+} from './workoutTemplates';
 
 jest.setTimeout(180_000);
 
@@ -728,7 +733,10 @@ describe('a refusal writes nothing', () => {
     expect(await written(gym)).toMatchObject({ drills: 1, assignments: 1 });
   });
 
-  test('an adopted, running drill is assigned although its reference was later SUPERSEDED', async () => {
+  // CHANGED by FT1 (OD-2026-10-08-008 D1; OD-2026-10-11-001 ruling 2): this case
+  // used to assign the gym's OLD drill. A step on the superseded v1 now names
+  // the head, so the gym's drill is updated in place to v2 and v2 is assigned.
+  test('a running drill whose reference was later SUPERSEDED is updated in place to the head and the head is assigned', async () => {
     const gym = await newGym('adopted-then-superseded');
     await insertReference(gym, 'ref-v1', 'Superseded Under It', { lineageId: 'lin-1', version: 1 });
     const drillId = await adopt(gym, 'ref-v1', 'Superseded Under It');
@@ -743,7 +751,9 @@ describe('a refusal writes nothing', () => {
 
     expect(result).toMatchObject({ outcome: 'issued', adopted: [] });
     if (result.outcome !== 'issued') return;
-    expect(result.steps[0].assignment.drill_id).toBe(drillId);
+    expect(result.updated).toHaveLength(1);
+    expect(result.updated[0]).toMatchObject({ reference_drill_id: 'ref-v2', updated_from_drill_id: drillId });
+    expect(result.steps[0].assignment.drill_id).toBe(result.updated[0].drill_id);
   });
 
   test('a running drill of this gym that breaks the cue rule is named, by the production cue-rule read', async () => {
@@ -769,7 +779,12 @@ describe('a refusal writes nothing', () => {
     expect(await written(gym)).toEqual(before);
   });
 
-  test('a withdrawn reference and a superseded one the gym has NOT adopted are both named and neither is adopted', async () => {
+  // CHANGED by FT1 (OD-2026-10-08-008 D1; OD-2026-10-11-001 ruling 2). This case
+  // used to expect the superseded reference to be named ("A newer version of
+  // this reference drill exists."). A step on a superseded version now names
+  // its lineage head: here the head is ready, so only the withdrawn drill stops
+  // the issue, and nothing is adopted.
+  test('a withdrawn reference is named; a superseded one the gym has NOT adopted resolves to its ready head, and nothing is adopted', async () => {
     const gym = await newGym('withdrawn-superseded');
     await insertReference(gym, 'ref-gone', 'Withdrawn Drill', { active: false });
     await insertReference(gym, 'ref-old', 'Old Version', { lineageId: 'lin-1', version: 1, superseded: true });
@@ -782,9 +797,159 @@ describe('a refusal writes nothing', () => {
     if (result.outcome !== 'refused') return;
     expect(result.drills.map((drill) => [drill.name, drill.reason])).toEqual([
       ['Withdrawn Drill', 'The reference drill has been withdrawn.'],
-      ['Old Version', 'A newer version of this reference drill exists.'],
     ]);
     expect(await written(gym)).toEqual(NOTHING);
+  });
+
+  describe('a step pinned to a superseded drill version names the lineage head (FT1)', () => {
+    async function supersedeV1(gym: Gym) {
+      await client.query(
+        `update pilot.drill_library set superseded_at = now() where organization_id = $1 and drill_id = 'ref-v1'`,
+        [gym.organizationId],
+      );
+    }
+
+    test('the gym has not adopted the lineage and v2 is ready: v2 is adopted and assigned; the template row is untouched', async () => {
+      const gym = await newGym('ft1-adopt-head');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1, superseded: true });
+      await insertReference(gym, 'ref-v2', 'Jab Drill', { lineageId: 'lin-ft1', version: 2 });
+      await insertTemplate(gym, ['ref-v1']);
+
+      const result = await issue(gym);
+
+      expect(result.outcome).toBe('issued');
+      if (result.outcome !== 'issued') return;
+      expect(result.adopted.map((drill) => drill.reference_drill_id)).toEqual(['ref-v2']);
+      expect(result.steps[0].assignment.drill_id).toBe(result.adopted[0].drill_id);
+      const { rows: pinned } = await client.query(
+        `select drill_id from pilot.workout_template_items where organization_id = $1 and template_id = $2`,
+        [gym.organizationId, TEMPLATE_ID],
+      );
+      expect(pinned).toEqual([{ drill_id: 'ref-v1' }]);
+    });
+
+    test("the gym runs v1 and the template pins v1: the gym's drill is updated in place to v2, then assigned", async () => {
+      const gym = await newGym('ft1-update-head');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1 });
+      const oldId = await adopt(gym, 'ref-v1', 'Jab Drill');
+      await supersedeV1(gym);
+      await insertReference(gym, 'ref-v2', 'Jab Drill', { lineageId: 'lin-ft1', version: 2 });
+      await insertTemplate(gym, ['ref-v1']);
+
+      const result = await issue(gym);
+
+      expect(result.outcome).toBe('issued');
+      if (result.outcome !== 'issued') return;
+      expect(result.adopted).toEqual([]);
+      expect(result.updated).toHaveLength(1);
+      expect(result.updated[0]).toMatchObject({ reference_drill_id: 'ref-v2', updated_from_drill_id: oldId });
+      expect(result.steps[0].assignment.drill_id).toBe(result.updated[0].drill_id);
+      expect(result.steps[0].assignment.drill_id).not.toBe(oldId);
+    });
+
+    test('the gym already runs v2 and the template pins v1: v2 is assigned, nothing adopted or updated', async () => {
+      const gym = await newGym('ft1-runs-head');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1 });
+      await supersedeV1(gym);
+      await insertReference(gym, 'ref-v2', 'Jab Drill', { lineageId: 'lin-ft1', version: 2 });
+      const headId = await adopt(gym, 'ref-v2', 'Jab Drill');
+      await insertTemplate(gym, ['ref-v1']);
+
+      const result = await issue(gym);
+
+      expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [] });
+      if (result.outcome !== 'issued') return;
+      expect(result.steps[0].assignment.drill_id).toBe(headId);
+    });
+
+    test('the head is withdrawn: refused and named as withdrawn, nothing written', async () => {
+      const gym = await newGym('ft1-head-withdrawn');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1, superseded: true });
+      await insertReference(gym, 'ref-v2', 'Jab Drill II', { lineageId: 'lin-ft1', version: 2, active: false });
+      await insertTemplate(gym, ['ref-v1']);
+
+      const result = await issue(gym);
+
+      expect(result.outcome).toBe('refused');
+      if (result.outcome !== 'refused') return;
+      expect(result.drills).toEqual([
+        { steps: [1], drill_id: 'ref-v2', name: 'Jab Drill II', reason: 'The reference drill has been withdrawn.' },
+      ]);
+      expect(await written(gym)).toEqual(NOTHING);
+    });
+
+    test("the head is not ready: refused and named with the head's missing items, nothing written", async () => {
+      const gym = await newGym('ft1-head-not-ready');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1, superseded: true });
+      await insertReference(gym, 'ref-v2', 'Jab Drill II', { lineageId: 'lin-ft1', version: 2, stopRules: false });
+      await insertTemplate(gym, ['ref-v1']);
+
+      const result = await issue(gym);
+
+      expect(result.outcome).toBe('refused');
+      if (result.outcome !== 'refused') return;
+      expect(result.drills).toMatchObject([{ steps: [1], drill_id: 'ref-v2', name: 'Jab Drill II' }]);
+      expect(result.drills[0].reason).toContain('It has no stop rules.');
+      expect(await written(gym)).toEqual(NOTHING);
+    });
+
+    test("the gym runs v1 and v2 is withdrawn: v1's gym drill is assigned, nothing updated (fallback)", async () => {
+      const gym = await newGym('ft1-fallback-withdrawn');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1 });
+      const oldId = await adopt(gym, 'ref-v1', 'Jab Drill');
+      await supersedeV1(gym);
+      await insertReference(gym, 'ref-v2', 'Jab Drill', { lineageId: 'lin-ft1', version: 2, active: false });
+      await insertTemplate(gym, ['ref-v1']);
+
+      const result = await issue(gym);
+
+      expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [] });
+      if (result.outcome !== 'issued') return;
+      expect(result.steps[0].assignment.drill_id).toBe(oldId);
+    });
+
+    test("the gym runs v1 and v2 is not ready: v1's gym drill is assigned for both steps, nothing updated (fallback)", async () => {
+      const gym = await newGym('ft1-fallback-not-ready');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1 });
+      const oldId = await adopt(gym, 'ref-v1', 'Jab Drill');
+      await supersedeV1(gym);
+      await insertReference(gym, 'ref-v2', 'Jab Drill', { lineageId: 'lin-ft1', version: 2, stopRules: false });
+      await insertTemplate(gym, ['ref-v1', 'ref-v2']);
+
+      const result = await issue(gym);
+
+      expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [] });
+      if (result.outcome !== 'issued') return;
+      expect(result.steps.map((step) => [step.step, step.assignment.drill_id])).toEqual([[1, oldId], [2, oldId]]);
+    });
+
+    test('the gym does not run the lineage and v2 is not ready: refused and named, with both steps that resolve to it', async () => {
+      const gym = await newGym('ft1-no-fallback');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1, superseded: true });
+      await insertReference(gym, 'ref-v2', 'Jab Drill II', { lineageId: 'lin-ft1', version: 2, stopRules: false });
+      await insertTemplate(gym, ['ref-v1', 'ref-v2']);
+
+      const result = await issue(gym);
+
+      expect(result.outcome).toBe('refused');
+      if (result.outcome !== 'refused') return;
+      expect(result.drills).toMatchObject([{ steps: [1, 2], drill_id: 'ref-v2', name: 'Jab Drill II' }]);
+      expect(await written(gym)).toEqual(NOTHING);
+    });
+
+    test('class-plan readiness (planTemplateIssue on the detail read) is ready for a template pinned to v1 when v2 is ready', async () => {
+      const gym = await newGym('ft1-class-plan');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1, superseded: true });
+      await insertReference(gym, 'ref-v2', 'Jab Drill', { lineageId: 'lin-ft1', version: 2 });
+      await insertTemplate(gym, ['ref-v1']);
+
+      const detail = await getWorkoutTemplateWithItems(gym.organizationId, TEMPLATE_ID);
+      const plan = await planTemplateIssue(gym.organizationId, detail?.items ?? []);
+
+      expect(detail?.items[0]).toMatchObject({ drill_id: 'ref-v1', head_drill_id: 'ref-v2' });
+      expect(plan.refused).toEqual([]);
+      expect(plan.adoptions.map((drill) => drill.drill_id)).toEqual(['ref-v2']);
+    });
   });
 
   test("a step naming the newer version updates the gym's drill in place while issuing, then assigns it (Jason, question card 2026-10-11)", async () => {

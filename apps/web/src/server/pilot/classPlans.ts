@@ -73,8 +73,10 @@ async function readinessOf(organizationId: string, head: TemplateHead): Promise<
     return { state: 'empty', ...base, drill_count: 0, drills_to_complete: 0 };
   }
   const plan = await planTemplateIssue(organizationId, detail.items);
-  const drillCount = new Set(detail.items.filter((item) => item.drill_id !== null).map((item) => item.drill_id)).size
-    + detail.items.filter((item) => item.drill_id === null).length;
+  // Counted the way the plan judges: one drill per resolved reference (the
+  // newest version, or the gym's running one on fallback), so it matches plan.refused.
+  const drillCount = new Set(plan.items.filter((item) => item.drill_id !== null).map((item) => item.drill_id)).size
+    + plan.items.filter((item) => item.drill_id === null).length;
   return {
     state: plan.refused.length === 0 ? 'ready' : 'not_ready',
     ...base,
