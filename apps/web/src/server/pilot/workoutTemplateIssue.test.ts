@@ -1722,3 +1722,140 @@ describe('a step pinned to an older drill version names the lineage head (FT1; O
     expect(result).toMatchObject({ outcome: 'refused', drills: [{ drill_id: 'ref-1' }] });
   });
 });
+
+describe('the head cannot be used: the gym keeps its own running older version (FT1 review fix)', () => {
+  const V1 = (ordinal = 1) => item(ordinal, { drill_id: 'ref-1', head_drill_id: 'ref-2', uses_older_drill_version: true });
+  const HEAD_STEP = (ordinal: number) => item(ordinal, { drill_id: 'ref-2', head_drill_id: 'ref-2' });
+  const V1_ROW = () => reference('ref-1', { name: 'Old Drill', superseded_at: '2026-10-01T00:00:00.000Z' });
+  const RUNS_V1 = { state: 'operational', operational: 'op-old', row: V1_ROW() };
+
+  test('(a) the gym runs v1 and v2 is withdrawn: the gym drill is assigned, nothing updated or adopted', async () => {
+    given({
+      items: [V1()],
+      library: { 'ref-1': RUNS_V1, 'ref-2': { state: 'unavailable', row: reference('ref-2', { active: false }) } },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [] });
+    expect(mockCard.mock.calls[0][0]).toMatchObject({ drillId: 'op-old' });
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockPromote).not.toHaveBeenCalled();
+    expect(mockCueRule).toHaveBeenCalledWith(ORG, 'op-old');
+  });
+
+  test('(b) the gym runs v1 and v2 is not ready: the gym drill is assigned, nothing updated', async () => {
+    given({
+      items: [V1()],
+      library: { 'ref-1': RUNS_V1, 'ref-2': { state: 'newer_version_available', operational: 'op-old', row: reference('ref-2', { stop_rules: [] }) } },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [] });
+    expect(mockCard.mock.calls[0][0]).toMatchObject({ drillId: 'op-old' });
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  test('(c) the gym does not run the lineage and v2 is not ready: refused and named', async () => {
+    given({
+      items: [V1()],
+      library: {
+        'ref-1': { state: 'superseded', row: V1_ROW() },
+        'ref-2': { state: 'available', row: reference('ref-2', { name: 'Head Drill', stop_rules: [] }) },
+      },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'refused', drills: [{ steps: [1], drill_id: 'ref-2', name: 'Head Drill' }] });
+    expectNothingWritten();
+  });
+
+  test('the gym retired the lineage: a withdrawn head still refuses', async () => {
+    given({
+      items: [V1()],
+      library: { 'ref-1': { state: 'retired', row: V1_ROW() }, 'ref-2': { state: 'unavailable', row: reference('ref-2', { name: 'Head Drill', active: false }) } },
+    });
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'refused', drills: [{ drill_id: 'ref-2' }] });
+  });
+
+  test('a cue-rule failure on the fallen-back gym drill refuses it, named', async () => {
+    given({
+      items: [V1()],
+      library: { 'ref-1': RUNS_V1, 'ref-2': { state: 'unavailable', row: reference('ref-2', { active: false }) } },
+    });
+    mockCueRule.mockRejectedValue(new ConflictError('has no coaching cue', 'CUE_RULE'));
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({ outcome: 'refused', drills: [{ drill_id: 'ref-1', reason: 'has no coaching cue' }] });
+    expectNothingWritten();
+  });
+
+  test('two steps resolving to one head fall back together: both assign the gym drill, both ordinals', async () => {
+    given({
+      items: [V1(1), HEAD_STEP(2)],
+      library: { 'ref-1': RUNS_V1, 'ref-2': { state: 'unavailable', row: reference('ref-2', { active: false }) } },
+    });
+
+    const result = await issueWorkoutTemplate(PARAMS);
+
+    expect(result).toMatchObject({ outcome: 'issued' });
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-old', 'op-old']);
+  });
+
+  test('two steps resolving to one head, no fallback: one refusal carries both ordinals', async () => {
+    given({
+      items: [V1(1), HEAD_STEP(2)],
+      library: {
+        'ref-1': { state: 'superseded', row: V1_ROW() },
+        'ref-2': { state: 'unavailable', row: reference('ref-2', { name: 'Head Drill', active: false }) },
+      },
+    });
+
+    await expect(issueWorkoutTemplate(PARAMS)).resolves.toMatchObject({
+      outcome: 'refused',
+      drills: [{ steps: [1, 2], drill_id: 'ref-2', name: 'Head Drill' }],
+    });
+  });
+
+  test('two steps resolving to one adoptable head: one adoption, both steps assign it', async () => {
+    given({
+      items: [V1(1), HEAD_STEP(2)],
+      library: { 'ref-1': { state: 'superseded', row: V1_ROW() }, 'ref-2': { state: 'available' } },
+    });
+
+    await issueWorkoutTemplate(PARAMS);
+
+    expect(mockPromote).toHaveBeenCalledTimes(1);
+    expect(mockCard.mock.calls.map(([params]) => params.drillId)).toEqual(['op-ref-2', 'op-ref-2']);
+  });
+
+  describe('listUntestedTemplateDrills with raw items carrying head_drill_id', () => {
+    test("a step pinned to v1 is judged by the head's floor test, with the steps of both", async () => {
+      given({
+        library: { 'ref-1': { state: 'superseded', row: V1_ROW() }, 'ref-2': { state: 'available', row: reference('ref-2', { name: 'Head Draft', field_provenance: DRAFT }) } },
+      });
+
+      await expect(listUntestedTemplateDrills(ORG, [
+        { drill_id: 'ref-1', head_drill_id: 'ref-2', ordinal: 1 },
+        { drill_id: 'ref-2', head_drill_id: 'ref-2', ordinal: 2 },
+      ])).resolves.toEqual([{ reference_drill_id: 'ref-2', name: 'Head Draft', steps: [1, 2] }]);
+    });
+
+    test("a fallen-back step is judged as the gym's drill, not the head", async () => {
+      given({
+        library: {
+          'ref-1': { state: 'operational', operational: 'op-old', row: reference('ref-1', { name: 'Old Draft', field_provenance: DRAFT, superseded_at: '2026-10-01T00:00:00.000Z' }) },
+          // The head is also a draft, but unusable: its floor test must not count.
+          'ref-2': { state: 'unavailable', row: reference('ref-2', { name: 'Head Draft', field_provenance: DRAFT, active: false }) },
+        },
+      });
+      mockQueryOne.mockImplementation(async (text: string) =>
+        (/from pilot[.]drills o/.test(text) ? { reference_drill_id: 'ref-1' } : null));
+
+      await expect(listUntestedTemplateDrills(ORG, [{ drill_id: 'ref-1', head_drill_id: 'ref-2', ordinal: 1 }]))
+        .resolves.toEqual([{ reference_drill_id: 'ref-1', name: 'Old Draft', steps: [1] }]);
+    });
+  });
+});

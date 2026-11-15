@@ -230,7 +230,9 @@ export async function getWorkoutTemplateWithItems(
 // operational drill (pilot.drills) may be assigned (OD-2026-09-18-001). So:
 //   - the gym already runs the drill          -> its operational drill is
 //     assigned, even when its reference has since been withdrawn or superseded
-//     (an adopted drill is the gym's).
+//     (an adopted drill is the gym's). This also holds for a step that names an
+//     OLDER version when the newest version (below) is withdrawn or not ready:
+//     the gym keeps running its own drill until the newest version is ready.
 //
 // A STEP NAMES THE NEWEST VERSION OF ITS DRILL. A step whose drill is not the
 // highest version of its lineage in this gym's library (the same head rule
@@ -238,8 +240,13 @@ export async function getWorkoutTemplateWithItems(
 // as naming that head (OD-2026-10-08-008 D1; OD-2026-10-11-001 ruling 2:
 // "updates the gym's drill to that version in the same action, then assigns
 // it. A retired drill is still refused and named."). Every rule below then
-// applies to the head unchanged; a head that is withdrawn or not ready refuses
-// the issue and is named with its own reason. The template row is not touched.
+// applies to the head unchanged. ONE EXCEPTION, kept from the old behaviour: when
+// the gym runs an older version of the lineage and the head is withdrawn or not
+// ready, the step falls back to the gym's own operational drill (after the same
+// cue rule) rather than refusing; every step naming that head falls back
+// together (resolveStepsToHead). Where the gym does not run the lineage, or
+// retired it, a head that is withdrawn or not ready refuses the issue and is
+// named with its own reason. The template row is not touched.
 //   - the gym has not adopted it, it is ready -> it is adopted in the same
 //     transaction (promoteReferenceDrill, audited as a promotion is), then
 //     assigned. "Ready" is adoptionReadiness, the check the promote route
@@ -288,6 +295,47 @@ const MAX_ADOPTED_CUES = 12;
  */
 function namedByLineageHead<T extends { drill_id: string | null; head_drill_id?: string | null }>(item: T): T {
   return item.drill_id !== null && item.head_drill_id ? { ...item, drill_id: item.head_drill_id } : item;
+}
+
+type SteppedDrill = { drill_id: string | null; head_drill_id?: string | null };
+
+/**
+ * The steps as judged and issued: each older version resolves to its lineage
+ * head (namedByLineageHead), except that a head the gym cannot be moved onto
+ * (withdrawn or not ready, and the gym neither runs nor retired that head's
+ * lineage) falls back to the older version the gym RUNS, so the gym's own drill
+ * is assigned as before. Decided per head: every step naming it falls back
+ * together, so the plan, the untested list and the writer cannot disagree.
+ * Reads only. The floor test is taken as met, as the plan takes it.
+ */
+async function resolveStepsToHead<T extends SteppedDrill>(organizationId: string, rawItems: readonly T[]): Promise<T[]> {
+  const resolved = rawItems.map(namedByLineageHead);
+  const pinnedByHead = new Map<string, Set<string>>();
+  rawItems.forEach((item, index) => {
+    const head = resolved[index].drill_id;
+    if (item.drill_id !== null && head !== null && head !== item.drill_id) {
+      pinnedByHead.set(head, (pinnedByHead.get(head) ?? new Set<string>()).add(item.drill_id));
+    }
+  });
+  if (pinnedByHead.size === 0) {
+    return resolved;
+  }
+  const lifecycles = await listReferenceLifecycles(organizationId, [
+    ...pinnedByHead.keys(),
+    ...[...pinnedByHead.values()].flatMap((ids) => [...ids]),
+  ]);
+  const fallback = new Map<string, string>();
+  for (const [headId, pinned] of pinnedByHead) {
+    const headState = lifecycles[headId]?.state;
+    if (headState === 'operational' || headState === 'retired') continue;
+    const head = await getDrillWithDetail(organizationId, headId);
+    if (head && adoptionReadiness({ ...head, floor_tested_by_this_gym: true }).ready) continue;
+    const running = [...pinned].find((id) => lifecycles[id]?.state === 'operational' && lifecycles[id]?.operational_drill_id);
+    if (running) fallback.set(headId, running);
+  }
+  return fallback.size === 0
+    ? resolved
+    : resolved.map((item) => (item.drill_id !== null && fallback.has(item.drill_id) ? { ...item, drill_id: fallback.get(item.drill_id) as string } : item));
 }
 
 /** One drill (or typed step) that stopped a template from being issued. */
@@ -406,7 +454,13 @@ export async function listUntestedTemplateDrills(
   organizationId: string,
   rawItems: readonly (Pick<WorkoutTemplateItemWithDrillHead, 'drill_id' | 'ordinal'> & { head_drill_id?: string | null })[],
 ): Promise<TemplateUntestedDrill[]> {
-  const items = rawItems.map(namedByLineageHead);
+  return untestedAmong(organizationId, await resolveStepsToHead(organizationId, rawItems));
+}
+
+async function untestedAmong(
+  organizationId: string,
+  items: readonly Pick<WorkoutTemplateItemWithDrillHead, 'drill_id' | 'ordinal'>[],
+): Promise<TemplateUntestedDrill[]> {
   const stepsByReference = new Map<string, number[]>();
   for (const item of items) {
     if (item.drill_id !== null) {
@@ -459,6 +513,9 @@ export async function listUntestedTemplateDrills(
       countedId = newer;
       counted = newerDrill;
     } else if (lifecycle?.state === 'operational' && lifecycle.operational_drill_id && reference.superseded_at !== null) {
+      // Reached by a step that fell back to the older version the gym runs
+      // (resolveStepsToHead), or one the gym has since updated past: the
+      // version the gym's drill pins is the one whose floor test counts.
       const runs = (await queryOne<{ reference_drill_id: string | null }>(
         `select o.reference_drill_id from pilot.drills o where o.organization_id = $1 and o.drill_id = $2`,
         [organizationId, lifecycle.operational_drill_id],
@@ -491,6 +548,8 @@ export async function listUntestedTemplateDrills(
 
 export interface TemplateIssuePlan {
   refused: TemplateIssueRefusedDrill[];
+  /** The steps as judged (resolveStepsToHead); the writer issues these, so plan and writer agree. */
+  items: WorkoutTemplateItemWithDrillHead[];
   /** reference drill id -> the gym's active operational drill id. */
   operational: Map<string, string>;
   /** Reference drills to adopt, or to update the gym's drill to, in the transaction, in drill-id order. */
@@ -529,13 +588,15 @@ export async function planTemplateIssue(
   organizationId: string,
   rawItems: WorkoutTemplateItemWithDrillHead[],
 ): Promise<TemplateIssuePlan> {
-  // Each step is judged as naming its lineage's head (see the header).
-  const items = rawItems.map(namedByLineageHead);
+  // Each step is judged as naming its lineage's head, or the gym's running
+  // older version when the head cannot be used (see the header).
+  const items = await resolveStepsToHead(organizationId, rawItems);
   const plan: TemplateIssuePlan = {
+    items,
     refused: [],
     operational: new Map(),
     adoptions: [],
-    untested: await listUntestedTemplateDrills(organizationId, items),
+    untested: await untestedAmong(organizationId, items),
   };
 
   for (const item of items) {
@@ -818,20 +879,20 @@ export async function issueWorkoutTemplate(params: {
     return { outcome: 'not_found' };
   }
   const { template } = detail;
-  // The steps as issued: each names its lineage's head (see the header). The
-  // plan and the writer below read the same resolved ids.
-  const items = detail.items.map(namedByLineageHead);
 
   // Only a current template is issued: not a withdrawn one (the list read
   // leaves those out) and not one a newer version has replaced.
   if (!template.active || template.superseded_at !== null) {
     throw new ConflictError(TEMPLATE_NOT_CURRENT_MESSAGE, 'WORKOUT_TEMPLATE_NOT_CURRENT');
   }
-  if (items.length === 0) {
+  if (detail.items.length === 0) {
     throw new ConflictError('This workout template has no steps to issue.', 'WORKOUT_TEMPLATE_EMPTY');
   }
 
-  const plan = await planTemplateIssue(params.organizationId, items);
+  const plan = await planTemplateIssue(params.organizationId, detail.items);
+  // The steps as the plan judged them (head, or the gym's running version); the
+  // writer reads the same resolved ids.
+  const items = plan.items;
   if (plan.refused.length > 0) {
     return { outcome: 'refused', message: refusalMessage(plan.refused), drills: plan.refused };
   }

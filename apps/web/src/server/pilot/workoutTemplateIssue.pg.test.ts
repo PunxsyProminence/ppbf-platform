@@ -893,6 +893,50 @@ describe('a refusal writes nothing', () => {
       expect(await written(gym)).toEqual(NOTHING);
     });
 
+    test("the gym runs v1 and v2 is withdrawn: v1's gym drill is assigned, nothing updated (fallback)", async () => {
+      const gym = await newGym('ft1-fallback-withdrawn');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1 });
+      const oldId = await adopt(gym, 'ref-v1', 'Jab Drill');
+      await supersedeV1(gym);
+      await insertReference(gym, 'ref-v2', 'Jab Drill', { lineageId: 'lin-ft1', version: 2, active: false });
+      await insertTemplate(gym, ['ref-v1']);
+
+      const result = await issue(gym);
+
+      expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [] });
+      if (result.outcome !== 'issued') return;
+      expect(result.steps[0].assignment.drill_id).toBe(oldId);
+    });
+
+    test("the gym runs v1 and v2 is not ready: v1's gym drill is assigned for both steps, nothing updated (fallback)", async () => {
+      const gym = await newGym('ft1-fallback-not-ready');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1 });
+      const oldId = await adopt(gym, 'ref-v1', 'Jab Drill');
+      await supersedeV1(gym);
+      await insertReference(gym, 'ref-v2', 'Jab Drill', { lineageId: 'lin-ft1', version: 2, stopRules: false });
+      await insertTemplate(gym, ['ref-v1', 'ref-v2']);
+
+      const result = await issue(gym);
+
+      expect(result).toMatchObject({ outcome: 'issued', adopted: [], updated: [] });
+      if (result.outcome !== 'issued') return;
+      expect(result.steps.map((step) => [step.step, step.assignment.drill_id])).toEqual([[1, oldId], [2, oldId]]);
+    });
+
+    test('the gym does not run the lineage and v2 is not ready: refused and named, with both steps that resolve to it', async () => {
+      const gym = await newGym('ft1-no-fallback');
+      await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1, superseded: true });
+      await insertReference(gym, 'ref-v2', 'Jab Drill II', { lineageId: 'lin-ft1', version: 2, stopRules: false });
+      await insertTemplate(gym, ['ref-v1', 'ref-v2']);
+
+      const result = await issue(gym);
+
+      expect(result.outcome).toBe('refused');
+      if (result.outcome !== 'refused') return;
+      expect(result.drills).toMatchObject([{ steps: [1, 2], drill_id: 'ref-v2', name: 'Jab Drill II' }]);
+      expect(await written(gym)).toEqual(NOTHING);
+    });
+
     test('class-plan readiness (planTemplateIssue on the detail read) is ready for a template pinned to v1 when v2 is ready', async () => {
       const gym = await newGym('ft1-class-plan');
       await insertReference(gym, 'ref-v1', 'Jab Drill', { lineageId: 'lin-ft1', version: 1, superseded: true });
