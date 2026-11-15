@@ -583,7 +583,7 @@ and should not try to.
 
 **Not ruled here:** whether issuing should read a drill's newest version (it matters only where FT1 version 1 is already loaded, which is staging's punxsy_prominence); the production seed run itself; whether the drills read well on the gym floor, which only coaches running them will show.
 
-**Status:** recorded 2026-11-14 by PR; lane FT1d applying the approval labels to #1923.
+**Status:** applied 2026-11-14: labels in PR #1923 (merged `01872a7f`); loaded on staging (run 43645564212) and production (run 43647261320, approved on Jason's "I approve all get it to production"; import imp_1f8b15fe-fd12-46d2-ac1b-317621e5146e).
 
 ---
 
