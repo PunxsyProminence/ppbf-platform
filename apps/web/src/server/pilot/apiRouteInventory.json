@@ -4806,6 +4806,66 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/medical-restrictions/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/medical-restrictions",
+    "gate": "requirePrincipal + requireRole(MEDICAL_RESTRICTION_WRITER_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Lists one athlete's USA Boxing medical restrictions (P22) for staff of that gym; assertActorCanAccessAthlete on the athlete_id.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "<[...MEDICAL_RESTRICTION_WRITER_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/medical-restrictions/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/medical-restrictions",
+    "gate": "requirePrincipal + requireRole(MEDICAL_RESTRICTION_WRITER_ROLES) + assertActorCanAccessAthlete (record: on athlete_id; release/lbc_informed/void: on the stored row's athlete); void also requires organization_admin/admin",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records a P22 restriction, its release date, its LBC date, or (gym admin only) marks it entered in error; set-once writes in medicalRestrictions.ts.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "<[...MEDICAL_RESTRICTION_WRITER_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/athlete-drill-exposure/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/athlete-drill-exposure",
