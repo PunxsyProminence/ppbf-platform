@@ -20,6 +20,15 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-15-012 | 2026-11-15 | The P22 medical-restriction gate is a USA Boxing rule: live wrestling and grappling entries are not blocked | PRIMARY |  | yes |
+| OD-2026-11-15-011 | 2026-11-15 | Jason skips his review of AI drafts, for L2b and every later lane; the lane's two adversarial reviewers check each sheet: "skip my review"; "1 ..."; "A: Stands; fix misses by new version or promote (Recommended)" | RECONSTRUCTED |  | yes |
+| OD-2026-11-15-010 | 2026-11-15 | Standing go for the remaining content lanes: next lane on merge, migrations staging then production, seed loads once the dry run passes | RECONSTRUCTED |  | yes |
+| OD-2026-11-15-009 | 2026-11-15 | The two dependabot PRs go to a small Claude Code lane; Overwatch merges each when green | RECONSTRUCTED |  | yes |
+| OD-2026-11-15-008 | 2026-11-15 | G3: the May 2026 governance MASTER v2 and ChatGPT setup packet are marked superseded; app-side Overwatch makes the OneDrive edits: "A: Mark superseded (Recommended)" (twice); "A: Claude Code, app-side Overwatch (Recommended)" | RECONSTRUCTED |  |  |
+| OD-2026-11-15-007 | 2026-11-15 | P22 medical-restriction gate: only the two sparring levels are blocked; an admin or the member's coach records the release date; member and parent see on file, end date, release needed; lane issued after L2a: "B"; "A"; "A"; "B: Block only the two sparring levels"; "A: Approve; issue when L2a is merged (Recommended)" | RECONSTRUCTED |  |  |
+| OD-2026-11-15-006 | 2026-11-15 | Lane order after lane 2: one assessment-catalog lane, then two stage lanes (youth + recreational, then amateur + pro): "A: One catalog lane before the stage lanes (Recommended)"; "B: One amateur lane"; "A: Two stage lanes (Recommended)" | RECONSTRUCTED |  |  |
+| OD-2026-11-15-005 | 2026-11-15 | L2b loads requires_coach_authorization as frozen (false) on the 73 sparring-level drills | RECONSTRUCTED |  |  |
+| OD-2026-11-15-004 | 2026-11-15 | Lane L2b (the 256 lane-2 drills, exported and AI-drafted) starts | PRIMARY |  | yes |
 | OD-2026-11-15-003 | 2026-11-15 | Lane L2a (the 'Long Road practice' label migration) starts | PRIMARY |  | yes |
 | OD-2026-11-15-002 | 2026-11-15 | Lane 2, the 256 remaining Backbone drills: a 'Long Road practice' label, AI drafts Jason approves, contact drills load now, two lanes: "A: Add the label (Rec.)"; "A: AI drafts, you OK (Rec.)"; "A: Load all now (Rec.)"; "A: Two lanes (Rec.)" | PRIMARY |  | yes |
 | OD-2026-11-15-001 | 2026-11-15 | Class plans shows the FT1 Friday Protocol days as coach-run, not "not ready" | PRIMARY |  | yes |
@@ -569,6 +578,415 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-15-012 -- The P22 medical-restriction gate is a USA Boxing rule: live wrestling and grappling entries are not blocked: "A: Boxing only (Rec.)"
+
+**Provenance: PRIMARY.** Jason's answer to a one-question card in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`): card at line 20128 (2026-11-16T01:56:58.836Z), answer at line 20129 (2026-11-16T01:57:31.392Z, 2026-11-15 about 20:57 EST; the `AskUserQuestion` result, which carries his pick), checked against the file by script before writing. Raised by lane P22's step-1 report, which found that grappling and wrestling entries carry no boxing contact level. New; edits no earlier entry's text.
+
+**What was put to him (quoted):** "OFFICIAL: P22 blocks sparring-level entries on the boxing contact scale while a USA Boxing medical restriction is on file (OD-2026-11-10-002, OW25-04 B, OW25-11 B). Live wrestling and grappling entries are on no boxing scale, and no ruling covers them. A (Rec.): leave them unblocked, because the ruling is a USA Boxing rule. B: also block live wrestling and grappling for a restricted member. PLAIN: if a boxer is under a doctor's no-contact order and also wrestles, should the app also refuse to log their live wrestling?" Options: "A: Boxing only (Rec.)" (The gate stays a USA Boxing rule. Wrestling and grappling entries save as they do today. The coach can still stop or reduce training at any time.) / "B: Block live wrestling too" (Live wrestling and grappling entries are also refused during the restriction. This adds a gate beyond USA Boxing's own rule, and the lane wires it in with the rest.)
+
+**Jason:** *"A: Boxing only (Rec.)"*
+
+**Ruling:** the P22 gate (OD-2026-11-10-002, narrowed by OD-2026-11-15-007 to `controlled_sparring` and `open_sparring`) applies to boxing entries only. Live wrestling and grappling entries (for example `grappling_exposure`) save during a USA Boxing medical restriction as they do today. The coach may still stop or reduce training at any time.
+
+**Not ruled here:** any wrestling-specific medical restriction (no such record exists in the app).
+
+**Status:** recorded 2026-11-15 by PR; lane P22 builds without a wrestling or grappling gate.
+
+---
+
+## OD-2026-11-15-011 -- Jason skips his review of AI drafts, for L2b and every later lane; the lane's two adversarial reviewers check each sheet: "skip my review"; "1 ..."; "A: Stands; fix misses by new version or promote (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-15 (about 19:33 to 20:43 US Eastern) in the Backbone Overwatch thread ("Overwatch 25", frame 8c489b68). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `10121b29e73780a5` when read; a working file that may change), which says it copies each card "as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19816, 2026-11-16T01:47:12.178Z, `origin.kind` human) he pasted the Backbone Overwatch 25 note asking for these entries ("Record all seventeen answers in docs/current/OWNER_DECISIONS.md"); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-15** (header 'Speed: draft review')
+> Question, as shown:
+> Official: L2b (running since 20:23, brief LANE_L2B_DRILL_LIBRARY_DRAFTS_BRIEF.md 113f01d359038829) drafts the blank parts of 256 drills for your approval (OD-2026-11-15-002 ruling 2). FT1d gave you its 131 drafts as 8 review sheets in one PR, and you approved them all at once (OD-2026-11-14-001). How should you review L2b's drafts?
+> - 73 of the drills are at controlled or open sparring; 12 come from the Youth Sparring Drill Manual.
+> Plain: Read each batch as it is finished, or wait for the whole set? Read every draft, or the risky ones plus a sample?
+> Risk note (option C): drafts you don't read reach coaches labelled as AI drafts, so a wrong stop rule on an unread drill could slip through.
+>
+> Options, in the order shown:
+> 1. "A: Every draft, sheet by sheet as each lands (Recommended)": Claude Code sends each review sheet when it is drafted; you approve sheet by sheet; the PR merges when all sheets are approved. Pros: Full review; your reading overlaps the drafting, so the wait shrinks. Cons: More, smaller sittings.
+> 2. "B: Every draft, all at the end (as FT1d)": One sitting when all 256 are drafted. Pros: One sitting. Cons: The drafting and review times add up instead of overlapping.
+> 3. "C: Sparring and youth in full, sample the rest": You read every sparring-level and youth draft, plus 1 in 5 of the others, then approve the set. Pros: Fastest for you. Cons: About 140 drafts load without being read.
+>
+> Jason's answer: "skip my review". (Free text, not one of the options.)
+
+> **OW25-16** (header 'Skip review: scope')
+> Question, as shown:
+> Official: You answered "skip my review" on how to review L2b's AI drafts. That changes OD-2026-11-15-002 ruling 2 ("AI drafts Jason approves", for all 256) and the "you still approve every AI draft set" part of the standing go you just chose. Which scope applies, and what checks the drafts instead?
+> Plain: Drafts load without you reading them. Is that for L2b only or for every lane, and should the lane's AI reviewers check them first?
+> Risk note: the unread drafts include stop rules for 73 sparring drills, 9 of them youth sparring drills, used with minors. Every drafted field keeps its AI-draft label in the app either way.
+>
+> Options, in the order shown:
+> 1. "A: Every lane; AI reviewers check each sheet (Recommended)": L2b and all later draft sets load without your review once the lane's two adversarial reviewers pass each sheet against the frozen sources; drafted fields stay labelled AI draft. You can spot-check later in the app. Pros: No draft waits on you; a second check still runs. Cons: No human reads the drafts before coaches see them.
+> 2. "B: L2b only; AI reviewers check": As A for L2b; later lanes' drafts come back to you. Pros: You see later lanes' drafts. Cons: Later lanes wait on you again.
+> 3. "C: Every lane; no extra check": Drafts load after the lane's normal tests only. Pros: Fastest. Cons: No review of the content at all before coaches see it.
+>
+> Jason's answer: "1 i have seen most of these in 1 way shape or form and they shuld be editable in the app if we miss anything". (Free text. Overwatch read the leading '1' as the first option (A); OW25-17 put that reading back to Jason, and he confirmed it.)
+
+> **OW25-17** (header 'Skip review: editing')
+> Question, as shown:
+> Official: Your answer to the skip-review card: "1 i have seen most of these in 1 way shape or form and they shuld be editable in the app if we miss anything". Read as option A: every lane, with the lane's AI reviewers checking each sheet.
+> The code at d826ae06 says library drills are not editable in the app. apps/web/app/api/pilot/drills/promote/route.ts reads: "pilot.drill_library holds the reference drills: instructional and safety content, seeded, read-only, canonical." There are two ways to fix a drill:
+> - (a) a new drill version through a small content PR (how FT1-H was handled);
+> - (b) a coach promotes the drill into the gym's own drills and proposes the change, which a coach, organization admin or admin adopts (drills/proposals route).
+> Plain: A mistake in an AI draft can't be typed over in the library screen. It is fixed by Claude Code loading a corrected version, or by a coach copying the drill into the gym's own list and editing that copy. Does your answer stand?
+>
+> Options, in the order shown:
+> 1. "A: Stands; fix misses by new version or promote (Recommended)": Drafts load after the AI reviewers pass. Misses are fixed by a small content PR (new version) or a coach's promoted copy. Pros: No draft waits on you; both fix paths already exist. Cons: A fix needs Claude Code or a coach step, not a quick edit.
+> 2. "B: Go back to reviewing, sheet by sheet": You approve each L2b sheet as it lands. Pros: You read every draft before coaches do. Cons: Your reading time is back on the path.
+> 3. "C: Stands, plus a FUTURE in-app editor": As A, and Claude Code drafts a brief for in-app editing of library drills, for your approval later. Pros: Quick fixes later. Cons: A new feature lane; nothing is built until you approve it.
+>
+> Jason's answer: "A: Stands; fix misses by new version or promote (Recommended)".
+
+**Jason:** OW25-15 "skip my review". (Free text, not one of the options.); OW25-16 "1 i have seen most of these in 1 way shape or form and they shuld be editable in the app if we miss anything". (Free text. Overwatch read the leading '1' as the first option (A); OW25-17 put that reading back to Jason, and he confirmed it.); OW25-17 "A: Stands; fix misses by new version or promote (Recommended)"
+
+**Ruling:**
+
+1. AI-drafted content in lane L2b and every later content lane loads WITHOUT Jason's review, once the lane's two adversarial reviewers pass each review sheet against the frozen sources (OW25-16, read as option A; OW25-17 put that reading back to him and he confirmed it).
+2. Drafted fields keep their AI-draft labels in the app.
+3. A miss is fixed by a new drill version through a small content PR, or by a coach promoting the drill into the gym's own drills and proposing the change (OW25-17 A). Library drills are not edited in place.
+
+**Changes:** OD-2026-11-15-002 ruling 2 ("approved before anything loads") and OD-2026-11-15-004's "Not ruled here: the drafts themselves (they go to him for approval before the PR merges)"; and, in OD-2026-11-15-010, the words "You would still approve every AI draft set". OD-2026-11-12-005 ruling 3 and OD-2026-11-14-001 (FT1, already approved and loaded) are unchanged.
+
+**Not ruled here:** an in-app editor for library drills (OW25-17 option C, not chosen).
+
+**Status:** recorded 2026-11-15 by PR.
+
+---
+
+## OD-2026-11-15-010 -- Standing go for the remaining content lanes: next lane on merge, migrations staging then production, seed loads once the dry run passes: "A: Standing go: lanes, migrations, loads (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-15 (about 19:33 to 20:43 US Eastern) in the Backbone Overwatch thread ("Overwatch 25", frame 8c489b68). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `10121b29e73780a5` when read; a working file that may change), which says it copies each card "as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19816, 2026-11-16T01:47:12.178Z, `origin.kind` human) he pasted the Backbone Overwatch 25 note asking for these entries ("Record all seventeen answers in docs/current/OWNER_DECISIONS.md"); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-13** (header 'Speed: standing go')
+> Question, as shown:
+> Official: A standing authorization, recorded as an OD, for the remaining content lanes in the ruled order (L2b, P22, assessment catalog, youth, recreational, amateur, pro). The app-side Overwatch would:
+> 1. issue the next lane when the previous one merges;
+> 2. apply each lane's migration on staging and, once the staging runner passes, in production;
+> 3. load seed content on staging and production once the dry run passes.
+> You would still approve every AI draft set, every new question card and every app release (deploy).
+> Measured (STATUS.md, REPORTED): FT1 took about 2.5 days from brief approval (2026-11-11 23:31) to production content (2026-11-14), mostly waiting on your sign-in, lane-start clicks and draft approval. L2a took 66 minutes from start to production with you present.
+> Caveat (STATUS.md 2026-11-12, REPORTED): the app once refused a lane start from an automated turn, so a start may still need one word from you.
+> Plain: Let Claude Code move from one lane to the next and press the migration and load buttons itself once the checks pass. You still sign off drafts, questions and releases.
+>
+> Options, in the order shown:
+> 1. "A: Standing go: lanes, migrations, loads (Recommended)": Starts, migration applies and seed loads go ahead once checks pass. Drafts, cards and releases stay yours. Pros: Removes most of the waits measured on FT1. Cons: Production migrations and loads run without your click (each still needs a passing staging run or dry run).
+> 2. "B: Standing go for lane starts only": The next lane starts by itself; every staging/production click stays yours. Pros: You keep every production button. Cons: Each lane still waits for your clicks.
+> 3. "C: No change": Every start and click waits for you, as now. Pros: Full control. Cons: Lanes keep waiting on your availability.
+>
+> Jason's answer: "A: Standing go: lanes, migrations, loads (Recommended)".
+
+**Jason:** OW25-13 "A: Standing go: lanes, migrations, loads (Recommended)"
+
+**Ruling:**
+
+For the remaining content lanes in the ruled order (L2b, P22, the assessment catalog, then the stage lanes of OD-2026-11-15-006), app-side Overwatch:
+1. issues the next lane when the previous one merges;
+2. applies each lane's migration on staging and, once the staging runner passes, in production;
+3. loads seed content on staging and production once the dry run passes.
+Jason still answers every new question card and approves every app release (deploy). (The card's "every AI draft set" is changed by OD-2026-11-15-011.)
+
+**Reading (not his words):** for these lanes' migration applies and seed loads, this replaces the workspace rule that each production run needs his per-run approval (L2 "PRODUCTION PATH": "Production still requires Jason's explicit per-run approval"). Overwatch makes the production-environment approval for those runs itself, only after the staging runner or dry run has passed, and records each run. Deploys of app code are not covered: each still needs his approval. The L2 file's text is not edited by this entry. The card's caveat stands: the app may refuse a lane start from an automated turn, so a start may still need one word from him.
+
+**Not ruled here:** releases (deploys); new question cards; lanes outside the content order (for example the dependabot lane of OD-2026-11-15-009).
+
+**Status:** recorded 2026-11-15 by PR.
+
+---
+
+## OD-2026-11-15-009 -- The two dependabot PRs go to a small Claude Code lane; Overwatch merges each when green: "A: Small lane for Claude Code (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-15 (about 19:33 to 20:43 US Eastern) in the Backbone Overwatch thread ("Overwatch 25", frame 8c489b68). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `10121b29e73780a5` when read; a working file that may change), which says it copies each card "as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19816, 2026-11-16T01:47:12.178Z, `origin.kind` human) he pasted the Backbone Overwatch 25 note asking for these entries ("Record all seventeen answers in docs/current/OWNER_DECISIONS.md"); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-10** (header 'Dependabot')
+> Question, as shown:
+> Official: Dependabot PRs open since 2026-10-29.
+> - #1881 bumps @types/node 22.20.1 → 22.20.5 (dev). Its checks validate, classify and verify failed, and declaration was cancelled (run 2026-11-13; no output text).
+> - #1886 bumps googleapis 176.0.0 → 189.0.0 in apps/web/package.json and the lockfile. All of its checks are green.
+> Plain: Two automatic library-update PRs have been sitting for 2.5 weeks. What should happen to them?
+>
+> Options, in the order shown:
+> 1. "A: Small lane for Claude Code (Recommended)": Find why #1881's checks fail and fix or recreate it. Read the app's googleapis calls before #1886, since it jumps 13 major versions. Overwatch merges each one when it is green. Pros: Libraries stay current, with checks. Cons: A session's time.
+> 2. "B: Close both": Dependabot opens fresh ones later. Pros: No work now. Cons: The updates are deferred.
+> 3. "C: Leave both open": No action. Pros: No work. Cons: They keep showing as open, and #1881 stays red.
+>
+> Jason's answer: "A: Small lane for Claude Code (Recommended)".
+
+**Jason:** OW25-10 "A: Small lane for Claude Code (Recommended)"
+
+**Ruling:**
+
+A small Claude Code lane finds why #1881's checks fail and fixes or recreates it, and reads the app's googleapis calls before #1886 (13 major versions). Overwatch merges each one when it is green.
+
+**Not ruled here:** when the lane runs (the Backbone Overwatch note says "when capacity allows").
+
+**Status:** recorded 2026-11-15 by PR.
+
+---
+
+## OD-2026-11-15-008 -- G3: the May 2026 governance MASTER v2 and ChatGPT setup packet are marked superseded; app-side Overwatch makes the OneDrive edits: "A: Mark superseded (Recommended)" (twice); "A: Claude Code, app-side Overwatch (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-15 (about 19:33 to 20:43 US Eastern) in the Backbone Overwatch thread ("Overwatch 25", frame 8c489b68). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `10121b29e73780a5` when read; a working file that may change), which says it copies each card "as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19816, 2026-11-16T01:47:12.178Z, `origin.kind` human) he pasted the Backbone Overwatch 25 note asking for these entries ("Record all seventeen answers in docs/current/OWNER_DECISIONS.md"); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-07** (header 'G3: MASTER v2')
+> Question, as shown:
+> Official (OD-2026-11-11-004, not ruled): Promote 2026-05-15_AI_GOVERNANCE_MASTER_v2_ACTIVE.docx (AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE), or mark it superseded?
+> - Its own text says: "Document status REVIEW_REQUIRED — Not ACTIVE until Jason explicitly promotes."
+> - Manifest v3 (2026-09-21) lists it as "ACTIVE — PENDING REVIEW".
+> - It was built from MASTER v1, manifest v1 and the memory files. All of those are marked superseded, and manifest v3 says ChatGPT memory and Claude auto memory are OFF.
+> Plain: An old draft rulebook from May was never switched on. Switch it on now, or file it as history?
+>
+> Options, in the order shown:
+> 1. "A: Mark superseded (Recommended)": Rename it _SUPERSEDED; kept as history only. Pros: It never bound anything, so nothing in force changes; the misleading '_ACTIVE' name goes. Cons: Not compared line by line with the installed L1/L2 texts.
+> 2. "B: Promote to ACTIVE": Its rules become binding governance. Pros: Its rules take effect. Cons: It rests on memory pointers and files retired on 2026-09-21, and may conflict with the installed texts.
+> 3. "C: Compare first, then decide": A research session compares it with the installed L1/L2 texts, then you are asked again. Pros: Nothing is dropped unseen. Cons: One more session and card.
+>
+> Jason's answer: "A: Mark superseded (Recommended)".
+
+> **OW25-08** (header 'G3: setup pack')
+> Question, as shown:
+> Official (OD-2026-11-11-004, not ruled): Promote 2026-05-15_AI_GOVERNANCE_CHATGPT_MANUAL_SETUP_PACKET_v1_ACTIVE.docx, or mark it superseded?
+> - Its own status line says "ACTIVE after upload to ACTIVE_APPROVED_SOURCE". It tells you how to set up ChatGPT Storage, Memory and Global Instructions by hand.
+> - On 2026-09-21, manifest v3 marked the memory pointer rules and Global Custom Instructions v1 superseded (memory OFF; the installed L1 replaced them). It kept this packet "pending review".
+> Plain: A May how-to for setting up ChatGPT. Most of what it sets up was replaced in September. Keep it active, or file it as history?
+>
+> Options, in the order shown:
+> 1. "A: Mark superseded (Recommended)": Rename it _SUPERSEDED; kept as history only. Pros: The setup it describes was replaced on 2026-09-21. Cons: Not compared line by line.
+> 2. "B: Keep it ACTIVE": It stays an active governance source. Pros: No change. Cons: Its memory and instruction steps contradict the installed setup.
+> 3. "C: Compare first, then decide": A research session checks it against the installed L1/L2 texts first. Pros: Nothing is dropped unseen. Cons: One more session and card.
+>
+> Jason's answer: "A: Mark superseded (Recommended)".
+
+> **OW25-09** (header 'G3: who edits')
+> Question, as shown:
+> Official (OD-2026-11-11-004, not ruled): Which session makes the OneDrive edits that entry names?
+> - Rename the two files per your answers, point the INSTALLED L1/L2 record's "log it in the ledger" line to OWNER_DECISIONS, and update manifest v3.
+> - Claude Science sessions have a read-only grant on AI_GOVERNANCE. Manifest v3 names ChatGPT (designer/standards lane) as owner of later promotions.
+> Plain: Who makes these few file edits in the governance folder?
+>
+> Options, in the order shown:
+> 1. "A: Claude Code, app-side Overwatch (Recommended)": One step, with before-and-after hashes logged in STATUS.md; this Overwatch re-checks them. Pros: Local file access on this PC; checkable. Cons: One more small task for that session.
+> 2. "B: You, by hand": You make the three edits yourself. Pros: No AI writes governance files. Cons: Your time; no hash record unless asked.
+> 3. "C: ChatGPT (designer/standards lane)": As manifest v3 names for promotions. Pros: Matches the manifest's owner line. Cons: Harder to verify from here.
+>
+> Jason's answer: "A: Claude Code, app-side Overwatch (Recommended)".
+
+**Jason:** OW25-07 "A: Mark superseded (Recommended)"; OW25-08 "A: Mark superseded (Recommended)"; OW25-09 "A: Claude Code, app-side Overwatch (Recommended)"
+
+**Ruling:**
+
+1. `2026-05-15_AI_GOVERNANCE_MASTER_v2_ACTIVE.docx` and `2026-05-15_AI_GOVERNANCE_CHATGPT_MANUAL_SETUP_PACKET_v1_ACTIVE.docx` (AI_GOVERNANCE/ACTIVE_APPROVED_SOURCE) are renamed _SUPERSEDED and kept as history only.
+2. App-side Overwatch (Claude Code) makes the edits OD-2026-11-11-004 names: the two renames, the INSTALLED L1/L2 record's "log it in the ledger" line pointed to this file, and manifest v3 updated, with before-and-after hashes logged in STATUS.md.
+
+**Answers:** what OD-2026-11-11-004 left not ruled (promote or supersede the two files; who edits).
+
+**Status:** recorded 2026-11-15 by PR.
+
+---
+
+## OD-2026-11-15-007 -- P22 medical-restriction gate: only the two sparring levels are blocked; an admin or the member's coach records the release date; member and parent see on file, end date, release needed; lane issued after L2a: "B"; "A"; "A"; "B: Block only the two sparring levels"; "A: Approve; issue when L2a is merged (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-15 (about 19:33 to 20:43 US Eastern) in the Backbone Overwatch thread ("Overwatch 25", frame 8c489b68). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `10121b29e73780a5` when read; a working file that may change), which says it copies each card "as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19816, 2026-11-16T01:47:12.178Z, `origin.kind` human) he pasted the Backbone Overwatch 25 note asking for these entries ("Record all seventeen answers in docs/current/OWNER_DECISIONS.md"); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-04** (header 'P22 gate 1/3')
+> Question, as shown:
+> Official (LANE_P22_CONTACT_GATE_BRIEF.md 51d811173d0fe5fd, question 1; OD-2026-11-10-002 left it open): During a USA Boxing medical restriction, or after it with no release on file, the app does not save "sparring or other contact entries" for that member. Which entries count as "other contact entries" besides sparring?
+> Plain: Option A blocks anything where someone touches the restricted member. Option B blocks only real sparring and full contact.
+>
+> Options, in the order shown:
+> 1. "A: Every entry above contact 'none' (Recommended)": Covers sparring, light technical partner touch, and any contact drill or session item.
+> 2. "B: Sparring and full contact only": Light technical partner touch still saves, with the note.
+>
+> Jason's answer: "B: Sparring and full contact only".
+
+> **OW25-05** (header 'P22 gate 2/3')
+> Question, as shown:
+> Official (P22 brief, question 2): Who records the release that lifts the gate, and what counts as "on file"?
+> Plain: Who types in "the doctor cleared them on this date"? Option A lets the coach do it; option B keeps it to the office.
+>
+> Options, in the order shown:
+> 1. "A: Gym admin or the member's coach (Recommended)": Records the date the physician's clearance or medical release was signed. The gate lifts when that date is on file and the minimum end date has passed. The app stores the date, not the document (P22; USA Boxing Rule 5.1(4) note in the Backbone).
+> 2. "B: Gym admin only": As A, but only a gym admin may record it.
+>
+> Jason's answer: "A: Gym admin or the member's coach (Recommended)".
+
+> **OW25-06** (header 'P22 gate 3/3')
+> Question, as shown:
+> Official (P22 brief, question 3): What does the member or their parent see of a P22 medical restriction?
+> Plain: Can the athlete and family see the restriction in their own view?
+>
+> Options, in the order shown:
+> 1. "A: On file, end date, release needed (Recommended)": They see that a medical restriction is on file, its minimum end date, and that a physician's release is needed. They do not see the affidavit details or the loss-of-consciousness field.
+> 2. "B: Nothing; staff only": The restriction shows only to staff.
+> 3. "C: The whole record": Member and parent see every field.
+>
+> Jason's answer: "A: On file, end date, release needed (Recommended)".
+
+> **OW25-11** (header 'P22: conditioned')
+> Question, as shown:
+> Official: Under your P22 answer 1 ("B: Sparring and full contact only"), does contact level 'conditioned' count as blocked?
+> - The app's ladder (vocabularies.ts contact_level) runs none, light_technical, conditioned ("Conditioned contact"), controlled_sparring, open_sparring.
+> - The app library holds 12 conditioned drills, among them Block and Cover, Inside Position and Counter the Jab.
+> - Answer B lets light technical save with the note. The brief does not place conditioned.
+> Plain: Partner drills where real (controlled) shots land on the guard. Should a restricted athlete's entries for these be blocked, like sparring?
+> Risk note: a USA Boxing medical restriction often follows a head knock, and conditioned drills put repeated impacts on the guard and head area.
+>
+> Options, in the order shown:
+> 1. "A: Block conditioned too (Recommended)": Blocked: conditioned, controlled_sparring, open_sparring. Saved with the note: none, light_technical. Pros: One clean cut on the app's ladder, just above light technical, which your answer lets through. Cons: Some defensive partner drills are blocked during a restriction.
+> 2. "B: Block only the two sparring levels": Blocked: controlled_sparring and open_sparring. Conditioned saves with the note. Pros: More drills stay open to a restricted athlete. Cons: Partner drills with landed shots stay loggable during a medical restriction.
+>
+> Jason's answer: "B: Block only the two sparring levels".
+
+> **OW25-12** (header 'P22: issue')
+> Question, as shown:
+> Official: LANE_P22_CONTACT_GATE_BRIEF.md (51d811173d0fe5fd) says it "is not issued until Jason approves it and answers the three questions". The questions are now answered. Approve the brief, and when should lane P22 (a migration, Opus high, builder plus two reviewers) be issued?
+> - L2a, now running, edits the three migration lists in .github/workflows/apply-migrations.yml, which a P22 migration would also edit.
+> - Lane briefs forbid rebase, so two lanes on those lists at once would collide.
+> Plain: OK to build the medical-restriction gate, and should it wait for the label lane that is running now?
+>
+> Options, in the order shown:
+> 1. "A: Approve; issue when L2a is merged (Recommended)": The app-side Overwatch finalises the brief with your answers and issues P22 once L2a's PR is merged; L2b and P22 can then run side by side. Pros: No clash on the migration lists; the gate starts within about a day. Cons: P22 waits for L2a.
+> 2. "B: Approve; issue now, alongside L2a": Both migration lanes run at once. Pros: The gate starts sooner. Cons: Likely conflict in apply-migrations.yml with no rebase allowed; more RAM pressure (about 3-4 GB free).
+> 3. "C: Approve; hold until the content lanes finish": P22 waits for lane 2, the catalog lane and the stage lanes. Pros: Content first. Cons: 106 lane-2 contact drills and the stage content load with no gate built for days or weeks.
+>
+> Jason's answer: "A: Approve; issue when L2a is merged (Recommended)".
+
+**Jason:** OW25-04 "B: Sparring and full contact only"; OW25-05 "A: Gym admin or the member's coach (Recommended)"; OW25-06 "A: On file, end date, release needed (Recommended)"; OW25-11 "B: Block only the two sparring levels"; OW25-12 "A: Approve; issue when L2a is merged (Recommended)"
+
+**Ruling:**
+
+1. During a P22 restriction, or after it with no release on file, the app refuses to save entries at contact level `controlled_sparring` or `open_sparring` for that member. Entries at `none`, `light_technical` and `conditioned` save, with the note (OW25-04 B, narrowed by OW25-11 B).
+2. A gym admin or the member's coach records the date the physician's clearance or medical release was signed; the gate lifts when that date is on file and the minimum end date has passed; the app stores the date, not the document (OW25-05 A).
+3. The member and parent see that a restriction is on file, its minimum end date, and that a physician's release is needed; not the affidavit details or the loss-of-consciousness field (OW25-06 A).
+4. The lane brief is approved, and lane P22 is issued once L2a is merged (OW25-12 A). L2a merged as #1933 (`b331a139`); Overwatch issued lane P22 on 2026-11-15 with the brief finalised from these answers (`Documents/PPBF-overwatch/lane-briefs/LANE_P22_CONTACT_GATE_BRIEF.md`).
+
+**Answers:** the three items OD-2026-11-10-002 left not ruled. The card OW25-11 carried a risk note (a restriction often follows a head knock; conditioned drills put repeated impacts on the guard and head area); he chose B with it in view.
+
+**Status:** recorded 2026-11-15 by PR.
+
+---
+
+## OD-2026-11-15-006 -- Lane order after lane 2: one assessment-catalog lane, then two stage lanes (youth + recreational, then amateur + pro): "A: One catalog lane before the stage lanes (Recommended)"; "B: One amateur lane"; "A: Two stage lanes (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-15 (about 19:33 to 20:43 US Eastern) in the Backbone Overwatch thread ("Overwatch 25", frame 8c489b68). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `10121b29e73780a5` when read; a working file that may change), which says it copies each card "as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19816, 2026-11-16T01:47:12.178Z, `origin.kind` human) he pasted the Backbone Overwatch 25 note asking for these entries ("Record all seventeen answers in docs/current/OWNER_DECISIONS.md"); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-02** (header 'Lanes: catalog')
+> Question, as shown:
+> Official: OD-2026-11-10-003 left unruled where the gates, scorecard items, assessment protocols, anchor-clip specs, evidence items and content stage links go in the lane order.
+> - The frozen design_catalogs.json holds 38 gates (2 per stage), 46 assessment protocols, 29 scorecard items and 105 anchor-clip specs.
+> - Scorecard items point to protocols. Anchor-clip specs point to scorecard items and to 1–5 gates each. 5 frozen tracks, FT1's included, point at gates, protocols or scorecard items.
+> - App at d826ae06: assessment protocols have an import spec and a table but none are seeded. No import spec was found for gates, scorecard items or anchor-clip specs, so they need new tables (a migration).
+> - In every option, evidence items and content stage links ride with each record in its own lane, as FT1's did (evidence on 131 of 131 drills; pilot.content_stage_links).
+> Plain: The scoring and progress-check kit (gates, tests, scorecards, example clips) has no place in the lane order yet. Where should it go?
+>
+> Options, in the order shown:
+> 1. "A: One catalog lane before the stage lanes (Recommended)": One assessment-catalog lane right after lane 2, before the youth lane: all four kinds together, with their migration. Pros: Everything the tracks point to exists before any stage lane loads; one migration review. Cons: The youth lane starts one lane later.
+> 2. "B: Same lane, after all stage lanes": The stage lanes load first; the catalog lane comes last. Pros: Stage content reaches coaches sooner. Cons: 4 recreational-lane tracks load pointing at gates or scorecards the app does not have yet.
+> 3. "C: Gates per stage lane, rest after": Each stage lane carries its own 2 gates per stage. Protocols, scorecard items and anchor-clip specs go in one lane after the stage lanes. Pros: Each stage arrives with its own gates. Cons: Anchor-clip specs serve gates across stages, so they arrive apart from their gates.
+>
+> Jason's answer: "A: One catalog lane before the stage lanes (Recommended)".
+> CORRECTION (Overwatch 25, after a Reviewer finding): '2 per stage' on this card is wrong. The 38 gates are 2 per stage for 16 stage keys and 3 each for Y2 and T1 (design_catalogs.json, counted by script). The answer (A) does not depend on it.
+
+> **OW25-03** (header 'Lanes: amateur')
+> Question, as shown:
+> Official: Is "amateur T1-T2 and AM1-AM3" (OD-2026-11-10-003) one lane or two?
+> - Sized by first stage group from the frozen data/, FT1 excluded: T1-T2 has 5 tracks, 16 blocks and 45 sessions (66 records); AM1-AM3 has 2 tracks, 0 blocks and 16 sessions (18 records).
+> - For scale: FT1 was 42 records (1 track, 8 blocks, 33 sessions). Youth is 57, recreational 33, pro 12, exit 0.
+> Plain: The amateur group is the biggest. Load it in one go or two?
+>
+> Options, in the order shown:
+> 1. "A: Two lanes, T1-T2 then AM1-AM3 (Recommended)": Two PRs: T1-T2 (66 records), then AM1-AM3 (18). Pros: Each PR is nearer FT1's size; AM can follow quickly. Cons: One more PR and review.
+> 2. "B: One amateur lane": One PR of 84 records. Pros: One PR. Cons: Twice FT1's size, so a longer review for you.
+>
+> Jason's answer: "B: One amateur lane".
+
+> **OW25-14** (header 'Speed: fewer lanes')
+> Question, as shown:
+> Official: Merge the four stage lanes of OD-2026-11-10-003 into two, keeping the order and "one lane, one PR":
+> - (1) youth + recreational: 53 tracks, 3 blocks, 34 sessions = 90 records;
+> - (2) amateur + pro: 14 tracks, 16 blocks, 66 sessions = 96 records.
+> Counts are from the frozen data/, by first stage group, FT1 excluded. For scale, FT1 was 42 records, and you chose one 84-record amateur lane (OW25-03 B).
+> Plain: Two bigger loads instead of four, so half as many briefs, record PRs, staging/production rounds and review sittings.
+>
+> Options, in the order shown:
+> 1. "A: Two stage lanes (Recommended)": Youth + recreational, then amateur + pro. Pros: Halves the fixed cost per lane. Cons: Each review is about twice FT1's size; a fault in one group holds the other.
+> 2. "B: Keep four stage lanes": Youth, recreational, amateur, pro, as ruled. Pros: Smaller reviews; problems stay contained. Cons: Twice the per-lane rounds.
+>
+> Jason's answer: "A: Two stage lanes (Recommended)".
+
+**Jason:** OW25-02 "A: One catalog lane before the stage lanes (Recommended)"; OW25-03 "B: One amateur lane"; OW25-14 "A: Two stage lanes (Recommended)"
+
+**Ruling:**
+
+1. After lane 2, one assessment-catalog lane loads the 38 gates, 46 assessment protocols, 29 scorecard items and 105 anchor-clip specs, with their migration, before any stage lane (OW25-02 A). Evidence items and content stage links ride with each record in its own lane.
+2. Then two stage lanes, in order: youth + recreational (about 90 records), then amateur + pro (about 96 records), one lane one PR each (OW25-14 A). This replaces the four stage-group lanes of OD-2026-11-10-003 and, with them, OW25-03's "one amateur lane" (asked first, answered B, then folded into the amateur + pro lane).
+
+**Changes:** OD-2026-11-10-003 points 3 and 4 (the stage-group lanes) and answers its "Not ruled here" on where the gates, scorecards, protocols, anchor-clip specs, evidence items and stage links go. The card file corrects OW25-02's "2 per stage": the 38 gates are 2 per stage for 16 stage keys and 3 each for Y2 and T1; the answer does not depend on it.
+
+**Status:** recorded 2026-11-15 by PR.
+
+---
+
+## OD-2026-11-15-005 -- L2b loads requires_coach_authorization as frozen (false) on the 73 sparring-level drills: "A: Load as frozen, false (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-15 (about 19:33 to 20:43 US Eastern) in the Backbone Overwatch thread ("Overwatch 25", frame 8c489b68). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `10121b29e73780a5` when read; a working file that may change), which says it copies each card "as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19816, 2026-11-16T01:47:12.178Z, `origin.kind` human) he pasted the Backbone Overwatch 25 note asking for these entries ("Record all seventeen answers in docs/current/OWNER_DECISIONS.md"); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-01** (asked about 19:32 (between the 19:31 handoff write and the 19:33 answer), answered 2026-11-15 19:33 US Eastern; header 'L2b coach auth')
+> Question, as shown:
+> Official: For lane L2b, set requires_coach_authorization on the 73 lane-2 drills at contact level controlled_sparring (68) or open_sparring (5)? Frozen value: false on all 73. The Backbone labels this INFERRED, with the reason "no gate is added (RULES s1)". App seed at d826ae06: true on 15 of 15 drills above light_technical. No app code found that acts on the flag (text search only). OD-2026-11-15-002 ruling 3 (contact levels as written) is unchanged under either option.
+> Plain: Should the 73 sparring drills carry the "a coach must authorize this" tick, as the app's current sparring drills do? 9 of them come from the Youth Sparring Drill Manual.
+>
+> Options, in the order shown:
+> 1. "A: Load as frozen, false (Recommended)": L2b exports the flag as the Backbone has it. No ruling changes. Pros: follows the Backbone's RULES s1 reasoning and your 'as written' answer; no extra mapping in the export. Cons: the 73 sparring drills will differ from the app's 15 existing sparring-level drills, which all carry the flag.
+> 2. "B: Set true on the 73 sparring drills": the L2b export maps the flag to true for controlled_sparring and open_sparring only, the same way it maps the 12 DOC-023 labels. Frozen files are not edited. Needs a new OD record. Pros: matches the app's existing convention; coach authorization is marked on every sparring drill, including the 9 youth sparring drills. Cons: departs from the Backbone's labelled value, and RULES s1 ('no new gate') may read it as a gate. The flag does nothing in the app today.
+>
+> Jason's answer: "A: Load as frozen, false (Recommended)".
+> Evidence: L2B_PRECHECK_2026-11-15.md (9762527c01ffaedc), L2B_BASELINE_2026-11-15.json (eb2d5b040e5222ca).
+
+**Jason:** OW25-01 "A: Load as frozen, false (Recommended)"
+
+**Ruling:**
+
+Lane L2b exports `requires_coach_authorization` as the Backbone has it: false on all 73 lane-2 drills at `controlled_sparring` (68) or `open_sparring` (5). No mapping to true. OD-2026-11-15-002 ruling 3 is unchanged.
+
+**Noted on the card:** the app's 15 existing drills above light_technical all carry the flag true; no app code was found that acts on it (text search only).
+
+**Status:** recorded 2026-11-15 by PR.
+
+---
+
+## OD-2026-11-15-004 -- Lane L2b (the 256 lane-2 drills, exported and AI-drafted) starts: "Start L2b"
+
+**Provenance: PRIMARY.** Jason's reply, a button, 2026-11-15 about 20:23 EST (transcript timestamp 2026-11-16T01:23:40.013Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19547, `origin.kind` human), checked against the file by script before writing. The question is line 19539 (the `wrap_up` `ask`, 2026-11-16T01:14:30.951Z): "Start lane L2b (export and AI-draft the 256 drills)?", with the buttons "Start L2b" and "Not yet". No other typed message of his falls between. New; edits no earlier entry's text.
+
+**Jason:** *"Start L2b"*
+
+**Ruling:** lane L2b, the second of the two lane-2 lanes in OD-2026-11-15-002 ruling 4, is issued. With OD-2026-11-15-003 it answers that entry's "Not ruled here: issuing lanes L2a and L2b".
+
+**Applied, not separately asked:** Overwatch issued the lane with the brief `Documents/PPBF-overwatch/lane-briefs/LANE_L2B_DRILL_LIBRARY_DRAFTS_BRIEF.md` (sha256[:16] `113f01d359038829` when issued) as session `local_631c9ee9` (Opus, high effort, builder plus two adversarial reviewers). The brief carries OD-2026-11-15-002 rulings 1 to 4 and the FT1 drafting and approval shapes (OD-2026-11-12-006, OD-2026-11-14-001); external research is cited by key and never quoted in the repo (OD-2026-10-02-013 answer 2A). L2a, the label it depends on, is merged (#1933, `b331a139`) and applied on staging (run 43783911438) and in production (run 43784595949, approved on his "Approve it").
+
+**Not ruled here:** the drafts themselves (they go to him for approval before the PR merges); the staging and production loads (production on his click); the stage lanes.
+
+**Status:** recorded 2026-11-15 by PR; lane L2b running, nothing merged.
 
 ---
 
