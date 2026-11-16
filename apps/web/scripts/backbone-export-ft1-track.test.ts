@@ -355,10 +355,11 @@ ${oldHeader.map((column) => old[column]).join(',')}
 
 describe('the committed FT1 rows', () => {
   const count = (name: string, pick: (row: Record<string, string>) => boolean) => rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, name), 'utf8')).filter(pick).length;
-  it('leave every row that is not FT1 with blank label cells: only the three label columns were added to the two root files', () => {
+  it('leave every row from before the Backbone (no stage_keys) with blank label cells: only the three label columns were added to the two root files', () => {
+    // The lane-2 drills (backbone-export-drill-library.mjs, lane L2b) are Backbone rows too, with their own labels and stage keys.
     for (const [name, key] of [[DRILLS, 'drill_id'], [TEMPLATES, 'template_id']] as const) {
       const rows = rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, name), 'utf8'));
-      const others = rows.filter((row) => row.stage_keys !== 'FT1');
+      const others = rows.filter((row) => row.stage_keys === '');
       expect(others.length).toBeGreaterThan(0);
       for (const row of others) expect([key, row.field_labels, row.evidence, row.stage_keys]).toEqual([key, '', '', '']);
     }

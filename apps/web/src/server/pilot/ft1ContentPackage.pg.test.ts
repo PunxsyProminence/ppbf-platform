@@ -221,7 +221,9 @@ const REGISTRIES: readonly DatasetName[] = ['disciplines', 'competence-levels', 
 const committed = readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES);
 const ft1DrillIds = new Set(rowsOf(committed[DRILLS_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.drill_id));
 const ft1TemplateIds = new Set(rowsOf(committed[TEMPLATES_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.template_id));
-const existingDrills = rowsOf(committed[DRILLS_CSV]).filter((row) => !ft1DrillIds.has(row.drill_id));
+// Every Backbone drill (stage_keys not blank): FT1's 131 plus lane L2b's 256, all new to a library loaded before them.
+const backboneDrillIds = new Set(rowsOf(committed[DRILLS_CSV]).filter((row) => row.stage_keys !== '').map((row) => row.drill_id));
+const existingDrills = rowsOf(committed[DRILLS_CSV]).filter((row) => !backboneDrillIds.has(row.drill_id));
 const existingTemplates = rowsOf(committed[TEMPLATES_CSV]).filter((row) => !ft1TemplateIds.has(row.template_id));
 
 /**
@@ -230,10 +232,10 @@ const existingTemplates = rowsOf(committed[TEMPLATES_CSV]).filter((row) => !ft1T
  */
 function beforeFiles(): Record<string, string> {
   return {
-    [DRILLS_CSV]: reshape(committed[DRILLS_CSV], (row) => !ft1DrillIds.has(row.drill_id), LABEL_COLUMNS),
-    [CUES_CSV]: reshape(committed[CUES_CSV], (row) => !ft1DrillIds.has(row.drill_id)),
-    [STOPS_CSV]: reshape(committed[STOPS_CSV], (row) => !ft1DrillIds.has(row.drill_id)),
-    'drill-library/seed_drill_scale_levels.csv': reshape(committed['drill-library/seed_drill_scale_levels.csv'], (row) => !ft1DrillIds.has(row.drill_id)),
+    [DRILLS_CSV]: reshape(committed[DRILLS_CSV], (row) => !backboneDrillIds.has(row.drill_id), LABEL_COLUMNS),
+    [CUES_CSV]: reshape(committed[CUES_CSV], (row) => !backboneDrillIds.has(row.drill_id)),
+    [STOPS_CSV]: reshape(committed[STOPS_CSV], (row) => !backboneDrillIds.has(row.drill_id)),
+    'drill-library/seed_drill_scale_levels.csv': reshape(committed['drill-library/seed_drill_scale_levels.csv'], (row) => !backboneDrillIds.has(row.drill_id)),
     'drill-library/seed_drill_secondary_skills.csv': committed['drill-library/seed_drill_secondary_skills.csv'],
     [TEMPLATES_CSV]: reshape(committed[TEMPLATES_CSV], (row) => !ft1TemplateIds.has(row.template_id), LABEL_COLUMNS),
     [ITEMS_CSV]: reshape(committed[ITEMS_CSV], (row) => !ft1TemplateIds.has(row.template_id)),
@@ -270,7 +272,9 @@ describe('FT1 content added to a loaded library', () => {
 
   it('plans the whole committed set with every existing drill and template unchanged and only the FT1 rows new', async () => {
     const result = await plan(ORG, admin, committed);
-    expect(result.counts['drill-library']).toEqual({ new: ft1DrillIds.size, new_version: 0, unchanged: existingDrills.length, absent: 0, reject: 0 });
+    expect(result.counts['drill-library']).toEqual({ new: 387, new_version: 0, unchanged: 119, absent: 0, reject: 0 });
+    expect(backboneDrillIds.size).toBe(387);
+    expect(existingDrills).toHaveLength(119);
     expect(result.counts['workout-templates']).toEqual({ new: ft1TemplateIds.size, new_version: 0, unchanged: existingTemplates.length, absent: 0, reject: 0 });
     expect(result.counts['training-tracks']).toEqual({ new: 1, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
     expect(ft1DrillIds.size).toBe(131);
