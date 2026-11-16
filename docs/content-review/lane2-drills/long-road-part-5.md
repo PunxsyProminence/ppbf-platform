@@ -22,10 +22,11 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 
 - LR5-1 Back squat: intermediate; LR5-2 Belt squat / hack squat / safety-bar squat: intermediate; LR5-3 Front squat: intermediate; LR5-4 Hip thrust: intermediate; LR5-5 Nordic hamstring curl: intermediate; LR5-6 Rear-foot-elevated split squat: intermediate; LR5-7 Romanian deadlift: intermediate; LR5-8 Trap-bar deadlift: intermediate; LR5-9 Broad jump, vertical jump, box jump: beginner; LR5-10 Depth jumps and drop jumps: advanced; LR5-11 Hurdle hops, pogo hops, ankle stiffness work: intermediate; LR5-12 Jump squat: intermediate; LR5-13 Olympic lift derivatives — hang clean, clean pull, high pull, snatch pull: advanced; LR5-14 Sled pushes and short sprints: intermediate; LR5-15 Trap-bar jump: intermediate; LR5-16 Ballistic bench press throw: intermediate; LR5-17 Medicine ball overhead slam and chest pass: intermediate; LR5-18 Plyometric push-ups, clap push-ups, drop push-ups: intermediate; LR5-19 Barbell row, dumbbell row, single-arm row: intermediate; LR5-20 Bench press or floor press: intermediate; LR5-21 Face pulls, external rotation at multiple angles, prone Y/T/W, serratus work: intermediate; LR5-22 Overhead press (standing): intermediate; LR5-23 Weighted chin-up and pull-up: intermediate; LR5-24 Cable/band rotational chop at speed: intermediate; LR5-25 Dead bug, bird dog: intermediate; LR5-26 Hanging leg raise / ab wheel: intermediate; LR5-27 Landmine rotation: intermediate; LR5-28 Rotational deceleration (catch and stop a rotational throw): intermediate; LR5-29 Side plank variants: intermediate; LR5-30 Band-resisted head rotation and anti-rotation: intermediate; LR5-31 Isometric holds — flexion, extension, both lateral flexions: intermediate; LR5-32 Manual resistance or harness dynamic work — all planes: intermediate; LR5-33 Pre-activation drill — brace on a cue, absorb a light controlled perturbation: intermediate; LR5-34 Trap and scapular work (upper trap shrugs, scapular retraction): intermediate; LR5-35 Sprint Interval Training (SIT): intermediate; LR5-36 High-Intensity Interval Training (HIIT): intermediate; LR5-37 Muscle buffering / lactate tolerance: intermediate; LR5-38 Bag intervals matched to bout format: intermediate; LR5-39 Circuit work with boxing movements: intermediate; LR5-40 Fatigued technical work: intermediate; LR5-41 Shadow boxing intervals: intermediate.
 
-**Other notes** (5)
+**Other notes** (6)
 
 - LR5-1 Back squat: The record's coaching_notes caution (axial loading in high-sparring weeks; substitute a trap-bar deadlift, belt squat or safety-bar squat) has no column (F2) and is used in no drafted field; Jason may want it carried somewhere.
 - LR5-5 Nordic hamstring curl: The Nordic is often done with a partner holding the ankles; drafted with a fixed anchor so nothing reads as partner touch on a contact-none drill. Jason or the head coach may choose the partner hold.
+- LR5-13 Olympic lift derivatives — hang clean, clean pull, high pull, snatch pull: The setup's "The coach running it knows the lifts" is the record's own "Only use these with competent coaching"; shown as the record has it, not as a gate.
 - LR5-22 Overhead press (standing): The record's coaching_notes line 'Only if overhead range of motion is adequate' has no column (F2); drafted only as a stop condition (do not force the range), not as a gate.
 - LR5-35 Sprint Interval Training (SIT): The record's coaching_notes caution (heavier boxers, boxers returning from injury, anyone unaccustomed to high-speed running: build in gradually or use the bike) has no column (F2); only its 'use the bike' line is used, at level A.
 - LR5-39 Circuit work with boxing movements: The Long Road rates this method 'Generally low value' (existing purpose) and Part 5 2.8 lists circuit 'boxing conditioning' with weights as a practice to avoid; shown for Jason, nothing changed.
@@ -81,10 +82,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
   - Coach watches: Do the knees track over the feet at the lighter load?
   - DOC-072 Progression_Map P-PHYS-02 (PHYS-02 strength exposure): "reduce movement complexity, range, load, or density; return to bodyweight/control exposure"
   - Note: adapted: P-PHYS-02's regression; my addition: the box.
-- **B, start** (INFERRED): The drill as designed: the squat as written; the Long Road's Phase 2 strength session uses 4–5 × 3–5 @ 80–88% 1RM, 3 min rest.
+- **B, start** (INFERRED): The drill as designed: the squat as written, at the sets, reps and load the session plan sets.
   - Coach watches: Is depth at least parallel with a neutral spine on every rep?
-  - The Long Road (DOC-001), Part 3, 2.8.1 Strength session — lower-body emphasis, 75 min: "Back squat or trap-bar deadlift 4–5 × 3–5 @ 80–88% 1RM, 3 min rest"
-  - Note: the Part 3 session example's dose for this lift (the record itself gives no prescription).
+  - LR-091 (The Long Road, Part 5, 2.2 The exercise menu, with coaching detail): "descend to at least parallel with a neutral spine"
+  - Note: the record's own execution as the drill as designed; no dose: the record gives none (fixed after review; the Part 3 sample-session dose was removed).
 - **C** (INFERRED): Load rises with one progression method per block (the Long Road's default is RPE-based), same depth and technique.
   - Constraint: Load rises only with clean transfer.
   - Coach watches: Is the boxing check after the lift still clean at the new load?
@@ -623,10 +624,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
   - Coach watches: Is it still a hip hinge with a neutral spine?
   - DOC-072 Progression_Map P-PHYS-02 (PHYS-02 strength exposure): "reduce movement complexity, range, load, or density; return to bodyweight/control exposure"
   - Note: adapted: P-PHYS-02's regression; my addition: 'to about the knees'.
-- **B, start** (INFERRED): The drill as designed: the hinge as written; the Long Road's Phase 2 strength session uses 3 × 6–8.
+- **B, start** (INFERRED): The drill as designed: the hinge as written, at the sets, reps and load the session plan sets.
   - Coach watches: Does the bar stay on the thighs on every rep?
-  - The Long Road (DOC-001), Part 3, 2.8.1 Strength session — lower-body emphasis, 75 min: "or Romanian deadlift 3 × 6–8"
-  - Note: the Part 3 session example's dose for this lift (the record itself gives no prescription).
+  - LR-091 (The Long Road, Part 5, 2.2 The exercise menu, with coaching detail): "hips back, minimal knee bend, bar tracing the thighs"
+  - Note: the record's own execution as the drill as designed; no dose: the record gives none (fixed after review; the Part 3 sample-session dose was removed).
 - **C** (INFERRED): More load, only while the hinge, the neutral spine and the boxing check stay clean.
   - Constraint: Load rises only with clean transfer.
   - Coach watches: Does the hinge hold at the new load?
@@ -1134,7 +1135,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 
 `drl_dd04a77d2f2819`. Contact: none (unchanged). Stages: T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1. Source: LR-091: The Long Road, Part 5, 2.2 The exercise menu, with coaching detail, 2.2.2 Lower-body explosive strength and power.
 
-**Flags:** [difficulty_no_source] No source states a difficulty; drafted "advanced" by the difficulty rule.
+**Flags:** [difficulty_no_source] No source states a difficulty; drafted "advanced" by the difficulty rule. [other] The setup's "The coach running it knows the lifts" is the record's own "Only use these with competent coaching"; shown as the record has it, not as a gate.
 
 **Already in the drill, kept as written:**
 
@@ -1522,6 +1523,9 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 2. Stop and regress when the power work turns into conditioning volume, the loading is telegraphed, or the reset check after it fails. (kind intent_drift; INFERRED; tier CONVENTION)
    - DOC-072 Workout_Map W-PHYS-03-A (PHYS-03 Power-to-Reset Transfer): "Stop/regress when power task becomes conditioning volume, telegraphed loading, over-rotation, foot crossing, or reset failure"
    - Note: adapted: the W-PHYS-03-A stop line (owner rule on this record).
+3. Stop the set when the bar bounces off the chest or the catch after a release is uncontrolled; keep the bar in the hands (level A) or lighten the load. (kind technique_degradation; UNVERIFIED; tier UNTIERED)
+   - no source passage
+   - Note: no source passage; drafted from the drill's name and the record's release setup (added after the safety review).
 
 ---
 
@@ -2506,7 +2510,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 
 **Steps** (INFERRED)
 
-> Athlete braces and turns the bar down toward one hip, pivoting the back foot as the hips and trunk rotate.
+> Athlete braces and turns the bar down toward one hip, pivoting the foot on the side the bar turns away from as the hips and trunk rotate.
 >
 > Athlete brings the bar back through the middle and on to the other hip, arms long.
 >
@@ -2934,9 +2938,9 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 
 **Stop rules** (defaults a coach can override; scope drill_specific)
 
-1. Stop the hold when the head starts to move or the trunk leans into the push to keep position; shorten the hold or lighten the push. (kind technique_degradation; INFERRED; tier UNTIERED)
-   - DOC-072 Progression_Map P-PHYS-04 (PHYS-04 body adaptation support): "reduce range, resistance, time, density, or category complexity"
-   - Note: adapted: the regress step is P-PHYS-04's; my addition: the condition itself (no source names this fault).
+1. Stop the hold when the head starts to move or the trunk leans into the push to keep position; shorten the hold or lighten the push. (kind technique_degradation; UNVERIFIED; tier UNTIERED)
+   - no source passage
+   - Note: no source passage names this fault; the regress step follows DOC-072 P-PHYS-04's idea, not quoted.
 2. Stop and regress when the neck work becomes the session goal or leaves posture, guard or footwork worse in the boxing task that follows. (kind intent_drift; INFERRED; tier CONVENTION)
    - DOC-072 Workout_Map W-PHYS-04-A (PHYS-04 Body Adaptation Support): "Stop/regress when accessory work becomes the session goal, disrupts the target boxing skill, or creates poor mechanics afterward"
    - Note: adapted: the W-PHYS-04-A stop line (owner rule on this record) named for this exercise.
@@ -3708,7 +3712,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 2. Stop the circuit when athletes start chasing or over-throwing and one cue no longer corrects it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Non Negotiable Conditioning Rules): "If conditioning makes the athlete chase, over-throw, or stop seeing clearly, the conditioning is now teaching the wrong thing."
    - DOC-027 (Punxsy Master Source Manual v1, Downgrade and Stop Rules for Conditioning): "Can the coach still correct the block with one cue."
-   - Note: adapted: DOC-027's conditioning rule and downgrade watch point.
+   - Note: adapted: DOC-027's conditioning rule and downgrade watch point. my addition: the 'one cue' / 'one reset' threshold.
 
 **Cue** (the drill had none)
 
@@ -3803,7 +3807,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the block when the KPI collapses (for example guard drops rise round after round) and one cue does not fix it; go back to a simpler task. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Decision Under Fatigue Standard): "If the athlete loses the behavior instantly, fatigue is too high or the skill is not ready."
    - DOC-027 (Punxsy Master Source Manual v1, Decision Under Fatigue Standard): "Return to a cleaner picture and rebuild the decision before trying the block again."
-   - Note: adapted: DOC-027's decision-under-fatigue lines named for this drill's KPI.
+   - Note: adapted: DOC-027's decision-under-fatigue lines named for this drill's KPI. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the layer when reset disappears, or guessing, stance collapse or guard abandonment stops the technique from transferring. (kind fatigue; INFERRED; tier CONVENTION)
    - DOC-072 Cue_Registry C-S11-004 (If reset disappears, stop the layer): "If reset disappears, stop the layer"
    - DOC-072 Workout_Map W-PHYS-01-C (PHYS-01 Skill-Under-Fatigue Check): "Stop/regress when guessing, blind reset, stance collapse, guard abandonment, or target-skill disappearance prevents training transfer"

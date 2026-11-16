@@ -128,7 +128,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the athlete keeps turning the body to face each direction and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Box drill | 4 cones in a square, 2 m sides | Moving forward, back and laterally around a fixed shape | 3 × 2 min | Turning the body to face each direction instead of staying in stance |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the feet cross or the athlete squares up at the corners. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S01-001 (Mirror Base Freeze): "crossed feet, square stance, chin lifted, hands unavailable"
    - Note: adapted: DOC-072's stance fail trigger as this drill's stop.
@@ -217,7 +217,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the boxer keeps circling into the power hand and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Circle drill | Partner in the middle | Circling toward the partner’s lead hand continuously | 4 × 2 min, R5 | Circling into the power hand by default |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the partner stops turning to face the boxer as set and the picture is no longer the assigned one. (kind intent_drift; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when partner role discipline is gone and the picture is no longer what was assigned."
    - Note: adapted: the standard's role line named for the partner in the middle.
@@ -310,10 +310,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the rep when the boxer is chasing (following where the partner is) instead of cutting, and one cue does not fix it; go back to level A. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when chasing replaces positioning."
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Cut-off drill | Partner must move continuously | Trap the partner in a corner within 30 s | 6 reps, R5–6 | Chasing — following where they are instead of stepping where they’re going |"
-   - Note: adapted: DOC-027's chasing stop line with the row's failure mode.
+   - Note: adapted: DOC-027's chasing stop line with the row's failure mode. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the rep when the partner stops moving continuously or turns the drill into a race, and a reset does not restore the roles. (kind intent_drift; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when partner role discipline is gone and the picture is no longer what was assigned."
-   - Note: adapted: the standard's role line named for this drill's two roles.
+   - Note: adapted: the standard's role line named for this drill's two roles. my addition: the 'one cue' / 'one reset' threshold.
 
 **Cue** (the drill had none)
 
@@ -402,7 +402,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the rep when the boxer keeps ducking and covering instead of pivoting and one cue does not fix it; go back to level A. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Escape-the-corner | Boxer starts in a corner | Pivot out and reset ring position within 15 s | 8 reps, R5–6 | Ducking and covering instead of pivoting |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the rep when the corner creates panic (freezing or wild exits); reduce the pace and restore the first exit. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Edge Management Standard): "If the edge creates panic, reduce pace and restore the first leave point."
    - Note: adapted: DOC-027's edge correction as the stop.
@@ -498,7 +498,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the athlete keeps stepping out sideways without the second step and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| L-step drill | Tape an L on the floor | Changing the line of attack, not just the distance | 3 × 2 min | Stepping out sideways without the second step |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the angle turns into a spin or the stance squares up at the finish. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S07-004 (Angle After Touch): "angle becomes spin, guard drops, stance squares, footwork replaces action quality"
    - Note: adapted: DOC-072's angle fail trigger as this drill's stop.
@@ -589,7 +589,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the rep when the athlete abandons the stance to move faster and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Ladder in stance | Agility ladder | Foot speed while maintaining boxing stance | 6 × 30 s | Abandoning stance to move faster — defeats the point |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the set when fatigue shows in the stance: it keeps collapsing or the guard is abandoned. (kind fatigue; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S01-007 (Late-Round Stance Check): "Identify what breaks first under fatigue"
    - DOC-072 Drill_Registry S01-007 (Late-Round Stance Check): "persistent stance collapse, guard abandonment, blind reset"
@@ -682,7 +682,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the athlete keeps bouncing off both feet or standing upright and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Line work | A single line on the floor | Step-and-slide in all four directions without crossing feet or leaving stance | 4 × 2 min, R1 | Bouncing off both feet; standing upright |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the feet cross or the stance squares up. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S01-001 (Mirror Base Freeze): "crossed feet, square stance, chin lifted, hands unavailable"
    - Note: adapted: DOC-072's stance fail trigger as this drill's stop.
@@ -776,11 +776,11 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the partner stops leading at the set pace and role (racing, or trying to lose the boxer) and a reset does not fix it. (kind intent_drift; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when partner role discipline is gone and the picture is no longer what was assigned."
    - DOC-027 (Punxsy Master Source Manual v1, Feeder and Receiver Role Standard): "The feeder should not 'win' the drill unless the lesson specifically requires that pressure."
-   - Note: adapted: DOC-027's role lines named for the leading partner.
+   - Note: adapted: DOC-027's role lines named for the leading partner. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the boxer keeps reacting late or drifting closer and further and one cue does not fix it; go back to level A. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Mirror movement | Partner leads, boxer maintains exact distance | Distance maintenance under another person’s rhythm | 4 × 2 min, R5 | Reacting late; drifting closer or further |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 
 **Cue** (the drill had none)
 
@@ -872,7 +872,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the set when the athlete pivots on a flat foot or loses balance at the end and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Pivot circuit | One cone | Pivot 90° off the lead foot, reset, repeat; then rear-foot pivots | 3 × 90 s each | Pivoting on a flat foot; losing balance at the end |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the set when fatigue shows in the pivots: the finish keeps collapsing or the guard is abandoned. (kind fatigue; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S01-007 (Late-Round Stance Check): "persistent stance collapse, guard abandonment, blind reset"
    - Note: adapted: DOC-072's fatigue stance check as this drill's fatigue stop.
@@ -964,7 +964,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the athlete keeps stopping to punch and then moving, and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Punch-on-the-move | Open floor | Throwing while moving forward, back, and both laterals | 4 × 2 min | Stopping to punch, then moving |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the stance breaks while punching on the move (feet cross, hips turn away, athlete backs up blind). (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S01-004 (Line Pressure Base): "foot crossing, retreating blind, hips turned away"
    - Note: adapted: DOC-072's moving-stance fail trigger as this drill's stop.
@@ -1055,14 +1055,14 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 
 1. Stop the round when contact rises above the controlled level the coach set and one cue does not bring it back. (kind safety; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Sparring Standard): "If chaos rises above the educational value of the round, intensity is reduced or the round is stopped."
-   - Note: adapted: the Sparring Standard's chaos line named as contact leaving the drill's level.
+   - Note: adapted: the Sparring Standard's chaos line named as contact leaving the drill's level. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the boxer crosses the back line, as the drill's rule sets; if it keeps happening, go back to level A. (kind technique_degradation; INFERRED; tier UNTIERED)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Retreat ban | Taped channel; back line loses the round | Lateral movement and pivots instead of straight retreat | 5 × 2 min, R6 | Crossing the line “just once” — enforce it |"
    - LR-114 (The Long Road, Part 6, 2.2 The constraint library): "| Taped channel on the floor; crossing the back line loses the round | Stops straight-line retreat; forces lateral movement and pivots |"
    - Note: the drill's own round-loss rule as its stop; my addition: the drop to A.
 3. Stop the round when the partner's pressure role breaks down (trading instead of pressuring at the set pace) and a reset does not restore it. (kind intent_drift; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when partner role discipline is gone and the picture is no longer what was assigned."
-   - Note: adapted: the standard's role line named for the pressure partner.
+   - Note: adapted: the standard's role line named for the pressure partner. my addition: the 'one cue' / 'one reset' threshold.
 
 **Cue** (the drill had none)
 
@@ -1148,7 +1148,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the athlete keeps stopping punching to change direction and one cue does not fix it; go back to level A. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-210 (The Long Road, Part 9, 2. Footwork and Movement Drills): "| Shadow with direction calls | Coach calls a direction | Immediate direction change while continuing to punch | 4 × 2 min | Stopping punching to change direction |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when fatigue makes the direction changes late or breaks the stance on the change. (kind fatigue; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Fatigue Standard): "Fatigue is allowed only when it does not erase the decision target."
    - Note: adapted: DOC-027's fatigue line named for this drill's direction change and stance.
@@ -1242,7 +1242,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the boxer starts trying to hurt with the jab and one cue does not bring it back to disruption. (kind intent_drift; INFERRED; tier CONVENTION)
    - LR-211 (The Long Road, Part 9, 3. Jab Development Drills): "| Blinding jab | Partner tries to throw; boxer’s jab must obscure vision | Disruption rather than damage | 3 × 2 min, R5 | Trying to hurt with it |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when contact or near-contact sets off wild retaliation from either athlete, or the partner stops working the assigned role. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Contact Readiness Standard): "Does contact or near-contact create panic, freezing, or wild retaliation."
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when partner role discipline is gone and the picture is no longer what was assigned."
@@ -1333,7 +1333,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the jabs come out identical at identical timing and one cue does not change it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-211 (The Long Road, Part 9, 3. Jab Development Drills): "| Double and triple jab | Bag or pads | Second and third jab arriving off-beat | 4 × 2 min | Three identical jabs at identical timing |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the feet stay behind the hand on the second or third jab and the athlete starts reaching. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-023 (PUNCH MECHANICS MANUAL, Jab): "double jab with feet behind hand"
    - Note: adapted: DOC-023's double-jab error as this drill's stop.
@@ -1428,7 +1428,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the jabs become the same punch at different speeds and one cue does not separate them. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-211 (The Long Road, Part 9, 3. Jab Development Drills): "| Five jabs circuit | Bag | Range-finder / power / up-jab / body / blinding, in rotation | 5 × 2 min, one jab type per round | Making all five the same punch at different speeds |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the jab stops recovering (rear hand drops, athlete leans over the lead knee, no exit). (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-023 (PUNCH MECHANICS MANUAL, Jab): "reaching, rear-hand drop, leaning over lead knee, chin rise, no exit"
    - Note: adapted: DOC-023's jab errors as this drill's stop.
@@ -1519,7 +1519,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when punch and step separate (punch then step, or step then punch) and one cue does not join them. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-211 (The Long Road, Part 9, 3. Jab Development Drills): "| Jab with step | Open floor, lines | Jab while stepping in, out, and both laterals | 4 × 2 min | Punching first, then stepping — or vice versa. They are one action |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the feet cross or the footwork takes over from the jab. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S02-003 (Jab Exit Shared): "blind exit, crossed feet, footwork goal replaces jab goal"
    - Note: adapted: DOC-072's jab-exit fail trigger as this drill's stop.
@@ -1612,7 +1612,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
    - Note: adapted: the row's failure mode with DOC-027's feeder line.
 2. Stop the round when the jabs come off balance or without a reset, or the athlete starts guessing at the target. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S02-002 (Jab Accuracy Under Cue): "guessing, late cue, off-balance jab, no reset"
-   - Note: adapted: DOC-072's fail trigger as this drill's stop.
+   - Note: adapted: DOC-072's fail trigger as this drill's stop. my addition: the 'one cue' / 'one reset' threshold.
 
 **Cue** (the drill had none)
 
@@ -1691,7 +1691,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
   - Coach watches: Does the jab still step and recover when nothing comes back.
   - DOC-027 (Punxsy Master Source Manual v1, Contact Readiness Standard): "Use staged contact before freer contact."
   - DOC-152 (Youth Sparring Drill Manual, 3. Counter-Only Round): "Assign one athlete to initiate offense."
-  - Note: adapted: staged contact as one-way lead-hand attack, with DOC-152 drill 3's role line (as in the approved DOC-152 sample).
+  - Note: adapted: staged contact as one-way lead-hand attack, with DOC-152 drill 3's role line (as in the approved DOC-152 sample). my addition: switching on the coach's call.
 - **B, start** (INFERRED): The drill as designed: constrained live, rear hand defensive only, 5 × 2 min.
   - Coach watches: Any rear-hand punch.
   - LR-211 (The Long Road, Part 9, 3. Jab Development Drills): "| Lead-hand-only sparring | Constrained live; rear hand defensive only | Making the lead hand a scoring weapon | 5 × 2 min, R6 | Sneaking the rear hand in |"
@@ -1706,11 +1706,11 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 
 1. Stop the round when contact rises above the controlled level the coach set and one cue does not bring it back. (kind safety; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Sparring Standard): "If chaos rises above the educational value of the round, intensity is reduced or the round is stopped."
-   - Note: adapted: the Sparring Standard's chaos line named as contact leaving the drill's level.
+   - Note: adapted: the Sparring Standard's chaos line named as contact leaving the drill's level. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the rear hand keeps coming into play (rear-hand punches sneaking in) and a reset does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-211 (The Long Road, Part 9, 3. Jab Development Drills): "| Lead-hand-only sparring | Constrained live; rear hand defensive only | Making the lead hand a scoring weapon | 5 × 2 min, R6 | Sneaking the rear hand in |"
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when partner role discipline is gone and the picture is no longer what was assigned."
-   - Note: adapted: the row's failure mode with DOC-027's assigned-picture stop line.
+   - Note: adapted: the row's failure mode with DOC-027's assigned-picture stop line. my addition: the 'one cue' / 'one reset' threshold.
 3. Stop the round when the boxer loses stance, eyes or reset again and again; go back to level A. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Has the athlete lost stance, eyes, or reset ability repeatedly."
    - Note: adapted: the Stop Rule Standard's watch point as a stop, with the drop to A.
@@ -1807,7 +1807,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 2. Stop the set when the athlete keeps showing the same tell and one cue does not change it; go back to level A. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-046 (The Long Road, Part 3, 1.3 Technical priorities, Months 0-3): "Initiation without telegraph — no shoulder dip, no hand cocking, no weight shift"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the Long Road's tells named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the Long Road's tells named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 
 **Cue** (the drill had none)
 
@@ -1895,10 +1895,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the boxer keeps jabbing and staying in front and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-211 (The Long Road, Part 9, 3. Jab Development Drills): "| Range-find and exit | Partner moves | Jab to measure, then immediately reset distance | 4 × 2 min, R5 | Jabbing and staying |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the partner's role breaks down (standing still, or attacking instead of moving) and a reset does not fix it. (kind intent_drift; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when partner role discipline is gone and the picture is no longer what was assigned."
-   - Note: adapted: the standard's role line named for the moving partner.
+   - Note: adapted: the standard's role line named for the moving partner. my addition: the 'one cue' / 'one reset' threshold.
 
 **Cue** (the drill had none)
 
@@ -1985,7 +1985,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the set when the athlete is watching the extension only and the return slows down, and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-211 (The Long Road, Part 9, 3. Jab Development Drills): "| Retraction emphasis | Mirror or bag | Retraction faster than extension | 4 × 30 jabs, counting the return | Watching the extension only |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the set when the jab starts leaning in or the rear hand drops. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S02-001 (Lead Straight Speed-Recover): "leaning, rear-hand drop, blind reset, feet narrow"
    - Note: adapted: DOC-072's fail trigger as this drill's stop.
@@ -2166,7 +2166,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the athlete treats it as a rest round (sequence and focus drop) and one cue does not fix it. (kind intent_drift; INFERRED; tier CONVENTION)
    - LR-212 (The Long Road, Part 9, 4. Power and Kinetic Chain Drills): "| Half-power precision | Bag | Perfect sequencing at 50% output | 4 × 2 min | Treating it as a rest round |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when the punches start with the arm instead of the hip. (kind technique_degradation; INFERRED; tier UNTIERED)
    - LR-046 (The Long Road, Part 3, 1.3 Technical priorities, Months 0-3): "Hip rotates before the shoulder; shoulder before the arm — proximal to distal"
    - Note: adapted: the Long Road's sequence line as the stop condition.
@@ -2257,7 +2257,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the set when reps slow into grinding and one cue does not restore the speed; lighten the load or end the set. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-212 (The Long Road, Part 9, 4. Power and Kinetic Chain Drills): "| Landmine punch press | Barbell in a landmine | Punching pattern with rotation, loaded | 3 × 6/side | Slow grinding reps — this is a power exercise |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the set when the rotation drops out and the press becomes arm-only. (kind technique_degradation; INFERRED; tier UNTIERED)
    - LR-091 (The Long Road, Part 5, 2.2 The exercise menu, with coaching detail): "Landmine rotational press and landmine punch press — a punching pattern under load, with the rotational component preserved."
    - Note: adapted: LR-091's 'rotational component preserved' as the stop condition.
@@ -2445,7 +2445,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the set when the athlete arms the punch or the rear heel stays flat and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-212 (The Long Road, Part 9, 4. Power and Kinetic Chain Drills): "| Rear foot screw | Bag, slow tempo | Ground connection first; hip before shoulder | 3 × 15 slow crosses | Arming the punch; heel staying flat |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the set when the tempo speeds up and the foot-hip-shoulder order is lost. (kind technique_degradation; INFERRED; tier UNTIERED)
    - LR-212 (The Long Road, Part 9, 4. Power and Kinetic Chain Drills): "| Rear foot screw | Bag, slow tempo | Ground connection first; hip before shoulder | 3 × 15 slow crosses | Arming the punch; heel staying flat |"
    - LR-046 (The Long Road, Part 3, 1.3 Technical priorities, Months 0-3): "Hip rotates before the shoulder; shoulder before the arm — proximal to distal"
@@ -2630,7 +2630,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the set when the athlete starts rushing and the links blur together, and one cue does not slow it down. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-212 (The Long Road, Part 9, 4. Power and Kinetic Chain Drills): "| Slow-motion cross | Mirror, 5 seconds per punch | Feeling each link of the chain in sequence | 3 × 10 | Rushing |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the set when the shoulder or arm starts the punch before the hip. (kind technique_degradation; INFERRED; tier UNTIERED)
    - LR-046 (The Long Road, Part 3, 1.3 Technical priorities, Months 0-3): "Hip rotates before the shoulder; shoulder before the arm — proximal to distal"
    - Note: adapted: the Long Road's sequence line as the stop condition.
@@ -2718,7 +2718,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the round when the athlete drifts back to punching only from a set position and one cue does not fix it. (kind intent_drift; INFERRED; tier CONVENTION)
    - LR-212 (The Long Road, Part 9, 4. Power and Kinetic Chain Drills): "| Stance-shift power | Bag | Generating force from a moving base | 3 × 2 min | Only punching from a set position |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the round when power shots end off balance or come from a broken base (leaning, pushing the bag). (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S01-005 (Bag Touch-Return-Reset): "pushing bag, leaning, punching from broken base"
    - Note: adapted: DOC-072's bag fail trigger as this drill's stop.
@@ -2808,7 +2808,7 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 1. Stop the set when the athlete starts reaching or pushing off the wall and one cue does not fix it. (kind technique_degradation; INFERRED; tier CONVENTION)
    - LR-212 (The Long Road, Part 9, 4. Power and Kinetic Chain Drills): "| Wall drill | Standing close to a wall, unable to over-extend | Rotation rather than reaching | 3 × 20 | Pushing off the wall |"
    - DOC-027 (Punxsy Master Source Manual v1, Universal Stop Rules): "Stop when the athlete is practicing the exact failure pattern the drill was meant to remove."
-   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line.
+   - Note: adapted: the row's failure mode named in DOC-027's failure-pattern stop line. my addition: the 'one cue' / 'one reset' threshold.
 2. Stop the set when the rear hand stops returning through the guard or the feet cross or narrow. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-072 Drill_Registry S03-001 (Rear-Hand Line Check): "reaching, looping, over-rotation, feet crossed/narrow"
    - Note: adapted: DOC-072's rear-hand fail trigger as this drill's stop.
