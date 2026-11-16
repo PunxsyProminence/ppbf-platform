@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { formatGymDay } from '@/src/lib/gymTime';
 
 /**
  * What a member and their parent see of a USA Boxing medical restriction
@@ -35,11 +36,9 @@ export function isFamilyMedicalRestriction(value: unknown): value is FamilyMedic
     && typeof row.release_needed === 'boolean';
 }
 
-/** A calendar day as words, read as that day (no time zone shift). */
+/** A calendar day as words, through the gym's date helper (a date-only value is never shifted by the viewer's zone). */
 function dayInWords(isoDay: string): string {
-  const at = new Date(`${isoDay}T12:00:00Z`);
-  if (Number.isNaN(at.getTime())) return isoDay;
-  return at.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' });
+  return formatGymDay(isoDay) ?? isoDay;
 }
 
 export function medicalRestrictionSentence(restriction: FamilyMedicalRestriction): string {
