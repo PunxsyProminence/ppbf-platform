@@ -628,12 +628,12 @@ and should not try to.
 >
 > Jason's answer: "A: Stands; fix misses by new version or promote (Recommended)".
 
-**Jason:** OW25-15 "skip my review". (Free text, not one of the options.); OW25-16 "1 i have seen most of these in 1 way shape or form and they shuld be editable in the app if we miss anything". (Free text. Overwatch read the leading '1' as the first option (A); OW25-17 put that reading back to Jason, and he confirmed it.); OW25-17 "A: Stands; fix misses by new version or promote (Recommended)".
+**Jason:** OW25-15 "skip my review". (Free text, not one of the options.); OW25-16 "1 i have seen most of these in 1 way shape or form and they shuld be editable in the app if we miss anything". (Free text. Overwatch read the leading '1' as the first option (A); OW25-17 put that reading back to Jason, and he confirmed it.); OW25-17 "A: Stands; fix misses by new version or promote (Recommended)"
 
 **Ruling:**
 
 1. AI-drafted content in lane L2b and every later content lane loads WITHOUT Jason's review, once the lane's two adversarial reviewers pass each review sheet against the frozen sources (OW25-16, read as option A; OW25-17 put that reading back to him and he confirmed it).
-2. Drafted fields keep their AI-draft labels in the app; no approval source is added to them.
+2. Drafted fields keep their AI-draft labels in the app.
 3. A miss is fixed by a new drill version through a small content PR, or by a coach promoting the drill into the gym's own drills and proposing the change (OW25-17 A). Library drills are not edited in place.
 
 **Changes:** OD-2026-11-15-002 ruling 2 ("approved before anything loads") and OD-2026-11-15-004's "Not ruled here: the drafts themselves (they go to him for approval before the PR merges)"; and, in OD-2026-11-15-010, the words "You would still approve every AI draft set". OD-2026-11-12-005 ruling 3 and OD-2026-11-14-001 (FT1, already approved and loaded) are unchanged.
@@ -668,7 +668,7 @@ and should not try to.
 >
 > Jason's answer: "A: Standing go: lanes, migrations, loads (Recommended)".
 
-**Jason:** OW25-13 "A: Standing go: lanes, migrations, loads (Recommended)".
+**Jason:** OW25-13 "A: Standing go: lanes, migrations, loads (Recommended)"
 
 **Ruling:**
 
@@ -678,7 +678,7 @@ For the remaining content lanes in the ruled order (L2b, P22, the assessment cat
 3. loads seed content on staging and production once the dry run passes.
 Jason still answers every new question card and approves every app release (deploy). (The card's "every AI draft set" is changed by OD-2026-11-15-011.)
 
-**Reading (not his words):** for these lanes' migration applies and seed loads, this replaces the workspace rule that each production run needs his per-run approval (L2 "PRODUCTION PATH": "Production still requires Jason's explicit per-run approval"). Overwatch approves those runs on the production environment only after the staging runner or dry run has passed, and logs each in STATUS.md. Deploys of app code are not covered: each still needs his approval. The L2 file's text is not edited by this entry. The card's caveat stands: the app may refuse a lane start from an automated turn, so a start may still need one word from him.
+**Reading (not his words):** for these lanes' migration applies and seed loads, this replaces the workspace rule that each production run needs his per-run approval (L2 "PRODUCTION PATH": "Production still requires Jason's explicit per-run approval"). Overwatch makes the production-environment approval for those runs itself, only after the staging runner or dry run has passed, and records each run. Deploys of app code are not covered: each still needs his approval. The L2 file's text is not edited by this entry. The card's caveat stands: the app may refuse a lane start from an automated turn, so a start may still need one word from him.
 
 **Not ruled here:** releases (deploys); new question cards; lanes outside the content order (for example the dependabot lane of OD-2026-11-15-009).
 
@@ -706,7 +706,7 @@ Jason still answers every new question card and approves every app release (depl
 >
 > Jason's answer: "A: Small lane for Claude Code (Recommended)".
 
-**Jason:** OW25-10 "A: Small lane for Claude Code (Recommended)".
+**Jason:** OW25-10 "A: Small lane for Claude Code (Recommended)"
 
 **Ruling:**
 
@@ -767,7 +767,7 @@ A small Claude Code lane finds why #1881's checks fail and fixes or recreates it
 >
 > Jason's answer: "A: Claude Code, app-side Overwatch (Recommended)".
 
-**Jason:** OW25-07 "A: Mark superseded (Recommended)".; OW25-08 "A: Mark superseded (Recommended)".; OW25-09 "A: Claude Code, app-side Overwatch (Recommended)".
+**Jason:** OW25-07 "A: Mark superseded (Recommended)"; OW25-08 "A: Mark superseded (Recommended)"; OW25-09 "A: Claude Code, app-side Overwatch (Recommended)"
 
 **Ruling:**
 
@@ -849,7 +849,7 @@ A small Claude Code lane finds why #1881's checks fail and fixes or recreates it
 >
 > Jason's answer: "A: Approve; issue when L2a is merged (Recommended)".
 
-**Jason:** OW25-04 "B: Sparring and full contact only".; OW25-05 "A: Gym admin or the member's coach (Recommended)".; OW25-06 "A: On file, end date, release needed (Recommended)".; OW25-11 "B: Block only the two sparring levels".; OW25-12 "A: Approve; issue when L2a is merged (Recommended)".
+**Jason:** OW25-04 "B: Sparring and full contact only"; OW25-05 "A: Gym admin or the member's coach (Recommended)"; OW25-06 "A: On file, end date, release needed (Recommended)"; OW25-11 "B: Block only the two sparring levels"; OW25-12 "A: Approve; issue when L2a is merged (Recommended)"
 
 **Ruling:**
 
@@ -914,7 +914,7 @@ A small Claude Code lane finds why #1881's checks fail and fixes or recreates it
 >
 > Jason's answer: "A: Two stage lanes (Recommended)".
 
-**Jason:** OW25-02 "A: One catalog lane before the stage lanes (Recommended)".; OW25-03 "B: One amateur lane".; OW25-14 "A: Two stage lanes (Recommended)".
+**Jason:** OW25-02 "A: One catalog lane before the stage lanes (Recommended)"; OW25-03 "B: One amateur lane"; OW25-14 "A: Two stage lanes (Recommended)"
 
 **Ruling:**
 
@@ -945,7 +945,7 @@ A small Claude Code lane finds why #1881's checks fail and fixes or recreates it
 > Jason's answer: "A: Load as frozen, false (Recommended)".
 > Evidence: L2B_PRECHECK_2026-11-15.md (9762527c01ffaedc), L2B_BASELINE_2026-11-15.json (eb2d5b040e5222ca).
 
-**Jason:** OW25-01 "A: Load as frozen, false (Recommended)".
+**Jason:** OW25-01 "A: Load as frozen, false (Recommended)"
 
 **Ruling:**
 
