@@ -51,7 +51,6 @@ import {
   CONTENT_DIRS,
   EXCERPT_KEYS,
   ExportError,
-  GUARD_KEYS,
   HEADERS,
   ORG_PLACEHOLDER,
   boolCell,

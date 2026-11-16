@@ -144,10 +144,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when the style round turns into a brawl and loses its teaching value. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Sparring Standard): "If chaos rises above the educational value of the round, intensity is reduced or the round is stopped."
    - Note: the Sparring Standard's chaos line named for this drill.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -238,10 +238,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
    - LR-068 (The Long Road, Part 4, 3.4 Technical priorities — refinement, disguise, integration): "Live drill at 50%"
    - DOC-027 (Punxsy Master Source Manual v1, Sparring Standard): "If chaos rises above the educational value of the round, intensity is reduced or the round is stopped."
    - Note: adapted: the record's 50% with the Sparring Standard's chaos line.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -331,10 +331,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when the boxer starts punching to keep the partner off instead of using feet and position, and the round drifts into trading. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Sparring Standard): "If chaos rises above the educational value of the round, intensity is reduced or the round is stopped."
    - Note: adapted: 'chaos' named as trading, the opposite of this drill's lesson.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -421,10 +421,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when it turns into trading and the distance task is lost. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Sparring Standard): "If chaos rises above the educational value of the round, intensity is reduced or the round is stopped."
    - Note: the Sparring Standard's chaos line named for this drill.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -513,10 +513,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when it turns into trading and the constraint is lost. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Sparring Standard): "If chaos rises above the educational value of the round, intensity is reduced or the round is stopped."
    - Note: the Sparring Standard's chaos line named for this drill.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -858,10 +858,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when the stronger boxer's structure breaks in the weak mode again and again. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Has the athlete lost stance, eyes, or reset ability repeatedly."
    - Note: the standard's watch point as this drill's stop condition.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -1274,10 +1274,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when stance, eyes or reset are lost again and again after the switch; go back to level A. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Has the athlete lost stance, eyes, or reset ability repeatedly."
    - Note: the standard's watch point as this drill's stop condition.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -1451,10 +1451,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when the boxer cannot protect themselves structurally in the rush. (kind safety; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when the athlete cannot protect themselves structurally."
    - Note: the standard's first line.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -1540,10 +1540,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when stance, eyes or reset are lost again and again after the change; go back to level A. (kind technique_degradation; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Has the athlete lost stance, eyes, or reset ability repeatedly."
    - Note: the standard's watch point as this drill's stop condition.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -1787,10 +1787,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when the mode change turns into a brawl and the round loses its teaching value. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Sparring Standard): "If chaos rises above the educational value of the round, intensity is reduced or the round is stopped."
    - Note: the Sparring Standard's chaos line named for this drill.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -3468,10 +3468,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when emotional escalation overrides coaching cues."
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Waiting too long because the block was supposed to be hard."
    - Note: adapted: the standard's line, with its common error as the reason the result does not keep the round going.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -3586,10 +3586,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when partner role discipline is gone and the picture is no longer what was assigned."
    - LR-150 (The Long Road, Part 7, 1.6 Skill E — Resilience and adversity tolerance): "land one hard shot early"
    - Note: adapted: the standard's role line with the scenario's 'one hard shot'.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -3704,10 +3704,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when frustration takes over (retaliation, emotional speed) and cues no longer land. (kind coach_judgment; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when emotional escalation overrides coaching cues."
    - Note: the standard's line named for this drill.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -3819,10 +3819,10 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 3. Stop the round when the boxer cannot protect themselves structurally in the rush. (kind safety; INFERRED; tier CONVENTION)
    - DOC-027 (Punxsy Master Source Manual v1, Stop Rule Standard): "Stop when the athlete cannot protect themselves structurally."
    - Note: the standard's first line.
-4. Stop the round when contact rises above the level the coach set for this drill and one reset does not bring it back. (kind safety; INFERRED; tier UNTIERED)
+4. Stop the round when contact rises above the level the coach set for this drill. (kind safety; INFERRED; tier UNTIERED)
    - The Long Road (DOC-001), Part 3, 1.5 Sparring in Phase 1: "Stop any round where a partner ignores the agreed intensity"
    - The Long Road (DOC-001), Part 6, 9.6.4 The pre-round agreement: "Any escalation beyond the agreement ends the session."
-   - Note: adapted: the Long Road's agreed-intensity rules named for this drill's own contact level (added after the safety review); my addition: 'one reset'.
+   - Note: adapted: the Long Road's agreed-intensity rules (stop at once) named for this drill's own contact level (added after the safety review).
 
 **Cue** (the drill had none)
 
@@ -3854,11 +3854,11 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 
 **Target behaviour** (INFERRED)
 
-> Holds a straight wrist and a firm grip through each exercise, and boxes the check afterwards with no loss of guard or hand position.
+> Holds a straight wrist and a firm grip in the carries and grip holds, and moves the wrist through full, controlled range in the rollers and band work.
 
 - Sources:
   - Backbone record, owner_rules: "Pass if adaptation work supports the next boxing task without posture collapse, guard loss, footwork failure, or excessive stiffness"
-- Note: adapted: the owner rule's pass line; my addition: straight wrist and firm grip during the work.
+- Note: adapted: the owner rule's pass line; my addition: straight wrist and firm grip during the work. Fixed after the safety re-check: the straight wrist applies to carries and holds only (my addition).
 
 **Setup** (INFERRED)
 
