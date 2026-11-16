@@ -908,3 +908,15 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_ed0327f4a9aad4,drl_41d9f3ac453d89,2,Stop when the test changes partway or the round is chasing volume instead of checking the standard.,drill_specific,intent_drift
 {{PPBF_ORG_ID}},stp_a90c0dd449adc8,drl_579f4c574ff8bb,1,Stop the round when breathing becomes panic-driven instead of recoverable.,drill_specific,fatigue
 {{PPBF_ORG_ID}},stp_b80aa17fbbdad9,drl_579f4c574ff8bb,2,Stop the block when the athlete can no longer punch with the intended form.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a7d0f01c2a0764,drl_094a6c7e0ee5f2,1,squared stance or head drift cannot be corrected.,drill_specific,
+{{PPBF_ORG_ID}},stp_6596a22654c598,drl_14eeed32358d0a,1,athlete guesses or loses defensive responsibility.,drill_specific,
+{{PPBF_ORG_ID}},stp_aa29dce7d05094,drl_399d6a9854ebc4,1,"technical breakdown, symptoms, abnormal response.",drill_specific,
+{{PPBF_ORG_ID}},stp_e8591c89cd9159,drl_631ca619421980,1,review becomes opinion debate.,drill_specific,
+{{PPBF_ORG_ID}},stp_f529f2d33b0882,drl_81a64caa3bbf52,1,repeated guessing.,drill_specific,
+{{PPBF_ORG_ID}},stp_f268e821970aad,drl_9e2321080691bd,1,blind preloading.,drill_specific,
+{{PPBF_ORG_ID}},stp_6a8cbed35c6de0,drl_cff7d38654e1ca,1,athlete panics or contact rises beyond drill level.,drill_specific,
+{{PPBF_ORG_ID}},stp_96aca8c3045154,drl_d19b5fad4e54b0,1,athlete rotates blind.,drill_specific,
+{{PPBF_ORG_ID}},stp_11d14976fd59b3,drl_dcc881eb38f12e,1,contact discipline fails.,drill_specific,
+{{PPBF_ORG_ID}},stp_0d13076bc5cc63,drl_e6442ec28937a7,1,rear hand drops repeatedly.,drill_specific,
+{{PPBF_ORG_ID}},stp_cb43e406e85046,drl_e90c6f58aa44eb,1,"head contact risk, panic, or uncontrolled trading.",drill_specific,
+{{PPBF_ORG_ID}},stp_b9b2e9c520b871,drl_f842afc719f2c6,1,"repeated panic, symptoms, or inability to correct.",drill_specific,

@@ -151,27 +151,27 @@ export function readCsv(text) {
   return { header: rows[0] ?? [], rows: rows.slice(1) };
 }
 
-const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-const sha16 = (bytes) => createHash('sha256').update(bytes).digest('hex').slice(0, 16);
-const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+export const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+export const sha16 = (bytes) => createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+export const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
-function textCell(value, where) {
+export function textCell(value, where) {
   if (value === undefined || value === null) return '';
   if (typeof value !== 'string') throw new ExportError(`${where} is ${JSON.stringify(value)}, not text`);
   return value.normalize('NFC').trim();
 }
-function numberCell(value, where) {
+export function numberCell(value, where) {
   if (value === undefined || value === null) return '';
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new ExportError(`${where} is ${JSON.stringify(value)}, not a number`);
   return String(value);
 }
-function boolCell(value, where) {
+export function boolCell(value, where) {
   if (typeof value !== 'boolean') throw new ExportError(`${where} is ${JSON.stringify(value)}, not true or false`);
   return String(value);
 }
 
 /** The value with every excerpt key removed at any depth; `count.keys` counts them. */
-function stripExcerpts(value, count) {
+export function stripExcerpts(value, count) {
   if (Array.isArray(value)) return value.map((item) => stripExcerpts(item, count));
   if (!isObject(value)) return value;
   const out = {};
@@ -200,7 +200,7 @@ function checkKeys(kind, record, where, tally) {
 }
 
 /** The three label cells: field_labels (object), evidence (list), stage_keys ('|' list). */
-function labelCells(record, where, dropped, { stageKeysAsJson = false } = {}) {
+export function labelCells(record, where, dropped, { stageKeysAsJson = false } = {}) {
   const cells = {};
   if (record.field_labels === undefined || record.field_labels === null) cells.field_labels = '';
   else if (!isObject(record.field_labels)) throw new ExportError(`${where}: field_labels is not an object`);
@@ -222,7 +222,7 @@ function sourcesCell(sources, where) {
 
 // ---- reading the frozen Backbone, hashed ----
 
-function loadManifest(backboneDir) {
+export function loadManifest(backboneDir) {
   const file = path.join(backboneDir, MANIFEST_FILE);
   if (!fs.existsSync(file)) throw new ExportError(`not found: ${file}`);
   const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -231,7 +231,7 @@ function loadManifest(backboneDir) {
 }
 
 /** Reads every JSON file of a content folder, each checked against the manifest. Returns [{ file, hash, wrapper }]. */
-function readDir(backboneDir, manifest, dir, hashes) {
+export function readDir(backboneDir, manifest, dir, hashes) {
   const full = path.join(backboneDir, dir);
   if (!fs.existsSync(full)) throw new ExportError(`not found: ${full}`);
   return fs.readdirSync(full).filter((name) => name.endsWith('.json')).sort(compare).map((name) => {
@@ -408,7 +408,7 @@ function trackRows({ track, blocks }, version, dropped, tally) {
 // ---- merging into the committed files ----
 
 /** A committed file's rows as objects over `header` (a column the file lacks is blank). */
-function committedRows(existingText, header) {
+export function committedRows(existingText, header) {
   if (!existingText) return [];
   const table = readCsv(existingText);
   const index = new Map(table.header.map((name, position) => [name, position]));
@@ -425,7 +425,7 @@ function guardId(name, obj) {
 }
 
 /** Stops when the file would hold one id twice: twice among the new rows, or a new row and a kept committed row. */
-function checkUniqueIds(name, kept, newRows) {
+export function checkUniqueIds(name, kept, newRows) {
   const { owner, row } = GUARD_KEYS[name];
   const fresh = new Map();
   for (const obj of newRows) {
@@ -443,7 +443,7 @@ function checkUniqueIds(name, kept, newRows) {
 }
 
 /** What writing `newRows` in place of the committed rows `replaced` would change or remove: [{ file, owner, id, removed, columns }]. */
-function findOverwrites(name, replaced, newRows) {
+export function findOverwrites(name, replaced, newRows) {
   const { owner, row } = GUARD_KEYS[name];
   const header = HEADERS[name];
   const idOf = (obj) => guardId(name, obj);
@@ -481,7 +481,7 @@ export function describeOverwrites(found) {
 }
 
 /** The kept committed rows in their place, then the new rows. */
-function mergeCsv(kept, header, newRows) {
+export function mergeCsv(kept, header, newRows) {
   return writeCsv(header, [...kept, ...newRows].map((obj) => header.map((column) => obj[column] ?? '')));
 }
 
