@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-15-003 | 2026-11-15 | Lane L2a (the 'Long Road practice' label migration) starts | PRIMARY |  | yes |
 | OD-2026-11-15-002 | 2026-11-15 | Lane 2, the 256 remaining Backbone drills: a 'Long Road practice' label, AI drafts Jason approves, contact drills load now, two lanes: "A: Add the label (Rec.)"; "A: AI drafts, you OK (Rec.)"; "A: Load all now (Rec.)"; "A: Two lanes (Rec.)" | PRIMARY |  | yes |
 | OD-2026-11-15-001 | 2026-11-15 | Class plans shows the FT1 Friday Protocol days as coach-run, not "not ready" | PRIMARY |  | yes |
 | OD-2026-11-14-001 | 2026-11-14 | Jason approves all 131 FT1 drill drafts in PR #1923; they load on staging, then production on his click | PRIMARY |  | yes |
@@ -568,6 +569,22 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-15-003 -- Lane L2a (the 'Long Road practice' label migration) starts: "Start L2a"
+
+**Provenance: PRIMARY.** Jason's reply, a button, 2026-11-15 about 19:08 EST (transcript timestamp 2026-11-16T00:08:04.212Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 18896, `origin.kind` human), checked against the file by script before writing. The question is line 18887 (the `wrap_up` `ask`, 2026-11-16T00:04:36.290Z): "Start lane L2a (the 'Long Road practice' label migration) now?", with the buttons "Start L2a" and "Not yet". No other typed message of his falls between. New; edits no earlier entry's text.
+
+**Jason:** *"Start L2a"*
+
+**Ruling:** lane L2a, the first of the two lane-2 lanes in OD-2026-11-15-002 ruling 4, is issued. It answers that entry's "Not ruled here: issuing lanes L2a and L2b" for L2a only.
+
+**Applied, not separately asked:** Overwatch issued the lane with the brief `Documents/PPBF-overwatch/lane-briefs/LANE_L2A_LONG_ROAD_LABEL_BRIEF.md` (sha256[:16] `17c2afa7ec98401e` when issued) as session `local_b4d4fa17` (Opus, high effort, builder plus two adversarial reviewers, under the L2 usage rule for migrations). The brief carries OD-2026-11-15-002 rulings 1 and 4, and a hazard Overwatch found in the code: the `all` run of `apply-migrations.yml` re-runs the owner-authored label migration, which re-adds a four-value check that would refuse 'Long Road practice' rows; the lane settles the fix with Overwatch before writing code.
+
+**Not ruled here:** lane L2b; applying the migration in production (his click on that run); the drafts.
+
+**Status:** recorded 2026-11-15 by PR; lane L2a running, nothing merged.
 
 ---
 
