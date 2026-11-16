@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-15-012 | 2026-11-15 | The P22 medical-restriction gate is a USA Boxing rule: live wrestling and grappling entries are not blocked | PRIMARY |  | yes |
 | OD-2026-11-15-011 | 2026-11-15 | Jason skips his review of AI drafts, for L2b and every later lane; the lane's two adversarial reviewers check each sheet: "skip my review"; "1 ..."; "A: Stands; fix misses by new version or promote (Recommended)" | RECONSTRUCTED |  | yes |
 | OD-2026-11-15-010 | 2026-11-15 | Standing go for the remaining content lanes: next lane on merge, migrations staging then production, seed loads once the dry run passes | RECONSTRUCTED |  | yes |
 | OD-2026-11-15-009 | 2026-11-15 | The two dependabot PRs go to a small Claude Code lane; Overwatch merges each when green | RECONSTRUCTED |  | yes |
@@ -577,6 +578,22 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-15-012 -- The P22 medical-restriction gate is a USA Boxing rule: live wrestling and grappling entries are not blocked: "A: Boxing only (Rec.)"
+
+**Provenance: PRIMARY.** Jason's answer to a one-question card in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`): card at line 20128 (2026-11-16T01:56:58.836Z), answer at line 20129 (2026-11-16T01:57:31.392Z, 2026-11-15 about 20:57 EST; the `AskUserQuestion` result, which carries his pick), checked against the file by script before writing. Raised by lane P22's step-1 report, which found that grappling and wrestling entries carry no boxing contact level. New; edits no earlier entry's text.
+
+**What was put to him (quoted):** "OFFICIAL: P22 blocks sparring-level entries on the boxing contact scale while a USA Boxing medical restriction is on file (OD-2026-11-10-002, OW25-04 B, OW25-11 B). Live wrestling and grappling entries are on no boxing scale, and no ruling covers them. A (Rec.): leave them unblocked, because the ruling is a USA Boxing rule. B: also block live wrestling and grappling for a restricted member. PLAIN: if a boxer is under a doctor's no-contact order and also wrestles, should the app also refuse to log their live wrestling?" Options: "A: Boxing only (Rec.)" (The gate stays a USA Boxing rule. Wrestling and grappling entries save as they do today. The coach can still stop or reduce training at any time.) / "B: Block live wrestling too" (Live wrestling and grappling entries are also refused during the restriction. This adds a gate beyond USA Boxing's own rule, and the lane wires it in with the rest.)
+
+**Jason:** *"A: Boxing only (Rec.)"*
+
+**Ruling:** the P22 gate (OD-2026-11-10-002, narrowed by OD-2026-11-15-007 to `controlled_sparring` and `open_sparring`) applies to boxing entries only. Live wrestling and grappling entries (for example `grappling_exposure`) save during a USA Boxing medical restriction as they do today. The coach may still stop or reduce training at any time.
+
+**Not ruled here:** any wrestling-specific medical restriction (no such record exists in the app).
+
+**Status:** recorded 2026-11-15 by PR; lane P22 builds without a wrestling or grappling gate.
 
 ---
 
