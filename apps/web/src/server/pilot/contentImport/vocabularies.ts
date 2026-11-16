@@ -98,7 +98,7 @@ export const VOCABULARIES = {
   // drill_library_v3 :266-273, widened by drill_owner_authored_label (OD-2026-10-06-026
   // ruling 4: "PPBF owner-authored" for Jason's own material) and by
   // drill_long_road_label (OD-2026-11-15-002 ruling 1: 'Long Road practice', the
-  // label the frozen Backbone drills carry; not a draft). Matched as exact
+  // label 190 of the frozen Backbone drills carry; not a draft). Matched as exact
   // strings (em dashes included): the check compares text, so a paraphrase is a
   // refusal.
   field_provenance: vocab(

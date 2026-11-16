@@ -134,10 +134,42 @@ async function v3Database(name: string): Promise<Client> {
   return client;
 }
 
-/** Today's production shape for this column: v3 then owner-authored, four values. */
+// The owner-authored file as production ran it (origin/main d826ae06, before
+// this change): drop every field_provenance CHECK, add the four values, no
+// guard. Production is in the state this leaves.
+const OLD_OWNER_AUTHORED_SQL = `
+do $$
+declare
+  existing record;
+begin
+  for existing in
+    select con.conname
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace nsp on nsp.oid = rel.relnamespace
+    where nsp.nspname = 'pilot'
+      and rel.relname = 'drill_library'
+      and con.contype = 'c'
+      and pg_get_constraintdef(con.oid) ilike '%field_provenance%'
+  loop
+    execute format('alter table pilot.drill_library drop constraint %I', existing.conname);
+  end loop;
+
+  alter table pilot.drill_library
+    add constraint pilot_drill_library_field_provenance_check
+    check (field_provenance in (
+      'PPBF source manual v3',
+      'LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION',
+      'COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION',
+      'PPBF owner-authored'
+    ));
+end $$;
+`;
+
+/** Today's production shape for this column: v3 then the OLD owner-authored file, four values. */
 async function productionTodayDatabase(name: string): Promise<Client> {
   const client = await v3Database(name);
-  await applyOwnerAuthored(client, ownerAuthoredSql);
+  await applyOwnerAuthored(client, OLD_OWNER_AUTHORED_SQL);
   return client;
 }
 
@@ -335,15 +367,18 @@ describe('the re-run hazard', () => {
     const files = (await fs.readdir(INFRA_DIR)).filter((name) => /^pilot_slice_postgres.*\.sql$/.test(name));
     const naming: string[] = [];
     const droppingDrillLibraryChecks: string[] = [];
+    const reshapingTheColumn: string[] = [];
     for (const file of files) {
       const sql = await fs.readFile(path.join(INFRA_DIR, file), 'utf8');
       if (sql.includes(CONSTRAINT)) naming.push(file);
-      if (/drill_library[\s\S]*drop constraint/i.test(sql)) droppingDrillLibraryChecks.push(file);
+      if (sql.includes('drill_library') && /drop\s+constraint/i.test(sql)) droppingDrillLibraryChecks.push(file);
+      if (/(alter|drop)\s+column\s+(if\s+exists\s+)?field_provenance/i.test(sql)) reshapingTheColumn.push(file);
     }
     expect(naming.sort()).toEqual([LONG_ROAD_FILE, OWNER_AUTHORED_FILE, V3_FILE].sort());
     // check-drop removes pilot_drill_library_discipline_check by name only; it is
     // in the re-run set above so the proof covers it anyway.
     expect(droppingDrillLibraryChecks.sort()).toEqual([CHECK_DROP_FILE, LONG_ROAD_FILE, OWNER_AUTHORED_FILE].sort());
+    expect(reshapingTheColumn).toEqual([]);
   });
 });
 

@@ -1,10 +1,10 @@
 -- ---------------------------------------------------------------------------
 -- Add the source label "Long Road practice" to pilot.drill_library.field_provenance.
 --
--- OWNER DECISION, VERBATIM (OD-2026-11-15-002 ruling 1, Jason, 2026-11-15):
---   "A: Add the label (Rec.)" -- "The app gets a 'Long Road practice' label.
---   Your manuals and the Long Road stay told apart, and no extra floor test is
---   added."
+-- OWNER DECISION (OD-2026-11-15-002 ruling 1, 2026-11-15). Jason's answer,
+-- verbatim: "A: Add the label (Rec.)". The option it chose read: "The app gets
+-- a 'Long Road practice' label. Your manuals and the Long Road stay told apart,
+-- and no extra floor test is added."
 -- The frozen Backbone drill records carry exactly 'Long Road practice'
 -- (PK-201 A; 190 of the 256 lane-2 drills), so this literal is that string,
 -- byte for byte: plain ASCII, 18 bytes, no trailing space.
@@ -95,5 +95,5 @@ begin
     ));
 
   comment on constraint pilot_drill_library_field_provenance_check on pilot.drill_library is
-    'How the fields were authored. PPBF owner-authored marks material the gym''s owner wrote himself (OD-2026-10-06-026 ruling 4); Long Road practice is the label the frozen Backbone drills carry (OD-2026-11-15-002 ruling 1) and is not a draft; the two DRAFT values still require floor validation before a gym adopts the drill.';
+    'How the fields were authored. PPBF owner-authored marks material the gym''s owner wrote himself (OD-2026-10-06-026 ruling 4); Long Road practice is the label 190 of the frozen Backbone drills carry (OD-2026-11-15-002 ruling 1) and is not a draft; the two DRAFT values still require floor validation before a gym adopts the drill.';
 end $$;
