@@ -908,15 +908,603 @@ organization_id,stop_rule_id,drill_id,ordinal,condition_text,scope,rule_kind
 {{PPBF_ORG_ID}},stp_ed0327f4a9aad4,drl_41d9f3ac453d89,2,Stop when the test changes partway or the round is chasing volume instead of checking the standard.,drill_specific,intent_drift
 {{PPBF_ORG_ID}},stp_a90c0dd449adc8,drl_579f4c574ff8bb,1,Stop the round when breathing becomes panic-driven instead of recoverable.,drill_specific,fatigue
 {{PPBF_ORG_ID}},stp_b80aa17fbbdad9,drl_579f4c574ff8bb,2,Stop the block when the athlete can no longer punch with the intended form.,drill_specific,technique_degradation
-{{PPBF_ORG_ID}},stp_a7d0f01c2a0764,drl_094a6c7e0ee5f2,1,squared stance or head drift cannot be corrected.,drill_specific,
-{{PPBF_ORG_ID}},stp_6596a22654c598,drl_14eeed32358d0a,1,athlete guesses or loses defensive responsibility.,drill_specific,
-{{PPBF_ORG_ID}},stp_aa29dce7d05094,drl_399d6a9854ebc4,1,"technical breakdown, symptoms, abnormal response.",drill_specific,
-{{PPBF_ORG_ID}},stp_e8591c89cd9159,drl_631ca619421980,1,review becomes opinion debate.,drill_specific,
-{{PPBF_ORG_ID}},stp_f529f2d33b0882,drl_81a64caa3bbf52,1,repeated guessing.,drill_specific,
-{{PPBF_ORG_ID}},stp_f268e821970aad,drl_9e2321080691bd,1,blind preloading.,drill_specific,
-{{PPBF_ORG_ID}},stp_6a8cbed35c6de0,drl_cff7d38654e1ca,1,athlete panics or contact rises beyond drill level.,drill_specific,
-{{PPBF_ORG_ID}},stp_96aca8c3045154,drl_d19b5fad4e54b0,1,athlete rotates blind.,drill_specific,
-{{PPBF_ORG_ID}},stp_11d14976fd59b3,drl_dcc881eb38f12e,1,contact discipline fails.,drill_specific,
-{{PPBF_ORG_ID}},stp_0d13076bc5cc63,drl_e6442ec28937a7,1,rear hand drops repeatedly.,drill_specific,
-{{PPBF_ORG_ID}},stp_cb43e406e85046,drl_e90c6f58aa44eb,1,"head contact risk, panic, or uncontrolled trading.",drill_specific,
-{{PPBF_ORG_ID}},stp_b9b2e9c520b871,drl_f842afc719f2c6,1,"repeated panic, symptoms, or inability to correct.",drill_specific,
+{{PPBF_ORG_ID}},stp_cc7d3be79fcf1c,drl_000287edf5dc02,1,"Stop the round when the boxer reaches the body by bending at the waist or falling in, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_786cebecb226f8,drl_000287edf5dc02,2,Stop the round when the scoring makes the boxers rush in for body shots without an entry; drop the scoring and keep the body-work focus.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a882699050941a,drl_000287edf5dc02,3,"Stop the round when it turns into trading at close range instead of entering, scoring and leaving.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_27f4d8760b5e26,drl_00e798644187bd,1,Stop the round when the athlete starts throwing more than one punch per window and one cue does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b7fda96637cff3,drl_00e798644187bd,2,"Stop the round when punches stop being maximal or come from a broken base (leaning, pushing the bag) because recovery is no longer complete.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_6f0208f3fbbaed,drl_010237bae5fb5b,1,Stop the round when the boxer keeps backing out of reach of the rope and one cue does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_eb44c2a2c92d40,drl_010237bae5fb5b,2,Stop the round when the partner's pressure rises above the pace and contact set for the round and a reset does not restore the roles.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_bc31e7f37ff814,drl_010237bae5fb5b,3,Stop the round when the boxer can no longer protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_a65ddf2cb25807,drl_01326d571835e6,1,Stop the hold when the head starts to move or the trunk leans into the push to keep position; shorten the hold or lighten the push.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_76e71da19f0ca9,drl_01326d571835e6,2,"Stop and regress when the neck work becomes the session goal or leaves posture, guard or footwork worse in the boxing task that follows.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_30a0219d705a09,drl_03b9c6da4f9fe9,1,"Stop the set when the breath turns forced or the chest takes over from the belly, and go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_1a311c60ee177d,drl_03b9c6da4f9fe9,2,"Stop the set when the athlete is straining to hold the count (shoulders rising, breath held) instead of settling; drop to a shorter count.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_95db83bfbc3c87,drl_04a676403515ae,1,"Stop the round when jabs keep coming from out of range (reaching, leaning) and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bf21a7d97d340a,drl_04a676403515ae,2,Stop the round when a rear hand comes into play and a reset does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_862179b84b37b7,drl_04a676403515ae,3,Stop the round when it turns into trading instead of range work.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_bad87542be13e5,drl_06894aca53b9e4,1,Stop the set when the two jabs fall into one identical rhythm and one cue does not bring the off-beat back; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2b044266445e1c,drl_06894aca53b9e4,2,Stop the set when stance collapses on the cross (reaching or falling in) on consecutive reps.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fe860954cb9b35,drl_06894aca53b9e4,3,Stop the set when the step back or pivot comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2bd4b964a0c8b0,drl_07afeb6383daab,1,Stop the round when the lead hand starts reaching or falling in to catch the pad and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e79714299167b9,drl_07afeb6383daab,2,"Stop the round when the pad moves so much the lesson is hidden (the boxer cannot land clean shots at all), and slow the pad to level A.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_315ff84939cdbe,drl_07afeb6383daab,3,"Stop the round when the boxer chases the pad with the hands instead of the feet, or the rear hand comes into play, and restate the constraint.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_31fa7ce6f83d0b,drl_07b659eaf5c073,1,Stop the round when the guard drops on most punches and one cue does not bring it back; go back to level A.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_e83bdd94a032cb,drl_07b659eaf5c073,2,"Stop the block when the athlete is practicing survival (flailing output, eyes down) instead of guard quality.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a7d0f01c2a0764,drl_094a6c7e0ee5f2,1,squared stance or head drift cannot be corrected.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_58d0f58aae1252,drl_094befdb483578,1,"Stop the set when the feint turns into a committed half-attack (weight forward, stance broken) on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_dddd93bad69829,drl_094befdb483578,2,Stop the set when the 1 – 2 – 3 fires the same way whatever the feint showed.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_aece0297a389c4,drl_094befdb483578,3,Stop the set when the pivot comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_666628f074e97f,drl_09e85ad8df9c95,1,"Stop the set when the turn comes from the lower back or hips instead of the upper back, and go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_497b2c8d85407b,drl_09e85ad8df9c95,2,"Stop the block when the mobility work makes the boxing check worse (posture, guard or feet) or starts to become the session goal.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f7cd32d816761d,drl_0bb18ed31c1b10,1,Stop the session when output falls more than 15% below the first interval.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_100dd29b44dbaf,drl_0bb18ed31c1b10,2,"Stop and regress when the boxing check after the set shows guessing, blind reset, stance collapse, guard abandonment or the target skill gone.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_035c8eb9b2b7b5,drl_0bb18ed31c1b10,3,Stop the interval and downgrade (longer reset or shorter effort) when breathing turns panic-driven instead of recoverable or the athlete stops responding to a cue.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_19f0e8d1c4b16a,drl_0bed7e0850cccc,1,"Stop the round when the boxer freezes in the window (flat feet, standing tall) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e6280e36192ae9,drl_0bed7e0850cccc,2,Stop the round when the boxer keeps throwing inside the window and a reset does not restore the rule.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_cfd386a3cb2e7c,drl_0bed7e0850cccc,3,Stop the round when it turns into trading after the window.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_907970dd198ada,drl_0e62a1f24cedcf,1,Stop the round when denial turns into chasing or straight-line retreat and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a9173afcb636c1,drl_0e62a1f24cedcf,2,Stop the round when the partner stops working for their range (the role breaks down) and a reset does not restore it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_96bc21b5dceb47,drl_0e62a1f24cedcf,3,"Stop the round when the boxer starts punching to keep the partner off instead of using feet and position, and the round drifts into trading.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_91b3c52c4f9867,drl_0f284bce7c9171,1,Stop the round when the athlete keeps stopping punching to change direction and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2b7956763fba0d,drl_0f284bce7c9171,2,Stop the round when fatigue makes the direction changes late or breaks the stance on the change.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_76b463ee7e04f2,drl_1018aaf93ab01e,1,"Stop the rep when the hook swings wide or a hand stays down after a punch, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_62dd7cf89341a0,drl_1018aaf93ab01e,2,"Stop the set when the athlete keeps finishing combinations standing still (no defense, no exit), practising the dead finish the drill is meant to remove.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_fddd25df7afdd7,drl_131c4318be6d6e,1,Stop the round when the boxer drifts back to their usual mode and one cue does not bring the named mode back.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a27fe0240f6aff,drl_131c4318be6d6e,2,"Stop the round when structure breaks in the new mode (stance, eyes or reset lost again and again); go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8ad808fb4b5a48,drl_131c4318be6d6e,3,Stop the round when the mode change turns into a brawl and the round loses its teaching value.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_6596a22654c598,drl_14eeed32358d0a,1,athlete guesses or loses defensive responsibility.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3a4f6d63cfd25f,drl_179419bceeab59,1,Stop the set when the wrist bends back or the grip gives way and the athlete cannot hold position; lighten the load or go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_c0abaf540f9c62,drl_179419bceeab59,2,Stop the block when the grip work makes the boxing check worse (guard or hand position) or starts to become the session goal.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_55caa43a0f7a9d,drl_17c5245aa86db7,1,Stop the round when the boxer cannot keep the new constraint and drifts back into habit fighting after one cue.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_e2a38e91f39eaa,drl_17c5245aa86db7,2,Stop the round when chaos rises above the educational value of the round.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_430d77ba9e64b2,drl_17c5245aa86db7,3,Stop the round when the boxer can no longer protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_d662f207619328,drl_17d2688da30c44,1,"Stop the set when the hips shoot up first, the back rounds at the start, or the bar drifts forward onto the toes.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_55cbda263d9156,drl_17d2688da30c44,2,Stop the set when bar speed visibly drops or technique breaks; do not grind reps.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_1447da3920a35c,drl_17d2688da30c44,3,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_53231b0bdb0942,drl_199cc9e84c57c6,1,Stop the set when the athlete keeps flinching or turning away from the tap and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_94b10ed942a393,drl_199cc9e84c57c6,2,Stop the set when a tap starts an emotional answer (tapping or pushing back) instead of a guard reset.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_1bbb2809b1b005,drl_199cc9e84c57c6,3,"Stop the set when the reset posture disappears as the athlete tires (hands drop, base narrows, balance goes).",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_6c4a53adba7821,drl_19a07357174d84,1,"Stop the circuit when it turns into unscored volume, or the assigned technique collapses and resets disappear.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f447f66aeacf33,drl_19a07357174d84,2,Stop the circuit when athletes start chasing or over-throwing and one cue no longer corrects it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9945290369e681,drl_1a52ed01c90646,1,Stop the round when the slip turns into a lean or a big head movement and one cue does not fix it; slow down.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b06fc143b46f1b,drl_1a52ed01c90646,2,"Stop the round when the athlete stops resetting stance between reps (feet cross, hands drop) and the jab and slip run together.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fdc547b25e7be6,drl_1aa997d840f3b5,1,Stop the set when the athlete swings to finish reps or the lower back sags at the far point of the rollout.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_724dada543d992,drl_1aa997d840f3b5,2,"Stop and regress when the trunk work leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8cd1ac42c93120,drl_1d53ce540efd71,1,Stop the review when it turns into a long lecture or a list of faults; end on one fault and one fix.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_cf86449af157be,drl_1d53ce540efd71,2,Stop the filmed round when the same wrist or knuckle fault shows on punch after punch and one cue does not change it; go back to level A (one punch type).,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e38a67787147b7,drl_1e110a463a923e,1,Stop the round when it turns into score-settling or ego and a reset does not bring the round back to its purpose.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_85deaabfe5e842,drl_1e110a463a923e,2,"Stop the round when a boxer cannot protect themselves structurally, or loses stance, eyes or reset again and again.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_c2ec96ea5eb0b1,drl_1e110a463a923e,3,"Stop the round when emotional escalation overrides the corner's cues, even though the result counts.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_27b959efb874f3,drl_1e5bca7ee0270c,1,"Stop the rep when the slips get big or bend at the waist instead of the knees, and one cue does not fix it; go back to slip only.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_da1e8139291bd4,drl_1e5bca7ee0270c,2,"Stop the rep when the punch comes from broken balance after the slip (feet crossed or weight thrown over), and a reset does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6184b401300f29,drl_21a751e31b9c94,1,Stop the set when rhythm changes break stance or balance and reducing the variation does not bring control back.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f60814ad0467a6,drl_21a751e31b9c94,2,"Stop the set when the boxer keeps the old tempo after the beat stops, or turns the change into frantic speed, and one cue does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_bab1225b0ca09f,drl_21a95f8298507b,1,"Stop the set when bar speed visibly drops from rep to rep, so the press is no longer at maximum velocity.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_c14c9500cc1007,drl_21a95f8298507b,2,"Stop and regress when the power work turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ef5e95af00497c,drl_221ff488a37ff0,1,Stop the round when contact rises above the controlled level the coach set and one cue does not bring it back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_7072fde32f2093,drl_221ff488a37ff0,2,Stop the round when the rear hand keeps coming into play (rear-hand punches sneaking in) and a reset does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9853ca52de4295,drl_221ff488a37ff0,3,"Stop the round when the boxer loses stance, eyes or reset again and again; go back to level A.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_94bfb27092f3d8,drl_23835f8d11d82c,1,Stop the measuring when the boxer leans or reaches to make a range longer than it is from stance; reset stance and measure again.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d2de34482b9d4b,drl_23835f8d11d82c,2,Stop the moving check when the boxer can no longer find the mark by eye and starts guessing; go back to level A.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_8deceaa6588877,drl_271bf7b4bdb1b6,1,"Stop the sprint when punches turn frantic (guard gone, stance broken) and one cue does not fix it; finish the round at the normal pace.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_1af0e4d1953ae4,drl_28a5de0def862e,1,Stop the set when the athlete starts reaching or pushing off the wall and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_413ef65a13573e,drl_28a5de0def862e,2,Stop the set when the rear hand stops returning through the guard or the feet cross or narrow.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f2fea3fd0b39ab,drl_29aa8015de9e60,1,Stop the round when the jabs become the same punch at different speeds and one cue does not separate them.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_dc665abbb73653,drl_29aa8015de9e60,2,"Stop the round when the jab stops recovering (rear hand drops, athlete leans over the lead knee, no exit).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6f1dd45e443393,drl_2b27785918f43a,1,Stop the set when the breath turns forced or strained to chase the pacer; slow down or go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9a627032cc9643,drl_2b5d28a094788a,1,"Stop the round when the boxer panics, freezes or shells up on the ropes and stops choosing; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_802d28fd2cc3e5,drl_2b5d28a094788a,2,Stop the round when the boxer stays on the ropes past a brief hold and no longer leaves on purpose.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_90b4729dbad538,drl_2b5d28a094788a,3,Stop the round when the boxer cannot protect themselves structurally on the ropes.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_7f71f6b046aab4,drl_2d36e6097a6dfa,1,"Stop the round when the boxer ignores the signal and keeps forcing plan A, and one reminder does not produce a switch.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_38b6ce91883c38,drl_2d36e6097a6dfa,2,Stop the round when the switch turns into panic or a brawl and coaching cues stop landing.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_2be6f2a30b95c3,drl_2d36e6097a6dfa,3,"Stop the round when stance, eyes or reset are lost again and again after the switch; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d3dacb85e88cd4,drl_2d3741d101a571,1,Stop the set when the lower back arches off the mat or the hips rotate as the limbs move.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6232cca8f38f37,drl_2d3741d101a571,2,"Stop and regress when the trunk work leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ac0a7fc5c24956,drl_2d52b4641cafa6,1,Stop the round when the jabs come out identical at identical timing and one cue does not change it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9ac97b6a1ed4a3,drl_2d52b4641cafa6,2,Stop the round when the feet stay behind the hand on the second or third jab and the athlete starts reaching.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_cd8fde0123d14c,drl_2d8fdd51b92261,1,Stop the set when the throws slow down or turn into a push or a grind (the ball is too heavy for a power throw).,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8467f64c27f127,drl_2d8fdd51b92261,2,Stop the set when the athlete is breathing hard; rest longer before the next set.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_e292dfdd84fb41,drl_2e8fe39dcf7746,1,Stop the round when the partner drops the assigned style and drifts into ego sparring and a reset does not restore the role.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_aba85783e1c2ad,drl_2e8fe39dcf7746,2,Stop the round when emotional escalation overrides coaching cues.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_4a5185556cf277,drl_2e8fe39dcf7746,3,Stop the round when the boxer can no longer protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_45f2338c9c9fae,drl_301d51528b3b95,1,Stop the block when the KPI collapses (for example guard drops rise round after round) and one cue does not fix it; go back to a simpler task.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bf5ab49d343f79,drl_301d51528b3b95,2,"Stop the layer when reset disappears, or guessing, stance collapse or guard abandonment stops the technique from transferring.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_2a7e133a3e022f,drl_301d51528b3b95,3,"Stop the block when it turns into sparring tired, or survival instead of scored technique.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_702a8f78be7f97,drl_303ec8fb854066,1,Stop the round when bursts turn frantic and the guard is gone and one cue does not fix it; lengthen the reset or go back to level A.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_6d9c12c26da5f5,drl_331ef97b959faa,1,"Stop the round when the partner stops leading at the set pace and role (racing, or trying to lose the boxer) and a reset does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a18f5f7a17353d,drl_331ef97b959faa,2,Stop the round when the boxer keeps reacting late or drifting closer and further and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bcd1a71d2ad67e,drl_3386077176c91d,1,"Stop the round when the hit rate collapses and the athlete swings for volume, and one cue does not fix it; go back to level A.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_d11280db2b385e,drl_355d5113d7c340,1,Stop the exercise the moment ground contact time lengthens or jump height drops.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_5a48790955d131,drl_355d5113d7c340,2,"Stop the set when the hops turn into squats (deep knee bend) or the landings get heavy, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2ad2a4b43a6a0b,drl_355d5113d7c340,3,"Stop and regress when the hops turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_916c03982160d2,drl_359e5b6fe5860a,1,"Stop the set when the elbows drop and the bar rolls forward, or the torso folds forward out of the bottom.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f999a0b4f42787,drl_359e5b6fe5860a,2,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_aa29dce7d05094,drl_399d6a9854ebc4,1,"technical breakdown, symptoms, abnormal response.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_82ec874e08e874,drl_39c464a38cad01,1,Stop the round when the boxers chase each other instead of using distance and one cue does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_c44822bc148ab2,drl_39c464a38cad01,2,Stop the round when touches turn into pushes or strikes and a reset does not bring them back to a light touch.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_623dc2ffcd73ed,drl_39ec154e04cb95,1,"Stop the set when the hops get too high, the rhythm slows or balance goes, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_40e455324baf9e,drl_39ec154e04cb95,2,Stop the set the moment ground contact lengthens or the hops lose height and rhythm across the reps.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_540c93c3cbced3,drl_3a97c9c9fe1e9d,1,"Stop the set when the athlete absorbs the jab with an open palm or a dead shell instead of catching it, on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3b36b77083c794,drl_3a97c9c9fe1e9d,2,"Stop the set when the 1 – 2 comes from a broken base (leaning, off balance) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_83d210e8d4f1e1,drl_3a97c9c9fe1e9d,3,Stop the set when the partner stops feeding the agreed single jab at the agreed pace and a reset does not restore it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b9f4bac2eedc4e,drl_3b1ec1fb7207bc,1,"Stop the work period when entries get rushed or reaching and the clean entry-exit cycle breaks; slow the eyes first, then restart.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_21e0e51371e80e,drl_3b1ec1fb7207bc,2,Stop the work period when exits become late on consecutive reps or the athlete watches the touch instead of leaving.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bd04b67c23309e,drl_3b1ec1fb7207bc,3,Stop the drill when fatigue erases clean scoring and clean exits; the load is too high.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_0dff97b014ad5c,drl_3cc110cc6213ba,1,"Stop and regress when the boxing check after the block shows guessing, blind reset, stance collapse, guard abandonment or the target skill gone.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a7f435ed965c1c,drl_3cc110cc6213ba,2,Stop the interval and downgrade (shorter interval or longer recovery) when breathing turns panic-driven instead of recoverable.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_8e57b6fcd57c92,drl_3f49ec223f945f,1,"Stop the rep when the pivot collapses posture (bending over, squaring up, guard dropping, spinning away) and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0593401f7bef48,drl_3f49ec223f945f,2,"Stop the set when the athlete keeps watching the last punch and forgets the pivot, rep after rep.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_e1015d8ce58cf0,drl_3f4ff51930f03f,1,"Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_9b382fbd4f9c3e,drl_3f4ff51930f03f,2,"Stop the round when the roles break down (B throws before defending, or A stops attacking first) and a reset does not restore them.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_40e760dea29f62,drl_3f4ff51930f03f,3,Stop the round when B's counters come from broken balance and a cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d0c4544c3426f3,drl_404a38bec6daac,1,"Stop the round when the boxer keeps stopping to punch and then moving, and the coach's calls do not change it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b364ada3ebe7a4,drl_404a38bec6daac,2,"Stop the round when punching on the move costs the stance again and again (crossed feet, reaching, off balance); go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f36071d296b986,drl_404a38bec6daac,3,Stop the round when it turns into trading from set feet instead of punching on the move.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_6e2cd5e508699e,drl_4105b85f4967a9,1,Stop the round when the boxer drifts back to their own style and one cue does not bring the assigned style back.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b10ac6f5be2104,drl_4105b85f4967a9,2,"Stop the round when structure breaks inside the assigned style (stance, eyes or reset lost again and again); go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f3dc1e7a5abd93,drl_4105b85f4967a9,3,Stop the round when the style round turns into a brawl and loses its teaching value.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_68bd7549ab48a7,drl_4138c56f76331e,1,"Stop the set when the shoulders or trunk turn with the head, or the head jerks against the band.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_91f1a3b63ce9fd,drl_4138c56f76331e,2,"Stop and regress when the neck work becomes the session goal or leaves posture, guard or footwork worse in the boxing task that follows.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_33b91242f95909,drl_43d923174a2e13,1,Stop the round when the athlete holds the breath through combinations and one cue does not bring the exhale back; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_de2b0b134e173f,drl_43d923174a2e13,2,"Stop the round when the shoulders rise and tighten and the punches lose their snap (tense all the way, not relaxed then firm).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_47e5def0490846,drl_44173cce2543ae,1,Stop the set when the athlete tenses so hard they strain or hold the breath; ease the tension and keep breathing.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7e7fb67497280f,drl_44173cce2543ae,2,Stop the ring version when the checkpoints cost the athlete their guard or stance between exchanges; go back to the full-body version.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2674e9cde42666,drl_4433cfd4fde518,1,"Stop the set when the athlete is no longer trying to jump as high as possible, or jump height visibly drops.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_493df70d89a2ab,drl_4433cfd4fde518,2,Stop the set when landings turn hard or the athlete stops resetting between reps.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d51e7841a702d7,drl_4433cfd4fde518,3,"Stop and regress when the jumps turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3ed3fd8309ed9e,drl_444f6117179cd4,1,"Stop the round when the roles break down (the counter athlete starts leading, or the pressure athlete stops pressuring) and a reset does not restore them.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_678e1a9f970d3b,drl_444f6117179cd4,2,Stop the round when the pressure athlete is chasing instead of cutting angles and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ae395e20c74b72,drl_444f6117179cd4,3,Stop the round when the exchange escalates on ego and coaching cues no longer change it.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_2166dec8c3d3a4,drl_45e3aa3d653dec,1,"Stop the set when the athlete adds a fifth punch or keeps working after the last cross, on consecutive reps.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_40c628b9a6344d,drl_45e3aa3d653dec,2,"Stop the set when stance collapses on the hook or the last cross (leaning, falling in) on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3783f69b019aa0,drl_45e3aa3d653dec,3,Stop the set when the step off at an angle comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_83e56124b190e5,drl_45e8895039a8cd,1,"Stop the set when the athlete crashes into the landing, loses balance or the movement gets shallow, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_62c2c0abed7e09,drl_45e8895039a8cd,2,Stop the set the moment jump height drops across the reps.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_9e110fc2d5f50a,drl_46040657d32624,1,"Stop using a word when it no longer produces the relaxed state, or the athlete tightens on hearing it; go back to calm pairing at level A.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_70be16bd7e460d,drl_46040657d32624,2,Stop adding words once the athlete has their two or three anchored ones (cue stacking).,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_335188b163b278,drl_4698397d9a30a6,1,Stop the set when a second punch or a delayed exit appears; reset to one score only and exit before any second action.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_817f5a3d3916c3,drl_4698397d9a30a6,2,Stop the set when the feet stop and the athlete stalls in front after the touch instead of leaving.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_945ea4703650e8,drl_4698397d9a30a6,3,Stop the drill when fatigue erases clean scoring and clean exits; the load is too high.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_52d97e0190c454,drl_472ace744d23ad,1,Stop the round when the boxer keeps backing straight into the ropes with no exit plan; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4ad3504b99cf8b,drl_472ace744d23ad,2,"Stop the round when the boxer counters from poor balance (leaning back, falling away) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3023b231512d4c,drl_472ace744d23ad,3,Stop the round when the boxer keeps stepping forward and repeated calls are changing less each time.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_c6001f962fcb4a,drl_47332a2172ca34,1,Stop the set when the lift turns into a squat (knees travel forward) or a back extension (the back rounds or arches to finish).,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2c15dc066706d9,drl_47332a2172ca34,2,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_53fde03c51de54,drl_4803fcc892043a,1,"Stop the rep when the athlete loses balance on the 1-2 (falls forward, feet cross or go narrow) and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f867da82e162be,drl_4803fcc892043a,2,"Stop the set when a hand stays down after the punch rep after rep, so the athlete is practising the dropped guard.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ed6136fe1790f6,drl_48f8f22c831619,1,"Stop the rep when the defender backs straight out along the line instead of pivoting or angling, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6eb1367abea511,drl_48f8f22c831619,2,Stop the rep when the defender panics or freezes at the edge and cannot get out within 5 seconds; slow the pressure before the next rep.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_2aa25f85b84c03,drl_48f8f22c831619,3,"Stop the rep when the pressure partner throws punches, since the partner's role is to advance without punching.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_3ff1c835170cfd,drl_49141fcde606c6,1,Stop the round when returns come from broken balance just to beat the clock and one cue does not fix it; drop to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7b41654890b59b,drl_49141fcde606c6,2,Stop the round when the roles break down (the partner stops working at the set pace and contact) and a reset does not restore them.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_add0d0441815c0,drl_49141fcde606c6,3,Stop the round when it turns into trading instead of defend-and-return.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_b757bb413fb7f9,drl_4a483392725951,1,"Stop the round when the athlete keeps stopping to punch and then moving, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4e5e3fe61e1652,drl_4a483392725951,2,"Stop the round when the stance breaks while punching on the move (feet cross, hips turn away, athlete backs up blind).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_809a72d7c7f217,drl_4b07e8c1f3c6b1,1,Stop the set when the pivot turns into a spin or the stance squares up at the finish and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2255f2ea2489e4,drl_4b07e8c1f3c6b1,2,Stop the pad round when the boxer pivots before the cue on most reps (guessing); go back to shadow with the tape.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_32f7d4d7c94d2c,drl_4b7253cfe8577a,1,"Stop the set when the athlete pulls straight back without returning, or pulls so far the 1 – 2 cannot land, on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_610d989898aa67,drl_4b7253cfe8577a,2,"Stop the set when the 1 – 2 comes from a broken base (leaning, off balance) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8c9061a6f2b7f8,drl_4b7253cfe8577a,3,Stop the set when the partner stops feeding the agreed single jab at the agreed pace and a reset does not restore it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_efd44237140259,drl_4ce12fe941db07,1,"Stop and regress when the sled or sprint work turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b967e70f980946,drl_4ce12fe941db07,2,Stop the rep when the athlete stands upright on the sled or the stride turns into reaching instead of driving.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5c8d7e8cad55b9,drl_4ec23d961e27f7,1,Stop the set when the push or the bag tap stops being light and controlled; reset the force before continuing.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_c076cb906ff594,drl_4ec23d961e27f7,2,Stop the set when the brace comes late (after the push) on repeated reps; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_74340798e0ff88,drl_4ec23d961e27f7,3,"Stop and regress when the drill becomes the session goal or leaves posture, guard or footwork worse in the boxing task that follows.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a74642486a0892,drl_4f669dc005e508,1,Stop the round when the boxers keep breaking the one-step rule and a reset does not restore it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_9bcc6bdf79bd4b,drl_4f669dc005e508,2,Stop the round when the boxer can no longer protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_3abeeded653f23,drl_4f669dc005e508,3,Stop the round when it turns into trading instead of distance work.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_49f476226e94dc,drl_4f994e23202301,1,Stop the round when the feet cross or the back foot moves first and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6d4e4eea80797e,drl_4f994e23202301,2,"Stop the round when the stance falls apart as the athlete tires (stands tall, hands drop, feet narrow).",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_06de874266fd94,drl_503b08e6e4c1cf,1,Stop the set when the hook swings wide or finishes square on consecutive reps; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_1ef25c6dc3da20,drl_503b08e6e4c1cf,2,Stop the set when stance collapses on the cross (reaching or falling in) on consecutive reps.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e6a5eb8c4d3f37,drl_503b08e6e4c1cf,3,Stop the set when the pivot comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_01bee014e0798c,drl_50c44c2044e4f7,1,"Stop the round when the boxer cannot protect themselves structurally against the problem, or loses stance, eyes or reset again and again; go back to level A.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_9d817e92f700b4,drl_50c44c2044e4f7,2,"Stop the round when the partner drifts off the instructed behaviour or into ego sparring, and re-brief the partner.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_7adecc1cf22269,drl_50c44c2044e4f7,3,"Stop the round when frustration takes over (retaliation, emotional speed) and cues no longer land.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_9fb56d3826dbb6,drl_515284198bd197,1,"Stop the round when urgency turns into chasing and lunging, with the hands ahead of the feet, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5dca79eaa22208,drl_515284198bd197,2,Stop the round when the boxer stops defending to catch up and cannot protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_397cd2d3625590,drl_515284198bd197,3,Stop the round when emotional escalation overrides the coach's cues.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_39dc1c27b21995,drl_5168945f1276b3,1,Stop the round when the boxer throws wild or off-balance just to beat the count and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_83ec60a91a4784,drl_5168945f1276b3,2,Stop the round when the partner's work rises above the pace and contact set for the round and a reset does not restore the roles.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_acd0e31e83d1bd,drl_5168945f1276b3,3,Stop the round when it turns into trading instead of timed entries.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_61cb5a4467334b,drl_51897d282e13dd,1,"Stop the round when punches stop being controlled or the escape turns into wrestling or scrambling, and one cue does not settle it.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_dee7a622cbdc5b,drl_51897d282e13dd,2,Stop the round when the athlete keeps backing straight out or panics at the ropes; reduce the pace and restore the first leave point.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0050db43f6867a,drl_51897d282e13dd,3,Stop the round when the pressuring partner rushes and crowds into chaos instead of holding the set picture.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_347b700d82cdbb,drl_5427d7d085cfe7,1,Stop the round when the stronger boxer slips back into their strong mode and one cue does not bring the weak mode back.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_33aadd507c360f,drl_5427d7d085cfe7,2,"Stop the round when the less skilled boxer is surviving instead of learning, and reassign or go back to level A.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_f27b5e8ac98327,drl_5427d7d085cfe7,3,Stop the round when the stronger boxer's structure breaks in the weak mode again and again.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_da4bb5e171107c,drl_5483e1e36c7bf1,1,Stop the round when the partner's shots rise above the set 30% and a reset does not bring them back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_65908f34734966,drl_5483e1e36c7bf1,2,Stop the round when the guard keeps dropping or the boxer turns square and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b86c6d39870078,drl_551e8bcf9a042e,1,"Stop the round when the holder keeps the mitt still, or the feed stops serving the lesson, and a reminder does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ad0fbb1270d331,drl_551e8bcf9a042e,2,"Stop the round when the jabs come off balance or without a reset, or the athlete starts guessing at the target.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_854a5ec337a279,drl_55ceaa36d2ecec,1,"Stop the rep when the boxer is chasing (following where the partner is) instead of cutting, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_1d8e6d006e0940,drl_55ceaa36d2ecec,2,"Stop the rep when the partner stops moving continuously or turns the drill into a race, and a reset does not restore the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_7aad1f100d98c5,drl_57bc1c356f8ab7,1,"Stop the round when the partner's switch is unclear or the partner drops the new style (the role breaks down), and re-brief the partner.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a16bbca7bea23c,drl_57bc1c356f8ab7,2,Stop the round when the boxer's answer to the change turns into panic or wild exchanges and cues stop landing.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_ec967a0f7b9dff,drl_57bc1c356f8ab7,3,"Stop the round when stance, eyes or reset are lost again and again after the change; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_84e798f158fe2f,drl_58237a97475086,1,Stop the round when frames or reaches turn into shoves or strikes and a reset does not bring them back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_2c2ada6be42e9f,drl_58237a97475086,2,Stop the round when the boxer keeps backing straight up instead of stepping off and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4dacf61c8cef8f,drl_58f3d4d1d6e8f1,1,Stop the set when the tempo turns jerky or the partner's resistance stops being steady and controlled.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0bb5e054f5a464,drl_58f3d4d1d6e8f1,2,"Stop and regress when the neck work becomes the session goal or leaves posture, guard or footwork worse in the boxing task that follows.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_335f9a7203d492,drl_5a57ce7cd18bfa,1,Stop the rep when the athlete abandons the stance to move faster and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7a265d70e3793d,drl_5a57ce7cd18bfa,2,Stop the set when fatigue shows in the stance: it keeps collapsing or the guard is abandoned.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_e3c1bed2e31d94,drl_5c41d88c641246,1,"Stop the round when the feints get so big they become fake attacks with no recovery, or balance breaks after the feint, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_604e0829ccefc2,drl_5c41d88c641246,2,Stop the round when the boxer throws the real shot whether or not the second reaction came.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_5596f6f056013d,drl_5c41d88c641246,3,Stop the round when the pace climbs past the drill's 50% and it turns into trading.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_282a62ef505e8c,drl_5ca4062c169a63,1,"Stop the set when the hips sag, the range gets partial or the push loses intent, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_813bb577e542a0,drl_5ca4062c169a63,2,Stop the set when the work stops sharpening position and only makes the athlete hotter and more tired before the work that follows.,drill_specific,warmup_decay
+{{PPBF_ORG_ID}},stp_30ce770be0c221,drl_5e5234a61eb2a4,1,"Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_c776659e6fee27,drl_5e5234a61eb2a4,2,"Stop the round when the rear hand comes into play or the athlete starts reaching with the jab, and a reset does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_56b7b6b410a1dd,drl_5e5234a61eb2a4,3,"Stop the round when it turns into standing and trading jabs instead of step in, score and step out.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_69288ac776c78a,drl_5e8d1e08db9348,1,Stop the round when the feint keeps turning into a real entry (the boxer crosses into range) and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bc017320421887,drl_5e8d1e08db9348,2,Stop the round when the boxer loses stance or balance after the feint.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5ee236e732d04b,drl_5e8d1e08db9348,3,"Stop the round when the partner reacts to everything or to nothing, so the picture is no longer what was assigned, and restate the partner's rule.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f3ce6a37ba83db,drl_5ff7db8ae359c1,1,Stop the set when the pivot is made on a flat foot or ends off balance on consecutive reps; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fa64ccd19efd82,drl_5ff7db8ae359c1,2,Stop the set when the 1 – 2 splits into two separate punches and one cue does not rejoin it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_caba9e39ccf02c,drl_5ff7db8ae359c1,3,Stop the set when the pivot comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_9c3de75ce17a3d,drl_6082697af8047e,1,"Stop the round when punches stop being controlled or athletes fall in on the entry, and one cue does not fix it.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_c0ffefef568b76,drl_6082697af8047e,2,"Stop the round when the athlete bends at the waist with the head on center instead of bending the legs, and a reset does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_58b5c0af4fc1e6,drl_6082697af8047e,3,Stop the round when athletes stay inside trading after the body shot instead of exiting.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2d6b7a96ee0f21,drl_608fcef4de2779,1,Stop the round when the punching falls apart on every switch (the hands stop or form breaks) and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5f1955188cace2,drl_608fcef4de2779,2,Stop the round when the boxer stops responding to the calls and keeps one focus throughout.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f8b03f8d0acd6d,drl_61b46656c61585,1,Stop the set when the throws slow down or the athlete loses balance or guard after the throw.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_73d46587b5b4ef,drl_61b46656c61585,2,"Stop and regress when the throws turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_1fc70c7ae4f30b,drl_6219fca7255c06,1,Stop the set when the routine turns into a long pause or a talk rather than a quick reset; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ddcf83f78ac051,drl_6219fca7255c06,2,Stop the round when mistakes keep stacking and the routine no longer brings the boxer back; simplify the task until one clean rep lands.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_e8591c89cd9159,drl_631ca619421980,1,review becomes opinion debate.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_6f05ac3f8836a0,drl_6370c51875c49f,1,"Stop the set when the knees bend too much, ground contact slows or the landings get heavy, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_45f35e760e97a4,drl_6370c51875c49f,2,Stop the set the moment ground contact lengthens or bounce height drops across the reps.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_0c6215640269e7,drl_6596a2711e549c,1,Stop the round when the boxer keeps reaching for the knee by folding at the waist with the guard down and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_c5f9f1d297b742,drl_6596a2711e549c,2,Stop the round when touches turn into pushes or strikes and a reset does not bring them back to a light touch.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_25393cccbccfa1,drl_659a3e3609094a,1,Stop the round when punches keep landing with no feint first and the coach's call does not bring the rule back.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_af2befb5700972,drl_659a3e3609094a,2,"Stop the round when the feints get so big the athlete loses balance or cannot recover, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2a57f400177d9a,drl_659a3e3609094a,3,Stop the round when an athlete cannot protect themselves structurally while feinting or punching.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_211d74da41d250,drl_6671bb48982a6c,1,"Stop the set when the knees collapse inward, the pelvis tucks under at depth, or the torso pitches forward.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6e3a1bdc68e9e7,drl_6671bb48982a6c,2,Stop the set when bar speed visibly drops or technique breaks; do not grind reps.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_530cbd4b2ed8d7,drl_6671bb48982a6c,3,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b44b0fec2ca38c,drl_69afcc79abc4f3,1,"Stop the set when reps lose range (no full hang, or the chin stops short of the bar) or the athlete kicks and swings to finish.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a8597206432bfc,drl_69afcc79abc4f3,2,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7677db090fb0bb,drl_6a9ec801add8ab,1,"Stop the round when the loose phase is no longer loose (shoulders up, hands tight) and one cue does not change it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_83e63c81e126c5,drl_6a9ec801add8ab,2,"Stop the round when fatigue turns the explosive phase into slow, sloppy punching; the drill is the switch, not exhaustion.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_e60a6499250c45,drl_6bd0ad1ffb7a50,1,"Stop the block when the shadow turns into unscored volume, or the mechanics collapse and resets disappear.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_112481ec788871,drl_6bd0ad1ffb7a50,2,Stop the block when the bursts turn frantic and the athlete can no longer shadow with the intended structure.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a9a4db99cfb666,drl_6e1a591f720088,1,"Stop the round when sequences keep running past three punches or movement disappears, and one cue does not fix it; go back to level A.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_415cda84141ea4,drl_6e1a591f720088,2,"Stop the block when the athlete is practicing survival instead of capped, moving sequences.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_e2d92d85aa8104,drl_6f0f46653e5345,1,"Stop the round when the boxer backs straight to the boundary or turns blind to escape, again and again; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_07fcb98a17d438,drl_6f0f46653e5345,2,Stop the round when the line is crossed again and again and the space is no longer what was assigned.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_5ec70b288df81c,drl_6f0f46653e5345,3,Stop the round when it turns into crowding and trading in the tight space instead of exits.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_8c7613e00a1eec,drl_701a04b803aa13,1,Stop the round when the boxer gives the wrong response or freezes on most calls and one cue does not fix it; cut back to fewer numbers.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_22018c5dcca3a2,drl_701a04b803aa13,2,Stop the round when the partner's work rises above the pace and contact set for the round and a reset does not restore the roles.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_e2c75130a5a146,drl_701a04b803aa13,3,Stop the round when it turns into trading and the calls stop being heard.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_6406ab5bf67460,drl_724a39a711ad27,1,Stop the round when shots drift to the head and one cue does not bring them back to the body.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_d09767f502ea32,drl_724a39a711ad27,2,"Stop the round when the athlete reaches for the body by bending at the waist and dropping the guard, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d3690e7b35c935,drl_724a39a711ad27,3,"Stop the round when the pace stops being controlled and turns into trading, and a reset does not bring it back.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_20ec90a3004f29,drl_7288d58dc1ed47,1,"Stop the set when the athlete starts rushing and the links blur together, and one cue does not slow it down.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_710338a6751dec,drl_7288d58dc1ed47,2,Stop the set when the shoulder or arm starts the punch before the hip.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f1dafb1d0f0c99,drl_72ef6e618606cf,1,"Stop the set when fatigue makes the combinations sloppy (guard stays down, feet go flat, no exit) and one cue no longer fixes it; reset and drop back a layer.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_8b169eda58e96e,drl_72ef6e618606cf,2,Stop the set when the athlete is surviving (throwing anything to keep moving) instead of holding the combination.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ffed7e9b15fad5,drl_73fdc4c1546d8f,1,"Stop the set when the jab leans in or the rear hand drops, and one cue does not fix it; go back to slow jabs.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e3f9d7b932f593,drl_73fdc4c1546d8f,2,"Stop the set when the jab telegraphs (shoulder dip, hand cocking) or comes back slower than it goes out, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_27f9b12aa1e075,drl_7432294846ea67,1,"Stop the round when the cross starts reaching, looping or over-rotating and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b8f355b56b51d6,drl_7432294846ea67,2,Stop the round when the hands stop coming back to guard between combinations as the athlete tires.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_919bb44a0cef51,drl_7474ad3b744c34,1,"Stop the round when the shot triggers emotional re-entry (retaliation, trading) and the boxer does not reset.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_64c759c0068252,drl_7474ad3b744c34,2,Stop the round when the boxer cannot recover eyes and feet before acting after the shot.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_0126d97adbaea2,drl_7474ad3b744c34,3,"Stop the round when the partner keeps landing hard after the one instructed shot (the role breaks down), and re-brief the partner.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_78e6874f746403,drl_74ec4aa5a0ef22,1,"Stop the round when the jab turns into reaching or leaning and the feet stop, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_dd4973a773d3a2,drl_74ec4aa5a0ef22,2,Stop the round when the jab stops coming back quickly and the guard drops as the athlete tires; go back to level A.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_b70d3330df223d,drl_77ab33d446cf52,1,Stop the round when the boxer keeps circling into the power hand and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b6f22d13972ab5,drl_77ab33d446cf52,2,Stop the round when the partner stops turning to face the boxer as set and the picture is no longer the assigned one.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_52f878bad2f710,drl_79538b5ffad0d9,1,"Stop the check when the athlete cannot hold the stance (feet cross, stance squares, chin lifts, hands drop) after one cue; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_81b8da12faac34,drl_79538b5ffad0d9,2,Stop the line when the corrections get too long to use; go back to one cue per athlete.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_b07a6bee2e9d51,drl_7b233bde705ac5,1,"Stop the set when the hips sag, the range gets partial, or the push slows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_21c67c111f2014,drl_7b233bde705ac5,2,"Stop and regress when the push-ups turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_eb0c146b0092da,drl_7b3072bdcc91f6,1,Stop the round when entries keep ending with no exit (the boxer stays after the two shots) and one cue does not fix it; go back to level A.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3a41ca6fb7641f,drl_7b3072bdcc91f6,2,Stop the round when the partner's work rises above the pace and contact set for the round and a reset does not restore the roles.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_0607fb6f1c6d27,drl_7b3072bdcc91f6,3,Stop the round when it turns into trading instead of enter-and-leave.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_352f00fa18766a,drl_7d186d942e9231,1,Stop the round when fatigue breaks decision quality and the boxer is surviving instead of choosing.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_3b5141b0d67fdf,drl_7d186d942e9231,2,"Stop the round when visible fatigue is degrading the boxer's defence (guard dropping, no longer defending intelligently).",drill_specific,safety
+{{PPBF_ORG_ID}},stp_e896627e86cf77,drl_7d186d942e9231,3,"Stop the round when fatigue brings chasing or emotional acceleration, and downgrade the session.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_176d6ef8e43336,drl_81831a79fee73b,1,Stop the set when punch speed visibly drops or the punch mechanics change against the band.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9e953a79f0b7ff,drl_81831a79fee73b,2,Stop the band work when it turns into rounds of punching for conditioning.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_d18445fd5feec8,drl_81950b7109357f,1,"Stop the work period when the athlete backs straight up, stays to trade or loses stance under the step-in, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_68cf249c724e86,drl_81950b7109357f,2,Stop the work period when the athlete freezes or retaliates emotionally as the partner steps in; go back to level A.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_dcc57358e12dd2,drl_81950b7109357f,3,Stop the drill when fatigue erases clean scoring and clean exits; the load is too high.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_f529f2d33b0882,drl_81a64caa3bbf52,1,repeated guessing.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_16a3b04a6ced5c,drl_83057d7afff22a,1,"Stop the hold when the athlete overextends, shrugs the shoulder or drops the opposite hand, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_c54bec10620e73,drl_83057d7afff22a,2,Stop the set when the work stops sharpening position and only makes the athlete hotter and more tired before the work that follows.,drill_specific,warmup_decay
+{{PPBF_ORG_ID}},stp_a12d6cbd0181a0,drl_83832de7d460cd,1,"Stop the round when the pause turns into a freeze (standing tall, feet stuck) or the jab fires without a pause, and one cue does not fix it; go back to slip and pause only.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_dc6cd473804206,drl_83832de7d460cd,2,Stop the round when the slip grows big or leaning and balance goes.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3e3f1c92c640f7,drl_85122df5131221,1,"Stop the round when the boxer starts chasing the partner off the centre with the hands (lunging, reaching).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7dbdb4c4eb57ea,drl_85122df5131221,2,"Stop the round when the boxer drifts off the centre and does not come back, and repeated calls are changing less each time.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_5745fcd7fb9edf,drl_85122df5131221,3,Stop the round when it turns into a brawl in the middle instead of holding and defending it.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_bbac6ab9c0d783,drl_85983bf2524746,1,"Stop the round when the boxer trades shots to reach the count instead of defending first, and one reset does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ce4dac5d8c9ca2,drl_85983bf2524746,2,"Stop the round when the boxer cannot protect themselves structurally (guard gone, eyes off the partner) on repeated exchanges; go back to level A.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_2c242098e233d3,drl_85983bf2524746,3,Stop the round when emotional escalation overrides the coach's cues.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_a19a93c64f2ba4,drl_85a93f6757497a,1,"Stop the set when the punches turn into pushes, form goes or the hands drop, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6fcebc1eaddc13,drl_85a93f6757497a,2,Stop the set when the bursts turn frantic and the athlete no longer returns to guard and stance between bursts.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_6ab3430f9481ae,drl_86bb5b1cad3f3b,1,Stop the set when jump height visibly drops or the athlete stops jumping for maximum height.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_95fae945374455,drl_86bb5b1cad3f3b,2,Stop the set when landings turn hard or the bar swings out of control.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_07c4789c256bf0,drl_86bb5b1cad3f3b,3,"Stop and regress when the jumps turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_558a10380415ba,drl_88c64045e530a3,1,"Stop the rep when the slips get big, the eyes leave the partner, or balance is lost, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_1da82581a64083,drl_88c64045e530a3,2,"Stop the rep when the defender slips but does not return, or returns from a broken base, and a reset does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_cb33e033e92645,drl_88c64045e530a3,3,Stop the drill when the partner's jab stops being light and controlled and one cue does not bring it back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_51ba1c4a8dc7e4,drl_8a92d5f1b49f9f,1,Stop the set when the dip gets big enough to pull the boxer off balance or drop the guard; go back to the mirror.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4ad3ed1bb21742,drl_8a92d5f1b49f9f,2,Stop the partner drill when the partner calls the feint correctly almost every time; go back to the mirror.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e7b45ca85433e6,drl_8aa5ccebcf72ab,1,"Stop the set when the uppercut drifts into a hook or a reaching straight, or the stance squares, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_60eb436e30c67a,drl_8aa5ccebcf72ab,2,Stop the set when the boxer reaches out to throw at long range instead of meeting the entry.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_af453549a8ae79,drl_8aa5ccebcf72ab,3,"Stop the set when the partner's entries turn into real exchanges and contact climbs above the drill's light technical level, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f0044af633cb9d,drl_8aabee41f71840,1,Stop the round when the boxer keeps jabbing and staying in front and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_499ffeb2820ae9,drl_8aabee41f71840,2,"Stop the round when the partner's role breaks down (standing still, or attacking instead of moving) and a reset does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_4c6d4ae5755ee9,drl_8ca8814b596907,1,"Stop the hold when the elbows flare, the hips drop or the athlete holds their breath, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_679d85a8e3fe66,drl_8ca8814b596907,2,Stop the set when the work stops sharpening position and only makes the athlete hotter and more tired before the work that follows.,drill_specific,warmup_decay
+{{PPBF_ORG_ID}},stp_2b2ba2dcd8b708,drl_8cd68e49cc8584,1,"Stop the rep when the clinch turns into wrestling or scrambling instead of tie-up, turn and break.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_47946ec311d97d,drl_8cd68e49cc8584,2,"Stop the rep when the athlete comes out of the break blind or off balance, without eyes and feet back, on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5bd0dc523c092e,drl_8cd68e49cc8584,3,Stop the rep when the partner stops playing the agreed role (pace or resistance beyond what was set) and a reset does not restore it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_8a9cb359e0a9c8,drl_8e3937d3ce95c4,1,"Stop the rep when the range-finding jab reaches or leans to touch the pad instead of measuring from stance, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_72eb2dc23586ad,drl_8e3937d3ce95c4,2,Stop the set when the athlete is guessing ranges rather than reading them and the estimates are not getting closer; go back to level A.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_167e3a18096f55,drl_930b1bf20b997a,1,Stop the round when exits come late or disappear on consecutive exchanges.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a391c32f30b242,drl_930b1bf20b997a,2,"Stop the round when the pivots and step-offs end crossed, square or with the eyes off the partner, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_af5b0e8862bf9f,drl_930b1bf20b997a,3,Stop the round when it turns into trading in front instead of score and exit.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_ca4fb816bf27f9,drl_932bb8430b0966,1,Stop the session when the imagery turns into replaying fears with no end (rumination) instead of rehearsal; finish on the athlete's composed response.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_3a6240bd91ed91,drl_932bb8430b0966,2,"Stop the session when the imagery skips the loss or the nerves (winning only), and restart with the full content.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_04b26e9b7eec1f,drl_936dda713f06d7,1,Stop the round when half-punches start to look different from real ones (the watcher calls them every time); slow down and go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4c407ea37716c0,drl_936dda713f06d7,2,Stop the round when stopping the half-punch pulls the boxer off balance or drops the guard.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_043b41d3fcb3da,drl_9423bba8f720f4,1,Stop the round when either boxer escalates past the agreed intensity to win the decision.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_2b515d59704120,drl_9423bba8f720f4,2,Stop the round when a boxer stops defending intelligently or cannot protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_45146508538cc6,drl_9423bba8f720f4,3,"Stop the round when the boxers abandon the plan to chase the result (wild exchanges, headhunting).",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_912080d27776e1,drl_94bed8fcb73e70,1,Stop the round when the boxer keeps mixing layers and one cue does not fix it; go back to level A.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3b957dd52dce70,drl_94bed8fcb73e70,2,Stop the round when the partner's attacks rise above the pace and contact set for the round and a reset does not restore the roles.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_578e9ae4c953bb,drl_94bed8fcb73e70,3,Stop the round when the boxer can no longer protect themselves structurally inside the round's layer.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_b8a5217868302a,drl_94ddb11b6696e2,1,"Stop the round when the feints get so big they become fake attacks with no recovery, or balance breaks after the feint, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e6caa1106a62b8,drl_94ddb11b6696e2,2,Stop the round when the boxer scores or throws without the named reaction having come.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ba5d6a60357f4c,drl_94ddb11b6696e2,3,Stop the round when it turns into trading and the constraint is lost.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_0919dc35a0266b,drl_95af631decae78,1,Stop the round when technique falls apart under the disruption and one cue does not bring it back; lower the disruption one step.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fab44b30f7410f,drl_95af631decae78,2,Stop the round when the coach's cue can no longer be heard or used over the noise.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_eaea5e09ac0deb,drl_96dbaf61d33325,1,"Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_449993bab04933,drl_96dbaf61d33325,2,"Stop the round when counters come from broken balance or before any defense, and a reset does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_83252527c38ee9,drl_96dbaf61d33325,3,"Stop the round when the picture is no longer what was assigned (athletes punch without defending first, or nobody attacks so there is nothing to defend) and a reset does not restore it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_5c6c02a2b76030,drl_9772ebdbf4df1c,1,Stop the round when the athlete keeps stepping out sideways without the second step and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6cc1dd136bcc21,drl_9772ebdbf4df1c,2,Stop the round when the angle turns into a spin or the stance squares up at the finish.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f224903573f4a5,drl_97ee0ae7f003ac,1,Stop the set when the bar path wanders or the shoulders roll forward off the bench or floor to finish the press.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8befeac064dfa6,drl_97ee0ae7f003ac,2,Stop adding sets when the press starts to dominate the session's strength work.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_8fa87130e7cb54,drl_97ee0ae7f003ac,3,"Stop and regress when the press leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_24651119f1043f,drl_98b7d553578b2f,1,Stop the round when the boxer keeps rolling into the second punch and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5826bbaba5e7ec,drl_98b7d553578b2f,2,Stop the round when the partner's hooks rise above the set 40% and a reset does not bring them back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_538c9e41a9d6e2,drl_99429f59282dc9,1,"Stop the round when the stakes make the boxer rush, freeze or overthrow, and one reset does not settle it; lower the stakes (level A).",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_1e9fae2adf9952,drl_99429f59282dc9,2,Stop the round when pace becomes emotional rather than purposeful because of what is riding on it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_4239c75cab5599,drl_99429f59282dc9,3,Stop the round when it turns into a fight over the consequence instead of the round's lesson.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_49d1d08fea4e63,drl_9a34519a91aee6,1,Stop the set when reps slow into grinding and one cue does not restore the speed; lighten the load or end the set.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_95b986681d2e3e,drl_9a34519a91aee6,2,Stop the set when the rotation drops out and the press becomes arm-only.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b6cd0e17b11347,drl_9c0dd19f2d2f39,1,Stop the round when the boxer keeps guessing (moving before anything starts) and one cue does not fix it; go back to level A.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b618bf3acbd28e,drl_9c0dd19f2d2f39,2,Stop the round when the partner's punches no longer stop halfway and a reset does not restore it.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_1f23f2cf16cbe2,drl_9c80a436166e16,1,"Stop the set when the head starts chasing the flashes or the guard drops, and one cue does not fix it; slow the flashes down.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_26f1a775507493,drl_9c80a436166e16,2,Stop the set when the athlete starts guessing numbers instead of reading them.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_75523a60af24b4,drl_9da62b8d5cc768,1,"Stop the round when urgency turns into rushing (lunging, wild exchanges, defence gone) and one cue does not restore structure.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_00dcbf8c3a2514,drl_9da62b8d5cc768,2,"Stop the round when the partner changes how they box because of the scenario (eases off or steps up), and re-brief the partner.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3caad69c2ec04a,drl_9da62b8d5cc768,3,Stop the round when the boxer cannot protect themselves structurally in the rush.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_f268e821970aad,drl_9e2321080691bd,1,blind preloading.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a2065818718312,drl_9eef0052f5db82,1,"Stop the session when it has turned into planning or replaying the last bout (thinking, not noticing and returning); restart with the focus.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_c746e055c28aaa,drl_9eef0052f5db82,2,"Stop the session when the athlete is straining to force focus (tense, frustrated at drifting) instead of returning to it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6802d68169ed30,drl_a028058cba5f59,1,Stop the round when the boxer keeps forcing the solved weapon and repeated cues are changing less each time; go back to level A.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a0689a8008dc24,drl_a028058cba5f59,2,"Stop the round when the partner's role drifts into ego sparring or stops solving the weapon, and a reset does not restore it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_641f8ab94c7af9,drl_a028058cba5f59,3,Stop the round when frustration turns into emotional escalation that overrides the coach's cues.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_78c481ae52a5b9,drl_a144ad94d6f48d,1,"Stop the set when the athlete rolls into the punch or bends at the waist instead of rolling under it, on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_959e97b2e8e4a7,drl_a144ad94d6f48d,2,"Stop the set when the 3 – 6 comes from a broken base (leaning, off balance) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a4cc2b57ea9381,drl_a144ad94d6f48d,3,Stop the set when the partner stops feeding the agreed single hook at the agreed pace and a reset does not restore it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_177c7c5e4a190c,drl_a2b1ba67ea49e4,1,Stop the round when the boxer keeps guessing (moving before the screen moves) and one cue does not fix it; go back to level A.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_84011ac75fbd5f,drl_a2b1ba67ea49e4,2,Stop the round when the partner's punches rise above the pace the coach set and a reset does not bring them back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_1b7ef5cdc1f7d1,drl_a316fd6ce4f360,1,"Stop the round when being watched makes the boxer rush, freeze or overthrow, and one reset does not settle it; go back to level A.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_a074fb4d5a95ce,drl_a316fd6ce4f360,2,Stop the round when the boxer starts performing for the audience (showboating or escalating) instead of solving the round.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b2fa2ddb10480b,drl_a316fd6ce4f360,3,Stop the round when emotional escalation overrides the coach's cues.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_9ba690ae8372e4,drl_a44542f9c1d9c2,1,Stop the rep when the boxer keeps ducking and covering instead of pivoting and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e1b3a67a4381e0,drl_a44542f9c1d9c2,2,Stop the rep when the corner creates panic (freezing or wild exits); reduce the pace and restore the first exit.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_4b0ffe5d964de3,drl_a44542f9c1d9c2,3,"Stop the rep when contact goes beyond the light technical level the coach set, or the partner stops pressuring as assigned.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_5acaf0f2bd0688,drl_a50fe886127371,1,Stop at the first sign of degradation: ground contact lengthens or rebound height drops.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_629859f17ab422,drl_a50fe886127371,2,Stop the set when landings are loud or uncontrolled; go back to the lower box.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7bca686a50fe02,drl_a50fe886127371,3,"Stop and regress when the jumps turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_e92b8881f8acfe,drl_a693cb7bd591e4,1,Stop the set when the torso heaves up to move the weight or the back rounds.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8e7d7ebb4559e0,drl_a693cb7bd591e4,2,"Stop and regress when the rowing leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0c0bbfc3d8b3d9,drl_abf3c76fed2f33,1,Stop the round when the athlete drifts back to punching only from a set position and one cue does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_db19428d6f3f09,drl_abf3c76fed2f33,2,"Stop the round when power shots end off balance or come from a broken base (leaning, pushing the bag).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_12a26e782eda2f,drl_acbe0b2f0ca51b,1,"Stop the round when the boxer settles far outside both ranges, or turns it into big exaggerated movement, and one cue does not bring them back.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b854dd24db3e4d,drl_acbe0b2f0ca51b,2,"Stop the round when the partner's punches stop short no longer and start reaching the boxer, and a reset does not restore it.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_507afa5db8e0e3,drl_af22d918c7e142,1,Stop the round when mechanics turn sloppy or the guard drops after the sprint and one cue does not fix it; drop to level A.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_65ff9a3561a324,drl_af22d918c7e142,2,"Stop the round when fatigue causes chasing, emotional speeding up or sloppy exits, so the athlete is surviving rather than sparring with structure.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_6ebd0dcde79e8d,drl_af22d918c7e142,3,Stop the round when an athlete cannot protect themselves structurally after the sprint.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_a8b6e2697c2596,drl_b04c5d06c2f37d,1,Stop the set when the hips bend to shorten the lever or the athlete drops instead of lowering.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_34e9312e547642,drl_b04c5d06c2f37d,2,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_bc4edb6aa50f84,drl_b0963dc04e4e4b,1,"Stop before the restart when the athlete's breathing is still panic-driven (held breath, shallow breaths, shoulders up); give another breathing reset or make the next round's task simpler.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_4445dd7232fb06,drl_b2683fced64c22,1,Stop the round when the boxer's counters come from broken balance or a lost stance and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a0a523242592b5,drl_b2683fced64c22,2,"Stop the round when the roles break down (the boxer starts leading, or the partner stops leading at the set pace) and a reset does not restore them.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2fbb5f0d0345a5,drl_b2683fced64c22,3,Stop the round when it turns into trading instead of read-and-counter.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_677fb7bb158583,drl_b2b68427f3f9d4,1,"Stop the rep when the boxer backs straight along or off the ropes, or turns blind, and reset the start.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4abd1751728766,drl_b2b68427f3f9d4,2,Stop the set when the boxer freezes or shells on the ropes rep after rep; go back to level A.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_0a8baccbca5cc6,drl_b43815f10020ef,1,Stop the set when the lower back arches to finish the lift instead of the hips extending.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_c953940e662a13,drl_b43815f10020ef,2,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_992fa046fa20a9,drl_b4a13d67312d67,1,Stop the session when predictions turn into guesses with no reason given; go back to two choices.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f9677b7d5fc300,drl_b6356060d21414,1,"Stop the round when the bag work turns into unscored volume, or the mechanics collapse and resets disappear.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_11f3703f7ba8bc,drl_b6356060d21414,2,"Stop the round when posture, breathing or resets go and the technical target is no longer visible.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_82af3b46f26cb4,drl_b6676091d3de0b,1,Stop the comparison when it turns into a list of everything that went wrong; cut it to one technical and one tactical fix.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_22c47179be446a,drl_b8e8ebdb2855b1,1,Stop the round when the removed weapon keeps coming back in and repeated calls are changing less each time.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_d1788c548b4927,drl_b8e8ebdb2855b1,2,Stop the round when frustration at the lost weapon turns into emotional escalation that overrides the coach's cues; go back to level A.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_6ad1cf119a5513,drl_b8e8ebdb2855b1,3,Stop the round when the boxer cannot protect themselves structurally in the unfamiliar mode.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_5a9d97bf1035eb,drl_b97ad47142a90d,1,Stop the round when the boxer keeps slipping and admiring (no return) and one cue does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_cfe3acef63e18e,drl_b97ad47142a90d,2,Stop the round when returns come from a broken base or an over-slip; drop to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_cfb1089e4cec39,drl_b97cc0357410f4,1,"Stop the round when the athlete counters without the cue or from broken balance, and a reset does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_38f840467a7a32,drl_b97cc0357410f4,2,"Stop the round when the defense ends frozen or in a dead shell instead of back in stance, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_eafc5b9164e651,drl_bbf178262859b4,1,"Stop the rep when the pivot collapses posture (bending over, squaring up, guard dropping, spinning away) and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_916cf5bebef8de,drl_bbf178262859b4,2,"Stop the set when a hand stays down after the punches because the athlete is rushing to the pivot, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_58491d952dcd3a,drl_bc3bbd8c2f3567,1,"Stop the round when the bursts become frantic (chasing, sloppy exits) instead of clean, and shorten or simplify before going again.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_df012bb320c974,drl_bc3bbd8c2f3567,2,Stop the block when the boxer can no longer act with the intended structure after the break.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_c5dbc4aee40a92,drl_bc3bbd8c2f3567,3,Stop the round when a boxer cannot protect themselves structurally under the output.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_940009772a494c,drl_bd94a18badaf22,1,"Stop the set when the athlete is watching the extension only and the return slows down, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8d80a1ad035d88,drl_bd94a18badaf22,2,Stop the set when the jab starts leaning in or the rear hand drops.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_96e26d83aabb47,drl_bda0f1282cadaf,1,Stop the round when the boxer keeps backing straight up instead of pivoting and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_814cc3eedec220,drl_bda0f1282cadaf,2,"Stop the round when the pivot turns into a spin, or the boxer ends square or blind.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3e166638ba0064,drl_bda0f1282cadaf,3,"Stop the round when the partner starts punching or stops walking forward (the role breaks down), and restate the role.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_789c094b74a87c,drl_bdbd7d886dffb3,1,Stop the round when fatigue brings straight-line retreats or sloppy exits back and one cue does not fix it; go back to level A.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_73878b418ed4a8,drl_bdbd7d886dffb3,2,Stop the round when the boxer can no longer protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_632ec42f72b7a2,drl_bdbd7d886dffb3,3,Stop the round when the partner's pressure rises above the pace and contact set for the round and a reset does not restore the roles.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_81e63d04562ebb,drl_bf062f758ca6d2,1,Stop the round when the athlete keeps bouncing off both feet or standing upright and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_cc08d01fcbed2e,drl_bf062f758ca6d2,2,Stop the round when the feet cross or the stance squares up.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6d917c72239f77,drl_c0b4e60da4be34,1,Stop the session when the imagined plan uses skills the athlete has not trained or a fantasy version of the opponent; rebuild it at the athlete's real level.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_410cd59eb6fae4,drl_c0b4e60da4be34,2,Stop the session when the imagery speeds up or skips rounds instead of running in real time; restart the round.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_637664efa87f5e,drl_c15ccb8199f819,1,Stop the round when head shots creep in and a reset does not stop them.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_d6d5ff7fcad3d7,drl_c15ccb8199f819,2,Stop the round when emotional escalation overrides coaching cues.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_3f74eda3fb7809,drl_c15ccb8199f819,3,Stop the round when it turns into trading body shots instead of entry and defense work.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_686cc197200409,drl_c35acff94e6251,1,Stop the set when the athlete bends at the waist instead of the legs and one cue does not fix it; slow down to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_40c4339485f80c,drl_c3b5b4d2fd7983,1,Stop the round when the boxer keeps pulling straight back without the return and one cue does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_3ce6f93c1dc9e4,drl_c3b5b4d2fd7983,2,Stop the round when pulls turn into big leans that break stance; drop to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e2aaddc3cd8df5,drl_c46c05d5db1694,1,Stop the round when straight-back retreats keep happening and the lost points are not changing the behaviour; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9071bf56fabfe5,drl_c46c05d5db1694,2,"Stop the round when the exits lose stance (turning the back, exiting tall, no reset) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8d83ad4bb70d9f,drl_c46c05d5db1694,3,Stop the round when an athlete cannot protect themselves structurally while exiting.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_8bfcfd36bfd175,drl_c4ac99142ee8a2,1,Stop the set when the athlete bounces out of the bottom or the front knee and torso lose position.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2c895df8da67ca,drl_c4ac99142ee8a2,2,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8ab51f050e6bcc,drl_c4b5ebd78d7c93,1,"Stop the round when the boxer reaches the new quadrant by spinning, turning blind or running, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_104d1d545c0d29,drl_c4b5ebd78d7c93,2,"Stop the round when the boxer moves without a destination and arrives in worse spots, exchange after exchange.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_4204d640330c90,drl_c4b5ebd78d7c93,3,Stop the round when it turns into running the ring instead of finishing exchanges on a new angle.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_8212c38f10143c,drl_c4b7cd8e03084a,1,Stop the session when the imagery stays in the bad moment and never reaches a response; guide it to the response and finish there.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_cd0ae270e44c7f,drl_c4b7cd8e03084a,2,Stop the session when the athlete images only winning or skips the adversity; restart with one scenario.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_fdd7611f4ca7a0,drl_c5d3ce0676247e,1,Stop the set when the partner stops calling honestly and a reminder does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_f7244e9febdeea,drl_c5d3ce0676247e,2,Stop the set when the athlete keeps showing the same tell and one cue does not change it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_283cbb07511cb3,drl_c68238e3eb5294,1,Stop the round when the athlete starts guessing (moving before the call or doing the wrong action) and one cue does not fix it; go back to level A.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_e9a5334a14b7f7,drl_c68238e3eb5294,2,"Stop the round when speed breaks the punches (leaning, falling in, hands not returning).",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_285d9c2ca9623d,drl_c78bebb5a5e5e2,1,Stop the round when the athlete treats it as a rest round (sequence and focus drop) and one cue does not fix it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_df4c4c463e7195,drl_c78bebb5a5e5e2,2,Stop the round when the punches start with the arm instead of the hip.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_577469184bfab2,drl_c91a6a2c482437,1,Stop the round when contact rises above the controlled level the coach set and one cue does not bring it back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_060b0d7da99fcc,drl_c91a6a2c482437,2,"Stop the round when the boxer crosses the back line, as the drill's rule sets; if it keeps happening, go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8a0151931a28ef,drl_c91a6a2c482437,3,Stop the round when the partner's pressure role breaks down (trading instead of pressuring at the set pace) and a reset does not restore it.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2a717c51f3f4b4,drl_c933404c933b35,1,"Stop the round when punch and step separate (punch then step, or step then punch) and one cue does not join them.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_14f7e8da2d744c,drl_c933404c933b35,2,Stop the round when the feet cross or the footwork takes over from the jab.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e3d00a0b3bfc02,drl_c9cf91e3139518,1,"Stop the set when the athlete slips and admires, or over-slips so far no return is possible, on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_1299d0fb8a6988,drl_c9cf91e3139518,2,"Stop the set when the 2 – 3 comes from a broken base (leaning, off balance) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4d85a8b4613ec8,drl_c9cf91e3139518,3,Stop the set when the pivot comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b0e6d17e9332ca,drl_cb64068578eed2,1,Stop the set when the chop slows or the arms pull instead of the hips and trunk turning.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_82e4d8356d5eba,drl_cb64068578eed2,2,"Stop and regress when the chops leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d168d03149bbff,drl_cf0b7928aab0e3,1,"Stop the set when stance breaks down (feet crossing, guard dropping) and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d0737c682bca6c,drl_cf0b7928aab0e3,2,"Stop the set when the roles break down (the mirror starts leading, or the leader moves faster than the mirror can follow) and a reset does not restore them.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_6a8cbed35c6de0,drl_cff7d38654e1ca,1,athlete panics or contact rises beyond drill level.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_d378d0c4e49d0b,drl_d04d6a09040e66,1,Stop the round when speed creeps above 25% and a reset does not bring it back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_857821b33a0126,drl_d04d6a09040e66,2,"Stop the round when the boxer only reacts late to punches instead of reading starts, and one cue does not fix it; go back to level A.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_a1f795480a757d,drl_d0d14430bb0ddb,1,"Stop the set when the athlete shrugs, arches the back or swings to finish reps.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_249829d1e7ca2d,drl_d0d14430bb0ddb,2,"Stop and regress when the shoulder work leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_96aca8c3045154,drl_d19b5fad4e54b0,1,athlete rotates blind.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0379529258abed,drl_d21b7f5ad30817,1,Stop the set when the slips grow big or fold at the waist and one cue does not fix it; slow down.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_15730ff44a33b6,drl_d21b7f5ad30817,2,"Stop the set when the leader stops giving slow, clear movement the follower can mirror, and a reset does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_9f3b90062ee18a,drl_d32bd858072f6d,1,Stop the round when emotions take over and the athletes are trying to prove something instead of working on the stated objective; a stop is not a coaching cue.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_8c197eb519490c,drl_d32bd858072f6d,2,Stop the round when an athlete cannot protect themselves structurally; staying silent never overrides a stop.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_f40d65916c1fe7,drl_d32bd858072f6d,3,Stop the round when chaos rises above what the round can teach.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_0b32384a76b554,drl_d3bad3855a66cd,1,Stop the round when the boxer turtles behind the guard again and again and one cue does not get the feet moving; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_67e369382f97bf,drl_d3bad3855a66cd,2,Stop the round when the partner's attacks rise above the pace and contact set for the round and a reset does not restore the roles.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_18865c2e5b7391,drl_d3bad3855a66cd,3,"Stop the round when the boxer can no longer protect themselves structurally (flat feet, squared stance, eyes off the partner).",drill_specific,safety
+{{PPBF_ORG_ID}},stp_c373a43feac997,drl_d3d85f78276536,1,Stop the round when the athlete repeatedly breaks the count (a fourth or fifth punch) and one cue does not fix it; go back to level A.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_324c6035069016,drl_d3d85f78276536,2,Stop the round when punch hunger erases the exit or reset after the third punch.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_d43a7df6d348d4,drl_d3d85f78276536,3,"Stop the round when it stops being under control and turns into flurrying, and a reset does not bring it back.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_dfbbbed63dbeb4,drl_d40b9c8f7750b6,1,Stop the set when the bar cannot reach overhead without the lower back arching or the ribs flaring; do not force the range.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_26665b947dc16d,drl_d40b9c8f7750b6,2,"Stop and regress when the press leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_248d9c3288f16b,drl_d45a13b4456944,1,"Stop the round when the boxer keeps catching palm-forward, absorbing the jab instead of deflecting it, and one cue does not fix it; drop to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_10c87d7fd35afe,drl_d45a13b4456944,2,"Stop the round when the partner's jabs stop matching the set pace (faster, harder or random) and a reset does not restore the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_abe390b76b8d7d,drl_d48de12ba7bd0c,1,"Stop the round as soon as athletes stay, chase or throw panic combos, and reset the rule before restarting.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ae1bacacac8e54,drl_d48de12ba7bd0c,2,Stop the round when chaos rises above what the round is teaching.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_64ae8186985a74,drl_d48de12ba7bd0c,3,Stop the drill when fatigue erases clean scoring and clean exits; the load is too high.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_bf9eef5571985c,drl_d4f43917646ac7,1,"Stop the rep when the boxer's movement becomes a chase pattern, following the partner instead of cutting.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_867bf1999a0107,drl_d4f43917646ac7,2,Stop the rep when the boxer's pressure drops into running and reaching; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9faedcb0b6f746,drl_d4f43917646ac7,3,Stop the rep when the boxer cannot stay calm while the partner keeps escaping.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_2c4a9f597aa625,drl_d6f7d5926df898,1,"Stop the rep when the athlete rushes or moves without a decision and ""slow down"" does not fix it; go back a level.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_dc112c225e76b7,drl_d6f7d5926df898,2,"Stop the rep when balance breaks; freeze, hold it, then restart.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_40b71aab1de77b,drl_d6f7d5926df898,3,"Stop the drill when reps keep ending without a reset, head still on line.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e1e0ade2d59537,drl_d75b4c493c3c82,1,"Stop the hold when the front knee caves in, the athlete rises out of the position or the weight shifts back, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5fc029277a699c,drl_d75b4c493c3c82,2,Stop the set when the work stops sharpening position and only makes the athlete hotter and more tired before the work that follows.,drill_specific,warmup_decay
+{{PPBF_ORG_ID}},stp_f64ec3ea956332,drl_d7f1e69e6d4504,1,"Stop the round when the boxer keeps reaching for shots from out of range (leaning in, falling in) and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_c0d2a009b6469a,drl_d7f1e69e6d4504,2,Stop the round when the miss penalty stops the boxer punching at all; remove the deduction and keep the clean-shot rule.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_d39510e9a9a18f,drl_d7f1e69e6d4504,3,Stop the round when the boxers argue about what landed instead of boxing; simplify the scoring.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_cc93699df413dd,drl_d822a0557f8882,1,"Stop the round when technique breaks down (guard stops coming back, feet cross, punches lose shape) and a reset does not restore it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_804d12aade751a,drl_d822a0557f8882,2,"Stop the round when fatigue turns it into survival (chasing, rushing, sloppy exits) instead of the round's job.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_7a9f181cd0a04b,drl_d9284ee48844bf,1,Stop the round when contact stops being light and controlled and one cue does not bring it back.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_d9998b2677b035,drl_d9284ee48844bf,2,"Stop the round when the rear hand comes into play (a rear-hand punch, or the rear hand leaves the chin) and a reset does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8f4478288349b1,drl_d9284ee48844bf,3,"Stop the round when the athlete loses stance, eyes or reset again and again and can no longer recover after mistakes; go back to level A.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_ef47e50ca23ff5,drl_dbe3f9dd2d62cc,1,Stop the session when the reps turn into paced efforts instead of all-out attacks.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_995b127e94bef4,drl_dbe3f9dd2d62cc,2,"Stop and regress when the boxing check after the session shows guessing, blind reset, stance collapse, guard abandonment or the target skill gone.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_11d14976fd59b3,drl_dcc881eb38f12e,1,contact discipline fails.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_af7e32ba6bf1aa,drl_dd04a77d2f2819,1,"Stop the set when the arms bend early, the bar swings away from the body, or the back rounds at the start.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_86e0f9212f7e10,drl_dd04a77d2f2819,2,"Stop and regress when the lifts turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ecb0f7871062a2,drl_dd2ea2579a20a3,1,Stop the set when the athlete reaches or leans to land at a mark instead of standing at the true range; re-measure.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_b5192a0fe433ef,drl_e18ea6740641e5,1,"Stop the round when the closing burst turns into wild swinging, with the guard gone, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6010d819baeeaf,drl_e18ea6740641e5,2,Stop the round when fatigue makes the finish chasing or sloppy round after round; downgrade the session.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_212d2c27f2a582,drl_e18ea6740641e5,3,Stop the round when it turns into a brawl at the bell instead of clean closing work.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_04385b00e36f85,drl_e1fb33d27969c6,1,Stop the set when the athlete bends at the waist or reaches for the body on consecutive reps; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_aac461cfc91775,drl_e1fb33d27969c6,2,"Stop the set when the three punches run together with no return to stance after the body hook, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a6edb8cc7af3a4,drl_e1fb33d27969c6,3,Stop the set when the step back comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_bbf0c978e5a9db,drl_e27266e197f9b4,1,"Stop the rep when the athlete backs straight out, turns their back or exits tall instead of pivoting, and one cue does not fix it; go back to the walk-through.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_04fb3b665ffd57,drl_e27266e197f9b4,2,Stop the set when the corner causes panic (rushing or freezing at the cone) and slowing the pace does not bring back the first leave point.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_9e75460c99486c,drl_e61aed2ffe38b6,1,"Stop the round when punches stop being controlled or emotion takes over the exchanges, and one cue does not bring it back.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_d9627ae090b58e,drl_e61aed2ffe38b6,2,"Stop the round when athletes keep punching and staying in front, or the exit loses the stance, and a reset does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_60d7e2510dcf7d,drl_e61aed2ffe38b6,3,Stop the round when the exits turn into running or spinning away instead of a new line facing the partner.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_50e171e73349cc,drl_e6287d27087f43,1,"Stop the set when the body jab reaches, drops the head or misses its target on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f8c9beffc1056f,drl_e6287d27087f43,2,Stop the set when stance collapses on the cross to the head (reaching or falling in) on consecutive reps.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_a22b7e185fcf9d,drl_e6287d27087f43,3,Stop the set when the lateral step comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_0d13076bc5cc63,drl_e6442ec28937a7,1,rear hand drops repeatedly.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ff9531ef2c9f7a,drl_e758a3fdc1bc54,1,Stop the set when the first two 1-2s are not alike (there is no pattern to break) and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3dfe7483a8b62e,drl_e758a3fdc1bc54,2,Stop the set when the changed ending breaks stance or balance; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_17ff9663b48e72,drl_e78f34e6106fb2,1,"Stop the set when the arms swing the bar instead of the hips and trunk turning, or the feet slide.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_fe546c94ddea52,drl_e78f34e6106fb2,2,"Stop and regress when the rotation work leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_186df580b4b4a1,drl_e8f8769a5c0832,1,Stop the rep when balance breaks; slow down immediately.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_2e828b169a50ac,drl_e8f8769a5c0832,2,"Stop the round when slips become leans or big head movements, or the guard opens on the roll, and one cue does not fix it; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_cb43e406e85046,drl_e90c6f58aa44eb,1,"head contact risk, panic, or uncontrolled trading.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_9e6766b81b8c01,drl_ea45a32f9cc77f,1,"Stop the audit when the entries are tidied or made up (what the boxer thinks they should say, not what they said); restart the log.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_10f581ee713b12,drl_ea45a32f9cc77f,2,Stop building a replacement when it turns into vague positivity; make it a specific counter for the specific thought.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_61291c610c4117,drl_eaf0e3cba383bf,1,Stop the round when the athlete keeps turning the body to face each direction and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_cadc9c6284a30b,drl_eaf0e3cba383bf,2,Stop the round when the feet cross or the athlete squares up at the corners.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8fc44679391203,drl_eaf4a6bd916cb0,1,"Stop the round when the inside work turns into heads down, blind swinging or smothering, and one cue does not fix it.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_21435952498d93,drl_eaf4a6bd916cb0,2,"Stop the round when a boxer cannot protect themselves structurally inside (guard gone, eyes off the partner) on repeated exchanges; go back to level A.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_b33421407c0fa1,drl_eaf4a6bd916cb0,3,Stop the round when emotional escalation overrides the coach's cues.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_cdfdca0931b251,drl_ee5c66d0ff8f24,1,Stop the exercise when jump height or distance drops or takeoff slows.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_3209f291dedab0,drl_ee5c66d0ff8f24,2,"Stop the set when landings are loud or uncontrolled, or the knees cave on landing; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_e5550c94447784,drl_ee5c66d0ff8f24,3,"Stop and regress when the jumps turns into conditioning volume, the loading is telegraphed, or the reset check after it fails.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2fd8910e7f5af4,drl_ef17c6a2d0a99c,1,"Stop the round when the roles break down (the counter athlete starts leading, or the initiator stops leading) and a reset does not restore them.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_17f9228817ecc4,drl_ef17c6a2d0a99c,2,Stop the round when counters come from broken balance or guessing and one cue does not fix it; go back to level A.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_88eb9f3004ff57,drl_ef17c6a2d0a99c,3,Stop the round when an athlete cannot protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_efc26dab2b44af,drl_ef32f9229285b4,1,"Stop the round when the score makes the boxer chase (lunging, hands ahead of the feet) and one cue does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_7e7c36c79e193c,drl_ef32f9229285b4,2,"Stop the round when the boxer who is ahead stops working and banks the round, and a cue does not restart them.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_5c11563aae4326,drl_ef32f9229285b4,3,Stop the round when it turns into a race for points instead of managed urgency.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_4e3ac5e4565c8f,drl_ef916938364d43,1,"Stop the round when fatigue causes chasing, emotional acceleration or sloppy exits and one cue does not bring structure back.",drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_706283049b6fa7,drl_ef916938364d43,2,Stop the round when the boxer can no longer protect themselves structurally.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_044d5921064f02,drl_ef916938364d43,3,Stop the round when chaos rises above the educational value of the round.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_313888a1b62df9,drl_f0156a0b5388f7,1,Stop the set when the athlete pivots on a flat foot or loses balance at the end and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_6622b76cca0021,drl_f0156a0b5388f7,2,Stop the set when fatigue shows in the pivots: the finish keeps collapsing or the guard is abandoned.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_8b138aabb1e654,drl_f10d545bac88fc,1,Stop the round when the boxer drifts inside the partner's range or out of their own again and again and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_87edfc6f69a763,drl_f10d545bac88fc,2,Stop the round when holding the edge turns into chasing or reaching with the hands.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_5ad7178eb298cb,drl_f10d545bac88fc,3,Stop the round when it turns into trading and the distance task is lost.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_8e99685ef09dee,drl_f31c81646beca8,1,"Stop the set when the shrug turns into rolling the shoulders or jerking the weight, or the head pokes forward.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_88da11cc2ea628,drl_f31c81646beca8,2,"Stop and regress when the trap work becomes the session goal or leaves posture, guard or footwork worse in the boxing task that follows.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_54782c7d918971,drl_f59f7ae5050fc6,1,Stop the set when the frame turns into pushing or wrestling and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8916691edb3cb1,drl_f59f7ae5050fc6,2,"Stop the set when the boxer steps straight back, or ends square or blind after the step-off.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_f36fac139507c1,drl_f59f7ae5050fc6,3,"Stop the set when the partner's closes turn into punching or shoving beyond the drill's light technical contact, and restate the roles.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_145c4e1799e390,drl_f5d10bfec46b61,1,Stop the round when the shoulders stay up and the jaw clenched and the check does not release them; drop the pace and run the check again.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_3890fa22cd93e8,drl_f5d68d0b9b4be7,1,Stop the hold when the hips sag or roll out of the straight line and a cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_ba5e64af1e20d0,drl_f5d68d0b9b4be7,2,"Stop and regress when the plank leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_856411b8d9f557,drl_f7d0ae8f3cac3e,1,"Stop the set when the uppercut scoops, drifts into a hook or over-rotates on consecutive reps; go back to level A.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_5f3e1b7367b5f5,drl_f7d0ae8f3cac3e,2,Stop the set when the hook swings wide or finishes square on consecutive reps.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_8c918447338eb3,drl_f7d0ae8f3cac3e,3,Stop the set when the turn out comes late or not at all on consecutive reps.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_b9b2e9c520b871,drl_f842afc719f2c6,1,"repeated panic, symptoms, or inability to correct.",drill_specific,safety
+{{PPBF_ORG_ID}},stp_23b2b3fa785258,drl_f8edb69dce8d21,1,Stop the set when the athlete is pulled past the stop position or the feet slide on the catch.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_72725c3f7b65f8,drl_f8edb69dce8d21,2,"Stop and regress when the deceleration work leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_0ec40d22be467b,drl_f960c4800aff35,1,"Stop the round when the reduced vision creates panic, freezing or wild retaliation; go back to level A.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_ece454ed6a40fc,drl_f960c4800aff35,2,Stop the round when the boxer cannot protect themselves structurally without the full picture (guard and eyes lost again and again).,drill_specific,safety
+{{PPBF_ORG_ID}},stp_835e491f261a60,drl_f960c4800aff35,3,"Stop the round when the boxer keeps guessing and lunging instead of resetting, and one cue does not fix it.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_4fba46f9712c64,drl_fad04a70b547d6,1,Stop the set when the knees cave inward or the pelvis tucks under at depth.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_985dff6f447899,drl_fad04a70b547d6,2,"Stop and regress when the lift leaves stance, guard recovery, foot speed or reset worse in the boxing check that follows.",drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_7d1ad7f560047d,drl_fd7a5e63c53696,1,Stop the round when the boxer starts trying to hurt with the jab and one cue does not bring it back to disruption.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_2dc9496a57fcbf,drl_fd7a5e63c53696,2,"Stop the round when contact or near-contact sets off wild retaliation from either athlete, or the partner stops working the assigned role.",drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_c0e52e8e5f2063,drl_fda6e7ce180d06,1,Stop the round when the boxer keeps guessing at tells that are not there and starts leading blind; go back to one tell.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_72c204d3d3f01f,drl_fda6e7ce180d06,2,Stop the round when the partner's work rises above the pace and contact set for the round and a reset does not restore the roles.,drill_specific,safety
+{{PPBF_ORG_ID}},stp_c2112ab040978f,drl_fda6e7ce180d06,3,Stop the round when it turns into trading instead of reading.,drill_specific,coach_judgment
+{{PPBF_ORG_ID}},stp_1153ef3486f975,drl_fe922e22017bd0,1,Stop the set when the athlete arms the punch or the rear heel stays flat and one cue does not fix it.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_08e253bddbffc3,drl_fe922e22017bd0,2,Stop the set when the tempo speeds up and the foot-hip-shoulder order is lost.,drill_specific,technique_degradation
+{{PPBF_ORG_ID}},stp_9ab111ee8d1f3f,drl_ff0b0e297519b0,1,"Stop the round when the athlete keeps biting on fake looks (guessing, panic punches) and freezing the hands on fake cues does not fix it.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_121e9e3567d14e,drl_ff0b0e297519b0,2,Stop the round when the partner's looks stop being clear (real and fake can no longer be told apart) and a reset does not restore them.,drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_0de9c9c8dc66a5,drl_ff0b0e297519b0,3,Stop the drill when fatigue turns holds into fake-opening punches; the load is too high.,drill_specific,fatigue
+{{PPBF_ORG_ID}},stp_5c62237c8bf154,drl_ff7ac85eae4e69,1,"Stop the round when urgency turns into rushing (lunging, wild exchanges, defence gone) and one cue does not restore structure.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_ab06967be9efc3,drl_ff7ac85eae4e69,2,"Stop the round when the partner changes how they box because of the announcement, and re-brief the partner.",drill_specific,intent_drift
+{{PPBF_ORG_ID}},stp_def6ab5ed483e2,drl_ff7ac85eae4e69,3,Stop the round when the boxer cannot protect themselves structurally in the rush.,drill_specific,safety
