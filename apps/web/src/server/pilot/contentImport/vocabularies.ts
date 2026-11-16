@@ -96,7 +96,9 @@ export const VOCABULARIES = {
     [{ table: 'drill_cues', constraint: 'drill_cues_focus_type_check' }],
   ),
   // drill_library_v3 :266-273, widened by drill_owner_authored_label (OD-2026-10-06-026
-  // ruling 4: "PPBF owner-authored" for Jason's own material). Matched as exact
+  // ruling 4: "PPBF owner-authored" for Jason's own material) and by
+  // drill_long_road_label (OD-2026-11-15-002 ruling 1: 'Long Road practice', the
+  // label the frozen Backbone drills carry; not a draft). Matched as exact
   // strings (em dashes included): the check compares text, so a paraphrase is a
   // refusal.
   field_provenance: vocab(
@@ -105,6 +107,7 @@ export const VOCABULARIES = {
       'LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION',
       'COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION',
       'PPBF owner-authored',
+      'Long Road practice',
     ],
     [{ table: 'drill_library', constraint: 'pilot_drill_library_field_provenance_check' }],
   ),
