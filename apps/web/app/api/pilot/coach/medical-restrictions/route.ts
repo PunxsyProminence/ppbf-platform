@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
+import { assertActorCanAccessAthlete, isOrganizationAdminRole, requireRole } from '@/src/server/pilot/access';
 import { gymToday } from '@/src/server/pilot/competenceCohorts';
 import { ForbiddenError, NotFoundError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
@@ -9,7 +9,6 @@ import {
   LOSS_OF_CONSCIOUSNESS_VALUES,
   type LossOfConsciousness,
   MEDICAL_RESTRICTION_SOURCES,
-  MEDICAL_RESTRICTION_VOID_ROLES,
   MEDICAL_RESTRICTION_WRITER_ROLES,
   type MedicalRestrictionRow,
   type MedicalRestrictionSource,
@@ -197,7 +196,9 @@ export async function POST(request: NextRequest) {
 
     if (action === 'void') {
       // Role first, before the row is read: a coach learns nothing about the id.
-      if (!(MEDICAL_RESTRICTION_VOID_ROLES as readonly string[]).includes(principal.role)) {
+      // isOrganizationAdminRole is exactly MEDICAL_RESTRICTION_VOID_ROLES
+      // (organization_admin, admin), the shared helper for that pair.
+      if (!isOrganizationAdminRole(principal.role)) {
         throw new ForbiddenError('Forbidden: only a gym admin can mark a medical restriction entered in error');
       }
       const reason = optionalText(input.reason, 'reason', VOID_REASON_MAX);
