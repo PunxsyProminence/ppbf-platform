@@ -3854,11 +3854,11 @@ The injury, dizziness and distress stop line (DOC-027 Stop Rule Standard) is not
 
 **Target behaviour** (INFERRED)
 
-> Holds a straight wrist and a firm grip in the carries and grip holds, and moves the wrist through full, controlled range in the rollers and band work.
+> Holds a straight wrist and a firm grip in the carries and grip holds, moves the wrist through full, controlled range in the rollers and band work, and boxes the check afterwards with no loss of guard or hand position.
 
 - Sources:
   - Backbone record, owner_rules: "Pass if adaptation work supports the next boxing task without posture collapse, guard loss, footwork failure, or excessive stiffness"
-- Note: adapted: the owner rule's pass line; my addition: straight wrist and firm grip during the work. Fixed after the safety re-check: the straight wrist applies to carries and holds only (my addition).
+- Note: adapted: the owner rule's pass line (the boxing check afterwards); my addition: a straight wrist and firm grip in the carries and holds, and full, controlled range in the rollers and band work.
 
 **Setup** (INFERRED)
 
