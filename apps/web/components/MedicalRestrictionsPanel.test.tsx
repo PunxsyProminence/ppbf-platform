@@ -7,12 +7,11 @@ import MedicalRestrictionsPanel from './MedicalRestrictionsPanel';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 /*
- * The Sports Medicine panel for USA Boxing medical restrictions (P22a). The
- * route decides everything; this asserts what the SURFACE promises: it opens
- * on demand, shows what the member reads plus whether the release and LBC
- * dates are on file, never prints the source, the loss-of-consciousness
- * answer or the staff note even when the server sends them, hides the void
- * control from a coach, and sends the form it was given.
+ * The staff panel for USA Boxing medical restrictions (P22a), on its own page,
+ * /coach/medical-restrictions. The route decides everything; this asserts what
+ * the SURFACE promises: the staff who may write a restriction see the whole
+ * record, a coach is not offered the void the route would refuse, and each form
+ * sends what it was given.
  */
 
 const ATHLETES = [{ athlete_id: 'ath-1', full_name: 'Test Member' }];
@@ -46,7 +45,6 @@ function respondWith(restrictions: unknown[]) {
 }
 
 async function openFor(name: string) {
-  fireEvent.click(screen.getByRole('button', { name: 'Open medical restrictions' }));
   fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'ath-1' } });
   await screen.findByText(name);
 }
@@ -56,26 +54,22 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('closed until opened: no member names, no read', () => {
+test('nothing is read until a member is chosen', () => {
   respondWith([]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  expect(screen.queryByText('Test Member')).toBeNull();
   expect(calls).toHaveLength(0);
 });
 
-test('shows the state, the dates and what is not on file -- never the source, loss of consciousness or note', async () => {
+test('staff see the whole record; a coach is not offered the void', async () => {
   createPersistentRoleSession('coach');
-  respondWith([ROW]);
+  respondWith([ROW, { ...ROW, restriction_id: 'f1d5c1aa-0000-4000-8000-000000000002', voided_at: '2026-10-02T00:00:00Z', void_reason: 'Wrong member', state: 'voided' }]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  await openFor('Release needed — no sparring');
-  expect(screen.getByText('Minimum end date 10/30/2026.')).toBeTruthy();
-  expect(document.body.textContent).not.toContain('10/1/2026');
-  expect(screen.getByText(/Physician's release: not on file\./)).toBeTruthy();
-  expect(screen.getByText(/LBC: not yet informed\./)).toBeTruthy();
-  const text = document.body.textContent ?? '';
-  for (const hidden of ['knockout', 'concussion', 'Over 1 minute', 'over_1_min', 'Staff-only test note']) {
-    expect(text).not.toContain(hidden);
-  }
+  await openFor('In force — release needed');
+  expect(screen.getAllByText('From 10/1/2026; minimum end date 10/30/2026.')).toHaveLength(2);
+  expect(screen.getAllByText('Source: Training knockout or concussion. Loss of consciousness: Over 1 minute.')).toHaveLength(2);
+  expect(screen.getAllByText('Staff note: Staff-only test note')).toHaveLength(2);
+  expect(screen.getAllByText(/Physician's release: not on file\./)).toHaveLength(2);
+  expect(screen.getByText('Marked entered in error: Wrong member.')).toBeTruthy();
   // A coach is not offered the void the route would refuse.
   expect(screen.queryByRole('button', { name: 'Mark entered in error' })).toBeNull();
   expect(calls[0].url).toContain('/api/pilot/coach/medical-restrictions?athlete_id=ath-1');
@@ -85,7 +79,7 @@ test('a gym admin is offered the void, and it sends the reason', async () => {
   createPersistentRoleSession('admin');
   respondWith([ROW]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  await openFor('Release needed — no sparring');
+  await openFor('In force — release needed');
   fireEvent.change(screen.getByLabelText(/Entered in error\? Say why/), { target: { value: 'Wrong member' } });
   fireEvent.click(screen.getByRole('button', { name: 'Mark entered in error' }));
   await waitFor(() => expect(calls.some((c) => c.init?.method === 'POST')).toBe(true));
@@ -97,7 +91,7 @@ test('records a release date for the row it was typed on', async () => {
   createPersistentRoleSession('coach');
   respondWith([ROW]);
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
-  await openFor('Release needed — no sparring');
+  await openFor('In force — release needed');
   fireEvent.change(screen.getByLabelText('Date the release was signed'), { target: { value: '2026-11-01' } });
   fireEvent.click(screen.getByRole('button', { name: 'Record release' }));
   await waitFor(() => expect(calls.some((c) => c.init?.method === 'POST')).toBe(true));

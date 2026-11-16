@@ -6,21 +6,20 @@ import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
-// USA Boxing medical restrictions on the Sports Medicine board (Backbone P22,
-// lane P22a). The staff write surface: record a restriction, the date the
-// physician's release was signed, the date the LBC was informed, and -- gym
-// admin only -- mark a record entered in error.
+// USA Boxing medical restrictions, the staff record (Backbone P22, lane P22a).
+// Rendered on its own page, /coach/medical-restrictions, never on the Sports
+// Medicine clearance board: that board's 2026-08-15 rule is "clearance and holds
+// only, never diagnoses or clinical detail", and Jason has twice put records of
+// this kind on their own page linked from it (OD-2026-10-04-001, the injury
+// log; OD-2026-10-04-017, the sparring cap editor).
 //
-// WHAT IT SHOWS, AND WHAT IT DOES NOT. The board's surface rule (owner
-// decision 2026-08-15, in the page header) is "exactly what the athlete
-// themselves can read, and nothing more": no diagnosis, clinical note,
-// restriction detail or source. So a restriction reads here as what the member
-// reads (OW25-06 A: on file, minimum end date, release needed), whether the gate
-// applies today, and whether the release and the LBC date are on file -- yes or
-// no, never the dates themselves (adversarial review of P22a). The start date
-// is not shown either. The source and the loss-of-consciousness answer are ENTERED
-// here and never shown here; the staff route serves them to staff who need the
-// full record.
+// WHO SEES WHAT. This is the staff view: the roles that may write a restriction
+// (a coach of this gym, organization_admin, admin; Overwatch's approved design,
+// "staff: full row") see the whole record -- source, loss of consciousness,
+// dates, note, incident link, release and LBC dates, and whether it was marked
+// entered in error, with the reason. The member and their parent never reach
+// this page or its route; what they see is a separate, narrower view (OW25-06
+// A: on file, minimum end date, release needed).
 //
 // It reimplements NO authorization. The route decides standing, the roles that
 // may void, the set-once rule and every date check; this sends the form and
@@ -41,7 +40,12 @@ interface StaffRestriction {
   minimum_end_date: string;
   release_signed_on: string | null;
   lbc_informed_on: string | null;
+  source: string;
+  loss_of_consciousness: string;
+  linked_incident_id: string | null;
+  note: string;
   voided_at: string | null;
+  void_reason: string | null;
   state: RestrictionState;
 }
 
@@ -59,8 +63,8 @@ const LOC_VALUES: ReadonlyArray<{ value: string; label: string }> = [
 ];
 
 const STATE_WORDS: Record<RestrictionState, string> = {
-  in_force: 'In force — no sparring',
-  release_needed: 'Release needed — no sparring',
+  in_force: 'In force',
+  release_needed: 'In force — release needed',
   not_started: 'Starts later',
   lifted: 'Lifted — release on file',
   voided: 'Marked entered in error',
@@ -74,6 +78,10 @@ const EMPTY_RECORD = {
   linked_incident_id: '',
   note: '',
 };
+
+function labelFor(options: ReadonlyArray<{ value: string; label: string }>, value: string): string {
+  return options.find((option) => option.value === value)?.label ?? value;
+}
 
 /** 'YYYY-MM-DD' as M/D/YYYY, read as a calendar day (never through a time zone). */
 function dayWords(day: string | null): string {
@@ -90,6 +98,8 @@ function isStaffRestriction(value: unknown): value is StaffRestriction {
     && typeof row.athlete_id === 'string'
     && typeof row.start_date === 'string'
     && typeof row.minimum_end_date === 'string'
+    && typeof row.source === 'string'
+    && typeof row.loss_of_consciousness === 'string'
     && typeof row.state === 'string'
     && row.state in STATE_WORDS;
 }
@@ -100,9 +110,6 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
   // organization_admin and admin to void and refuses everyone else.
   const viewerCanVoid = session?.role === 'admin';
 
-  // Closed until asked for: the board above already lists every name, and the
-  // member picker below would list each one a second time.
-  const [opened, setOpened] = useState(false);
   const [athleteId, setAthleteId] = useState('');
   const [rows, setRows] = useState<StaffRestriction[] | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
@@ -216,21 +223,14 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
   };
 
   return (
-    <section className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="medical-restrictions-heading">
-      <p className="t-eyebrow">USA Boxing</p>
-      <h2 id="medical-restrictions-heading" className="t-title mt-[var(--s2)]">Medical restrictions</h2>
-      <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
-        While a restriction is in force, or after its minimum end date with no physician&apos;s release on file, the
-        app does not save sparring (controlled or open) for that member. Training below sparring still saves. It
-        lifts once the release date is recorded and the minimum end date has passed. The member and their parent
-        see that a restriction is on file, its minimum end date, and that a release is needed — nothing else.
+    <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" aria-label="Medical restrictions">
+      <p className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+        A restriction applies from its start date until its minimum end date has passed and the date the
+        physician&apos;s release was signed is on file. Record that date here once it is signed; nothing else ends
+        it. A record entered against the wrong member or with wrong dates is marked entered in error by a gym admin,
+        and kept.
       </p>
 
-      {!opened ? (
-        <button type="button" className="btn btn--ghost mt-[var(--s3)]" aria-expanded={false} onClick={() => setOpened(true)}>
-          Open medical restrictions
-        </button>
-      ) : (
       <div className="field mt-[var(--s3)]">
         <label className="t-label" htmlFor="medical-restrictions-athlete">Member</label>
         <select
@@ -247,9 +247,8 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
           ))}
         </select>
       </div>
-      )}
 
-      {opened && athleteId ? (
+      {athleteId ? (
         <div className="mt-[var(--s3)]">
           {readError ? (
             <div className="alert alert--warning" role="alert">
@@ -273,12 +272,26 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
                 return (
                   <li key={row.restriction_id} className="rounded-[var(--r-md)] border border-[color:var(--bone-300)] p-[var(--s3)]">
                     <p className="t-label">{STATE_WORDS[row.state]}</p>
-                    <p className="t-body mt-[var(--s2)]">Minimum end date {dayWords(row.minimum_end_date)}.</p>
-                    <p className="t-body">
-                      {row.release_signed_on ? "Physician's release: on file." : "Physician's release: not on file."}
-                      {' '}
-                      {row.lbc_informed_on ? 'LBC: informed.' : 'LBC: not yet informed.'}
+                    <p className="t-body mt-[var(--s2)]">
+                      From {dayWords(row.start_date)}; minimum end date {dayWords(row.minimum_end_date)}.
                     </p>
+                    <p className="t-body">
+                      Source: {labelFor(SOURCES, row.source)}. Loss of consciousness: {labelFor(LOC_VALUES, row.loss_of_consciousness)}.
+                    </p>
+                    <p className="t-body">
+                      {row.release_signed_on
+                        ? `Physician's release signed ${dayWords(row.release_signed_on)}.`
+                        : "Physician's release: not on file."}
+                      {' '}
+                      {row.lbc_informed_on ? `LBC informed ${dayWords(row.lbc_informed_on)}.` : 'LBC: not yet informed.'}
+                    </p>
+                    {row.linked_incident_id ? <p className="t-body">Incident: {row.linked_incident_id}</p> : null}
+                    {row.note ? <p className="t-body">Staff note: {row.note}</p> : null}
+                    {row.voided_at ? (
+                      <p className="t-body">
+                        Marked entered in error{row.void_reason ? `: ${row.void_reason}` : ''}.
+                      </p>
+                    ) : null}
 
                     {open && !row.release_signed_on ? (
                       <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">

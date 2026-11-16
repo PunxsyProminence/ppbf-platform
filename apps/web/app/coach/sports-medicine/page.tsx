@@ -9,7 +9,6 @@ import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalSt
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import WorkAxis from '@/components/WorkAxis';
 import PastTrainingHolds from '@/components/PastTrainingHolds';
-import MedicalRestrictionsPanel from '@/components/MedicalRestrictionsPanel';
 import ArmedButton from '@/components/ArmedButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
@@ -1104,22 +1103,18 @@ export default function SportsMedicinePage() {
             </ul>
           )}
 
-          {/* USA Boxing medical restrictions (Backbone P22): its own panel and its
-              own route, so this board's hold and clearance code is untouched. It
-              shows what the member reads (on file, minimum end date, release
-              needed), whether the gate applies today, and yes/no for the release
-              and LBC dates -- never the dates, the source or the
-              loss-of-consciousness answer (the surface rule above). */}
-          {!loading && !errorMessage ? (
-            <MedicalRestrictionsPanel athletes={rows.map((row) => ({ athlete_id: row.athlete_id, full_name: row.full_name }))} />
-          ) : null}
-
           <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/coach/injuries" className="btn btn--ghost">
               Injury Record
             </Link>
             <Link href="/coach/sparring-caps" className="btn btn--ghost">
               Sparring Caps
+            </Link>
+            {/* USA Boxing medical restrictions (Backbone P22) live on their own
+                page: this board's 2026-08-15 rule is clearance and holds only,
+                never clinical detail (OD-2026-10-04-001, -017). A link only. */}
+            <Link href="/coach/medical-restrictions" className="btn btn--ghost">
+              Medical Restrictions
             </Link>
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">
               Progression Intelligence
