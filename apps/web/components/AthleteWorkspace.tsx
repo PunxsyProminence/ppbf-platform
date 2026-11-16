@@ -21,6 +21,7 @@ import { ANCHOR_KEY_OPTIONS, anchorLabel } from './rabbitHoleAnchorLabels';
 import ProfileHeader from './ProfileHeader';
 import MyInjuries from './MyInjuries';
 import TrainingHoldBanner from './TrainingHoldBanner';
+import MedicalRestrictionNotice from './MedicalRestrictionNotice';
 import {
   AthleteSummaryPanel,
   HelpPanel,
@@ -2850,6 +2851,9 @@ export default function AthleteWorkspace() {
             pain off the first screen); on every other tab it stands here,
             first. */}
         {activeTab !== 'my-dashboard' && <TrainingHoldBanner />}
+        {/* A USA Boxing medical restriction in force (lane P22c, OW25-06 A),
+            beside the hold in both places; renders nothing otherwise. */}
+        {activeTab !== 'my-dashboard' && <MedicalRestrictionNotice />}
 
         {/* MY CORNER: the day's actions -- check in, report pain, coach work,
             goals -- at the top of the screen on My Dashboard. This is the
@@ -2871,7 +2875,7 @@ export default function AthleteWorkspace() {
             onAskShadow={() => setActiveTab('shadow')}
             checkedOutToday={checkedOutToday}
             checkInFailed={checkInFailed}
-            afterPain={<TrainingHoldBanner />}
+            afterPain={<><TrainingHoldBanner /><MedicalRestrictionNotice /></>}
           />
         )}
 

@@ -8,6 +8,7 @@ import { GymRegisteredOfficeLine } from '@/components/PrintSheet';
 import BackHome from '@/components/BackHome';
 import { SESSION_TOTAL_DIMENSIONS, SPARRING_LOG_FIELD_KEYS } from '@/src/server/pilot/formulas/types';
 import ClusterNav from '@/components/ClusterNav';
+import MedicalRestrictionNotice from '@/components/MedicalRestrictionNotice';
 
 type OpponentStance = 'Orthodox' | 'Southpaw' | 'Switch';
 type PunchType = 'Jab' | 'Cross' | 'Hook' | 'Uppercut' | 'Body' | 'Other';
@@ -774,6 +775,12 @@ export default function SparringTelemetryPage() {
         </div>
         <span className="plaque">{actor === 'staff' ? 'Athlete training record' : 'Your training record'}</span>
       </header>
+      {/* The member's own USA Boxing medical restriction, while one is in
+          force (lane P22c, OW25-06 A); nothing otherwise. Self only, so it is
+          mounted for the boxer, not for a coach entering for them. */}
+      {actor === 'athlete' && (
+        <div className="px-[var(--s5)] pt-[var(--s4)]"><MedicalRestrictionNotice /></div>
+      )}
 
       <form onSubmit={onSubmit} className="px-[var(--s5)] py-[var(--s6)]">
         <div className="grid items-start gap-[var(--s5)] lg:grid-cols-[var(--split-major)_var(--split-minor)]">

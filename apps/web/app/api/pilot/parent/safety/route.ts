@@ -4,6 +4,7 @@ import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { callerParentIdSet, checkGuardianMediaConsent, MEDIA_CONSENT_WAIVER_TYPE } from '@/src/server/pilot/guardianConsent';
 import { jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { familyMedicalRestriction } from '@/src/server/pilot/medicalRestrictions';
 import { familyHoldPlacerName } from '@/src/server/pilot/videoFamilyView';
 import { getGuardianGateSummary } from '@/src/server/pilot/safetyGateMatrix';
 import { getActiveTrainingHold, type TrainingHoldRow, type TrainingHoldScope } from '@/src/server/pilot/trainingHolds';
@@ -182,7 +183,9 @@ async function waiverStatusesFor(
 /* Gates whose last evaluation a guardian is not sent (#1537):
    - contact_medical_clearance: its outcome says whether medical clearance was
      current when contact was last logged. Medical status is staff-only, and
-     that outcome is not "clearance on file now".
+     that outcome is not "clearance on file now". The one exception is the
+     USA Boxing medical restriction's three fields, sent as
+     `medical_restriction` (Jason's card OW25-06 A; lane P22c).
    - training_hold: its outcome is the last class-registration attempt, not
      the hold. The hold itself is sent as `hold`, and that is what the Safety
      page and the Parent Hub read.
@@ -202,7 +205,7 @@ export async function GET(request: NextRequest) {
 
     const items = await Promise.all(
       athleteIds.map(async (athleteId) => {
-        const [athlete, hold, gates, waivers] = await Promise.all([
+        const [athlete, hold, gates, waivers, medicalRestriction] = await Promise.all([
           getAthleteById(principal.organizationId, athleteId),
           getActiveTrainingHold(principal.organizationId, athleteId),
           getGuardianGateSummary(principal.organizationId, athleteId),
@@ -213,6 +216,22 @@ export async function GET(request: NextRequest) {
              consent state" to answer one child's question. That applies with
              more force here, where the caller is a guardian. */
           waiverStatusesFor(principal.organizationId, athleteId, ownParentIds),
+          /* USA Boxing medical restriction (lane P22c; OW25-06 A): on file,
+             minimum end date, release needed, and nothing else -- never the
+             source, loss of consciousness, note, incident or LBC date. null
+             when nothing blocks today (lifted, voided, not yet started). Read
+             only for the children guardianAthleteIds returned above: this
+             gym, a live record, the link not ended at 18. A failed read shows
+             nothing for this child rather than taking the hold and waivers
+             down with it (Overwatch, P22c: render nothing on a read failure);
+             the save gate refuses sparring on the server regardless. */
+          familyMedicalRestriction(principal.organizationId, athleteId).catch((error: unknown) => {
+            console.warn('[parent/safety] medical restriction read failed', {
+              name: (error as { name?: unknown } | null)?.name,
+              code: (error as { code?: unknown } | null)?.code,
+            });
+            return null;
+          }),
         ]);
 
         return {
@@ -227,6 +246,7 @@ export async function GET(request: NextRequest) {
             evaluated_at: gate.evaluated_at,
           })),
           waivers,
+          medical_restriction: medicalRestriction,
         };
       }),
     );

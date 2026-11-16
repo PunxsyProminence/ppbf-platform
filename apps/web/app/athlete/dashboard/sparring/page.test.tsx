@@ -28,6 +28,15 @@ jest.mock('@/components/RoleStandaloneView', () => ({
   default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
 }));
 
+// The member's medical restriction notice (lane P22c) reads its own route;
+// it has its own suite (components/MedicalRestrictionNotice.test.tsx). Here it
+// is a marker, so this suite's fetch counts stay the page's own, and the tests
+// below can see who it is mounted for.
+jest.mock('@/components/MedicalRestrictionNotice', () => ({
+  __esModule: true,
+  default: () => <div data-testid="medical-restriction-notice-mount" />,
+}));
+
 const SESSION_PATH = '/api/pilot/auth/session';
 
 const submittedObservations: Array<Record<string, unknown>> = [];
@@ -306,6 +315,19 @@ async function renderAsStaff(options: StaffMocks = {}) {
   await screen.findByLabelText('Which athlete is this for');
   return { ...view, fetchMock };
 }
+
+describe('the medical restriction notice (P22c)', () => {
+  test('is mounted for the boxer whose log it is', async () => {
+    global.fetch = mockFetch(() => true) as unknown as typeof fetch;
+    render(<SparringTelemetryPage />);
+    expect(await screen.findByTestId('medical-restriction-notice-mount')).toBeTruthy();
+  });
+
+  test('is not mounted for a coach entering for an athlete', async () => {
+    await renderAsStaff();
+    expect(screen.queryByTestId('medical-restriction-notice-mount')).toBeNull();
+  });
+});
 
 describe('a coach logging a session for an athlete', () => {
   test('can open the log and is offered the athletes they are authorized for', async () => {

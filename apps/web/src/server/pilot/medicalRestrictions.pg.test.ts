@@ -23,7 +23,12 @@
 //     module against real rows (sparring exposure, drill assignments, Coach
 //     Cards, completions, workout issues, training attempts, sessions,
 //     competition entries). The athlete sparring log's gate is held by its
-//     route test.
+//     route test;
+//   * P22c: what the member (/api/pilot/athlete/medical-restriction) and a
+//     guardian (/api/pilot/parent/safety) are sent, through the real routes:
+//     exactly on_file, minimum_end_date and release_needed, never the record's
+//     detail; nothing once it lifts, is voided or has not started; a guardian
+//     sees only their own linked minor children in their own gym.
 //
 // Test data only. Disposable, local-only embedded Postgres; it NEVER connects
 // to production or staging.
@@ -77,7 +82,9 @@ jest.mock('./http', () => {
 
 import type { PoolClient } from 'pg';
 
+import { GET as getOwnRestriction } from '../../../app/api/pilot/athlete/medical-restriction/route';
 import { GET, POST } from '../../../app/api/pilot/coach/medical-restrictions/route';
+import { GET as getGuardianSafety } from '../../../app/api/pilot/parent/safety/route';
 import { issueCoachCard, issueCoachCardToProgram } from './coachCards';
 import type { PilotSession } from './contracts';
 import { upsertSession } from './entities';
@@ -1089,5 +1096,213 @@ describe('P22b before the migration', () => {
     } finally {
       await client.end();
     }
+  });
+});
+
+describe('P22c: what the member and their guardian are sent', () => {
+  const TODAY = gymDayOf(new Date());
+  const day = (offset: number) => {
+    const at = new Date(`${TODAY}T12:00:00Z`);
+    at.setUTCDate(at.getUTCDate() + offset);
+    return at.toISOString().slice(0, 10);
+  };
+  const ADULT_ID = 'ath-medres-adult';
+  const OTHER_PARENT_ACCOUNT_ID = 'acct-medres-parent-2';
+  const ATHLETE = principal(ATHLETE_ACCOUNT_ID, 'athlete', ORG_ID, ATHLETE_ID);
+  const PARENT = principal(PARENT_ACCOUNT_ID, 'parent');
+  const OTHER_PARENT = principal(OTHER_PARENT_ACCOUNT_ID, 'parent');
+  // Everything on the record a family must never read, as it is stored or named.
+  const NEVER = ['Test note text', 'incident-test-1', 'under_1_min', 'training_knockout_or_concussion', 'lbc', 'source',
+    'loss_of_consciousness', 'restriction_id', 'start_date', 'release_signed_on', 'note', COACH_ID, 'Not saved'];
+  let db: Client;
+  let restrictionId = '';
+
+  async function asMember(): Promise<{ status: number; text: string; body: Record<string, unknown> }> {
+    mockPrincipal.mockResolvedValueOnce(ATHLETE);
+    const response = await getOwnRestriction(new NextRequest('http://localhost/api/pilot/athlete/medical-restriction'));
+    const text = await response.text();
+    return { status: response.status, text, body: JSON.parse(text) };
+  }
+  async function asGuardian(who = PARENT): Promise<{ text: string; items: Array<Record<string, unknown>> }> {
+    mockPrincipal.mockResolvedValueOnce(who);
+    const response = await getGuardianSafety(new NextRequest('http://localhost/api/pilot/parent/safety'));
+    const text = await response.text();
+    expect({ status: response.status, text }).toMatchObject({ status: 200 });
+    return { text, items: (JSON.parse(text) as { items: Array<Record<string, unknown>> }).items };
+  }
+  const leaked = (text: string) => NEVER.filter((value) => text.includes(value));
+
+  beforeAll(async () => {
+    db = await freshDatabase('medres_family_view');
+    // An adult child of the same guardian (the link ends at 18), with a restriction.
+    await db.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values ($1, $2, 'Test Adult', '2000-01-01', '100', 'active', 'contact', true, $3, now(), now())`,
+      [ORG_ID, ADULT_ID, COACH_ID],
+    );
+    await db.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'parent-medres-1', $2, 'parent')`,
+      [ORG_ID, ADULT_ID],
+    );
+    await insertRaw(db, { athlete_id: ADULT_ID, start_date: day(-5), minimum_end_date: day(10) });
+    // Another family in this gym, guarding SHARED_ATHLETE_ID. That id also
+    // exists in the other gym, where it has a restriction of its own.
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id)
+       values ($1, 'parent', $2, 'microsoft', null)`,
+      [OTHER_PARENT_ACCOUNT_ID, ORG_ID],
+    );
+    await db.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+       values ($1, $2, 'parent', true)`,
+      [OTHER_PARENT_ACCOUNT_ID, ORG_ID],
+    );
+    await db.query(
+      `insert into pilot.parents (organization_id, parent_id, account_id, full_name)
+       values ($1, 'parent-medres-2', $2, 'Test Guardian Two')`,
+      [ORG_ID, OTHER_PARENT_ACCOUNT_ID],
+    );
+    await db.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete)
+       values ($1, 'parent-medres-2', $2, 'parent')`,
+      [ORG_ID, SHARED_ATHLETE_ID],
+    );
+    await insertRaw(db, { organization_id: OTHER_ORG_ID, athlete_id: SHARED_ATHLETE_ID, start_date: day(-5), minimum_end_date: day(10) });
+  });
+  afterAll(async () => {
+    await db.end();
+  });
+  // The tests below run in order, on one database: each builds on the last.
+  beforeEach(() => {
+    activeClient = db;
+  });
+
+  test('nothing on file: the member and the guardian read null', async () => {
+    const member = await asMember();
+    expect(member.status).toBe(200);
+    expect(member.body).toStrictEqual({ ok: true, medical_restriction: null });
+    const guardian = await asGuardian();
+    expect(guardian.items.map((item) => item.athlete_id)).toEqual([ATHLETE_ID]);
+    expect(guardian.items[0].medical_restriction).toBeNull();
+  });
+
+  test('in force with every detail recorded: exactly the three fields reach the member and the guardian', async () => {
+    const row = await recordMedicalRestriction({ ...RECORD, startDate: day(-5), minimumEndDate: day(10) });
+    restrictionId = row.restriction_id;
+    await recordLbcInformed({
+      organizationId: ORG_ID, restrictionId, lbcInformedOn: day(-1), actorAccountId: COACH_ID, actorRole: 'coach',
+    });
+    const expected = { on_file: true, minimum_end_date: day(10), release_needed: true };
+
+    const member = await asMember();
+    expect(member.body).toStrictEqual({ ok: true, medical_restriction: expected });
+    expect(leaked(member.text)).toEqual([]);
+
+    const guardian = await asGuardian();
+    expect(guardian.items).toHaveLength(1);
+    expect(guardian.items[0].medical_restriction).toStrictEqual(expected);
+    expect(leaked(JSON.stringify(guardian.items[0].medical_restriction))).toEqual([]);
+    expect(guardian.text).not.toContain('Test note text');
+    expect(guardian.text).not.toContain('incident-test-1');
+  });
+
+  test('a child whose guardian link ended at 18 is not in the guardian response at all', async () => {
+    const guardian = await asGuardian();
+    expect(guardian.items.map((item) => item.athlete_id)).toEqual([ATHLETE_ID]);
+    expect(guardian.text).not.toContain(ADULT_ID);
+    expect(guardian.text).not.toContain('Test Adult');
+  });
+
+  test("another family's guardian sees only their own child, and not another gym's record for the same id", async () => {
+    const other = await asGuardian(OTHER_PARENT);
+    expect(other.items.map((item) => item.athlete_id)).toEqual([SHARED_ATHLETE_ID]);
+    expect(other.items[0].medical_restriction).toBeNull();
+    expect(other.text).not.toContain(ATHLETE_ID);
+  });
+
+  test('staff and guardians cannot use the member route', async () => {
+    for (const who of [principal(COACH_ID, 'coach'), PARENT, ADMIN]) {
+      mockPrincipal.mockResolvedValueOnce(who);
+      const response = await getOwnRestriction(new NextRequest('http://localhost/api/pilot/athlete/medical-restriction'));
+      expect(response.status).toBe(403);
+    }
+  });
+
+  test('a release on file before the end date: still shown, the release no longer needed', async () => {
+    await recordRelease({
+      organizationId: ORG_ID, restrictionId, releaseSignedOn: day(-1), actorAccountId: COACH_ID, actorRole: 'coach',
+    });
+    const expected = { on_file: true, minimum_end_date: day(10), release_needed: false };
+    expect((await asMember()).body).toStrictEqual({ ok: true, medical_restriction: expected });
+    expect((await asGuardian()).items[0].medical_restriction).toStrictEqual(expected);
+  });
+
+  test('voided: nothing is shown', async () => {
+    await voidMedicalRestriction({
+      organizationId: ORG_ID, restrictionId, reason: 'Entered in error (test)', actorAccountId: ADMIN_ID, actorRole: 'organization_admin',
+    });
+    expect((await asMember()).body).toStrictEqual({ ok: true, medical_restriction: null });
+    const guardian = await asGuardian();
+    expect(guardian.items[0].medical_restriction).toBeNull();
+    expect(guardian.text).not.toContain('Entered in error');
+  });
+
+  test('lifted (end date passed, release on file) or not yet started: nothing is shown', async () => {
+    await insertRaw(db, {
+      start_date: day(-30), minimum_end_date: day(-2), release_signed_on: day(-1),
+      release_recorded_by_account_id: COACH_ID, release_recorded_by_role: 'coach', release_recorded_at: new Date().toISOString(),
+    });
+    await insertRaw(db, { start_date: day(5), minimum_end_date: day(20) });
+    expect((await asMember()).body).toStrictEqual({ ok: true, medical_restriction: null });
+    expect((await asGuardian()).items[0].medical_restriction).toBeNull();
+  });
+
+  test('end date passed with no release: still shown, release needed', async () => {
+    await insertRaw(db, { start_date: day(-30), minimum_end_date: day(-2) });
+    const expected = { on_file: true, minimum_end_date: day(-2), release_needed: true };
+    expect((await asMember()).body).toStrictEqual({ ok: true, medical_restriction: expected });
+    expect((await asGuardian()).items[0].medical_restriction).toStrictEqual(expected);
+  });
+
+  describe('two restrictions in force at once', () => {
+    const releasedOn = (on: string) => ({
+      release_signed_on: on, release_recorded_by_account_id: COACH_ID, release_recorded_by_role: 'coach',
+      release_recorded_at: new Date().toISOString(),
+    });
+    beforeEach(async () => {
+      await db.query('set session_replication_role = replica'); // past the no-delete trigger
+      await db.query('delete from pilot.medical_restrictions where organization_id = $1 and athlete_id = $2', [ORG_ID, ATHLETE_ID]);
+      await db.query('set session_replication_role = origin');
+    });
+
+    test('the later end date has its release, the earlier one does not: release still needed', async () => {
+      await insertRaw(db, { start_date: day(-5), minimum_end_date: day(20), ...releasedOn(day(-1)) });
+      await insertRaw(db, { start_date: day(-3), minimum_end_date: day(5) });
+      const expected = { on_file: true, minimum_end_date: day(20), release_needed: true };
+      expect((await asMember()).body).toStrictEqual({ ok: true, medical_restriction: expected });
+      expect((await asGuardian()).items[0].medical_restriction).toStrictEqual(expected);
+      // The staff note and the refusal say the same.
+      expect((await medicalRestrictionNote({ organizationId: ORG_ID, athleteId: ATHLETE_ID }))?.message)
+        .toMatch(/and a physician's release is on file/);
+    });
+
+    test('one past its end date with no release, one ahead with its release: release still needed', async () => {
+      await insertRaw(db, { start_date: day(-30), minimum_end_date: day(-2) });
+      await insertRaw(db, { start_date: day(-5), minimum_end_date: day(10), ...releasedOn(day(-1)) });
+      expect((await asMember()).body).toStrictEqual({
+        ok: true, medical_restriction: { on_file: true, minimum_end_date: day(10), release_needed: true },
+      });
+    });
+
+    test('both released: no release needed, the later end date named', async () => {
+      await insertRaw(db, { start_date: day(-5), minimum_end_date: day(20), ...releasedOn(day(-1)) });
+      await insertRaw(db, { start_date: day(-3), minimum_end_date: day(5), ...releasedOn(day(-1)) });
+      expect((await asMember()).body).toStrictEqual({
+        ok: true, medical_restriction: { on_file: true, minimum_end_date: day(20), release_needed: false },
+      });
+    });
   });
 });
