@@ -52,6 +52,22 @@ import { POST as postObservation } from './route';
  * a 4xx here would be encoding the opposite of the safeguarding decision.
  */
 
+// USA Boxing medical restriction gate (lane P22b): stubbed to "nothing on
+// file" so this suite keeps testing its own path; medicalRestrictions.pg.test.ts
+// holds every save path to the real gate against real rows.
+jest.mock('@/src/server/pilot/medicalRestrictions', () => ({
+  ...jest.requireActual('@/src/server/pilot/medicalRestrictions'),
+  medicalRestrictionNote: async () => null,
+  assertNoMedicalRestriction: async () => undefined,
+  assertSparringExposureClearOfMedicalRestriction: async () => undefined,
+  drillIsAtSparringLevel: async () => false,
+  assertDrillClearOfMedicalRestriction: async () => undefined,
+  membersBlockedToday: async () => new Set<string>(),
+  assertSessionClearOfMedicalRestriction: async () => undefined,
+  sessionMedicalRestrictionNote: async () => null,
+  assertCompetitionClearOfMedicalRestriction: async () => undefined,
+}));
+
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
@@ -968,5 +984,78 @@ describe('check-in answers are written by the check-in only (personal baseline, 
     }));
     expect(response.status).toBe(409);
     expect(mockSaveObservation).not.toHaveBeenCalled();
+  });
+});
+
+// USA Boxing medical restriction (lane P22b, Overwatch Q2). The gate itself
+// is stubbed at the top of this file; these tests swap in spies to prove the
+// route's wiring: which observations it gates, on which day, the raise rule
+// for corrections, and that a refusal stores nothing.
+describe('P22b: the medical restriction gate on the sparring log', () => {
+  const medical = jest.requireMock('@/src/server/pilot/medicalRestrictions') as Record<string, unknown>;
+  const stubs = { assert: medical.assertNoMedicalRestriction, note: medical.medicalRestrictionNote };
+  const mockAssert = jest.fn();
+  const mockNote = jest.fn();
+  const NOTE = { on_file: true, minimum_end_date: '2026-08-30', release_needed: true, message: 'A USA Boxing medical restriction is on file.' };
+
+  beforeEach(() => {
+    mockAssert.mockReset().mockResolvedValue(undefined);
+    mockNote.mockReset().mockResolvedValue(null);
+    medical.assertNoMedicalRestriction = mockAssert;
+    medical.medicalRestrictionNote = mockNote;
+  });
+  afterAll(() => {
+    medical.assertNoMedicalRestriction = stubs.assert;
+    medical.medicalRestrictionNote = stubs.note;
+  });
+
+  test('contact above 0 is gated on the gym day of observedAt (America/New_York), for the athlete in the body', async () => {
+    // 01:30 UTC on the 19th is still the 18th at the gym.
+    const response = await postObservation(jsonRequest({ ...contactObservationBody, observedAt: '2026-08-19T01:30:00.000Z' }));
+    expect(response.status).toBe(200);
+    expect(mockAssert).toHaveBeenCalledWith({ organizationId: 'org-1', athleteId: 'athlete-1', entryDay: '2026-08-18' });
+  });
+
+  test('a refusal is a 403 naming the restriction, and nothing is stored or flagged', async () => {
+    const { ForbiddenError } = jest.requireActual('@/src/server/pilot/errors');
+    mockAssert.mockRejectedValue(new ForbiddenError('Not saved: A USA Boxing medical restriction is on file.', 'MEDICAL_RESTRICTION'));
+    const response = await postObservation(jsonRequest(contactObservationBody));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'MEDICAL_RESTRICTION' });
+    expect(mockSaveObservation).not.toHaveBeenCalled();
+    expect(mockFlagNearMiss).not.toHaveBeenCalled();
+  });
+
+  test('0 ("None") and non-contact kinds are not gated; a contact kind still carries the note', async () => {
+    mockNote.mockResolvedValue(NOTE);
+    const none = await postObservation(jsonRequest({ ...contactObservationBody, value: 0 }));
+    expect(none.status).toBe(200);
+    expect((await none.json()).medical_restriction_note).toEqual(NOTE);
+    const rpe = await postObservation(jsonRequest(nonContactObservationBody));
+    expect((await rpe.json()).medical_restriction_note).toBeUndefined();
+    expect(mockAssert).not.toHaveBeenCalled();
+  });
+
+  test('a correction is gated only when it raises the value it replaces', async () => {
+    const correction = { ...contactObservationBody, kind: 'punch_absorbed', unit: 'count', supersedesObservationId: 'observation-0' };
+    // The route's own reads; the supersede check reads the replaced kind, the gate reads its value.
+    // The earlier value is found only for this athlete, on the same gym day.
+    mockQueryOne.mockImplementation(async (text: string, params?: unknown[]) => {
+      if (!String(text).includes('numeric_value')) {
+        return { observation_kind: 'punch_absorbed', context_id: 'sparring-2026-08-18' };
+      }
+      return String(text).includes('athlete_id = $3') && params?.[2] === 'athlete-1'
+        ? { observation_kind: 'punch_absorbed', numeric_value: '5', observed_at: '2026-08-18T17:00:00.000Z' }
+        : null;
+    });
+    expect((await postObservation(jsonRequest({ ...correction, value: 3 }))).status).toBe(200);
+    expect((await postObservation(jsonRequest({ ...correction, value: 5 }))).status).toBe(200);
+    expect(mockAssert).not.toHaveBeenCalled();
+    expect((await postObservation(jsonRequest({ ...correction, value: 6 }))).status).toBe(200);
+    expect(mockAssert).toHaveBeenCalledTimes(1);
+    // The same value moved to another gym day is a new entry for that day.
+    expect((await postObservation(jsonRequest({ ...correction, value: 5, observedAt: '2026-08-20T18:00:00.000Z' }))).status).toBe(200);
+    expect(mockAssert).toHaveBeenCalledTimes(2);
+    expect(mockAssert).toHaveBeenLastCalledWith(expect.objectContaining({ entryDay: '2026-08-20' }));
   });
 });

@@ -7,6 +7,22 @@ import { getSafetyGateDefinition, recordSafetyGateEvaluation } from './safetyGat
 import { findContactEventBlockingHold } from './trainingHolds';
 import { getAthleteWaiverStatus } from './waiverCompliance';
 
+// USA Boxing medical restriction gate (lane P22b): stubbed to "nothing on
+// file" so this suite keeps testing its own path; medicalRestrictions.pg.test.ts
+// holds every save path to the real gate against real rows.
+jest.mock('@/src/server/pilot/medicalRestrictions', () => ({
+  ...jest.requireActual('@/src/server/pilot/medicalRestrictions'),
+  medicalRestrictionNote: async () => null,
+  assertNoMedicalRestriction: async () => undefined,
+  assertSparringExposureClearOfMedicalRestriction: async () => undefined,
+  drillIsAtSparringLevel: async () => false,
+  assertDrillClearOfMedicalRestriction: async () => undefined,
+  membersBlockedToday: async () => new Set<string>(),
+  assertSessionClearOfMedicalRestriction: async () => undefined,
+  sessionMedicalRestrictionNote: async () => null,
+  assertCompetitionClearOfMedicalRestriction: async () => undefined,
+}));
+
 jest.mock('./access', () => ({ assertActorCanAccessAthlete: jest.fn() }));
 jest.mock('./safetyGateMatrix', () => ({
   getSafetyGateDefinition: jest.fn(),
@@ -371,5 +387,40 @@ describe('runCompetitionEntryUnderSafetyLock keeps pool reads and writes outside
     await expect(run()).rejects.toBeInstanceOf(ConflictError);
     expect(errorLog).toHaveBeenCalled();
     errorLog.mockRestore();
+  });
+});
+
+// USA Boxing medical restriction (lane P22b, Overwatch Q6; OD-2026-11-15-012
+// boxing only). The check is stubbed at the top of this file; a spy proves
+// which entries reach it and that its refusal stops the entry.
+describe('gate 2b -- USA Boxing medical restriction', () => {
+  const medical = jest.requireMock('@/src/server/pilot/medicalRestrictions') as Record<string, unknown>;
+  const stub = medical.assertCompetitionClearOfMedicalRestriction;
+  const mockMedical = jest.fn();
+  beforeEach(() => {
+    // The suite above leaves mockRecordEvaluation rejecting; this block wants it plain.
+    mockRecordEvaluation.mockReset().mockResolvedValue(undefined);
+    mockMedical.mockReset().mockResolvedValue(undefined);
+    medical.assertCompetitionClearOfMedicalRestriction = mockMedical;
+  });
+  afterAll(() => {
+    medical.assertCompetitionClearOfMedicalRestriction = stub;
+  });
+
+  test('an external competition entry is checked for this athlete and competition', async () => {
+    await expect(gates()).resolves.toBeUndefined();
+    expect(mockMedical).toHaveBeenCalledWith({ organizationId: 'org-1', athleteId: 'ath-1', competitionId: 'comp-1', client: undefined });
+  });
+
+  test('a restriction refuses the entry before the travel waiver is read', async () => {
+    const { ForbiddenError } = jest.requireActual('./errors');
+    mockMedical.mockRejectedValue(new ForbiddenError('Not saved: restriction', 'MEDICAL_RESTRICTION'));
+    await expect(gates()).rejects.toMatchObject({ status: 403, code: 'MEDICAL_RESTRICTION' });
+    expect(mockWaiverStatus).not.toHaveBeenCalled();
+  });
+
+  test('a wrestling league roster add is not checked (boxing only)', async () => {
+    await expect(gates({ kind: 'wrestling_league_season', contextId: 'season-1' })).resolves.toBeUndefined();
+    expect(mockMedical).not.toHaveBeenCalled();
   });
 });

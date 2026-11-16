@@ -159,6 +159,8 @@ export default function CoachSparringExposurePage() {
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   /** The cap check the route returned with the last save: warnings, or why none could be given. */
   const [savedCheck, setSavedCheck] = useState<CapCheck | 'unreadable' | null>(null);
+  /** USA Boxing medical restriction note the route returned with the last save (P22b, Q8). */
+  const [restrictionNote, setRestrictionNote] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -237,6 +239,7 @@ export default function CoachSparringExposurePage() {
 
     setSaving(true);
     setSavedCheck(null);
+    setRestrictionNote(null);
     try {
       const response = await fetch(`${apiBase()}/api/pilot/coach/sparring-exposure`, {
         method: 'POST',
@@ -250,8 +253,11 @@ export default function CoachSparringExposurePage() {
         return;
       }
       setMessage({ kind: 'ok', text: 'Saved.' });
-      const saved = (await response.json().catch(() => null)) as { cap_check?: unknown } | null;
+      const saved = (await response.json().catch(() => null)) as
+        { cap_check?: unknown; medical_restriction_note?: { message?: unknown } } | null;
       setSavedCheck(isSaveCheck(saved?.cap_check) ? saved.cap_check : 'unreadable');
+      const noteText = saved?.medical_restriction_note?.message;
+      setRestrictionNote(typeof noteText === 'string' ? noteText : null);
       // Keep the day, the stage and the gear for the next round; clear what was observed.
       setForm((current) => ({
         ...EMPTY_FORM,
@@ -462,6 +468,18 @@ export default function CoachSparringExposurePage() {
                 className={message.kind === 'error' ? 'text-[var(--restricted-ink)]' : undefined}>
                 {message.text}
               </p>
+            )}
+            {/* P22b (Q8): a segment below sparring for a restricted member
+                saved; say why sparring is held back. A refused one arrives as
+                the error message above, with the same words. */}
+            {message?.kind === 'ok' && restrictionNote && (
+              <div className="alert alert--warning" role="status" data-testid="spar-medical-restriction">
+                <span className="alert-icon" aria-hidden="true">▲</span>
+                <div className="alert-body">
+                  <p className="alert-title">Medical restriction on file</p>
+                  <p className="alert-msg">{restrictionNote}</p>
+                </div>
+              </div>
             )}
             {message?.kind === 'ok' && savedCheck === 'unreadable' && (
               <p>The cap check did not come back, so this segment was not checked against a cap.</p>

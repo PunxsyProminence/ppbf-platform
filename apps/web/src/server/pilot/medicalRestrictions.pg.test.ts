@@ -17,7 +17,13 @@
 //     including the pre-migration window (no restriction, transaction intact);
 //   * through the route: only staff of THIS gym read or write; a coach of
 //     another gym, a parent, an athlete, platform_owner and board are refused;
-//     a coach cannot void.
+//     a coach cannot void;
+//   * P22b: the ruled save paths refuse a sparring-level entry for a
+//     restricted member and save the levels below it, each through its own
+//     module against real rows (sparring exposure, drill assignments, Coach
+//     Cards, completions, workout issues, training attempts, sessions,
+//     competition entries). The athlete sparring log's gate is held by its
+//     route test.
 //
 // Test data only. Disposable, local-only embedded Postgres; it NEVER connects
 // to production or staging.
@@ -69,19 +75,36 @@ jest.mock('./http', () => {
   return { ...actual, requirePrincipal: jest.fn() };
 });
 
+import type { PoolClient } from 'pg';
+
 import { GET, POST } from '../../../app/api/pilot/coach/medical-restrictions/route';
+import { issueCoachCard, issueCoachCardToProgram } from './coachCards';
+import type { PilotSession } from './contracts';
+import { upsertSession } from './entities';
 import { ConflictError } from './errors';
 import { requirePrincipal } from './http';
 import {
+  MEDICAL_RESTRICTION_REFUSAL_CODE,
   type GateFields,
+  assertCompetitionClearOfMedicalRestriction,
+  assertNoMedicalRestriction,
+  drillIsAtSparringLevel,
   findBlockingMedicalRestriction,
+  gymDayOf,
   listMedicalRestrictions,
+  medicalRestrictionGateDays,
+  medicalRestrictionNote,
+  membersBlockedToday,
   recordLbcInformed,
   recordMedicalRestriction,
   recordRelease,
   restrictionBlocksOn,
   voidMedicalRestriction,
 } from './medicalRestrictions';
+import { assignDrill, recordCompletion } from './progression';
+import { recordSparringExposure, sparringExposureDay } from './sparringExposure';
+import { type AttemptContextType, recordAttempt } from './trainingAttempts';
+import { recordWorkoutIssue } from './workoutIssues';
 
 jest.setTimeout(180_000);
 
@@ -703,6 +726,366 @@ describe('the staff route against real rows', () => {
       expect((await voided.json()).restriction.state).toBe('voided');
       const { rows: after } = await client.query('select count(*)::int as n from pilot.medical_restrictions where voided_at is not null');
       expect(after[0].n).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P22b: the gate on every boxing save path, against real rows. Each save
+// path's own module is called for real (its './db' is this file's mock, so
+// its SQL runs on the embedded server); only the restriction rows are arranged.
+// Dates are relative to the gym's today, because the gate's "today" is real.
+// ---------------------------------------------------------------------------
+
+describe('P22b: the gate on the save paths', () => {
+  const TODAY = gymDayOf(new Date());
+  const day = (offset: number) => {
+    const at = new Date(`${TODAY}T12:00:00Z`);
+    at.setUTCDate(at.getUTCDate() + offset);
+    return at.toISOString().slice(0, 10);
+  };
+  let db: Client;
+
+  /** A restriction for ATHLETE_ID: in force from 5 days ago to 10 days ahead, no release, unless overridden. */
+  async function restrict(overrides: Record<string, unknown> = {}) {
+    await insertRaw(db, { start_date: day(-5), minimum_end_date: day(10), ...overrides });
+  }
+  const released = (on: string) => ({
+    release_signed_on: on,
+    release_recorded_by_account_id: COACH_ID,
+    release_recorded_by_role: 'coach',
+    release_recorded_at: new Date().toISOString(),
+  });
+  async function refusal(work: () => Promise<unknown>): Promise<{ status: number; code?: string; message: string }> {
+    try {
+      await work();
+    } catch (error) {
+      const e = error as { status?: number; code?: string; message: string };
+      return { status: e.status ?? 0, code: e.code, message: e.message };
+    }
+    throw new Error('expected a refusal; the save went through');
+  }
+  const count = async (table: string) => (await db.query(`select count(*)::int as n from ${table}`)).rows[0].n as number;
+
+  async function referenceDrill(drillId: string, contactLevel: string | null) {
+    if (contactLevel) {
+      await db.query(
+        `insert into pilot.drill_library
+           (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
+            standard_setup, execution, what_good_looks_like, what_bad_looks_like, contact_level)
+         values ($1, $2, $2, $2, 'technical', 'b', 'p', 's', 'e', 'g', 'bad', $3)`,
+        [ORG_ID, `ref-${drillId}`, contactLevel],
+      );
+    }
+    await db.query(
+      `insert into pilot.drills (organization_id, drill_id, name, category, focus, difficulty, active, cues, reference_drill_id)
+       values ($1, $2, $2, 'technical', 'focus', 'intermediate', true, '{"Test cue"}', $3)`,
+      [ORG_ID, drillId, contactLevel ? `ref-${drillId}` : null],
+    );
+  }
+
+  beforeAll(async () => {
+    db = await freshDatabase('medres_save_paths');
+    await db.query(
+      `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+       values ($1, 'boxing', 'Boxing', 'striking', 'head_impact') on conflict do nothing`,
+      [ORG_ID],
+    );
+    await referenceDrill('drill-open', 'open_sparring');
+    await referenceDrill('drill-controlled', 'controlled_sparring');
+    await referenceDrill('drill-conditioned', 'conditioned');
+    await referenceDrill('drill-plain', null);
+    await db.query(
+      `insert into pilot.external_competitions (organization_id, competition_id, competition_name, competition_date, created_by_account_id)
+       values ($1, 'comp-soon', 'Test Bout Night', $2::date, $3)`,
+      [ORG_ID, day(20), ADMIN_ID],
+    );
+    await db.query(
+      `insert into pilot.activity_log
+         (organization_id, activity_id, person_account_id, athlete_id, activity_domain, activity_type, occurred_on,
+          duration_minutes, attendance_status, capture_method, recorded_by_role, recorded_by_account_id)
+       values ($1, 'act-before', $2, $3, 'boxing_training', 'technical_session', $4::date, 60, 'present',
+               'coach_override', 'coach', $2)`,
+      [ORG_ID, COACH_ID, ATHLETE_ID, day(-20)],
+    );
+  });
+  afterAll(async () => {
+    await db.end();
+  });
+  beforeEach(async () => {
+    activeClient = db;
+    await db.query("set session_replication_role = replica"); // lets the cleanup delete past the no-delete trigger
+    await db.query('delete from pilot.medical_restrictions');
+    await db.query("set session_replication_role = origin");
+  });
+
+  test('which days are checked: the entry day; today as well when the entry is in the future', () => {
+    expect(medicalRestrictionGateDays(null, TODAY)).toEqual([TODAY]);
+    expect(medicalRestrictionGateDays(day(-3), TODAY)).toEqual([day(-3)]);
+    expect(medicalRestrictionGateDays(day(3), TODAY)).toEqual([day(3), TODAY]);
+    expect(() => medicalRestrictionGateDays('soon', TODAY)).toThrow('MEDICAL_RESTRICTION_PROBE_BAD_INPUT');
+  });
+
+  test('a future-dated entry is refused while today is restricted, even when its own day would be clear', async () => {
+    // Release on file, minimum end date still ahead: day(20) alone would pass.
+    await restrict(released(day(-1)));
+    expect(await findBlockingMedicalRestriction(ORG_ID, ATHLETE_ID, day(20))).toBeNull();
+    const refused = await refusal(() => assertNoMedicalRestriction({ organizationId: ORG_ID, athleteId: ATHLETE_ID, entryDay: day(20) }));
+    expect(refused).toMatchObject({ status: 403, code: MEDICAL_RESTRICTION_REFUSAL_CODE });
+    expect(refused.message).toContain(day(10));
+    expect(refused.message).not.toMatch(/physician's release is on file/); // the release is on file; only the date is ahead
+    // Dated before the restriction started: a record of sparring before the injury, and it saves.
+    await expect(assertNoMedicalRestriction({ organizationId: ORG_ID, athleteId: ATHLETE_ID, entryDay: day(-10) })).resolves.toBeUndefined();
+  });
+
+  test('the note says on file, the minimum end date and release needed -- never the source or loss of consciousness', async () => {
+    await restrict({ source: 'training_knockout_or_concussion', loss_of_consciousness: 'over_1_min' });
+    const note = await medicalRestrictionNote({ organizationId: ORG_ID, athleteId: ATHLETE_ID });
+    expect(note).toEqual({
+      on_file: true,
+      minimum_end_date: day(10),
+      release_needed: true,
+      message: expect.stringContaining(day(10)),
+    });
+    expect(JSON.stringify(note)).not.toMatch(/knockout|concussion|over_1_min|ringside|conscious/i);
+    // Two in force: the one with the later minimum end date is named.
+    await restrict({ minimum_end_date: day(30) });
+    expect((await medicalRestrictionNote({ organizationId: ORG_ID, athleteId: ATHLETE_ID }))?.minimum_end_date).toBe(day(30));
+  });
+
+  test('A, sparring exposure: open or controlled sparring and a blank stage are refused; conditioned saves', async () => {
+    await restrict();
+    const entry = {
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      sessionDate: TODAY,
+      sparringType: 'technical' as const,
+      timeUnderImpactSec: 120,
+      coachObservedIntensity: 'light' as const,
+      coachObservedHeadContact: 'none' as const,
+      supervisingCoachAccountId: COACH_ID,
+    };
+    for (const contactStage of ['open_sparring', 'controlled_sparring'] as const) {
+      expect(await refusal(() => recordSparringExposure({ ...entry, contactStage }))).toMatchObject({ status: 403, code: 'MEDICAL_RESTRICTION' });
+    }
+    const blank = await refusal(() => recordSparringExposure(entry));
+    expect(blank.message).toMatch(/say the contact stage/);
+    expect(await count('pilot.sparring_exposure')).toBe(0);
+
+    await recordSparringExposure({ ...entry, contactStage: 'conditioned' });
+    expect(await count('pilot.sparring_exposure')).toBe(1);
+    expect(await medicalRestrictionNote({ organizationId: ORG_ID, athleteId: ATHLETE_ID, entryDay: await sparringExposureDay(entry) }))
+      .toMatchObject({ on_file: true });
+    expect(await sparringExposureDay({ organizationId: ORG_ID, activityId: 'act-before' })).toBe(day(-20));
+
+    // Q9: 'hard' is open sparring, whatever the stage says.
+    const hard = await refusal(() => recordSparringExposure({ ...entry, sparringType: 'hard', contactStage: 'conditioned' }));
+    expect(hard).toMatchObject({ status: 403, code: 'MEDICAL_RESTRICTION' });
+    expect(hard.message).toMatch(/hard sparring counts as open sparring/);
+
+    // Q10: the restricted member cannot be the partner either; an unrestricted partner is fine.
+    const asPartner = { ...entry, athleteId: SHARED_ATHLETE_ID, partnerAthleteId: ATHLETE_ID };
+    const partner = await refusal(() => recordSparringExposure({ ...asPartner, contactStage: 'open_sparring' }));
+    expect(partner).toMatchObject({ status: 403, code: 'MEDICAL_RESTRICTION' });
+    expect(partner.message).toMatch(/on file for the sparring partner named on this entry/);
+    expect((await refusal(() => recordSparringExposure({ ...asPartner, sparringType: 'hard', contactStage: 'none' }))).status).toBe(403);
+    expect(await count('pilot.sparring_exposure')).toBe(1);
+    await recordSparringExposure({ ...asPartner, contactStage: 'light_technical' }); // below sparring: saves
+    await recordSparringExposure({ ...entry, athleteId: SHARED_ATHLETE_ID, contactStage: 'open_sparring' }); // no partner named
+    expect(await count('pilot.sparring_exposure')).toBe(3);
+
+    // Linked to an activity dated before the restriction: that is the day sparred, and it saves.
+    await recordSparringExposure({ ...entry, sessionDate: null, activityId: 'act-before', contactStage: 'open_sparring' });
+    expect(await count('pilot.sparring_exposure')).toBe(4);
+  });
+
+  test('C/D, drill work: a sparring-level drill is not issued or logged; work below it is', async () => {
+    const card = (drillId: string) => issueCoachCard({ organizationId: ORG_ID, athleteId: ATHLETE_ID, assignedByAccountId: COACH_ID, drillId });
+    // Assigned before the restriction was recorded; the completion is checked on its own day.
+    const earlier = await card('drill-open');
+    await restrict();
+    for (const drillId of ['drill-open', 'drill-controlled']) {
+      expect(await refusal(() => card(drillId))).toMatchObject({ status: 403, code: 'MEDICAL_RESTRICTION' });
+    }
+    await card('drill-conditioned');
+    await card('drill-plain'); // no reference drill = no contact level
+    expect(await refusal(() => recordCompletion({
+      organizationId: ORG_ID, assignmentId: earlier.assignment_id, athleteId: ATHLETE_ID, repsCompleted: 1,
+    }))).toMatchObject({ status: 403 });
+    expect((await db.query('select count(*)::int as n from pilot.assignment_completions')).rows[0].n).toBe(0);
+  });
+
+  test('C, gap-driven assignment: a sparring-level drill is not assigned; a lower one is', async () => {
+    await restrict();
+    for (const gapId of ['gap-medres-1', 'gap-medres-2']) {
+      await db.query(
+        `insert into pilot.progression_gaps
+           (gap_id, organization_id, athlete_id, coach_account_id, gap_type, gap_description, detected_from)
+         values ($1, $2, $3, $4, 'technique', 'Test gap', 'coach_observation') on conflict do nothing`,
+        [gapId, ORG_ID, ATHLETE_ID, COACH_ID],
+      );
+    }
+    const assign = (gapId: string, drillId: string) => assignDrill({
+      organizationId: ORG_ID, gapId, athleteId: ATHLETE_ID, assignedByAccountId: COACH_ID, drillId,
+    });
+    const before = await count('pilot.drill_assignments');
+    expect(await refusal(() => assign('gap-medres-1', 'drill-open'))).toMatchObject({ status: 403, code: 'MEDICAL_RESTRICTION' });
+    expect(await count('pilot.drill_assignments')).toBe(before);
+    expect((await db.query(`select status from pilot.progression_gaps where gap_id = 'gap-medres-1'`)).rows[0].status).not.toBe('assigned');
+    await assign('gap-medres-2', 'drill-conditioned');
+    expect(await count('pilot.drill_assignments')).toBe(before + 1);
+  });
+
+  test('C, group card (Q3): the restricted member is skipped and listed; a lower card reaches them', async () => {
+    await restrict();
+    expect(await drillIsAtSparringLevel(ORG_ID, 'drill-controlled')).toBe(true);
+    expect(await drillIsAtSparringLevel(ORG_ID, 'drill-conditioned')).toBe(false);
+    expect(await drillIsAtSparringLevel(ORG_ID, 'drill-plain')).toBe(false);
+    expect([...(await membersBlockedToday(ORG_ID, [ATHLETE_ID, SHARED_ATHLETE_ID]))]).toEqual([ATHLETE_ID]);
+
+    await db.query(
+      `insert into pilot.programs (organization_id, program_id, program_name, created_by_account_id)
+       values ($1, 'prog-medres', 'Test Program', $2) on conflict do nothing`,
+      [ORG_ID, ADMIN_ID],
+    );
+    for (const [index, athleteId] of [ATHLETE_ID, SHARED_ATHLETE_ID].entries()) {
+      await db.query(
+        `insert into pilot.program_memberships
+           (organization_id, membership_id, athlete_id, program_name, status, started_on, created_by_account_id)
+         values ($1, $2, $3, 'Test Program', 'active', '2026-06-01'::date, $4) on conflict do nothing`,
+        [ORG_ID, `mem-medres-${index}`, athleteId, ADMIN_ID],
+      );
+    }
+    await db.query('delete from pilot.drill_assignments');
+    const coachActor = { accountId: COACH_ID, role: 'coach', organizationId: ORG_ID } as Parameters<typeof issueCoachCardToProgram>[0]['actor'];
+    const sparring = await issueCoachCardToProgram({ actor: coachActor, programId: 'prog-medres', drillId: 'drill-controlled' });
+    expect(sparring!.issued.map((entry) => entry.athlete_id)).toEqual([SHARED_ATHLETE_ID]);
+    expect(sparring!.skipped).toEqual([]);
+    expect(sparring!.skipped_medical_restriction).toEqual([{ athlete_id: ATHLETE_ID, athlete_name: 'Test Member' }]);
+    const lower = await issueCoachCardToProgram({ actor: coachActor, programId: 'prog-medres', drillId: 'drill-conditioned' });
+    expect(lower!.issued.map((entry) => entry.athlete_id).sort()).toEqual([ATHLETE_ID, SHARED_ATHLETE_ID].sort());
+    expect(lower).not.toHaveProperty('skipped_medical_restriction');
+    const { rows } = await db.query(
+      `select athlete_id, drill_id from pilot.drill_assignments order by drill_id, athlete_id`,
+    );
+    expect(rows).toEqual([
+      { athlete_id: ATHLETE_ID, drill_id: 'drill-conditioned' },
+      { athlete_id: SHARED_ATHLETE_ID, drill_id: 'drill-conditioned' },
+      { athlete_id: SHARED_ATHLETE_ID, drill_id: 'drill-controlled' },
+    ]);
+  });
+
+  test('E, workout issue: a sparring step is refused before anything is written', async () => {
+    await restrict();
+    const client = { query: (text: string, values?: unknown[]) => db.query(text, values) } as unknown as PoolClient;
+    const step = { ordinal: 1, block: 'main', scale_level: null, coach_note: null, template_item_id: 'item-1', assignment_id: 'none' };
+    await db.query('BEGIN'); // the probe runs under a SAVEPOINT on the caller's transaction
+    const refused = await refusal(() => recordWorkoutIssue(client, {
+      organizationId: ORG_ID,
+      athleteId: ATHLETE_ID,
+      template: { template_id: 'tpl-1', name: 'Test', version: 1 },
+      issuedByAccountId: COACH_ID,
+      requestKey: null,
+      steps: [{ ...step, contact_level: 'light_technical' }, { ...step, ordinal: 2, contact_level: 'controlled_sparring' }],
+    }));
+    await db.query('ROLLBACK');
+    expect(refused).toMatchObject({ status: 403, code: 'MEDICAL_RESTRICTION' });
+    expect(await count('pilot.workout_issues')).toBe(0);
+  });
+
+  test('F, training attempts (Q4): open, technical and game sparring refused; sparring drills save', async () => {
+    await restrict();
+    const attempt = (contextType: AttemptContextType) => recordAttempt({
+      organizationId: ORG_ID, athleteId: ATHLETE_ID, contextType, metricKind: 'reps', targetValue: null,
+      achievedValue: 3, recordedByAccountId: COACH_ID,
+    });
+    for (const contextType of ['open_sparring', 'technical_sparring', 'sparring_games'] as const) {
+      expect(await refusal(() => attempt(contextType))).toMatchObject({ status: 403 });
+    }
+    await attempt('sparring_drills');
+    await attempt('open_floor');
+    expect(await count('pilot.training_attempts')).toBe(2);
+  });
+
+  test('G, sessions (Q5): the sparring tag is refused; an edit is refused only when it raises', async () => {
+    const session = (id: string, date: string, sessionType: PilotSession['session_type']): PilotSession => ({
+      session_id: id, athlete_id: ATHLETE_ID, date, rpe: null, rpe_method: 'UNKNOWN', notes: '', completed_flag: false,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(), session_type: sessionType,
+    });
+    const update = { mode: 'update' as const, expectedAthleteId: ATHLETE_ID, noteWriter: true };
+    await upsertSession(ORG_ID, session('s-before', day(-20), 'sparring'), { mode: 'create' }); // before the restriction
+    await upsertSession(ORG_ID, session('s-cond', TODAY, 'conditioning'), { mode: 'create' });
+    await restrict();
+
+    expect(await refusal(() => upsertSession(ORG_ID, session('s-new', TODAY, 'sparring'), { mode: 'create' }))).toMatchObject({ status: 403 });
+    await upsertSession(ORG_ID, session('s-new2', TODAY, 'technique'), { mode: 'create' });
+    // Raising conditioning to sparring: refused.
+    expect(await refusal(() => upsertSession(ORG_ID, session('s-cond', TODAY, 'sparring'), update))).toMatchObject({ status: 403 });
+    // Editing the old sparring row in place (RPE, type unsent): saves.
+    await upsertSession(ORG_ID, {
+      ...session('s-before', day(-20), undefined), rpe: 6, rpe_method: 'athlete_post_session_self_report', completed_flag: true,
+    }, update);
+    // Moving it into the restriction: refused.
+    expect(await refusal(() => upsertSession(ORG_ID, session('s-before', TODAY, undefined), update))).toMatchObject({ status: 403 });
+    // Moving another member's sparring session onto the restricted member: refused.
+    await upsertSession(ORG_ID, { ...session('s-other', TODAY, 'sparring'), athlete_id: SHARED_ATHLETE_ID }, { mode: 'create' });
+    expect(await refusal(() => upsertSession(
+      ORG_ID,
+      session('s-other', TODAY, undefined),
+      { mode: 'update', expectedAthleteId: SHARED_ATHLETE_ID, noteWriter: true },
+    ))).toMatchObject({ status: 403 });
+    const { rows } = await db.query(`select session_id, session_type, date::text as d from pilot.sessions order by session_id`);
+    expect(rows).toEqual([
+      { session_id: 's-before', session_type: 'sparring', d: day(-20) },
+      { session_id: 's-cond', session_type: 'conditioning', d: TODAY },
+      { session_id: 's-new2', session_type: 'technique', d: TODAY },
+      { session_id: 's-other', session_type: 'sparring', d: TODAY },
+    ]);
+  });
+
+  test('H, competition entry (Q6): the bout date, plus today when the bout is ahead', async () => {
+    const check = () => assertCompetitionClearOfMedicalRestriction({ organizationId: ORG_ID, athleteId: ATHLETE_ID, competitionId: 'comp-soon' });
+    await expect(check()).resolves.toBeUndefined();
+    // Starts after today but before the bout: today is clear, the bout date is not.
+    await restrict({ start_date: day(15), minimum_end_date: day(40) });
+    expect(await refusal(check)).toMatchObject({ status: 403 });
+    // A bout already past, entered after the fact: its own day decides, not today.
+    await db.query(
+      `insert into pilot.external_competitions (organization_id, competition_id, competition_name, competition_date, created_by_account_id)
+       values ($1, 'comp-past', 'Test Past Bout', $2::date, $3) on conflict do nothing`,
+      [ORG_ID, day(-30), ADMIN_ID],
+    );
+    await db.query('set session_replication_role = replica');
+    await db.query('delete from pilot.medical_restrictions');
+    await db.query('set session_replication_role = origin');
+    await restrict(); // from day(-5): today is restricted, day(-30) is not
+    await expect(assertCompetitionClearOfMedicalRestriction({
+      organizationId: ORG_ID, athleteId: ATHLETE_ID, competitionId: 'comp-past',
+    })).resolves.toBeUndefined();
+  });
+
+  test('a lifted or voided restriction blocks nothing', async () => {
+    await restrict({ start_date: day(-40), minimum_end_date: day(-10), ...released(day(-12)) });
+    await restrict({
+      voided_at: new Date().toISOString(), voided_by_account_id: ADMIN_ID, voided_by_role: 'organization_admin', void_reason: 'wrong member',
+    });
+    await expect(assertNoMedicalRestriction({ organizationId: ORG_ID, athleteId: ATHLETE_ID })).resolves.toBeUndefined();
+    expect(await medicalRestrictionNote({ organizationId: ORG_ID, athleteId: ATHLETE_ID })).toBeNull();
+  });
+});
+
+describe('P22b before the migration', () => {
+  test('every path saves as before: no table, no restriction', async () => {
+    const client = await freshDatabase('medres_save_paths_premigration', { preMigration: true });
+    try {
+      await recordAttempt({
+        organizationId: ORG_ID, athleteId: ATHLETE_ID, contextType: 'open_sparring', metricKind: 'reps',
+        targetValue: null, achievedValue: 1, recordedByAccountId: COACH_ID,
+      });
+      expect(await medicalRestrictionNote({ organizationId: ORG_ID, athleteId: ATHLETE_ID })).toBeNull();
+      expect((await client.query('select count(*)::int as n from pilot.training_attempts')).rows[0].n).toBe(1);
     } finally {
       await client.end();
     }

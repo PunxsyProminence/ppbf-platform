@@ -14,6 +14,22 @@ import { issueWorkoutTemplate } from '@/src/server/pilot/workoutTemplates';
 // in workoutTemplateIssue.pg.test.ts. requireRole is the real one, so the
 // role cases prove the gate that ships.
 
+// USA Boxing medical restriction gate (lane P22b): stubbed to "nothing on
+// file" so this suite keeps testing its own path; medicalRestrictions.pg.test.ts
+// holds every save path to the real gate against real rows.
+jest.mock('@/src/server/pilot/medicalRestrictions', () => ({
+  ...jest.requireActual('@/src/server/pilot/medicalRestrictions'),
+  medicalRestrictionNote: async () => null,
+  assertNoMedicalRestriction: async () => undefined,
+  assertSparringExposureClearOfMedicalRestriction: async () => undefined,
+  drillIsAtSparringLevel: async () => false,
+  assertDrillClearOfMedicalRestriction: async () => undefined,
+  membersBlockedToday: async () => new Set<string>(),
+  assertSessionClearOfMedicalRestriction: async () => undefined,
+  sessionMedicalRestrictionNote: async () => null,
+  assertCompetitionClearOfMedicalRestriction: async () => undefined,
+}));
+
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
@@ -427,5 +443,28 @@ describe('a request key', () => {
       code: 'WORKOUT_ISSUE_REQUEST_KEY_REUSED',
     });
     expect(mockHold).not.toHaveBeenCalled();
+  });
+});
+
+// Lane P22b (Overwatch Q8): a workout issued to a restricted member carries
+// the note on its 201; the read runs after the reach check, for that athlete.
+describe('the USA Boxing medical restriction note', () => {
+  const medical = jest.requireMock('@/src/server/pilot/medicalRestrictions') as Record<string, unknown>;
+  const stub = medical.medicalRestrictionNote;
+  const mockNote = jest.fn();
+  const NOTE = { on_file: true, minimum_end_date: '2026-12-01', release_needed: true, message: 'A USA Boxing medical restriction is on file.' };
+  beforeEach(() => {
+    mockNote.mockReset().mockResolvedValue(NOTE);
+    medical.medicalRestrictionNote = mockNote;
+  });
+  afterAll(() => {
+    medical.medicalRestrictionNote = stub;
+  });
+
+  test('is on the 201 for the session gym and the named athlete', async () => {
+    const res = await POST(post(BODY));
+    expect(res.status).toBe(201);
+    expect((await res.json()).medical_restriction_note).toEqual(NOTE);
+    expect(mockNote).toHaveBeenCalledWith({ organizationId: 'org-1', athleteId: 'athlete-1' });
   });
 });

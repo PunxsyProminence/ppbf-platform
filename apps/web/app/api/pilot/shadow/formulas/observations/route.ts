@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
-import { flagContactWithoutClearance } from '@/src/server/pilot/contactClearanceGate';
+import {
+  CONTACT_OBSERVATION_KINDS,
+  flagContactWithoutClearance,
+  isContactObservation,
+} from '@/src/server/pilot/contactClearanceGate';
 import { flagContactDuringHold } from '@/src/server/pilot/trainingHolds';
 import {
   autoCalculateForObservationContext,
@@ -29,6 +33,7 @@ import {
   type ObservationKind,
 } from '@/src/server/pilot/formulas/types';
 import { queryOne } from '@/src/server/pilot/db';
+import { assertNoMedicalRestriction, gymDayOf, medicalRestrictionNote } from '@/src/server/pilot/medicalRestrictions';
 import {
   hiddenNotFound,
   jsonError,
@@ -214,6 +219,56 @@ export async function POST(request: NextRequest) {
       ],
     });
 
+    // USA Boxing medical restriction (lane P22b; Overwatch Q2 B). This is the
+    // athlete's Deep-Track sparring log; its contact scale is 0-3 (None, Light,
+    // Moderate, Heavy -- app/athlete/dashboard/sparring/page.tsx), not the
+    // contact ladder, and it has no rung that means "below sparring". So for a
+    // restricted member any contact_level, contact_rounds or punch_absorbed
+    // above 0 is refused on the observation's gym day; 0 ("none") and every
+    // other kind still save. A correction is refused only when it RAISES the
+    // value it replaces (Overwatch, P22b step 1 (2)); lowering or keeping it
+    // saves -- but only on the replaced entry's own gym day: a correction
+    // stores the NEW observedAt, so one that moves contact onto another day
+    // is a new entry for that day and is gated. Runs after the role and
+    // athlete checks above, and before anything is stored or flagged.
+    const contactValue = body.value as number | null;
+    const observedDay = (CONTACT_OBSERVATION_KINDS as readonly string[]).includes(body.kind)
+      ? gymDayOf(body.observedAt)
+      : null;
+    if (observedDay && isContactObservation(body.kind, contactValue)) {
+      let raises = true;
+      if (body.supersedesObservationId != null) {
+        const prior = await queryOne<{ observation_kind: string; numeric_value: string | number | null; observed_at: string | Date }>(
+          `select observation_kind, numeric_value, observed_at from pilot.shadow_formula_observations
+           where organization_id = $1 and observation_id = $2 and athlete_id = $3`,
+          [principal.organizationId, body.supersedesObservationId.trim(), body.athleteId],
+        );
+        if (
+          prior
+          && prior.observation_kind === body.kind
+          && prior.numeric_value !== null
+          && (contactValue as number) <= Number(prior.numeric_value)
+          && gymDayOf(prior.observed_at) === observedDay
+        ) {
+          raises = false;
+        }
+      }
+      if (raises) {
+        await assertNoMedicalRestriction({
+          organizationId: principal.organizationId,
+          athleteId: body.athleteId,
+          entryDay: observedDay,
+        });
+      }
+    }
+    const restrictionNote = observedDay
+      ? await medicalRestrictionNote({
+          organizationId: principal.organizationId,
+          athleteId: body.athleteId,
+          entryDay: observedDay,
+        })
+      : null;
+
     // Runs BEFORE the observation is stored, so a failure here aborts the whole
     // request rather than quietly persisting contact nobody was alerted to. The
     // observation write below is idempotency-keyed, so a retry is safe. See
@@ -364,6 +419,9 @@ export async function POST(request: NextRequest) {
             },
           }
         : {}),
+      // P22b (Q8): a contact entry that saved for a restricted member (0, or a
+      // correction that did not raise) says why sparring is held back.
+      ...(restrictionNote ? { medical_restriction_note: restrictionNote } : {}),
       // The athlete who reported the pain is told, in the same response, that
       // it reached a coach -- so the workspace never has to guess.
       ...(painAlert.raised

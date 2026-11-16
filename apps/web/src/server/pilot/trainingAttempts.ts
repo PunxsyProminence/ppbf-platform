@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { query, queryOne } from './db';
+import { assertNoMedicalRestriction } from './medicalRestrictions';
 
 // The training-attempts ledger (owner decision 2026-08-16): one row per
 // attempt, failure-first. "Every failure -- failed reps, failed time,
@@ -45,6 +46,17 @@ export const ATTEMPT_CONTEXT_TYPES: readonly AttemptContextType[] = [
   'session', 'drill_assignment', 'assessment', 'film_study', 'open_floor',
   'technical_sparring', 'sparring_games', 'sparring_drills', 'open_sparring',
 ];
+
+// USA Boxing medical restriction (lane P22b; Overwatch Q4). The contexts a
+// restricted member cannot log: open sparring, technical sparring and sparring
+// games are partner contact at sparring level. 'sparring_drills' is not here:
+// set drills are the nearest of these to conditioned contact, below sparring,
+// so they save with the note.
+export const MEDICAL_RESTRICTION_GATED_CONTEXTS: ReadonlySet<AttemptContextType> = new Set<AttemptContextType>([
+  'open_sparring',
+  'technical_sparring',
+  'sparring_games',
+]);
 
 // A correction or a dispute must say why (mirrors the database's own
 // pilot_attempt_reviews_reason_required constraint, so the service refuses
@@ -172,6 +184,12 @@ export async function recordAttempt(input: {
     [input.organizationId, input.athleteId],
   );
   if (!athlete) return null;
+
+  // P22b: refused on today's gym day (an attempt is stamped when recorded).
+  // The route has already checked role and standing on the athlete.
+  if (MEDICAL_RESTRICTION_GATED_CONTEXTS.has(input.contextType ?? 'open_floor')) {
+    await assertNoMedicalRestriction({ organizationId: input.organizationId, athleteId: input.athleteId });
+  }
 
   const direction = input.direction ?? DEFAULT_DIRECTION[input.metricKind];
   const made = computeMade(input.targetValue, input.achievedValue, direction);

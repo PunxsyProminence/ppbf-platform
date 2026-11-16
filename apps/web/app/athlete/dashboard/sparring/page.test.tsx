@@ -41,6 +41,8 @@ function mockFetch(
   // by mutation audit 2026-08-25: the whole branch could be deleted with the
   // suite green).
   observationPayload: (index: number) => Record<string, unknown> = () => ({}),
+  // The HTTP status per observation; omitted = none set, as before.
+  observationStatus?: (index: number) => number,
 ) {
   let index = 0;
   return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -62,6 +64,7 @@ function mockFetch(
     const at = index++;
     return {
       ok: observationOk(at),
+      ...(observationStatus ? { status: observationStatus(at) } : {}),
       json: async () => observationPayload(at),
     } as Response;
   });
@@ -70,9 +73,10 @@ function mockFetch(
 async function renderAndSubmit(
   observationOk: (index: number) => boolean,
   observationPayload?: (index: number) => Record<string, unknown>,
+  observationStatus?: (index: number) => number,
 ) {
   submittedObservations.length = 0;
-  global.fetch = mockFetch(observationOk, observationPayload) as unknown as typeof fetch;
+  global.fetch = mockFetch(observationOk, observationPayload, observationStatus) as unknown as typeof fetch;
   const { container } = render(<SparringTelemetryPage />);
 
   const submit = await screen.findByRole('button', { name: 'Log This Session' });
@@ -108,6 +112,30 @@ describe('sparring log submission status', () => {
 
     await screen.findByText('Saved to your training record.');
     expect(screen.queryByText('Nothing logged yet')).toBeNull();
+  });
+
+  // Lane P22b (Overwatch Q2/Q8). A USA Boxing medical restriction refuses the
+  // contact numbers and the rest saves: the athlete is told that, in the
+  // server's words, and not told to check their connection.
+  test('contact numbers refused for a medical restriction are named as such; the rest is kept', async () => {
+    const refusal = 'Not saved: A USA Boxing medical restriction is on file for this member. No sparring until the minimum end date (2026-12-01) has passed.';
+    await renderAndSubmit(
+      (index) => index !== 0,
+      (index) => (index === 0 ? { code: 'MEDICAL_RESTRICTION', error: refusal } : {}),
+      (index) => (index === 0 ? 403 : 200),
+    );
+    const status = await screen.findByText(/The contact numbers were not saved/);
+    expect(status.textContent).toContain('do not put it in again');
+    expect(status.textContent).toContain('2026-12-01');
+    expect(status.textContent).not.toContain('Not saved:');
+    expect(screen.queryByText(/check your connection/)).toBeNull();
+  });
+
+  test('a save that carries the restriction note shows it after the saved line', async () => {
+    const message = 'A USA Boxing medical restriction is on file for this member.';
+    await renderAndSubmit(() => true, (index) => (index === 0 ? { medical_restriction_note: { message } } : {}));
+    const status = await screen.findByText(/Saved to your training record\./);
+    expect(status.textContent).toContain(message);
   });
 
   // Nothing reads ordinary sparring observations back out: the results

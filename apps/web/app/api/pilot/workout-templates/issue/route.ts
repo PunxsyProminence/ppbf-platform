@@ -6,6 +6,7 @@ import { requireRole } from '@/src/server/pilot/access';
 import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { medicalRestrictionNote } from '@/src/server/pilot/medicalRestrictions';
 import { readStaffHoldWarning } from '@/src/server/pilot/trainingHolds';
 import { issueWorkoutTemplate } from '@/src/server/pilot/workoutTemplates';
 
@@ -84,6 +85,12 @@ export async function POST(request: NextRequest) {
       return hiddenNotFound();
     }
 
+    // USA Boxing medical restriction (lane P22b, Q8). Read after the reach
+    // check and before the write, so a failed read writes nothing;
+    // recordWorkoutIssue refuses a workout with a sparring step itself. A
+    // workout below sparring is issued and carries the note.
+    const restrictionNote = await medicalRestrictionNote({ organizationId: principal.organizationId, athleteId });
+
     // The organization is the session's, never the body's.
     const result = await issueWorkoutTemplate({
       organizationId: principal.organizationId,
@@ -152,6 +159,7 @@ export async function POST(request: NextRequest) {
         // so the coach can see it; they were assigned all the same.
         untested_drills: result.untested,
         ...(holdWarning ? { hold_warning: holdWarning } : {}),
+        ...(restrictionNote ? { medical_restriction_note: restrictionNote } : {}),
       },
       { status: 201 },
     );

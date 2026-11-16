@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 
 import { query } from './db';
+import { assertNoMedicalRestriction, isGatedContactLevel } from './medicalRestrictions';
 
 // The shape of an ISSUED workout: pilot.workout_issues (one row per act of
 // issuing a template to one athlete) and pilot.workout_issue_steps (one row per
@@ -89,6 +90,17 @@ export async function recordWorkoutIssue(
 ): Promise<string> {
   if (params.steps.length === 0) {
     throw new Error('recordWorkoutIssue: an issued workout has at least one step');
+  }
+  // USA Boxing medical restriction (lane P22b). A workout with any step at
+  // 'controlled_sparring' or 'open_sparring' is refused for a restricted member
+  // on today's gym day, on this transaction, before anything is written. The
+  // coach may issue it without those steps (reduce); there is no override.
+  if (params.steps.some((step) => isGatedContactLevel(step.contact_level))) {
+    await assertNoMedicalRestriction({
+      organizationId: params.organizationId,
+      athleteId: params.athleteId,
+      client,
+    });
   }
   const issueId = randomUUID();
   try {

@@ -10,6 +10,7 @@ import {
 import { DRILL_DIFFICULTIES, getDrill, isDrillDifficulty } from '@/src/server/pilot/drills';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal, requireRole } from '@/src/server/pilot/http';
+import { medicalRestrictionNote } from '@/src/server/pilot/medicalRestrictions';
 import { requireAssignableDrillId } from '@/src/server/pilot/progression';
 import { listIssuedWorkoutsForAssignments, type IssuedWorkoutStep } from '@/src/server/pilot/workoutIssues';
 
@@ -113,13 +114,23 @@ export async function POST(request: NextRequest) {
         return hiddenNotFound();
       }
 
+      // USA Boxing medical restriction (P22b, Q8). Read before the write so a
+      // failed read writes nothing; issueCoachCard refuses a sparring-level
+      // drill itself. A card below sparring is issued and carries the note.
+      const restrictionNote = await medicalRestrictionNote({
+        organizationId: principal.organizationId,
+        athleteId,
+      });
       const card = await issueCoachCard({
         organizationId: principal.organizationId,
         athleteId,
         assignedByAccountId: principal.accountId,
         ...content,
       });
-      return NextResponse.json(card, { status: 201 });
+      return NextResponse.json(
+        restrictionNote ? { ...card, medical_restriction_note: restrictionNote } : card,
+        { status: 201 },
+      );
     }
 
     // Group card. Per-member authorization happens inside the module via

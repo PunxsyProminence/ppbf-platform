@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { ValidationError } from '@/src/server/pilot/errors';
 import { hiddenNotFound, jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { medicalRestrictionNote } from '@/src/server/pilot/medicalRestrictions';
 import {
   isAttemptContextType,
   isAttemptMetricKind,
@@ -76,6 +77,11 @@ export async function POST(request: NextRequest) {
       throw new ValidationError('target_value must be a positive number when provided.');
     }
 
+    // USA Boxing medical restriction (P22b, Q8). Read before the write so a
+    // failed read writes nothing; recordAttempt refuses the sparring contexts
+    // itself. Anything below sparring saves and carries the note.
+    const restrictionNote = await medicalRestrictionNote({ organizationId: principal.organizationId, athleteId });
+
     const item = await recordAttempt({
       organizationId: principal.organizationId,
       athleteId,
@@ -89,7 +95,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!item) return hiddenNotFound();
-    return NextResponse.json({ item });
+    return NextResponse.json({ item, ...(restrictionNote ? { medical_restriction_note: restrictionNote } : {}) });
   } catch (error) {
     return jsonError(error);
   }

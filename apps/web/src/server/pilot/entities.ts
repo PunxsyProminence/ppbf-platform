@@ -11,6 +11,7 @@ import type {
 } from './contracts';
 import { query, queryOne } from './db';
 import { ConflictError, ForbiddenError } from './errors';
+import { assertSessionClearOfMedicalRestriction } from './medicalRestrictions';
 
 export async function getAthleteById(organizationId: string, athleteId: string): Promise<PilotAthlete | null> {
   return queryOne<PilotAthlete>('select * from pilot.athletes where organization_id = $1 and athlete_id = $2', [organizationId, athleteId]);
@@ -234,6 +235,14 @@ export async function upsertSession(
   guard: SessionWriteGuard,
   options: SessionWriteOptions = {},
 ): Promise<void> {
+  await assertSessionClearOfMedicalRestriction({
+    organizationId,
+    sessionId: payload.session_id,
+    athleteId: payload.athlete_id,
+    date: payload.date,
+    sessionType: payload.session_type,
+    update: guard.mode === 'update',
+  });
   const closeMethod: SessionCloseMethod | null = options.closedBy === 'athlete'
     ? 'athlete_check_out'
     : options.closedBy === 'staff'

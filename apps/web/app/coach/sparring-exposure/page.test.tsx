@@ -65,6 +65,8 @@ interface Stubs {
   capCheck?: unknown;
   /** cap_check on the POST reply; 'omit' leaves the key out. */
   postCheck?: unknown;
+  /** medical_restriction_note on the POST reply (lane P22b); absent when unset. */
+  postNote?: unknown;
 }
 
 let posts: Array<Record<string, unknown>>;
@@ -86,7 +88,11 @@ function installFetch(stubs: Stubs = {}) {
           ok: status < 300,
           status,
           json: async () => (status < 300
-            ? { entry: {}, ...(stubs.postCheck === 'omit' ? {} : { cap_check: stubs.postCheck ?? NO_CAP }) }
+            ? {
+                entry: {},
+                ...(stubs.postCheck === 'omit' ? {} : { cap_check: stubs.postCheck ?? NO_CAP }),
+                ...(stubs.postNote === undefined ? {} : { medical_restriction_note: stubs.postNote }),
+              }
             : { error: stubs.postError }),
         } as Response;
       }
@@ -339,6 +345,27 @@ describe('coach sparring record screen', () => {
     });
     expect(screen.getByRole('alert').textContent).toBe('Unsupported session_date: cannot be after today');
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  // Lane P22b (Overwatch Q8): a segment below sparring for a restricted member
+  // saves, and the screen says why sparring is held back, in the server's words.
+  test('a saved segment for a restricted member shows the medical restriction note', async () => {
+    const message = 'A USA Boxing medical restriction is on file for this member. No sparring until the minimum end date (2026-12-01) has passed.';
+    await renderAndPick({ postNote: { on_file: true, minimum_end_date: '2026-12-01', release_needed: true, message } });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.getByTestId('spar-medical-restriction').textContent).toContain(message);
+  });
+
+  test('no note, no restriction box', async () => {
+    await renderAndPick();
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.queryByTestId('spar-medical-restriction')).toBeNull();
   });
 
   test('a roster failure is said, not shown as an empty gym', async () => {

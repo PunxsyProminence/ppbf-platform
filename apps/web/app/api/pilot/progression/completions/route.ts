@@ -12,6 +12,7 @@ import {
   toFamilyCompletion,
 } from '@/src/server/pilot/progression';
 import { hiddenNotFound, requirePrincipal, requireRole, jsonError } from '@/src/server/pilot/http';
+import { medicalRestrictionNote } from '@/src/server/pilot/medicalRestrictions';
 
 export const runtime = 'nodejs';
 
@@ -125,6 +126,16 @@ export async function POST(request: NextRequest) {
       throw completionOnCancelledWork();
     }
 
+    // USA Boxing medical restriction (P22b, Q8). Read before the write so a
+    // failed read writes nothing; recordCompletion refuses sparring-level work
+    // itself. Work below sparring logs and carries the note.
+    const restrictionNote = await medicalRestrictionNote({
+      organizationId: principal.organizationId,
+      athleteId: body.athlete_id,
+    });
+    const withNote = <T extends object>(row: T) =>
+      (restrictionNote ? { ...row, medical_restriction_note: restrictionNote } : row);
+
     // Record the completion (also recomputes assignment percentage/status).
     const completion = await recordCompletion({
       organizationId: principal.organizationId,
@@ -150,10 +161,10 @@ export async function POST(request: NextRequest) {
       if (!verified) {
         throw new Error('Completion was recorded but its verification could not be written');
       }
-      return NextResponse.json(verified, { status: 201 });
+      return NextResponse.json(withNote(verified), { status: 201 });
     }
 
-    return NextResponse.json(completion, { status: 201 });
+    return NextResponse.json(withNote(completion), { status: 201 });
   } catch (error) {
     return jsonError(error);
   }

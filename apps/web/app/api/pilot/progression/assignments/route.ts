@@ -4,6 +4,7 @@ import { assertActorCanAccessAthlete } from '@/src/server/pilot/access';
 import { getCoachDisplayName } from '@/src/server/pilot/achievements';
 import { DRILL_DIFFICULTIES, getDrill, isDrillDifficulty } from '@/src/server/pilot/drills';
 import { ValidationError } from '@/src/server/pilot/errors';
+import { medicalRestrictionNote } from '@/src/server/pilot/medicalRestrictions';
 import {
   assignDrill,
   getAthleteAssignments,
@@ -165,6 +166,14 @@ export async function POST(request: NextRequest) {
       throw new Error('Unsupported drill_id: that drill is retired');
     }
 
+    // USA Boxing medical restriction (P22b, Q8). Read before the write so a
+    // failed read writes nothing; assignDrill refuses a sparring-level drill
+    // itself. Work below sparring is assigned and carries the note.
+    const restrictionNote = await medicalRestrictionNote({
+      organizationId: principal.organizationId,
+      athleteId: body.athlete_id,
+    });
+
     const assignment = await assignDrill({
       organizationId: principal.organizationId,
       gapId: body.gap_id,
@@ -188,7 +197,14 @@ export async function POST(request: NextRequest) {
     // (readStaffHoldWarning does not throw). The key is absent when the athlete
     // is not held, so an unheld athlete's answer is exactly what it was before.
     const holdWarning = await readStaffHoldWarning(principal.role, principal.organizationId, body.athlete_id);
-    return NextResponse.json(holdWarning ? { ...assignment, hold_warning: holdWarning } : assignment, { status: 201 });
+    return NextResponse.json(
+      {
+        ...assignment,
+        ...(holdWarning ? { hold_warning: holdWarning } : {}),
+        ...(restrictionNote ? { medical_restriction_note: restrictionNote } : {}),
+      },
+      { status: 201 },
+    );
   } catch (error) {
     return jsonError(error);
   }
