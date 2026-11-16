@@ -2908,6 +2908,33 @@
     }
   },
   {
+    "id": "app/api/pilot/athlete/medical-restriction/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/athlete/medical-restriction",
+    "gate": "requirePrincipal + requireRole(athlete) + assertAthleteBelongsToOrganization",
+    "rolesAdmitted": [
+      "athlete"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The member's own USA Boxing medical restriction in force today (P22c, OW25-06 A): on_file, minimum_end_date, release_needed only (familyMedicalRestriction), or null. Self only via session athleteId; no athlete_id parameter. Staff read the full record on /api/pilot/coach/medical-restrictions; guardians on /api/pilot/parent/safety.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "athlete"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/athlete/mental-skills/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/athlete/mental-skills",

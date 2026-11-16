@@ -4,6 +4,7 @@ import { GET } from './route';
 import { getAthleteById } from '@/src/server/pilot/entities';
 import { guardianAthleteIds } from '@/src/server/pilot/guardianAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { familyMedicalRestriction } from '@/src/server/pilot/medicalRestrictions';
 import { familyHoldPlacerName } from '@/src/server/pilot/videoFamilyView';
 import { callerParentIdSet, checkGuardianMediaConsent, type ConsentCheckResult } from '@/src/server/pilot/guardianConsent';
 import { getGuardianGateSummary } from '@/src/server/pilot/safetyGateMatrix';
@@ -27,6 +28,13 @@ jest.mock('@/src/server/pilot/guardianAccess', () => ({
 // it lives, and guardianContactProjection.pg.test.ts runs it for real.
 jest.mock('@/src/server/pilot/videoFamilyView', () => ({
   familyHoldPlacerName: jest.fn(),
+}));
+
+// The USA Boxing medical restriction's family read (lane P22c). Its three
+// fields are built and held to an exact key set against real rows in
+// medicalRestrictions.pg.test.ts, through this route.
+jest.mock('@/src/server/pilot/medicalRestrictions', () => ({
+  familyMedicalRestriction: jest.fn(),
 }));
 
 jest.mock('@/src/server/pilot/safetyGateMatrix', () => ({
@@ -65,6 +73,7 @@ const mockFamilyHoldPlacerName = jest.mocked(familyHoldPlacerName);
 const mockGetAthleteWaiverStatus = jest.mocked(getAthleteWaiverStatus);
 const mockCheckGuardianMediaConsent = jest.mocked(checkGuardianMediaConsent);
 const mockCallerParentIdSet = jest.mocked(callerParentIdSet);
+const mockFamilyMedicalRestriction = jest.mocked(familyMedicalRestriction);
 
 /** A media consent check result, one entry per linked guardian. The caller
  *  backs 'par-1' (see beforeEach); anything else is another guardian. */
@@ -115,6 +124,7 @@ beforeEach(() => {
   mockCallerParentIdSet.mockResolvedValue(new Set(['par-1']));
   mockCheckGuardianMediaConsent.mockResolvedValue(consent([{ parentId: 'par-1', status: 'signed' }]));
   mockFamilyHoldPlacerName.mockResolvedValue('Coach Neale');
+  mockFamilyMedicalRestriction.mockResolvedValue(null);
 });
 
 test('returns hold and gate status for every linked athlete', async () => {
@@ -170,8 +180,44 @@ test('returns hold and gate status for every linked athlete', async () => {
         photo_media: 'signed',
         travel: 'signed',
       },
+      medical_restriction: null,
     },
   ]);
+});
+
+test('P22c: a restriction in force reaches the guardian as its three fields, for each linked child only', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1', 'ath-2']);
+  mockFamilyMedicalRestriction.mockImplementation(async (_org, athleteId) => (
+    athleteId === 'ath-1' ? { on_file: true, minimum_end_date: '2026-12-01', release_needed: true } : null
+  ));
+
+  const body = await (await get()).json();
+
+  expect(body.items.map((item: { medical_restriction: unknown }) => item.medical_restriction)).toEqual([
+    { on_file: true, minimum_end_date: '2026-12-01', release_needed: true },
+    null,
+  ]);
+  // Asked only for the children the guardian link returned, in the caller's own gym.
+  expect(mockGuardianAthleteIds).toHaveBeenCalledWith('org-a', 'acct-parent');
+  expect(mockFamilyMedicalRestriction.mock.calls).toEqual([['org-a', 'ath-1'], ['org-a', 'ath-2']]);
+});
+
+test('P22c: a failed restriction read shows nothing for it, and the rest of the page still loads', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
+  mockFamilyMedicalRestriction.mockRejectedValueOnce(Object.assign(new Error('db down'), { code: '57014' }));
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+  const response = await get();
+
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.items[0].medical_restriction).toBeNull();
+  expect(body.items[0].waivers.general).toBe('signed');
+  // Logged by kind, never the message.
+  expect(warn).toHaveBeenCalledWith(expect.any(String), { name: 'Error', code: '57014' });
+  warn.mockRestore();
 });
 
 // The whole reason a locally-defined projection exists in this route rather

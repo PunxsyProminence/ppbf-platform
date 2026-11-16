@@ -6,6 +6,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import RefusalStamp from '@/components/RefusalStamp';
 import MyInjuries from '@/components/MyInjuries';
+import { MedicalRestrictionStatement } from '@/components/MedicalRestrictionNotice';
 
 type TrainingHoldScope = 'all_training' | 'contact_only' | 'conditioning_only';
 
@@ -36,6 +37,11 @@ interface AthleteSafety {
      the page renders whatever actually arrives, and anything outside the
      vocabulary below reads Unknown -- never Signed, never Not on file. */
   waivers?: Record<string, unknown> | null;
+  /* USA Boxing medical restriction (lane P22c; OW25-06 A): on file, minimum
+     end date, release needed -- or null when nothing blocks today. Checked
+     before it renders (MedicalRestrictionStatement); anything else shows
+     nothing. */
+  medical_restriction?: unknown;
 }
 
 /* The four types the route reads (TRACKED_WAIVER_TYPES in
@@ -363,6 +369,13 @@ export default function GuardianSafetyPage() {
                   ) : (
                     <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training hold on file right now.</p>
                   )}
+
+                  {/* Only while a restriction is in force; nothing once it lifts. */}
+                  {item.medical_restriction ? (
+                    <div className="mt-[var(--s3)]">
+                      <MedicalRestrictionStatement restriction={item.medical_restriction} />
+                    </div>
+                  ) : null}
 
                   <SafetyChecks rows={safetyCheckRows(item)} />
 

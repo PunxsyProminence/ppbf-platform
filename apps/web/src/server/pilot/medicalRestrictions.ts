@@ -515,8 +515,7 @@ export interface MedicalRestrictionNote {
   message: string;
 }
 
-function noteFor(row: BlockingRestriction, day: string): MedicalRestrictionNote {
-  const releaseNeeded = row.release_signed_on === null || row.release_signed_on > day;
+function noteFor(row: BlockingRestriction, releaseNeeded: boolean): MedicalRestrictionNote {
   const conditions = releaseNeeded
     ? `the minimum end date (${row.minimum_end_date}) has passed and a physician's release is on file`
     : `the minimum end date (${row.minimum_end_date}) has passed`;
@@ -555,7 +554,38 @@ export function medicalRestrictionRefusal(note: MedicalRestrictionNote): Forbidd
  */
 export async function medicalRestrictionNote(input: MedicalRestrictionGateInput): Promise<MedicalRestrictionNote | null> {
   const found = await findBlockingOnDays(input.organizationId, input.athleteId, gateDaysFor(input), input.client);
-  return found ? noteFor(found.row, found.day) : null;
+  if (!found) return null;
+  // The end date named is the latest of the restrictions blocking that day
+  // (the probe's order). A release is still needed if ANY of them lacks one,
+  // not only the one named: with two on file, the one with the later end date
+  // may have its release while the other does not, and saying "no release
+  // needed" would be false (P22c review).
+  const releaseNeeded = (found.row.release_signed_on === null || found.row.release_signed_on > found.day)
+    || await anyBlockingNeedsRelease(input.organizationId, input.athleteId, found.day, input.client);
+  return noteFor(found.row, releaseNeeded);
+}
+
+/** Does any restriction blocking this member on `day` still lack a release dated on or before it? */
+async function anyBlockingNeedsRelease(
+  organizationId: string,
+  athleteId: string,
+  day: string,
+  client?: PoolClient,
+): Promise<boolean> {
+  const row = await readTolerant<{ hit: number }>(
+    `select 1 as hit
+       from pilot.medical_restrictions
+      where organization_id = $1 and athlete_id = $2
+        and voided_at is null
+        and start_date <= $3::date
+        and not (release_signed_on is not null and release_signed_on <= $3::date and $3::date > minimum_end_date)
+        and (release_signed_on is null or release_signed_on > $3::date)
+      limit 1`,
+    [organizationId, athleteId, day],
+    'medical_restriction_release_probe',
+    client,
+  );
+  return row !== null;
 }
 
 /**
@@ -566,6 +596,34 @@ export async function medicalRestrictionNote(input: MedicalRestrictionGateInput)
 export async function assertNoMedicalRestriction(input: MedicalRestrictionGateInput): Promise<void> {
   const note = await medicalRestrictionNote(input);
   if (note) throw medicalRestrictionRefusal(note);
+}
+
+/**
+ * What the member and their parent see (lane P22c; Jason's card OW25-06 "A:
+ * On file, end date, release needed (Recommended)"): that a restriction is in
+ * force today, its minimum end date, and whether a physician's release is
+ * still needed. Exactly those three fields, built here as a new object so
+ * nothing else on the row or the save note (source, loss of consciousness,
+ * note, incident, LBC date, start date, release date, recorder, ids, the save
+ * message) can ride along. null when nothing blocks today: lifted, voided,
+ * not yet started, or none -- the family sees nothing then, not a "cleared"
+ * line. Callers check the viewer's standing first (the member's own session,
+ * or the guardian link).
+ */
+export interface FamilyMedicalRestriction {
+  on_file: true;
+  minimum_end_date: string;
+  release_needed: boolean;
+}
+
+export async function familyMedicalRestriction(
+  organizationId: string,
+  athleteId: string,
+  today?: string,
+): Promise<FamilyMedicalRestriction | null> {
+  const note = await medicalRestrictionNote({ organizationId, athleteId, today });
+  if (!note) return null;
+  return { on_file: true, minimum_end_date: note.minimum_end_date, release_needed: note.release_needed };
 }
 
 // ---------------------------------------------------------------------------

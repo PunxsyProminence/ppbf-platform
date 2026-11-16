@@ -592,3 +592,57 @@ test('a failed load offers Check again, which reads Loading and then the answer'
   expect(await screen.findByText('Sam R.')).toBeInTheDocument();
   expect(screen.queryByText('Database unavailable')).toBeNull();
 });
+
+// Lane P22c (Jason's card OW25-06 A): a USA Boxing medical restriction in
+// force reads as on file, its minimum end date, and whether a release is
+// needed -- on that child's card only. None in force (null, lifted, voided)
+// shows nothing at all, and neither does a value that is not those fields.
+describe('the USA Boxing medical restriction (P22c)', () => {
+  const RESTRICTED = { on_file: true, minimum_end_date: '2026-12-01', release_needed: true };
+
+  test("is shown on the restricted child's card, and only there", async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({
+      ok: true,
+      items: [
+        { ...CLEAR_ATHLETE[0], medical_restriction: RESTRICTED },
+        { ...CLEAR_ATHLETE[0], athlete_id: 'ath-3', athlete_name: 'Lee K.', medical_restriction: null },
+      ],
+    })) as unknown as typeof fetch;
+
+    render(<GuardianSafetyPage />);
+
+    const notices = await screen.findAllByTestId('medical-restriction-notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0].closest('article')?.textContent).toContain('Sam R.');
+    expect(notices[0].textContent).toBe(
+      'USA Boxing medical restriction on file'
+      + 'No sparring until December 1, 2026 has passed and a physician’s release is on file. Training below sparring is fine.',
+    );
+  });
+
+  test('a release on file drops the release clause', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({
+      ok: true, items: [{ ...CLEAR_ATHLETE[0], medical_restriction: { ...RESTRICTED, release_needed: false } }],
+    })) as unknown as typeof fetch;
+
+    render(<GuardianSafetyPage />);
+
+    expect((await screen.findByTestId('medical-restriction-notice')).textContent).not.toMatch(/release/);
+  });
+
+  test.each([
+    ['null (none in force)', null],
+    ['left out by an older server', undefined],
+    ['malformed', { on_file: true }],
+  ])('%s: nothing is shown', async (_label, value) => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({
+      ok: true, items: [{ ...CLEAR_ATHLETE[0], medical_restriction: value }],
+    })) as unknown as typeof fetch;
+
+    render(<GuardianSafetyPage />);
+
+    await screen.findByText('Sam R.');
+    expect(screen.queryByTestId('medical-restriction-notice')).toBeNull();
+    expect(screen.queryByText(/medical restriction/i)).toBeNull();
+  });
+});
