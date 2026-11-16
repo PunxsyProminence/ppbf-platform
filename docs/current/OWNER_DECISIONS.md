@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-15-004 | 2026-11-15 | Lane L2b (the 256 lane-2 drills, exported and AI-drafted) starts | PRIMARY |  | yes |
 | OD-2026-11-15-003 | 2026-11-15 | Lane L2a (the 'Long Road practice' label migration) starts | PRIMARY |  | yes |
 | OD-2026-11-15-002 | 2026-11-15 | Lane 2, the 256 remaining Backbone drills: a 'Long Road practice' label, AI drafts Jason approves, contact drills load now, two lanes: "A: Add the label (Rec.)"; "A: AI drafts, you OK (Rec.)"; "A: Load all now (Rec.)"; "A: Two lanes (Rec.)" | PRIMARY |  | yes |
 | OD-2026-11-15-001 | 2026-11-15 | Class plans shows the FT1 Friday Protocol days as coach-run, not "not ready" | PRIMARY |  | yes |
@@ -569,6 +570,22 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-15-004 -- Lane L2b (the 256 lane-2 drills, exported and AI-drafted) starts: "Start L2b"
+
+**Provenance: PRIMARY.** Jason's reply, a button, 2026-11-15 about 20:23 EST (transcript timestamp 2026-11-16T01:23:40.013Z), in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 19547, `origin.kind` human), checked against the file by script before writing. The question is line 19539 (the `wrap_up` `ask`, 2026-11-16T01:14:30.951Z): "Start lane L2b (export and AI-draft the 256 drills)?", with the buttons "Start L2b" and "Not yet". No other typed message of his falls between. New; edits no earlier entry's text.
+
+**Jason:** *"Start L2b"*
+
+**Ruling:** lane L2b, the second of the two lane-2 lanes in OD-2026-11-15-002 ruling 4, is issued. With OD-2026-11-15-003 it answers that entry's "Not ruled here: issuing lanes L2a and L2b".
+
+**Applied, not separately asked:** Overwatch issued the lane with the brief `Documents/PPBF-overwatch/lane-briefs/LANE_L2B_DRILL_LIBRARY_DRAFTS_BRIEF.md` (sha256[:16] `113f01d359038829` when issued) as session `local_631c9ee9` (Opus, high effort, builder plus two adversarial reviewers). The brief carries OD-2026-11-15-002 rulings 1 to 4 and the FT1 drafting and approval shapes (OD-2026-11-12-006, OD-2026-11-14-001); external research is cited by key and never quoted in the repo (OD-2026-10-02-013 answer 2A). L2a, the label it depends on, is merged (#1933, `b331a139`) and applied on staging (run 43783911438) and in production (run 43784595949, approved on his "Approve it").
+
+**Not ruled here:** the drafts themselves (they go to him for approval before the PR merges); the staging and production loads (production on his click); the stage lanes.
+
+**Status:** recorded 2026-11-15 by PR; lane L2b running, nothing merged.
 
 ---
 
