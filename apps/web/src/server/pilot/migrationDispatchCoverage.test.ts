@@ -431,6 +431,11 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // an existing database the position does not matter (v3 guards the
     // constraint by name), so this pins the order the rebuild needs.
     expect(at('drill-owner-authored-label')).toBeGreaterThan(at('drill-library-v3'));
+    // drill-long-road-label replaces that same CHECK with a superset of
+    // drill-owner-authored-label's list. Each leaves a check that already
+    // holds its values alone, so either order ends at five on a re-run; on a
+    // fresh rebuild the later one decides the list, and it must be the wider.
+    expect(at('drill-long-road-label')).toBeGreaterThan(at('drill-owner-authored-label'));
     // calibration-adjudication-revisions adds the revision column and its
     // unique index to pilot.calibration_adjudications, which
     // calibration-adjudication creates. Applied first, a rebuild dies on ALTER

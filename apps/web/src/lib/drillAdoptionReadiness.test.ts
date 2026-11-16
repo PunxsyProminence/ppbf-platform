@@ -382,7 +382,9 @@ describe('adoptionReadiness: the floor-test rule', () => {
 
   // 'PPBF owner-authored' is the label #1322 adds to the CHECK; the rule reads
   // it as a non-draft either way, so it is pinned here ahead of that merge.
-  test.each(['PPBF source manual v3', 'PPBF owner-authored'])(
+  // 'Long Road practice' (OD-2026-11-15-002 ruling 1) is not a draft either:
+  // "no extra floor test is added".
+  test.each(['PPBF source manual v3', 'PPBF owner-authored', 'Long Road practice'])(
     'a drill that is not a draft needs no floor test (%s)',
     (field_provenance) => {
       expect(adoptionReadiness(readyDrill({ field_provenance, floor_tested_by_this_gym: false })))

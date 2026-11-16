@@ -22,7 +22,16 @@
 -- Same shape as drill_vocabulary_widening: find every CHECK on the column
 -- through the catalog rather than trusting one name, drop them, add the
 -- replacement with an explicit name. Re-running is a no-op that leaves exactly
--- one CHECK. The v3 migration's own `if not exists ... add constraint` guard
+-- one CHECK.
+--
+-- LEAVES A WIDER CHECK ALONE (added with drill_long_road_label,
+-- OD-2026-11-15-002). If exactly one field_provenance CHECK exists, it carries
+-- the shared name, and it already contains all four values below, this returns
+-- without touching it. Without that, an `all` run after the 'Long Road
+-- practice' label landed would re-add this four-value list, fail on every
+-- stored 'Long Road practice' row, and stop the chain here. The comment is set
+-- only when this file actually replaces the CHECK, so a re-run does not
+-- overwrite the wider check's comment either. The v3 migration's own `if not exists ... add constraint` guard
 -- sees the name present and does not re-add the narrow list on a later `all`
 -- run; this migration sits AFTER drill-library-v3 in that list and refuses to
 -- run before it.
@@ -30,10 +39,38 @@
 
 do $$
 declare
+  wanted constant text[] := array[
+    'PPBF source manual v3',
+    'LITERATURE-GROUNDED DRAFT — generated from cited registry claims; REQUIRES FLOOR VALIDATION',
+    'COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION',
+    'PPBF owner-authored'
+  ];
   existing record;
+  check_count integer;
+  named_def text;
 begin
   if to_regclass('pilot.drill_library') is null then
     raise exception 'DRILL_OWNER_AUTHORED_LABEL_NOT_READY: pilot.drill_library does not exist -- apply the drill library v3 migration first';
+  end if;
+
+  select count(*), max(pg_get_constraintdef(con.oid)) filter (
+           where con.conname = 'pilot_drill_library_field_provenance_check')
+    into check_count, named_def
+  from pg_constraint con
+  join pg_class rel on rel.oid = con.conrelid
+  join pg_namespace nsp on nsp.oid = rel.relnamespace
+  where nsp.nspname = 'pilot'
+    and rel.relname = 'drill_library'
+    and con.contype = 'c'
+    and pg_get_constraintdef(con.oid) ilike '%field_provenance%';
+
+  if check_count = 1
+     and named_def is not null
+     and not exists (
+       select 1 from unnest(wanted) as value
+       where strpos(named_def, quote_literal(value)) = 0
+     ) then
+    return;
   end if;
 
   for existing in
@@ -57,7 +94,7 @@ begin
       'COACHING-CRAFT DRAFT — no directly relevant research retrieved; REQUIRES FLOOR VALIDATION',
       'PPBF owner-authored'
     ));
-end $$;
 
-comment on constraint pilot_drill_library_field_provenance_check on pilot.drill_library is
-  'How the fields were authored. PPBF owner-authored marks material the gym''s owner wrote himself (OD-2026-10-06-026 ruling 4); the two DRAFT values still require floor validation before a gym adopts the drill.';
+  comment on constraint pilot_drill_library_field_provenance_check on pilot.drill_library is
+    'How the fields were authored. PPBF owner-authored marks material the gym''s owner wrote himself (OD-2026-10-06-026 ruling 4); the two DRAFT values still require floor validation before a gym adopts the drill.';
+end $$;

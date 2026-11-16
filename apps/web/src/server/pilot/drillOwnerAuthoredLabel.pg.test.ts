@@ -51,6 +51,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let baseSql: string;
 let drillLibrarySql: string;
 let migrationSql: string;
+let longRoadSql: string;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 
 function connectionStringFor(database: string): string {
@@ -206,6 +207,30 @@ describe('after the label', () => {
   });
 });
 
+describe('a wider CHECK is left alone', () => {
+  // OD-2026-11-15-002: drill_long_road_label widens this CHECK to five values.
+  // This file re-runs on every `all` dispatch; re-adding its four would fail
+  // on the first stored 'Long Road practice' row and stop the chain here.
+  test('re-running over a five-value CHECK keeps it, and a stored Long Road row still validates', async () => {
+    const client = await freshDatabase('ppbf_label_wider_kept');
+    try {
+      await applyMigrationTransaction(client, migrationSql);
+      await client.query(longRoadSql);
+      const longRoad = await insertDrill(client, 'Long Road practice');
+      await applyMigrationTransaction(client, migrationSql);
+      const checks = await provenanceChecks(client);
+      expect(checks).toHaveLength(1);
+      expect(checks[0].conname).toBe('pilot_drill_library_field_provenance_check');
+      expect(checks[0].def).toContain("'Long Road practice'");
+      const rows = await client.query(`select field_provenance from pilot.drill_library where drill_id = $1`, [longRoad]);
+      expect(rows.rows).toEqual([{ field_provenance: 'Long Road practice' }]);
+      await expect(insertDrill(client, 'Long Road practice')).resolves.toBeDefined();
+    } finally {
+      await client.end();
+    }
+  });
+});
+
 describe('migration mechanics', () => {
   test('re-running is a no-op, and does not accumulate constraints', async () => {
     const client = await freshDatabase('ppbf_label_idempotent');
@@ -290,6 +315,9 @@ beforeAll(async () => {
   );
   migrationSql = await fs.readFile(
     path.join(INFRA_DIR, 'pilot_slice_postgres_drill_owner_authored_label_migration.sql'), 'utf8',
+  );
+  longRoadSql = await fs.readFile(
+    path.join(INFRA_DIR, 'pilot_slice_postgres_drill_long_road_label_migration.sql'), 'utf8',
   );
 
   const runnerModule = await nativeDynamicImport(pathToFileURL(MIGRATION_RUNNER_PATH).href);
