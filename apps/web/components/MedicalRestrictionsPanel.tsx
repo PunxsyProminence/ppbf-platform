@@ -1,0 +1,404 @@
+'use client';
+
+import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
+
+import { apiBase } from '@/lib/apiBase';
+import { refusalWords } from '@/src/lib/serverRefusalWords';
+import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
+
+// USA Boxing medical restrictions on the Sports Medicine board (Backbone P22,
+// lane P22a). The staff write surface: record a restriction, the date the
+// physician's release was signed, the date the LBC was informed, and -- gym
+// admin only -- mark a record entered in error.
+//
+// WHAT IT SHOWS, AND WHAT IT DOES NOT. The board's surface rule (owner
+// decision 2026-08-15, in the page header) is "exactly what the athlete
+// themselves can read, and nothing more": no diagnosis, clinical note,
+// restriction detail or source. So a restriction reads here as what the member
+// reads (OW25-06 A: on file, minimum end date, release needed), whether the gate
+// applies today, and whether the release and the LBC date are on file -- yes or
+// no, never the dates themselves (adversarial review of P22a). The start date
+// is not shown either. The source and the loss-of-consciousness answer are ENTERED
+// here and never shown here; the staff route serves them to staff who need the
+// full record.
+//
+// It reimplements NO authorization. The route decides standing, the roles that
+// may void, the set-once rule and every date check; this sends the form and
+// shows what the server answered. The void control is hidden from a coach only
+// because the route would refuse it.
+
+interface RosterAthlete {
+  athlete_id: string;
+  full_name?: string;
+}
+
+type RestrictionState = 'voided' | 'not_started' | 'in_force' | 'release_needed' | 'lifted';
+
+interface StaffRestriction {
+  restriction_id: string;
+  athlete_id: string;
+  start_date: string;
+  minimum_end_date: string;
+  release_signed_on: string | null;
+  lbc_informed_on: string | null;
+  voided_at: string | null;
+  state: RestrictionState;
+}
+
+const SOURCES: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'ringside_affidavit', label: 'Ringside Restriction Affidavit' },
+  { value: 'training_knockout_or_concussion', label: 'Training knockout or concussion' },
+  { value: 'other', label: 'Other' },
+];
+
+const LOC_VALUES: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'none', label: 'None' },
+  { value: 'under_1_min', label: 'Under 1 minute' },
+  { value: 'over_1_min', label: 'Over 1 minute' },
+  { value: 'unknown', label: 'Unknown' },
+];
+
+const STATE_WORDS: Record<RestrictionState, string> = {
+  in_force: 'In force — no sparring',
+  release_needed: 'Release needed — no sparring',
+  not_started: 'Starts later',
+  lifted: 'Lifted — release on file',
+  voided: 'Marked entered in error',
+};
+
+const EMPTY_RECORD = {
+  source: 'ringside_affidavit',
+  loss_of_consciousness: 'none',
+  start_date: '',
+  minimum_end_date: '',
+  linked_incident_id: '',
+  note: '',
+};
+
+/** 'YYYY-MM-DD' as M/D/YYYY, read as a calendar day (never through a time zone). */
+function dayWords(day: string | null): string {
+  if (!day) return '';
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return day;
+  return `${Number(match[2])}/${Number(match[3])}/${match[1]}`;
+}
+
+function isStaffRestriction(value: unknown): value is StaffRestriction {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.restriction_id === 'string'
+    && typeof row.athlete_id === 'string'
+    && typeof row.start_date === 'string'
+    && typeof row.minimum_end_date === 'string'
+    && typeof row.state === 'string'
+    && row.state in STATE_WORDS;
+}
+
+export default function MedicalRestrictionsPanel({ athletes }: { athletes: readonly RosterAthlete[] }) {
+  const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
+  // The client session names a gym admin 'admin' (ClubRole); the route admits
+  // organization_admin and admin to void and refuses everyone else.
+  const viewerCanVoid = session?.role === 'admin';
+
+  // Closed until asked for: the board above already lists every name, and the
+  // member picker below would list each one a second time.
+  const [opened, setOpened] = useState(false);
+  const [athleteId, setAthleteId] = useState('');
+  const [rows, setRows] = useState<StaffRestriction[] | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [record, setRecord] = useState(EMPTY_RECORD);
+  const [dates, setDates] = useState<Record<string, string>>({});
+  // The athlete the panel is showing NOW. A read that comes back after the
+  // coach picked someone else must not paint that other child's list.
+  const shownFor = useRef('');
+
+  const read = useCallback(async (forAthlete: string) => {
+    shownFor.current = forAthlete;
+    setRows(null);
+    setReadError(null);
+    if (!forAthlete) return;
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/coach/medical-restrictions?athlete_id=${encodeURIComponent(forAthlete)}`,
+        { method: 'GET', credentials: 'include' },
+      );
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; restrictions?: unknown };
+      if (shownFor.current !== forAthlete) return;
+      if (!response.ok || !Array.isArray(payload.restrictions)) {
+        setReadError(refusalWords({ error: payload.error, status: response.status }));
+        return;
+      }
+      setRows(payload.restrictions.filter(isStaffRestriction));
+    } catch {
+      if (shownFor.current === forAthlete) setReadError('The medical restrictions could not be read. Nothing is shown as clear because of it.');
+    }
+  }, []);
+
+  const chooseAthlete = (next: string) => {
+    setAthleteId(next);
+    setRefusal(null);
+    setRecordOpen(false);
+    setRecord(EMPTY_RECORD);
+    setDates({});
+    void read(next);
+  };
+
+  const post = async (body: Record<string, unknown>): Promise<boolean> => {
+    setBusy(true);
+    setRefusal(null);
+    const forAthlete = athleteId;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/medical-restrictions`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        setRefusal(refusalWords({ error: payload.error, status: response.status }));
+        return false;
+      }
+      return true;
+    } catch {
+      setRefusal('Nothing was saved: the request did not reach the server.');
+      return false;
+    } finally {
+      setBusy(false);
+      // Always re-read: the list on screen is what the server says, never what this form assumed.
+      await read(forAthlete);
+    }
+  };
+
+  const submitRecord = async () => {
+    if (!record.start_date || !record.minimum_end_date) {
+      setRefusal('Enter the start date and the minimum end date.');
+      return;
+    }
+    const saved = await post({
+      action: 'record',
+      athlete_id: athleteId,
+      source: record.source,
+      loss_of_consciousness: record.loss_of_consciousness,
+      start_date: record.start_date,
+      minimum_end_date: record.minimum_end_date,
+      ...(record.linked_incident_id.trim() ? { linked_incident_id: record.linked_incident_id.trim() } : {}),
+      ...(record.note.trim() ? { note: record.note.trim() } : {}),
+    });
+    if (saved) {
+      setRecordOpen(false);
+      setRecord(EMPTY_RECORD);
+    }
+  };
+
+  const dateKey = (restrictionId: string, field: string) => `${restrictionId}:${field}`;
+
+  const submitDate = async (restrictionId: string, action: 'release' | 'lbc_informed') => {
+    const field = action === 'release' ? 'release_signed_on' : 'lbc_informed_on';
+    const value = dates[dateKey(restrictionId, field)] ?? '';
+    if (!value) {
+      setRefusal('Enter the date first.');
+      return;
+    }
+    await post({ action, restriction_id: restrictionId, [field]: value });
+  };
+
+  const submitVoid = async (restrictionId: string) => {
+    const reason = (dates[dateKey(restrictionId, 'void_reason')] ?? '').trim();
+    if (!reason) {
+      setRefusal('Say why this record was entered in error.');
+      return;
+    }
+    await post({ action: 'void', restriction_id: restrictionId, reason });
+  };
+
+  return (
+    <section className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="medical-restrictions-heading">
+      <p className="t-eyebrow">USA Boxing</p>
+      <h2 id="medical-restrictions-heading" className="t-title mt-[var(--s2)]">Medical restrictions</h2>
+      <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+        While a restriction is in force, or after its minimum end date with no physician&apos;s release on file, the
+        app does not save sparring (controlled or open) for that member. Training below sparring still saves. It
+        lifts once the release date is recorded and the minimum end date has passed. The member and their parent
+        see that a restriction is on file, its minimum end date, and that a release is needed — nothing else.
+      </p>
+
+      {!opened ? (
+        <button type="button" className="btn btn--ghost mt-[var(--s3)]" aria-expanded={false} onClick={() => setOpened(true)}>
+          Open medical restrictions
+        </button>
+      ) : (
+      <div className="field mt-[var(--s3)]">
+        <label className="t-label" htmlFor="medical-restrictions-athlete">Member</label>
+        <select
+          id="medical-restrictions-athlete"
+          className="select"
+          value={athleteId}
+          onChange={(event) => chooseAthlete(event.target.value)}
+        >
+          <option value="">Choose a member</option>
+          {athletes.map((athlete) => (
+            <option key={athlete.athlete_id} value={athlete.athlete_id}>
+              {athlete.full_name || athlete.athlete_id}
+            </option>
+          ))}
+        </select>
+      </div>
+      )}
+
+      {opened && athleteId ? (
+        <div className="mt-[var(--s3)]">
+          {readError ? (
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
+              <div className="alert-body">
+                <p className="alert-title">Not read</p>
+                <p className="alert-msg">{readError}</p>
+              </div>
+            </div>
+          ) : rows === null ? (
+            <span className="working">Reading medical restrictions...</span>
+          ) : rows.length === 0 ? (
+            <p className="t-body">No medical restriction on file for this member.</p>
+          ) : (
+            <ul className="grid gap-[var(--s3)]" aria-label="Medical restrictions on file">
+              {rows.map((row) => {
+                const releaseKey = dateKey(row.restriction_id, 'release_signed_on');
+                const lbcKey = dateKey(row.restriction_id, 'lbc_informed_on');
+                const voidKey = dateKey(row.restriction_id, 'void_reason');
+                const open = row.state !== 'voided';
+                return (
+                  <li key={row.restriction_id} className="rounded-[var(--r-md)] border border-[color:var(--bone-300)] p-[var(--s3)]">
+                    <p className="t-label">{STATE_WORDS[row.state]}</p>
+                    <p className="t-body mt-[var(--s2)]">Minimum end date {dayWords(row.minimum_end_date)}.</p>
+                    <p className="t-body">
+                      {row.release_signed_on ? "Physician's release: on file." : "Physician's release: not on file."}
+                      {' '}
+                      {row.lbc_informed_on ? 'LBC: informed.' : 'LBC: not yet informed.'}
+                    </p>
+
+                    {open && !row.release_signed_on ? (
+                      <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+                        <div className="field">
+                          <label className="t-label" htmlFor={`release-${row.restriction_id}`}>Date the release was signed</label>
+                          <input
+                            id={`release-${row.restriction_id}`}
+                            type="date"
+                            className="input"
+                            value={dates[releaseKey] ?? ''}
+                            onChange={(event) => setDates((d) => ({ ...d, [releaseKey]: event.target.value }))}
+                          />
+                        </div>
+                        <button type="button" className="btn" disabled={busy} aria-busy={busy} onClick={() => void submitDate(row.restriction_id, 'release')}>
+                          Record release
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {open && !row.lbc_informed_on ? (
+                      <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+                        <div className="field">
+                          <label className="t-label" htmlFor={`lbc-${row.restriction_id}`}>Date the LBC was informed</label>
+                          <input
+                            id={`lbc-${row.restriction_id}`}
+                            type="date"
+                            className="input"
+                            value={dates[lbcKey] ?? ''}
+                            onChange={(event) => setDates((d) => ({ ...d, [lbcKey]: event.target.value }))}
+                          />
+                        </div>
+                        <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void submitDate(row.restriction_id, 'lbc_informed')}>
+                          Record LBC date
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {open && viewerCanVoid ? (
+                      <div className="mt-[var(--s3)] flex flex-wrap items-end gap-[var(--s3)]">
+                        <div className="field grow">
+                          <label className="t-label" htmlFor={`void-${row.restriction_id}`}>
+                            Entered in error? Say why (gym admin only)
+                          </label>
+                          <input
+                            id={`void-${row.restriction_id}`}
+                            className="input"
+                            maxLength={500}
+                            value={dates[voidKey] ?? ''}
+                            onChange={(event) => setDates((d) => ({ ...d, [voidKey]: event.target.value }))}
+                          />
+                        </div>
+                        <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void submitVoid(row.restriction_id)}>
+                          Mark entered in error
+                        </button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {recordOpen ? (
+            <div className="mat-paper mt-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
+              <p className="t-eyebrow">Record a medical restriction</p>
+              <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
+                <div className="field">
+                  <label className="t-label" htmlFor="mr-source">Source</label>
+                  <select id="mr-source" className="select" value={record.source} onChange={(event) => setRecord((r) => ({ ...r, source: event.target.value }))}>
+                    {SOURCES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="t-label" htmlFor="mr-loc">Loss of consciousness</label>
+                  <select id="mr-loc" className="select" value={record.loss_of_consciousness} onChange={(event) => setRecord((r) => ({ ...r, loss_of_consciousness: event.target.value }))}>
+                    {LOC_VALUES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="t-label" htmlFor="mr-start">Start date</label>
+                  <input id="mr-start" type="date" className="input" value={record.start_date} onChange={(event) => setRecord((r) => ({ ...r, start_date: event.target.value }))} />
+                </div>
+                <div className="field">
+                  <label className="t-label" htmlFor="mr-end">Minimum end date</label>
+                  <input id="mr-end" type="date" className="input" value={record.minimum_end_date} onChange={(event) => setRecord((r) => ({ ...r, minimum_end_date: event.target.value }))} />
+                </div>
+              </div>
+              <div className="field mt-[var(--s3)]">
+                <label className="t-label" htmlFor="mr-incident">Incident id (optional)</label>
+                <input id="mr-incident" className="input" maxLength={200} value={record.linked_incident_id} onChange={(event) => setRecord((r) => ({ ...r, linked_incident_id: event.target.value }))} />
+              </div>
+              <div className="field mt-[var(--s3)]">
+                <label className="t-label" htmlFor="mr-note">Staff note (optional — the member and their parent never see this)</label>
+                <textarea id="mr-note" className="textarea" rows={2} maxLength={2000} value={record.note} onChange={(event) => setRecord((r) => ({ ...r, note: event.target.value }))} />
+              </div>
+              <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
+                <button type="button" className="btn" disabled={busy} aria-busy={busy} onClick={() => void submitRecord()}>
+                  {busy ? 'Saving…' : 'Save restriction'}
+                </button>
+                <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => { setRecordOpen(false); setRecord(EMPTY_RECORD); setRefusal(null); }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : rows !== null && !readError ? (
+            <button type="button" className="btn mt-[var(--s3)]" onClick={() => setRecordOpen(true)}>
+              Record a restriction
+            </button>
+          ) : null}
+
+          {refusal ? (
+            <div className="mt-[var(--s3)]" role="alert">
+              <span className="stamp stamp--brass stamp--flat">
+                <i aria-hidden="true">▲</i> Not saved
+              </span>
+              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{refusal}</p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
