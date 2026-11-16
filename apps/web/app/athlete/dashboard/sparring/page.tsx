@@ -46,6 +46,13 @@ interface DeepTrackResult {
   // moment" doctrine: a stop names what's missing and where to fix it, not just
   // that it happened. Undefined when no review was raised.
   safetyReviewLesson: string | undefined;
+  // USA Boxing medical restriction (lane P22b, Q2/Q8). `restrictionRefused`:
+  // the server refused the contact numbers because a restriction is on file;
+  // the rest still saved. `restrictionMessage`: the server's own words (on
+  // file, minimum end date, release needed), from the refusal or the note.
+  restrictionRefused: boolean;
+  onlyRestrictionRefused: boolean;
+  restrictionMessage: string | undefined;
 }
 
 async function submitDeepTrackObservations(input: {
@@ -155,11 +162,22 @@ async function submitDeepTrackObservations(input: {
 
     const payload = (await response.json().catch(() => ({}))) as {
       safetyReview?: { raised?: boolean; lesson?: string };
+      code?: string;
+      error?: string;
+      medical_restriction_note?: { message?: string };
     };
+    const restrictionRefused = response.status === 403 && payload.code === 'MEDICAL_RESTRICTION';
+    const noteMessage = payload.medical_restriction_note?.message;
     return {
       ok: response.ok,
       safetyReviewRaised: payload.safetyReview?.raised === true,
       safetyReviewLesson: payload.safetyReview?.lesson,
+      restrictionRefused,
+      restrictionMessage: typeof noteMessage === 'string'
+        ? noteMessage
+        : restrictionRefused && typeof payload.error === 'string'
+          ? payload.error.replace(/^Not saved: /, '')
+          : undefined,
     };
   }));
 
@@ -173,6 +191,11 @@ async function submitDeepTrackObservations(input: {
     // concern the same session.
     safetyReviewRaised: fulfilled.some((value) => value.safetyReviewRaised),
     safetyReviewLesson: fulfilled.find((value) => value.safetyReviewLesson)?.safetyReviewLesson,
+    restrictionRefused: fulfilled.some((value) => value.restrictionRefused),
+    // Everything that did not save was refused for the restriction (nothing
+    // lost to the network or a server fault), so the rest really is on record.
+    onlyRestrictionRefused: savedCount + fulfilled.filter((value) => value.restrictionRefused).length === results.length,
+    restrictionMessage: fulfilled.find((value) => value.restrictionMessage)?.restrictionMessage,
   };
 }
 
@@ -628,7 +651,10 @@ export default function SparringTelemetryPage() {
     const observedAt = new Date().toISOString();
 
     try {
-      const { ok, savedCount, safetyReviewRaised, safetyReviewLesson } = await submitDeepTrackObservations({
+      const {
+        ok, savedCount, safetyReviewRaised, safetyReviewLesson, restrictionRefused, onlyRestrictionRefused,
+        restrictionMessage,
+      } = await submitDeepTrackObservations({
         athleteId,
         contextId,
         observedAt,
@@ -668,8 +694,20 @@ export default function SparringTelemetryPage() {
           ? `Saved to ${subjectName ?? 'this athlete'}'s training record.`
           : 'Saved to your training record.';
 
+      // P22b: a USA Boxing medical restriction refused the contact numbers
+      // (contact level, contact rounds, punches taken) and the rest saved. Say
+      // so in the server's words rather than blaming the connection.
+      if (restrictionRefused) {
+        setStatusMessage('The contact numbers were not saved: a USA Boxing medical restriction is on file. '
+          + (onlyRestrictionRefused
+            ? 'Everything else is on your record -- do not put it in again.'
+            : 'Some of the rest did not save either -- check your connection. What went through is on your record.')
+          + (restrictionMessage ? ` ${restrictionMessage}` : ''));
+        return;
+      }
+
       setStatusMessage(ok
-        ? savedMessage
+        ? savedMessage + (restrictionMessage ? ` ${restrictionMessage}` : '')
         : 'Some of it saved, some did not -- check your connection. What went through is on your record.');
     } finally {
       setIsSubmitting(false);

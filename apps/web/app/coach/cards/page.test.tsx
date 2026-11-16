@@ -1974,3 +1974,37 @@ describe('an issued workout is one group, in the order the coach wrote it', () =
     expect(screen.queryByText(/Your cards could not be read/)).toBeNull();
   });
 });
+
+// Lane P22b (Overwatch Q3): a member skipped for a USA Boxing medical
+// restriction is listed under its own heading and counted in the skipped total.
+async function issueToProgram() {
+  await act(async () => {
+    render(<CoachCardsPage />);
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Whole program' }));
+  fireEvent.change(screen.getByLabelText('Program'), { target: { value: 'prog-1' } });
+  fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Issue to program' }));
+  });
+  return screen.findByLabelText('Issuance report');
+}
+
+test('a group issue lists members skipped for a medical restriction under their own heading', async () => {
+  installFetch({
+    cardsPostResponse: { ...REPORT, skipped_medical_restriction: [{ athlete_id: 'ath-4', athlete_name: 'Dana Cards' }] },
+  });
+  const reportSection = await issueToProgram();
+  expect(within(reportSection).getByText('2 issued, 2 skipped.')).toBeTruthy();
+  const medical = within(reportSection).getByTestId('cards-skipped-medical-restriction');
+  expect(within(medical).getByText('Skipped — USA Boxing medical restriction on file')).toBeTruthy();
+  expect(within(medical).getByText('Dana Cards')).toBeTruthy();
+  expect(within(medical).queryByText('Bela Cards')).toBeNull();
+});
+
+test('a report with no restriction list (an older server) shows no restriction heading', async () => {
+  installFetch();
+  const reportSection = await issueToProgram();
+  expect(within(reportSection).getByText('2 issued, 1 skipped.')).toBeTruthy();
+  expect(within(reportSection).queryByTestId('cards-skipped-medical-restriction')).toBeNull();
+});

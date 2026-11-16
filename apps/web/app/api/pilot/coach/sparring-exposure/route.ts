@@ -18,6 +18,7 @@ import {
 import { gymToday } from '@/src/server/pilot/competenceCohorts';
 import { ConflictError, ValidationError } from '@/src/server/pilot/errors';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { medicalRestrictionNote } from '@/src/server/pilot/medicalRestrictions';
 import { type LinkedClip, listLinkedClipsForExposures } from '@/src/server/pilot/videoClipTags';
 import {
   type AthletePresentation,
@@ -29,6 +30,7 @@ import {
   listSparringExposure,
   type RecordSparringExposureInput,
   recordSparringExposure,
+  sparringExposureDay,
   type SparringType,
 } from '@/src/server/pilot/sparringExposure';
 
@@ -404,6 +406,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // USA Boxing medical restriction (P22b, Q8). Read BEFORE the save, so a
+    // failed read saves nothing; recordSparringExposure enforces the refusal
+    // itself. An entry below sparring for a restricted member saves and says
+    // why the member is held back.
+    const restrictionNote = await medicalRestrictionNote({
+      organizationId: principal.organizationId,
+      athleteId: entry.athleteId,
+      entryDay: await sparringExposureDay({
+        organizationId: principal.organizationId,
+        activityId: entry.activityId,
+        sessionDate: entry.sessionDate,
+      }),
+    });
+
     try {
       const saved = await recordSparringExposure({
         ...entry,
@@ -415,7 +431,10 @@ export async function POST(request: NextRequest) {
         contactStage: saved.contact_stage,
         sparringType: saved.sparring_type,
       });
-      return NextResponse.json({ entry: saved, cap_check: check }, { status: 201 });
+      return NextResponse.json(
+        { entry: saved, cap_check: check, ...(restrictionNote ? { medical_restriction_note: restrictionNote } : {}) },
+        { status: 201 },
+      );
     } catch (error) {
       if (error instanceof Error && error.message === 'SPARRING_EXPOSURE_SEGMENT_DUPLICATE') {
         throw new ConflictError('Another entry for this athlete was saved at the same moment. Try again.');

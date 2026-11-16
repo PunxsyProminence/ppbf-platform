@@ -136,6 +136,8 @@ interface IssuanceReport {
   issuance_id: string;
   issued: { athlete_id: string; athlete_name: string; assignment_id: string }[];
   skipped: { athlete_id: string; athlete_name: string }[];
+  /** Lane P22b (Q3): members not issued a sparring-level card because a USA Boxing medical restriction is on file. */
+  skipped_medical_restriction?: { athlete_id: string; athlete_name: string }[];
 }
 
 // No title or description: since W-D3 (OD-2026-09-18-001) a card takes its
@@ -648,7 +650,8 @@ export default function CoachCardsPage() {
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]" aria-label="Issuance report">
             <h2 className="t-command text-[length:var(--t-lg)]">Issued to {report.program_name}</h2>
             <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-              {report.issued.length} issued, {report.skipped.length} skipped.
+              {report.issued.length} issued,{' '}
+              {report.skipped.length + (report.skipped_medical_restriction?.length ?? 0)} skipped.
             </p>
             {report.issued.length > 0 && (
               <div className="mt-[var(--s3)]">
@@ -665,6 +668,19 @@ export default function CoachCardsPage() {
                 <p className="t-label">Skipped — not open to you</p>
                 <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
                   {report.skipped.map((entry) => (
+                    <li key={entry.athlete_id} className="t-body text-[length:var(--t-sm)]">{entry.athlete_name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {/* Lane P22b (Q3). Only coach, organization admin and admin can
+                issue a group card (coach/cards route), and all three may read
+                restrictions, so the reason is shown as it is. */}
+            {(report.skipped_medical_restriction?.length ?? 0) > 0 && (
+              <div className="mt-[var(--s3)]" data-testid="cards-skipped-medical-restriction">
+                <p className="t-label">Skipped — USA Boxing medical restriction on file</p>
+                <ul className="mt-[var(--s2)] space-y-[var(--s1)]">
+                  {report.skipped_medical_restriction?.map((entry) => (
                     <li key={entry.athlete_id} className="t-body text-[length:var(--t-sm)]">{entry.athlete_name}</li>
                   ))}
                 </ul>

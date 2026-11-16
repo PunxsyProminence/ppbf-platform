@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { query, queryOne, withTransaction } from './db';
 import { assertDrillMeetsCueRule } from './drills';
 import { ConflictError, ValidationError } from './errors';
+import { assertDrillClearOfMedicalRestriction } from './medicalRestrictions';
 import { randomUUID } from 'node:crypto';
 
 // severity is a text column, so `order by severity desc` sorts alphabetically
@@ -400,6 +401,14 @@ export async function assignDrill(params: {
   // keeps showing up as unaddressed work, so the pair must commit together or
   // not at all.
   return withTransaction(async (client) => {
+    // P22b: a sparring-level drill is not assigned to a restricted member.
+    await assertDrillClearOfMedicalRestriction({
+      organizationId: params.organizationId,
+      athleteId: params.athleteId,
+      drillId,
+      client,
+    });
+
     // RESOLVE AND SNAPSHOT IN ONE STATEMENT. The row is inserted FROM the drill,
     // so an unknown, cross-org, reference-library or retired drill_id selects
     // nothing and inserts nothing -- and because the check and the write are the
@@ -576,8 +585,8 @@ export async function recordCompletion(params: {
     // Only a NEW log is refused. Completions already logged against the work
     // are its history and are not read or touched here. A missing row is left
     // to the insert's foreign key, exactly as before this check existed.
-    const locked = await client.query<{ status: string }>(
-      `select status
+    const locked = await client.query<{ status: string; drill_id: string | null }>(
+      `select status, drill_id
        from pilot.drill_assignments
        where organization_id = $1 and assignment_id = $2
        for update`,
@@ -585,6 +594,19 @@ export async function recordCompletion(params: {
     );
     if (locked.rows[0]?.status === 'cancelled') {
       throw completionOnCancelledWork();
+    }
+
+    // P22b: sparring-level drill work is not logged as done by a restricted
+    // member on today's gym day, even when it was assigned before the
+    // restriction. Lower-level work still logs.
+    const lockedDrillId = locked.rows[0]?.drill_id;
+    if (lockedDrillId) {
+      await assertDrillClearOfMedicalRestriction({
+        organizationId: params.organizationId,
+        athleteId: params.athleteId,
+        drillId: lockedDrillId,
+        client,
+      });
     }
 
     const result = await client.query<AssignmentCompletion>(

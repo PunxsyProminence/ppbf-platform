@@ -4,6 +4,7 @@ import { assertActorCanAccessAthlete, type ActorIdentity } from './access';
 import { lockCompetitionSafety } from './competitionSafetyLock';
 import { withTransaction } from './db';
 import { ConflictError, ForbiddenError } from './errors';
+import { assertCompetitionClearOfMedicalRestriction } from './medicalRestrictions';
 import { getSafetyGateDefinition, recordSafetyGateEvaluation, type SafetyGateDefinition } from './safetyGateMatrix';
 import { findContactEventBlockingHold } from './trainingHolds';
 import { getAthleteWaiverStatus, type TrackedWaiverType, type WaiverStatus } from './waiverCompliance';
@@ -330,6 +331,21 @@ async function assertHoldAndTravelGates(
     metadata: { event_kind: input.kind },
     evaluatedAt,
   });
+
+  // GATE 2b -- USA Boxing medical restriction (lane P22b; Overwatch Q6). A bout
+  // is contact above open sparring, so a restricted member is not entered. 403
+  // naming the restriction, checked on the competition's own date, and on today
+  // as well when the bout is ahead (Overwatch, P22b step 1 (1)); a bout already
+  // past is checked on its own day only. Boxing only (OD-2026-11-15-012): the wrestling league
+  // season is not gated. No evaluation row: those record the hold gate.
+  if (input.kind === 'external_competition') {
+    await assertCompetitionClearOfMedicalRestriction({
+      organizationId,
+      athleteId: input.athleteId,
+      competitionId: input.contextId,
+      client,
+    });
+  }
 
   // GATE 3 -- travel waiver. 409 rather than 403 on purpose: errors.ts defines
   // ConflictError as "a precondition on a DIFFERENT resource than the one

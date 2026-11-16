@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { assertActorCanAccessAthlete, requireRole } from '@/src/server/pilot/access';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { getSessionById, upsertSession } from '@/src/server/pilot/entities';
+import { sessionMedicalRestrictionNote } from '@/src/server/pilot/medicalRestrictions';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 import { isSessionNoteWriter } from '@/src/server/pilot/sessionNotes';
 import { assertDurationWrittenByAthlete, validateSessionPayload } from '@/src/server/pilot/validation';
@@ -24,6 +25,14 @@ export async function POST(request: NextRequest) {
 
     await assertActorCanAccessAthlete(principal, current.athlete_id);
     await assertActorCanAccessAthlete(principal, payload.athlete_id);
+
+    // USA Boxing medical restriction (P22b, Q8). Read before the write so a
+    // failed read writes nothing; upsertSession refuses a 'sparring' tag itself.
+    const restrictionNote = await sessionMedicalRestrictionNote({
+      organizationId: principal.organizationId,
+      athleteId: payload.athlete_id,
+      date: payload.date,
+    });
 
     // Compare-and-set: the write carries the owner just authorized, so a
     // concurrent owner change between the lookup above and this write fails
@@ -54,7 +63,11 @@ export async function POST(request: NextRequest) {
       details: { athlete_id: payload.athlete_id },
     });
 
-    return NextResponse.json({ ok: true, session_id: payload.session_id });
+    return NextResponse.json({
+      ok: true,
+      session_id: payload.session_id,
+      ...(restrictionNote ? { medical_restriction_note: restrictionNote } : {}),
+    });
   } catch (error) {
     return jsonError(error);
   }

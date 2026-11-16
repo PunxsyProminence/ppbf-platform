@@ -7,6 +7,22 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { ConflictError } from '@/src/server/pilot/errors';
 
+// USA Boxing medical restriction gate (lane P22b): stubbed to "nothing on
+// file" so this suite keeps testing its own path; medicalRestrictions.pg.test.ts
+// holds every save path to the real gate against real rows.
+jest.mock('@/src/server/pilot/medicalRestrictions', () => ({
+  ...jest.requireActual('@/src/server/pilot/medicalRestrictions'),
+  medicalRestrictionNote: async () => null,
+  assertNoMedicalRestriction: async () => undefined,
+  assertSparringExposureClearOfMedicalRestriction: async () => undefined,
+  drillIsAtSparringLevel: async () => false,
+  assertDrillClearOfMedicalRestriction: async () => undefined,
+  membersBlockedToday: async () => new Set<string>(),
+  assertSessionClearOfMedicalRestriction: async () => undefined,
+  sessionMedicalRestrictionNote: async () => null,
+  assertCompetitionClearOfMedicalRestriction: async () => undefined,
+}));
+
 jest.mock('@/src/server/pilot/entities', () => ({
   getSessionById: jest.fn(),
   upsertSession: jest.fn().mockResolvedValue(undefined),

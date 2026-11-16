@@ -10,6 +10,11 @@ import {
 import { query, queryOne } from './db';
 import { ValidationError } from './errors';
 import {
+  assertDrillClearOfMedicalRestriction,
+  drillIsAtSparringLevel,
+  membersBlockedToday,
+} from './medicalRestrictions';
+import {
   ASSIGNMENT_DRILL_JOIN,
   ASSIGNMENT_FIELDS,
   assertNewAssignmentMeetsCueRule,
@@ -81,6 +86,12 @@ export interface ProgramIssuanceResult {
   // are org-wide by existing doctrine (see /api/pilot/athletes/list, where a
   // coach reads every athlete's name and gym status to plan a floor).
   skipped: SkippedMemberReport[];
+  // Members this coach may reach who were NOT issued a sparring-level card
+  // because a USA Boxing medical restriction is on file for them today (lane
+  // P22b; Overwatch Q3: issue to everyone else, list these as skipped). Ids
+  // and names only -- never anything about the restriction itself.
+  // Present only when non-empty, so an unrestricted program's report is unchanged.
+  skipped_medical_restriction?: SkippedMemberReport[];
 }
 
 /**
@@ -131,6 +142,13 @@ export async function issueCoachCard(params: {
   // called with the two arguments it always has, not a trailing undefined.
   const onClient: [] | [PoolClient] = client ? [client] : [];
   await assertNewAssignmentMeetsCueRule(params.organizationId, drillId, ...onClient);
+  // P22b: a sparring-level card is not issued to a restricted member.
+  await assertDrillClearOfMedicalRestriction({
+    organizationId: params.organizationId,
+    athleteId: params.athleteId,
+    drillId,
+    client,
+  });
   const run = client
     ? async (text: string, values: unknown[]) => (await client.query<DrillAssignment>(text, values)).rows
     : (text: string, values: unknown[]) => query<DrillAssignment>(text, values);
@@ -271,7 +289,18 @@ export async function issueCoachCardToProgram(params: {
     params.actor,
     members.map((member) => member.athlete_id),
   );
-  const authorized = members.filter((member) => accessible.has(member.athlete_id));
+  const reachable = members.filter((member) => accessible.has(member.athlete_id));
+  // P22b (Q3): for a sparring-level drill, a reachable member with a USA
+  // Boxing medical restriction blocking today is skipped and listed; everyone
+  // else is issued. Probed only for members this coach may reach, so the
+  // report never says anything about anyone else.
+  const restrictedIds = reachable.length > 0 && (await drillIsAtSparringLevel(organizationId, drillId))
+    ? await membersBlockedToday(organizationId, reachable.map((member) => member.athlete_id))
+    : new Set<string>();
+  const authorized = reachable.filter((member) => !restrictedIds.has(member.athlete_id));
+  const skippedMedicalRestriction = reachable
+    .filter((member) => restrictedIds.has(member.athlete_id))
+    .map(({ athlete_id, athlete_name }) => ({ athlete_id, athlete_name }));
   const skipped = members
     .filter((member) => !accessible.has(member.athlete_id))
     .map(({ athlete_id, athlete_name }) => ({ athlete_id, athlete_name }));
@@ -287,6 +316,7 @@ export async function issueCoachCardToProgram(params: {
       issuance_id: issuanceId,
       issued: [],
       skipped,
+      ...(skippedMedicalRestriction.length > 0 ? { skipped_medical_restriction: skippedMedicalRestriction } : {}),
     };
   }
 
@@ -347,6 +377,7 @@ export async function issueCoachCardToProgram(params: {
       assignment_id: assignmentByAthlete.get(member.athlete_id) as string,
     })),
     skipped,
+    ...(skippedMedicalRestriction.length > 0 ? { skipped_medical_restriction: skippedMedicalRestriction } : {}),
   };
 }
 

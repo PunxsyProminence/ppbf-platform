@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { ContactStage } from './athleteContactCaps';
 import { query, queryOne } from './db';
 import { athleteNotDeletedSql } from './deletedAthletes';
+import { assertSparringExposureClearOfMedicalRestriction, sparringExposureIsGated } from './medicalRestrictions';
 
 // pilot.sparring_exposure and pilot.session_load are owned by
 // infra/azure/pilot_slice_postgres_sparring_exposure_and_load_migration.sql,
@@ -136,6 +137,20 @@ export interface RecordSparringExposureInput {
  * pilot_sparring_exposure_stop -- silence is not a record.
  */
 export async function recordSparringExposure(input: RecordSparringExposureInput): Promise<SparringExposureRow> {
+  // USA Boxing medical restriction (lane P22b; medicalRestrictions.ts says
+  // what is refused, for the member and the partner). The route has already
+  // checked role and standing. The day is read only when the gate could
+  // refuse (a blank or sparring stage, or 'hard').
+  if (sparringExposureIsGated(input)) {
+    await assertSparringExposureClearOfMedicalRestriction({
+      organizationId: input.organizationId,
+      athleteId: input.athleteId,
+      contactStage: input.contactStage ?? null,
+      sparringType: input.sparringType,
+      partnerAthleteId: input.partnerAthleteId ?? null,
+      entryDay: await sparringExposureDay(input),
+    });
+  }
   const auto = input.segmentNumber === undefined;
   for (let attempt = 1; ; attempt += 1) {
     try {
@@ -148,6 +163,31 @@ export async function recordSparringExposure(input: RecordSparringExposureInput)
       if (!retry) throw error;
     }
   }
+}
+
+/**
+ * The gym day an entry is for: session_date, else the linked activity's
+ * occurred_on (the same "day sparred" countHardOrOpenSparringDays and
+ * listSparringExposure use). null when neither is known -- the medical
+ * restriction gate then checks today, and the insert's own constraint refuses
+ * an entry with no day. This file is grandfathered for reading
+ * pilot.activity_log (attendancePrecedence.test.ts), which is why the read
+ * lives here and not in medicalRestrictions.ts.
+ */
+export async function sparringExposureDay(
+  input: Pick<RecordSparringExposureInput, 'organizationId' | 'activityId' | 'sessionDate'>,
+): Promise<string | null> {
+  if (input.sessionDate) return input.sessionDate;
+  if (!input.activityId) return null;
+  const linked = await queryOne<{ occurred_on: string }>(
+    `select occurred_on::text as occurred_on from pilot.activity_log
+      where organization_id = $1 and activity_id = $2`,
+    [input.organizationId, input.activityId],
+  );
+  // A stored date that is not a calendar day ('infinity') reads as unknown,
+  // so the gate checks today instead of failing the save.
+  const day = linked?.occurred_on ?? null;
+  return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
 }
 
 // Both unique keys on segment_number: the original one for linked rows, the

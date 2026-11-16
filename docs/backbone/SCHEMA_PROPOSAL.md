@@ -293,10 +293,13 @@ retired codes stay readable. Usage review at about 3 months.
 concussion | other, loss of consciousness: none | under 1 minute | over 1 minute | unknown,
 start date, minimum end date, physician clearance or medical release signed on, LBC informed
 (or release sent to the LBC registration chair) on, linked incident id (P20, nullable), note, recorded by, recorded at).
-Drives the `usab_medical_restriction` note (P12 pattern) when the member is logged for training
-or sparring during the restriction, or after it with no release on file. P20's
-`usab_report_filed_on` is approved (2026-10-25) and drives the `usab_incident_report` note.
-Neither note holds a save. Source: USA Boxing Rule Book 2026: Rule 5.4(7) (written clearance from a qualified medical physician;
+During the restriction, or after it with no release on file, the app REFUSES entries at contact
+level `controlled_sparring` or `open_sparring` for that member and names the restriction; lower
+levels save with the `usab_medical_restriction` note (returned as `medical_restriction_note`; OD-2026-11-10-002, cards OW25-04 B and
+OW25-11 B; Overwatch rulings Q1-Q11, including `hard` sparring and a restricted partner; built in lanes P22a/P22b, boxing only per OD-2026-11-15-012). The gate lifts when the
+release date is on file and the minimum end date has passed. P20's
+`usab_report_filed_on` is approved (2026-10-25) and drives the `usab_incident_report` note,
+which does not hold a save. Source: USA Boxing Rule Book 2026: Rule 5.4(7) (written clearance from a qualified medical physician;
 inform the LBC) and the Restriction Affidavit form in the appendix (personal physician's medical
 release sent to the LBC registration chair).
 
