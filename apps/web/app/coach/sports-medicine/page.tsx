@@ -1110,6 +1110,12 @@ export default function SportsMedicinePage() {
             <Link href="/coach/sparring-caps" className="btn btn--ghost">
               Sparring Caps
             </Link>
+            {/* USA Boxing medical restrictions (Backbone P22) live on their own
+                page: this board's 2026-08-15 rule is clearance and holds only,
+                never clinical detail (OD-2026-10-04-001, -017). A link only. */}
+            <Link href="/coach/medical-restrictions" className="btn btn--ghost">
+              Medical Restrictions
+            </Link>
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">
               Progression Intelligence
             </Link>
