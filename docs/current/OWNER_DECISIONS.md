@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-17-002 | 2026-11-17 | Sparring minutes in frozen templates load as labelled information; the no-preset-sparring-volume check stays | PRIMARY |  | yes |
+| OD-2026-11-17-001 | 2026-11-17 | Blank required fields on frozen session templates are AI-drafted, labelled and checked by the lane's two reviewers | PRIMARY |  | yes |
 | OD-2026-11-16-004 | 2026-11-16 | Fight-week weigh-in sheets (DOC-154): the app shows the USA Boxing day-of weigh-in line, the ACSM minors line and the 'Sodium matters' line beside the sheet lines, nothing on the sheets edited: "A: Show rule line beside sheet line (Recommended)"; "A: Show all three lines beside the sheet (Recommended)" | RECONSTRUCTED |  | yes |
 | OD-2026-11-16-003 | 2026-11-16 | Drill KPIs: DOC-041's 7 for drill scorecards and DOC-027's 6 for room monitoring, shown side by side; drill KPIs scored simply, Long Road 1-5 stays for the footage scorecard: "A: DOC-041's 7 for drills; DOC-027's 6 for room (Recommended)"; "A: Simple for drills; 1-5 for footage (Recommended)" | RECONSTRUCTED |  |  |
 | OD-2026-11-16-002 | 2026-11-16 | DOC-154 weigh-in sheets: the research session makes one Microsoft 365 read Jason approves and reads the 6-days sheet with the 5-days sheet, as DOC-154: "A: Approve one read now; session adds addendum (Recommended)"; "A: Read it with the 5-days sheet, as DOC-154 (Recommended)" | RECONSTRUCTED |  |  |
@@ -582,6 +584,66 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-17-002 -- Sparring minutes in frozen templates load as labelled information; the no-preset-sparring-volume check stays: "A: Show as info (Recommended)"
+
+**Provenance: PRIMARY.** Jason's answer to a two-question card in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`): card at line 24368 (2026-11-17T13:23:33.647Z), answer at line 24369 (2026-11-17T13:27:10.960Z, about 08:27 EST; the `AskUserQuestion` result, which carries his picks), checked against the file by script before writing. Raised by lane YR's step-1 report (`YR_STEP1_REPORT.md`, sha256[:16] `f09b6153e6d5b9b1`, section 7), checked by Overwatch against the frozen Backbone and the workout-templates migration before it was put to him. New; edits no earlier entry's text.
+
+**What was put to him (quoted, question 2 of the card):**
+
+> Official: Three frozen adult templates (stages T1/T2/AM1/RC1 and up; no youth stage) give minutes for a controlled_sparring item: 'Phase 1 Foundation / Novice - Sparring session' 30 min, 'Phase 2 Competitive Amateur' constrained live 25 min, 'Session structure for skill development' 20 min. The app's template table refuses a duration on any contact above light_technical (check pilot_wti_no_contact_volume, Aug 2026: 'A qualified human sets contact volume, in person, every time'). How should those minutes load?
+>
+> Plain: Your Long Road sessions say how many minutes of sparring. The app has a rule that a template never presets sparring time, so the coach decides it on the day. Show your minutes as information, drop the rule, or leave the minutes out?
+>
+> Options, in the order shown:
+> 1. "A: Show as info (Recommended)": Keep the rule. The minutes load as your text, labelled, shown beside the item, and are never used as a preset by timers or issuing. Pros: your content shows as written; the app never presets sparring time. Cons: minutes live in a note, not the duration field.
+> 2. "B: Drop the rule": Minutes go in the duration field like any drill, and timers and issuing would use them. Pros: simplest. Cons: removes the rule that a coach sets contact volume in person.
+> 3. "C: Leave minutes out": The sparring items load without minutes. Cons: part of your text is withheld (Backbone RULES s0).
+
+**Jason:** *"A: Show as info (Recommended)"*
+
+**Ruling:**
+
+1. The check `pilot_wti_no_contact_volume` (workout-templates migration, "NO PRESCRIBED SPARRING VOLUME") stays unchanged.
+2. Where a frozen template gives minutes for an item above `light_technical` (the 3 `controlled_sparring` items: 30, 25 and 20 minutes), the minutes load as the source's text in the item's details, labelled, with the duration column blank, and the template page shows them beside the item as information.
+3. Timers, issuing and any preset never read them; a coach sets contact volume in person.
+
+**Not ruled here:** the same case in the amateur + pro lane (this ruling's words reach it: apply, do not ask again).
+
+**Status:** recorded 2026-11-17 by PR; lane YR builds it.
+
+---
+
+## OD-2026-11-17-001 -- Blank required fields on frozen session templates are AI-drafted, labelled and checked by the lane's two reviewers: "B: AI drafts the values"
+
+**Provenance: PRIMARY.** Jason's answer to a two-question card in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`): card at line 24368 (2026-11-17T13:23:33.647Z), answer at line 24369 (2026-11-17T13:27:10.960Z, about 08:27 EST; the `AskUserQuestion` result, which carries his picks), checked against the file by script before writing. Raised by lane YR's step-1 report (`YR_STEP1_REPORT.md`, sha256[:16] `f09b6153e6d5b9b1`, section 7), checked by Overwatch against the frozen Backbone and the workout-templates migration before it was put to him. New; edits no earlier entry's text.
+
+**What was put to him (quoted, question 1 of the card):**
+
+> Official: Lane YR (youth + recreational content) found 23 of 33 frozen session templates with blank required fields: session_type (23), difficulty (23), duration_minutes (13), intent (2). One template, 'The permanent circuit ... ~10 min', is 10 minutes, under the app's 15-minute floor. OD-2026-11-12-001 ('A: Load blanks') covered drill setup and steps only and left other fields unruled. How should these templates load?
+>
+> Plain: Many class templates from your material don't say how hard or how long they are, and the app currently refuses a template without that. Load them with those fields empty, have AI fill them in, or hold them back?
+>
+> Options, in the order shown:
+> 1. "A: Load blanks (Recommended)": The app stops requiring the four fields; the 10-minute circuit loads as 10. The template page shows a blank. Pros: all your content goes in as written. Cons: coaches see some templates with no difficulty or length.
+> 2. "B: AI drafts the values": Values drafted, labelled AI draft, checked by the lane's two reviewers (OD-2026-11-15-011). Pros: every field filled. Cons: invented values on your content; slower.
+> 3. "C: Hold those 23 templates": They, and the tracks that list them, wait until someone writes the values. Cons: much of the youth and recreational content waits.
+
+**Jason:** *"B: AI drafts the values"* (not the recommended option; the card gave its cons, "invented values on your content; slower", and Overwatch states the cost once in its reply)
+
+**Ruling:**
+
+1. Where a frozen session template leaves `session_type`, `difficulty`, `duration_minutes` or `intent` blank (lane YR: 23, 23, 13 and 2 of 33), the lane drafts the value from that template's own frozen content, inside the app's existing vocabularies and checks.
+2. Each drafted field is labelled INFERRED with the AI-draft marker, goes on a review sheet, and loads once the lane's two adversarial reviewers pass the sheet (OD-2026-11-15-011; Jason does not review them). A miss is fixed by a new version.
+3. The four fields stay required in the import and the database.
+
+**Applied, not asked (Overwatch):** the template "The permanent circuit ... ~10 min" has a written 10 minutes, under the app's 15-minute floor. It is not blank, so it is not drafted: the duration check widens to 1-180 and the value loads as written.
+
+**Not ruled here:** required fields other than these four; reach to later lanes (its plain principle reaches the amateur + pro lane's templates: apply, do not ask again).
+
+**Status:** recorded 2026-11-17 by PR; lane YR builds it.
 
 ---
 
