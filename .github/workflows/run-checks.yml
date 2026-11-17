@@ -35,11 +35,12 @@
 # TWO KINDS OF CHECK, AND WHAT A RED RUN MEANS
 #   Most of these are GATES: they exit non-zero when a human still has to
 #   decide something, so a red run is a finding rather than a broken workflow.
-#   Six are REPORTS -- seed-identity, runtime-claims, cue-source-provenance,
-#   reference-content, medical-restriction-presets and video-readiness print
-#   their answer and exit zero whenever they managed to run at all, so the
-#   answer is in the log and a green run says only "it connected". Do not
-#   read a green `all` as "seed identity is correct"; read the group.
+#   Seven are REPORTS -- seed-identity, runtime-claims, medical-clearance-
+#   coverage, cue-source-provenance, reference-content, medical-restriction-
+#   presets and video-readiness print their answer and exit zero whenever they
+#   managed to run at all, so the answer is in the log and a green run (and
+#   its "no action needed" summary line) says only "it connected". Do not read
+#   a green `all` as "seed identity is correct"; read the group.
 #
 #   medical-restriction-presets counts pilot.medical_restrictions rows holding
 #   BOTH values the staff form used to pre-pick (source ringside_affidavit,

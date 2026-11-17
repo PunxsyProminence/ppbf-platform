@@ -115,6 +115,10 @@ export function reportLines(result) {
 export async function run() {
   const connectionString = required('AZURE_POSTGRES_CONNECTION_STRING');
   const client = new Client({ connectionString, ssl: resolveSslConfig() });
+  // A socket error after connecting rejects the pending query, which the
+  // caller reports by class and SQLSTATE; without a listener the client would
+  // also throw it unhandled, with its full message and stack.
+  client.on('error', () => {});
   await client.connect();
   let result;
   try {

@@ -270,6 +270,7 @@ describe('with the table present', () => {
       `"Records holding both pre-set values" means source = 'ringside_affidavit' and loss_of_consciousness = 'none'.`,
       'A count cannot tell a skipped field from a chosen one.',
     ]);
+    expect(run.stderr).toBe('');
     const everything = `${run.stdout}\n${run.stderr}`;
     for (const value of [ORG_ID, COACH_ID, ADMIN_ID, ATHLETE_ID, NOTE, INCIDENT, VOID_REASON, START, END, 'Test Member', ...restrictionIds]) {
       expect(everything).not.toContain(value);
@@ -314,5 +315,27 @@ test('the script has no way to read a file, so it cannot load apps/web/.env.loca
   const source = await fs.readFile(CHECKER_SCRIPT_PATH, 'utf8');
   expect(source).not.toMatch(/from ['"](node:)?fs(\/promises)?['"]/);
   expect(source).not.toMatch(/require\(\s*['"](node:)?fs/);
-  expect(source).not.toMatch(/\bdotenv\b/);
+  expect(source).not.toMatch(/import\(\s*['"](node:)?fs/);
+  expect(source).not.toMatch(/loadEnvFile|\bdotenv\b/);
+});
+
+test('a connection that fails prints the error class and SQLSTATE only, never the user, database or host', async () => {
+  const closedPort = await findFreePort();
+  const run = spawnSync(process.execPath, [CHECKER_SCRIPT_PATH], {
+    encoding: 'utf8',
+    env: {
+      PATH: process.env.PATH,
+      SystemRoot: process.env.SystemRoot,
+      NODE_ENV: 'test',
+      PPBF_POSTGRES_DISABLE_SSL: 'true',
+      AZURE_POSTGRES_CONNECTION_STRING: `postgres://user-presets-sentinel:pw-presets-sentinel@127.0.0.1:${closedPort}/db-presets-sentinel`,
+    },
+    timeout: 60_000,
+  });
+  expect(run.status).toBe(1);
+  expect(run.stdout).toBe('');
+  expect(run.stderr).toContain('MEDICAL RESTRICTION PRE-SET VALUES CHECK FAILED TO RUN');
+  for (const value of ['user-presets-sentinel', 'pw-presets-sentinel', 'db-presets-sentinel', String(closedPort), '127.0.0.1']) {
+    expect(run.stderr).not.toContain(value);
+  }
 });
