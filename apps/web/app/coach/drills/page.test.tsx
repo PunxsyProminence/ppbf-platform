@@ -2494,6 +2494,13 @@ describe('What to score (OD-2026-11-16-003 ruling 1; lane CAT-d)', () => {
     expect(await screen.findByText('Seeded jab return')).toBeInTheDocument();
   });
 
+  it('a malformed answer (a list with no KPIs) shows the failure line and leaves the drill library standing', async () => {
+    global.fetch = withKpis(() => jsonResponse({ lists: [{ listKey: 'drill', title: 'x', sourceDoc: 'DOC-041', scoringRuleText: null }] }));
+    render(<CoachDrillLibraryPage />);
+    expect(await screen.findByText('The KPI lists could not be loaded.')).toBeInTheDocument();
+    expect(await screen.findByText('Seeded jab return')).toBeInTheDocument();
+  });
+
   it('says so when the lists cannot be loaded, and the drill library still loads', async () => {
     global.fetch = withKpis(() => jsonResponse({ error: 'boom' }, false, 500));
     render(<CoachDrillLibraryPage />);

@@ -103,9 +103,15 @@ beforeAll(async () => {
   client = new Client({ connectionString: connectionStringFor(DATABASE) });
   await client.connect();
   await applyFullSchema(client, { infraDir: INFRA_DIR });
+  // behaviorKpis.ts reads through db.ts's pool: point it at this database.
+  // db.ts only honors the SSL switch when NODE_ENV is exactly 'test' (Jest sets it).
+  process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(DATABASE);
+  process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
 });
 
 afterAll(async () => {
+  const { closePool } = await import('./db');
+  await closePool().catch(() => {});
   await client?.end().catch(() => {});
   await new Promise<void>((resolve) => {
     let done = false;
@@ -251,6 +257,22 @@ describe('the committed assessment-catalog seed', () => {
       'Composure rating.', 'Decision quality notes under stress.',
     ]);
     expect(room.every((row) => row.scoring_kind === null && !row.anchored)).toBe(true);
+  });
+
+  it('the panel\'s read (listBehaviorKpis) returns each gym\'s own lists, drill first, drafts flagged; a gym with none gets none', async () => {
+    const { listBehaviorKpis } = await import('./behaviorKpis');
+    const lists = await listBehaviorKpis('gym_seed');
+    expect(lists.map((list) => [list.listKey, list.sourceDoc, list.kpis.length])).toEqual([['drill', 'DOC-041', 7], ['room', 'DOC-027', 6]]);
+    expect(lists[0].kpis.map((kpi) => kpi.ordinal)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(lists[0].kpis.every((kpi) => kpi.draft)).toBe(true);
+    expect(lists[1].kpis.every((kpi) => !kpi.draft && kpi.scoringKind === null && kpi.levelAnchors === null)).toBe(true);
+    expect(lists[0].kpis.filter((kpi) => kpi.levelAnchors).map((kpi) => Object.keys(kpi.levelAnchors ?? {}).sort())).toEqual([
+      ['1', '2', '3'], ['1', '2', '3'], ['1', '2', '3'],
+    ]);
+    // Another organization's rows never come back: a gym that holds the pathway catalog but no assessment catalog.
+    const other = await createGym('gym_no_catalog');
+    await load('gym_no_catalog', other, pathway);
+    expect(await listBehaviorKpis('gym_no_catalog')).toEqual([]);
   });
 
   it('a new gym loads the pathway seed and the catalog in one package', async () => {

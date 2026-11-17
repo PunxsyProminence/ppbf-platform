@@ -73,8 +73,15 @@ test('a signed-out caller gets 401 and nothing is read', async () => {
   expect(mockList).not.toHaveBeenCalled();
 });
 
-test('a role outside the drill library\'s readers is refused before anything is read', async () => {
-  for (const role of ['board'] as PilotRole[]) {
+/** Every PilotRole (contracts.ts); the type check fails here if one is added there and not here. */
+const ALL_ROLES: Record<PilotRole, true> = {
+  platform_owner: true, organization_admin: true, admin: true, coach: true, athlete: true, parent: true, board: true, volunteer: true, staff: true,
+};
+
+test('every role outside the drill library\'s readers is refused before anything is read', async () => {
+  const outside = (Object.keys(ALL_ROLES) as PilotRole[]).filter((role) => !COACHING_CONTENT_READER_ROLES.includes(role));
+  expect(outside.length).toBeGreaterThan(0);
+  for (const role of outside) {
     mockRequirePrincipal.mockResolvedValue(principal({ role }));
     const response = await GET(request());
     expect([role, response.status]).toEqual([role, 403]);

@@ -375,7 +375,8 @@ function WhatToScorePanel() {
         const response = await fetch(`${apiBase()}/api/pilot/coach/behavior-kpis`, { method: 'GET', credentials: 'include' });
         if (!response.ok) throw new Error('not ok');
         const body = (await response.json()) as { lists?: unknown };
-        if (!Array.isArray(body.lists)) throw new Error('malformed');
+        // A list without its KPIs would throw while rendering and take the whole page down with it.
+        if (!Array.isArray(body.lists) || !body.lists.every((list) => Array.isArray((list as { kpis?: unknown })?.kpis))) throw new Error('malformed');
         if (live) setLists(body.lists as BehaviorKpiList[]);
       } catch {
         if (live) setFailed(true);
