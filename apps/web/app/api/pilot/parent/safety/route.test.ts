@@ -183,6 +183,8 @@ test('returns hold and gate status for every linked athlete', async () => {
       medical_restriction: null,
     },
   ]);
+  // "None in force" is a good read: no unread flag (OD-2026-11-17-009 ruling 3).
+  expect(Object.keys(payload.items[0])).not.toContain('medical_restriction_unread');
 });
 
 test('P22c: a restriction in force reaches the guardian as its three fields, for each linked child only', async () => {
@@ -198,12 +200,31 @@ test('P22c: a restriction in force reaches the guardian as its three fields, for
     { on_file: true, minimum_end_date: '2026-12-01', release_needed: true },
     null,
   ]);
+  // Both reads succeeded (one in force, one none): neither carries the unread flag.
+  for (const item of body.items) expect(Object.keys(item)).not.toContain('medical_restriction_unread');
   // Asked only for the children the guardian link returned, in the caller's own gym.
   expect(mockGuardianAthleteIds).toHaveBeenCalledWith('org-a', 'acct-parent');
   expect(mockFamilyMedicalRestriction.mock.calls).toEqual([['org-a', 'ath-1'], ['org-a', 'ath-2']]);
 });
 
-test('P22c: a failed restriction read shows nothing for it, and the rest of the page still loads', async () => {
+test('one child\'s failed read flags only that child; the other child\'s good read is unchanged', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1', 'ath-2']);
+  mockFamilyMedicalRestriction.mockImplementation(async (_org, athleteId) => {
+    if (athleteId === 'ath-1') throw Object.assign(new Error('db down'), { code: '57014' });
+    return { on_file: true, minimum_end_date: '2026-12-01', release_needed: true };
+  });
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+  const body = await (await get()).json();
+
+  expect(body.items[0]).toMatchObject({ athlete_id: 'ath-1', medical_restriction: null, medical_restriction_unread: true });
+  expect(body.items[1].medical_restriction).toEqual({ on_file: true, minimum_end_date: '2026-12-01', release_needed: true });
+  expect(Object.keys(body.items[1])).not.toContain('medical_restriction_unread');
+  warn.mockRestore();
+});
+
+test('a failed restriction read is sent as null plus medical_restriction_unread, and the rest of the page still loads', async () => {
   mockRequirePrincipal.mockResolvedValueOnce(principal());
   mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
   mockFamilyMedicalRestriction.mockRejectedValueOnce(Object.assign(new Error('db down'), { code: '57014' }));
@@ -214,6 +235,12 @@ test('P22c: a failed restriction read shows nothing for it, and the rest of the 
   expect(response.status).toBe(200);
   const body = await response.json();
   expect(body.items[0].medical_restriction).toBeNull();
+  // OD-2026-11-17-009 ruling 3 (OW25-35 A): the page must tell "not read" from
+  // "none". One boolean is added and nothing else about any record.
+  expect(body.items[0].medical_restriction_unread).toBe(true);
+  expect(Object.keys(body.items[0]).sort()).toEqual(
+    ['athlete_id', 'athlete_name', 'gates', 'hold', 'medical_restriction', 'medical_restriction_unread', 'waivers'],
+  );
   expect(body.items[0].waivers.general).toBe('signed');
   // Logged by kind, never the message.
   expect(warn).toHaveBeenCalledWith(expect.any(String), { name: 'Error', code: '57014' });

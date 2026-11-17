@@ -27,14 +27,19 @@ import type { DrillDetailView, DrillStopRuleView } from './drillDetailView';
 // the caller passes in.
 
 const SECTION = 'space-y-[var(--s2)]';
-const BODY = 'text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]';
+// On a gym-floor (kiosk) page -- /coach/drills (OD-2026-11-17-009 ruling 4) and
+// the athlete pages -- text rises to the 19.1px kiosk floor and expanders to the
+// 55px tap floor; desk pages that mount this keep their sizes. `in-data-` is
+// Tailwind's ancestor variant: `:where([data-surface="kiosk"]) &`.
+const KIOSK_TEXT = 'in-data-[surface=kiosk]:text-[length:var(--t-md)]';
+const BODY = `text-[length:var(--t-sm)] ${KIOSK_TEXT} leading-relaxed text-[color:var(--bone-300)]`;
 const LIST = `${BODY} list-disc space-y-[var(--s1)] pl-[var(--s5)]`;
 const EXPANDER = 'rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.2)] px-[var(--s3)] py-[var(--s2)]';
 // The summary is the tap target, so it carries the 44px floor itself; padding
 // on the <details> alone left an ~11px target. It keeps its default display
 // (list-item) on purpose: that is what draws the open/closed disclosure marker,
 // and without it an expander reads as a plain label.
-const EXPANDER_SUMMARY = 't-label min-h-[44px] cursor-pointer py-[var(--s3)]';
+const EXPANDER_SUMMARY = 't-label min-h-[44px] in-data-[surface=kiosk]:min-h-[var(--tap)] cursor-pointer py-[var(--s3)]';
 
 export interface DrillDetailProps {
   view: DrillDetailView;
@@ -91,7 +96,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
       <header className="space-y-[var(--s2)]">
         <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
           <h2 id={headingId} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">{view.name}</h2>
-          {view.coach && <span className="plaque">{view.coach.difficulty}</span>}
+          {view.coach && <span className="plaque"><span className={KIOSK_TEXT}>{view.coach.difficulty}</span></span>}
         </div>
         {view.coach && (
           <p className="t-label">{view.coach.discipline} · {view.coach.category}</p>
@@ -200,7 +205,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
             {view.cues.map((cue) => (
               <li
                 key={`${view.id}-cue-${cue}`}
-                className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"
+                className={`rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] ${KIOSK_TEXT} text-[color:var(--bone-300)]`}
               >
                 {cue}
               </li>
@@ -270,7 +275,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
 function StopRuleList({ heading, rules }: { heading: string; rules: DrillStopRuleView[] }) {
   return (
     <div className="space-y-[var(--s1)]">
-      <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-200)]">{heading}</p>
+      <p className={`text-[length:var(--t-sm)] ${KIOSK_TEXT} font-semibold text-[color:var(--bone-200)]`}>{heading}</p>
       <ol className={`${BODY} list-decimal space-y-[var(--s1)] pl-[var(--s5)]`}>
         {/* Keyed by origin as well: the readiness list can hold a drill rule
             and a stored-once rule at the same ordinal. */}

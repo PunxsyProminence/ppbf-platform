@@ -194,7 +194,7 @@ export default function DrillLineageReview({ drillId, canReview, canReinstate = 
         {mine?.notice && <p role="status" className="t-body mt-[var(--s2)]">{mine.notice}</p>}
         {mine?.error && (
           <div role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-            <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{mine.error}</p>
+            <p className="text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">{mine.error}</p>
             <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{mine.explanation}</p>
           </div>
         )}
@@ -227,7 +227,7 @@ export default function DrillLineageReview({ drillId, canReview, canReinstate = 
         <p className="t-label text-[color:var(--bone-300)]">
           Proposed by {ROLE_LABELS[p.proposed_by_role] ?? p.proposed_by_role} on {day(p.created_at)}, against {versionOf(p.based_on_drill_id)}
         </p>
-        <table className="mt-[var(--s3)] w-full text-left text-[length:var(--t-sm)]">
+        <table className="mt-[var(--s3)] w-full text-left text-[length:var(--t-md)]">
           <thead>
             <tr><th scope="col">Field</th><th scope="col">Was</th><th scope="col">Proposed</th></tr>
           </thead>
@@ -248,7 +248,7 @@ export default function DrillLineageReview({ drillId, canReview, canReinstate = 
           <div className="mt-[var(--s3)] space-y-[var(--s3)]">
             <div className="field">
               <label htmlFor={`review-note-${p.proposal_id}`} className="t-label">Review note</label>
-              <textarea id={`review-note-${p.proposal_id}`} rows={2} className="textarea" value={notes[p.proposal_id] ?? ''}
+              <textarea id={`review-note-${p.proposal_id}`} rows={2} className="textarea input--kiosk" value={notes[p.proposal_id] ?? ''}
                 onChange={(event) => setNotes((prev) => ({ ...prev, [p.proposal_id]: event.target.value }))} />
             </div>
             <div className="flex flex-wrap gap-[var(--s3)]">
@@ -297,7 +297,7 @@ export default function DrillLineageReview({ drillId, canReview, canReinstate = 
               <li key={v.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                 <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
                   <p className="t-command text-[length:var(--t-md)]">Version {v.version}: {v.name}</p>
-                  <span className="plaque">{label(v)}</span>
+                  <span className="plaque"><span className="text-[length:var(--t-md)]">{label(v)}</span></span>
                 </div>
                 <button
                   type="button"

@@ -125,6 +125,8 @@ const FLOOR_ROUTES = [
   'coach/assessments',
   'coach/test-day',
   'coach/injuries',
+  'coach/medical-restrictions', // OD-2026-11-17-009 ruling 4 (OW25-37 A)
+  'coach/drills', // OD-2026-11-17-009 ruling 4 (OW25-37 A)
   'shadow',
   'parent/safety',
 ] as const;

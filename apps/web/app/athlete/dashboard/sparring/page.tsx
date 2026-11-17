@@ -776,8 +776,10 @@ export default function SparringTelemetryPage() {
         <span className="plaque">{actor === 'staff' ? 'Athlete training record' : 'Your training record'}</span>
       </header>
       {/* The member's own USA Boxing medical restriction, while one is in
-          force (lane P22c, OW25-06 A); nothing otherwise. Self only, so it is
-          mounted for the boxer, not for a coach entering for them. */}
+          force (lane P22c, OW25-06 A); one neutral "could not be checked" line
+          when the read fails (OD-2026-11-17-009 ruling 3); nothing otherwise.
+          Self only, so it is mounted for the boxer, not for a coach entering
+          for them. */}
       {actor === 'athlete' && (
         <div className="px-[var(--s5)] pt-[var(--s4)]"><MedicalRestrictionNotice /></div>
       )}

@@ -35,13 +35,22 @@ function asText(value: unknown): string {
 const BODY = 't-body mt-[var(--s1)] text-[color:var(--bone-300)]';
 const NOTE = 'mt-[var(--s2)] border-l-2 border-[color:rgb(var(--brass-400-rgb)_/_.22)] pl-[var(--s3)]';
 
+/**
+ * A detail value with no value says so, rather than printing "null" or a
+ * blank that reads like an answer (P6, OD-2026-11-17-009). Table cells keep
+ * asText: an empty cell on a sheet is a real blank on that sheet.
+ */
+function detailText(value: unknown): string {
+  return value === null || value === undefined ? 'not set' : asText(value);
+}
+
 /** A stored detail value as text: a string, a list, or a key/value map (as on Class plans). */
 function DetailValue({ value }: { readonly value: unknown }) {
   if (Array.isArray(value)) {
     return (
       <ul className="mt-[var(--s2)] list-disc pl-[var(--s5)]">
         {value.map((entry, index) => (
-          <li key={index} className="t-body text-[color:var(--bone-300)]">{asText(entry)}</li>
+          <li key={index} className="t-body text-[color:var(--bone-300)]">{detailText(entry)}</li>
         ))}
       </ul>
     );
@@ -52,13 +61,13 @@ function DetailValue({ value }: { readonly value: unknown }) {
         {Object.entries(value).map(([key, entry]) => (
           <div key={key} className="t-body text-[color:var(--bone-300)]">
             <dt className="inline font-semibold">{key}: </dt>
-            <dd className="inline">{asText(entry)}</dd>
+            <dd className="inline">{detailText(entry)}</dd>
           </div>
         ))}
       </dl>
     );
   }
-  return <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{String(value)}</p>;
+  return <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{detailText(value)}</p>;
 }
 
 /** A line the app shows beside a sheet's line; the sheet itself is not edited. */
@@ -66,6 +75,8 @@ function BesideLine({ line }: { readonly line: Data }) {
   const sources = listOf(line.sources).map(asText).join(', ');
   return (
     <div className={NOTE}>
+      {/* Its own label, so it is told apart from a Backbone note at a glance (P6; Overwatch DFX Q2: generic wording). */}
+      <p className="t-label">Shown beside the sheet</p>
       <p className={BODY}>{asText(line.line_text)}</p>
       <p className={BODY}>{`Source: ${asText(line.line_key)} (${sources})`}</p>
       {textOf(line.caveat) && <p className={BODY}>{asText(line.caveat)}</p>}
@@ -132,7 +143,8 @@ function OwnerPassages({ passages }: { readonly passages: Data[] }) {
   if (passages.length === 0) return null;
   return (
     <details className="mt-[var(--s4)]">
-      <summary className="t-label cursor-pointer">{`Owner passages (${passages.length})`}</summary>
+      {/* 55px to tap: no tap floor names <summary> (P6). Left a list item so the disclosure marker stays. */}
+      <summary className="t-label min-h-[var(--tap)] cursor-pointer py-[var(--s3)]">{`Owner passages (${passages.length})`}</summary>
       {passages.map((passage, index) => <OwnerPassage key={index} passage={passage} />)}
     </details>
   );
@@ -404,7 +416,7 @@ function Library() {
         {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
         {!loading && loadError && (
           <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-            <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
+            <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
             <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
               This is a failure to load, not an empty library.
             </p>
@@ -441,7 +453,7 @@ function Library() {
           <h2 className="t-command text-[length:var(--t-lg)]">{detail ? detail.name : 'Library track'}</h2>
           {detailLoading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading the track...</p>}
           {!detailLoading && detailError && (
-            <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">
+            <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
               {detailError}
             </p>
           )}

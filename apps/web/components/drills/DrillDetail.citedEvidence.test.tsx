@@ -51,6 +51,20 @@ describe('cited evidence on a surface that does not read the Library', () => {
     expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument();
   });
 
+  it('rises to the kiosk floors only on a gym-floor page (OD-2026-11-17-009 ruling 4)', () => {
+    const { container } = render(<DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" />);
+    for (const summary of container.querySelectorAll('summary')) {
+      expect(summary.className).toContain('min-h-[44px]');
+      expect(summary.className).toContain('in-data-[surface=kiosk]:min-h-[var(--tap)]');
+    }
+    const sized = container.querySelectorAll('[class*="in-data-[surface=kiosk]:text-[length:var(--t-md)]"]');
+    expect(sized.length).toBeGreaterThan(0);
+    // Every small text size on the card has its kiosk rise beside it.
+    for (const node of container.querySelectorAll('[class*="--t-sm"], [class*="--t-xs"]')) {
+      expect(node.className).toContain('in-data-[surface=kiosk]:text-[length:var(--t-md)]');
+    }
+  });
+
   it('says a failed read failed', () => {
     render(<DrillDetail view={fromCoachDrillDetail(drill, null)} audience="coach" />);
 

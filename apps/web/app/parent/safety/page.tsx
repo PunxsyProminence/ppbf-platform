@@ -6,7 +6,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import RefusalStamp from '@/components/RefusalStamp';
 import MyInjuries from '@/components/MyInjuries';
-import { MedicalRestrictionStatement } from '@/components/MedicalRestrictionNotice';
+import { MedicalRestrictionFromRead, familyRestrictionRead } from '@/components/MedicalRestrictionNotice';
 
 type TrainingHoldScope = 'all_training' | 'contact_only' | 'conditioning_only';
 
@@ -39,9 +39,12 @@ interface AthleteSafety {
   waivers?: Record<string, unknown> | null;
   /* USA Boxing medical restriction (lane P22c; OW25-06 A): on file, minimum
      end date, release needed -- or null when nothing blocks today. Checked
-     before it renders (MedicalRestrictionStatement); anything else shows
-     nothing. */
+     before it renders (familyRestrictionRead). A failed read arrives as
+     medical_restriction_unread: true; that, or anything that is neither null
+     nor the three fields, shows the neutral "could not be checked" line,
+     never nothing (OD-2026-11-17-009 ruling 3, OW25-35 A). */
   medical_restriction?: unknown;
+  medical_restriction_unread?: unknown;
 }
 
 /* The four types the route reads (TRACKED_WAIVER_TYPES in
@@ -370,12 +373,16 @@ export default function GuardianSafetyPage() {
                     <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training hold on file right now.</p>
                   )}
 
-                  {/* Only while a restriction is in force; nothing once it lifts. */}
-                  {item.medical_restriction ? (
-                    <div className="mt-[var(--s3)]">
-                      <MedicalRestrictionStatement restriction={item.medical_restriction} />
-                    </div>
-                  ) : null}
+                  {/* While a restriction is in force, or when it could not be
+                      read; nothing once it lifts. */}
+                  {(() => {
+                    const read = familyRestrictionRead(item.medical_restriction, item.medical_restriction_unread === true);
+                    return read.kind === 'none' ? null : (
+                      <div className="mt-[var(--s3)]">
+                        <MedicalRestrictionFromRead read={read} />
+                      </div>
+                    );
+                  })()}
 
                   <SafetyChecks rows={safetyCheckRows(item)} />
 

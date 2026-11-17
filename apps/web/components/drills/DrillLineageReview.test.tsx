@@ -140,6 +140,13 @@ afterEach(() => {
 });
 
 describe('DrillLineageReview', () => {
+  test('is gym-floor size: text at 19.1px and the review note at 55px (OD-2026-11-17-009 ruling 4)', async () => {
+    await renderPanel({ versions: twoVersions(), items: [stale] });
+    for (const textarea of document.querySelectorAll('textarea')) expect(textarea.className).toContain('input--kiosk');
+    expect(document.querySelectorAll('textarea').length).toBeGreaterThan(0);
+    expect(document.body.innerHTML).not.toMatch(/--t-sm|--t-xs/);
+  });
+
   test('renders every version oldest first, with the active one marked Current, and opens each one', async () => {
     await renderPanel({ versions: twoVersions(), items: [] });
 

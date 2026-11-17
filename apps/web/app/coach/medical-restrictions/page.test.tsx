@@ -42,6 +42,9 @@ test('admits coach and admin, and offers the roster to the panel', async () => {
 test('a roster that will not load says so, and shows no panel', async () => {
   serve(() => ({ ok: false, status: 500, json: async () => ({}) } as Response));
   render(<MedicalRestrictionsPage />);
-  expect(await screen.findByText('Your roster could not be loaded. Reload to try again.')).toBeTruthy();
+  const message = await screen.findByText('Your roster could not be loaded. Reload to try again.');
   expect(screen.queryByLabelText('Member')).toBeNull();
+  // Gym-floor size (OD-2026-11-17-009 ruling 4): .alert-* are fixed sizes the kiosk floor does not reach.
+  expect(message.getAttribute('style')).toContain('font-size: var(--t-md)');
+  expect(screen.getByText('Not loaded').getAttribute('style')).toContain('font-size: var(--t-md)');
 });
