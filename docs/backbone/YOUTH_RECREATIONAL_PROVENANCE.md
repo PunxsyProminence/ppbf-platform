@@ -32,7 +32,7 @@ Lane YR, the first stage lane of OD-2026-11-15-006 ruling 2 (OW25-14 A). It carr
 
 ## Drafted template fields (OD-2026-11-17-001)
 
-- Jason: "B: AI drafts the values". 17 of the 27 loaded templates had blank fields: `session_type` 17, `difficulty` 17, `duration_minutes` 7, `intent` 2. These 43 values are drafted by Overwatch's order of basis and stay required: from the template's own frozen content (40, labelled `INFERRED`), otherwise from the same source document's sheet that matches its contact structure (3 durations of records that state no minutes, labelled `UNVERIFIED`, with the sheets used and the contrary values named).
+- Jason: "B: AI drafts the values". 17 of the 27 loaded templates had blank fields: `session_type` 17, `difficulty` 17, `duration_minutes` 7, `intent` 2. These 43 values are drafted by Overwatch's order of basis and stay required: from the template's own frozen content (41, labelled `INFERRED`), otherwise from the same source document's sheet that matches its contact structure (2 durations of records that state no minutes, labelled `UNVERIFIED`, with the sheets used and the contrary values named).
 - Each drafted field is labelled `INFERRED` or `UNVERIFIED` in `field_labels`, with the draft marker "AI draft, lane YR, 2026-11-17 (OD-2026-11-17-001)", its basis and its sources. The review sheet is `docs/content-review/youth-recreational/TEMPLATE_DRAFTS_REVIEW.md`.
 - The lane's two reviewers pass the sheet; Jason does not review it (OD-2026-11-15-011). A miss is fixed by a new template version.
 - The exporter's overwrite guard keeps the drafts: a rerun names the 17 drafted templates and writes nothing, unless `--allow-overwrite`.
