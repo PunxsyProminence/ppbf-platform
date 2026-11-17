@@ -592,6 +592,18 @@ function itemPrescription(item: TemplateItem): string {
   return parts.join(', ');
 }
 
+/**
+ * A template row's facts line from what it has: a template may carry no
+ * session type (''), no difficulty and no length (null), and never reads "null min".
+ */
+function templateFacts(template: Template): string {
+  return [
+    template.session_type.replace(/_/g, ' '),
+    template.age_band.replace(/_/g, ' ').toLowerCase(),
+    template.duration_minutes === null ? '' : `${template.duration_minutes} min`,
+  ].filter((part) => part.trim() !== '').join(' -- ');
+}
+
 function CoachWorkoutTemplates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -741,13 +753,9 @@ function CoachWorkoutTemplates() {
               <article key={template.template_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                 <div className="flex items-baseline justify-between gap-[var(--s3)]">
                   <h3 className="t-command text-[length:var(--t-md)]">{template.name}</h3>
-                  <span className="plaque">{template.difficulty}</span>
+                  {template.difficulty && <span className="plaque">{template.difficulty}</span>}
                 </div>
-                <p className="t-label mt-[var(--s2)]">
-                  {template.session_type.replace(/_/g, ' ')}
-                  {` -- ${template.age_band.replace(/_/g, ' ').toLowerCase()}`}
-                  {` -- ${template.duration_minutes} min`}
-                </p>
+                <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
                 {template.intent.trim() !== '' && (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{template.intent}</p>
                 )}

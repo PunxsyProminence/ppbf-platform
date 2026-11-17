@@ -5,6 +5,7 @@ import {
   type ClassPlanSessionRow,
   type ClassPlanTrackDetail,
   type ClassPlanTrackSummary,
+  type LibraryTrackSummary,
 } from './classPlanShapes';
 import { query, queryOne } from './db';
 import { getWorkoutTemplateWithItems, planTemplateIssue } from './workoutTemplates';
@@ -50,9 +51,34 @@ function summaryOf(row: TrackRow): ClassPlanTrackSummary {
   };
 }
 
+const HAS_BLOCKS = `exists (select 1 from pilot.track_blocks b
+  where b.organization_id = t.organization_id and b.track_id = t.track_id)`;
+
+/** Class plans: the current active tracks with at least one block. A track with none is a library track. */
 export async function listClassPlanTracks(organizationId: string): Promise<ClassPlanTrackSummary[]> {
-  const rows = await query<TrackRow>(`${TRACK_SELECT} order by t.name, t.track_id`, [organizationId]);
+  const rows = await query<TrackRow>(`${TRACK_SELECT} and ${HAS_BLOCKS} order by t.name, t.track_id`, [organizationId]);
   return rows.map(summaryOf);
+}
+
+/**
+ * Library tracks: the current active tracks with no blocks, by name. The
+ * headings and the group count are read from details in the query, so the
+ * list does not carry each track's full text; one opens with getClassPlanTrack.
+ */
+export async function listLibraryTracks(organizationId: string): Promise<LibraryTrackSummary[]> {
+  // group_count is an int4 (jsonb_array_length), which pg returns as a number.
+  return query<LibraryTrackSummary>(
+    `select t.track_id, t.name, t.lane, t.age_band,
+            t.details->>'part_heading' as part_heading,
+            t.details->>'chapter_heading' as chapter_heading,
+            t.details->>'subtitle' as subtitle,
+            case when jsonb_typeof(t.details->'groups') = 'array'
+                 then jsonb_array_length(t.details->'groups') else 0 end as group_count
+     from pilot.training_tracks t
+     where t.organization_id = $1 and t.superseded_at is null and t.active and not ${HAS_BLOCKS}
+     order by t.name, t.track_id`,
+    [organizationId],
+  );
 }
 
 interface TemplateHead {
