@@ -65,6 +65,20 @@ describe('cited evidence on a surface that does not read the Library', () => {
     }
   });
 
+  // On /coach/drills the card is light parchment, where the bone inks read at
+  // 1.01:1 (--bone-300) and 1.22:1 (--bone-200); inside .ge-drillcase that text
+  // takes the card's own ink. A .t-label and a list item already do, through
+  // the card's unlayered rules (ppbf-golden-era.css, .mat-leather--raised).
+  it('no bone ink is left on the parchment card without the card-ink fallback', () => {
+    const { container } = render(<main className="ge-drillcase"><DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" /></main>);
+    const bone = [...container.querySelectorAll('[class*="--bone-"]')];
+    expect(bone.length).toBeGreaterThan(0);
+    for (const node of bone) {
+      if (node.classList.contains('t-label') || node.tagName === 'LI') continue;
+      expect(node.className).toContain('in-[.ge-drillcase]:text-[color:inherit]');
+    }
+  });
+
   it('says a failed read failed', () => {
     render(<DrillDetail view={fromCoachDrillDetail(drill, null)} audience="coach" />);
 
