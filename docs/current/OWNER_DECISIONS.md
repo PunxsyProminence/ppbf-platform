@@ -20,6 +20,9 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-17-008 | 2026-11-17 | Production-database jobs move to short-lived self-hosted runners inside Azure (main branch only); a GitHub runner credential and usage-billed Azure resources are approved | PRIMARY |  | yes |
+| OD-2026-11-17-007 | 2026-11-17 | A Claude Science research session checks the new coach screens' code against the binding design rules; one findings file, no code | RECONSTRUCTED |  |  |
+| OD-2026-11-17-006 | 2026-11-17 | The next free build slot goes to the production-database timeouts lane: find the cause and fix it without loosening security; any firewall, network or credential change goes to Jason as a card first | RECONSTRUCTED |  |  |
 | OD-2026-11-17-005 | 2026-11-17 | Amateur + pro starts now beside lane YR; each lane loads when ready | PRIMARY |  |  |
 | OD-2026-11-17-004 | 2026-11-17 | Rule 6 proposals for a later app-side decision: a rest/away mark with a rated share, and no load ratio for under-18s and their parents; nothing changes now: "A: Rest/away mark + rated share (Recommended)"; "A: No ratio for under-18s; plain numbers (Recommended)" | RECONSTRUCTED |  | yes |
 | OD-2026-11-17-003 | 2026-11-17 | The D-PK19 finding is context only beside the live load-jump rule (Rule 6); one short follow-up finding on rest weeks and minors: "A: Context only (Recommended)"; "A: Yes, one short finding on both (Recommended)" | RECONSTRUCTED |  |  |
@@ -592,6 +595,98 @@ and should not try to.
 
 ---
 
+## OD-2026-11-17-008 -- Production-database jobs move to short-lived self-hosted runners inside Azure (main branch only); a GitHub runner credential and usage-billed Azure resources are approved: "A"
+
+**Provenance: PRIMARY.** Jason's typed reply "A", 2026-11-17 about 13:59 EST (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 26419, 2026-11-17T18:59:52.951Z, `origin.kind` human), checked against the file by script before writing. The question was a one-question card at line 26384 (2026-11-17T18:51:13.744Z), which he did not answer on the card (line 26393); his next message was "A". Raised by lane DBT's step-1 report (`DBT_STEP1_REPORT.md`), whose cause Overwatch checked in the run logs before asking. New; edits no earlier entry's text.
+
+**What was put to him (the card at line 26384, quoted):**
+
+> Official: Lane DBT found the cause of today's production-database timeouts (OBSERVED in 276 runs over 30 days): GitHub now runs some jobs on AWS servers, and the database firewall admits only Azure addresses. AWS-runner database jobs: 7 of 7 timed out. Azure-runner jobs: 0 of 214. The AWS share is rising (13.8% of database jobs on 11-17). A code-only fast-fail check (no security change) is approved and being built. It turns each block into a clear error in about 20 seconds, but jobs that land on AWS still need a re-run. Which structural fix, if any? Cost note: new Azure resources are usage-billed; the exact cost is UNVERIFIED.
+>
+> Plain: Some of GitHub's robots now run outside Azure, and our database only lets Azure in, so about 1 in 7 runs gets blocked and has to be retried. Do we build our own robots inside Azure, add an automatic retry for the nightly jobs, open a temporary door for each run, or just keep retrying by hand?
+>
+> Options, in the order shown:
+> 1. "A: Our own Azure runners (Recommended)": Short-lived self-hosted runners inside Azure (Container Apps jobs) for the production-database jobs only; main branch only, never PRs (the repo is public). New Azure resources and a GitHub runner-registration credential. Pros: fixes every job; a fixed address later lets us remove the 'allow all of Azure' rule, which tightens security. Cons: new resources to run and pay for; a new credential.
+> 2. "B: Nightly jobs retry themselves": Scheduled jobs (backup, session close, cleanup) get a second daily run that skips if the first one worked; their token gains read access to Actions history. Pros: no new resources; missed nights heal. Cons: production releases, migrations and loads still need a manual re-run about 1 time in 7.
+> 3. "C: Temporary door per run": Each job adds a firewall rule for its own address, then removes it. Pros: fixes every job. Cons: loosens security for those minutes; the deploy identity needs firewall-write rights; a killed job leaves the door open.
+> 4. "D: Nothing more": Keep only the fast-fail check; I re-run blocked jobs by hand. Pros: no change. Cons: manual re-runs at a rising rate; missed nightly jobs stay missed.
+
+**Jason:** *"A"* (read as the first option, "A: Our own Azure runners (Recommended)")
+
+**Ruling:**
+
+1. The production-database jobs run on short-lived self-hosted runners inside Azure (Container Apps jobs), main branch only, never pull requests (the repository is public).
+2. New usage-billed Azure resources and a GitHub runner-registration credential are approved for this. Jason creates or enters the credential himself; Claude never handles its value.
+3. The second-daily-run option (B) is not taken. The code-only fast-fail check approved by Overwatch under OD-2026-11-17-006 stays as a guard.
+
+**Not ruled here:** the design itself (lane DBT reports it to Overwatch first; resource creation and the workflow switch are later steps); removing the allow-all-Azure firewall rule once the runners have a fixed address (a separate card).
+
+**Status:** recorded 2026-11-17 by PR; lane DBT designs it.
+
+---
+
+## OD-2026-11-17-007 -- A Claude Science research session checks the new coach screens' code against the binding design rules; one findings file, no code: "B: Design check of the new coach screens"
+
+**Provenance: RECONSTRUCTED.** Jason answered this card in the Backbone Overwatch thread ("Overwatch 25"), 2026-11-17 about 12:51 US Eastern. That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answer are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `3b53f785871dd65e` when read; the note cited `c0d40dd3adcbd945`, an earlier state of this working file, which has since gained later cards). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 26015, 2026-11-17T18:02:56.730Z) he pasted the Backbone Overwatch 25 note of 2026-11-17 12:52 US Eastern asking for this record ("Record OW25-32/33 in the next records PR"; Backbone ACTIONS A-98), and pasted it again later the same day; the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The card, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-32** (header 'Parallel research')
+> Question, as shown:
+> Official: Two Claude Code build lanes are running (YR, AP), the limit under OD-2026-11-16-005, and about 2 GB of RAM is free. Claude Science research sessions here use little RAM. Which should run now, in parallel? Each is research only: one findings file, nothing built. I suggest at most two at once.
+> Plain: While the two build lanes run, which research jobs should I start here?
+>
+> Options, in the order shown:
+> 1. "A: Blind coach check of AI drafts (Recommended)": D-PK09: design a small, blinded check coaches can run on AI-drafted drill and template text: sample, blinding, rubric, who rates. L2b's 256 drafts and YR/AP's drafts load without your review (OD-2026-11-15-011). Pros: A safety net for drafts nobody reads first, including youth sparring drills. Cons: Coaches' time later to run it.
+> 2. "B: Design check of the new coach screens": Read the code of the What to score panel, the Library view and the Medical Restrictions pages, and check them against the binding design rules (55 px touch targets, 19.1 px kiosk text, colour never the only signal, unknown never shown as zero or complete). Proposals only. Pros: Catches gym-floor and tablet problems before coaches hit them. Cons: Reads code, not the running screens.
+> 3. "C: Club test-retest study design": RA-11: how PPBF could measure its own test reliability (typical error), which the load findings say change-score error needs. Pros: Makes progress numbers trustworthy later. Cons: No lane uses it yet.
+> 4. "D: None now": This thread stays on watch. Pros: No extra load. Cons: The time goes unused.
+>
+> Jason's answer: "B: Design check of the new coach screens".
+
+**Jason:** OW25-32 "B: Design check of the new coach screens"
+
+**Ruling:**
+
+A Claude Science research session reads the code of the What to score panel, the Library view and the Medical Restrictions pages and checks it against the binding design rules: one findings file, proposals only, no code (OW25-32 B; the card was multi-select and he picked B alone).
+
+---
+
+## OD-2026-11-17-006 -- The next free build slot goes to the production-database timeouts lane: find the cause and fix it without loosening security; any firewall, network or credential change goes to Jason as a card first: "B: Fix the database timeouts"
+
+**Provenance: RECONSTRUCTED.** Jason answered this card in the Backbone Overwatch thread ("Overwatch 25"), 2026-11-17 about 12:51 US Eastern. That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answer are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `3b53f785871dd65e` when read; the note cited `c0d40dd3adcbd945`, an earlier state of this working file, which has since gained later cards). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 26015, 2026-11-17T18:02:56.730Z) he pasted the Backbone Overwatch 25 note of 2026-11-17 12:52 US Eastern asking for this record ("Record OW25-32/33 in the next records PR"; Backbone ACTIONS A-98), and pasted it again later the same day; the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The card, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-33** (header 'Next build slot')
+> Question, as shown:
+> Official: When YR or AP finishes and a build slot frees, which lane goes next under the standing go?
+> - Rule 6: your proposals OW25-30 and OW25-31 (OD-2026-11-17-004) would get a brief, and you would get a card first.
+> - Production database timeouts: 5 failed connections today from GitHub Actions runners, each passing on retry (STATUS.md, REPORTED). The cause is INFERRED as the runners' traffic falling outside the database firewall's Azure-services rule.
+> - Dependabot: #1881 and #1886 (A-89).
+> - Fight-week 5/6-day sheets (OD-2026-11-16-004 ruling 2).
+> Plain: What should Claude Code build next once a lane is free?
+>
+> Options, in the order shown:
+> 1. "A: Rule 6 changes for minors (Recommended)": Brief the Rule 6 lane (no load ratio for under-18s and their parents; rest/away mark; rated share); you approve its card before it starts. Pros: Fixes a live sentence minors' families see. Cons: Needs your card first.
+> 2. "B: Fix the database timeouts": An operations lane: find why Actions runners can't always reach the production database, and fix it without loosening security. Pros: Stops failed runs that need retries. Cons: Touches database security settings; your approval needed for any change.
+> 3. "C: Dependabot updates": The two library-update PRs (A-89). Pros: Small; clears old PRs. Cons: No user-facing gain.
+> 4. "D: Fight-week 5/6-day sheets": Load the two weigh-in sheets with their beside-lines. Pros: Completes the fight-week content. Cons: Small audience until competition season.
+>
+> Jason's answer: "B: Fix the database timeouts".
+
+**Jason:** OW25-33 "B: Fix the database timeouts"
+
+**Ruling:**
+
+1. When lane YR or AP finishes and frees a build slot, the next lane under the standing go (OD-2026-11-15-010) is the production-database connection timeouts from GitHub Actions runners.
+2. Find the cause and fix it without loosening security. Any firewall, network or credential change goes to Jason as a card before it is made.
+3. After that, in order: Rule 6 (OD-2026-11-17-004; brief and card Jason), dependabot (OD-2026-11-15-009), then the 5-day and 6-day weigh-in sheets (OD-2026-11-16-004 ruling 2). At most two build lanes (OD-2026-11-16-005).
+
+**Status:** recorded 2026-11-17 by PR; lane DBT issued the same day when lane YR closed (brief `LANE_DBT_PROD_DB_TIMEOUTS_BRIEF.md`).
+
+---
+
 ## OD-2026-11-17-005 -- Amateur + pro starts now beside lane YR; each lane loads when ready: "A: Both now"
 
 **Provenance: PRIMARY.** Jason's typed reply "A: Both now", 2026-11-17 about 11:33 EST (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 25304, 2026-11-17T16:33:44.985Z, `origin.kind` human), checked against the file by script before writing. The question was a one-question card at line 25254 (2026-11-17T15:01:37.281Z), which he did not answer on the card; he asked instead "which is fastest to complete and how does it affect the others" (line 25280). Overwatch answered with estimates, labelled INFERRED from the recent lanes (A about 4 h for both, B about 4 h with youth + recreational held, C about 6 h; the cost of A: whichever lane merges second merges main and re-runs its exporter, about 30 minutes), recommended A, and asked "Which lane order?" with the buttons "A: Both now" and "C: YR first" (line 25296). New; edits no earlier entry's text.
@@ -762,6 +857,8 @@ Both are proposals for a later app-side decision on Rule 6. Nothing changes in t
 **Applied, not asked (Overwatch):** the template "The permanent circuit ... ~10 min" has a written 10 minutes, under the app's 15-minute floor. It is not blank, so it is not drafted: the duration check widens to 1-180 and the value loads as written.
 
 **Applied, 2026-11-17 (Overwatch):** ruling 1's words "from that template's own frozen content" are Overwatch's reading, not Jason's; his option B reads "Values drafted, labelled AI draft, checked by the lane's two reviewers (OD-2026-11-15-011)". Lane YR's fidelity reviewer found 3 required durations with no basis in their own records and returned CONFLICT. Overwatch settled it without changing his words: where a template's own content gives no basis, the value comes from the same source document's sheet that matches the template's contact structure and is labelled UNVERIFIED (not INFERRED), its sources naming the exact sheets and any contrary values. Difficulty follows the Backbone's written convention (the lowest stage served).
+
+**Applied, 2026-11-17, second note (Overwatch):** lane AP's fidelity reviewer found DOC-072 Workout_Map pad rounds (2:00, W-S10-007) that speak directly to the five DOC-023 mitt templates, whose own documents state no mitt round length. The order of basis gains a third step: (1) the template's own content; (2) the same source document's matching sheet; (3) where neither speaks to the activity, Jason's owner system (DOC-072, DOC-027) where it addresses the same activity directly, as it leads by source order (OWNER_DECISIONS section 3). Values from (2) or (3) are labelled UNVERIFIED with their sources and contrary values. Difficulty takes the value the written templates of the same lowest stage carry, else the nearest written stage below, with no name exception.
 
 **Not ruled here:** required fields other than these four; reach to later lanes (its plain principle reaches the amateur + pro lane's templates: apply, do not ask again).
 
