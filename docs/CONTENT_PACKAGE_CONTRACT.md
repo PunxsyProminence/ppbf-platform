@@ -767,7 +767,7 @@ One row = one protocol. Identity: protocol_id.
 | evidence_class |  | text | Strength of the evidence behind it. Blank means not stated; stored blank (CAT ruling Q1). |
 | boxing_specific |  | text | Whether it was developed in boxing. Blank means not stated; stored blank (CAT ruling Q1). |
 | minimal_detectable_change |  | number | Smallest change that is not measurement error. Blank means unknown until PPBF's reliability study supplies it. |
-| human_authority_required |  | true or false | A qualified person must administer or interpret it. Blank means true. |
+| human_authority_required |  | true or false | A qualified person must administer or interpret it. The backbone does not state it per protocol: its protocols load true, labelled INFERRED in field_labels (backbone RULES section 1, AI informs and humans decide). Blank means true. |
 | protocol_group |  | text | The backbone group the protocol belongs to (e.g. Physical test battery). |
 | status |  | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
 | sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |

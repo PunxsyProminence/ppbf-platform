@@ -66,7 +66,12 @@ export const assessmentProtocolsFile: FileSpec = {
     number('minimal_detectable_change', 'Smallest change that is not measurement error.', {
       blankMeans: 'unknown until PPBF\'s reliability study supplies it',
     }),
-    bool('human_authority_required', 'A qualified person must administer or interpret it.', { blankDefault: 'true' }),
+    bool(
+      'human_authority_required',
+      'A qualified person must administer or interpret it. The backbone does not state it per protocol: its protocols load '
+      + 'true, labelled INFERRED in field_labels (backbone RULES section 1, AI informs and humans decide).',
+      { blankDefault: 'true' },
+    ),
     text('protocol_group', 'The backbone group the protocol belongs to (e.g. Physical test battery).', { label: true }),
     vocabulary('status', 'record_status', 'The record status (backbone RULES section 10).'),
     { name: 'sources', role: 'content', type: 'text', list: '|', label: true, description: 'Source keys, separated by |.' },
