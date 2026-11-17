@@ -300,6 +300,12 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // pilot.shadow_medical_administrative_status, which shadow-decision-loop
     // creates. Applied first, a rebuild dies on ALTER against a missing table.
     expect(at('medical-clearance-expiry')).toBeGreaterThan(at('shadow-decision-loop'));
+    // assessment-catalog keys its gates to pilot.pathway_stages, reuses the
+    // pathway catalog's no-delete trigger function (pathway-catalog), and adds
+    // columns to pilot.assessment_protocols (assessment-protocols).
+    for (const prerequisite of ['pathway-catalog', 'assessment-protocols', 'multiorg']) {
+      expect(at('assessment-catalog')).toBeGreaterThan(at(prerequisite));
+    }
     // film-study-coach-reported widens shadow_film_study_proposals -- adding
     // origin, the reporter, the correction column and the 'corrected' verdict
     // -- against the table film-study-proposals creates.
