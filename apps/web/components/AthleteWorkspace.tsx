@@ -2852,7 +2852,9 @@ export default function AthleteWorkspace() {
             first. */}
         {activeTab !== 'my-dashboard' && <TrainingHoldBanner />}
         {/* A USA Boxing medical restriction in force (lane P22c, OW25-06 A),
-            beside the hold in both places; renders nothing otherwise. */}
+            beside the hold in both places; one neutral "could not be checked"
+            line when the read fails (OD-2026-11-17-009 ruling 3); nothing
+            otherwise. */}
         {activeTab !== 'my-dashboard' && <MedicalRestrictionNotice />}
 
         {/* MY CORNER: the day's actions -- check in, report pain, coach work,

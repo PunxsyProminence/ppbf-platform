@@ -10,6 +10,7 @@ import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDay, gymDayIso } from '@/src/lib/gymTime';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
+import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
 
 /*
  * Coach floor entry for sparring exposure: what the coach SAW during one
@@ -39,6 +40,11 @@ import ClusterNav from '@/components/ClusterNav';
  * said as such -- never as "no cap". The "Recent sparring" section stays
  * counts only.
  */
+
+/** 19.1 px for text the kiosk type floor does not reach (bare text, unlayered .alert-* sizes). */
+const KIOSK_TEXT = { fontSize: 'var(--t-md)' } as const;
+/** .alert-title's `font` shorthand also sets line-height 1, which crowds a wrapped 19.1 px title. */
+const KIOSK_TITLE = { fontSize: 'var(--t-md)', lineHeight: 1.25 } as const;
 
 const SPARRING_TYPES = [
   ['technical', 'Technical'],
@@ -156,7 +162,9 @@ export default function CoachSparringExposurePage() {
   const [recentState, setRecentState] = useState<'idle' | 'loading' | 'loaded' | 'unavailable'>('idle');
   const [form, setForm] = useState({ ...EMPTY_FORM, sessionDate: gymDayIso() ?? '' });
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  // `restricted`: the save was refused by the USA Boxing medical restriction
+  // gate (403, code MEDICAL_RESTRICTION), shown with the Restricted mark.
+  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string; restricted?: boolean } | null>(null);
   /** The cap check the route returned with the last save: warnings, or why none could be given. */
   const [savedCheck, setSavedCheck] = useState<CapCheck | 'unreadable' | null>(null);
   /** USA Boxing medical restriction note the route returned with the last save (P22b, Q8). */
@@ -248,8 +256,12 @@ export default function CoachSparringExposurePage() {
         body: JSON.stringify(body),
       });
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        setMessage({ kind: 'error', text: payload.error ?? 'Not saved. Try again.' });
+        const payload = (await response.json().catch(() => ({}))) as { error?: string; code?: string };
+        setMessage({
+          kind: 'error',
+          text: payload.error ?? 'Not saved. Try again.',
+          restricted: response.status === 403 && payload.code === 'MEDICAL_RESTRICTION',
+        });
         return;
       }
       setMessage({ kind: 'ok', text: 'Saved.' });
@@ -463,12 +475,23 @@ export default function CoachSparringExposurePage() {
             <button type="submit" disabled={!ready || saving} className="btn disabled:cursor-not-allowed disabled:opacity-60">
               {saving ? 'Saving…' : 'Save segment'}
             </button>
-            {message && (
+            {/* Gym-floor size (OD-2026-11-17-009 ruling 4): the save message and
+                the restriction note are bare text or unlayered .alert-* sizes
+                the kiosk type floor does not reach, so they are sized inline.
+                A refusal by the medical restriction gate carries the
+                Restricted mark, never the medical-stop mark (ruling 5). */}
+            {message && (message.restricted ? (
+              <div role="alert" data-testid="spar-medical-refusal" className="flex flex-col items-start gap-[var(--s2)]">
+                <RestrictedMark />
+                <p className="text-[var(--restricted-ink)]" style={KIOSK_TEXT}>{message.text}</p>
+              </div>
+            ) : (
               <p role={message.kind === 'error' ? 'alert' : 'status'}
-                className={message.kind === 'error' ? 'text-[var(--restricted-ink)]' : undefined}>
+                className={message.kind === 'error' ? 'text-[var(--restricted-ink)]' : undefined}
+                style={KIOSK_TEXT}>
                 {message.text}
               </p>
-            )}
+            ))}
             {/* P22b (Q8): a segment below sparring for a restricted member
                 saved; say why sparring is held back. A refused one arrives as
                 the error message above, with the same words. */}
@@ -476,8 +499,8 @@ export default function CoachSparringExposurePage() {
               <div className="alert alert--warning" role="status" data-testid="spar-medical-restriction">
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
-                  <p className="alert-title">Medical restriction on file</p>
-                  <p className="alert-msg">{restrictionNote}</p>
+                  <p className="alert-title" style={KIOSK_TITLE}>Restricted: medical restriction on file</p>
+                  <p className="alert-msg" style={KIOSK_TEXT}>{restrictionNote}</p>
                 </div>
               </div>
             )}

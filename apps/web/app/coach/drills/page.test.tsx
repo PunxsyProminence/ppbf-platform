@@ -449,6 +449,51 @@ it('shows reference drills separately from the operational drills assignments po
   expect(screen.getByText('Coach authorization required')).toBeInTheDocument();
 });
 
+// P5 (OD-2026-11-17-009, OW25-34 A): --locked means a medical stop and nothing
+// else. A form error, a load error and "Coach authorization required" are
+// neutral ink with the caution triangle and words.
+it('never paints with the medical-stop token; authorization reads as ▲ and words', async () => {
+  const fs = jest.requireActual('node:fs') as typeof import('node:fs');
+  const path = jest.requireActual('node:path') as typeof import('node:path');
+  const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+  expect(source).not.toMatch(/--locked/);
+  // P3: nothing on the page asks for less than the kiosk text floor.
+  expect(source).not.toMatch(/var\(--t-(sm|xs)\)/);
+
+  global.fetch = routes() as unknown as typeof fetch;
+  render(<CoachDrillLibraryPage />);
+  const words = await screen.findByText('Coach authorization required');
+  const line = words.parentElement!;
+  expect(line.textContent).toBe('▲ Coach authorization required');
+  expect(line.querySelector('[aria-hidden="true"]')?.textContent).toBe('▲');
+  expect(line.className).not.toMatch(/locked/);
+  // On the parchment card only .t-body takes the card's dark ink; a bone colour there is unreadable.
+  expect(line.className).toContain('t-body');
+  expect(line.className).not.toMatch(/bone-/);
+});
+
+it('reference load errors are neutral ink with ▲ and words, never the restricted orange (P5)', async () => {
+  const fs = jest.requireActual('node:fs') as typeof import('node:fs');
+  const path = jest.requireActual('node:path') as typeof import('node:path');
+  const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+  for (const name of ['promoteError', 'referenceLoadError', 'waitingError', 'loadError', 'formError']) {
+    const line = source.split('\n').find((text) => text.includes(`<span>{${name}}</span>`));
+    expect(line ? name : `${name}: no ▲ line`).toBe(name);
+    expect(line).toContain('<span aria-hidden="true">▲</span>');
+    expect(line).not.toMatch(/restricted/);
+  }
+  expect(screen.queryByText('nothing')).toBeNull();
+});
+
+it('every text control wears the kiosk size, so it reaches 55px on the gym floor (P3)', async () => {
+  global.fetch = routes() as unknown as typeof fetch;
+  render(<CoachDrillLibraryPage />);
+  await screen.findByText('Seeded jab return');
+  const controls = document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]), select, textarea');
+  expect(controls.length).toBeGreaterThan(0);
+  for (const control of controls) expect(control.className).toContain('input--kiosk');
+});
+
 it('keeps drill creation on the operational drills endpoint', async () => {
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -2481,9 +2526,12 @@ describe('What to score (OD-2026-11-16-003 ruling 1; lane CAT-d)', () => {
   it('shows the two lists side by side, each in its own order with its own scoring line, drafts marked', async () => {
     global.fetch = withKpis(() => jsonResponse({ lists: KPI_LISTS }));
     render(<CoachDrillLibraryPage />);
-    const panel = await screen.findByRole('region', { name: 'What to score' });
-    const drill = within(panel).getByRole('article', { name: 'Core Drill KPIs Worth Scoring' });
+    const drill = await screen.findByRole('article', { name: 'Core Drill KPIs Worth Scoring' });
+    const panel = screen.getByRole('region', { name: 'What to score' });
+    expect(panel).toContainElement(drill);
     const room = within(panel).getByRole('article', { name: 'Core Behavioral KPIs' });
+    // Once read, the loading line is gone.
+    expect(within(panel).queryByText('Loading what to score…')).not.toBeInTheDocument();
     expect(within(drill).getByText('Clean exits.')).toBeInTheDocument();
     expect(within(drill).getAllByText(/DRAFT, FOR COACH REVIEW/)).toHaveLength(2);
     expect(within(drill).getByText('Use simple counts, yes-no marks, or three-level ratings when possible.')).toBeInTheDocument();
@@ -2499,6 +2547,21 @@ describe('What to score (OD-2026-11-16-003 ruling 1; lane CAT-d)', () => {
     render(<CoachDrillLibraryPage />);
     expect(await screen.findByText('The KPI lists could not be loaded.')).toBeInTheDocument();
     expect(await screen.findByText('Seeded jab return')).toBeInTheDocument();
+  });
+
+  // P7 (OD-2026-11-17-009, OW25-34 A): while the lists are being read the panel
+  // says so, instead of showing nothing and then appearing.
+  it('says it is loading while the lists are being read', async () => {
+    let answer: (response: Response) => void = () => {};
+    global.fetch = withKpis(() => new Promise<Response>((resolve) => { answer = resolve; }) as unknown as Response);
+    render(<CoachDrillLibraryPage />);
+    const panel = await screen.findByRole('region', { name: 'What to score' });
+    expect(within(panel).getByRole('status')).toHaveTextContent('Loading what to score…');
+    await act(async () => {
+      answer(jsonResponse({ lists: KPI_LISTS }));
+    });
+    expect(await screen.findByRole('article', { name: 'Core Behavioral KPIs' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading what to score…')).not.toBeInTheDocument();
   });
 
   it('says so when the lists cannot be loaded, and the drill library still loads', async () => {

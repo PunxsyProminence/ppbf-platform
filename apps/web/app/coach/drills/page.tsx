@@ -198,9 +198,9 @@ function ReferenceActions({
           value={restoreCues}
           onChange={(event) => onRestoreCuesChange(event.target.value)}
           rows={3}
-          className="input"
+          className="input input--kiosk"
         />
-        <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+        <p className="t-body">
           This drill has no coaching cue, and a technique drill needs at least one before it can be used. Add one, then press Restore.
         </p>
       </div>
@@ -234,7 +234,7 @@ function ReferenceActions({
     ? (
       <div className="basis-full space-y-[var(--s2)]">
         <p className="t-label text-[color:var(--restricted-ink)]">Not ready to adopt</p>
-        <ul className="list-disc space-y-[var(--s1)] pl-[var(--s5)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+        <ul className="list-disc space-y-[var(--s1)] pl-[var(--s5)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
           {readiness.missing.map((item) => <li key={item}>{item}</li>)}
         </ul>
         {markControl}
@@ -275,7 +275,7 @@ function ReferenceActions({
           {changingLifecycle ? 'Saving…' : 'Restore'}
         </button>
         {restoreCueField}
-        <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_RESTORE_CONSEQUENCE}</p>
+        <p className="t-body basis-full">{NEWER_VERSION_RESTORE_CONSEQUENCE}</p>
       </>
     );
   }
@@ -307,7 +307,7 @@ function ReferenceActions({
         >
           {promotingReferenceId === referenceDrillId ? 'Updating...' : 'Update to newer version'}
         </button>
-        <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NEWER_VERSION_EXPLANATION}</p>
+        <p className="t-body basis-full">{NEWER_VERSION_EXPLANATION}</p>
       </>
     );
   }
@@ -343,7 +343,7 @@ function ReferenceActions({
         {restoring && restoreCueField}
         {/* What the action does, before it is taken -- no confirmation step,
             which would be ceremony: both actions are undone by the other. */}
-        <p className="basis-full text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+        <p className="t-body basis-full">
           {restoring
             ? 'Restoring brings back this same drill: coaches can assign it again, and athletes can read it in Learn.'
             : withdrawn
@@ -395,7 +395,15 @@ function WhatToScorePanel() {
       </section>
     );
   }
-  if (lists === null || lists.length === 0) return null;
+  if (lists === null) {
+    return (
+      <section aria-label="What to score" className="mt-[var(--s6)]">
+        <h2 className="t-command text-[length:var(--t-lg)]">What to score</h2>
+        <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]" role="status">Loading what to score…</p>
+      </section>
+    );
+  }
+  if (lists.length === 0) return null;
 
   return (
     <section aria-label="What to score" className="mt-[var(--s6)]">
@@ -420,7 +428,7 @@ function WhatToScorePanel() {
                     <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>DRAFT, FOR COACH REVIEW</span>
                   )}
                   {kpi.levelAnchors && (
-                    <ul className="mt-[var(--s2)] grid gap-[var(--s1)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    <ul className="mt-[var(--s2)] grid gap-[var(--s1)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                       {Object.entries(kpi.levelAnchors)
                         .sort(([a], [b]) => Number(a) - Number(b))
                         .map(([level, wording]) => (
@@ -432,7 +440,7 @@ function WhatToScorePanel() {
               ))}
             </ol>
             {list.scoringRuleText && (
-              <p className="t-body mt-[var(--s4)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{list.scoringRuleText}</p>
+              <p className="t-body mt-[var(--s4)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">{list.scoringRuleText}</p>
             )}
           </article>
         ))}
@@ -991,7 +999,7 @@ function CoachDrillLibrary() {
   }
 
   return (
-    <main className="ge-drillcase room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
+    <main className="ge-drillcase room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">
       <div className="mx-auto max-w-5xl">
         <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
           <p className="t-eyebrow">Coach</p>
@@ -1020,7 +1028,7 @@ function CoachDrillLibrary() {
                 id="drill-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="input"
+                className="input input--kiosk"
                 placeholder="Straight jab retraction"
               />
             </div>
@@ -1030,7 +1038,7 @@ function CoachDrillLibrary() {
                 id="drill-category"
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
-                className="input"
+                className="input input--kiosk"
                 placeholder="Striking"
               />
             </div>
@@ -1043,7 +1051,7 @@ function CoachDrillLibrary() {
               value={focus}
               onChange={(event) => setFocus(event.target.value)}
               rows={2}
-              className="textarea"
+              className="textarea input--kiosk"
               placeholder="Quick fist return to protect the chin after the jab."
             />
           </div>
@@ -1058,7 +1066,7 @@ function CoachDrillLibrary() {
                 value={cues}
                 onChange={(event) => setCues(event.target.value)}
                 rows={4}
-                className="textarea font-mono"
+                className="textarea input--kiosk font-mono"
                 placeholder={'Elbow tucked\nShoulder covers chin\nSnap the fist back'}
               />
             </div>
@@ -1068,7 +1076,7 @@ function CoachDrillLibrary() {
                 id="drill-difficulty"
                 value={difficulty}
                 onChange={(event) => setDifficulty(event.target.value)}
-                className="select"
+                className="select input--kiosk"
               >
                 {DIFFICULTIES.map((level) => (
                   <option key={level} value={level}>{level}</option>
@@ -1078,12 +1086,12 @@ function CoachDrillLibrary() {
           </div>
 
           {formError && (
-            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
-              {formError}
+            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
+              <span aria-hidden="true">▲</span> <span>{formError}</span>
             </p>
           )}
           {saved && (
-            <p className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--cleared)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--cleared-ink)]">
+            <p className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--cleared)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[var(--cleared-ink)]">
               ✓ {saved}
             </p>
           )}
@@ -1112,8 +1120,8 @@ function CoachDrillLibrary() {
           )}
 
           {promoteError && (
-            <div role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{promoteError}</p>
+            <div role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> <span>{promoteError}</span></p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 {OUTCOME_EXPLANATIONS[actionOutcome]}
               </p>
@@ -1123,8 +1131,8 @@ function CoachDrillLibrary() {
           {referenceLoading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading reference drills...</p>}
 
           {!referenceLoading && referenceLoadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{referenceLoadError}</p>
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> <span>{referenceLoadError}</span></p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty reference library.
               </p>
@@ -1190,7 +1198,7 @@ function CoachDrillLibrary() {
                     type="search"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    className="input"
+                    className="input input--kiosk"
                     autoComplete="off"
                   />
                 </div>
@@ -1201,7 +1209,7 @@ function CoachDrillLibrary() {
                       id={`reference-filter-${spec.key}`}
                       value={filters[spec.key]}
                       onChange={(event) => setFilters((prev) => ({ ...prev, [spec.key]: event.target.value }))}
-                      className="select"
+                      className="select input--kiosk"
                     >
                       <option value="">Any</option>
                       {filterOptions(spec).map((value) => (
@@ -1244,7 +1252,7 @@ function CoachDrillLibrary() {
               <article key={drill.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                 <div className="flex items-baseline justify-between gap-[var(--s3)]">
                   <h3 className="t-command text-[length:var(--t-md)]">{drill.name}</h3>
-                  <span className="plaque">{drill.difficulty}</span>
+                  <span className="plaque"><span className="in-data-[surface=kiosk]:text-[length:var(--t-md)]">{drill.difficulty}</span></span>
                 </div>
                 <p className="t-label mt-[var(--s2)]">{drill.discipline} · {drill.category}</p>
                 <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{drill.purpose}</p>
@@ -1256,9 +1264,10 @@ function CoachDrillLibrary() {
                     <span className="font-semibold text-[color:var(--bone-200)]">Equipment:</span> {equipmentLabel(drill.equipment_needed)}
                   </p>
                 )}
+                {/* .t-body: the parchment card's dark ink (golden-era .mat-leather--raised .t-body) and the kiosk size. */}
                 {drill.requires_coach_authorization && (
-                  <p className="mt-[var(--s3)] text-[length:var(--t-xs)] font-semibold text-[var(--locked-ink)]">
-                    Coach authorization required
+                  <p className="t-body mt-[var(--s3)] font-semibold">
+                    <span aria-hidden="true">▲</span> <span>Coach authorization required</span>
                   </p>
                 )}
                 <div className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
@@ -1293,8 +1302,8 @@ function CoachDrillLibrary() {
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
           {!loading && loadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">{loadError}</p>
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> <span>{loadError}</span></p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty library.
               </p>
@@ -1302,7 +1311,7 @@ function CoachDrillLibrary() {
           )}
 
           <h3 className="t-command mt-[var(--s4)] text-[length:var(--t-md)]">Proposals waiting</h3>
-          {waitingError && <p className="t-body mt-[var(--s2)] text-[color:var(--restricted-ink)]">{waitingError}</p>}
+          {waitingError && <p className="t-body mt-[var(--s2)] text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> <span>{waitingError}</span></p>}
           {!waitingError && waiting.length === 0 && (
             <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">No proposed changes are waiting for review.</p>
           )}
@@ -1356,7 +1365,7 @@ function CoachDrillLibrary() {
               <article key={drill.drill_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                 <div className="flex items-baseline justify-between gap-[var(--s3)]">
                   <h3 className="t-command text-[length:var(--t-md)]">{drill.name}</h3>
-                  <span className="plaque">{drill.difficulty}</span>
+                  <span className="plaque"><span className="in-data-[surface=kiosk]:text-[length:var(--t-md)]">{drill.difficulty}</span></span>
                 </div>
                 <p className="t-label mt-[var(--s2)]">
                   {drill.category} · {drill.reference_drill_id ? 'From the reference library' : 'Written by this gym'}
@@ -1380,7 +1389,7 @@ function CoachDrillLibrary() {
                 {drill.cues.length > 0 && (
                   <ul className="mt-[var(--s3)] flex flex-wrap gap-[var(--s2)]">
                     {drill.cues.map((cue) => (
-                      <li key={`${drill.drill_id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                      <li key={`${drill.drill_id}-${cue}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                         {cue}
                       </li>
                     ))}

@@ -221,17 +221,23 @@ export async function GET(request: NextRequest) {
              source, loss of consciousness, note, incident or LBC date. null
              when nothing blocks today (lifted, voided, not yet started). Read
              only for the children guardianAthleteIds returned above: this
-             gym, a live record, the link not ended at 18. A failed read shows
-             nothing for this child rather than taking the hold and waivers
-             down with it (Overwatch, P22c: render nothing on a read failure);
-             the save gate refuses sparring on the server regardless. */
-          familyMedicalRestriction(principal.organizationId, athleteId).catch((error: unknown) => {
-            console.warn('[parent/safety] medical restriction read failed', {
-              name: (error as { name?: unknown } | null)?.name,
-              code: (error as { code?: unknown } | null)?.code,
-            });
-            return null;
-          }),
+             gym, a live record, the link not ended at 18. A failed read does
+             not take the hold and waivers down with it. It is sent as
+             `medical_restriction: null` plus `medical_restriction_unread:
+             true` -- one boolean, nothing about any record -- so the Safety
+             page shows the neutral "could not be checked" line instead of
+             reading as none (OD-2026-11-17-009 ruling 3, Jason's card OW25-35
+             A). The save gate refuses sparring on the server regardless. */
+          familyMedicalRestriction(principal.organizationId, athleteId).then(
+            (value) => ({ value, unread: false }),
+            (error: unknown) => {
+              console.warn('[parent/safety] medical restriction read failed', {
+                name: (error as { name?: unknown } | null)?.name,
+                code: (error as { code?: unknown } | null)?.code,
+              });
+              return { value: null, unread: true };
+            },
+          ),
         ]);
 
         return {
@@ -246,7 +252,9 @@ export async function GET(request: NextRequest) {
             evaluated_at: gate.evaluated_at,
           })),
           waivers,
-          medical_restriction: medicalRestriction,
+          medical_restriction: medicalRestriction.value,
+          // Only on a failed read; absent on a good read, including "none".
+          ...(medicalRestriction.unread ? { medical_restriction_unread: true as const } : {}),
         };
       }),
     );

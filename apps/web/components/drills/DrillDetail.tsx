@@ -27,14 +27,27 @@ import type { DrillDetailView, DrillStopRuleView } from './drillDetailView';
 // the caller passes in.
 
 const SECTION = 'space-y-[var(--s2)]';
-const BODY = 'text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]';
+// On a gym-floor (kiosk) page -- /coach/drills (OD-2026-11-17-009 ruling 4) and
+// the athlete pages -- text rises to the 19.1px kiosk floor and expanders to the
+// 55px tap floor; desk pages that mount this keep their sizes. `in-data-` is
+// Tailwind's ancestor variant: `:where([data-surface="kiosk"]) &`.
+const KIOSK_TEXT = 'in-data-[surface=kiosk]:text-[length:var(--t-md)]';
+// On /coach/drills this card is light parchment (golden-era `.ge-drillcase
+// .mat-leather--raised`, flat background #E3CFAE). The bone inks are for dark
+// leather: --bone-300 #DCCFB2 reads at 1.01:1 there and --bone-200 #EFE6D0 at
+// 1.22:1, and the source link's --brass-300 #D6B063 at about 1.35:1. Inside
+// .ge-drillcase this text inherits the card's own ink (#3A2E1D: 8.69:1 on the
+// card, about 5.6:1 inside an expander's 20% black wash); every other page is
+// unchanged. OD-2026-11-17-009 rulings 1 and 4 (OW25-34 A, OW25-37 A).
+const CARD_INK = 'in-[.ge-drillcase]:text-[color:inherit]';
+const BODY = `text-[length:var(--t-sm)] ${KIOSK_TEXT} leading-relaxed text-[color:var(--bone-300)] ${CARD_INK}`;
 const LIST = `${BODY} list-disc space-y-[var(--s1)] pl-[var(--s5)]`;
 const EXPANDER = 'rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.2)] px-[var(--s3)] py-[var(--s2)]';
 // The summary is the tap target, so it carries the 44px floor itself; padding
 // on the <details> alone left an ~11px target. It keeps its default display
 // (list-item) on purpose: that is what draws the open/closed disclosure marker,
 // and without it an expander reads as a plain label.
-const EXPANDER_SUMMARY = 't-label min-h-[44px] cursor-pointer py-[var(--s3)]';
+const EXPANDER_SUMMARY = 't-label min-h-[44px] in-data-[surface=kiosk]:min-h-[var(--tap)] cursor-pointer py-[var(--s3)]';
 
 export interface DrillDetailProps {
   view: DrillDetailView;
@@ -91,7 +104,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
       <header className="space-y-[var(--s2)]">
         <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
           <h2 id={headingId} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">{view.name}</h2>
-          {view.coach && <span className="plaque">{view.coach.difficulty}</span>}
+          {view.coach && <span className="plaque"><span className={KIOSK_TEXT}>{view.coach.difficulty}</span></span>}
         </div>
         {view.coach && (
           <p className="t-label">{view.coach.discipline} · {view.coach.category}</p>
@@ -106,10 +119,10 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
       <section aria-label="Safety" className={`${SECTION} rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]`}>
         <h3 className="t-label">Safety</h3>
         <p className={BODY}>
-          <span className="font-semibold text-[color:var(--bone-200)]">Contact:</span> {humanizeContactLevel(view.contactLevel)}
+          <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Contact:</span> {humanizeContactLevel(view.contactLevel)}
         </p>
         <p className={BODY}>
-          <span className="font-semibold text-[color:var(--bone-200)]">Coach authorization:</span>{' '}
+          <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Coach authorization:</span>{' '}
           {view.requiresCoachAuthorization
             ? 'Required. Only run this drill with a coach who has approved it.'
             : 'Not required.'}
@@ -200,7 +213,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
             {view.cues.map((cue) => (
               <li
                 key={`${view.id}-cue-${cue}`}
-                className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]"
+                className={`rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] ${KIOSK_TEXT} text-[color:var(--bone-300)] ${CARD_INK}`}
               >
                 {cue}
               </li>
@@ -247,12 +260,12 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
                   {level.demand && <p className={BODY}>{level.demand}</p>}
                   {level.constraint && (
                     <p className={BODY}>
-                      <span className="font-semibold text-[color:var(--bone-200)]">Constraint:</span> {level.constraint}
+                      <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Constraint:</span> {level.constraint}
                     </p>
                   )}
                   {audience === 'coach' && level.watchPoint && (
                     <p className={BODY}>
-                      <span className="font-semibold text-[color:var(--bone-200)]">Watch for:</span> {level.watchPoint}
+                      <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Watch for:</span> {level.watchPoint}
                     </p>
                   )}
                 </div>
@@ -270,7 +283,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
 function StopRuleList({ heading, rules }: { heading: string; rules: DrillStopRuleView[] }) {
   return (
     <div className="space-y-[var(--s1)]">
-      <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-200)]">{heading}</p>
+      <p className={`text-[length:var(--t-sm)] ${KIOSK_TEXT} font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]`}>{heading}</p>
       <ol className={`${BODY} list-decimal space-y-[var(--s1)] pl-[var(--s5)]`}>
         {/* Keyed by origin as well: the readiness list can hold a drill rule
             and a stored-once rule at the same ordinal. */}
@@ -311,7 +324,7 @@ function CoachContext({ view }: { view: DrillDetailView }) {
           <div className="mt-[var(--s2)] space-y-[var(--s2)]">
             {showTarget && (
               <p className={BODY}>
-                <span className="font-semibold text-[color:var(--bone-200)]">Target behaviour:</span> {coach.targetBehavior}
+                <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Target behaviour:</span> {coach.targetBehavior}
               </p>
             )}
             {transfer.length > 0 && (
@@ -329,20 +342,20 @@ function CoachContext({ view }: { view: DrillDetailView }) {
       <details className={EXPANDER}>
         <summary className={EXPANDER_SUMMARY}>Source and version</summary>
         <dl className={`${BODY} mt-[var(--s2)] grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[var(--s3)] gap-y-[var(--s1)] [overflow-wrap:anywhere]`}>
-          <dt className="font-semibold text-[color:var(--bone-200)]">Content status</dt>
+          <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Content status</dt>
           <dd>{coach.fieldProvenance || 'Not recorded'}</dd>
-          <dt className="font-semibold text-[color:var(--bone-200)]">Content class</dt>
+          <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Content class</dt>
           <dd>{coach.contentClass || 'Not recorded'}</dd>
-          <dt className="font-semibold text-[color:var(--bone-200)]">Source</dt>
+          <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Source</dt>
           <dd>{coach.sourceRef || 'Not recorded'}</dd>
-          <dt className="font-semibold text-[color:var(--bone-200)]">Version</dt>
+          <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Version</dt>
           <dd>
             {coach.version}
             {coach.supersedesDrillId ? ' (replaces an earlier version)' : ''}
             {coach.supersededAt ? ' · superseded by a newer version' : ''}
             {!coach.active && !coach.supersededAt ? ' · retracted' : ''}
           </dd>
-          <dt className="font-semibold text-[color:var(--bone-200)]">Skill</dt>
+          <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Skill</dt>
           <dd>
             {coach.skillId || 'Not recorded'}
             {coach.secondarySkills.length > 0 ? ` (also ${coach.secondarySkills.join(', ')})` : ''}
@@ -420,43 +433,43 @@ function CitedClaim({ claimId, entry, loaded }: { claimId: string; entry: Ground
         {claimId}: {r.sourceTitle ?? 'research claim'}
       </summary>
       <dl className={`${BODY} mt-[var(--s2)] grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[var(--s3)] gap-y-[var(--s1)] [overflow-wrap:anywhere]`}>
-        <dt className="font-semibold text-[color:var(--bone-200)]">Claim</dt>
+        <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Claim</dt>
         <dd>{r.claim}</dd>
         {r.ppbfImplication && (
           <>
-            <dt className="font-semibold text-[color:var(--bone-200)]">PPBF implication</dt>
+            <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">PPBF implication</dt>
             <dd>{r.ppbfImplication}</dd>
           </>
         )}
-        <dt className="font-semibold text-[color:var(--bone-200)]">Who was studied</dt>
+        <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Who was studied</dt>
         <dd>{studied}</dd>
         {design && (
           <>
-            <dt className="font-semibold text-[color:var(--bone-200)]">Design</dt>
+            <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Design</dt>
             <dd>{design}</dd>
           </>
         )}
         {r.effect && (
           <>
-            <dt className="font-semibold text-[color:var(--bone-200)]">Effect</dt>
+            <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Effect</dt>
             <dd>{r.effect}</dd>
           </>
         )}
-        <dt className="font-semibold text-[color:var(--bone-200)]">Limitations</dt>
+        <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Limitations</dt>
         <dd>{r.limitations ?? 'Not recorded'}</dd>
         {(r.transferStatus || r.boxingSpecificity) && (
           <>
-            <dt className="font-semibold text-[color:var(--bone-200)]">Applies to boxing</dt>
+            <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Applies to boxing</dt>
             <dd>{[r.boxingSpecificity, r.transferStatus].filter(Boolean).join(' · ')}</dd>
           </>
         )}
         {strength && (
           <>
-            <dt className="font-semibold text-[color:var(--bone-200)]">Research program class</dt>
+            <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Research program class</dt>
             <dd>{strength}</dd>
           </>
         )}
-        <dt className="font-semibold text-[color:var(--bone-200)]">Source</dt>
+        <dt className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Source</dt>
         <dd>
           {source || 'Not recorded'}
           {r.doiOrPmid ? ` (${r.doiOrPmid})` : ''}
@@ -468,7 +481,7 @@ function CitedClaim({ claimId, entry, loaded }: { claimId: string; entry: Ground
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`Open the source for ${claimId}`}
-                className="underline"
+                className="underline in-[.ge-drillcase]:text-[color:inherit]"
               >
                 Open the source
               </a>

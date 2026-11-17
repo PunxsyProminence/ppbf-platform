@@ -14,7 +14,7 @@
  *   4. A refused save shows the route's own reason and is not reported as saved.
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import CoachSparringExposurePage, { CONTACT_STAGES } from './page';
@@ -357,6 +357,59 @@ describe('coach sparring record screen', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
     });
     expect(screen.getByTestId('spar-medical-restriction').textContent).toContain(message);
+    const title = screen.getByText('Restricted: medical restriction on file');
+    expect(title.getAttribute('style')).toContain('font-size: var(--t-md)');
+    expect(screen.getByText(message).getAttribute('style')).toContain('font-size: var(--t-md)');
+  });
+
+  // OD-2026-11-17-009 ruling 5 (OW25-38 A): a refusal by the medical
+  // restriction gate carries the Restricted mark, never the medical-stop mark.
+  test('a save refused by the medical restriction gate shows the Restricted mark and the server\'s words', async () => {
+    const refusal = 'Not saved: A USA Boxing medical restriction is on file for this member. No sparring until 12/1/2026 has passed. Training below sparring still saves.';
+    installFetch();
+    const base = global.fetch as jest.Mock;
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/api/pilot/coach/sparring-exposure') && init?.method === 'POST') {
+        return { ok: false, status: 403, json: async () => ({ error: refusal, code: 'MEDICAL_RESTRICTION' }) } as Response;
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    await act(async () => {
+      render(<CoachSparringExposurePage />);
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+    });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toBe(`▲Restricted${refusal}`);
+    const mark = within(alert).getByTestId('restricted-mark');
+    expect(mark.className).toBe('badge badge--restricted');
+    expect(alert.outerHTML).not.toMatch(/locked|✕/);
+    expect(within(alert).getByText(refusal).getAttribute('style')).toContain('font-size: var(--t-md)');
+  });
+
+  test('a 403 without the MEDICAL_RESTRICTION code carries no Restricted mark', async () => {
+    await renderAndPick({ postStatus: 403, postError: 'Forbidden: athlete is not on your roster' });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.getByRole('alert').textContent).toBe('Forbidden: athlete is not on your roster');
+    expect(screen.queryByTestId('restricted-mark')).toBeNull();
+  });
+
+  test('any other refusal carries no Restricted mark, at the kiosk text size', async () => {
+    await renderAndPick({ postStatus: 400, postError: 'Unsupported session_date: cannot be after today' });
+    fillRequired();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save segment' }));
+    });
+    expect(screen.queryByTestId('restricted-mark')).toBeNull();
+    expect(screen.getByRole('alert').getAttribute('style')).toContain('font-size: var(--t-md)');
   });
 
   test('no note, no restriction box', async () => {

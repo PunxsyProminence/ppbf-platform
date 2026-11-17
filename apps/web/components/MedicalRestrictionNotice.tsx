@@ -13,12 +13,18 @@ import { formatGymDay } from '@/src/lib/gymTime';
  * the routes send exactly those three fields (familyMedicalRestriction in
  * src/server/pilot/medicalRestrictions.ts).
  *
- * Shown only while the restriction is in force. Lifted, voided, not yet
- * started or none: the routes send null and this renders nothing -- no
- * "cleared" line. A read that fails also renders nothing (Overwatch, P22c
- * step 1; OD-2026-11-10-001 RULES 1, no new warning): the save gate refuses
- * sparring on the server whatever this shows, and TrainingHoldBanner already
- * carries the workspace's one "talk to your coach" line.
+ * Shown while the restriction is in force, with the Restricted mark: the
+ * restricted rung, ▲ and the word, never the medical-stop (locked) mark
+ * (OD-2026-11-17-009 ruling 5, Jason's card OW25-38 A). Lifted, voided, not
+ * yet started or none: the routes send null and this renders nothing -- no
+ * "cleared" line.
+ *
+ * A READ THAT FAILS IS NOT "NONE" (OD-2026-11-17-009 ruling 3, Jason's card
+ * OW25-35 A, the owner's direction RULES s1 allows). It shows one neutral line,
+ * the card's words with a closing period (Overwatch, DFX step 1, Q1): no
+ * warning colour, no glyph, nothing blocked. The save gate refuses sparring
+ * on the server whatever this shows. A value that is not null and not the
+ * three fields is treated as not read, the same line.
  */
 
 export interface FamilyMedicalRestriction {
@@ -34,6 +40,39 @@ export function isFamilyMedicalRestriction(value: unknown): value is FamilyMedic
   return row.on_file === true
     && typeof row.minimum_end_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.minimum_end_date)
     && typeof row.release_needed === 'boolean';
+}
+
+/** OD-2026-11-17-009 ruling 3 (OW25-35 A), word for word, plus the closing period Overwatch approved. */
+export const MEDICAL_RESTRICTION_UNREAD_LINE = 'Medical restriction: could not be checked just now; your coach can see it.';
+
+/** The glyph of the restricted rung (as the Clearance Board's "restricted"); never ✕, the medical-stop mark. */
+export const RESTRICTED_GLYPH = '▲';
+
+/** The Restricted mark (OD-2026-11-17-009 ruling 5, OW25-38 A): glyph and word, on the restricted rung. */
+export function RestrictedMark() {
+  return (
+    <span className="badge badge--restricted" data-testid="restricted-mark">
+      <i aria-hidden="true">{RESTRICTED_GLYPH}</i>Restricted
+    </span>
+  );
+}
+
+/** What one read of the family view comes to: in force, none in force, or not read. */
+export type FamilyRestrictionRead =
+  | { readonly kind: 'in_force'; readonly restriction: FamilyMedicalRestriction }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'unread' };
+
+/**
+ * null is the server's "none in force". Anything else that is not the three
+ * fields -- a failed read, a missing field, a malformed value -- was not read,
+ * and must never look like none.
+ */
+export function familyRestrictionRead(value: unknown, readFailed: boolean): FamilyRestrictionRead {
+  if (readFailed) return { kind: 'unread' };
+  if (value === null) return { kind: 'none' };
+  if (isFamilyMedicalRestriction(value)) return { kind: 'in_force', restriction: value };
+  return { kind: 'unread' };
 }
 
 /** A calendar day as words, through the gym's date helper (a date-only value is never shifted by the viewer's zone). */
@@ -53,15 +92,31 @@ export function MedicalRestrictionStatement({ restriction }: { readonly restrict
   if (!isFamilyMedicalRestriction(restriction)) return null;
   return (
     <section data-testid="medical-restriction-notice" className="space-y-[var(--s2)]">
-      <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>USA Boxing medical restriction on file</h2>
+      <div className="flex flex-wrap items-center gap-[var(--s2)]">
+        <RestrictedMark />
+        <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>USA Boxing medical restriction on file</h2>
+      </div>
       <p className="t-body">{medicalRestrictionSentence(restriction)}</p>
     </section>
   );
 }
 
+/** The neutral line for a read that failed: plain body text, no colour, no glyph, no block. */
+export function MedicalRestrictionUnread() {
+  return <p className="t-body" role="status" data-testid="medical-restriction-unread">{MEDICAL_RESTRICTION_UNREAD_LINE}</p>;
+}
+
+/** One read's view: the statement, the neutral line, or nothing for none in force. */
+export function MedicalRestrictionFromRead({ read }: { readonly read: FamilyRestrictionRead }) {
+  if (read.kind === 'in_force') return <MedicalRestrictionStatement restriction={read.restriction} />;
+  if (read.kind === 'unread') return <MedicalRestrictionUnread />;
+  return null;
+}
+
 /** The member's own notice: reads /api/pilot/athlete/medical-restriction (self only). */
 export default function MedicalRestrictionNotice() {
-  const [restriction, setRestriction] = useState<FamilyMedicalRestriction | null>(null);
+  // null while reading: nothing is shown until the read has an answer.
+  const [read, setRead] = useState<FamilyRestrictionRead | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -71,19 +126,25 @@ export default function MedicalRestrictionNotice() {
           credentials: 'include',
           signal: controller.signal,
         });
-        // Not an athlete (a coach opening the sparring page), or a failed
-        // read: nothing to show.
-        if (!response.ok) return;
-        const payload = (await response.json()) as { ok?: unknown; medical_restriction?: unknown } | null;
-        if (payload?.ok === true && isFamilyMedicalRestriction(payload.medical_restriction)) {
-          setRestriction(payload.medical_restriction);
+        // Not this member's own view: signed out (401), not an athlete (403),
+        // or no live record (404). The mounts are athlete-only, so these are
+        // edge cases; there is no member's restriction to report.
+        if (response.status === 401 || response.status === 403 || response.status === 404) return;
+        if (!response.ok) {
+          setRead({ kind: 'unread' });
+          return;
         }
+        const payload = (await response.json()) as { ok?: unknown; medical_restriction?: unknown } | null;
+        if (controller.signal.aborted) return;
+        const answered = payload?.ok === true && Object.prototype.hasOwnProperty.call(payload, 'medical_restriction');
+        setRead(familyRestrictionRead(answered ? payload.medical_restriction : undefined, !answered));
       } catch {
-        // Unreachable, or unmounted: nothing to show.
+        // Unmounted: nothing to update. Unreachable, or not JSON: not read.
+        if (!controller.signal.aborted) setRead({ kind: 'unread' });
       }
     })();
     return () => controller.abort();
   }, []);
 
-  return restriction ? <MedicalRestrictionStatement restriction={restriction} /> : null;
+  return read ? <MedicalRestrictionFromRead read={read} /> : null;
 }

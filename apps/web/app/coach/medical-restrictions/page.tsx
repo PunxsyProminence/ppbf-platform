@@ -69,8 +69,9 @@ export default function MedicalRestrictionsPage() {
           <div className="alert alert--warning mb-[var(--s4)]" role="alert">
             <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
-              <p className="alert-title">Not loaded</p>
-              <p className="alert-msg">Your roster could not be loaded. Reload to try again.</p>
+              {/* Inline size: .alert-title/.alert-msg are unlayered fixed sizes the kiosk type floor (layout.tsx) does not reach. */}
+              <p className="alert-title" style={{ fontSize: 'var(--t-md)', lineHeight: 1.25 }}>Not loaded</p>
+              <p className="alert-msg" style={{ fontSize: 'var(--t-md)' }}>Your roster could not be loaded. Reload to try again.</p>
             </div>
           </div>
         ) : roster === null ? (

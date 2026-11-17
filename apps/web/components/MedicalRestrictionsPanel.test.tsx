@@ -75,6 +75,120 @@ test('staff see the whole record; a coach is not offered the void', async () => 
   expect(calls[0].url).toContain('/api/pilot/coach/medical-restrictions?athlete_id=ath-1');
 });
 
+// OD-2026-11-17-009 ruling 5 (OW25-38 A): a restriction in force carries the
+// Restricted mark (the restricted rung, ▲ and the word), never the
+// medical-stop mark; other states are words only.
+test('a restriction in force carries the Restricted mark; a lifted or voided one does not', async () => {
+  createPersistentRoleSession('coach');
+  respondWith([
+    ROW,
+    { ...ROW, restriction_id: 'f1d5c1aa-0000-4000-8000-000000000003', state: 'lifted', release_signed_on: '2026-11-01' },
+    { ...ROW, restriction_id: 'f1d5c1aa-0000-4000-8000-000000000004', state: 'voided', voided_at: '2026-10-02T00:00:00Z', void_reason: 'Wrong member' },
+  ]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  await openFor('In force — release needed');
+  const marks = screen.getAllByTestId('restricted-mark');
+  expect(marks).toHaveLength(1);
+  expect(marks[0].className).toBe('badge badge--restricted');
+  expect(marks[0].parentElement?.textContent).toBe('▲RestrictedIn force — release needed');
+  expect(screen.getByText('Lifted — release on file').parentElement?.querySelector('[data-testid="restricted-mark"]')).toBeNull();
+  expect(document.body.innerHTML).not.toMatch(/--locked|badge--locked|✕/);
+});
+
+// OD-2026-11-17-009 ruling 4 (OW25-37 A): every text control wears the kiosk
+// size, and nothing asks for less than the kiosk text floor.
+test('every control on the record form and the rows wears the kiosk size', async () => {
+  createPersistentRoleSession('admin');
+  respondWith([ROW]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  await openFor('In force — release needed');
+  fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+  const controls = document.querySelectorAll('input, select, textarea');
+  expect(controls.length).toBeGreaterThanOrEqual(10);
+  for (const control of controls) expect(control.className).toContain('input--kiosk');
+  expect(document.body.innerHTML).not.toMatch(/var\(--t-(sm|xs)\)/);
+});
+
+test.each([
+  ['in_force', 'In force', true],
+  ['release_needed', 'In force — release needed', true],
+  ['not_started', 'Starts later', false],
+  ['lifted', 'Lifted — release on file', false],
+  ['voided', 'Marked entered in error', false],
+])('state %s: the Restricted mark is %s', async (state, words, marked) => {
+  createPersistentRoleSession('coach');
+  respondWith([{ ...ROW, state, ...(state === 'voided' ? { voided_at: '2026-10-02T00:00:00Z', void_reason: 'Wrong member' } : {}) }]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'ath-1' } });
+  const line = (await screen.findByText(words, { selector: 'span' })).parentElement!;
+  expect(line.querySelector('[data-testid="restricted-mark"]') !== null).toBe(marked);
+});
+
+test('the read failure, the reading line and a refusal are at the kiosk text size', async () => {
+  createPersistentRoleSession('coach');
+  let answer: (response: Response) => void = () => {};
+  global.fetch = jest.fn(() => new Promise<Response>((resolve) => { answer = resolve; })) as unknown as typeof fetch;
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'ath-1' } });
+  expect(screen.getByText('Reading medical restrictions...').getAttribute('style')).toContain('font-size: var(--t-md)');
+  answer({ ok: false, status: 500, json: async () => ({}) } as Response);
+  const title = await screen.findByText('Not read');
+  expect(title.getAttribute('style')).toContain('font-size: var(--t-md)');
+  expect(title.nextElementSibling?.getAttribute('style')).toContain('font-size: var(--t-md)');
+});
+
+test('a refusal wears the kiosk stamp and no 15px size', async () => {
+  createPersistentRoleSession('coach');
+  respondWith([]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  await openFor('No medical restriction on file for this member.');
+  fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save restriction' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert.querySelector('.stamp')?.className).toContain('stamp--kiosk');
+  expect(alert.innerHTML).not.toMatch(/--t-sm/);
+});
+
+/*
+ * FOUND IN PASSING (Overwatch: a data-integrity bug). A save's re-read used
+ * the member captured when the save began, so a coach who picked another
+ * member mid-save could see the first member's list under the second's name,
+ * and record a release on the wrong row. The picker is now locked while a
+ * save runs, and the re-read happens only for the member still shown.
+ */
+test('switching member mid-save never shows one member\'s records under another\'s name', async () => {
+  createPersistentRoleSession('coach');
+  const second = { ...ROW, restriction_id: 'f1d5c1aa-0000-4000-8000-0000000000b2', athlete_id: 'ath-2', note: 'Second member note' };
+  let finishSave: (response: Response) => void = () => {};
+  const gets: string[] = [];
+  global.fetch = jest.fn((url: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'POST') return new Promise<Response>((resolve) => { finishSave = resolve; });
+    gets.push(String(url));
+    const rows = String(url).includes('athlete_id=ath-2') ? [second] : [ROW];
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, restrictions: rows }) } as Response);
+  }) as unknown as typeof fetch;
+  render(<MedicalRestrictionsPanel athletes={[...ATHLETES, { athlete_id: 'ath-2', full_name: 'Second Member' }]} />);
+  await openFor('In force — release needed');
+  fireEvent.change(screen.getByLabelText('Date the release was signed'), { target: { value: '2026-11-01' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Record release' }));
+
+  // Locked while the save is in flight.
+  const picker = screen.getByLabelText('Member') as HTMLSelectElement;
+  await waitFor(() => expect(picker.disabled).toBe(true));
+
+  // Even if a change gets through, the save's answer must not repaint the list.
+  fireEvent.change(picker, { target: { value: 'ath-2' } });
+  finishSave({ ok: true, status: 200, json: async () => ({ ok: true }) } as Response);
+  await waitFor(() => expect(picker.disabled).toBe(false));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const shown = picker.value;
+  const notes = screen.queryAllByText(/^Staff note: /).map((node) => node.textContent);
+  expect(notes).toEqual([shown === 'ath-2' ? 'Staff note: Second member note' : 'Staff note: Staff-only test note']);
+  // The last read is for the member on screen.
+  expect(gets.at(-1)).toContain(`athlete_id=${shown}`);
+});
+
 test('a gym admin is offered the void, and it sends the reason', async () => {
   createPersistentRoleSession('admin');
   respondWith([ROW]);
