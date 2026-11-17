@@ -1760,6 +1760,30 @@ describe('the age group on a template row', () => {
   });
 });
 
+// A template may carry no difficulty, no length, no session type and no intent.
+describe('a template row with fields left empty', () => {
+  it('shows no "null min", no empty plaque and no stray separators, and still opens', async () => {
+    mockFetch(() => jsonResponse({ templates: [{ ...BOXING_FUNDAMENTALS, difficulty: null, duration_minutes: null, session_type: '', intent: '' }] }));
+
+    render(<CoachWorkoutTemplatesPage />);
+
+    const card = (await screen.findByText('Boxing Fundamentals 60')).closest('article')!;
+    expect(card.textContent).not.toMatch(/null|undefined/);
+    expect(card.querySelector('.plaque')).toBeNull();
+    expect(within(card as HTMLElement).getByText('11-14')).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByRole('button', { name: 'Open template' })).toBeEnabled();
+  });
+
+  it('keeps the full line when every field is there', async () => {
+    mockFetch(() => jsonResponse({ templates: [BOXING_FUNDAMENTALS] }));
+
+    render(<CoachWorkoutTemplatesPage />);
+
+    expect(await screen.findByText('group class -- 11-14 -- 60 min')).toBeInTheDocument();
+    expect(screen.getByText('beginner')).toHaveClass('plaque');
+  });
+});
+
 // The medical-stop colour (--locked) means a medical stop and nothing else
 // (AGENT_KERNEL.md, OD-2026-09-29-001). Nothing on this page is one.
 describe('ordinary errors on this page', () => {

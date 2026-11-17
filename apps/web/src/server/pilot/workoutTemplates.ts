@@ -76,9 +76,9 @@ export interface WorkoutTemplateRow {
   superseded_at: string | null;
   name: string;
   session_type: string;
-  difficulty: WorkoutTemplateDifficulty;
+  difficulty: WorkoutTemplateDifficulty | null;
   age_band: string;
-  duration_minutes: number;
+  duration_minutes: number | null;
   intent: string;
   coach_notes: string | null;
   requires_coach_authorization: boolean;

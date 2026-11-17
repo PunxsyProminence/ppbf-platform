@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 
 import { GET } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
-import { getClassPlanTrack, listClassPlanTracks } from '@/src/server/pilot/classPlans';
+import { getClassPlanTrack, listClassPlanTracks, listLibraryTracks } from '@/src/server/pilot/classPlans';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 
@@ -17,11 +17,13 @@ jest.mock('@/src/server/pilot/http', () => {
 jest.mock('@/src/server/pilot/classPlans', () => ({
   listClassPlanTracks: jest.fn(),
   getClassPlanTrack: jest.fn(),
+  listLibraryTracks: jest.fn(),
 }));
 
 const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockList = listClassPlanTracks as jest.Mock;
 const mockTrack = getClassPlanTrack as jest.Mock;
+const mockLibrary = listLibraryTracks as jest.Mock;
 
 afterEach(() => jest.clearAllMocks());
 
@@ -43,8 +45,10 @@ describe('GET /api/pilot/training-tracks: who may read', () => {
       mockRequirePrincipal.mockResolvedValue(principal(role));
       expect((await GET(request())).status).toBe(403);
       expect((await GET(request('track=trk_x'))).status).toBe(403);
+      expect((await GET(request('library=1'))).status).toBe(403);
       expect(mockList).not.toHaveBeenCalled();
       expect(mockTrack).not.toHaveBeenCalled();
+      expect(mockLibrary).not.toHaveBeenCalled();
     },
   );
 });
@@ -78,5 +82,35 @@ describe('GET /api/pilot/training-tracks: what it returns', () => {
     mockTrack.mockResolvedValue({ track_id: 'trk_1', weeks: [{ days }] });
     const body = await (await GET(request('track=trk_1'))).json();
     expect(body.track.weeks[0].days).toEqual(days);
+  });
+});
+
+describe('GET /api/pilot/training-tracks?library=1: the library tracks', () => {
+  it.each(['coach', 'organization_admin', 'admin'] as PilotRole[])('admits %s', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+    mockLibrary.mockResolvedValue([]);
+    expect((await GET(request('library=1'))).status).toBe(200);
+  });
+
+  it('lists under `tracks` for the organization of the principal only, and not the class plans', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin', 'org-7'));
+    mockLibrary.mockResolvedValue([{ track_id: 'trk_lib', name: 'Fight week', group_count: 2 }]);
+    const response = await GET(request('library=1&organization_id=other-org'));
+    expect(await response.json()).toEqual({ tracks: [{ track_id: 'trk_lib', name: 'Fight week', group_count: 2 }] });
+    expect(mockLibrary).toHaveBeenCalledWith('org-7');
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it('any other value lists the class plans, and ?track= still opens one track of either kind', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach', 'org-7'));
+    mockList.mockResolvedValue([]);
+    await GET(request('library=0'));
+    expect(mockList).toHaveBeenCalledWith('org-7');
+    expect(mockLibrary).not.toHaveBeenCalled();
+    mockTrack.mockResolvedValueOnce({ track_id: 'trk_lib', weeks: [], details: { groups: [] } });
+    const body = await (await GET(request('track=trk_lib&library=1'))).json();
+    expect(body).toEqual({ track: { track_id: 'trk_lib', weeks: [], details: { groups: [] } } });
+    expect(mockTrack).toHaveBeenCalledWith('org-7', 'trk_lib');
+    expect(mockLibrary).not.toHaveBeenCalled();
   });
 });

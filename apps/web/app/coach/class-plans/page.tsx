@@ -155,6 +155,7 @@ function ClassPlans() {
         </p>
         <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
           <Link href="/coach/workout-templates" className="btn btn--ghost">Workout Templates</Link>
+          <Link href="/coach/library" className="btn btn--ghost">Library tracks</Link>
         </div>
       </header>
 
