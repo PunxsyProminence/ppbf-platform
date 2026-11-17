@@ -1,5 +1,5 @@
 import type { DatasetName, DatasetSpec, FileSpec } from '../types';
-import { assessmentProtocolsDataset } from './assessmentProtocols';
+import { assessmentCatalogDataset } from './assessmentCatalog';
 import { labelColumns } from './common';
 import { cohortDefinitionsDataset, competenceLevelsDataset } from './competence';
 import { disciplinesDataset } from './disciplines';
@@ -42,7 +42,8 @@ export const DATASETS: readonly DatasetSpec[] = [
   sessionScriptsDataset,
   trainingTracksDataset,
   transferClaimsDataset,
-  assessmentProtocolsDataset,
+  // After the pathway catalog its gates, criteria and anchor specs name.
+  assessmentCatalogDataset,
 ].map(withLabelColumns);
 
 export const FILE_SPECS: readonly FileSpec[] = DATASETS.flatMap((dataset) => dataset.files);

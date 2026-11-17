@@ -14,7 +14,7 @@ export type DatasetName =
   | 'session-scripts'
   | 'training-tracks'
   | 'transfer-claims'
-  | 'assessment-protocols';
+  | 'assessment-catalog';
 
 /**
  * What a column is FOR, which decides how every stage treats it:
@@ -270,7 +270,9 @@ export type WarningCode =
   | 'legacy_universal_stop_rule'
   | 'ignored_file'
   // Information only (Overwatch, PR #1894): pathway catalog rows a plan would load with no labels.
-  | 'unlabelled_catalog_rows';
+  | 'unlabelled_catalog_rows'
+  // Information only (lane CAT-b): protocols the organization holds that a load leaves as they are.
+  | 'protocols_left_alone';
 
 export interface Warning {
   code: WarningCode;

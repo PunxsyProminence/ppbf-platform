@@ -737,25 +737,25 @@ Rules:
 - A public claim that names a brain structure must be EVIDENCE-SUPPORTED.
 - A blank transfer_id takes the id of the committed row whose content gives the same 'txf_' + first 14 hex of sha256(target id + ':' + claim_kind + ':' + statement), else it is filled with that formula. Two rows that come to the same id are refused as a duplicate.
 
-### 11. Assessment protocols
+### 11. Assessment catalog
 
-Physical tests, skill rubrics and questionnaires the gym administers, with their retest guidance and measurement properties. Under R2 a changed protocol becomes the next protocol_version; a recorded result keeps pointing at the version it was taken with (pilot_assessments_protocol_fk).
+The backbone's pathway gates and their criteria, the scorecard items, the anchor-clip specs, the scorecard scales and the non-contact cap, the assessment protocols, and the two behavioural KPI lists (SCHEMA_PROPOSAL P5, P6; OD-2026-11-16-001, OD-2026-11-16-003). It describes and informs: a gate is shown as met, not met or not scored and never moves anyone, and the cap is data for the later rating path. Each catalog file is a whole snapshot of its table, as the pathway catalog's: a changed row is revised in place with the old content kept in the history ledger, and a row the file leaves out is retired (kept, marked inactive), never deleted. The protocols file is not a snapshot: a protocol it leaves out is left alone, and a changed one becomes the next protocol_version, the earlier version kept inactive. Blank loads blank for this dataset: a protocol's quality_measured is not required, and a blank boxing_specific or evidence_class is stored blank rather than as the table's default (Overwatch's CAT ruling Q1). Every id is checked against the backbone's identity rule. Gates, criteria and anchor specs name stages of the pathway catalog, which must be loaded first.
 
-Loaded today: Nothing yet. The table exists and the app reads it, but no loader writes it; the file validates today.
+Loaded today: Nothing yet: the tables exist (assessment-catalog migration), and the Backbone seed files follow in lane CAT-c (the KPI lists in CAT-d).
 
-#### assessment-protocols/seed_assessment_protocols.csv
+#### assessment-catalog/seed_assessment_protocols.csv
 
 One row = one protocol. Identity: protocol_id.
 
 | column | required | allowed | meaning |
 | --- | --- | --- | --- |
 | organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
-| protocol_id | yes | a capital letter, a capital letter or digit, -T, two digits (A5-T01) | The test's id from the research battery, e.g. A5-T01. It is the protocol's identity: keep it on a revision. |
+| protocol_id | yes | a capital letter, a capital letter or digit, -T, two digits (A5-T01) | The protocol's id, e.g. PP-T01 (backbone) or A5-T01 (research battery). It is the protocol's identity: keep it on a revision. |
 | protocol_version |  | blank or `1` | Decided by the tool: a changed protocol becomes the next version at load. |
 | name | yes | text | The protocol name. |
 | measure_kind | yes | `physical_test`, `skill_rubric`, `wellness`, `questionnaire`, `other` | What kind of measure. |
 | source_ref |  | text | Where it came from, e.g. the battery row or citation. |
-| quality_measured | yes | text | What it measures. |
+| quality_measured |  | text | What it measures. Blank means not stated; stored blank (the backbone states none for its 46). |
 | protocol_summary | yes | text | How to administer it. |
 | equipment_needed |  | text | Equipment. |
 | time_to_administer_min |  | whole number | Minutes to administer. |
@@ -764,11 +764,16 @@ One row = one protocol. Identity: protocol_id.
 | retest_interval_basis |  | text | Why that interval. Blank means TBD - no defensible basis. |
 | reliability_status |  | text | How reliable the measure is known to be. Blank means UNVALIDATED - PPBF MUST ESTABLISH. |
 | validity_status |  | text | What it is known to be valid for. Blank means UNKNOWN. |
-| evidence_class |  | text | Strength of the evidence behind it. Blank means INSUFFICIENT EVIDENCE. |
-| boxing_specific |  | text | Whether it was developed in boxing. Blank means NO - transferred. |
+| evidence_class |  | text | Strength of the evidence behind it. Blank means not stated; stored blank (CAT ruling Q1). |
+| boxing_specific |  | text | Whether it was developed in boxing. Blank means not stated; stored blank (CAT ruling Q1). |
 | minimal_detectable_change |  | number | Smallest change that is not measurement error. Blank means unknown until PPBF's reliability study supplies it. |
 | human_authority_required |  | true or false | A qualified person must administer or interpret it. Blank means true. |
-| active |  | blank or `true` | Decided by the tool: retiring a protocol is a separate action. |
+| protocol_group |  | text | The backbone group the protocol belongs to (e.g. Physical test battery). |
+| status |  | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| decision |  | text | The decision record the protocol rests on (e.g. D-OQ182). |
+| backbone_version |  | text | The backbone snapshot the row comes from. A new value is a new version of the protocol. |
+| active |  | blank or `true` | Decided by the tool: the current version is active; an earlier one is kept inactive. |
 | field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
 | evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
 | stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
@@ -776,3 +781,254 @@ One row = one protocol. Identity: protocol_id.
 Rules:
 
 - name is unique among active protocols (pilot_assessment_protocols_one_active_name).
+
+#### assessment-catalog/seed_scorecard_scales.csv
+
+One row = one scorecard scale. Identity: scale_key.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| scale_key | yes | text | The scale's name as the backbone gives it (e.g. live_long_road). |
+| min_level | yes | whole number | The lowest score on the scale. |
+| max_level | yes | whole number | The highest score on the scale. |
+| level_anchors | yes | text | JSON object: what each score means, by score ("1" ... "5"), as written. |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| note |  | text | A note on the scale, as written. |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| backbone_version |  | text | The snapshot the row comes from. A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- scale_key is lowercase letters, digits and underscores.
+- min_level is 0 or more and below max_level.
+- level_anchors, when set, is a JSON object.
+- stage_keys stays blank: a catalog row names any stage in its own columns.
+
+#### assessment-catalog/seed_scorecard_score_caps.csv
+
+One row = one score cap. Identity: cap_key.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| cap_key | yes | text | The cap's name as the backbone gives it (e.g. non_contact_rule). |
+| scale_key | yes | text | The scale the cap applies to: a scale in seed_scorecard_scales.csv (or the loaded catalog). |
+| max_score | yes | number above 0 | The highest score allowed where the cap applies. |
+| applies_to | yes | text | Where the cap applies, as the backbone words it. |
+| applies_to_protocol_id |  | text | The protocol the cap applies to, read from applies_to. |
+| applies_to_contexts |  | a list separated by `\|`; each item: `drill`, `shadow`, `partner`, `constrained_live`, `live` | The contexts the cap applies to, read from applies_to, separated by \|. |
+| wording |  | text | Which scale wording the capped scores use, as written. |
+| decision |  | text | The decision record the row rests on (e.g. D-OQ183). |
+| note |  | text | A note on the cap, as written. |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| backbone_version |  | text | The snapshot the row comes from. A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- cap_key is lowercase letters, digits and underscores.
+- stage_keys stays blank: a catalog row names any stage in its own columns.
+
+#### assessment-catalog/seed_scorecard_items.csv
+
+One row = one scorecard item. Identity: scorecard_item_id.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| scorecard_item_id | yes | text | The backbone's id: 'sci_' + hex14(protocol_id + ':' + two-digit item number). Kept as given, never re-minted. |
+| protocol_id |  | text | The protocol the item belongs to: a protocol in seed_assessment_protocols.csv (or the loaded catalog). |
+| item_number |  | whole number 1 or more | The item's number on its protocol. |
+| item_group |  | text | The scorecard section (e.g. foundations). The backbone key is `group`. |
+| name | yes | text | The item's name. |
+| definition | yes | text | What the item rates, as written. |
+| scale | yes | text | The scale as the backbone states it. |
+| scale_key |  | text | The scale the item is scored on: a scale in seed_scorecard_scales.csv (or the loaded catalog). Blank when the source gives none. |
+| scorable_contexts |  | a list separated by `\|`; each item: `drill`, `shadow`, `partner`, `constrained_live`, `live` | The contexts the item may be scored in, separated by \|. |
+| gaps |  | a list separated by `\|`; each item: text | What the source leaves open, separated by \|, as written. |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| decision |  | text | The decision record the row rests on (e.g. D-OQ183). |
+| backbone_version |  | text | The snapshot the row comes from. A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- one item per number on a protocol (pilot_scorecard_items_one_active_number).
+- scorecard_item_id is 'sci_' and 14 lowercase hex.
+- scorecard_item_id is the backbone's id for the row's identity: 'sci_' + first 14 hex of sha256(identity).
+- stage_keys stays blank: a catalog row names any stage in its own columns.
+
+#### assessment-catalog/seed_pathway_gates.csv
+
+One row = one pathway gate. Identity: gate_id.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| gate_id | yes | text | The backbone's id: 'pgt_' + hex14(stage_key + ':' + gate_kind). Kept as given, never re-minted. |
+| stage_key | yes | text | The stage the gate belongs to: a stage of the pathway catalog. |
+| gate_kind | yes | `entry`, `exit`, `contact_readiness`, `checkpoint_90_days` | Which gate of the stage this is. One gate per stage and kind. |
+| informs_only |  | true or false | Always true: a gate informs and never moves anyone (RULES section 1). Blank means true. |
+| override_process |  | text | How a coach may place a member against the gate result (the override workflow is a later lane). |
+| override_presets_status |  | text | The state of the override reason pick-list. |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| decision |  | text | The decision record the row rests on (e.g. D-OQ183). |
+| backbone_version |  | text | The snapshot the row comes from. A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- gate_id is 'pgt_' and 14 lowercase hex.
+- gate_id is the backbone's id for the row's identity: 'pgt_' + first 14 hex of sha256(identity).
+- each stage in stage_key is a stage key in its human form (Y3, AM1).
+- informs_only is true: a gate informs and never moves anyone.
+- stage_keys stays blank: a catalog row names any stage in its own columns.
+
+#### assessment-catalog/seed_pathway_gate_criteria.csv
+
+One row = one gate criterion. Identity: criterion_id.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| criterion_id | yes | text | The backbone's id: 'pgc_' + hex14(gate_id + ':' + ordinal). Kept as given, never re-minted. |
+| gate_id | yes | text | The gate the criterion belongs to: a gate in seed_pathway_gates.csv (or, without that file, the loaded catalog). |
+| ordinal | yes | whole number 1 or more | The criterion's place in its gate (1 = first). |
+| kind | yes | `text`, `scorecard_min`, `stage_completed`, `gate_met`, `bout_count` | What the criterion checks: text a coach confirms, a scorecard minimum, a stage or gate completed, or a bout count. |
+| criterion_text |  | text | The criterion as a coach reads it (kind text). The backbone key is `text`. |
+| polarity |  | `should_have`, `should_not_have` | For a checkpoint list: something the member should have, or should not have. |
+| scorecard_item_ids |  | a list separated by `\|`; each item: text | The scorecard items a scorecard minimum reads, separated by \|: items in seed_scorecard_items.csv (or the loaded catalog). |
+| item_numbers |  | a list separated by `\|`; each item: text | Those items' numbers on their scorecard, separated by \|, as the backbone states them. |
+| protocol_id |  | text | The protocol the items belong to, when the backbone names it. |
+| min_score |  | number above 0 | The lowest score that meets the criterion (halves allowed, e.g. 4.5). |
+| contexts |  | a list separated by `\|`; each item: `drill`, `shadow`, `partner`, `constrained_live`, `live` | The contexts the scores must come from, separated by \|. |
+| combine |  | `all`, `any` | all: every item at the minimum; any: at least one. |
+| ref_stage_key |  | text | The stage a stage_completed or gate_met criterion names. The backbone key is `stage_key`. |
+| ref_gate_kind |  | `entry`, `exit`, `contact_readiness`, `checkpoint_90_days` | The kind of the gate a gate_met criterion names. The backbone key is `gate_kind`. |
+| ref_gate_id |  | text | The gate a gate_met criterion names; its stage and kind must be that gate's. The backbone key is `gate_id`. |
+| bout_min |  | whole number | Fewest bouts (bout_count). The backbone key is `min`. |
+| bout_max |  | whole number | Most bouts (bout_count). The backbone key is `max`. |
+| bout_scope |  | text | What the bouts are counted over. The backbone key is `scope`. |
+| note |  | text | A note on the criterion, as written. |
+| conflict_resolved |  | text | How a conflict between sources was decided, as written. |
+| source_cell |  | text | The source table cell the criterion was read from, as written. |
+| status |  | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| decision |  | text | The decision record the row rests on (e.g. D-OQ183). |
+| backbone_version |  | text | The snapshot the row comes from. A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- one criterion per place in a gate (pilot_pathway_gate_criteria_one_active_ordinal).
+- criterion_id is 'pgc_' and 14 lowercase hex.
+- criterion_id is the backbone's id for the row's identity: 'pgc_' + first 14 hex of sha256(identity).
+- Each kind carries what it needs: text its words; scorecard_min its items, minimum and contexts; stage_completed its stage; gate_met its gate's stage, kind and id; bout_count a bound.
+- Bout counts are 0 or more, and bout_min is not above bout_max.
+- item_numbers are whole numbers, as many as scorecard_item_ids when both are set.
+- each stage in ref_stage_key is a stage key in its human form (Y3, AM1).
+- stage_keys stays blank: a catalog row names any stage in its own columns.
+
+#### assessment-catalog/seed_scorecard_anchor_clip_specs.csv
+
+One row = one anchor-clip spec. Identity: anchor_spec_id.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| anchor_spec_id | yes | text | The backbone's id: 'acs_' + hex14(scorecard_item_id + ':' + level + ':' + context_class). Kept as given, never re-minted. |
+| scorecard_item_id | yes | text | The item the anchor footage is for: an item in seed_scorecard_items.csv (or the loaded catalog). |
+| item_number |  | whole number | The item's number, as the backbone repeats it; must equal the item's own. |
+| level | yes | whole number 1 or more, 5 or less | The score the footage should show; within the item's scale. |
+| context_class | yes | `live`, `non_contact` | Live footage or non-contact footage. |
+| used_by_stage_keys |  | a list separated by `\|`; each item: text | The stages whose gates use the anchor, separated by \|. The backbone key is `used_by_gates`. |
+| priority |  | whole number 1 or more | Which anchors to film first (1 = first). |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| backbone_version |  | text | The snapshot the row comes from. A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- one spec per item, level and context (pilot_scorecard_anchor_clip_specs_one_active_slot).
+- anchor_spec_id is 'acs_' and 14 lowercase hex.
+- anchor_spec_id is the backbone's id for the row's identity: 'acs_' + first 14 hex of sha256(identity).
+- each stage in used_by_stage_keys is a stage key in its human form (Y3, AM1).
+- stage_keys stays blank: a catalog row names any stage in its own columns.
+
+#### assessment-catalog/seed_behavior_kpi_lists.csv
+
+One row = one behavioural KPI list. Identity: list_key.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| list_key | yes | `drill`, `room` | drill: DOC-041's drill KPIs; room: DOC-027's core behavioural KPIs (OD-2026-11-16-003). |
+| title | yes | text | The list's title as its source gives it. |
+| source_doc | yes | text | The owner document the list comes from (DOC-041, DOC-027). |
+| scope_text |  | text | What the list is for. |
+| scoring_rule_text |  | text | How the list is scored, quoted from its source. |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| backbone_version |  | text | The snapshot the row comes from. A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- stage_keys stays blank: a catalog row names any stage in its own columns.
+
+#### assessment-catalog/seed_behavior_kpis.csv
+
+One row = one behavioural KPI. Identity: kpi_id.
+
+| column | required | allowed | meaning |
+| --- | --- | --- | --- |
+| organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
+| kpi_id | yes | text | 'kpi_' + hex14(list_key + ':' + name). Kept as given, never re-minted. |
+| list_key | yes | `drill`, `room` | The list the KPI belongs to. |
+| ordinal | yes | whole number 1 or more | The KPI's place in its list, in its source's order (1 = first). |
+| name | yes | text | The KPI, quoted from its source. |
+| scoring_kind |  | `count`, `yes_no`, `three_level` | How the KPI is scored (DOC-041: counts, yes-no marks or three-level ratings). Blank for a room KPI. |
+| level_anchors |  | text | JSON object, three-level KPIs only: what each level means ("1" ... "3"). |
+| status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
+| sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
+| backbone_version |  | text | The snapshot the row comes from. A new value is a new version of the row. |
+| active_flag |  | blank or `true` | Decided by the tool: a row the file carries is active; one a later snapshot leaves out is retired (false), never deleted. |
+| field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
+| evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
+| stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
+
+Rules:
+
+- one KPI per place in a list (pilot_behavior_kpis_one_active_ordinal).
+- kpi_id is 'kpi_' and 14 lowercase hex.
+- kpi_id is the backbone's id for the row's identity: 'kpi_' + first 14 hex of sha256(identity).
+- level_anchors, when set, is a JSON object.
+- level_anchors only on a three-level KPI.
+- stage_keys stays blank: a catalog row names any stage in its own columns.

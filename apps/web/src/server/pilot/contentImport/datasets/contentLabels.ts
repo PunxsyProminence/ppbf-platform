@@ -41,7 +41,8 @@ const KIND: Record<DatasetName, string> = {
   'session-scripts': 'session_script',
   'training-tracks': 'training_track',
   'transfer-claims': 'transfer_claim',
-  'assessment-protocols': 'assessment_protocol',
+  // Never written here: the catalog keeps its labels natively (datasets/assessmentCatalog.ts).
+  'assessment-catalog': 'assessment_catalog',
 };
 
 /** target_kind in both label tables: the item kind a dataset holds. */

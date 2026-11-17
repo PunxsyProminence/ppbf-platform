@@ -2,6 +2,7 @@ import type { DbClient, ImportActor } from '../actor';
 import { DATASETS } from '../specs';
 import type { DatasetName, DatasetSpec, Finding, ParsedFile, Warning } from '../types';
 import type { ValidationResult } from '../validate';
+import { ASSESSMENT_CATALOG_ENGINE } from './assessmentCatalog';
 import { DRILL_LIBRARY_ENGINE } from './drills';
 import { PATHWAY_CATALOG_ENGINE } from './pathwayCatalog';
 import { REGISTRY_ENGINES } from './registries';
@@ -16,7 +17,7 @@ import { UNIVERSAL_STOP_RULES_ENGINE } from './universalStopRules';
 // a discipline differs from a drill.
 //
 // ONE LINE PER DATASET MODULE. A dataset with no module here (transfer
-// claims, assessment protocols) is refused at plan with dataset_not_loadable,
+// claims) is refused at plan with dataset_not_loadable,
 // rather than half-loaded.
 
 export type UnitOutcome = 'new' | 'new_version' | 'unchanged' | 'absent' | 'reject';
@@ -40,7 +41,7 @@ export interface UnitPlan {
   toVersion?: number;
   /** A revision first records the database row as fromVersion, because the ledger does not hold that content yet. */
   recordsBefore?: boolean;
-  /** The revision only retires the row: the file leaves it out, so it is kept and marked inactive (pathway catalog). */
+  /** The revision only retires the row: the file leaves it out, so it is kept and marked inactive (pathway and assessment catalogs). */
   retires?: true;
   /** For a reject: why, in plain English. */
   reasons?: string[];
@@ -91,6 +92,7 @@ export const DATASET_ENGINES: readonly DatasetEngine[] = [
   workoutTemplatesEngine,
   sessionScriptsEngine,
   trainingTracksEngine,
+  ASSESSMENT_CATALOG_ENGINE,
 ].sort((a, b) => DATASETS.indexOf(a.spec) - DATASETS.indexOf(b.spec));
 
 export function datasetEngine(name: DatasetName): DatasetEngine | undefined {
