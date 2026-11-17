@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /**
  * infra/gh-runner -- the PPBF self-hosted runner image (lane DBT, PR-1 of the
@@ -27,8 +28,16 @@ const REPO = 'PunxsyProminence/ppbf-platform';
 /** bash on every platform the suite runs on; paths in forward slashes for Git Bash on Windows. */
 const posix = (p: string) => p.replace(/\\/g, '/');
 
+/**
+ * The guard SIGKILLs processes named Runner.Worker / Runner.Listener on refusal,
+ * and the CI machine running this suite has both. Every test therefore names a
+ * process that does not exist, except the kill test, which names its own decoy.
+ */
+const NO_PROCESS = 'ppbf-no-such-process';
+
 function runGuard(env: Record<string, string>): { code: number; out: string } {
-  const r = spawnSync('bash', [posix(guard), posix(allowlistPath), REPO], {
+  // `bash -e`: how the runner itself runs a .sh hook.
+  const r = spawnSync('bash', ['-e', posix(guard), posix(allowlistPath), REPO, NO_PROCESS], {
     encoding: 'utf8',
     env: { PATH: process.env.PATH ?? '', ...env } as unknown as NodeJS.ProcessEnv,
   });
@@ -94,6 +103,12 @@ describe('job-started-guard.sh: refuses everything else', () => {
     ['an empty ref', { GITHUB_REF: '' }],
     ['an empty workflow ref', { GITHUB_WORKFLOW_REF: '' }],
     ['a job id with an odd character', { GITHUB_JOB: 'apply;id' }],
+    // The allowlist match is whole-line: neither a prefix nor a suffix of a listed line passes.
+    ['a job id that is a prefix of a listed one', { GITHUB_JOB: 'appl' }],
+    ['a file name that is a suffix of a listed one', { GITHUB_WORKFLOW_REF: `${REPO}/.github/workflows/migrations.yml@refs/heads/main` }],
+    ['a line break in the workflow file name', { GITHUB_WORKFLOW_REF: `${REPO}/.github/workflows/evil\napply-migrations.yml@refs/heads/main` }],
+    ['a line break in the job id', { GITHUB_JOB: 'x\napply' }],
+    ['a carriage return in the ref', { GITHUB_REF: 'refs/heads/main\r' }],
   ];
 
   it.each(cases)('refuses %s', (_label, over) => {
@@ -115,12 +130,46 @@ describe('job-started-guard.sh: refuses everything else', () => {
   });
 
   it('refuses when its allowlist is missing', () => {
-    const r = spawnSync('bash', [posix(guard), posix(path.join(dir, 'no-such-file.txt')), REPO], {
+    const r = spawnSync('bash', ['-e', posix(guard), posix(path.join(dir, 'no-such-file.txt')), REPO, NO_PROCESS], {
       encoding: 'utf8',
       env: { PATH: process.env.PATH ?? '', ...ctx(base) } as unknown as NodeJS.ProcessEnv,
     });
     expect(r.status).toBe(1);
     expect(`${r.stdout}`).toContain('allowlist missing');
+  });
+
+  it('defaults to the allowlist the Dockerfile installs and to this repository', () => {
+    const text = fs.readFileSync(guard, 'utf8');
+    expect(text).toContain('ALLOWED_FILE="${1:-/opt/ppbf-runner/allowed-jobs.txt}"');
+    expect(text).toContain(`EXPECTED_REPO="\${2:-${REPO}}"`);
+    expect(text).toContain('STOP_PROCESSES="${3:-Runner.Worker,Runner.Listener}"');
+    expect(fs.readFileSync(path.join(dir, 'Dockerfile'), 'utf8')).toContain('allowed-jobs.txt /opt/ppbf-runner/');
+  });
+
+  // The runner queues the hook as an always() step (actions/runner JobExtension.cs), so a
+  // failing hook alone would let a foreign job's `if: always()` steps run. The guard kills
+  // the Worker instead. Linux only: it needs a parent process with a chosen name in /proc.
+  const linuxOnly = process.platform === 'linux' ? it : it.skip;
+  linuxOnly('on refusal it kills the runner process, so nothing after it runs; on allow it does not', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-guard-kill-'));
+    const decoy = path.join(tmp, 'ppbf-decoy-wkr');
+    fs.copyFileSync('/bin/bash', decoy);
+    fs.chmodSync(decoy, 0o755);
+    const run = (over: Record<string, string>) =>
+      spawnSync(decoy, ['-c', `bash -e "${guard}" "${allowlistPath}" "${REPO}" ppbf-decoy-wkr; echo AFTER-GUARD`], {
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH ?? '', ...ctx('apply-migrations.yml:apply', over) } as unknown as NodeJS.ProcessEnv,
+      });
+    try {
+      const refused = run({ GITHUB_EVENT_NAME: 'push' });
+      expect(refused.signal).toBe('SIGKILL');
+      expect(refused.stdout).not.toContain('AFTER-GUARD');
+      const allowedRun = run({});
+      expect(allowedRun.status).toBe(0);
+      expect(allowedRun.stdout).toContain('AFTER-GUARD');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
@@ -167,6 +216,14 @@ describe('allowed-jobs.txt agrees with the workflows', () => {
     expect(on.filter((t) => t !== 'workflow_dispatch' && t !== 'schedule')).toEqual([]);
   });
 
+  it('no allowed job calls a reusable workflow (the guard sees the caller file name)', () => {
+    for (const entry of allowed) {
+      const [file, job] = entry.split(':');
+      const found = jobs.find((j) => j.file === file && j.job === job) as Job;
+      expect({ entry, reusable: /^ {4}uses:/m.test(found.text) }).toEqual({ entry, reusable: false });
+    }
+  });
+
   it('every job that reaches Postgres and builds no image is on the list', () => {
     const expected = jobs.filter((j) => reachesPostgres(j) && !buildsImages(j)).map((j) => `${j.file}:${j.job}`).sort();
     expect([...allowed].sort()).toEqual(expected);
@@ -176,13 +233,20 @@ describe('allowed-jobs.txt agrees with the workflows', () => {
 describe('entrypoint.sh', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ppbf-runner-entry-'));
   // A stand-in for the runner: prints its arguments and whether JIT_CONFIG leaked through.
-  fs.writeFileSync(path.join(tmp, 'run.sh'), '#!/usr/bin/env bash\necho "ARGS=$*"\necho "LEFT=${JIT_CONFIG:-unset}"\n');
+  fs.writeFileSync(
+    path.join(tmp, 'run.sh'),
+    '#!/usr/bin/env bash\necho "ARGS=$*"\necho "LEFT=${JIT_CONFIG:-unset}"\n'
+      + 'echo "HOOK=${ACTIONS_RUNNER_HOOK_JOB_STARTED:-unset}"\necho "DONE_HOOK=${ACTIONS_RUNNER_HOOK_JOB_COMPLETED:-unset}"\n'
+      + 'echo "CONTAINER_HOOKS=${ACTIONS_RUNNER_CONTAINER_HOOKS:-unset}"\n',
+    { mode: 0o755 },
+  );
+  const baseEnv = { PATH: process.env.PATH ?? '', PPBF_RUNNER_HOME: posix(tmp), PPBF_GUARD_PATH: posix(guard) };
   afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
   it('refuses to start without a JIT configuration', () => {
     const r = spawnSync('bash', [posix(entrypoint)], {
       encoding: 'utf8',
-      env: { PATH: process.env.PATH ?? '', PPBF_RUNNER_HOME: posix(tmp) } as unknown as NodeJS.ProcessEnv,
+      env: { ...baseEnv } as unknown as NodeJS.ProcessEnv,
     });
     expect(r.status).toBe(64);
     expect(r.stderr).toContain('JIT_CONFIG is empty');
@@ -191,11 +255,37 @@ describe('entrypoint.sh', () => {
   it('runs the runner once with --jitconfig and does not pass JIT_CONFIG on in the environment', () => {
     const r = spawnSync('bash', [posix(entrypoint)], {
       encoding: 'utf8',
-      env: { PATH: process.env.PATH ?? '', PPBF_RUNNER_HOME: posix(tmp), JIT_CONFIG: 'eyJmYWtlIjp0cnVlfQ==' } as unknown as NodeJS.ProcessEnv,
+      env: { ...baseEnv, JIT_CONFIG: 'eyJmYWtlIjp0cnVlfQ==' } as unknown as NodeJS.ProcessEnv,
     });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('ARGS=--jitconfig eyJmYWtlIjp0cnVlfQ==');
     expect(r.stdout).toContain('LEFT=unset');
+  });
+
+  it('forces the guard hook on and other hooks off, whatever the job execution set', () => {
+    const r = spawnSync('bash', [posix(entrypoint)], {
+      encoding: 'utf8',
+      env: {
+        ...baseEnv,
+        JIT_CONFIG: 'x',
+        ACTIONS_RUNNER_HOOK_JOB_STARTED: '',
+        ACTIONS_RUNNER_HOOK_JOB_COMPLETED: '/tmp/evil.sh',
+        ACTIONS_RUNNER_CONTAINER_HOOKS: '/tmp/evil.js',
+      } as unknown as NodeJS.ProcessEnv,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain(`HOOK=${posix(guard)}`);
+    expect(r.stdout).toContain('DONE_HOOK=unset');
+    expect(r.stdout).toContain('CONTAINER_HOOKS=unset');
+  });
+
+  it('refuses to start when the guard is missing', () => {
+    const r = spawnSync('bash', [posix(entrypoint)], {
+      encoding: 'utf8',
+      env: { ...baseEnv, PPBF_GUARD_PATH: posix(path.join(tmp, 'missing.sh')), JIT_CONFIG: 'x' } as unknown as NodeJS.ProcessEnv,
+    });
+    expect(r.status).toBe(65);
+    expect(r.stdout).not.toContain('ARGS=');
   });
 });
 
@@ -208,6 +298,14 @@ describe('write-setup-info.sh', () => {
     expect(parsed[0].detail).toMatch(/^Cloud: Azure$/m);
     expect(parsed[0].detail).toMatch(/^Region: eastus$/m);
     expect(parsed[0].detail).toMatch(/^Image: ppbf-gh-runner:2\.338\.2-abc123$/m);
+  });
+
+  it('is read as Azure by the database preflight (scripts/db-reachability-probe.mjs, #1957)', () => {
+    const out = execFileSync('bash', [posix(setupInfo), 'ppbf-gh-runner:2.338.2-abc123', '2.338.2', 'eastus'], { encoding: 'utf8' });
+    const probeUrl = pathToFileURL(path.join(repositoryRoot, 'scripts/db-reachability-probe.mjs')).href;
+    const script = `import { parseSetupInfo } from ${JSON.stringify(probeUrl)}; console.log(JSON.stringify(parseSetupInfo(${JSON.stringify(out)})));`;
+    const parsed = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' }));
+    expect(parsed).toEqual({ cloud: 'Azure', region: 'eastus' });
   });
 
   it('refuses a value that would need escaping', () => {
@@ -233,6 +331,13 @@ describe('Dockerfile', () => {
     const users = code.match(/^USER \S+/gm) ?? [];
     expect(users[users.length - 1]).toBe('USER runner');
     expect(code).toContain('write-setup-info.sh "$IMAGE_TAG" "$RUNNER_VERSION" "$RUNNER_REGION" > /home/runner/.setup_info');
+  });
+
+  it('fails piped build steps, keeps the runner trace out of Container Apps logs, and matches hosted runners where jobs notice', () => {
+    expect(code).toMatch(/^SHELL \["\/bin\/bash", "-o", "pipefail", "-c"\]\s*$/m);
+    expect(code).toMatch(/^ENV ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT=0\s*$/m);
+    expect(code).toMatch(/^ENV LANG=C\.UTF-8\s*$/m);
+    expect(code).toMatch(/\bzstd\b/);
   });
 
   it('carries no credential and no Docker daemon', () => {

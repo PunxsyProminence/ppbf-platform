@@ -7,10 +7,22 @@
 # the container ends with that job. No registration token, PAT or App key is
 # ever given to this container; the JIT configuration is single-use.
 #
-# PPBF_RUNNER_HOME exists for the tests only (default /home/runner, where the
-# official actions-runner image installs the runner). It is read before any
-# job exists, so no workflow can set it.
+# The hook settings are forced HERE, not only in the image: the runner reads
+# them from the process environment, and an empty or different value set on
+# the Container Apps job (template or execution) would silently drop the guard.
+#
+# PPBF_RUNNER_HOME and PPBF_GUARD_PATH exist for the tests only (defaults: the
+# official actions-runner image's /home/runner, and the guard installed by the
+# Dockerfile). They are read before any job exists, so no workflow can set them.
 set -euo pipefail
+
+guard="${PPBF_GUARD_PATH:-/opt/ppbf-runner/job-started-guard.sh}"
+if [ ! -x "$guard" ]; then
+  echo "ppbf-runner: the job-started guard is missing or not executable; refusing to start." >&2
+  exit 65
+fi
+export ACTIONS_RUNNER_HOOK_JOB_STARTED="$guard"
+unset ACTIONS_RUNNER_HOOK_JOB_COMPLETED ACTIONS_RUNNER_CONTAINER_HOOKS
 
 if [ -z "${JIT_CONFIG:-}" ]; then
   echo "ppbf-runner: JIT_CONFIG is empty. This image only runs one just-in-time job; refusing to start." >&2

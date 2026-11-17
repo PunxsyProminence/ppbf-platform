@@ -9,8 +9,10 @@ name: build-runner-image
 # current: Overwatch re-dispatches it when actions/runner releases (about
 # monthly) and rolls the Container Apps job to the new tag (infra/gh-runner/README.md).
 #
-# The base image is pinned by version AND digest, resolved here from GitHub's
-# registry and printed in the summary with the built image's digest.
+# The base image is pinned by version AND digest: the digest is the one the
+# version's tag points at when this runs (not a separately reviewed pin), and it
+# is printed in the summary with the built image's digest. Roll the Container
+# Apps job by that IMAGE DIGEST, never by tag: a tag can be overwritten.
 
 on:
   workflow_dispatch:
@@ -33,6 +35,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # A belt, not the lock: a dispatch from another branch runs that branch's
+      # copy of this file, which could drop this step. The lock is the Azure
+      # federated credential, whose subject is ref:refs/heads/main.
       - name: Refuse Anything But main
         env:
           REF: ${{ github.ref }}
