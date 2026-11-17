@@ -1,0 +1,121 @@
+name: build-runner-image
+
+# Builds the PPBF self-hosted runner image (infra/gh-runner) IN AZURE with
+# `az acr build` (ACR Tasks), so no Docker runs here and nothing is pushed from
+# a GitHub runner. Lane DBT; OD-2026-11-17-008; design DBT_DESIGN_A.md.
+#
+# DISPATCH ONLY, from main, by Overwatch. Every az write is Overwatch's to run
+# (2026-11-17), so this workflow has NO schedule. The runner software must stay
+# current: Overwatch re-dispatches it when actions/runner releases (about
+# monthly) and rolls the Container Apps job to the new tag (infra/gh-runner/README.md).
+#
+# The base image is pinned by version AND digest, resolved here from GitHub's
+# registry and printed in the summary with the built image's digest.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_version:
+        description: actions/runner version to build, e.g. 2.338.2 (empty = the latest release)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: build-runner-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Refuse Anything But main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::build-runner-image runs from main only."
+            exit 1
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve Runner Version And Base Image Digest
+        id: base
+        env:
+          REQUESTED: ${{ inputs.runner_version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REQUESTED" ]; then
+            VERSION="$REQUESTED"
+          else
+            VERSION="$(gh api repos/actions/runner/releases/latest --jq .tag_name)"
+          fi
+          VERSION="${VERSION#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Not an actions/runner version (expected N.N.N)."
+            exit 1
+          fi
+
+          # Anonymous pull token for the public image; masked although it grants nothing private.
+          TOKEN="$(curl -fsSL "https://ghcr.io/token?scope=repository:actions/actions-runner:pull" | jq -r .token)"
+          echo "::add-mask::$TOKEN"
+          DIGEST="$(curl -fsSI \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.oci.image.index.v1+json" \
+            -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://ghcr.io/v2/actions/actions-runner/manifests/$VERSION" \
+            | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:" {print $2}')"
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Could not resolve the digest of ghcr.io/actions/actions-runner:$VERSION."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build The Image In Azure (ACR Tasks)
+        env:
+          ACR_NAME: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          VERSION: ${{ steps.base.outputs.version }}
+          DIGEST: ${{ steps.base.outputs.digest }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          TAG="${VERSION}-${SHA:0:12}"
+          az acr build \
+            --registry "$ACR_NAME" \
+            --image "ppbf-gh-runner:${TAG}" \
+            --platform linux/amd64 \
+            --build-arg "BASE_IMAGE=ghcr.io/actions/actions-runner:${VERSION}@${DIGEST}" \
+            --build-arg "RUNNER_VERSION=${VERSION}" \
+            --build-arg "IMAGE_TAG=ppbf-gh-runner:${TAG}" \
+            --build-arg "RUNNER_REGION=eastus" \
+            infra/gh-runner
+
+          BUILT="$(az acr repository show --name "$ACR_NAME" --image "ppbf-gh-runner:${TAG}" --query digest -o tsv)"
+          {
+            echo "### PPBF runner image built"
+            echo ""
+            echo "- Image: \`ppbf-gh-runner:${TAG}\`"
+            echo "- Image digest: \`${BUILT}\`"
+            echo "- Base: \`ghcr.io/actions/actions-runner:${VERSION}@${DIGEST}\`"
+            echo "- Commit: \`${SHA}\`"
+            echo ""
+            echo "Nothing uses this image until the Container Apps job is pointed at it (Overwatch)."
+          } >> "$GITHUB_STEP_SUMMARY"
