@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
+import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
 // USA Boxing medical restrictions, the staff record (Backbone P22, lane P22a).
@@ -83,6 +84,20 @@ const EMPTY_RECORD = {
   linked_incident_id: '',
   note: '',
 };
+
+// GYM-FLOOR SIZE (OD-2026-11-17-009 ruling 4, OW25-37 A). The route's layout
+// marks the page kiosk, which lifts .btn, .t-body and .t-label. Three things it
+// does not reach are sized here: .input/.select/.textarea (an unlayered 46px
+// that outranks the layered kiosk floor, so each wears input--kiosk, as
+// Workout templates does), and .alert-title/.alert-msg/.working (unlayered
+// fixed sizes; only an inline size outranks them).
+const KIOSK_TEXT = { fontSize: 'var(--t-md)' } as const;
+// .alert-title's `font` shorthand also sets line-height 1, which crowds a wrapped 19.1px title.
+const KIOSK_TITLE = { fontSize: 'var(--t-md)', lineHeight: 1.25 } as const;
+
+// The states in which the restriction is in force (the gate refuses sparring):
+// these carry the Restricted mark (OD-2026-11-17-009 ruling 5, OW25-38 A).
+const IN_FORCE_STATES: ReadonlySet<RestrictionState> = new Set(['in_force', 'release_needed']);
 
 /** Rows the server sent that this screen could not show, said as a count (never dropped silently). */
 function hiddenWords(count: number): string {
@@ -182,17 +197,19 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        setRefusal(refusalWords({ error: payload.error, status: response.status }));
+        if (shownFor.current === forAthlete) setRefusal(refusalWords({ error: payload.error, status: response.status }));
         return false;
       }
       return true;
     } catch {
-      setRefusal('Nothing was saved: the request did not reach the server.');
+      if (shownFor.current === forAthlete) setRefusal('Nothing was saved: the request did not reach the server.');
       return false;
     } finally {
       setBusy(false);
-      // Always re-read: the list on screen is what the server says, never what this form assumed.
-      await read(forAthlete);
+      // Re-read so the list on screen is what the server says, never what this
+      // form assumed -- but only while the same member is still shown. The
+      // member picker is also locked while a save runs; this covers the rest.
+      if (shownFor.current === forAthlete) await read(forAthlete);
     }
   };
 
@@ -244,7 +261,7 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
 
   return (
     <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" aria-label="Medical restrictions">
-      <p className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+      <p className="t-body">
         A restriction applies from its start date until its minimum end date has passed and the date the
         physician&apos;s release was signed is on file. Record that date here once it is signed; nothing else ends
         it. A record entered against the wrong member or with wrong dates is marked entered in error by a gym admin,
@@ -255,8 +272,12 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
         <label className="t-label" htmlFor="medical-restrictions-athlete">Member</label>
         <select
           id="medical-restrictions-athlete"
-          className="select"
+          className="select input--kiosk"
           value={athleteId}
+          // Locked while a save, date or void is in flight, so its answer and
+          // re-read can only ever belong to the member on screen.
+          disabled={busy}
+          aria-busy={busy}
           onChange={(event) => chooseAthlete(event.target.value)}
         >
           <option value="">Choose a member</option>
@@ -278,15 +299,15 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
             <div className="alert alert--warning" role="alert">
               <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
-                <p className="alert-title">Not read</p>
-                <p className="alert-msg">{readError}</p>
+                <p className="alert-title" style={KIOSK_TITLE}>Not read</p>
+                <p className="alert-msg" style={KIOSK_TEXT}>{readError}</p>
               </div>
             </div>
           ) : rows === null ? (
-            <span className="working">Reading medical restrictions...</span>
+            <span className="working" style={KIOSK_TEXT}>Reading medical restrictions...</span>
           ) : rows.length === 0 ? (
             // "None on file" only when the server sent none; a row this screen
-            // could not show is counted below instead.
+            // could not show is counted above instead.
             hiddenCount === 0 ? <p className="t-body">No medical restriction on file for this member.</p> : null
           ) : (
             <ul className="grid gap-[var(--s3)]" aria-label="Medical restrictions on file">
@@ -297,7 +318,10 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
                 const open = row.state !== 'voided';
                 return (
                   <li key={row.restriction_id} className="rounded-[var(--r-md)] border border-[color:var(--bone-300)] p-[var(--s3)]">
-                    <p className="t-label">{STATE_WORDS[row.state]}</p>
+                    <p className="t-label flex flex-wrap items-center gap-[var(--s2)]">
+                      {IN_FORCE_STATES.has(row.state) ? <RestrictedMark /> : null}
+                      <span>{STATE_WORDS[row.state]}</span>
+                    </p>
                     <p className="t-body mt-[var(--s2)]">
                       From {dayWords(row.start_date)}; minimum end date {dayWords(row.minimum_end_date)}.
                     </p>
@@ -326,7 +350,7 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
                           <input
                             id={`release-${row.restriction_id}`}
                             type="date"
-                            className="input"
+                            className="input input--kiosk"
                             value={dates[releaseKey] ?? ''}
                             onChange={(event) => setDates((d) => ({ ...d, [releaseKey]: event.target.value }))}
                           />
@@ -344,7 +368,7 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
                           <input
                             id={`lbc-${row.restriction_id}`}
                             type="date"
-                            className="input"
+                            className="input input--kiosk"
                             value={dates[lbcKey] ?? ''}
                             onChange={(event) => setDates((d) => ({ ...d, [lbcKey]: event.target.value }))}
                           />
@@ -363,7 +387,7 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
                           </label>
                           <input
                             id={`void-${row.restriction_id}`}
-                            className="input"
+                            className="input input--kiosk"
                             maxLength={500}
                             value={dates[voidKey] ?? ''}
                             onChange={(event) => setDates((d) => ({ ...d, [voidKey]: event.target.value }))}
@@ -386,34 +410,34 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
               <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
                 <div className="field">
                   <label className="t-label" htmlFor="mr-source">Source</label>
-                  <select id="mr-source" className="select" required value={record.source} onChange={(event) => setRecord((r) => ({ ...r, source: event.target.value }))}>
+                  <select id="mr-source" className="select input--kiosk" required value={record.source} onChange={(event) => setRecord((r) => ({ ...r, source: event.target.value }))}>
                     <option value="">Choose…</option>
                     {SOURCES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </div>
                 <div className="field">
                   <label className="t-label" htmlFor="mr-loc">Loss of consciousness</label>
-                  <select id="mr-loc" className="select" required value={record.loss_of_consciousness} onChange={(event) => setRecord((r) => ({ ...r, loss_of_consciousness: event.target.value }))}>
+                  <select id="mr-loc" className="select input--kiosk" required value={record.loss_of_consciousness} onChange={(event) => setRecord((r) => ({ ...r, loss_of_consciousness: event.target.value }))}>
                     <option value="">Choose…</option>
                     {LOC_VALUES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </div>
                 <div className="field">
                   <label className="t-label" htmlFor="mr-start">Start date</label>
-                  <input id="mr-start" type="date" className="input" value={record.start_date} onChange={(event) => setRecord((r) => ({ ...r, start_date: event.target.value }))} />
+                  <input id="mr-start" type="date" className="input input--kiosk" value={record.start_date} onChange={(event) => setRecord((r) => ({ ...r, start_date: event.target.value }))} />
                 </div>
                 <div className="field">
                   <label className="t-label" htmlFor="mr-end">Minimum end date</label>
-                  <input id="mr-end" type="date" className="input" value={record.minimum_end_date} onChange={(event) => setRecord((r) => ({ ...r, minimum_end_date: event.target.value }))} />
+                  <input id="mr-end" type="date" className="input input--kiosk" value={record.minimum_end_date} onChange={(event) => setRecord((r) => ({ ...r, minimum_end_date: event.target.value }))} />
                 </div>
               </div>
               <div className="field mt-[var(--s3)]">
                 <label className="t-label" htmlFor="mr-incident">Incident id (optional)</label>
-                <input id="mr-incident" className="input" maxLength={200} value={record.linked_incident_id} onChange={(event) => setRecord((r) => ({ ...r, linked_incident_id: event.target.value }))} />
+                <input id="mr-incident" className="input input--kiosk" maxLength={200} value={record.linked_incident_id} onChange={(event) => setRecord((r) => ({ ...r, linked_incident_id: event.target.value }))} />
               </div>
               <div className="field mt-[var(--s3)]">
                 <label className="t-label" htmlFor="mr-note">Staff note (optional — the member and their parent never see this)</label>
-                <textarea id="mr-note" className="textarea" rows={2} maxLength={2000} value={record.note} onChange={(event) => setRecord((r) => ({ ...r, note: event.target.value }))} />
+                <textarea id="mr-note" className="textarea input--kiosk" rows={2} maxLength={2000} value={record.note} onChange={(event) => setRecord((r) => ({ ...r, note: event.target.value }))} />
               </div>
               <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                 <button type="button" className="btn" disabled={busy} aria-busy={busy} onClick={() => void submitRecord()}>
@@ -432,10 +456,10 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
 
           {refusal ? (
             <div className="mt-[var(--s3)]" role="alert">
-              <span className="stamp stamp--brass stamp--flat">
+              <span className="stamp stamp--brass stamp--flat stamp--kiosk">
                 <i aria-hidden="true">▲</i> Not saved
               </span>
-              <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{refusal}</p>
+              <p className="t-body mt-[var(--s2)]">{refusal}</p>
             </div>
           ) : null}
         </div>

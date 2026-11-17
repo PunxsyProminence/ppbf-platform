@@ -5,14 +5,19 @@
 // What a member (MedicalRestrictionNotice) and a guardian
 // (MedicalRestrictionStatement) see of a USA Boxing medical restriction, lane
 // P22c, Jason's card OW25-06 A: on file, the minimum end date, whether a
-// physician's release is needed -- and nothing at all when none is in force,
-// when the read fails, or when what arrived is not those three fields
-// (Overwatch, P22c step 1; no new warning).
+// physician's release is needed -- with the Restricted mark, never the
+// medical-stop mark (OD-2026-11-17-009 ruling 5, OW25-38 A). Nothing at all
+// when none is in force. A read that fails, or what arrived is not null and
+// not those three fields, shows ONE neutral line and never the "none" state
+// (ruling 3, OW25-35 A).
 
 import { render, screen, waitFor } from '@testing-library/react';
 
 import MedicalRestrictionNotice, {
+  MEDICAL_RESTRICTION_UNREAD_LINE,
   MedicalRestrictionStatement,
+  RestrictedMark,
+  familyRestrictionRead,
   isFamilyMedicalRestriction,
   medicalRestrictionSentence,
 } from './MedicalRestrictionNotice';
@@ -70,9 +75,11 @@ describe('MedicalRestrictionNotice (the member)', () => {
 
     expect(await screen.findByText('USA Boxing medical restriction on file')).toBeTruthy();
     expect(container.textContent).toBe(
-      'USA Boxing medical restriction on file'
+      '▲Restricted'
+      + 'USA Boxing medical restriction on file'
       + 'No sparring until December 1, 2026 has passed and a physician’s release is on file. Training below sparring is fine.',
     );
+    expect(screen.queryByTestId('medical-restriction-unread')).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/pilot/athlete/medical-restriction'),
       expect.objectContaining({ credentials: 'include' }),
@@ -81,22 +88,68 @@ describe('MedicalRestrictionNotice (the member)', () => {
 
   test.each([
     ['none in force (null)', () => json({ ok: true, medical_restriction: null })],
-    ['a refused read (not an athlete)', () => json({ ok: false, error: 'Forbidden' }, 403)],
-    ['a server fault', () => json({ ok: false }, 500)],
-    ['a 200 that does not say ok', () => json({ medical_restriction: IN_FORCE })],
-    ['a malformed value', () => json({ ok: true, medical_restriction: { on_file: true } })],
-    ['a body that is not JSON', () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }) as unknown as Response],
+    ['signed out (401)', () => json({ error: 'Unauthorized' }, 401)],
+    ['a refused read (not an athlete, 403)', () => json({ ok: false, error: 'Forbidden' }, 403)],
+    ['no live record (404)', () => json({ error: 'Not found' }, 404)],
   ])('%s: renders nothing', async (_label, responder) => {
     const fetchMock = mockRead(responder);
     const { container } = render(<MedicalRestrictionNotice />);
     expect(await settled(fetchMock, container)).toBe('');
   });
 
-  test('an unreachable API renders nothing', async () => {
+  test.each([
+    ['a server fault (500)', () => json({ ok: false }, 500)],
+    ['a busy server (503)', () => json({ ok: false }, 503)],
+    ['a 200 that does not say ok', () => json({ medical_restriction: IN_FORCE })],
+    ['a 200 with no medical_restriction field', () => json({ ok: true })],
+    ['a malformed value', () => json({ ok: true, medical_restriction: { on_file: true } })],
+    ['a body that is not JSON', () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }) as unknown as Response],
+  ])('%s: the one neutral line, never the "none" state', async (_label, responder) => {
+    const fetchMock = mockRead(responder);
+    const { container } = render(<MedicalRestrictionNotice />);
+    expect(await settled(fetchMock, container)).toBe(MEDICAL_RESTRICTION_UNREAD_LINE);
+    const line = screen.getByTestId('medical-restriction-unread');
+    // Neutral: plain body text, a status (not an alert), no glyph, no mark.
+    expect(line.className).toBe('t-body');
+    expect(line.getAttribute('role')).toBe('status');
+    expect(container.querySelector('i, .badge, [role="alert"]')).toBeNull();
+  });
+
+  test('an unreachable API shows the neutral line', async () => {
     const fetchMock = jest.fn(async () => { throw new TypeError('Failed to fetch'); });
     global.fetch = fetchMock as unknown as typeof fetch;
     const { container } = render(<MedicalRestrictionNotice />);
-    expect(await settled(fetchMock, container)).toBe('');
+    expect(await settled(fetchMock, container)).toBe(MEDICAL_RESTRICTION_UNREAD_LINE);
+  });
+
+  test('the line is the card wording, word for word, with the closing period', () => {
+    expect(MEDICAL_RESTRICTION_UNREAD_LINE).toBe('Medical restriction: could not be checked just now; your coach can see it.');
+  });
+});
+
+describe('familyRestrictionRead', () => {
+  test('null is none; the three fields are in force; anything else is not read', () => {
+    expect(familyRestrictionRead(null, false)).toEqual({ kind: 'none' });
+    expect(familyRestrictionRead(IN_FORCE, false)).toEqual({ kind: 'in_force', restriction: IN_FORCE });
+    for (const value of [undefined, {}, [], 'on file', { on_file: true }]) {
+      expect(familyRestrictionRead(value, false)).toEqual({ kind: 'unread' });
+    }
+  });
+
+  test('a failed read is not read, whatever value came with it', () => {
+    expect(familyRestrictionRead(null, true)).toEqual({ kind: 'unread' });
+    expect(familyRestrictionRead(IN_FORCE, true)).toEqual({ kind: 'unread' });
+  });
+});
+
+describe('the Restricted mark (OD-2026-11-17-009 ruling 5)', () => {
+  test('is the restricted rung with ▲ and the word, never the medical-stop mark', () => {
+    render(<RestrictedMark />);
+    const mark = screen.getByTestId('restricted-mark');
+    expect(mark.className).toBe('badge badge--restricted');
+    expect(mark.textContent).toBe('▲Restricted');
+    expect(mark.outerHTML).not.toMatch(/locked|✕/);
+    expect(mark.querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
   });
 });
 
@@ -104,7 +157,8 @@ describe('MedicalRestrictionStatement (the guardian)', () => {
   test('shows the same words for a value already read', () => {
     render(<MedicalRestrictionStatement restriction={{ ...IN_FORCE, release_needed: false }} />);
     expect(screen.getByTestId('medical-restriction-notice').textContent).toBe(
-      'USA Boxing medical restriction on file'
+      '▲Restricted'
+      + 'USA Boxing medical restriction on file'
       + 'No sparring until December 1, 2026 has passed. Training below sparring is fine.',
     );
   });

@@ -297,6 +297,31 @@ describe('Library page', () => {
     await waitFor(() => expect(screen.getByText(/No library tracks are loaded/)).toBeInTheDocument());
   });
 
+  // P6 (OD-2026-11-17-009, OW25-34 A; Overwatch DFX Q2: the generic label).
+  it('labels each beside line, says "not set" for a detail with no value, and gives the passages a 55px tap row', async () => {
+    mockReads({ ...FIGHT_WEEK, details: { ...FIGHT_WEEK.details, made_up_empty_detail: null } });
+    await openFirst(FIGHT_WEEK_SUMMARY.name);
+    const thursday = await screen.findByText(THURSDAY);
+    const item = thursday.closest('li')!;
+    expect(within(item).getByText('Shown beside the sheet')).toBeInTheDocument();
+    expect(within(item).getByText('Shown beside the sheet').className).toBe('t-label');
+    expect(screen.getByText('not set')).toBeInTheDocument();
+    expect(screen.queryByText('null')).toBeNull();
+    expect(document.querySelectorAll('summary').length).toBeGreaterThan(0);
+    for (const summary of document.querySelectorAll('summary')) {
+      expect(summary.className).toContain('min-h-[var(--tap)]');
+    }
+  });
+
+  it('sets both error lines at the kiosk text size (P6)', () => {
+    const fs = jest.requireActual('node:fs') as typeof import('node:fs');
+    const path = jest.requireActual('node:path') as typeof import('node:path');
+    const source = fs.readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+    const errorLines = source.split('\n').filter((line) => /\{(loadError|detailError)\}|font-semibold text-\[color:var\(--bone-100\)\]/.test(line));
+    expect(errorLines.length).toBeGreaterThanOrEqual(2);
+    for (const line of errorLines) expect(line).not.toMatch(/--t-sm/);
+  });
+
   it('uses no warning colour anywhere on the page', () => {
     // A source check on purpose: --locked means a medical stop and nothing else.
     const fs = jest.requireActual('node:fs') as typeof import('node:fs');

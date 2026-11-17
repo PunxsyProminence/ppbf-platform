@@ -43,6 +43,8 @@ const HELD_ATHLETE = [
     gates: [
       { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome: 'flagged' as const, evaluated_at: '2026-08-01T00:00:00.000Z' },
     ],
+    // What the route sends for "none in force" (a good read).
+    medical_restriction: null,
   },
 ];
 
@@ -54,6 +56,7 @@ const CLEAR_ATHLETE = [
     gates: [
       { gate_key: 'mouthguard_on_file', name: 'Mouthguard On File', category: 'equipment', outcome: 'passed' as const, evaluated_at: '2026-08-01T00:00:00.000Z' },
     ],
+    medical_restriction: null,
   },
 ];
 
@@ -297,6 +300,7 @@ function athleteWith(waivers: unknown, athleteName = 'Casey W.') {
       hold: null,
       gates: [],
       waivers,
+      medical_restriction: null,
     },
   ];
 }
@@ -595,8 +599,10 @@ test('a failed load offers Check again, which reads Loading and then the answer'
 
 // Lane P22c (Jason's card OW25-06 A): a USA Boxing medical restriction in
 // force reads as on file, its minimum end date, and whether a release is
-// needed -- on that child's card only. None in force (null, lifted, voided)
-// shows nothing at all, and neither does a value that is not those fields.
+// needed -- on that child's card only, with the Restricted mark
+// (OD-2026-11-17-009 ruling 5). None in force (null) shows nothing at all. A
+// failed read, a missing field or a value that is not those fields shows the
+// one neutral "could not be checked" line, never nothing (ruling 3).
 describe('the USA Boxing medical restriction (P22c)', () => {
   const RESTRICTED = { on_file: true, minimum_end_date: '2026-12-01', release_needed: true };
 
@@ -615,9 +621,15 @@ describe('the USA Boxing medical restriction (P22c)', () => {
     expect(notices).toHaveLength(1);
     expect(notices[0].closest('article')?.textContent).toContain('Sam R.');
     expect(notices[0].textContent).toBe(
-      'USA Boxing medical restriction on file'
+      '▲Restricted'
+      + 'USA Boxing medical restriction on file'
       + 'No sparring until December 1, 2026 has passed and a physician’s release is on file. Training below sparring is fine.',
     );
+    expect(screen.queryByTestId('medical-restriction-unread')).toBeNull();
+    // The restricted rung, never the medical-stop (locked) mark.
+    const mark = screen.getByTestId('restricted-mark');
+    expect(mark.className).toBe('badge badge--restricted');
+    expect(mark.textContent).not.toContain('✕');
   });
 
   test('a release on file drops the release clause', async () => {
@@ -630,13 +642,9 @@ describe('the USA Boxing medical restriction (P22c)', () => {
     expect((await screen.findByTestId('medical-restriction-notice')).textContent).not.toMatch(/release/);
   });
 
-  test.each([
-    ['null (none in force)', null],
-    ['left out by an older server', undefined],
-    ['malformed', { on_file: true }],
-  ])('%s: nothing is shown', async (_label, value) => {
+  test('null (none in force): nothing is shown', async () => {
     global.fetch = jest.fn().mockResolvedValue(jsonResponse({
-      ok: true, items: [{ ...CLEAR_ATHLETE[0], medical_restriction: value }],
+      ok: true, items: [{ ...CLEAR_ATHLETE[0], medical_restriction: null }],
     })) as unknown as typeof fetch;
 
     render(<GuardianSafetyPage />);
@@ -644,5 +652,27 @@ describe('the USA Boxing medical restriction (P22c)', () => {
     await screen.findByText('Sam R.');
     expect(screen.queryByTestId('medical-restriction-notice')).toBeNull();
     expect(screen.queryByText(/medical restriction/i)).toBeNull();
+  });
+
+  test.each([
+    ['a failed read (medical_restriction_unread)', { medical_restriction: null, medical_restriction_unread: true }],
+    ['the field left out', { medical_restriction: undefined }],
+    ['malformed', { medical_restriction: { on_file: true } }],
+  ])('%s: the one neutral line, never the "none" state', async (_label, fields) => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({
+      ok: true, items: [{ ...CLEAR_ATHLETE[0], ...fields }],
+    })) as unknown as typeof fetch;
+
+    render(<GuardianSafetyPage />);
+
+    const line = await screen.findByTestId('medical-restriction-unread');
+    expect(line.textContent).toBe('Medical restriction: could not be checked just now; your coach can see it.');
+    expect(line.closest('article')?.textContent).toContain('Sam R.');
+    // Neutral: no glyph, no badge, no alert, nothing styled as a warning.
+    expect(line.querySelector('i, .badge')).toBeNull();
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.className).toBe('t-body');
+    expect(screen.queryByTestId('medical-restriction-notice')).toBeNull();
+    expect(screen.queryByTestId('restricted-mark')).toBeNull();
   });
 });

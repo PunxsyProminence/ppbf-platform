@@ -51,6 +51,51 @@ describe('cited evidence on a surface that does not read the Library', () => {
     expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument();
   });
 
+  it('rises to the kiosk floors only on a gym-floor page (OD-2026-11-17-009 ruling 4)', () => {
+    const { container } = render(<DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" />);
+    for (const summary of container.querySelectorAll('summary')) {
+      expect(summary.className).toContain('min-h-[44px]');
+      expect(summary.className).toContain('in-data-[surface=kiosk]:min-h-[var(--tap)]');
+    }
+    const sized = container.querySelectorAll('[class*="in-data-[surface=kiosk]:text-[length:var(--t-md)]"]');
+    expect(sized.length).toBeGreaterThan(0);
+    // Every small text size on the card has its kiosk rise beside it.
+    for (const node of container.querySelectorAll('[class*="--t-sm"], [class*="--t-xs"]')) {
+      expect(node.className).toContain('in-data-[surface=kiosk]:text-[length:var(--t-md)]');
+    }
+  });
+
+  // On /coach/drills the card is light parchment, where the bone inks read at
+  // 1.01:1 (--bone-300) and 1.22:1 (--bone-200); inside .ge-drillcase that text
+  // takes the card's own ink. A .t-label and a list item already do, through
+  // the card's unlayered rules (ppbf-golden-era.css, .mat-leather--raised).
+  it('every bone colour and the link in the source carry the card-ink fallback (all branches, not only those rendered)', () => {
+    const fs = jest.requireActual('node:fs') as typeof import('node:fs');
+    const path = jest.requireActual('node:path') as typeof import('node:path');
+    const source = fs.readFileSync(path.join(__dirname, 'DrillDetail.tsx'), 'utf8');
+    const lines = source.split('\n');
+    const bone = lines.filter((line) => /--bone-\d00\)\]/.test(line) && !line.trim().startsWith('//'));
+    expect(bone.length).toBeGreaterThan(10);
+    for (const line of bone) {
+      // A .t-label takes the card's label ink from the card's own unlayered rule.
+      if (line.includes('t-label')) continue;
+      expect(line.includes('in-[.ge-drillcase]:text-[color:inherit]') || line.includes('${CARD_INK}') ? 'covered' : line.trim()).toBe('covered');
+    }
+    const links = lines.filter((line) => /className="underline/.test(line));
+    expect(links.length).toBeGreaterThan(0);
+    for (const line of links) expect(line).toContain('in-[.ge-drillcase]:text-[color:inherit]');
+  });
+
+  it('no bone ink is left on the parchment card without the card-ink fallback', () => {
+    const { container } = render(<main className="ge-drillcase"><DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" /></main>);
+    const bone = [...container.querySelectorAll('[class*="--bone-"]')];
+    expect(bone.length).toBeGreaterThan(0);
+    for (const node of bone) {
+      if (node.classList.contains('t-label') || node.tagName === 'LI') continue;
+      expect(node.className).toContain('in-[.ge-drillcase]:text-[color:inherit]');
+    }
+  });
+
   it('says a failed read failed', () => {
     render(<DrillDetail view={fromCoachDrillDetail(drill, null)} audience="coach" />);
 
