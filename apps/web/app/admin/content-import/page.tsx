@@ -74,7 +74,7 @@ const DATASET_LABEL: Record<string, string> = {
   'workout-templates': 'Workout templates',
   'session-scripts': 'Session plans',
   'transfer-claims': 'Transfer claims',
-  'assessment-protocols': 'Assessment protocols',
+  'assessment-catalog': 'Assessment catalog',
 };
 
 /* Law 3 (docs/FRONTEND_STYLE_CONTRACT.md:43-45): every state is a .badge

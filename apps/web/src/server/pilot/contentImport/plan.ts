@@ -144,7 +144,7 @@ export async function planWithState(request: ImportRequest, checkedActor?: Impor
   const datasetPlans: DatasetPlan[] = [];
   for (const engine of engines) {
     const files = parsed.files.filter((file) => file.spec.dataset === engine.spec.name);
-    datasetPlans.push(await engine.plan(context, { files, validation }));
+    datasetPlans.push(await engine.plan(context, { files, validation, all: parsed.files }));
   }
 
   const units = datasetPlans.flatMap((plan) => plan.units).sort(compareUnits);

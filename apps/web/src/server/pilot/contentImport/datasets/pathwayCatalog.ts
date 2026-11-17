@@ -1,17 +1,25 @@
 import type { DbClient } from '../actor';
-import { type CellInput, canonicalRow, isContentColumn, sha256Hex } from '../canonical';
-import { appendLedgerRow, ledgerHeads, planLedgerVersions, type LedgerVersionPlan } from '../ledger';
+import type { CellInput } from '../canonical';
 import { datasetSpec } from '../specs';
+import { ANCHOR_SPECS_FILE, CRITERIA_FILE, GATES_FILE } from '../specs/assessmentCatalog';
 import {
   PATHWAY_DEFAULTS_FILE,
   PATHWAY_LINKS_FILE,
   PATHWAY_STAGES_FILE,
   pathwayStageReferenceFindings,
 } from '../specs/pathwayCatalog';
-import { type ColumnSpec, type FileSpec, type Finding, type ParsedFile, type ParsedPackage, STAGE_KEYS, type Warning } from '../types';
-import { integerText, normalizeCell, numberText, splitList } from '../values';
-import { withStoredLabels } from './contentLabels';
-import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
+import { type FileSpec, type Finding, type ParsedFile, type ParsedPackage, STAGE_KEYS, type Warning } from '../types';
+import { splitList } from '../values';
+import {
+  applySnapshotTables,
+  finishSnapshotUnits,
+  lockSnapshotTables,
+  planSnapshotTables,
+  readSnapshotTables,
+  type SnapshotItem,
+  type SnapshotTable,
+} from './catalogSnapshot';
+import type { DatasetEngine, DatasetPlan, DatasetWriteResult } from './index';
 
 // THE PATHWAY CATALOG ENGINE (specs/pathwayCatalog.ts; pathway_catalog
 // migration). Three keyed tables, each loaded in the keyed-registry pattern
@@ -30,110 +38,43 @@ import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, Uni
 // table, written from the package's label columns; a label column the file
 // leaves out keeps the stored value (contentLabels.ts withStoredLabels, lane
 // BB-1a's rule). stage_keys is blank on catalog rows (the spec refuses it).
+// The snapshot mechanics live in catalogSnapshot.ts (shared with the
+// assessment catalog, lane CAT-b); what is pathway-specific stays here.
 //
 // NOTHING HERE PLACES ANYONE. The catalog describes; no reader computes or
 // restricts a stage from it.
 
-interface Table {
-  spec: FileSpec;
-  table: string;
-  /** pilot.reference_content_revisions.dataset (a lowercase slug). */
-  ledgerDataset: string;
-  itemKey(row: Readonly<Record<string, CellInput>>): string;
-}
-
 const dataset = datasetSpec('pathway-catalog');
 const specOf = (file: string) => dataset.files.find((spec) => spec.file === file) as FileSpec;
 
-const TABLES: readonly Table[] = [
-  { spec: specOf(PATHWAY_STAGES_FILE), table: 'pathway_stages', ledgerDataset: 'pathway_stages', itemKey: (row) => String(row.stage_key) },
+/** Columns that hold JSON in the tables (jsonb): compared, and handed to withStoredLabels, as text. */
+const JSON_CONTENT = new Set(['phases', 'field_labels', 'evidence']);
+
+const TABLES: readonly SnapshotTable[] = [
+  { spec: specOf(PATHWAY_STAGES_FILE), table: 'pathway_stages', ledgerDataset: 'pathway_stages', itemKey: (row) => String(row.stage_key), jsonColumns: JSON_CONTENT },
   {
     spec: specOf(PATHWAY_LINKS_FILE),
     table: 'pathway_stage_links',
     ledgerDataset: 'pathway_stage_links',
     itemKey: (row) => `${String(row.from_stage_key)}>${String(row.to_stage_key)}`,
+    jsonColumns: JSON_CONTENT,
   },
-  { spec: specOf(PATHWAY_DEFAULTS_FILE), table: 'pathway_stage_defaults', ledgerDataset: 'pathway_stage_defaults', itemKey: (row) => String(row.default_id) },
+  {
+    spec: specOf(PATHWAY_DEFAULTS_FILE),
+    table: 'pathway_stage_defaults',
+    ledgerDataset: 'pathway_stage_defaults',
+    itemKey: (row) => String(row.default_id),
+    jsonColumns: JSON_CONTENT,
+  },
 ];
 
-/** Columns that hold JSON in the table (jsonb): compared, and handed to withStoredLabels, as text. */
-const JSON_CONTENT = new Set(['phases', 'field_labels', 'evidence']);
-
-/** JSON with keys sorted at every depth, so CSV text and jsonb compare equal. */
-function sortedJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(sortedJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${sortedJson((value as Record<string, unknown>)[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
-
-function jsonText(value: CellInput | object): string {
-  if (value === null || value === undefined || value === '') return '';
-  if (typeof value === 'object') return sortedJson(value);
-  try {
-    return sortedJson(JSON.parse(String(value)));
-  } catch {
-    return String(value);
-  }
-}
-
-/** A row's cells with its JSON content columns in one canonical form, whichever side it came from. */
-function normalized(row: Readonly<Record<string, unknown>>): Record<string, CellInput> {
-  const out: Record<string, CellInput> = {};
-  for (const [name, value] of Object.entries(row)) {
-    out[name] = JSON_CONTENT.has(name) ? jsonText(value as CellInput) : (value as CellInput);
-  }
-  return out;
-}
-
-/** What one row IS, active or retired: the ledger's content_sha256. */
-function rowHash(table: Table, row: Readonly<Record<string, CellInput>>, active: boolean): string {
-  return sha256Hex(JSON.stringify([table.spec.file, canonicalRow(table.spec, row), active ? 'active' : 'retired']));
-}
-
-function ledgerContent(table: Table, row: Readonly<Record<string, CellInput>>, active: boolean): Record<string, string> {
-  return { ...canonicalRow(table.spec, row), active_flag: String(active) };
-}
-
-/** The value written for a validated cell; blank is NULL (every optional column is nullable). */
-function databaseValue(column: ColumnSpec, value: string): unknown {
-  if (!value) return null;
-  if (column.type === 'integer') return Number(integerText(value));
-  if (column.type === 'number') return Number(numberText(value));
-  if (column.list) return splitList(value, column.list);
-  return value;
-}
-
-/** The columns an UPDATE or INSERT writes: content (labels included; stage_keys is not a column). */
-function written(table: Table): ColumnSpec[] {
-  return table.spec.columns.filter((column) => (isContentColumn(column) || column.role === 'key') && column.name !== 'stage_keys');
-}
-
-interface Item {
-  table: Table;
-  unit: UnitPlan;
-  cells?: Record<string, CellInput>;
-  active: boolean;
-  databaseCells?: Record<string, CellInput>;
-  ledger?: LedgerVersionPlan;
-}
-
 interface State {
-  items: Item[];
+  items: SnapshotItem[];
 }
 
 async function tablesExist(client: DbClient): Promise<boolean> {
   const { rows } = await client.query<{ ready: boolean }>(`select to_regclass('pilot.pathway_stages') is not null as ready`);
   return rows[0]?.ready === true;
-}
-
-async function databaseRows(ctx: EngineContext, table: Table): Promise<Map<string, Record<string, CellInput>>> {
-  const { rows } = await ctx.client.query<Record<string, unknown>>(`select * from pilot.${table.table} where organization_id = $1`, [ctx.organizationId]);
-  return new Map(rows.map((row) => {
-    const cells = normalized(row);
-    return [table.itemKey(cells), cells];
-  }));
 }
 
 /** Every stage key the organization's catalog holds, retired ones included (a link to one is still a valid foreign key). */
@@ -186,9 +127,7 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
   // Every row of the three tables: a snapshot may retire rows it does not name.
   async lockKeys(ctx): Promise<void> {
     if (!(await tablesExist(ctx.client))) return;
-    for (const table of TABLES) {
-      await ctx.client.query(`select 1 from pilot.${table.table} where organization_id = $1 order by 1 for update`, [ctx.organizationId]);
-    }
+    await lockSnapshotTables(ctx, TABLES);
   },
 
   async plan(ctx, input): Promise<DatasetPlan> {
@@ -206,9 +145,8 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
     }
 
     const findings: Finding[] = [];
-    const present = (table: Table) => input.files.find((file) => file.spec === table.spec);
-    const database = new Map<Table, Map<string, Record<string, CellInput>>>();
-    for (const table of TABLES) database.set(table, await databaseRows(ctx, table));
+    const present = (table: SnapshotTable) => input.files.find((file) => file.spec === table.spec);
+    const database = await readSnapshotTables(ctx, TABLES);
 
     // Link ends and default scopes against the stages this load leaves
     // active. With the package's stage file, the validator has checked the
@@ -236,6 +174,35 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
           }
         }
       }
+      // The assessment catalog's loaded rows that name a stage (lane CAT-b): a
+      // stage file may not retire a stage one of them still names, unless the
+      // package carries that catalog file too (its own engine checks it).
+      const named: [string, string, string, string][] = [
+        ['pathway_gates', 'gate_id', 'stage_key', GATES_FILE],
+        ['pathway_gate_criteria', 'criterion_id', 'ref_stage_key', CRITERIA_FILE],
+        ['scorecard_anchor_clip_specs', 'anchor_spec_id', 'used_by_stage_keys', ANCHOR_SPECS_FILE],
+      ];
+      for (const [catalogTable, keyColumn, stageColumn, file] of named) {
+        if (input.all?.some((candidate) => candidate.spec.file === file)) continue;
+        const ready = await ctx.client.query<{ ready: boolean }>(`select to_regclass('pilot.${catalogTable}') is not null as ready`);
+        if (ready.rows[0]?.ready !== true) continue;
+        const { rows } = await ctx.client.query<{ key: string; named: string | string[] | null }>(
+          `select ${keyColumn} as key, ${stageColumn} as named from pilot.${catalogTable} where organization_id = $1 and active_flag`,
+          [ctx.organizationId],
+        );
+        for (const row of rows) {
+          for (const end of Array.isArray(row.named) ? row.named : [row.named]) {
+            if (end && !kept.has(end)) {
+              findings.push({
+                code: 'orphan_reference',
+                file: present(stagesTable)?.path ?? PATHWAY_STAGES_FILE,
+                key: row.key,
+                message: `this file would retire stage '${end}', but the loaded ${catalogTable} row ${row.key} still names it; carry ${file} too, or keep the stage`,
+              });
+            }
+          }
+        }
+      }
     } else {
       const loaded = new Set(
         [...(database.get(stagesTable)?.values() ?? [])].filter((row) => row.active_flag !== false).map((row) => String(row.stage_key)),
@@ -243,66 +210,13 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
       findings.push(...pathwayStageReferenceFindings({ files: [...input.files] }, (key) => loaded.has(key), "this organization's active pathway stages (pilot.pathway_stages)"));
     }
 
-    const items: Item[] = [];
-    for (const table of TABLES) {
-      const file = present(table);
-      if (!file) continue;
-      const rows = database.get(table) ?? new Map();
-      const keys = file.rows.map((row) => table.itemKey(row.values));
-      const heads = await ledgerHeads(ctx.client, ctx.organizationId, table.ledgerDataset, [...new Set([...keys, ...rows.keys()])]);
-      const fileFindings = [...input.validation.blocking, ...findings].filter((finding) => finding.file === file.path);
-      const wholeFile = fileFindings.filter((finding) => finding.line === undefined || finding.line <= 1).map((finding) => finding.message);
-      const seen = new Set<string>();
-
-      file.rows.forEach((row, index) => {
-        const key = keys[index];
-        seen.add(key);
-        const existing = rows.get(key);
-        const cells = normalized(withStoredLabels(file.header, row.values, existing));
-        const unit: UnitPlan = { dataset: dataset.name, key, outcome: 'reject', fileSha256: rowHash(table, cells, true) };
-        const existingActive = existing ? existing.active_flag !== false : false;
-        if (existing) unit.databaseSha256 = rowHash(table, existing, existingActive);
-        const reasons = [...wholeFile, ...fileFindings.filter((finding) => finding.line === row.line).map((finding) => finding.message)];
-        let ledger: LedgerVersionPlan | undefined;
-        if (reasons.length > 0) {
-          unit.reasons = reasons;
-        } else if (!existing) {
-          unit.outcome = 'new';
-          ledger = planLedgerVersions(heads.get(key), undefined);
-        } else if (unit.fileSha256 === unit.databaseSha256) {
-          unit.outcome = 'unchanged';
-        } else {
-          unit.outcome = 'new_version';
-          ledger = planLedgerVersions(heads.get(key), unit.databaseSha256);
-        }
-        items.push({ table, unit, cells, active: true, databaseCells: existing, ledger });
-      });
-
-      // The snapshot leaves these out: an active row is retired, a retired one left alone.
-      for (const [key, row] of rows) {
-        if (seen.has(key)) continue;
-        if (row.active_flag === false) {
-          items.push({ table, unit: { dataset: dataset.name, key, outcome: 'absent' }, active: false });
-          continue;
-        }
-        const unit: UnitPlan = {
-          dataset: dataset.name,
-          key,
-          outcome: 'new_version',
-          retires: true,
-          fileSha256: rowHash(table, row, false),
-          databaseSha256: rowHash(table, row, true),
-        };
-        const ledger = planLedgerVersions(heads.get(key), unit.databaseSha256);
-        items.push({ table, unit, cells: row, active: false, databaseCells: row, ledger });
-      }
-    }
+    const items = await planSnapshotTables(ctx, input, TABLES, database, findings);
 
     // INFORMATION, never a refusal (Overwatch, PR #1894): how many rows this
     // load carries with no labels at all, so the approver sees what the
     // snapshot is missing. A link's provenance is its backbone_version.
     const warnings: Warning[] = [];
-    const unlabelled: [Table, string, (cells: Record<string, CellInput>) => boolean][] = [
+    const unlabelled: [SnapshotTable, string, (cells: Record<string, CellInput>) => boolean][] = [
       [TABLES[0], 'stages carry no field_labels', (cells) => !cells.field_labels],
       [TABLES[2], 'defaults carry no sources', (cells) => !cells.sources || (Array.isArray(cells.sources) && cells.sources.length === 0)],
     ];
@@ -319,80 +233,15 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
       }
     }
 
-    for (const item of items) {
-      if (item.ledger) {
-        if (item.ledger.fromVersion !== undefined) item.unit.fromVersion = item.ledger.fromVersion;
-        item.unit.toVersion = item.ledger.toVersion;
-        if (item.ledger.recordBefore) item.unit.recordsBefore = true;
-      }
-    }
+    finishSnapshotUnits(items);
     return { dataset: dataset.name, units: items.map((item) => item.unit), findings, warnings, state: { items } satisfies State };
   },
 
   async apply(ctx, plan, write): Promise<DatasetWriteResult> {
     const { items } = plan.state as State;
     const result: DatasetWriteResult = { inserted: [], updated: [], ledgerRows: 0 };
-    const record = async (table: Table, key: string, version: number, content: Record<string, string>, sha: string) => {
-      await appendLedgerRow(ctx.client, {
-        organizationId: ctx.organizationId,
-        dataset: table.ledgerDataset,
-        itemKey: key,
-        version,
-        content,
-        contentSha256: sha,
-        importId: write.importId,
-        actor: ctx.actor,
-      });
-      result.ledgerRows += 1;
-    };
-
     // TABLES order: stages before the links and defaults that name them.
-    for (const table of TABLES) {
-      const columns = written(table);
-      const keyColumns = table.spec.key;
-      for (const item of items) {
-        const { unit, cells, ledger } = item;
-        if (item.table !== table || (unit.outcome !== 'new' && unit.outcome !== 'new_version')) continue;
-        if (!cells || !ledger || !unit.fileSha256) throw new Error(`content-import: pathway catalog ${unit.key} was planned without its content`);
-        const value = (column: ColumnSpec) =>
-          databaseValue(column, normalizeCell(Array.isArray(cells[column.name]) ? (cells[column.name] as string[]).join(column.list ?? '|') : cells[column.name] === null || cells[column.name] === undefined ? '' : String(cells[column.name])));
-
-        if (unit.outcome === 'new') {
-          const names = ['organization_id', ...columns.map((column) => column.name), 'active_flag'];
-          const params = [ctx.organizationId, ...columns.map(value), true];
-          await ctx.client.query(
-            `insert into pilot.${table.table} (${names.join(', ')}) values (${names.map((_, i) => `$${i + 1}`).join(', ')})`,
-            params,
-          );
-          result.inserted.push(unit.key);
-          await record(table, unit.key, ledger.toVersion, ledgerContent(table, cells, true), unit.fileSha256);
-          continue;
-        }
-
-        if (ledger.recordBefore) {
-          if (!item.databaseCells || !unit.databaseSha256 || ledger.fromVersion === undefined) {
-            throw new Error(`content-import: pathway catalog ${unit.key} was planned as a revision without its database content`);
-          }
-          const wasActive = item.databaseCells.active_flag !== false;
-          await record(table, unit.key, ledger.fromVersion, ledgerContent(table, item.databaseCells, wasActive), unit.databaseSha256);
-        }
-        const params: unknown[] = [ctx.organizationId, ...keyColumns.map((name) => String(cells[name]))];
-        const where = keyColumns.map((name, index) => `${name} = $${index + 2}`).join(' and ');
-        const sets = ['active_flag', 'updated_at'].map((name) => `${name} = ${name === 'updated_at' ? 'now()' : `$${params.push(item.active)}`}`);
-        if (item.active) {
-          for (const column of columns) {
-            if (keyColumns.includes(column.name)) continue;
-            sets.push(`${column.name} = $${params.push(value(column))}`);
-          }
-        }
-        const outcome = await ctx.client.query(`update pilot.${table.table} set ${sets.join(', ')} where organization_id = $1 and ${where}`, params);
-        if (outcome.rowCount !== 1) {
-          throw new Error(`content-import: expected to update 1 row of pilot.${table.table} for ${unit.key}, updated ${outcome.rowCount}`);
-        }
-        result.updated.push(item.active ? unit.key : `${unit.key} retired`);
-        await record(table, unit.key, ledger.toVersion, ledgerContent(table, cells, item.active), unit.fileSha256);
-      }
-    }
+    await applySnapshotTables(ctx, TABLES, items, write, result, 'pathway catalog');
     return result;
   },
 };

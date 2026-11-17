@@ -2,6 +2,7 @@ import type { DbClient, ImportActor } from '../actor';
 import { DATASETS } from '../specs';
 import type { DatasetName, DatasetSpec, Finding, ParsedFile, Warning } from '../types';
 import type { ValidationResult } from '../validate';
+import { ASSESSMENT_CATALOG_ENGINE } from './assessmentCatalog';
 import { DRILL_LIBRARY_ENGINE } from './drills';
 import { PATHWAY_CATALOG_ENGINE } from './pathwayCatalog';
 import { REGISTRY_ENGINES } from './registries';
@@ -16,7 +17,7 @@ import { UNIVERSAL_STOP_RULES_ENGINE } from './universalStopRules';
 // a discipline differs from a drill.
 //
 // ONE LINE PER DATASET MODULE. A dataset with no module here (transfer
-// claims, assessment protocols) is refused at plan with dataset_not_loadable,
+// claims) is refused at plan with dataset_not_loadable,
 // rather than half-loaded.
 
 export type UnitOutcome = 'new' | 'new_version' | 'unchanged' | 'absent' | 'reject';
@@ -40,7 +41,7 @@ export interface UnitPlan {
   toVersion?: number;
   /** A revision first records the database row as fromVersion, because the ledger does not hold that content yet. */
   recordsBefore?: boolean;
-  /** The revision only retires the row: the file leaves it out, so it is kept and marked inactive (pathway catalog). */
+  /** The revision only retires the row: the file leaves it out, so it is kept and marked inactive (pathway and assessment catalogs). */
   retires?: true;
   /** For a reject: why, in plain English. */
   reasons?: string[];
@@ -75,7 +76,8 @@ export interface DatasetEngine {
   readBaseline(ctx: EngineContext): Promise<ParsedFile[]>;
   /** SELECT ... FOR UPDATE on the rows these keys name (those that exist). */
   lockKeys(ctx: EngineContext, keys: readonly string[]): Promise<void>;
-  plan(ctx: EngineContext, input: { files: readonly ParsedFile[]; validation: ValidationResult }): Promise<DatasetPlan>;
+  /** `files`: this dataset's; `all`: every file of the package (a catalog may check a reference against another dataset's file). */
+  plan(ctx: EngineContext, input: { files: readonly ParsedFile[]; validation: ValidationResult; all?: readonly ParsedFile[] }): Promise<DatasetPlan>;
   /** Writes exactly what `plan` decided. Called only with a plan made inside the same transaction. */
   apply(ctx: EngineContext, plan: DatasetPlan, write: { importId: string }): Promise<DatasetWriteResult>;
 }
@@ -91,6 +93,7 @@ export const DATASET_ENGINES: readonly DatasetEngine[] = [
   workoutTemplatesEngine,
   sessionScriptsEngine,
   trainingTracksEngine,
+  ASSESSMENT_CATALOG_ENGINE,
 ].sort((a, b) => DATASETS.indexOf(a.spec) - DATASETS.indexOf(b.spec));
 
 export function datasetEngine(name: DatasetName): DatasetEngine | undefined {

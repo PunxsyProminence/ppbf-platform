@@ -9,6 +9,7 @@ import {
   SKILL_FAMILY_PREFIX,
 } from './ids';
 import { FILE_SPECS, fileSpecByName, UNIVERSAL_SYSTEM_COLUMNS } from './specs';
+import { assessmentCatalogReferenceFindings } from './specs/assessmentCatalog';
 import { pathwayStageReferenceFindings } from './specs/pathwayCatalog';
 import {
   type ColumnSpec,
@@ -432,8 +433,8 @@ function checkCell(file: ParsedFile, row: ParsedRow, column: ColumnSpec, out: Fi
   }
 
   if (column.list) {
-    const wrong = column.list === '|' ? /[;,]/ : /[|;]/;
-    if (wrong.test(value)) {
+    const wrong = column.list === '|' ? (column.proseItems ? null : /[;,]/) : /[|;]/;
+    if (wrong?.test(value)) {
       out.push(
         finding(
           file,
@@ -944,6 +945,9 @@ export function validateParsed(
   // stage file. Without one, the plan stage checks them against the
   // organization's loaded catalog (datasets/pathwayCatalog.ts).
   blocking.push(...pathwayStageReferenceFindings(parsed));
+  // The assessment catalog's references between its own files (and to the
+  // package's stage file); the rest at plan (datasets/assessmentCatalog.ts).
+  blocking.push(...assessmentCatalogReferenceFindings(parsed));
   const minted = mintIds(parsed, options.baseline, blocking);
   const blankKeyIds = resolveBlankKeys(parsed, options.baseline, minted, blocking);
 

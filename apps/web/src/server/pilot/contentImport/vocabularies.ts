@@ -191,12 +191,56 @@ export const VOCABULARIES = {
       { table: 'pathway_stage_defaults', constraint: 'pilot_pathway_stage_defaults_status_check' },
       { table: 'training_tracks', constraint: 'pilot_training_tracks_status_check' },
       { table: 'track_blocks', constraint: 'pilot_track_blocks_status_check' },
+      { table: 'pathway_gates', constraint: 'pilot_pathway_gates_status_check' },
+      { table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_status_check' },
+      { table: 'scorecard_scales', constraint: 'pilot_scorecard_scales_status_check' },
+      { table: 'scorecard_score_caps', constraint: 'pilot_scorecard_score_caps_status_check' },
+      { table: 'scorecard_items', constraint: 'pilot_scorecard_items_status_check' },
+      { table: 'scorecard_anchor_clip_specs', constraint: 'pilot_scorecard_anchor_clip_specs_status_check' },
+      { table: 'behavior_kpi_lists', constraint: 'pilot_behavior_kpi_lists_status_check' },
+      { table: 'behavior_kpis', constraint: 'pilot_behavior_kpis_status_check' },
+      { table: 'assessment_protocols', constraint: 'pilot_assessment_protocols_status_check' },
     ],
   ),
   // Training tracks (SCHEMA_PROPOSAL P17; training_tracks migration): the
   // backbone schema's program_track lane and track enums.
   track_lane: vocab(['standard', 'non_contact'], [{ table: 'training_tracks', constraint: 'pilot_training_tracks_lane_check' }]),
   track_kind: vocab(['contact', 'fitness'], [{ table: 'training_tracks', constraint: 'pilot_training_tracks_track_check' }]),
+  // The assessment catalog (SCHEMA_PROPOSAL P5, P6; assessment_catalog migration),
+  // as the frozen design_catalogs.json holds it.
+  pathway_gate_kind: vocab(
+    ['entry', 'exit', 'contact_readiness', 'checkpoint_90_days'],
+    [
+      { table: 'pathway_gates', constraint: 'pilot_pathway_gates_kind_check' },
+      { table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_ref_gate_kind_check' },
+    ],
+  ),
+  gate_criterion_kind: vocab(
+    ['text', 'scorecard_min', 'stage_completed', 'gate_met', 'bout_count'],
+    [{ table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_kind_check' }],
+  ),
+  gate_criterion_polarity: vocab(
+    ['should_have', 'should_not_have'],
+    [{ table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_polarity_check' }],
+  ),
+  gate_criterion_combine: vocab(['all', 'any'], [{ table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_combine_check' }]),
+  scorable_context: vocab(
+    ['drill', 'shadow', 'partner', 'constrained_live', 'live'],
+    [
+      { table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_contexts_check' },
+      { table: 'scorecard_items', constraint: 'pilot_scorecard_items_contexts_check' },
+      { table: 'scorecard_score_caps', constraint: 'pilot_scorecard_score_caps_contexts_check' },
+    ],
+  ),
+  anchor_context_class: vocab(
+    ['live', 'non_contact'],
+    [{ table: 'scorecard_anchor_clip_specs', constraint: 'pilot_scorecard_anchor_clip_specs_context_check' }],
+  ),
+  kpi_list_key: vocab(['drill', 'room'], [{ table: 'behavior_kpi_lists', constraint: 'pilot_behavior_kpi_lists_key_check' }]),
+  kpi_scoring_kind: vocab(
+    ['count', 'yes_no', 'three_level'],
+    [{ table: 'behavior_kpis', constraint: 'pilot_behavior_kpis_scoring_kind_check' }],
+  ),
 } as const satisfies Record<string, Vocabulary>;
 
 export type VocabularyName = keyof typeof VOCABULARIES;
@@ -234,7 +278,18 @@ export const BOUNDS = {
         constraint: 'assessment_protocols_retest_after_training_hours_check',
         column: 'retest_after_training_hours',
       },
+      { table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_ordinal_check', column: 'ordinal' },
+      { table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_min_score_check', column: 'min_score' },
+      { table: 'scorecard_score_caps', constraint: 'pilot_scorecard_score_caps_max_check', column: 'max_score' },
+      { table: 'scorecard_items', constraint: 'pilot_scorecard_items_item_number_check', column: 'item_number' },
+      { table: 'scorecard_anchor_clip_specs', constraint: 'pilot_scorecard_anchor_clip_specs_priority_check', column: 'priority' },
+      { table: 'behavior_kpis', constraint: 'pilot_behavior_kpis_ordinal_check', column: 'ordinal' },
     ],
+  },
+  anchor_level: {
+    gte: 1,
+    lte: 5,
+    mirrors: [{ table: 'scorecard_anchor_clip_specs', constraint: 'pilot_scorecard_anchor_clip_specs_level_check', column: 'level' }],
   },
   template_duration_minutes: {
     gte: 15,
