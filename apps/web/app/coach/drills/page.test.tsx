@@ -2455,3 +2455,49 @@ describe('versions and proposals', () => {
     expect(await screen.findByText(/could not be loaded. This is a failure to load, not an empty queue./)).toBeInTheDocument();
   });
 });
+
+describe('What to score (OD-2026-11-16-003 ruling 1; lane CAT-d)', () => {
+  const KPI_LISTS = [
+    {
+      listKey: 'drill', title: 'Core Drill KPIs Worth Scoring', sourceDoc: 'DOC-041',
+      scoringRuleText: 'Use simple counts, yes-no marks, or three-level ratings when possible.',
+      kpis: [
+        { ordinal: 1, name: 'Clean exits.', scoringKind: 'count', levelAnchors: null, draft: true },
+        { ordinal: 2, name: 'Reset quality.', scoringKind: 'three_level', levelAnchors: { 3: 'Restores without a cue.', 1: 'Starts broken.', 2: 'Restores some.' }, draft: true },
+      ],
+    },
+    {
+      listKey: 'room', title: 'Core Behavioral KPIs', sourceDoc: 'DOC-027',
+      scoringRuleText: 'Use simple counts or simple quality ratings.',
+      kpis: [{ ordinal: 1, name: 'Chasing instances.', scoringKind: null, levelAnchors: null, draft: false }],
+    },
+  ];
+  const withKpis = (answer: () => Response) => {
+    const base = routes();
+    return (async (input: RequestInfo | URL, init?: RequestInit) =>
+      (String(input) === '/api/pilot/coach/behavior-kpis' ? answer() : base(input, init))) as unknown as typeof fetch;
+  };
+
+  it('shows the two lists side by side, each in its own order with its own scoring line, drafts marked', async () => {
+    global.fetch = withKpis(() => jsonResponse({ lists: KPI_LISTS }));
+    render(<CoachDrillLibraryPage />);
+    const panel = await screen.findByRole('region', { name: 'What to score' });
+    const drill = within(panel).getByRole('article', { name: 'Core Drill KPIs Worth Scoring' });
+    const room = within(panel).getByRole('article', { name: 'Core Behavioral KPIs' });
+    expect(within(drill).getByText('Clean exits.')).toBeInTheDocument();
+    expect(within(drill).getAllByText(/DRAFT, FOR COACH REVIEW/)).toHaveLength(2);
+    expect(within(drill).getByText('Use simple counts, yes-no marks, or three-level ratings when possible.')).toBeInTheDocument();
+    expect(within(drill).getAllByText(/^\d: /).map((item) => item.textContent)).toEqual(['1: Starts broken.', '2: Restores some.', '3: Restores without a cue.']);
+    expect(within(room).getByText('Chasing instances.')).toBeInTheDocument();
+    expect(within(room).queryByText(/DRAFT/)).not.toBeInTheDocument();
+    expect(within(room).getByText('Use simple counts or simple quality ratings.')).toBeInTheDocument();
+    expect(await screen.findByText('Seeded jab return')).toBeInTheDocument();
+  });
+
+  it('says so when the lists cannot be loaded, and the drill library still loads', async () => {
+    global.fetch = withKpis(() => jsonResponse({ error: 'boom' }, false, 500));
+    render(<CoachDrillLibraryPage />);
+    expect(await screen.findByText('The KPI lists could not be loaded.')).toBeInTheDocument();
+    expect(await screen.findByText('Seeded jab return')).toBeInTheDocument();
+  });
+});

@@ -12,6 +12,7 @@ import { gymDayIso } from '@/src/lib/gymTime';
 import { adoptionReadiness } from '@/src/lib/drillAdoptionReadiness';
 import { requiresFloorValidation } from '@/src/lib/drillFloorValidation';
 import type { DrillFloorValidation } from '@/src/server/pilot/drillFloorValidations';
+import type { BehaviorKpiList } from '@/src/server/pilot/behaviorKpis';
 import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 import { equipmentLabel, humanizeContactLevel } from '@/src/lib/drillPresentation';
 import type {
@@ -353,6 +354,90 @@ function ReferenceActions({
     );
   }
   return label;
+}
+
+// WHAT TO SCORE (OD-2026-11-16-003 ruling 1; lane CAT-d). The two KPI lists
+// side by side, read only: DOC-041's drill KPIs for drill-level scorecards and
+// DOC-027's core behavioural KPIs for room and session monitoring. Each list
+// keeps its own order and its own scoring line; nothing pairs them. A drafted
+// scoring kind or set of levels says it is a draft for a coach's review
+// (ruling 3). A failure to load shows here only; the drill library is unaffected.
+const SCORING_KIND_LABELS = { count: 'Count', yes_no: 'Yes / no', three_level: 'Three levels' } as const;
+
+function WhatToScorePanel() {
+  const [lists, setLists] = useState<BehaviorKpiList[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/coach/behavior-kpis`, { method: 'GET', credentials: 'include' });
+        if (!response.ok) throw new Error('not ok');
+        const body = (await response.json()) as { lists?: unknown };
+        if (!Array.isArray(body.lists)) throw new Error('malformed');
+        if (live) setLists(body.lists as BehaviorKpiList[]);
+      } catch {
+        if (live) setFailed(true);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (failed) {
+    return (
+      <section aria-label="What to score" className="mt-[var(--s6)]">
+        <h2 className="t-command text-[length:var(--t-lg)]">What to score</h2>
+        <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">The KPI lists could not be loaded.</p>
+      </section>
+    );
+  }
+  if (lists === null || lists.length === 0) return null;
+
+  return (
+    <section aria-label="What to score" className="mt-[var(--s6)]">
+      <h2 className="t-command text-[length:var(--t-lg)]">What to score</h2>
+      <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
+        Two lists, side by side: the drill KPIs for drill scorecards, and the room KPIs for watching the room and the session.
+        Each keeps its own order and its own scoring line.
+      </p>
+      <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+        {lists.map((list) => (
+          <article key={list.listKey} aria-label={list.title} className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
+            <p className="t-eyebrow">{list.listKey === 'drill' ? 'Drill scorecards' : 'Room and session'} · {list.sourceDoc}</p>
+            <h3 className="t-command mt-[var(--s2)] text-[length:var(--t-md)]">{list.title}</h3>
+            <ol className="mt-[var(--s3)] grid gap-[var(--s3)]">
+              {list.kpis.map((kpi) => (
+                <li key={kpi.ordinal} className="t-body">
+                  <span className="font-semibold">{kpi.name}</span>
+                  {kpi.scoringKind && (
+                    <span className="text-[color:var(--bone-300)]"> · {SCORING_KIND_LABELS[kpi.scoringKind]}</span>
+                  )}
+                  {kpi.draft && (
+                    <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>DRAFT, FOR COACH REVIEW</span>
+                  )}
+                  {kpi.levelAnchors && (
+                    <ul className="mt-[var(--s2)] grid gap-[var(--s1)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                      {Object.entries(kpi.levelAnchors)
+                        .sort(([a], [b]) => Number(a) - Number(b))
+                        .map(([level, wording]) => (
+                          <li key={level}>{level}: {wording}</li>
+                        ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ol>
+            {list.scoringRuleText && (
+              <p className="t-body mt-[var(--s4)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{list.scoringRuleText}</p>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function CoachDrillLibrary() {
@@ -921,6 +1006,8 @@ function CoachDrillLibrary() {
           </p>
           <BackHome className="btn btn--ghost mt-[var(--s4)]" />
         </header>
+
+        <WhatToScorePanel />
 
         <section className="mat-leather mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s5)]">
           <h2 className="t-command text-[length:var(--t-lg)]">Add a drill</h2>

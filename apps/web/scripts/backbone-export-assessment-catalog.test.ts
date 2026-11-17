@@ -20,10 +20,29 @@ const SEED_DIR = path.resolve(__dirname, '../seed-data');
 const FROZEN = 'C:\\Users\\jason\\OneDrive - PUNXSY PROMINENCE BOXING AND FITNESS\\PPBF-AI-Lanes\\Research\\Backbone';
 const CATALOGS = 'working/design-2026-10-25/design_catalogs.json';
 const DIR = 'assessment-catalog';
+const TRACK = 'data/content/tracks/trk_21ba0c958c98e1.json';
+const ROOM_SOURCE = 'DOC-027 (Punxsy Master Source Manual v1, Performance Tracking Source Manual v3, Core Behavioral KPIs)';
 const FILES = [
   'seed_assessment_protocols.csv', 'seed_scorecard_scales.csv', 'seed_scorecard_score_caps.csv', 'seed_scorecard_items.csv',
   'seed_pathway_gates.csv', 'seed_pathway_gate_criteria.csv', 'seed_scorecard_anchor_clip_specs.csv',
+  'seed_behavior_kpi_lists.csv', 'seed_behavior_kpis.csv',
 ];
+
+/** The frozen DOC-027 track's shape, as far as the exporter reads it. */
+function track(lines: string[] = [
+  'Clean exits.', 'Chasing instances.', 'Reset success quality.', 'Exchange cap compliance such as three-and-out when applicable.',
+  'Composure rating.', 'Decision quality notes under stress.',
+  'Use simple counts or simple quality ratings. Do not create complex scoring systems that coaches will stop using.',
+]): Json {
+  return {
+    status_line: 'Status: DRAFT', record_kind: 'track',
+    record: {
+      status: 'REPORTED',
+      groups: [{ owner_rules: [] }, { owner_rules: [{ rule: 'The room tracks ...', owner_text: lines, owner_source: ROOM_SOURCE, changed_by: 'Jason 2026-11-03 (D-PK77-1)' }] }],
+      owner_passages: [{ doc: 'DOC-027', lines: ['An owner passage that stays out.'] }],
+    },
+  };
+}
 
 type Json = Record<string, unknown>;
 const temps: string[] = [];
@@ -100,12 +119,16 @@ function catalogs(over: Json = {}): Json {
 }
 
 /** A Backbone folder with a manifest; `after` may tamper once the manifest is written. */
-function backbone(data: Json = catalogs(), after?: (dir: string) => void): string {
+function backbone(data: Json = catalogs(), after?: (dir: string) => void, room: Json = track()): string {
   const dir = tempDir();
-  const text = JSON.stringify(data, null, 2);
-  fs.mkdirSync(path.join(dir, path.dirname(CATALOGS)), { recursive: true });
-  fs.writeFileSync(path.join(dir, CATALOGS), text);
-  fs.writeFileSync(path.join(dir, 'FREEZE_MANIFEST.json'), JSON.stringify({ files: [{ path: CATALOGS, sha256_16: sha16(text) }] }));
+  const files: { path: string; sha256_16: string }[] = [];
+  for (const [rel, value] of [[CATALOGS, data], [TRACK, room]] as const) {
+    const text = JSON.stringify(value, null, 2);
+    fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), text);
+    files.push({ path: rel, sha256_16: sha16(text) });
+  }
+  fs.writeFileSync(path.join(dir, 'FREEZE_MANIFEST.json'), JSON.stringify({ files }));
   after?.(dir);
   return dir;
 }
@@ -194,6 +217,49 @@ describe('backbone-export-assessment-catalog (lane CAT-c)', () => {
     expect(first.stdout).toContain("evidence 'quotes' (licensed excerpts, OD-2026-10-02-013 2A) not carried: 1 keys, 2 passages");
   });
 
+  it('writes DOC-027\'s room list and 6 KPIs from the track as written, the source line in the labels', () => {
+    const lists = rowsOf(read(first.out, 'seed_behavior_kpi_lists.csv'));
+    expect(lists.map((row) => row.list_key)).toEqual(['room']);
+    expect(lists[0]).toMatchObject({
+      title: 'Core Behavioral KPIs', source_doc: 'DOC-027', sources: 'DOC-027', status: 'REPORTED',
+      scoring_rule_text: 'Use simple counts or simple quality ratings. Do not create complex scoring systems that coaches will stop using.',
+    });
+    const kpis = rowsOf(read(first.out, 'seed_behavior_kpis.csv'));
+    expect(kpis.map((row) => `${row.ordinal} ${row.name}`)).toEqual([
+      '1 Clean exits.', '2 Chasing instances.', '3 Reset success quality.', '4 Exchange cap compliance such as three-and-out when applicable.',
+      '5 Composure rating.', '6 Decision quality notes under stress.',
+    ]);
+    expect(kpis[0].kpi_id).toBe(`kpi_${createHash('sha256').update('room:Clean exits.').digest('hex').slice(0, 14)}`);
+    expect(kpis.every((row) => row.scoring_kind === '' && row.level_anchors === '')).toBe(true);
+    expect(JSON.parse(kpis[0].field_labels).name).toMatchObject({ owner_source: ROOM_SOURCE, changed_by: 'Jason 2026-11-03 (D-PK77-1)' });
+    expect(read(first.out, 'seed_behavior_kpis.csv')).not.toContain('An owner passage that stays out.');
+  });
+
+  it('keeps every committed drill row exactly as written and in place, and replaces only the room rows', () => {
+    const seed = tempDir();
+    fs.cpSync(first.out, seed, { recursive: true });
+    const file = path.join(seed, DIR, 'seed_behavior_kpis.csv');
+    const header = readCsv(fs.readFileSync(file, 'utf8')).header;
+    const drill = header.map((column) => ({ organization_id: '{{PPBF_ORG_ID}}', kpi_id: 'kpi_00000000000001', list_key: 'drill', ordinal: '1', name: 'Clean exits.',
+      scoring_kind: 'count', status: 'OBSERVED', sources: 'DOC-041', active_flag: 'true', field_labels: '{"scoring_kind":{"draft":"AI draft","status":"INFERRED"}}' } as Record<string, string>)[column] ?? '');
+    const quote = (cell: string) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell);
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    lines.splice(1, 0, drill.map(quote).join(','));
+    fs.writeFileSync(file, lines.join('\n'));
+    const again = exportInto(dir, seed);
+    expect(again.stderr).toBe('');
+    const text = read(again.out, 'seed_behavior_kpis.csv');
+    expect(text.split('\n')[1]).toBe(drill.map(quote).join(','));
+    expect(rowsOf(text).map((row) => row.list_key)).toEqual(['drill', 'room', 'room', 'room', 'room', 'room', 'room']);
+    expect(exportInto(dir, again.out).stderr).toBe('');
+  });
+
+  it('stops when the track\'s owner rule is not 6 KPIs and a scoring line', () => {
+    const result = exportInto(backbone(catalogs(), undefined, track(['Clean exits.'])));
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('is not 6 KPIs and a scoring line');
+  });
+
   it('a second run over the first run\'s output is byte-identical', () => {
     const again = exportInto(dir, first.out);
     expect(again.status).toBe(2);
@@ -258,7 +324,7 @@ describe('the committed assessment-catalog seed', () => {
     const result = exportInto(FROZEN, SEED_DIR);
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('counts: protocols 46, scales 2, caps 1, items 29, gates 38, criteria 94, anchorSpecs 105, excerptKeys 4, excerptPassages 10');
+    expect(result.stdout).toContain('counts: protocols 46, scales 2, caps 1, items 29, gates 38, criteria 94, anchorSpecs 105, excerptKeys 4, excerptPassages 10, roomKpis 6');
     for (const name of FILES) expect(read(result.out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, DIR, name), 'utf8'));
   });
 });

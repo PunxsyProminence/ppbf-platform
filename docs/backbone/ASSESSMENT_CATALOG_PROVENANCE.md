@@ -31,6 +31,19 @@ Lane CAT (OD-2026-11-15-006 ruling 1; OD-2026-11-16-001: the catalog's `meta` bl
   - every protocol's `human_authority_required` (true; the Backbone does not state it per protocol; Backbone RULES section 1).
 - Blank loads blank: quality_measured, boxing_specific and evidence_class (Overwatch's CAT ruling Q1).
 
+## The two behavioural KPI lists (lane CAT-d; OD-2026-11-16-003)
+
+- **Room list, DOC-027's 6 core behavioural KPIs:**
+  - Exported by the same exporter from the frozen track `data/content/tracks/trk_21ba0c958c98e1.json` (sha256[:16] `4fd51410efa688f8`, listed in the manifest).
+  - Source: the owner rule from "DOC-027 (Punxsy Master Source Manual v1, Performance Tracking Source Manual v3, Core Behavioral KPIs)" (D-PK77-1).
+  - Its 6 lines and its scoring line are copied as written. The source line rides in each row's field labels, because it holds commas, which a source list refuses.
+  - No scoring kind: DOC-027 states only the list-level line.
+- **Drill list, DOC-041's 7 drill KPIs:**
+  - DOC-041 is Jason's own material and is not in the frozen Backbone. Source: "Drill KPI Scorecards and Evaluation Forms Source Manual v3", Google Drive file `1vg-YDzyHtxVSpf-m1BsbFvp_4hsDF3Jl` (37,790 bytes, modified 2026-06-14), read read-only on 2026-11-16.
+  - The 7 names (section "Core Drill KPIs Worth Scoring") and the scoring line (section "Scoring Logic Standard") are quoted verbatim.
+  - These rows are committed by hand. The exporter keeps them exactly as written, in their place, and rewrites only the room rows.
+- **Drafts:** each drill KPI's scoring kind, and the three-level anchors of Reset quality, Chase control and Composure under disruption, are AI drafts, labelled INFERRED with the draft marker (OD-2026-11-16-003 rulings 2 and 3; OD-2026-11-15-011). Review sheet: `docs/content-review/assessment-catalog/DRILL_KPI_ANCHORS_REVIEW.md`.
+
 ## The `meta` block, as written
 
 ```json

@@ -4,7 +4,10 @@
 // and re-plans unchanged; every count holds (46 protocols, 2 scales, 1 cap, 29
 // items, 38 gates, 94 criteria, 105 anchor specs); blank loads blank for the
 // three Q1 columns on all 46; no licensed excerpt reaches the database; and a
-// new gym loads the pathway seed and the catalog in one package.
+// new gym loads the pathway seed and the catalog in one package. Lane CAT-d:
+// the two KPI lists (DOC-041's 7 drill KPIs with their drafted scoring kinds and
+// three-level anchors, labelled INFERRED with the draft marker; DOC-027's 6 room
+// KPIs) load beside it, each list in its own order.
 //
 // Spins up the same disposable, local-only embedded Postgres the other pg
 // suites use. It NEVER connects to production or staging.
@@ -154,7 +157,7 @@ async function load(organizationId: string, actor: string, files: Record<string,
   }
 }
 
-const EXPECTED = { protocols: 46, scales: 2, caps: 1, items: 29, gates: 38, criteria: 94, specs: 105 };
+const EXPECTED = { protocols: 46, scales: 2, caps: 1, items: 29, gates: 38, criteria: 94, specs: 105, lists: 2, kpis: 13 };
 const TOTAL = Object.values(EXPECTED).reduce((sum, n) => sum + n, 0);
 
 async function counts(organizationId: string) {
@@ -165,7 +168,9 @@ async function counts(organizationId: string) {
             (select count(*) from pilot.scorecard_items where organization_id = $1 and active_flag)::int as items,
             (select count(*) from pilot.pathway_gates where organization_id = $1 and active_flag)::int as gates,
             (select count(*) from pilot.pathway_gate_criteria where organization_id = $1 and active_flag)::int as criteria,
-            (select count(*) from pilot.scorecard_anchor_clip_specs where organization_id = $1 and active_flag)::int as specs`,
+            (select count(*) from pilot.scorecard_anchor_clip_specs where organization_id = $1 and active_flag)::int as specs,
+            (select count(*) from pilot.behavior_kpi_lists where organization_id = $1 and active_flag)::int as lists,
+            (select count(*) from pilot.behavior_kpis where organization_id = $1 and active_flag)::int as kpis`,
     [organizationId],
   );
   return row;
@@ -175,9 +180,10 @@ describe('the committed assessment-catalog seed', () => {
   const catalog = readDatasetFiles(SEED_DATA_DIR, ['assessment-catalog']);
   const pathway = readDatasetFiles(SEED_DATA_DIR, ['pathway-catalog']);
 
-  it('is the seven committed files', () => {
+  it('is the nine committed files', () => {
     expect(Object.keys(catalog).sort()).toEqual([
-      'assessment-catalog/seed_assessment_protocols.csv', 'assessment-catalog/seed_pathway_gate_criteria.csv', 'assessment-catalog/seed_pathway_gates.csv',
+      'assessment-catalog/seed_assessment_protocols.csv', 'assessment-catalog/seed_behavior_kpi_lists.csv', 'assessment-catalog/seed_behavior_kpis.csv',
+      'assessment-catalog/seed_pathway_gate_criteria.csv', 'assessment-catalog/seed_pathway_gates.csv',
       'assessment-catalog/seed_scorecard_anchor_clip_specs.csv', 'assessment-catalog/seed_scorecard_items.csv', 'assessment-catalog/seed_scorecard_scales.csv',
       'assessment-catalog/seed_scorecard_score_caps.csv',
     ]);
@@ -221,6 +227,30 @@ describe('the committed assessment-catalog seed', () => {
              + (select count(*) from pilot.scorecard_items where organization_id = 'gym_seed' and evidence::text like '%"quotes"%'))::int as n`,
     );
     expect(excerpts.n).toBe(0);
+  });
+
+  it('loads the two KPI lists side by side: DOC-041 drafts labelled, DOC-027 as written', async () => {
+    const { rows } = await client.query(
+      `select list_key, ordinal, name, scoring_kind, level_anchors is not null as anchored,
+              field_labels->'scoring_kind'->>'status' as kind_status, field_labels->'scoring_kind'->>'draft' is not null as kind_draft,
+              field_labels->'level_anchors'->>'status' as anchor_status
+         from pilot.behavior_kpis where organization_id = 'gym_seed' order by list_key, ordinal`,
+    );
+    const drill = rows.filter((row) => row.list_key === 'drill');
+    const room = rows.filter((row) => row.list_key === 'room');
+    expect(drill.map((row) => `${row.name} ${row.scoring_kind}`)).toEqual([
+      'Clean exits. count', 'Reset quality. three_level', 'Chase control. three_level', 'Exchange cap discipline. yes_no',
+      'Composure under disruption. three_level', 'Correct decision branch selection. count', 'Arrival in stance after action. yes_no',
+    ]);
+    expect(drill.every((row) => row.kind_status === 'INFERRED' && row.kind_draft)).toBe(true);
+    expect(drill.filter((row) => row.anchored).map((row) => [row.name, row.anchor_status])).toEqual([
+      ['Reset quality.', 'INFERRED'], ['Chase control.', 'INFERRED'], ['Composure under disruption.', 'INFERRED'],
+    ]);
+    expect(room.map((row) => row.name)).toEqual([
+      'Clean exits.', 'Chasing instances.', 'Reset success quality.', 'Exchange cap compliance such as three-and-out when applicable.',
+      'Composure rating.', 'Decision quality notes under stress.',
+    ]);
+    expect(room.every((row) => row.scoring_kind === null && !row.anchored)).toBe(true);
   });
 
   it('a new gym loads the pathway seed and the catalog in one package', async () => {
