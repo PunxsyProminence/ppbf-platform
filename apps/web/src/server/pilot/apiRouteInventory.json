@@ -5305,6 +5305,40 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/behavior-kpis/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behavior-kpis",
+    "gate": "requirePrincipal + requireRole(COACHING_CONTENT_READER_ROLES)",
+    "rolesAdmitted": [
+      "platform_owner",
+      "organization_admin",
+      "admin",
+      "coach",
+      "athlete",
+      "parent",
+      "volunteer",
+      "staff"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Reads the gym's two behavioural KPI lists (DOC-041 drill, DOC-027 room; OD-2026-11-16-003) for the What to score panel on /coach/drills: coaching content, no athlete data; organization from the session. Same role check as the drill library GET (drills/route.ts:126; coachingContentAccess.ts:93-102).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...COACHING_CONTENT_READER_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/coach/behavior-notes/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/coach/behavior-notes",

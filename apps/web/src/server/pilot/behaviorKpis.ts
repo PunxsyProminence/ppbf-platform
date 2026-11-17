@@ -13,9 +13,6 @@ import { query } from './db';
 // `draft: true`, so the page can say so. Nothing here scores, places or limits
 // anyone.
 
-/** Who may read the lists: the coach drill page's roles (its RoleSessionGate 'admin' covers organization_admin and admin). */
-export const BEHAVIOR_KPI_READER_ROLES = ['coach', 'organization_admin', 'admin'] as const;
-
 export type KpiScoringKind = 'count' | 'yes_no' | 'three_level';
 
 export interface BehaviorKpi {
