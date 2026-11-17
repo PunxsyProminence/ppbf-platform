@@ -437,7 +437,10 @@ describe('the assessment_catalog migration', () => {
       .toBe('23514 pilot_pathway_gate_criteria_contexts_check');
     expect(await criterion('stage_completed', '', '')).toBe('23514 pilot_pathway_gate_criteria_kind_shape_check');
     expect(await criterion('stage_completed', ', ref_stage_key', `, 'AM9'`)).toBe('23503 pilot_pathway_gate_criteria_ref_stage_fkey');
-    expect(await criterion('gate_met', ', ref_gate_id', `, '${PGT(99)}'`)).toBe('23503 pilot_pathway_gate_criteria_ref_gate_fkey');
+    expect(await criterion('gate_met', ', ref_stage_key, ref_gate_kind, ref_gate_id', `, 'T1', 'exit', '${PGT(99)}'`))
+      .toBe('23503 pilot_pathway_gate_criteria_ref_gate_fkey');
+    // gate_met names its gate three ways; one left blank would skip the three-part key.
+    expect(await criterion('gate_met', ', ref_gate_id', `, '${PGT(10)}'`)).toBe('23514 pilot_pathway_gate_criteria_kind_shape_check');
     expect(await criterion('bout_count', '', '')).toBe('23514 pilot_pathway_gate_criteria_kind_shape_check');
     expect(await criterion('bout_count', ', bout_min, bout_max', ', 5, 2')).toBe('23514 pilot_pathway_gate_criteria_bout_range_check');
     expect(await criterion('bout_count', ', bout_max', ', -1')).toBe('23514 pilot_pathway_gate_criteria_bout_range_check');

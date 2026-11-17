@@ -192,7 +192,7 @@ create table if not exists pilot.pathway_gate_criteria (
     (kind <> 'text' or criterion_text is not null)
     and (kind <> 'scorecard_min' or (coalesce(cardinality(scorecard_item_ids), 0) > 0 and min_score is not null and coalesce(cardinality(contexts), 0) > 0))
     and (kind <> 'stage_completed' or ref_stage_key is not null)
-    and (kind <> 'gate_met' or ref_gate_id is not null)
+    and (kind <> 'gate_met' or (ref_gate_id is not null and ref_stage_key is not null and ref_gate_kind is not null))
     and (kind <> 'bout_count' or bout_min is not null or bout_max is not null)
   ),
   constraint pilot_pathway_gate_criteria_polarity_check
