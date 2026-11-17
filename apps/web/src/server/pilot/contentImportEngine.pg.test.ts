@@ -18,7 +18,7 @@
 // suites use. It NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -89,6 +89,17 @@ const TRACK_ROWS = committedRowCount('training-tracks/seed_training_tracks.csv')
 /** The committed Backbone snapshot (lane BB-1c): one history row per catalog row on a first load. */
 const PATHWAY_ROWS = ['seed_pathway_stages.csv', 'seed_pathway_stage_links.csv', 'seed_pathway_stage_defaults.csv']
   .reduce((sum, file) => sum + committedRowCount(`pathway-catalog/${file}`), 0);
+/**
+ * The committed assessment catalog (lane CAT-c): one item per row. Its catalog tables write one history row per
+ * row on a first load; its protocols write none (the table keeps its own versions, datasets/assessmentCatalog.ts).
+ * The KPI files count only once a lane commits them (CAT-d).
+ */
+const CATALOG_SNAPSHOT_FILES = [
+  'seed_scorecard_scales.csv', 'seed_scorecard_score_caps.csv', 'seed_scorecard_items.csv', 'seed_pathway_gates.csv',
+  'seed_pathway_gate_criteria.csv', 'seed_scorecard_anchor_clip_specs.csv', 'seed_behavior_kpi_lists.csv', 'seed_behavior_kpis.csv',
+].filter((file) => existsSync(path.join(SEED_DATA_DIR, 'assessment-catalog', file)));
+const CATALOG_LEDGER_ROWS = CATALOG_SNAPSHOT_FILES.reduce((sum, file) => sum + committedRowCount(`assessment-catalog/${file}`), 0);
+const CATALOG_ROWS = CATALOG_LEDGER_ROWS + committedRowCount('assessment-catalog/seed_assessment_protocols.csv');
 
 const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
   specifier: string,
@@ -904,10 +915,10 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     // hold, in ONE transaction -- one import, one audit row: the drills'
     // discipline foreign key is satisfied by disciplines written earlier in
     // it, and the template items' drill foreign key by the drills.
-    expect(applied.stdout).toContain(`RESULT: COMMITTED -- ${PATHWAY_ROWS + REGISTRY_ROWS + DRILL_ROWS + TEMPLATE_ROWS + SCRIPT_ROWS + TRACK_ROWS} item(s) written`);
+    expect(applied.stdout).toContain(`RESULT: COMMITTED -- ${PATHWAY_ROWS + REGISTRY_ROWS + DRILL_ROWS + TEMPLATE_ROWS + SCRIPT_ROWS + TRACK_ROWS + CATALOG_ROWS} item(s) written`);
     expect(applied.stdout).toContain(`  workout-templates: inserted ${TEMPLATE_ROWS + TEMPLATE_LABEL_ENTRIES}`);
     expect(applied.stdout).toContain(`  session-scripts: inserted ${SCRIPT_ROWS}`);
-    expect(await committedCounts('gym_cli')).toEqual({ ...REGISTRY_COUNTS, ledger: REGISTRY_ROWS + PATHWAY_ROWS, audit: 1, shadowEvents: 1 });
+    expect(await committedCounts('gym_cli')).toEqual({ ...REGISTRY_COUNTS, ledger: REGISTRY_ROWS + PATHWAY_ROWS + CATALOG_LEDGER_ROWS, audit: 1, shadowEvents: 1 });
     const imports = await observer.query(
       "select count(distinct import_id)::int as n from pilot.reference_content_revisions where organization_id = 'gym_cli'",
     );
@@ -924,6 +935,7 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     expect(planBlock(again.stdout)).toContain(`  drill-library: 0 new, 0 new version, ${DRILL_ROWS} unchanged, 0 absent, 0 reject`);
     expect(planBlock(again.stdout)).toContain(`  workout-templates: 0 new, 0 new version, ${TEMPLATE_ROWS} unchanged, 0 absent, 0 reject`);
     expect(planBlock(again.stdout)).toContain(`  session-scripts: 0 new, 0 new version, ${SCRIPT_ROWS} unchanged, 0 absent, 0 reject`);
+    expect(planBlock(again.stdout)).toContain(`  assessment-catalog: 0 new, 0 new version, ${CATALOG_ROWS} unchanged, 0 absent, 0 reject`);
     expect(again.stdout).toContain('RESULT: PLANNED -- 0 item(s) would be written.');
   });
 
