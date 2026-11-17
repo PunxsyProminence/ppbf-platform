@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-17-010 | 2026-11-17 | A Claude Science research session designs a club test-retest study (RA-11); one findings file, nothing built | RECONSTRUCTED |  |  |
+| OD-2026-11-17-009 | 2026-11-17 | Coach and family screen design fixes: all small fixes go to Claude Code, the loss-of-consciousness default first and ahead of the database lane; a neutral "could not be checked" line, gym-floor size for two pages, and a "Restricted" mark: OW25-34 to OW25-39, all A | RECONSTRUCTED |  |  |
 | OD-2026-11-17-008 | 2026-11-17 | Production-database jobs move to short-lived self-hosted runners inside Azure (main branch only); a GitHub runner credential and usage-billed Azure resources are approved | PRIMARY |  | yes |
 | OD-2026-11-17-007 | 2026-11-17 | A Claude Science research session checks the new coach screens' code against the binding design rules; one findings file, no code | RECONSTRUCTED |  |  |
 | OD-2026-11-17-006 | 2026-11-17 | The next free build slot goes to the production-database timeouts lane: find the cause and fix it without loosening security; any firewall, network or credential change goes to Jason as a card first | RECONSTRUCTED |  |  |
@@ -592,6 +594,130 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-17-010 -- A Claude Science research session designs a club test-retest study (RA-11); one findings file, nothing built: "D: Club test-retest study design"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone Overwatch thread ("Overwatch 25"), 2026-11-17 (OW25-34 to -39 about 14:02 US Eastern; OW25-40 later the same afternoon). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `ef5ed1b6c3080c13` when read; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, lines 26665 and 26811, 2026-11-17T19:06:53Z and 19:15:48Z) he pasted the Backbone Overwatch 25 notes of 14:02 and 14:14 US Eastern asking for these records ("Record OW25-34 to -40 in the next records PR"; Backbone ACTIONS A-98, A-99); the pastes carry no typed words of his own. New; edits no earlier entry's text.
+
+**The card, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-40** (header 'Parallel research')
+> Question, as shown (multi-select):
+> Official: All frozen content is now loaded in production (REPORTED: 68 tracks, 138 templates, 387 drills, the catalog). The 6 USA Boxing home-sheet templates (DOC-136) are held out of the public repo. One build lane (DBT) runs, and the design-fix lane takes the second slot (OW25-39 A). Which research sessions should run here in parallel? Each writes one findings file and builds nothing; I suggest at most two at once (about 2 GB RAM free).
+> Plain: While the two build lanes run, which research jobs should I start here?
+>
+> Options, in the order shown:
+> 1. "A: Blind coach check of AI drafts (Recommended)": D-PK09: design a small, blinded check coaches can run on AI-drafted drill and template text (sample, blinding, rubric, who rates). Hundreds of AI-drafted fields are now live without your review (OD-2026-11-15-011). Pros: A safety net for unread drafts, including youth sparring drills. Cons: Coaches' time later to run it.
+> 2. "B: The 6 held DOC-136 templates": Research what USA Boxing's terms allow for its HPCE home sheets, and how PPBF could give them to members (link, private copy, admin upload) without putting them in the public repo. Pros: Turns 'held' into a real option for you. Cons: Rights questions may need USA Boxing's answer.
+> 3. "C: 'Not written' fields check": Read the code to check that the app shows the 151 missing exit conditions and 190 missing correction paths as 'not written', never as empty or complete (hand-off note, PK-197). Pros: Checks a binding display rule on live content. Cons: Reads code, not screens.
+> 4. "D: Club test-retest study design": RA-11: how PPBF could measure its own test reliability (typical error). Pros: Makes progress numbers trustworthy later. Cons: No lane uses it yet.
+>
+> Jason's answer: "D: Club test-retest study design" (only D chosen; A, B, C not started).
+
+**Jason:** OW25-40 "D: Club test-retest study design" (multi-select; only D chosen)
+
+**Ruling:** A research session designs how PPBF could measure its own test reliability (typical error), RA-11: one findings file, nothing built. The blind coach check of AI drafts (D-PK09), the DOC-136 rights research and the "not written" fields check were not started.
+
+**Status:** recorded 2026-11-17 by PR.
+
+---
+
+## OD-2026-11-17-009 -- Coach and family screen design fixes: all small fixes go to Claude Code, the loss-of-consciousness default first and ahead of the database lane; a neutral "could not be checked" line, gym-floor size for two pages, and a "Restricted" mark: OW25-34 to OW25-39, all A
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone Overwatch thread ("Overwatch 25"), 2026-11-17 (OW25-34 to -39 about 14:02 US Eastern; OW25-40 later the same afternoon). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `ef5ed1b6c3080c13` when read; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, lines 26665 and 26811, 2026-11-17T19:06:53Z and 19:15:48Z) he pasted the Backbone Overwatch 25 notes of 14:02 and 14:14 US Eastern asking for these records ("Record OW25-34 to -40 in the next records PR"; Backbone ACTIONS A-98, A-99); the pastes carry no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-34** (header 'Design fixes')
+> Question, as shown:
+> Official (findings 2026-11-17-coach-screens-design-check.md, d205da8d387662d0, section 2): how should the design check go to Claude Code? Read from code, nothing run:
+> - Medical Restrictions staff page 6 pass / 3 fail; member and parent notice 6 / 1; gate refusal 7 / 1.
+> - What to score 6 pass / 1 fail; Library 5 pass / 2 fail.
+> - Top issue, verified in code: the "Record a medical restriction" form pre-answers "Loss of consciousness: None" and source "Ringside Restriction Affidavit" (MedicalRestrictionsPanel.tsx lines 74–75).
+> Plain: Send all the small fixes, only the urgent one, or none?
+>
+> Options, in the order shown:
+> 1. "A: All small fixes to Claude Code (Recommended)": Send section 4's proposals as small fixes, plus your answers to Q1 to Q4. Pros: Fixes the safety default and the gym-floor sizes together. Cons: One more lane in the queue.
+> 2. "B: Only the loss-of-consciousness default now": Fix that one now; check the rest on a tablet at the next pilot walk-through. Pros: Smallest change fast. Cons: Other fails wait.
+> 3. "C: Accept as built": No fixes. Pros: No work. Cons: A record can say 'no loss of consciousness' when nobody answered.
+>
+> Jason's answer: "A: All small fixes to Claude Code (Recommended)".
+
+> **OW25-35** (header 'Q1 failed read')
+> Question, as shown:
+> Official (Q1): When the app cannot read a member's USA Boxing medical restriction, what do the member's screens and the parent's Safety page show? Today they show nothing, the same as "no restriction". The server still blocks sparring either way.
+> Plain: Should families see "couldn't check" instead of a silence that looks like "all clear"? Your rule against new warnings is why it was left out, so the call is yours.
+>
+> Options, in the order shown:
+> 1. "A: One neutral 'could not be checked' line (Recommended)": 'Medical restriction: could not be checked just now; your coach can see it', with no warning colour and nothing blocked.
+> 2. "B: Nothing, as now": RULES s1 'no new warnings'; Overwatch P22c step 1.
+> 3. "C: Parent's Safety page only": The line on the parent page, not the member's.
+>
+> Jason's answer: "A: One neutral 'could not be checked' line (Recommended)".
+
+> **OW25-36** (header 'Q2 form defaults')
+> Question, as shown:
+> Official (Q2): On "Record a medical restriction", what do Source and Loss of consciousness show before the coach chooses?
+> Plain: Today a coach who skips the field saves "Loss of consciousness: None", an answer nobody gave.
+>
+> Options, in the order shown:
+> 1. "A: 'Choose…', Save asks for both (Recommended)": Nothing pre-picked; Save requires both.
+> 2. "B: Keep the pre-picked answers": 'Ringside Restriction Affidavit' and 'None', as now.
+> 3. "C: Pre-pick 'Unknown' for LOC": Loss of consciousness starts as 'Unknown'; Source stays pre-picked.
+>
+> Jason's answer: "A: 'Choose…', Save asks for both (Recommended)".
+
+> **OW25-37** (header 'Q3 gym-floor size')
+> Question, as shown:
+> Official (Q3): Should /coach/medical-restrictions and /coach/drills be gym-floor (kiosk) pages, with 55 px touch targets and 19.1 px text? Today they have 44–46 px controls and an 11 px "In force" status. The Clearance Board, Injury Record, Class plans and Workout templates are already gym-floor size.
+> Plain: Make these two pages big enough to use on the gym tablet?
+>
+> Options, in the order shown:
+> 1. "A: Both (Recommended)": Medical Restrictions and the drill library become gym-floor pages.
+> 2. "B: Medical Restrictions only": The drill library stays a desk page.
+> 3. "C: Neither": Both stay desk pages (44 px).
+>
+> Jason's answer: "A: Both (Recommended)".
+
+> **OW25-38** (header 'Q4 restriction mark')
+> Question, as shown:
+> Official (Q4): Is an in-force USA Boxing medical restriction (no sparring; training below sparring continues) a "medical stop" for the locked mark? The pack's binding rule: the medical-stop mark means only that.
+> Plain: This restriction stops sparring only. Today it shows in words, plus the restricted colour on the coach sparring screen. Which mark should it get, so later screens stay consistent?
+>
+> Options, in the order shown:
+> 1. "A: 'Restricted' glyph and words (Recommended)": Not the medical-stop mark; its own glyph plus words.
+> 2. "B: Use the medical-stop (locked) mark": Treat it as a medical stop.
+> 3. "C: Words only, as now": No mark.
+>
+> Jason's answer: "A: 'Restricted' glyph and words (Recommended)".
+
+> **OW25-39** (header 'Fix order')
+> Question, as shown:
+> Official: OW25-33 B puts the database-timeout lane in the next free build slot. The design-fix lane now carries the loss-of-consciousness default fix (OW25-36 A): today a skipped field saves "None" on a medical restriction record. Which goes first when a slot frees?
+> Plain: Fix the medical form first, or the database timeouts first?
+>
+> Options, in the order shown:
+> 1. "A: Design fixes first, LOC default at top (Recommended)": The design-fix lane takes the next slot, with the loss-of-consciousness default as its first change; the database lane follows. Pros: Stops wrong medical answers being saved as soon as possible. Cons: Database runs keep needing retries a little longer.
+> 2. "B: Database first, as OW25-33": Keep your earlier order; design fixes follow. Pros: Keeps the order you set. Cons: The form keeps saving 'None' until then.
+> 3. "C: LOC fix rides in the current YR or AP lane": Claude Code adds the one-line default fix to a running lane if its allowlist allows; the rest waits. Pros: Fastest for the safety fix. Cons: Stretches a content lane's scope; needs Claude Code's OK.
+>
+> Jason's answer: "A: Design fixes first, LOC default at top (Recommended)".
+
+**Jason:** OW25-34 "A: All small fixes to Claude Code (Recommended)"; OW25-35 "A: One neutral 'could not be checked' line (Recommended)"; OW25-36 "A: 'Choose…', Save asks for both (Recommended)"; OW25-37 "A: Both (Recommended)"; OW25-38 "A: 'Restricted' glyph and words (Recommended)"; OW25-39 "A: Design fixes first, LOC default at top (Recommended)"
+
+**Ruling:**
+
+1. The design-check finding's section 4 proposals go to Claude Code as small fixes (OW25-34 A), in a design-fix lane that takes the next free build slot ahead of the database-timeouts lane, with the loss-of-consciousness default as its first change (OW25-39 A; changes OD-2026-11-17-006's order).
+2. On "Record a medical restriction", Source and Loss of consciousness start at "Choose…" with nothing picked, and Save asks for both (OW25-36 A).
+3. When a member's USA Boxing medical restriction cannot be read, the member's screens and the parent's Safety page show one neutral line, "Medical restriction: could not be checked just now; your coach can see it", with no warning colour and nothing blocked (OW25-35 A). This is the owner's direction that RULES s1 allows.
+4. /coach/medical-restrictions and /coach/drills become gym-floor (kiosk) pages: 55 px touch targets and 19.1 px text (OW25-37 A).
+5. An in-force USA Boxing medical restriction shows a "Restricted" glyph plus words, never the medical-stop (locked) mark (OW25-38 A).
+
+**Also asked by the 14:02 note:** a count of existing records saved with the old pre-set values, as a count only, with no member names or record details anywhere. App-side, Jason chose "Count via GitHub job" (transcript 2026-11-17, after this PC's address proved to be outside the production database firewall); the count is a read-only check run from Actions.
+
+**Status:** recorded 2026-11-17 by PR. Lane DFX was issued the same day on Jason's "Yes, start it" (transcript line 26617, 2026-11-17T19:06:14.443Z, `origin.kind` human), beside lane DBT (brief `LANE_DFX_COACH_SCREEN_DESIGN_FIXES_BRIEF.md`).
 
 ---
 
