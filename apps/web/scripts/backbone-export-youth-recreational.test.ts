@@ -417,7 +417,7 @@ describe('the committed youth + recreational rows', () => {
   const DRAFT = 'AI draft, lane YR, 2026-11-17 (OD-2026-11-17-001)';
   const DRAFTED = ['session_type', 'difficulty', 'duration_minutes', 'intent'];
 
-  it('carry 43 drafted cells, each filled and labelled with the draft marker: 40 INFERRED, 3 durations UNVERIFIED (order of basis 2)', () => {
+  it('carry 43 drafted cells, each filled and labelled with the draft marker: 41 INFERRED, 2 durations UNVERIFIED (order of basis 2)', () => {
     const drafted = templates.flatMap((row) => {
       const labels = JSON.parse(row.field_labels) as Record<string, { status?: string; draft?: string; basis?: string; sources?: string[] }>;
       return DRAFTED.filter((field) => labels[field]?.draft).map((field) => ({ row, field, label: labels[field] }));
@@ -425,14 +425,18 @@ describe('the committed youth + recreational rows', () => {
     const byField = (field: string) => drafted.filter((entry) => entry.field === field).length;
     expect([drafted.length, byField('session_type'), byField('difficulty'), byField('duration_minutes'), byField('intent')]).toEqual([43, 17, 17, 7, 2]);
     // A duration from the same document's matching sheet, not the template's own content, is UNVERIFIED.
-    const UNVERIFIED = new Map([['wtp_151338565aea69', '60'], ['wtp_4b192f174699bc', '60'], ['wtp_c5d6897640434c', '120']]);
+    const UNVERIFIED = new Map([['wtp_4b192f174699bc', '60'], ['wtp_c5d6897640434c', '120']]);
     for (const { row, field, label } of drafted) {
       const fromSheet = field === 'duration_minutes' && UNVERIFIED.has(row.template_id);
       expect({ id: row.template_id, field, value: row[field] !== '', status: label.status, draft: label.draft, basis: Boolean(label.basis), sources: (label.sources ?? []).length > 0 })
         .toEqual({ id: row.template_id, field, value: true, status: fromSheet ? 'UNVERIFIED' : 'INFERRED', draft: DRAFT, basis: true, sources: true });
       if (fromSheet) expect(row[field]).toBe(UNVERIFIED.get(row.template_id));
     }
-    expect(drafted.filter(({ label }) => label.status === 'UNVERIFIED')).toHaveLength(3);
+    expect(drafted.filter(({ label }) => label.status === 'UNVERIFIED')).toHaveLength(2);
+    // Its own record's DOC-027 owner passage, "Base 60 Minute Session Template", is its basis (Overwatch, Q2).
+    expect(templates.find((row) => row.template_id === 'wtp_151338565aea69')?.duration_minutes).toBe('60');
+    // Difficulty goes by the lowest stage served, not by a template's name.
+    for (const id of ['wtp_1696a57348cd45', 'wtp_16acacbeaa1eeb']) expect(templates.find((row) => row.template_id === id)?.difficulty).toBe('intermediate');
     // A written value is never drafted over: the ~10-minute circuit keeps its 10.
     expect(templates.find((row) => row.template_id === 'wtp_b314d9a0582d20')?.duration_minutes).toBe('10');
   });

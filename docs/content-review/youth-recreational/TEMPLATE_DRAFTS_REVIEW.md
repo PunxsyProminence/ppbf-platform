@@ -7,7 +7,7 @@ Ruling: OD-2026-11-17-001 (Jason: "B: AI drafts the values"). 17 of the 27 loade
 1. The template's own content: its name, items, stated minutes, stage keys and source. A value from here is labelled `INFERRED`.
 2. Otherwise, the same source document's sheet that matches the template's contact structure. A value from here is labelled `UNVERIFIED`; its sources name the exact sheets, and its basis names any contrary values.
 
-Jason's pick, "B: AI drafts the values", asks for values drafted, labelled as AI drafts and checked by the lane's two reviewers. The order above is Overwatch's reading of it; nothing of his is reversed. 40 values come from (1) and 3 durations from (2).
+Jason's pick, "B: AI drafts the values", asks for values drafted, labelled as AI drafts and checked by the lane's two reviewers. The order above is Overwatch's reading of it; nothing of his is reversed. 41 values come from (1) and 2 durations from (2).
 
 Every drafted field is labelled in `field_labels`:
 - `INFERRED` or `UNVERIFIED`, as above;
@@ -25,10 +25,11 @@ Not drafted, because they are not loaded: the six DOC-136 home-program days, hel
 - **session_type:** one of the eight values already on committed templates, read from the template's own name, intent and items. The eight are technical, footwork, defense, sparring, conditioning, strength, tactical and observation.
   - Where every item is a warm-up or a cool-down block, the app's own item block word (`warmup`, `cooldown`) is used.
   - **Flag:** those two are new session_type values; no in-use value fits a warm-up or cool-down protocol.
-- **difficulty:** the lowest stage the template serves, as the Backbone's own written values do (the written T1 sparring, conditioning and strength templates are `beginner`):
-  - `beginner`: lowest stage Y1-Y2, T1, RC1 or FT1, or all ages;
-  - `intermediate`: lowest stage Y3-Y5;
-  - `advanced`: lowest stage T2 or above, or the template names itself advanced.
+- **difficulty:** the lowest stage the template serves, read as the Backbone's written templates of the same lowest stage show it (Overwatch):
+  - `beginner`: lowest stage Y1-Y2, T1 or FT1, or all ages (the written T1/RC1 templates are `beginner`);
+  - `intermediate`: lowest stage Y3-Y5, or T2 (the written T2, T2/RC1 and T2/AM1/RC1 templates are `intermediate`);
+  - `advanced`: lowest stage AM1 or above (the written AM1 and AM2/AM3 templates are `advanced`).
+  - RC1 does not change the level, and neither does a template's name.
 - **duration_minutes:** the template's own stated length or range (its upper end), else the sum of its own item times; where a range's items add up to more, the basis says so.
   - Where the record states no minutes at all: order of basis (2), labelled `UNVERIFIED`.
 - **intent:** the template's own block titles and source lines in plain words. Nothing is added that its items do not say.
@@ -62,7 +63,7 @@ Stages Y1, Y2, Y3, Y4, Y5; contact structure `non_contact`; age band "youth: Y1 
 | --- | --- | --- | --- |
 | session_type | technical | INFERRED | its items: skill instruction and skill drills (2 of 5 parts), with warm-up, conditioning and reflection |
 | difficulty | beginner | INFERRED | rule: difficulty follows the lowest stage the template serves, as the Backbone's own written values do: lowest stage Y1; non-contact |
-| duration_minutes | 60 | UNVERIFIED | UNVERIFIED: the record states no minutes, and DOC-156 states none elsewhere. 60 is the youth class length in the gym's youth sheets: the 48-session youth manual's session_minutes 60 (DOC-151, trk_c517c15740fb41) and the non-contact after-school sheet's "Session Length: 60 Minutes" (DOC-091, wtp_3557c34e022c31). No contrary youth non-contact length found. |
+| duration_minutes | 60 | INFERRED | its own record: the DOC-027 owner passage carried beside its items, "Base 60 Minute Session Template" (Session Templates and Weekly Build Patterns Source Manual v3), gives the class's block shape as a 60-minute session. The gym's youth sheets agree: the 48-session youth manual's session_minutes 60 (DOC-151, trk_c517c15740fb41) and the non-contact after-school sheet's "Session Length: 60 Minutes" (DOC-091, wtp_3557c34e022c31). Contrary: "About 30 to 45 minutes" (wtp_840621865a088d, an active recovery session, not a class). |
 
 ### Advanced Non-Contact Trial Session (60 Minutes) (`wtp_1696a57348cd45`)
 
@@ -71,7 +72,7 @@ Stages Y3, Y4, Y5; contact structure `non_contact`; age band "youth: Y3 (ages 12
 | Field | Draft | Label | Basis |
 | --- | --- | --- | --- |
 | session_type | technical | INFERRED | its technique work (technical precision rounds 0:05–0:20, defense and reaction 0:35–0:48, perfect round challenge 0:48–0:55: 35 of 60 min) outweighs its conditioning circuit (0:20–0:35, 15 min) |
-| difficulty | advanced | INFERRED | the template names itself advanced ("Advanced Non-Contact Trial Session") |
+| difficulty | intermediate | INFERRED | rule: difficulty follows the lowest stage the template serves, as the Backbone's own written values do: lowest stage Y3. Its name says "Advanced"; the convention goes by stage, not by name. |
 | intent | Technical precision rounds, a conditioning circuit, defense and reaction rounds and a perfect round challenge, closed by a leadership reflection; no contact. | INFERRED | its own block titles after the opening start block, in order, and its contact structure non_contact |
 
 ### Advanced Contact Sparring Simulation (`wtp_16acacbeaa1eeb`)
@@ -81,7 +82,7 @@ Stages T2, AM1, AM2, AM3, RC1; contact structure `split_non_contact_then_contact
 | Field | Draft | Label | Basis |
 | --- | --- | --- | --- |
 | session_type | sparring | INFERRED | its name "Advanced Contact Sparring Simulation"; 4 sparring blocks (60 of 90 min) |
-| difficulty | advanced | INFERRED | the template names itself advanced ("Advanced Contact Sparring Simulation"); lowest stage T2 |
+| difficulty | intermediate | INFERRED | rule: difficulty follows the lowest stage the template serves, as the Backbone's own written values do: lowest stage T2, with RC1, as the written T2/AM1/RC1 and T2/RC1 templates (wtp_080c41583b3757, wtp_7069f515b9b84e, wtp_da83ce464ffa96), all intermediate. Its name says "Advanced"; the convention goes by stage, not by name. |
 
 ### Friday Sparring Coach Sheet (`wtp_1ad3c846b03ecc`)
 
@@ -186,7 +187,7 @@ Stages Y3, Y4, Y5; contact structure `contact`; age band "youth: Y3 (ages 12-14)
 | --- | --- | --- | --- |
 | session_type | tactical | INFERRED | its rule "score clean, exit immediately, do not chase" and its entry, score and exit rounds |
 | difficulty | intermediate | INFERRED | rule: difficulty follows the lowest stage the template serves, as the Backbone's own written values do: lowest stage Y3 |
-| duration_minutes | 120 | UNVERIFIED | UNVERIFIED: the record states no minutes. It is a contact card; the two contact sheets in its own track (trk_bfd0fb2129bc8d) state 120: "Training Block: 3:30 PM to 5:30 PM" (wtp_1ad3c846b03ecc) and "Time: 4:00 PM – 6:00 PM" (wtp_9fbf7f8edf5016). Contrary: "90-Minute Training Session" (wtp_16acacbeaa1eeb, DOC-091) and DOC-091's non-contact sheets, 60. |
+| duration_minutes | 120 | UNVERIFIED | UNVERIFIED: the record states no minutes. Its contact structure is contact, and the contact sheet in its own track (trk_bfd0fb2129bc8d), wtp_1ad3c846b03ecc, states 120: "Training Block: 3:30 PM to 5:30 PM". The track's split-structure sheet wtp_9fbf7f8edf5016 also states 120: "Time: 4:00 PM – 6:00 PM". Contrary: "90-Minute Training Session" (wtp_16acacbeaa1eeb, DOC-091, split structure) and DOC-091's non-contact sheets, 60. |
 
 ### Session structure for skill development (`wtp_f2488df4fa331a`)
 
@@ -199,7 +200,7 @@ Stages T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1; contact structure `c
 
 ## Flags for the reviewers
 
-- `UNVERIFIED` (order of basis 2), durations of records that state no minutes: `wtp_151338565aea69` duration_minutes = 60; `wtp_4b192f174699bc` duration_minutes = 60; `wtp_c5d6897640434c` duration_minutes = 120.
+- `UNVERIFIED` (order of basis 2), durations of records that state no minutes: `wtp_4b192f174699bc` duration_minutes = 60; `wtp_c5d6897640434c` duration_minutes = 120.
 - `warmup` and `cooldown` are new session_type values: `wtp_0053dde5c924db`, `wtp_9e9710b7ff5736`, `wtp_b314d9a0582d20`.
 - The active recovery session (`wtp_840621865a088d`) is drafted `technical`, from its own words ("the heart of the session" is technical shadowboxing; "not a conditioning workout"). A coach may file it as recovery.
 
