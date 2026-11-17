@@ -180,6 +180,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       # One command for both modes. The script is read-only unless
       # PPBF_INTAKE_AUDIT_REDACT_APPLY is exactly 'true' AND
       # PPBF_INTAKE_AUDIT_REDACT_CONFIRM is the phrase -- it checks the phrase

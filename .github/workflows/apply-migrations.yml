@@ -415,6 +415,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=$EXPECTED_DB" >> "$GITHUB_ENV"
           echo "Target host: $EXPECTED_HOST / db: $EXPECTED_DB (override in effect: ${OVERRIDE_HOST:+yes}${OVERRIDE_HOST:-no})."
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       - name: Apply Migration
         env:
           MIGRATION: ${{ inputs.migration }}

@@ -229,6 +229,10 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        if: inputs.mode == 'apply'
+        uses: ./.github/actions/db-preflight
+
       # whole_corpus maps to an UNSET variable, not to the string 'whole_corpus': the importer
       # treats unset as "no split", and would refuse an unknown scope name.
       - name: Resolve Corpus Scope

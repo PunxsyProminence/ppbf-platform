@@ -1,0 +1,24 @@
+name: Database Preflight
+description: >-
+  Fails the job in about 20 seconds, with a plain message, when this runner
+  cannot open a TCP connection to the database -- once per job, before the
+  job's first database step. Sends no bytes (no startup packet, no TLS, no credentials, no SQL) and
+  prints the host and port only. See scripts/db-reachability-probe.mjs for why
+  (lane DBT, 2026-11-17: GitHub places some Linux jobs on non-Azure runners,
+  which the database firewall does not admit).
+inputs:
+  connection-env:
+    description: >-
+      NAME of the environment variable that holds the connection string (set by
+      the job's resolve step through GITHUB_ENV). The value is never passed or
+      printed.
+    required: false
+    default: AZURE_POSTGRES_CONNECTION_STRING
+runs:
+  using: composite
+  steps:
+    - name: Probe The Database Port From This Runner (TCP Only)
+      shell: bash
+      env:
+        PROBE_CONN_ENV: ${{ inputs.connection-env }}
+      run: node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs" --env "$PROBE_CONN_ENV"

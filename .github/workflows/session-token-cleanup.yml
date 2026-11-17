@@ -136,6 +136,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       # A scheduled run has no inputs. It deletes only when the repository
       # variable PPBF_SESSION_CLEANUP_SCHEDULED_APPLY is 'true' (DRY RUN FIRST,
       # above); a dispatch deletes only when a person typed APPLY. GitHub's ==
