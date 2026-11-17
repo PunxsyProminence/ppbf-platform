@@ -1,13 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { getClassPlanTrack, listClassPlanTracks } from '@/src/server/pilot/classPlans';
+import { getClassPlanTrack, listClassPlanTracks, listLibraryTracks } from '@/src/server/pilot/classPlans';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
 
 // Read-only "Class plans" (OD-2026-11-12-005): the gym's training tracks.
-// GET lists them; GET ?track=<track_id> returns one with its weeks and days.
+// GET lists them (the tracks with blocks); GET ?library=1 lists the library
+// tracks (no blocks, text only); GET ?track=<track_id> returns one of either
+// kind with its details, weeks and days.
 //
 // WHO: coaches and gym admins only, the issue route's list (OD-2026-11-12-005
 // ruling 2: "coaches and gym admins only"). Deliberately NOT the wider
@@ -23,13 +25,17 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...CLASS_PLAN_ROLES]);
 
-    const trackId = new URL(request.url).searchParams.get('track');
+    const params = new URL(request.url).searchParams;
+    const trackId = params.get('track');
     if (trackId) {
       const track = await getClassPlanTrack(principal.organizationId, trackId);
       if (!track) {
         return NextResponse.json({ error: 'TRAINING_TRACK_NOT_FOUND' }, { status: 404 });
       }
       return NextResponse.json({ track });
+    }
+    if (params.get('library') === '1') {
+      return NextResponse.json({ tracks: await listLibraryTracks(principal.organizationId) });
     }
     return NextResponse.json({ tracks: await listClassPlanTracks(principal.organizationId) });
   } catch (error) {

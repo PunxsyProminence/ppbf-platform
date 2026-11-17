@@ -81,6 +81,14 @@ describe('Class plans page', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
+  it('links to the library tracks, and lists only what the class plans read returns', async () => {
+    global.fetch = jest.fn(async () => json({ tracks: [SUMMARY] })) as unknown as typeof fetch;
+    render(<ClassPlansPage />);
+    expect(await screen.findByText('8-Week Non-Contact Boxing Pilot Program')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Library tracks' })).toHaveAttribute('href', '/coach/library');
+    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url)).toEqual(['/api/pilot/training-tracks']);
+  });
+
   it('says a failed load is a failure, not an empty list; and says empty when empty', async () => {
     global.fetch = jest.fn(async () => json({}, false)) as unknown as typeof fetch;
     const { unmount } = render(<ClassPlansPage />);

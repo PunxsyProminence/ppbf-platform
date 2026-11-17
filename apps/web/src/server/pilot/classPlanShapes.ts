@@ -105,6 +105,21 @@ export interface ClassPlanTrackSummary {
   day_count: number;
 }
 
+/**
+ * A library track: a current, active track with no blocks (no weeks or days),
+ * only the text its details carry. Headings are read from details; null when absent.
+ */
+export interface LibraryTrackSummary {
+  track_id: string;
+  name: string;
+  lane: string;
+  age_band: string;
+  part_heading: string | null;
+  chapter_heading: string | null;
+  subtitle: string | null;
+  group_count: number;
+}
+
 export interface ClassPlanTrackDetail extends ClassPlanTrackSummary {
   /** The track's detail fields as stored (strings, lists, or key/value maps). */
   details: Record<string, unknown>;

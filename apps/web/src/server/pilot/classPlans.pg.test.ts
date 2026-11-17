@@ -222,7 +222,7 @@ async function applyCommitted(organizationId: string, actorAccountId: string, fi
   }
 }
 
-import { getClassPlanTrack, listClassPlanTracks } from './classPlans';
+import { getClassPlanTrack, listClassPlanTracks, listLibraryTracks } from './classPlans';
 
 describe('Class plans over the loaded FT1 track', () => {
   const ORG = 'ft1_gym';
@@ -329,5 +329,51 @@ describe('Class plans over the loaded FT1 track', () => {
   it('shows another gym nothing of the track of this gym', async () => {
     expect(await listClassPlanTracks(OTHER)).toEqual([]);
     expect(await getClassPlanTrack(OTHER, trackId)).toBeNull();
+  });
+  // Library tracks (lane YR-c): a track with no blocks is text only. Written
+  // straight into the table inside a rolled-back transaction; made-up text.
+  async function insertLibraryTrack(
+    organizationId: string,
+    id: string,
+    name: string,
+    details: Record<string, unknown>,
+    extra: { active?: boolean; superseded?: boolean } = {},
+  ) {
+    await client.query(
+      `insert into pilot.training_tracks (organization_id, track_id, lineage_id, name, lane, status, details, active, superseded_at)
+       values ($1, $2, $2, $3, 'standard', 'REPORTED', $4::jsonb, $5, case when $6 then now() else null end)`,
+      [organizationId, id, name, JSON.stringify(details), extra.active ?? true, extra.superseded ?? false],
+    );
+  }
+
+  it('lists a track with no blocks as library, not as a class plan, with its headings and group count', async () => {
+    await client.query('BEGIN');
+    try {
+      await insertLibraryTrack(ORG, 'trk_00000000000b02', 'B library track', {
+        part_heading: 'PART 1', chapter_heading: '1. Made-up chapter', subtitle: 'A subtitle',
+        groups: [{ section: 'S1', heading: 'One', blocks: [] }, { section: 'S2', heading: 'Two', blocks: [] }],
+      });
+      await insertLibraryTrack(ORG, 'trk_00000000000a01', 'A library track', { groups: 'not a list' });
+      await insertLibraryTrack(ORG, 'trk_00000000000c03', 'C withdrawn', {}, { active: false });
+      await insertLibraryTrack(ORG, 'trk_00000000000d04', 'D superseded', {}, { superseded: true, active: false });
+      await insertLibraryTrack(OTHER, 'trk_00000000000e05', 'E other gym', {});
+
+      expect((await listClassPlanTracks(ORG)).map((track) => track.track_id)).toEqual([trackId]);
+      expect(await listLibraryTracks(ORG)).toEqual([
+        { track_id: 'trk_00000000000a01', name: 'A library track', lane: 'standard', age_band: 'any',
+          part_heading: null, chapter_heading: null, subtitle: null, group_count: 0 },
+        { track_id: 'trk_00000000000b02', name: 'B library track', lane: 'standard', age_band: 'any',
+          part_heading: 'PART 1', chapter_heading: '1. Made-up chapter', subtitle: 'A subtitle', group_count: 2 },
+      ]);
+      expect((await listLibraryTracks(OTHER)).map((track) => track.track_id)).toEqual(['trk_00000000000e05']);
+
+      // One library track opens through the same read, with its details whole and no weeks.
+      const opened = await getClassPlanTrack(ORG, 'trk_00000000000b02');
+      expect(opened).toMatchObject({ track_id: 'trk_00000000000b02', block_count: 0, day_count: 0, weeks: [] });
+      expect(opened!.details).toMatchObject({ part_heading: 'PART 1', groups: [{ section: 'S1' }, { section: 'S2' }] });
+      expect(await getClassPlanTrack(OTHER, 'trk_00000000000b02')).toBeNull();
+    } finally {
+      await client.query('ROLLBACK');
+    }
   });
 });
