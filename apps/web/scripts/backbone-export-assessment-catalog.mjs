@@ -17,7 +17,15 @@
 //   seed_pathway_gates.csv              38 gates
 //   seed_pathway_gate_criteria.csv      94 criteria
 //   seed_scorecard_anchor_clip_specs.csv 105 anchor-clip specs
-// --out defaults to apps/web/seed-data. The KPI lists (CAT-d) are not written here.
+// and, from the frozen DOC-027 track data/content/tracks/trk_21ba0c958c98e1.json
+// (lane CAT-d; OD-2026-11-16-003 ruling 1; owner rule D-PK77-1), the ROOM rows of
+//   seed_behavior_kpi_lists.csv         the room list and its scoring line
+//   seed_behavior_kpis.csv              DOC-027's 6 core behavioural KPIs
+// Those two files also hold the DRILL list, DOC-041's 7 drill KPIs: DOC-041 is
+// not in the frozen Backbone, so its rows (and the drafted scoring kinds and
+// three-level anchors on them) are committed by hand and kept exactly as they
+// are, in their place; only the room rows are written here.
+// --out defaults to apps/web/seed-data.
 // A count that differs from the brief is printed by name and the run exits 2.
 //
 // COPY, NEVER REWORD. Every text cell is the backbone's own value, Unicode NFC
@@ -69,6 +77,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const CATALOGS_FILE = 'working/design-2026-10-25/design_catalogs.json';
+export const ROOM_TRACK_FILE = 'data/content/tracks/trk_21ba0c958c98e1.json';
+/** The owner rule that holds DOC-027's core behavioural KPIs, by its own source line. */
+export const ROOM_SOURCE = 'DOC-027 (Punxsy Master Source Manual v1, Performance Tracking Source Manual v3, Core Behavioral KPIs)';
 export const MANIFEST_FILE = 'FREEZE_MANIFEST.json';
 export const FOLDER = 'assessment-catalog';
 export const ORG_PLACEHOLDER = '{{PPBF_ORG_ID}}';
@@ -76,7 +87,7 @@ export const EXCERPT_KEYS = ['quotes'];
 export const RECORD_STATUSES = ['OBSERVED', 'REPORTED', 'INFERRED', 'UNVERIFIED'];
 
 export const EXPECTED_COUNTS = {
-  protocols: 46, scales: 2, caps: 1, items: 29, gates: 38, criteria: 94, anchorSpecs: 105, excerptKeys: 4, excerptPassages: 10,
+  protocols: 46, scales: 2, caps: 1, items: 29, gates: 38, criteria: 94, anchorSpecs: 105, excerptKeys: 4, excerptPassages: 10, roomKpis: 6,
 };
 
 const LABELS = ['field_labels', 'evidence', 'stage_keys'];
@@ -109,7 +120,15 @@ export const HEADERS = {
     'organization_id', 'anchor_spec_id', 'scorecard_item_id', 'item_number', 'level', 'context_class', 'used_by_stage_keys', 'priority', 'status',
     'sources', 'backbone_version', 'active_flag', ...LABELS,
   ],
+  'seed_behavior_kpi_lists.csv': [
+    'organization_id', 'list_key', 'title', 'source_doc', 'scope_text', 'scoring_rule_text', 'status', 'sources', 'backbone_version', 'active_flag', ...LABELS,
+  ],
+  'seed_behavior_kpis.csv': [
+    'organization_id', 'kpi_id', 'list_key', 'ordinal', 'name', 'scoring_kind', 'level_anchors', 'status', 'sources', 'backbone_version', 'active_flag', ...LABELS,
+  ],
 };
+/** The KPI files: the room rows come from the Backbone, every other row is kept as committed. */
+export const KPI_FILES = ['seed_behavior_kpi_lists.csv', 'seed_behavior_kpis.csv'];
 /** Each file's id column, for sorting and the overwrite guard. */
 export const KEY_OF = {
   'seed_assessment_protocols.csv': 'protocol_id',
@@ -119,6 +138,8 @@ export const KEY_OF = {
   'seed_pathway_gates.csv': 'gate_id',
   'seed_pathway_gate_criteria.csv': 'criterion_id',
   'seed_scorecard_anchor_clip_specs.csv': 'anchor_spec_id',
+  'seed_behavior_kpi_lists.csv': 'list_key',
+  'seed_behavior_kpis.csv': 'kpi_id',
 };
 
 /** Every key each record kind may carry; anything else stops the export. */
@@ -476,6 +497,73 @@ function capRow(definitions, version, tally) {
   };
 }
 
+/** 'prefix_' + first 14 hex of sha256(NFC-trimmed identity) (contentImport/ids.ts hex14). */
+function hex14(identity) {
+  return createHash('sha256').update(identity.normalize('NFC').trim(), 'utf8').digest('hex').slice(0, 14);
+}
+
+/** DOC-027's room list and its 6 KPIs, from the frozen track's owner rule, as written. */
+function roomRows(track, version) {
+  const record = track.record;
+  if (!isObject(record) || !Array.isArray(record.groups)) throw new ExportError(`${ROOM_TRACK_FILE}: record.groups is missing`);
+  const rules = record.groups.flatMap((group) => (Array.isArray(group.owner_rules) ? group.owner_rules : [])).filter((rule) => rule.owner_source === ROOM_SOURCE);
+  if (rules.length !== 1) throw new ExportError(`${ROOM_TRACK_FILE}: expected one owner rule from ${ROOM_SOURCE}, found ${rules.length}`);
+  const lines = rules[0].owner_text;
+  if (!Array.isArray(lines) || lines.length !== 7 || !String(lines[6]).startsWith('Use simple counts')) {
+    throw new ExportError(`${ROOM_TRACK_FILE}: the owner rule's owner_text is not 6 KPIs and a scoring line; re-read it by decision, do not guess`);
+  }
+  // The source line holds commas, which a '|' source list refuses: the key is DOC-027, and the line itself,
+  // as written, rides in each row's field labels.
+  const owner = text(ROOM_SOURCE, 'room source');
+  const ownerLabel = { status: 'REPORTED', sources: ['DOC-027'], owner_source: owner, changed_by: text(rules[0].changed_by, 'room changed_by') };
+  const recordStatus = status(record.status, `${ROOM_TRACK_FILE} status`);
+  const list = {
+    organization_id: ORG_PLACEHOLDER,
+    list_key: 'room',
+    title: 'Core Behavioral KPIs',
+    source_doc: 'DOC-027',
+    scope_text: 'Room and session monitoring (owner rule D-PK77-1; OD-2026-11-16-003 ruling 1)',
+    scoring_rule_text: text(lines[6], 'room scoring line'),
+    status: recordStatus,
+    sources: 'DOC-027',
+    backbone_version: version,
+    active_flag: 'true',
+    field_labels: labelsCell({
+      title: { ...ownerLabel, basis: 'the section name in the owner rule\'s source line' },
+      scoring_rule_text: ownerLabel,
+      scope_text: { status: 'REPORTED', sources: ['OD-2026-11-16-003', 'D-PK77-1'] },
+    }),
+  };
+  const kpis = lines.slice(0, 6).map((line, index) => {
+    const name = text(line, `room KPI ${index + 1}`);
+    return {
+      organization_id: ORG_PLACEHOLDER,
+      kpi_id: `kpi_${hex14(`room:${name}`)}`,
+      list_key: 'room',
+      ordinal: String(index + 1),
+      name,
+      status: recordStatus,
+      sources: 'DOC-027',
+      backbone_version: version,
+      active_flag: 'true',
+      field_labels: labelsCell({ name: ownerLabel }),
+    };
+  });
+  return { list, kpis };
+}
+
+/** A KPI file: the committed rows that are not room rows, kept as written, then the room rows; sorted by list and place. */
+function kpiFile(name, committedText, roomRowsForFile) {
+  const kept = [];
+  if (committedText !== undefined) {
+    const header = committedText.slice(0, committedText.indexOf('\n')).split(',');
+    if (header.join(',') !== HEADERS[name].join(',')) throw new ExportError(`${FOLDER}/${name}: committed header differs from the exporter's; nothing was written`);
+    for (const row of readCsv(committedText)) if (row.list_key !== 'room') kept.push(row);
+  }
+  const order = (row) => `${row.list_key}\u0000${String(row.ordinal ?? '').padStart(4, '0')}`;
+  return [...kept, ...roomRowsForFile].sort((a, b) => compare(order(a), order(b)));
+}
+
 export function loadManifest(backboneDir) {
   const file = path.join(backboneDir, MANIFEST_FILE);
   if (!fs.existsSync(file)) throw new ExportError(`not found: ${file}`);
@@ -485,12 +573,12 @@ export function loadManifest(backboneDir) {
 }
 
 /** The changed and removed committed rows, by id and column, for one file. */
-function overwritesOf(name, committedText, newRows) {
+function overwritesOf(name, committedText, newRows, owned = () => true) {
   if (committedText === undefined) return [];
   const key = KEY_OF[name];
   const fresh = new Map(newRows.map((row) => [row[key], row]));
   const found = [];
-  for (const old of readCsv(committedText)) {
+  for (const old of readCsv(committedText).filter(owned)) {
     const next = fresh.get(old[key]);
     if (!next) {
       found.push(`  ${FOLDER}/${name} ${old[key]}: removed`);
@@ -558,6 +646,26 @@ export function exportAssessmentCatalog(backboneDir, existing = () => undefined,
     excerptKeys: dropped.keys,
     excerptPassages: dropped.passages,
   };
+  // The room rows, from the frozen DOC-027 track (hashed like the catalog).
+  const trackFile = path.join(backboneDir, ROOM_TRACK_FILE);
+  if (!fs.existsSync(trackFile)) throw new ExportError(`not found: ${trackFile}`);
+  const trackBytes = fs.readFileSync(trackFile);
+  const trackHash = sha16(trackBytes);
+  if (manifest.get(ROOM_TRACK_FILE) !== trackHash) {
+    throw new ExportError(`${ROOM_TRACK_FILE}: hash ${trackHash} differs from ${MANIFEST_FILE} (${manifest.get(ROOM_TRACK_FILE) ?? 'not listed'}); the frozen Backbone has changed`);
+  }
+  const room = roomRows(JSON.parse(trackBytes.toString('utf8')), `track trk_21ba0c958c98e1 ${trackHash}`);
+  rows['seed_behavior_kpi_lists.csv'] = kpiFile('seed_behavior_kpi_lists.csv', existing(`${FOLDER}/seed_behavior_kpi_lists.csv`), [room.list]);
+  rows['seed_behavior_kpis.csv'] = kpiFile('seed_behavior_kpis.csv', existing(`${FOLDER}/seed_behavior_kpis.csv`), room.kpis);
+  counts.roomKpis = room.kpis.length;
+  for (const name of KPI_FILES) {
+    const ids = new Set();
+    for (const row of rows[name]) {
+      if (ids.has(row[KEY_OF[name]])) throw new ExportError(`${name}: two rows with ${KEY_OF[name]} ${row[KEY_OF[name]]}`);
+      ids.add(row[KEY_OF[name]]);
+    }
+  }
+
   const differences = Object.entries(EXPECTED_COUNTS)
     .filter(([key, expected]) => counts[key] !== expected)
     .map(([key, expected]) => `${key}: brief ${expected}, observed ${counts[key]}`);
@@ -568,7 +676,10 @@ export function exportAssessmentCatalog(backboneDir, existing = () => undefined,
     const rel = `${FOLDER}/${name}`;
     files[rel] = writeCsv(HEADERS[name], list_.map((row) => HEADERS[name].map((column) => row[column] ?? '')));
     const committed = existing(rel);
-    if (committed !== undefined && committed !== files[rel]) overwrites.push(...overwritesOf(name, committed, list_));
+    if (committed !== undefined && committed !== files[rel]) {
+      const room = KPI_FILES.includes(name);
+      overwrites.push(...overwritesOf(name, committed, list_, room ? (row) => row.list_key === 'room' : () => true));
+    }
   }
   if (overwrites.length && !allowOverwrite) {
     throw new ExportError(['committed rows differ from the frozen Backbone; nothing was written (--allow-overwrite writes anyway):', ...overwrites].join('\n'));
