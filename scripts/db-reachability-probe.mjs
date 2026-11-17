@@ -118,21 +118,54 @@ export async function probe({
  * "Cloud: AWS" and "Region: us-west-2". Returns {cloud, region} or null.
  */
 export function parseSetupInfo(text) {
+  return parseSetupInfoDetailed(text).runner;
+}
+
+/**
+ * Only these two values from the file are ever printed, and only in this
+ * cleaned form: plain characters, short. Nothing else in the file reaches the
+ * log, so nothing in it can be read as a workflow command.
+ */
+function safeValue(value) {
+  const cleaned = String(value).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
+  return cleaned || null;
+}
+
+/** A property read the way the runner reads it: Newtonsoft matches names case-insensitively. */
+function field(obj, name) {
+  if (!obj || typeof obj !== 'object') return undefined;
+  for (const key of Object.keys(obj)) {
+    if (key.toLowerCase() === name) return obj[key];
+  }
+  return undefined;
+}
+
+/**
+ * Like parseSetupInfo, and says why when there is no answer:
+ *   'unparsable'    -- not JSON (after a byte-order mark is dropped), or not an array
+ *   'no-cloud-line' -- JSON, but no group whose detail has a "Cloud:" line
+ * GitHub-hosted runners' provisioner writes this file at boot, and its key case
+ * is not documented; the runner itself reads it case-insensitively and
+ * tolerates a byte-order mark, so this does too (lane DBT, run 44172929958).
+ */
+export function parseSetupInfoDetailed(text) {
   let groups;
   try {
-    groups = JSON.parse(text);
+    groups = JSON.parse(String(text).replace(/^﻿/, ''));
   } catch {
-    return null;
+    return { runner: null, reason: 'unparsable' };
   }
-  if (!Array.isArray(groups)) return null;
+  if (!Array.isArray(groups)) return { runner: null, reason: 'unparsable' };
   for (const g of groups) {
-    if (!g || typeof g.detail !== 'string') continue;
-    const cloud = /^\s*Cloud:\s*(\S+)/m.exec(g.detail);
-    if (!cloud) continue;
-    const region = /^\s*Region:\s*(\S+)/m.exec(g.detail);
-    return { cloud: cloud[1], region: region ? region[1] : null };
+    const detail = field(g, 'detail');
+    if (typeof detail !== 'string') continue;
+    const cloud = /^\s*Cloud:\s*(\S+)/m.exec(detail);
+    const cloudValue = cloud ? safeValue(cloud[1]) : null;
+    if (!cloudValue) continue;
+    const region = /^\s*Region:\s*(\S+)/m.exec(detail);
+    return { runner: { cloud: cloudValue, region: region ? safeValue(region[1]) : null }, reason: null };
   }
-  return null;
+  return { runner: null, reason: 'no-cloud-line' };
 }
 
 /**
@@ -142,13 +175,26 @@ export function parseSetupInfo(text) {
  * ancestry to the Runner.Worker binary (<root>/bin/Runner.Worker). Linux only;
  * best effort; null when anything is missing.
  */
-export function findRunnerProvisioner({
+export function findRunnerProvisioner(options = {}) {
+  return readRunnerProvisioner(options).runner;
+}
+
+/**
+ * Like findRunnerProvisioner, and names the step that failed when there is no
+ * answer, so a job log says WHY the cloud is unknown:
+ *   'no-worker'     -- no Runner.Worker among this process's ancestors (or /proc unreadable)
+ *   'unreadable'    -- found the runner root, but its .setup_info could not be read
+ *   'unparsable' / 'no-cloud-line' -- see parseSetupInfoDetailed
+ * Reason codes are fixed words; no error text or file content is returned.
+ */
+export function readRunnerProvisioner({
   procRoot = '/proc',
   startPid = process.ppid,
   maxDepth = 8,
   readlink = fs.readlinkSync,
   readFile = fs.readFileSync,
 } = {}) {
+  let root = null;
   try {
     let pid = startPid;
     for (let i = 0; i < maxDepth && pid > 1; i += 1) {
@@ -159,8 +205,8 @@ export function findRunnerProvisioner({
         exe = null;
       }
       if (exe && path.posix.basename(exe) === 'Runner.Worker') {
-        const root = path.posix.dirname(path.posix.dirname(exe));
-        return parseSetupInfo(readFile(path.posix.join(root, '.setup_info'), 'utf8'));
+        root = path.posix.dirname(path.posix.dirname(exe));
+        break;
       }
       const stat = readFile(path.posix.join(procRoot, String(pid), 'stat'), 'utf8');
       // Field 4 is the parent pid; field 2 (comm) may contain spaces, so split after ')'.
@@ -168,18 +214,28 @@ export function findRunnerProvisioner({
       pid = Number(after[1]);
     }
   } catch {
-    return null;
+    root = null;
   }
-  return null;
+  if (!root) return { runner: null, reason: 'no-worker' };
+  let text;
+  try {
+    text = readFile(path.posix.join(root, '.setup_info'), 'utf8');
+  } catch {
+    return { runner: null, reason: 'unreadable' };
+  }
+  return parseSetupInfoDetailed(text);
 }
 
-function describeRunner(runner) {
-  if (!runner) return 'Runner cloud: unknown (see "Set up job" -> "Runner Image Provisioner" in this job\'s log).';
+function describeRunner(runner, reason) {
+  if (!runner) {
+    const why = reason ? `setup info: ${reason}; ` : '';
+    return `Runner cloud: unknown (${why}see "Set up job" -> "Runner Image Provisioner" in this job's log).`;
+  }
   return `Runner cloud: ${runner.cloud}${runner.region ? `, region ${runner.region}` : ''} (from the runner's provisioner info).`;
 }
 
 /** The ::error:: text for an unreachable database. Host and port only; never the connection string. */
-export function failureMessage({ host, port, attempts, codes, runner }) {
+export function failureMessage({ host, port, attempts, codes, runner, reason = null }) {
   const last = codes.length ? codes[codes.length - 1] : 'unknown';
   const cause =
     runner && runner.cloud && runner.cloud.toLowerCase() !== 'azure'
@@ -189,7 +245,7 @@ export function failureMessage({ host, port, attempts, codes, runner }) {
         : 'GitHub sometimes places Linux jobs on non-Azure runners; as of 2026-11-17, 10 of 10 such database jobs since 2026-11-03 had failed to connect (lane DBT; OD-2026-11-17-008).';
   return (
     `Could not open a TCP connection to ${host}:${port} after ${attempts} attempt(s) (last: ${last}). ` +
-    `${describeRunner(runner)} ${cause} ` +
+    `${describeRunner(runner, reason)} ${cause} ` +
     "This check sends no data and runs before this job's first database step, so the job has not touched the database. " +
     'A new runner is needed: re-run the job, or dispatch a fresh run where re-runs are refused (release-one-approval).'
   );
@@ -234,16 +290,16 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     );
     return 0;
   }
-  const runner = findRunnerProvisioner();
+  const { runner, reason } = readRunnerProvisioner();
   const result = await probe({ ...target, ...opts, log: (line) => console.log(line) });
   if (result.ok) {
     console.log(
-      `db-preflight: ${target.host}:${target.port} reachable (attempt ${result.attempt}, ${result.ms} ms). ${describeRunner(runner)}`,
+      `db-preflight: ${target.host}:${target.port} reachable (attempt ${result.attempt}, ${result.ms} ms). ${describeRunner(runner, reason)}`,
     );
     return 0;
   }
   console.log(
-    `::error title=Database unreachable from this runner::${failureMessage({ ...target, attempts: opts.attempts, codes: result.codes, runner })}`,
+    `::error title=Database unreachable from this runner::${failureMessage({ ...target, attempts: opts.attempts, codes: result.codes, runner, reason })}`,
   );
   return 1;
 }
