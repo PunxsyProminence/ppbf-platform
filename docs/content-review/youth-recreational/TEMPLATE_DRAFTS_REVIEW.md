@@ -27,8 +27,8 @@ Not drafted, because they are not loaded: the six DOC-136 home-program days, hel
   - **Flag:** those two are new session_type values; no in-use value fits a warm-up or cool-down protocol.
 - **difficulty:** the lowest stage the template serves, read as the Backbone's written templates of the same lowest stage show it (Overwatch):
   - `beginner`: lowest stage Y1-Y2, T1 or FT1, or all ages (the written T1/RC1 templates are `beginner`);
-  - `intermediate`: lowest stage Y3-Y5, or T2 (the written T2, T2/RC1 and T2/AM1/RC1 templates are `intermediate`);
-  - `advanced`: lowest stage AM1 or above (the written AM1 and AM2/AM3 templates are `advanced`).
+  - `intermediate`: lowest stage T2 not running to PR1-PR5 (the written T2, T2/RC1 and T2/AM1/RC1 templates are `intermediate`); and lowest stage Y3-Y5, which no written template has: the lane places it between the written Y1/Y2 `beginner` templates and the adult stages;
+  - `advanced`: lowest stage AM1 or above, or T2 running to PR1-PR5 (the written AM1, AM2/AM3 and T2-to-PR5 templates are `advanced`).
   - RC1 does not change the level, and neither does a template's name.
 - **duration_minutes:** the template's own stated length or range (its upper end), else the sum of its own item times; where a range's items add up to more, the basis says so.
   - Where the record states no minutes at all: order of basis (2), labelled `UNVERIFIED`.
@@ -206,5 +206,5 @@ Stages T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1; contact structure `c
 
 ## Reviewer marks
 
-- Fidelity reviewer: PENDING
-- Scoping reviewer: PENDING
+- Fidelity reviewer: CLEAN, 2026-11-17. Round 3 checked the values and labels at `de9b6f71` and these rule lines: the difficulty lines give all 104 written difficulties in the frozen Backbone and all 17 drafts; the sheet matches the CSV (17 templates, 43 drafts, 41 `INFERRED` and 2 `UNVERIFIED`).
+- Scoping reviewer: CLEAN, 2026-11-17. Round 2 at `de9b6f71`: only the 4 drafted template rows changed; the counts agree in the sheet, the provenance doc, ACTIVE_WORK and the exporter test.
