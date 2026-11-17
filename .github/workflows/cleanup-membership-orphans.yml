@@ -134,6 +134,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       - name: Clean Up Orphaned Membership Rows
         env:
           PPBF_MEMBERSHIP_ORPHAN_CLEANUP_APPLY: ${{ inputs.apply == 'APPLY' }}

@@ -187,6 +187,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       # pg_dump refuses to run against a server newer than itself, and the
       # runner image's preinstalled client tracks Ubuntu rather than Azure. Ask
       # the server what it is and install that exact client, so an Azure major

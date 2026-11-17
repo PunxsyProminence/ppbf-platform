@@ -145,6 +145,9 @@ jobs:
           echo "::add-mask::$CONN"
           echo "AZURE_POSTGRES_CONNECTION_STRING=$CONN" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       - name: Run Check
         id: run_check
         env:

@@ -222,6 +222,7 @@ jobs:
             --query value -o tsv)"
           test -n "$CONN"
           echo "::add-mask::$CONN"
+          AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"
           if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-verify-schema.mjs; then
             echo "::error::Production is missing schema objects this commit expects. Run apply-migrations against production first. migrations_complete=CONFIRMED was not true."
             exit 1

@@ -138,6 +138,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       # A scheduled run has no inputs (github.event_name == 'schedule'), and it
       # APPLIES -- that is the ruling. A dispatch applies only when a person
       # typed APPLY.

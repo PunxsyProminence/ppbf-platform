@@ -296,6 +296,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       # The organization that will own every row: the operator's explicit
       # input, required and checked non-blank by the seed-validate job. There
       # is no fallback to the app's default-org secret any more (see the
