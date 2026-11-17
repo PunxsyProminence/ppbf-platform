@@ -20,6 +20,10 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-16-004 | 2026-11-16 | Fight-week weigh-in sheets (DOC-154): the app shows the USA Boxing day-of weigh-in line, the ACSM minors line and the 'Sodium matters' line beside the sheet lines, nothing on the sheets edited: "A: Show rule line beside sheet line (Recommended)"; "A: Show all three lines beside the sheet (Recommended)" | RECONSTRUCTED |  | yes |
+| OD-2026-11-16-003 | 2026-11-16 | Drill KPIs: DOC-041's 7 for drill scorecards and DOC-027's 6 for room monitoring, shown side by side; drill KPIs scored simply, Long Road 1-5 stays for the footage scorecard: "A: DOC-041's 7 for drills; DOC-027's 6 for room (Recommended)"; "A: Simple for drills; 1-5 for footage (Recommended)" | RECONSTRUCTED |  |  |
+| OD-2026-11-16-002 | 2026-11-16 | DOC-154 weigh-in sheets: the research session makes one Microsoft 365 read Jason approves and reads the 6-days sheet with the 5-days sheet, as DOC-154: "A: Approve one read now; session adds addendum (Recommended)"; "A: Read it with the 5-days sheet, as DOC-154 (Recommended)" | RECONSTRUCTED |  |  |
+| OD-2026-11-16-001 | 2026-11-16 | The assessment-catalog lane also loads the frozen scale definitions (the 1-5 anchors and the non-contact cap of 3); the catalog's meta block stays as docs | RECONSTRUCTED |  | yes |
 | OD-2026-11-15-012 | 2026-11-15 | The P22 medical-restriction gate is a USA Boxing rule: live wrestling and grappling entries are not blocked | PRIMARY |  | yes |
 | OD-2026-11-15-011 | 2026-11-15 | Jason skips his review of AI drafts, for L2b and every later lane; the lane's two adversarial reviewers check each sheet: "skip my review"; "1 ..."; "A: Stands; fix misses by new version or promote (Recommended)" | RECONSTRUCTED |  | yes |
 | OD-2026-11-15-010 | 2026-11-15 | Standing go for the remaining content lanes: next lane on merge, migrations staging then production, seed loads once the dry run passes | RECONSTRUCTED |  | yes |
@@ -578,6 +582,171 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-16-004 -- Fight-week weigh-in sheets (DOC-154): the app shows the USA Boxing day-of weigh-in line, the ACSM minors line and the 'Sodium matters' line beside the sheet lines, nothing on the sheets edited: "A: Show rule line beside sheet line (Recommended)"; "A: Show all three lines beside the sheet (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-16 (about 07:00 and 12:06 US Eastern) in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `adc2d23badf905ed` when read; a working file that may change), which says the text is "the card as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 22652, 2026-11-17T03:30:33.122Z, `origin.kind` human) Jason sent the Backbone Overwatch 25 note of 2026-11-16 21:30 US Eastern asking for these entries ("record OW25-18 to OW25-24 in one docs-only PR"), ending "Jason: go." New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-23** (header 'Weigh-in day')
+> Question, as shown:
+> Official (Q5): The frozen DOC-154 track prints "THURSDAY – REST / WEIGH-IN" and "FRIDAY – FIGHT DAY". USA Boxing's 2026 rule book has boxers weigh in on the day they box (conflict C5). The session read that rule only in search-result excerpts, not the full rule book. Options follow CD-Q07, which already shows the rule beside the sheet for youth round length (K-94).
+> Plain: Your sheet puts weigh-in the day before the fight, but USA Boxing weighs in on fight day. Should the app show both lines next to each other?
+>
+> Options, in the order shown:
+> 1. "A: Show rule line beside sheet line (Recommended)": Nothing in the sheet is edited; the app shows the USA Boxing line next to it.
+> 2. "B: Leave the sheet line alone": No rule line shown.
+>
+> Jason's answer: "A: Show rule line beside sheet line (Recommended)".
+
+> **OW25-24** (header 'Weigh-in sheets')
+> Question, as shown:
+> Official (finding a3e036a8e36a2346, addendum A8, Q6): The 5-days and 6-days weigh-in sheets say 'excess salt' (Day −4), 'slightly lower carbs' or 'Slightly reduce carbs' (Day −3), 'Avoid salty / fried foods' and 'No extreme weight cutting', and they print 'REST / WEIGH-IN' at Day −1 (conflict C5). Should the app show the frozen lines beside them, with nothing edited? Those lines are the ACSM minors line (D-PK47), the 'Sodium matters' hydration line and the USA Boxing weigh-in-on-the-day-you-box line, shown as OW25-23 A and CD-Q07 already do.
+> Plain: The sheets mention trimming salt and carbs and avoiding only "extreme" cuts, while the guidance for kids is no weight cutting at all. Should the app show that guidance next to those lines?
+>
+> Options, in the order shown:
+> 1. "A: Show all three lines beside the sheet (Recommended)": ACSM minors line, 'Sodium matters' line and the USA Boxing day-of weigh-in line, each beside its sheet line; nothing on the sheet edited.
+> 2. "B: Only the USA Boxing line": OW25-23 A extended to these two sheets; salt and carb lines shown as written.
+> 3. "C: Leave the sheet lines alone": No guidance lines shown beside them.
+>
+> Jason's answer: "A: Show all three lines beside the sheet (Recommended)".
+
+**Jason:** OW25-23 "A: Show rule line beside sheet line (Recommended)".; OW25-24 "A: Show all three lines beside the sheet (Recommended)".
+
+**Ruling:**
+
+1. Nothing on the DOC-154 weigh-in sheets is edited. Beside the sheet's Day -1 "REST / WEIGH-IN" line, the app shows the USA Boxing line that boxers weigh in on the day they box, as CD-Q07 already does for youth round length (OW25-23 A).
+2. On the 5-days and 6-days sheets, beside the "excess salt", "slightly lower carbs" / "Slightly reduce carbs", "No extreme weight cutting" and Day -1 "REST / WEIGH-IN" lines, the app shows the frozen ACSM minors line (D-PK47), the "Sodium matters" hydration line and the USA Boxing day-of weigh-in line, each beside its sheet line (OW25-24 A).
+3. This rides with the lane that loads the fight-week sheets (Backbone ACTIONS A-94).
+
+**Not ruled here:** which lane loads the fight-week sheets. The card for OW25-23 says the research session read the USA Boxing rule only in search-result excerpts, not the full 2026 rule book.
+
+**Status:** recorded 2026-11-16 by PR.
+
+---
+
+## OD-2026-11-16-003 -- Drill KPIs: DOC-041's 7 for drill scorecards and DOC-027's 6 for room monitoring, shown side by side; drill KPIs scored simply, Long Road 1-5 stays for the footage scorecard: "A: DOC-041's 7 for drills; DOC-027's 6 for room (Recommended)"; "A: Simple for drills; 1-5 for footage (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-16 (about 07:00 US Eastern) in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `adc2d23badf905ed` when read; a working file that may change), which says the text is "the card as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 22652, 2026-11-17T03:30:33.122Z, `origin.kind` human) Jason sent the Backbone Overwatch 25 note of 2026-11-16 21:30 US Eastern asking for these entries ("record OW25-18 to OW25-24 in one docs-only PR"), ending "Jason: go." New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-21** (header 'Drill KPIs: list')
+> Question, as shown:
+> Official (Q3): DOC-041 lists 7 drill KPIs. DOC-027 Performance Tracking v3 lists 6 "core behavioral KPIs", which frozen owner rule D-PK77-1 makes the room's tracked KPIs (table 3.4). Of the six, 1 is identical, 4 are renamed and 1 is reframed; DOC-041 adds "arrival in stance after action". Which list do drill scorecards use?
+> Plain: Two of your manuals give slightly different lists of what to score in drills. Which list should coaches see?
+>
+> Options, in the order shown:
+> 1. "A: DOC-041's 7 for drills; DOC-027's 6 for room (Recommended)": DOC-041's seven for drill-level scorecards, matching its own stated scope. DOC-027's six stay for room and session monitoring. Both are shown side by side.
+> 2. "B: DOC-027's 6 everywhere": DOC-041's differences are shown as information.
+> 3. "C: One merged list": A single combined list.
+>
+> Jason's answer: "A: DOC-041's 7 for drills; DOC-027's 6 for room (Recommended)".
+
+> **OW25-22** (header 'Drill KPIs: scale')
+> Question, as shown:
+> Official (Q4): Which scale for drill KPIs? DOC-041's rule is counts, yes-no marks or three-level ratings. The Long Road 1–5 scale is used for the 8–12-weekly footage scorecard (D-Q11, with its non-contact cap of 3). DOC-041 does not word its three levels, so any anchors would be drafted, labelled INFERRED, and reviewed by a coach.
+> Plain: Should quick drill scoring stay simple (tally, yes/no, three levels) while the deeper video scorecard keeps 1–5?
+>
+> Options, in the order shown:
+> 1. "A: Simple for drills; 1-5 for footage (Recommended)": DOC-041's rule for drill KPIs; Long Road 1–5 stays for the footage scorecard.
+> 2. "B: One 1-5 scale for both": Drill KPIs also scored 1–5.
+> 3. "C: One three-level scale for both": The footage scorecard also moves to three levels.
+>
+> Jason's answer: "A: Simple for drills; 1-5 for footage (Recommended)".
+
+**Jason:** OW25-21 "A: DOC-041's 7 for drills; DOC-027's 6 for room (Recommended)".; OW25-22 "A: Simple for drills; 1-5 for footage (Recommended)".
+
+**Ruling:**
+
+1. Drill-level scorecards use DOC-041's 7 drill KPIs. DOC-027's 6 core behavioral KPIs (frozen owner rule D-PK77-1) stay for room and session monitoring. Both lists are shown side by side (OW25-21 A).
+2. Drill KPIs are scored by count, yes-no or three levels (DOC-041's rule). The Long Road 1-5 scale stays for the 8-12-weekly footage scorecard, with the D-Q11 non-contact cap of 3 (OW25-22 A).
+3. DOC-041 does not word its three levels, so any three-level anchors are drafted, labelled INFERRED, and reviewed by a coach (OW25-22's card text).
+4. Both ride with the assessment-catalog lane of OD-2026-11-15-006 (Backbone ACTIONS A-93).
+
+**Status:** recorded 2026-11-16 by PR.
+
+---
+
+## OD-2026-11-16-002 -- DOC-154 weigh-in sheets: the research session makes one Microsoft 365 read Jason approves and reads the 6-days sheet with the 5-days sheet, as DOC-154: "A: Approve one read now; session adds addendum (Recommended)"; "A: Read it with the 5-days sheet, as DOC-154 (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-16 (about 07:00 US Eastern) in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `adc2d23badf905ed` when read; a working file that may change), which says the text is "the card as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 22652, 2026-11-17T03:30:33.122Z, `origin.kind` human) Jason sent the Backbone Overwatch 25 note of 2026-11-16 21:30 US Eastern asking for these entries ("record OW25-18 to OW25-24 in one docs-only PR"), ending "Jason: go." New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-19** (header 'Weigh-in: read')
+> Question, as shown:
+> Official (finding a129decc741cf208, Q1): How should the DOC-154 weigh-in sheet be read? Its Microsoft 365 approval card ran out unanswered three times (06:04–06:25 UTC). The file is PPBFOperationsHub/Shared Documents/COACH__Standards/5_Days_Out_Weigh_In_Checklist.pdf. The search result shows only a title and 5 blank header fields, so it looks like a blank template.
+> Plain: The sheet needs one "approve" click from you. How do you want it read, if at all?
+>
+> Options, in the order shown:
+> 1. "A: Approve one read now; session adds addendum (Recommended)": I resume the same research session; you approve its one Microsoft 365 read of that file when the card appears; it appends an addendum to the finding. Pros: Closes the gap tonight with one click. Cons: You need to be here to approve the card.
+> 2. "B: You drop a copy in Research\": You put a copy of the blank template in PPBF-AI-Lanes\Research\ for the session to read. Pros: No connector approval needed. Cons: A manual step for you.
+> 3. "C: Leave it a gap": As D-PK170 A. Pros: No work. Cons: The weigh-in checklist stays unread.
+>
+> Jason's answer: "A: Approve one read now; session adds addendum (Recommended)".
+
+> **OW25-20** (header 'Weigh-in: scope')
+> Question, as shown:
+> Official (Q2): A sibling sheet, 6_Days_Out_Weigh_In_Checklist_USA_Boxing, has the same blank header pattern but is not in the v69 inventory's DOC-154 row. There is a PDF in Library Intake R01, and a PDF and a DOCX in the admin OneDrive folder 'Microsoft Copilot Chat Files'. It was not opened.
+> Plain: There is also a 6-days-out version. Should it count as part of the same document?
+>
+> Options, in the order shown:
+> 1. "A: Read it with the 5-days sheet, as DOC-154 (Recommended)": The follow-up reads both sheets.
+> 2. "B: Out of scope": Only the 5-days sheet is read.
+> 3. "C: Own DOC number at next inventory pass": Listed separately; not read now.
+>
+> Jason's answer: "A: Read it with the 5-days sheet, as DOC-154 (Recommended)".
+
+**Jason:** OW25-19 "A: Approve one read now; session adds addendum (Recommended)".; OW25-20 "A: Read it with the 5-days sheet, as DOC-154 (Recommended)".
+
+**Ruling:**
+
+1. The research session reads the DOC-154 5-days-out weigh-in checklist through one Microsoft 365 read that Jason approves, and appends an addendum to its finding (OW25-19 A).
+2. The 6-days-out sheet (6_Days_Out_Weigh_In_Checklist_USA_Boxing) is read with it and counts as DOC-154 (OW25-20 A).
+
+**Noted (REPORTED by the Backbone Overwatch 25 note of 2026-11-16 12:06 US Eastern, not checked here):** the finding is complete (research/claude-research-project/findings/2026-11-16-doc041-kpi-scorecards-and-doc154-weigh-in.md, sha256[:16] 1f90ed1bfb48c8f6); both sheets are blank templates (5-days, 23 items; 6-days, 24 items).
+
+**Status:** recorded 2026-11-16 by PR.
+
+---
+
+## OD-2026-11-16-001 -- The assessment-catalog lane also loads the frozen scale definitions (the 1-5 anchors and the non-contact cap of 3); the catalog's meta block stays as docs: "A: Scales in the catalog lane; meta as docs (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards on 2026-11-16 (about 00:43 US Eastern) in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `adc2d23badf905ed` when read; a working file that may change), which says the text is "the card as sent". In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 22652, 2026-11-17T03:30:33.122Z, `origin.kind` human) Jason sent the Backbone Overwatch 25 note of 2026-11-16 21:30 US Eastern asking for these entries ("record OW25-18 to OW25-24 in one docs-only PR"), ending "Jason: go." New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-18** (header 'Catalog: scales')
+> Question, as shown:
+> Official: The frozen design_catalogs.json holds scale_definitions and a meta block with "no schema entry (no decision names them)" (hand-off note, section 2). Neither is in the assessment-catalog lane you ruled (OW25-02 A, OD-2026-11-15-006).
+> - scale_definitions: the 1–5 anchors live_long_road (REPORTED; 28 of the 29 scorecard items use a 1–5 scale) and cue_response_draft (INFERRED, draft anchors you accepted for now, D-Q10); non_contact_rule, your D-Q11 cap of 3 for non-contact scoring; plus a status map and a note.
+> - meta: generation provenance (date, sources, id rule, counts, decisions applied).
+> Where do they go?
+> Plain: The 1-to-5 meaning of each score, and the "non-contact maxes at 3" rule, aren't in any lane yet. Load them with the scorecards?
+>
+> Options, in the order shown:
+> 1. "A: Scales in the catalog lane; meta as docs (Recommended)": The assessment-catalog lane loads the scale definitions with the scorecard items (and the cap of 3 with them). Meta stays as provenance in the lane's docs and is not loaded. Pros: Scorecard scores arrive with their meaning and your cap; no extra lane. Cons: The catalog lane grows a little (one more table or a column).
+> 2. "B: A later lane of their own": Scale definitions get their own lane after the stage lanes. Pros: Keeps the catalog lane smaller. Cons: Scorecards load without their 1–5 meaning or the cap for a while.
+> 3. "C: Docs only, not loaded": Both stay in docs/backbone as reference; the app holds no scale table. Pros: No build. Cons: The app can't show what a score of 3 means or enforce the non-contact cap.
+>
+> Jason's answer: "A: Scales in the catalog lane; meta as docs (Recommended)".
+
+**Jason:** OW25-18 "A: Scales in the catalog lane; meta as docs (Recommended)".
+
+**Ruling:**
+
+1. The assessment-catalog lane (OD-2026-11-15-006) also loads the frozen `design_catalogs.json` `scale_definitions` with the scorecard items: the `live_long_road` and `cue_response_draft` 1-5 anchors, `non_contact_rule` (the D-Q11 cap of 3 for non-contact scoring), the status map and the note.
+2. The catalog's `meta` block (generation provenance) stays as provenance in the lane's docs and is not loaded.
+
+**Adds to:** OD-2026-11-15-006 ruling 1.
+
+**Not ruled here:** whether the scale definitions are a table of their own or a column (the card says "one more table or a column").
+
+**Status:** recorded 2026-11-16 by PR.
 
 ---
 
