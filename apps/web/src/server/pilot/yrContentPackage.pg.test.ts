@@ -222,7 +222,23 @@ function reshape(text: string, keep: (row: Row) => boolean, drop: string[] = [])
 
 const PACKAGES: readonly DatasetName[] = ['drill-library', 'workout-templates', 'session-scripts', 'training-tracks'];
 const REGISTRIES: readonly DatasetName[] = ['disciplines', 'competence-levels', 'cohort-definitions', 'pathway-catalog'];
-const committed = readDatasetFiles(SEED_DATA_DIR, PACKAGES);
+// The committed files as this lane left them: a later stage lane's rows (lane AP, amateur + pro: an
+// amateur or pro stage, no youth or RC1 stage, not FT1 only) are left out here; lane AP's own suite
+// (apContentPackage.pg.test.ts) adds them on top of these.
+const LATER_STAGES = ['T1', 'T2', 'AM1', 'AM2', 'AM3', 'PR1', 'PR2', 'PR3', 'PR4', 'PR5'];
+const allCommitted = readDatasetFiles(SEED_DATA_DIR, PACKAGES);
+const ofLaterLane = (row: Row) => row.stage_keys !== 'FT1' && !row.stage_keys.split('|').some((key) => YR_STAGES.includes(key))
+  && row.stage_keys.split('|').some((key) => LATER_STAGES.includes(key));
+const laterTemplateIds = new Set(rowsOf(allCommitted[TEMPLATES_CSV]).filter(ofLaterLane).map((row) => row.template_id));
+const laterTrackIds = new Set(rowsOf(allCommitted[TRACKS_CSV]).filter(ofLaterLane).map((row) => row.track_id));
+const committed: Record<string, string> = {
+  ...allCommitted,
+  [TEMPLATES_CSV]: reshape(allCommitted[TEMPLATES_CSV], (row) => !laterTemplateIds.has(row.template_id)),
+  [ITEMS_CSV]: reshape(allCommitted[ITEMS_CSV], (row) => !laterTemplateIds.has(row.template_id)),
+  [TRACKS_CSV]: reshape(allCommitted[TRACKS_CSV], (row) => !laterTrackIds.has(row.track_id)),
+  [BLOCKS_CSV]: reshape(allCommitted[BLOCKS_CSV], (row) => !laterTrackIds.has(row.track_id)),
+  [SESSIONS_CSV]: reshape(allCommitted[SESSIONS_CSV], (row) => !laterTrackIds.has(row.track_id)),
+};
 const inLane = (row: Row) => row.stage_keys !== 'FT1' && row.stage_keys.split('|').some((key) => YR_STAGES.includes(key));
 const yrTemplateIds = new Set(rowsOf(committed[TEMPLATES_CSV]).filter(inLane).map((row) => row.template_id));
 const yrTrackIds = new Set(rowsOf(committed[TRACKS_CSV]).filter(inLane).map((row) => row.track_id));

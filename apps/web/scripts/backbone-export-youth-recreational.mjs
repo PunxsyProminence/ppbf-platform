@@ -242,7 +242,7 @@ export function stripExcerpts(value, count) {
   return out;
 }
 
-function labelCells(record, where, dropped, { stageKeysAsJson = false, extraLabels = {} } = {}) {
+export function labelCells(record, where, dropped, { stageKeysAsJson = false, extraLabels = {} } = {}) {
   const cells = {};
   if (record.field_labels === undefined || record.field_labels === null) cells.field_labels = Object.keys(extraLabels).length ? sortedJson(extraLabels) : '';
   else if (!isObject(record.field_labels)) throw new ExportError(`${where}: field_labels is not an object`);
@@ -260,13 +260,13 @@ function labelCells(record, where, dropped, { stageKeysAsJson = false, extraLabe
   return cells;
 }
 
-function sourcesCell(sources, where) {
+export function sourcesCell(sources, where) {
   if (!Array.isArray(sources) || !sources.every((source) => typeof source === 'string')) throw new ExportError(`${where}: sources must be a list of source keys`);
   return sortedJson(sources.map((source) => source.normalize('NFC').trim()));
 }
 
 /** details: the listed Backbone keys the record has (null kept as null), whole, key-sorted; blank when none. */
-function detailsCell(record, keys, dropped, extra = {}) {
+export function detailsCell(record, keys, dropped, extra = {}) {
   const details = Object.fromEntries(keys.filter((key) => record[key] !== undefined).map((key) => [key, record[key]]));
   const clash = Object.keys(extra).filter((key) => key in details);
   if (clash.length) throw new ExportError(`details already has ${clash.join(', ')}, an app key this export adds`);
@@ -291,7 +291,7 @@ function checkKeys(kind, record, where, tally) {
   }
 }
 
-const sameId = (record, idKey, where) => {
+export const sameId = (record, idKey, where) => {
   if (record.lineage_id !== record[idKey]) throw new ExportError(`${where}: lineage_id differs from ${idKey}`);
 };
 
@@ -502,7 +502,7 @@ function scriptRows(scripts, existing, dropped, tally) {
 
 // ---- merging into the committed files ----
 
-function guardId(name, obj) {
+export function guardId(name, obj) {
   const { row } = GUARD_KEYS[name];
   return row.every((column) => (obj[column] ?? '') !== '') ? row.map((column) => obj[column]).join('/') : `\u0000${HEADERS[name].map((column) => obj[column] ?? '').join('\u0000')}`;
 }
@@ -529,11 +529,11 @@ export function findOverwrites(name, replaced, newRows) {
   return found;
 }
 
-function describeOverwrites(found) {
+export function describeOverwrites(found) {
   return found.map((item) => `  ${item.file} ${GUARD_KEYS[item.file].owner} ${item.owner}: ${item.removed ? `removes ${item.id}` : `changes ${item.columns.join(', ')} of ${item.id}`}`);
 }
 
-function checkUniqueIds(name, kept, newRows) {
+export function checkUniqueIds(name, kept, newRows) {
   const { owner, row } = GUARD_KEYS[name];
   const fresh = new Map();
   for (const obj of newRows) {

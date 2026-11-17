@@ -461,7 +461,8 @@ describe('the committed youth + recreational rows', () => {
       const committed = committedRows[index];
       const differing = Object.keys(row).filter((column) => row[column] !== committed[column]);
       const labels = committed.field_labels ? JSON.parse(committed.field_labels) : {};
-      const expected = DRAFTED.filter((field) => labels[field]?.draft);
+      // Only this lane's rows are re-exported; another lane's drafted rows (lane AP) are kept as committed.
+      const expected = inLane(committed) ? DRAFTED.filter((field) => labels[field]?.draft) : [];
       expect({ id: row.template_id, differing }).toEqual({ id: row.template_id, differing: expected.length ? [...expected, 'field_labels'].sort((a, b) => Object.keys(row).indexOf(a) - Object.keys(row).indexOf(b)) : [] });
       for (const field of expected) expect(row[field]).toBe('');
     });
