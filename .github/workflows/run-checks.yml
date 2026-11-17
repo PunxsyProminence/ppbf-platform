@@ -35,11 +35,18 @@
 # TWO KINDS OF CHECK, AND WHAT A RED RUN MEANS
 #   Most of these are GATES: they exit non-zero when a human still has to
 #   decide something, so a red run is a finding rather than a broken workflow.
-#   Five are REPORTS -- seed-identity, runtime-claims, cue-source-provenance,
-#   reference-content and video-readiness print their answer and exit zero
-#   whenever they managed to run at all, so the answer is in the log and a
-#   green run says only "it connected". Do not read a green `all` as "seed
-#   identity is correct"; read the group.
+#   Seven are REPORTS -- seed-identity, runtime-claims, medical-clearance-
+#   coverage, cue-source-provenance, reference-content, medical-restriction-
+#   presets and video-readiness print their answer and exit zero whenever they
+#   managed to run at all, so the answer is in the log and a green run (and
+#   its "no action needed" summary line) says only "it connected". Do not read
+#   a green `all` as "seed identity is correct"; read the group.
+#
+#   medical-restriction-presets counts pilot.medical_restrictions rows holding
+#   BOTH values the staff form used to pre-pick (source ringside_affidavit,
+#   loss_of_consciousness none; OD-2026-11-17-009). Three counts over the whole
+#   table, no ids, names or row data; a missing table prints "table not
+#   present", never 0. A count cannot tell a skipped field from a chosen one.
 #
 #   cue-source-provenance reports how many pilot.drill_cues rows carry each
 #   distinct source_ref, including one named target value. It is a report
@@ -121,6 +128,7 @@ on:
           - runtime-claims
           - shadow-filter-rate
           - medical-clearance-coverage
+          - medical-restriction-presets
           - deletion-preflight
           - calibration-adjudication-ties
           - privacy-leftovers
@@ -207,7 +215,9 @@ jobs:
           # picking one of those gets a green run and no answer.
           for s in $(grep -E "^[[:space:]]+- [a-z0-9-]+$" "$WF" | sed -E 's/^[[:space:]]+- //' || true); do
             case "$s" in
-              all|list-check|staging|production) continue ;;
+              # contested-overlap is a job of its own (no pilot:check- script),
+              # like list-check.
+              all|list-check|contested-overlap|staging|production) continue ;;
             esac
             if ! node -e "process.exit(require('./apps/web/package.json').scripts['pilot:check-$s'] ? 0 : 1)"; then
               echo "::error::this workflow offers '$s' but there is no pilot:check-$s script to run."
@@ -489,6 +499,7 @@ jobs:
               run_one waiver-statuses     pilot:check-waiver-statuses
               run_one cue-source-provenance pilot:check-cue-source-provenance
               run_one reference-content   pilot:check-reference-content
+              run_one medical-restriction-presets pilot:check-medical-restriction-presets
               run_one video-readiness     pilot:check-video-readiness
               ;;
             orphan-chat-audit)  run_one orphan-chat-audit   pilot:check-orphan-chat-audit ;;
@@ -508,6 +519,7 @@ jobs:
             privacy-leftovers) run_one privacy-leftovers pilot:check-privacy-leftovers ;;
             shadow-filter-rate) run_one shadow-filter-rate  pilot:check-shadow-filter-rate ;;
             medical-clearance-coverage) run_one medical-clearance-coverage pilot:check-medical-clearance-coverage ;;
+            medical-restriction-presets) run_one medical-restriction-presets pilot:check-medical-restriction-presets ;;
             discipline-values)  run_one discipline-values   pilot:check-discipline-values ;;
             waiver-statuses)    run_one waiver-statuses     pilot:check-waiver-statuses ;;
             cue-source-provenance) run_one cue-source-provenance pilot:check-cue-source-provenance ;;
