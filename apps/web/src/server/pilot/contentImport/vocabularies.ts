@@ -292,7 +292,8 @@ export const BOUNDS = {
     mirrors: [{ table: 'scorecard_anchor_clip_specs', constraint: 'pilot_scorecard_anchor_clip_specs_level_check', column: 'level' }],
   },
   template_duration_minutes: {
-    gte: 15,
+    // 1, not 15: the Backbone's ~10-minute permanent circuit is a written length (lane YR-a).
+    gte: 1,
     lte: 180,
     mirrors: [{ table: 'workout_templates', constraint: 'workout_templates_duration_minutes_check', column: 'duration_minutes' }],
   },

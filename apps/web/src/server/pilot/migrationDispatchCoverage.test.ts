@@ -306,6 +306,9 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     for (const prerequisite of ['pathway-catalog', 'assessment-protocols', 'multiorg']) {
       expect(at('assessment-catalog')).toBeGreaterThan(at(prerequisite));
     }
+    // workout-template-details adds a details column to pilot.workout_templates
+    // and pilot.workout_template_items, which workout-templates-v2 creates.
+    expect(at('workout-template-details')).toBeGreaterThan(at('workout-templates-v2'));
     // film-study-coach-reported widens shadow_film_study_proposals -- adding
     // origin, the reporter, the correction column and the 'corrected' verdict
     // -- against the table film-study-proposals creates.
