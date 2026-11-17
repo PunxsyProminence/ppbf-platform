@@ -102,6 +102,7 @@ the D2 mapping. Youth and other stages get goals from the spine's `develops` fie
 during the wave 1 slice.
 
 **P5. Gates: `pilot.pathway_gates` and `pilot.pathway_gate_criteria` (new).**
+Status (2026-11-16, lane CAT, built: assessment-catalog migration #1943, loader #1944, seed CAT-c): the committed seed (CAT-c) carries the frozen 38 gates and 94 criteria, and the two tables hold them for an organization once it is loaded; the data is authoritative where this text differs: gate kinds entry, exit, contact_readiness and checkpoint_90_days (T1); criterion kinds `text` (with an optional should_have / should_not_have polarity), `scorecard_min` (items, a minimum score where halves occur, contexts, all or any), `stage_completed`, `gate_met` (a gate named by stage, kind and id) and `bout_count`. `informs_only` is always true. The override request table, the votes and any reading of a gate against an athlete are later lanes. The wording below is unchanged.
 One entry and one exit gate per stage. Criteria types: `scorecard_min` (item IDs,
 minimum score), `stage_completed`, `text` (prose a coach confirms). The app shows
 each criterion as met, not met or not scored. It never moves anyone. Placing an athlete against the gate result opens an override request
@@ -115,6 +116,7 @@ repo safety gates keep `gate_<org>_<key>`, unchanged (SP-13).
 
 **P6. Scorecard and two-coach scoring (change C): `pilot.scorecard_items`,
 `pilot.scorecard_ratings`, `pilot.rater_calibrations` (new).**
+Status (2026-11-16, lane CAT, built in part): the committed seed (CAT-c) carries the frozen 29 items for `pilot.scorecard_items`, held once loaded (27 Long Road items on PP-T01, the cue-response item on PP-T02, fight_iq_components with no scale yet), each with its scale's key; the anchor clip reference is a separate table of specs, `pilot.scorecard_anchor_clip_specs` (the seed's 105 specs: item, level, live or non-contact; no clip yet), and the scales and the non-contact cap of 3 are `pilot.scorecard_scales` and `pilot.scorecard_score_caps` (OD-2026-11-16-001). DOC-041's 7 drill KPIs and DOC-027's 6 room KPIs are `pilot.behavior_kpi_lists` and `pilot.behavior_kpis` (OD-2026-11-16-003; seeded in CAT-d, held once loaded). Not built: ratings, rater calibrations, the pairing view and the `scorecard_anchor_clips` link (later lanes). The wording below is unchanged.
 - Items: the Long Road 27-item technical scorecard (Part 2 section 3.3), 1-5 scale,
   with an optional anchor clip reference (reuse the existing video clip storage).
 - Ratings: `athlete_id`, `item_key`, `score` 1-5, `rater_account_id`,
