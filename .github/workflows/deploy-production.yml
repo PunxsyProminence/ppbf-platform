@@ -658,7 +658,6 @@ jobs:
             --query value -o tsv)"
           test -n "$CONN"
           echo "::add-mask::$CONN"
-          AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"
           if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-check-shadow-job-queue.mjs; then
             echo "::error::SHADOW background jobs are still pending or running. Each holds the context it will be answered from, written before this release, so deploying now leaves them to deliver the old behaviour afterwards. Let the worker drain and re-dispatch."
             exit 1

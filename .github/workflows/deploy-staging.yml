@@ -488,12 +488,6 @@ jobs:
           echo "GATE_EXPECTED_POSTGRES_HOSTNAME=$GATE_HOST" >> "$GITHUB_ENV"
           echo "GATE_EXPECTED_POSTGRES_DATABASE=$GATE_DB" >> "$GITHUB_ENV"
 
-      - name: Check The Database Is Reachable From This Runner
-        if: inputs.enable_shadow_gate
-        uses: ./.github/actions/db-preflight
-        with:
-          connection-env: GATE_DB_CONNECTION
-
       # The org id lives in the app's secret store (it is what the app itself
       # runs with), so the gate tests against the same organization the app
       # serves rather than a workflow-hardcoded guess.

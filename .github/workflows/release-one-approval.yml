@@ -226,7 +226,6 @@ jobs:
             --query value -o tsv)"
           test -n "$CONN"
           echo "::add-mask::$CONN"
-          AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"
           if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-verify-schema.mjs; then
             echo "::error::Staging is missing schema objects this commit expects. The migrations this run just applied did not produce them."
             exit 1
@@ -455,12 +454,6 @@ jobs:
           test -n "$GATE_DB"
           echo "GATE_EXPECTED_POSTGRES_HOSTNAME=$GATE_HOST" >> "$GITHUB_ENV"
           echo "GATE_EXPECTED_POSTGRES_DATABASE=$GATE_DB" >> "$GITHUB_ENV"
-
-      - name: Check The Database Is Reachable From This Runner
-        if: inputs.enable_shadow_gate
-        uses: ./.github/actions/db-preflight
-        with:
-          connection-env: GATE_DB_CONNECTION
 
       - name: Resolve Staging Default Organization For Gate
         if: inputs.enable_shadow_gate
@@ -986,7 +979,6 @@ jobs:
             --query value -o tsv)"
           test -n "$CONN"
           echo "::add-mask::$CONN"
-          AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"
 
           # Four runners refuse to write to a database nobody named. Derived
           # from the string just fetched, parsed exactly as the runners parse it.
@@ -1030,7 +1022,6 @@ jobs:
             --query value -o tsv)"
           test -n "$CONN"
           echo "::add-mask::$CONN"
-          AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"
           if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-verify-schema.mjs; then
             echo "::error::Production is missing schema objects this commit expects. The migrations this run just applied did not produce them. Production schema may now be AHEAD of the running app."
             exit 1
@@ -1045,7 +1036,6 @@ jobs:
             --query value -o tsv)"
           test -n "$CONN"
           echo "::add-mask::$CONN"
-          AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"
           if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-check-shadow-job-queue.mjs; then
             echo "::error::SHADOW background jobs are still pending or running. Each holds the context it will be answered from, written before this release, so deploying now leaves them to deliver the old behaviour afterwards. Let the worker drain and re-dispatch."
             exit 1

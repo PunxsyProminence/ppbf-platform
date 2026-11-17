@@ -1,6 +1,7 @@
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -8,10 +9,10 @@ import { pathToFileURL } from 'node:url';
  * scripts/db-reachability-probe.mjs -- the database preflight (lane DBT).
  *
  * WHY THIS EXISTS. GitHub places some Linux jobs on AWS runners, and the
- * Postgres firewall admits Azure ranges only. Since 2026-11-03, 10 of 10 DB jobs
- * on AWS runners hung ~134 s and died with `connect ETIMEDOUT`; no Azure-runner
- * job did. The probe fails such a job fast and plainly; the first probe in each
- * job runs before any database step of that job.
+ * Postgres firewall admits Azure ranges and named single IPs only. Since
+ * 2026-11-03, 10 of 10 DB jobs on AWS runners hung ~134 s and died with
+ * `connect ETIMEDOUT`; no Azure-runner job did. The probe fails such a job fast
+ * and plainly, once per job, before that job's first database contact.
  *
  * What these tests hold it to: the retry count and backoff, the final message,
  * that it sends no byte (so there is no auth or SQL to retry and nothing it can
@@ -132,10 +133,40 @@ describe('db-reachability-probe: against a real socket', () => {
     expect(out).toContain(`attempt 3/3 to 127.0.0.1:${port} failed (ECONNREFUSED)`);
     expect(out).toContain('::error title=Database unreachable from this runner::');
     expect(out).toContain(`Could not open a TCP connection to 127.0.0.1:${port} after 3 attempt(s) (last: ECONNREFUSED).`);
-    expect(out).toContain('This check sends no data and stops the job before the database step that follows it.');
+    expect(out).toContain("This check sends no data and runs before this job's first database step, so the job has not touched the database.");
     expect(out).toContain('re-run the job, or dispatch a fresh run where re-runs are refused (release-one-approval)');
     expect(out).not.toContain(SECRET);
     expect(out).not.toContain(USER);
+  });
+
+  it('still runs (does not silently skip itself) when started through a linked folder', async () => {
+    const server = net.createServer();
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const { port } = server.address() as net.AddressInfo;
+    const link = path.join(os.tmpdir(), `ppbf-probe-link-${process.pid}-${Date.now()}`);
+    // 'junction' needs no admin rights on Windows; elsewhere the type is ignored.
+    fs.symlinkSync(path.dirname(probePath), link, 'junction');
+    try {
+      const out = await new Promise<{ code: number; out: string }>((resolve) => {
+        execFile(
+          process.execPath,
+          [path.join(link, path.basename(probePath))],
+          { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', AZURE_POSTGRES_CONNECTION_STRING: conn(port) } as unknown as NodeJS.ProcessEnv },
+          (err: (Error & { code?: unknown }) | null, stdout: string, stderr: string) =>
+            resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, out: `${stdout}${stderr}` }),
+        );
+      });
+      expect(out.code).toBe(0);
+      expect(out.out).toContain('reachable (attempt 1,');
+    } finally {
+      // Remove the LINK only, never recursively (a recursive delete would follow it into scripts/).
+      try {
+        fs.unlinkSync(link);
+      } catch {
+        fs.rmdirSync(link);
+      }
+      await new Promise((r) => server.close(r));
+    }
   });
 
   it('reads the variable NAMED by --env (the gate steps use GATE_DB_CONNECTION)', async () => {
@@ -244,42 +275,73 @@ describe('db-reachability-probe: cannot write', () => {
   });
 });
 
-describe('workflows: every connection-resolve site is followed by the probe', () => {
+describe("workflows: one probe per job, before that job's first database contact", () => {
   const PROBE_STEP = 'uses: ./.github/actions/db-preflight';
-  const PROBE_INLINE = 'node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"';
+  const PROBE_INLINE = 'AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"';
+  const isStep = (l: string) => /^ {6}- name: /.test(l);
 
-  const files = fs.readdirSync(workflowsDir).filter((f) => f.endsWith('.yml'));
-  const sites: Array<{ file: string; line: number; lines: string[] }> = [];
-  for (const file of files) {
+  interface Site {
+    file: string;
+    job: string;
+    line: number;
+    /** The resolve step's text and the step after it. */
+    step: string;
+    next: string;
+  }
+
+  // A job can reach Postgres only after it has fetched the connection string,
+  // so the first fetch in a job comes before that job's first database contact.
+  const sites: Site[] = [];
+  for (const file of fs.readdirSync(workflowsDir).filter((f) => f.endsWith('.yml'))) {
     const lines = fs.readFileSync(path.join(workflowsDir, file), 'utf8').split('\n');
+    let inJobs = false;
+    let job = '';
     lines.forEach((l, i) => {
-      if (l.includes('--secret-name azure-postgres-connection-string')) sites.push({ file, line: i, lines });
+      if (/^jobs:\s*$/.test(l)) inJobs = true;
+      const header = inJobs ? /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(l) : null;
+      if (header) job = header[1];
+      if (!l.includes('--secret-name azure-postgres-connection-string')) return;
+      let end = i + 1;
+      while (end < lines.length && !isStep(lines[end])) end += 1;
+      let nextEnd = end + 1;
+      while (nextEnd < lines.length && !isStep(lines[nextEnd])) nextEnd += 1;
+      sites.push({ file, job, line: i + 1, step: lines.slice(i, end).join('\n'), next: lines.slice(end, nextEnd).join('\n') });
     });
   }
 
-  it('finds the resolve sites it guards', () => {
-    expect(sites.length).toBeGreaterThanOrEqual(28);
+  const probed = (s: Site): boolean => {
+    if (s.step.includes('>> "$GITHUB_ENV"')) return s.next.includes(PROBE_STEP);
+    const afterMask = s.step.split('echo "::add-mask::$CONN"')[1] ?? '';
+    const first = afterMask.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#'));
+    return first === PROBE_INLINE;
+  };
+
+  const jobs = new Map<string, Site[]>();
+  for (const s of sites) jobs.set(`${s.file} ${s.job}`, [...(jobs.get(`${s.file} ${s.job}`) ?? []), s]);
+
+  it('finds the jobs it guards', () => {
+    expect(jobs.size).toBeGreaterThanOrEqual(21);
   });
 
-  it.each(sites.map((s) => [`${s.file}:${s.line + 1}`, s] as const))('%s', (_label, s) => {
-    // The rest of the step that resolves the string, and the step after it.
-    const isStep = (l: string) => /^ {6}- name: /.test(l);
-    let end = s.line + 1;
-    while (end < s.lines.length && !isStep(s.lines[end])) end += 1;
-    const step = s.lines.slice(s.line, end).join('\n');
-    let nextEnd = end + 1;
-    while (nextEnd < s.lines.length && !isStep(s.lines[nextEnd])) nextEnd += 1;
-    const next = s.lines.slice(end, nextEnd).join('\n');
-
-    if (step.includes('>> "$GITHUB_ENV"')) {
-      // Written for later steps: the very next step is the preflight.
-      expect(next).toContain(PROBE_STEP);
-      if (step.includes('GATE_DB_CONNECTION=')) expect(next).toContain('connection-env: GATE_DB_CONNECTION');
-    } else {
-      // Kept inside the step: probed right after the mask, before any use.
-      const afterMask = step.split('echo "::add-mask::$CONN"')[1] ?? '';
-      const firstCommand = afterMask.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#'));
-      expect(firstCommand).toBe(`AZURE_POSTGRES_CONNECTION_STRING="$CONN" ${PROBE_INLINE}`);
+  it.each([...jobs.entries()])('%s', (_label, jobSites) => {
+    const [first, ...later] = jobSites;
+    // The first fetch is followed by the probe ...
+    expect({ at: `${first.file}:${first.line}`, probed: probed(first) }).toEqual({ at: `${first.file}:${first.line}`, probed: true });
+    // ... and no later fetch in the same job is: the runner has already reached
+    // the server, so a later probe cannot catch the non-Azure-runner case and
+    // would only add a short-fused gate between steps that may already have written.
+    for (const s of later) {
+      expect({ at: `${s.file}:${s.line}`, probed: probed(s) }).toEqual({ at: `${s.file}:${s.line}`, probed: false });
     }
+  });
+
+  it('the composite action is used nowhere else', () => {
+    const uses = fs.readdirSync(workflowsDir)
+      .filter((f) => f.endsWith('.yml'))
+      .reduce((n, f) => n + fs.readFileSync(path.join(workflowsDir, f), 'utf8').split(PROBE_STEP).length - 1, 0);
+    const inline = fs.readdirSync(workflowsDir)
+      .filter((f) => f.endsWith('.yml'))
+      .reduce((n, f) => n + fs.readFileSync(path.join(workflowsDir, f), 'utf8').split(PROBE_INLINE).length - 1, 0);
+    expect(uses + inline).toBe(jobs.size);
   });
 });

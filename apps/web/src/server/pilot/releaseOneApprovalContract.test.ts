@@ -149,15 +149,20 @@ const fromProduction = (name: string, substitutions?: [string, string][]): Copy 
   ({ job: 'production', name, source: 'deploy-production.yml', substitutions });
 
 const SHADOW_QUEUE = 'Refuse To Deploy While SHADOW Jobs Are Waiting';
+/** Lane DBT's probe: one per job, before that job's first database contact. */
+const PROBE_LINE = '          AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"\n';
+const MASK_LINE = '          echo "::add-mask::$CONN"\n';
 const SHADOW_QUEUE_EARLY = 'Refuse To Migrate While SHADOW Jobs Are Waiting';
 
 /**
  * Every copied step and exactly how it may differ from its source.
  *
- * The differences are of three kinds and no others: the digest comes from the
+ * The differences are of four kinds and no others: the digest comes from the
  * staging job instead of a dispatch input; the SHA is the run's own instead of
- * a dispatch input; and three messages that told the operator to go and run
- * another workflow now say what is true of a run that did the work itself.
+ * a dispatch input; three messages that told the operator to go and run
+ * another workflow now say what is true of a run that did the work itself; and
+ * the database reachability probe (lane DBT) sits only in the FIRST database
+ * step of each job, which is not the same step here as in the source workflows.
  */
 const COPIES: Copy[] = [
   fromStaging('Checkout Source Code'),
@@ -166,6 +171,7 @@ const COPIES: Copy[] = [
   fromStaging('Install Locked Dependencies'),
   fromStaging('Verify Staging Schema Matches This Commit', [
     ['Run apply-migrations against staging first.', 'The migrations this run just applied did not produce them.'],
+    [PROBE_LINE, ''],
   ]),
   fromStaging('Set up Docker Buildx'),
   fromStaging('Log in to Azure Container Registry'),
@@ -178,7 +184,6 @@ const COPIES: Copy[] = [
   fromStaging('Wait For New Revision To Take Traffic'),
   fromStaging('Resolve Staging API Base URL'),
   fromStaging('Resolve Staging Database Connection For Gate'),
-  fromStaging('Check The Database Is Reachable From This Runner'),
   fromStaging('Resolve Staging Default Organization For Gate'),
   fromStaging('Mint Ephemeral Gate Athlete PIN'),
   fromStaging('Provision Gate Fixture Accounts'),
@@ -211,13 +216,17 @@ const COPIES: Copy[] = [
     name: SHADOW_QUEUE_EARLY,
     source: 'deploy-production.yml',
     sourceName: SHADOW_QUEUE,
-    substitutions: [[`      - name: ${SHADOW_QUEUE}`, `      - name: ${SHADOW_QUEUE_EARLY}`]],
+    substitutions: [
+      [`      - name: ${SHADOW_QUEUE}`, `      - name: ${SHADOW_QUEUE_EARLY}`],
+      [MASK_LINE, MASK_LINE + PROBE_LINE],
+    ],
   },
   fromProduction('Verify Production Schema Matches This Commit', [
     [
       'Run apply-migrations against production first. migrations_complete=CONFIRMED was not true.',
       'The migrations this run just applied did not produce them. Production schema may now be AHEAD of the running app.',
     ],
+    [PROBE_LINE, ''],
   ]),
   fromProduction(SHADOW_QUEUE),
   fromProduction('Deploy Tested Digest to Azure Container App (Production)', [
@@ -306,8 +315,8 @@ const REPLACED: Record<string, { file: string; job: string; steps: Record<string
         'Inside "Apply <Environment> Migrations", where the connection string stays in the step. The repository-variable '
         + 'override of the expected host and database is NOT carried: the expected target is always derived.',
       'Check The Database Is Reachable From This Runner':
-        'Inside "Apply <Environment> Migrations" too: the same db-reachability probe is the first command after the '
-        + 'connection string is masked, because the string never leaves that step (lane DBT).',
+        "The same db-reachability probe, as the first command after the mask in each job's first database step: "
+        + '"Apply Staging Migrations" and "Refuse To Migrate While SHADOW Jobs Are Waiting" (lane DBT).',
       'Apply Migration':
         '"Apply <Environment> Migrations": the `all` arm only, with the list read through migration-apply-order.mjs.',
       'Record What Ran': '"Report What Production Now Runs" for production; the staging job has no counterpart.',
@@ -345,7 +354,7 @@ const FROZEN: Record<string, string> = {
   'production: Refuse A Re-Run, A Wrong Ref Or A Wrong Commit': '36c3659904b636fb1b42fd435e89d136880e804cf34a589aa2de07d108dbc4cb',
   'production: Verify The Staged Digest Was Handed On': 'be2771b43627ff52c12b39f1da879377162e582852816d7f12ad8550751c0caf',
   'production: Verify The Checkout Is The Frozen Commit': '7d97d51267ee66fb7109f05a7c20457250d0ca82647ca3b315e617b564b5d7a8',
-  'production: Apply Production Migrations': 'b8075b68488b5cb0ba53537ff02f52d8b46207199a24e265f3e06821f82f2846',
+  'production: Apply Production Migrations': '09d034ab01c0a7d64cc0e670b73c6d19bf6758e6c56f5dc6581c8466aa52a519',
   'production: Report What Production Now Runs': '4d4976186939a489a093009064c1c5b7bbd7f11e014cb5997eb237a225905744',
 };
 
@@ -795,12 +804,18 @@ describe('release-one-approval: migrations come from the one reader', () => {
   const productionMigrate = step(production, 'Apply Production Migrations').text;
 
   test('both environments run the same step, differing only in which app is asked', () => {
+    // Lane DBT's reachability probe sits in the staging step only: it is the
+    // staging job's first database contact, while the production job reaches
+    // the database first in "Refuse To Migrate While SHADOW Jobs Are Waiting".
     const asProduction = stagingMigrate
       .replace('Apply Staging Migrations', 'Apply Production Migrations')
       .replace('id: migrate-staging', 'id: migrate-production')
-      .replace('--name app-ppbf-staging \\', '--name "$CONTAINER_APP_NAME" \\');
+      .replace('--name app-ppbf-staging \\', '--name "$CONTAINER_APP_NAME" \\')
+      .replace(PROBE_LINE, '');
     expect(asProduction).toBe(productionMigrate);
     expect(stagingMigrate).toMatch(/--name app-ppbf-staging \\/);
+    expect(stagingMigrate.split(PROBE_LINE)).toHaveLength(2);
+    expect(productionMigrate).not.toContain('db-reachability-probe');
   });
 
   test('the order is read from migration-apply-order.mjs and an empty answer is refused', () => {

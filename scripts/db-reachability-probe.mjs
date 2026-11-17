@@ -8,13 +8,14 @@
 // no answer and died with `connect ETIMEDOUT` after 133-137 s (the driver sets
 // no connect timeout; the ~134 s is INFERRED to be the kernel's SYN retries);
 // no job on an Azure runner timed out. Which side drops the packets is not
-// established. Every retry that passed was a new run on a new (Azure) runner,
-// so a retry inside the same job is not expected to help.
+// established. Every retry that passed was a re-run or new run on a new (Azure)
+// runner, so a retry inside the same job is not expected to help.
 //
-// So this check runs right after each connection-string resolve, before the
-// database step that follows it; the first one in every job runs before any
-// database step of that job. It fails in about 20 s with a message that says
-// what happened, instead of a silent two-minute hang.
+// So this check runs once per job, right after the job first resolves the
+// connection string and before that job's first database contact. It fails in
+// about 20 s with a message that says what happened, instead of a silent
+// two-minute hang. (A later check in the same job could not catch this case:
+// the runner has already reached the server by then.)
 //
 // WHAT IT DOES AND DOES NOT DO
 //   * Opens a TCP connection to host:port and closes it at once. It writes no
@@ -182,15 +183,14 @@ export function failureMessage({ host, port, attempts, codes, runner }) {
   const last = codes.length ? codes[codes.length - 1] : 'unknown';
   const cause =
     runner && runner.cloud && runner.cloud.toLowerCase() !== 'azure'
-      ? 'This runner is not on Azure. Since 2026-11-03 every database job GitHub placed on a non-Azure runner has failed to connect, and the database firewall admits Azure ranges and named single IPs only (lane DBT; OD-2026-11-17-008).'
+      ? 'This runner is not on Azure. As of 2026-11-17, 10 of 10 database jobs GitHub placed on non-Azure runners since 2026-11-03 had failed to connect, and the database firewall admits Azure ranges and named single IPs only (lane DBT; OD-2026-11-17-008).'
       : runner && runner.cloud
         ? 'This runner IS on Azure, so this is not the known non-Azure-runner pattern: check the server\'s status and firewall before re-running.'
-        : 'GitHub sometimes places Linux jobs on non-Azure runners, and since 2026-11-03 every such database job has failed to connect (lane DBT; OD-2026-11-17-008).';
+        : 'GitHub sometimes places Linux jobs on non-Azure runners; as of 2026-11-17, 10 of 10 such database jobs since 2026-11-03 had failed to connect (lane DBT; OD-2026-11-17-008).';
   return (
     `Could not open a TCP connection to ${host}:${port} after ${attempts} attempt(s) (last: ${last}). ` +
     `${describeRunner(runner)} ${cause} ` +
-    'This check sends no data and stops the job before the database step that follows it. ' +
-    "If it is the job's first database check, the job has not touched the database; otherwise check what the job's earlier steps did. " +
+    "This check sends no data and runs before this job's first database step, so the job has not touched the database. " +
     'A new runner is needed: re-run the job, or dispatch a fresh run where re-runs are refused (release-one-approval).'
   );
 }
