@@ -303,7 +303,7 @@ describe('without the table', () => {
 test('refuses to run without a connection string, and never falls back to apps/web/.env.local', () => {
   const run = spawnSync(process.execPath, [CHECKER_SCRIPT_PATH], {
     encoding: 'utf8',
-    env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot },
+    env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, NODE_ENV: 'test' },
     timeout: 60_000,
   });
   expect(run.status).toBe(1);
