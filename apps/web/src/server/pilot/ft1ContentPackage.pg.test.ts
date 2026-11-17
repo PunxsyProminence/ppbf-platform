@@ -8,8 +8,10 @@
 //     database holding labels on existing items would show it; one that never
 //     had them must not): every row that was loaded from the files WITHOUT
 //     the columns stays unchanged;
-//   - the FT1 rows are the only new ones: 131 drills, 33 templates, and the
-//     track with its 8 blocks and 40 block sessions;
+//   - the Backbone rows are the only new ones: the FT1 set (131 drills, 33
+//     templates, the track with its 8 blocks and 40 block sessions), lane 2's
+//     drills and lane YR's templates, tracks, blocks and block sessions, every
+//     count but FT1's read from the files;
 //   - a drill the Backbone left without setup and steps loads as '' (the
 //     columns are text not null), never as NULL;
 //   - a second plan over the loaded state finds everything unchanged.
@@ -187,6 +189,9 @@ const CUES_CSV = 'drill-library/seed_drill_cues.csv';
 const STOPS_CSV = 'drill-library/seed_drill_stop_rules.csv';
 const TEMPLATES_CSV = 'workout-templates/seed_workout_templates.csv';
 const ITEMS_CSV = 'workout-templates/seed_workout_template_items.csv';
+const TRACKS_CSV = 'training-tracks/seed_training_tracks.csv';
+const BLOCKS_CSV = 'training-tracks/seed_track_blocks.csv';
+const SESSIONS_CSV = 'training-tracks/seed_track_block_sessions.csv';
 const LABEL_COLUMNS = ['field_labels', 'evidence', 'stage_keys'];
 
 async function createGym(organizationId: string): Promise<string> {
@@ -221,10 +226,14 @@ const REGISTRIES: readonly DatasetName[] = ['disciplines', 'competence-levels', 
 const committed = readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES);
 const ft1DrillIds = new Set(rowsOf(committed[DRILLS_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.drill_id));
 const ft1TemplateIds = new Set(rowsOf(committed[TEMPLATES_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.template_id));
+// Every Backbone template (stage_keys not blank): FT1's 33 plus lane YR's youth and recreational ones.
+const backboneTemplateIds = new Set(rowsOf(committed[TEMPLATES_CSV]).filter((row) => row.stage_keys !== '').map((row) => row.template_id));
 // Every Backbone drill (stage_keys not blank): FT1's 131 plus lane L2b's 256, all new to a library loaded before them.
 const backboneDrillIds = new Set(rowsOf(committed[DRILLS_CSV]).filter((row) => row.stage_keys !== '').map((row) => row.drill_id));
 const existingDrills = rowsOf(committed[DRILLS_CSV]).filter((row) => !backboneDrillIds.has(row.drill_id));
-const existingTemplates = rowsOf(committed[TEMPLATES_CSV]).filter((row) => !ft1TemplateIds.has(row.template_id));
+const existingTemplates = rowsOf(committed[TEMPLATES_CSV]).filter((row) => !backboneTemplateIds.has(row.template_id));
+// Every committed track, block and block session: FT1's and lane YR's (counted from the files, never pinned).
+const committedTracks = rowsOf(committed[TRACKS_CSV]);
 
 /**
  * The state before this lane: the committed files with the FT1 rows taken out and the three
@@ -237,8 +246,8 @@ function beforeFiles(): Record<string, string> {
     [STOPS_CSV]: reshape(committed[STOPS_CSV], (row) => !backboneDrillIds.has(row.drill_id)),
     'drill-library/seed_drill_scale_levels.csv': reshape(committed['drill-library/seed_drill_scale_levels.csv'], (row) => !backboneDrillIds.has(row.drill_id)),
     'drill-library/seed_drill_secondary_skills.csv': committed['drill-library/seed_drill_secondary_skills.csv'],
-    [TEMPLATES_CSV]: reshape(committed[TEMPLATES_CSV], (row) => !ft1TemplateIds.has(row.template_id), LABEL_COLUMNS),
-    [ITEMS_CSV]: reshape(committed[ITEMS_CSV], (row) => !ft1TemplateIds.has(row.template_id)),
+    [TEMPLATES_CSV]: reshape(committed[TEMPLATES_CSV], (row) => !backboneTemplateIds.has(row.template_id), [...LABEL_COLUMNS, 'details']),
+    [ITEMS_CSV]: reshape(committed[ITEMS_CSV], (row) => !backboneTemplateIds.has(row.template_id), ['details']),
   };
 }
 
@@ -275,8 +284,9 @@ describe('FT1 content added to a loaded library', () => {
     expect(result.counts['drill-library']).toEqual({ new: 387, new_version: 0, unchanged: 119, absent: 0, reject: 0 });
     expect(backboneDrillIds.size).toBe(387);
     expect(existingDrills).toHaveLength(119);
-    expect(result.counts['workout-templates']).toEqual({ new: ft1TemplateIds.size, new_version: 0, unchanged: existingTemplates.length, absent: 0, reject: 0 });
-    expect(result.counts['training-tracks']).toEqual({ new: 1, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
+    expect(result.counts['workout-templates']).toEqual({ new: backboneTemplateIds.size, new_version: 0, unchanged: existingTemplates.length, absent: 0, reject: 0 });
+    expect(result.counts['training-tracks']).toEqual({ new: committedTracks.length, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
+    expect(committedTracks.filter((row) => row.stage_keys === 'FT1')).toHaveLength(1);
     expect(ft1DrillIds.size).toBe(131);
     expect(ft1TemplateIds.size).toBe(33);
     expect(result.blocking).toEqual([]);
@@ -300,12 +310,19 @@ describe('FT1 content added to a loaded library', () => {
     expect(again.changes).toBe(0);
   });
 
-  it('keeps the track, 8 blocks and 40 block sessions, each session naming a template the gym has', async () => {
-    const { rows } = await observer.query<{ blocks: string; sessions: string }>(
+  it('keeps every committed track, block and block session, with the 8 blocks and 40 sessions of the FT1 track among them', async () => {
+    const { rows } = await observer.query<{ blocks: string; sessions: string; ft1_blocks: string; ft1_sessions: string }>(
       `select (select count(*) from pilot.track_blocks where organization_id = $1) as blocks,
-              (select count(*) from pilot.track_block_sessions where organization_id = $1) as sessions`,
+              (select count(*) from pilot.track_block_sessions where organization_id = $1) as sessions,
+              (select count(*) from pilot.track_blocks where organization_id = $1 and track_id = 'trk_d104860a7eccef') as ft1_blocks,
+              (select count(*) from pilot.track_block_sessions where organization_id = $1 and track_id = 'trk_d104860a7eccef') as ft1_sessions`,
       [ORG],
     );
-    expect(rows[0]).toEqual({ blocks: '8', sessions: '40' });
+    expect(rows[0]).toEqual({
+      blocks: String(rowsOf(committed[BLOCKS_CSV]).length),
+      sessions: String(rowsOf(committed[SESSIONS_CSV]).length),
+      ft1_blocks: '8',
+      ft1_sessions: '40',
+    });
   });
 });

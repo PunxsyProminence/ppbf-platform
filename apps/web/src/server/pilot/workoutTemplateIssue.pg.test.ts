@@ -484,6 +484,38 @@ describe('issuing a template', () => {
     });
   });
 
+  test('minutes a sheet gives an item in its details are never issued: only the duration column travels (OD-2026-11-17-002)', async () => {
+    const gym = await newGym('sheet-minutes');
+    await insertReference(gym, 'ref-run', 'Running Drill');
+    await adopt(gym, 'ref-run', 'Running Drill');
+    await insertTemplate(gym, ['ref-run', 'ref-run']);
+    // Step 1 keeps its own 6 minutes and gains sheet minutes in details; step 2 has sheet minutes only.
+    await client.query(
+      `update pilot.workout_template_items set details = '{"duration_minutes": 30, "phase": "Main set"}'::jsonb
+        where organization_id = $1 and template_id = $2 and ordinal = 1`,
+      [gym.organizationId, TEMPLATE_ID],
+    );
+    await client.query(
+      `update pilot.workout_template_items set duration_minutes = null, rep_count = null, details = '{"duration_minutes": 20}'::jsonb
+        where organization_id = $1 and template_id = $2 and ordinal = 2`,
+      [gym.organizationId, TEMPLATE_ID],
+    );
+
+    const result = await issue(gym);
+    expect(result.outcome).toBe('issued');
+    if (result.outcome !== 'issued') return;
+    const cards = await client.query<{ assignment_id: string; duration_minutes: number | null; rep_count: number | null }>(
+      `select assignment_id, duration_minutes, rep_count from pilot.drill_assignments where organization_id = $1`,
+      [gym.organizationId],
+    );
+    const byId = new Map(cards.rows.map((row) => [row.assignment_id, row]));
+    expect(result.steps.map((step) => ({ step: step.step, ...byId.get(step.assignment.assignment_id) })).map(({ step, duration_minutes, rep_count }) => ({ step, duration_minutes, rep_count })))
+      .toEqual([
+        { step: 1, duration_minutes: 6, rep_count: null },
+        { step: 2, duration_minutes: null, rep_count: null },
+      ]);
+  });
+
   test('inside its transaction an issue takes NO second connection: every statement between BEGIN and COMMIT is on the transaction', async () => {
     const gym = await newGym('no-pool-in-transaction');
     await insertReference(gym, 'ref-run', 'Running Drill');

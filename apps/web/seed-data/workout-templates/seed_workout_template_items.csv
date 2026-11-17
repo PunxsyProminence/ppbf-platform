@@ -1,214 +1,1018 @@
-organization_id,item_id,template_id,ordinal,block,drill_id,free_text_drill,duration_minutes,rep_count,contact_level,coach_note,scale_level
-{{PPBF_ORG_ID}},wti_78e9602c406a6f,wtp_216dfa4227233d,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_e90985cec0964e,wtp_216dfa4227233d,2,warmup,drl_f54d4fe102fb09,,4.0,,none,,
-{{PPBF_ORG_ID}},wti_68e957176ace20,wtp_216dfa4227233d,3,technical,drl_9de5719225a39c,,7.0,,none,,
-{{PPBF_ORG_ID}},wti_f7b4c65d8968b9,wtp_216dfa4227233d,4,technical,drl_7e09f9990ea721,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_351de79df647a0,wtp_216dfa4227233d,5,technical,drl_160ff16df2a668,,10.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_02857c31eb0775,wtp_216dfa4227233d,6,craft,drl_39ed71de8c14cd,,5.0,,none,,
-{{PPBF_ORG_ID}},wti_0019a02fb90252,wtp_216dfa4227233d,7,cooldown,drl_325b6ba2613eb0,,5.0,,none,,
-{{PPBF_ORG_ID}},wti_aea3e8a0772a07,wtp_98af8ee68020d0,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_25c92d8e809246,wtp_98af8ee68020d0,2,warmup,drl_0eaa11e875ffef,,5.0,,none,,
-{{PPBF_ORG_ID}},wti_e017985851a067,wtp_98af8ee68020d0,3,technical,drl_b37c52526817b7,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_045afa54b1c47f,wtp_98af8ee68020d0,4,technical,drl_d79b33ee316e09,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_1562391052340b,wtp_98af8ee68020d0,5,technical,drl_4347e2c1a20806,,7.0,,none,,
-{{PPBF_ORG_ID}},wti_fe5b9adfac3237,wtp_98af8ee68020d0,6,conditioning,drl_40acc6820f5df6,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_d1a39eb8c514cc,wtp_98af8ee68020d0,7,cooldown,drl_786d761c9321c0,,3.0,,none,,
-{{PPBF_ORG_ID}},wti_09fd782404c42c,wtp_b35f1273aa79bd,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_9095043ce8557d,wtp_b35f1273aa79bd,2,warmup,drl_f54d4fe102fb09,,4.0,,none,,
-{{PPBF_ORG_ID}},wti_f8011edc2fa3d1,wtp_b35f1273aa79bd,3,technical,drl_105923e88c4fff,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_77876c0bee587e,wtp_b35f1273aa79bd,4,technical,drl_160ff16df2a668,,10.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_08b846372f29e1,wtp_b35f1273aa79bd,5,technical,drl_45d9662ee44c36,,10.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_fa74233541c309,wtp_b35f1273aa79bd,6,technical,drl_a8fcfc8f0a4c63,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_80871fcbdacf7a,wtp_b35f1273aa79bd,7,cooldown,drl_325b6ba2613eb0,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_5f079f078097df,wtp_f35ff87b3529ab,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_c8e95d28f8255f,wtp_f35ff87b3529ab,2,warmup,drl_0eaa11e875ffef,,5.0,,none,,
-{{PPBF_ORG_ID}},wti_7d1d0aa74c96aa,wtp_f35ff87b3529ab,3,technical,drl_087353a71f3b4e,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_881aa05c7ef2d6,wtp_f35ff87b3529ab,4,technical,drl_1d6e36f12d7c87,,8.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_eab4ba321fe62f,wtp_f35ff87b3529ab,5,technical,drl_e0428b3066b8c2,,10.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_92137dc9b59f96,wtp_f35ff87b3529ab,6,technical,drl_c339eeabf109d4,,8.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_fed770855af0c4,wtp_f35ff87b3529ab,7,conditioning,drl_ee5abe0d5aa056,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_3c5f68695e853a,wtp_f35ff87b3529ab,8,cooldown,drl_786d761c9321c0,,5.0,,none,,
-{{PPBF_ORG_ID}},wti_1504c3354fd974,wtp_e3c1f50475379b,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_a32b9ef6e79e46,wtp_e3c1f50475379b,2,warmup,drl_f54d4fe102fb09,,4.0,,none,,
-{{PPBF_ORG_ID}},wti_c9548d5c992431,wtp_e3c1f50475379b,3,technical,drl_3e2e2cb0a54792,,12.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_9432a179365001,wtp_e3c1f50475379b,4,technical,drl_3554c55ab8b584,,12.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_8f970d10baccee,wtp_e3c1f50475379b,5,technical,drl_4700995bab7b07,,10.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_262b242a56243c,wtp_e3c1f50475379b,6,bagwork,drl_b755caac79e37e,,8.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_02b6f2088ec533,wtp_e3c1f50475379b,7,cooldown,drl_325b6ba2613eb0,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_63901bbb89eb4d,wtp_46173e84b09d7c,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_faabda6117ba8b,wtp_46173e84b09d7c,2,technical,drl_7e09f9990ea721,,5.0,,none,,
-{{PPBF_ORG_ID}},wti_5fdebdd5d33097,wtp_46173e84b09d7c,3,defense,drl_2713ad55cfcbf0,,10.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_bfbc65beca8ba1,wtp_46173e84b09d7c,4,defense,drl_badeec66ed769d,,8.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_8ae81213d2cec0,wtp_46173e84b09d7c,5,defense,drl_464b8ff7d556f9,,10.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_6045605db77dcb,wtp_46173e84b09d7c,6,defense,drl_87d9424cc9f2a3,,8.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_75b1b8d35116b1,wtp_46173e84b09d7c,7,cooldown,drl_786d761c9321c0,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_077682ea752ce0,wtp_1123d6411a2e60,1,warmup,drl_dbb0347500e7eb,,10.0,,none,,
-{{PPBF_ORG_ID}},wti_3e8d42f0a997a9,wtp_1123d6411a2e60,2,craft,drl_39ed71de8c14cd,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_acd28b0962db2b,wtp_1123d6411a2e60,3,partner,drl_e1f757f0c3e703,,4.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_6d09dc4e3a6237,wtp_1123d6411a2e60,4,partner,drl_cb54d49d71c270,,4.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_f8200bc7f5d562,wtp_1123d6411a2e60,5,sparring,drl_31f81811de1b2f,,,,controlled_sparring,Coach sets contact volume in person. This system prescribes none.,
-{{PPBF_ORG_ID}},wti_d3db70b0a6051f,wtp_1123d6411a2e60,6,sparring,drl_d305c9e9ba7ddd,,,,controlled_sparring,Coach sets contact volume in person. This system prescribes none.,
-{{PPBF_ORG_ID}},wti_f6bbef488f9768,wtp_1123d6411a2e60,7,film,drl_367b662564784e,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_dd2f7aab619fe3,wtp_1123d6411a2e60,8,cooldown,drl_325b6ba2613eb0,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_78ab339eddd9ba,wtp_f4f4d54c39a219,1,warmup,drl_f54d4fe102fb09,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_f2a72eddb00630,wtp_f4f4d54c39a219,2,warmup,drl_61ef34ab64a92c,,4.0,,none,,
-{{PPBF_ORG_ID}},wti_7e24da14d7847d,wtp_f4f4d54c39a219,3,technical,drl_b761c27849920e,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_e0587aca344b63,wtp_f4f4d54c39a219,4,technical,drl_7908566cc70d14,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_ad09b47656c36c,wtp_f4f4d54c39a219,5,technical,drl_af8541eacc70e5,,12.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_abe6b524f14197,wtp_f4f4d54c39a219,6,cooldown,drl_786d761c9321c0,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_4278d888911e75,wtp_cfb86f25abfa16,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_e2b559771185ea,wtp_cfb86f25abfa16,2,conditioning,drl_40acc6820f5df6,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_4d4ddb0dc8da8a,wtp_cfb86f25abfa16,3,technical,drl_146f4afdc88839,,10.0,,none,,
-{{PPBF_ORG_ID}},wti_9069bedaf93ee0,wtp_cfb86f25abfa16,4,conditioning,drl_681a54fa579bb1,,14.0,,none,,
-{{PPBF_ORG_ID}},wti_ae2be35208d10e,wtp_cfb86f25abfa16,5,cooldown,drl_325b6ba2613eb0,,7.0,,none,,
-{{PPBF_ORG_ID}},wti_edb64ee2c69395,wtp_7d4394c5d4fe32,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_189636960f8560,wtp_7d4394c5d4fe32,2,strength,drl_7b05e2c6d49010,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_6c834ff2a46749,wtp_7d4394c5d4fe32,3,strength,drl_f84ea554b6aae6,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_91b78a7c37d670,wtp_7d4394c5d4fe32,4,strength,drl_8549299fc8d8c7,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_d4e23e4abad914,wtp_7d4394c5d4fe32,5,strength,drl_f472a511f53d54,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_0d0d8b5513831e,wtp_7d4394c5d4fe32,6,power,drl_129b59c4f4dd76,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_a769a4f44ce7f7,wtp_7d4394c5d4fe32,7,cooldown,drl_786d761c9321c0,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_058a3d007fc8b7,wtp_d15fb20ba517cf,1,warmup,drl_dbb0347500e7eb,,10.0,,none,,
-{{PPBF_ORG_ID}},wti_43b20af4e134ac,wtp_d15fb20ba517cf,2,technical,drl_81c1dc6ae59852,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_fbf683d2c52c27,wtp_d15fb20ba517cf,3,technical,drl_006134ad264754,,10.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_5b90624645d41d,wtp_d15fb20ba517cf,4,technical,drl_c8fa1590a8649a,,8.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_6626b1b0986002,wtp_d15fb20ba517cf,5,tactical,drl_b2fcf989112703,,,,conditioned,Coach sets contact volume in person. This system prescribes none.,
-{{PPBF_ORG_ID}},wti_49d67cfd328bf4,wtp_d15fb20ba517cf,6,film,drl_1f5bf3a2ca967b,,10.0,,none,,
-{{PPBF_ORG_ID}},wti_2a87550c08a126,wtp_d15fb20ba517cf,7,cooldown,drl_786d761c9321c0,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_6fbda8dbb310f9,wtp_ff74bd014f77b2,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,
-{{PPBF_ORG_ID}},wti_a7460d2c6be1f2,wtp_ff74bd014f77b2,2,technical,drl_c256be2f4f5fab,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_9785b5a9e42a9e,wtp_ff74bd014f77b2,3,technical,drl_4347e2c1a20806,,7.0,,none,,
-{{PPBF_ORG_ID}},wti_abcfaa03d6bf94,wtp_ff74bd014f77b2,4,technical,drl_160ff16df2a668,,8.0,,light_technical,,
-{{PPBF_ORG_ID}},wti_0eb9ea1b514794,wtp_ff74bd014f77b2,5,conditioning,drl_b67ee94d958d32,,6.0,,none,,
-{{PPBF_ORG_ID}},wti_04f25e79f58980,wtp_ff74bd014f77b2,6,cooldown,drl_325b6ba2613eb0,,5.0,,none,,
-{{PPBF_ORG_ID}},wti_eee36de327fa02,wtp_043d0076448e51,1,footwork,drl_f71c195e47aed4,,,,none,,
-{{PPBF_ORG_ID}},wti_a6e2e08bfa6204,wtp_043d0076448e51,2,head_movement,drl_f2457106a9a74e,,,,none,,
-{{PPBF_ORG_ID}},wti_ca577ad5cd3ac4,wtp_043d0076448e51,3,defense,drl_6bb81739aa4d60,,,,none,,
-{{PPBF_ORG_ID}},wti_17b5cb1cabfae2,wtp_043d0076448e51,4,punch_integration,drl_9356b87b9bb495,,,,none,,
-{{PPBF_ORG_ID}},wti_20acbc3f14e92a,wtp_0e197b7b863cbc,1,footwork,drl_791571e22b71a6,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_5031f158c4e4bd,wtp_0e197b7b863cbc,2,head_movement,drl_05fefb0dde0a32,,,,none,,
-{{PPBF_ORG_ID}},wti_c6cc15d111e00f,wtp_0e197b7b863cbc,3,defense,drl_eb7919f3d68eee,,,,none,,
-{{PPBF_ORG_ID}},wti_9f11f12066ee1e,wtp_0e197b7b863cbc,4,punch_integration,drl_49210628cd02c5,,,,none,,
-{{PPBF_ORG_ID}},wti_2c0b6e29c3f1e4,wtp_11b682b96a73c4,1,footwork,drl_c4f9950bffb389,,,,none,,
-{{PPBF_ORG_ID}},wti_bf66f5860ba9aa,wtp_11b682b96a73c4,2,head_movement,drl_2970403ca76ea3,,,,none,,
-{{PPBF_ORG_ID}},wti_50cea7326d19b0,wtp_11b682b96a73c4,3,defense,drl_7c4bb31c9915ba,,,,none,,
-{{PPBF_ORG_ID}},wti_8a3163668c81ef,wtp_11b682b96a73c4,4,punch_integration,drl_8f1212cd382918,,,,none,,
-{{PPBF_ORG_ID}},wti_e2e404b045edde,wtp_17da22ddb29563,1,footwork,drl_9355e97d01bc0e,,,,none,,
-{{PPBF_ORG_ID}},wti_090d79e16110a1,wtp_17da22ddb29563,2,head_movement,drl_a00981153c82f6,,,,none,,
-{{PPBF_ORG_ID}},wti_bf0850c185c43a,wtp_17da22ddb29563,3,defense,drl_0b1820269d1cab,,,,none,,
-{{PPBF_ORG_ID}},wti_00ad745c62df7e,wtp_17da22ddb29563,4,punch_integration,drl_3e601393f0859c,,,,none,,
-{{PPBF_ORG_ID}},wti_153c82de23afad,wtp_2baa98806e5a72,1,footwork,drl_5fa9e2642be19e,,,,none,,
-{{PPBF_ORG_ID}},wti_320078701acd7f,wtp_2baa98806e5a72,2,head_movement,drl_dd6d717a1e0b84,,,,none,,
-{{PPBF_ORG_ID}},wti_1552eb1531e3c1,wtp_2baa98806e5a72,3,defense,drl_ab12445c3cca05,,,,none,,
-{{PPBF_ORG_ID}},wti_3077e3f01afd5b,wtp_2baa98806e5a72,4,punch_integration,drl_3e747059993bbb,,,,none,,
-{{PPBF_ORG_ID}},wti_9e507070e5629c,wtp_33f6ca0b7eef2f,1,footwork,drl_a275f9fb6f9811,,,,none,,
-{{PPBF_ORG_ID}},wti_850e3e19666f25,wtp_33f6ca0b7eef2f,2,head_movement,drl_08964a9e5da8b4,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_b4b717b9c27556,wtp_33f6ca0b7eef2f,3,defense,drl_2e88d61ccab1ed,,,,none,,
-{{PPBF_ORG_ID}},wti_53f7be1fbc644c,wtp_33f6ca0b7eef2f,4,punch_integration,drl_4a85860cb53e1c,,,,none,,
-{{PPBF_ORG_ID}},wti_5120e1f54a9186,wtp_347517fe8ee3ff,1,footwork,drl_7a34dfdf933016,,,,none,,
-{{PPBF_ORG_ID}},wti_f40f051ae105d4,wtp_347517fe8ee3ff,2,head_movement,drl_7a4ff70fc0fe8c,,,,none,,
-{{PPBF_ORG_ID}},wti_b2fba9eeddcc48,wtp_347517fe8ee3ff,3,defense,drl_0d245008a3bc3a,,,,none,,
-{{PPBF_ORG_ID}},wti_5120748a8da52b,wtp_347517fe8ee3ff,4,punch_integration,drl_d99734578fa40b,,,,none,,
-{{PPBF_ORG_ID}},wti_2dbf8d4b3a258e,wtp_384fff166cd68c,1,footwork,drl_e18c98d4d8a79d,,,,none,,
-{{PPBF_ORG_ID}},wti_e14ddf87c057dc,wtp_384fff166cd68c,2,head_movement,drl_2bc36663440bcc,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_e663d11452f848,wtp_384fff166cd68c,3,defense,drl_c08aba5603edbb,,,,none,,
-{{PPBF_ORG_ID}},wti_35a33e099be206,wtp_384fff166cd68c,4,punch_integration,drl_1bb75a746b9006,,,,none,,
-{{PPBF_ORG_ID}},wti_d8d3a6d568458f,wtp_3d6e094c504fb9,1,footwork,drl_9a7d4a896bd9b9,,,,none,,
-{{PPBF_ORG_ID}},wti_62faf998a3997d,wtp_3d6e094c504fb9,2,head_movement,drl_07b7cfec78e65f,,,,none,,
-{{PPBF_ORG_ID}},wti_9c2c55c3344e1b,wtp_3d6e094c504fb9,3,defense,drl_1f477ccb45843a,,,,none,,
-{{PPBF_ORG_ID}},wti_6b967ba454991b,wtp_3d6e094c504fb9,4,punch_integration,drl_b4b28995635fa1,,,,none,,
-{{PPBF_ORG_ID}},wti_bad62fde4da9af,wtp_3d74a55428befe,1,footwork,drl_80d84e68fc04c3,,,,none,,
-{{PPBF_ORG_ID}},wti_23c8854382913e,wtp_3d74a55428befe,2,head_movement,drl_989a9ccf4d20d5,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_56452b74cb7f3d,wtp_3d74a55428befe,3,defense,drl_75f1fbf4b9b6e7,,,,none,,
-{{PPBF_ORG_ID}},wti_15018a2f2dc74c,wtp_3d74a55428befe,4,punch_integration,drl_2c47bf50f3319c,,,,none,,
-{{PPBF_ORG_ID}},wti_5606a6a7331b33,wtp_3f6573472c50c7,1,footwork,drl_f2ae3305eecbd3,,,,none,,
-{{PPBF_ORG_ID}},wti_61fc5cc6e50bd2,wtp_3f6573472c50c7,2,head_movement,drl_93e4dd386a5d09,,,,none,,
-{{PPBF_ORG_ID}},wti_d3483eb9963bb3,wtp_3f6573472c50c7,3,defense,drl_6a6ba18e74cd8c,,,,none,,
-{{PPBF_ORG_ID}},wti_3554d5ac257db5,wtp_3f6573472c50c7,4,punch_integration,drl_933367020418fa,,,,none,,
-{{PPBF_ORG_ID}},wti_e95b9c959a9c60,wtp_527f1449cd956f,1,footwork,drl_9dc8b5c81e03e4,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_3958b571678ff4,wtp_527f1449cd956f,2,head_movement,drl_e495a9def1d069,,,,none,,
-{{PPBF_ORG_ID}},wti_918fdc9889c1ca,wtp_527f1449cd956f,3,defense,drl_11c347a25d9617,,,,none,,
-{{PPBF_ORG_ID}},wti_2411f1a200cd2c,wtp_527f1449cd956f,4,punch_integration,drl_4a209e8e7cd9ec,,,,none,,
-{{PPBF_ORG_ID}},wti_07dcc5ede8d4cd,wtp_5a7345ebcdcd9f,1,footwork,drl_b48b377e96a343,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_839d334f7ead7c,wtp_5a7345ebcdcd9f,2,head_movement,drl_a44d9edc222c13,,,,none,,
-{{PPBF_ORG_ID}},wti_6d57418c09603b,wtp_5a7345ebcdcd9f,3,defense,drl_91f86714f57d30,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_75f32a4fdde59f,wtp_5a7345ebcdcd9f,4,punch_integration,drl_5590822eb50ace,,,,none,,
-{{PPBF_ORG_ID}},wti_b9cc7cf1cb1a10,wtp_653790590ad56c,1,footwork,drl_7ef4b989d58c04,,,,none,,
-{{PPBF_ORG_ID}},wti_eb51dc8bd18d5b,wtp_653790590ad56c,2,head_movement,drl_df744af9260a5c,,,,none,,
-{{PPBF_ORG_ID}},wti_5fe8936f852f01,wtp_653790590ad56c,3,defense,drl_cd0114f916e5a9,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_c54df91d889dd3,wtp_653790590ad56c,4,punch_integration,drl_6f381ad3920e1c,,,,none,,
-{{PPBF_ORG_ID}},wti_2c22883403287e,wtp_65439423f35fe1,1,footwork,drl_9851444d9d672e,,,,none,,
-{{PPBF_ORG_ID}},wti_95f5d33c0c4799,wtp_65439423f35fe1,2,head_movement,drl_4e41b10b1ff929,,,,none,,
-{{PPBF_ORG_ID}},wti_545e326b45f9f9,wtp_65439423f35fe1,3,defense,drl_8a98f90d1aae77,,,,none,,
-{{PPBF_ORG_ID}},wti_1e0d1ced55565f,wtp_65439423f35fe1,4,punch_integration,drl_3b3138da14a69c,,,,none,,
-{{PPBF_ORG_ID}},wti_1622309c7d749e,wtp_65be8484440820,1,footwork,drl_fa246bf3c4e076,,,,none,,
-{{PPBF_ORG_ID}},wti_868532238afb21,wtp_65be8484440820,2,head_movement,drl_ce5c7d3a093716,,,,none,,
-{{PPBF_ORG_ID}},wti_40a7e593160f1b,wtp_65be8484440820,3,defense,drl_41d9f3ac453d89,,,,none,,
-{{PPBF_ORG_ID}},wti_1d27fef399cadc,wtp_65be8484440820,4,punch_integration,drl_579f4c574ff8bb,,,,none,,
-{{PPBF_ORG_ID}},wti_e8ca1e55f6091e,wtp_7b6f797329d91b,1,footwork,drl_3c101d81e1d371,,,,none,,
-{{PPBF_ORG_ID}},wti_ab54dc3d9f6ada,wtp_7b6f797329d91b,2,head_movement,drl_56ad4892501e40,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_4763faaceada9d,wtp_7b6f797329d91b,3,defense,drl_5be76200976f7b,,,,none,,
-{{PPBF_ORG_ID}},wti_fa83a16cf11059,wtp_7b6f797329d91b,4,punch_integration,drl_6a469dc081920c,,,,none,,
-{{PPBF_ORG_ID}},wti_9200ea9b827076,wtp_7f86a79e132aaf,1,footwork,drl_e536331dccd8bd,,,,none,,
-{{PPBF_ORG_ID}},wti_b6bb26bea0030a,wtp_7f86a79e132aaf,2,head_movement,drl_fd8ab0a761b558,,,,none,,
-{{PPBF_ORG_ID}},wti_195870f205487c,wtp_7f86a79e132aaf,3,defense,drl_ed932ad70b5cd6,,,,none,,
-{{PPBF_ORG_ID}},wti_5af9457ff4b5b4,wtp_7f86a79e132aaf,4,punch_integration,drl_0190c8c74acccc,,,,none,,
-{{PPBF_ORG_ID}},wti_d931777e90bb6c,wtp_7f959c8afe1f72,1,footwork,drl_21471eb3988596,,,,none,,
-{{PPBF_ORG_ID}},wti_9c1e1ce2936582,wtp_7f959c8afe1f72,2,head_movement,drl_8bfd233f9969e9,,,,none,,
-{{PPBF_ORG_ID}},wti_397bb6b1a2fcc4,wtp_7f959c8afe1f72,3,defense,drl_af75f1ba763c5e,,,,none,,
-{{PPBF_ORG_ID}},wti_a1e183024a1b9b,wtp_7f959c8afe1f72,4,punch_integration,drl_4b30970a2f41f2,,,,none,,
-{{PPBF_ORG_ID}},wti_d40fd87fcb8103,wtp_7fae0e467ff5aa,1,footwork,drl_e07eed95574f39,,,,none,,
-{{PPBF_ORG_ID}},wti_9cbca2e18ebb71,wtp_7fae0e467ff5aa,2,head_movement,drl_3137281f565d1e,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_63deaf72541bea,wtp_7fae0e467ff5aa,3,defense,drl_2ae484acae2fb7,,,,none,,
-{{PPBF_ORG_ID}},wti_8b7d7cb09c4728,wtp_7fae0e467ff5aa,4,punch_integration,drl_ad47e3f2a65147,,,,none,,
-{{PPBF_ORG_ID}},wti_8093d19aef1e79,wtp_8b0f1757660821,1,footwork,drl_43056d78bdaaac,,,,none,,
-{{PPBF_ORG_ID}},wti_3725f5e25c3db8,wtp_8b0f1757660821,2,head_movement,drl_7484b6c7469a54,,,,none,,
-{{PPBF_ORG_ID}},wti_90369266202434,wtp_8b0f1757660821,3,defense,drl_5c8883024d9b0f,,,,none,,
-{{PPBF_ORG_ID}},wti_8f47c7252cd400,wtp_8b0f1757660821,4,punch_integration,drl_25034a26c6d63a,,,,none,,
-{{PPBF_ORG_ID}},wti_2fd4a20192e566,wtp_9b58dd36ed3de0,1,footwork,drl_c03f5a5387fef1,,,,none,,
-{{PPBF_ORG_ID}},wti_54885f4ed66cad,wtp_9b58dd36ed3de0,2,head_movement,drl_f86bf508c9ed7f,,,,none,,
-{{PPBF_ORG_ID}},wti_83a896c1a5627b,wtp_9b58dd36ed3de0,3,defense,drl_8d011b7f8363d1,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_255a7c5de546e6,wtp_9b58dd36ed3de0,4,punch_integration,drl_e0a2911de03a1f,,,,none,,
-{{PPBF_ORG_ID}},wti_3e8c2f7d5d95ce,wtp_9e5cb1bf803a77,1,footwork,drl_49c71b45d2097d,,,,none,,
-{{PPBF_ORG_ID}},wti_46a907427970d6,wtp_9e5cb1bf803a77,2,head_movement,drl_93b6b459d53b7b,,,,none,,
-{{PPBF_ORG_ID}},wti_f14c388c8da88a,wtp_9e5cb1bf803a77,3,defense,drl_4f85b148d496cc,,,,none,,
-{{PPBF_ORG_ID}},wti_7361b53064825e,wtp_9e5cb1bf803a77,4,punch_integration,drl_995c01024b7fd1,,,,none,,
-{{PPBF_ORG_ID}},wti_11eb907bc27ad5,wtp_a64f28f2e6be20,1,footwork,drl_a950c60e0de90a,,,,none,,
-{{PPBF_ORG_ID}},wti_29b915e0f5a8ec,wtp_a64f28f2e6be20,2,head_movement,drl_5fff3b16444fa5,,,,none,,
-{{PPBF_ORG_ID}},wti_b039d324c26537,wtp_a64f28f2e6be20,3,defense,drl_32cfe738651ded,,,,none,,
-{{PPBF_ORG_ID}},wti_164207ac142026,wtp_a64f28f2e6be20,4,punch_integration,drl_11f147a5df7845,,,,none,,
-{{PPBF_ORG_ID}},wti_1a650f5f8f55f5,wtp_bdd47675cf7287,1,footwork,drl_166bb3f59507ae,,,,none,,
-{{PPBF_ORG_ID}},wti_f5a1eacd3051cd,wtp_bdd47675cf7287,2,head_movement,drl_fb2e0145f160f4,,,,none,,
-{{PPBF_ORG_ID}},wti_cbbb143d2253b5,wtp_bdd47675cf7287,3,defense,drl_bae5f9fe620c2e,,,,none,,
-{{PPBF_ORG_ID}},wti_5b34315f61fa59,wtp_bdd47675cf7287,4,punch_integration,drl_055c716f79cb4f,,,,none,,
-{{PPBF_ORG_ID}},wti_5c2808b6151545,wtp_ca3a759965b70e,1,footwork,drl_9bdfbd473dc228,,,,none,,
-{{PPBF_ORG_ID}},wti_9b4deb03677096,wtp_ca3a759965b70e,2,head_movement,drl_18ad51de202998,,,,none,,
-{{PPBF_ORG_ID}},wti_84eb3c45499359,wtp_ca3a759965b70e,3,defense,drl_4a9018cbe21dbc,,,,none,,
-{{PPBF_ORG_ID}},wti_cdd1c2ee8e45d0,wtp_ca3a759965b70e,4,punch_integration,drl_49d3280f9912bd,,,,none,,
-{{PPBF_ORG_ID}},wti_27396a83db5be3,wtp_cc785d0df234eb,1,footwork,drl_72553da2dda34f,,,,none,,
-{{PPBF_ORG_ID}},wti_df374a7d68783a,wtp_cc785d0df234eb,2,head_movement,drl_d56c3466c5fd96,,,,none,,
-{{PPBF_ORG_ID}},wti_dea375bb00806d,wtp_cc785d0df234eb,3,defense,drl_0cc5031949edc1,,,,none,,
-{{PPBF_ORG_ID}},wti_1e580362986973,wtp_cc785d0df234eb,4,punch_integration,drl_0f723715bf6176,,,,none,,
-{{PPBF_ORG_ID}},wti_c16e2150f722b1,wtp_cf6970627be24f,1,footwork,drl_65b9bb5fb0ae72,,,,none,,
-{{PPBF_ORG_ID}},wti_24a586a56f76fb,wtp_cf6970627be24f,2,head_movement,drl_16474d27ad2e2b,,,,none,,
-{{PPBF_ORG_ID}},wti_ef6d2604995bc7,wtp_cf6970627be24f,3,defense,drl_89000197ac8ac9,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_5616f4c34c412d,wtp_cf6970627be24f,4,punch_integration,drl_f8bc17e2f1477a,,,,none,,
-{{PPBF_ORG_ID}},wti_893e0067c4a61a,wtp_d8f361c63410ba,1,footwork,drl_e1d122595da5f1,,,,none,,
-{{PPBF_ORG_ID}},wti_c862b002b1a5b4,wtp_d8f361c63410ba,2,head_movement,drl_97147e99cea1e7,,,,none,,
-{{PPBF_ORG_ID}},wti_0b3955dc095755,wtp_d8f361c63410ba,3,defense,drl_8271fab3abbf1c,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_80e43e463c15a3,wtp_d8f361c63410ba,4,punch_integration,drl_a9e9c8e7a2519c,,,,none,,
-{{PPBF_ORG_ID}},wti_beb73da4336655,wtp_ea4de084d2b7b1,1,footwork,drl_248b0c4e9b65bb,,,,none,,
-{{PPBF_ORG_ID}},wti_07d5c1911e9fc8,wtp_ea4de084d2b7b1,2,head_movement,drl_b7fefd1d00bf64,,,,none,,
-{{PPBF_ORG_ID}},wti_b991025a431b6a,wtp_ea4de084d2b7b1,3,defense,drl_f06b8bfcc4e803,,,,none,,
-{{PPBF_ORG_ID}},wti_a451f7e3f99aef,wtp_ea4de084d2b7b1,4,punch_integration,drl_f11ebd617116c5,,,,none,,
-{{PPBF_ORG_ID}},wti_9158b3c44101b8,wtp_f3044ebd171ebc,1,footwork,drl_c2ebf0ee081771,,,,none,,
-{{PPBF_ORG_ID}},wti_a1ce3245f8acbc,wtp_f3044ebd171ebc,2,head_movement,drl_62a6b727b9d473,,,,light_technical,,
-{{PPBF_ORG_ID}},wti_d0a2787eb85ea8,wtp_f3044ebd171ebc,3,defense,drl_61f70e344129a1,,,,none,,
-{{PPBF_ORG_ID}},wti_0a3c1188cd78bc,wtp_f3044ebd171ebc,4,punch_integration,drl_eb11ff26841455,,,,none,,
-{{PPBF_ORG_ID}},wti_87263e5b61b300,wtp_f3d74ccca9cc85,1,observation,,Students engage in sparring observation to analyze technique application,,,none,,
-{{PPBF_ORG_ID}},wti_8b5024676bcbec,wtp_f3d74ccca9cc85,2,self_guided_workout,,Complete self-guided workouts reinforcing weekly themes,,,none,,
-{{PPBF_ORG_ID}},wti_96fa8da7c2a8b5,wtp_f3d74ccca9cc85,3,gym_service,,Perform gym service duties to build ownership and community responsibility,,,none,,
-{{PPBF_ORG_ID}},wti_baed76caca82ba,wtp_fa0957f2d3df40,1,footwork,drl_6e7f02beb67617,,,,none,,
-{{PPBF_ORG_ID}},wti_62a6eb6db019e8,wtp_fa0957f2d3df40,2,head_movement,drl_d4fcaf8feca2db,,,,none,,
-{{PPBF_ORG_ID}},wti_343c85592097ea,wtp_fa0957f2d3df40,3,defense,drl_a092995ff57bef,,,,none,,
-{{PPBF_ORG_ID}},wti_5a01048006c2f5,wtp_fa0957f2d3df40,4,punch_integration,drl_db6eb00e2893f6,,,,none,,
+organization_id,item_id,template_id,ordinal,block,drill_id,free_text_drill,duration_minutes,rep_count,contact_level,coach_note,scale_level,details
+{{PPBF_ORG_ID}},wti_78e9602c406a6f,wtp_216dfa4227233d,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_e90985cec0964e,wtp_216dfa4227233d,2,warmup,drl_f54d4fe102fb09,,4.0,,none,,,
+{{PPBF_ORG_ID}},wti_68e957176ace20,wtp_216dfa4227233d,3,technical,drl_9de5719225a39c,,7.0,,none,,,
+{{PPBF_ORG_ID}},wti_f7b4c65d8968b9,wtp_216dfa4227233d,4,technical,drl_7e09f9990ea721,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_351de79df647a0,wtp_216dfa4227233d,5,technical,drl_160ff16df2a668,,10.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_02857c31eb0775,wtp_216dfa4227233d,6,craft,drl_39ed71de8c14cd,,5.0,,none,,,
+{{PPBF_ORG_ID}},wti_0019a02fb90252,wtp_216dfa4227233d,7,cooldown,drl_325b6ba2613eb0,,5.0,,none,,,
+{{PPBF_ORG_ID}},wti_aea3e8a0772a07,wtp_98af8ee68020d0,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_25c92d8e809246,wtp_98af8ee68020d0,2,warmup,drl_0eaa11e875ffef,,5.0,,none,,,
+{{PPBF_ORG_ID}},wti_e017985851a067,wtp_98af8ee68020d0,3,technical,drl_b37c52526817b7,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_045afa54b1c47f,wtp_98af8ee68020d0,4,technical,drl_d79b33ee316e09,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_1562391052340b,wtp_98af8ee68020d0,5,technical,drl_4347e2c1a20806,,7.0,,none,,,
+{{PPBF_ORG_ID}},wti_fe5b9adfac3237,wtp_98af8ee68020d0,6,conditioning,drl_40acc6820f5df6,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_d1a39eb8c514cc,wtp_98af8ee68020d0,7,cooldown,drl_786d761c9321c0,,3.0,,none,,,
+{{PPBF_ORG_ID}},wti_09fd782404c42c,wtp_b35f1273aa79bd,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_9095043ce8557d,wtp_b35f1273aa79bd,2,warmup,drl_f54d4fe102fb09,,4.0,,none,,,
+{{PPBF_ORG_ID}},wti_f8011edc2fa3d1,wtp_b35f1273aa79bd,3,technical,drl_105923e88c4fff,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_77876c0bee587e,wtp_b35f1273aa79bd,4,technical,drl_160ff16df2a668,,10.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_08b846372f29e1,wtp_b35f1273aa79bd,5,technical,drl_45d9662ee44c36,,10.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_fa74233541c309,wtp_b35f1273aa79bd,6,technical,drl_a8fcfc8f0a4c63,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_80871fcbdacf7a,wtp_b35f1273aa79bd,7,cooldown,drl_325b6ba2613eb0,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_5f079f078097df,wtp_f35ff87b3529ab,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_c8e95d28f8255f,wtp_f35ff87b3529ab,2,warmup,drl_0eaa11e875ffef,,5.0,,none,,,
+{{PPBF_ORG_ID}},wti_7d1d0aa74c96aa,wtp_f35ff87b3529ab,3,technical,drl_087353a71f3b4e,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_881aa05c7ef2d6,wtp_f35ff87b3529ab,4,technical,drl_1d6e36f12d7c87,,8.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_eab4ba321fe62f,wtp_f35ff87b3529ab,5,technical,drl_e0428b3066b8c2,,10.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_92137dc9b59f96,wtp_f35ff87b3529ab,6,technical,drl_c339eeabf109d4,,8.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_fed770855af0c4,wtp_f35ff87b3529ab,7,conditioning,drl_ee5abe0d5aa056,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_3c5f68695e853a,wtp_f35ff87b3529ab,8,cooldown,drl_786d761c9321c0,,5.0,,none,,,
+{{PPBF_ORG_ID}},wti_1504c3354fd974,wtp_e3c1f50475379b,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_a32b9ef6e79e46,wtp_e3c1f50475379b,2,warmup,drl_f54d4fe102fb09,,4.0,,none,,,
+{{PPBF_ORG_ID}},wti_c9548d5c992431,wtp_e3c1f50475379b,3,technical,drl_3e2e2cb0a54792,,12.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_9432a179365001,wtp_e3c1f50475379b,4,technical,drl_3554c55ab8b584,,12.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_8f970d10baccee,wtp_e3c1f50475379b,5,technical,drl_4700995bab7b07,,10.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_262b242a56243c,wtp_e3c1f50475379b,6,bagwork,drl_b755caac79e37e,,8.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_02b6f2088ec533,wtp_e3c1f50475379b,7,cooldown,drl_325b6ba2613eb0,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_63901bbb89eb4d,wtp_46173e84b09d7c,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_faabda6117ba8b,wtp_46173e84b09d7c,2,technical,drl_7e09f9990ea721,,5.0,,none,,,
+{{PPBF_ORG_ID}},wti_5fdebdd5d33097,wtp_46173e84b09d7c,3,defense,drl_2713ad55cfcbf0,,10.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_bfbc65beca8ba1,wtp_46173e84b09d7c,4,defense,drl_badeec66ed769d,,8.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_8ae81213d2cec0,wtp_46173e84b09d7c,5,defense,drl_464b8ff7d556f9,,10.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_6045605db77dcb,wtp_46173e84b09d7c,6,defense,drl_87d9424cc9f2a3,,8.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_75b1b8d35116b1,wtp_46173e84b09d7c,7,cooldown,drl_786d761c9321c0,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_077682ea752ce0,wtp_1123d6411a2e60,1,warmup,drl_dbb0347500e7eb,,10.0,,none,,,
+{{PPBF_ORG_ID}},wti_3e8d42f0a997a9,wtp_1123d6411a2e60,2,craft,drl_39ed71de8c14cd,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_acd28b0962db2b,wtp_1123d6411a2e60,3,partner,drl_e1f757f0c3e703,,4.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_6d09dc4e3a6237,wtp_1123d6411a2e60,4,partner,drl_cb54d49d71c270,,4.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_f8200bc7f5d562,wtp_1123d6411a2e60,5,sparring,drl_31f81811de1b2f,,,,controlled_sparring,Coach sets contact volume in person. This system prescribes none.,,
+{{PPBF_ORG_ID}},wti_d3db70b0a6051f,wtp_1123d6411a2e60,6,sparring,drl_d305c9e9ba7ddd,,,,controlled_sparring,Coach sets contact volume in person. This system prescribes none.,,
+{{PPBF_ORG_ID}},wti_f6bbef488f9768,wtp_1123d6411a2e60,7,film,drl_367b662564784e,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_dd2f7aab619fe3,wtp_1123d6411a2e60,8,cooldown,drl_325b6ba2613eb0,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_78ab339eddd9ba,wtp_f4f4d54c39a219,1,warmup,drl_f54d4fe102fb09,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_f2a72eddb00630,wtp_f4f4d54c39a219,2,warmup,drl_61ef34ab64a92c,,4.0,,none,,,
+{{PPBF_ORG_ID}},wti_7e24da14d7847d,wtp_f4f4d54c39a219,3,technical,drl_b761c27849920e,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_e0587aca344b63,wtp_f4f4d54c39a219,4,technical,drl_7908566cc70d14,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_ad09b47656c36c,wtp_f4f4d54c39a219,5,technical,drl_af8541eacc70e5,,12.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_abe6b524f14197,wtp_f4f4d54c39a219,6,cooldown,drl_786d761c9321c0,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_4278d888911e75,wtp_cfb86f25abfa16,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_e2b559771185ea,wtp_cfb86f25abfa16,2,conditioning,drl_40acc6820f5df6,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_4d4ddb0dc8da8a,wtp_cfb86f25abfa16,3,technical,drl_146f4afdc88839,,10.0,,none,,,
+{{PPBF_ORG_ID}},wti_9069bedaf93ee0,wtp_cfb86f25abfa16,4,conditioning,drl_681a54fa579bb1,,14.0,,none,,,
+{{PPBF_ORG_ID}},wti_ae2be35208d10e,wtp_cfb86f25abfa16,5,cooldown,drl_325b6ba2613eb0,,7.0,,none,,,
+{{PPBF_ORG_ID}},wti_edb64ee2c69395,wtp_7d4394c5d4fe32,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_189636960f8560,wtp_7d4394c5d4fe32,2,strength,drl_7b05e2c6d49010,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_6c834ff2a46749,wtp_7d4394c5d4fe32,3,strength,drl_f84ea554b6aae6,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_91b78a7c37d670,wtp_7d4394c5d4fe32,4,strength,drl_8549299fc8d8c7,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_d4e23e4abad914,wtp_7d4394c5d4fe32,5,strength,drl_f472a511f53d54,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_0d0d8b5513831e,wtp_7d4394c5d4fe32,6,power,drl_129b59c4f4dd76,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_a769a4f44ce7f7,wtp_7d4394c5d4fe32,7,cooldown,drl_786d761c9321c0,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_058a3d007fc8b7,wtp_d15fb20ba517cf,1,warmup,drl_dbb0347500e7eb,,10.0,,none,,,
+{{PPBF_ORG_ID}},wti_43b20af4e134ac,wtp_d15fb20ba517cf,2,technical,drl_81c1dc6ae59852,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_fbf683d2c52c27,wtp_d15fb20ba517cf,3,technical,drl_006134ad264754,,10.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_5b90624645d41d,wtp_d15fb20ba517cf,4,technical,drl_c8fa1590a8649a,,8.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_6626b1b0986002,wtp_d15fb20ba517cf,5,tactical,drl_b2fcf989112703,,,,conditioned,Coach sets contact volume in person. This system prescribes none.,,
+{{PPBF_ORG_ID}},wti_49d67cfd328bf4,wtp_d15fb20ba517cf,6,film,drl_1f5bf3a2ca967b,,10.0,,none,,,
+{{PPBF_ORG_ID}},wti_2a87550c08a126,wtp_d15fb20ba517cf,7,cooldown,drl_786d761c9321c0,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_6fbda8dbb310f9,wtp_ff74bd014f77b2,1,warmup,drl_dbb0347500e7eb,,8.0,,none,,,
+{{PPBF_ORG_ID}},wti_a7460d2c6be1f2,wtp_ff74bd014f77b2,2,technical,drl_c256be2f4f5fab,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_9785b5a9e42a9e,wtp_ff74bd014f77b2,3,technical,drl_4347e2c1a20806,,7.0,,none,,,
+{{PPBF_ORG_ID}},wti_abcfaa03d6bf94,wtp_ff74bd014f77b2,4,technical,drl_160ff16df2a668,,8.0,,light_technical,,,
+{{PPBF_ORG_ID}},wti_0eb9ea1b514794,wtp_ff74bd014f77b2,5,conditioning,drl_b67ee94d958d32,,6.0,,none,,,
+{{PPBF_ORG_ID}},wti_04f25e79f58980,wtp_ff74bd014f77b2,6,cooldown,drl_325b6ba2613eb0,,5.0,,none,,,
+{{PPBF_ORG_ID}},wti_eee36de327fa02,wtp_043d0076448e51,1,footwork,drl_f71c195e47aed4,,,,none,,,
+{{PPBF_ORG_ID}},wti_a6e2e08bfa6204,wtp_043d0076448e51,2,head_movement,drl_f2457106a9a74e,,,,none,,,
+{{PPBF_ORG_ID}},wti_ca577ad5cd3ac4,wtp_043d0076448e51,3,defense,drl_6bb81739aa4d60,,,,none,,,
+{{PPBF_ORG_ID}},wti_17b5cb1cabfae2,wtp_043d0076448e51,4,punch_integration,drl_9356b87b9bb495,,,,none,,,
+{{PPBF_ORG_ID}},wti_20acbc3f14e92a,wtp_0e197b7b863cbc,1,footwork,drl_791571e22b71a6,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_5031f158c4e4bd,wtp_0e197b7b863cbc,2,head_movement,drl_05fefb0dde0a32,,,,none,,,
+{{PPBF_ORG_ID}},wti_c6cc15d111e00f,wtp_0e197b7b863cbc,3,defense,drl_eb7919f3d68eee,,,,none,,,
+{{PPBF_ORG_ID}},wti_9f11f12066ee1e,wtp_0e197b7b863cbc,4,punch_integration,drl_49210628cd02c5,,,,none,,,
+{{PPBF_ORG_ID}},wti_2c0b6e29c3f1e4,wtp_11b682b96a73c4,1,footwork,drl_c4f9950bffb389,,,,none,,,
+{{PPBF_ORG_ID}},wti_bf66f5860ba9aa,wtp_11b682b96a73c4,2,head_movement,drl_2970403ca76ea3,,,,none,,,
+{{PPBF_ORG_ID}},wti_50cea7326d19b0,wtp_11b682b96a73c4,3,defense,drl_7c4bb31c9915ba,,,,none,,,
+{{PPBF_ORG_ID}},wti_8a3163668c81ef,wtp_11b682b96a73c4,4,punch_integration,drl_8f1212cd382918,,,,none,,,
+{{PPBF_ORG_ID}},wti_e2e404b045edde,wtp_17da22ddb29563,1,footwork,drl_9355e97d01bc0e,,,,none,,,
+{{PPBF_ORG_ID}},wti_090d79e16110a1,wtp_17da22ddb29563,2,head_movement,drl_a00981153c82f6,,,,none,,,
+{{PPBF_ORG_ID}},wti_bf0850c185c43a,wtp_17da22ddb29563,3,defense,drl_0b1820269d1cab,,,,none,,,
+{{PPBF_ORG_ID}},wti_00ad745c62df7e,wtp_17da22ddb29563,4,punch_integration,drl_3e601393f0859c,,,,none,,,
+{{PPBF_ORG_ID}},wti_153c82de23afad,wtp_2baa98806e5a72,1,footwork,drl_5fa9e2642be19e,,,,none,,,
+{{PPBF_ORG_ID}},wti_320078701acd7f,wtp_2baa98806e5a72,2,head_movement,drl_dd6d717a1e0b84,,,,none,,,
+{{PPBF_ORG_ID}},wti_1552eb1531e3c1,wtp_2baa98806e5a72,3,defense,drl_ab12445c3cca05,,,,none,,,
+{{PPBF_ORG_ID}},wti_3077e3f01afd5b,wtp_2baa98806e5a72,4,punch_integration,drl_3e747059993bbb,,,,none,,,
+{{PPBF_ORG_ID}},wti_9e507070e5629c,wtp_33f6ca0b7eef2f,1,footwork,drl_a275f9fb6f9811,,,,none,,,
+{{PPBF_ORG_ID}},wti_850e3e19666f25,wtp_33f6ca0b7eef2f,2,head_movement,drl_08964a9e5da8b4,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_b4b717b9c27556,wtp_33f6ca0b7eef2f,3,defense,drl_2e88d61ccab1ed,,,,none,,,
+{{PPBF_ORG_ID}},wti_53f7be1fbc644c,wtp_33f6ca0b7eef2f,4,punch_integration,drl_4a85860cb53e1c,,,,none,,,
+{{PPBF_ORG_ID}},wti_5120e1f54a9186,wtp_347517fe8ee3ff,1,footwork,drl_7a34dfdf933016,,,,none,,,
+{{PPBF_ORG_ID}},wti_f40f051ae105d4,wtp_347517fe8ee3ff,2,head_movement,drl_7a4ff70fc0fe8c,,,,none,,,
+{{PPBF_ORG_ID}},wti_b2fba9eeddcc48,wtp_347517fe8ee3ff,3,defense,drl_0d245008a3bc3a,,,,none,,,
+{{PPBF_ORG_ID}},wti_5120748a8da52b,wtp_347517fe8ee3ff,4,punch_integration,drl_d99734578fa40b,,,,none,,,
+{{PPBF_ORG_ID}},wti_2dbf8d4b3a258e,wtp_384fff166cd68c,1,footwork,drl_e18c98d4d8a79d,,,,none,,,
+{{PPBF_ORG_ID}},wti_e14ddf87c057dc,wtp_384fff166cd68c,2,head_movement,drl_2bc36663440bcc,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_e663d11452f848,wtp_384fff166cd68c,3,defense,drl_c08aba5603edbb,,,,none,,,
+{{PPBF_ORG_ID}},wti_35a33e099be206,wtp_384fff166cd68c,4,punch_integration,drl_1bb75a746b9006,,,,none,,,
+{{PPBF_ORG_ID}},wti_d8d3a6d568458f,wtp_3d6e094c504fb9,1,footwork,drl_9a7d4a896bd9b9,,,,none,,,
+{{PPBF_ORG_ID}},wti_62faf998a3997d,wtp_3d6e094c504fb9,2,head_movement,drl_07b7cfec78e65f,,,,none,,,
+{{PPBF_ORG_ID}},wti_9c2c55c3344e1b,wtp_3d6e094c504fb9,3,defense,drl_1f477ccb45843a,,,,none,,,
+{{PPBF_ORG_ID}},wti_6b967ba454991b,wtp_3d6e094c504fb9,4,punch_integration,drl_b4b28995635fa1,,,,none,,,
+{{PPBF_ORG_ID}},wti_bad62fde4da9af,wtp_3d74a55428befe,1,footwork,drl_80d84e68fc04c3,,,,none,,,
+{{PPBF_ORG_ID}},wti_23c8854382913e,wtp_3d74a55428befe,2,head_movement,drl_989a9ccf4d20d5,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_56452b74cb7f3d,wtp_3d74a55428befe,3,defense,drl_75f1fbf4b9b6e7,,,,none,,,
+{{PPBF_ORG_ID}},wti_15018a2f2dc74c,wtp_3d74a55428befe,4,punch_integration,drl_2c47bf50f3319c,,,,none,,,
+{{PPBF_ORG_ID}},wti_5606a6a7331b33,wtp_3f6573472c50c7,1,footwork,drl_f2ae3305eecbd3,,,,none,,,
+{{PPBF_ORG_ID}},wti_61fc5cc6e50bd2,wtp_3f6573472c50c7,2,head_movement,drl_93e4dd386a5d09,,,,none,,,
+{{PPBF_ORG_ID}},wti_d3483eb9963bb3,wtp_3f6573472c50c7,3,defense,drl_6a6ba18e74cd8c,,,,none,,,
+{{PPBF_ORG_ID}},wti_3554d5ac257db5,wtp_3f6573472c50c7,4,punch_integration,drl_933367020418fa,,,,none,,,
+{{PPBF_ORG_ID}},wti_e95b9c959a9c60,wtp_527f1449cd956f,1,footwork,drl_9dc8b5c81e03e4,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_3958b571678ff4,wtp_527f1449cd956f,2,head_movement,drl_e495a9def1d069,,,,none,,,
+{{PPBF_ORG_ID}},wti_918fdc9889c1ca,wtp_527f1449cd956f,3,defense,drl_11c347a25d9617,,,,none,,,
+{{PPBF_ORG_ID}},wti_2411f1a200cd2c,wtp_527f1449cd956f,4,punch_integration,drl_4a209e8e7cd9ec,,,,none,,,
+{{PPBF_ORG_ID}},wti_07dcc5ede8d4cd,wtp_5a7345ebcdcd9f,1,footwork,drl_b48b377e96a343,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_839d334f7ead7c,wtp_5a7345ebcdcd9f,2,head_movement,drl_a44d9edc222c13,,,,none,,,
+{{PPBF_ORG_ID}},wti_6d57418c09603b,wtp_5a7345ebcdcd9f,3,defense,drl_91f86714f57d30,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_75f32a4fdde59f,wtp_5a7345ebcdcd9f,4,punch_integration,drl_5590822eb50ace,,,,none,,,
+{{PPBF_ORG_ID}},wti_b9cc7cf1cb1a10,wtp_653790590ad56c,1,footwork,drl_7ef4b989d58c04,,,,none,,,
+{{PPBF_ORG_ID}},wti_eb51dc8bd18d5b,wtp_653790590ad56c,2,head_movement,drl_df744af9260a5c,,,,none,,,
+{{PPBF_ORG_ID}},wti_5fe8936f852f01,wtp_653790590ad56c,3,defense,drl_cd0114f916e5a9,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_c54df91d889dd3,wtp_653790590ad56c,4,punch_integration,drl_6f381ad3920e1c,,,,none,,,
+{{PPBF_ORG_ID}},wti_2c22883403287e,wtp_65439423f35fe1,1,footwork,drl_9851444d9d672e,,,,none,,,
+{{PPBF_ORG_ID}},wti_95f5d33c0c4799,wtp_65439423f35fe1,2,head_movement,drl_4e41b10b1ff929,,,,none,,,
+{{PPBF_ORG_ID}},wti_545e326b45f9f9,wtp_65439423f35fe1,3,defense,drl_8a98f90d1aae77,,,,none,,,
+{{PPBF_ORG_ID}},wti_1e0d1ced55565f,wtp_65439423f35fe1,4,punch_integration,drl_3b3138da14a69c,,,,none,,,
+{{PPBF_ORG_ID}},wti_1622309c7d749e,wtp_65be8484440820,1,footwork,drl_fa246bf3c4e076,,,,none,,,
+{{PPBF_ORG_ID}},wti_868532238afb21,wtp_65be8484440820,2,head_movement,drl_ce5c7d3a093716,,,,none,,,
+{{PPBF_ORG_ID}},wti_40a7e593160f1b,wtp_65be8484440820,3,defense,drl_41d9f3ac453d89,,,,none,,,
+{{PPBF_ORG_ID}},wti_1d27fef399cadc,wtp_65be8484440820,4,punch_integration,drl_579f4c574ff8bb,,,,none,,,
+{{PPBF_ORG_ID}},wti_e8ca1e55f6091e,wtp_7b6f797329d91b,1,footwork,drl_3c101d81e1d371,,,,none,,,
+{{PPBF_ORG_ID}},wti_ab54dc3d9f6ada,wtp_7b6f797329d91b,2,head_movement,drl_56ad4892501e40,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_4763faaceada9d,wtp_7b6f797329d91b,3,defense,drl_5be76200976f7b,,,,none,,,
+{{PPBF_ORG_ID}},wti_fa83a16cf11059,wtp_7b6f797329d91b,4,punch_integration,drl_6a469dc081920c,,,,none,,,
+{{PPBF_ORG_ID}},wti_9200ea9b827076,wtp_7f86a79e132aaf,1,footwork,drl_e536331dccd8bd,,,,none,,,
+{{PPBF_ORG_ID}},wti_b6bb26bea0030a,wtp_7f86a79e132aaf,2,head_movement,drl_fd8ab0a761b558,,,,none,,,
+{{PPBF_ORG_ID}},wti_195870f205487c,wtp_7f86a79e132aaf,3,defense,drl_ed932ad70b5cd6,,,,none,,,
+{{PPBF_ORG_ID}},wti_5af9457ff4b5b4,wtp_7f86a79e132aaf,4,punch_integration,drl_0190c8c74acccc,,,,none,,,
+{{PPBF_ORG_ID}},wti_d931777e90bb6c,wtp_7f959c8afe1f72,1,footwork,drl_21471eb3988596,,,,none,,,
+{{PPBF_ORG_ID}},wti_9c1e1ce2936582,wtp_7f959c8afe1f72,2,head_movement,drl_8bfd233f9969e9,,,,none,,,
+{{PPBF_ORG_ID}},wti_397bb6b1a2fcc4,wtp_7f959c8afe1f72,3,defense,drl_af75f1ba763c5e,,,,none,,,
+{{PPBF_ORG_ID}},wti_a1e183024a1b9b,wtp_7f959c8afe1f72,4,punch_integration,drl_4b30970a2f41f2,,,,none,,,
+{{PPBF_ORG_ID}},wti_d40fd87fcb8103,wtp_7fae0e467ff5aa,1,footwork,drl_e07eed95574f39,,,,none,,,
+{{PPBF_ORG_ID}},wti_9cbca2e18ebb71,wtp_7fae0e467ff5aa,2,head_movement,drl_3137281f565d1e,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_63deaf72541bea,wtp_7fae0e467ff5aa,3,defense,drl_2ae484acae2fb7,,,,none,,,
+{{PPBF_ORG_ID}},wti_8b7d7cb09c4728,wtp_7fae0e467ff5aa,4,punch_integration,drl_ad47e3f2a65147,,,,none,,,
+{{PPBF_ORG_ID}},wti_8093d19aef1e79,wtp_8b0f1757660821,1,footwork,drl_43056d78bdaaac,,,,none,,,
+{{PPBF_ORG_ID}},wti_3725f5e25c3db8,wtp_8b0f1757660821,2,head_movement,drl_7484b6c7469a54,,,,none,,,
+{{PPBF_ORG_ID}},wti_90369266202434,wtp_8b0f1757660821,3,defense,drl_5c8883024d9b0f,,,,none,,,
+{{PPBF_ORG_ID}},wti_8f47c7252cd400,wtp_8b0f1757660821,4,punch_integration,drl_25034a26c6d63a,,,,none,,,
+{{PPBF_ORG_ID}},wti_2fd4a20192e566,wtp_9b58dd36ed3de0,1,footwork,drl_c03f5a5387fef1,,,,none,,,
+{{PPBF_ORG_ID}},wti_54885f4ed66cad,wtp_9b58dd36ed3de0,2,head_movement,drl_f86bf508c9ed7f,,,,none,,,
+{{PPBF_ORG_ID}},wti_83a896c1a5627b,wtp_9b58dd36ed3de0,3,defense,drl_8d011b7f8363d1,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_255a7c5de546e6,wtp_9b58dd36ed3de0,4,punch_integration,drl_e0a2911de03a1f,,,,none,,,
+{{PPBF_ORG_ID}},wti_3e8c2f7d5d95ce,wtp_9e5cb1bf803a77,1,footwork,drl_49c71b45d2097d,,,,none,,,
+{{PPBF_ORG_ID}},wti_46a907427970d6,wtp_9e5cb1bf803a77,2,head_movement,drl_93b6b459d53b7b,,,,none,,,
+{{PPBF_ORG_ID}},wti_f14c388c8da88a,wtp_9e5cb1bf803a77,3,defense,drl_4f85b148d496cc,,,,none,,,
+{{PPBF_ORG_ID}},wti_7361b53064825e,wtp_9e5cb1bf803a77,4,punch_integration,drl_995c01024b7fd1,,,,none,,,
+{{PPBF_ORG_ID}},wti_11eb907bc27ad5,wtp_a64f28f2e6be20,1,footwork,drl_a950c60e0de90a,,,,none,,,
+{{PPBF_ORG_ID}},wti_29b915e0f5a8ec,wtp_a64f28f2e6be20,2,head_movement,drl_5fff3b16444fa5,,,,none,,,
+{{PPBF_ORG_ID}},wti_b039d324c26537,wtp_a64f28f2e6be20,3,defense,drl_32cfe738651ded,,,,none,,,
+{{PPBF_ORG_ID}},wti_164207ac142026,wtp_a64f28f2e6be20,4,punch_integration,drl_11f147a5df7845,,,,none,,,
+{{PPBF_ORG_ID}},wti_1a650f5f8f55f5,wtp_bdd47675cf7287,1,footwork,drl_166bb3f59507ae,,,,none,,,
+{{PPBF_ORG_ID}},wti_f5a1eacd3051cd,wtp_bdd47675cf7287,2,head_movement,drl_fb2e0145f160f4,,,,none,,,
+{{PPBF_ORG_ID}},wti_cbbb143d2253b5,wtp_bdd47675cf7287,3,defense,drl_bae5f9fe620c2e,,,,none,,,
+{{PPBF_ORG_ID}},wti_5b34315f61fa59,wtp_bdd47675cf7287,4,punch_integration,drl_055c716f79cb4f,,,,none,,,
+{{PPBF_ORG_ID}},wti_5c2808b6151545,wtp_ca3a759965b70e,1,footwork,drl_9bdfbd473dc228,,,,none,,,
+{{PPBF_ORG_ID}},wti_9b4deb03677096,wtp_ca3a759965b70e,2,head_movement,drl_18ad51de202998,,,,none,,,
+{{PPBF_ORG_ID}},wti_84eb3c45499359,wtp_ca3a759965b70e,3,defense,drl_4a9018cbe21dbc,,,,none,,,
+{{PPBF_ORG_ID}},wti_cdd1c2ee8e45d0,wtp_ca3a759965b70e,4,punch_integration,drl_49d3280f9912bd,,,,none,,,
+{{PPBF_ORG_ID}},wti_27396a83db5be3,wtp_cc785d0df234eb,1,footwork,drl_72553da2dda34f,,,,none,,,
+{{PPBF_ORG_ID}},wti_df374a7d68783a,wtp_cc785d0df234eb,2,head_movement,drl_d56c3466c5fd96,,,,none,,,
+{{PPBF_ORG_ID}},wti_dea375bb00806d,wtp_cc785d0df234eb,3,defense,drl_0cc5031949edc1,,,,none,,,
+{{PPBF_ORG_ID}},wti_1e580362986973,wtp_cc785d0df234eb,4,punch_integration,drl_0f723715bf6176,,,,none,,,
+{{PPBF_ORG_ID}},wti_c16e2150f722b1,wtp_cf6970627be24f,1,footwork,drl_65b9bb5fb0ae72,,,,none,,,
+{{PPBF_ORG_ID}},wti_24a586a56f76fb,wtp_cf6970627be24f,2,head_movement,drl_16474d27ad2e2b,,,,none,,,
+{{PPBF_ORG_ID}},wti_ef6d2604995bc7,wtp_cf6970627be24f,3,defense,drl_89000197ac8ac9,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_5616f4c34c412d,wtp_cf6970627be24f,4,punch_integration,drl_f8bc17e2f1477a,,,,none,,,
+{{PPBF_ORG_ID}},wti_893e0067c4a61a,wtp_d8f361c63410ba,1,footwork,drl_e1d122595da5f1,,,,none,,,
+{{PPBF_ORG_ID}},wti_c862b002b1a5b4,wtp_d8f361c63410ba,2,head_movement,drl_97147e99cea1e7,,,,none,,,
+{{PPBF_ORG_ID}},wti_0b3955dc095755,wtp_d8f361c63410ba,3,defense,drl_8271fab3abbf1c,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_80e43e463c15a3,wtp_d8f361c63410ba,4,punch_integration,drl_a9e9c8e7a2519c,,,,none,,,
+{{PPBF_ORG_ID}},wti_beb73da4336655,wtp_ea4de084d2b7b1,1,footwork,drl_248b0c4e9b65bb,,,,none,,,
+{{PPBF_ORG_ID}},wti_07d5c1911e9fc8,wtp_ea4de084d2b7b1,2,head_movement,drl_b7fefd1d00bf64,,,,none,,,
+{{PPBF_ORG_ID}},wti_b991025a431b6a,wtp_ea4de084d2b7b1,3,defense,drl_f06b8bfcc4e803,,,,none,,,
+{{PPBF_ORG_ID}},wti_a451f7e3f99aef,wtp_ea4de084d2b7b1,4,punch_integration,drl_f11ebd617116c5,,,,none,,,
+{{PPBF_ORG_ID}},wti_9158b3c44101b8,wtp_f3044ebd171ebc,1,footwork,drl_c2ebf0ee081771,,,,none,,,
+{{PPBF_ORG_ID}},wti_a1ce3245f8acbc,wtp_f3044ebd171ebc,2,head_movement,drl_62a6b727b9d473,,,,light_technical,,,
+{{PPBF_ORG_ID}},wti_d0a2787eb85ea8,wtp_f3044ebd171ebc,3,defense,drl_61f70e344129a1,,,,none,,,
+{{PPBF_ORG_ID}},wti_0a3c1188cd78bc,wtp_f3044ebd171ebc,4,punch_integration,drl_eb11ff26841455,,,,none,,,
+{{PPBF_ORG_ID}},wti_87263e5b61b300,wtp_f3d74ccca9cc85,1,observation,,Students engage in sparring observation to analyze technique application,,,none,,,
+{{PPBF_ORG_ID}},wti_8b5024676bcbec,wtp_f3d74ccca9cc85,2,self_guided_workout,,Complete self-guided workouts reinforcing weekly themes,,,none,,,
+{{PPBF_ORG_ID}},wti_96fa8da7c2a8b5,wtp_f3d74ccca9cc85,3,gym_service,,Perform gym service duties to build ownership and community responsibility,,,none,,,
+{{PPBF_ORG_ID}},wti_baed76caca82ba,wtp_fa0957f2d3df40,1,footwork,drl_6e7f02beb67617,,,,none,,,
+{{PPBF_ORG_ID}},wti_62a6eb6db019e8,wtp_fa0957f2d3df40,2,head_movement,drl_d4fcaf8feca2db,,,,none,,,
+{{PPBF_ORG_ID}},wti_343c85592097ea,wtp_fa0957f2d3df40,3,defense,drl_a092995ff57bef,,,,none,,,
+{{PPBF_ORG_ID}},wti_5a01048006c2f5,wtp_fa0957f2d3df40,4,punch_integration,drl_db6eb00e2893f6,,,,none,,,
+{{PPBF_ORG_ID}},wti_3fa2b4c0845400,wtp_0053dde5c924db,1,cooldown,,Easy movement until HR is below 120,,,none,,,"{""phase"":""1. Active recovery"",""time"":""5 min""}"
+{{PPBF_ORG_ID}},wti_121dd32854cafe,wtp_0053dde5c924db,2,cooldown,,"Hip flexors, adductors, thoracic spine, shoulders, calves — held 30 s each",,,none,,,"{""phase"":""2. Mobility"",""time"":""3 min""}"
+{{PPBF_ORG_ID}},wti_e82fb3c3c2de0d,wtp_0053dde5c924db,3,cooldown,,"4-2-6 diaphragmatic pattern. This is mental-skills training, not filler",,,none,,,"{""phase"":""3. Breathing"",""time"":""2 min""}"
+{{PPBF_ORG_ID}},wti_bedbacedffbe39,wtp_0053dde5c924db,4,cooldown,,Within 60–90 min: 0.3–0.4 g/kg protein + 1.0–1.2 g/kg carbohydrate,,,none,,,"{""phase"":""4. Nutrition"",""time"":""—""}"
+{{PPBF_ORG_ID}},wti_00c0786c6387b2,wtp_0053dde5c924db,5,cooldown,,"RPE, duration, sparring rounds and stage, head-impact score, pain, one technical note",,,none,,,"{""phase"":""5. Log"",""time"":""1 min""}"
+{{PPBF_ORG_ID}},wti_64db0fdbedc161,wtp_0053dde5c924db,6,cooldown,,After any session with head contact. Non-negotiable,,,none,,,"{""phase"":""6. Symptom screen"",""time"":""—""}"
+{{PPBF_ORG_ID}},wti_a8cfbb489c6f2f,wtp_0053dde5c924db,7,cooldown,,Evaluate → Reset,,,none,,,"{""changed_by"":""Jason 2026-11-01 (D-PK69-5)"",""owner_source"":""DOC-027 (Punxsy Master Source Manual v1, Boxing Workflow v4 Core, 10. Session template)"",""timing"":""inside the cool-down's 8–10 minutes, beside its log; no Long Road minutes change"",""within_item_id"":""wti_00c0786c6387b2""}"
+{{PPBF_ORG_ID}},wti_a8d2a861676298,wtp_01de3f48606d4c,1,warmup,,5 min easy → 5 × 20 s progressive builds with 60 s easy → 2 × 5 s at maximum,,,none,,,"{""phase"":""Warm-up"",""time"":""15 min""}"
+{{PPBF_ORG_ID}},wti_a8910beddc8abb,wtp_01de3f48606d4c,2,conditioning,drl_dbe3f9dd2d62cc,"4–6 × 30 s maximal, 3–4 min recovery",,,none,,,"{""phase"":""Main set"",""time"":""20–24 min""}"
+{{PPBF_ORG_ID}},wti_0120cda2b86f5d,wtp_01de3f48606d4c,3,cooldown,,"Easy until HR <120, then mobility",,,none,,,"{""phase"":""Cool-down"",""time"":""8 min""}"
+{{PPBF_ORG_ID}},wti_dd16704982ab11,wtp_01de3f48606d4c,4,cooldown,,"Speed or power at 7 s, 17 s, 27 s of each rep",,,none,,,"{""phase"":""Record"",""time"":""—""}"
+{{PPBF_ORG_ID}},wti_2d512b759563f2,wtp_01de3f48606d4c,5,warmup,,fresh technical check,,,none,,,"{""changed_by"":""Jason 2026-11-02 (D-PK73-3)"",""owner_source"":""DOC-072 (Pro Boxing Skill System Master Registry, Workout_Map W-PHYS-01-C), column 'Rounds'"",""timing"":""at the end of the warm-up, before the main set; no Long Road minutes change"",""within_item_id"":""wti_a8d2a861676298""}"
+{{PPBF_ORG_ID}},wti_cf645117976b5e,wtp_01de3f48606d4c,6,conditioning,,same technical check; first-failure log; regression note,,,none,,,"{""changed_by"":""Jason 2026-11-02 (D-PK73-3)"",""owner_source"":""DOC-072 (Pro Boxing Skill System Master Registry, Workout_Map W-PHYS-01-C), column 'Rounds'"",""timing"":""straight after the main set, before the cool-down; no Long Road minutes change"",""within_item_id"":""wti_a8910beddc8abb""}"
+{{PPBF_ORG_ID}},wti_e5b8a0d3e6d5fa,wtp_040289603033b6,1,warmup,,Extended warm-up,15,,none,,,"{""block_time"":""15 min"",""plan_items"":[""Including progressive punching intensity and cervical pre-activation""]}"
+{{PPBF_ORG_ID}},wti_d08b64218acc48,wtp_040289603033b6,2,craft,,Agreement,2,,none,,,"{""block_time"":""2 min"",""plan_items"":[""Intensity stated aloud, objectives stated, stop signal agreed""]}"
+{{PPBF_ORG_ID}},wti_5eed8da8ab865e,wtp_040289603033b6,3,sparring,,Sparring,,,controlled_sparring,,,"{""block_time"":""30 min"",""duration_minutes"":30,""plan_items"":[""6 × 2 min at 50–60%, 1 min intervals with 15 s coach / 15 s boxer debrief""]}"
+{{PPBF_ORG_ID}},wti_bbc23554a406b9,wtp_040289603033b6,4,technical,,Post-sparring specific,15,,none,,,"{""block_time"":""15 min"",""plan_items"":[""The single biggest error, drilled immediately on pads or bag""]}"
+{{PPBF_ORG_ID}},wti_174f4859fb3889,wtp_040289603033b6,5,cooldown,,Cool-down + symptom screen + log,13,,none,,,"{""block_time"":""13 min"",""plan_items"":[""Symptom screen is not optional""]}"
+{{PPBF_ORG_ID}},wti_120a08f5821074,wtp_080c41583b3757,1,warmup,,Warm-up + robustness circuit,15,,none,,,"{""plan_items"":[""Standard + cervical + shoulder + thoracic""]}"
+{{PPBF_ORG_ID}},wti_74f3f2ca51c945,wtp_080c41583b3757,2,technical,,Refinement,20,,none,,,"{""plan_items"":[""Existing skill with variability. Partner-fed pads, unpredictable""]}"
+{{PPBF_ORG_ID}},wti_c5b7ed2896317d,wtp_080c41583b3757,3,sparring,,Constrained live,,,controlled_sparring,,,"{""duration_minutes"":25,""plan_items"":[""6 × 2 min with a single constraint targeting this block’s objective""]}"
+{{PPBF_ORG_ID}},wti_9046c62e228f0d,wtp_080c41583b3757,4,technical,,Signature sequence work,15,,none,,,"{""plan_items"":[""The 3–5 sequences, at speed, on pads and bag""]}"
+{{PPBF_ORG_ID}},wti_6a2725db26f022,wtp_080c41583b3757,5,bagwork,,Bag with KPIs,12,,none,,,"{""plan_items"":[""4 × 2 min, each round with a scored constraint""]}"
+{{PPBF_ORG_ID}},wti_2901fafcba3192,wtp_080c41583b3757,6,cooldown,,Cool-down + log,8,,none,,,"{""plan_items"":[]}"
+{{PPBF_ORG_ID}},wti_6a39c3c79bc274,wtp_080c41583b3757,7,cooldown,,Evaluate → Reset,,,none,,,"{""changed_by"":""Jason 2026-10-31 (D-PK66-7)"",""timing"":""inside the cool-down's 8 minutes, beside its log; no Long Road minutes change"",""within_item_id"":""wti_2901fafcba3192""}"
+{{PPBF_ORG_ID}},wti_b61206cd9bf20c,wtp_151338565aea69,1,warmup,,"Movement drills
+Jump rope
+Mobility",,,none,,,"{""block_title"":""Warmup""}"
+{{PPBF_ORG_ID}},wti_3fe7d493d05543,wtp_151338565aea69,2,technical,,"Technique explanation
+Demonstration",,,none,,,"{""block_title"":""Skill Instruction""}"
+{{PPBF_ORG_ID}},wti_da214ed18f56a9,wtp_151338565aea69,3,technical,,"Partner drills
+Bag drills
+Footwork drills",,,none,,,"{""block_title"":""Skill Drills""}"
+{{PPBF_ORG_ID}},wti_3e262787053fa5,wtp_151338565aea69,4,conditioning,,"Skill-based conditioning
+Bodyweight circuits",,,none,,,"{""block_title"":""Conditioning""}"
+{{PPBF_ORG_ID}},wti_4e9a7c88c3b107,wtp_151338565aea69,5,character_integration,,"Short life-skill discussion
+Positive reinforcement",,,none,,,"{""block_title"":""Reflection""}"
+{{PPBF_ORG_ID}},wti_6c6c4741087148,wtp_1696a57348cd45,1,warmup,,2-minute shadowboxing round,,,none,,,"{""block_time"":""0:00–0:05"",""block_title"":""Immediate Start Block"",""phase"":""0:00–0:05 | Immediate Start Block""}"
+{{PPBF_ORG_ID}},wti_4475e684f16cf9,wtp_1696a57348cd45,2,warmup,,1-minute stance hold (coach correction),,,none,,,"{""block_time"":""0:00–0:05"",""block_title"":""Immediate Start Block"",""phase"":""0:00–0:05 | Immediate Start Block""}"
+{{PPBF_ORG_ID}},wti_6182c985506781,wtp_1696a57348cd45,3,warmup,,2-minute controlled footwork (no punches),,,none,,,"{""block_time"":""0:00–0:05"",""block_title"":""Immediate Start Block"",""phase"":""0:00–0:05 | Immediate Start Block""}"
+{{PPBF_ORG_ID}},wti_a6c756f206362d,wtp_1696a57348cd45,4,technical,,Round 1: Jab–Cross–Hook + Pivot,,,none,,,"{""block_time"":""0:05–0:20"",""block_title"":""Technical Precision Rounds (3 x 3 min)"",""phase"":""0:05–0:20 | Technical Precision Rounds (3 x 3 min)""}"
+{{PPBF_ORG_ID}},wti_bbdbcadfd45e16,wtp_1696a57348cd45,5,technical,,Round 2: Add defensive exit (slip or roll),,,none,,,"{""block_time"":""0:05–0:20"",""block_title"":""Technical Precision Rounds (3 x 3 min)"",""phase"":""0:05–0:20 | Technical Precision Rounds (3 x 3 min)""}"
+{{PPBF_ORG_ID}},wti_fbe04d6b650e39,wtp_1696a57348cd45,6,technical,,Round 3: Coach calls random combinations,,,none,,,"{""block_time"":""0:05–0:20"",""block_title"":""Technical Precision Rounds (3 x 3 min)"",""phase"":""0:05–0:20 | Technical Precision Rounds (3 x 3 min)""}"
+{{PPBF_ORG_ID}},wti_2ba1bc31aa18b8,wtp_1696a57348cd45,7,technical,,Between rounds: Add 2 perfect reps (20X Principle),,,none,,,"{""block_time"":""0:05–0:20"",""block_title"":""Technical Precision Rounds (3 x 3 min)"",""phase"":""0:05–0:20 | Technical Precision Rounds (3 x 3 min)""}"
+{{PPBF_ORG_ID}},wti_b96912b75bba71,wtp_1696a57348cd45,8,conditioning,,Heavy Bag Intervals: 30 sec high output / 30 sec controlled,,,none,,,"{""block_time"":""0:20–0:35"",""block_title"":""Conditioning Circuit (4 Stations, 3 min each)"",""phase"":""0:20–0:35 | Conditioning Circuit (4 Stations, 3 min each)""}"
+{{PPBF_ORG_ID}},wti_db14ed93709b3f,wtp_1696a57348cd45,9,conditioning,,Core Stability: Planks + rotational med ball work,,,none,,,"{""block_time"":""0:20–0:35"",""block_title"":""Conditioning Circuit (4 Stations, 3 min each)"",""phase"":""0:20–0:35 | Conditioning Circuit (4 Stations, 3 min each)""}"
+{{PPBF_ORG_ID}},wti_f88fc53b96962b,wtp_1696a57348cd45,10,conditioning,,Shuttle Sprint + Sprawl (non-contact),,,none,,,"{""block_time"":""0:20–0:35"",""block_title"":""Conditioning Circuit (4 Stations, 3 min each)"",""phase"":""0:20–0:35 | Conditioning Circuit (4 Stations, 3 min each)""}"
+{{PPBF_ORG_ID}},wti_9b796e872e6838,wtp_1696a57348cd45,11,conditioning,,Combo Conditioning: Continuous 1–2 punches,,,none,,,"{""block_time"":""0:20–0:35"",""block_title"":""Conditioning Circuit (4 Stations, 3 min each)"",""phase"":""0:20–0:35 | Conditioning Circuit (4 Stations, 3 min each)""}"
+{{PPBF_ORG_ID}},wti_029dfa1923f065,wtp_1696a57348cd45,12,conditioning,,Final 30 sec: 'Finish Strong Round' (40% Rule),,,none,,,"{""block_time"":""0:20–0:35"",""block_title"":""Conditioning Circuit (4 Stations, 3 min each)"",""phase"":""0:20–0:35 | Conditioning Circuit (4 Stations, 3 min each)""}"
+{{PPBF_ORG_ID}},wti_8d7fec7d47388d,wtp_1696a57348cd45,13,defense,,Round 1: Continuous slip rope movement,,,none,,,"{""block_time"":""0:35–0:48"",""block_title"":""Defense & Reaction Block (3 x 3 min)"",""phase"":""0:35–0:48 | Defense & Reaction Block (3 x 3 min)""}"
+{{PPBF_ORG_ID}},wti_ee5bba5e6615d3,wtp_1696a57348cd45,14,defense,,Round 2: Mirror defense drill (no contact),,,none,,,"{""block_time"":""0:35–0:48"",""block_title"":""Defense & Reaction Block (3 x 3 min)"",""phase"":""0:35–0:48 | Defense & Reaction Block (3 x 3 min)""}"
+{{PPBF_ORG_ID}},wti_5786e9501b0e5c,wtp_1696a57348cd45,15,defense,,Round 3: Coach reaction commands (pivot/slip/roll),,,none,,,"{""block_time"":""0:35–0:48"",""block_title"":""Defense & Reaction Block (3 x 3 min)"",""phase"":""0:35–0:48 | Defense & Reaction Block (3 x 3 min)""}"
+{{PPBF_ORG_ID}},wti_cb3ec55d6b26a0,wtp_1696a57348cd45,16,defense,,60-second controlled breathing between rounds,,,none,,,"{""block_time"":""0:35–0:48"",""block_title"":""Defense & Reaction Block (3 x 3 min)"",""phase"":""0:35–0:48 | Defense & Reaction Block (3 x 3 min)""}"
+{{PPBF_ORG_ID}},wti_a4414c30b18b9e,wtp_1696a57348cd45,17,finish_block,,2-minute round,,,none,,,"{""block_time"":""0:48–0:55"",""block_title"":""Perfect Round Challenge"",""phase"":""0:48–0:55 | Perfect Round Challenge""}"
+{{PPBF_ORG_ID}},wti_262b338beb89d6,wtp_1696a57348cd45,18,finish_block,,No sloppy reps; guard stays up,,,none,,,"{""block_time"":""0:48–0:55"",""block_title"":""Perfect Round Challenge"",""phase"":""0:48–0:55 | Perfect Round Challenge""}"
+{{PPBF_ORG_ID}},wti_ca6583332fa3af,wtp_1696a57348cd45,19,finish_block,,Restart clock if standards drop,,,none,,,"{""block_time"":""0:48–0:55"",""block_title"":""Perfect Round Challenge"",""phase"":""0:48–0:55 | Perfect Round Challenge""}"
+{{PPBF_ORG_ID}},wti_f8c4d9dd62aa12,wtp_1696a57348cd45,20,character_integration,,Where did you hit your 40% wall?,,,none,,,"{""block_time"":""0:55–1:00"",""block_title"":""Leadership Closeout"",""phase"":""0:55–1:00 | Leadership Closeout""}"
+{{PPBF_ORG_ID}},wti_031bfa1fc429a5,wtp_1696a57348cd45,21,character_integration,,Who demonstrated 20X effort?,,,none,,,"{""block_time"":""0:55–1:00"",""block_title"":""Leadership Closeout"",""phase"":""0:55–1:00 | Leadership Closeout""}"
+{{PPBF_ORG_ID}},wti_f3b734ae05f8fd,wtp_1696a57348cd45,22,character_integration,,Who represented the gym well today?,,,none,,,"{""block_time"":""0:55–1:00"",""block_title"":""Leadership Closeout"",""phase"":""0:55–1:00 | Leadership Closeout""}"
+{{PPBF_ORG_ID}},wti_98ddba071eba9c,wtp_16acacbeaa1eeb,1,warmup,,"• Jump rope: 2 minutes continuous
+• Shadow boxing: 2 rounds × 90 seconds",,,none,,,"{""block_time"":""5 min"",""block_title"":""Phase 1: Dynamic Movement (5 min)""}"
+{{PPBF_ORG_ID}},wti_d0c8aaa6b82317,wtp_16acacbeaa1eeb,2,warmup,,"• Mirror drills: Partners mirror footwork without contact
+• Distance management: Maintain range while moving",,,none,,,"{""block_time"":""5 min"",""block_title"":""Phase 2: Partner Movement (5 min)""}"
+{{PPBF_ORG_ID}},wti_6a771999b1f1d9,wtp_16acacbeaa1eeb,3,warmup,,"• Jab-cross on mitts: Focus on form
+• Defensive reflexes: Slip, roll, parry at 30% speed
+WATCH FOR
+• Proper warm-up intensity (gradual increase)
+• Full range of motion in shoulders and hips
+• Athletes maintaining balance during movement",,,light_technical,,,"{""block_time"":""5 min"",""block_title"":""Phase 3: Light Technical Work (5 min)""}"
+{{PPBF_ORG_ID}},wti_0a41f80cbde81a,wtp_16acacbeaa1eeb,4,technical,,"Review Today's Focus Points:
+1. Distance control: Maintaining optimal range
+2. Defensive positioning: Hands up, chin down, elbows in
+3. Combination structure: Entry punch → body work → exit",,,none,,,"{""block_time"":""10 MINUTES"",""block_title"":""TECHNICAL REVIEW (10 MINUTES)""}"
+{{PPBF_ORG_ID}},wti_ca7d77aba29c49,wtp_16acacbeaa1eeb,5,sparring,,"Structure: 3 rounds × 3 minutes with 1-minute rest
+Athlete A - Offense (40%): Execute combinations on moving target. Focus on distance and accuracy. Reset after each combination.
+Athlete B - Defense: Maintain guard and footwork. Slip, parry, or move - NO COUNTERS. Communicate if contact too heavy.
+COACHING CUES
+""Control distance before you punch"" • ""Defender keep moving"" • ""Touch don't push - land clean, pull back"" • ""Reset to neutral""
+SAFETY
+Stop if frustration shown • Verify 40% power • Mix head and body targets",,,controlled_sparring,,,"{""block_time"":""15 MIN"",""block_title"":""ROUND 1: CONTROLLED COMBINATIONS (15 MIN)""}"
+{{PPBF_ORG_ID}},wti_2fcd7c3cba79e7,wtp_16acacbeaa1eeb,6,sparring,,"Progression: Defender may now counter (50% contact)
+Athlete A - Offense: Same combination work. React to counters defensively. Expect return fire.
+Athlete B - Defense + Counter: Single shots only (jab or cross). No combinations - single punch and reset. Focus on timing not power.
+COACHING CUES
+""Offense - defend the counter before reset"" • ""Defense - one clean counter, then out"" • ""Control and communicate"" • ""If too much say 'break'""
+WATCH FOR
+Power escalation - reset if heavy • Hands dropping after punching • Loss of technique under pressure",,,controlled_sparring,,,"{""block_time"":""15 MIN"",""block_title"":""ROUND 2: LIGHT COUNTERS (15 MIN)""}"
+{{PPBF_ORG_ID}},wti_db5d687e0ca72d,wtp_16acacbeaa1eeb,7,sparring,,"Final Progression: Controlled free exchange at 60% contact. Athletes punch and counter while maintaining defense. Work in 3-4 punch bursts, reset every 20-30 seconds.
+Coach Control: Call ""time"" every 30 seconds. Stop if technique breaks down. Rotate partners after each 3-minute round.
+COACHING CUES
+""Work smart, not hard - technique first"" • ""Break!"" - immediate reset • ""Breathe between exchanges"" • ""Hands up after you punch""
+CRITICAL SAFETY
+No headhunting or targeting one area repeatedly. Stop on any sign of ego or emotion. Touch gloves before and after rounds. Coach has absolute authority to stop or reduce intensity.",,,controlled_sparring,,,"{""block_time"":""15 MIN"",""block_title"":""DRILL ROUND 3: STRUCTURED SPARRING (15 MIN)""}"
+{{PPBF_ORG_ID}},wti_1f0d573eb024db,wtp_16acacbeaa1eeb,8,sparring,,"Open Sparring: 3 rounds × 3 minutes, 1-minute rest. Athletes choose partners (coach approval). Previous rules apply, intensity capped at 70%. Coach provides active supervision.",,,open_sparring,,,"{""block_time"":""15 MIN"",""block_title"":""CONTROLLED SPARRING (15 MIN)""}"
+{{PPBF_ORG_ID}},wti_e53a3ef8891062,wtp_16acacbeaa1eeb,9,cooldown,,"Cool-Down: Light movement and stretching (2 min), deep breathing (1 min).
+Debrief: Discuss what worked and needs improvement. Individual check-ins for concerns or injuries. Reinforce safety culture and respect.
+POST-SESSION WATCH: Check for delayed injury signs. Document incidents. Note athletes needing additional safety coaching.",,,none,,,"{""block_time"":""5 MIN"",""block_title"":""COOL-DOWN & DEBRIEF (5 MIN)""}"
+{{PPBF_ORG_ID}},wti_2db0b81c663a3a,wtp_1ad3c846b03ecc,1,warmup,,Athletes arrive and prepare for training.,,,none,,,"{""block_time"":""3:30 to 3:40"",""block_title"":""Arrival and Preparation"",""parts"":{""Athletes"":[""wrap hands"",""put on headgear"",""gloves ready"",""begin light movement or shadowboxing""],""Coach"":[""organize sparring partners"",""review sparring expectations"",""explain drill rounds"",""assign non contact expectations""],""Coaching note"":[""Do not treat arrival as dead time. This is the first discipline rep of the day.""],""Life skill development"":[""This block reinforces:"",""readiness by teaching athletes to prepare before action"",""self management by arriving ready without being chased"",""responsibility by handling equipment and preparation correctly"",""respect by taking the gym and training seriously from the start""],""Neuro development"":[""This opening block prepares the nervous system for controlled performance. Light movement, gear preparation, and routine help athletes shift from outside distractions into task focus. This supports:"",""prefrontal cortex activation through routine, rule following, and attentional control"",""cerebellar readiness through movement preparation and coordination"",""autonomic regulation by lowering chaos and creating a predictable entry into training""],""Safety reminders"":[""controlled punches"",""relaxed shoulders"",""soft knees"",""protect training partners"",""stay composed when hit"",""follow coach commands immediately""]}}"
+{{PPBF_ORG_ID}},wti_7b39cfbad73dc2,wtp_1ad3c846b03ecc,2,self_guided_workout,,"Non contact athletes are unsupervised during the sparring block.
+Athletes are expected to demonstrate:
+discipline
+integrity
+responsibility
+initiative
+Athletes may choose:
+individual workout
+shadowboxing rounds
+heavy bag rounds
+observation training
+gym service
+Coaches check periodically, but athletes manage their own work.",,,none,,,"{""block_title"":""Non Contact Athlete Expectations"",""parts"":{""Coaching note"":[""For non contact athletes, Friday is a character test as much as a training period.""],""Life skill development"":[""This block builds:"",""integrity because athletes work when nobody is watching"",""ownership because they choose productive actions"",""work ethic because progress still matters even when they are not the main group"",""independence because they learn to train without constant prompting""],""Neuro development"":[""Independent work strengthens:"",""executive function through self direction and task selection"",""attention control through staying engaged without direct supervision"",""self regulation through resisting distraction and staying productive"",""habit formation networks through repeated disciplined choices""]}}"
+{{PPBF_ORG_ID}},wti_8d477a82543d27,wtp_1ad3c846b03ecc,3,sparring,drl_5e5234a61eb2a4,,,,controlled_sparring,,,"{""block_time"":""3:40 to 4:10"",""block_title"":""Drill 1 Jab Only Sparring"",""phase"":""Sparring Drill Rounds""}"
+{{PPBF_ORG_ID}},wti_d7d23cecda5cf1,wtp_1ad3c846b03ecc,4,sparring,drl_3f4ff51930f03f,,,,controlled_sparring,,,"{""block_time"":""3:40 to 4:10"",""block_title"":""Drill 2 Defense First Round"",""phase"":""Sparring Drill Rounds""}"
+{{PPBF_ORG_ID}},wti_d2e052963aec89,wtp_1ad3c846b03ecc,5,sparring,drl_e61aed2ffe38b6,,,,controlled_sparring,,,"{""block_time"":""3:40 to 4:10"",""block_title"":""Drill 3 Angle Exit Round"",""phase"":""Sparring Drill Rounds""}"
+{{PPBF_ORG_ID}},wti_2e426f61623458,wtp_1ad3c846b03ecc,6,sparring,drl_96dbaf61d33325,,,,controlled_sparring,,,"{""block_time"":""3:40 to 4:10"",""block_title"":""Drill 4 Counter Punch Round"",""phase"":""Sparring Drill Rounds""}"
+{{PPBF_ORG_ID}},wti_a4dbb97e91fcf1,wtp_1ad3c846b03ecc,7,sparring,drl_6082697af8047e,,,,controlled_sparring,,,"{""block_time"":""3:40 to 4:10"",""block_title"":""Drill 5 Body Shot Round"",""phase"":""Sparring Drill Rounds""}"
+{{PPBF_ORG_ID}},wti_9891d6dfc19606,wtp_1ad3c846b03ecc,8,sparring,drl_51897d282e13dd,,,,controlled_sparring,,,"{""block_time"":""3:40 to 4:10"",""block_title"":""Drill 6 Rope Escape Situation"",""phase"":""Sparring Drill Rounds""}"
+{{PPBF_ORG_ID}},wti_348333c65c36d9,wtp_1ad3c846b03ecc,9,sparring,,Athletes rotate partners.,,,open_sparring,,,"{""block_time"":""4:10 to 5:20"",""block_title"":""Open Sparring"",""parts"":{""Athlete technical focus"":[""Athletes maintain:"",""soft knees"",""relaxed shoulders"",""controlled punching power"",""balanced stance"",""breathing during exchanges""],""Coaching focus during sparring"":[""Watch for:"",""defensive reactions"",""foot positioning"",""balance"",""clean punches"",""composure"",""angle exits"",""ability to recover after mistakes"",""Correct between rounds.""],""Coaching note"":[""Open sparring should look like applied learning, not emotional brawling.""],""Goal"":[""Apply weekly skills in live rounds with more freedom and realism.""],""Intensity"":[""Slightly higher than weekday technical sparring, but still controlled.""],""Key habit"":[""Punch → move → reset position""],""Life skill development"":[""Open sparring reinforces:"",""composure under pressure"",""confidence through testing"",""resilience after mistakes"",""decision making in fast environments"",""respect and self control because intensity rises, but discipline must remain""],""Neuro development"":[""Open sparring develops:"",""integrated decision making because multiple skills must come together in real time"",""processing speed as athletes read offense, defense, and movement patterns"",""stress regulation through live contact and uncertainty"",""working memory under fatigue because athletes must remember cues while tired"",""adaptability because no two exchanges are exactly the same"",""motor learning transfer because practiced drills are now expressed in a live environment"",""This is the bridge between isolated skill work and real application.""],""Round length"":[""2 to 3 minutes""],""Typical format"":[""Minimum 3 rounds per athlete""]}}"
+{{PPBF_ORG_ID}},wti_06bfec50e99fa6,wtp_1ad3c846b03ecc,10,observation,,"Non contact athletes observing sparring should track:
+clean punches landed
+defensive reactions used
+footwork positioning
+control of distance
+who exits exchanges well
+who stays composed under pressure",,,none,,,"{""block_title"":""Observation Training"",""parts"":{""Coaching note"":[""Do not let observation become passive standing around. Give athletes specific things to watch.""],""Life skill development"":[""Observation work reinforces:"",""active learning"",""patience"",""analytical thinking"",""respect for detail"",""Athletes learn that improvement is not only physical. Smart watching is also training.""],""Neuro development"":[""Observation training strengthens:"",""visual analysis through careful tracking of patterns"",""attention control by asking athletes to stay mentally engaged"",""mirror neuron and modeling processes by learning through watching skilled behavior"",""pattern recognition by identifying what works repeatedly in real rounds"",""cognitive rehearsal because athletes mentally simulate solutions while observing""],""Purpose"":[""Develop tactical awareness and ring IQ.""]}}"
+{{PPBF_ORG_ID}},wti_6c276e454c7610,wtp_1ad3c846b03ecc,11,gym_service,,Athletes rotate through gym service tasks.,,,none,,,"{""block_title"":""Gym Service Tasks"",""parts"":{""Coaching note"":[""Service is not punishment. It is culture building.""],""Life skill development"":[""Gym service reinforces:"",""responsibility"",""humility"",""ownership"",""community mindedness"",""respect for shared spaces"",""Athletes learn that being part of a team means contributing to the environment, not just benefiting from it.""],""Neuro development"":[""Service work supports:"",""task completion habits"",""executive function through beginning and finishing useful work"",""behavioral consistency by linking responsibility to routine"",""self regulation because athletes are asked to do necessary work, not just preferred work""],""Purpose"":[""Build ownership of the gym and respect for the training space.""],""Tasks include"":[""sweep floors"",""clean mirrors"",""take trash out"",""organize gloves"",""wipe equipment"",""reset heavy bags""]}}"
+{{PPBF_ORG_ID}},wti_c6e82701fe46a9,wtp_3557c34e022c31,1,activation,,"4-4-4-4 Box Breathing (Trauma-Informed Option)
+Cue Script:
+Feet flat
+Inhale 4
+Hold 4
+Exhale 4
+Hold 4
+Repeat x4 cycles
+Modifications:
+Reduce hold to 2 seconds if needed
+Eyes open allowed
+Standing or seated position
+Coaching Focus: Calm tone. No forced breathing.",,,none,,,"{""block_title"":""1. ARRIVAL & BREATHING RESET (5 MIN)"",""phase"":""1. ARRIVAL & BREATHING RESET (5 MIN)""}"
+{{PPBF_ORG_ID}},wti_8babe936406dc0,wtp_3557c34e022c31,2,activation,drl_9c80a436166e16,,,,none,,,"{""block_title"":""A. Visual Tracking Drill (3 MIN)"",""phase"":""2. MOVEMENT PREP & NEURAL ACTIVATION (10 MIN)""}"
+{{PPBF_ORG_ID}},wti_360a1f9c6339f7,wtp_3557c34e022c31,3,activation,drl_d21b7f5ad30817,,,,none,,,"{""block_title"":""B. Mirror Slip Drill (4 MIN)"",""phase"":""2. MOVEMENT PREP & NEURAL ACTIVATION (10 MIN)""}"
+{{PPBF_ORG_ID}},wti_3cb199efd15863,wtp_3557c34e022c31,4,activation,drl_199cc9e84c57c6,,,,light_technical,,,"{""block_title"":""C. Guard Recovery Reps (3 MIN)"",""phase"":""2. MOVEMENT PREP & NEURAL ACTIVATION (10 MIN)""}"
+{{PPBF_ORG_ID}},wti_afcb071a63ddf5,wtp_3557c34e022c31,5,primary_drill,drl_e8f8769a5c0832,,,,none,,,"{""block_title"":""3. SKILL BLOCK – DEFENSIVE SEQUENCE (20 MIN)"",""phase"":""3. SKILL BLOCK – DEFENSIVE SEQUENCE (20 MIN)""}"
+{{PPBF_ORG_ID}},wti_702e08aee74ccd,wtp_3557c34e022c31,6,applied_rounds,,"Coach cue every 5 seconds
+Technical precision",,,none,,,"{""block_title"":""Round 1 (3 MIN) – Slip Only"",""phase"":""4. STRUCTURED ROUNDS (15 MIN)""}"
+{{PPBF_ORG_ID}},wti_aebeaf3e4a476b,wtp_3557c34e022c31,7,applied_rounds,,"Add full movement
+Moderate tempo",,,none,,,"{""block_title"":""Round 2 (3 MIN) – Slip + Roll"",""phase"":""4. STRUCTURED ROUNDS (15 MIN)""}"
+{{PPBF_ORG_ID}},wti_979a3c17c91751,wtp_3557c34e022c31,8,applied_rounds,,"50% speed
+Controlled breathing",,,none,,,"{""block_title"":""Round 3 (3 MIN) – Slip → Roll → Jab"",""phase"":""4. STRUCTURED ROUNDS (15 MIN)""}"
+{{PPBF_ORG_ID}},wti_790c3e2f96f89b,wtp_3557c34e022c31,9,conditioning,,"20 sec Wall Sit
+20 sec Plank
+20 sec Jump Rope (or phantom rope)
+60 sec Rest
+Repeat x2 rounds.
+Coaching Emphasis: Steady breathing. Quality movement only.",,,none,,,"{""block_title"":""5. CONDITIONING FINISHER – “STAY CALM CIRCUIT” (5 MIN)"",""phase"":""5. CONDITIONING FINISHER – “STAY CALM CIRCUIT” (5 MIN)""}"
+{{PPBF_ORG_ID}},wti_ce863573ad1546,wtp_3557c34e022c31,10,cooldown,,"Ask:
+What felt difficult today?
+When did you feel pressure?
+What helped you stay controlled?
+Close with: “Defense is staying calm when things feel fast.”",,,none,,,"{""block_title"":""6. REFLECTION CIRCLE (5 MIN)"",""phase"":""6. REFLECTION CIRCLE (5 MIN)""}"
+{{PPBF_ORG_ID}},wti_e137fb9c8e82be,wtp_363e43d4f3f870,1,warmup,,Warm-up — 10 min,10,,none,,,"{""plan_items"":[""bike 3 min → dynamic hip and ankle work → glute/hamstring activation → 2 × 5 bodyweight jump squats → cervical isometrics""]}"
+{{PPBF_ORG_ID}},wti_6a2236b0228aa4,wtp_363e43d4f3f870,2,power,,Power potentiation — 8 min,8,,none,,,"{""plan_items"":[""box jump 3 × 3 (focus: soft landing, minimal contact time). Full recovery between sets.""]}"
+{{PPBF_ORG_ID}},wti_53e4d208582a1b,wtp_363e43d4f3f870,3,strength,,Primary strength — 20 min,20,,none,,,"{""plan_items"":[""trap-bar deadlift 4 × 6 @ RPE 7–8, 2.5–3 min rest. Progress load 2.5–5 kg per week within the block.""]}"
+{{PPBF_ORG_ID}},wti_10820ff6351c57,wtp_363e43d4f3f870,4,strength,,Secondary strength — 16 min,16,,none,,,"{""plan_items"":[""- Rear-foot-elevated split squat 3 × 8/side"",""Romanian deadlift 3 × 8""]}"
+{{PPBF_ORG_ID}},wti_a9ee088c0587fd,wtp_363e43d4f3f870,5,strength,,Boxing-relevant accessory circuit — 12 min,12,,none,,,"{""plan_items"":[""- Pallof press 3 × 10/side"",""Landmine rotational press 3 × 6/side, explosive intent"",""Farmer’s carry 3 × 40 m"",""Cervical: harness or manual isometrics 3 × 3 × 10 s each plane; banded head rotation resistance""]}"
+{{PPBF_ORG_ID}},wti_10bd81940b02a3,wtp_363e43d4f3f870,6,cooldown,,Cool-down — 4 min,4,,none,,,"{""plan_items"":[""hip flexor and adductor stretch, breathing, log entry""]}"
+{{PPBF_ORG_ID}},wti_17e24cfb5bb84c,wtp_4346e280d811e3,1,warmup,,Standard + shoulder-specific + cervical,,,none,,,"{""phase"":""Warm-up"",""time"":""10 min""}"
+{{PPBF_ORG_ID}},wti_489903c8190730,wtp_4346e280d811e3,2,power,,"Drop jumps 4 × 4 (or box jumps if earlier in progression), full recovery",,,none,,,"{""phase"":""Plyometric"",""time"":""10 min""}"
+{{PPBF_ORG_ID}},wti_fd7fbd40765ac7,wtp_4346e280d811e3,3,power,,Ballistic bench throw 4 × 3 @ 35%; MB punch throw 4 × 4/side; plyometric push-up 3 × 4,,,none,,,"{""phase"":""Upper explosive"",""time"":""20 min""}"
+{{PPBF_ORG_ID}},wti_cfefe0cc908ce6,wtp_4346e280d811e3,4,strength,,Weighted chin-up 4 × 4; single-arm row 3 × 8/side; landmine press 3 × 6/side,,,none,,,"{""phase"":""Upper strength"",""time"":""18 min""}"
+{{PPBF_ORG_ID}},wti_d1dbfd53987223,wtp_4346e280d811e3,5,strength,,"Cuff, scapular, thoracic, cervical, grip",,,none,,,"{""phase"":""Robustness"",""time"":""8 min""}"
+{{PPBF_ORG_ID}},wti_d39b19b7c2ed39,wtp_4346e280d811e3,6,cooldown,,,,,none,,,"{""phase"":""Cool-down"",""time"":""4 min""}"
+{{PPBF_ORG_ID}},wti_11dcde8ca5ed30,wtp_4346e280d811e3,7,cooldown,,post-strength SKILL-01 reset or SKILL-02 jab-recovery check; log,,,none,,,"{""changed_by"":""Jason 2026-11-02 (D-PK72-4)"",""owner_source"":""DOC-072 (Pro Boxing Skill System Master Registry, Workout_Map W-PHYS-02-A), column 'Rounds'"",""timing"":""at the end of the cool-down; no Long Road minutes change"",""within_item_id"":""wti_d39b19b7c2ed39""}"
+{{PPBF_ORG_ID}},wti_537ca26f749933,wtp_43c793b8f90e77,1,warmup,,Jump rope progression (rhythm → alternating feet → high knees).,,,none,,,"{""block_time"":""0–8 min""}"
+{{PPBF_ORG_ID}},wti_760ba77f661880,wtp_43c793b8f90e77,2,warmup,,"Dynamic mobility (hips, thoracic rotation, shoulders).",,,none,,,"{""block_time"":""0–8 min""}"
+{{PPBF_ORG_ID}},wti_d72c4177a32799,wtp_43c793b8f90e77,3,technical,drl_79538b5ffad0d9,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_d4c92d41179053,wtp_43c793b8f90e77,4,technical,drl_73fdc4c1546d8f,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_24d27a27d7eff4,wtp_43c793b8f90e77,5,technical,drl_4803fcc892043a,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_707ca7ab718ae8,wtp_43c793b8f90e77,6,technical,drl_bbf178262859b4,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_05648276a3f6d9,wtp_43c793b8f90e77,7,applied_rounds,,Round 1: Technical scoring only.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_c93ea67d09a24c,wtp_43c793b8f90e77,8,applied_rounds,,Round 2: Add movement exit.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_05acce8a33abe1,wtp_43c793b8f90e77,9,applied_rounds,,Round 3: Add defensive trigger.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_d23cdcca170ce1,wtp_43c793b8f90e77,10,conditioning,,5×20 sec straight punch bursts,,,none,,,"{""block_time"":""35–50 min""}"
+{{PPBF_ORG_ID}},wti_31470a34b187de,wtp_43c793b8f90e77,11,conditioning,,40 sec controlled footwork between bursts,,,none,,,"{""block_time"":""35–50 min""}"
+{{PPBF_ORG_ID}},wti_df62358e2e8f2f,wtp_43c793b8f90e77,12,character_integration,,"Character Focus: Discipline – Build routine, follow structure without reminders.",,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_4991bc03dccd42,wtp_43c793b8f90e77,13,character_integration,,4-sec inhale / 6-sec exhale breathing reset.,,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_48216278ccdaef,wtp_43c793b8f90e77,14,character_integration,,2-minute life-skill discussion tied to training.,,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_39768563c0509d,wtp_456e418b1741b8,1,warmup,drl_d75b4c493c3c82,,,,none,"Split Squat Iso:
+- Front thigh just above parallel
+- Back knee 1–3 inches off floor
+- 70% weight front leg
+- Cue: Sit into front leg",,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
+{{PPBF_ORG_ID}},wti_b5839f5c92b83e,wtp_456e418b1741b8,2,warmup,drl_8ca8814b596907,,,,none,"Push-Up Iso:
+- Elbows ~90°
+- Straight body line
+- Cue: Screw hands into floor",,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
+{{PPBF_ORG_ID}},wti_f781f9a804de5b,wtp_456e418b1741b8,3,warmup,drl_83057d7afff22a,,,,none,"Punch Iso:
+- Elbow slightly bent
+- Shoulder packed
+- Cue: Reach, don’t overextend",,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
+{{PPBF_ORG_ID}},wti_4e5896794614b1,wtp_456e418b1741b8,4,warmup,drl_6370c51875c49f,,,,none,"Pogo Jumps:
+- 10–15° knee bend max
+- Quick ground contact
+- Cue: Bounce, don’t squat",,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
+{{PPBF_ORG_ID}},wti_5cc664619c48f3,wtp_456e418b1741b8,5,warmup,drl_39ec154e04cb95,,,,none,"Lateral Line Hops:
+- 1–3 inches height
+- Fast rhythm",,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
+{{PPBF_ORG_ID}},wti_c26f2e49250ffa,wtp_456e418b1741b8,6,warmup,,"Contrast Work:
+- Split squat hold → jump lunges (3–5)
+- Push-up hold → explosive push-ups
+- Punch hold → fast burst",,,none,,,"{""block_time"":""0:00–8:00"",""block_title"":""0:00–8:00 Warm-Up (Iso → Plyo)""}"
+{{PPBF_ORG_ID}},wti_0813502c3392c0,wtp_456e418b1741b8,7,footwork,,"Split stance pogo:
+- Stay in stance, small bounce",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_bb2b0abe258599,wtp_456e418b1741b8,8,footwork,,"Shuffle → Stick:
+- Shuffle then stop hard
+- No wobble",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_a11434a43adc13,wtp_456e418b1741b8,9,footwork,,"Forward/back step:
+- Quick feet, no crossing",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_41c625e25d2f35,wtp_456e418b1741b8,10,footwork,,"Pivot hop:
+- Turn on ball of foot",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_2e7a01495dda5b,wtp_456e418b1741b8,11,footwork,,"Slip → step:
+- Head then feet",,,none,,,"{""block_time"":""8:00–18:00"",""block_title"":""8:00–18:00 Movement + Footwork""}"
+{{PPBF_ORG_ID}},wti_1263a503ee9e2a,wtp_456e418b1741b8,12,power,drl_45e8895039a8cd,,,,none,"Split squat iso → jump lunges:
+- Same depth as iso
+- Jump straight up
+- Land soft",,"{""block_time"":""18:00–35:00"",""block_title"":""18:00–35:00 Power Block (Iso → Plyo Circuit)""}"
+{{PPBF_ORG_ID}},wti_df7d96c7caa6bf,wtp_456e418b1741b8,13,power,drl_5ca4062c169a63,,,,none,"Push-up iso → explosive:
+- Full depth → explode",,"{""block_time"":""18:00–35:00"",""block_title"":""18:00–35:00 Power Block (Iso → Plyo Circuit)""}"
+{{PPBF_ORG_ID}},wti_2a8f9075fc10de,wtp_456e418b1741b8,14,power,drl_85a93f6757497a,,,,none,"Punch iso → burst:
+- 3–5 fast punches
+- Snap back to guard",,"{""block_time"":""18:00–35:00"",""block_title"":""18:00–35:00 Power Block (Iso → Plyo Circuit)""}"
+{{PPBF_ORG_ID}},wti_2917206d521fb3,wtp_456e418b1741b8,15,power,,"Run 3 rounds, rest 45–60 sec",,,none,,,"{""block_time"":""18:00–35:00"",""block_title"":""18:00–35:00 Power Block (Iso → Plyo Circuit)""}"
+{{PPBF_ORG_ID}},wti_0b129344cf2cd8,wtp_456e418b1741b8,16,applied_rounds,,"Round 1: Power transfer
+- Pause then explode punches",,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
+{{PPBF_ORG_ID}},wti_7f63e61ab6c339,wtp_456e418b1741b8,17,applied_rounds,,"Round 2: Reactive
+- Coach calls: slip, step, fire",,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
+{{PPBF_ORG_ID}},wti_770ea73c4b30b9,wtp_456e418b1741b8,18,applied_rounds,,"Round 3: Controlled
+- 70% power, clean technique",,,none,,,"{""block_time"":""35:00–50:00"",""block_title"":""35:00–50:00 Boxing Integration""}"
+{{PPBF_ORG_ID}},wti_225fe1384aefc9,wtp_456e418b1741b8,19,conditioning,,"Option A:
+- Pogos x20
+- Fast punches 20 sec
+- Rest 20 sec",,,none,,,"{""block_time"":""50:00–58:00"",""block_title"":""50:00–58:00 Conditioning""}"
+{{PPBF_ORG_ID}},wti_aee314f3ed659a,wtp_456e418b1741b8,20,conditioning,,"Option B:
+- 30 sec punch out
+- 30 sec bounce
+- 30 sec rest",,,none,,,"{""block_time"":""50:00–58:00"",""block_title"":""50:00–58:00 Conditioning""}"
+{{PPBF_ORG_ID}},wti_ac4ab08a82ecb0,wtp_456e418b1741b8,21,cooldown,,"Light bounce
+Deep breathing
+Relax arms/legs",,,none,,,"{""block_time"":""58:00–60:00"",""block_title"":""58:00–60:00 Reset""}"
+{{PPBF_ORG_ID}},wti_a22fc036566395,wtp_4b192f174699bc,1,technical,,Mirror awareness,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
+{{PPBF_ORG_ID}},wti_3a31a44a12c4eb,wtp_4b192f174699bc,2,technical,,Mirror movement,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
+{{PPBF_ORG_ID}},wti_a00c2b3898001f,wtp_4b192f174699bc,3,technical,,Shadowboxing application,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
+{{PPBF_ORG_ID}},wti_08ebbd7c51a711,wtp_4b192f174699bc,4,technical,,Partner application,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
+{{PPBF_ORG_ID}},wti_c7094860e8e6a9,wtp_4b192f174699bc,5,technical,,Recorded demonstration,,,none,,,"{""phase"":""SESSION PROGRESSION""}"
+{{PPBF_ORG_ID}},wti_047f5b68284577,wtp_6de6cb7607bb2b,1,warmup,,Warm-up — 12 min,12,,none,,,"{""plan_items"":[""5 min easy, then 4 × 45 s progressive builds with 45 s easy, then 3 × 15 s at target pace""]}"
+{{PPBF_ORG_ID}},wti_202b5183da5ddc,wtp_6de6cb7607bb2b,2,conditioning,,Main set,,,none,,,"{""plan_items"":[""4 × 4 min at an intensity that puts you at ≥90% HRmax by minute 2, with 2 min easy recovery. Target: 8–12 minutes total above 90% HRmax.""]}"
+{{PPBF_ORG_ID}},wti_a2272dfc0c836e,wtp_6de6cb7607bb2b,3,cooldown,,Cool-down — 8 min,8,,none,,,"{""plan_items"":[""easy, HR under 120, then mobility""]}"
+{{PPBF_ORG_ID}},wti_6e012fd8224cf5,wtp_6de6cb7607bb2b,4,cooldown,,Record,,,none,,,"{""plan_items"":[""average and peak HR, time above 90%, distance or average power per interval""]}"
+{{PPBF_ORG_ID}},wti_3d5b0459497e4e,wtp_7069f515b9b84e,1,warmup,,Warm-up (10 min),10,,none,,,"{""plan_items"":[""bike 3 min → dynamic hip/ankle → glute and hamstring activation → 2 × 5 bodyweight jump squats → cervical isometrics + one pre-activation drill""]}"
+{{PPBF_ORG_ID}},wti_0d02ae2bec89e3,wtp_7069f515b9b84e,2,power,,Power potentiation (8 min),8,,none,,,"{""plan_items"":[""Box jump 4 × 3 — minimal contact time, soft landing, full recovery"",""OR hang high pull / clean pull 4 × 3 @ 70–80% if technically competent""]}"
+{{PPBF_ORG_ID}},wti_223629ebf41cc9,wtp_7069f515b9b84e,3,strength,,Primary strength (22 min),22,,none,,,"{""plan_items"":[""Back squat or trap-bar deadlift 4–5 × 3–5 @ 80–88% 1RM, 3 min rest"",""Autoregulated: cap at RPE 8 (2–3 reps in reserve). Stop the set if bar velocity visibly drops or technique breaks. Never grind"",""Progression within block: wk1 4×5@80%, wk2 4×4@85%, wk3 4×3@88%, wk4 deload 2×3@75%""]}"
+{{PPBF_ORG_ID}},wti_0b76f149da6214,wtp_7069f515b9b84e,4,strength,,Secondary strength (16 min),16,,none,,,"{""plan_items"":[""Rear-foot-elevated split squat 3 × 6–8/side @ RPE 8"",""Nordic hamstring curl 3 × 5, or Romanian deadlift 3 × 6–8""]}"
+{{PPBF_ORG_ID}},wti_49462b672ff548,wtp_7069f515b9b84e,5,strength,,"Boxing-relevant accessory (14 min, as a circuit)",14,,none,,,"{""plan_items"":[""Pallof press 3 × 10/side"",""Landmine rotational press 3 × 6/side, maximum intent"",""Farmer’s carry 3 × 40 m"",""Cervical: harness/manual isometrics 3 × 3 × 10 s each plane; banded rotation resistance 2 × 10/side""]}"
+{{PPBF_ORG_ID}},wti_1feb131506c03e,wtp_7069f515b9b84e,6,cooldown,,Cool-down (5 min),5,,none,,,"{""plan_items"":[""hip flexor and adductor stretch, breathing, log""]}"
+{{PPBF_ORG_ID}},wti_fb9e592ff316d0,wtp_840621865a088d,1,warmup,,"Time: 2–3 minutes
+Purpose
+Before movement starts, the athlete should assess their current state. This creates awareness and helps regulate the session.
+Directions
+Stand tall and relaxed. Take a few normal breaths. Notice:
+how the shoulders feel
+whether the neck feels tight
+how easy it is to raise the hands to guard
+whether the hips feel loose or stiff
+whether the feet feel springy or heavy
+whether the mind feels calm or rushed
+Do not judge the body. Just observe it.
+What to notice
+soreness
+heaviness
+asymmetry
+tight breathing
+elevated shoulders
+stiff upper back
+tired legs
+Teaching point
+Active recovery starts with awareness. If the athlete never learns to feel their condition, they will always train the same way regardless of what their body is telling them.",,,none,,,"{""block_time"":""2–3 min arrival and check-in"",""block_title"":""PART 1 — ARRIVAL AND BODY CHECK-IN""}"
+{{PPBF_ORG_ID}},wti_4418efede3a2eb,wtp_840621865a088d,2,warmup,,"Time: 8–10 minutes
+This section prepares the body without creating stress.
+A. Neck mobility
+Time: 1 minute
+Purpose
+Hard punching and guard position often create neck and upper trap tension. Gentle neck movement helps reduce stiffness.
+Directions
+Stand relaxed. Slowly tilt the head:
+down slightly
+back to neutral
+ear toward left shoulder
+back to neutral
+ear toward right shoulder
+back to neutral
+Then slowly turn the head left and right.
+Keep all movements small and comfortable. No aggressive stretching.
+What it should feel like
+A release of stiffness, not a stretch battle.
+Common mistakes
+forcing range
+rolling the neck too aggressively
+shrugging the shoulders while moving the head
+B. Shoulder rolls
+Time: 1 minute
+Purpose
+Boxing heavily involves the shoulders. Rolls help restore motion in the shoulder girdle and reduce trapped tension.
+Directions
+Lift both shoulders up, roll them backward, then let them drop. Repeat for several slow reps. Then reverse direction.
+Move deliberately, not fast.
+What to feel
+shoulder blades gliding
+neck softening
+chest opening slightly
+tension leaving the traps
+Teaching point
+Many athletes think shoulders are supposed to stay “on” all the time. Recovery teaches that relaxed shoulders are often faster and healthier shoulders.
+C. Arm circles
+Time: 1–2 minutes
+Purpose
+To warm the shoulder joint through controlled motion and improve circulation to the upper body.
+Directions
+Extend the arms lightly out to the side or slightly forward. Make:
+small circles
+medium circles
+large circles
+Do forward circles first, then backward.
+Stay smooth. Do not turn it into a burn challenge.
+What to feel
+Gradual warmth through the shoulder, upper arm, and upper back.
+Common mistakes
+doing too many too fast
+tensing the fists
+lifting the shoulders toward the ears
+D. Torso rotations
+Time: 1–2 minutes
+Purpose
+Punching uses rotational mechanics. After a hard day, the trunk can feel rigid. Rotations restore fluidity.
+Directions
+Stand with feet under the hips or in a light stance. Keep knees soft. Rotate the torso left and right in a relaxed rhythm. Let the arms stay loose.
+You are not trying to crank the spine. You are letting the trunk unwind.
+What to feel
+the ribcage moving
+the spine loosening
+the hips softly following
+easier turning from side to side
+Common mistakes
+twisting too hard
+locking the knees
+trying to make it dramatic
+E. Scapular reach and retract
+Time: 1 minute
+Purpose
+Punching requires the shoulder blade to move well. This drill restores scapular rhythm.
+Directions
+Bring the hands up in front as if lightly touching an invisible wall. Reach the arms forward slightly by letting the shoulder blades glide around the ribcage. Then gently pull the shoulder blades back without arching the lower back.
+Repeat slowly.
+What to feel
+Movement around the upper back, not just the arms.
+Teaching point
+A lot of shoulder discomfort in boxing comes from the athlete thinking only about the arm and forgetting the shoulder blade.
+F. Hip and stance loosen-up
+Time: 1–2 minutes
+Purpose
+Even if yesterday’s session focused on upper body work, a boxer still needs hip freedom and stance comfort.
+Directions
+Stand in stance and lightly shift weight:
+front foot to back foot
+left to right
+small pivots
+gentle step-ins and step-outs
+Everything should feel light.
+What to feel
+feet reconnecting with the floor
+hips becoming less sticky
+stance becoming natural again",,,none,,,"{""block_time"":""8–10 min mobility warm-up"",""block_title"":""PART 2 — JOINT MOBILITY AND GENERAL WARM-UP""}"
+{{PPBF_ORG_ID}},wti_a35cffa21b3b3d,wtp_840621865a088d,3,footwork,,"Time: 3–4 minutes
+Purpose
+This transitions the body from general movement into boxing-specific recovery movement.
+Directions
+Get into stance and move lightly:
+bounce gently on the balls of the feet
+shift forward and back
+step left and right
+pivot softly
+maintain relaxed guard
+No hard punching yet.
+The goal is to feel athletic without effort.
+What it should feel like
+springy
+relaxed
+balanced
+calm
+controlled
+Breathing
+Breathe normally through the nose as much as possible. Do not hold the breath.
+Common mistakes
+stomping
+over-bouncing
+tensing the calves
+raising the shoulders
+treating it like conditioning footwork
+Teaching point
+A good boxing stance should feel alive, not rigid. Recovery days are a great time to rediscover that.",,,none,,,"{""block_time"":""3–4 min light stance rhythm"",""block_title"":""9. PART 3 — LIGHT STANCE RHYTHM WORK""}"
+{{PPBF_ORG_ID}},wti_2d8a87cfdc493a,wtp_840621865a088d,4,technical,,"Time: 3 rounds of 2 minutes, 1 minute easy rest between rounds
+This is the heart of the session.
+The athlete is not using shadowboxing here to test toughness or get tired. They are using it to restore clean boxing.
+ROUND 1 — FORM ROUND
+Purpose
+To re-groove the basic punches with perfect mechanics and minimal effort.
+Directions
+Throw simple punches at about 40–50% speed and very low power:
+jab
+cross
+jab-cross
+single rear hand
+jab to guard return
+cross to guard return
+If you want to add hooks or uppercuts, keep them slow and short.
+Between combinations, pause just enough to confirm your position:
+feet under you
+hands back home
+chin controlled
+shoulders relaxed
+Main focus points
+straight punches go straight out and straight back
+hands return immediately to guard
+shoulders stay relaxed
+no lunging
+no pushing the air
+no forcing speed
+What it should feel like
+Like practicing in front of a coach who only cares about clean mechanics.
+Common mistakes
+going too fast because shadowboxing feels too easy
+letting the punches drift long
+dropping the rear hand
+leaning too far into the jab
+punching with tension
+Coaching cues
+“Touch and return”
+“Long spine, relaxed shoulders”
+“Clean line, clean recovery”
+“Demo-level form”
+Teaching point
+This round teaches a major recovery lesson: sometimes the body heals best when you rehearse skill with low cost.
+ROUND 2 — MOVEMENT ROUND
+Purpose
+To reconnect punching with footwork, balance, and spatial control.
+Directions
+Begin moving lightly in stance. Add:
+step and jab
+step back and reset
+small pivots
+step left or right with light punches
+angle out after a 1–2
+soft rhythm changes
+Keep all movement under control. The feet should feel organized, not busy.
+Punch volume should stay low to moderate. The focus is the quality of moving while boxing.
+Main focus points
+never cross the feet
+keep the base under the body
+move first when appropriate, punch second
+finish every action balanced
+let the feet carry the punches, not the other way around
+What it should feel like
+The body should feel like it is gliding, not grinding.
+Common mistakes
+bouncing too much
+moving without purpose
+reaching with punches instead of stepping correctly
+rushing transitions
+getting sloppy because there is no target
+Coaching cues
+“Glide, don’t stomp”
+“Feet set the table”
+“Move quiet”
+“Always land in balance”
+Teaching point
+When fighters are fatigued, footwork usually gets messy before they realize it. Recovery days are ideal for restoring movement discipline.
+ROUND 3 — FLOW ROUND
+Purpose
+To rebuild rhythm, looseness, and boxing IQ under very light conditions.
+Directions
+Move freely and mix:
+straights
+hooks
+uppercuts
+simple combinations
+defensive exits
+angle changes
+guard recoveries
+This is still light. The athlete should feel expressive, not forceful.
+Use combinations like:
+jab-cross
+jab-jab-cross
+cross-hook-cross
+jab-hook-cross
+uppercut-hook
+jab-cross-roll
+jab-step out
+cross-hook-pivot out
+Do not worry about winning the round. Worry about the flow of good boxing.
+Main focus points
+keep everything compact
+maintain rhythm
+stay relaxed through transitions
+let defense happen naturally after offense
+no chaotic flurries
+What it should feel like
+Smooth, fluid, and intelligent. Like boxing with no urgency.
+Common mistakes
+turning “flow” into random punching
+throwing too many shots because there is no resistance
+losing structure between combinations
+forgetting defense after offense
+Coaching cues
+“Flow, don’t force”
+“Stay smooth between phases”
+“Every combo ends in position”
+“Nothing wild”
+Teaching point
+Flow rounds help the athlete rediscover boxing timing without the emotional pressure of impact.",,,none,,,"{""block_time"":""3 rounds × 2 min shadowboxing, 1 min easy rest"",""block_title"":""10. PART 4 — TECHNICAL SHADOWBOXING""}"
+{{PPBF_ORG_ID}},wti_d6695d3e650c73,wtp_840621865a088d,5,defense,,"Time: 6–8 minutes
+Defense is excellent for active recovery because it can sharpen perception and positioning without impact or muscular strain.
+A. Slip drill
+Time: 2 minutes
+Purpose
+To sharpen head movement and rhythm while keeping the body relaxed.
+Directions
+Imagine a straight punch coming at your face. Slip slightly to one side, return to center, then slip to the other side.
+Keep the movement small. It is a clean angle change, not a dramatic bend.
+Hands stay near guard. Eyes forward.
+What to feel
+neck relaxed
+knees soft
+trunk subtly engaged
+movement coming from the whole body, not just the head
+Common mistakes
+moving too far
+bending at the waist
+taking the eyes off the line
+turning the slip into a squat
+Cue
+“Just enough to miss.”
+B. Roll under drill
+Time: 2 minutes
+Purpose
+To restore coordinated defensive movement under the base.
+Directions
+Imagine a hook coming. Bend the knees slightly, rotate under the imaginary punch, and come up on the other side in balance.
+Move left and right.
+Keep the spine organized. The torso rotates with the legs.
+What to feel
+legs supporting the movement
+hips and trunk working together
+head staying controlled
+easy return to stance
+Common mistakes
+folding forward
+making the roll too deep
+losing stance width
+coming up out of balance
+Cue
+“Under control, under the shot, back to stance.”
+C. Pull-back drill
+Time: 1–2 minutes
+Purpose
+To rehearse distance management and controlled rearward movement.
+Directions
+From stance, slightly draw the head and upper body back as if avoiding a jab or cross. Then return to position.
+You can add a light counter jab or cross afterward, but only if it remains smooth and easy.
+What to feel
+balance remains centered
+the movement is small and efficient
+no panic or overreaction
+Common mistakes
+leaning too far
+straightening the whole body stiffly
+falling onto the back leg
+losing readiness to return
+Cue
+“Small escape, fast return.”
+D. Defense into reset
+Time: 1–2 minutes
+Purpose
+To teach the boxer to reconnect defense with composure.
+Directions
+Combine light defensive motions:
+slip-slip
+roll-roll
+pull-reset
+slip-counter-reset
+roll-step out
+Everything ends with a calm, balanced return to stance.
+Teaching point
+Recovery is not just physical. It is also the restoration of organized movement after action.",,,none,,,"{""block_time"":""6–8 min defensive rehearsal"",""block_title"":""11. PART 5 — DEFENSIVE MOVEMENT REHEARSAL""}"
+{{PPBF_ORG_ID}},wti_1261b78eefcb32,wtp_840621865a088d,6,cooldown,,"Time: 8–10 minutes
+This section is especially important after a weighted punching day.
+A. Wall slides
+Sets/Reps: 2 sets of 8–12 slow reps
+Purpose
+To restore shoulder mobility, upward rotation mechanics, and posture control.
+Directions
+Stand with your back against a wall if possible. Bring the arms into a goalpost or bent-arm position. Slowly slide the arms upward, then back down, while keeping the ribcage controlled.
+Only go through the range you can control.
+What to feel
+upper back working gently
+shoulder blades moving
+shoulders opening without strain
+Common mistakes
+arching the lower back
+shrugging excessively
+forcing the arms higher than control allows
+Teaching point
+Good shoulder mechanics are not just about “mobility”; they are about controlled movement of the shoulder blade and ribcage together.
+B. Scapular push-ups
+Sets/Reps: 2 sets of 8–10 reps
+Purpose
+To improve scapular control and restore healthy shoulder function for punching.
+Directions
+Get into a push-up position against a wall, bench, or floor depending on comfort. Keep the elbows straight. Let the chest sink slightly between the shoulders, then press the floor or wall away so the shoulder blades spread apart.
+Only the shoulder blades move. The elbows stay straight.
+What to feel
+work around the shoulder blades
+light activation through serratus and upper trunk
+no neck tension
+Common mistakes
+bending the elbows
+rushing the reps
+shrugging
+collapsing the core
+Cue
+“Glide in, glide out.”
+C. Band pull-aparts if a band is available
+Sets/Reps: 2 sets of 12–15
+Purpose
+To bring some balance to the upper body after repeated forward punching actions.
+Directions
+Hold a light band at chest height with straight but not locked arms. Pull the band apart by moving the hands outward while keeping the ribcage stacked and the neck relaxed. Return under control.
+What to feel
+upper back activation
+shoulder blades drawing together smoothly
+chest staying relaxed
+Common mistakes
+lifting the shoulders
+using a band that is too strong
+arching the lower back
+jerking the band apart
+Cue
+“Open the chest without tensing the neck.”
+D. Arm shake-outs
+Time: 30–60 seconds between exercises
+Purpose
+To release accumulated tension.
+Directions
+Let the arms hang and shake them loosely. Relax the hands, elbows, and shoulders.
+Teaching point
+Boxers often underestimate how much low-level tension they carry after training. Shake-outs teach active relaxation.",,,none,,,"{""block_time"":""8–10 min shoulder/scapular restoration"",""block_title"":""12. PART 6 — SHOULDER AND SCAPULAR RESTORATION BLOCK""}"
+{{PPBF_ORG_ID}},wti_2bec88fe26da67,wtp_840621865a088d,7,conditioning,,"Time: 10–20 minutes optional
+This is optional, not required.
+Purpose
+To extend circulation work, support recovery, and help the athlete mentally downshift.
+Good choices
+light walk
+very easy bike
+easy jump rope only if it feels truly effortless and not jarring
+casual movement outdoors
+Intensity
+Very easy. The boxer should not be breathing hard.
+What it should feel like
+You should feel more awake and less stiff, not more trained.
+Teaching point
+Recovery work is successful when it supports tomorrow. Optional cardio becomes harmful when it secretly becomes conditioning.",,,none,,,"{""block_time"":""optional 10–20 min easy walk"",""block_title"":""13. PART 7 — OPTIONAL LIGHT CARDIO OR WALK""}"
+{{PPBF_ORG_ID}},wti_12b07a6eb8b3ee,wtp_840621865a088d,8,cooldown,,"Time: 3–5 minutes
+This is a major part of the session, not an afterthought.
+Purpose
+To reduce tension, downshift the nervous system, and help the body move from training mode into recovery mode.
+Directions
+Sit, stand, or lie down comfortably. Place one or both hands on the ribs or lower ribcage.
+Breathe in through the nose for about 4 seconds.
+Exhale slowly through the mouth for about 6 to 8 seconds.
+Do not force giant breaths. Let the breath be smooth.
+Repeat for several cycles.
+What to feel
+heart rate settling
+shoulders dropping
+jaw softening
+body becoming quieter
+mind becoming less hurried
+Common mistakes
+trying to breathe too deeply
+lifting the shoulders while inhaling
+rushing the exhale
+turning it into performance breathing
+Teaching point
+The end of a recovery session should feel like the body is being taught to relax on purpose, not just told to relax.",,,none,,,"{""block_time"":""3–5 min breathing reset"",""block_title"":""14. PART 8 — BREATHING RESET""}"
+{{PPBF_ORG_ID}},wti_7a84d33781ed96,wtp_900c0a3fd4422a,1,warmup,,,,,none,,,"{""block_time"":""4:00–4:05"",""block_title"":""4:00–4:05 Jump Rope / Boxer Bounce"",""parts"":{""Coach Instruction Script"":[""“Light on your toes. Hands up. Relax your shoulders and find your rhythm.”""],""Drill"":[""Jump rope or boxer bounce while moving around the floor.""],""Life Skill Explanation"":[""“Improvement happens through small actions repeated consistently.”""],""Neurological Explanation"":[""“This drill activates coordination between both hemispheres of the brain."",""Your cerebellum controls balance while the motor cortex controls timing and rhythm.”""]},""phase"":""4:00–4:10 Warm-Up""}"
+{{PPBF_ORG_ID}},wti_f2ea7920ab5372,wtp_900c0a3fd4422a,2,warmup,,,,,none,,,"{""block_time"":""4:05–4:10"",""block_title"":""4:05–4:10 Dynamic Mobility"",""parts"":{""Coach Instruction Script"":[""“Open your shoulders and hips. Twist your torso slowly."",""Prepare your body to punch safely.”""],""Exercises"":[""Arm circles"",""Hip rotations"",""Torso twists"",""Light shadowboxing""],""Life Skill Explanation"":[""“Preparation improves performance.”""],""Neurological Explanation"":[""“These movements activate proprioception."",""Your brain becomes more aware of body position and movement.”""]},""phase"":""4:00–4:10 Warm-Up""}"
+{{PPBF_ORG_ID}},wti_570af922d62aa8,wtp_900c0a3fd4422a,3,technical,drl_4f994e23202301,,,,none,,,"{""block_time"":""4:10–4:12"",""block_title"":""Round 1 — Step-Slide Footwork"",""phase"":""Technical Rounds Block"",""time_lines"":[""4:10–4:12 Drill"",""4:12–4:13 Explanation Break""]}"
+{{PPBF_ORG_ID}},wti_856fd4ae9260d6,wtp_900c0a3fd4422a,4,technical,drl_74ec4aa5a0ef22,,,,none,,,"{""block_time"":""4:13–4:15"",""block_title"":""Round 2 — Moving Jab"",""phase"":""Technical Rounds Block"",""time_lines"":[""4:13–4:15 Drill"",""4:15–4:16 Explanation Break""]}"
+{{PPBF_ORG_ID}},wti_983bcb3fea5315,wtp_900c0a3fd4422a,5,technical,drl_1a52ed01c90646,,,,none,,,"{""block_time"":""4:16–4:18"",""block_title"":""Round 3 — Jab + Slip"",""phase"":""Technical Rounds Block"",""time_lines"":[""4:16–4:18 Drill"",""4:18–4:19 Explanation Break""]}"
+{{PPBF_ORG_ID}},wti_cd670077952461,wtp_900c0a3fd4422a,6,technical,drl_7432294846ea67,,,,none,,,"{""block_time"":""4:19–4:21"",""block_title"":""Round 4 — Jab–Cross Combination"",""phase"":""Technical Rounds Block"",""time_lines"":[""4:19–4:21 Drill"",""4:21–4:22 Explanation Break""]}"
+{{PPBF_ORG_ID}},wti_98a7baf0404948,wtp_900c0a3fd4422a,7,technical,drl_c68238e3eb5294,,,,none,,,"{""block_time"":""4:22–4:24"",""block_title"":""Round 5 — Reaction Commands (Optional)"",""phase"":""Technical Rounds Block"",""time_lines"":[""4:22–4:24 Drill"",""4:24–4:25 Explanation Break""]}"
+{{PPBF_ORG_ID}},wti_1489363d87da91,wtp_900c0a3fd4422a,8,conditioning,,,,,none,,,"{""block_time"":""4:35–4:40"",""block_title"":""4:35–4:40 Progressive Combo Shuffle"",""parts"":{""Life Skill Explanation"":[""“Complex skills are built step-by-step.”""],""Neurological Explanation"":[""“This trains motor sequencing in the brain."",""Your nervous system organizes multiple movements into a coordinated pattern.”""],""Sequence"":[""Shuffle"",""Shuffle → Jab"",""Shuffle → Jab → Cross"",""Shuffle → Jab → Cross → Slip"",""Shuffle → Jab → Cross → Slip → Jab"",""Shuffle → Jab → Cross → Slip → Jab → Pivot"",""Shuffle → Jab → Cross → Slip → Jab → Pivot → Cross"",""Continue repeating the full combo until time ends.""],""Structure"":[""0:00–0:30 shuffle only"",""Add a new move every 15 seconds"",""Restart combo from the beginning when new move is added""]},""phase"":""4:35–4:50 Conditioning Block (15 Minutes)""}"
+{{PPBF_ORG_ID}},wti_714f852345b46c,wtp_900c0a3fd4422a,9,conditioning,,,,,none,,,"{""block_time"":""4:40–4:45"",""block_title"":""4:40–4:45 Strength Endurance Circuit"",""parts"":{""Coach Instruction Script"":[""“Push-ups, squats, then leg lifts."",""Each cycle we add one more leg lift.”""],""Example progression"":[""Cycle 1"",""5 push-ups"",""10 squats"",""5 leg lifts"",""Cycle 2"",""5 push-ups"",""10 squats"",""6 leg lifts"",""Cycle 3"",""5 push-ups"",""10 squats"",""7 leg lifts"",""Continue increasing leg lifts each round.""],""Exercises"":[""Push-ups"",""Squats"",""Leg lifts""],""Life Skill Explanation"":[""“Small increases over time lead to major improvement.”""],""Neurological Explanation"":[""“This challenges the brain to track progression while maintaining movement control.”""],""Progression"":[""Each cycle adds one additional leg lift repetition.""]},""phase"":""4:35–4:50 Conditioning Block (15 Minutes)""}"
+{{PPBF_ORG_ID}},wti_e7565fc17a4b0b,wtp_900c0a3fd4422a,10,conditioning,,,,,none,,,"{""block_time"":""4:45–4:50"",""block_title"":""4:45–4:50 Punch Burst Drill"",""parts"":{""Coach Script"":[""“Throw ten fast punches, duck under an imaginary punch, then reset your stance.”""],""Life Skill Explanation"":[""“When challenges come your way, stay alert and respond quickly.”""],""Neurological Explanation"":[""“This trains fast neural firing and quick defensive reactions.”""],""Sequence"":[""10 fast straight punches"",""Duck"",""Reset stance""]},""phase"":""4:35–4:50 Conditioning Block (15 Minutes)""}"
+{{PPBF_ORG_ID}},wti_ab6fde1af1e646,wtp_900c0a3fd4422a,11,integration_block,,,,,none,,,"{""block_time"":""4:50–4:52"",""block_title"":""4:50–4:52 Shadowboxing Integration Round"",""parts"":{""Coach Script"":[""“Combine everything you practiced today."",""Move, jab, slip, pivot, and use combinations.”""],""Life Skill Explanation"":[""“Practice connects individual skills into complete performance.”""],""Neurological Explanation"":[""“This integrates separate movement patterns into one coordinated motor program.”""]}}"
+{{PPBF_ORG_ID}},wti_2ab3873fd0c781,wtp_900c0a3fd4422a,12,cooldown,,,,,none,,,"{""block_time"":""4:52–4:54"",""block_title"":""4:52–4:54 Shoulder Stretch"",""parts"":{""Coach Script"":[""“Pull one arm across your chest. Keep your shoulders relaxed.”""],""Reflection Prompt"":[""“Think about one habit that helps you improve every day.”""]},""phase"":""4:52–5:00 Reflection + Exit Stretching""}"
+{{PPBF_ORG_ID}},wti_7b925fa99c24f4,wtp_900c0a3fd4422a,13,cooldown,,,,,none,,,"{""block_time"":""4:54–4:56"",""block_title"":""4:54–4:56 Hip Flexor Stretch"",""parts"":{""Coach Script"":[""“Step one foot forward and lower your hips slightly.”""],""Reflection Prompt"":[""“What is one disciplined habit you can practice this week?”""]},""phase"":""4:52–5:00 Reflection + Exit Stretching""}"
+{{PPBF_ORG_ID}},wti_1cf6d0653c08b6,wtp_900c0a3fd4422a,14,cooldown,,,,,none,,,"{""block_time"":""4:56–4:58"",""block_title"":""4:56–4:58 Hamstring Stretch"",""parts"":{""Coach Script"":[""“Reach toward your toes and breathe slowly.”""],""Reflection Prompt"":[""“How does discipline help you improve in school, sports, or at home?”""]},""phase"":""4:52–5:00 Reflection + Exit Stretching""}"
+{{PPBF_ORG_ID}},wti_ee86d8ba09f9a3,wtp_900c0a3fd4422a,15,cooldown,,,,,none,,,"{""block_time"":""4:58–5:00"",""block_title"":""4:58–5:00 Closing Reflection"",""parts"":{""Coach Closing Script"":[""“Training is complete."",""Look around and thank your teammates for helping you improve today.”""],""Purpose"":[""Creates a structured reflection and recovery period that reinforces life skills while physically cooling down.""]},""phase"":""4:52–5:00 Reflection + Exit Stretching""}"
+{{PPBF_ORG_ID}},wti_134a959bf232f1,wtp_9e9710b7ff5736,1,warmup,,"Skipping, easy bike, or movement in stance. Raise temperature and heart rate",,,none,,,"{""phase"":""1. General"",""time"":""3 min""}"
+{{PPBF_ORG_ID}},wti_24420fd62a33a3,wtp_9e9710b7ff5736,2,warmup,,Ankle rocks × 10/side; 90/90 hip transitions × 6/side; thoracic open-books × 6/side; band shoulder circuit; wrist circles,,,none,,,"{""phase"":""2. Joint preparation"",""time"":""4 min""}"
+{{PPBF_ORG_ID}},wti_2d9f655eb67835,wtp_9e9710b7ff5736,3,warmup,,"The permanent circuit (Part 7 §4.5.1) — cervical, shoulder, thoracic, hip, ankle, trunk, grip",,,none,,,"{""phase"":""3. Robustness circuit"",""time"":""4 min""}"
+{{PPBF_ORG_ID}},wti_964f0dda2a3a11,wtp_9e9710b7ff5736,4,warmup,,3 × 10 s fast feet; 2 × 5 medicine ball throws; 4 × 5 s rapid punch flurries building 50% → 80% → 95%,,,none,,,"{""phase"":""4. Neuromuscular activation"",""time"":""3 min""}"
+{{PPBF_ORG_ID}},wti_4319c9e7535b1a,wtp_9e9710b7ff5736,5,warmup,,"The first movements of the session, at low intensity",,,none,,,"{""phase"":""5. Task-specific"",""time"":""2 min""}"
+{{PPBF_ORG_ID}},wti_590da0aae76086,wtp_9e9710b7ff5736,6,warmup,,"Movement activation restores stance, stepping, pivots, and balance.",,,none,,,"{""changed_by"":""Jason 2026-11-01 (D-PK69-2)"",""owner_source"":""DOC-027 (Punxsy Master Source Manual v1, Recovery and Regulation Source Manual v3, Warm-Up and Activation Standard)"",""timing"":""inside phase 5 (task-specific, 2 min); no Long Road minutes change"",""within_item_id"":""wti_4319c9e7535b1a""}"
+{{PPBF_ORG_ID}},wti_54b35fbc483d1f,wtp_9e9710b7ff5736,7,warmup,,Decision activation uses light cues or partner interaction to wake up recognition without adding stress.,,,none,,,"{""changed_by"":""Jason 2026-11-01 (D-PK69-2)"",""owner_source"":""DOC-027 (Punxsy Master Source Manual v1, Recovery and Regulation Source Manual v3, Warm-Up and Activation Standard)"",""timing"":""inside phase 5 (task-specific, 2 min); no Long Road minutes change"",""within_item_id"":""wti_4319c9e7535b1a""}"
+{{PPBF_ORG_ID}},wti_07f082f0ca5d4b,wtp_9fbf7f8edf5016,1,warmup,,"Say:
+""Today is about seeing before moving. No guessing. Stay calm and balanced.""
+Watch: attention, spacing
+Fix: ""Eyes here."" / ""Two steps back.""",,,none,,,"{""block_time"":""4:00–4:02"",""block_title"":""Set Tone (4:00–4:02)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_67513d4fc316b5,wtp_9fbf7f8edf5016,2,warmup,,"Say:
+""Small steps. Forward, back, left, right.""
+Non-negotiables: knees bent, hands up, feet do not cross
+Fix: ""Smaller steps."" / ""Hands home.""",,,none,,,"{""block_time"":""4:02–4:04"",""block_title"":""Movement in Stance (4:02–4:04)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_58703758cf0215,wtp_9fbf7f8edf5016,3,warmup,,"Say:
+""Jab and keep moving.""
+Fix: ""Punch then reset."" / ""Don’t lean.""",,,none,,,"{""block_time"":""4:04–4:06"",""block_title"":""Add Jab (4:04–4:06)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_0cc0da513649d6,wtp_9fbf7f8edf5016,4,warmup,,"Say:
+""Slip is small. Head first.""
+Fix: ""Smaller."" / ""See it first.""",,,none,,,"{""block_time"":""4:06–4:08"",""block_title"":""Slip on Visual Cue (4:06–4:08)"",""phase"":""4:00–5:00 Non-Contact""}"
+{{PPBF_ORG_ID}},wti_4d6f294ac59cec,wtp_9fbf7f8edf5016,5,primary_drill,drl_83832de7d460cd,,,,none,,,"{""block_time"":""4:08–4:20"",""block_title"":""Drill 1: Slip → Pause → Jab (4:08–4:20)"",""phase"":""Drill 1: Slip → Pause → Jab (4:08–4:20)""}"
+{{PPBF_ORG_ID}},wti_433b3c478e58c6,wtp_9fbf7f8edf5016,6,sparring,,"Round 1: Jab only
+Round 2: Jab + cross
+Round 3: Open but controlled",,,controlled_sparring,,,"{""block_title"":""Technical Spar"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_7cf7c77b002620,wtp_9fbf7f8edf5016,7,sparring,,"Defense before score
+Ropes escape first
+Higher pace finish",,,controlled_sparring,,,"{""block_title"":""Situational Spar"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_f9e2cb14abb626,wtp_9fbf7f8edf5016,8,finish_block,,"Technique while tired
+Defense before offense always",,,none,,,"{""block_title"":""Conditioning Finish"",""phase"":""5:00–6:00 Contact""}"
+{{PPBF_ORG_ID}},wti_96cdce5f6e9280,wtp_b314d9a0582d20,1,warmup,,isometrics all planes + pre-activation cue drill,,,light_technical,,,"{""phase"":""Cervical""}"
+{{PPBF_ORG_ID}},wti_dab66ca0bc9cd4,wtp_b314d9a0582d20,2,warmup,,"band external rotation × 12, prone Y × 10, face pull × 12",,,none,,,"{""phase"":""Shoulder""}"
+{{PPBF_ORG_ID}},wti_8ec1e743f8f629,wtp_b314d9a0582d20,3,warmup,,"open book × 6/side, thread the needle × 6/side",,,none,,,"{""phase"":""Thoracic""}"
+{{PPBF_ORG_ID}},wti_c9fcf6a5edc647,wtp_b314d9a0582d20,4,warmup,,"90/90 transitions × 6/side, adductor squeeze isometric 3 × 10 s",,,none,,,"{""phase"":""Hip""}"
+{{PPBF_ORG_ID}},wti_a47a9f1c534d36,wtp_b314d9a0582d20,5,warmup,,"knee-to-wall × 10/side, calf raise × 15 (straight and bent knee)",,,none,,,"{""phase"":""Ankle""}"
+{{PPBF_ORG_ID}},wti_a542162d4ee6f1,wtp_b314d9a0582d20,6,warmup,,"dead bug × 8/side, side plank 2 × 20 s/side",,,none,,,"{""phase"":""Trunk""}"
+{{PPBF_ORG_ID}},wti_a8760489327199,wtp_b314d9a0582d20,7,warmup,,"wrist circles, isometric grip 3 × 15 s, wrist extension band work × 15",,,none,,,"{""phase"":""Grip/wrist""}"
+{{PPBF_ORG_ID}},wti_c45c9a6b7deddd,wtp_c2c4bec001a56b,1,warmup,,Warm-up — 12 min,12,,none,,,"{""plan_items"":[""1. General (3 min): skipping, or easy movement in stance"",""2. Joint prep (4 min): ankle rocks, hip 90/90 transitions, thoracic open-books, band shoulder circuits"",""3. Neuromuscular activation (3 min): 3 × 10 s fast feet; 2 × 5 MB chest pass; 4 × 5 s rapid jab flurries at 50%"",""4. Cervical activation (2 min): isometric holds 3 × 10 s each plane + one pre-activation cue drill""]}"
+{{PPBF_ORG_ID}},wti_20c46b8fe94d3d,wtp_c2c4bec001a56b,2,technical,drl_4b07e8c1f3c6b1,,20,,none,Target: one new item. Example — pivot off the lead foot after the 1-2.,,"{""block_title"":""Technical block A — acquisition, 20 min""}"
+{{PPBF_ORG_ID}},wti_10430333f0717d,wtp_c2c4bec001a56b,3,technical,drl_07afeb6383daab,,20,,none,"Target: previously learned material, now with unpredictability.",,"{""block_title"":""Technical block B — refinement under variability, 20 min""}"
+{{PPBF_ORG_ID}},wti_47df5f6392de71,wtp_c2c4bec001a56b,4,bagwork,,Specific/physical block — 20 min,20,,none,,,"{""changed_by"":""Jason 2026-10-30 (D-PK63-8); Jason 2026-10-30 (D-OQ58)"",""plan_items"":[""Bag work, 5 × 3 min with 1 min rest, each round with a theme and a measurable KPI:"",""1. Jab only — all variations. KPI: no two consecutive identical jabs"",""2. 1-2 and pivots. KPI: every combination ends off the line it started on"",""3. Defense-to-counter shadow-and-bag. KPI: every defensive action produces a return"",""4. Body work. KPI: entry, two shots, exit"",""5. Open at 70%. KPI: maximum 3 punches per sequence, movement after every sequence"",""Heart rate monitored — this block doubles as aerobic and buffering work""],""round_focus_rule"":""Every bag round serves the session's one focus, the Technical block A item: the coach picks the round themes below that carry that focus (a theme may repeat) and keeps each theme's KPI; one cue, and one correction per round, on that focus.""}"
+{{PPBF_ORG_ID}},wti_499f0451fff5fc,wtp_c2c4bec001a56b,5,conditioning,,Conditioning finisher — 8 min,8,,none,,,"{""plan_items"":[""(non-strength days only)"",""8 × 20 s hard / 10 s easy on bike or curved treadmill, or 4 × 30 s maximal shadow with 30 s rest""]}"
+{{PPBF_ORG_ID}},wti_087004bbea34ca,wtp_c2c4bec001a56b,6,cooldown,,Cool-down — 10 min,10,,none,,,"{""plan_items"":[""- 5 min easy movement, HR under 120"",""Static stretching: hip flexors, adductors, thoracic, calves, shoulders"",""2 min diaphragmatic breathing (4-2-6 pattern) — this is mental-skills training, not filler"",""Log: RPE, rounds, one technical note""]}"
+{{PPBF_ORG_ID}},wti_8b46d54698b90f,wtp_c2c4bec001a56b,7,cooldown,,Evaluate → Reset,,,none,,,"{""changed_by"":""Jason 2026-10-30 (D-PK63-7); Jason 2026-10-30 (D-OQ57)"",""timing"":""inside the cool-down's 10 minutes, beside its log line; no Long Road minutes change; total 90"",""within_item_id"":""wti_087004bbea34ca""}"
+{{PPBF_ORG_ID}},wti_44778a52a01c45,wtp_c5d6897640434c,1,technical,drl_4698397d9a30a6,,,,light_technical,,,"{""block_title"":""1. CONTINUOUS TOUCH → EXIT""}"
+{{PPBF_ORG_ID}},wti_07f55189890d2b,wtp_c5d6897640434c,2,technical,drl_3b1ec1fb7207bc,,,,light_technical,,,"{""block_title"":""2. ENTRY → SCORE → EXIT (CONTINUOUS)""}"
+{{PPBF_ORG_ID}},wti_380fea02c9b816,wtp_c5d6897640434c,3,technical,drl_ff0b0e297519b0,,,,light_technical,,,"{""block_title"":""3. FAKE OPENING → NO THROW""}"
+{{PPBF_ORG_ID}},wti_df3ae69f20dc3c,wtp_c5d6897640434c,4,technical,drl_81950b7109357f,,,,light_technical,,,"{""block_title"":""4. SCORE → EXIT UNDER PRESSURE""}"
+{{PPBF_ORG_ID}},wti_6a9e5778121757,wtp_c5d6897640434c,5,sparring,drl_d48de12ba7bd0c,,,,controlled_sparring,,,"{""block_title"":""5. CONSTRAINT ROUNDS""}"
+{{PPBF_ORG_ID}},wti_2908282fb2978e,wtp_d861f584584788,1,warmup,,Jump rope progression (rhythm → alternating feet → high knees).,,,none,,,"{""block_time"":""0–8 min""}"
+{{PPBF_ORG_ID}},wti_5bf232642bdff1,wtp_d861f584584788,2,warmup,,"Dynamic mobility (hips, thoracic rotation, shoulders).",,,none,,,"{""block_time"":""0–8 min""}"
+{{PPBF_ORG_ID}},wti_aeb53c974fda35,wtp_d861f584584788,3,technical,drl_d822a0557f8882,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_b7cabc586c7913,wtp_d861f584584788,4,technical,drl_b97cc0357410f4,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_eda8b50e60f262,wtp_d861f584584788,5,technical,drl_72ef6e618606cf,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_647471115788e8,wtp_d861f584584788,6,technical,drl_b0963dc04e4e4b,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_4540e9ac9e3fe4,wtp_d861f584584788,7,applied_rounds,,Round 1: Technical scoring only.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_903a2277e699ee,wtp_d861f584584788,8,applied_rounds,,Round 2: Add movement exit.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_dc0107b7483d25,wtp_d861f584584788,9,applied_rounds,,Round 3: Add defensive trigger.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_f6fa38835adc93,wtp_d861f584584788,10,conditioning,,5×30 sec bursts,,,none,,,"{""block_time"":""35–50 min""}"
+{{PPBF_ORG_ID}},wti_a39aa5cf00f824,wtp_d861f584584788,11,conditioning,,Strict 1-minute rest intervals,,,none,,,"{""block_time"":""35–50 min""}"
+{{PPBF_ORG_ID}},wti_38a4ed816676fa,wtp_d861f584584788,12,character_integration,,"Character Focus: Confidence & Leadership – Execute under fatigue, model standards for peers.",,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_245e0a8f0301e4,wtp_d861f584584788,13,character_integration,,4-sec inhale / 6-sec exhale breathing reset.,,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_4f32d7cb5e6d79,wtp_d861f584584788,14,character_integration,,2-minute life-skill discussion tied to training.,,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_2eae2f99389886,wtp_da83ce464ffa96,1,warmup,,Warm-up (14 min),14,,none,,,"{""plan_items"":[""6 min easy building → 4 × 30 s progressive builds with 60 s easy → 2 × 20 s at target intensity → 2 min easy""]}"
+{{PPBF_ORG_ID}},wti_26d51dacc4d986,wtp_da83ce464ffa96,2,conditioning,,Main set,,,none,,,"{""plan_items"":[""6 × 2 min at target intensity, 3 min active recovery"",""Target intensity: an effort you can just complete for 2 minutes with the last 30 seconds genuinely difficult. On a curved treadmill or bike, set it from previous session data. From 30-15 IFT data, roughly 100–105% VIFT for the first efforts"",""Target physiological response: blood lactate 12–14 mmol·L⁻¹ (measure if possible; if not, use the subjective marker — significant burning and heavy breathing, but completing all intervals)"",""Record every interval — distance, average power, or speed. The shape of the decline is the data"",""Stop the session if output falls more than 15% below the first interval. Continuing past that point trains fatigue tolerance, not buffering""]}"
+{{PPBF_ORG_ID}},wti_4543f4e5bdea5e,wtp_da83ce464ffa96,3,cooldown,,Cool-down (10 min),10,,none,,,"{""plan_items"":[""6 min easy to bring HR below 120, then mobility. Do not sit down immediately — active clearance is faster""]}"
+{{PPBF_ORG_ID}},wti_3c648e2467133d,wtp_ed57bea28de0f7,1,warmup,,Jump rope progression (rhythm → alternating feet → high knees).,,,none,,,"{""block_time"":""0–8 min""}"
+{{PPBF_ORG_ID}},wti_712de2c0d5ec99,wtp_ed57bea28de0f7,2,warmup,,"Dynamic mobility (hips, thoracic rotation, shoulders).",,,none,,,"{""block_time"":""0–8 min""}"
+{{PPBF_ORG_ID}},wti_1ba79790491ee2,wtp_ed57bea28de0f7,3,technical,drl_1e5bca7ee0270c,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_484d7f7fa7c113,wtp_ed57bea28de0f7,4,technical,drl_1018aaf93ab01e,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_83495d17ea0eb5,wtp_ed57bea28de0f7,5,technical,drl_e27266e197f9b4,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_2ecad74b008b2a,wtp_ed57bea28de0f7,6,technical,drl_3f49ec223f945f,,,,none,,,"{""block_time"":""8–20 min""}"
+{{PPBF_ORG_ID}},wti_c3e64ee8ff7a6f,wtp_ed57bea28de0f7,7,applied_rounds,,Round 1: Technical scoring only.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_2678f912354d0e,wtp_ed57bea28de0f7,8,applied_rounds,,Round 2: Add movement exit.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_ca05a9b0cb4646,wtp_ed57bea28de0f7,9,applied_rounds,,Round 3: Add defensive trigger.,,,none,,,"{""block_time"":""20–35 min""}"
+{{PPBF_ORG_ID}},wti_0030f9adabbf6e,wtp_ed57bea28de0f7,10,conditioning,,4×30 sec punch bursts,,,none,,,"{""block_time"":""35–50 min""}"
+{{PPBF_ORG_ID}},wti_8a700372450699,wtp_ed57bea28de0f7,11,conditioning,,Add 4th round simulation in Weeks 7–8,,,none,,,"{""block_time"":""35–50 min""}"
+{{PPBF_ORG_ID}},wti_7ef709853a4549,wtp_ed57bea28de0f7,12,character_integration,,"Character Focus: Composure & Accountability – Stay calm under pressure, accept correction immediately.",,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_0482aed112beec,wtp_ed57bea28de0f7,13,character_integration,,4-sec inhale / 6-sec exhale breathing reset.,,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_11a30600c4520e,wtp_ed57bea28de0f7,14,character_integration,,2-minute life-skill discussion tied to training.,,,none,,,"{""block_time"":""50–60 min""}"
+{{PPBF_ORG_ID}},wti_4116655e0ecf5b,wtp_f2488df4fa331a,1,warmup,,"General, joint prep, neuromuscular activation, cervical",12,,none,,,"{""phase"":""Warm-up"",""rung"":""—"",""time"":""12 min""}"
+{{PPBF_ORG_ID}},wti_c8d5f9711eb9de,wtp_f2488df4fa331a,2,technical,,"ONE new item. Fresh athlete, low intensity, high attention, external cues, video",20,,none,,,"{""phase"":""Acquisition"",""rung"":""1–4"",""time"":""20 min""}"
+{{PPBF_ORG_ID}},wti_6f077b40658254,wtp_f2488df4fa331a,3,technical,,Previously learned material with unpredictability introduced,20,,none,,,"{""phase"":""Refinement under variability"",""rung"":""4–5"",""time"":""20 min""}"
+{{PPBF_ORG_ID}},wti_ca825e0a3e84a9,wtp_f2488df4fa331a,4,sparring,,The target behavior forced by a constraint,,,controlled_sparring,,,"{""duration_minutes"":20,""phase"":""Constrained live"",""rung"":""6"",""time"":""20 min""}"
+{{PPBF_ORG_ID}},wti_5db83ad0cebd5b,wtp_f2488df4fa331a,5,bagwork,,Bag work with round themes and measurable KPIs,15,,none,,,"{""phase"":""Specific/physical"",""rung"":""3"",""time"":""15 min""}"
+{{PPBF_ORG_ID}},wti_2586c20cc043ef,wtp_f2488df4fa331a,6,cooldown,,"Recovery, breathing practice, one technical note",8,,none,,,"{""phase"":""Cool-down + log"",""rung"":""—"",""time"":""8 min""}"
+{{PPBF_ORG_ID}},wti_6c2b0ba2eea9c7,wtp_f2488df4fa331a,7,cooldown,,Evaluate → Reset,,,none,,,"{""changed_by"":""Jason 2026-11-01 (D-PK70-5)"",""owner_source"":""DOC-027 (Punxsy Master Source Manual v1, Boxing Workflow v4 Core, 10. Session template)"",""timing"":""inside the cool-down's 8 minutes, beside its log; no Long Road minutes change"",""within_item_id"":""wti_2586c20cc043ef""}"

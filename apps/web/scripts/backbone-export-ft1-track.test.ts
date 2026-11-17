@@ -278,17 +278,20 @@ ${oldHeader.map((column) => old[column]).join(',')}
     expect(snapshot(forced.out)).toEqual(snapshot(first.out));
   });
 
-  it('stops before writing over a row of another track in the training-tracks files, which are written whole', () => {
+  it('keeps the rows of another track in the training-tracks files (lane YR adds its tracks there), and the FT1 rows in their place', () => {
     const seed = exportInto(dir).out;
     const name = 'training-tracks/seed_training_tracks.csv';
     const table = readCsv(read(seed, name));
     const other = [...table.records[0].cells];
     other[table.header.indexOf('track_id')] = 'trk_00000000000099';
     other[table.header.indexOf('lineage_id')] = 'trk_00000000000099';
-    fs.writeFileSync(path.join(seed, name), writeCsv(table.header, [...table.records.map((record) => record.cells), other]));
-    const refused = exportInto(dir, seed);
-    expect(refused.status).toBe(1);
-    expect(refused.stderr).toContain(`${TRACKS} track_id trk_00000000000099: removes the row\n`);
+    other[table.header.indexOf('name')] = 'Another track';
+    const withOther = writeCsv(table.header, [...table.records.map((record) => record.cells), other]);
+    fs.writeFileSync(path.join(seed, name), withOther);
+    const rerun = exportInto(dir, seed);
+    expect(rerun.stderr).toBe('');
+    expect(rerun.status).toBe(2);
+    expect(read(rerun.out, name)).toBe(withOther);
   });
 
   it('stops on an id the file would hold twice: twice in the export, or once in it and once on a committed row outside it', () => {
@@ -367,9 +370,11 @@ describe('the committed FT1 rows', () => {
   it('are 131 drills, 131 cues, 235 stop rules, 33 templates, 131 items, 1 track, 8 blocks and 40 block sessions', () => {
     expect(count(DRILLS, (row) => row.stage_keys === 'FT1')).toBe(131);
     expect(count(TEMPLATES, (row) => row.stage_keys === 'FT1')).toBe(33);
-    expect(rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, TRACKS), 'utf8'))).toHaveLength(1);
-    expect(rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, BLOCKS), 'utf8'))).toHaveLength(8);
-    expect(rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, SESSIONS), 'utf8'))).toHaveLength(40);
+    // The training-tracks files also hold the youth and recreational tracks (lane YR).
+    const ofFt1 = (row: Record<string, string>) => row.track_id === TRACK;
+    expect(count(TRACKS, ofFt1)).toBe(1);
+    expect(count(BLOCKS, ofFt1)).toBe(8);
+    expect(count(SESSIONS, ofFt1)).toBe(40);
     const drillIds = new Set(rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, DRILLS), 'utf8')).filter((row) => row.stage_keys === 'FT1').map((row) => row.drill_id));
     expect(count(CUES, (row) => drillIds.has(row.drill_id))).toBe(131);
     // 9 exported from DOC-123, plus 226 AI-drafted under OD-2026-11-12-005 ruling 3 (lane FT1d; Jason approves before merge).

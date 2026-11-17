@@ -87,6 +87,7 @@ function item(overrides: Record<string, unknown> = {}) {
     rep_count: null,
     contact_level: 'none',
     coach_note: 'Feet quiet, breathing loud.',
+    details: {},
     created_at: '2026-08-01T00:00:00.000Z',
     ...overrides,
   };
@@ -164,6 +165,56 @@ describe('coach workout templates page', () => {
     render(<CoachWorkoutTemplatesPage />);
     await screen.findByRole('button', { name: /open template/i });
     expect(plain.mock.calls.some((call) => String(call[0]).includes('template_id'))).toBe(false);
+  });
+
+  it('shows the minutes a sheet gives a sparring item as information beside it, never as its prescription (OD-2026-11-17-002)', async () => {
+    mockFetch((url) => (url.includes('template_id')
+      ? jsonResponse({
+        template: BOXING_FUNDAMENTALS,
+        items: [
+          item({ item_id: 'wti-spar', block: 'sparring', free_text_drill: 'Technical sparring', duration_minutes: null, contact_level: 'controlled_sparring', details: { duration_minutes: 20, phase: 'Constrained live' } }),
+          item({ item_id: 'wti-rope', ordinal: 2 }),
+        ],
+      })
+      : jsonResponse({ templates: [BOXING_FUNDAMENTALS] })));
+
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+
+    const spar = (await screen.findByText('Technical sparring')).closest('li') as HTMLElement;
+    expect(spar).toHaveTextContent('Sheet says 20 min (information; not timed or issued)');
+    // Not shown as the item's own minutes, and not as an alert.
+    expect(spar).not.toHaveTextContent(/(^|[^s] )20 min,/);
+    expect(within(spar).queryByRole('alert')).toBeNull();
+    // An item without sheet minutes shows its own prescription only.
+    const rope = screen.getByText('Rope intervals').closest('li') as HTMLElement;
+    expect(rope).toHaveTextContent('10 min');
+    expect(rope).not.toHaveTextContent(/Sheet says/);
+  });
+
+  it('names an item kept only in its sheet fields by the sheet title, shows a drill with its text, and lists the sheet fields as information', async () => {
+    mockFetch((url) => (url.includes('template_id')
+      ? jsonResponse({
+        template: BOXING_FUNDAMENTALS,
+        items: [
+          item({ item_id: 'wti-sheet', free_text_drill: null, duration_minutes: null, details: { block_title: '4:00–4:05 Jump Rope / Boxer Bounce', parts: { Drill: ['Jump rope or boxer bounce.'] } } }),
+          item({ item_id: 'wti-both', ordinal: 2, drill_id: 'drl-sit', head_drill_name: 'Sprint Interval Drill', free_text_drill: '4–6 × 30 s maximal' }),
+          item({ item_id: 'wti-bare', ordinal: 3, free_text_drill: null, duration_minutes: null, details: {} }),
+        ],
+      })
+      : jsonResponse({ templates: [BOXING_FUNDAMENTALS] })));
+
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+
+    const sheet = (await screen.findByRole('heading', { name: '4:00–4:05 Jump Rope / Boxer Bounce' })).closest('li') as HTMLElement;
+    expect(within(sheet).getByText('From the sheet')).toBeInTheDocument();
+    expect(sheet).toHaveTextContent('Jump rope or boxer bounce.');
+    const both = screen.getByRole('heading', { name: 'Sprint Interval Drill' }).closest('li') as HTMLElement;
+    expect(both).toHaveTextContent('4–6 × 30 s maximal');
+    // Nothing to name it by: still shown, never dropped.
+    expect(screen.getByRole('heading', { name: 'Unnamed drill' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('says when an item uses an older drill version, and only on that item', async () => {
@@ -1760,7 +1811,8 @@ describe('the age group on a template row', () => {
   });
 });
 
-// A template may carry no difficulty, no length, no session type and no intent.
+// Defensive: the database keeps the four fields NOT NULL (OD-2026-11-17-001), but a
+// reader that met an empty one must still show a clean line and open.
 describe('a template row with fields left empty', () => {
   it('shows no "null min", no empty plaque and no stray separators, and still opens', async () => {
     mockFetch(() => jsonResponse({ templates: [{ ...BOXING_FUNDAMENTALS, difficulty: null, duration_minutes: null, session_type: '', intent: '' }] }));

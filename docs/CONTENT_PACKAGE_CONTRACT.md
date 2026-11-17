@@ -488,6 +488,7 @@ One row = one template. Identity: template_id.
 | requires_coach_authorization |  | true or false | A coach must authorize it. Blank means false. |
 | active |  | blank or `true` | Decided by the tool: withdrawing a template is a separate action. |
 | created_by_account_id |  | `{{SEED_ACCOUNT_ID}}` or blank | The account that runs the load is recorded as the author. |
+| details |  | text | JSON object: every backbone field of the template with no column of its own, whole, by its backbone name. Blank means {}. |
 | field_labels |  | text | JSON object: per field, {"status": one of OBSERVED, REPORTED, INFERRED, UNVERIFIED, "sources": [source keys]} (backbone RULES section 10). A field may hold labels for its own parts the same way. Stored by item version. Blank means no field labels. A file without this column leaves the stored field labels of each item as they are. |
 | evidence |  | text | JSON object, or a JSON list of them: evidence_category, evidence_label (one of PROVEN, EMERGING, EXPERIMENTAL, RESEARCH_NEEDED, RULE, CONVENTION, FRAMEWORK, UNTIERED), check_state, evidence_item_ids, registry_claim_ids, basis (backbone EVIDENCE_VOCABULARY). Other keys are kept as written. Stored by item version. Blank means no evidence entry. A file without this column leaves the stored evidence of each item as it is. |
 | stage_keys |  | a list separated by `\|`; each item: text | The pathway stages the item serves, separated by \| (Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1). Stored by lineage; a link describes the map and never limits where a coach places a member or what a coach runs. Blank means no stage links (current links are ended). A file without this column leaves the links of each item as they are. |
@@ -495,6 +496,7 @@ One row = one template. Identity: template_id.
 Rules:
 
 - name is unique among current templates (pilot_workout_templates_one_active_name).
+- details, when set, is a JSON object: every backbone field with no column of its own, by its backbone name.
 - A new:<short-name> template_id becomes 'wtp_' + first 14 hex of sha256(name).
 
 #### workout-templates/seed_workout_template_items.csv
@@ -515,10 +517,12 @@ One row = one item, in order, of one template. Identity: template_id + ordinal. 
 | contact_level |  | `none`, `light_technical`, `conditioned`, `controlled_sparring`, `open_sparring` | Contact in this item. Blank means none. |
 | coach_note |  | text | Coach note. |
 | scale_level |  | `A`, `B`, `C` | A preferred scale level (a preference, never forced). |
+| details |  | text | JSON object: every backbone field of the item with no column of its own, whole, by its backbone name. Blank means {}. |
 
 Rules:
 
-- Exactly one of drill_id and free_text_drill.
+- details, when set, is a JSON object: every backbone field with no column of its own, by its backbone name.
+- At least one of drill_id, free_text_drill or a non-empty details.
 - Contact above light_technical carries no duration or rep count.
 - A blank item_id is filled with 'wti_' + first 14 hex of sha256(template_id + ':' + ordinal) (an existing row keeps its id).
 

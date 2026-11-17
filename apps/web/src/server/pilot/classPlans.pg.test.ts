@@ -37,6 +37,7 @@ import { Client } from 'pg';
 
 import { applyImport } from './contentImport/apply';
 import { readDatasetFiles } from './contentImport/cli';
+import { readCsv } from './contentImport/csv';
 import { type ImportPlan, planImport } from './contentImport/plan';
 import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './contentImport/referenceSets';
 import type { DatasetName } from './contentImport/types';
@@ -224,6 +225,31 @@ async function applyCommitted(organizationId: string, actorAccountId: string, fi
 
 import { getClassPlanTrack, listClassPlanTracks, listLibraryTracks } from './classPlans';
 
+const FT1_TRACK = 'trk_d104860a7eccef';
+const csvRows = (name: string) => {
+  const table = readCsv(committed[name]);
+  return table.records.map((record) => Object.fromEntries(table.header.map((column, index) => [column, record.cells[index] ?? ''])));
+};
+/**
+ * The committed tracks Class plans lists: those with at least one block. Read from the files, never
+ * pinned: lane YR adds the 48-session youth manual beside FT1, and its 52 library tracks (no blocks)
+ * go to the Library view instead.
+ */
+const blockRows = csvRows('training-tracks/seed_track_blocks.csv');
+const sessionRows = csvRows('training-tracks/seed_track_block_sessions.csv');
+const tracksWithBlocks = csvRows('training-tracks/seed_training_tracks.csv')
+  .filter((row) => blockRows.some((block) => block.track_id === row.track_id))
+  .map((row) => ({
+    track_id: row.track_id,
+    name: row.name,
+    duration_weeks: row.duration_weeks === '' ? null : Number(row.duration_weeks),
+    block_count: blockRows.filter((block) => block.track_id === row.track_id).length,
+    day_count: sessionRows.filter((session) => session.track_id === row.track_id).length,
+  }))
+  .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+const committedLibraryTracks = csvRows('training-tracks/seed_training_tracks.csv')
+  .filter((row) => !blockRows.some((block) => block.track_id === row.track_id)).length;
+
 describe('Class plans over the loaded FT1 track', () => {
   const ORG = 'ft1_gym';
   const OTHER = 'other_gym';
@@ -237,18 +263,16 @@ describe('Class plans over the loaded FT1 track', () => {
     await applyCommitted(ORG, admin, readDatasetFiles(SEED_DATA_DIR, REGISTRIES));
     await applyCommitted(ORG, admin, committed);
     trackId = (await client.query<{ track_id: string }>(
-      `select track_id from pilot.training_tracks where organization_id = $1`, [ORG],
+      `select track_id from pilot.training_tracks where organization_id = $1 and track_id = $2`, [ORG, FT1_TRACK],
     )).rows[0].track_id;
   });
 
-  it('lists the one current track with its counts', async () => {
-    expect(await listClassPlanTracks(ORG)).toEqual([expect.objectContaining({
-      track_id: trackId,
-      name: '8-Week Non-Contact Boxing Pilot Program',
-      duration_weeks: 8,
-      block_count: 8,
-      day_count: 40,
-    })]);
+  it('lists every committed track with blocks, FT1 among them, with its counts', async () => {
+    expect(tracksWithBlocks.map((track) => track.track_id)).toContain(FT1_TRACK);
+    expect(tracksWithBlocks.find((track) => track.track_id === FT1_TRACK)).toEqual({
+      track_id: FT1_TRACK, name: '8-Week Non-Contact Boxing Pilot Program', duration_weeks: 8, block_count: 8, day_count: 40,
+    });
+    expect(await listClassPlanTracks(ORG)).toEqual(tracksWithBlocks.map((track) => expect.objectContaining(track)));
   });
 
   it('reads 8 titled weeks of 5 days in order, each day naming its template, and carries the detail fields', async () => {
@@ -358,13 +382,17 @@ describe('Class plans over the loaded FT1 track', () => {
       await insertLibraryTrack(ORG, 'trk_00000000000d04', 'D superseded', {}, { superseded: true, active: false });
       await insertLibraryTrack(OTHER, 'trk_00000000000e05', 'E other gym', {});
 
-      expect((await listClassPlanTracks(ORG)).map((track) => track.track_id)).toEqual([trackId]);
-      expect(await listLibraryTracks(ORG)).toEqual([
+      // Class plans: the committed tracks with blocks, nothing else (lane YR adds the 48-session youth manual).
+      expect((await listClassPlanTracks(ORG)).map((track) => track.track_id)).toEqual(tracksWithBlocks.map((track) => track.track_id));
+      // Library: the two fixtures, plus every committed track without blocks (lane YR's library tracks).
+      const library = await listLibraryTracks(ORG);
+      expect(library.filter((track) => track.track_id.startsWith('trk_00000000000'))).toEqual([
         { track_id: 'trk_00000000000a01', name: 'A library track', lane: 'standard', age_band: 'any',
           part_heading: null, chapter_heading: null, subtitle: null, group_count: 0 },
         { track_id: 'trk_00000000000b02', name: 'B library track', lane: 'standard', age_band: 'any',
           part_heading: 'PART 1', chapter_heading: '1. Made-up chapter', subtitle: 'A subtitle', group_count: 2 },
       ]);
+      expect(library).toHaveLength(2 + committedLibraryTracks);
       expect((await listLibraryTracks(OTHER)).map((track) => track.track_id)).toEqual(['trk_00000000000e05']);
 
       // One library track opens through the same read, with its details whole and no weeks.

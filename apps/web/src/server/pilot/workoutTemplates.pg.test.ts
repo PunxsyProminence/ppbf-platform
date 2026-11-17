@@ -87,6 +87,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let drillLibraryMigrationSql: string;
 let vocabularyWideningSql: string;
 let migrationSql: string;
+let detailsMigrationSql: string;
 let baseSchemaSql: string;
 let applyDrillLibraryMigrationTransaction: (client: Client, sql: string) => Promise<void>;
 let applyMigrationTransaction: (client: Client, sql: string) => Promise<void>;
@@ -232,6 +233,7 @@ beforeAll(async () => {
     path.join(INFRA_DIR, 'pilot_slice_postgres_drill_vocabulary_widening_migration.sql'), 'utf8',
   );
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
+  detailsMigrationSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres_workout_template_details_migration.sql'), 'utf8');
 
   const drillLibraryRunnerModule = await nativeDynamicImport(pathToFileURL(DRILL_LIBRARY_RUNNER_PATH).href);
   applyDrillLibraryMigrationTransaction = drillLibraryRunnerModule.applyMigrationTransaction as (
@@ -457,6 +459,8 @@ describe('workoutTemplates.ts read functions', () => {
     const client = await freshDatabase('ppbf_test_wtpl_read_functions');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      // The readers select item details (lane YR-a's migration, in `all` after this one).
+      await client.query(detailsMigrationSql);
       await insertDrill(client, 'drl-1', 'Jab Drill');
       await insertDrill(client, 'drl-2', 'Footwork Drill');
       await insertTemplate(client, 'tpl-1', 'Beginner Footwork');
@@ -493,6 +497,8 @@ describe('workoutTemplates.ts read functions', () => {
     const client = await freshDatabase('ppbf_test_wtpl_list_org_scope');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      // The readers select item details (lane YR-a's migration, in `all` after this one).
+      await client.query(detailsMigrationSql);
       await insertOrganization(client, ORG_B);
       await insertTemplate(client, 'tpl-a', 'A gym template');
       await insertTemplate(client, 'tpl-b', 'B gym template', { organizationId: ORG_B });
@@ -509,6 +515,8 @@ describe('workoutTemplates.ts read functions', () => {
     const client = await freshDatabase('ppbf_test_wtpl_detail_org_scope');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      // The readers select item details (lane YR-a's migration, in `all` after this one).
+      await client.query(detailsMigrationSql);
       await insertOrganization(client, ORG_B);
       await insertTemplate(client, 'tpl-b', 'B gym template', { organizationId: ORG_B });
 
@@ -531,6 +539,8 @@ describe('workoutTemplates.ts read functions', () => {
     const client = await freshDatabase('ppbf_test_wtpl_items_org_scope');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      // The readers select item details (lane YR-a's migration, in `all` after this one).
+      await client.query(detailsMigrationSql);
       await insertOrganization(client, ORG_B);
       await insertDrill(client, 'drl-a', 'A gym drill');
       await insertDrill(client, 'drl-b', 'B gym drill', ORG_B);
@@ -570,6 +580,8 @@ describe('workoutTemplates.ts read functions', () => {
     const client = await freshDatabase('ppbf_test_wtpl_active_predicate');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      // The readers select item details (lane YR-a's migration, in `all` after this one).
+      await client.query(detailsMigrationSql);
       await insertTemplate(client, 'tpl-live', 'Still taught');
       await insertTemplate(client, 'tpl-retired', 'No longer taught', { active: false });
 
@@ -594,6 +606,8 @@ describe('workoutTemplates.ts read functions', () => {
     const client = await freshDatabase('ppbf_test_wtpl_filters');
     try {
       await applyMigrationTransaction(client, migrationSql);
+      // The readers select item details (lane YR-a's migration, in `all` after this one).
+      await client.query(detailsMigrationSql);
       await insertTemplate(client, 'tpl-cond', 'Conditioning', { sessionType: 'conditioning' });
       await insertTemplate(client, 'tpl-elite', 'Elite technical', { difficulty: 'elite' });
       await insertTemplate(client, 'tpl-youth', 'Youth technical', { ageBand: 'youth' });

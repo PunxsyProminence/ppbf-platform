@@ -215,8 +215,10 @@ describe('the drill-linked prompt', () => {
     const [id] = listedIds(linked);
     const step = { template_id: WORKOUT.template_id, ordinal: '4', block: 'technical', drill_id: id, duration_minutes: '10' };
     expect(blockingFor([WORKOUT], [...STEPS, step])).toEqual([]);
-    // Both columns filled breaks "exactly one".
-    expect(blockingFor([WORKOUT], [...STEPS, { ...step, free_text_drill: 'also words' }]).map((f) => f.code)).toContain('row_rule');
+    // A drill and its dosage in words loads (lane YR: pilot_wti_one_source takes a drill, words or details).
+    expect(blockingFor([WORKOUT], [...STEPS, { ...step, free_text_drill: '4 x 30 s maximal' }])).toEqual([]);
+    // No drill, no words and empty details: nothing to run, so it blocks.
+    expect(blockingFor([WORKOUT], [...STEPS, { ...step, drill_id: '', details: '{}' }]).map((f) => f.code)).toContain('row_rule');
     // An id the gym does not have is an orphan, so a guessed id cannot load quietly.
     expect(blockingFor([WORKOUT], [...STEPS, { ...step, drill_id: 'drl_00000000000000' }]).map((f) => f.code)).toContain('orphan_reference');
   });

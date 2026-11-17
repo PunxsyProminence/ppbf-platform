@@ -104,6 +104,11 @@ const MIGRATIONS: ReadonlyArray<{ file: string; runner: string }> = [
     file: 'pilot_slice_postgres_workout_templates_v2_migration.sql',
     runner: 'pilot-apply-workout-templates-v2-migration.mjs',
   },
+  // workoutTemplates.ts selects item details (lane YR-a's migration, in `all` after v2).
+  {
+    file: 'pilot_slice_postgres_workout_template_details_migration.sql',
+    runner: 'pilot-apply-workout-template-details-migration.mjs',
+  },
   // sessionScriptRuns.ts reads and writes session_script_runs.class_id (D4), which the
   // session-run-class migration adds; it alters session_run_athletes, which needs the staff-notes
   // table it widens.

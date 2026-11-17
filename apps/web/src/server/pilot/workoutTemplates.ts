@@ -102,6 +102,13 @@ export interface WorkoutTemplateItemRow {
   rep_count: number | null;
   contact_level: WorkoutTemplateItemContactLevel;
   coach_note: string | null;
+  /**
+   * Every Backbone field of the item with no column of its own (lane YR), e.g. a sheet's
+   * duration_minutes on a controlled-sparring item, which the duration column may not hold
+   * (pilot_wti_no_contact_volume). SHOWN AS INFORMATION ONLY (OD-2026-11-17-002): issuing,
+   * timers and presets read duration_minutes and rep_count, never details.
+   */
+  details: Record<string, unknown>;
   created_at: string;
 }
 
@@ -140,7 +147,7 @@ const TEMPLATE_FIELDS =
 
 const ITEM_FIELDS =
   'organization_id, item_id, template_id, ordinal, block, drill_id, free_text_drill, scale_level, '
-  + 'duration_minutes, rep_count, contact_level, coach_note, created_at';
+  + 'duration_minutes, rep_count, contact_level, coach_note, details, created_at';
 
 // The same columns qualified to the item alias, because the detail read joins
 // pilot.drill_library, which also has organization_id, drill_id,
