@@ -53,7 +53,7 @@ const NO_STAGE_KEYS: RowRule = {
 };
 
 /** An id of the backbone's shape, and the id its identity string gives (never re-minted). */
-function backboneId(column: string, prefix: string, identity: (row: RowValues) => string | null, mirrors: RowRule['mirrors']): RowRule[] {
+function backboneId(column: string, prefix: string, identity: (row: RowValues) => string | null, mirrors: RowRule['mirrors'], whose = "the backbone's id"): RowRule[] {
   const shape = new RegExp(`^${prefix}_[0-9a-f]{14}$`);
   return [
     {
@@ -62,7 +62,7 @@ function backboneId(column: string, prefix: string, identity: (row: RowValues) =
       check: (row) => (row[column] && !shape.test(row[column]) ? `${column} '${row[column]}' is not '${prefix}_' and 14 lowercase hex` : null),
     },
     {
-      description: `${column} is the backbone's id for the row's identity: '${prefix}_' + first 14 hex of sha256(identity).`,
+      description: `${column} is ${whose} for the row's identity: '${prefix}_' + first 14 hex of sha256(identity).`,
       check: (row) => {
         const ident = identity(row);
         if (!shape.test(row[column] ?? '') || ident === null) return null;
@@ -169,7 +169,7 @@ const criteriaFile: FileSpec = {
     activeFlag(),
   ],
   rowRules: [
-    ...backboneId('criterion_id', 'pgc', (row) => (row.gate_id && row.ordinal ? `${row.gate_id}:${row.ordinal}` : null),
+    ...backboneId('criterion_id', 'pgc', (row) => (row.gate_id && row.ordinal ? `${row.gate_id}:${Number(row.ordinal)}` : null),
       { table: 'pathway_gate_criteria', constraint: 'pilot_pathway_gate_criteria_id_check' }),
     {
       description: 'Each kind carries what it needs: text its words; scorecard_min its items, minimum and contexts; stage_completed its stage; gate_met its gate\'s stage, kind and id; bout_count a bound.',
@@ -286,7 +286,7 @@ const itemsFile: FileSpec = {
   unique: [{ columns: ['protocol_id', 'item_number'], description: 'one item per number on a protocol (pilot_scorecard_items_one_active_number).' }],
   columns: [
     organizationColumn(),
-    key('scorecard_item_id', "The backbone's id: 'sci_' + hex14(protocol_id + ':' + two-digit item number). Kept as given, never re-minted."),
+    key('scorecard_item_id', "The backbone's id: 'sci_' + hex14(protocol_id + ':' + two-digit item number), checked; an item with no protocol is checked by shape only (its id comes from its source key and name, D-PK128). Kept as given, never re-minted."),
     text('protocol_id', 'The protocol the item belongs to: a protocol in seed_assessment_protocols.csv (or the loaded catalog).', { label: true }),
     integer('item_number', 'The item\'s number on its protocol.', { bound: 'positive' }),
     text('item_group', 'The scorecard section (e.g. foundations). The backbone key is `group`.', { label: true }),
@@ -295,7 +295,7 @@ const itemsFile: FileSpec = {
     text('scale', 'The scale as the backbone states it.', { required: true, label: true }),
     text('scale_key', 'The scale the item is scored on: a scale in seed_scorecard_scales.csv (or the loaded catalog). Blank when the source gives none.', { label: true }),
     listOf('scorable_contexts', 'The contexts the item may be scored in, separated by |.', { vocabulary: 'scorable_context', label: true }),
-    listOf('gaps', 'What the source leaves open, separated by |, as written.'),
+    listOf('gaps', 'What the source leaves open, separated by |, each as written (commas and semicolons kept).', { proseItems: true }),
     status(),
     sources(),
     decision(),
@@ -304,7 +304,7 @@ const itemsFile: FileSpec = {
   ],
   rowRules: [
     ...backboneId('scorecard_item_id', 'sci',
-      (row) => (row.protocol_id && row.item_number ? `${row.protocol_id}:${String(row.item_number).padStart(2, '0')}` : null),
+      (row) => (row.protocol_id && row.item_number ? `${row.protocol_id}:${String(Number(row.item_number)).padStart(2, '0')}` : null),
       { table: 'scorecard_items', constraint: 'pilot_scorecard_items_id_check' }),
     NO_STAGE_KEYS,
   ],
@@ -336,7 +336,7 @@ const anchorSpecsFile: FileSpec = {
   ],
   rowRules: [
     ...backboneId('anchor_spec_id', 'acs',
-      (row) => (row.scorecard_item_id && row.level && row.context_class ? `${row.scorecard_item_id}:${row.level}:${row.context_class}` : null),
+      (row) => (row.scorecard_item_id && row.level && row.context_class ? `${row.scorecard_item_id}:${Number(row.level)}:${row.context_class}` : null),
       { table: 'scorecard_anchor_clip_specs', constraint: 'pilot_scorecard_anchor_clip_specs_id_check' }),
     stageShape('used_by_stage_keys'),
     NO_STAGE_KEYS,
@@ -375,7 +375,7 @@ const kpisFile: FileSpec = {
   unique: [{ columns: ['list_key', 'ordinal'], description: 'one KPI per place in a list (pilot_behavior_kpis_one_active_ordinal).' }],
   columns: [
     organizationColumn(),
-    key('kpi_id', "'kpi_' + hex14(list_key + ':' + name). Kept as given, never re-minted."),
+    key('kpi_id', "Lane CAT's id rule (not in the backbone's DATA_MODEL): 'kpi_' + hex14(list_key + ':' + name). Kept as given, never re-minted."),
     vocabulary('list_key', 'kpi_list_key', 'The list the KPI belongs to.', { required: true }),
     integer('ordinal', 'The KPI\'s place in its list, in its source\'s order (1 = first).', { required: true, bound: 'positive' }),
     text('name', 'The KPI, quoted from its source.', { required: true }),
@@ -388,7 +388,7 @@ const kpisFile: FileSpec = {
   ],
   rowRules: [
     ...backboneId('kpi_id', 'kpi', (row) => (row.list_key && row.name ? `${row.list_key}:${row.name}` : null),
-      { table: 'behavior_kpis', constraint: 'pilot_behavior_kpis_id_check' }),
+      { table: 'behavior_kpis', constraint: 'pilot_behavior_kpis_id_check' }, "lane CAT's id"),
     jsonObject('level_anchors'),
     {
       description: 'level_anchors only on a three-level KPI.',
@@ -411,9 +411,12 @@ export const assessmentCatalogDataset: DatasetSpec = {
     + 'table, as the pathway catalog\'s: a changed row is revised in place with the old content kept in the history ledger, '
     + 'and a row the file leaves out is retired (kept, marked inactive), never deleted. The protocols file is not a '
     + 'snapshot: a protocol it leaves out is left alone, and a changed one becomes the next protocol_version, the earlier '
-    + 'version kept inactive. Blank loads blank for this dataset: a protocol\'s quality_measured is not required, and a '
+    + 'version kept inactive; a protocol\'s name may not be held by another active protocol when the load starts (so '
+    + 'swapping two names takes two loads), and a reference to a protocol the file leaves out is checked against the '
+    + 'loaded ones. Blank loads blank for this dataset: a protocol\'s quality_measured is not required, and a '
     + 'blank boxing_specific or evidence_class is stored blank rather than as the table\'s default (Overwatch\'s CAT '
-    + 'ruling Q1). Every id is checked against the backbone\'s identity rule. Gates, criteria and anchor specs name '
+    + 'ruling Q1). Every id is checked against its identity rule (a scorecard item with no protocol by its shape only). '
+    + 'Gates, criteria and anchor specs name '
     + 'stages of the pathway catalog, which must be loaded first.',
   loadedToday:
     'Nothing yet: the tables exist (assessment-catalog migration), and the Backbone seed files follow in lane CAT-c '
@@ -489,8 +492,12 @@ export function assessmentCatalogReferenceFindings(
     if (file) packageIndex.set(name, new Map(file.rows.map((row) => [row.values[KEY_OF[name]], row.values])));
   }
   const known = (name: string): boolean => packageIndex.has(name) || fallback !== undefined;
-  const find = (name: string, value: string): RowValues | undefined =>
-    packageIndex.has(name) ? packageIndex.get(name)?.get(value) : fallback?.lookup(name, value);
+  const find = (name: string, value: string): RowValues | undefined => {
+    const inPackage = packageIndex.get(name)?.get(value);
+    if (inPackage) return inPackage;
+    // A snapshot file is the whole table after this load; the protocols file is not.
+    return packageIndex.has(name) && name !== ASSESSMENT_PROTOCOLS_FILE ? undefined : fallback?.lookup(name, value);
+  };
   const source = (name: string) => (packageIndex.has(name) ? `${name} of this package` : fallback?.where ?? name);
 
   const out: Finding[] = [];
@@ -501,6 +508,9 @@ export function assessmentCatalogReferenceFindings(
       const values = reference.list ? splitList(row.values[reference.column] ?? '', '|') : [row.values[reference.column]].filter(Boolean);
       for (const value of values) {
         if (find(reference.to, value)) continue;
+        // The protocols file is not a snapshot: a protocol it leaves out stays
+        // loaded, so offline (no lookup) only the plan stage can decide.
+        if (reference.to === ASSESSMENT_PROTOCOLS_FILE && packageIndex.has(reference.to) && !fallback) continue;
         out.push({
           code: 'orphan_reference',
           file: file.path,
@@ -533,7 +543,7 @@ export function assessmentCatalogReferenceFindings(
     for (const row of specs.rows) {
       const item = find(ITEMS_FILE, row.values.scorecard_item_id);
       if (!item) continue;
-      if (row.values.item_number && item.item_number && row.values.item_number !== item.item_number) {
+      if (row.values.item_number && item.item_number && Number(row.values.item_number) !== Number(item.item_number)) {
         out.push({
           code: 'row_rule',
           file: specs.path,

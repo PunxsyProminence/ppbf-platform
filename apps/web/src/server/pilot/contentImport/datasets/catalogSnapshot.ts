@@ -236,6 +236,19 @@ export async function applySnapshotTables(
   for (const table of tables) {
     const columns = writtenColumns(table.spec);
     const keyColumns = table.spec.key;
+    // Every row this load revises or retires is set inactive first, so a
+    // partial unique index over active rows (one per place, one per name)
+    // never sees the old and new row active together: a rename or a swap of
+    // places applies as planned. Each row's final active_flag is written in
+    // the loop below; the end state and the history ledger are unchanged.
+    for (const item of items) {
+      if (item.table !== table || item.unit.outcome !== 'new_version') continue;
+      const params: unknown[] = [ctx.organizationId, ...keyColumns.map((name) => String((item.cells ?? {})[name]))];
+      await ctx.client.query(
+        `update pilot.${table.table} set active_flag = false where organization_id = $1 and ${keyColumns.map((name, index) => `${name} = $${index + 2}`).join(' and ')}`,
+        params,
+      );
+    }
     for (const item of items) {
       const { unit, cells, ledger } = item;
       if (item.table !== table || (unit.outcome !== 'new' && unit.outcome !== 'new_version')) continue;

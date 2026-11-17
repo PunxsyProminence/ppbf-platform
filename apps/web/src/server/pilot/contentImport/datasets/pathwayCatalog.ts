@@ -1,6 +1,7 @@
 import type { DbClient } from '../actor';
 import type { CellInput } from '../canonical';
 import { datasetSpec } from '../specs';
+import { ANCHOR_SPECS_FILE, CRITERIA_FILE, GATES_FILE } from '../specs/assessmentCatalog';
 import {
   PATHWAY_DEFAULTS_FILE,
   PATHWAY_LINKS_FILE,
@@ -168,6 +169,35 @@ export const PATHWAY_CATALOG_ENGINE: DatasetEngine = {
                 file: present(stagesTable)?.path ?? PATHWAY_STAGES_FILE,
                 key,
                 message: `this file would retire stage '${String(end)}', but the loaded ${table.table === 'pathway_stage_links' ? 'link' : 'default'} ${key} still names it; carry ${table.spec.file} too, or keep the stage`,
+              });
+            }
+          }
+        }
+      }
+      // The assessment catalog's loaded rows that name a stage (lane CAT-b): a
+      // stage file may not retire a stage one of them still names, unless the
+      // package carries that catalog file too (its own engine checks it).
+      const named: [string, string, string, string][] = [
+        ['pathway_gates', 'gate_id', 'stage_key', GATES_FILE],
+        ['pathway_gate_criteria', 'criterion_id', 'ref_stage_key', CRITERIA_FILE],
+        ['scorecard_anchor_clip_specs', 'anchor_spec_id', 'used_by_stage_keys', ANCHOR_SPECS_FILE],
+      ];
+      for (const [catalogTable, keyColumn, stageColumn, file] of named) {
+        if (input.all?.some((candidate) => candidate.spec.file === file)) continue;
+        const ready = await ctx.client.query<{ ready: boolean }>(`select to_regclass('pilot.${catalogTable}') is not null as ready`);
+        if (ready.rows[0]?.ready !== true) continue;
+        const { rows } = await ctx.client.query<{ key: string; named: string | string[] | null }>(
+          `select ${keyColumn} as key, ${stageColumn} as named from pilot.${catalogTable} where organization_id = $1 and active_flag`,
+          [ctx.organizationId],
+        );
+        for (const row of rows) {
+          for (const end of Array.isArray(row.named) ? row.named : [row.named]) {
+            if (end && !kept.has(end)) {
+              findings.push({
+                code: 'orphan_reference',
+                file: present(stagesTable)?.path ?? PATHWAY_STAGES_FILE,
+                key: row.key,
+                message: `this file would retire stage '${end}', but the loaded ${catalogTable} row ${row.key} still names it; carry ${file} too, or keep the stage`,
               });
             }
           }

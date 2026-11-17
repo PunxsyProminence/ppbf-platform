@@ -82,6 +82,8 @@ export interface ColumnSpec {
   vocabulary?: VocabularyName;
   /** The cell holds a list; each item is checked against vocabulary / idKind / references. */
   list?: '|' | ',';
+  /** A '|' list whose items are prose: ',' and ';' may appear inside an item (lane CAT-b, the backbone's gaps). */
+  proseItems?: boolean;
   idKind?: IdKind;
   /** new:<short-name> is accepted (a key, or a reference to an item in the same package). */
   allowNew?: boolean;

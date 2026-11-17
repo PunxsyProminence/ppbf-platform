@@ -76,7 +76,8 @@ export interface DatasetEngine {
   readBaseline(ctx: EngineContext): Promise<ParsedFile[]>;
   /** SELECT ... FOR UPDATE on the rows these keys name (those that exist). */
   lockKeys(ctx: EngineContext, keys: readonly string[]): Promise<void>;
-  plan(ctx: EngineContext, input: { files: readonly ParsedFile[]; validation: ValidationResult }): Promise<DatasetPlan>;
+  /** `files`: this dataset's; `all`: every file of the package (a catalog may check a reference against another dataset's file). */
+  plan(ctx: EngineContext, input: { files: readonly ParsedFile[]; validation: ValidationResult; all?: readonly ParsedFile[] }): Promise<DatasetPlan>;
   /** Writes exactly what `plan` decided. Called only with a plan made inside the same transaction. */
   apply(ctx: EngineContext, plan: DatasetPlan, write: { importId: string }): Promise<DatasetWriteResult>;
 }

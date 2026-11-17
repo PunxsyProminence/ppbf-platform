@@ -433,8 +433,8 @@ function checkCell(file: ParsedFile, row: ParsedRow, column: ColumnSpec, out: Fi
   }
 
   if (column.list) {
-    const wrong = column.list === '|' ? /[;,]/ : /[|;]/;
-    if (wrong.test(value)) {
+    const wrong = column.list === '|' ? (column.proseItems ? null : /[;,]/) : /[|;]/;
+    if (wrong?.test(value)) {
       out.push(
         finding(
           file,

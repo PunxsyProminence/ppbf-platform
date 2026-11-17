@@ -190,7 +190,7 @@ const H = {
   scales: ['organization_id', 'scale_key', 'min_level', 'max_level', 'level_anchors', 'status', 'note', 'backbone_version'],
   caps: ['organization_id', 'cap_key', 'scale_key', 'max_score', 'applies_to', 'applies_to_protocol_id', 'applies_to_contexts', 'wording', 'decision', 'note', 'status'],
   items: ['organization_id', 'scorecard_item_id', 'protocol_id', 'item_number', 'item_group', 'name', 'definition', 'scale', 'scale_key', 'scorable_contexts',
-    'status', 'sources', 'backbone_version', 'field_labels', 'evidence'],
+    'gaps', 'status', 'sources', 'backbone_version', 'field_labels', 'evidence'],
   gates: ['organization_id', 'gate_id', 'stage_key', 'gate_kind', 'informs_only', 'override_process', 'status', 'sources', 'backbone_version', 'evidence'],
   criteria: ['organization_id', 'criterion_id', 'gate_id', 'ordinal', 'kind', 'criterion_text', 'scorecard_item_ids', 'item_numbers', 'min_score', 'contexts',
     'combine', 'ref_stage_key', 'ref_gate_kind', 'ref_gate_id', 'status', 'sources', 'backbone_version'],
@@ -201,6 +201,9 @@ const H = {
 
 const ITEM1 = sci('PP-T01', 1);
 const ITEM2 = sci('PP-T01', 2);
+// The frozen item with no protocol and no scale: its id comes from its source key and name (D-PK128).
+const FIGHT_IQ = `sci_${hex14('LR-131:fight_iq_components')}`;
+const FIGHT_IQ_GAP = 'no scale in the source; not scorable until a scale is set (D-PK119)';
 const Y1_ENTRY = pgt('Y1', 'entry');
 const Y1_EXIT = pgt('Y1', 'exit');
 const Y2_ENTRY = pgt('Y2', 'entry');
@@ -227,6 +230,8 @@ function catalog(over: Partial<Record<keyof typeof H, Row[]>> = {}): Record<stri
         field_labels: '{"scorable_contexts": "INFERRED"}', evidence: EVIDENCE },
       { organization_id: ORG, scorecard_item_id: ITEM2, protocol_id: 'PP-T01', item_number: '2', name: 'Footwork economy', definition: 'Footwork economy',
         scale: '1-5 (Long Road Part 2 section 3.1)', scale_key: 'live_long_road', status: 'REPORTED' },
+      { organization_id: ORG, scorecard_item_id: FIGHT_IQ, name: 'fight_iq_components', definition: '| Component | Definition |',
+        scale: 'not in source (gap)', gaps: FIGHT_IQ_GAP, status: 'REPORTED', sources: 'LR-131' },
     ],
     gates: [
       { organization_id: ORG, gate_id: Y1_ENTRY, stage_key: 'Y1', gate_kind: 'entry', informs_only: 'true', status: 'REPORTED', sources: 'DOC-156|RULES', evidence: EVIDENCE },
@@ -288,11 +293,11 @@ describe('an assessment-catalog package', () => {
     const files = catalog();
     const first = await plan('gym_cat', actor, files);
     expect(first.blocking).toEqual([]);
-    expect(first.counts['assessment-catalog']).toEqual({ new: 15, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
+    expect(first.counts['assessment-catalog']).toEqual({ new: 16, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
     await load('gym_cat', actor, files);
 
     const again = await plan('gym_cat', actor, files);
-    expect(again.counts['assessment-catalog']).toEqual({ new: 0, new_version: 0, unchanged: 15, absent: 0, reject: 0 });
+    expect(again.counts['assessment-catalog']).toEqual({ new: 0, new_version: 0, unchanged: 16, absent: 0, reject: 0 });
 
     const { rows: [protocol] } = await client.query(
       `select protocol_version, active, quality_measured, boxing_specific, evidence_class, retest_interval_basis, reliability_status,
@@ -310,10 +315,11 @@ describe('an assessment-catalog package', () => {
               (select count(*) from pilot.scorecard_items where organization_id = $1)::int as items,
               (select array_to_string(scorable_contexts, '|') from pilot.scorecard_items where organization_id = $1 and item_number = 1) as contexts,
               (select level_anchors->>'2' from pilot.behavior_kpis where organization_id = $1 and ordinal = 2) as anchor,
+              (select gaps from pilot.scorecard_items where organization_id = $1 and protocol_id is null) as gaps,
               (select count(*) from pilot.reference_content_revisions where organization_id = $1 and dataset = 'pathway_gates')::int as gate_history`,
       ['gym_cat'],
     );
-    expect(counts).toEqual({ gates: 3, criteria: 3, items: 2, contexts: 'drill|shadow|partner|constrained_live|live', anchor: 'b', gate_history: 3 });
+    expect(counts).toEqual({ gates: 3, criteria: 3, items: 3, contexts: 'drill|shadow|partner|constrained_live|live', anchor: 'b', gaps: [FIGHT_IQ_GAP], gate_history: 3 });
   });
 
   it('revises a changed row and retires what a file leaves out; a file left out leaves its table alone', async () => {
@@ -387,6 +393,67 @@ describe('an assessment-catalog package', () => {
     const result = await plan('gym_cat', actor, files);
     expect(blockingMessages(result)).toEqual(["duplicate_value name another active protocol, A5-T01 v1, already has the name 'Countermovement jump'"]);
     expect(formatPlan(result)).toContain("    reject PP-T03: another active protocol, A5-T01 v1, already has the name 'Countermovement jump'");
+  });
+});
+
+describe('review fixes (CAT-b adversarial review)', () => {
+  let actor: string;
+  beforeAll(async () => {
+    actor = await gymWithPathway('gym_fix');
+    await load('gym_fix', actor, catalog());
+  });
+
+  it('a KPI renamed in its place, and two KPIs swapping places, plan and apply', async () => {
+    const renamed = only(catalog({
+      kpis: [
+        { organization_id: ORG, kpi_id: kpi('drill', 'Clean exits from the exchange.'), list_key: 'drill', ordinal: '1', name: 'Clean exits from the exchange.', scoring_kind: 'count', status: 'OBSERVED' },
+        { organization_id: ORG, kpi_id: kpi('drill', 'Reset quality.'), list_key: 'drill', ordinal: '2', name: 'Reset quality.', scoring_kind: 'three_level',
+          level_anchors: '{"1": "a", "2": "b", "3": "c"}', status: 'OBSERVED', field_labels: '{"level_anchors": {"status": "INFERRED", "draft": true}}' },
+      ],
+    }), 'seed_behavior_kpis.csv');
+    await load('gym_fix', actor, renamed);
+    const swapped = only(catalog({
+      kpis: [
+        { organization_id: ORG, kpi_id: kpi('drill', 'Clean exits from the exchange.'), list_key: 'drill', ordinal: '2', name: 'Clean exits from the exchange.', scoring_kind: 'count', status: 'OBSERVED' },
+        { organization_id: ORG, kpi_id: kpi('drill', 'Reset quality.'), list_key: 'drill', ordinal: '1', name: 'Reset quality.', scoring_kind: 'three_level',
+          level_anchors: '{"1": "a", "2": "b", "3": "c"}', status: 'OBSERVED', field_labels: '{"level_anchors": {"status": "INFERRED", "draft": true}}' },
+      ],
+    }), 'seed_behavior_kpis.csv');
+    await load('gym_fix', actor, swapped);
+    const { rows } = await client.query(
+      `select ordinal, name, active_flag from pilot.behavior_kpis where organization_id = 'gym_fix' order by active_flag desc, ordinal`,
+    );
+    expect(rows.map((row) => `${row.ordinal} ${row.name} ${row.active_flag}`)).toEqual([
+      '1 Reset quality. true', '2 Clean exits from the exchange. true', '1 Clean exits. false',
+    ]);
+  });
+
+  it('a partial protocols file: a reference to a loaded protocol it leaves out is accepted', async () => {
+    const files = only(catalog({ protocols: [{ ...P1, protocol_id: 'PP-T02', name: 'DOC-027 cue response and coachability' }] }),
+      'seed_assessment_protocols.csv', 'seed_scorecard_items.csv');
+    const result = await plan('gym_fix', actor, files);
+    expect(result.blocking).toEqual([]);
+  });
+
+  it('a pathway stage file may not retire a stage a loaded gate still names', async () => {
+    const pathway = readDatasetFiles(SEED_DATA_DIR, ['pathway-catalog']);
+    const stagesPath = 'pathway-catalog/seed_pathway_stages.csv';
+    const lines = pathway[stagesPath].split('\n');
+    const withoutY2 = lines.filter((line) => !line.includes(',Y2,')).join('\n');
+    const result = await plan('gym_fix', actor, { [stagesPath]: withoutY2 });
+    expect(blockingMessages(result).filter((message) => message.includes('pathway_gates'))).toEqual([
+      `orphan_reference  this file would retire stage 'Y2', but the loaded pathway_gates row ${Y2_ENTRY} still names it; carry seed_pathway_gates.csv too, or keep the stage`,
+    ]);
+  });
+
+  it('one package carrying the pathway seed and the catalog loads for a new gym', async () => {
+    const fresh = await createGym('gym_onepackage');
+    const files = { ...readDatasetFiles(SEED_DATA_DIR, ['pathway-catalog']), ...catalog() };
+    const result = await plan('gym_onepackage', fresh, files);
+    expect(result.blocking).toEqual([]);
+    await load('gym_onepackage', fresh, files);
+    const { rows: [gates] } = await client.query(`select count(*)::int as n from pilot.pathway_gates where organization_id = 'gym_onepackage'`);
+    expect(gates.n).toBe(3);
   });
 });
 

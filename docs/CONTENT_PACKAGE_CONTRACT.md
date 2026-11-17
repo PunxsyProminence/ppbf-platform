@@ -739,7 +739,7 @@ Rules:
 
 ### 11. Assessment catalog
 
-The backbone's pathway gates and their criteria, the scorecard items, the anchor-clip specs, the scorecard scales and the non-contact cap, the assessment protocols, and the two behavioural KPI lists (SCHEMA_PROPOSAL P5, P6; OD-2026-11-16-001, OD-2026-11-16-003). It describes and informs: a gate is shown as met, not met or not scored and never moves anyone, and the cap is data for the later rating path. Each catalog file is a whole snapshot of its table, as the pathway catalog's: a changed row is revised in place with the old content kept in the history ledger, and a row the file leaves out is retired (kept, marked inactive), never deleted. The protocols file is not a snapshot: a protocol it leaves out is left alone, and a changed one becomes the next protocol_version, the earlier version kept inactive. Blank loads blank for this dataset: a protocol's quality_measured is not required, and a blank boxing_specific or evidence_class is stored blank rather than as the table's default (Overwatch's CAT ruling Q1). Every id is checked against the backbone's identity rule. Gates, criteria and anchor specs name stages of the pathway catalog, which must be loaded first.
+The backbone's pathway gates and their criteria, the scorecard items, the anchor-clip specs, the scorecard scales and the non-contact cap, the assessment protocols, and the two behavioural KPI lists (SCHEMA_PROPOSAL P5, P6; OD-2026-11-16-001, OD-2026-11-16-003). It describes and informs: a gate is shown as met, not met or not scored and never moves anyone, and the cap is data for the later rating path. Each catalog file is a whole snapshot of its table, as the pathway catalog's: a changed row is revised in place with the old content kept in the history ledger, and a row the file leaves out is retired (kept, marked inactive), never deleted. The protocols file is not a snapshot: a protocol it leaves out is left alone, and a changed one becomes the next protocol_version, the earlier version kept inactive; a protocol's name may not be held by another active protocol when the load starts (so swapping two names takes two loads), and a reference to a protocol the file leaves out is checked against the loaded ones. Blank loads blank for this dataset: a protocol's quality_measured is not required, and a blank boxing_specific or evidence_class is stored blank rather than as the table's default (Overwatch's CAT ruling Q1). Every id is checked against its identity rule (a scorecard item with no protocol by its shape only). Gates, criteria and anchor specs name stages of the pathway catalog, which must be loaded first.
 
 Loaded today: Nothing yet: the tables exist (assessment-catalog migration), and the Backbone seed files follow in lane CAT-c (the KPI lists in CAT-d).
 
@@ -845,7 +845,7 @@ One row = one scorecard item. Identity: scorecard_item_id.
 | column | required | allowed | meaning |
 | --- | --- | --- | --- |
 | organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
-| scorecard_item_id | yes | text | The backbone's id: 'sci_' + hex14(protocol_id + ':' + two-digit item number). Kept as given, never re-minted. |
+| scorecard_item_id | yes | text | The backbone's id: 'sci_' + hex14(protocol_id + ':' + two-digit item number), checked; an item with no protocol is checked by shape only (its id comes from its source key and name, D-PK128). Kept as given, never re-minted. |
 | protocol_id |  | text | The protocol the item belongs to: a protocol in seed_assessment_protocols.csv (or the loaded catalog). |
 | item_number |  | whole number 1 or more | The item's number on its protocol. |
 | item_group |  | text | The scorecard section (e.g. foundations). The backbone key is `group`. |
@@ -854,7 +854,7 @@ One row = one scorecard item. Identity: scorecard_item_id.
 | scale | yes | text | The scale as the backbone states it. |
 | scale_key |  | text | The scale the item is scored on: a scale in seed_scorecard_scales.csv (or the loaded catalog). Blank when the source gives none. |
 | scorable_contexts |  | a list separated by `\|`; each item: `drill`, `shadow`, `partner`, `constrained_live`, `live` | The contexts the item may be scored in, separated by \|. |
-| gaps |  | a list separated by `\|`; each item: text | What the source leaves open, separated by \|, as written. |
+| gaps |  | a list separated by `\|`; each item: text | What the source leaves open, separated by \|, each as written (commas and semicolons kept). |
 | status | yes | `OBSERVED`, `REPORTED`, `INFERRED`, `UNVERIFIED` | The record status (backbone RULES section 10). |
 | sources |  | a list separated by `\|`; each item: text | Source keys, separated by \|. |
 | decision |  | text | The decision record the row rests on (e.g. D-OQ183). |
@@ -1010,7 +1010,7 @@ One row = one behavioural KPI. Identity: kpi_id.
 | column | required | allowed | meaning |
 | --- | --- | --- | --- |
 | organization_id |  | `{{PPBF_ORG_ID}}` or blank | The seed workflow (or the signed-in session) decides the organization. |
-| kpi_id | yes | text | 'kpi_' + hex14(list_key + ':' + name). Kept as given, never re-minted. |
+| kpi_id | yes | text | Lane CAT's id rule (not in the backbone's DATA_MODEL): 'kpi_' + hex14(list_key + ':' + name). Kept as given, never re-minted. |
 | list_key | yes | `drill`, `room` | The list the KPI belongs to. |
 | ordinal | yes | whole number 1 or more | The KPI's place in its list, in its source's order (1 = first). |
 | name | yes | text | The KPI, quoted from its source. |
@@ -1028,7 +1028,7 @@ Rules:
 
 - one KPI per place in a list (pilot_behavior_kpis_one_active_ordinal).
 - kpi_id is 'kpi_' and 14 lowercase hex.
-- kpi_id is the backbone's id for the row's identity: 'kpi_' + first 14 hex of sha256(identity).
+- kpi_id is lane CAT's id for the row's identity: 'kpi_' + first 14 hex of sha256(identity).
 - level_anchors, when set, is a JSON object.
 - level_anchors only on a three-level KPI.
 - stage_keys stays blank: a catalog row names any stage in its own columns.

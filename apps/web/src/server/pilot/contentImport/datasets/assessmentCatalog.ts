@@ -14,6 +14,7 @@ import {
   SCALES_FILE,
 } from '../specs/assessmentCatalog';
 import { ASSESSMENT_PROTOCOLS_FILE } from '../specs/assessmentProtocols';
+import { PATHWAY_STAGES_FILE } from '../specs/pathwayCatalog';
 import type { ColumnSpec, FileSpec, Finding, ParsedFile, RowValues, Warning } from '../types';
 import { normalizeCell, splitList } from '../values';
 import {
@@ -138,8 +139,12 @@ async function protocolRows(ctx: EngineContext): Promise<Record<string, CellInpu
   return rows.map(protocolRow);
 }
 
-async function keptStageKeys(ctx: EngineContext): Promise<Set<string>> {
-  const { rows } = await ctx.client.query<{ stage_key: string }>('select stage_key from pilot.pathway_stages where organization_id = $1', [ctx.organizationId]);
+/** The organization's ACTIVE stages: a catalog row may not name a retired stage (as the pathway catalog's own links and defaults). */
+async function activeStageKeys(ctx: EngineContext): Promise<Set<string>> {
+  const { rows } = await ctx.client.query<{ stage_key: string }>(
+    'select stage_key from pilot.pathway_stages where organization_id = $1 and active_flag',
+    [ctx.organizationId],
+  );
   return new Set(rows.map((row) => row.stage_key));
 }
 
@@ -183,7 +188,7 @@ export const ASSESSMENT_CATALOG_ENGINE: DatasetEngine = {
     const protocols = await protocolRows(ctx);
     const latest = new Map<string, Record<string, CellInput>>();
     for (const row of protocols) latest.set(String(row.protocol_id), row);
-    const stages = await keptStageKeys(ctx);
+    const stages = await activeStageKeys(ctx);
 
     // References whose target the package leaves out, against what the
     // organization holds (active rows; a protocol's latest version). Those the
@@ -198,7 +203,9 @@ export const ASSESSMENT_CATALOG_ENGINE: DatasetEngine = {
       return row && row.active_flag !== false ? asValues(row) : undefined;
     };
     const offline = new Set(input.validation.blocking.map(findingKey));
-    const findings: Finding[] = assessmentCatalogReferenceFindings({ files: [...input.files] }, {
+    // The package's own stage file, when it carries one, is the stage list after this load (plan.ts hands every file over).
+    const stageFile = input.all?.find((candidate) => candidate.spec.file === PATHWAY_STAGES_FILE);
+    const findings: Finding[] = assessmentCatalogReferenceFindings({ files: [...input.files, ...(stageFile ? [stageFile] : [])] }, {
       lookup,
       stageKnown: (key) => stages.has(key),
       where: "this organization's assessment catalog and pathway stages",
