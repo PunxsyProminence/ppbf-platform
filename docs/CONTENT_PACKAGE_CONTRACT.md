@@ -482,7 +482,7 @@ One row = one template. Identity: template_id.
 | session_type | yes | text | e.g. technical, footwork, sparring. |
 | difficulty | yes | `beginner`, `intermediate`, `advanced`, `elite` | Who it is pitched at. |
 | age_band |  | text | e.g. any, youth, adult, youth_and_adult. Blank means any. |
-| duration_minutes | yes | whole number 15 or more, 180 or less | Session length, 15 to 180 minutes. |
+| duration_minutes | yes | whole number 1 or more, 180 or less | Session length, 1 to 180 minutes. |
 | intent | yes | text | What the session is for. |
 | coach_notes |  | text | Coach notes. |
 | requires_coach_authorization |  | true or false | A coach must authorize it. Blank means false. |

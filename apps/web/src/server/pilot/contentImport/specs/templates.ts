@@ -62,7 +62,7 @@ export const workoutTemplatesDataset: DatasetSpec = {
         text('session_type', 'e.g. technical, footwork, sparring.', { required: true, label: true }),
         vocabulary('difficulty', 'difficulty', 'Who it is pitched at.', { required: true }),
         text('age_band', 'e.g. any, youth, adult, youth_and_adult.', { blankDefault: 'any', label: true }),
-        integer('duration_minutes', 'Session length, 15 to 180 minutes.', { required: true, bound: 'template_duration_minutes' }),
+        integer('duration_minutes', 'Session length, 1 to 180 minutes.', { required: true, bound: 'template_duration_minutes' }),
         text('intent', 'What the session is for.', { required: true }),
         text('coach_notes', 'Coach notes.'),
         bool('requires_coach_authorization', 'A coach must authorize it.', { blankDefault: 'false' }),

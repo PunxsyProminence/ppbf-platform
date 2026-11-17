@@ -1,11 +1,14 @@
-// Workout template details (lane YR, YR-a; Overwatch step-1 ruling Q3 A): the
-// workout_template_details migration adds `details jsonb not null default '{}'`,
-// checked to be a JSON object, to pilot.workout_templates and
-// pilot.workout_template_items. It applies in `all` order and re-applies as a
-// no-op; rows that existed before it keep every value and read '{}'; the
-// object checks refuse anything but an object; readiness refuses an environment
-// missing any piece it asserts; the migration refuses a database without the
-// two tables.
+// Workout template details (lane YR, YR-a; Overwatch step-1 ruling Q3 A,
+// OD-2026-11-17-001 and the one_source ruling A): the workout_template_details
+// migration adds `details jsonb not null default '{}'`, checked to be a JSON
+// object, to pilot.workout_templates and pilot.workout_template_items; widens
+// workout_templates_duration_minutes_check to 1-180 minutes; and redefines
+// pilot_wti_one_source as "a drill, free text or a non-empty details". It
+// applies in `all` order and re-applies as a no-op; rows that existed before it
+// keep every value and read '{}'; the checks refuse what they should;
+// pilot_wti_no_contact_volume is untouched; readiness refuses an environment
+// missing any piece it asserts, or still holding an old definition; the
+// migration refuses a database without the two tables.
 //
 // Spins up the same disposable, local-only embedded Postgres the other pg
 // suites use. It NEVER connects to production or staging.
@@ -165,6 +168,9 @@ async function snapshot(organizationId: string) {
 
 const without = <T extends Record<string, unknown>>(row: T, key: string) => Object.fromEntries(Object.entries(row).filter(([name]) => name !== key));
 
+/** pilot_wti_one_source before this migration (workout_templates_v2): exactly one of the two. */
+const OLD_ONE_SOURCE = '((drill_id is not null and free_text_drill is null) or (drill_id is null and free_text_drill is not null))';
+
 describe('the workout_template_details migration', () => {
   it('runs in `all` order after workout-templates-v2, and its runner re-applies it as a no-op', async () => {
     const at = (file: string) => fullOrder.findIndex((entry) => path.basename(entry) === file);
@@ -193,12 +199,13 @@ describe('the workout_template_details migration', () => {
       { table_name: 'workout_template_items', data_type: 'jsonb', is_nullable: 'NO', column_default: "'{}'::jsonb" },
       { table_name: 'workout_templates', data_type: 'jsonb', is_nullable: 'NO', column_default: "'{}'::jsonb" },
     ]);
-    // Postgres 18 lists NOT NULL in pg_constraint too; the object checks are the CHECK ones.
-    const checks = constraintsAfter.rows.filter((row) => /^CHECK .*details/.test(row.def));
-    expect(checks).toEqual([
-      { rel: 'pilot.workout_template_items', conname: 'pilot_wti_details_check', def: "CHECK ((jsonb_typeof(details) = 'object'::text))" },
-      { rel: 'pilot.workout_templates', conname: 'pilot_workout_templates_details_check', def: "CHECK ((jsonb_typeof(details) = 'object'::text))" },
-    ]);
+    const def = (conname: string) => constraintsAfter.rows.find((row) => row.conname === conname)?.def;
+    expect(def('pilot_wti_details_check')).toBe("CHECK ((jsonb_typeof(details) = 'object'::text))");
+    expect(def('pilot_workout_templates_details_check')).toBe("CHECK ((jsonb_typeof(details) = 'object'::text))");
+    expect(def('workout_templates_duration_minutes_check')).toBe('CHECK (((duration_minutes >= 1) AND (duration_minutes <= 180)))');
+    expect(def('pilot_wti_one_source')).toBe("CHECK (((drill_id IS NOT NULL) OR (free_text_drill IS NOT NULL) OR (details <> '{}'::jsonb)))");
+    // Unchanged (OD-2026-11-17-002): contact above light_technical carries no minutes.
+    expect(def('pilot_wti_no_contact_volume')).toMatch(/contact_level.*duration_minutes IS NULL.*rep_count IS NULL/);
   });
 
   it('leaves every existing row as it was: each value kept, details {}', async () => {
@@ -206,8 +213,12 @@ describe('the workout_template_details migration', () => {
     // Back to the schema before this migration, inside a transaction, with rows written then.
     await client.query('BEGIN');
     try {
+      // Dropping details drops the new pilot_wti_one_source with it; the old definitions go back.
       await client.query('alter table pilot.workout_template_items drop column details');
       await client.query('alter table pilot.workout_templates drop column details');
+      await client.query(`alter table pilot.workout_template_items add constraint pilot_wti_one_source check ${OLD_ONE_SOURCE}`);
+      await client.query(`alter table pilot.workout_templates drop constraint workout_templates_duration_minutes_check,
+        add constraint workout_templates_duration_minutes_check check (duration_minutes between 15 and 180)`);
       await insertTemplate(GYM, TEMPLATE_ID);
       await insertItem(GYM, TEMPLATE_ID, ITEM_ID, 1);
       const before = await snapshot(GYM);
@@ -224,6 +235,14 @@ describe('the workout_template_details migration', () => {
       expect(after.items.map((row) => without(row, 'details'))).toEqual(before.items);
       expect(after.templates.map((row) => row.details)).toEqual([{}]);
       expect(after.items.map((row) => row.details)).toEqual([{}]);
+      const defs = await client.query<{ conname: string; def: string }>(
+        `select conname, pg_get_constraintdef(oid) as def from pg_constraint
+          where conname in ('workout_templates_duration_minutes_check', 'pilot_wti_one_source') order by conname`,
+      );
+      expect(defs.rows).toEqual([
+        { conname: 'pilot_wti_one_source', def: "CHECK (((drill_id IS NOT NULL) OR (free_text_drill IS NOT NULL) OR (details <> '{}'::jsonb)))" },
+        { conname: 'workout_templates_duration_minutes_check', def: 'CHECK (((duration_minutes >= 1) AND (duration_minutes <= 180)))' },
+      ]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
@@ -256,6 +275,55 @@ describe('the workout_template_details migration', () => {
     await expect(insertItem(gym, 'wtp_00000000000b01', 'wti_00000000000d01', 3, '[1]')).rejects.toMatchObject({ constraint: 'pilot_wti_details_check' });
   });
 
+  it('takes 1 to 180 minutes, and an item with a drill, free text or details; refuses the rest', async () => {
+    const gym = 'gym_template_wider_checks';
+    await createGym(gym);
+    const template = (id: string, minutes: number) => client.query(
+      `insert into pilot.workout_templates (organization_id, template_id, lineage_id, name, session_type, difficulty, duration_minutes, intent)
+       values ($1, $2, $2, $2, 'technical', 'beginner', $3, 'x')`,
+      [gym, id, minutes],
+    );
+    await template('wtp_00000000000e01', 10);
+    await template('wtp_00000000000e02', 1);
+    await template('wtp_00000000000e03', 180);
+    for (const minutes of [0, 181]) {
+      await expect(template(`wtp_00000000000e9${minutes === 0 ? 0 : 1}`, minutes))
+        .rejects.toMatchObject({ code: '23514', constraint: 'workout_templates_duration_minutes_check' });
+    }
+    const item = (ordinal: number, drill: string | null, text: string | null, details: string) => client.query(
+      `insert into pilot.workout_template_items (organization_id, item_id, template_id, ordinal, block, drill_id, free_text_drill, contact_level, details)
+       values ($1, $2, 'wtp_00000000000e01', $3, 'warmup', $4, $5, 'none', $6::jsonb)`,
+      [gym, `wti_00000000000e0${ordinal}`, ordinal, drill, text, details],
+    );
+    await client.query(
+      `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+       values ($1, 'boxing', 'Boxing', 'striking', 'head_impact')`,
+      [gym],
+    );
+    await client.query(
+      `insert into pilot.drill_library
+         (organization_id, drill_id, lineage_id, version, name, discipline, category, difficulty, target_behavior,
+          purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like)
+       values ($1, 'drl_00000000000e01', 'drl_00000000000e01', 1, 'Fixture drill', 'boxing', 'technical', 'beginner', 'x', 'x', 'x', 'x', 'x', 'x')`,
+      [gym],
+    );
+    // Neither a drill nor text, but details (a scripted class's parts): taken.
+    await item(1, null, null, '{"parts": {"Drill": ["Jump rope."]}}');
+    // Free text only, and a drill only: taken, as before.
+    await item(2, null, 'Shadow', '{}');
+    await item(3, 'drl_00000000000e01', null, '{}');
+    // A drill and its dosage as text: taken now.
+    await item(6, 'drl_00000000000e01', '4 x 30 s maximal', '{}');
+    // Nothing at all: refused.
+    await expect(item(4, null, null, '{}')).rejects.toMatchObject({ code: '23514', constraint: 'pilot_wti_one_source' });
+    // Contact above light_technical still carries no minutes (pilot_wti_no_contact_volume, unchanged).
+    await expect(client.query(
+      `insert into pilot.workout_template_items (organization_id, item_id, template_id, ordinal, block, free_text_drill, contact_level, duration_minutes)
+       values ($1, 'wti_00000000000e05', 'wtp_00000000000e01', 5, 'sparring', 'Technical sparring', 'controlled_sparring', 20)`,
+      [gym],
+    )).rejects.toMatchObject({ code: '23514', constraint: 'pilot_wti_no_contact_volume' });
+  });
+
   it('refuses a database without the two template tables', async () => {
     const empty = new Client({ connectionString: connectionStringFor(EMPTY_DATABASE) });
     await empty.connect();
@@ -274,6 +342,17 @@ describe('readiness: every clause it asserts is one a broken environment fails',
     ['the item object check', 'alter table pilot.workout_template_items drop constraint pilot_wti_details_check'],
     ['the template column default', "alter table pilot.workout_templates alter column details set default '{\"a\": 1}'::jsonb"],
     ['the item column NOT NULL', 'alter table pilot.workout_template_items alter column details drop not null'],
+    // An old definition back in place (NOT VALID: rows the wider check took stay; readiness alone must catch it).
+    [
+      'the old 15-180 duration range',
+      `alter table pilot.workout_templates drop constraint workout_templates_duration_minutes_check,
+         add constraint workout_templates_duration_minutes_check check (duration_minutes between 15 and 180) not valid`,
+    ],
+    [
+      'the old exactly-one-source rule',
+      `alter table pilot.workout_template_items drop constraint pilot_wti_one_source,
+         add constraint pilot_wti_one_source check ${OLD_ONE_SOURCE} not valid`,
+    ],
     [
       'the template column type',
       `alter table pilot.workout_templates drop constraint pilot_workout_templates_details_check,

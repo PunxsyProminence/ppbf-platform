@@ -53,7 +53,8 @@ function resolveSslConfig() {
 
 // Asserts, on both tables, the column's type, NOT NULL and '{}' default, and the object check, so
 // an environment that got a column without its check -- or nullable, or with another default --
-// cannot pass readiness.
+// cannot pass readiness; and that the duration check and pilot_wti_one_source hold their NEW
+// definitions (1 to 180 minutes; a drill, free text or non-empty details), not the old ones.
 const READINESS_QUERY = `
   select
     exists (
@@ -77,7 +78,22 @@ const READINESS_QUERY = `
       select 1 from pg_constraint
       where conrelid = to_regclass('pilot.workout_template_items')
         and conname = 'pilot_wti_details_check'
-    ) as item_details_check_ready
+    ) as item_details_check_ready,
+    exists (
+      select 1 from pg_constraint
+      where conrelid = to_regclass('pilot.workout_templates')
+        and conname = 'workout_templates_duration_minutes_check'
+        and pg_get_constraintdef(oid) like '%(duration_minutes >= 1)%'
+        and pg_get_constraintdef(oid) like '%(duration_minutes <= 180)%'
+    ) as duration_range_ready,
+    exists (
+      select 1 from pg_constraint
+      where conrelid = to_regclass('pilot.workout_template_items')
+        and conname = 'pilot_wti_one_source'
+        and pg_get_constraintdef(oid) like '%drill_id IS NOT NULL%'
+        and pg_get_constraintdef(oid) like '%free_text_drill IS NOT NULL%'
+        and pg_get_constraintdef(oid) like '%details%'
+    ) as one_source_ready
 `;
 
 function assertReadiness(row) {
