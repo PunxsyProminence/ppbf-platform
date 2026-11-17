@@ -106,6 +106,15 @@ test.each([
   ['an unknown action', { ...RECORD, action: 'lift' }],
   ['a bad source', { ...RECORD, source: 'rumour' }],
   ['a bad loss-of-consciousness value', { ...RECORD, loss_of_consciousness: 'maybe' }],
+  // OW25-36 A: Save needs both. The route refuses a missing answer too, not
+  // only the form: absent, empty (the form's "Choose…") or null.
+  ['no source', { ...RECORD, source: undefined }],
+  ['an empty source', { ...RECORD, source: '' }],
+  ['a null source', { ...RECORD, source: null }],
+  ['no loss-of-consciousness answer', { ...RECORD, loss_of_consciousness: undefined }],
+  ['an empty loss-of-consciousness answer', { ...RECORD, loss_of_consciousness: '' }],
+  ['a null loss-of-consciousness answer', { ...RECORD, loss_of_consciousness: null }],
+  ['neither answer', { ...RECORD, source: '', loss_of_consciousness: '' }],
   ['a date that is not real', { ...RECORD, start_date: '2026-02-30' }],
   ['a date not written YYYY-MM-DD', { ...RECORD, minimum_end_date: '10/30/2026' }],
   ['an end before the start', { ...RECORD, minimum_end_date: '2026-09-30' }],
