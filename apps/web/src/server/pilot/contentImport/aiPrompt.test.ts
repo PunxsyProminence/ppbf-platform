@@ -95,7 +95,7 @@ describe('the workout intake prompt asks for what the upload accepts', () => {
         expect(prompt).toContain(rule.description);
       }
     }
-    expect(prompt).toContain('duration_minutes (required): a whole number, 15 to 180.');
+    expect(prompt).toContain('duration_minutes (required): a whole number, 1 to 180.');
     expect(prompt).toContain('duration_minutes (optional): a whole number, 1 to 90.');
     expect(prompt).toContain('rep_count (optional): a whole number, 1 or more.');
   });
@@ -122,7 +122,7 @@ describe('the workout intake prompt asks for what the upload accepts', () => {
   test('and the validator is really reading it: a value the prompt does not allow blocks', () => {
     const codes = (found: { code: string; column?: string }[]) => found.map((finding) => `${finding.code}:${finding.column ?? ''}`);
     expect(codes(blockingFor([{ ...WORKOUT, difficulty: 'easy' }], STEPS))).toContain('unknown_value:difficulty');
-    expect(codes(blockingFor([{ ...WORKOUT, duration_minutes: '5' }], STEPS))).toContain('out_of_range:duration_minutes');
+    expect(codes(blockingFor([{ ...WORKOUT, duration_minutes: '0' }], STEPS))).toContain('out_of_range:duration_minutes');
     // The row rule the prompt prints: exactly one of drill_id and free_text_drill.
     const noDrill = [{ ...STEPS[0], free_text_drill: '' }, STEPS[1], STEPS[2]];
     expect(blockingFor([WORKOUT], noDrill).map((finding) => finding.code)).toContain('row_rule');
