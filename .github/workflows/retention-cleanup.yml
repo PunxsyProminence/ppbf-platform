@@ -178,6 +178,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_HOSTNAME=${OVERRIDE_HOST:-$HOST}" >> "$GITHUB_ENV"
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       # The purge deletes a purged athlete's video and portrait files, so it
       # needs the storage account those files live in. Read from the SAME
       # target-named Container App as the database, for the same reason: asking

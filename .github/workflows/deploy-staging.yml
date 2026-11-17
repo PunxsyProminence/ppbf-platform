@@ -144,6 +144,7 @@ jobs:
             --query value -o tsv)"
           test -n "$CONN"
           echo "::add-mask::$CONN"
+          AZURE_POSTGRES_CONNECTION_STRING="$CONN" node "$GITHUB_WORKSPACE/scripts/db-reachability-probe.mjs"
           if ! AZURE_POSTGRES_CONNECTION_STRING="$CONN" node apps/web/scripts/pilot-verify-schema.mjs; then
             echo "::error::Staging is missing schema objects this commit expects. Run apply-migrations against staging first."
             exit 1
@@ -486,6 +487,12 @@ jobs:
           test -n "$GATE_DB"
           echo "GATE_EXPECTED_POSTGRES_HOSTNAME=$GATE_HOST" >> "$GITHUB_ENV"
           echo "GATE_EXPECTED_POSTGRES_DATABASE=$GATE_DB" >> "$GITHUB_ENV"
+
+      - name: Check The Database Is Reachable From This Runner
+        if: inputs.enable_shadow_gate
+        uses: ./.github/actions/db-preflight
+        with:
+          connection-env: GATE_DB_CONNECTION
 
       # The org id lives in the app's secret store (it is what the app itself
       # runs with), so the gate tests against the same organization the app

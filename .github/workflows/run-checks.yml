@@ -361,6 +361,9 @@ jobs:
           echo "PPBF_EXPECTED_POSTGRES_DATABASE=${OVERRIDE_DB:-$DB}" >> "$GITHUB_ENV"
           echo "Checking host ${OVERRIDE_HOST:-$HOST} / db ${OVERRIDE_DB:-$DB}."
 
+      - name: Check The Database Is Reachable From This Runner
+        uses: ./.github/actions/db-preflight
+
       # video-readiness is the one check whose question is not in the database,
       # so it is fed here instead of by the connection string above. This reads
       # THREE NAMED variables off the same target-NAMED Container App the

@@ -178,6 +178,7 @@ const COPIES: Copy[] = [
   fromStaging('Wait For New Revision To Take Traffic'),
   fromStaging('Resolve Staging API Base URL'),
   fromStaging('Resolve Staging Database Connection For Gate'),
+  fromStaging('Check The Database Is Reachable From This Runner'),
   fromStaging('Resolve Staging Default Organization For Gate'),
   fromStaging('Mint Ephemeral Gate Athlete PIN'),
   fromStaging('Provision Gate Fixture Accounts'),
@@ -304,6 +305,9 @@ const REPLACED: Record<string, { file: string; job: string; steps: Record<string
       'Resolve Database Connection':
         'Inside "Apply <Environment> Migrations", where the connection string stays in the step. The repository-variable '
         + 'override of the expected host and database is NOT carried: the expected target is always derived.',
+      'Check The Database Is Reachable From This Runner':
+        'Inside "Apply <Environment> Migrations" too: the same db-reachability probe is the first command after the '
+        + 'connection string is masked, because the string never leaves that step (lane DBT).',
       'Apply Migration':
         '"Apply <Environment> Migrations": the `all` arm only, with the list read through migration-apply-order.mjs.',
       'Record What Ran': '"Report What Production Now Runs" for production; the staging job has no counterpart.',
@@ -335,13 +339,13 @@ const FROZEN: Record<string, string> = {
   'production job header': '7ac9185ab7a8e5384496f355a6779c37cdb705a91aca738879fd2b71a15d97a7',
   'staging: Refuse A Re-Run, A Wrong Ref Or A Wrong Commit': '36c3659904b636fb1b42fd435e89d136880e804cf34a589aa2de07d108dbc4cb',
   'staging: Verify The Checkout Is The Frozen Commit': '7d97d51267ee66fb7109f05a7c20457250d0ca82647ca3b315e617b564b5d7a8',
-  'staging: Apply Staging Migrations': '1b525f6a569b158017cfd6b41f42553b7c8c5d3860b8d600c6b3a7f65cf83a21',
+  'staging: Apply Staging Migrations': '3659ad062ce43c6ef9721dc50723dc2cddf5021dcee1275c14a1517975f0b9ed',
   'staging: Refuse Promotion While The Gate Athlete Fixture May Be Live': 'ab309b7c837d4badb5b0a7f6712a883d31eaa75c1b072b2d490b523a623da070',
   'staging: Say Whether The Staging Gate Ran': '4772b8f04643af15e6f7e2b6223277d98d792efd4edeb4427273dfa257b76afc',
   'production: Refuse A Re-Run, A Wrong Ref Or A Wrong Commit': '36c3659904b636fb1b42fd435e89d136880e804cf34a589aa2de07d108dbc4cb',
   'production: Verify The Staged Digest Was Handed On': 'be2771b43627ff52c12b39f1da879377162e582852816d7f12ad8550751c0caf',
   'production: Verify The Checkout Is The Frozen Commit': '7d97d51267ee66fb7109f05a7c20457250d0ca82647ca3b315e617b564b5d7a8',
-  'production: Apply Production Migrations': '09d034ab01c0a7d64cc0e670b73c6d19bf6758e6c56f5dc6581c8466aa52a519',
+  'production: Apply Production Migrations': 'b8075b68488b5cb0ba53537ff02f52d8b46207199a24e265f3e06821f82f2846',
   'production: Report What Production Now Runs': '4d4976186939a489a093009064c1c5b7bbd7f11e014cb5997eb237a225905744',
 };
 
