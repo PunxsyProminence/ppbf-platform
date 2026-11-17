@@ -29,9 +29,11 @@ const REPO = 'PunxsyProminence/ppbf-platform';
 const posix = (p: string) => p.replace(/\\/g, '/');
 
 /**
- * The guard SIGKILLs processes named Runner.Worker / Runner.Listener on refusal,
- * and the CI machine running this suite has both. Every test therefore names a
- * process that does not exist, except the kill test, which names its own decoy.
+ * Called with no arguments (as the runner calls it) the guard SIGKILLs the
+ * process named Runner.Worker on refusal, and the CI machine running this suite
+ * has one. With arguments it stops only what argument 3 names. Every test passes
+ * arguments and names a process that does not exist, except the kill test, which
+ * names its own decoy. Never run the guard here without arguments.
  */
 const NO_PROCESS = 'ppbf-no-such-process';
 
@@ -138,12 +140,28 @@ describe('job-started-guard.sh: refuses everything else', () => {
     expect(`${r.stdout}`).toContain('allowlist missing');
   });
 
-  it('defaults to the allowlist the Dockerfile installs and to this repository', () => {
+  it('with no arguments uses the allowlist the Dockerfile installs, this repository and the Worker; with arguments stops nothing unless told', () => {
     const text = fs.readFileSync(guard, 'utf8');
-    expect(text).toContain('ALLOWED_FILE="${1:-/opt/ppbf-runner/allowed-jobs.txt}"');
-    expect(text).toContain(`EXPECTED_REPO="\${2:-${REPO}}"`);
-    expect(text).toContain('STOP_PROCESSES="${3:-Runner.Worker,Runner.Listener}"');
+    const noArgs = text.slice(text.indexOf('if [ "$#" -eq 0 ]; then'), text.indexOf('\nfi\n'));
+    expect(noArgs).toContain('ALLOWED_FILE=/opt/ppbf-runner/allowed-jobs.txt');
+    expect(noArgs).toContain(`EXPECTED_REPO=${REPO}`);
+    expect(noArgs).toContain('STOP_PROCESSES=Runner.Worker');
+    expect(noArgs).toContain('STOP_PROCESSES="${3:-}"');
     expect(fs.readFileSync(path.join(dir, 'Dockerfile'), 'utf8')).toContain('allowed-jobs.txt /opt/ppbf-runner/');
+  });
+
+  it('fails closed: the stop is armed for every exit and disarmed only right before the allow', () => {
+    const text = fs.readFileSync(guard, 'utf8');
+    const armed = text.indexOf("trap 'stop_runner' EXIT");
+    const disarmed = text.indexOf('trap - EXIT');
+    expect(armed).toBeGreaterThan(-1);
+    expect(armed).toBeLessThan(text.indexOf('repo="${GITHUB_REPOSITORY:-}"'));
+    expect(disarmed).toBeGreaterThan(text.indexOf('grep -Fxq'));
+    expect(text.slice(disarmed).split('\n').filter((l) => l.trim() && !l.trim().startsWith('#'))).toEqual([
+      'trap - EXIT',
+      'echo "ppbf-runner-guard: allowed $file:$job ($event on $ref)."',
+      'exit 0',
+    ]);
   });
 
   // The runner queues the hook as an always() step (actions/runner JobExtension.cs), so a
@@ -237,14 +255,26 @@ describe('entrypoint.sh', () => {
     path.join(tmp, 'run.sh'),
     '#!/usr/bin/env bash\necho "ARGS=$*"\necho "LEFT=${JIT_CONFIG:-unset}"\n'
       + 'echo "HOOK=${ACTIONS_RUNNER_HOOK_JOB_STARTED:-unset}"\necho "DONE_HOOK=${ACTIONS_RUNNER_HOOK_JOB_COMPLETED:-unset}"\n'
-      + 'echo "CONTAINER_HOOKS=${ACTIONS_RUNNER_CONTAINER_HOOKS:-unset}"\n',
+      + 'echo "CONTAINER_HOOKS=${ACTIONS_RUNNER_CONTAINER_HOOKS:-unset}"\necho "BASH_ENV=${BASH_ENV:-unset}"\n',
     { mode: 0o755 },
   );
-  const baseEnv = { PATH: process.env.PATH ?? '', PPBF_RUNNER_HOME: posix(tmp), PPBF_GUARD_PATH: posix(guard) };
+  // The entrypoint's paths are fixed on purpose; the tests run a copy with them rewritten.
+  const original = fs.readFileSync(entrypoint, 'utf8');
+  const copyWith = (guardPath: string): string => {
+    const out = path.join(tmp, `entrypoint-${Math.random().toString(36).slice(2)}.sh`);
+    const text = original
+      .replace('readonly GUARD=/opt/ppbf-runner/job-started-guard.sh', `readonly GUARD=${guardPath}`)
+      .replace('readonly RUNNER_HOME=/home/runner', `readonly RUNNER_HOME=${posix(tmp)}`);
+    expect(text).not.toBe(original);
+    fs.writeFileSync(out, text, { mode: 0o755 });
+    return posix(out);
+  };
+  const testEntrypoint = copyWith(posix(guard));
+  const baseEnv = { PATH: process.env.PATH ?? '' };
   afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
   it('refuses to start without a JIT configuration', () => {
-    const r = spawnSync('bash', [posix(entrypoint)], {
+    const r = spawnSync('bash', [testEntrypoint], {
       encoding: 'utf8',
       env: { ...baseEnv } as unknown as NodeJS.ProcessEnv,
     });
@@ -253,7 +283,7 @@ describe('entrypoint.sh', () => {
   });
 
   it('runs the runner once with --jitconfig and does not pass JIT_CONFIG on in the environment', () => {
-    const r = spawnSync('bash', [posix(entrypoint)], {
+    const r = spawnSync('bash', [testEntrypoint], {
       encoding: 'utf8',
       env: { ...baseEnv, JIT_CONFIG: 'eyJmYWtlIjp0cnVlfQ==' } as unknown as NodeJS.ProcessEnv,
     });
@@ -263,7 +293,7 @@ describe('entrypoint.sh', () => {
   });
 
   it('forces the guard hook on and other hooks off, whatever the job execution set', () => {
-    const r = spawnSync('bash', [posix(entrypoint)], {
+    const r = spawnSync('bash', [testEntrypoint], {
       encoding: 'utf8',
       env: {
         ...baseEnv,
@@ -271,18 +301,27 @@ describe('entrypoint.sh', () => {
         ACTIONS_RUNNER_HOOK_JOB_STARTED: '',
         ACTIONS_RUNNER_HOOK_JOB_COMPLETED: '/tmp/evil.sh',
         ACTIONS_RUNNER_CONTAINER_HOOKS: '/tmp/evil.js',
+        BASH_ENV: '/tmp/evil-env.sh',
       } as unknown as NodeJS.ProcessEnv,
     });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain(`HOOK=${posix(guard)}`);
     expect(r.stdout).toContain('DONE_HOOK=unset');
     expect(r.stdout).toContain('CONTAINER_HOOKS=unset');
+    expect(r.stdout).toContain('BASH_ENV=unset');
+  });
+
+  it('fixes its paths, and runs as bash -p so BASH_ENV is not read', () => {
+    expect(original.split('\n')[0]).toBe('#!/bin/bash -p');
+    expect(original).toContain('readonly GUARD=/opt/ppbf-runner/job-started-guard.sh');
+    expect(original).toContain('readonly RUNNER_HOME=/home/runner');
+    expect(original).not.toMatch(/PPBF_GUARD_PATH|PPBF_RUNNER_HOME/);
   });
 
   it('refuses to start when the guard is missing', () => {
-    const r = spawnSync('bash', [posix(entrypoint)], {
+    const r = spawnSync('bash', [copyWith(posix(path.join(tmp, 'missing.sh')))], {
       encoding: 'utf8',
-      env: { ...baseEnv, PPBF_GUARD_PATH: posix(path.join(tmp, 'missing.sh')), JIT_CONFIG: 'x' } as unknown as NodeJS.ProcessEnv,
+      env: { ...baseEnv, JIT_CONFIG: 'x' } as unknown as NodeJS.ProcessEnv,
     });
     expect(r.status).toBe(65);
     expect(r.stdout).not.toContain('ARGS=');

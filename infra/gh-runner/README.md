@@ -14,7 +14,7 @@ This folder is the runner image only. The rest comes in a later PR: the launch a
 |---|---|
 | `Dockerfile` | The official `ghcr.io/actions/actions-runner` image, pinned by version and digest, plus the Azure CLI and build tools. No secret, ever. Runner trace to stdout is off. |
 | `entrypoint.sh` | Forces the guard hook on (and other hooks off), then runs the runner once with the single-use just-in-time (JIT) configuration in `JIT_CONFIG`. The container then ends. |
-| `job-started-guard.sh` | `ACTIONS_RUNNER_HOOK_JOB_STARTED`. Refuses every job except those in `allowed-jobs.txt`, from `main`, started by `workflow_dispatch` or `schedule`, in this repository. **On refusal it SIGKILLs the runner's Worker and Listener.** A failing hook alone does not stop the job: the runner queues the hook as an `always()` step, so the job's own `if: always()` steps would still run. |
+| `job-started-guard.sh` | `ACTIONS_RUNNER_HOOK_JOB_STARTED`. Refuses every job except those in `allowed-jobs.txt`, from `main`, started by `workflow_dispatch` or `schedule`, in this repository. **On every exit except an allow (refusal or unexpected error), it SIGKILLs the runner's Worker.** A failing hook alone does not stop the job: the runner queues the hook as an `always()` step, so the job's own `if: always()` steps would still run. |
 | `allowed-jobs.txt` | The 19 jobs that reach Postgres and build no images. Baked in, so a workflow cannot widen it. |
 | `write-setup-info.sh` | Writes the runner's `.setup_info`, so "Set up job" and the database preflight print `Cloud: Azure`, the region and the image tag. |
 
@@ -41,7 +41,7 @@ The GitHub App key that creates JIT configurations has "Administration: write", 
 
 **Roll:**
 - Point the Container Apps job at the new **image digest**, `ppbf-gh-runner@sha256:…`, never at a tag. A tag can be overwritten by anything that can push to the registry.
-- The job's own managed identity holds AcrPull only.
+- The job's own managed identity must hold AcrPull only. It is created in PR-2.
 
 **Changing the allowlist:**
 - A new database workflow needs a line in `allowed-jobs.txt` and a rebuild.
@@ -57,4 +57,18 @@ The GitHub App key that creates JIT configurations has "Administration: write", 
 - Check `sudo -n true` works in the container. backup.yml installs its PostgreSQL client with sudo, and whether Container Apps allows it is UNVERIFIED.
 - In the GitHub job log, "Set up runner" shows `ppbf-runner-guard: allowed …`.
 - "Set up job" shows the runner's provisioner info (`Cloud: Azure`).
-- **Negative control:** dispatch an allowed workflow from a non-main branch, with an `if: always()` marker step. The job must end failed, and the marker must never print.
+- **Negative control:**
+  - Dispatch an allowed workflow from a non-main branch, with an `if: always()` marker step. PR-2's pilot must route that one dispatch to the runner on purpose; normal routing keeps non-main runs on GitHub's runners.
+  - The control passes only if all three hold, so a job that never reached the runner cannot pass it:
+    - the jobs API shows that job's `runner_name` is the launched PPBF runner;
+    - its conclusion is failure;
+    - the marker never prints.
+  - The REFUSED line is in the **Container Apps execution log**, not the GitHub job log: the Worker is killed before it uploads the step log.
+  - The execution itself may show "Succeeded", because run.sh exits 0 after the listener dies.
+
+## Notes for PR-2 and PR-3
+
+- **Labels:** register each JIT runner with its per-launch label only, then read the runner back and check its labels.
+- **Execution settings:** `replicaRetryLimit` 0. More than 1 vCPU.
+- **`JIT_CONFIG` exposure:** on the execution, `JIT_CONFIG` is readable by Azure readers until it is used. Whoever takes it can take that job. Start the execution only when the job is ready to be picked up.
+- **Non-main dispatches stay on GitHub's runners.** Route to this runner only when `github.ref == 'refs/heads/main'`, because the guard refuses anything else. Today some dispatches run from other branches.

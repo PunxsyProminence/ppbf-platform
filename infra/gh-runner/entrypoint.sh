@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # entrypoint.sh -- start the runner for exactly one just-in-time job, then exit.
 #
 # The launch step (a later PR) asks GitHub for a JIT runner configuration and
@@ -7,21 +7,23 @@
 # the container ends with that job. No registration token, PAT or App key is
 # ever given to this container; the JIT configuration is single-use.
 #
-# The hook settings are forced HERE, not only in the image: the runner reads
-# them from the process environment, and an empty or different value set on
-# the Container Apps job (template or execution) would silently drop the guard.
-#
-# PPBF_RUNNER_HOME and PPBF_GUARD_PATH exist for the tests only (defaults: the
-# official actions-runner image's /home/runner, and the guard installed by the
-# Dockerfile). They are read before any job exists, so no workflow can set them.
+# Nothing here can be redirected by an environment variable set on the job:
+# - the guard and runner paths are fixed (the tests run a copy with them rewritten);
+# - `bash -p` does not read BASH_ENV or ENV for this script, and both are
+#   unset before the runner starts, so the hook's bash does not read them either;
+# - the hook settings are forced, because the runner reads them from its
+#   environment and an empty or different value would drop the guard.
 set -euo pipefail
 
-guard="${PPBF_GUARD_PATH:-/opt/ppbf-runner/job-started-guard.sh}"
-if [ ! -x "$guard" ]; then
+readonly GUARD=/opt/ppbf-runner/job-started-guard.sh
+readonly RUNNER_HOME=/home/runner
+
+unset BASH_ENV ENV
+if [ ! -x "$GUARD" ]; then
   echo "ppbf-runner: the job-started guard is missing or not executable; refusing to start." >&2
   exit 65
 fi
-export ACTIONS_RUNNER_HOOK_JOB_STARTED="$guard"
+export ACTIONS_RUNNER_HOOK_JOB_STARTED="$GUARD"
 unset ACTIONS_RUNNER_HOOK_JOB_COMPLETED ACTIONS_RUNNER_CONTAINER_HOOKS
 
 if [ -z "${JIT_CONFIG:-}" ]; then
@@ -32,5 +34,5 @@ fi
 config="$JIT_CONFIG"
 unset JIT_CONFIG
 
-cd "${PPBF_RUNNER_HOME:-/home/runner}"
+cd "$RUNNER_HOME"
 exec ./run.sh --jitconfig "$config"

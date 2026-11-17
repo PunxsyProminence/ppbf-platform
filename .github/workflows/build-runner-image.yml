@@ -7,7 +7,8 @@ name: build-runner-image
 # DISPATCH ONLY, from main, by Overwatch. Every az write is Overwatch's to run
 # (2026-11-17), so this workflow has NO schedule. The runner software must stay
 # current: Overwatch re-dispatches it when actions/runner releases (about
-# monthly) and rolls the Container Apps job to the new tag (infra/gh-runner/README.md).
+# monthly) and rolls the Container Apps job to the new image DIGEST, never a tag
+# (infra/gh-runner/README.md).
 #
 # The base image is pinned by version AND digest: the digest is the one the
 # version's tag points at when this runs (not a separately reviewed pin), and it
