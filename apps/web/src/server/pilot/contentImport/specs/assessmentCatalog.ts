@@ -419,8 +419,12 @@ export const assessmentCatalogDataset: DatasetSpec = {
     + 'Gates, criteria and anchor specs name '
     + 'stages of the pathway catalog, which must be loaded first.',
   loadedToday:
-    'Nothing yet: the tables exist (assessment-catalog migration), and the Backbone seed files follow in lane CAT-c '
-    + '(the KPI lists in CAT-d).',
+    'A PROVISIONAL Backbone snapshot is committed (seed-data/assessment-catalog: 46 protocols, 2 scales, 1 cap, 29 '
+    + 'scorecard items, 38 gates, 94 criteria, 105 anchor-clip specs; backbone_version "catalogs 876ac31f5c677584"), '
+    + 'exported by scripts/backbone-export-assessment-catalog.mjs, which regenerates it at the final Backbone hand-off '
+    + '(provenance: docs/backbone/ASSESSMENT_CATALOG_PROVENANCE.md). The KPI lists follow in lane CAT-d. It loads '
+    + 'through the seed path or the admin content-import screen once the pathway catalog is loaded; no screen shows '
+    + 'the catalog yet.',
   files: [assessmentProtocolsFile, scalesFile, capsFile, itemsFile, gatesFile, criteriaFile, anchorSpecsFile, kpiListsFile, kpisFile],
 };
 
