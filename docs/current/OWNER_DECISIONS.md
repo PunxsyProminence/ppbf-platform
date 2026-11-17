@@ -20,8 +20,13 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-17-005 | 2026-11-17 | Amateur + pro starts now beside lane YR; each lane loads when ready | PRIMARY |  |  |
+| OD-2026-11-17-004 | 2026-11-17 | Rule 6 proposals for a later app-side decision: a rest/away mark with a rated share, and no load ratio for under-18s and their parents; nothing changes now: "A: Rest/away mark + rated share (Recommended)"; "A: No ratio for under-18s; plain numbers (Recommended)" | RECONSTRUCTED |  | yes |
+| OD-2026-11-17-003 | 2026-11-17 | The D-PK19 finding is context only beside the live load-jump rule (Rule 6); one short follow-up finding on rest weeks and minors: "A: Context only (Recommended)"; "A: Yes, one short finding on both (Recommended)" | RECONSTRUCTED |  |  |
 | OD-2026-11-17-002 | 2026-11-17 | Sparring minutes in frozen templates load as labelled information; the no-preset-sparring-volume check stays | PRIMARY |  | yes |
 | OD-2026-11-17-001 | 2026-11-17 | Blank required fields on frozen session templates are AI-drafted, labelled and checked by the lane's two reviewers | PRIMARY |  | yes |
+| OD-2026-11-16-006 | 2026-11-16 | A Claude Science research session defines the D-PK19 load metrics (ACWR, fitness-fatigue model, change-score error); one findings file, nothing built | RECONSTRUCTED |  |  |
+| OD-2026-11-16-005 | 2026-11-16 | Amateur + pro runs beside the catalog lane and loads when ready; at most two Claude Code build lanes, the research session the third stream: "B: Amateur + pro now; load when ready"; "A: No third build lane; research is the third (Recommended)" | RECONSTRUCTED | partly replaced by OD-2026-11-17-005 (lane order) (2026-11-17) |  |
 | OD-2026-11-16-004 | 2026-11-16 | Fight-week weigh-in sheets (DOC-154): the app shows the USA Boxing day-of weigh-in line, the ACSM minors line and the 'Sodium matters' line beside the sheet lines, nothing on the sheets edited: "A: Show rule line beside sheet line (Recommended)"; "A: Show all three lines beside the sheet (Recommended)" | RECONSTRUCTED |  | yes |
 | OD-2026-11-16-003 | 2026-11-16 | Drill KPIs: DOC-041's 7 for drill scorecards and DOC-027's 6 for room monitoring, shown side by side; drill KPIs scored simply, Long Road 1-5 stays for the footage scorecard: "A: DOC-041's 7 for drills; DOC-027's 6 for room (Recommended)"; "A: Simple for drills; 1-5 for footage (Recommended)" | RECONSTRUCTED |  |  |
 | OD-2026-11-16-002 | 2026-11-16 | DOC-154 weigh-in sheets: the research session makes one Microsoft 365 read Jason approves and reads the 6-days sheet with the 5-days sheet, as DOC-154: "A: Approve one read now; session adds addendum (Recommended)"; "A: Read it with the 5-days sheet, as DOC-154 (Recommended)" | RECONSTRUCTED |  |  |
@@ -587,6 +592,121 @@ and should not try to.
 
 ---
 
+## OD-2026-11-17-005 -- Amateur + pro starts now beside lane YR; each lane loads when ready: "A: Both now"
+
+**Provenance: PRIMARY.** Jason's typed reply "A: Both now", 2026-11-17 about 11:33 EST (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 25304, 2026-11-17T16:33:44.985Z, `origin.kind` human), checked against the file by script before writing. The question was a one-question card at line 25254 (2026-11-17T15:01:37.281Z), which he did not answer on the card; he asked instead "which is fastest to complete and how does it affect the others" (line 25280). Overwatch answered with estimates, labelled INFERRED from the recent lanes (A about 4 h for both, B about 4 h with youth + recreational held, C about 6 h; the cost of A: whichever lane merges second merges main and re-runs its exporter, about 30 minutes), recommended A, and asked "Which lane order?" with the buttons "A: Both now" and "C: YR first" (line 25296). New; edits no earlier entry's text.
+
+**What was put to him (the card at line 25254, quoted):**
+
+> Official: In Backbone Overwatch 25 (about 23:11 ET, 2026-11-16) you answered OW25-25 "B: Amateur + pro now; load when ready" and OW25-27 "A: No third build lane". That ran amateur + pro alongside CAT, ahead of youth + recreational, with two Claude Code lanes at most. The prompt issuing that lane never reached me; I first saw these cards in your 09:00 paste (CARDS_OW25.md 0d3cd8d8231aa6e4). After CAT closed I followed OD-2026-11-15-006 and issued youth + recreational (lane YR, 13:06Z). Its migration is applied on staging and production, its Library page (#1948) is merged, and its content PR is in final review. Amateur + pro has not started. How should the two lanes proceed?
+>
+> Plain: You'd chosen to do the amateur and pro content next. That instruction never reached me, so I started the youth and recreational content instead, and it's nearly done. What now?
+>
+> Options, in the order shown:
+> 1. "A: Both now (Recommended)": Start amateur + pro now as the second lane; YR finishes. Each loads when ready, so youth + rec likely loads first. Pros: both reach coaches soonest; nothing thrown away; stays inside two lanes. Cons: youth + rec loads before amateur + pro, against your order; both write the same seed files, so whichever lands second merges main first.
+> 2. "B: Both now, YR load waits": Start amateur + pro now; YR finishes but holds its seed load until amateur + pro has loaded. Pros: keeps your load order. Cons: finished youth content waits on the other lane.
+> 3. "C: YR first, then amateur + pro": One lane at a time: amateur + pro starts when YR closes. Pros: no seed-file conflicts, less RAM. Cons: amateur + pro reaches coaches later than you chose.
+
+**Jason:** *"A: Both now"*
+
+**Ruling:**
+
+1. The amateur + pro lane starts now, beside lane YR (youth + recreational). Two build lanes run at once (OD-2026-11-16-005 ruling 2).
+2. Each lane loads when it is ready, so youth + recreational will likely load first. This replaces OD-2026-11-16-005 ruling 1's order (amateur + pro ahead of youth + recreational).
+3. Both lanes write the same seed files: whichever merges second merges main and re-runs its exporter.
+
+**Status:** recorded 2026-11-17 by PR; lane AP issued the same day (brief `LANE_AP_AMATEUR_PRO_BRIEF.md`).
+
+---
+
+## OD-2026-11-17-004 -- Rule 6 proposals for a later app-side decision: a rest/away mark with a rated share, and no load ratio for under-18s and their parents; nothing changes now: "A: Rest/away mark + rated share (Recommended)"; "A: No ratio for under-18s; plain numbers (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `0d3cd8d8231aa6e4` when read; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 25118, 2026-11-17T14:48:43.125Z) he pasted the Backbone Overwatch 25 note of 2026-11-17 09:00 US Eastern asking for these records ("Record both with OW25-25 to -29 (A-96) in the next records PR"; Backbone ACTIONS A-96, A-97); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-30** (header 'Rest vs unlogged')
+> Question, as shown:
+> Official (finding 2026-11-17-load-followup-rest-weeks-and-minors.md, 5f6b74c64b09054d, FQ1): For proposal (a), "rest week or unlogged week", which option should go to Overwatch for a later app-side decision? Nothing changes Rule 6 now.
+> Findings (OBSERVED in code): RPE and minutes are optional at check-out, and Rule 6 counts only sessions with both. A partly rated week enters as complete but low, and weeks with nothing logged are skipped. Rule 6 does not read attendance, and no closure or holiday calendar exists.
+> Plain: Should the app learn the difference between "didn't train" and "didn't log it"? If so, should someone tap to say so, or should it guess from attendance?
+>
+> Options, in the order shown:
+> 1. "A: Rest/away mark + rated share (Recommended)": A recorded rest or away mark (no health reason asked for minors), a per-week share of rated sessions, and a ratio that stays silent otherwise; no imputed numbers on screen.
+> 2. "B: Attendance only": Use attendance as the only completeness signal.
+> 3. "C: No change": Leave Rule 6's data handling as it is.
+>
+> Jason's answer: "A: Rest/away mark + rated share (Recommended)".
+
+> **OW25-31** (header 'Minors and ratio')
+> Question, as shown:
+> Official (same finding, FQ2): For proposal (b), "minors and families", which option should go to Overwatch for a later app-side decision? Nothing changes now.
+> Findings: a 482-player youth trial and a 159-player junior ice-hockey cohort found no support for ratio-based load management (transferred, not boxing). No study tests showing a load ratio to young people or parents. A Cochrane review found "times" formats feel larger and more persuasive without better understanding (health-risk research, transferred). The family sentence has no age input, and it shows only after a coach confirms.
+> Plain: Should kids and parents keep seeing "about 2 times your usual week", see plain numbers instead, or see nothing?
+>
+> Options, in the order shown:
+> 1. "A: No ratio for under-18s; plain numbers (Recommended)": Under-18s and their parents see plain numbers (sessions and time against a usual range) after the coach confirms, with 'your coach is looking at it'. Adults unchanged until review.
+> 2. "B: Ratio for all, with basis line": Keep the ratio for everyone, with what it counts and a 'prompt, not warning' line.
+> 3. "C: No load sentence for minors' families": The coach talks to the family instead.
+> 4. "D: No change": Keep the sentence as it is.
+>
+> Jason's answer: "A: No ratio for under-18s; plain numbers (Recommended)".
+
+**Jason:** OW25-30 "A: Rest/away mark + rated share (Recommended)"; OW25-31 "A: No ratio for under-18s; plain numbers (Recommended)"
+
+**Ruling:**
+
+Both are proposals for a later app-side decision on Rule 6. Nothing changes in the app now.
+1. (a) Rest week vs unlogged week: a recorded rest or away mark (no health reason asked for minors), a per-week share of rated sessions, the ratio silent otherwise, and no imputed numbers on screen (OW25-30 A).
+2. (b) Minors: no load ratio for under-18s and their parents; after the coach confirms, they see plain numbers (sessions and time against a usual range) with 'your coach is looking at it'; adults unchanged until review (OW25-31 A).
+3. When a Rule 6 lane is proposed, Overwatch briefs it from these and puts it to Jason as a card (Backbone ACTIONS A-97).
+
+**Not ruled here:** whether or when a Rule 6 lane runs.
+
+---
+
+## OD-2026-11-17-003 -- The D-PK19 finding is context only beside the live load-jump rule (Rule 6); one short follow-up finding on rest weeks and minors: "A: Context only (Recommended)"; "A: Yes, one short finding on both (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `0d3cd8d8231aa6e4` when read; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 25118, 2026-11-17T14:48:43.125Z) he pasted the Backbone Overwatch 25 note of 2026-11-17 09:00 US Eastern asking for these records ("Record both with OW25-25 to -29 (A-96) in the next records PR"; Backbone ACTIONS A-96, A-97); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-28** (header 'Load rule (Q1)')
+> Question, as shown:
+> Official (findings 2026-11-17-dpk19-load-metric-definitions.md, 8e971917a632aee6, Q1): How should this finding relate to the live load-jump rule (Rule 6)?
+> - The rule flags weeks with at least 2.0 × the athlete's usual week (LOAD_JUMP_RATIO = 2.0 in weeklySessionLoad.ts). The family sentence "about X times your usual week" is in progressionSuggestions.ts. Live since 2026-10-04 (commit 2ccf8e1d, PR #1193; verified in the mirror at 909f4502).
+> - The frozen Backbone treats the ratio (ACWR) as FUTURE (D-PK19).
+> - The research finds ACWR contested, never validated in boxers, and "ratios do not set sparring limits".
+> Plain: The app already shows a "training jumped" prompt built on a ratio. Should this research just sit beside it, be used to review it, or be kept apart?
+>
+> Options, in the order shown:
+> 1. "A: Context only (Recommended)": Claude Code's Overwatch reads the finding alongside Rule 6; no app change is implied. Pros: Nothing changes without a fresh decision. Cons: The family sentence stays as it is.
+> 2. "B: App-side review of Rule 6": Ask Claude Code's Overwatch to review Rule 6 and its family sentence against this finding; any change comes back to you. Pros: Checks a live, contested number, including what minors' families see. Cons: One more task for that session.
+> 3. "C: Keep separate": D-PK19 stays purely FUTURE; Rule 6 is out of scope. Pros: No work. Cons: The conflict stays unexamined.
+>
+> Jason's answer: "A: Context only (Recommended)".
+
+> **OW25-29** (header 'Load follow-up (Q2)')
+> Question, as shown:
+> Official (same finding, Q2): Should a further research finding cover (a) how a rest week is told apart from an unlogged week in load views (Rule 6 skips weeks with nothing logged), and (b) whether minors should see any load ratio, including the family sentence "about X times your usual week"?
+> Plain: Two loose ends matter most for honest numbers and for kids. Do you want me to research them next?
+>
+> Options, in the order shown:
+> 1. "A: Yes, one short finding on both (Recommended)": A research session here; one findings file; nothing built.
+> 2. "B: Only (b), the minors part": Research only what minors and families should see.
+> 3. "C: No follow-up now": Leave both for later.
+>
+> Jason's answer: "A: Yes, one short finding on both (Recommended)".
+
+**Jason:** OW25-28 "A: Context only (Recommended)"; OW25-29 "A: Yes, one short finding on both (Recommended)"
+
+**Ruling:**
+
+1. App-side Overwatch reads the D-PK19 finding alongside Rule 6 (`LOAD_JUMP_RATIO` = 2.0 in `weeklySessionLoad.ts`; the family sentence in `progressionSuggestions.ts`); no app change is implied (OW25-28 A).
+2. One short research finding covers (a) telling a rest week from an unlogged week and (b) whether minors should see any load ratio (OW25-29 A). Done: research finding `2026-11-17-load-followup-rest-weeks-and-minors.md` (sha256[:16] `5f6b74c64b09054d`, REPORTED by the Backbone note); the first D-PK19 finding was revised to `33beaa040c508e4b`.
+
+---
+
 ## OD-2026-11-17-002 -- Sparring minutes in frozen templates load as labelled information; the no-preset-sparring-volume check stays: "A: Show as info (Recommended)"
 
 **Provenance: PRIMARY.** Jason's answer to a two-question card in the Claude Code session on the Overwatch account (transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`): card at line 24368 (2026-11-17T13:23:33.647Z), answer at line 24369 (2026-11-17T13:27:10.960Z, about 08:27 EST; the `AskUserQuestion` result, which carries his picks), checked against the file by script before writing. Raised by lane YR's step-1 report (`YR_STEP1_REPORT.md`, sha256[:16] `f09b6153e6d5b9b1`, section 7), checked by Overwatch against the frozen Backbone and the workout-templates migration before it was put to him. New; edits no earlier entry's text.
@@ -641,9 +761,88 @@ and should not try to.
 
 **Applied, not asked (Overwatch):** the template "The permanent circuit ... ~10 min" has a written 10 minutes, under the app's 15-minute floor. It is not blank, so it is not drafted: the duration check widens to 1-180 and the value loads as written.
 
+**Applied, 2026-11-17 (Overwatch):** ruling 1's words "from that template's own frozen content" are Overwatch's reading, not Jason's; his option B reads "Values drafted, labelled AI draft, checked by the lane's two reviewers (OD-2026-11-15-011)". Lane YR's fidelity reviewer found 3 required durations with no basis in their own records and returned CONFLICT. Overwatch settled it without changing his words: where a template's own content gives no basis, the value comes from the same source document's sheet that matches the template's contact structure and is labelled UNVERIFIED (not INFERRED), its sources naming the exact sheets and any contrary values. Difficulty follows the Backbone's written convention (the lowest stage served).
+
 **Not ruled here:** required fields other than these four; reach to later lanes (its plain principle reaches the amateur + pro lane's templates: apply, do not ask again).
 
 **Status:** recorded 2026-11-17 by PR; lane YR builds it.
+
+---
+
+## OD-2026-11-16-006 -- A Claude Science research session defines the D-PK19 load metrics (ACWR, fitness-fatigue model, change-score error); one findings file, nothing built: "B: D-PK19 load-metric definitions"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `0d3cd8d8231aa6e4` when read; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 25118, 2026-11-17T14:48:43.125Z) he pasted the Backbone Overwatch 25 note of 2026-11-17 09:00 US Eastern asking for these records ("Record both with OW25-25 to -29 (A-96) in the next records PR"; Backbone ACTIONS A-96, A-97); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-26** (header 'Parallel: research')
+> Question, as shown:
+> Official: Run a Claude Science research session here in parallel (research only; one findings file; nothing built)? Candidates from the frozen agenda (FUTURE items):
+> - D-PK09: a blinded expert benchmark of the AI's content. AI drafts now load without your review (OD-2026-11-15-011): 387 drills, 131 of them FT1 drills you approved.
+> - D-PK19: definitions for derived metrics (ACWR, fitness-fatigue model, change-score error) for the app's load views. The data model logs raw inputs only and has "no damage score, no cumulative risk index".
+> Plain: While the app lanes build, should I start a research job? The first designs a fair, blind check that coaches can run on the AI-written drill text. The second defines training-load numbers.
+>
+> Options, in the order shown:
+> 1. "A: D-PK09 blind check of AI drafts (Recommended)": Design a small, blinded coach check: which drills, how many (sample), how they are hidden (blinding), a scoring rubric and who rates. Sourced and labelled, one findings file. Pros: Gives a safety net for drafts nobody reads before coaches do. Cons: Coaches' time to run it later.
+> 2. "B: D-PK19 load-metric definitions": Define ACWR, the fitness-fatigue model and change-score error, with their evidence and limits, for later load views. Pros: Groundwork for load features. Cons: No app lane uses it yet.
+> 3. "C: No research now": Keep this thread on watch only. Pros: No extra RAM or cards. Cons: The time goes unused.
+>
+> Jason's answer: "B: D-PK19 load-metric definitions".
+
+**Jason:** OW25-26 "B: D-PK19 load-metric definitions"
+
+**Ruling:**
+
+A research session in Claude Science defines ACWR, the fitness-fatigue model and change-score error, with their evidence and limits, for later load views: one findings file, nothing built (OW25-26 B). The D-PK09 blinded check of AI drafts was not chosen.
+
+---
+
+## OD-2026-11-16-005 -- Amateur + pro runs beside the catalog lane and loads when ready; at most two Claude Code build lanes, the research session the third stream: "B: Amateur + pro now; load when ready"; "A: No third build lane; research is the third (Recommended)"
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `0d3cd8d8231aa6e4` when read; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 25118, 2026-11-17T14:48:43.125Z) he pasted the Backbone Overwatch 25 note of 2026-11-17 09:00 US Eastern asking for these records ("Record both with OW25-25 to -29 (A-96) in the next records PR"; Backbone ACTIONS A-96, A-97); the paste carries no typed words of his own. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-25** (header 'Parallel: app lane')
+> Question, as shown:
+> Official: Run one more Claude Code lane alongside lane CAT? RAM is about 3–4 GB free on 16 GB, so there is room for one extra lane, not two. Frozen data, checked now (OBSERVED):
+> - youth + recreational (90 records): 4 tracks point at catalog gates, protocols or scorecards; all 300 of its drill references already exist in the app (294 Backbone drills loaded by L2b, 6 app seed drills).
+> - amateur + pro (96 records): no catalog references; all 35 drill references exist in the app.
+> OD-2026-11-15-006 orders the lanes: catalog, then youth + recreational, then amateur + pro. CAT runs as four sequential PRs (CAT-a to CAT-d).
+> Plain: While the catalog lane builds, should Claude Code start on the next content in parallel?
+>
+> Options, in the order shown:
+> 1. "A: Youth + rec now; load after CAT (Recommended)": The lane exports, drafts and reviews now. It merges and loads once CAT has merged, so the ruled order holds and its 4 catalog-linked tracks find their tables. Pros: Drafting and review time overlaps CAT, and the order is unchanged. Cons: It may need a merge of main if CAT lands first, and the two lanes share RAM.
+> 2. "B: Amateur + pro now; load when ready": It has no catalog references, so it can load before CAT finishes. This changes OD-2026-11-15-006 so amateur + pro go before youth + recreational. Pros: Content reaches coaches soonest. Cons: Changes your ruled order; youth content comes later.
+> 3. "C: Dependabot lane now (A-89)": The two library updates. Stage lanes wait for CAT. Pros: Small; clears the long-open PRs. Cons: No content gain.
+>
+> Jason's answer: "B: Amateur + pro now; load when ready".
+
+> **OW25-27** (header 'Third lane')
+> Question, as shown:
+> Official: Two Claude Code lanes are planned at once: CAT, which is running, and amateur + pro (OW25-25 B, issued once you paste the 23:11 prompt). The D-PK19 research session has just started here in Claude Science, where it uses little RAM. Should a third Claude Code lane run?
+> - RAM: the platform reads about 4 GB free of 16. This sandbox cannot see Claude Code's processes.
+> - Claude Code itself held the dependabot lane "until L2b or P22 finishes (RAM)" (STATUS.md, REPORTED), which treats two lanes as its limit.
+> - Youth + recreational writes the same training-tracks seed files as amateur + pro, and cannot load before CAT.
+> Plain: Two build lanes and one research job are running. Add a third build lane?
+>
+> Options, in the order shown:
+> 1. "A: No third build lane; research is the third (Recommended)": Keep two Claude Code lanes (CAT and amateur + pro). The D-PK19 research here is the third stream. Dependabot stays queued. Pros: Stays inside the RAM limit Claude Code set itself. Cons: Youth + rec and dependabot wait.
+> 2. "B: Third lane = dependabot, CI only": Claude Code runs the dependabot lane without local test runs or a local database, relying on GitHub's CI, and merges each update when green. Pros: Clears the two old PRs with little local RAM. Cons: Some risk of slowing the other two lanes; failures are found only in CI.
+> 3. "C: Third lane = youth + rec drafting": Export and AI drafts now; merge and load after CAT. Pros: Most content progress. Cons: Heaviest on RAM; it writes the same seed files as amateur + pro, so merge conflicts are likely.
+>
+> Jason's answer: "A: No third build lane; research is the third (Recommended)".
+
+**Jason:** OW25-25 "B: Amateur + pro now; load when ready"; OW25-27 "A: No third build lane; research is the third (Recommended)"
+
+**Ruling:**
+
+1. The amateur + pro stage lane runs while the assessment-catalog lane builds, and loads when ready, ahead of youth + recreational (OW25-25 B). This changes OD-2026-11-15-006 ruling 2's order.
+2. At most two Claude Code build lanes run at once; the D-PK19 research session in Claude Science is the third stream; the dependabot lane stays queued (OW25-27 A).
+
+**Noted (OBSERVED by app-side Overwatch):** the prompt that was to issue the amateur + pro lane ("issued once you paste the 23:11 prompt") never reached this session. After the catalog lane closed, Overwatch issued youth + recreational under OD-2026-11-15-006 (lane YR, 2026-11-17 13:06 UTC), and first saw these cards in the 09:00 paste. The conflict was put to Jason; see OD-2026-11-17-005.
+
+**Status, 2026-11-17:** partly replaced by OD-2026-11-17-005 (lane order)
 
 ---
 
