@@ -221,6 +221,7 @@ describe('backbone-export-assessment-catalog (lane CAT-c)', () => {
       [backbone(catalogs({ scorecard_items: [{ ...(catalogs().scorecard_items as Json[])[0], scale: '1-10 (made up)' }] })), 'names no known scale'],
       [backbone(catalogs({ scale_definitions: { ...(catalogs().scale_definitions as Json), non_contact_rule: { ...((catalogs().scale_definitions as Json).non_contact_rule as Json), applies_to: 'every item' } } })), 'non_contact_rule: its wording differs'],
       [backbone(catalogs({ gates: [{ ...(catalogs().gates as Json[])[1], informs_only: false }] })), 'a gate only informs'],
+      [backbone(catalogs({ scale_definitions: { ...(catalogs().scale_definitions as Json), non_contact_rule: { ...((catalogs().scale_definitions as Json).non_contact_rule as Json), wording: 'live_long_road, reworded' } } })), 'non_contact_rule: its wording differs'],
     ];
     for (const [folder, message] of stops) {
       const result = exportInto(folder);
@@ -228,6 +229,19 @@ describe('backbone-export-assessment-catalog (lane CAT-c)', () => {
       expect(result.stderr).toContain(message);
       expect(fs.existsSync(path.join(result.out, DIR))).toBe(false);
     }
+  });
+});
+
+describe('the exporter\'s arguments', () => {
+  it('refuses an --out with no folder, and an --out inside the Backbone folder', () => {
+    const dir = backbone();
+    const noFolder = run([dir, '--out', '--allow-overwrite']);
+    expect(noFolder.status).toBe(1);
+    expect(noFolder.stderr).toContain('--out needs a folder');
+    const inside = run([dir, '--out', path.join(dir, 'working')]);
+    expect(inside.status).toBe(1);
+    expect(inside.stderr).toContain('is inside the Backbone folder');
+    expect(fs.existsSync(path.join(dir, 'working', DIR))).toBe(false);
   });
 });
 

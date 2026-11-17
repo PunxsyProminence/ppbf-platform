@@ -169,7 +169,7 @@ export const SCALE_KEYS = {
 /** The cap's scope, read from its frozen wording (INFERRED). A different wording stops the export. */
 export const CAP_SCOPE = {
   applies_to: 'PP-T01 Long Road items scored in drill, shadow or partner contexts',
-  wordingStartsWith: 'live_long_road',
+  wording: 'live_long_road (verbatim; the draft non-contact wording is withdrawn)',
   scale_key: 'live_long_road',
   applies_to_protocol_id: 'PP-T01',
   applies_to_contexts: ['drill', 'shadow', 'partner'],
@@ -183,11 +183,13 @@ const HUMAN_AUTHORITY_LABEL = {
 
 export class ExportError extends Error {}
 
+/** JSON with keys sorted at every depth; every string NFC, as the text cells are. */
 export function sortedJson(value) {
   if (Array.isArray(value)) return `[${value.map(sortedJson).join(',')}]`;
   if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${sortedJson(value[key])}`).join(',')}}`;
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key.normalize('NFC'))}:${sortedJson(value[key])}`).join(',')}}`;
   }
+  if (typeof value === 'string') return JSON.stringify(value.normalize('NFC'));
   return JSON.stringify(value) ?? 'null';
 }
 
@@ -452,7 +454,7 @@ function capRow(definitions, version, tally) {
   checkKeys('cap', rule, 'scale_definitions.non_contact_rule', tally);
   const appliesTo = text(rule.applies_to, 'non_contact_rule.applies_to');
   const wording = text(rule.wording, 'non_contact_rule.wording');
-  if (appliesTo !== CAP_SCOPE.applies_to || !wording.startsWith(CAP_SCOPE.wordingStartsWith)) {
+  if (appliesTo !== CAP_SCOPE.applies_to || wording !== CAP_SCOPE.wording) {
     throw new ExportError(`non_contact_rule: its wording differs from what CAP_SCOPE reads (${JSON.stringify(appliesTo)}); re-read it by decision, do not guess`);
   }
   const inferred = { status: 'INFERRED', basis: 'read from applies_to and wording (lane CAT mapping)' };
@@ -594,14 +596,19 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--out') {
       out = argv[i + 1];
-      if (!out) throw new ExportError(`--out needs a folder\n${USAGE}`);
+      if (!out || out.startsWith('--')) throw new ExportError(`--out needs a folder\n${USAGE}`);
       i += 1;
     } else if (argv[i] === '--allow-overwrite') allowOverwrite = true;
     else if (argv[i].startsWith('--')) throw new ExportError(`unknown option ${argv[i]}\n${USAGE}`);
     else positional.push(argv[i]);
   }
   if (positional.length !== 1) throw new ExportError(USAGE);
-  return { backboneDir: positional[0], out: out ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../seed-data'), allowOverwrite };
+  const resolvedOut = path.resolve(out ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '../seed-data'));
+  const relative = path.relative(path.resolve(positional[0]), resolvedOut);
+  if (!relative || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+    throw new ExportError(`--out ${resolvedOut} is inside the Backbone folder, which is read-only; write elsewhere`);
+  }
+  return { backboneDir: positional[0], out: resolvedOut, allowOverwrite };
 }
 
 function main() {
