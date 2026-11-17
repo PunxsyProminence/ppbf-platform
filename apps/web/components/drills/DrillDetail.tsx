@@ -35,8 +35,9 @@ const KIOSK_TEXT = 'in-data-[surface=kiosk]:text-[length:var(--t-md)]';
 // On /coach/drills this card is light parchment (golden-era `.ge-drillcase
 // .mat-leather--raised`, flat background #E3CFAE). The bone inks are for dark
 // leather: --bone-300 #DCCFB2 reads at 1.01:1 there and --bone-200 #EFE6D0 at
-// 1.22:1. Inside .ge-drillcase this text inherits the card's own ink (#3A2E1D,
-// 8.69:1); everywhere else (the dark athlete and coach surfaces) it is
+// 1.22:1, and the source link's --brass-300 #D6B063 at about 1.35:1. Inside
+// .ge-drillcase this text inherits the card's own ink (#3A2E1D: 8.69:1 on the
+// card, about 5.6:1 inside an expander's 20% black wash); every other page is
 // unchanged. OD-2026-11-17-009 rulings 1 and 4 (OW25-34 A, OW25-37 A).
 const CARD_INK = 'in-[.ge-drillcase]:text-[color:inherit]';
 const BODY = `text-[length:var(--t-sm)] ${KIOSK_TEXT} leading-relaxed text-[color:var(--bone-300)] ${CARD_INK}`;
@@ -212,7 +213,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
             {view.cues.map((cue) => (
               <li
                 key={`${view.id}-cue-${cue}`}
-                className={`rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] ${KIOSK_TEXT} text-[color:var(--bone-300)]`}
+                className={`rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-xs)] ${KIOSK_TEXT} text-[color:var(--bone-300)] ${CARD_INK}`}
               >
                 {cue}
               </li>
@@ -480,7 +481,7 @@ function CitedClaim({ claimId, entry, loaded }: { claimId: string; entry: Ground
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`Open the source for ${claimId}`}
-                className="underline"
+                className="underline in-[.ge-drillcase]:text-[color:inherit]"
               >
                 Open the source
               </a>
