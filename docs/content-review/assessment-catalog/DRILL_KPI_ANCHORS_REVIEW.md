@@ -58,7 +58,7 @@ Level 1 is the lowest, level 3 the highest. A level describes what the coach see
 ## Flags (for the reviewers and the coach)
 
 - No source states a scoring kind for any one drill KPI. All seven kinds are drafts, and two have a plausible alternative: Chase control as a count of chases, and Correct decision branch selection as three levels.
-- "Decision branch" has no definition anywhere in the frozen Backbone (searched; research finding `Documents\PPBF-overwatchesearch\claude-research-projectindings6-11-16-doc041-kpi-scorecards-and-doc154-weigh-in.md` section 3.2, row K6, NOT APP SOURCE). The count reads it as "the right option among the ones the drill offers".
+- "Decision branch" has no definition anywhere in the frozen Backbone (searched; research finding `Documents/PPBF-overwatch/research/claude-research-project/findings/2026-11-16-doc041-kpi-scorecards-and-doc154-weigh-in.md` section 3.2, row K6, NOT APP SOURCE). The count reads it as "the right option among the ones the drill offers".
 - Exchange cap discipline and Arrival in stance are yes-no per exchange or per rep. A coach tallies them over a set, which makes them counts in practice; the kind records the mark, not the tally.
 
 ## Reviewer verdicts
