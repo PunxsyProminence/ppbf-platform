@@ -2,7 +2,7 @@
 
 Status: AI drafts, labelled field by field (`field_labels.scoring_kind` and `field_labels.level_anchors`: status INFERRED, draft "AI draft, lane CAT-d, 2026-11-17 (OD-2026-11-16-003 rulings 2 and 3; OD-2026-11-15-011)").
 - They load once the lane's two adversarial reviewers pass this sheet (OD-2026-11-15-011). A miss is fixed by a new version of the KPI row.
-- A coach reviews them on the gym floor (OD-2026-11-16-003 ruling 3); this sheet is where that review is recorded.
+- A coach reviews them (OD-2026-11-16-003 ruling 3); this sheet is where that review is recorded.
 - Rows: `apps/web/seed-data/assessment-catalog/seed_behavior_kpis.csv`, list `drill`.
 
 ## What is drafted, and what is not
@@ -19,7 +19,7 @@ Status: AI drafts, labelled field by field (`field_labels.scoring_kind` and `fie
 Sources the drafts lean on, all frozen and checked verbatim:
 - the DOC-027 glossary, track trk_1f8e1d681bb3ae: "Clean exit = leaving the exchange with posture, vision, and destination intact."; "Reset = restore breath, eyes, base, and decision quality before the next action."; "Chase = following movement with emotional urgency, usually hand-led and structurally weak."; "Composure = the ability to stay usable and decision-capable under pressure, contact, error, or delay."; "Disruption = any event that breaks normal rhythm or shape, such as contact, clinch, interruption, crowding, or timing breaks.";
 - DOC-027's room KPIs (above);
-- the frozen drill drl_3b1ec1fb7207bc watch point "Athlete arrives in stance after the reposition.".
+- the frozen drill drl_3b1ec1fb7207bc's what-good-looks-like line "Athlete arrives in stance after the reposition." (its DOC-027 passage, "Touch to Reposition").
 
 Level 1 is the lowest, level 3 the highest. A level describes what the coach sees in the set; it moves no one and limits nothing (Backbone RULES section 1).
 
@@ -33,15 +33,15 @@ Level 1 is the lowest, level 3 the highest. A level describes what the coach see
 | 4 | Exchange cap discipline. | yes_no | Kept or not, per exchange; DOC-027 tracks "Exchange cap compliance such as three-and-out when applicable." |
 | 5 | Composure under disruption. | three_level | A quality, so three levels; DOC-027 tracks a "Composure rating." |
 | 6 | Correct decision branch selection. | count | One count per correct branch chosen in the set. DOC-027 keeps "Decision quality notes under stress." as notes, not a scale. |
-| 7 | Arrival in stance after action. | yes_no | Arrived in stance or not, per rep; the frozen drills use it as a watch point. |
+| 7 | Arrival in stance after action. | yes_no | Arrived in stance or not, per rep; a frozen drill's what-good-looks-like line says it. |
 
 ## The three-level anchors (drafts)
 
 **2. Reset quality.** Built on "Reset = restore breath, eyes, base, and decision quality before the next action."
 - 1: Starts the next action with breath, eyes or base still broken.
-- 2: Restores some of breath, eyes, base and decision quality, or only after a coach cue.
+- 2: Restores breath, eyes and base before the next action, but decision quality lags; or restores all four only after a coach cue.
 - 3: Restores breath, eyes, base and decision quality before the next action, without a cue.
-- Note: "without a cue" (level 3) and "only after a coach cue" (level 2) are my addition; the glossary does not speak of cues.
+- Note: "without a cue" (level 3) and "only after a coach cue" (level 2) are my addition; the glossary does not speak of cues. Level 2 was reworded at review so the three levels do not overlap (an athlete who starts the next action with the base still broken is level 1, not level 2).
 
 **3. Chase control.** Built on "Chase = following movement with emotional urgency, usually hand-led and structurally weak."
 - 1: Chases: follows the partner's movement with urgency, hand-led, and the structure breaks.
@@ -58,7 +58,7 @@ Level 1 is the lowest, level 3 the highest. A level describes what the coach see
 ## Flags (for the reviewers and the coach)
 
 - No source states a scoring kind for any one drill KPI. All seven kinds are drafts, and two have a plausible alternative: Chase control as a count of chases, and Correct decision branch selection as three levels.
-- "Decision branch" has no definition anywhere in the frozen Backbone (research finding 3.2, K6). The count reads it as "the right option among the ones the drill offers".
+- "Decision branch" has no definition anywhere in the frozen Backbone (searched; research finding `Documents\PPBF-overwatchesearch\claude-research-projectindings6-11-16-doc041-kpi-scorecards-and-doc154-weigh-in.md` section 3.2, row K6, NOT APP SOURCE). The count reads it as "the right option among the ones the drill offers".
 - Exchange cap discipline and Arrival in stance are yes-no per exchange or per rep. A coach tallies them over a set, which makes them counts in practice; the kind records the mark, not the tally.
 
 ## Reviewer verdicts
