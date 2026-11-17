@@ -70,14 +70,24 @@ const STATE_WORDS: Record<RestrictionState, string> = {
   voided: 'Marked entered in error',
 };
 
+// NOTHING PRE-PICKED (Jason's card OW25-36 "A: 'Choose…', Save asks for both
+// (Recommended)"). Source and Loss of consciousness start empty, at "Choose…",
+// and Save refuses until both are chosen. A pre-picked "None" saved an answer
+// nobody gave whenever a coach skipped the field. The route refuses a missing
+// value too (requiredEnum in the route), and the columns have no default.
 const EMPTY_RECORD = {
-  source: 'ringside_affidavit',
-  loss_of_consciousness: 'none',
+  source: '',
+  loss_of_consciousness: '',
   start_date: '',
   minimum_end_date: '',
   linked_incident_id: '',
   note: '',
 };
+
+/** Rows the server sent that this screen could not show, said as a count (never dropped silently). */
+function hiddenWords(count: number): string {
+  return count === 1 ? '1 record could not be shown.' : `${count} records could not be shown.`;
+}
 
 function labelFor(options: ReadonlyArray<{ value: string; label: string }>, value: string): string {
   return options.find((option) => option.value === value)?.label ?? value;
@@ -112,6 +122,9 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
 
   const [athleteId, setAthleteId] = useState('');
   const [rows, setRows] = useState<StaffRestriction[] | null>(null);
+  // Rows the server sent that failed the shape check. Counted, so the screen
+  // never reads "No medical restriction on file" while one exists (P2).
+  const [hiddenCount, setHiddenCount] = useState(0);
   const [readError, setReadError] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -125,6 +138,7 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
   const read = useCallback(async (forAthlete: string) => {
     shownFor.current = forAthlete;
     setRows(null);
+    setHiddenCount(0);
     setReadError(null);
     if (!forAthlete) return;
     try {
@@ -138,7 +152,9 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
         setReadError(refusalWords({ error: payload.error, status: response.status }));
         return;
       }
-      setRows(payload.restrictions.filter(isStaffRestriction));
+      const shown = payload.restrictions.filter(isStaffRestriction);
+      setHiddenCount(payload.restrictions.length - shown.length);
+      setRows(shown);
     } catch {
       if (shownFor.current === forAthlete) setReadError('The medical restrictions could not be read. Nothing is shown as clear because of it.');
     }
@@ -181,6 +197,10 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
   };
 
   const submitRecord = async () => {
+    if (!record.source || !record.loss_of_consciousness) {
+      setRefusal('Choose a Source and a Loss of consciousness answer; Save needs both.');
+      return;
+    }
     if (!record.start_date || !record.minimum_end_date) {
       setRefusal('Enter the start date and the minimum end date.');
       return;
@@ -250,6 +270,10 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
 
       {athleteId ? (
         <div className="mt-[var(--s3)]">
+          {/* Above the list, so it is read before any row looks like the whole record. */}
+          {rows !== null && !readError && hiddenCount > 0 ? (
+            <p className="t-body mb-[var(--s3)]" data-testid="medical-restrictions-hidden">{hiddenWords(hiddenCount)}</p>
+          ) : null}
           {readError ? (
             <div className="alert alert--warning" role="alert">
               <span className="alert-icon" aria-hidden="true">▲</span>
@@ -261,7 +285,9 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
           ) : rows === null ? (
             <span className="working">Reading medical restrictions...</span>
           ) : rows.length === 0 ? (
-            <p className="t-body">No medical restriction on file for this member.</p>
+            // "None on file" only when the server sent none; a row this screen
+            // could not show is counted below instead.
+            hiddenCount === 0 ? <p className="t-body">No medical restriction on file for this member.</p> : null
           ) : (
             <ul className="grid gap-[var(--s3)]" aria-label="Medical restrictions on file">
               {rows.map((row) => {
@@ -360,13 +386,15 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
               <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
                 <div className="field">
                   <label className="t-label" htmlFor="mr-source">Source</label>
-                  <select id="mr-source" className="select" value={record.source} onChange={(event) => setRecord((r) => ({ ...r, source: event.target.value }))}>
+                  <select id="mr-source" className="select" required value={record.source} onChange={(event) => setRecord((r) => ({ ...r, source: event.target.value }))}>
+                    <option value="">Choose…</option>
                     {SOURCES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </div>
                 <div className="field">
                   <label className="t-label" htmlFor="mr-loc">Loss of consciousness</label>
-                  <select id="mr-loc" className="select" value={record.loss_of_consciousness} onChange={(event) => setRecord((r) => ({ ...r, loss_of_consciousness: event.target.value }))}>
+                  <select id="mr-loc" className="select" required value={record.loss_of_consciousness} onChange={(event) => setRecord((r) => ({ ...r, loss_of_consciousness: event.target.value }))}>
+                    <option value="">Choose…</option>
                     {LOC_VALUES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </div>
