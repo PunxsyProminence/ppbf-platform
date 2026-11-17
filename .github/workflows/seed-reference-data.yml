@@ -103,6 +103,7 @@ on:
           - session-scripts
           - pathway-catalog
           - training-tracks
+          - assessment-catalog
       mode:
         description: Rehearse inside a rolled-back transaction, or write for real
         required: true
