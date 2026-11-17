@@ -498,7 +498,11 @@ export function assessmentCatalogReferenceFindings(
     // A snapshot file is the whole table after this load; the protocols file is not.
     return packageIndex.has(name) && name !== ASSESSMENT_PROTOCOLS_FILE ? undefined : fallback?.lookup(name, value);
   };
-  const source = (name: string) => (packageIndex.has(name) ? `${name} of this package` : fallback?.where ?? name);
+  const source = (name: string) => {
+    if (!packageIndex.has(name)) return fallback?.where ?? name;
+    // The protocols file is not a snapshot: a protocol it leaves out was looked for among the loaded ones too.
+    return name === ASSESSMENT_PROTOCOLS_FILE && fallback ? `${name} of this package or ${fallback.where}` : `${name} of this package`;
+  };
 
   const out: Finding[] = [];
   for (const reference of CATALOG_REFERENCES) {
