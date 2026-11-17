@@ -151,7 +151,7 @@ function field(obj, name) {
 export function parseSetupInfoDetailed(text) {
   let groups;
   try {
-    groups = JSON.parse(String(text).replace(/^﻿/, ''));
+    groups = JSON.parse(String(text).replace(/^\uFEFF/, ''));
   } catch {
     return { runner: null, reason: 'unparsable' };
   }
