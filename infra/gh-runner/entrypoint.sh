@@ -11,6 +11,7 @@
 # - the guard and runner paths are fixed (the tests run a copy with them rewritten);
 # - `bash -p` does not read BASH_ENV or ENV for this script, and both are
 #   unset before the runner starts, so the hook's bash does not read them either;
+# - exported bash functions are dropped before the runner starts (below);
 # - the hook settings are forced, because the runner reads them from its
 #   environment and an empty or different value would drop the guard.
 set -euo pipefail
@@ -34,5 +35,16 @@ fi
 config="$JIT_CONFIG"
 unset JIT_CONFIG
 
+# Exported bash functions (BASH_FUNC_name%%=...) are not imported by this
+# `bash -p` but would be by every child bash, including run.sh and the hook,
+# where a function named kill, trap or grep would switch the guard off. Drop
+# them all before the runner starts.
+drop=()
+while IFS= read -r -d '' kv; do
+  case "$kv" in
+    BASH_FUNC_*) drop+=(-u "${kv%%=*}") ;;
+  esac
+done < <(env -0)
+
 cd "$RUNNER_HOME"
-exec ./run.sh --jitconfig "$config"
+exec env "${drop[@]}" ./run.sh --jitconfig "$config"

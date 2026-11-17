@@ -63,8 +63,8 @@ The GitHub App key that creates JIT configurations has "Administration: write", 
     - the jobs API shows that job's `runner_name` is the launched PPBF runner;
     - its conclusion is failure;
     - the marker never prints.
-  - The REFUSED line is in the **Container Apps execution log**, not the GitHub job log: the Worker is killed before it uploads the step log.
-  - The execution itself may show "Succeeded", because run.sh exits 0 after the listener dies.
+  - The REFUSED line is in the **Container Apps execution log**, not the GitHub job log: the Worker is killed before it uploads the step log. This assumes PID 1 is `run.sh`; confirm it at the pilot.
+  - The execution itself may show "Succeeded": the listener reports the job failed, exits 0, and run.sh exits with it.
 
 ## Notes for PR-2 and PR-3
 

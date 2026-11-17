@@ -255,7 +255,8 @@ describe('entrypoint.sh', () => {
     path.join(tmp, 'run.sh'),
     '#!/usr/bin/env bash\necho "ARGS=$*"\necho "LEFT=${JIT_CONFIG:-unset}"\n'
       + 'echo "HOOK=${ACTIONS_RUNNER_HOOK_JOB_STARTED:-unset}"\necho "DONE_HOOK=${ACTIONS_RUNNER_HOOK_JOB_COMPLETED:-unset}"\n'
-      + 'echo "CONTAINER_HOOKS=${ACTIONS_RUNNER_CONTAINER_HOOKS:-unset}"\necho "BASH_ENV=${BASH_ENV:-unset}"\n',
+      + 'echo "CONTAINER_HOOKS=${ACTIONS_RUNNER_CONTAINER_HOOKS:-unset}"\necho "BASH_ENV=${BASH_ENV:-unset}"\n'
+      + 'echo "KILL_IS=$(type -t kill)"\n',
     { mode: 0o755 },
   );
   // The entrypoint's paths are fixed on purpose; the tests run a copy with them rewritten.
@@ -309,6 +310,23 @@ describe('entrypoint.sh', () => {
     expect(r.stdout).toContain('DONE_HOOK=unset');
     expect(r.stdout).toContain('CONTAINER_HOOKS=unset');
     expect(r.stdout).toContain('BASH_ENV=unset');
+  });
+
+  it('drops exported bash functions, so no child bash can replace kill, trap or grep', () => {
+    const injected = { 'BASH_FUNC_kill%%': '() {  echo hijacked\n}' };
+    // Control: run straight, the stand-in's bash DOES import the function, so the variable arrives.
+    const control = spawnSync('bash', [posix(path.join(tmp, 'run.sh'))], {
+      encoding: 'utf8',
+      env: { ...baseEnv, ...injected } as unknown as NodeJS.ProcessEnv,
+    });
+    expect(control.stdout).toContain('KILL_IS=function');
+    const r = spawnSync('bash', [testEntrypoint], {
+      encoding: 'utf8',
+      env: { ...baseEnv, JIT_CONFIG: 'x', ...injected } as unknown as NodeJS.ProcessEnv,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('KILL_IS=builtin');
+    expect(r.stdout).not.toContain('hijacked');
   });
 
   it('fixes its paths, and runs as bash -p so BASH_ENV is not read', () => {
