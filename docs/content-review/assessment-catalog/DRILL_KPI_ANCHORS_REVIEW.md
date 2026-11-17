@@ -9,7 +9,7 @@ Status: AI drafts, labelled field by field (`field_labels.scoring_kind` and `fie
 
 - **Quoted, not drafted:**
   - the 7 KPI names, DOC-041 "Core Drill KPIs Worth Scoring";
-  - the list's scoring line, DOC-041 "Scoring Logic Standard": "Use simple counts, yes-no marks, or three-level ratings when possible.";
+  - the list's scoring lines, DOC-041 "Scoring Logic Standard", all three in order (Overwatch ruling B): "Use simple counts, yes-no marks, or three-level ratings when possible." "Do not create detailed formulas unless they will actually be sustained." "Score the same behavior the same way across coaches.";
   - DOC-027's 6 room KPIs and their scoring line (frozen track trk_21ba0c958c98e1, owner rule D-PK77-1).
 - **Drafted:** each drill KPI's scoring kind. DOC-041 states the three kinds for the list but names no kind for any single KPI (Drive file `1vg-YDzyHtxVSpf-m1BsbFvp_4hsDF3Jl`, read 2026-11-16).
 - **Drafted:** the three levels of the three KPIs drafted as three-level. DOC-041 does not word its levels (ruling 3).
