@@ -15,6 +15,7 @@ import {
   text,
   vocabulary,
 } from './common';
+import { detailsColumn, detailsRule } from './trainingTracks';
 
 // pilot.workout_templates and pilot.workout_template_items
 // (workout_templates_v2 migration :43-100). Loaded by the content-import core
@@ -68,7 +69,9 @@ export const workoutTemplatesDataset: DatasetSpec = {
         bool('requires_coach_authorization', 'A coach must authorize it.', { blankDefault: 'false' }),
         systemColumn('active', 'true', 'withdrawing a template is a separate action'),
         createdByColumn(),
+        detailsColumn('template'),
       ],
+      rowRules: [detailsRule({ table: 'workout_templates', constraint: 'pilot_workout_templates_details_check' })],
     },
     {
       dataset: 'workout-templates',
@@ -98,15 +101,29 @@ export const workoutTemplatesDataset: DatasetSpec = {
         vocabulary('contact_level', 'contact_level', 'Contact in this item.', { blankDefault: 'none' }),
         text('coach_note', 'Coach note.'),
         vocabulary('scale_level', 'scale_level', 'A preferred scale level (a preference, never forced).'),
+        detailsColumn('item'),
       ],
       rowRules: [
+        detailsRule({ table: 'workout_template_items', constraint: 'pilot_wti_details_check' }),
         {
-          description: 'Exactly one of drill_id and free_text_drill.',
+          // A frozen item may hold its content only in details (a scripted class's parts) or name a
+          // drill and its dosage as text (lane YR; Overwatch's one_source ruling A; YR-a migration).
+          description: 'At least one of drill_id, free_text_drill or a non-empty details.',
           mirrors: { table: 'workout_template_items', constraint: 'pilot_wti_one_source' },
-          check: (row) =>
-            Boolean(row.drill_id) === Boolean(row.free_text_drill)
-              ? 'needs exactly one of drill_id and free_text_drill'
-              : null,
+          check: (row) => {
+            if (row.drill_id || row.free_text_drill) return null;
+            const details = (row.details ?? '').trim();
+            let empty = details === '';
+            if (!empty) {
+              try {
+                const value: unknown = JSON.parse(details);
+                empty = !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
+              } catch {
+                return null; // detailsRule names the unreadable JSON
+              }
+            }
+            return empty ? 'needs at least one of drill_id, free_text_drill or a non-empty details' : null;
+          },
         },
         {
           description: 'Contact above light_technical carries no duration or rep count.',

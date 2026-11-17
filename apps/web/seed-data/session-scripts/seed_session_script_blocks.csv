@@ -412,3 +412,16 @@ stand at the pairing and watch the exchange directly - stop when fatigue breaks 
 boxers break cleanly and stop instantly on the coach's call - no additional punches after “stop”
 direct, uninterrupted supervision with a full sightline on both boxers - reposition immediately if attention is split
 stop on sight of any head-blow stoppage criteria - a boxer who takes a blow to the head is out of sparring and routes through the concussion return protocol before any resumption",,instruction,,,controlled_sparring
+{{PPBF_ORG_ID}},blk_e3cf7095420829,scr_e2ed38b1a19670,1,0,5,Instruction,Circle up. Today we’re working distance control and the jab system.,,,,instruction,,,none
+{{PPBF_ORG_ID}},blk_531ccdd70b7c2c,scr_e2ed38b1a19670,2,5,15,Mirror Footwork,Partners face each other. Leader moves first — react clean.,,,,drill_round,,,none
+{{PPBF_ORG_ID}},blk_58ead132d146b5,scr_e2ed38b1a19670,3,15,25,Distance Line Drill,"On the line. Step in, step out — control space.",,,,drill_round,,,none
+{{PPBF_ORG_ID}},blk_29128a0cd62b23,scr_e2ed38b1a19670,4,25,35,Jab Entry System,Single jabs only. Clean mechanics.,,,,drill_round,,,none
+{{PPBF_ORG_ID}},blk_a01acf878da27e,scr_e2ed38b1a19670,5,35,45,Defensive Reactions,"Defense only. Small slips, tight parries.",,,,drill_round,,,none
+{{PPBF_ORG_ID}},blk_bd7221b4d2fa64,scr_e2ed38b1a19670,6,45,55,Bag Work,On the bags — jab volume.,,,,drill_round,,,none
+{{PPBF_ORG_ID}},blk_bcde450033c4a8,scr_e2ed38b1a19670,7,55,60,Reflection,"Walk, breathe, reflect.",,,,reflection,,,none
+{{PPBF_ORG_ID}},blk_7621ed9ce657de,scr_e2ed38b1a19670,8,60,65,Instruction,Contact session starts. Partner up.,,,,instruction,,,none
+{{PPBF_ORG_ID}},blk_945b9098c7a7e0,scr_e2ed38b1a19670,9,65,75,Technical Partner Drill,"Jab–cross entry, slip cross — slow and clean.",,,,drill_round,,,light_technical
+{{PPBF_ORG_ID}},blk_b82252cef23919,scr_e2ed38b1a19670,10,75,90,Situational Sparring,Round 1: jab only scoring.,,,,drill_round,,,conditioned
+{{PPBF_ORG_ID}},blk_0790932ad82831,scr_e2ed38b1a19670,11,90,100,Technical Sparring,"Controlled sparring — light, clean touches only.",,,,drill_round,,,controlled_sparring
+{{PPBF_ORG_ID}},blk_42e381daaac45d,scr_e2ed38b1a19670,12,100,110,Fight Pace Bag Work,Fight pace bags — push volume.,,,,conditioning,,,none
+{{PPBF_ORG_ID}},blk_983a7b7dab5d04,scr_e2ed38b1a19670,13,110,120,Cooldown,Cooldown and reset.,,,,close,,,none

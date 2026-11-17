@@ -6,10 +6,11 @@
 // The 8-week non-contact FT1 class track, from the frozen Backbone into three content packages:
 //   drill-library     131 drills + their cues and own stop rules   (rows ADDED to the committed CSVs)
 //   workout-templates  33 templates + 131 items                    (rows ADDED to the committed CSVs)
-//   training-tracks     1 track, 8 blocks, 40 block sessions       (new CSVs)
-// --out defaults to apps/web/seed-data. Existing rows of the two committed packages are kept
-// exactly as they are; rows of the FT1 set already in a file are replaced, so a second run is
-// byte-identical.
+//   training-tracks     1 track, 8 blocks, 40 block sessions       (rows of the FT1 track)
+// --out defaults to apps/web/seed-data. Existing rows of the committed packages are kept exactly
+// as they are; rows of the FT1 set already in a file are replaced, so a second run is
+// byte-identical. The training-tracks files also hold the youth and recreational tracks (lane YR,
+// backbone-export-youth-recreational.mjs): this export replaces only the FT1 track's rows there.
 //
 // OVERWRITE GUARD (lane FT1-G). The repo is the only live copy (OD-2026-11-10-001): FT1 rows are
 // edited after the export (the drill drafts Jason approves, OD-2026-11-12-005 ruling 3, fill blank
@@ -87,14 +88,14 @@ const DRILL_HEADER = ['organization_id', 'drill_id', 'lineage_id', 'version', 's
   'contact_level', 'equipment_needed', 'requires_coach_authorization', 'content_class', 'source_ref', 'active', 'created_by_account_id', 'difficulty',
   'grounding_claim_ids', 'field_provenance', ...LABELS];
 const TEMPLATE_HEADER = ['organization_id', 'template_id', 'lineage_id', 'version', 'supersedes_template_id', 'superseded_at', 'name', 'session_type', 'difficulty',
-  'age_band', 'duration_minutes', 'intent', 'coach_notes', 'requires_coach_authorization', 'active', 'created_by_account_id', ...LABELS];
+  'age_band', 'duration_minutes', 'intent', 'coach_notes', 'requires_coach_authorization', 'active', 'created_by_account_id', 'details', ...LABELS];
 export const HEADERS = {
   'drill-library/seed_drill_library.csv': DRILL_HEADER,
   'drill-library/seed_drill_cues.csv': ['organization_id', 'cue_id', 'drill_id', 'cue_text', 'cue_family', 'focus_type', 'evidence_note', 'source_ref'],
   'drill-library/seed_drill_stop_rules.csv': ['organization_id', 'stop_rule_id', 'drill_id', 'ordinal', 'condition_text', 'scope', 'rule_kind'],
   'workout-templates/seed_workout_templates.csv': TEMPLATE_HEADER,
   'workout-templates/seed_workout_template_items.csv': ['organization_id', 'item_id', 'template_id', 'ordinal', 'block', 'drill_id', 'free_text_drill', 'duration_minutes',
-    'rep_count', 'contact_level', 'coach_note', 'scale_level'],
+    'rep_count', 'contact_level', 'coach_note', 'scale_level', 'details'],
   'training-tracks/seed_training_tracks.csv': ['organization_id', 'track_id', 'lineage_id', 'version', 'supersedes_track_id', 'superseded_at', 'name', 'lane', 'track',
     'duration_weeks', 'delivered_to_program_id', 'age_band', 'status', 'sources', 'details', 'active', 'created_by_account_id', ...LABELS],
   'training-tracks/seed_track_blocks.csv': ['organization_id', 'track_block_id', 'block_lineage_id', 'track_id', 'block_order', 'title', 'weeks', 'status', 'sources',
@@ -102,8 +103,8 @@ export const HEADERS = {
   'training-tracks/seed_track_block_sessions.csv': ['organization_id', 'block_session_id', 'track_id', 'block_order', 'ordinal', 'week', 'day', 'template_lineage_id'],
 };
 
-// The overwrite guard's row identity and owner, per file. The training-tracks files are written whole,
-// so every committed row in them is compared, whichever track it belongs to.
+// The overwrite guard's row identity and owner, per file. In the training-tracks files only the FT1
+// track's rows are replaced and compared; other tracks' rows are kept as they are (lane YR).
 export const GUARD_KEYS = {
   'drill-library/seed_drill_library.csv': { owner: 'drill_id', row: ['drill_id'] },
   'drill-library/seed_drill_cues.csv': { owner: 'drill_id', row: ['cue_id'] },
@@ -512,14 +513,19 @@ export function exportFt1Track(backboneDir, existing = () => undefined, { allowO
   const templateIdSet = new Set(templateSet.rows.map((row) => row.template_id));
   const files = {};
   const overwrites = [];
-  // `replaces(row)`: the committed rows this run writes over; null = the whole file (written whole).
-  const put = (name, rows, replaces = null) => {
+  // `replaces(row)`: the committed rows this run writes over; every other committed row is kept.
+  const put = (name, rows, replaces) => {
     const committed = committedRows(existing(name), HEADERS[name]);
-    const replaced = replaces ? committed.filter(replaces) : committed;
-    const kept = replaces ? committed.filter((row) => !replaces(row)) : [];
+    const replaced = committed.filter(replaces);
+    const kept = committed.filter((row) => !replaces(row));
     checkUniqueIds(name, kept, rows);
     overwrites.push(...findOverwrites(name, replaced, rows));
-    files[name] = mergeCsv(kept, HEADERS[name], rows);
+    // A replaced row keeps its place (the training-tracks and drill files also hold other lanes'
+    // rows after the FT1 ones, so a rerun must not move them); new rows follow.
+    const fresh = new Map(rows.map((row) => [guardId(name, row), row]));
+    const placed = new Set(replaced.map((row) => guardId(name, row)).filter((id) => fresh.has(id)));
+    const inPlace = committed.flatMap((row) => (!replaces(row) ? [row] : placed.has(guardId(name, row)) ? [fresh.get(guardId(name, row))] : []));
+    files[name] = mergeCsv(inPlace, HEADERS[name], rows.filter((row) => !placed.has(guardId(name, row))));
   };
   const ofDrill = (row) => drillIdSet.has(row.drill_id);
   const ofTemplate = (row) => templateIdSet.has(row.template_id);
@@ -529,14 +535,15 @@ export function exportFt1Track(backboneDir, existing = () => undefined, { allowO
   put('drill-library/seed_drill_stop_rules.csv', drillSet.stopRules.sort(ordinal('drill_id')), ofDrill);
   put('workout-templates/seed_workout_templates.csv', templateSet.rows.sort(byId('template_id')), ofTemplate);
   put('workout-templates/seed_workout_template_items.csv', templateSet.items.sort(ordinal('template_id')), ofTemplate);
-  put('training-tracks/seed_training_tracks.csv', [trackSet.trackCells]);
-  put('training-tracks/seed_track_blocks.csv', trackSet.blockCells);
-  put('training-tracks/seed_track_block_sessions.csv', trackSet.sessionCells);
+  const ofFt1Track = (row) => row.track_id === FT1_TRACK_ID;
+  put('training-tracks/seed_training_tracks.csv', [trackSet.trackCells], ofFt1Track);
+  put('training-tracks/seed_track_blocks.csv', trackSet.blockCells, ofFt1Track);
+  put('training-tracks/seed_track_block_sessions.csv', trackSet.sessionCells, ofFt1Track);
   const overwriteLines = describeOverwrites(overwrites);
   if (overwrites.length && !allowOverwrite) {
     throw new ExportError([
       `refused: this run would change or remove ${overwrites.length} committed row(s): edits made in the repo since the export`
-        + ' (for FT1: the drafted drill fields and stop rules, OD-2026-11-12-005), or rows of a file the export writes whole. Nothing was written.',
+        + ' (for FT1: the drafted drill fields and stop rules, OD-2026-11-12-005). Nothing was written.',
       ...overwriteLines,
       'To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.',
     ].join('\n'));

@@ -84,6 +84,19 @@ const TEMPLATE_LABEL_ENTRIES = (() => {
     return sum + labelled + links;
   }, 0);
 })();
+/**
+ * The scripts file's `inserted` list holds the same `labels` and `stage link` entries, counted the same way from the
+ * file (lane YR: the Week 2 Monday script carries both).
+ */
+const SCRIPT_LABEL_ENTRIES = (() => {
+  const table = readCsv(readFileSync(path.join(SEED_DATA_DIR, 'session-scripts/seed_session_scripts.csv'), 'utf8'));
+  const at = (name: string) => table.header.indexOf(name);
+  return table.records.reduce((sum, record) => {
+    const labelled = record.cells[at('field_labels')] || record.cells[at('evidence')] ? 1 : 0;
+    const links = record.cells[at('stage_keys')] ? record.cells[at('stage_keys')].split('|').length : 0;
+    return sum + labelled + links;
+  }, 0);
+})();
 /** Training tracks (lane FT1b): one item per track; its blocks and block sessions are children of it, not items. */
 const TRACK_ROWS = committedRowCount('training-tracks/seed_training_tracks.csv');
 /** The committed Backbone snapshot (lane BB-1c): one history row per catalog row on a first load. */
@@ -917,7 +930,7 @@ describe('the content-import command (scripts/pilot-content-import.ts)', () => {
     // it, and the template items' drill foreign key by the drills.
     expect(applied.stdout).toContain(`RESULT: COMMITTED -- ${PATHWAY_ROWS + REGISTRY_ROWS + DRILL_ROWS + TEMPLATE_ROWS + SCRIPT_ROWS + TRACK_ROWS + CATALOG_ROWS} item(s) written`);
     expect(applied.stdout).toContain(`  workout-templates: inserted ${TEMPLATE_ROWS + TEMPLATE_LABEL_ENTRIES}`);
-    expect(applied.stdout).toContain(`  session-scripts: inserted ${SCRIPT_ROWS}`);
+    expect(applied.stdout).toContain(`  session-scripts: inserted ${SCRIPT_ROWS + SCRIPT_LABEL_ENTRIES}`);
     expect(await committedCounts('gym_cli')).toEqual({ ...REGISTRY_COUNTS, ledger: REGISTRY_ROWS + PATHWAY_ROWS + CATALOG_LEDGER_ROWS, audit: 1, shadowEvents: 1 });
     const imports = await observer.query(
       "select count(distinct import_id)::int as n from pilot.reference_content_revisions where organization_id = 'gym_cli'",

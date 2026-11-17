@@ -482,22 +482,29 @@ describe('row and group rules', () => {
     expect(result.blocking.filter((f) => f.code === 'row_rule').map((f) => f.line)).toEqual([2, 3, 4]);
   });
 
-  it('template items: exactly one of drill_id and free_text_drill; no volume on sparring', () => {
+  it('template items: at least one of drill_id, free_text_drill or a non-empty details; no volume on sparring', () => {
     const item = (overrides: Record<string, string>) => ({ template_id: EXISTING_TEMPLATE, block: 'technical', ...overrides });
     const result = run([
       input(
         'seed_workout_template_items.csv',
         [
+          // A drill and its dosage in words: taken (lane YR; pilot_wti_one_source as YR-a redefines it).
           item({ ordinal: '1', drill_id: EXISTING_DRILL, free_text_drill: 'Shadow box' }),
           // In words: a linked drill below sparring would also be step_contact_above_drill.
           item({ ordinal: '2', free_text_drill: 'Controlled sparring', contact_level: 'controlled_sparring', duration_minutes: '6' }),
+          // Nothing at all: refused. An empty details object is nothing.
+          item({ ordinal: '3' }),
+          item({ ordinal: '4', details: '{}' }),
+          // Only a sheet's fields: taken.
+          item({ ordinal: '5', details: '{"block_title": "Jump rope"}' }),
         ],
         'workout-templates',
       ),
     ]);
-    expect(result.blocking.map((f) => [f.code, f.line])).toEqual([
-      ['row_rule', 2],
+    expect(result.blocking.map((f) => [f.code, f.line]).sort((a, b) => Number(a[1]) - Number(b[1]))).toEqual([
       ['row_rule', 3],
+      ['row_rule', 4],
+      ['row_rule', 5],
     ]);
   });
 

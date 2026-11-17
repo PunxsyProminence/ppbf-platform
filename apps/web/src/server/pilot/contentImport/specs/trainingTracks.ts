@@ -111,7 +111,7 @@ const SOURCES_RULE: RowRule = {
   },
 };
 
-function detailsRule(mirrors: RowRule['mirrors']): RowRule {
+export function detailsRule(mirrors: RowRule['mirrors']): RowRule {
   return {
     description: 'details, when set, is a JSON object: every backbone field with no column of its own, by its backbone name.',
     mirrors,
@@ -195,7 +195,7 @@ const sourcesColumn = (): ColumnSpec => ({
   description: 'The record\'s sources: a JSON list of source keys, e.g. ["DOC-123"]. A JSON list, not a | list, so a source may hold any character.',
 });
 
-const detailsColumn = (what: string): ColumnSpec => ({
+export const detailsColumn = (what: string): ColumnSpec => ({
   name: 'details',
   role: 'content',
   type: 'text',

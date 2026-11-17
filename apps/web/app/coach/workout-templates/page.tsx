@@ -584,6 +584,48 @@ function IssueToAthlete({
   );
 }
 
+/**
+ * Minutes the source sheet gives a contact item, kept in the item's details because the duration
+ * column holds none above light technical (OD-2026-11-17-002). Information only: nothing times,
+ * issues or presets them.
+ */
+function sheetMinutes(item: TemplateItem): number | null {
+  const minutes = item.details?.duration_minutes;
+  return typeof minutes === 'number' && Number.isFinite(minutes) ? minutes : null;
+}
+
+/**
+ * The item's name: its drill's name when it links one; else its typed text; else the title its
+ * source sheet gives it (details.block_title, then details.phase, lane YR). A drill named WITH
+ * text shows the text under the name (itemText), so neither hides the other.
+ */
+function itemName(item: TemplateItem): string {
+  const sheet = item.details ?? {};
+  const title = typeof sheet.block_title === 'string' ? sheet.block_title : typeof sheet.phase === 'string' ? sheet.phase : null;
+  if (item.drill_id !== null) return item.head_drill_name ?? item.drill_id;
+  return item.free_text_drill ?? title ?? 'Unnamed drill';
+}
+
+/** Text an item gives beside its linked drill (a dosage, a set), shown under the drill's name. */
+function itemText(item: TemplateItem): string | null {
+  return item.drill_id !== null && (item.free_text_drill ?? '').trim() !== '' ? item.free_text_drill : null;
+}
+
+/** The item's other source-sheet fields (details), as written, for the "From the sheet" list. */
+const SHEET_SHOWN_ELSEWHERE = new Set(['duration_minutes']);
+function sheetFields(item: TemplateItem): [string, unknown][] {
+  return Object.entries(item.details ?? {}).filter(([key, value]) => !SHEET_SHOWN_ELSEWHERE.has(key) && value !== null && value !== '');
+}
+
+function sheetText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(sheetText).join('\n');
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).map(([key, entry]) => `${key}:\n${sheetText(entry)}`).join('\n');
+  }
+  return String(value);
+}
+
 /** What one item prescribes, from the nullable columns it actually has. */
 function itemPrescription(item: TemplateItem): string {
   const parts: string[] = [];
@@ -593,8 +635,9 @@ function itemPrescription(item: TemplateItem): string {
 }
 
 /**
- * A template row's facts line from what it has: a template may carry no
- * session type (''), no difficulty and no length (null), and never reads "null min".
+ * A template row's facts line from what it has; it never reads "null min". Defensive only: the
+ * database keeps session_type, difficulty, duration_minutes and intent NOT NULL (OD-2026-11-17-001),
+ * so a blank session type is the one empty value a stored template can show.
  */
 function templateFacts(template: Template): string {
   return [
@@ -825,13 +868,18 @@ function CoachWorkoutTemplates() {
                         <h4 className="t-command text-[length:var(--t-sm)]">
                           {/* The lineage head's name; the raw drill_id only
                               when that row did not resolve. */}
-                          {item.free_text_drill ?? item.head_drill_name ?? item.drill_id ?? 'Unnamed drill'}
+                          {itemName(item)}
                         </h4>
                         {itemPrescription(item) !== '' && (
                           <span className="t-label">{itemPrescription(item)}</span>
                         )}
                         {item.scale_level && (
                           <span className="t-label">Scale {item.scale_level}</span>
+                        )}
+                        {sheetMinutes(item) !== null && (
+                          <span className="t-label text-[color:var(--bone-400)]">
+                            {`Sheet says ${sheetMinutes(item)} min (information; not timed or issued)`}
+                          </span>
                         )}
                         <span className="t-label text-[color:var(--bone-400)]">
                           {item.contact_level.replace(/_/g, ' ')}
@@ -846,11 +894,28 @@ function CoachWorkoutTemplates() {
                           Uses an older drill version.
                         </p>
                       )}
+                      {itemText(item) !== null && (
+                        <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{itemText(item)}</p>
+                      )}
                       {(item.coach_note ?? '').trim() !== '' && (
                         <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                           <span className="t-label">Note: </span>
                           {item.coach_note}
                         </p>
+                      )}
+                      {/* The source sheet's own fields for this item, as written (lane YR): information only. */}
+                      {sheetFields(item).length > 0 && (
+                        <details className="mt-[var(--s2)]">
+                          <summary className="t-label cursor-pointer">From the sheet</summary>
+                          <dl className="mt-[var(--s1)]">
+                            {sheetFields(item).map(([key, value]) => (
+                              <div key={key} className="t-body mt-[var(--s1)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                                <dt className="inline font-semibold">{`${key.replace(/_/g, ' ')}: `}</dt>
+                                <dd className="inline whitespace-pre-line">{sheetText(value)}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </details>
                       )}
                     </li>
                   ))}

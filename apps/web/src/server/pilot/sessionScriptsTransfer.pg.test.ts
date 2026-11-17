@@ -374,7 +374,9 @@ describe('the committed session scripts, loaded through the content-import core'
   const SCRIPTS = committedRows('session-scripts/seed_session_scripts.csv');
   const BLOCKS = committedRows('session-scripts/seed_session_script_blocks.csv');
   const RENDERINGS = committedRows('session-scripts/seed_session_script_renderings.csv');
-  const DATASETS = 'disciplines,session-scripts';
+  // The pathway catalog too: the Week 2 Monday script carries stage keys (Y3, Y4, Y5; lane YR), and a
+  // stage key must name a loaded stage.
+  const DATASETS = 'pathway-catalog,disciplines,session-scripts';
   const INDUCED = 'INDUCED_NON_DATABASE_FAILURE';
 
   beforeAll(async () => {
