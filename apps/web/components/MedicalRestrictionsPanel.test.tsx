@@ -107,6 +107,7 @@ test('records a new restriction with the fields entered', async () => {
   render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
   await openFor('No medical restriction on file for this member.');
   fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+  fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'ringside_affidavit' } });
   fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'unknown' } });
   fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-11-10' } });
   fireEvent.change(screen.getByLabelText('Minimum end date'), { target: { value: '2026-12-10' } });
@@ -117,4 +118,116 @@ test('records a new restriction with the fields entered', async () => {
     action: 'record', athlete_id: 'ath-1', source: 'ringside_affidavit', loss_of_consciousness: 'unknown',
     start_date: '2026-11-10', minimum_end_date: '2026-12-10',
   });
+});
+
+/*
+ * OW25-36 A: "'Choose…', Save asks for both (Recommended)". Nothing is
+ * pre-picked, so a skipped field can never save as an answer nobody gave.
+ */
+async function openRecordForm() {
+  createPersistentRoleSession('coach');
+  respondWith([]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  await openFor('No medical restriction on file for this member.');
+  fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+}
+
+function selected(label: string): HTMLOptionElement {
+  const select = screen.getByLabelText(label) as HTMLSelectElement;
+  return select.options[select.selectedIndex];
+}
+
+test('Source and Loss of consciousness start at "Choose…" with nothing picked', async () => {
+  await openRecordForm();
+  for (const label of ['Source', 'Loss of consciousness']) {
+    expect(selected(label).value).toBe('');
+    expect(selected(label).textContent).toBe('Choose…');
+    expect((screen.getByLabelText(label) as HTMLSelectElement).required).toBe(true);
+  }
+});
+
+test.each([
+  ['no Source', { 'Loss of consciousness': 'none' }],
+  ['no Loss of consciousness answer', { Source: 'ringside_affidavit' }],
+  ['neither', {}],
+])('Save with %s is refused on screen and sends nothing', async (_label, chosen: Record<string, string>) => {
+  await openRecordForm();
+  for (const [label, value] of Object.entries(chosen)) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  }
+  fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-11-10' } });
+  fireEvent.change(screen.getByLabelText('Minimum end date'), { target: { value: '2026-12-10' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save restriction' }));
+  expect(await screen.findByText('Choose a Source and a Loss of consciousness answer; Save needs both.')).toBeTruthy();
+  expect(screen.getByRole('alert').textContent).toContain('Not saved');
+  expect(calls.some((c) => c.init?.method === 'POST')).toBe(false);
+});
+
+test('after a save the next record starts at "Choose…" again', async () => {
+  await openRecordForm();
+  fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
+  fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'under_1_min' } });
+  fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-11-10' } });
+  fireEvent.change(screen.getByLabelText('Minimum end date'), { target: { value: '2026-12-10' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save restriction' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Record a restriction' }));
+  expect(selected('Source').value).toBe('');
+  expect(selected('Loss of consciousness').value).toBe('');
+});
+
+test('Cancel, then reopening, starts at "Choose…" again', async () => {
+  await openRecordForm();
+  fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
+  fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+  expect(selected('Source').value).toBe('');
+  expect(selected('Loss of consciousness').value).toBe('');
+});
+
+test("one member's choices never carry into another member's form", async () => {
+  createPersistentRoleSession('coach');
+  respondWith([]);
+  render(<MedicalRestrictionsPanel athletes={[...ATHLETES, { athlete_id: 'ath-2', full_name: 'Second Member' }]} />);
+  await openFor('No medical restriction on file for this member.');
+  fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+  fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
+  fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
+  fireEvent.change(screen.getByLabelText('Member'), { target: { value: 'ath-2' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Record a restriction' }));
+  expect(selected('Source').value).toBe('');
+  expect(selected('Loss of consciousness').value).toBe('');
+});
+
+/*
+ * P2: a row the server sent that this screen cannot show is counted, never
+ * dropped, so the screen never says "none on file" while one exists.
+ */
+test('a row that cannot be shown is counted, and "none on file" is not said', async () => {
+  createPersistentRoleSession('coach');
+  respondWith([{ restriction_id: 'x', state: 'not_a_state' }]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  await openFor('1 record could not be shown.');
+  expect(screen.queryByText('No medical restriction on file for this member.')).toBeNull();
+});
+
+test('shown rows and a count of the rest appear together', async () => {
+  createPersistentRoleSession('coach');
+  respondWith([ROW, { restriction_id: 'x' }, null]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  await openFor('In force — release needed');
+  const count = screen.getByTestId('medical-restrictions-hidden');
+  expect(count.textContent).toBe('2 records could not be shown.');
+  expect(screen.queryByText('No medical restriction on file for this member.')).toBeNull();
+  // Read before the list, never below it where a long list would push it out of view.
+  const list = screen.getByRole('list', { name: 'Medical restrictions on file' });
+  expect(count.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('"none on file" still shows when the server sent none', async () => {
+  createPersistentRoleSession('coach');
+  respondWith([]);
+  render(<MedicalRestrictionsPanel athletes={ATHLETES} />);
+  await openFor('No medical restriction on file for this member.');
+  expect(screen.queryByTestId('medical-restrictions-hidden')).toBeNull();
 });
