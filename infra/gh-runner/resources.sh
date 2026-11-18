@@ -42,6 +42,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     echo "resources.sh: azure-runner.conf has a line that is not KEY=value with a plain value." >&2
     exit 2
   fi
+  [ -z "${C[${BASH_REMATCH[1]}]+set}" ] || { echo "resources.sh: azure-runner.conf sets ${BASH_REMATCH[1]} twice." >&2; exit 2; }
   C[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]}"
 done < "$CONF"
 for k in RESOURCE_GROUP LOCATION ENVIRONMENT_NAME WORKLOAD_PROFILE JOB_NAME IDENTITY_NAME REGISTRY_NAME \
@@ -69,7 +70,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ -z "$WRITER" ] || [[ "$WRITER" =~ ^[A-Za-z0-9._%+@-]{3,254}$ ]] || { echo "resources.sh: --secret-writer is malformed." >&2; exit 2; }
+[ -z "$WRITER" ] || [[ "$WRITER" =~ ^[A-Za-z0-9._%+@][A-Za-z0-9._%+@-]{2,253}$ ]] || { echo "resources.sh: --secret-writer is malformed." >&2; exit 2; }
 [ -z "$OIDC_APP" ] || [[ "$OIDC_APP" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ]] || { echo "resources.sh: --oidc-app-id must be a GUID." >&2; exit 2; }
 [ -z "$SUBSCRIPTION" ] || [[ "$SUBSCRIPTION" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ]] || { echo "resources.sh: --subscription must be a GUID." >&2; exit 2; }
 
@@ -96,7 +97,7 @@ confirm_subscription() {
   echo "Target subscription: $SUBSCRIPTION"
   [ "$APPLY" = 1 ] || return 0
   local current
-  current="$(az account show --query id -o tsv 2>/dev/null | tr -d '')" || current=''
+  current="$(az account show --query id -o tsv 2>/dev/null | tr -d '\r')" || current=''
   if [ "$current" != "$SUBSCRIPTION" ]; then
     echo "resources.sh: REFUSED --apply: az is not signed in to subscription $SUBSCRIPTION. Nothing was changed." >&2
     exit 6
@@ -155,9 +156,12 @@ create() {
 JSON
   echo "Job body:"
   cat "$BODY"
+  # az on Windows is a Windows python.exe, which cannot open /tmp/...: hand it C:/... there.
+  local body_arg="$BODY"
+  if command -v cygpath >/dev/null 2>&1; then body_arg="$(cygpath -m "$BODY")"; fi
   run az rest --method put \
     --url "https://management.azure.com/subscriptions/$sub/resourceGroups/$RG/providers/Microsoft.App/jobs/$JOB?api-version=2025-07-01" \
-    --body "@$BODY" -o none
+    --body "@$body_arg" -o none
   if [ "$APPLY" = 1 ]; then
     for i in $(seq 1 30); do
       state="$(az containerapp job show --resource-group "$RG" --name "$JOB" --query properties.provisioningState -o tsv | tr -d '\r')"
@@ -174,9 +178,9 @@ grant() {
   [ -n "$OIDC_APP" ] || { echo "resources.sh grant needs --oidc-app-id <client id of the workflows' Azure login>." >&2; exit 2; }
   local kv_id present sp_id
   kv_id="$(get '<vault-id>' az keyvault show --name "$KV" --query id -o tsv)"; arm_id "$kv_id" 'vault id'
-  # Lists names only; no secret value is read.
-  present="$(get '1' az keyvault secret list --vault-name "$KV" --query "length([?name=='$SECRET'])" -o tsv)"
-  [ "$present" = 1 ] || { echo "resources.sh: secret '$SECRET' is not in $KV yet. Jason pastes the GitHub App key first." >&2; exit 3; }
+  # Management plane: needs no Key Vault data role, and never returns the value.
+  present="$(get "$SECRET" az rest --method get --url "https://management.azure.com$kv_id/secrets/$SECRET?api-version=2023-07-01" --query name -o tsv 2>/dev/null)" || present=''
+  [ "$present" = "$SECRET" ] || { echo "resources.sh: secret '$SECRET' is not in $KV yet. Jason pastes the GitHub App key first." >&2; exit 3; }
   sp_id="$(get '<oidc-service-principal-id>' az ad sp show --id "$OIDC_APP" --query id -o tsv)"; guid "$sp_id" 'service principal id'
   run az role assignment create --assignee-object-id "$sp_id" --assignee-principal-type ServicePrincipal \
     --role "Key Vault Secrets User" --scope "$kv_id/secrets/$SECRET" -o none
@@ -197,8 +201,12 @@ check() {
   az role assignment list --scope "$kv_id" --query "[].{who:principalName,type:principalType,role:roleDefinitionName,scope:scope}" -o table
   az role assignment list --scope "$kv_id/secrets/$SECRET" --query "[].{who:principalName,type:principalType,role:roleDefinitionName,scope:scope}" -o table 2>/dev/null \
     || echo "(secret '$SECRET' not created yet)"
+  echo "== roles on resource group $RG and above (each can read an execution's JIT config before the runner uses it)"
+  az role assignment list --resource-group "$RG" --include-inherited --query "[].{who:principalName,type:principalType,role:roleDefinitionName,scope:scope}" -o table
   if [ -n "$OIDC_APP" ]; then
-    echo "== federated subjects of $OIDC_APP (expected: main and the production environment only)"
+    echo "== roles of $OIDC_APP (the launch starts, reads and stops job executions; Contributor on the group or above covers it)"
+    az role assignment list --assignee "$OIDC_APP" --all --query "[].{role:roleDefinitionName,scope:scope}" -o table
+    echo "== federated subjects of $OIDC_APP (each subject listed can read the App key once grant has run)"
     az ad app federated-credential list --id "$OIDC_APP" --query "[].subject" -o tsv
   fi
 }

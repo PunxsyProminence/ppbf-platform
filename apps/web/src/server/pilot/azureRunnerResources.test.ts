@@ -64,7 +64,7 @@ describe('resources.sh', () => {
     '  "containerapp env show"*) echo /subscriptions/s/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/cae-ppbf-enterprise-staging ;;',
     '  "rest --method put"*) local a="$*"; a="${a##*--body @}"; cp "${a%% -o none}" "$AZ_BODY" ;;',
     '  "containerapp job show"*) echo Succeeded ;;',
-    '  "keyvault secret list"*) echo "${AZ_SECRET_PRESENT:-0}" ;;',
+    '  "rest --method get"*"/secrets/"*) [ "${AZ_SECRET_PRESENT:-0}" = 1 ] || return 3; echo github-app-private-key ;;',
     'esac',
     '}',
     'export -f az',
@@ -138,6 +138,26 @@ describe('resources.sh', () => {
     expect(after.calls.filter((c) => c.startsWith('role assignment create'))).toEqual([
       'role assignment create --assignee-object-id cccccccc-0000-0000-0000-000000000003 --assignee-principal-type ServicePrincipal --role Key Vault Secrets User --scope /subscriptions/s/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/kv-ppbf-gh-runner/secrets/github-app-private-key -o none',
     ]);
+    // Existence is read through the management plane: no Key Vault data role, and no value.
+    for (const run of [before, after]) {
+      expect(run.calls).toContain('rest --method get --url https://management.azure.com/subscriptions/s/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/kv-ppbf-gh-runner/secrets/github-app-private-key?api-version=2023-07-01 --query name -o tsv');
+      expect(run.calls.some((c) => c.startsWith('keyvault secret'))).toBe(false);
+    }
+  });
+
+  it('refuses a config that sets a key twice, and an account name that starts with a dash', () => {
+    const dup = path.join(tmp, 'dup.conf');
+    fs.writeFileSync(dup, `${read(confPath)}\nJOB_NAME=other\n`);
+    const r1 = sh(['create', '--subscription', SUB, '--secret-writer', WRITER], { PPBF_RUNNER_CONF: posix(dup) });
+    expect(r1.code).toBe(2);
+    expect(r1.out).toContain('azure-runner.conf sets JOB_NAME twice');
+    const r2 = sh(['create', '--subscription', SUB, '--secret-writer', '-oops@example.invalid']);
+    expect(r2.code).toBe(2);
+    expect(r2.calls).toEqual([]);
+  });
+
+  it('keeps LF line ends and no CR byte, so git treats it as text', () => {
+    expect(fs.readFileSync(resourcesPath).includes(0x0d)).toBe(false);
   });
 
   it('--apply against any other subscription stops after `az account show`, before any write', () => {
