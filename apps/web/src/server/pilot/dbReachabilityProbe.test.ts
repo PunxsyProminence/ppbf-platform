@@ -251,6 +251,92 @@ describe('db-reachability-probe: naming the runner cloud', () => {
     expect(r).toEqual([{ cloud: 'AWS', region: 'us-west-2' }, null]);
   });
 
+  // GitHub's hosted provisioner writes .setup_info at boot; its key case is not documented, and
+  // run 44172929958 printed "Runner cloud: unknown" while the runner itself showed Cloud: Azure.
+  // The runner reads the file case-insensitively and tolerates a byte-order mark; so must the probe.
+  const pascal = JSON.stringify([
+    { Group: 'Runner Image Provisioner', Detail: 'Hosted Compute Agent\nWorker ID: {530c666f-6280-4d1b-96c1-79e51932123d}\nRegion: eastus\nCloud: Azure' },
+  ]);
+
+  it('reads PascalCase keys, a byte-order mark, and CRLF line ends', () => {
+    const r = inModule(`console.log(JSON.stringify([
+      p.parseSetupInfo(${JSON.stringify(pascal)}),
+      p.parseSetupInfo('\\uFEFF' + ${JSON.stringify(setupInfo)}),
+      p.parseSetupInfo('\\uFEFF' + ${JSON.stringify(pascal)}.replace(/\\\\n/g, '\\\\r\\\\n')),
+      p.parseSetupInfo('[{"GROUP":"x","DETAIL":"Cloud: AWS"}]'),
+    ]));`);
+    expect(r).toEqual([
+      { cloud: 'Azure', region: 'eastus' },
+      { cloud: 'AWS', region: 'us-west-2' },
+      { cloud: 'Azure', region: 'eastus' },
+      { cloud: 'AWS', region: null },
+    ]);
+  });
+
+  it('names why the cloud is unknown, in fixed words', () => {
+    const r = inModule(`console.log(JSON.stringify([
+      p.parseSetupInfoDetailed('not json'),
+      p.parseSetupInfoDetailed('{"group":"x"}'),
+      p.parseSetupInfoDetailed('[{"group":"Operating System","detail":"Ubuntu"}]'),
+      p.parseSetupInfoDetailed(${JSON.stringify(pascal)}),
+    ]));`);
+    expect(r).toEqual([
+      { runner: null, reason: 'unparsable' },
+      { runner: null, reason: 'unparsable' },
+      { runner: null, reason: 'no-cloud-line' },
+      { runner: { cloud: 'Azure', region: 'eastus' }, reason: null },
+    ]);
+  });
+
+  it('names the failing step of the /proc walk: no-worker, unreadable, or the parse step', () => {
+    const r = inModule(`
+      const links = { '/proc/300/exe': '/usr/bin/bash', '/proc/200/exe': '/home/runner/actions-runner/cached/bin/Runner.Worker' };
+      const stats = { '/proc/300/stat': '300 (bash) S 200 1 1' };
+      const readlink = (f) => { if (f in links) return links[f]; throw new Error('EACCES'); };
+      const withFile = (content) => (f) => {
+        if (f in stats) return stats[f];
+        if (f === '/home/runner/actions-runner/cached/.setup_info' && content !== undefined) return content;
+        throw new Error('ENOENT');
+      };
+      console.log(JSON.stringify([
+        p.readRunnerProvisioner({ startPid: 300, readlink: () => { throw new Error('x'); }, readFile: withFile(undefined) }).reason,
+        p.readRunnerProvisioner({ startPid: 300, readlink, readFile: withFile(undefined) }).reason,
+        p.readRunnerProvisioner({ startPid: 300, readlink, readFile: withFile('garbage') }).reason,
+        p.readRunnerProvisioner({ startPid: 300, readlink, readFile: withFile('[]') }).reason,
+        p.readRunnerProvisioner({ startPid: 300, readlink, readFile: withFile(${JSON.stringify(pascal)}) }),
+      ]));
+    `);
+    expect(r).toEqual([
+      'no-worker',
+      'unreadable',
+      'unparsable',
+      'no-cloud-line',
+      { runner: { cloud: 'Azure', region: 'eastus' }, reason: null },
+    ]);
+  });
+
+  it('prints nothing from the file but the cleaned Cloud and Region values', () => {
+    const hostile = JSON.stringify([
+      { Group: 'Runner Image Provisioner', Detail: 'SENTINEL-LINE-1\nWorker ID: {SENTINEL-GUID}\nRegion: east::us%0A\nCloud: ::error::Azure' },
+      { group: 'Other', detail: 'SENTINEL-LINE-2' },
+    ]);
+    const r = inModule(`
+      const d = p.parseSetupInfoDetailed(${JSON.stringify(hostile)});
+      console.log(JSON.stringify({
+        runner: d.runner,
+        failure: p.failureMessage({ host: 'h', port: 5432, attempts: 3, codes: ['PROBE_TIMEOUT'], runner: d.runner, reason: d.reason }),
+        unknown: p.failureMessage({ host: 'h', port: 5432, attempts: 3, codes: ['PROBE_TIMEOUT'], runner: null, reason: 'unparsable' }),
+      }));
+    `) as { runner: { cloud: string; region: string }; failure: string; unknown: string };
+    expect(r.runner).toEqual({ cloud: 'errorAzure', region: 'eastus0A' });
+    for (const text of [r.failure, r.unknown]) {
+      expect(text).not.toContain('SENTINEL');
+      expect(text).not.toContain('::');
+      expect(text).not.toContain('%');
+    }
+    expect(r.unknown).toContain('Runner cloud: unknown (setup info: unparsable;');
+  });
+
   it('says which case it is: not Azure, Azure, or unknown', () => {
     const r = inModule(`console.log(JSON.stringify([
       p.failureMessage({ host: 'h', port: 5432, attempts: 3, codes: ['PROBE_TIMEOUT'], runner: { cloud: 'AWS', region: 'us-west-2' } }),
@@ -260,7 +346,7 @@ describe('db-reachability-probe: naming the runner cloud', () => {
     expect(r[0]).toContain('Runner cloud: AWS, region us-west-2');
     expect(r[0]).toContain('This runner is not on Azure.');
     expect(r[1]).toContain('This runner IS on Azure');
-    expect(r[2]).toContain('Runner cloud: unknown');
+    expect(r[2]).toContain('Runner cloud: unknown (see');
     expect(r[2]).toContain('(last: unknown)');
   });
 });
