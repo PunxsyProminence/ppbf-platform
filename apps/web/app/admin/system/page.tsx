@@ -69,6 +69,7 @@ const SYSTEM_JOBS: readonly SystemJob[] = [
   { file: 'azure-static-web-apps-purple-bush-04c73e010.yml', name: 'legacy-static-web-apps-manual', purpose: 'Legacy Azure Static Web Apps deployment.', runsOn: ['manual'] },
   { file: 'backup.yml', name: 'backup', purpose: 'Backs up the pilot schema.', runsOn: ['schedule', 'manual'] },
   { file: 'branch-cleanup.yml', name: 'branch-cleanup', purpose: 'Deletes a pasted list of branches. Never main.', runsOn: ['manual'] },
+  { file: 'build-runner-image.yml', name: 'build-runner-image', purpose: 'Builds the self-hosted runner image in Azure (manual, main only).', runsOn: ['manual'] },
   { file: 'check-database.yml', name: 'check-database', purpose: 'Read-only database diagnostics.', runsOn: ['manual'] },
   { file: 'ci.yml', name: 'ci', purpose: 'Typecheck, lint, tests and build for pull requests and main.', runsOn: ['pull request', 'push', 'manual'] },
   { file: 'cleanup-intake-research-requirements.yml', name: 'cleanup-intake-research-requirements', purpose: 'Deletes the research-requirement rows intake uploads wrote before 2026-10-03, dry run first.', runsOn: ['manual'] },

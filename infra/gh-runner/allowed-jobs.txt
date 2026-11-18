@@ -1,0 +1,24 @@
+# Jobs allowed to run on the PPBF self-hosted runner, as <workflow file>:<job id>.
+# Read by job-started-guard.sh. Baked into the image: changing this list needs a
+# rebuild (build-runner-image.yml), so a workflow cannot widen it at run time.
+# Every entry must be a job that reaches Postgres and runs only on
+# workflow_dispatch or schedule (ghRunnerImage.test.ts checks both ways).
+apply-migrations.yml:apply
+approve-library-baseline.yml:approve
+backup.yml:dump
+check-database.yml:check
+cleanup-intake-research-requirements.yml:cleanup
+cleanup-membership-orphans.yml:cleanup
+deploy-production.yml:build-and-deploy
+import-shadow-research.yml:import
+load-licensed-excerpts.yml:load
+move-policy-shelf.yml:move
+redact-intake-upload-audit.yml:redact
+release-one-approval.yml:production
+repair-research-baseline.yml:repair
+rescope-library-baseline.yml:rescope
+retention-cleanup.yml:sweep
+run-checks.yml:check
+seed-reference-data.yml:seed
+session-autoclose.yml:sweep
+session-token-cleanup.yml:sweep
