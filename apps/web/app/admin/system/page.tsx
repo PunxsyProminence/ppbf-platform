@@ -91,6 +91,7 @@ const SYSTEM_JOBS: readonly SystemJob[] = [
   { file: 'research-bridge-ci.yml', name: 'research-bridge-ci', purpose: 'Typecheck, tests and build for the research bridge.', runsOn: ['pull request', 'push', 'manual'] },
   { file: 'retention-cleanup.yml', name: 'retention-cleanup', purpose: "Nightly: deletes expired public enquiries and counts records due for deletion. People's records are deleted only by a manual run.", runsOn: ['schedule', 'manual'] },
   { file: 'run-checks.yml', name: 'run-checks', purpose: 'Read-only database checks.', runsOn: ['manual'] },
+  { file: 'runner-guard-check.yml', name: 'runner-guard-check', purpose: 'Checks the Azure runner refuses a job it does not list (manual, main only).', runsOn: ['manual'] },
   { file: 'seed-reference-data.yml', name: 'seed-reference-data', purpose: 'Loads committed reference data.', runsOn: ['manual'] },
   { file: 'session-autoclose.yml', name: 'session-autoclose', purpose: 'Closes training sessions nobody checked out of.', runsOn: ['schedule', 'manual'] },
   { file: 'session-token-cleanup.yml', name: 'session-token-cleanup', purpose: 'Counts expired and revoked sign-in tokens. Deletes them on a manual run, or nightly once its repository variable is switched on.', runsOn: ['schedule', 'manual'] },
