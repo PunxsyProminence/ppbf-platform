@@ -1,0 +1,32 @@
+name: Launch An Azure Runner
+description: >-
+  Starts one single-use self-hosted runner in Azure Container Apps for the job
+  that follows, and outputs the runs-on value for it (lane DBT,
+  OD-2026-11-17-008: GitHub places some jobs on AWS machines, which the
+  database firewall does not admit). Needs actions/checkout and azure/login
+  (OIDC) earlier in the same job. Prints no key, token or runner
+  configuration. See scripts/azure-runner-launch.mjs and infra/gh-runner/README.md.
+inputs:
+  app-id:
+    description: The GitHub App's ID or client ID (repository variable PPBF_RUNNER_APP_ID). Not a secret.
+    required: true
+  installation-id:
+    description: The App's installation ID on this repository (repository variable PPBF_RUNNER_INSTALLATION_ID). Not a secret.
+    required: true
+outputs:
+  runs-on:
+    description: JSON for runs-on, holding the runner's one label.
+    value: ${{ steps.launch.outputs.runs-on }}
+  label:
+    description: The runner's label (and name).
+    value: ${{ steps.launch.outputs.label }}
+runs:
+  using: composite
+  steps:
+    - name: Start A Single-Use Runner In Azure
+      id: launch
+      shell: bash
+      env:
+        PPBF_RUNNER_APP_ID: ${{ inputs.app-id }}
+        PPBF_RUNNER_INSTALLATION_ID: ${{ inputs.installation-id }}
+      run: node "$GITHUB_WORKSPACE/scripts/azure-runner-launch.mjs"

@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Negative control for the Azure runner's guard (lane DBT, OD-2026-11-17-008).
+#
+# Launches one single-use runner in Azure and sends it a job that is NOT in
+# infra/gh-runner/allowed-jobs.txt. The guard hook must refuse it and kill the
+# runner's Worker before any step runs. Dispatch from main before the first
+# switch-over and after every image roll.
+#
+# PASS needs all three (infra/gh-runner/README.md, "First real run"):
+#   * the jobs API shows `refused` ran on the launched runner (runner_name is
+#     the launch job's label);
+#   * `refused` concluded failure;
+#   * the marker line never printed.
+# The REFUSED line itself is in the Container Apps execution log: the Worker
+# is killed before it uploads a step log.
+#
+# Why not a run from another branch: the Azure login trusts main and the
+# production environment only (federated subjects), and this workflow declares
+# no environment, so a run of it from another branch cannot launch a runner.
+# The guard's branch, event and repository checks share the refusal path
+# tested here and are unit-tested in ghRunnerImage.test.ts.
+#
+# Re-run with "Re-run all jobs": `refused` alone would wait for a runner that
+# is gone.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: runner-guard-check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: runner-guard-check
+  cancel-in-progress: false
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      runs-on: ${{ steps.azure.outputs.runs-on }}
+    steps:
+      - name: Refuse Anything But main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Dispatch runner-guard-check from main."
+            exit 1
+          fi
+
+      - name: Checkout Source Code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Authenticate via Azure OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Launch A Runner In Azure
+        id: azure
+        uses: ./.github/actions/azure-runner-launch
+        with:
+          app-id: ${{ vars.PPBF_RUNNER_APP_ID }}
+          installation-id: ${{ vars.PPBF_RUNNER_INSTALLATION_ID }}
+
+  # Not in allowed-jobs.txt, on purpose. Expected: failure, and no marker.
+  refused:
+    needs: launch
+    runs-on: ${{ fromJSON(needs.launch.outputs.runs-on) }}
+    timeout-minutes: 5
+    # Nothing to use, even if the guard ever let this job through.
+    permissions: {}
+    steps:
+      - name: Marker (Must Never Print)
+        if: always()
+        run: echo "PPBF-GUARD-MARKER this job was NOT refused"

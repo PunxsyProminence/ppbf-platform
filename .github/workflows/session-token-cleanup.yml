@@ -62,7 +62,8 @@ concurrency:
 
 jobs:
   sweep:
-    runs-on: ubuntu-latest
+    needs: launch
+    runs-on: ${{ fromJSON(needs.launch.outputs.runs-on) }}
     timeout-minutes: 10
     env:
       TARGET: ${{ inputs.target || 'production' }}
@@ -174,3 +175,62 @@ jobs:
             [ -s session-cleanup-result.json ] && cat session-cleanup-result.json || echo '{"event":"session.cleanup.no-output"}'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Where `sweep` runs (lane DBT, OD-2026-11-17-008, the pilot). `sweep` waits
+  # for this job through `needs`; it sits below `sweep` so that the resource-group
+  # guard still comes before the file's first Azure login
+  # (workflowResourceGroupContract.test.ts). With the
+  # repository variable PPBF_AZURE_DB_RUNNER set to 'true' and a run from main:
+  # a single-use runner inside Azure, which the database firewall always
+  # admits. Otherwise GitHub's runner, exactly as before. Runs from other
+  # branches stay on GitHub, because the Azure runner's guard refuses them.
+  # RE-RUN WITH "Re-run all jobs", never "Re-run failed jobs": a re-run of
+  # `sweep` alone would wait for this attempt's single-use runner, which is gone.
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    outputs:
+      runs-on: ${{ steps.azure.outputs.runs-on || '"ubuntu-latest"' }}
+    steps:
+      - name: Choose The Runner
+        id: route
+        env:
+          SWITCH: ${{ vars.PPBF_AZURE_DB_RUNNER }}
+        run: |
+          if [ "${SWITCH,,}" = "true" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "azure=true" >> "$GITHUB_OUTPUT"
+            echo "sweep runs on a single-use runner in Azure."
+          else
+            echo "azure=false" >> "$GITHUB_OUTPUT"
+            echo "sweep runs on GitHub's runner (PPBF_AZURE_DB_RUNNER is not 'true', or this run is not from main)."
+          fi
+
+      - name: Checkout Source Code
+        if: steps.route.outputs.azure == 'true'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Authenticate via Azure OIDC
+        if: steps.route.outputs.azure == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Launch A Runner In Azure
+        id: azure
+        if: steps.route.outputs.azure == 'true'
+        uses: ./.github/actions/azure-runner-launch
+        with:
+          app-id: ${{ vars.PPBF_RUNNER_APP_ID }}
+          installation-id: ${{ vars.PPBF_RUNNER_INSTALLATION_ID }}
+
+      # Fail closed: a launch that reported success but named no runner must
+      # not quietly send `sweep` to GitHub's runner.
+      - name: Check A Runner Was Named
+        if: steps.route.outputs.azure == 'true'
+        env:
+          RUNS_ON: ${{ steps.azure.outputs.runs-on }}
+        run: test -n "$RUNS_ON"

@@ -6,7 +6,7 @@
 
 Jason chose short-lived self-hosted runners inside Azure for the database jobs (OD-2026-11-17-008). He approved this design and its security model on 2026-11-17, and added staging dispatches of the shared workflows.
 
-This folder holds the runner image, its Azure settings and the script that creates the Azure resources. The launch action and the workflow switch come in the next PR.
+This folder holds the runner image, its Azure settings and the script that creates the Azure resources. Each job's runner is started by `scripts/azure-runner-launch.mjs`, through `.github/actions/azure-runner-launch`.
 
 | File | Role |
 |---|---|
@@ -47,6 +47,7 @@ The GitHub App key that creates JIT configurations has "Administration: write", 
 **Roll:**
 - Change `IMAGE` in `azure-runner.conf` to the new **image digest**, `ppbf-gh-runner@sha256:…`, never a tag (a PR). A tag can be overwritten by anything that can push to the registry.
 - Then re-run `resources.sh create --apply`, which re-applies the job definition; `resources.sh check` reports DIFFERS until then.
+- Launches pass the image on every execution, so they use the new digest from the merge on. Dispatch `runner-guard-check` again after each roll.
 - The job's own managed identity holds AcrPull only, and on the job its lifecycle is None: only the image pull can use it, never a job step.
 
 ## Azure resources (`resources.sh`, once)
@@ -76,8 +77,8 @@ The GitHub App key that creates JIT configurations has "Administration: write", 
 - Check `sudo -n true` works in the container. backup.yml installs its PostgreSQL client with sudo, and whether Container Apps allows it is UNVERIFIED.
 - In the GitHub job log, "Set up runner" shows `ppbf-runner-guard: allowed …`.
 - "Set up job" shows the runner's provisioner info (`Cloud: Azure`).
-- **Negative control:**
-  - Dispatch an allowed workflow from a non-main branch, with an `if: always()` marker step. PR-2's pilot must route that one dispatch to the runner on purpose; normal routing keeps non-main runs on GitHub's runners.
+- **Negative control:** dispatch `runner-guard-check` from main. It launches a runner and sends it a job, `refused`, that is not in `allowed-jobs.txt`.
+  - A run of it from another branch cannot launch: the workflows' Azure login trusts `main` and the production environment only, and this workflow declares no environment. The guard's branch, event and repository checks share the refusal path and are unit-tested.
   - The control passes only if all three hold, so a job that never reached the runner cannot pass it:
     - the jobs API shows that job's `runner_name` is the launched PPBF runner;
     - its conclusion is failure;
@@ -85,9 +86,29 @@ The GitHub App key that creates JIT configurations has "Administration: write", 
   - The REFUSED line is in the **Container Apps execution log**, not the GitHub job log: the Worker is killed before it uploads the step log. This assumes PID 1 is `run.sh`; confirm it at the pilot.
   - The execution itself may show "Succeeded": the listener reports the job failed, exits 0, and run.sh exits with it.
 
-## Notes for PR-2 and PR-3
+## How a launch works
 
-- **Labels:** register each JIT runner with its per-launch label only, then read the runner back and check its labels.
-- **Execution settings:** `replicaRetryLimit` 0. More than 1 vCPU.
-- **`JIT_CONFIG` exposure:** on the execution, `JIT_CONFIG` is readable by Azure readers until it is used. Whoever takes it can take that job. Start the execution only when the job is ready to be picked up.
-- **Non-main dispatches stay on GitHub's runners.** Route to this runner only when `github.ref == 'refs/heads/main'`, because the guard refuses anything else. Today some dispatches run from other branches.
+The `launch` job reaches only the GitHub API, Azure Resource Manager and Key Vault, never the database, so it runs on GitHub's `ubuntu-latest` wherever GitHub places it.
+
+1. It logs in to Azure with OIDC and reads the GitHub App key from the vault.
+2. It trades an App JWT for an installation token limited to this repository and `administration: write`.
+3. It registers one just-in-time runner with one random label (`ppbf-db-<run>-<attempt>-<16 hex>`) and reads the labels back. Any other custom label fails the launch.
+4. It starts one execution with the image digest, cpu, memory and the JIT configuration. Azure replaces the job's whole template when an execution overrides anything, so all of it is sent, in a 0600 file deleted at once, never on a command line.
+5. It waits up to 480 s for the runner to come online and logs how long that took.
+
+**On failure:**
+- Any failure after step 3, a thrown error included, removes the runner registration and stops the execution if one started.
+- The work job is then skipped rather than queued for 24 hours.
+- The token is revoked on every path.
+- A run cancelled mid-wait skips that cleanup. The execution then ends at the job's 3600 s replica timeout, and the token expires within the hour.
+
+**Secrets:** the key, JWT, token and JIT configuration are add-masked as soon as they exist and are never printed. The JIT configuration stays readable on the execution by Azure readers of the resource group until the runner uses it; `resources.sh check` lists them.
+
+**Re-runs:** use "Re-run all jobs", never "Re-run failed jobs". A work job re-run alone waits for its attempt's single-use runner, which is gone.
+
+## Switching a workflow over
+
+1. After `resources.sh create` and `grant`, the App and the repository variables (above), dispatch `runner-guard-check` from main. It must fail as described under "Negative control".
+2. **Pilot:** set repository variable `PPBF_AZURE_DB_RUNNER` to `true` and dispatch `session-token-cleanup` from main. Unset the variable to put it back on GitHub's runners.
+
+A workflow that launches a runner takes only `workflow_dispatch` and `schedule`, never `pull_request` or `pull_request_target`; `azureRunnerLaunch.test.ts` fails if one does. Route to the runner only when `github.ref == 'refs/heads/main'`, because the guard refuses anything else.
