@@ -6,7 +6,12 @@
 
 Jason chose short-lived self-hosted runners inside Azure for the database jobs (OD-2026-11-17-008). He approved this design and its security model on 2026-11-17, and added staging dispatches of the shared workflows.
 
-This folder is the runner image only. The rest comes in a later PR: the launch action, the `resources.sh` that creates the Azure resources, and the workflow switch.
+This folder holds the runner image, its Azure settings and the script that creates the Azure resources. The launch action and the workflow switch come in the next PR.
+
+| File | Role |
+|---|---|
+| `azure-runner.conf` | The one place for the resource names, the image **digest**, cpu and memory. Read by `resources.sh` and by every launch; neither runs it as code. |
+| `resources.sh` | Creates the identity, vault and Container Apps job (`create`), then the vault role for the workflows' Azure login (`grant`); `check` is read-only. **Overwatch runs it.** A dry run by default. |
 
 ## What is in the image
 
@@ -40,8 +45,22 @@ The GitHub App key that creates JIT configurations has "Administration: write", 
 - Rebuild when actions/runner releases, about monthly. Self-hosted runners must stay current, and a JIT runner cannot update itself mid-job.
 
 **Roll:**
-- Point the Container Apps job at the new **image digest**, `ppbf-gh-runner@sha256:…`, never at a tag. A tag can be overwritten by anything that can push to the registry.
-- The job's own managed identity must hold AcrPull only. It is created in PR-2.
+- Change `IMAGE` in `azure-runner.conf` to the new **image digest**, `ppbf-gh-runner@sha256:…`, never a tag (a PR). A tag can be overwritten by anything that can push to the registry.
+- Then re-run `resources.sh create --apply`, which re-applies the job definition; `resources.sh check` reports DIFFERS until then.
+- The job's own managed identity holds AcrPull only, and on the job its lifecycle is None: only the image pull can use it, never a job step.
+
+## Azure resources (`resources.sh`, once)
+
+1. **Overwatch:** `bash infra/gh-runner/resources.sh create --subscription <id> --secret-writer <account Jason names>`. Read the dry run, then add `--apply`.
+   - It creates the identity (AcrPull on the registry only), the vault `kv-ppbf-gh-runner` (RBAC, purge protection) and the Manual job `caj-ppbf-gh-runner` (retry 0, image by digest, no secrets, volumes or ingress).
+   - It gives the named account Key Vault Secrets Officer on that vault only, because an RBAC vault lets nobody write a secret without a data-plane role.
+2. **Jason:** create the GitHub App under his account: repository permission Administration: write, Metadata: read, no webhook. Install it on `ppbf-platform` only. Generate a private key and paste it into vault `kv-ppbf-gh-runner` as secret `github-app-private-key`.
+3. **Overwatch:** `resources.sh grant --subscription <id> --oidc-app-id <client id of the workflows' Azure login>`, dry run then `--apply`. It gives Key Vault Secrets User on that ONE secret, and refuses until the secret exists. Then set repository variables `PPBF_RUNNER_APP_ID` and `PPBF_RUNNER_INSTALLATION_ID`, and run `resources.sh check`.
+
+**Safety:**
+- `--apply` first checks that `--subscription` is the signed-in `az` subscription, and changes nothing otherwise.
+- No ID or account is committed; each one is an argument.
+- Writes need an MFA-backed `az` login. The tenant's policy "Multi Factor Authentication Enforcement - Write" refuses others with `RequestDisallowedByAzure`. After any failure, sign in again and re-run: every step is safe to repeat.
 
 **Changing the allowlist:**
 - A new database workflow needs a line in `allowed-jobs.txt` and a rebuild.
