@@ -2001,6 +2001,51 @@ describe('finding a template, and the open one drawn under its own card', () => 
     }
   });
 
+  it('opened from the address before the list, the template is brought back into view when the list moves it under its card', async () => {
+    let releaseList: () => void = () => {};
+    const listGate = new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+      if (url.includes('template_id')) return jsonResponse({ template: CONDITIONING_ADV, items: [item({ template_id: 'wt-2' })] });
+      await listGate;
+      return jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+    }) as unknown as typeof fetch;
+    const scrolled: Element[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = function scrollIntoView(this: HTMLElement) {
+      scrolled.push(this);
+    };
+    window.history.pushState({}, '', '/coach/workout-templates?template=wt-2');
+    try {
+      render(<CoachWorkoutTemplatesPage />);
+      const heading = await screen.findByRole('heading', { level: 2, name: 'Conditioning Circuit 45' });
+      expect(heading).toHaveFocus();
+      scrolled.length = 0;
+
+      await act(async () => {
+        releaseList();
+        await listGate;
+      });
+      await screen.findByText('Boxing Fundamentals 60', { selector: 'article h3' });
+      expect(scrolled).toContain(heading);
+      expect(heading).toHaveFocus();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      window.history.pushState({}, '', '/coach/workout-templates');
+    }
+  });
+
+  it('a one-template catalog says "1 template.", not "1 templates."', async () => {
+    mockFetch(() => jsonResponse({ templates: [BOXING_FUNDAMENTALS] }));
+    render(<CoachWorkoutTemplatesPage />);
+    expect(await screen.findByText('1 template.')).toBeInTheDocument();
+    type('boxing');
+    expect(screen.getByText('1 of 1 template matches.')).toBeInTheDocument();
+  });
+
   it('with a template open and nothing else matching, the line says the open one is held, not that nothing matches', async () => {
     listAndDetail();
     render(<CoachWorkoutTemplatesPage />);

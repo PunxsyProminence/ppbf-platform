@@ -786,6 +786,19 @@ function CoachWorkoutTemplates() {
     heading?.scrollIntoView?.({ block: 'start' });
   }, [focusDetail]);
 
+  const openIsListed = openTemplateId !== null && templates.some((template) => template.template_id === openTemplateId);
+
+  // Opened from the address (a Class plans day) before the list arrived, the
+  // template was drawn first; when the list lands it moves under its own card,
+  // which can be far down. If the coach is still on its heading (has not moved
+  // on to anything else), bring it back into view. Focus is never taken from
+  // a control the coach has moved to (review, 2026-11-19).
+  useEffect(() => {
+    if (!openIsListed) return;
+    const heading = detailHeadingRef.current;
+    if (heading && document.activeElement === heading) heading.scrollIntoView?.({ block: 'start' });
+  }, [openIsListed]);
+
   // What the list shows: the templates that match the box, and always the open
   // one. Filtering never takes the open template off the screen, because an
   // issue or a plan being made from it answers to that block, and a result
@@ -793,7 +806,6 @@ function CoachWorkoutTemplates() {
   const shown = templates.filter(
     (template) => template.template_id === openTemplateId || templateMatches(template, query),
   );
-  const openIsListed = openTemplateId !== null && templates.some((template) => template.template_id === openTemplateId);
   const filtering = query.trim() !== '';
   const matchCount = templates.filter((template) => templateMatches(template, query)).length;
   const openHeldByFilter = filtering && openIsListed
@@ -986,13 +998,13 @@ function CoachWorkoutTemplates() {
                 className="input"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Name, session type, age group or level"
+                placeholder="Name, what it is for, session type, age group or level"
                 autoComplete="off"
               />
               <p aria-live="polite" className="t-label text-[color:var(--bone-400)]">
                 {filtering
-                  ? `${matchCount} of ${templates.length} templates match.${openHeldByFilter ? ' The open template stays in the list.' : ''}`
-                  : `${templates.length} templates.`}
+                  ? `${matchCount} of ${templates.length} ${templates.length === 1 ? 'template matches' : 'templates match'}.${openHeldByFilter ? ' The open template stays in the list.' : ''}`
+                  : `${templates.length} ${templates.length === 1 ? 'template' : 'templates'}.`}
               </p>
               {filtering && shown.length === 0 && (
                 <p className="t-body text-[color:var(--bone-300)]">
