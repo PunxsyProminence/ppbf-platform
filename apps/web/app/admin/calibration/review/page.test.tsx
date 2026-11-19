@@ -288,16 +288,26 @@ test("a refusal is shown in the server's own words, and nothing that came with i
   expect(document.body.textContent).not.toContain('lead_straight');
 });
 
-test('with no clip named it says so and asks the server nothing', async () => {
-  global.fetch = jest.fn() as unknown as typeof fetch;
+/* BOA-01 (lane SH): no clip in the address is no longer a dead end that
+   names a URL parameter. The page shows the clip picker, which reads the study
+   list only; nothing about any reading is asked for until a clip is chosen. */
+test('with no clip named it offers the clip picker and reads only the study list', async () => {
+  const fetchMock = jest.fn(async () => ({ ok: true, json: async () => ({ ok: true, projects: [] }) }) as unknown as Response);
+  global.fetch = fetchMock as unknown as typeof fetch;
   searchParams.delete('calibration_clip_id');
+  try {
+    render(<CalibrationReviewPage />);
 
-  render(<CalibrationReviewPage />);
-
-  expect(screen.getByText(/No clip named/)).toBeInTheDocument();
-  expect(global.fetch).not.toHaveBeenCalled();
-
-  searchParams.set('calibration_clip_id', 'clip-1');
+    expect(screen.getByRole('heading', { name: 'Pick a clip' })).toBeInTheDocument();
+    expect(await screen.findByText(/No studies yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/No clip named/)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('calibration_clip_id');
+    expect(fetchMock.mock.calls.map((call) => String((call as unknown[])[0]))).toEqual([
+      expect.stringContaining('/api/pilot/calibration/projects'),
+    ]);
+  } finally {
+    searchParams.set('calibration_clip_id', 'clip-1');
+  }
 });
 
 test('three readings: the screen asks which two, and shows no comparison', async () => {

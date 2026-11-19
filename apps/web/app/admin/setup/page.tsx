@@ -1,14 +1,20 @@
 import Link from 'next/link';
 
+import GymTvPanel from '@/components/GymTvPanel';
 import { readGymSetupStatus, type SetupLineState } from '@/src/server/pilot/gymSetupStatus';
 import { requirePageRole } from '@/src/server/pilot/pageGuard';
 
 /**
  * /admin/setup -- what is left before the gym's first class (lane L31 P5).
  *
- * The organization admin's own gym only, read-only. Each line says what the
- * records show and links to the screen where the step is done; nothing here
- * writes. The platform owner has no gym of its own here and goes to its desk.
+ * The organization admin's own gym only. Each line says what the records show
+ * and links to the screen where the step is done. One exception: the TV line
+ * holds the gym TV panel itself (lane SH, OFF-02), since the only other place
+ * to pair a TV is the coach workspace, which the office cannot open. That
+ * panel pairs, lists and disconnects TVs through the gym-tvs routes, which
+ * admit coach and organization admin; it sends no session from here. Nothing
+ * else on the page writes. The platform owner has no gym of its own here and
+ * goes to its desk.
  */
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +69,11 @@ export default async function GymSetupPage() {
               {line.href && line.linkLabel ? (
                 <div className="mt-[var(--s3)]">
                   <Link href={line.href} className="btn btn--ghost">{line.linkLabel}</Link>
+                </div>
+              ) : null}
+              {line.key === 'tv' ? (
+                <div className="mt-[var(--s3)]">
+                  <GymTvPanel liveRun={null} liveRunKnown coachAccountId="" sendsSessions={false} />
                 </div>
               ) : null}
             </li>

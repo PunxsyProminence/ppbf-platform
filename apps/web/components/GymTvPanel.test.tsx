@@ -68,6 +68,7 @@ interface PanelProps {
   liveRunKnown?: boolean;
   coachAccountId?: string;
   onRunStale?: () => void;
+  sendsSessions?: boolean;
 }
 
 function panel(props: PanelProps = {}) {
@@ -77,6 +78,7 @@ function panel(props: PanelProps = {}) {
       liveRunKnown={props.liveRunKnown ?? true}
       coachAccountId={props.coachAccountId ?? ME}
       onRunStale={props.onRunStale}
+      sendsSessions={props.sendsSessions}
     />
   );
 }
@@ -584,4 +586,78 @@ test('the refusal dictionary says the right sentence for every code the gym-tvs 
   expect(describeRefusal('SOMETHING_NEW', 409)).toBe('That did not go through. Nothing was changed. Try again.');
   // A 500 may have written: nothing is claimed about it.
   expect(describeRefusal(undefined, 500)).toBe('That did not go through. Check what the screen shows before trying again.');
+});
+
+/* OFF-02 (lane SH): the office's Gym Setup page shows this panel with
+   sendsSessions false. Pairing, the list and disconnect work as on coach
+   home; nothing sends or takes off a session, and no line speaks of the
+   viewer's own session. */
+describe('on the office Gym Setup page (sendsSessions false)', () => {
+  const office = { liveRun: null, liveRunKnown: true, coachAccountId: '', sendsSessions: false } as const;
+
+  test('lists TVs with no send or take-off control and no live-session lines', async () => {
+    serve(listOf([
+      tv({ tv_id: 'a', tv_name: 'Ring wall', current_run_id: 'run_other', current_run_set_by_account_id: 'acct_other' }),
+      tv({ tv_id: 'b', tv_name: 'Bag row' }),
+    ]));
+    openPanel(office);
+    const list = await screen.findByRole('list', { name: 'Paired TVs' });
+    const items = within(list).getAllByRole('listitem');
+    expect(within(items[0]).getByText('Showing a live session')).toBeTruthy();
+    expect(within(items[0]).getAllByRole('button').map((b) => b.textContent)).toEqual(['Disconnect Ring wall']);
+    expect(within(items[1]).getAllByRole('button').map((b) => b.textContent)).toEqual(['Disconnect Bag row']);
+    expect(screen.queryByRole('button', { name: /Send to TV|Take off TV/ })).toBeNull();
+    expect(screen.queryByText('Start a session to send it to a TV.')).toBeNull();
+    expect(screen.queryByText(/Whether you have a session in progress/)).toBeNull();
+    expect(screen.queryByText(/Show on TV/)).toBeNull();
+    expect(screen.queryByText(/your session|your live session/i)).toBeNull();
+  });
+
+  test('even holding a live run, it offers no send (the office has none to send)', async () => {
+    serve(listOf([tv()]));
+    openPanel({ ...office, liveRun: LIVE });
+    await screen.findByText('PAIRED');
+    expect(screen.queryByRole('button', { name: /Send to TV/ })).toBeNull();
+  });
+
+  test('a TV showing a session it set is still not offered a take-off', async () => {
+    serve(listOf([tv({ current_run_id: 'run_x', current_run_set_by_account_id: ME })]));
+    openPanel({ ...office, coachAccountId: ME });
+    await screen.findByText('PAIRED');
+    expect(screen.queryByRole('button', { name: /Take off TV/ })).toBeNull();
+  });
+
+  test('pairing works and shows the code', async () => {
+    serve((call) => {
+      if (call.method === 'POST') {
+        return respond({ tv: { tv_id: 'gymtv_new', tv_name: 'Lobby', code: 'ABC234', expires_at: '2026-10-08T15:05:00.000Z' } }, 201);
+      }
+      return respond({ tvs: [] });
+    });
+    openPanel(office);
+    await screen.findByText('No TV is paired right now.');
+    fireEvent.change(screen.getByLabelText('TV name'), { target: { value: 'Lobby' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Make a pairing code' }));
+    await screen.findByText('ABC234');
+    expect(writes()).toEqual([{ url: LIST_URL, method: 'POST', body: { tv_name: 'Lobby' } }]);
+  });
+
+  test('the disconnect confirm says "a coach", not "another coach"', async () => {
+    serve(listOf([tv({ current_run_id: 'run_other', current_run_set_by_account_id: 'acct_other' })]));
+    openPanel(office);
+    await screen.findByText('PAIRED');
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect Ring wall' }));
+    expect(screen.getByText(/including the session a coach has on it/)).toBeTruthy();
+    expect(screen.queryByText(/another coach/)).toBeNull();
+  });
+
+  test('the closed panel speaks of pairing, not of the viewer\'s session', () => {
+    render(panel(office));
+    expect(screen.getByText("Pair the gym's TVs and see which are connected. Coaches put a live session on a TV from the coach workspace.")).toBeTruthy();
+  });
+});
+
+test('coach home is unchanged: the closed panel still offers to put your live session on a TV', () => {
+  render(panel());
+  expect(screen.getByText("Pair the gym's TVs, see which are connected, and put your live session on one.")).toBeTruthy();
 });

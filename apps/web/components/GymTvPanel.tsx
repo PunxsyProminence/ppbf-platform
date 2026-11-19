@@ -50,6 +50,14 @@ interface GymTvPanelProps {
   readonly coachAccountId: string;
   /** Called when the server says the run the dashboard holds is no longer live, so it re-reads it. */
   readonly onRunStale?: () => void | Promise<void>;
+  /**
+   * False where nobody has a live session to send: the office's Gym Setup
+   * page (lane SH, OFF-02). Pairing, the list, the code and disconnect are
+   * unchanged; the send and take-off controls and the live-session lines are
+   * not shown, and the words do not speak of "your session". Default true
+   * (the coach workspace).
+   */
+  readonly sendsSessions?: boolean;
 }
 
 type ListState = 'closed' | 'loading' | 'loaded' | 'unavailable';
@@ -102,7 +110,13 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
   return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
 }
 
-export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRunStale }: GymTvPanelProps) {
+export default function GymTvPanel({
+  liveRun,
+  liveRunKnown,
+  coachAccountId,
+  onRunStale,
+  sendsSessions = true,
+}: GymTvPanelProps) {
   const [listState, setListState] = useState<ListState>('closed');
   const [refreshing, setRefreshing] = useState(false);
   const [tvs, setTvs] = useState<GymTvListItem[]>([]);
@@ -297,7 +311,9 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
 
       {listState === 'closed' && (
         <p className="text-[color:var(--bone-300)]">
-          Pair the gym&apos;s TVs, see which are connected, and put your live session on one.
+          {sendsSessions
+            ? "Pair the gym's TVs, see which are connected, and put your live session on one."
+            : "Pair the gym's TVs and see which are connected. Coaches put a live session on a TV from the coach workspace."}
         </p>
       )}
 
@@ -412,7 +428,7 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
 
                     {tv.status !== 'disconnected' && (
                       <div className="flex flex-wrap items-center gap-[var(--s3)]">
-                        {usable && liveRun && !session.mine && (
+                        {sendsSessions && usable && liveRun && !session.mine && (
                           <button
                             type="button"
                             onClick={() => sendToTv(tv)}
@@ -422,7 +438,7 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
                             {busy ? 'Sending...' : `Send to TV ${tv.tv_name}`}
                           </button>
                         )}
-                        {usable && session.mine && (
+                        {sendsSessions && usable && session.mine && (
                           <button
                             type="button"
                             onClick={() => takeOffTv(tv)}
@@ -452,7 +468,11 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
                       <div className="space-y-[var(--s2)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] p-[var(--s3)]">
                         <p className="font-semibold">
                           Disconnect {tv.tv_name}? It stops showing anything now
-                          {tv.current_run_id && !session.mine ? ", including the session another coach has on it," : ''}
+                          {tv.current_run_id && !session.mine
+                            ? sendsSessions
+                              ? ", including the session another coach has on it,"
+                              : ', including the session a coach has on it,'
+                            : ''}
                           {' '}and must be paired again with a new code.
                         </p>
                         <div className="flex flex-wrap gap-[var(--s3)]">
@@ -487,15 +507,15 @@ export default function GymTvPanel({ liveRun, liveRunKnown, coachAccountId, onRu
             </ul>
           )}
 
-          {listState === 'loaded' && !liveRunKnown && (
+          {sendsSessions && listState === 'loaded' && !liveRunKnown && (
             <p className="t-muted">
               Whether you have a session in progress could not be checked, so nothing can be sent from here yet.
             </p>
           )}
-          {listState === 'loaded' && liveRunKnown && !liveRun && (
+          {sendsSessions && listState === 'loaded' && liveRunKnown && !liveRun && (
             <p className="t-muted">Start a session to send it to a TV.</p>
           )}
-          {listState === 'loaded' && liveRun && !liveRun.show_on_wall && (
+          {sendsSessions && listState === 'loaded' && liveRun && !liveRun.show_on_wall && (
             <p className="t-muted">
               Your session&apos;s &quot;Show on TV&quot; switch is off. Switch it on under Today&apos;s Session before sending.
             </p>

@@ -98,3 +98,55 @@ describe('each tab with real records behind it says so and hands over the door',
     expect(screen.getByText('Grant Placeholder')).toBeTruthy();
   });
 });
+
+/* BOA-02 (lane SH): the console no longer claims anything about the gym's
+   payment processors. It used to show six hard-coded "<provider> Placeholder"
+   cards reading "Not Connected" and say "No payment processor is connected",
+   from typed-in rows, while the real state lives on /admin/payments. The
+   Payment Settings tab now hands the reader that page instead. */
+describe('no payment processor claim (BOA-02)', () => {
+  const CLAIMS = [
+    /Not Connected/i,
+    /processor is connected/i,
+    /processor not connected/i,
+    /payment processor/i,
+    /(Stripe|Square|PayPal|Donorbox|Givebutter|QuickBooks|Power Platform) Placeholder/i,
+    /Processor enablement/i,
+  ];
+
+  test('no tab says a processor is or is not connected', () => {
+    render(<RevenueFundingCenter />);
+    const tabs = screen.getAllByRole('button').map((button) => button.textContent ?? '');
+    for (const tab of ['Payment Settings Placeholder', 'Treasurer Review', 'Overview', 'Donations']) {
+      if (!tabs.includes(tab)) continue;
+      openTab(tab);
+      const text = document.body.textContent ?? '';
+      for (const claim of CLAIMS) expect(text).not.toMatch(claim);
+    }
+  });
+
+  test('the source carries no processor claim either', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const source: string = require('node:fs').readFileSync(require('node:path').join(__dirname, 'RevenueFundingCenter.tsx'), 'utf8');
+    const code = source.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    // Case-sensitive here: the status-tone helper lower-cases any status word it
+    // is handed ('not connected' among them) to pick a colour; that is not a
+    // claim. Displayed text is checked case-insensitively above.
+    for (const claim of CLAIMS) expect(code).not.toMatch(new RegExp(claim.source));
+  });
+
+  test('Payment Settings links to the real Payment Accounts page', () => {
+    render(<RevenueFundingCenter />);
+    openTab('Payment Settings Placeholder');
+    expect(screen.getByText('Payment accounts and their real connection status are on the Payment Accounts page.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Payment Accounts' }).getAttribute('href')).toBe('/admin/payments');
+  });
+
+  test('the Payment Settings tab still makes no request', () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<RevenueFundingCenter />);
+    openTab('Payment Settings Placeholder');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

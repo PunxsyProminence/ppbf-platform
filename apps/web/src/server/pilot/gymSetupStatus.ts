@@ -162,7 +162,9 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
         ? { state: 'done', detail: `${plural(n, 'upcoming class', 'upcoming classes')}.` }
         : { state: 'to_do', detail: 'No upcoming class yet.' };
     }),
-    // No link: the pairing panel is on the coach workspace, which admits coaches only.
+    // No link: the office pairs a TV on this page itself, where /admin/setup
+    // shows the gym TV panel inside this line (lane SH, OFF-02); a coach
+    // still pairs one from the coach workspace.
     line({ key: 'tv', title: 'A gym TV paired (if the gym uses one)', href: null, linkLabel: null }, async () => {
       const n = await count(
         `select count(*)::int as n from pilot.gym_tvs
@@ -171,7 +173,7 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
       );
       return n > 0
         ? { state: 'done', detail: `${plural(n, 'TV is', 'TVs are')} paired.` }
-        : { state: 'optional', detail: 'No TV paired. A coach pairs one with a code from the coach workspace.' };
+        : { state: 'optional', detail: 'No TV paired. Pair one here, or a coach pairs one from the coach workspace.' };
     }),
   ]);
 }

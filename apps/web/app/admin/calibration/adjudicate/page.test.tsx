@@ -637,3 +637,26 @@ describe('corrections: which answer is current, and which one was reviewed', () 
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method !== 'POST').length).toBe(readsBefore);
   });
 });
+
+/* BOA-01 (lane SH): with no clip in the address the page offers the clip
+   picker instead of a dead end; nothing about any reading or adjudication is
+   asked for until a clip is chosen. */
+test('with no clip named it offers the clip picker and reads only the study list', async () => {
+  const fetchMock = jest.fn(async () => ({
+    ok: true,
+    json: async () => ({ ok: true, projects: [{ calibration_project_id: 'proj-1', name: 'Jab study' }] }),
+  }) as unknown as Response);
+  global.fetch = fetchMock as unknown as typeof fetch;
+  searchParams.delete('calibration_clip_id');
+  try {
+    render(<CalibrationAdjudicationPage />);
+    expect(screen.getByRole('heading', { name: 'Pick a clip' })).toBeInTheDocument();
+    expect(await screen.findByLabelText('Study')).toBeInTheDocument();
+    expect(screen.queryByText(/No clip named/)).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.map((call) => String((call as unknown[])[0]))).toEqual([
+      expect.stringContaining('/api/pilot/calibration/projects'),
+    ]);
+  } finally {
+    searchParams.set('calibration_clip_id', 'clip-1');
+  }
+});

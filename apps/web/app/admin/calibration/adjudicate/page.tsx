@@ -3,6 +3,7 @@
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 
+import CalibrationClipPicker from '@/components/CalibrationClipPicker';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatDurationMs, formatMediaOffset } from '@/src/lib/clipTime';
@@ -457,14 +458,9 @@ function AdjudicationDesk() {
           </p>
         </header>
 
-        {!clipId && (
-          <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-            <p className="t-body">
-              No clip named. Open this screen with a <code>calibration_clip_id</code> in the
-              address, from the clip it belongs to.
-            </p>
-          </div>
-        )}
+        {/* BOA-01 (lane SH): with no clip in the address, pick one here
+            rather than a dead end that names a URL parameter. */}
+        {!clipId && <CalibrationClipPicker basePath="/admin/calibration/adjudicate" />}
 
         {/* alert--warning and ▲, never alert--critical and ✕. alert--critical
             wears --locked, which means the top of the safety ladder — a

@@ -681,7 +681,7 @@ export default function SignInPanel({
               Account ID &amp; PIN
             </h2>
             <p className="t-body mt-[var(--s3)]">
-              Enter your Account ID and PIN. Ask your coach or admin if you do not have one.
+              Enter your Account ID and PIN. Ask the gym office if you do not have one.
             </p>
             <p className="t-body mt-[var(--s4)] rounded-[var(--r-sm)] border border-[rgba(0,0,0,0.14)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)]">
               First time here with an activation code?{' '}
@@ -827,8 +827,11 @@ export default function SignInPanel({
             Need Help?
           </h2>
           <p className="t-body mt-[var(--s3)] max-w-[54ch]">
-            If you do not have an Account ID or PIN, or if you have forgotten your PIN, contact your gym admin or
-            coach. They can create a new account or reset your PIN.
+            {/* OW25-46 A: only the office (organization admin) can create an
+                account, issue an activation code or reset a PIN, so the help
+                sends people there and not to a coach. */}
+            If you do not have an Account ID or PIN, or if you have forgotten your PIN, ask the gym office. The
+            office can create a new account or reset your PIN.
           </p>
           <Link href="/athlete/sign-in" className="btn btn--ghost mt-[var(--s4)]">
             Open Simple Athlete PIN Sign-In
