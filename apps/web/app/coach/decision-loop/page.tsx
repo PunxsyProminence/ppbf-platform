@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -8,7 +9,6 @@ import FamilyNotesPosted from '@/components/FamilyNotesPosted';
 import FamilyObservations from '@/components/FamilyObservations';
 import FamilyGoalsForStaff from '@/components/FamilyGoalsForStaff';
 import MessageAthlete from '@/components/MessageAthlete';
-import ArmedButton from '@/components/ArmedButton';
 import ShadowCoachRecommendationDraft from '@/components/ShadowCoachRecommendationDraft';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
@@ -370,8 +370,6 @@ function StatusBadge({ status }: { readonly status: string }) {
 /* Everything a coach can type or choose on this page before pressing a button.
    One object per athlete: a draft belongs to the athlete it was written for. */
 interface Drafts {
-  medicalStatusDraft: MedicalStatusValue;
-  medicalSourceRef: string;
   decisionText: string;
   decisionExpectedOutcome: string;
   decisionRecommendationId: string;
@@ -391,8 +389,6 @@ interface Drafts {
 }
 
 const EMPTY_DRAFTS: Drafts = {
-  medicalStatusDraft: 'pending',
-  medicalSourceRef: '',
   decisionText: '',
   decisionExpectedOutcome: '',
   decisionRecommendationId: '',
@@ -413,15 +409,8 @@ const EMPTY_DRAFTS: Drafts = {
 
 /* The six writes below the first three lock while in flight and say when they
    landed (UXB-02): a double tap used to write two records to a child's file. */
-type DoneKind = 'medicalStatus' | 'recommendation' | 'decision' | 'nearMiss' | 'outcome';
+type DoneKind = 'recommendation' | 'decision' | 'nearMiss' | 'outcome';
 type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome' | DoneKind;
-
-const MEDICAL_STATUS_WORDS: Record<MedicalStatusValue, string> = {
-  pending: 'Pending',
-  cleared: 'Cleared',
-  restricted: 'Restricted',
-  not_cleared: 'Not Cleared',
-};
 
 /** A roster read that has not answered by then is treated as failed, so the
     coach is offered Check again rather than a picker that never fills. */
@@ -532,8 +521,6 @@ export default function DecisionLoopReviewPage() {
   const [draftsByAthlete, setDraftsByAthlete] = useState<ReadonlyMap<string, Drafts>>(new Map());
   const drafts = draftsByAthlete.get(athleteId) ?? EMPTY_DRAFTS;
   const {
-    medicalStatusDraft,
-    medicalSourceRef,
     decisionText,
     decisionExpectedOutcome,
     nearMissDescription,
@@ -637,7 +624,6 @@ export default function DecisionLoopReviewPage() {
     setDoneLines((shown) => ({ ...shown, [kind]: '' }));
     return true;
   }
-  const athleteName = athletes.find((athlete) => athlete.athlete_id === athleteId)?.full_name?.trim() || 'this athlete';
 
   /* ARRIVING FROM "Record what you did" (#1474 item 5): the athlete the coach
      came for, handed over in page memory (decisionLoopArrival.ts). Taken once,
@@ -854,24 +840,6 @@ export default function DecisionLoopReviewPage() {
     readSeqRef.current += 1;
     setAthleteId(nextAthleteId);
     setStatusUnreadFor(null);
-    /* The one draft that is NOT kept for its athlete: the medical status
-       selection and its source reference. A "Cleared" left selected from an
-       earlier visit is one click from being set; every arrival at an athlete
-       starts that form at its default, Pending with no reference. (The
-       selections that carry recommendation and decision ids are drafts too,
-       kept per athlete and honoured only while the record they point at is
-       loaded: see draftsByAthlete.) */
-    setDraftsByAthlete((kept) => {
-      const next = new Map<string, Drafts>();
-      for (const [id, draft] of kept) {
-        next.set(id, {
-          ...draft,
-          medicalStatusDraft: EMPTY_DRAFTS.medicalStatusDraft,
-          medicalSourceRef: EMPTY_DRAFTS.medicalSourceRef,
-        });
-      }
-      return next;
-    });
     setIncidentFiledMessage('');
     setBehaviorNoteMessage('');
     setMessageHomeMessage('');
@@ -910,40 +878,6 @@ export default function DecisionLoopReviewPage() {
     if (message === WRITE_NOT_CONFIRMED) {
       unconfirmedSeqRef.current += 1;
       void refreshAll(forAthleteId);
-    }
-  }
-
-  // Run by the armed Set Status button only (UXB-03); Enter in the form does not send it.
-  async function handleSetMedicalStatus() {
-    if (!athleteId || !startWrite('medicalStatus', athleteId)) return;
-    const writeConfirmed = beginWrite('medicalStatus');
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/shadow/medical-status`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          athleteId,
-          status: medicalStatusDraft,
-          sourceReference: medicalSourceRef || undefined,
-        }),
-      });
-      // shadow/medical-status answers { ok: true, status: <the new row> }.
-      await confirmWriteOrThrow(response, 'Failed to set medical status.', (envelope) => {
-        const row = returnedRow(envelope, 'status');
-        return !!row && isFilled(row.status_id) && row.athlete_id === athleteId && row.status === medicalStatusDraft;
-      });
-      // The selection goes back to Pending too: a status left selected after
-      // it was set is one click from being set again.
-      clearSentDrafts(athleteId, { medicalSourceRef, medicalStatusDraft });
-      if (athleteId !== selectedAthleteRef.current) return;
-      writeConfirmed();
-      await refreshAll(athleteId);
-      if (athleteId === selectedAthleteRef.current) setDoneLines((shown) => ({ ...shown, medicalStatus: 'Status set.' }));
-    } catch (error) {
-      reportWriteError(athleteId, error, 'Failed to set medical status.', 'medicalStatus');
-    } finally {
-      markSubmitting('medicalStatus', athleteId, false);
     }
   }
 
@@ -1404,10 +1338,6 @@ export default function DecisionLoopReviewPage() {
               {/* Medical Administrative Status */}
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h2 className="t-command text-[length:var(--t-lg)]">Medical Administrative Status</h2>
-                <p className="t-muted mt-[var(--s2)]">
-                  Setting a new status never clears an existing restriction automatically — each change is its own
-                  explicit, human-attributed record.
-                </p>
                 {medicalStatus && !statusUnread ? (
                   <div className="mt-[var(--s3)] space-y-[var(--s2)] text-[length:var(--t-sm)]">
                     <p className="flex flex-wrap items-center gap-[var(--s3)]">
@@ -1436,45 +1366,14 @@ export default function DecisionLoopReviewPage() {
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">No medical administrative status recorded yet.</p>
                 )}
 
-                <form onSubmit={(event) => event.preventDefault()} className="mt-[var(--s4)] space-y-[var(--s3)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
-                  <label className="field block">
-                    <span className="t-label">New status</span>
-                    <select
-                      value={medicalStatusDraft}
-                      onChange={(event) => editDraft('medicalStatusDraft', event.target.value as MedicalStatusValue)}
-                      className="select"
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="cleared">Cleared</option>
-                      <option value="restricted">Restricted</option>
-                      <option value="not_cleared">Not Cleared</option>
-                    </select>
-                  </label>
-                  <label className="field block">
-                    <span className="t-label">Source reference (optional)</span>
-                    <input
-                      value={medicalSourceRef}
-                      onChange={(event) => editDraft('medicalSourceRef', event.target.value)}
-                      placeholder="e.g. physician note, incident id"
-                      className="input"
-                    />
-                  </label>
-                  {/* The one danger-face control on this page: it operates the
-                      medical gate itself. Red is not reserved
-                      (OD-2026-09-29-001). */}
-                  <ArmedButton
-                    className="btn btn--danger"
-                    armKey={`${athleteId}:${medicalStatusDraft}`}
-                    busy={isSubmitting('medicalStatus')}
-                    busyLabel="Setting…"
-                    armedLabel={`Press again: set ${athleteName} to ${MEDICAL_STATUS_WORDS[medicalStatusDraft]}`}
-                    onConfirm={() => void handleSetMedicalStatus()}
-                  >
-                    Set Status
-                  </ArmedButton>
-                  {doneLines.medicalStatus && <p role="status" className="t-body text-[color:var(--brass-300)]">{doneLines.medicalStatus}</p>}
-                  {errorUnder('medicalStatus')}
-                </form>
+                {/* SET ON THE CLEARANCE BOARD (Jason, card OW25-45 B, 2026-11-19:
+                    "Coaches and the office" set clearance, on the Clearance
+                    Board). The Set Status control that was here moved there;
+                    this page keeps the reading its gates use. */}
+                <p className="t-body mt-[var(--s4)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
+                  Clearance is set on the Clearance Board.{' '}
+                  <Link href="/coach/sports-medicine" className="underline">Open the Clearance Board</Link>
+                </p>
               </section>
 
               {/* Recommendations */}

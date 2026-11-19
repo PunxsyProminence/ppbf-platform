@@ -5,7 +5,6 @@
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 
 import DecisionLoopReviewPage from './page';
 import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
@@ -53,7 +52,6 @@ function jsonResponse(body: unknown, ok = true) {
 }
 
 /* WHAT EACH WRITE ROUTE ANSWERS ON SUCCESS, read from the routes themselves:
-     shadow/medical-status      { ok: true, status: <row>, effectiveStatus }
      shadow/recommendations/decide { ok: true, recommendation: <row> }
      shadow/decisions           { ok: true, decision: <row> }
      shadow/near-misses         { ok: true, nearMiss: <row> }
@@ -67,23 +65,6 @@ const ACK = { ok: true, json: async () => ({ ok: true, __genericAck: true }) } a
 
 function acknowledge(url: string, init?: RequestInit): Response {
   const sent = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
-  if (url.includes('/shadow/medical-status')) {
-    return jsonResponse({
-      ok: true,
-      status: {
-        status_id: 'st-new',
-        athlete_id: sent.athleteId,
-        status: sent.status,
-        restriction_flags: {},
-        source_reference: sent.sourceReference ?? null,
-        set_by_account_id: 'acct-1',
-        set_by_role: 'coach',
-        effective_at: '2026-10-01T12:00:00.000Z',
-        created_at: '2026-10-01T12:00:00.000Z',
-      },
-      effectiveStatus: sent.status,
-    });
-  }
   if (url.includes('/recommendations/decide')) {
     return jsonResponse({ ok: true, recommendation: { recommendation_id: sent.recommendationId, athlete_id: sent.athleteId, status: sent.decision } });
   }
@@ -861,7 +842,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     installSwitchFetch({ post: () => heldPost });
     await openAthleteA();
 
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Athlete A: glove came loose.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
     switchToB();
     expect(await screen.findByText('No medical administrative status recorded yet.')).toBeTruthy();
 
@@ -898,7 +880,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   });
 
   test('a re-read that fails after a write does not keep showing the status from before the write', async () => {
-    // Set Status succeeds, the re-read fails. What was on screen was read
+    // The write (a near-miss) succeeds, the re-read fails. What was on screen was read
     // BEFORE the write; leaving it under "Current status" is a claim about
     // now that nothing supports.
     let failReads = false;
@@ -914,7 +896,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     });
     await openAthleteA();
 
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Athlete A: glove came loose.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
 
     expect(await screen.findByText(/medical administrative status could not be read/i)).toBeTruthy();
     expect(within(medicalSection()).queryByText('cleared')).toBeNull();
@@ -1079,10 +1062,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
    * needs and presses its button while athlete A is selected.
    */
   const WRITES: Array<{ name: string; route: string; submit: () => void; confirmation?: string; draft?: () => string }> = [
-    { name: 'Set Status', route: '/shadow/medical-status', submit: () => {
-      fireEvent.change(screen.getByLabelText('Source reference (optional)'), { target: { value: 'note for A' } });
-      pressArmed(screen.getByRole('button', { name: 'Set Status' }));
-    }, draft: () => (screen.getByLabelText('Source reference (optional)') as HTMLInputElement).value },
     { name: 'Accept a recommendation', route: '/recommendations/decide', submit: () => {
       fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     } },
@@ -1206,7 +1185,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test('switching to no athlete clears the previous athlete’s error line', async () => {
     installSwitchFetch({ post: () => jsonResponse({ error: 'SERVER-TEXT-ABOUT-ATHLETE-A' }, false) });
     await openAthleteA();
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Athlete A: glove came loose.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
     await screen.findByText(/SERVER-TEXT-ABOUT-ATHLETE-A/);
 
     fireEvent.change(athletePicker(), { target: { value: '' } });
@@ -1220,8 +1200,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
      Every form on this page sends whatever is in its boxes with the athlete
      selected when the button is pressed. Before this, nothing emptied a box on
      a switch: a Message Home written about athlete A went to athlete B's
-     family with one click; "Cleared" plus A's physician reference could be
-     set on B; A's incident could be filed against B. One row per form.
+     family with one click; A's incident could be filed against B. One row per form.
      ----------------------------------------------------------------------- */
 
   function field<T extends HTMLElement>(label: string, sectionHeading?: string): T {
@@ -1254,8 +1233,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     values: () => string[];
     defaults: string[];
     press: () => void;
-    /** False for the one form whose draft is deliberately NOT kept. */
-    keptForItsAthlete?: boolean;
   }> = [
     {
       name: 'Message Home',
@@ -1326,21 +1303,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       ],
       defaults: ['', 'low', ''],
       press: () => fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' })),
-    },
-    {
-      name: 'Set Status (medical)',
-      whatCouldGoWrong: '"Cleared" and A’s physician reference are set on B',
-      fill: () => {
-        type('New status', 'cleared');
-        type('Source reference (optional)', A_TEXT);
-      },
-      values: () => [
-        field<HTMLSelectElement>('New status').value,
-        field<HTMLInputElement>('Source reference (optional)').value,
-      ],
-      defaults: ['pending', ''],
-      press: () => pressArmed(screen.getByRole('button', { name: 'Set Status' })),
-      keptForItsAthlete: false,
     },
     {
       name: 'Evaluate a Decision Outcome',
@@ -1452,7 +1414,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     });
   });
 
-  describe.each(FORMS)('$name: so that never $whatCouldGoWrong', ({ fill, values, defaults, press, keptForItsAthlete }) => {
+  describe.each(FORMS)('$name: so that never $whatCouldGoWrong', ({ fill, values, defaults, press }) => {
     test('after a switch that succeeds, the form is empty and pressing its button sends nothing of the previous athlete', async () => {
       const fetchMock = installSwitchFetch();
       await openAthleteA();
@@ -1495,11 +1457,9 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       expectNoRequestCarriesAthleteA(fetchMock);
     });
 
-    test('on return to the athlete it was written for: kept, even after typing under the other athlete -- except the medical status form, which always starts over', async () => {
+    test('on return to the athlete it was written for: kept, even after typing under the other athlete', async () => {
       // The ID box changes the selection on every keystroke, and a coach who
       // picks the wrong name and picks back has not thrown their writing away.
-      // The medical form is the exception: a "Cleared" left selected from an
-      // earlier visit is one click from being set.
       installSwitchFetch();
       await openAthleteA();
       fill();
@@ -1512,7 +1472,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       fireEvent.change(athletePicker(), { target: { value: 'ath-a' } });
       await screen.findByText(/ref-for-athlete-a/);
 
-      expect(values()).toEqual(keptForItsAthlete === false ? defaults : written);
+      expect(values()).toEqual(written);
     });
   });
 
@@ -1662,7 +1622,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test('no commit has the new athlete selected with the previous athlete’s error line, confirmation or status still up', async () => {
     installSwitchFetch({ post: () => jsonResponse({ error: 'SERVER-TEXT-ABOUT-ATHLETE-A' }, false) });
     await openAthleteA();
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Athlete A: glove came loose.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
     await screen.findByText(/SERVER-TEXT-ABOUT-ATHLETE-A/);
     committed.length = 0;
 
@@ -2348,8 +2309,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   });
 
   test.each([
-    ['Set Status', () => { type('Source reference (optional)', 'note for A'); pressArmed(screen.getByRole('button', { name: 'Set Status' })); },
-      () => field<HTMLInputElement>('Source reference (optional)').value],
     ['Record Decision', () => { type('Decision text', 'decision for A'); type('Expected outcome', 'outcome', 'Decisions'); fireEvent.click(screen.getByRole('button', { name: 'Record Decision' })); },
       () => field<HTMLTextAreaElement>('Decision text').value + field<HTMLTextAreaElement>('Expected outcome', 'Decisions').value],
     ['Flag Near-Miss', () => { type('Description', 'near miss for A'); fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' })); },
@@ -2390,16 +2349,12 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       global.fetch = fetchMock as unknown as typeof fetch;
       await openAthleteA();
       type('Message', A_TEXT);
-      type('New status', 'cleared');
-      type('Source reference (optional)', A_TEXT);
       type('What happened', A_TEXT);
 
       fireEvent.change(athletePicker(), { target: { value: oddId } });
       await screen.findByText('No medical administrative status recorded yet.');
 
       expect(field<HTMLTextAreaElement>('Message').value).toBe('');
-      expect(field<HTMLSelectElement>('New status').value).toBe('pending');
-      expect(field<HTMLInputElement>('Source reference (optional)').value).toBe('');
       expect(field<HTMLTextAreaElement>('What happened').value).toBe('');
 
       // Typing under the odd id and sending carries only what was typed there.
@@ -2426,7 +2381,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
       const key = String(url);
       if (init?.method === 'POST') {
-        if (key.includes('/medical-status')) rejected = true;
+        if (key.includes('/shadow/near-misses')) rejected = true;
         return acknowledge(key, init);
       }
       if (key.includes('/api/pilot/athletes/list')) return jsonResponse({ items: TEST_ROSTER });
@@ -2444,7 +2399,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     type('Expected outcome', 'outcome for A', 'Decisions');
 
     // A re-read comes back with the recommendation rejected.
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    type('Description', 'near miss for A');
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
     await screen.findByText('rejected');
 
     expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('');
@@ -2491,10 +2447,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test('after a send, the selections that went with it are back to their defaults', async () => {
     const fetchMock = installSwitchFetch();
     await openAthleteA();
-
-    type('New status', 'cleared');
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
-    await waitFor(() => expect(field<HTMLSelectElement>('New status').value).toBe('pending'));
 
     type('Link to recommendation (optional)', 'rec-a');
     type('Decision text', 'decision for A');
@@ -2546,7 +2498,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       return { ok: true, json: async () => ({ ...((await real.json()) as object), ok: 1 }) } as Response;
     }],
     ['the acknowledgement of a write for a DIFFERENT athlete or record', (url) => {
-      if (url.includes('/shadow/medical-status')) return jsonResponse({ ok: true, status: { status_id: 's', athlete_id: 'someone-else', status: 'pending' } });
       if (url.includes('/recommendations/decide')) return jsonResponse({ ok: true, recommendation: { recommendation_id: 'another-rec' } });
       if (url.includes('/shadow/decisions')) return jsonResponse({ ok: true, decision: { decision_id: 'd', athlete_id: 'someone-else' } });
       if (url.includes('/shadow/near-misses')) return jsonResponse({ ok: true, nearMiss: { near_miss_id: 'n', athlete_id: 'someone-else' } });
@@ -2555,7 +2506,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       return jsonResponse({ ok: true, outcome: { outcome_id: 'o', decision_id: 'another-decision' } });
     }],
     ['an acknowledgement with no id in it', (url) => {
-      if (url.includes('/shadow/medical-status')) return jsonResponse({ ok: true, status: { athlete_id: 'ath-a', status: 'pending' } });
       if (url.includes('/recommendations/decide')) return jsonResponse({ ok: true, recommendation: { status: 'accepted' } });
       if (url.includes('/shadow/decisions')) return jsonResponse({ ok: true, decision: { athlete_id: 'ath-a' } });
       if (url.includes('/shadow/near-misses')) return jsonResponse({ ok: true, nearMiss: { athlete_id: 'ath-a' } });
@@ -2564,16 +2514,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
       return jsonResponse({ ok: true, outcome: { decision_id: 'dec-a' } });
     }],
   ];
-
-  test('Set Status: a row for this athlete with an id but a DIFFERENT status than the one sent is not the acknowledgement', async () => {
-    installSwitchFetch({ post: () => jsonResponse({ ok: true, status: { status_id: 's', athlete_id: 'ath-a', status: 'cleared' } }) });
-    await openAthleteA();
-
-    type('New status', 'restricted');
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
-
-    expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
-  });
 
   test.each([
     ['Behavior Note', 'Note', 'Log Note', 'Note logged.'],
@@ -2591,7 +2531,9 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   });
 
   test('a not-confirmed write re-reads the athlete, so "check" has something to check, and the line stays up', async () => {
-    // The status set DID land; only the answer was lost.
+    // The write DID land; only the answer was lost. (A near-miss: the fixture
+    // answers the next medical-status read as restricted once any write has
+    // been sent, so the re-read is visible on screen.)
     let written = false;
     const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
       const key = String(url);
@@ -2610,8 +2552,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     fireEvent.change(await rosterLoaded(), { target: { value: 'ath-a' } });
     await within(medicalSection()).findByText('cleared');
 
-    type('New status', 'restricted');
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    type('Description', 'near miss for A');
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
 
     expect(await screen.findByText(NOT_CONFIRMED)).toBeTruthy();
     expect(await within(medicalSection()).findByText('restricted')).toBeTruthy();
@@ -2841,7 +2783,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
      the picker header, several panels above, where a coach scrolled down to
      Report Incident could not see that it had not gone in. */
   const FORM_HEADING: Record<string, string> = {
-    'Set Status': 'Medical Administrative Status',
     'Accept a recommendation': 'Recommendations',
     'Record Decision': 'Decisions',
     'Flag Near-Miss': 'Near-Misses',
@@ -2981,9 +2922,6 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     again: (button: HTMLElement) => void;
     done: string;
   }> = [
-    { name: 'Set Status', route: '/shadow/medical-status',
-      button: () => screen.getByRole('button', { name: 'Set Status' }),
-      press: pressArmed, again: pressArmed, done: 'Status set.' },
     { name: 'Accept', route: '/recommendations/decide',
       button: () => screen.getByRole('button', { name: 'Accept' }),
       press: (b) => fireEvent.click(b), again: (b) => fireEvent.click(b), done: 'Recommendation accepted.' },
@@ -3040,7 +2978,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await openAthleteA();
 
     fill?.();
-    // Held by node: while busy its words change ("Setting…").
+    // Held by node: while busy its words change ("Filing…").
     const pressed = button();
     press(pressed);
     await waitFor(() =>
@@ -3065,12 +3003,13 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
   test('a success line for one athlete is gone when the coach moves to another', async () => {
     installSwitchFetch();
     await openAthleteA();
-    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
-    await screen.findByText('Status set.');
+    type('Description', 'near miss for A');
+    fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
+    await screen.findByText('Near-miss flagged.');
 
     switchToB();
     await screen.findByText('No medical administrative status recorded yet.');
-    expect(screen.queryByText('Status set.')).toBeNull();
+    expect(screen.queryByText('Near-miss flagged.')).toBeNull();
     expect(screen.queryAllByRole('status').filter((line) => /landed|set\.|recorded\.|flagged\.|accepted\.|rejected\./i.test(line.textContent ?? ''))).toHaveLength(0);
   });
 
@@ -3087,33 +3026,22 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(line.closest('section')).toBe(pressed.closest('section'));
   });
 
-  test('Set Status: one press sends nothing and says what the next press does (UXB-03)', async () => {
+  // OW25-45 B (Jason): "Coaches and the office" set medical clearance, on the
+  // Clearance Board. This page reads and shows the status; it sets nothing.
+  test('the Decision Loop offers no way to set clearance, and points to the Clearance Board', async () => {
     const fetchMock = installSwitchFetch();
     await openAthleteA();
-    const posts = () => fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
 
-    fireEvent.change(within(medicalSection()).getByLabelText('New status'), { target: { value: 'cleared' } });
-    armOnly(screen.getByRole('button', { name: 'Set Status' }));
+    expect(screen.queryByRole('button', { name: 'Set Status' })).toBeNull();
+    expect(screen.queryByLabelText('New status')).toBeNull();
+    expect(screen.queryByLabelText('Source reference (optional)')).toBeNull();
+
+    const section = medicalSection();
+    expect(within(section).getByText('Clearance is set on the Clearance Board.')).toBeTruthy();
+    expect(within(section).getByRole('link', { name: 'Open the Clearance Board' })).toHaveAttribute('href', '/coach/sports-medicine');
+
     await settle();
-
-    expect(posts()).toHaveLength(0);
-    expect(screen.getByRole('button', { name: 'Press again: set Athlete A to Cleared' })).toBeTruthy();
-  });
-
-  test('Set Status: picking another status disarms it, and Enter in the form sends nothing', async () => {
-    const fetchMock = installSwitchFetch();
-    await openAthleteA();
-    const posts = () => fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST');
-
-    const button = screen.getByRole('button', { name: 'Set Status' });
-    armOnly(button);
-    expect(button).toHaveTextContent('Press again: set Athlete A to Pending');
-    fireEvent.change(within(medicalSection()).getByLabelText('New status'), { target: { value: 'restricted' } });
-    expect(button).toHaveTextContent('Set Status');
-
-    fireEvent.submit(button.closest('form') as HTMLFormElement);
-    await settle();
-    expect(posts()).toHaveLength(0);
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/shadow/medical-status') && (c[1] as RequestInit | undefined)?.method === 'POST')).toBe(false);
   });
 });
 

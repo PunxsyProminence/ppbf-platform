@@ -138,7 +138,7 @@ test('no clearance record reads as an action state, not as quiet', async () => {
   render(<SportsMedicinePage />);
 
   await screen.findByText('no record');
-  expect(screen.getByText('No clearance record on file. The office sets one during onboarding.')).toBeTruthy();
+  expect(screen.getByText('No clearance record on file. A coach or the office sets one below.')).toBeTruthy();
   // Recommendations and decisions are not refused for it (issue #1474).
   expect(screen.queryByText(/gate blocks/)).toBeNull();
 });
@@ -2483,5 +2483,213 @@ describe('past holds are read back on the board, athlete-safe fields only (F-071
     } finally {
       clearRoleSession();
     }
+  });
+});
+
+
+/* SETTING CLEARANCE ON THIS BOARD (Jason, card OW25-45 B, 2026-11-19:
+   "Coaches and the office" -- both set it, on the Clearance Board, and the
+   words say so). The control moved here from the Decision Loop. The write is
+   POST /api/pilot/shadow/medical-status, whose role gate (coach and
+   organization admin in, everyone else out) is pinned in that route's own
+   test; here: what the board sends, what it shows after, and that it shows
+   nothing it did not read back. */
+describe('setting clearance on the board (OW25-45 B)', () => {
+  afterEach(() => clearRoleSession());
+
+  const NOT_CLEARED_STATUS = {
+    ...CLEARED_STATUS,
+    status_id: 'status-2',
+    status: 'not_cleared',
+    effective_at: '2026-11-19T10:00:00.000Z',
+    source_reference: 'clinic-letter-77',
+  };
+
+  /** GETs read `current`; a POST answers with `post()` and, if it says so, moves `current`. */
+  function clearanceFetch(options: {
+    post?: (body: Record<string, unknown>) => Response | Promise<Response>;
+    after?: () => Response;
+  } = {}) {
+    let afterPost = false;
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/shadow/medical-status') && init?.method === 'POST') {
+        afterPost = true;
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        if (options.post) return options.post(body);
+        return {
+          ok: true,
+          json: async () => ({ ok: true, status: { ...NOT_CLEARED_STATUS, status: body.status, athlete_id: body.athleteId } }),
+        } as Response;
+      }
+      if (url.includes('/shadow/medical-status')) {
+        if (afterPost && options.after) return options.after();
+        const status = afterPost ? NOT_CLEARED_STATUS : CLEARED_STATUS;
+        return { ok: true, json: async () => ({ ok: true, status, effectiveStatus: status.status }) } as Response;
+      }
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  const posts = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+
+  async function openForm() {
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    fireEvent.click(screen.getByRole('button', { name: 'Set clearance status' }));
+  }
+
+  test('the board says who sets clearance, and where', async () => {
+    clearanceFetch();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    expect(screen.getByText(/Clearance records are set here, by coaches and the office\./)).toBeTruthy();
+    expect(screen.queryByText(/set by the office\./)).toBeNull();
+  });
+
+  test.each(['coach', 'admin'])('a %s session gets the control, and the form starts at Pending', async (role) => {
+    createPersistentRoleSession(role as 'coach' | 'admin');
+    clearanceFetch();
+    await openForm();
+
+    expect((screen.getByLabelText('New status') as HTMLSelectElement).value).toBe('pending');
+    expect((screen.getByLabelText('Source reference (optional)') as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('button', { name: 'Set Status' })).toBeTruthy();
+    expect(screen.getByText('Saved with the record for staff. This board does not show it.')).toBeTruthy();
+  });
+
+  test('setting a status sends that athlete, that status and the reference, then shows what is read back', async () => {
+    const fetchMock = clearanceFetch();
+    await openForm();
+
+    fireEvent.change(screen.getByLabelText('New status'), { target: { value: 'not_cleared' } });
+    fireEvent.change(screen.getByLabelText('Source reference (optional)'), { target: { value: '  clinic-letter-77  ' } });
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(await screen.findByText('Status set.')).toBeTruthy();
+    const [call] = posts(fetchMock);
+    expect(String(call[0])).toContain('/api/pilot/shadow/medical-status');
+    expect(JSON.parse(String((call[1] as RequestInit).body))).toEqual({
+      athleteId: 'ath-1',
+      status: 'not_cleared',
+      sourceReference: 'clinic-letter-77',
+    });
+    // The row shows the reading the route sent back, and never the reference.
+    expect(screen.getByText('not cleared')).toBeTruthy();
+    expect(screen.queryByText('cleared')).toBeNull();
+    expect(screen.queryByText(/clinic-letter-77/)).toBeNull();
+    // The form is closed; opening it again starts over.
+    expect(screen.queryByLabelText('New status')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Set clearance status' }));
+    expect((screen.getByLabelText('New status') as HTMLSelectElement).value).toBe('pending');
+    expect((screen.getByLabelText('Source reference (optional)') as HTMLInputElement).value).toBe('');
+  });
+
+  test('a blank reference is not sent', async () => {
+    const fetchMock = clearanceFetch();
+    await openForm();
+    fireEvent.change(screen.getByLabelText('Source reference (optional)'), { target: { value: '   ' } });
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    await screen.findByText('Status set.');
+    expect(JSON.parse(String((posts(fetchMock)[0][1] as RequestInit).body))).toEqual({ athleteId: 'ath-1', status: 'pending' });
+  });
+
+  test('one press sends nothing and says what the next press does (UXB-03)', async () => {
+    const fetchMock = clearanceFetch();
+    await openForm();
+    fireEvent.change(screen.getByLabelText('New status'), { target: { value: 'cleared' } });
+    armOnly(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(screen.getByRole('button', { name: 'Press again: set Jordan Doe to Cleared' })).toBeTruthy();
+    expect(posts(fetchMock)).toHaveLength(0);
+  });
+
+  test('picking another status disarms the armed button', async () => {
+    const fetchMock = clearanceFetch();
+    await openForm();
+    armOnly(screen.getByRole('button', { name: 'Set Status' }));
+    expect(screen.getByRole('button', { name: 'Press again: set Jordan Doe to Pending' })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('New status'), { target: { value: 'cleared' } });
+    expect(screen.getByRole('button', { name: 'Set Status' })).toBeTruthy();
+    expect(posts(fetchMock)).toHaveLength(0);
+  });
+
+  test('Cancel closes the form and sends nothing', async () => {
+    const fetchMock = clearanceFetch();
+    await openForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('New status')).toBeNull();
+    expect(posts(fetchMock)).toHaveLength(0);
+  });
+
+  test('a refusal is stamped on the row in plain words, and the row is read again', async () => {
+    const fetchMock = clearanceFetch({
+      post: () => ({ ok: false, status: 403, json: async () => ({ error: 'Forbidden: role not allowed' }) }) as Response,
+    });
+    await openForm();
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(await screen.findByText(/Status Not Set/)).toBeTruthy();
+    expect(screen.queryByText('Status set.')).toBeNull();
+    expect(screen.queryByText(/\b403\b/)).toBeNull();
+    const reads = fetchMock.mock.calls.filter(([input, init]) =>
+      String(input).includes('/shadow/medical-status') && (init as RequestInit | undefined)?.method !== 'POST');
+    expect(reads.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test.each([
+    ['a body that will not parse', () => ({ ok: true, status: 200, json: async () => { throw new Error('bad json'); } }) as unknown as Response],
+    ['ok with no row', () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }) as Response],
+    ['a row for another athlete', () => ({ ok: true, status: 200, json: async () => ({ ok: true, status: { ...NOT_CLEARED_STATUS, athlete_id: 'ath-2', status: 'pending' } }) }) as Response],
+    ['a row with another status', () => ({ ok: true, status: 200, json: async () => ({ ok: true, status: { ...NOT_CLEARED_STATUS, status: 'cleared' } }) }) as Response],
+    ['a row with no status id', () => ({ ok: true, status: 200, json: async () => ({ ok: true, status: { ...NOT_CLEARED_STATUS, status: 'pending', status_id: '' } }) }) as Response],
+  ])('a 200 carrying %s is not a confirmation: no "Status set.", a stamp, and the row as read now', async (_name, post) => {
+    clearanceFetch({ post });
+    await openForm();
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(await screen.findByText(/Status Not Confirmed/)).toBeTruthy();
+    expect(screen.queryByText('Status set.')).toBeNull();
+    expect(screen.getByText('not cleared')).toBeTruthy();
+  });
+
+  test('a confirmed write whose read-back fails shows unavailable, never the status that was picked', async () => {
+    clearanceFetch({ after: () => ({ ok: false, status: 503, json: async () => ({}) }) as Response });
+    await openForm();
+    fireEvent.change(screen.getByLabelText('New status'), { target: { value: 'not_cleared' } });
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(await screen.findByText(/Status Not Read Back/)).toBeTruthy();
+    expect(screen.getByText('unavailable')).toBeTruthy();
+    expect(screen.queryByText('not cleared')).toBeNull();
+    expect(screen.queryByText('Status set.')).toBeNull();
+  });
+
+  test('a second press while the first is out sends nothing more', async () => {
+    let release: (() => void) | undefined;
+    const fetchMock = clearanceFetch({
+      post: (body) => new Promise<Response>((resolve) => {
+        release = () => resolve({
+          ok: true,
+          json: async () => ({ ok: true, status: { ...NOT_CLEARED_STATUS, status: body.status, athlete_id: body.athleteId } }),
+        } as Response);
+      }),
+    });
+    await openForm();
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    await waitFor(() => expect(posts(fetchMock)).toHaveLength(1));
+    const busy = screen.getByRole('button', { name: /Setting/ });
+    pressArmed(busy);
+    expect(posts(fetchMock)).toHaveLength(1);
+    await act(async () => {
+      release?.();
+    });
+    expect(await screen.findByText('Status set.')).toBeTruthy();
   });
 });
