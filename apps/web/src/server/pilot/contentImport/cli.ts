@@ -292,7 +292,7 @@ export function formatPlan(plan: ImportPlan): string[] {
     lines.push(
       `  ${name}: ${(Object.keys(OUTCOME_LABEL) as (keyof typeof OUTCOME_LABEL)[])
         .map((outcome) => `${counts[outcome]} ${OUTCOME_LABEL[outcome]}`)
-        .join(', ')}`,
+        .join(', ')}${counts.held ? `, ${counts.held} held` : ''}`,
     );
     for (const unit of plan.units) {
       if (unit.dataset !== name) continue;
@@ -316,6 +316,9 @@ export function formatPlan(plan: ImportPlan): string[] {
           break;
         case 'absent':
           lines.push(`    absent ${label}: not in the files; left alone`);
+          break;
+        case 'held':
+          lines.push(`    held ${label}: ${(unit.reasons ?? []).join(' | ')}`);
           break;
         default:
           break;

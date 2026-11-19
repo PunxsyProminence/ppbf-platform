@@ -50,6 +50,8 @@ export const workoutTemplatesEngine: DatasetEngine = versionedDatasetEngine({
     },
   ],
   holdsName: (row) => row.active === true,
+  // workoutTemplateEdit.ts records each in-app edit under this entity type.
+  inAppEditAuditEntity: 'workout_template',
   rootOverrides: ({ outcome, head, actorRole }) => ({
     supersedes_template_id: outcome === 'new_version' ? head?.id ?? null : null,
     active: outcome === 'new_version' ? head?.row.active === true : true,

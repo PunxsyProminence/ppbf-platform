@@ -128,6 +128,11 @@ export async function applyImport(request: ApplyRequest): Promise<ApplyResult> {
     ledgerRows += result.ledgerRows;
   }
 
+  // Items kept because a coach edited them in the app (inAppEdits.ts), so the
+  // record of this import says what it did NOT load; only when there are any.
+  const held: Partial<Record<DatasetName, string[]>> = {};
+  for (const unit of plan.units) if (unit.outcome === 'held') (held[unit.dataset] ??= []).push(unit.key);
+
   const audit: ContentImportAuditRecord = {
     importId,
     organizationId,
@@ -140,6 +145,7 @@ export async function applyImport(request: ApplyRequest): Promise<ApplyResult> {
       inserted: Object.fromEntries(Object.entries(written).map(([name, result]) => [name, result?.inserted ?? []])),
       updated: Object.fromEntries(Object.entries(written).map(([name, result]) => [name, result?.updated ?? []])),
       ledger_rows: ledgerRows,
+      ...(Object.keys(held).length > 0 ? { held } : {}),
     },
   };
   const auditId = await insertContentImportAuditRow(client, audit);

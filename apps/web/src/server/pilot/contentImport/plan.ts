@@ -1,12 +1,12 @@
 import { assertImportActor, type DbClient, type ImportActor } from './actor';
 import { sha256Hex } from './canonical';
 import {
+  type CountedOutcome,
   DATASET_ENGINES,
   datasetEngine,
   type DatasetPlan,
   type EngineContext,
   UNIT_OUTCOMES,
-  type UnitOutcome,
   type UnitPlan,
 } from './datasets';
 import { stageKeyFindings } from './datasets/pathwayCatalog';
@@ -30,6 +30,9 @@ import { parsePackage, validateParsed } from './validate';
 //   unchanged    in the database with the same content; nothing is written
 //   absent       in the database, not in the package; listed, never touched
 //   reject       has a blocking finding; the whole plan cannot be applied
+//   held         would be revised, but its current version holds a coach's
+//                in-app edit (inAppEdits.ts); nothing is written for it and
+//                the rest of the plan applies
 // plus the validator's blocking findings and warnings (validate.ts), judged
 // against what THIS organization holds (referenceSetsDb.ts), and a plan_hash.
 //
@@ -47,7 +50,8 @@ export interface ImportRequest {
   files: Readonly<Record<string, string>>;
 }
 
-export type OutcomeCounts = Record<UnitOutcome, number>;
+/** `held` is present only when the plan has a held item, so a plan without one counts exactly as before. */
+export type OutcomeCounts = Record<CountedOutcome, number> & { held?: number };
 
 export interface ImportPlan {
   organizationId: string;
@@ -142,9 +146,15 @@ export async function planWithState(request: ImportRequest, checkedActor?: Impor
   const validation = validateParsed(parsed, { references, baseline: { files: baseline } }, findings, warnings);
 
   const datasetPlans: DatasetPlan[] = [];
+  // Engines plan in dependency order, so a dataset sees what the ones it
+  // references hold (a template step linking a held drill).
+  const held = new Map<DatasetName, Set<string>>();
   for (const engine of engines) {
     const files = parsed.files.filter((file) => file.spec.dataset === engine.spec.name);
-    datasetPlans.push(await engine.plan(context, { files, validation, all: parsed.files }));
+    const datasetPlan = await engine.plan(context, { files, validation, all: parsed.files, held });
+    datasetPlans.push(datasetPlan);
+    const keys = datasetPlan.units.filter((unit) => unit.outcome === 'held').map((unit) => unit.key);
+    if (keys.length > 0) held.set(engine.spec.name, new Set(keys));
   }
 
   const units = datasetPlans.flatMap((plan) => plan.units).sort(compareUnits);
@@ -158,8 +168,9 @@ export async function planWithState(request: ImportRequest, checkedActor?: Impor
   const totals = emptyCounts();
   for (const name of datasets) counts[name] = emptyCounts();
   for (const unit of units) {
-    (counts[unit.dataset] as OutcomeCounts)[unit.outcome] += 1;
-    totals[unit.outcome] += 1;
+    const datasetCounts = counts[unit.dataset] as OutcomeCounts;
+    datasetCounts[unit.outcome] = (datasetCounts[unit.outcome] ?? 0) + 1;
+    totals[unit.outcome] = (totals[unit.outcome] ?? 0) + 1;
   }
 
   const plan: ImportPlan = {
