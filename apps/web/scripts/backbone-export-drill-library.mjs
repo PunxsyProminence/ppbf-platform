@@ -2,6 +2,7 @@
 // BACKBONE -> DRILL LIBRARY, LANE 2 (lane L2b; OD-2026-11-15-002, OD-2026-11-10-003).
 //
 //   node scripts/backbone-export-drill-library.mjs <backbone-folder> [--out <seed-data folder>] [--allow-overwrite]
+//   node scripts/backbone-export-drill-library.mjs <backbone-folder> --fill-columns [--out <seed-data folder>]
 //
 // The rest of the drill library: every frozen Backbone drill whose stage_keys is NOT exactly ["FT1"]
 // (FT1's 131 are backbone-export-ft1-track.mjs's). Rows are ADDED to the committed drill-library CSVs:
@@ -42,6 +43,17 @@
 //   - library_group, coaching_notes, prescription and the other record keys with no drill-library
 //     column (NO_COLUMN below): not carried; the frozen Backbone keeps them (PK-203 A), and the
 //     drafts quote them as sources where a drafted field uses them.
+//   - exit_condition and correction_path (lane NW-b, PK-197 A): carried as text, as written, into
+//     their own columns; a blank shows "Not written yet". FT1 records have neither key.
+//
+// --fill-columns (lane NW-b). The committed lane-2 rows were edited after the export (the drafts),
+// so a normal rerun refuses, and --allow-overwrite would put the frozen blanks back. This mode
+// writes ONLY the FILL_COLUMNS cells of seed_drill_library.csv, for every committed row whose
+// drill_id is a frozen Backbone drill (FT1 and lane 2), from the record as written (the same cell
+// rule as the export). Every other cell, and every row outside the Backbone, stays as committed.
+// A committed cell that already holds a different non-blank value stops it, naming each drill and
+// column, and nothing is written; so does a Backbone drill with no committed row. A second run is
+// byte-identical. The counts are printed and checked against FILL_EXPECTED, like the export's.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -67,6 +79,7 @@ import {
   readDir,
   sha16,
   textCell,
+  writeCsv,
 } from './backbone-export-ft1-track.mjs';
 
 export const LONG_ROAD = 'Long Road practice';
@@ -81,11 +94,14 @@ export const FILES = ['drill-library/seed_drill_library.csv', 'drill-library/see
 
 // Record keys with no drill-library column. The frozen Backbone keeps them; the drafts cite them.
 export const NO_COLUMN = ['library_group', 'coaching_notes', 'prescription', 'progression', 'head_impact_cost', 'owner_rules', 'combination_range',
-  'combination_exit', 'training_rule', 'exit_condition', 'correction_path', 'kpi', 'placement_rule', 'placement_condition', 'pass_fail', 'log',
+  'combination_exit', 'training_rule', 'kpi', 'placement_rule', 'placement_condition', 'pass_fail', 'log',
   'source_evidence_grade', 'neurological_development', 'life_skill_transfer', 'coupling_rung', 'use_when', 'exchange_cap_rule', 'defense_return_rule',
   'feint_type', 'feint_mechanism', 'differences', 'progression_stage'];
 const TEXT_KEYS = ['name', 'discipline', 'category', 'target_behavior', 'purpose', 'standard_setup', 'execution', 'what_good_looks_like', 'what_bad_looks_like',
-  'common_errors', 'corrections', 'transfer', 'contact_level', 'equipment_needed', 'content_class', 'source_ref', 'difficulty'];
+  'common_errors', 'corrections', 'transfer', 'exit_condition', 'correction_path', 'contact_level', 'equipment_needed', 'content_class', 'source_ref', 'difficulty'];
+/** The columns --fill-columns writes (lane NW-b), and the frozen set's counts of filled values (all 387 drills). */
+export const FILL_COLUMNS = ['exit_condition', 'correction_path'];
+export const FILL_EXPECTED = { drills: 387, exit_condition: 17, correction_path: 7 };
 const KEYS = {
   drill: {
     carried: ['organization_id', 'drill_id', 'lineage_id', ...TEXT_KEYS, 'requires_coach_authorization', 'grounding_claim_ids', 'field_provenance', 'active',
@@ -260,23 +276,84 @@ export function exportDrillLibrary(backboneDir, existing = () => undefined, { al
   };
 }
 
-const USAGE = 'usage: node scripts/backbone-export-drill-library.mjs <backbone-folder> [--out <seed-data folder>] [--allow-overwrite]';
+/**
+ * --fill-columns: the committed seed_drill_library.csv with only the FILL_COLUMNS cells written from
+ * the frozen Backbone. { files, counts, differences, notices, backboneVersion }. `existing(name)`
+ * returns a committed file's text. Throws, before any file is produced, on a conflicting cell or a
+ * Backbone drill with no committed row.
+ */
+export function fillColumns(backboneDir, existing = () => undefined) {
+  const manifest = loadManifest(backboneDir);
+  const hashes = [];
+  const records = readDir(backboneDir, manifest, CONTENT_DIRS.drills, hashes).map((entry) => entry.record).sort((a, b) => compare(a.drill_id, b.drill_id));
+  const backboneVersion = `drill-library fill ${sha16(Buffer.from([...hashes].sort(compare).join('\n')))} (${hashes.length} files)`;
+  const name = FILES[0];
+  const text = existing(name);
+  if (!text) throw new ExportError(`${name}: no committed file to fill`);
+  const header = HEADERS[name];
+  const rows = committedRows(text, header);
+  const byId = new Map();
+  for (const row of rows) {
+    if (byId.has(row.drill_id)) throw new ExportError(`${name}: drill_id ${row.drill_id} is on two committed rows`);
+    byId.set(row.drill_id, row);
+  }
+  const counts = { drills: records.length, ...Object.fromEntries(FILL_COLUMNS.map((column) => [column, 0])) };
+  const problems = [];
+  for (const record of records) {
+    const where = `drill ${record.drill_id}`;
+    const row = byId.get(record.drill_id);
+    if (!row) {
+      problems.push(`  ${name}: ${where} is in the Backbone and has no committed row`);
+      continue;
+    }
+    for (const column of FILL_COLUMNS) {
+      const value = textOrLines(record[column], `${where} ${column}`);
+      if (value !== '') counts[column] += 1;
+      const current = row[column] ?? '';
+      if (current !== '' && current !== value) {
+        problems.push(`  ${name} drill_id ${record.drill_id}: ${column} holds ${JSON.stringify(current)}; the Backbone has ${JSON.stringify(value)}`);
+      } else row[column] = value;
+    }
+  }
+  if (problems.length) {
+    throw new ExportError([`refused: --fill-columns would change ${problems.length} committed cell(s) or row(s). Nothing was written.`, ...problems].join('\n'));
+  }
+  const differences = Object.entries(FILL_EXPECTED).filter(([key, expected]) => counts[key] !== expected)
+    .map(([key, expected]) => `${key}: expected ${expected}, observed ${counts[key]}`);
+  const filled = FILL_COLUMNS.map((column) => `${column} ${counts[column]} filled, ${counts.drills - counts[column]} empty`).join('; ');
+  return {
+    backboneVersion,
+    counts,
+    differences,
+    files: { [name]: writeCsv(header, rows.map((row) => header.map((column) => row[column] ?? ''))) },
+    notices: [
+      `drill files read: ${records.length}; committed rows: ${rows.length} (${rows.length - records.length} outside the Backbone, left as they are)`,
+      `filled from the Backbone: ${filled}`,
+      ...(differences.length ? [`COUNTS DIFFER FROM FILL_EXPECTED: ${differences.join('; ')}`] : []),
+    ],
+  };
+}
+
+const USAGE = 'usage: node scripts/backbone-export-drill-library.mjs <backbone-folder> [--out <seed-data folder>] [--allow-overwrite | --fill-columns]';
 
 export function parseArgs(argv) {
   const positional = [];
   let out;
   let allowOverwrite = false;
+  let fill = false;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--out') {
       out = argv[i + 1];
       if (!out) throw new ExportError(`--out needs a folder\n${USAGE}`);
       i += 1;
     } else if (argv[i] === '--allow-overwrite') allowOverwrite = true;
+    else if (argv[i] === '--fill-columns') fill = true;
     else if (argv[i].startsWith('--')) throw new ExportError(`unknown option ${argv[i]}\n${USAGE}`);
     else positional.push(argv[i]);
   }
   if (positional.length !== 1) throw new ExportError(`give exactly one Backbone folder\n${USAGE}`);
-  return { backboneDir: positional[0], out, allowOverwrite };
+  if (fill && allowOverwrite) throw new ExportError(`--fill-columns never overwrites; drop --allow-overwrite\n${USAGE}`);
+  return { backboneDir: positional[0], out, allowOverwrite, fillColumns: fill };
 }
 
 function main() {
@@ -289,7 +366,10 @@ function main() {
       const file = path.join(out, name);
       return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
     };
-    const result = exportDrillLibrary(path.resolve(typedIn, args.backboneDir), existing, { allowOverwrite: args.allowOverwrite });
+    const backboneDir = path.resolve(typedIn, args.backboneDir);
+    const result = args.fillColumns
+      ? fillColumns(backboneDir, existing)
+      : exportDrillLibrary(backboneDir, existing, { allowOverwrite: args.allowOverwrite });
     for (const [name, text] of Object.entries(result.files)) {
       fs.mkdirSync(path.dirname(path.join(out, name)), { recursive: true });
       fs.writeFileSync(path.join(out, name), text, 'utf8');

@@ -493,6 +493,8 @@ describe('GET: the workout intake prompt, behind the same gate as the upload', (
       common_errors: 'ERRORS-TEXT',
       corrections: 'CORRECTIONS-TEXT',
       transfer: 'TRANSFER-TEXT',
+      exit_condition: '',
+      correction_path: '',
       contact_level: 'light_technical',
       equipment_needed: 'EQUIPMENT-TEXT',
       requires_coach_authorization: false,

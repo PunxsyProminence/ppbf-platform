@@ -241,12 +241,12 @@ const CROSS_ORG_REFERENCE_PROBES: ReadonlyArray<readonly [organizationId: string
 ];
 
 /**
- * The athlete detail's keys (drillLibraryV3.pg.test.ts pins those sixteen)
+ * The athlete detail's keys (drillLibraryV3.pg.test.ts pins those eighteen)
  * minus drill_id, which is the reference pointer. An exact allow-list: a key
  * added to the athlete projection tomorrow fails here as well as there.
  */
 const ATHLETE_INSTRUCTION_KEYS = [
-  'common_errors', 'contact_level', 'corrections', 'cues', 'equipment_needed', 'execution', 'name',
+  'common_errors', 'contact_level', 'correction_path', 'corrections', 'cues', 'equipment_needed', 'execution', 'exit_condition', 'name',
   'purpose', 'requires_coach_authorization', 'scale_levels', 'setup', 'stop_rules',
   'universal_stop_rules', 'what_bad_looks_like', 'what_good_looks_like',
 ];
@@ -388,6 +388,8 @@ function pinnedInstruction(label: string, name: string) {
     what_bad_looks_like: `${label} bad`,
     common_errors: `${label} errors`,
     corrections: `${label} correction`,
+    exit_condition: '',
+    correction_path: '',
     equipment_needed: 'focus mitts',
     scale_levels: [
       {
@@ -917,7 +919,7 @@ describe('a promoted, live reference (real database)', () => {
   test('the athlete gets the athlete-safe instruction, without the reference pointer', async () => {
     const result = await openAsAthlete(ASG_LIVE);
 
-    // AN EXACT ALLOW-LIST: the sixteen keys of getAthleteDrillDetail minus drill_id.
+    // AN EXACT ALLOW-LIST: the eighteen keys of getAthleteDrillDetail minus drill_id.
     expect(Object.keys(result.drill).sort()).toEqual(ATHLETE_INSTRUCTION_KEYS);
     expect(Object.keys(result).sort()).toEqual(['audience', 'drill', 'state']);
 
@@ -935,6 +937,8 @@ describe('a promoted, live reference (real database)', () => {
       what_bad_looks_like: 'Live bad',
       common_errors: 'Live errors',
       corrections: 'Live correction',
+      exit_condition: '',
+      correction_path: '',
       equipment_needed: 'focus mitts',
       scale_levels: [
         {
@@ -1212,7 +1216,7 @@ describe('OPEN WORK KEEPS ITS INSTRUCTION AFTER THE GYM RETIRES THE DRILL: OD-20
 
     const result = await openAsAthlete(assignmentId);
 
-    // The athlete envelope and the exact fifteen keys -- the same projection
+    // The athlete envelope and the exact seventeen keys -- the same projection
     // as Learn's, not a wider one for this path.
     expect(Object.keys(result).sort()).toEqual(['audience', 'drill', 'state']);
     expect(Object.keys(result.drill).sort()).toEqual(ATHLETE_INSTRUCTION_KEYS);

@@ -6,6 +6,7 @@ import { writePilotAuditEvent } from './audit';
 import { carryLabelsToNewVersion } from './contentImport/datasets/contentLabels';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
+import { orNotWritten } from '@/src/lib/drillPresentation';
 import { BLOCK_RENDERED_FORMATS, FROM_TEMPLATE, explainLine, templateSectionWords } from '@/src/lib/sessionScriptWords';
 import type { SessionScriptBlockRow, SessionScriptRow } from './sessionScripts';
 import { getWorkoutTemplateWithItems, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
@@ -175,8 +176,9 @@ type RenderedBlock = Pick<
 
 /**
  * A plan as plain text, from its blocks in the order given: the plan's name,
- * then each block's minutes and title and the coaching lines its author
- * filled, under the labels the plan page and the live screen use. Pure.
+ * then each block's minutes and title and its four coaching lines, under the
+ * labels the plan page and the live screen use; a line the author left empty
+ * reads "Not written yet". Pure.
  */
 export function renderingFromBlocks(name: string, blocks: readonly RenderedBlock[]): string {
   const lines = [name];
@@ -189,7 +191,8 @@ export function renderingFromBlocks(name: string, blocks: readonly RenderedBlock
       ['Watch', block.what_to_watch ?? ''],
       ['Fix', block.what_to_fix ?? ''],
     ]) {
-      if (value.trim() !== '') lines.push(`  ${label}: ${value.trim()}`);
+      // A field the author left empty says so, as the plan page's block list does.
+      lines.push(`  ${label}: ${orNotWritten(value.trim())}`);
     }
   }
   return lines.join('\n');

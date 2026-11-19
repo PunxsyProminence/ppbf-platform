@@ -80,9 +80,27 @@ describe('renderingFromBlocks', () => {
         '  Say: Hands up.',
         '  From the template: Warm-up',
         '  Watch: Elbows',
+        '  Fix: Not written yet',
         '',
         '6-16 min  Partner mirror',
+        '  Say: Not written yet',
         '  Explain: Why the feet lead',
+        '  Watch: Not written yet',
+        '  Fix: Not written yet',
+      ].join('\n'),
+    );
+  });
+
+  it('says "Not written yet" for every line a block left empty, never dropping one', () => {
+    expect(renderingFromBlocks('Empty plan', [block({ what_to_say: '   ' })])).toBe(
+      [
+        'Empty plan',
+        '',
+        '0-6 min  Jab Drill',
+        '  Say: Not written yet',
+        '  Explain: Not written yet',
+        '  Watch: Not written yet',
+        '  Fix: Not written yet',
       ].join('\n'),
     );
   });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -12,6 +12,7 @@ import {
   isAttendanceWindow,
 } from '@/src/lib/attendanceWords';
 import ClusterNav from '@/components/ClusterNav';
+import { formatGymDayShort } from '@/src/lib/gymTime';
 
 // Read-only rollup over data the gym already records: session logs and RPE
 // (pilot.sessions), readiness check-ins (pilot.readiness), go-forward
@@ -177,11 +178,234 @@ function Figure({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/* ------------------------------------------------------- rest and away ---
+ *
+ * Lane R6-b1 (OD-2026-11-17-004): "a recorded rest or away mark (no health
+ * reason asked for minors)". One tap marks one of Rule 6's 7-day load weeks
+ * as rest or away; Undo takes the mark back. There is no reason field, and
+ * none is ever sent. Nothing here shows a load number: a marked week is a
+ * word, never a zero. The rated share per week arrives with lane R6-b2.
+ */
+interface LoadWeek {
+  week_index: number;
+  first_day: string;
+  last_day: string;
+}
+interface RestMark {
+  mark_id: string;
+  athlete_id: string;
+  kind: 'rest' | 'away';
+  first_day: string;
+  last_day: string;
+}
+type RestMarksState =
+  | { status: 'loading' }
+  | { status: 'unavailable' }
+  | { status: 'loaded'; today: string; weeks: LoadWeek[]; marks: RestMark[] };
+
+const KIND_WORDS: Record<RestMark['kind'], { word: string; glyph: string }> = {
+  rest: { word: 'Rest', glyph: '—' },
+  away: { word: 'Away', glyph: '↗' },
+};
+
+function weekLabel(index: number): string {
+  if (index === 0) return 'Last 7 days';
+  return index === 1 ? '1 week before' : `${index} weeks before`;
+}
+
+function dayRange(first: string, last: string): string {
+  const a = formatGymDayShort(first) ?? first;
+  const b = formatGymDayShort(last) ?? last;
+  return first === last ? a : `${a} – ${b}`;
+}
+
+/** One read of the marks. Returns the state to show; never "no marks" on a failure. */
+async function readRestMarks(): Promise<RestMarksState> {
+  try {
+    const response = await fetch(`${apiBase()}/api/pilot/coach/rest-marks`, { method: 'GET', credentials: 'include' });
+    if (!response.ok) throw new Error(String(response.status));
+    const payload = (await response.json()) as { today?: string; weeks?: LoadWeek[]; marks?: RestMark[] };
+    if (!payload.today || !Array.isArray(payload.weeks) || !Array.isArray(payload.marks)) throw new Error('shape');
+    return { status: 'loaded', today: payload.today, weeks: payload.weeks, marks: payload.marks };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}
+
+function RestAwayWeeks({
+  athleteId,
+  state,
+  onChanged,
+}: {
+  athleteId: string;
+  state: RestMarksState;
+  /** Reads the marks again; resolves once the strip shows the new state. */
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [fromDay, setFromDay] = useState('');
+  const [toDay, setToDay] = useState('');
+
+  if (state.status === 'loading') return <p className="t-muted mt-[var(--s4)]">Loading rest and away marks...</p>;
+  if (state.status === 'unavailable') {
+    return (
+      <p className="t-muted mt-[var(--s4)]">
+        Rest and away marks could not be loaded. This is not a statement that none are recorded.
+      </p>
+    );
+  }
+
+  async function send(method: 'POST' | 'DELETE', init: { body?: Record<string, string>; query?: string }) {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/rest-marks${init.query ?? ''}`, {
+        method,
+        credentials: 'include',
+        ...(init.body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(init.body) } : {}),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Not saved (${response.status}).`);
+      }
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : 'Not saved.');
+      setBusy(false);
+      return;
+    }
+    // The buttons stay off until the strip shows what was just recorded, so a
+    // second tap cannot land on a week that already carries a mark.
+    try {
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const mark = (kind: RestMark['kind'], first: string, last: string) =>
+    send('POST', { body: { athlete_id: athleteId, kind, first_day: first, last_day: last } });
+  const undo = (markId: string) =>
+    send('DELETE', { query: `?athlete_id=${encodeURIComponent(athleteId)}&mark_id=${encodeURIComponent(markId)}` });
+  const mine = state.marks.filter((m) => m.athlete_id === athleteId);
+  // Marked ahead of time (a planned holiday): starts after today, so no load week holds it yet.
+  const ahead = mine.filter((m) => m.first_day > state.today);
+
+  return (
+    <section className="mt-[var(--s4)]" aria-label="Rest or away, by load week">
+      <p className="t-eyebrow">Rest or away (no reason recorded)</p>
+      <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
+        {state.weeks.map((week) => {
+          const onWeek = mine.filter((m) => m.first_day <= week.last_day && m.last_day >= week.first_day);
+          return (
+            <li key={week.week_index} className="flex flex-wrap items-center gap-[var(--s3)]">
+              <span className="min-w-[10rem] text-[color:var(--bone-200)]">
+                {weekLabel(week.week_index)}{' '}
+                <span className="text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                  ({dayRange(week.first_day, week.last_day)})
+                </span>
+              </span>
+              {onWeek.map((m) => (
+                <span key={m.mark_id} className="flex items-center gap-[var(--s2)]">
+                  <span className="badge badge--monitor">
+                    <i aria-hidden="true">{KIND_WORDS[m.kind].glyph}</i>
+                    {KIND_WORDS[m.kind].word} marked, {dayRange(m.first_day, m.last_day)}
+                  </span>
+                  <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void undo(m.mark_id)}>
+                    Undo
+                  </button>
+                </span>
+              ))}
+              {onWeek.length === 0 ? (
+                <>
+                  <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void mark('rest', week.first_day, week.last_day)}>
+                    Rest
+                  </button>
+                  <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void mark('away', week.first_day, week.last_day)}>
+                    Away
+                  </button>
+                </>
+              ) : null}
+            </li>
+          );
+        })}
+        {ahead.length > 0 ? (
+          <li className="flex flex-wrap items-center gap-[var(--s3)]">
+            <span className="min-w-[10rem] text-[color:var(--bone-200)]">Marked ahead</span>
+            {ahead.map((m) => (
+              <span key={m.mark_id} className="flex items-center gap-[var(--s2)]">
+                <span className="badge badge--monitor">
+                  <i aria-hidden="true">{KIND_WORDS[m.kind].glyph}</i>
+                  {KIND_WORDS[m.kind].word} marked, {dayRange(m.first_day, m.last_day)}
+                </span>
+                <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void undo(m.mark_id)}>
+                  Undo
+                </button>
+              </span>
+            ))}
+          </li>
+        ) : null}
+      </ul>
+      <details className="mt-[var(--s3)]">
+        <summary className="cursor-pointer text-[color:var(--bone-300)]">Mark days</summary>
+        <div className="mt-[var(--s2)] flex flex-wrap items-end gap-[var(--s3)]">
+          <label className="flex flex-col">
+            <span className="t-eyebrow">From</span>
+            <input type="date" className="input" value={fromDay} onChange={(event) => setFromDay(event.target.value)} />
+          </label>
+          <label className="flex flex-col">
+            <span className="t-eyebrow">To</span>
+            <input type="date" className="input" value={toDay} onChange={(event) => setToDay(event.target.value)} />
+          </label>
+          <button type="button" className="btn btn--ghost" disabled={busy || !fromDay || !toDay} onClick={() => void mark('rest', fromDay, toDay)}>
+            Rest
+          </button>
+          <button type="button" className="btn btn--ghost" disabled={busy || !fromDay || !toDay} onClick={() => void mark('away', fromDay, toDay)}>
+            Away
+          </button>
+        </div>
+      </details>
+      {failure ? <p className="mt-[var(--s2)] text-[color:var(--restricted-ink)]" role="alert">{failure}</p> : null}
+    </section>
+  );
+}
+
 export default function PerformanceAnalyticsPage() {
   const [windowDays, setWindowDays] = useState<number>(28);
   const [items, setItems] = useState<PerformanceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [restMarks, setRestMarks] = useState<RestMarksState>({ status: 'loading' });
+
+  // Marks are their own read: a failure here leaves the rollup on screen and
+  // says the marks could not be read, never that there are none. Only the
+  // NEWEST read is shown: a slower, older reply (taps on two athletes in a
+  // row) is dropped, so it cannot hide a mark the newer read already holds.
+  // A tap waits for the NEWEST read, not just its own: if a later tap started
+  // another read, this one's buttons stay off until that one lands too.
+  const marksRead = useRef(0);
+  const latestRead = useRef<Promise<void> | null>(null);
+  const refreshRestMarks = useCallback(async () => {
+    const read = ++marksRead.current;
+    let waiting: Promise<void> = (async () => {
+      const next = await readRestMarks();
+      if (read === marksRead.current) setRestMarks(next);
+    })();
+    latestRead.current = waiting;
+    await waiting;
+    while (latestRead.current && latestRead.current !== waiting) {
+      waiting = latestRead.current;
+      await waiting;
+    }
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const read = ++marksRead.current;
+      const next = await readRestMarks();
+      if (read === marksRead.current) setRestMarks(next);
+    })();
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -345,6 +569,7 @@ export default function PerformanceAnalyticsPage() {
                       ) : null}
                     </Figure>
                   </dl>
+                  <RestAwayWeeks athleteId={item.athlete_id} state={restMarks} onChanged={refreshRestMarks} />
                 </li>
               );
             })}

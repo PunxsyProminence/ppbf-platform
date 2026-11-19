@@ -701,6 +701,9 @@ export const PUBLIC_SURFACE_FORBIDDEN_TABLES: readonly string[] = [
   'pilot.session_run_athletes',
   // A coach's plain-text capacity notes for one athlete (module 013 slice).
   'pilot.athlete_capacity_notes',
+  // Days a coach marked a child as resting or away (lane R6-b1). Staff only;
+  // no reason is recorded, but an absence pattern is still a child's record.
+  'pilot.athlete_rest_marks',
   // A workout issued to one child: the coach's note and the contact level
   // beside each step (lane P7c). Two entries: neither name prefixes the other.
   'pilot.workout_issues',

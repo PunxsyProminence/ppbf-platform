@@ -137,6 +137,8 @@ const PROGRESSION_MIGRATION_FILE = 'pilot_slice_postgres_progression_migration.s
 const DRILLS_MIGRATION_FILE = 'pilot_slice_postgres_drills_migration.sql';
 const DRILL_VERSIONING_MIGRATION_FILE = 'pilot_slice_postgres_drill_versioning_migration.sql';
 const PROVENANCE_MIGRATION_FILE = 'pilot_slice_postgres_drill_reference_provenance_migration.sql';
+// Lane NW-b: the readers select exit_condition and correction_path, which this migration adds.
+const EXIT_CORRECTION_MIGRATION_FILE = 'pilot_slice_postgres_drill_exit_correction_fields_migration.sql';
 
 const ORG_A = 'org-drilllib-a';
 const ORG_B = 'org-drilllib-b';
@@ -149,6 +151,7 @@ let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let migrationSql: string;
 let secondarySkillsSql: string;
+let exitCorrectionSql: string;
 let baseSchemaSql: string;
 let operationalDrillSql: string;
 let storedOnceRuleSql: string;
@@ -203,6 +206,12 @@ interface InsertDrillOptions {
   category?: string;
   difficulty?: string;
   active?: boolean;
+}
+
+/** The v3 migration plus drill-exit-correction-fields: the columns every drill read selects. */
+async function applyReaderSchema(client: Client): Promise<void> {
+  await applyMigrationTransaction(client, migrationSql);
+  await client.query(exitCorrectionSql);
 }
 
 /** After the v3 migration: what every drill DETAIL read needs (see storedOnceRuleSql). */
@@ -282,6 +291,7 @@ beforeAll(async () => {
   baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
   migrationSql = await fs.readFile(path.join(INFRA_DIR, MIGRATION_FILE), 'utf8');
   secondarySkillsSql = await fs.readFile(path.join(INFRA_DIR, SECONDARY_MIGRATION_FILE), 'utf8');
+  exitCorrectionSql = await fs.readFile(path.join(INFRA_DIR, EXIT_CORRECTION_MIGRATION_FILE), 'utf8');
 
   // Concatenated in dependency order and applied as one unit, because no test
   // here cares about the seams between them -- they exist only so that
@@ -514,7 +524,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
   test('getDrillWithDetail assembles scale levels, stop rules, and cues', async () => {
     const client = await freshDatabase('ppbf_test_drilllib_detail');
     try {
-      await applyMigrationTransaction(client, migrationSql);
+      await applyReaderSchema(client);
       await applySecondarySkillsMigration(client, secondarySkillsSql);
       await applyStoredOnceRuleSchema(client);
       await insertDrill(client, { drillId: 'drill-detail', name: 'Detail Drill' });
@@ -547,7 +557,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
   test('getDrillWithDetail returns null for a nonexistent drill', async () => {
     const client = await freshDatabase('ppbf_test_drilllib_detail_missing');
     try {
-      await applyMigrationTransaction(client, migrationSql);
+      await applyReaderSchema(client);
       const detail = await getDrillWithDetail(ORG_A, 'drill-does-not-exist');
       expect(detail).toBeNull();
     } finally {
@@ -559,7 +569,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
   test('listDrillLibrary filters by discipline and excludes inactive drills', async () => {
     const client = await freshDatabase('ppbf_test_drilllib_list_filter');
     try {
-      await applyMigrationTransaction(client, migrationSql);
+      await applyReaderSchema(client);
       await applySecondarySkillsMigration(client, secondarySkillsSql);
       await insertDrill(client, { drillId: 'drill-box', name: 'Boxing Drill', discipline: 'boxing' });
       await insertDrill(client, { drillId: 'drill-wr', name: 'Wrestling Drill', discipline: 'wrestling' });
@@ -583,7 +593,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
   test('listDrillLibrary with no filter returns only the asked organization\'s drills', async () => {
     const client = await freshDatabase('ppbf_test_drilllib_list_org_isolation');
     try {
-      await applyMigrationTransaction(client, migrationSql);
+      await applyReaderSchema(client);
       await applySecondarySkillsMigration(client, secondarySkillsSql);
       await client.query(
         `insert into pilot.organizations (organization_id, organization_name, status)
@@ -626,7 +636,7 @@ describe('drillLibraryV3.ts against real Postgres', () => {
 describe('drill secondary skill relationships against real Postgres', () => {
   async function freshWithSecondaries(name: string): Promise<Client> {
     const client = await freshDatabase(name);
-    await applyMigrationTransaction(client, migrationSql);
+    await applyReaderSchema(client);
     await applySecondarySkillsMigration(client, secondarySkillsSql);
     await applyStoredOnceRuleSchema(client);
     return client;
@@ -1320,7 +1330,7 @@ describe('the athlete reference library against real Postgres', () => {
    */
   async function athleteFixture(name: string): Promise<Client> {
     const client = await freshDatabase(name);
-    await applyMigrationTransaction(client, migrationSql);
+    await applyReaderSchema(client);
     await applySecondarySkillsMigration(client, secondarySkillsSql);
     await applyStoredOnceRuleSchema(client);
     await client.query(operationalDrillSql);
@@ -1534,6 +1544,8 @@ describe('the athlete reference library against real Postgres', () => {
                 common_errors = 'Pawing the jab',
                 corrections = 'Coach calls home [A6-037]',
                 transfer = 'Keeps the chin safe [A3-021]',
+                exit_condition = 'Three clean returns [A2-070]',
+                correction_path = E'Slow the jab\nReturn on the same line',
                 equipment_needed = 'focus mitts'
           where organization_id = $1 and drill_id = $2`,
         [ORG_A, REFERENCE_ID],
@@ -1548,6 +1560,9 @@ describe('the athlete reference library against real Postgres', () => {
       expect(detail.common_errors).toBe('Pawing the jab');
       expect(detail.corrections).toBe('Coach calls home');
       expect(detail.equipment_needed).toBe('focus mitts');
+      // Lane NW-b (PK-197 A): both reach athletes, as written, tags stripped.
+      expect(detail.exit_condition).toBe('Three clean returns');
+      expect(detail.correction_path).toBe('Slow the jab\nReturn on the same line');
       expect(JSON.stringify(detail)).not.toMatch(/\[[A-Z]\d+-\d+\]/);
       // Transfer is not athlete content: neither its key nor its words arrive.
       expect(JSON.stringify(detail)).not.toContain('Keeps the chin safe');
@@ -1556,8 +1571,8 @@ describe('the athlete reference library against real Postgres', () => {
       // the names on it; a column added to the detail tomorrow under any other
       // name fails here instead.
       expect(Object.keys(detail).sort()).toEqual([
-        'common_errors', 'contact_level', 'corrections', 'cues', 'drill_id', 'equipment_needed',
-        'execution', 'name', 'purpose', 'requires_coach_authorization', 'scale_levels', 'setup',
+        'common_errors', 'contact_level', 'correction_path', 'corrections', 'cues', 'drill_id', 'equipment_needed',
+        'execution', 'exit_condition', 'name', 'purpose', 'requires_coach_authorization', 'scale_levels', 'setup',
         'stop_rules', 'universal_stop_rules', 'what_bad_looks_like', 'what_good_looks_like',
       ]);
       expect(Object.keys(detail.scale_levels[0]).sort()).toEqual([

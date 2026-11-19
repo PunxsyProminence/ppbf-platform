@@ -349,6 +349,8 @@ One row = one drill. Identity: drill_id.
 | common_errors |  | text | Common errors. |
 | corrections |  | text | Corrections. |
 | transfer |  | text | How it transfers to the sport. |
+| exit_condition |  | text | The exit condition, as the source writes it. A blank one shows as not written on the drill screen. |
+| correction_path |  | text | The correction path, as the source writes it. A blank one shows as not written on the drill screen. |
 | contact_level | yes | `none`, `light_technical`, `conditioned`, `controlled_sparring`, `open_sparring` | The most contact the drill involves. |
 | equipment_needed |  | text | Equipment. |
 | requires_coach_authorization | yes | true or false | A coach must authorize it before an athlete runs it. |

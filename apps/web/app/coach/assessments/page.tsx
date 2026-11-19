@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
+import { NOT_WRITTEN_YET, equipmentLabel } from '@/src/lib/drillPresentation';
 import { formatGymDay } from '@/src/lib/gymTime';
 import BackHome from '@/components/BackHome';
 
@@ -34,6 +35,13 @@ import BackHome from '@/components/BackHome';
 interface AuthorizedAthlete {
   athlete_id: string;
   full_name: string;
+}
+
+/** Filled: "Needs: X."; "none": "No equipment needed."; blank: "Equipment: Not written yet." (OD-2026-11-19-004). */
+function equipmentLine(equipment: string): string {
+  const label = equipmentLabel(equipment);
+  if (label === 'No equipment needed') return `${label}.`;
+  return `${label === NOT_WRITTEN_YET ? 'Equipment' : 'Needs'}: ${label}.`;
 }
 
 interface JumpProtocol {
@@ -396,7 +404,7 @@ export default function CoachAssessmentsPage() {
                       <span>
                         <span className="font-semibold">{p.name}</span>
                         <span className="block text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
-                          {p.summary} Needs: {p.equipment}.
+                          {p.summary} {equipmentLine(p.equipment)}
                         </span>
                       </span>
                     </label>

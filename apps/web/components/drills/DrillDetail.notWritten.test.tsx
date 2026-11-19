@@ -49,6 +49,8 @@ const empty = {
   common_errors: '  ',
   corrections: null,
   transfer: '',
+  exit_condition: '',
+  correction_path: null,
 } as unknown as DrillWithDetail;
 
 const filled = {
@@ -58,18 +60,22 @@ const filled = {
   common_errors: 'Pawing the jab',
   corrections: 'Slow the tempo',
   transfer: 'Carries to the cross',
+  exit_condition: 'Three clean rounds',
+  correction_path: 'Reset the stance\nShorten the step',
 } as unknown as DrillWithDetail;
 
 describe('empty drill fields read "Not written yet"', () => {
   it('coach view: every empty teaching section says so, none is blank or 0', () => {
     const { container } = render(<DrillDetail view={fromCoachDrillDetail(empty)} audience="coach" />);
-    // good, bad, common errors, corrections, transfer
-    expect(screen.getAllByText('Not written yet')).toHaveLength(5);
+    // good, bad, common errors, corrections, transfer, exit condition, correction path
+    expect(screen.getAllByText('Not written yet')).toHaveLength(7);
     expect(screen.getByText('What good looks like')).toBeInTheDocument();
     expect(screen.getByText('What to avoid')).toBeInTheDocument();
     expect(screen.getByText('Common errors')).toBeInTheDocument();
     expect(screen.getByText('Corrections')).toBeInTheDocument();
     expect(screen.getByText('Transfer')).toBeInTheDocument();
+    expect(screen.getByText('Exit condition')).toBeInTheDocument();
+    expect(screen.getByText('Correction path')).toBeInTheDocument();
     // Guard: no list item is empty or a bare zero.
     for (const li of container.querySelectorAll('li')) {
       expect((li.textContent ?? '').trim()).not.toBe('');
@@ -79,8 +85,8 @@ describe('empty drill fields read "Not written yet"', () => {
 
   it('athlete view: the teaching sections say so', () => {
     render(<DrillDetail view={fromAthleteDrillDetail(empty as never)} audience="athlete" />);
-    // good, bad, common errors, corrections; transfer is coach-only.
-    expect(screen.getAllByText('Not written yet')).toHaveLength(4);
+    // good, bad, common errors, corrections, exit condition, correction path; transfer is coach-only.
+    expect(screen.getAllByText('Not written yet')).toHaveLength(6);
   });
 
   it('blank equipment reads "Not written yet"; "none" and the D8 drills read "No equipment needed"', () => {
@@ -107,9 +113,47 @@ describe('empty drill fields read "Not written yet"', () => {
 
   it('filled fields are shown as written and no "Not written yet" appears', () => {
     render(<DrillDetail view={fromCoachDrillDetail(filled)} audience="coach" />);
-    for (const text of ['Hand back at the chin', 'Hand drops', 'Pawing the jab', 'Slow the tempo', 'Carries to the cross']) {
+    for (const text of ['Hand back at the chin', 'Hand drops', 'Pawing the jab', 'Slow the tempo', 'Carries to the cross', 'Three clean rounds', 'Reset the stance', 'Shorten the step']) {
       expect(screen.getByText(text)).toBeInTheDocument();
     }
     expect(screen.queryByText('Not written yet')).not.toBeInTheDocument();
   });
+});
+
+// Lane NW-b (PK-197 A: "Show the two fields as not written, never as empty or complete").
+describe('exit condition and correction path (lane NW-b)', () => {
+  const textOf = (element: Element | null) => (element?.textContent ?? '').trim();
+  const itemsUnder = (heading: string) => [...(screen.getByText(heading).nextElementSibling?.querySelectorAll('li') ?? [])].map(textOf);
+
+  for (const audience of ['coach', 'athlete'] as const) {
+    const view = (drill: DrillWithDetail) => (audience === 'coach' ? fromCoachDrillDetail(drill) : fromAthleteDrillDetail(drill as never));
+
+    it(`${audience}: each field shows as written, one line per line`, () => {
+      render(<DrillDetail view={view(filled)} audience={audience} />);
+      expect(itemsUnder('Exit condition')).toEqual(['Three clean rounds']);
+      expect(itemsUnder('Correction path')).toEqual(['Reset the stance', 'Shorten the step']);
+    });
+
+    it(`${audience}: an empty, blank or missing field shows "Not written yet", never blank`, () => {
+      for (const [exit, path] of [['', null], ['  ', '\n'], [undefined, undefined]]) {
+        const drill = { ...empty, exit_condition: exit, correction_path: path } as unknown as DrillWithDetail;
+        const { unmount } = render(<DrillDetail view={view(drill)} audience={audience} />);
+        expect(itemsUnder('Exit condition')).toEqual(['Not written yet']);
+        expect(itemsUnder('Correction path')).toEqual(['Not written yet']);
+        unmount();
+      }
+    });
+
+    it(`${audience}: the exit condition is its own open section after the common errors; the correction path sits in the Corrections expander`, () => {
+      const { container } = render(<DrillDetail view={view(filled)} audience={audience} />);
+      const exitHeading = screen.getByText('Exit condition');
+      expect(exitHeading.tagName).toBe('H3');
+      expect(exitHeading.closest('details')).toBeNull();
+      const errors = screen.getByText('Common errors');
+      expect(errors.compareDocumentPosition(exitHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const corrections = [...container.querySelectorAll('details')].find((details) => textOf(details.querySelector('summary')) === 'Corrections');
+      expect(corrections).toBeDefined();
+      expect(corrections!.contains(screen.getByText('Correction path'))).toBe(true);
+    });
+  }
 });

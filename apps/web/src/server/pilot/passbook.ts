@@ -318,7 +318,8 @@ export interface AthletePassbook {
         Omit<CoachObservationRow, 'organization_id' | 'coach_account_id'> & { coach_account_id?: string }
       >;
     };
-    progression_gaps: Array<Omit<ProgressionGapRow, 'organization_id'>>;
+    // detected_from is an internal rule name: staff readers only (OD-2026-10-08-003 R4).
+    progression_gaps: Array<Omit<ProgressionGapRow, 'organization_id' | 'detected_from'> & { detected_from?: string }>;
   };
   status_domains: {
     attendance: {
@@ -642,7 +643,8 @@ export async function getAthletePassbook(
         }, familyReaders[index])
         : row.gap_description,
       severity: row.severity,
-      detected_from: row.detected_from,
+      // A rule name is never family wording: named for staff, absent for the athlete and parent.
+      ...(staffReader ? { detected_from: row.detected_from } : {}),
       status: row.status,
       created_at: row.created_at,
     }));

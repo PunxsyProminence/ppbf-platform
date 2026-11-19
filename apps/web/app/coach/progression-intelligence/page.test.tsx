@@ -886,6 +886,8 @@ describe('W-D4B: the coach reads the drill before and after assigning it', () =>
     common_errors: 'Pawing the jab',
     corrections: '',
     transfer: '',
+    exit_condition: '',
+    correction_path: '',
     contact_level: 'light_technical',
     equipment_needed: 'focus mitts',
     requires_coach_authorization: true,
