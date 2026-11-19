@@ -34,12 +34,27 @@ interface OrganizationConsentRow {
      one that counts, and consent_ok is that (OD-2026-10-08-015; lane U1,
      SC2-5). Absent for a minor, whose guardians' consent counts as before. */
   consent_basis?: 'own';
+  /* Why an adult's own consent does not count, when it does not: the same
+     states, in the same order, as the athlete's own panel. Never "nothing on
+     file" for a row that is on file. */
+  own_state?: 'none' | 'said_no' | 'photos_only' | 'not_by_them' | 'other';
   guardian_count: number;
   missing_guardian_count: number;
   per_guardian: GuardianConsentRow[];
 }
 
 type Filter = 'all' | 'missing' | 'ok';
+
+/* An adult's badge when their own consent does not count, by state (lane U1,
+   SC2-5, Overwatch's ruling). An unknown or missing state reads as 'other',
+   the one wording true of every row that does not count. */
+const ADULT_NOT_COUNTED: Record<NonNullable<OrganizationConsentRow['own_state']>, string> = {
+  none: '18 or over: no own consent on file',
+  said_no: '18 or over: said no',
+  photos_only: '18 or over: photos only, not video',
+  not_by_them: '18 or over: not recorded on their own account',
+  other: "18 or over: answer on file doesn't count",
+};
 
 /**
  * pilot.guardian_links.relationship_to_athlete is plain text; this is the
@@ -484,7 +499,7 @@ export default function AthleteConsentAuditPage() {
                             {item.consent_basis === 'own'
                               ? item.consent_ok
                                 ? '18 or over: own consent on file'
-                                : '18 or over: own consent not on file'
+                                : ADULT_NOT_COUNTED[item.own_state ?? 'other']
                               : item.consent_ok
                                 ? 'Consent on file'
                                 : 'Missing'}

@@ -9,9 +9,11 @@ import {
   ownConsentCoversNewPublication,
   readOwnMediaConsent,
   withdrawMediaConsent,
+  type OwnMediaConsent,
   type QueryExecutor,
 } from '@/src/server/pilot/guardianConsent';
 import { guardianLinkEnded } from '@/src/server/pilot/guardianAccess';
+import { normalizeWaiverStatusText } from '@/src/server/pilot/waiverCompliance';
 import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { recordMediaConsentAndSuppress } from '@/src/server/pilot/publication';
 import {
@@ -219,8 +221,28 @@ const DECISIONS = new Set<ConsentDecision>(['grant', 'withdraw']);
  * One read of the gym's dates of birth, scoped to this organization; then one
  * read of the adult's own consent per adult. At a gym's size that is a handful
  * of small reads, alongside the per-athlete guardian reads the list already does.
+ *
+ * WHY AN ADULT IS NOT ON FILE, so the desk is never told "nothing on file"
+ * about a row that is on file (Overwatch, applying the hard floor). The order
+ * is the athlete's own panel's (AthleteMediaConsentPanel currentWords): no
+ * row; said no (withdrawn); photos only (signed, not video); not recorded on
+ * their own account (only then); and anything else that does not count
+ * (for example an unknown status) as 'other'. Present only when consent_ok is
+ * false, alongside consent_basis 'own'.
  */
-async function adultOwnConsent(organizationId: string): Promise<Map<string, boolean>> {
+export type AdultOwnState = 'none' | 'said_no' | 'photos_only' | 'not_by_them' | 'other';
+
+function adultOwnState(own: OwnMediaConsent | null): AdultOwnState | null {
+  if (ownConsentCoversNewPublication(own)) return null;
+  if (own === null) return 'none';
+  const status = normalizeWaiverStatusText(own.status);
+  if (status === 'withdrawn') return 'said_no';
+  if (status === 'signed' && !own.coversVideo) return 'photos_only';
+  if (!own.recordedByOwnLogin) return 'not_by_them';
+  return 'other';
+}
+
+async function adultOwnConsent(organizationId: string): Promise<Map<string, AdultOwnState | null>> {
   const athletes = await query<{ athlete_id: string; dob: string | null }>(
     `select athlete_id, to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
       where organization_id = $1 and deleted_at is null`,
@@ -231,7 +253,7 @@ async function adultOwnConsent(organizationId: string): Promise<Map<string, bool
     await Promise.all(
       adults.map(async (athleteId) => [
         athleteId,
-        ownConsentCoversNewPublication(await readOwnMediaConsent(organizationId, athleteId)),
+        adultOwnState(await readOwnMediaConsent(organizationId, athleteId)),
       ] as const),
     ),
   );
@@ -254,13 +276,15 @@ export async function GET(request: NextRequest) {
       ok: true,
       items: rows.map((row) => {
         const missing = new Set(row.consent.missingParentIds);
-        const ownOk = adults.get(row.athleteId);
+        const adult = adults.has(row.athleteId);
+        const ownState = adults.get(row.athleteId) ?? null;
         return {
           athlete_id: row.athleteId,
           athlete_name: row.athleteName,
-          consent_ok: ownOk ?? row.consent.ok,
+          consent_ok: adult ? ownState === null : row.consent.ok,
           // Present on an adult's row only, so a minor's row is unchanged.
-          ...(ownOk === undefined ? {} : { consent_basis: 'own' as const }),
+          ...(adult ? { consent_basis: 'own' as const } : {}),
+          ...(ownState === null ? {} : { own_state: ownState }),
           guardian_count: row.consent.guardianIds.length,
           missing_guardian_count: row.consent.missingParentIds.length,
           per_guardian: row.consent.perGuardian.map((g) => ({

@@ -777,6 +777,7 @@ describe('GET /api/pilot/admin/athlete-consent -- whose consent counts, by age',
     mockOwn.mockResolvedValueOnce(own());
     const [item] = await items();
     expect(item).toMatchObject({ consent_ok: true, consent_basis: 'own' });
+    expect(item).not.toHaveProperty('own_state');
     expect(mockOwn).toHaveBeenCalledWith('org-a', 'ath-a');
   });
 
@@ -785,7 +786,7 @@ describe('GET /api/pilot/admin/athlete-consent -- whose consent counts, by age',
     mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-a', dob: ADULT_DOB }]);
     mockOwn.mockResolvedValueOnce(null);
     const [item] = await items();
-    expect(item).toMatchObject({ consent_ok: false, consent_basis: 'own' });
+    expect(item).toMatchObject({ consent_ok: false, consent_basis: 'own', own_state: 'none' });
   });
 
   test.each([' Signed ', 'SIGNED'])('an adult own row stored as %p is on file, as the publish gate reads it', async (status) => {
@@ -796,15 +797,21 @@ describe('GET /api/pilot/admin/athlete-consent -- whose consent counts, by age',
     expect(item).toMatchObject({ consent_ok: true, consent_basis: 'own' });
   });
 
+  /* Why, in the athlete panel's order (Overwatch): withdrawn, then photos only,
+     then not by their own login (only then), then anything else. */
   test.each([
-    ['withdrawn', { status: 'withdrawn' }],
-    ['not covering video', { coversVideo: false }],
-    ['recorded by someone else', { recordedByOwnLogin: false }],
-  ])('an adult whose own row is %s is not on file', async (_label, overrides) => {
+    ['withdrawn', { status: 'withdrawn' }, 'said_no'],
+    ['withdrawn, also recorded by someone else', { status: ' Withdrawn ', recordedByOwnLogin: false }, 'said_no'],
+    ['signed, photos only', { coversVideo: false }, 'photos_only'],
+    ['photos only, also recorded by someone else', { coversVideo: false, recordedByOwnLogin: false }, 'photos_only'],
+    ['signed with video, recorded by someone else', { recordedByOwnLogin: false }, 'not_by_them'],
+    ['an unknown status', { status: 'pending' }, 'other'],
+    ['an empty status', { status: '' }, 'other'],
+  ])('an adult whose own row is %s is not on file, as %p', async (_label, overrides, state) => {
     mockList.mockResolvedValueOnce([row('ath-a', noGuardians)]);
     mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-a', dob: ADULT_DOB }]);
     mockOwn.mockResolvedValueOnce(own(overrides));
     const [item] = await items();
-    expect(item).toMatchObject({ consent_ok: false, consent_basis: 'own' });
+    expect(item).toMatchObject({ consent_ok: false, consent_basis: 'own', own_state: state });
   });
 });
