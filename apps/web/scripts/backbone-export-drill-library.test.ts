@@ -356,6 +356,7 @@ describe('the committed seed_drill_library.csv (lane NW-b)', () => {
     expect(filled('correction_path')).toEqual([
       'drl_3b1ec1fb7207bc', 'drl_4698397d9a30a6', 'drl_81950b7109357f', 'drl_d48de12ba7bd0c', 'drl_d6f7d5926df898', 'drl_e8f8769a5c0832', 'drl_ff0b0e297519b0',
     ]);
-    expect(rows).toHaveLength(506);
+    // 506 drills, plus the 6 lane HW wrote for its home sessions (OD-2026-11-19-005), with blank exit conditions and correction paths.
+    expect(rows).toHaveLength(512);
   });
 });

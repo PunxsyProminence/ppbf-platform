@@ -41,6 +41,12 @@ interface TemplateDetail {
   items: TemplateItem[];
   /** Names of the drills no coach of this gym has floor-tested (the detail read's untested_drills). */
   untestedDrills: string[];
+  /**
+   * The steps an issue would refuse, from the issue's own plan (the detail
+   * read's refused_drills; lane U1, U1-ISSUE). undefined: not sent to this
+   * reader. null: the check could not run.
+   */
+  refusedDrills?: RefusedDrill[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +160,22 @@ function refusedDrillsFrom(value: unknown): RefusedDrill[] {
   });
 }
 
+/** The refused drills, drawn the same before Issue and after Confirm. */
+function RefusedDrillList({ drills }: { readonly drills: readonly RefusedDrill[] }) {
+  return (
+    <ul className="flex flex-col gap-[var(--s2)]">
+      {drills.map((drill, index) => (
+        // Index key: the list is drawn once per answer and never reordered.
+        <li key={index} className="t-body">
+          <span className="font-semibold">{drill.name}</span>
+          {drill.steps.length > 0 && ` (${drill.steps.length === 1 ? 'step' : 'steps'} ${drill.steps.join(', ')})`}
+          {drill.reason !== '' && `: ${drill.reason}`}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function namedDrills(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((drill) => {
@@ -238,12 +260,21 @@ const ALERT_TEXT = 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-300
 function IssueToAthlete({
   template,
   untestedDrills,
+  refusedDrills,
+  onRecheck,
+  recheckBlocked,
   onBusyChange,
   requestKeys,
 }: {
   readonly template: Template;
   /** Named in the confirm step before issuing; the result names the server's own list after. */
   readonly untestedDrills: readonly string[];
+  /** Steps the issue would refuse, read with the template; see TemplateDetail. */
+  readonly refusedDrills?: readonly RefusedDrill[] | null;
+  /** Reads the template again, so a step fixed elsewhere is seen (the open button is off while it is open). */
+  readonly onRecheck: () => void;
+  /** True while a session plan is being made below: a re-read would unmount it and lose the answer. */
+  readonly recheckBlocked: boolean;
   /** Told while an issue is running, so the page can keep this control mounted until it answers. */
   readonly onBusyChange: (busy: boolean) => void;
   /** The page's keys of unsettled issues: they outlive this control. */
@@ -468,6 +499,30 @@ function IssueToAthlete({
             ))}
           </select>
 
+          {/* BEFORE ISSUE, what the issue would refuse (lane U1, U1-ISSUE;
+              Overwatch Q-ISSUE A). Every refusal stops the whole issue, so
+              while any step would be refused the button is off and says why;
+              the reasons are the issue's own. Drill-level only: a refusal
+              that depends on the athlete chosen still comes after Confirm. */}
+          {refusedDrills && refusedDrills.length > 0 && (
+            <div className="flex flex-col gap-[var(--s2)]">
+              <p className={ALERT_TEXT}>These steps would be refused if you issue now:</p>
+              <RefusedDrillList drills={refusedDrills} />
+              <p className="t-body">Fix the steps above first; nothing would be issued.</p>
+              {/* A drill fixed in another tab is not seen until the template is
+                  read again, and this template's own open button is off while
+                  it is open (review A). */}
+              <button type="button" className="btn btn--ghost w-fit" disabled={recheckBlocked || busy} onClick={onRecheck}>
+                Check again
+              </button>
+            </div>
+          )}
+          {refusedDrills === null && (
+            <p className="t-body">
+              Whether every step can be issued could not be checked. Issuing will check again.
+            </p>
+          )}
+
           {/* Stays in its place, disabled, while the confirm step is open: a
               second tap on the same spot then lands on a dead button, never
               on Confirm. */}
@@ -475,7 +530,7 @@ function IssueToAthlete({
             ref={issueButtonRef}
             type="button"
             className="btn btn--kiosk"
-            disabled={!chosen || busy || confirming}
+            disabled={!chosen || busy || confirming || (refusedDrills?.length ?? 0) > 0}
             onClick={() => {
               setConfirming(true);
               setFocusOn('confirm');
@@ -564,16 +619,7 @@ function IssueToAthlete({
         {outcome?.kind === 'refused' && (
           <div role="alert" className="flex flex-col gap-[var(--s2)]">
             <p className={ALERT_TEXT}>{outcome.message}</p>
-            <ul className="flex flex-col gap-[var(--s2)]">
-              {outcome.drills.map((drill, index) => (
-                // Index key: the list is drawn once per answer and never reordered.
-                <li key={index} className="t-body">
-                  <span className="font-semibold">{drill.name}</span>
-                  {drill.steps.length > 0 && ` (${drill.steps.length === 1 ? 'step' : 'steps'} ${drill.steps.join(', ')})`}
-                  {drill.reason !== '' && `: ${drill.reason}`}
-                </li>
-              ))}
-            </ul>
+            <RefusedDrillList drills={outcome.drills} />
           </div>
         )}
 
@@ -648,10 +694,33 @@ function templateFacts(template: Template): string {
   ].filter((part) => part.trim() !== '').join(' -- ');
 }
 
+/**
+ * Does a template match what the coach typed in "Find a template"? Every word
+ * typed must appear somewhere in the template's name, intent, session type,
+ * age group or difficulty, in any order and any case. An empty box matches all.
+ * (Staging dry run, 2026-11-19: about 130 templates in one list, no way to look one up.)
+ */
+function templateMatches(template: Template, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter((word) => word !== '');
+  if (words.length === 0) return true;
+  const hay = [template.name, template.intent, template.session_type, template.age_band, template.difficulty ?? '']
+    .join(' ')
+    .replace(/_/g, ' ')
+    .toLowerCase();
+  return words.every((word) => hay.includes(word));
+}
+
 function CoachWorkoutTemplates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  // What the coach typed in "Find a template". It only narrows the list on
+  // screen; the open template always stays (see `shown` below).
+  const [query, setQuery] = useState('');
+  // Bumped on every open, so focus moves to the opened template each time,
+  // including a second open of the same one after an error.
+  const [focusDetail, setFocusDetail] = useState(0);
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const [openTemplateId, setOpenTemplateId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TemplateDetail | null>(null);
@@ -711,14 +780,16 @@ function CoachWorkoutTemplates() {
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
+    setFocusDetail((count) => count + 1);
     try {
       const response = await fetch(
         `${apiBase()}/api/pilot/workout-templates?template_id=${encodeURIComponent(templateId)}`,
         { method: 'GET', credentials: 'include' },
       );
       if (!response.ok) throw new Error('That workout template could not be opened.');
-      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills'>> & {
+      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills' | 'refusedDrills'>> & {
         untested_drills?: unknown;
+        refused_drills?: unknown;
       };
       if (!payload.template) throw new Error('That workout template could not be opened.');
       if (latest()) {
@@ -726,6 +797,11 @@ function CoachWorkoutTemplates() {
           template: payload.template,
           items: payload.items ?? [],
           untestedDrills: namedDrills(payload.untested_drills),
+          // Not sent: undefined. Sent but not a list (null, or a shape this
+          // screen cannot read): "could not be checked", never "none refused".
+          refusedDrills: payload.refused_drills === undefined
+            ? undefined
+            : Array.isArray(payload.refused_drills) ? refusedDrillsFrom(payload.refused_drills) : null,
         });
       }
     } catch (error) {
@@ -750,82 +826,55 @@ function CoachWorkoutTemplates() {
     })();
   }, [openTemplate]);
 
-  return (
-    <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
-      <div className="mx-auto max-w-5xl">
-        <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
-          <p className="t-eyebrow">Coach Workspace</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Workout Templates</h1>
-          <ClusterNav cluster="planning" />
-          <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
-            The reusable session shapes behind the plans: what a session of each type looks like,
-            block by block. Open one to issue it to an athlete, or to make a session plan from
-            it. Delivering a session live happens from Session Plans.
-          </p>
-          <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/coach/session-scripts" className="btn btn--ghost">
-              Go to Session Plans
-            </Link>
-            <Link href="/coach/drills" className="btn btn--ghost">
-              Back to drill library
-            </Link>
-          </div>
-        </header>
+  // The opened template is drawn right under its own card (below), and focus
+  // goes to its heading, so the coach is taken to it rather than left at a
+  // button that only changed its words while the template sat at the foot of
+  // a long list (staging dry run, 2026-11-19). No smooth scroll: an instant
+  // move needs no reduced-motion exception.
+  useEffect(() => {
+    if (focusDetail === 0) return;
+    const heading = detailHeadingRef.current;
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView?.({ block: 'start' });
+  }, [focusDetail]);
 
-        <section className="mt-[var(--s6)]">
-          <h2 className="t-command text-[length:var(--t-lg)]">Templates</h2>
+  const openIsListed = openTemplateId !== null && templates.some((template) => template.template_id === openTemplateId);
 
-          {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
+  // Opened from the address (a Class plans day) before the list arrived, the
+  // template was drawn first; when the list lands it moves under its own card,
+  // which can be far down. If the coach is still on its heading (has not moved
+  // on to anything else), bring it back into view. Focus is never taken from
+  // a control the coach has moved to (review, 2026-11-19).
+  useEffect(() => {
+    if (!openIsListed) return;
+    const heading = detailHeadingRef.current;
+    if (heading && document.activeElement === heading) heading.scrollIntoView?.({ block: 'start' });
+  }, [openIsListed]);
 
-          {!loading && loadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
-              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                This is a failure to load, not an empty catalog of templates.
-              </p>
-            </div>
-          )}
+  // What the list shows: the templates that match the box, and always the open
+  // one. Filtering never takes the open template off the screen, because an
+  // issue or a plan being made from it answers to that block, and a result
+  // with nowhere to show would be lost.
+  const shown = templates.filter(
+    (template) => template.template_id === openTemplateId || templateMatches(template, query),
+  );
+  const filtering = query.trim() !== '';
+  const matchCount = templates.filter((template) => templateMatches(template, query)).length;
+  const openHeldByFilter = filtering && openIsListed
+    && !templates.some((template) => template.template_id === openTemplateId && templateMatches(template, query));
 
-          {!loading && !loadError && templates.length === 0 && (
-            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              No workout templates are loaded in this environment yet.
-            </p>
-          )}
-
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            {templates.map((template) => (
-              <article key={template.template_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
-                <div className="flex items-baseline justify-between gap-[var(--s3)]">
-                  <h3 className="t-command text-[length:var(--t-md)]">{template.name}</h3>
-                  {template.difficulty && <span className="plaque">{template.difficulty}</span>}
-                </div>
-                <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
-                <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{orNotWritten(template.intent)}</p>
-                {template.requires_coach_authorization && (
-                  <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
-                    Requires coach authorization before use.
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void openTemplate(template.template_id)}
-                  className="btn btn--ghost mt-[var(--s4)]"
-                  // Not while an issue runs (its answer would be lost), and not
-                  // for the template already showing with its issue control (a
-                  // stray tap would wipe the result the coach is reading). A
-                  // template with no steps has no control, and can be re-read.
-                  disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
-                >
-                  {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
-                </button>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        {openTemplateId !== null && (
-          <section className="mat-leather mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s5)]">
-            <h2 className="t-command text-[length:var(--t-lg)]">
+  const detailSection = openTemplateId === null ? null : (
+          <section
+            key="open-template"
+            aria-labelledby="open-template-heading"
+            className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] md:col-span-2"
+          >
+            <h2
+              id="open-template-heading"
+              ref={detailHeadingRef}
+              tabIndex={-1}
+              className="t-command text-[length:var(--t-lg)]"
+            >
               {detail ? detail.template.name : 'Workout template'}
             </h2>
 
@@ -930,6 +979,12 @@ function CoachWorkoutTemplates() {
                   <IssueToAthlete
                     template={detail.template}
                     untestedDrills={detail.untestedDrills}
+                    refusedDrills={detail.refusedDrills}
+                    onRecheck={() => void openTemplate(detail.template.template_id)}
+                    // Not while a session plan is being made: re-reading the
+                    // template unmounts it and its answer (review B), the
+                    // reason the Open template button waits too.
+                    recheckBlocked={issuing || making}
                     onBusyChange={setIssuing}
                     requestKeys={requestKeys}
                   />
@@ -948,7 +1003,122 @@ function CoachWorkoutTemplates() {
               </>
             )}
           </section>
-        )}
+  );
+
+  return (
+    <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
+      <div className="mx-auto max-w-5xl">
+        <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
+          <p className="t-eyebrow">Coach Workspace</p>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Workout Templates</h1>
+          <ClusterNav cluster="planning" />
+          <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
+            The reusable session shapes behind the plans: what a session of each type looks like,
+            block by block. Open one to issue it to an athlete, or to make a session plan from
+            it. Delivering a session live happens from Session Plans.
+          </p>
+          <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/coach/session-scripts" className="btn btn--ghost">
+              Go to Session Plans
+            </Link>
+            <Link href="/coach/drills" className="btn btn--ghost">
+              Back to drill library
+            </Link>
+          </div>
+        </header>
+
+        <section className="mt-[var(--s6)]">
+          <h2 className="t-command text-[length:var(--t-lg)]">Templates</h2>
+
+          {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
+
+          {!loading && loadError && (
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
+              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                This is a failure to load, not an empty catalog of templates.
+              </p>
+            </div>
+          )}
+
+          {!loading && !loadError && templates.length === 0 && (
+            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+              No workout templates are loaded in this environment yet.
+            </p>
+          )}
+
+          {!loading && !loadError && templates.length > 0 && (
+            <div className="mt-[var(--s4)] flex max-w-xl flex-col gap-[var(--s2)]">
+              <label className="t-label" htmlFor="template-find">Find a template</label>
+              <input
+                id="template-find"
+                type="search"
+                className="input"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Name, what it is for, session type, age group or level"
+                autoComplete="off"
+              />
+              <p aria-live="polite" className="t-label text-[color:var(--bone-400)]">
+                {filtering
+                  ? `${matchCount} of ${templates.length} ${templates.length === 1 ? 'template matches' : 'templates match'}.${openHeldByFilter ? ' The open template stays in the list.' : ''}`
+                  : `${templates.length} ${templates.length === 1 ? 'template' : 'templates'}.`}
+              </p>
+              {filtering && shown.length === 0 && (
+                <p className="t-body text-[color:var(--bone-300)]">
+                  {`No template matches "${query.trim()}". Clear the box to see them all.`}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* One grid holds the cards AND the open template, so the template is
+              drawn right under its own card instead of below the whole list,
+              and moving it (another card opened, the box narrowed, the list
+              arriving after an address opened it) never remounts it: an issue
+              or a plan being made from it keeps its answer. That holds only
+              because the block and the cards are ONE keyed array: React matches
+              keys within an array, so a block that moved from its own slot
+              into the array would be rebuilt and lose its answer (review,
+              2026-11-19). A template the list does not hold (an address naming
+              one this read did not return, or the list not loaded yet) is drawn
+              first. */}
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+            {[
+              ...(openIsListed || detailSection === null ? [] : [detailSection]),
+              ...shown.flatMap((template) => {
+              const card = (
+                <article key={template.template_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <div className="flex items-baseline justify-between gap-[var(--s3)]">
+                    <h3 className="t-command text-[length:var(--t-md)]">{template.name}</h3>
+                    {template.difficulty && <span className="plaque">{template.difficulty}</span>}
+                  </div>
+                  <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{orNotWritten(template.intent)}</p>
+                  {template.requires_coach_authorization && (
+                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                      Requires coach authorization before use.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void openTemplate(template.template_id)}
+                    className="btn btn--ghost mt-[var(--s4)]"
+                    // Not while an issue runs (its answer would be lost), and not
+                    // for the template already showing with its issue control (a
+                    // stray tap would wipe the result the coach is reading). A
+                    // template with no steps has no control, and can be re-read.
+                    disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
+                  >
+                    {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
+                  </button>
+                </article>
+              );
+              return template.template_id === openTemplateId && detailSection ? [card, detailSection] : [card];
+            }),
+            ]}
+          </div>
+        </section>
 
       {/* The four words, at the foot of the page — the same foot the
           approved boards put under every full screen. See WorkAxis. */}
