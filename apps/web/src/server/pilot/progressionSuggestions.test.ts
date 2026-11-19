@@ -778,6 +778,7 @@ describe('familyGapDescription for an under-18 reader', () => {
       const text = familyGapDescription(gap, reader);
       expect(text).not.toMatch(/\d+(\.\d+)?\s*x\b/i);
       expect(text).not.toMatch(/\btimes\b/i);
+      expect(text).not.toMatch(/×|fold\b|\btwice\b|\bdouble/i);
       expect(text).not.toMatch(/ratio/i);
       expect(text).not.toMatch(/unvalidated|lighter week|RPE/i);
       expect(text).toMatch(/Your coach is looking at/);

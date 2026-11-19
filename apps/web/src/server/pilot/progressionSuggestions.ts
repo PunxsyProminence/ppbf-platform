@@ -690,7 +690,8 @@ function loadJumpRatioShown(data: Record<string, unknown> | null, storedText: st
 
 /** Who is reading a family gap, resolved per gap by getFamilyGapReaders. */
 export interface FamilyReader {
-  /** isMinor at read time; an unknown date of birth is a minor (OD-2026-10-04-010). */
+  /** isMinor at read time. An unknown date of birth is a minor: the brief's
+   * default, the same rule OD-2026-10-04-010 set for the adult pathway. */
   minor: boolean;
   /** The confirmed week's numbers (under-18 load gaps only), or null. */
   loadNumbers: FamilyLoadNumbers | null;

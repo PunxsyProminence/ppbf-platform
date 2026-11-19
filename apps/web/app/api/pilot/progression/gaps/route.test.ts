@@ -158,6 +158,10 @@ describe('GET /api/pilot/progression/gaps: who reads which words for a load jump
         + 'A usual week before that: 3 to 4 logged sessions, 180 to 240 minutes. Your coach is looking at it.',
       'Drops lead hand',
     ]);
+    // The age read is the requested athlete in the reader's organization.
+    const dobRead = mockQueryOne.mock.calls[1] as [string, unknown[]];
+    expect(dobRead[0]).toContain('from pilot.athletes');
+    expect(dobRead[1]).toEqual(['org-1', 'ath-1']);
     const weekly = mockQuery.mock.calls[1] as [string, unknown[]];
     expect(weekly[0]).toContain('from pilot.sessions');
     expect(weekly[1]).toEqual(['org-1', ['ath-1'], 5, '2026-10-05T12:00:00.000Z']);
