@@ -88,7 +88,8 @@ Research releases have their own contract (not in this file yet).
   a track session naming a template held that way (never loaded) holds its track. A held template or script keeps
   its steps, so a drill may not be lowered below them (blocking: drill_contact_below_steps). A held item is held on
   every later plan that would change it: the coach's version stays the one in use, and a coach who wants the
-  package's text enters it in the app. Session scripts are not covered. A package may not carry an
+  package's text enters it in the app. Session scripts get no in-app-edit guard (a script can still be held when it
+  depends on a held drill). A package may not carry an
   "In-app edit" field label: only the app writes that label (blocking: in_app_edit_label).
 - The seed workflow and `npm run seed:<dataset>` load through this rule (the content-import core). A dataset
   with no loader yet says so under "Loaded today", and a load that names it is refused, not skipped.
