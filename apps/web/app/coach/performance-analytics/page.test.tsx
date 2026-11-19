@@ -308,3 +308,103 @@ test('the 28-day attendance figures say their source, their denominator and thei
     'Last marked present—',
   ]);
 });
+
+describe('rest or away marks on the card (lane R6-b1, OD-2026-11-17-004)', () => {
+  const WEEKS = [
+    { week_index: 0, first_day: '2026-11-13', last_day: '2026-11-19' },
+    { week_index: 1, first_day: '2026-11-06', last_day: '2026-11-12' },
+    { week_index: 2, first_day: '2026-10-30', last_day: '2026-11-05' },
+    { week_index: 3, first_day: '2026-10-23', last_day: '2026-10-29' },
+    { week_index: 4, first_day: '2026-10-16', last_day: '2026-10-22' },
+  ];
+  const MARK_ID = '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f';
+  const marksWith = (marks: unknown[]) =>
+    ({ ok: true, json: async () => ({ ok: true, today: '2026-11-19', kinds: ['rest', 'away'], weeks: WEEKS, marks }) }) as Response;
+
+  type Call = { url: string; init?: RequestInit };
+  function routed(marks: () => unknown[], calls: Call[], write?: () => Response) {
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.includes('/api/pilot/coach/rest-marks')) {
+        if (init?.method === 'POST' || init?.method === 'DELETE') {
+          return write ? write() : ({ ok: true, json: async () => ({ ok: true }) } as Response);
+        }
+        return marksWith(marks());
+      }
+      return okWith([ITEM]);
+    }) as unknown as typeof fetch;
+  }
+
+  test('five load weeks, each with one-tap Rest and Away; nothing that could take a reason', async () => {
+    const calls: Call[] = [];
+    global.fetch = routed(() => [], calls);
+    render(<PerformanceAnalyticsPage />);
+    await screen.findByText('Last 7 days');
+    expect(screen.getByText('4 weeks before')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Rest' })).toHaveLength(6); // 5 weeks + the days form
+    expect(screen.getAllByRole('button', { name: 'Away' })).toHaveLength(6);
+    const section = screen.getByRole('region', { name: 'Rest or away, by load week' });
+    expect(section.querySelector('textarea')).toBeNull();
+    expect(section.querySelectorAll('input:not([type="date"])')).toHaveLength(0);
+    expect(section.textContent).toMatch(/no reason recorded/);
+  });
+
+  test('one tap on Rest sends exactly the four fields, then reads the marks again', async () => {
+    const calls: Call[] = [];
+    let marks: unknown[] = [];
+    global.fetch = routed(() => marks, calls, () => {
+      marks = [{ mark_id: MARK_ID, athlete_id: 'ath-1', kind: 'rest', first_day: '2026-11-13', last_day: '2026-11-19' }];
+      return { ok: true, status: 201, json: async () => ({ ok: true }) } as Response;
+    });
+    render(<PerformanceAnalyticsPage />);
+    await screen.findByText('Last 7 days');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Rest' })[0]);
+
+    await screen.findByText(/Rest marked/);
+    const post = calls.find((call) => call.init?.method === 'POST');
+    expect(JSON.parse(String(post!.init!.body))).toEqual({
+      athlete_id: 'ath-1', kind: 'rest', first_day: '2026-11-13', last_day: '2026-11-19',
+    });
+    // A marked week is a word with a glyph and Undo; no load figure, no zero.
+    const row = screen.getByText(/Rest marked/).closest('li')!;
+    expect(row.textContent).not.toMatch(/\b0\b/);
+    expect(row.querySelector('i')?.textContent).toBe('—');
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
+  });
+
+  test('Undo sends the two ids in the query and no body', async () => {
+    const calls: Call[] = [];
+    global.fetch = routed(
+      () => [{ mark_id: MARK_ID, athlete_id: 'ath-1', kind: 'away', first_day: '2026-11-06', last_day: '2026-11-12' }],
+      calls,
+    );
+    render(<PerformanceAnalyticsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    await waitFor(() => expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(true));
+    const del = calls.find((call) => call.init?.method === 'DELETE')!;
+    expect(del.url).toContain(`?athlete_id=ath-1&mark_id=${MARK_ID}`);
+    expect(del.init!.body).toBeUndefined();
+    expect(screen.getByText(/Away marked/)).toBeTruthy();
+  });
+
+  test('a marks read that fails says so, and the rollup stays on screen', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('rest-marks') ? ({ ok: false, status: 503, json: async () => ({}) } as Response) : okWith([ITEM]),
+    ) as unknown as typeof fetch;
+    render(<PerformanceAnalyticsPage />);
+    await screen.findByText(/Rest and away marks could not be loaded. This is not a statement that none are recorded./);
+    expect(screen.getByText('Jordan Doe')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Rest' })).toBeNull();
+  });
+
+  test("a refused tap shows the server's words", async () => {
+    const calls: Call[] = [];
+    global.fetch = routed(() => [], calls, () =>
+      ({ ok: false, status: 403, json: async () => ({ error: 'This account may not record or read rest marks for this athlete.' }) }) as Response);
+    render(<PerformanceAnalyticsPage />);
+    await screen.findByText('Last 7 days');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Away' })[0]);
+    expect((await screen.findByRole('alert')).textContent).toMatch(/may not record or read rest marks/);
+  });
+});
