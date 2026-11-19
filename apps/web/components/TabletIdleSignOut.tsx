@@ -68,6 +68,13 @@ import { clearRoleSession } from './roleSession';
 const ACTIVITY_EVENTS = ['pointerdown', 'touchstart', 'keydown', 'wheel'] as const;
 const RETRY_MS = 15_000;
 const TICK_MS = 1_000;
+/* How long the banner stays up after a finger leaves it, so the click the
+   browser makes from that lift lands on the banner (iPad Safari makes it at
+   the lift point) and not on a button the banner was covering. */
+const BANNER_RELEASE_MS = 500;
+/* A hold whose lift never arrives (a lost pointerup) is let go after this,
+   so a stale countdown cannot stay up over the page. */
+const BANNER_HOLD_MAX_MS = 10_000;
 const COVER_ID = 'gym-tablet-leaving';
 const SIGNING_OUT_WORDS = 'Signing out…';
 const OFFLINE_WORDS = 'This tablet could not finish signing out. It keeps trying.';
@@ -204,6 +211,12 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
   // Set when the watch starts (the first effect below), not during render.
   const lastUse = useRef(0);
   const lastWritten = useRef(0);
+  /* A finger is down on the banner (lane U1, AS2-d review B). The press
+     restarts the time, so the next tick would hide the banner under the
+     finger, and the lift would press whatever it covered. While held, the
+     tick leaves it up; it is released a moment after the lift. */
+  const bannerHeld = useRef(false);
+  const bannerHeldSince = useRef(0);
 
   const showCountdown = useCallback((next: boolean) => {
     countingRef.current = next;
@@ -242,7 +255,8 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
       setSecondsLeft(Math.ceil(left / 1000));
       if (!countingRef.current) showCountdown(true);
     } else if (countingRef.current) {
-      showCountdown(false);
+      if (bannerHeld.current && now - bannerHeldSince.current >= BANNER_HOLD_MAX_MS) bannerHeld.current = false;
+      if (!bannerHeld.current) showCountdown(false);
     }
   }, [showCountdown]);
 
@@ -297,8 +311,33 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
     // press, the tap would land on whatever is under it (review B). The next
     // tick hides it anyway, since the time has started again.
     const onBanner = event?.target instanceof Node && bannerRef.current?.contains(event.target);
-    if (countingRef.current && !onBanner) showCountdown(false);
+    if (onBanner && event?.type === 'pointerdown') {
+      bannerHeld.current = true;
+      bannerHeldSince.current = lastUse.current;
+    } else if (!onBanner) {
+      bannerHeld.current = false;
+    }
+    if (countingRef.current && !onBanner && !bannerHeld.current) showCountdown(false);
   }, [showCountdown]);
+
+  // The finger leaves the banner: keep it up a moment longer, for the click.
+  useEffect(() => {
+    let release: number | undefined;
+    const onLift = () => {
+      if (!bannerHeld.current) return;
+      window.clearTimeout(release);
+      release = window.setTimeout(() => {
+        bannerHeld.current = false;
+      }, BANNER_RELEASE_MS);
+    };
+    window.addEventListener('pointerup', onLift, { capture: true, passive: true });
+    window.addEventListener('pointercancel', onLift, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('pointerup', onLift, { capture: true });
+      window.removeEventListener('pointercancel', onLift, { capture: true });
+      window.clearTimeout(release);
+    };
+  }, []);
 
   // Use, the tick, and the moments a sleeping tablet comes back.
   useEffect(() => {
@@ -320,6 +359,7 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
   }, [check, markUse]);
 
   const stay = () => {
+    bannerHeld.current = false;
     lastWritten.current = 0;
     markUse();
     showCountdown(false);
@@ -339,8 +379,8 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
              relative; z-index: 2 }`, which beats Tailwind's layered `fixed`
              and `z-[1000]` whatever their specificity. With classes alone the
              banner was laid out at the end of the document, so on a long page
-             nobody would see "Stay signed in" before the sign-out. An inline
-             style outranks both. */
+             it could sit below the screen, out of sight, until the sign-out.
+             An inline style outranks both. */
           <div
             ref={bannerRef}
             data-surface="kiosk"

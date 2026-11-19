@@ -143,10 +143,52 @@ describe('a marked gym tablet', () => {
       fireEvent.pointerDown(button);
     });
     expect(screen.getByRole('button', { name: 'Stay signed in' })).toBe(button);
+    /* AS2-d review B: the press restarted the time, so a tick while the
+       finger is still down used to hide the banner under it. Held, it stays. */
+    await advance(1_000);
+    expect(screen.getByRole('button', { name: 'Stay signed in' })).toBe(button);
     await act(async () => {
       fireEvent.click(button);
     });
     expect(screen.queryByText(/Signing out in/)).toBeNull();
+    await advance(10 * MINUTE);
+    expect(mockEnd).not.toHaveBeenCalled();
+  });
+
+  test('a hold whose lift never arrives is let go after ten seconds', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(14 * MINUTE + 5_000);
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByRole('alert'));
+    });
+    await advance(9_000);
+    expect(screen.getByRole('alert')).toBeTruthy();
+    await advance(2_000);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(mockEnd).not.toHaveBeenCalled();
+  });
+
+  /* AS2-d review B: a finger that lands on the banner's text (not the button)
+     and lifts. The banner stays through the lift and the click the browser
+     makes from it, then goes, and the time has started again. */
+  test('a press held on the banner keeps it up until a moment after the lift', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(14 * MINUTE + 5_000);
+    const banner = screen.getByRole('alert');
+    await act(async () => {
+      fireEvent.pointerDown(banner);
+    });
+    await advance(2_000);
+    expect(screen.getByRole('alert')).toBe(banner);
+    await act(async () => {
+      fireEvent.pointerUp(banner);
+    });
+    await advance(300);
+    expect(screen.getByRole('alert')).toBe(banner);
+    await advance(1_500);
+    expect(screen.queryByRole('alert')).toBeNull();
     await advance(10 * MINUTE);
     expect(mockEnd).not.toHaveBeenCalled();
   });
