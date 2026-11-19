@@ -37,7 +37,15 @@ import EscalationsPage, { SOURCE_LABEL } from '@/app/admin/escalations/page';
 import SafetyReviewPage from '@/app/admin/safety-review/page';
 import CoachIntelligencePage from '@/app/coach/intelligence/page';
 import CoachWorkspace from './CoachWorkspace';
-import SafetyAttentionBadge from './SafetyAttentionBadge';
+import SafetyAttentionBadge, { isOfficeDeskPage } from './SafetyAttentionBadge';
+
+// The bar's route. The badge shows a lone pain number only on an office desk
+// page (/admin and below); every test starts there and moves where it says.
+let mockPathname: string | null = '/admin/escalations';
+jest.mock('next/navigation', () => ({
+  ...jest.requireActual('next/navigation'),
+  usePathname: () => mockPathname,
+}));
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -130,6 +138,7 @@ function installCoachFetch(rows: Array<Record<string, unknown>>): void {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  mockPathname = '/admin/escalations';
 });
 
 test('the guard covers every source type the ladder admits', () => {
@@ -262,7 +271,9 @@ test('no escalation on the /coach/intelligence list wears the medical-stop mark'
    that reason, so the number is on screen there. The header badge and
    /admin/safety-review receive the reason but do not show it, so they read
    the number out of it (painScoreFromEscalationReason; option B1): the badge
-   only for exactly one open pain report and never over a gym-floor surface.
+   only for exactly one open pain report and only on an office desk page
+   (/admin and below; isOfficeDeskPage), never on a floor page or the coach
+   home.
    The badge renders only for staff sessions (coach, organization admin), and
    GlobalRoleHeader draws no bar on /wall (globalRoleHeader.test.tsx). */
 describe.each([
@@ -353,17 +364,23 @@ describe.each([
     expect(li.textContent).not.toMatch(/wrist|Self-reported/);
   });
 
-  test('shows no number on the header badge over a gym-floor surface', async () => {
-    global.fetch = jest.fn(async () => jsonResponse({ ok: true, escalations: [row] })) as unknown as typeof fetch;
+  test.each(['/coach', '/coach/floor-groups', '/coach/drills', '/schedule', '/athlete', '/', null])(
+    'shows no number on the header badge on %s (not an office desk page)',
+    async (pathname) => {
+      mockPathname = pathname;
+      global.fetch = jest.fn(async () => jsonResponse({ ok: true, escalations: [row] })) as unknown as typeof fetch;
 
-    await act(async () => {
-      render(<><SafetyAttentionBadge role="coach" /><div data-surface="kiosk" className="contents" /></>);
-    });
+      await act(async () => {
+        render(<SafetyAttentionBadge role="coach" />);
+      });
 
-    const badge = document.body.querySelector('.badge') as HTMLElement;
-    expect(badge.textContent).toBe('▲SAFETY 1 · PAIN REPORTSafety 1 pain report');
-    expect(document.body.textContent).not.toContain(`${score}/10`);
-  });
+      const badge = document.body.querySelector('.badge') as HTMLElement;
+      expect(badge.textContent).toBe('▲SAFETY 1 · PAIN REPORTSafety 1 pain report');
+      expect(document.body.textContent).not.toContain(`${score}/10`);
+      const link = screen.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
+      expect(link.getAttribute('aria-label')).not.toContain('/10');
+    },
+  );
 });
 
 test('the header badge shows no pain number when two pain reports are open', async () => {
@@ -424,4 +441,36 @@ test.each(['critical', 'high'] as const)('a %s repeated-pattern pain escalation 
   expect(tr.querySelector('.badge')?.className).toContain('badge--restricted');
   expect(tr.textContent).not.toMatch(/\d+\/10/);
   expectNoMedicalStopMark(tr);
+});
+
+test('only /admin and its pages count as the office desk', () => {
+  expect(isOfficeDeskPage('/admin')).toBe(true);
+  expect(isOfficeDeskPage('/admin/escalations')).toBe(true);
+  expect(isOfficeDeskPage('/admin/safety-review')).toBe(true);
+  expect(isOfficeDeskPage('/administrator')).toBe(false);
+  expect(isOfficeDeskPage('/coach')).toBe(false);
+  expect(isOfficeDeskPage('/wall')).toBe(false);
+  expect(isOfficeDeskPage('')).toBe(false);
+  expect(isOfficeDeskPage(null)).toBe(false);
+  expect(isOfficeDeskPage(undefined)).toBe(false);
+});
+
+test('a lone critical pain report beside an ordinary high: the number belongs to the pain report, HIGH to the other', async () => {
+  global.fetch = jest.fn(async () => jsonResponse({
+    ok: true,
+    escalations: [
+      { escalation_id: 'e1', severity: 'high', status: 'open', metadata: {} },
+      {
+        escalation_id: 'p1', severity: 'critical', status: 'open', metadata: PAIN,
+        reason: 'Athlete ath_1 reported pain at the knee at severity 8/10. Self-reported by the athlete, not assessed by a coach or a medical provider.',
+      },
+    ],
+  })) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<SafetyAttentionBadge role="organization_admin" />);
+  });
+
+  expect(screen.getByText('SAFETY 1 · PAIN REPORT 8/10 · 1 · HIGH')).toBeTruthy();
+  expect(screen.getByText('Safety 1 pain report 8/10, 1 high')).toBeTruthy();
 });
