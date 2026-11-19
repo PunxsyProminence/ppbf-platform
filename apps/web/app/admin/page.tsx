@@ -1702,9 +1702,11 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
               <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">Tutorial Access</h2>
+                    {/* OFF-12 (lane U1): this card promised "the full tutorial
+                        center", but its button opens SHADOW chat. It says so. */}
+                    <h2 className="text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">SHADOW Chat</h2>
                     <p className="t-body mt-[var(--s3)]">
-                      Open the full tutorial center from this button when needed. Tutorial cards are no longer rendered inline in Admin.
+                      Questions about a screen? Open SHADOW Chat with this button.
                     </p>
                   </div>
                   <ShadowChatButton context="Admin Overview" />
@@ -1791,17 +1793,18 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   <Link href="/" className="btn btn--ghost">
                     Edit Public Page Surface
                   </Link>
-                  <Link href="/login" className="btn btn--ghost">
-                    Manage Login Announcements
-                  </Link>
-                  {canOpenComplianceCenter && (
-                    <Link href="/admin/compliance-center" className="btn btn--ghost">
-                      Automated Compliance Monitoring Surface
-                    </Link>
-                  )}
+                  {/* OFF-12 (lane U1): two links left this card. "Manage Login
+                      Announcements" went to /login, which sends a signed-in
+                      admin home, and no announcement shows on the sign-in
+                      page (AnnouncementBanner has no such placement). The
+                      Compliance Center link is above; what is still owed is
+                      its automated monitoring, said in a line below. */}
                 </div>
                 <p className="t-body mt-[var(--s3)]">
                   Automated publication workflow: not built yet. There is no screen for it.
+                </p>
+                <p className="t-body mt-[var(--s3)]">
+                  Automated compliance monitoring: not built yet. Violations are filed by hand from Video Analysis; the Compliance Center is where they are reviewed and closed.
                 </p>
               </article>
 

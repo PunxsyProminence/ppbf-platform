@@ -2845,8 +2845,6 @@ export default function CoachWorkspace() {
             sessionState={liveRunState === 'unavailable' ? 'error' : liveRunState}
             sessionLive={liveRunState === 'loaded' && liveRun !== null}
             sessionPaused={liveRun?.is_paused ?? false}
-            sessionMode={sessionMode}
-            onSessionMode={setSessionMode}
             everythingElseHref="#coach-dashboard-details"
           />
         )}
@@ -3206,7 +3204,9 @@ export default function CoachWorkspace() {
         />
         )}
 
-        {/* MODE TOGGLE -- on the Dashboard it lives in the board's Run the Room. */}
+        {/* TEMPLATE TOGGLE. It switches the Floor tab's code-written block
+            template and nothing else, so it says "template" (CF-05, lane U1);
+            the board names this place instead of offering a toggle. */}
         {!boardShown && (
         <div className="mat-leather flex w-fit gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s3)]">
           {(['Group', 'One-on-One'] as const).map(mode => (
@@ -3227,7 +3227,7 @@ export default function CoachWorkspace() {
                 sessionMode === mode ? ui.modeButtonActive : ui.modeButtonInactive,
               )}
             >
-              {mode} Mode
+              {mode} template
             </button>
           ))}
         </div>
