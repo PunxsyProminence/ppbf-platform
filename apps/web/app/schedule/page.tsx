@@ -813,7 +813,8 @@ export default function SchedulerPage() {
         </p>
         <p className="t-data">
           Seats: {item.registered_count ?? 0}/{item.capacity}
-          {item.coach_account_id ? ` | Coach: ${staffName(item.coach_account_id)}` : ''}
+          {/* staffName() already says "Coach <name>": no second "Coach:" (lane U1, SC2-5; dry-run line 34). */}
+          {item.coach_account_id ? ` | ${staffName(item.coach_account_id)}` : ''}
           {item.covering_coach_account_id ? ` | Cover: ${staffName(item.covering_coach_account_id)}` : ''}
         </p>
       </div>
@@ -1522,7 +1523,7 @@ export default function SchedulerPage() {
                       <p className="text-[color:var(--bone-300)]">
                         Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, cancelClockMs)}
                         {item.status === 'approved' && item.assigned_coach_account_id
-                          ? ` | Coach: ${staffName(item.assigned_coach_account_id)}`
+                          ? ` | ${staffName(item.assigned_coach_account_id)}`
                           : ''}
                       </p>
                       <p className="text-[color:var(--bone-400)]">Goals: <span>{item.goals}</span></p>

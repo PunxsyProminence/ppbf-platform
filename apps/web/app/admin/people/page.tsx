@@ -17,6 +17,7 @@ import { formatGymDateTime } from '@/src/lib/gymTime';
 import { requiredCredentialFor } from '@/src/server/pilot/credentialPolicy';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import BackHome from '@/components/BackHome';
+import { staffDisplayNameFor } from '@/src/shared/coachDisplayName';
 import {
   STAFF_DISPLAY_NAME_MAX,
   canCarryStaffDisplayName,
@@ -421,6 +422,21 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
     () => members.filter((member) => member.role === 'coach' && member.active_flag && member.membership_active),
     [members],
   );
+
+  /* The coach picker names each coach as the gym typed it (staff name), or as
+     their login reads when none is typed (lane U1, SC2-5; dry-run line 23: it
+     showed a bare login email). Two coaches who read the same get their login
+     after the name, so the admin can still tell them apart. */
+  const coachPickerLabels = useMemo(() => {
+    const named = coachOptions.map((coach) => ({
+      id: coach.account_id,
+      name: staffDisplayNameFor(coach.staff_display_name, coach.login_email) ?? coach.account_id,
+      login: coach.login_email || coach.account_id,
+    }));
+    const seen = new Map<string, number>();
+    for (const { name } of named) seen.set(name, (seen.get(name) ?? 0) + 1);
+    return new Map(named.map(({ id, name, login }) => [id, (seen.get(name) ?? 0) > 1 && login !== name ? `${name} (${login})` : name]));
+  }, [coachOptions]);
 
   // Athletes on the roster with no login yet — exactly the population path (B)
   // exists to serve, and the reason it can be a picker instead of a text box.
@@ -2230,7 +2246,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     <option value="">Choose a coach...</option>
                     {coachOptions.map((coach) => (
                       <option key={coach.account_id} value={coach.account_id}>
-                        {coach.login_email || coach.account_id}
+                        {coachPickerLabels.get(coach.account_id) ?? coach.account_id}
                       </option>
                     ))}
                   </select>

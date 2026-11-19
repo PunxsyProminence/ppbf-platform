@@ -30,6 +30,10 @@ interface OrganizationConsentRow {
   athlete_id: string;
   athlete_name: string;
   consent_ok: boolean;
+  /* 'own' on an athlete 18 or over on the gym's day: their own consent is the
+     one that counts, and consent_ok is that (OD-2026-10-08-015; lane U1,
+     SC2-5). Absent for a minor, whose guardians' consent counts as before. */
+  consent_basis?: 'own';
   guardian_count: number;
   missing_guardian_count: number;
   per_guardian: GuardianConsentRow[];
@@ -398,9 +402,11 @@ export default function AthleteConsentAuditPage() {
                       <tr className="border-b border-[color:var(--hide-800)] last:border-b-0">
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.athlete_name}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">
-                          {item.guardian_count === 0
-                            ? 'No guardians on file'
-                            : `${item.guardian_count - item.missing_guardian_count}/${item.guardian_count} consented`}
+                          {item.consent_basis === 'own'
+                            ? 'Not needed (18 or over)'
+                            : item.guardian_count === 0
+                              ? 'No guardians on file'
+                              : `${item.guardian_count - item.missing_guardian_count}/${item.guardian_count} consented`}
                           {/* Who they are, with the paper-only ones marked:
                               a count alone cannot say which guardian is the
                               one nobody can email. */}
@@ -469,7 +475,13 @@ export default function AthleteConsentAuditPage() {
                         <td className="px-[var(--s4)] py-[var(--s3)]">
                           <span className={`badge ${item.consent_ok ? 'badge--cleared' : 'badge--restricted'}`}>
                             <i>{item.consent_ok ? '✓' : '▲'}</i>
-                            {item.consent_ok ? 'Consent on file' : 'Missing'}
+                            {item.consent_basis === 'own'
+                              ? item.consent_ok
+                                ? '18 or over: own consent on file'
+                                : '18 or over: own consent not on file'
+                              : item.consent_ok
+                                ? 'Consent on file'
+                                : 'Missing'}
                           </span>
                         </td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">

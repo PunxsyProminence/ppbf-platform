@@ -367,3 +367,28 @@ test('a refused removal (a standing withdrawal) is shown in the server\'s words 
   expect(screen.getByText('Lee Paper (paper only)')).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
+
+/* Lane U1, SC2-5 (OD-2026-10-08-015): from 18 an athlete's own consent is the
+   one that counts. The audit says so in words, and an adult with no guardians
+   is not "Missing" for that. */
+const ADULTS = [
+  { athlete_id: 'ath-a1', athlete_name: 'Adult Without Own', consent_ok: false, consent_basis: 'own', guardian_count: 0, missing_guardian_count: 0, per_guardian: [] },
+  { athlete_id: 'ath-a2', athlete_name: 'Adult With Own', consent_ok: true, consent_basis: 'own', guardian_count: 0, missing_guardian_count: 0, per_guardian: [] },
+];
+
+test('an adult row reads its own consent, and its guardians as not needed', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: ADULTS })) as unknown as typeof fetch;
+
+  render(<AthleteConsentAuditPage />);
+
+  const without = (await screen.findByText('Adult Without Own')).closest('tr') as HTMLElement;
+  expect(within(without).getByText('18 or over: own consent not on file')).toBeInTheDocument();
+  expect(within(without).getByText('Not needed (18 or over)')).toBeInTheDocument();
+  expect(within(without).queryByText('Missing')).not.toBeInTheDocument();
+  expect(within(without).queryByText('No guardians on file')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'All athletes' }));
+  const withOwn = screen.getByText('Adult With Own').closest('tr') as HTMLElement;
+  expect(within(withOwn).getByText('18 or over: own consent on file')).toBeInTheDocument();
+  expect(within(withOwn).getByText('18 or over: own consent on file').closest('.badge')?.className).toContain('badge--cleared');
+});
