@@ -324,11 +324,17 @@ export default function AthleteConsentAuditPage() {
               consent on file. An athlete with no guardians on file cannot have consent verified at all -- that
               shows as missing, not as cleared.
             </p>
+            {/* OD-2026-10-08-015: from 18 only the athlete's own consent counts,
+                and only they can record it, signed in (lane U1, SC2-5). */}
+            <p className="t-body mt-[var(--s2)] max-w-4xl">
+              From 18, an athlete&rsquo;s own consent is the one that counts, and a guardian&rsquo;s does not. They record
+              it themselves, signed in on their own account; it cannot be recorded for them here.
+            </p>
             {/* The register at /admin/consent no longer files photo and media
                 consent (OD-2026-10-07-009); the people arriving from its
                 pointer need to know they are in the right place. */}
             <p className="t-body mt-[var(--s2)] max-w-4xl">
-              This is the only place photo and video consent is recorded. A guardian who has no login is shown as
+              For athletes under 18, this is the only place photo and video consent is recorded. A guardian who has no login is shown as
               &ldquo;paper only&rdquo;; their consent is recorded here from the signed form, the same as anyone else&rsquo;s.
             </p>
             {addNotice ? (
@@ -495,10 +501,15 @@ export default function AthleteConsentAuditPage() {
                             <button
                               type="button"
                               className="btn btn--ghost"
-                              disabled={item.guardian_count === 0}
+                              disabled={item.guardian_count === 0 || item.consent_basis === 'own'}
                               onClick={() => (openAthleteId === item.athlete_id ? setOpenAthleteId(null) : openRecorder(item))}
                             >
-                              {item.guardian_count === 0
+                              {/* The server refuses a guardian's consent for an adult
+                                  (guardian access has ended), so the button says
+                                  who records it instead of offering a 403. */}
+                              {item.consent_basis === 'own'
+                                ? 'They record it, signed in'
+                                : item.guardian_count === 0
                                 ? 'No guardian to record against'
                                 : openAthleteId === item.athlete_id
                                   ? 'Close'

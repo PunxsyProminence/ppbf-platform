@@ -386,6 +386,10 @@ test('an adult row reads its own consent, and its guardians as not needed', asyn
   expect(within(without).getByText('Not needed (18 or over)')).toBeInTheDocument();
   expect(within(without).queryByText('Missing')).not.toBeInTheDocument();
   expect(within(without).queryByText('No guardians on file')).not.toBeInTheDocument();
+  // A guardian's consent cannot be recorded for an adult: no dead-end Record.
+  const record = within(without).getByRole('button', { name: 'They record it, signed in' });
+  expect(record).toBeDisabled();
+  expect(within(without).queryByRole('button', { name: 'Record' })).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'All athletes' }));
   const withOwn = screen.getByText('Adult With Own').closest('tr') as HTMLElement;

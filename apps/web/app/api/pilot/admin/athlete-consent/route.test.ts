@@ -737,6 +737,31 @@ describe('GET /api/pilot/admin/athlete-consent -- whose consent counts, by age',
     expect(mockOwn).not.toHaveBeenCalled();
   });
 
+  test("a minor's row is exactly the guardian row, key for key", async () => {
+    mockList.mockResolvedValueOnce([row('ath-m', guardianYes)]);
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-m', dob: MINOR_DOB }]);
+    const [item] = await items();
+    expect(item).toEqual({
+      athlete_id: 'ath-m',
+      athlete_name: 'Sample Athlete',
+      consent_ok: true,
+      guardian_count: 1,
+      missing_guardian_count: 0,
+      per_guardian: [
+        {
+          parent_id: 'p1',
+          parent_name: 'Sample Guardian',
+          has_login: true,
+          status: 'signed',
+          consented: true,
+          covers_video: true,
+          public_use_allowed: false,
+          signed_at: '2026-08-01T00:00:00Z',
+        },
+      ],
+    });
+  });
+
   test('an unknown date of birth reads as a minor', async () => {
     mockList.mockResolvedValueOnce([row('ath-u', noGuardians)]);
     mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-u', dob: null }]);
@@ -761,6 +786,14 @@ describe('GET /api/pilot/admin/athlete-consent -- whose consent counts, by age',
     mockOwn.mockResolvedValueOnce(null);
     const [item] = await items();
     expect(item).toMatchObject({ consent_ok: false, consent_basis: 'own' });
+  });
+
+  test.each([' Signed ', 'SIGNED'])('an adult own row stored as %p is on file, as the publish gate reads it', async (status) => {
+    mockList.mockResolvedValueOnce([row('ath-a', noGuardians)]);
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-a', dob: ADULT_DOB }]);
+    mockOwn.mockResolvedValueOnce(own({ status }));
+    const [item] = await items();
+    expect(item).toMatchObject({ consent_ok: true, consent_basis: 'own' });
   });
 
   test.each([
