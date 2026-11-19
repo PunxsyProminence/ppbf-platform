@@ -129,8 +129,9 @@ const STATUS_TABS: { value: ReviewStatus; label: string }[] = [
  * gym should not have to distinguish two similar reds.
  *
  * The rung and glyph are the design system's badge ladder, the same one
- * /admin/compliance-center uses for violation severity: critical -> locked,
- * high -> restricted, moderate -> monitor. This page first named its own
+ * /admin/compliance-center uses for violation severity: critical and high ->
+ * restricted (a symptom ticket is not a medical stop, OD-2026-10-03-017 and
+ * OW25-48 A; the word tells them apart), moderate -> monitor. This page first named its own
  * classes (severity-critical, ticket, tabs ...) that no stylesheet ever
  * defined, so it rendered unstyled until it moved onto the shared ones.
  */

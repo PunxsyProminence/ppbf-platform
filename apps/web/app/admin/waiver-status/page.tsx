@@ -51,8 +51,9 @@ interface AthleteWaiverRow {
   tonight?: Tonight;
 }
 
-// Room DNA (clinic): --locked is what this room says when a clinician or a
-// hold has stopped something, which is exactly what 'not cleared' reports.
+// Room DNA (clinic): --locked means a medical stop and nothing else (OW25-48
+// A), so 'not cleared' wears it only when the clearance record says so; a hold
+// alone is restricted (tonightBadge, Overwatch Q5).
 // A read that failed is not that, and sits on --restricted as it does on
 // /coach/sports-medicine. Its label says what happened to the read, because
 // "unavailable" under a column headed Tonight reads as the athlete being
@@ -125,7 +126,6 @@ const MEDIA_WORDS: Record<WaiverStatus, string> = {
   missing: 'not on file from every guardian',
 };
 
-/** The medical record in its own word, with the day its clearance ends or ended. */
 /*
  * WHICH "NOT CLEARED" IS A MEDICAL STOP (Overwatch Q5, applying Jason's card
  * OW25-48 A: "Medical-stop mark only for a medical stop"; lane U1, SC2-3).
@@ -144,6 +144,7 @@ function tonightBadge(tonight: Tonight | undefined): { rung: string; glyph: stri
   return medicalStop ? TONIGHT_BADGE.not_cleared : HOLD_ONLY_NOT_CLEARED;
 }
 
+/** The medical record in its own word, with the day its clearance ends or ended. */
 function medicalWords(medical: { status: string; expires_at: string | null }): string {
   const ends = formatGymDateShort(medical.expires_at);
   const word = MEDICAL_WORDS[medical.status] ?? medical.status;

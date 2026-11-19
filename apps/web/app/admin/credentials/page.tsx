@@ -146,9 +146,7 @@ export default function AdminCredentialsPage() {
   };
 
   const alertRowClass = (band: string) =>
-    band === 'expired' || band === 'revoked' ? 'alert alert--warning'
-      : band === 'expiring_soon' ? 'alert alert--warning'
-        : '';
+    band === 'expired' || band === 'revoked' || band === 'expiring_soon' ? 'alert alert--warning' : '';
 
   const bandLabel: Record<string, string> = {
     current: 'Current', expiring_soon: 'Expiring soon', expired: 'Expired', submitted: 'Awaiting review',

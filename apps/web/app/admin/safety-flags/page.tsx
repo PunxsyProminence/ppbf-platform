@@ -165,8 +165,8 @@ export default function SafetyFlagsBoardPage() {
             </p>
           </header>
 
-          {/* Room DNA (clinic): red is --locked, and --locked is a medical or
-              safeguarding fact. This banner carries a failed read, a failed
+          {/* Room DNA (clinic): --locked is a medical stop and nothing else
+              (OW25-48 A). This banner carries a failed read, a failed
               write, and the client-side "a note is required" rule -- three
               things that are not that. --restricted carries them, with the
               glyph and the uppercase label Law 3 requires still doing the work

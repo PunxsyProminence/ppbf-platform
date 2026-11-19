@@ -73,7 +73,6 @@ interface FlagItem {
   created_at: string;
 }
 
-// The same rungs, glyphs and words /admin/safety-flags uses for this union.
 /*
  * WHICH BLOCKING FLAG IS A MEDICAL STOP (Overwatch Q5, applying Jason's card
  * OW25-48 A: "Medical-stop mark only for a medical stop"; lane U1, SC2-3).
@@ -91,6 +90,7 @@ function flagBadge(flag: { severity: FlagSeverity; flag_code: string }): { rung:
   return FLAG_BADGE[flag.severity] ?? FLAG_BADGE.advisory;
 }
 
+// The same rungs, glyphs and words /admin/safety-flags uses for this union.
 const FLAG_BADGE: Record<FlagSeverity, { rung: string; glyph: string; label: string }> = {
   blocking_display: { rung: 'badge--locked', glyph: '✕', label: 'blocking' },
   attention: { rung: 'badge--restricted', glyph: '▲', label: 'attention' },
@@ -225,9 +225,8 @@ export default function SafetyReviewPage() {
                 </span>
               </p>
             ) : null}
-            {/* A failed read is a network fact. --locked red is what this room
-                says when a clinician or a safeguarding decision has stopped
-                something, so it does not carry this. --restricted does, keeping
+            {/* A failed read is a network fact. --locked means a medical stop
+                and nothing else (OW25-48 A), so it does not carry this. --restricted does, keeping
                 the glyph and gaining the uppercase label Law 3 asks for. */}
             {errorMessage ? (
               <div role="alert" className="alert alert--warning mt-[var(--s3)]">

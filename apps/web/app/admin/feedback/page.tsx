@@ -284,7 +284,7 @@ export default function FeedbackTriagePage() {
             {/* This was the room's one true Law 3 break: --locked-ink as bare
                 text, with no glyph, no uppercase label and no .alert chassis --
                 colour carrying the whole meaning on its own, in the red this
-                room reserves for a medical or safeguarding fact, over a failed
+                room reserves for a medical stop (OW25-48 A), over a failed
                 read of the feedback queue. It gets the chassis every other
                 notice in this room now wears, one rung down. */}
             {errorMessage ? (

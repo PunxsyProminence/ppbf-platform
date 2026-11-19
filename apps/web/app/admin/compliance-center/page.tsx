@@ -299,7 +299,7 @@ export default function AdminComplianceCenterPage() {
             Compliance Center
           </h1>
           <p className="t-body mt-[var(--s3)]">Review, manage, and escalate athlete compliance violations.</p>
-          {/* --locked is a medical or safeguarding fact in this room. A register
+          {/* --locked is a medical stop and nothing else (OW25-48 A). A register
               that would not load, and a transition the server bounced, are
               neither -- and the correct answer was already twelve lines below,
               in the .alert--warning the unavailable-metrics notice uses for

@@ -317,6 +317,28 @@ test('open safety flags are listed, worst first, and lead to the flags queue', a
   expect(screen.queryByText('Nothing open right now')).toBeNull();
 });
 
+/* Overwatch Q5 (lane U1, SC2-3): a blocking flag that is a clinician's stop
+   keeps the medical-stop mark here too, as on /admin/safety-flags. */
+test.each(['concussion_rest_period', 'rtp_not_cleared'])('a blocking %s flag keeps the medical-stop mark', async (code) => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [],
+      openFlags: [
+        { flag_id: 'f1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', flag_code: code, severity: 'blocking_display', created_at: '2026-10-01T00:00:00.000Z' },
+      ],
+      violationsReadLimit: 200, violationsTruncated: false,
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  const heading = await screen.findByRole('heading', { name: 'Open Safety Flags (1)' });
+  const section = heading.closest('section') as HTMLElement;
+  const badge = within(section).getByText('blocking').closest('.badge') as HTMLElement;
+  expect(badge.className).toContain('badge--locked');
+  expect(badge.textContent).toContain('✕');
+});
+
 test('a review without the flags list is a failed read, never an all-clear', async () => {
   global.fetch = jest.fn().mockResolvedValue(
     jsonResponse({ ok: true, openHolds: [], failingGates: [], openEscalations: [], openViolations: [], violationsReadLimit: 200, violationsTruncated: false }),

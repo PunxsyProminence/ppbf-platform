@@ -1451,14 +1451,10 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                         <td>
                           <span
                             className={`badge ${
-                              status.tone === 'ok'
-                                ? 'badge--cleared'
-                                : status.tone === 'pending'
-                                  ? 'badge--restricted'
-                                  : 'badge--restricted'
+                              status.tone === 'ok' ? 'badge--cleared' : 'badge--restricted'
                             }`}
                           >
-                            <i>{status.tone === 'ok' ? '✓' : status.tone === 'pending' ? '▲' : '▲'}</i>
+                            <i>{status.tone === 'ok' ? '✓' : '▲'}</i>
                             {status.label}
                           </span>
                         </td>
