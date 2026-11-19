@@ -140,12 +140,15 @@ export default function ChangePinPage() {
             <form onSubmit={submit} className="mt-[var(--s5)] space-y-[var(--s5)]">
               {error && (
                 /* Law 3: glyph + uppercase label carry the refusal, so it
-                   survives greyscale; the red is the third channel. */
+                   survives greyscale. Not a medical stop, so the restricted
+                   rung (OW25-48 A). The page is a kiosk surface, and the
+                   refusal must not be its smallest text: the alert sizes come
+                   from the unlayered design sheet, so they are lifted inline. */
                 <div id="change-pin-error" role="alert" className="alert alert--warning alert--tight">
                   <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
-                    <p className="alert-title">PIN refused</p>
-                    <p className="alert-msg">{error}</p>
+                    <p className="alert-title" style={{ fontSize: 'var(--t-md)' }}>PIN refused</p>
+                    <p className="alert-msg" style={{ fontSize: 'var(--t-md)' }}>{error}</p>
                   </div>
                 </div>
               )}

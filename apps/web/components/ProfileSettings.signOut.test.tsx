@@ -85,6 +85,8 @@ test('a refused call keeps the person signed in here and says so, in the server\
   fireEvent.click(screen.getByRole('button', { name: 'Sign out of every device' }));
 
   expect(await screen.findByRole('alert')).toHaveTextContent('Account not found or cannot be revoked');
+  // Law 3: the error line carries ▲ as well as its words (lane U1, SC2-4).
+  expect(screen.getByRole('alert').textContent).toContain('\u25b2');
   expect(replace).not.toHaveBeenCalled();
   expect(clearRoleSession).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Sign out of every device' })).toBeEnabled();

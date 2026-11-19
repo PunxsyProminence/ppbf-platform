@@ -44,7 +44,7 @@ const PIN_INPUT =
 const ALERT =
   'flex items-start gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[color:var(--restricted)] ' +
   'bg-[color-mix(in_srgb,var(--restricted)_12%,var(--paper))] px-[var(--s4)] py-[var(--s4)] ' +
-  'text-[length:var(--t-sm)] font-semibold text-[color:var(--hide-950)]';
+  'text-[length:var(--t-md)] font-semibold text-[color:var(--hide-950)]';
 const STEP_ON = 'font-bold text-[color:var(--brass-800)]';
 const STEP_OFF = 'text-[color:var(--hide-600)]';
 const DISABLED = 'disabled:cursor-not-allowed disabled:opacity-50';
@@ -200,10 +200,14 @@ function ActivatePageContent() {
         {error && (
           /* Law 3 -- the glyph carries the state alongside the colour, so this
              survives greyscale and colour blindness. A refused code is not a
-             medical stop, so it is restricted, not the --locked mark (OW25-48 A). */
+             medical stop, so it is restricted, not the --locked mark (OW25-48 A).
+             ▲ is also this page's "not yet" hint, so the refusal names itself. */
           <p role="alert" className={ALERT}>
             <span aria-hidden="true" className="font-bold text-[color:var(--restricted)]">▲</span>
-            <span>{error}</span>
+            <span>
+              <strong className="block">Not activated</strong>
+              <span>{error}</span>
+            </span>
           </p>
         )}
 

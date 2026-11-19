@@ -191,7 +191,7 @@ export default function ProfileSettings() {
   if (loadError) {
     return (
       <div className={PANEL}>
-        <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-sm)]">{loadError}</p>
+        <p className="text-[color:var(--restricted-ink)] text-[length:var(--t-sm)]"><span aria-hidden="true">▲ </span><span>{loadError}</span></p>
         <button type="button" className="btn btn--ghost" onClick={() => void load()}>Try again</button>
       </div>
     );
@@ -250,8 +250,8 @@ export default function ProfileSettings() {
           )}
         </div>
         {reviewNotice && <p className={HELP}>{reviewNotice}</p>}
-        {photoNotice && <p className="text-[length:var(--t-xs)] text-[color:var(--cleared-ink)]">{photoNotice}</p>}
-        {photoError && <p className="text-[length:var(--t-xs)] text-[color:var(--restricted-ink)]">{photoError}</p>}
+        {photoNotice && <p className="text-[length:var(--t-xs)] text-[color:var(--cleared-ink)]"><span aria-hidden="true">✓ </span><span>{photoNotice}</span></p>}
+        {photoError && <p className="text-[length:var(--t-xs)] text-[color:var(--restricted-ink)]"><span aria-hidden="true">▲ </span><span>{photoError}</span></p>}
         <p className={HELP}>
           With no photo your card shows a brass plate with your initials. That is a finished
           object, not a placeholder — nothing on your card looks unfinished without one.
@@ -287,7 +287,7 @@ export default function ProfileSettings() {
           </p>
         )}
         {nicknameError && (
-          <p className="text-[length:var(--t-xs)] text-[color:var(--restricted-ink)]">{nicknameError}</p>
+          <p className="text-[length:var(--t-xs)] text-[color:var(--restricted-ink)]"><span aria-hidden="true">▲ </span><span>{nicknameError}</span></p>
         )}
         <div className="flex flex-wrap gap-[var(--s4)]">
           <button
@@ -382,7 +382,7 @@ export default function ProfileSettings() {
           </button>
         </div>
         {signOutEverywhereError && (
-          <p role="alert" className="text-[length:var(--t-xs)] text-[color:var(--restricted-ink)]">{signOutEverywhereError}</p>
+          <p role="alert" className="text-[length:var(--t-xs)] text-[color:var(--restricted-ink)]"><span aria-hidden="true">▲ </span><span>{signOutEverywhereError}</span></p>
         )}
       </section>
 
