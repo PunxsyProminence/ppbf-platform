@@ -747,8 +747,14 @@ export default function ParentHub() {
           setSafetyFailed(true);
           return;
         }
-        const payload = (await response.json()) as { items?: ParentSafetyItem[] };
-        setSafetySummary({ children: (payload.items ?? []).map(safetyChildFromItem) });
+        const payload = (await response.json()) as { items?: ParentSafetyItem[] } | null;
+        // UXB-24: an answer with no items list checked nothing, so it is the
+        // failed-read line, never the neutral one.
+        if (!Array.isArray(payload?.items)) {
+          setSafetyFailed(true);
+          return;
+        }
+        setSafetySummary({ children: payload.items.map(safetyChildFromItem) });
       } catch {
         // The links still work; the card says the check did not answer.
         setSafetyFailed(true);

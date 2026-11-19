@@ -442,8 +442,12 @@ test('a parent asking about another family\'s child gets nothing about that chil
   for (const reader of [mockGetAthleteById, mockGetActiveTrainingHold, mockGetGuardianGateSummary, mockFamilyMedicalRestriction]) {
     expect(reader.mock.calls.map((call) => call[1])).toEqual(['ath-1']);
   }
-  expect(mockGetAthleteWaiverStatus.mock.calls.every((call) => call[1] === 'ath-1')).toBe(true);
+  // general, medical_release and travel; photo_media goes through the consent check.
+  expect(mockGetAthleteWaiverStatus.mock.calls.map((call) => call[1])).toEqual(['ath-1', 'ath-1', 'ath-1']);
+  expect(mockCheckGuardianMediaConsent.mock.calls).toEqual([['org-a', 'ath-1']]);
+  expect(mockCallerParentIdSet.mock.calls).toEqual([['org-a', 'acct-parent']]);
   expect(JSON.stringify(body)).not.toContain('ath-other');
+  expect(JSON.stringify(body)).not.toContain('acct-other-parent');
 });
 
 test('a parent linked to no child gets an empty list, even when asking about one by id', async () => {

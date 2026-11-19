@@ -90,29 +90,29 @@ describe('the Safety & Consent line on the hub', () => {
 
   test('a hold only', async () => {
     const line = await lineFor([item({ hold: HOLD })]);
-    expect(line).toHaveTextContent(`First Child: 1 active training hold. ${TAIL}`);
+    expect(line.textContent).toBe(`First Child: 1 active training hold. ${TAIL}`);
   });
 
   test('gates only, counted as today: flagged and blocked, not passed', async () => {
     const line = await lineFor([item({
       gates: [{ outcome: 'flagged' }, { outcome: 'blocked' }, { outcome: 'passed' }, { outcome: 'not_evaluated' }],
     })]);
-    expect(line).toHaveTextContent(`First Child: 2 gates awaiting clearance. ${TAIL}`);
+    expect(line.textContent).toBe(`First Child: 2 gates awaiting clearance. ${TAIL}`);
   });
 
   test('a restriction in force only', async () => {
     const line = await lineFor([item({ medical_restriction: RESTRICTION })]);
-    expect(line).toHaveTextContent(`First Child: a medical restriction in force. ${TAIL}`);
+    expect(line.textContent).toBe(`First Child: a medical restriction in force. ${TAIL}`);
   });
 
   test('missing waivers only', async () => {
     const line = await lineFor([item({ waivers: { ...SIGNED, medical_release: 'missing', travel: 'missing' } })]);
-    expect(line).toHaveTextContent(`First Child: 2 waivers missing. ${TAIL}`);
+    expect(line.textContent).toBe(`First Child: 2 waivers missing. ${TAIL}`);
   });
 
   test('one missing waiver reads in the singular', async () => {
     const line = await lineFor([item({ waivers: { ...SIGNED, general: 'missing' } })]);
-    expect(line).toHaveTextContent(`First Child: 1 waiver missing. ${TAIL}`);
+    expect(line.textContent).toBe(`First Child: 1 waiver missing. ${TAIL}`);
   });
 
   test('declined, withdrawn and photo_only are not counted as missing', async () => {
@@ -127,7 +127,7 @@ describe('the Safety & Consent line on the hub', () => {
 
   test('a restriction that could not be read says so, and is neither "in force" nor nothing', async () => {
     const line = await lineFor([item({ medical_restriction: null, medical_restriction_unread: true })]);
-    expect(line).toHaveTextContent(`First Child: medical restriction could not be checked. ${TAIL}`);
+    expect(line.textContent).toBe(`First Child: medical restriction could not be checked. ${TAIL}`);
     expect(line).not.toHaveTextContent('in force');
     expect(screen.queryByText(NEUTRAL)).toBeNull();
   });
@@ -139,7 +139,7 @@ describe('the Safety & Consent line on the hub', () => {
       medical_restriction: RESTRICTION,
       waivers: { ...SIGNED, travel: 'missing', general: 'missing' },
     })]);
-    expect(line).toHaveTextContent(
+    expect(line.textContent).toBe(
       `First Child: 1 active training hold, 2 gates awaiting clearance, a medical restriction in force, 2 waivers missing. ${TAIL}`,
     );
   });
@@ -150,7 +150,7 @@ describe('the Safety & Consent line on the hub', () => {
       item({ athlete_id: 'ath_2', athlete_name: 'Second Child', waivers: { ...SIGNED, travel: 'missing' }, gates: [{ outcome: 'flagged' }] }),
       item({ athlete_id: 'ath_3', athlete_name: 'Third Child' }),
     ]);
-    expect(line).toHaveTextContent(
+    expect(line.textContent).toBe(
       `First Child: a medical restriction in force. Second Child: 1 gate awaiting clearance, 1 waiver missing. ${TAIL}`,
     );
     expect(line).not.toHaveTextContent('Third Child');
@@ -160,7 +160,7 @@ describe('the Safety & Consent line on the hub', () => {
 
   test('a child with no name on file reads "Your child"', async () => {
     const line = await lineFor([item({ athlete_name: null, hold: HOLD })]);
-    expect(line).toHaveTextContent(`Your child: 1 active training hold. ${TAIL}`);
+    expect(line.textContent).toBe(`Your child: 1 active training hold. ${TAIL}`);
   });
 
   test('a parent of another child: the line names only the children the route returned', async () => {
@@ -183,7 +183,7 @@ describe('the Safety & Consent line on the hub', () => {
     }) as unknown as typeof fetch;
     render(<ParentHub />);
     const line = await screen.findByTestId('parent-safety-line');
-    expect(line).toHaveTextContent(`First Child: 1 active training hold. ${TAIL}`);
+    expect(line.textContent).toBe(`First Child: 1 active training hold. ${TAIL}`);
     expect(line).not.toHaveTextContent('Other Family Child');
   });
 
@@ -225,6 +225,14 @@ describe('the Safety & Consent line on the hub', () => {
     render(<ParentHub />);
     expect(await screen.findByText(/Couldn.t check right now/)).toBeInTheDocument();
     expect(screen.queryByText(NEUTRAL)).toBeNull();
+  });
+
+  test('an answer with no items list is the failed-read line, never the neutral line', async () => {
+    mockSafety(jsonResponse({ ok: true }));
+    render(<ParentHub />);
+    expect(await screen.findByText(/Couldn.t check right now/)).toBeInTheDocument();
+    expect(screen.queryByText(NEUTRAL)).toBeNull();
+    expect(screen.queryByTestId('parent-safety-line')).toBeNull();
   });
 
   test('no children returned: the neutral line', async () => {
