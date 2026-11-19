@@ -99,7 +99,8 @@ export const DRILL_TEXT_LOADING = "Loading the drill's text...";
 export const DRILL_TEXT_FAILED = `${NOT_WRITTEN_YET}. The drill's text could not be loaded.`;
 /** The mark /coach/drills already shows on a drafted KPI (app/coach/drills/page.tsx). */
 export const AI_DRAFT_MARK = 'DRAFT, FOR COACH REVIEW';
-export const DRAFT_NOT_CHECKED = 'Draft status not checked';
+/** Shown in sentence case, not as an upper-case label, so it cannot be read as the draft mark itself. */
+export const DRAFT_NOT_CHECKED = 'draft status not checked';
 
 /** A drill field held as one line: its own lines joined with " · ", as the cues are. */
 function oneLine(items: readonly string[]): string {

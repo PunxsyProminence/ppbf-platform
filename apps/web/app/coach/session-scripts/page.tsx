@@ -861,10 +861,16 @@ function CoachSessionScripts() {
                           {line.value}
                           {/* OW25-57: the per-field AI-draft mark, for coaches and admins (this page's gate). */}
                           {line.fromDrill && line.draft === true && (
-                            <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>
+                            <>
+                              {' '}
+                              <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>
+                            </>
                           )}
                           {line.fromDrill && line.draft === null && (
-                            <span className="t-label ml-[var(--s2)]">{DRAFT_NOT_CHECKED}</span>
+                            <>
+                              {' '}
+                              <span className="t-muted">({DRAFT_NOT_CHECKED})</span>
+                            </>
                           )}
                         </p>
                       ))}

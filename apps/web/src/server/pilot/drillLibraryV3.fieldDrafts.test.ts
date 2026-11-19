@@ -117,12 +117,12 @@ afterEach(() => {
 });
 
 describe('drillFieldDrafts: which of the four fields still carry an AI-draft label', () => {
-  test('a label with a draft key is a draft; an in-app edit and a missing label are not', () => {
+  test('a label with a draft key is a draft; an in-app edit is not; a field with no label is not checked', () => {
     expect(drillFieldDrafts({ cues: AI_DRAFT, what_good_looks_like: IN_APP_EDIT })).toEqual({
       cues: true,
       what_good_looks_like: false,
-      what_bad_looks_like: false,
-      corrections: false,
+      what_bad_looks_like: null,
+      corrections: null,
     });
   });
 
@@ -131,8 +131,11 @@ describe('drillFieldDrafts: which of the four fields still carry an AI-draft lab
     expect(drillFieldDrafts({ corrections: { ...IN_APP_EDIT, 2: IN_APP_EDIT } }).corrections).toBe(false);
   });
 
-  test('no labels recorded for the version: nothing is a draft by label', () => {
-    expect(drillFieldDrafts(null)).toEqual({ cues: false, what_good_looks_like: false, what_bad_looks_like: false, corrections: false });
+  // "A version written without labels has no row here" (content_labels migration): most seeded
+  // drills, drafts among them, have no row. Nothing recorded is unknown, never "not a draft".
+  test('no labels recorded for the version: every field is "not checked" (null), never false', () => {
+    expect(drillFieldDrafts(null)).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
+    expect(drillFieldDrafts(undefined)).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
   });
 
   test('a shape the reader does not know answers "not checked" (null), never false', () => {
@@ -149,11 +152,17 @@ describe('getDrillWithDetail carries field_drafts for the version it read', () =
       cues: true,
       what_good_looks_like: true,
       what_bad_looks_like: false,
-      corrections: false,
+      corrections: null,
     });
     const labelsCall = mockQueryOne.mock.calls.find(([text]) => String(text).includes('pilot.content_record_labels'));
     expect(String(labelsCall?.[0])).toContain("target_kind = 'drill'");
     expect(labelsCall?.[1]).toEqual(['org-1', 'lin-1', 3]);
+  });
+
+  test('a version with no label row: every field "not checked", not "not a draft"', async () => {
+    labelsRow = null;
+    const detail = await getDrillWithDetail('org-1', 'ref-1');
+    expect(detail?.field_drafts).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
   });
 
   test('before the labels table exists (42P01): every field is "not checked", and nothing is logged', async () => {
@@ -214,7 +223,7 @@ describe('athletes and parents never receive field_drafts', () => {
         cues: true,
         what_good_looks_like: true,
         what_bad_looks_like: false,
-        corrections: false,
+        corrections: null,
       });
     }
   });

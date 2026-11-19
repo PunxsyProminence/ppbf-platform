@@ -1589,9 +1589,9 @@ describe("the current block's drill instructions", () => {
     const card = (await screen.findByText('Current block')).parentElement as HTMLElement;
     expect(await within(card).findByText('Snap it back')).toBeInTheDocument();
     expect(Array.from(card.querySelectorAll('p.t-body')).map((line) => line.textContent)).toEqual([
-      'Say (From the drill): Snap it back◉DRAFT, FOR COACH REVIEW',
+      'Say (From the drill): Snap it back ◉DRAFT, FOR COACH REVIEW',
       'Explain: Not written yet',
-      'Watch (From the drill): The hand comes straight back to the chin.Draft status not checked',
+      'Watch (From the drill): The hand comes straight back to the chin. (draft status not checked)',
       'Fix (From the drill): Elbow in before the next one.',
     ]);
     // Only the current block's drill was read, by GET, and nothing was written.

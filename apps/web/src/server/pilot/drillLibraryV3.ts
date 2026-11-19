@@ -183,10 +183,14 @@ export type DrillDraftField = (typeof DRILL_DRAFT_FIELDS)[number];
  *
  *   true   the field's label carries a `draft` key: an AI draft nobody has
  *          edited (contentLabels.ts inAppEditLabel writes no `draft` key).
- *   false  the version has no label for the field, or its label is not a draft.
- *   null   NOT CHECKED: the labels table is not there, the read failed, or the
- *          label is not in a shape this reader knows. A screen says so; it
- *          never treats null as "not a draft".
+ *   false  the field HAS a label, and it is not a draft (an in-app edit, or
+ *          a label the content gave without a draft key).
+ *   null   NOT CHECKED: nothing records whether the field is a draft -- the
+ *          version has no label row ("A version written without labels has no
+ *          row here", content_labels migration; most seeded drills are like
+ *          this), the row has no label for the field, the labels table is not
+ *          there, the read failed, or the label is in a shape this reader does
+ *          not know. A screen says so; it never treats null as "not a draft".
  */
 export type DrillFieldDrafts = Record<DrillDraftField, boolean | null>;
 
@@ -461,7 +465,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * so a group still marked draft still speaks for a part nobody edited.
  */
 function labelIsDraft(label: unknown): boolean | null {
-  if (label === undefined || label === null) return false;
+  if (label === undefined || label === null) return null;
   if (!isPlainObject(label)) return null;
   if ('draft' in label) return true;
   return Object.values(label).some((part) => isPlainObject(part) && 'draft' in part);
@@ -469,15 +473,13 @@ function labelIsDraft(label: unknown): boolean | null {
 
 /**
  * The four 6e fields' draft state from one version's field_labels (the
- * pilot.content_record_labels column). No row, or a row with no field labels,
- * means no label was recorded for that version: nothing is a draft by label.
- * Exported for its test.
+ * pilot.content_record_labels column). No row, or a row with no label for a
+ * field, records nothing about that field, so it is NOT CHECKED (null), never
+ * "not a draft": an unknown value never looks complete (AGENT_KERNEL.md, the
+ * floor). Exported for its test.
  */
 export function drillFieldDrafts(fieldLabels: unknown): DrillFieldDrafts {
-  if (fieldLabels === undefined || fieldLabels === null) {
-    return { cues: false, what_good_looks_like: false, what_bad_looks_like: false, corrections: false };
-  }
-  if (!isPlainObject(fieldLabels)) return { ...DRAFTS_NOT_CHECKED };
+  if (fieldLabels === undefined || fieldLabels === null || !isPlainObject(fieldLabels)) return { ...DRAFTS_NOT_CHECKED };
   return {
     cues: labelIsDraft(fieldLabels.cues),
     what_good_looks_like: labelIsDraft(fieldLabels.what_good_looks_like),

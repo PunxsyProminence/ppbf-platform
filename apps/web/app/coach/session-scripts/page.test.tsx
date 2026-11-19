@@ -368,11 +368,11 @@ describe('coach session plans page', () => {
       expect(await within(second).findByText('Eyes on the chest · Small slip')).toBeInTheDocument();
       const lines = Array.from(second.querySelectorAll('p')).map((line) => line.textContent);
       expect(lines).toEqual([
-        'Say (From the drill): Eyes on the chest · Small slip◉DRAFT, FOR COACH REVIEW',
+        'Say (From the drill): Eyes on the chest · Small slip ◉DRAFT, FOR COACH REVIEW',
         'Explain: Slipping is a decision, not a flinch.',
         'Watch (From the drill): Head moves off the line.',
-        'What to avoid (From the drill): Dropping the hands.Draft status not checked',
-        'Fix (From the drill): Bend the knees, not the waist.◉DRAFT, FOR COACH REVIEW',
+        'What to avoid (From the drill): Dropping the hands. (draft status not checked)',
+        'Fix (From the drill): Bend the knees, not the waist. ◉DRAFT, FOR COACH REVIEW',
       ]);
       // A block with no linked drill is unchanged.
       expect(within(within(blocks).getAllByRole('listitem')[0]).getAllByText('Not written yet')).toHaveLength(4);
