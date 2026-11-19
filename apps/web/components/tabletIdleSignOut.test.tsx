@@ -344,6 +344,15 @@ describe('a marked gym tablet', () => {
     expect(mockClear).not.toHaveBeenCalled();
   });
 
+  test('a signed-out mark in the future (a clock set back) does not send a new page round /login', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    writeGymTabletSignedOutAt(Date.now() + 60 * MINUTE);
+    await mount();
+    await advance(5 * MINUTE);
+    expect(mockLeave).not.toHaveBeenCalled();
+    expect(readGymTabletSignedOutAt()).toBeNull();
+  });
+
   test('a tab opened after an earlier sign-out is not treated as stale', async () => {
     idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
     writeGymTabletSignedOutAt(Date.now() - 60_000);

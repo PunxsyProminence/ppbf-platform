@@ -5,13 +5,12 @@ import { createPortal } from 'react-dom';
 
 import { apiBase } from '@/lib/apiBase';
 import {
-  clearGymTabletLastUse,
   isGymTabletMarked,
+  markSessionBoundary,
   readGymTabletLastUse,
   readGymTabletSignedOutAt,
   subscribeGymTabletMark,
   writeGymTabletLastUse,
-  writeGymTabletSignedOutAt,
 } from '@/src/lib/gymTabletMark';
 import { endThisSession, leaveForLogin } from '@/src/lib/signOut';
 import {
@@ -126,8 +125,8 @@ export function startTabletSignOut(): void {
     if (done) {
       window.clearTimeout(retry);
       window.removeEventListener('online', onOnline);
-      writeGymTabletSignedOutAt(Date.now());
-      clearGymTabletLastUse();
+      // A session boundary: a fresh clock, and the device's older tabs leave.
+      markSessionBoundary();
       clearRoleSession();
       leaveForLogin();
       return;

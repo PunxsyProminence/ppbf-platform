@@ -4,10 +4,13 @@
 
 import {
   isGymTabletMarked,
+  markSessionBoundary,
   readGymTabletLastUse,
+  readGymTabletSignedOutAt,
   setGymTabletMark,
   subscribeGymTabletMark,
   writeGymTabletLastUse,
+  writeGymTabletSignedOutAt,
 } from './gymTabletMark';
 import { clearRoleSession } from '@/components/roleSession';
 import { endThisSession } from './signOut';
@@ -73,4 +76,21 @@ test('the shared list, default and words', () => {
   expect(TABLET_IDLE_MINUTES).toEqual([15, 30, 60, 120, 240]);
   expect(DEFAULT_TABLET_IDLE_MINUTES).toBe(60);
   expect(TABLET_IDLE_MINUTES.map(tabletIdleLabel)).toEqual(['15 minutes', '30 minutes', '1 hour', '2 hours', '4 hours']);
+});
+
+/* AS2-b review A, round 4. */
+test('a session boundary starts a fresh clock and marks every older page stale; the device mark stays', () => {
+  setGymTabletMark(true);
+  writeGymTabletLastUse(Date.now() - 1_000);
+  const before = Date.now();
+  markSessionBoundary();
+  expect(readGymTabletLastUse()).toBeNull();
+  expect(readGymTabletSignedOutAt()).toBeGreaterThanOrEqual(before);
+  expect(isGymTabletMarked()).toBe(true);
+});
+
+test('a signed-out mark in the future (a clock set back) is dropped, not capped, so no page reloads forever', () => {
+  writeGymTabletSignedOutAt(Date.now() + 60 * 60_000);
+  expect(readGymTabletSignedOutAt()).toBeNull();
+  expect(window.localStorage.getItem('ppbf.device.gymTabletSignedOutAt')).toBeNull();
 });

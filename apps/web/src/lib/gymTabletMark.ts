@@ -72,11 +72,11 @@ export function subscribeGymTabletMark(listener: () => void): () => void {
  * person's session is still alive. Shared by every tab, so a hidden tab does
  * not sign out someone working in another.
  *
- * Cleared only when the session is known to be gone or new: a confirmed idle
- * sign-out (TabletIdleSignOut), the server ANSWERING that nobody is signed in
- * (GlobalRoleHeader's self-heal, SignInPanel's check on /login, where every
- * sign-in starts), and a fresh sign-in (SignInPanel, the athlete sign-in
- * page, the sign-in link page). Never by a plain cache clear,
+ * Cleared only at a session boundary (markSessionBoundary below): a confirmed
+ * idle sign-out (TabletIdleSignOut), the server ANSWERING that nobody is
+ * signed in (GlobalRoleHeader's self-heal, SignInPanel's check on /login,
+ * where every sign-in starts), and a fresh sign-in (SignInPanel, the athlete
+ * sign-in page, the sign-in link page). Never by a plain cache clear,
  * which can happen while the session is alive (AS2-b review A). If one is
  * ever left behind stale (a sign-in path not listed), the cost is that
  * sign-in being signed out at once; signing in again starts clean.
@@ -112,9 +112,18 @@ const SIGNED_OUT_KEY = 'ppbf.device.gymTabletSignedOutAt';
 
 export function readGymTabletSignedOutAt(): number | null {
   try {
-    const raw = storage()?.getItem(SIGNED_OUT_KEY);
+    const store = storage();
+    const raw = store?.getItem(SIGNED_OUT_KEY);
     const value = raw === null || raw === undefined ? NaN : Number(raw);
-    return Number.isFinite(value) && value > 0 ? value : null;
+    if (!Number.isFinite(value) || value <= 0) return null;
+    // A mark in the future (the device clock was set back) would make every
+    // new page look older than it, and reload forever: it is dropped, not
+    // capped (a capped mark would still match). AS2-b review A, round 4.
+    if (value > Date.now()) {
+      store?.removeItem(SIGNED_OUT_KEY);
+      return null;
+    }
+    return value;
   } catch {
     return null;
   }
@@ -126,6 +135,18 @@ export function writeGymTabletSignedOutAt(at: number): void {
   } catch {
     // This tab still leaves; another tab may not learn of it.
   }
+}
+
+/**
+ * A SESSION BOUNDARY on this device: a fresh sign-in, or the server answering
+ * that nobody is signed in. The idle clock starts fresh, and every page opened
+ * before now shows someone else, so each one still open leaves (review A,
+ * round 4: however the last person left -- the idle sign-out, Logout, a closed
+ * tab -- their other tabs must not survive into the next person's session).
+ */
+export function markSessionBoundary(): void {
+  clearGymTabletLastUse();
+  writeGymTabletSignedOutAt(Date.now());
 }
 
 export function clearGymTabletLastUse(): void {

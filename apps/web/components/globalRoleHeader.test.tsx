@@ -466,6 +466,24 @@ describe('the phone bar keeps the whole room name', () => {
    carries the watcher, refusal screens included: a marked tablet left on a
    refusal must still sign itself out. The plate rides the full bar only. */
 describe('the gym tablet idle watcher rides every signed-in bar', () => {
+  it('marks a session boundary when the server answers that nobody is signed in, and not on an error', async () => {
+    window.localStorage.clear();
+    mockLoadAuthoritative.mockResolvedValueOnce({ ok: false, reason: 'server_error', statusCode: 503 } as never);
+    renderAs(null);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(window.localStorage.getItem('ppbf.device.gymTabletSignedOutAt')).toBeNull();
+    cleanup();
+
+    mockLoadAuthoritative.mockResolvedValueOnce({ ok: false, reason: 'unauthenticated', signedOut: true } as never);
+    renderAs(null);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(window.localStorage.getItem('ppbf.device.gymTabletSignedOutAt')).not.toBeNull();
+  });
+
   it('is on the signed-in bar, with its plate', () => {
     renderAs('athlete');
     expect(screen.getByTestId('tablet-idle-watch').getAttribute('data-plate')).toBe('true');
