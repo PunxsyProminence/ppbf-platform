@@ -217,6 +217,7 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
      tick leaves it up; it is released a moment after the lift. */
   const bannerHeld = useRef(false);
   const bannerHeldSince = useRef(0);
+  const bannerRelease = useRef<number | undefined>(undefined);
 
   const showCountdown = useCallback((next: boolean) => {
     countingRef.current = next;
@@ -312,6 +313,9 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
     // tick hides it anyway, since the time has started again.
     const onBanner = event?.target instanceof Node && bannerRef.current?.contains(event.target);
     if (onBanner && event?.type === 'pointerdown') {
+      // A second press before the last lift's release: that release must not
+      // drop the hold under this finger.
+      window.clearTimeout(bannerRelease.current);
       bannerHeld.current = true;
       bannerHeldSince.current = lastUse.current;
     } else if (!onBanner) {
@@ -322,11 +326,10 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
 
   // The finger leaves the banner: keep it up a moment longer, for the click.
   useEffect(() => {
-    let release: number | undefined;
     const onLift = () => {
       if (!bannerHeld.current) return;
-      window.clearTimeout(release);
-      release = window.setTimeout(() => {
+      window.clearTimeout(bannerRelease.current);
+      bannerRelease.current = window.setTimeout(() => {
         bannerHeld.current = false;
       }, BANNER_RELEASE_MS);
     };
@@ -335,7 +338,7 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
     return () => {
       window.removeEventListener('pointerup', onLift, { capture: true });
       window.removeEventListener('pointercancel', onLift, { capture: true });
-      window.clearTimeout(release);
+      window.clearTimeout(bannerRelease.current);
     };
   }, []);
 

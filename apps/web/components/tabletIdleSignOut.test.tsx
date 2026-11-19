@@ -155,6 +155,25 @@ describe('a marked gym tablet', () => {
     expect(mockEnd).not.toHaveBeenCalled();
   });
 
+  test('a second press before the last lift is released keeps the hold', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(14 * MINUTE + 5_000);
+    const banner = screen.getByRole('alert');
+    await act(async () => {
+      fireEvent.pointerDown(banner);
+      fireEvent.pointerUp(banner);
+    });
+    await advance(200);
+    await act(async () => {
+      fireEvent.pointerDown(banner);
+    });
+    // The first lift's release (500 ms) has passed and a tick has run: still held.
+    await advance(1_500);
+    expect(screen.getByRole('alert')).toBe(banner);
+    expect(mockEnd).not.toHaveBeenCalled();
+  });
+
   test('a hold whose lift never arrives is let go after ten seconds', async () => {
     idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
     await mount();
