@@ -286,13 +286,13 @@ export default function SetupWizard() {
             <p
               className={`text-[length:var(--t-sm)] font-semibold ${
                 feedback.kind === 'error'
-                  ? 'text-[color:var(--locked-ink)]'
+                  ? 'text-[color:var(--restricted-ink)]'
                   : feedback.kind === 'success'
                     ? 'text-[color:var(--cleared-ink)]'
                     : 'text-[color:var(--bone-300)]'
               }`}
             >
-              {feedback.kind === 'error' && '✕ '}{feedback.kind === 'success' && '✓ '}{feedback.text}
+              {feedback.kind === 'error' && '▲ '}{feedback.kind === 'success' && '✓ '}{feedback.text}
             </p>
           </div>
         )}

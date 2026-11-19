@@ -1204,8 +1204,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
         )}
 
         {error && (
-          <div role="alert" className="alert alert--critical">
-            <span className="alert-icon" aria-hidden="true">✕</span>
+          <div role="alert" className="alert alert--warning">
+            <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
               <p className="alert-msg">{error}</p>
             </div>
@@ -1248,7 +1248,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                 so. */}
             {strandedGuardians.length > 0 && (
               <div className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-bold text-[color:var(--locked-ink)]">
+                <p className="text-[length:var(--t-sm)] font-bold text-[color:var(--restricted-ink)]">
                   ▲ {strandedGuardians.length} guardian{strandedGuardians.length === 1 ? '' : 's'} linked to no athlete
                 </p>
                 <p className="t-body mt-[var(--s2)]">
@@ -1451,14 +1451,10 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                         <td>
                           <span
                             className={`badge ${
-                              status.tone === 'ok'
-                                ? 'badge--cleared'
-                                : status.tone === 'pending'
-                                  ? 'badge--restricted'
-                                  : 'badge--locked'
+                              status.tone === 'ok' ? 'badge--cleared' : 'badge--restricted'
                             }`}
                           >
-                            <i>{status.tone === 'ok' ? '✓' : status.tone === 'pending' ? '▲' : '✕'}</i>
+                            <i>{status.tone === 'ok' ? '✓' : '▲'}</i>
                             {status.label}
                           </span>
                         </td>

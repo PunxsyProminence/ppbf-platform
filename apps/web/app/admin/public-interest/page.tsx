@@ -128,8 +128,8 @@ export default function PublicInterestReviewPage() {
         </div>
 
         {error ? (
-          <p role="alert" className="alert alert--critical">
-            <span className="alert-icon">✕</span>
+          <p role="alert" className="alert alert--warning">
+            <span className="alert-icon">▲</span>
             <span className="alert-msg">{error}</span>
           </p>
         ) : null}

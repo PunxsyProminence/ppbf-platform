@@ -243,7 +243,7 @@ function VideoReviewConsoleContent() {
 
         {error && (
           <div
-            className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--locked-ink)]"
+            className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--restricted-ink)]"
             role="alert"
           >
             {error}

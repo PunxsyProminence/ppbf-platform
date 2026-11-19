@@ -103,6 +103,31 @@ test('open flags render worst first with severity counts', async () => {
   expect(screen.getAllByText('blocking').length).toBeGreaterThan(0);
 });
 
+/* Overwatch Q5, applying OW25-48 A (lane U1, SC2-3): a blocking flag keeps the
+   medical-stop mark only for a clinician's stop. */
+test('a blocking clinician stop keeps the mark; any other blocking flag is restricted', async () => {
+  global.fetch = mockFetch({
+    flags: [
+      flag({ flag_id: 'f-rtp', severity: 'blocking_display', flag_code: 'rtp_not_cleared' }),
+      flag({ flag_id: 'f-hold', severity: 'blocking_display', flag_code: 'no_contact_hold' }),
+    ],
+  });
+
+  await act(async () => {
+    render(<SafetyFlagsBoardPage />);
+  });
+
+  const cardOf = (code: string) => screen.getByText(code).closest('li') as HTMLElement;
+  const stop = cardOf('rtp_not_cleared').querySelector('.badge') as HTMLElement;
+  expect(stop.className).toContain('badge--locked');
+  expect(stop.textContent).toContain('✕');
+  const other = cardOf('no_contact_hold').querySelector('.badge') as HTMLElement;
+  expect(other.className).toContain('badge--restricted');
+  expect(other.className).not.toContain('badge--locked');
+  expect(other.textContent).toContain('▲');
+  expect(other.textContent).toContain('blocking');
+});
+
 test('a resolution never leaves without a note', async () => {
   const capture = { patches: [] as unknown[] };
   global.fetch = mockFetch({ flags: [flag()], capture });

@@ -51,8 +51,9 @@ interface AthleteWaiverRow {
   tonight?: Tonight;
 }
 
-// Room DNA (clinic): --locked is what this room says when a clinician or a
-// hold has stopped something, which is exactly what 'not cleared' reports.
+// Room DNA (clinic): --locked means a medical stop and nothing else (OW25-48
+// A), so 'not cleared' wears it only when the clearance record says so; a hold
+// alone is restricted (tonightBadge, Overwatch Q5).
 // A read that failed is not that, and sits on --restricted as it does on
 // /coach/sports-medicine. Its label says what happened to the read, because
 // "unavailable" under a column headed Tonight reads as the athlete being
@@ -124,6 +125,24 @@ const MEDIA_WORDS: Record<WaiverStatus, string> = {
   withdrawn: 'withdrawn by a guardian',
   missing: 'not on file from every guardian',
 };
+
+/*
+ * WHICH "NOT CLEARED" IS A MEDICAL STOP (Overwatch Q5, applying Jason's card
+ * OW25-48 A: "Medical-stop mark only for a medical stop"; lane U1, SC2-3).
+ * Tonight is "not cleared" when the clearance record says not_cleared OR an
+ * all-training hold is in force. Only the first is a medical stop and keeps
+ * the mark; a hold alone (which may come from a pain report, OD-2026-10-03-017)
+ * is "Not cleared" on the restricted rung. Same word either way: whether the
+ * athlete trains tonight does not change, only which mark it wears.
+ */
+const HOLD_ONLY_NOT_CLEARED = { rung: 'badge--restricted', glyph: '▲', label: 'Not cleared' };
+
+function tonightBadge(tonight: Tonight | undefined): { rung: string; glyph: string; label: string } {
+  const answer = tonight?.answer ?? 'unavailable';
+  if (answer !== 'not_cleared') return TONIGHT_BADGE[answer];
+  const medicalStop = tonight !== undefined && tonight.medical !== 'unavailable' && tonight.medical.status === 'not_cleared';
+  return medicalStop ? TONIGHT_BADGE.not_cleared : HOLD_ONLY_NOT_CLEARED;
+}
 
 /** The medical record in its own word, with the day its clearance ends or ended. */
 function medicalWords(medical: { status: string; expires_at: string | null }): string {
@@ -490,9 +509,9 @@ export default function WaiverComplianceAuditPage() {
                       <td className="t-body px-[var(--s4)] py-[var(--s3)]">{row.athlete_name}</td>
                       {/* A row with no answer sent is unavailable, never cleared. */}
                       <td className="px-[var(--s4)] py-[var(--s3)] align-top">
-                        <span className={`badge ${TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].rung}`}>
-                          <i>{TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].glyph}</i>
-                          {TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].label}
+                        <span className={`badge ${tonightBadge(row.tonight).rung}`}>
+                          <i>{tonightBadge(row.tonight).glyph}</i>
+                          {tonightBadge(row.tonight).label}
                         </span>
                         {row.tonight && contactClearanceLine(row.tonight) ? (
                           <p className="t-muted mt-[var(--s2)]">{contactClearanceLine(row.tonight)}</p>

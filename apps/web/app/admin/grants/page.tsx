@@ -179,8 +179,8 @@ function GrantReport({ items }: Readonly<{ items: readonly ObligationRow[] }>) {
         </button>
       </div>
       {failure ? (
-        <div role="alert" className="alert alert--critical mt-[var(--s3)]">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <div role="alert" className="alert alert--warning mt-[var(--s3)]">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <div className="alert-body">
             <p className="alert-title">Download failed</p>
             <p className="alert-msg">{failure}</p>
@@ -333,8 +333,8 @@ export default function GrantObligationsPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical print:hidden" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning print:hidden" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>
@@ -420,7 +420,7 @@ export default function GrantObligationsPage() {
                       <span className="t-body font-semibold text-[color:var(--bone-100)]">{row.grant_name}</span>
                       {row.funder_name ? <span className="t-label">{row.funder_name}</span> : null}
                       <span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{row.status.replaceAll('_', ' ')}</span>
-                      {overdue ? <span className="badge badge--locked"><i aria-hidden="true">✕</i>overdue</span> : null}
+                      {overdue ? <span className="badge badge--restricted"><i aria-hidden="true">▲</i>overdue</span> : null}
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
                         {row.obligation_type} due {formatGymDateNumeric(row.due_date)}
                       </span>

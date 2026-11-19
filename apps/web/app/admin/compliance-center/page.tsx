@@ -37,18 +37,20 @@ const athleteLabel = (v: ComplianceViolation) => v.athlete_name || v.athlete_id;
 const ruleLabel = (v: ComplianceViolation) => v.rule_name || v.rule_id;
 
 // Law 3: severity and workflow state each carry a glyph and an uppercase
-// label on the badge ladder, never colour alone. Severity climbs the four
-// rungs; workflow state maps to what the queue still owes: new/escalated
+// label on the badge ladder, never colour alone. Severity climbs three rungs:
+// critical shares the restricted rung with high and is told apart by its word,
+// since a compliance violation is not a medical stop (OW25-48 A; lane U1,
+// SC2-3). Workflow state maps to what the queue still owes: new/escalated
 // await action, acknowledged/dismissed are tracked, resolved is settled.
 const SEVERITY_BADGE: Record<ComplianceViolation['severity'], { rung: string; glyph: string }> = {
-  critical: { rung: 'badge--locked', glyph: '✕' },
+  critical: { rung: 'badge--restricted', glyph: '▲' },
   high: { rung: 'badge--restricted', glyph: '▲' },
   medium: { rung: 'badge--monitor', glyph: '◉' },
   low: { rung: 'badge--cleared', glyph: '✓' },
 };
 
-// Room DNA (clinic): --locked, the red rung, is what this room says when a
-// clinician or a safeguarding decision has stopped something. `escalated` is
+// Room DNA (clinic): --locked, the red rung, means a medical stop and nothing
+// else (OW25-48 A), so nothing on this page wears it. `escalated` is
 // neither -- it is a workflow state meaning a human handed the row up the
 // ladder, and it wore the same red as `critical` severity two badges to its
 // left. It drops to --restricted, which is where the comment above already
@@ -297,7 +299,7 @@ export default function AdminComplianceCenterPage() {
             Compliance Center
           </h1>
           <p className="t-body mt-[var(--s3)]">Review, manage, and escalate athlete compliance violations.</p>
-          {/* --locked is a medical or safeguarding fact in this room. A register
+          {/* --locked is a medical stop and nothing else (OW25-48 A). A register
               that would not load, and a transition the server bounced, are
               neither -- and the correct answer was already twelve lines below,
               in the .alert--warning the unavailable-metrics notice uses for
@@ -334,7 +336,7 @@ export default function AdminComplianceCenterPage() {
         <section className="grid grid-cols-2 gap-[var(--s4)] sm:grid-cols-5">
           {([
             ['Total (this view)', metrics.total, null],
-            ['Critical (this view)', metrics.critical, '✕'],
+            ['Critical (this view)', metrics.critical, '▲'],
             ['High (this view)', metrics.high, '▲'],
             ['Medium (this view)', metrics.medium, '◉'],
             ['Low (this view)', metrics.low, '✓'],

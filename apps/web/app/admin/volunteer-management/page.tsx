@@ -225,8 +225,8 @@ export default function VolunteerManagementPage() {
               Everything on this page is kept on file — nothing here is a sample.
             </p>
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning">
+                <span className="alert-icon">▲</span>
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}

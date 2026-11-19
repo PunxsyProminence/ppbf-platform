@@ -129,13 +129,14 @@ const STATUS_TABS: { value: ReviewStatus; label: string }[] = [
  * gym should not have to distinguish two similar reds.
  *
  * The rung and glyph are the design system's badge ladder, the same one
- * /admin/compliance-center uses for violation severity: critical -> locked,
- * high -> restricted, moderate -> monitor. This page first named its own
+ * /admin/compliance-center uses for violation severity: critical and high ->
+ * restricted (a symptom ticket is not a medical stop, OD-2026-10-03-017 and
+ * OW25-48 A; the word tells them apart), moderate -> monitor. This page first named its own
  * classes (severity-critical, ticket, tabs ...) that no stylesheet ever
  * defined, so it rendered unstyled until it moved onto the shared ones.
  */
 const SEVERITY_STYLE: Record<Severity, { label: string; rung: string; glyph: string }> = {
-  critical: { label: 'CRITICAL', rung: 'badge--locked', glyph: '✕' },
+  critical: { label: 'CRITICAL', rung: 'badge--restricted', glyph: '▲' },
   high: { label: 'HIGH', rung: 'badge--restricted', glyph: '▲' },
   moderate: { label: 'MODERATE', rung: 'badge--monitor', glyph: '◉' },
 };
@@ -306,8 +307,8 @@ function ShadowReviewsConsole() {
       </header>
 
       {status === 'open' && criticalCount > 0 && (
-        <p role="status" className="alert alert--critical">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <p role="status" className="alert alert--warning">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <span className="alert-msg">
             {criticalCount} critical {criticalCount === 1 ? 'ticket' : 'tickets'} waiting.
             Critical means the classifier read chest pain, fainting, loss of
@@ -334,8 +335,8 @@ function ShadowReviewsConsole() {
       </nav>
 
       {error && (
-        <p role="alert" className="alert alert--critical">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <p role="alert" className="alert alert--warning">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <span className="alert-msg">{error}</span>
         </p>
       )}
@@ -422,8 +423,8 @@ function ShadowReviewsConsole() {
                 )}
                 {exchange?.kind === 'loading' && <p className="t-muted">Reading the flagged exchange…</p>}
                 {exchange?.kind === 'error' && (
-                  <p role="alert" className="alert alert--critical">
-                    <span className="alert-icon" aria-hidden="true">✕</span>
+                  <p role="alert" className="alert alert--warning">
+                    <span className="alert-icon" aria-hidden="true">▲</span>
                     <span className="alert-msg">{exchange.message}</span>
                   </p>
                 )}

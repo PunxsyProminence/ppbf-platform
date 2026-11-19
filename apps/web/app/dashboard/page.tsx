@@ -86,8 +86,8 @@ export default function DashboardEntryPage() {
               <div className="mt-[var(--s5)] grid justify-items-center gap-[var(--s4)]">
                 {/* Law 3: the failed check carries a glyph and an uppercase
                     label, not colour alone. */}
-                <div className="alert alert--critical alert--tight">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div className="alert alert--warning alert--tight">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-title">Session check failed</p>
                   </div>

@@ -137,12 +137,17 @@ test('escalated is a workflow state and does not wear the room\u2019s medical re
   expect(status.textContent).toContain('\u25c8');
 });
 
-test('critical severity keeps the medical red', async () => {
+/* Changed by lane U1, SC2-3: this used to pin critical severity to the medical
+   red. Jason's card OW25-48 A ("Medical-stop mark only for a medical stop"),
+   applied to the whole app by Overwatch (Q6), moves it: a critical compliance
+   violation is not a medical stop. The word still says critical. */
+test('critical severity is on the restricted rung with its word, not the medical-stop mark', async () => {
   await renderWithViolations([violation({ severity: 'critical' })]);
 
   const severity = badgeFor('critical');
-  expect(severity.className).toContain('badge--locked');
-  expect(severity.textContent).toContain('\u2715');
+  expect(severity.className).toContain('badge--restricted');
+  expect(severity.className).not.toContain('badge--locked');
+  expect(severity.textContent).toContain('\u25b2');
 });
 
 test('a register that would not load is not stamped as a medical emergency', async () => {
