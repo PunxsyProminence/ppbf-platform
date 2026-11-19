@@ -256,7 +256,9 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
       setSecondsLeft(Math.ceil(left / 1000));
       if (!countingRef.current) showCountdown(true);
     } else if (countingRef.current) {
-      if (bannerHeld.current && now - bannerHeldSince.current >= BANNER_HOLD_MAX_MS) bannerHeld.current = false;
+      // A clock set back while held (now before the press) lets go as well.
+      const heldFor = now - bannerHeldSince.current;
+      if (bannerHeld.current && (heldFor >= BANNER_HOLD_MAX_MS || heldFor < 0)) bannerHeld.current = false;
       if (!bannerHeld.current) showCountdown(false);
     }
   }, [showCountdown]);
