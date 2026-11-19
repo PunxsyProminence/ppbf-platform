@@ -84,8 +84,10 @@ Research releases have their own contract (not in this file yet).
 - A coach's in-app edit wins (OD-2026-11-19-005; lane IG). A CHANGED drill or workout template whose current
   version a coach edited in the app is HELD instead: nothing is written for it, the plan and the dry run list it
   with the reason, and the rest of the hand-off still loads. A child file counts (a drill's cues, a template's
-  items). A template step that links a held drill must fit the coach's kept version, or that template is held too.
-  A held item is held on every later plan: the coach's version stays the one in use, and a coach who wants the
+  items). A template step that links a held drill must fit the coach's kept version, or that template is held too;
+  a track session naming a template held that way (never loaded) holds its track. A held template or script keeps
+  its steps, so a drill may not be lowered below them (blocking: drill_contact_below_steps). A held item is held on
+  every later plan that would change it: the coach's version stays the one in use, and a coach who wants the
   package's text enters it in the app. Session scripts are not covered. A package may not carry an
   "In-app edit" field label: only the app writes that label (blocking: in_app_edit_label).
 - The seed workflow and `npm run seed:<dataset>` load through this rule (the content-import core). A dataset

@@ -15,10 +15,10 @@ import type { DbClient } from './actor';
 // holds an in-app edit is HELD instead (datasets/index.ts): nothing is written
 // for it, the plan says why, and nothing else in the package waits on it. The
 // coach's edit wins (Overwatch, F1 = A: no override). The coach's version stays
-// the one in use and the item is held on EVERY later plan and dry run: once
-// edited, its stored labels carry in-app labels no package can carry (the
-// validator refuses them), so it never plans unchanged again. A coach who
-// wants the package's text enters it in the app.
+// the one in use and the item is held on every later plan that would change
+// it: once edited, its stored labels carry in-app labels no package can carry
+// (the validator refuses them), so a package with label columns never matches
+// it again. A coach who wants the package's text enters it in the app.
 //
 // HOW AN IN-APP EDIT IS RECOGNISED, either of:
 //   (a) the current version's stored field_labels hold an in-app label at any
@@ -154,7 +154,7 @@ export async function inAppEditedHeads(
 export function heldReason(version: number, edit: InAppEditedHead): string {
   const who = [edit.role, edit.date].filter(Boolean).join(', ');
   return `kept: its current version v${version} holds an in-app edit${edit.path ? ` (${edit.path})` : ''}${who ? ` by ${who}` : ''}; `
-    + 'the package\'s version was not loaded. The coach\'s version stays in use and is held on every later plan; '
+    + 'the package\'s version was not loaded. The coach\'s version stays in use and is held on every later plan that would change it; '
     + 'a coach who wants the package\'s text enters it in the app.';
 }
 
@@ -162,7 +162,7 @@ export function heldReason(version: number, edit: InAppEditedHead): string {
  * THE KEPT STEPS OF A HELD TEMPLATE OR SCRIPT (lane IG). The validator's
  * drill_contact_below_steps skips a template's or script's stored steps when
  * the package carries step rows for it, because those rows replace them. A
- * HELD template or script is not written, so its stored steps stay -- and a
+ * HELD template or script (either cause) is not written, so its stored steps stay -- and a
  * step is issued against its drill's NEWEST version (workoutTemplates.ts,
  * "A STEP NAMES THE NEWEST VERSION"). So a drill this plan revises may not go
  * below a kept step of a held parent: that drill is rejected (blocking), as
@@ -196,8 +196,8 @@ export function heldStepFindings(
         column: 'contact_level',
         key: lineage,
         message: `contact_level ${level} is below ${above.length} kept step${above.length === 1 ? '' : 's'} linking drill '${lineage}' `
-          + `in a template or script that is held because a coach edited it in the app: ${named}${above.length > 5 ? ', ...' : ''}. `
-          + 'Those steps stay as they are, so keep the drill\'s contact_level.',
+          + `in a template or script that is held in this plan (see its reason): ${named}${above.length > 5 ? ', ...' : ''}. `
+          + 'A held item keeps its steps, so keep the drill\'s contact_level.',
       },
     });
   }

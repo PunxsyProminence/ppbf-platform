@@ -79,10 +79,13 @@ const shared = versionedDatasetEngine({
 });
 
 function reject(item: VersionedItem, message: string): void {
+  // A reject wins over a hold (inAppEdits.ts): drop the held cause and its line.
+  const held = item.unit.outcome === 'held';
   item.unit.outcome = 'reject';
+  delete item.unit.heldBy;
   delete item.unit.fromVersion;
   delete item.unit.toVersion;
-  item.unit.reasons = [...(item.unit.reasons ?? []), message];
+  item.unit.reasons = [...(held ? [] : item.unit.reasons ?? []), message];
 }
 
 export const trainingTracksEngine: DatasetEngine = {

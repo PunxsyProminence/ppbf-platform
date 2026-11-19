@@ -554,12 +554,12 @@ function ContentImportScreen() {
             <UnitList
               units={byOutcome('held').filter((unit) => unit.held_by !== 'held_dependency')}
               title="Kept: edited in the app"
-              note="A coach edited these in the app, so the files' version is not loaded and the coach's stays in use. They stay held on every later check; a coach who wants the files' text enters it in the app. The rest still applies."
+              note="A coach edited these in the app, so the files' version is not loaded and the coach's stays in use. They stay held on every later check that would change them; a coach who wants the files' text enters it in the app. The rest still applies."
             />
             <UnitList
               units={byOutcome('held').filter((unit) => unit.held_by === 'held_dependency')}
               title="Not loaded: depends on an item kept from the app"
-              note="These link a drill, or name a template, that a coach edited in the app and that is held, and would not fit the coach's version. Nothing is written for these; the rest still applies."
+              note="Nobody edited these. Each depends on something held in this check (a drill a coach edited, or a template not loaded because of one) and cannot be written against it; each line says which. Nothing is written for these; the rest still applies."
             />
             <UnitList units={byOutcome('new')} title="New" />
             <UnitList units={byOutcome('new_version')} title="New version (the old one is kept)" />
