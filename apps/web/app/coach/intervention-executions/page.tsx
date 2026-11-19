@@ -330,7 +330,7 @@ export default function InterventionExecutionsPage() {
     if (row.adherence === 'unknown') {
       return <span className="badge badge--monitor"><i aria-hidden="true">◉</i>adherence unknown</span>;
     }
-    return <span className="badge badge--locked"><i aria-hidden="true">△</i>{row.adherence.replaceAll('_', ' ')}</span>;
+    return <span className="badge badge--restricted"><i aria-hidden="true">△</i>{row.adherence.replaceAll('_', ' ')}</span>;
   };
 
   return (
@@ -349,8 +349,8 @@ export default function InterventionExecutionsPage() {
           </header>
 
           {errorMessage && (
-            <div className={`alert ${errorMessage === NOT_REFRESHED ? 'alert--warning' : 'alert--critical'}`} role="alert">
-              <span className="alert-icon" aria-hidden="true">{errorMessage === NOT_REFRESHED ? '▲' : '✕'}</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">{errorMessage === NOT_REFRESHED ? 'Saved' : 'Failed'}</p>
                 <p className="alert-msg">{errorMessage}</p>
@@ -407,7 +407,7 @@ export default function InterventionExecutionsPage() {
                       {row.status === 'in_progress' ? (
                         <span className="badge badge--monitor"><i aria-hidden="true">▶</i>in progress</span>
                       ) : row.status === 'stopped' ? (
-                        <span className="badge badge--locked"><i aria-hidden="true">◼</i>stopped</span>
+                        <span className="badge badge--restricted"><i aria-hidden="true">◼</i>stopped</span>
                       ) : (
                         <span className="badge badge--cleared"><i aria-hidden="true">✓</i>completed</span>
                       )}

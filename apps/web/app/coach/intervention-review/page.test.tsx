@@ -88,7 +88,9 @@ test('the chain renders in order with counterevidence visible and the unreviewed
   // rendered -- annotation, never a hidden row; the admissible row wears no
   // such stamp.
   const stamp = screen.getByText('inadmissible — no accepted proposal');
-  expect(stamp.className).toContain('badge--locked');
+  // The restricted rung, not the medical-stop mark (OW25-48 A; lane U1, SC2-2).
+  expect(stamp.className).toContain('badge--restricted');
+  expect(stamp.className).not.toContain('badge--locked');
   expect(screen.getByText(/film study prop-7/)).toBeTruthy();
   expect(screen.getByText(/training attempt att-9/)).toBeTruthy();
 });

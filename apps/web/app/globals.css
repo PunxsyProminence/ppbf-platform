@@ -660,7 +660,10 @@ h6 {
 }
 
 .leather-tag.is-active {
-  box-shadow: inset 0 -3px 0 var(--safety-locked), var(--shadow-sm);
+  /* Brass, not --safety-locked (an alias of --locked, the medical stop): an
+     active tag is chrome in the "on" position, not a claim about a person
+     (OW25-48 A; lane U1, SC2-2). */
+  box-shadow: inset 0 -3px 0 var(--accent), var(--shadow-sm);
 }
 
 .paper-ticket {
@@ -1077,15 +1080,17 @@ h6 {
 
 /* (1) Danger keeps being danger. A destructive action must not be able to
    render in the chassis colour, hovered or not (Law 2: saturated colour is
-   safety and destruction, and brass is neither). Built from --locked rather
-   than from a second red so the button and the badge reporting the same state
-   cannot disagree; hover lifts the face toward bone, which is a lamp coming up
-   on the same object, not a different colour. */
+   safety and destruction, and brass is neither). Built from --stamp-red, the
+   red the button's own face is drawn from (ppbf-leather-brass.css .btn--danger),
+   NOT from --locked: --locked means a medical stop and nothing else (OW25-48 A;
+   lane U1, SC2-2), and a destructive button is not one. Red itself is not
+   reserved (OD-2026-09-29-001), so the button looks as it did. Hover lifts the
+   face toward bone, a lamp coming up on the same object. */
 .btn--danger:hover {
   background-image: linear-gradient(180deg,
-    color-mix(in srgb, var(--locked) 66%, var(--bone-100)) 0%,
-    color-mix(in srgb, var(--locked) 94%, var(--bone-100)) 55%,
-    var(--locked) 100%);
+    color-mix(in srgb, var(--stamp-red) 66%, var(--bone-100)) 0%,
+    color-mix(in srgb, var(--stamp-red) 94%, var(--bone-100)) 55%,
+    var(--stamp-red) 100%);
 }
 
 /* (2) The middle tier. Leather, not brass: the material the chassis is bolted

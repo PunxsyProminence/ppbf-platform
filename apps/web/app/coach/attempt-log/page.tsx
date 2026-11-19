@@ -203,7 +203,7 @@ function AttemptCard({ attempt, canReview, onReviewed }: { attempt: AttemptRow; 
         ) : attempt.made ? (
           <span className="badge badge--cleared"><i aria-hidden="true">✓</i>made</span>
         ) : (
-          <span className="badge badge--locked"><i aria-hidden="true">✕</i>missed</span>
+          <span className="badge badge--restricted"><i aria-hidden="true">▲</i>missed</span>
         )}
         <span className="t-body font-semibold text-[color:var(--bone-100)]">
           {attempt.achieved_value}{spokenUnit(unit)}
@@ -464,8 +464,8 @@ export default function AttemptLogPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>

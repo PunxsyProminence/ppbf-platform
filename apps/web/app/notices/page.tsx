@@ -284,8 +284,8 @@ function NoticesAuthoringPage() {
             /* Law 3: the failed load carries a glyph and an uppercase label,
                not the safety red alone. */
             <div role="alert" className="flex flex-wrap items-center gap-[var(--s3)]">
-              <span className="badge badge--locked">
-                <i aria-hidden="true">✕</i>Load failed
+              <span className="badge badge--restricted">
+                <i aria-hidden="true">▲</i>Load failed
               </span>
               <p className="t-body">{loadError}</p>
             </div>

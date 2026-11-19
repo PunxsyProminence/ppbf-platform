@@ -120,8 +120,11 @@ test('every severity carries a glyph and its label, never colour alone (Law 3)',
   expect(high?.textContent).toContain('high');
 
   const critical = rows[1].querySelector('.badge');
-  expect(critical?.className).toContain('badge--locked');
-  expect(critical?.textContent).toContain('✕');
+  // A critical gap is not a medical stop: the restricted rung and ▲, told
+  // apart from high by its word (OW25-48 A; lane U1, SC2-2).
+  expect(critical?.className).toContain('badge--restricted');
+  expect(critical?.className).not.toContain('badge--locked');
+  expect(critical?.textContent).toContain('▲');
   expect(critical?.textContent).toContain('critical');
 });
 

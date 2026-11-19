@@ -300,7 +300,7 @@ export default function CoachVideoPublicationsPage() {
             <li>4. A passing check approves it; a failing check rejects it.</li>
             <li>5. You publish an approved publication to the research library.</li>
           </ol>
-          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{errorMessage}</p> : null}
         </header>
 
         {/* Create Publication Form */}

@@ -28,7 +28,7 @@ interface AthleteOption {
 
 const STATE_DISPLAY: Record<ReadoutRow['state'], { className: string; glyph: string; label: string; copy: string }> = {
   not_transferring: {
-    className: 'badge badge--locked', glyph: '✕', label: 'not transferring',
+    className: 'badge badge--restricted', glyph: '▲', label: 'not transferring',
     copy: 'Strong in practice, breaking down live — the gain has not transferred yet. Worth designing live exposure for.',
   },
   untested_live: {
@@ -129,8 +129,8 @@ export default function TransferCheckPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>

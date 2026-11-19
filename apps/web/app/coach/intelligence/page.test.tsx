@@ -140,9 +140,11 @@ test('escalations get ▲ and the word on the restricted rung; compliance violat
   const high = badgeOf('Fell from the apron');
   expect(high.textContent).toBe('▲high');
   expect(high.className).toContain('badge--restricted');
-  // Out of OW25-48's reach: a compliance violation keeps its own map, not the
-  // escalation one. (What a critical violation should wear is not ruled here.)
-  expect(badgeOf('Weigh-in missing').className).not.toContain('badge--restricted');
+  // A compliance violation keeps its own map, and a critical one is not a
+  // medical stop either: the restricted rung, told apart by its word (OW25-48
+  // A applied to the whole app, Overwatch Q6; lane U1, SC2-2).
+  expect(badgeOf('Weigh-in missing').className).toContain('badge--restricted');
+  expect(badgeOf('Weigh-in missing').className).not.toContain('badge--locked');
   expect(badgeOf('Weigh-in missing').textContent).toBe('critical');
 });
 

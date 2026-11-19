@@ -476,3 +476,140 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
   expect(screen.getByText('SAFETY 1 · PAIN REPORT 8/10 · 1 · HIGH')).toBeTruthy();
   expect(screen.getByText('Safety 1 pain report 8/10, 1 high')).toBeTruthy();
 });
+
+/* ------------------------------------------------------------------------
+ * THE MARK ANYWHERE ELSE (lane U1, SC2-2; Jason, card OW25-48 A: "Medical-stop
+ * mark only for a medical stop"; Overwatch Q6: the whole non-home population).
+ *
+ * The cases above render the escalation surfaces. This one reads the source:
+ * every non-test .ts/.tsx under app/ and components/, comments stripped, for
+ * the classes and tokens that draw --locked (alert--critical, badge--locked,
+ * var(--locked), --locked-ink, and the --safety-locked / --status-critical /
+ * --status-danger aliases). A file may carry them only if it is
+ *   - ALLOWED, with the reason, and no more often than it does today; or
+ *   - PENDING: still to be swept by the next U1 PRs (SC2-3, SC2-4). Each of
+ *     those PRs deletes its files from the list, and a PENDING file that no
+ *     longer carries the mark fails here until it is deleted, so the list can
+ *     only shrink.
+ * ------------------------------------------------------------------------ */
+
+const MARK_TOKEN = /alert--critical|badge--locked|--locked-ink|var\(--locked\)|var\(--safety-locked\)|var\(--status-critical\)|var\(--status-danger\)/g;
+
+const MARK_ALLOWED = new Map<string, { readonly count: number; readonly why: string }>([
+  ['app/coach/sports-medicine/page.tsx', { count: 1, why: "the Clearance Board's 'not cleared': a clearance record saying MEDICALLY_NOT_ALLOWED, the one medical stop" }],
+  ['components/uiStyles.ts', { count: 6, why: "token definitions (statusDanger, errorButton, errorContainer, errorText) that nothing renders" }],
+  ['components/AthleteWorkspace.tsx', { count: 4, why: "a home file: its marks are fixed with the athlete home (AS-8), not in this sweep" }],
+  ['components/ParentHub.tsx', { count: 2, why: "a home file: its marks are fixed with the parent home (AS-9), not in this sweep" }],
+]);
+
+/** Still to be swept: SC2-3 (office, board and platform pages). */
+const MARK_PENDING_SC2_3: readonly string[] = [
+  'app/admin/activation-codes/page.tsx',
+  'app/admin/athletes/page.tsx',
+  'app/admin/attendance/page.tsx',
+  'app/admin/board-seats/page.tsx',
+  'app/admin/coach-coverage/page.tsx',
+  'app/admin/community-service/page.tsx',
+  'app/admin/compliance-center/page.tsx',
+  'app/admin/consent/page.tsx',
+  'app/admin/credentials/page.tsx',
+  'app/admin/customize/page.tsx',
+  'app/admin/data-quality/page.tsx',
+  'app/admin/export/page.tsx',
+  'app/admin/feedback/page.tsx',
+  'app/admin/grants/page.tsx',
+  'app/admin/memberships/page.tsx',
+  'app/admin/organizations/page.tsx',
+  'app/admin/page.tsx',
+  'app/admin/payments/page.tsx',
+  'app/admin/people/page.tsx',
+  'app/admin/pin/page.tsx',
+  'app/admin/platform/overview/page.tsx',
+  'app/admin/platform/page.tsx',
+  'app/admin/portrait-review/page.tsx',
+  'app/admin/program-phases/page.tsx',
+  'app/admin/public-interest/page.tsx',
+  'app/admin/quotes/page.tsx',
+  'app/admin/safety-flags/page.tsx',
+  'app/admin/safety-review/page.tsx',
+  'app/admin/shadow-reviews/page.tsx',
+  'app/admin/shadow/page.tsx',
+  'app/admin/video-review/page.tsx',
+  'app/admin/volunteer-management/page.tsx',
+  'app/admin/waiver-status/page.tsx',
+  'app/audit/page.tsx',
+  'app/board/BoardSummaryPanel.tsx',
+  'app/board/compliance-monitoring/page.tsx',
+  'app/dashboard/page.tsx',
+  'app/evidence/page.tsx',
+  'app/knowledge-graph/page.tsx',
+  'app/operations/external-competition/page.tsx',
+  'app/operations/wrestling-league/page.tsx',
+  'app/rabbit-holes/page.tsx',
+  'app/research/page.tsx',
+  'app/research/review/page.tsx',
+  'app/staff-credentials/page.tsx',
+];
+
+/** Still to be swept: SC2-4 (athlete sign-in, athlete and parent pages). */
+const MARK_PENDING_SC2_4: readonly string[] = [
+  'app/activate/page.tsx',
+  'app/athlete/progression-intelligence/page.tsx',
+  'app/athlete/sign-in/page.tsx',
+  'app/athlete/video-analysis/page.tsx',
+  'app/change-pin/page.tsx',
+  'app/parent/progression-visibility/page.tsx',
+  'app/parent/video/page.tsx',
+  'components/ProfileSettings.tsx',
+  'components/RoleSummaryPanels.tsx',
+];
+
+function markCountsInSource(): Map<string, number> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as typeof import('node:fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('node:path') as typeof import('node:path');
+  const webRoot = path.resolve(__dirname, '..');
+  const counts = new Map<string, number>();
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') walk(full);
+      } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+        const code = fs.readFileSync(full, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
+        const found = code.match(MARK_TOKEN);
+        if (found) counts.set(path.relative(webRoot, full).split(path.sep).join('/'), found.length);
+      }
+    }
+  };
+  walk(path.join(webRoot, 'app'));
+  walk(path.join(webRoot, 'components'));
+  return counts;
+}
+
+describe('the medical-stop mark appears nowhere else in the source', () => {
+  const counts = markCountsInSource();
+  const pending = new Set([...MARK_PENDING_SC2_3, ...MARK_PENDING_SC2_4]);
+
+  test('the scan sees the one real medical stop, so it is not blind', () => {
+    expect(counts.get('app/coach/sports-medicine/page.tsx')).toBe(1);
+  });
+
+  test('every file that carries the mark is allowed, with its reason, or still pending a sweep', () => {
+    const unexplained = [...counts.keys()].filter((file) => !MARK_ALLOWED.has(file) && !pending.has(file));
+    expect(unexplained).toEqual([]);
+  });
+
+  test('an allowed file carries the mark no more often than it does today', () => {
+    const grown = [...MARK_ALLOWED].filter(([file, { count }]) => (counts.get(file) ?? 0) > count).map(([file]) => file);
+    expect(grown).toEqual([]);
+  });
+
+  test('the pending lists only shrink: a swept file is taken off', () => {
+    const swept = [...pending].filter((file) => !counts.has(file));
+    expect(swept).toEqual([]);
+  });
+});

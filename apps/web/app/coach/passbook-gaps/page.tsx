@@ -73,7 +73,7 @@ interface GapQueueItem {
 // 'monitor' rather than losing its badge: an unbadged row is still a row the
 // coach has to see.
 const SEVERITY_BADGE: Record<string, { className: string; glyph: string }> = {
-  critical: { className: 'badge--locked', glyph: '✕' },
+  critical: { className: 'badge--restricted', glyph: '▲' },
   high: { className: 'badge--restricted', glyph: '▲' },
   moderate: { className: 'badge--monitor', glyph: '◉' },
   medium: { className: 'badge--monitor', glyph: '◉' },
@@ -164,8 +164,8 @@ export default function CoachPassbookGapsPage() {
               className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]"
             />
           ) : errorMessage ? (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage} Gaps may be open that are not shown here.</p>

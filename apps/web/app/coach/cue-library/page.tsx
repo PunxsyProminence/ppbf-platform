@@ -102,8 +102,8 @@ export default function CueLibraryPage() {
           </div>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage} Cues may exist that are not shown here.</p>

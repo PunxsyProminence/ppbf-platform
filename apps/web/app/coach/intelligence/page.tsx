@@ -64,7 +64,7 @@ const EMPTY: Digest = {
 // lying about the record. Anything unrecognized falls to 'monitor' rather than
 // disappearing: an unbadged safety row is still a safety row a coach must see.
 const SEVERITY_BADGE: Record<string, string> = {
-  critical: 'badge--locked',
+  critical: 'badge--restricted',
   high: 'badge--restricted',
   moderate: 'badge--monitor',
   medium: 'badge--monitor',
@@ -149,8 +149,8 @@ export default function CoachIntelligencePage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage} Items may exist that are not shown here.</p>

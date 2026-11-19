@@ -163,13 +163,13 @@ export default function ClipTagsPanel({
     <div aria-label="Clip tags" className="mt-[var(--s3)] w-full rounded-[var(--r-md)] p-[var(--s3)]">
       <p className="t-label">Who is in this clip</p>
       {loadError ? (
-        <p role="alert" className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{loadError}</p>
+        <p role="alert" className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{loadError}</p>
       ) : tags === null ? (
         <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">Loading tags...</p>
       ) : (
         <>
           {blocked ? (
-            <p role="status" className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">
+            <p role="status" className="mt-[var(--s2)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">
               Consent blocked: a tagged athlete&apos;s media consent does not allow video, so no one can play this clip.
               Notes are hidden. Only an organization admin can remove the tag that blocks it.
             </p>

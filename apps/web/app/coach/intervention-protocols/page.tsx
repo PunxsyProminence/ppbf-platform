@@ -243,8 +243,8 @@ export default function InterventionProtocolsPage() {
           </header>
 
           {errorMessage && (
-            <div className={`alert ${errorMessage === NOT_REFRESHED ? 'alert--warning' : 'alert--critical'}`} role="alert">
-              <span className="alert-icon" aria-hidden="true">{errorMessage === NOT_REFRESHED ? '▲' : '✕'}</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">{errorMessage === NOT_REFRESHED ? 'Saved' : 'Failed'}</p>
                 <p className="alert-msg">{errorMessage}</p>
@@ -322,7 +322,7 @@ export default function InterventionProtocolsPage() {
                   <li key={protocol.protocol_id} className="mat-leather rounded-[var(--r-md)] p-[var(--s3)]">
                     <div className="flex flex-wrap items-center gap-[var(--s3)]">
                       {protocol.status === 'retired' ? (
-                        <span className="badge badge--locked"><i aria-hidden="true">◼</i>retired</span>
+                        <span className="badge badge--restricted"><i aria-hidden="true">◼</i>retired</span>
                       ) : (
                         <span className="badge badge--cleared"><i aria-hidden="true">●</i>active</span>
                       )}
