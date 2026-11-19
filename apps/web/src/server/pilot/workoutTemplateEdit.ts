@@ -42,8 +42,10 @@ import { ConflictError, NotFoundError, ValidationError } from './errors';
 // field is labelled REPORTED with the editor; a changed item list is labelled as
 // the field 'items' (contentLabels.ts#writeEditedVersionLabels).
 //
-// KNOWN GAP (Overwatch 2026-11-19, flagged not fixed): a later content-import
-// package that revises this template writes v(n+2) over the coach's edit.
+// IMPORTS DO NOT OVERWRITE AN EDIT (lane IG closed the known gap): a later
+// content-import package that would revise this template is held instead --
+// nothing written, the plan says why -- because the edited version carries
+// in-app labels and an in_app_edit audit event (contentImport/inAppEdits.ts).
 
 const TEMPLATE_TEXT_FIELDS = ['name', 'session_type', 'age_band', 'intent'] as const;
 const TEMPLATE_KEYS = [

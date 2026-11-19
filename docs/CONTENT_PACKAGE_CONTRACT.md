@@ -81,6 +81,12 @@ Research releases have their own contract (not in this file yet).
   and timestamps never count.
 - A CHANGED item gets a new version and the old one is kept as history. A NEW item is inserted. An UNCHANGED item
   is skipped. An item the hand-off leaves out is left alone and listed.
+- A coach's in-app edit wins (OD-2026-11-19-005; lane IG). A CHANGED drill or workout template whose current
+  version a coach edited in the app is HELD instead: nothing is written for it, the plan and the dry run list it
+  with the reason, and the rest of the hand-off still loads. A child file counts (a drill's cues, a template's
+  items). A template step that links a held drill must fit the coach's kept version, or that template is held too.
+  A held item stays listed on every plan until a coach changes it in the app. A package may not carry an
+  "In-app edit" field label: only the app writes that label (blocking: in_app_edit_label).
 - The seed workflow and `npm run seed:<dataset>` load through this rule (the content-import core). A dataset
   with no loader yet says so under "Loaded today", and a load that names it is refused, not skipped.
 

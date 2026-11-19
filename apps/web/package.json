@@ -671,7 +671,8 @@
     "test:migrations:w2-identity-reach": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/w2IdentityReach.pg.test.ts --testTimeout=240000",
     "test:migrations:drill-library-edit": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillLibraryEdit.pg.test.ts --testTimeout=240000",
     "test:migrations:workout-template-edit": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/workoutTemplateEdit.pg.test.ts --testTimeout=240000",
-    "test:migrations:personal-goal-undo": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/personalGoalUndo.pg.test.ts --testTimeout=180000"
+    "test:migrations:personal-goal-undo": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/personalGoalUndo.pg.test.ts --testTimeout=180000",
+    "test:migrations:content-import-in-app-edits": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportInAppEdits.pg.test.ts --testTimeout=300000"
   },
   "dependencies": {
     "@azure/identity": "^4.14.0",

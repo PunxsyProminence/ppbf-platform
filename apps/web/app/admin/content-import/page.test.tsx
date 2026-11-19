@@ -375,6 +375,41 @@ test('every outcome is a .badge with one of the contract\'s four glyphs and an u
   }
 });
 
+test('an item a coach edited in the app is listed as kept, with its reason, and does not stop Apply (lane IG)', async () => {
+  reply = {
+    status: 200,
+    body: planBody({
+      counts: { 'drill-library': { new: 1, new_version: 0, unchanged: 0, absent: 0, reject: 0, held: 1 } },
+      totals: { new: 1, new_version: 0, unchanged: 0, absent: 0, reject: 0, held: 1 },
+      changes: 1,
+      units: [
+        { dataset: 'drill-library', key: 'drl_0000000000000a', outcome: 'new', label: 'Jab Ladder', to_version: 1 },
+        {
+          dataset: 'drill-library',
+          key: 'drl_0000000000000g',
+          outcome: 'held',
+          label: 'Coach Drill',
+          reasons: ["kept: its current version v2 holds an in-app edit (purpose) by coach, 2026-11-19; the package's version was not loaded."],
+        },
+      ],
+    }),
+  };
+  render(<ContentImportPage />);
+  await chooseFiles([new File([DRILLS_CSV], 'seed_drill_library.csv', { type: 'text/csv' })]);
+  await checkFiles();
+
+  const plan = screen.getByRole('region', { name: 'Plan' });
+  expect(plan.textContent).toContain('1 new · 0 new version · 0 unchanged · 0 absent · 0 reject · 1 held');
+  expect(within(plan).getByRole('heading', { name: 'Kept: edited in the app (1)' })).toBeTruthy();
+  const badges = Array.from(plan.querySelectorAll('.badge'));
+  expect(badges.map((badge) => badge.textContent)).toEqual(['◉KEPT', '✓NEW']);
+  expect(badges[0].className).toBe('badge badge--filed');
+  const kept = badges[0].closest('li') as HTMLElement;
+  expect(kept.textContent).toContain('Coach Drill');
+  expect(kept.textContent).toContain('holds an in-app edit (purpose) by coach');
+  expect((screen.getByRole('button', { name: 'Apply 1 change' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
 test('a retirement is a RETIRE badge with the CLI wording and its versions, never NEW VERSION, and still obeys Law 3', async () => {
   reply = {
     status: 200,

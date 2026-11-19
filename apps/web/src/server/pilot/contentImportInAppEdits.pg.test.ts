@@ -14,7 +14,7 @@
 //   - an edit recorded only in the audit log still counts.
 //
 // The edits are made through the real edit paths (drillLibraryEdit.ts,
-// workoutTemplateEdit.ts). Spins up the same disposable, local-only embedded
+// workoutTemplateEdit.ts). The engine's own unit half is contentImport/inAppEdits.test.ts. Spins up the same disposable, local-only embedded
 // Postgres the other pg suites use; it NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
@@ -33,7 +33,7 @@ let activeConnectionString: string | null = null;
 
 // The edit paths open their own transaction (db.ts withTransaction); here it is
 // a connection of its own to the test database, so an edit commits for real.
-jest.mock('../db', () => ({
+jest.mock('./db', () => ({
   withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
     if (!activeConnectionString) throw new Error('test bug: no active embedded database');
     const own = new Client({ connectionString: activeConnectionString });
@@ -54,15 +54,15 @@ jest.mock('../db', () => ({
   }),
 }));
 
-import { editLibraryDrill, parseDrillLibraryEdit } from '../drillLibraryEdit';
-import { editWorkoutTemplate, parseWorkoutTemplateEdit } from '../workoutTemplateEdit';
-import { applyImport } from './apply';
-import { formatPlan, readDatasetFiles, runApply } from './cli';
-import { readCsv, writeCsv } from './csv';
-import { type ImportPlan, planImport } from './plan';
-import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './referenceSets';
-import { ContentImportRefusal } from './refusal';
-import type { DatasetName } from './types';
+import { applyImport } from './contentImport/apply';
+import { formatPlan, readDatasetFiles, runApply } from './contentImport/cli';
+import { readCsv, writeCsv } from './contentImport/csv';
+import { type ImportPlan, planImport } from './contentImport/plan';
+import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './contentImport/referenceSets';
+import { ContentImportRefusal } from './contentImport/refusal';
+import type { DatasetName } from './contentImport/types';
+import { editLibraryDrill, parseDrillLibraryEdit } from './drillLibraryEdit';
+import { editWorkoutTemplate, parseWorkoutTemplateEdit } from './workoutTemplateEdit';
 
 jest.setTimeout(300_000);
 
@@ -70,7 +70,7 @@ const PG_USER = 'postgres';
 const PG_PASSWORD = 'postgres';
 const DATABASE = 'content_in_app_edits';
 const DATA_DIR = path.join(os.tmpdir(), `ppbf-content-in-app-edits-pg-test-${Date.now()}`);
-const WEB_DIR = path.resolve(__dirname, '../../../..');
+const WEB_DIR = path.resolve(__dirname, '../../..');
 const SERVER_SCRIPT_PATH = path.join(WEB_DIR, 'scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(WEB_DIR, '../../infra/azure');
 const FULL_SCHEMA_HELPER_PATH = path.join(WEB_DIR, 'scripts/lib/full-schema.mjs');

@@ -90,6 +90,9 @@ const OUTCOME_MARK: Record<PlanUnitView['outcome'], { glyph: '✓' | '◉' | '�
   unchanged: { glyph: '✓', label: 'UNCHANGED' },
   absent: { glyph: '◉', label: 'ABSENT' },
   reject: { glyph: '✕', label: 'REJECT' },
+  // A coach edited it in the app, so the files' version is not loaded (lane
+  // IG). ◉: worth a look; it does not stop the rest, unlike ✕.
+  held: { glyph: '◉', label: 'KEPT' },
 };
 
 /* A retirement is a new_version in the plan's counts, but it is not a revision:
@@ -497,6 +500,7 @@ function ContentImportScreen() {
                     <strong>{datasetLabel(name)}</strong>{' '}
                     <span className="t-data">
                       {counts.new} new · {counts.new_version} new version · {counts.unchanged} unchanged · {counts.absent} absent · {counts.reject} reject
+                      {counts.held ? ` · ${counts.held} held` : null}
                     </span>
                   </li>
                 );
@@ -537,6 +541,11 @@ function ContentImportScreen() {
             ) : null}
 
             <UnitList units={byOutcome('reject')} title="Cannot be loaded" />
+            <UnitList
+              units={byOutcome('held')}
+              title="Kept: edited in the app"
+              note="A coach edited these in the app, so the files' version is not loaded and the coach's stays. The rest still applies. A coach who wants the files' text edits it in the app."
+            />
             <UnitList units={byOutcome('new')} title="New" />
             <UnitList units={byOutcome('new_version')} title="New version (the old one is kept)" />
             <UnitList units={retiring} title="Retire (left out of the file; kept, marked inactive)" />
