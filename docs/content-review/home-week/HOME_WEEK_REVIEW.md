@@ -11,6 +11,8 @@ Source: research finding `2026-11-19-ppbf-home-week-six-sessions-draft.md` (Clau
 - evidence: one entry, `UNTIERED`, `unchecked`, basis "AI draft from the finding's principles P1-P17, mostly transferred from non-boxing research; U12 interval amounts and all set, rep, hold and rest amounts are inferred".
 - Primers (Overwatch Q5): the five primers that name no drill are folded into the warm-up item (`details.primer`) and shown in coach_notes with the warm-up line; Day 4's primer, which names Neck Preparation, stays its own step. 50 items.
 - Every step names a library drill, so all six can be issued (OD-2026-09-18-001: only an operational drill is assigned; OD-2026-10-07-012 ruling 2: a template issues whole). The six typed steps link six drills lane HW wrote (below); every linked drill passes the adoption-readiness check from the seed files (hwContentPackage.test.ts).
+- The issued card (reviewer 2, round 2, finding 1): an issued step carries only the item's coach_note, scale level and contact level, not its details nor the template's coach_notes. So every item's coach_note carries the draft's words for that step: the three band amounts, rest, cue and safety line; step 1's note carries the draft's band and supervision lines (Bands, Under 12, 12–17), the stop rule and the warm-up line with its primer; the cool-down's carries the cool-down line. The heat line stays in the template's coach_notes (the stop rule on the card says "Not today ... in a hot room"), to keep step 1's note within the 1000-character in-app edit limit.
+- Day 5 'One-two, then pivot' prefers scale level A of its linked drill (Combination 1-2-pivot): A is shadow only, as the draft's item is; B and C use a bag or pads.
 - Item shape (first version, before the two lines above): 1 home warm-up item (drill `drl_dbb0347500e7eb`, second drill `drl_0eaa11e875ffef` in details), 1 session-primer item, the draft's 6 (Day 6: 7) items, 1 home cool-down item (drill `drl_325b6ba2613eb0`, second drill `drl_786d761c9321c0` in details). Amounts for U12 / 12–17 / Adult, rest, cue and safety are in item details; the duration_minutes and rep_count columns are blank because the amounts differ by band. contact_level none on every item.
 - duration_minutes column = the draft's Adult total (Overwatch Q3); all three band totals in `details.duration_minutes_by_band`.
 - session_type: the in-use word nearest the draft's Focus. Day 4 (Focus "Core and trunk; mobility") is `strength`; no in-use value names core or mobility. **Flag** for the reviewer.
@@ -185,14 +187,14 @@ Each is discipline `conditioning` (as the library files Bodyweight Lower Push), 
 ### Floor Y and T raises (`drl_7bcdd061b3f789`)
 
 - Source: research finding 2026-11-19-ppbf-home-week-six-sessions-draft.md, Day 2 item 5 (Floor Y and T raises (on the towel))
-- Purpose (lane wording): Upper-back and shoulder strength with clean form, without equipment.
+- Purpose (lane wording): Upper-back and shoulder strength with clean form, with only a towel.
 - Setup (lane wording): Lying face down on the towel, forehead resting on it and the neck long, with an arm's length of clear space all round. Equipment: a towel.
 - Execution (draft): U12: 2 × 6 (3 Y + 3 T) · 12–17: 2 × 8 · Adult: 3 × 10 · rest 30 s. Thumbs up; draw the shoulder blades down and back.
 - What good looks like (lane wording): Thumbs up and the shoulder blades drawn down and back; small lifts, the forehead on the towel and the neck long.
 - Cue (draft): Thumbs up; draw the shoulder blades down and back.
 - Stop rule 1 (safety): Stop and tell an adult (adults: your coach) if dizzy or faint, chest pain or tightness, breathing much harder than the effort, a racing or skipping heartbeat, or sharp joint pain. Not today after any knock to the head, with a fever or feeling ill, or in a hot room. Chest pain or fainting: call 911.
 - Scale A (AI-drafted): One arm at a time, small lifts; the same reps.
-- Scale B (as the draft writes it, starting point): The drill as the draft writes it, at your band's amount (U12: 2 × 6 (3 Y + 3 T) · 12–17: 2 × 8 · Adult: 3 × 10 · rest 30 s).
+- Scale B (as the draft writes it, starting point): The drill as written, at your band's amount (U12: 2 × 6 (3 Y + 3 T) · 12–17: 2 × 8 · Adult: 3 × 10 · rest 30 s).
 - Scale C (AI-drafted): A 2-second hold at the top of each Y and T; the same reps.
 
 ### Forearm plank (`drl_563b857233c3ee`)
@@ -206,7 +208,7 @@ Each is discipline `conditioning` (as the library files Bodyweight Lower Push), 
 - Stop rule 1 (technique_degradation): Stop the hold when the hips sag.
 - Stop rule 2 (safety): Stop and tell an adult (adults: your coach) if dizzy or faint, chest pain or tightness, breathing much harder than the effort, a racing or skipping heartbeat, or sharp joint pain. Not today after any knock to the head, with a fever or feeling ill, or in a hot room. Chest pain or fainting: call 911.
 - Scale A (AI-drafted): Plank on the knees: forearms and knees on the floor, the same hold times.
-- Scale B (as the draft writes it, starting point): The drill as the draft writes it, at your band's amount (U12: 2 × 15 s · 12–17: 3 × 20–30 s · Adult: 3 × 30–45 s · rest 30 s).
+- Scale B (as the draft writes it, starting point): The drill as written, at your band's amount (U12: 2 × 15 s · 12–17: 3 × 20–30 s · Adult: 3 × 30–45 s · rest 30 s).
 - Scale C (AI-drafted): Forearm plank with one foot lifted a few centimetres for part of each hold, switching feet; the same hold times.
 
 ### Reverse lunge (`drl_aeb2cbd5cc593d`)
@@ -218,9 +220,9 @@ Each is discipline `conditioning` (as the library files Bodyweight Lower Push), 
 - What good looks like (lane wording): A long step back; the front knee stays over the front foot on every rep.
 - Cue (draft): Step back long; front knee stays over the front foot.
 - Stop rule 1 (safety): Stop and tell an adult (adults: your coach) if dizzy or faint, chest pain or tightness, breathing much harder than the effort, a racing or skipping heartbeat, or sharp joint pain. Not today after any knock to the head, with a fever or feeling ill, or in a hot room. Chest pain or fainting: call 911.
-- Scale A (from the draft): A hand on the wall for balance (the draft's U12 amount, and its safety line: hand on the wall if wobbly).
-- Scale B (as the draft writes it, starting point): The drill as the draft writes it, at your band's amount (U12: 2 × 5 each leg, hand on wall · 12–17: 3 × 8 each leg · Adult: 3 × 10 each leg · rest 45 s / 60 s / 60 s).
-- Scale C (AI-drafted): Slower lowering, 3 counts down and 1 count up, with no hand on the wall; the same reps.
+- Scale A (from the draft): A hand on the wall for balance.
+- Scale B (as the draft writes it, starting point): The drill as written, at your band's amount (U12: 2 × 5 each leg, hand on wall · 12–17: 3 × 8 each leg · Adult: 3 × 10 each leg · rest 45 s / 60 s / 60 s).
+- Scale C (AI-drafted): Slower lowering, 3 counts down and 1 count up; the same reps. U12: hand on the wall; anyone wobbly: hand on the wall.
 
 ### Glute bridge (`drl_cbc25e710fb3e3`)
 
@@ -232,8 +234,8 @@ Each is discipline `conditioning` (as the library files Bodyweight Lower Push), 
 - Cue (draft): Push through the heels; squeeze 2 seconds at the top.
 - Stop rule 1 (safety): Stop and tell an adult (adults: your coach) if dizzy or faint, chest pain or tightness, breathing much harder than the effort, a racing or skipping heartbeat, or sharp joint pain. Not today after any knock to the head, with a fever or feeling ill, or in a hot room. Chest pain or fainting: call 911.
 - Scale A (AI-drafted): A smaller lift with no pause at the top; the same reps.
-- Scale B (as the draft writes it, starting point): The drill as the draft writes it, at your band's amount (U12: 2 × 8 · 12–17: 3 × 10 · Adult: 3 × 10 each leg (single-leg) or 3 × 15 · rest 30 s / 45 s / 45 s).
-- Scale C (from the draft): Single-leg bridge, each leg (the draft's Adult option: 3 × 10 each leg).
+- Scale B (as the draft writes it, starting point): The drill as written, at your band's amount (U12: 2 × 8 · 12–17: 3 × 10 · Adult: 3 × 10 each leg (single-leg) or 3 × 15 · rest 30 s / 45 s / 45 s).
+- Scale C (from the draft): Single-leg bridge, each leg: the Adult band's option (3 × 10 each leg). U12 and 12–17 do only their own band's amounts.
 
 ### Towel squeeze and wring (`drl_564171b28b3667`)
 
@@ -245,8 +247,8 @@ Each is discipline `conditioning` (as the library files Bodyweight Lower Push), 
 - Cue (draft): Squeeze with the whole hand; keep the wrist straight.
 - Stop rule 1 (safety): Stop if the wrist or knuckles hurt.
 - Stop rule 2 (safety): Stop and tell an adult (adults: your coach) if dizzy or faint, chest pain or tightness, breathing much harder than the effort, a racing or skipping heartbeat, or sharp joint pain. Not today after any knock to the head, with a fever or feeling ill, or in a hot room. Chest pain or fainting: call 911.
-- Scale A (from the draft): Squeeze only, no wrings (the draft's U12 amount: 2 × 10 s squeeze).
-- Scale B (as the draft writes it, starting point): The drill as the draft writes it, at your band's amount (U12: 2 × 10 s squeeze · 12–17: 3 × (15 s squeeze + 5 wrings each way) · Adult: 3 × (20 s squeeze + 8 wrings each way) · rest 30 s).
+- Scale A (from the draft): Squeeze only, no wrings.
+- Scale B (as the draft writes it, starting point): The drill as written, at your band's amount (U12: 2 × 10 s squeeze · 12–17: 3 × (15 s squeeze + 5 wrings each way) · Adult: 3 × (20 s squeeze + 8 wrings each way) · rest 30 s).
 - Scale C (AI-drafted): Slower wrings, 3 counts each way; the same reps.
 
 ### Wall calf raise (`drl_35aac3b481205b`)
@@ -259,7 +261,7 @@ Each is discipline `conditioning` (as the library files Bodyweight Lower Push), 
 - Cue (draft): Up for 1 count, down for 3.
 - Stop rule 1 (safety): Stop and tell an adult (adults: your coach) if dizzy or faint, chest pain or tightness, breathing much harder than the effort, a racing or skipping heartbeat, or sharp joint pain. Not today after any knock to the head, with a fever or feeling ill, or in a hot room. Chest pain or fainting: call 911.
 - Scale A (AI-drafted): Both hands on the wall and a smaller rise; the same reps.
-- Scale B (as the draft writes it, starting point): The drill as the draft writes it, at your band's amount (U12: 2 × 10 · 12–17: 3 × 12 · Adult: 3 × 15 · rest 30 s).
+- Scale B (as the draft writes it, starting point): The drill as written, at your band's amount (U12: 2 × 10 · 12–17: 3 × 12 · Adult: 3 × 15 · rest 30 s).
 - Scale C (AI-drafted): One foot at a time, a hand on the wall; the same reps each foot.
 
 ### Cue added to Shadow With an Imagined Opponent (`drl_e7587c167c1ebd`)
@@ -299,6 +301,9 @@ Every step links a drill. The four new items and the two partial matches link th
 
 ## Open for a coach edit (the draft's own text, carried unchanged)
 
+- The existing library drills the card links show their own levels, amounts and partners or kit (reviewer 2, round 2): for example Shadow boxing intervals (every level at maximal velocity), Hinge Pattern (C loaded), Jab Return Under Count (A into a held mitt), and library amounts above the home bands on Line work and the Day 5 drills. The card's note carries the draft's band amounts; a coach may set a scale level per item or swap the drill. No drill or tag is changed for this.
+- Reverse lunge: for U12 the easier level (hand on the wall) is the same as the band's own amount, so under-12s have no easier step.
+
 - Heat: the before-every-session line says "If the room is hot, do Day 4 instead or skip the session"; the stop rule says "Not today ... in a hot room". One wording should replace both.
 - The adults line ends "(P14)", a pointer to the research finding's principle list, which the app does not show.
 - Day 3 breathing reset (ordinal 7) says "Breathing still hard after the cool-down: stop and tell someone"; it comes before the cool-down, and the stop rule says "an adult".
@@ -312,4 +317,9 @@ Two adversarial reviewers, fresh context, Opus, read-only; each was given the dr
 - Reviewer 1 (fidelity to the draft; no DOC-136 text). First pass at d708e663: PASS, 5 minor findings. A script compared every template, item and the track edit with the draft: no mismatch; no added line carries a held title, held id or DOC-136 source line; the track row differs from main only in sources, details and field_labels. Minor findings: the session_refs label became INFERRED for the whole field (kept, cautious); a forced Backbone re-export would restore the held refs (stated in the PR); "(P14)", block words and the ordinal numbering (all on this sheet). Re-check at ff41d307: PASS; coach_notes is the draft's text word for word; one wording note on counts, fixed here.
 - Reviewer 2 (youth safety: amounts, contact, stop rules). First pass at d708e663: FINDINGS. 1 blocking: the coach screen never shows template details, so the draft's stop rule and band lines would not reach a coach; fixed by carrying them word for word in coach_notes. Minor: the heat wording conflict, the two partial-match drills needing bands or weights (now not linked), library text beyond the home amounts, and the breathing-reset line (on this sheet as open for a coach edit). No amount, contact or band defect: U12 <= 12–17 <= Adult on every item, every item and linked drill is non-contact, and the draft's limits are all kept. Re-check at ff41d307: PASS; one wording note on counts, fixed here; coach_notes capitalises the stop rule's first letter.
 
-Round 2, the six drills, the primer fold and the added cue (Overwatch GO: Q4 A, Q5, Q6): PENDING.
+Round 2, at 84e2d8aa: the six drills, the primer fold and the added cue (Overwatch GO: Q4 A, Q5, Q6).
+
+- Reviewer 1 (fidelity): PASS. Every field that claims the draft's words is word for word; every lane-written field is labelled as lane wording; the Shadow drill differs from main only in field_labels; no DOC-136 text. Minor, fixed: scale texts that said "the draft" on screen; Floor Y and T purpose ("with only a towel") and its name label; the stop-rule label notes the capital first letter; the FT1 exporter test again checks the Shadow drill's evidence and stage keys. Noted for Overwatch: the ruling's "10 missing A/C rows" are 9 (6 drills × 2, less the draft's 3).
+- Reviewer 2 (youth safety): FINDINGS, 2 blocking, both fixed. (1) An issued card carries only the item's coach_note, scale level and contact level, so minors would see the library drills' own amounts and not the home stop rule: every item's coach_note now carries the draft's words for the step, step 1 the band and supervision lines and the stop rule, and Day 5's one-two-then-pivot prefers the shadow-only level A. (2) Reverse lunge level C dropped the draft's wall hand for U12: it now keeps "U12: hand on the wall; anyone wobbly: hand on the wall". (3) CONFLICT with Q4 (bridge C carried as written gave every band the adult amount): resolved within the draft's words: "the Adult band's option (3 × 10 each leg). U12 and 12–17 do only their own band's amounts"; for Overwatch to confirm. No other defect: the 9 AI-drafted levels add no weight, jumping or maximal effort; the stop rules, cue and primers are kept.
+
+Round 3, re-check of these fixes: PENDING.

@@ -204,4 +204,28 @@ describe('lane HW: the six PPBF home sessions', () => {
     expect(Object.keys(labels)).toEqual(['cues']);
     expect(labels.cues.draft).toBe(MARKER);
   });
+
+  // An issued card carries each item's coach_note, scale level and contact level, not its details nor the
+  // template's coach_notes (workoutTemplates.ts issue path; IssuedWorkoutStepNotes). Reviewer 2, round 2.
+  it("put the draft's words for each step in its coach note, the one line an issued card shows, within the 1000-character edit limit", () => {
+    const stopRule = json(home[0].details).stop_rule as string;
+    for (const item of items) {
+      const details = json(item.details);
+      expect(item.coach_note.length).toBeGreaterThan(0);
+      expect(item.coach_note.length).toBeLessThanOrEqual(1000);
+      if (details.amounts) {
+        for (const band of BANDS) expect(item.coach_note).toContain(`${band}: ${details.amounts[band]}`);
+        for (const line of [`rest ${details.rest}`, `Cue: ${details.cue}`, `Safety: ${details.safety}`]) expect(item.coach_note).toContain(line);
+      }
+    }
+    for (const row of home) {
+      const first = items.find((item) => item.template_id === row.template_id && item.ordinal === '1') as Row;
+      expect(first.coach_note).toContain(stopRule.slice(1));
+      expect(first.coach_note).toContain('Under 12: an adult is at home and in the room for the whole session');
+      expect(first.coach_note).toContain('12–17: tell a parent before you start');
+    }
+    // Day 5's one-two-then-pivot prefers the linked drill's shadow-only level A (its B and C use a bag or pads).
+    expect(items.filter((item) => item.scale_level !== '').map((item) => [item.template_id, item.ordinal, item.scale_level, item.drill_id]))
+      .toEqual([[homeIds[4], '5', 'A', 'drl_5ff7db8ae359c1']]);
+  });
 });

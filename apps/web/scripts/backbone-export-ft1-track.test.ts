@@ -363,12 +363,17 @@ describe('the committed FT1 rows', () => {
     // Lane HW's six home sessions and the drills written for them (OD-2026-11-19-005) are AI drafts off the stage map
     // (Overwatch Q1 A and Q4 A): blank stage_keys, AI-draft labels; so is the cue lane HW added to one drill (Q6).
     // hwContentPackage.test.ts checks them.
-    const laneHw = (row: Record<string, string>) => row.field_labels.includes('"draft":"AI draft, lane HW, 2026-11-19');
+    const HW = '"draft":"AI draft, lane HW, 2026-11-19';
+    const laneHw = (row: Record<string, string>) => (row.name ?? '').startsWith('PPBF Home Day ') || (row.content_class ?? '').startsWith('AI DRAFT - lane HW');
     for (const [name, key] of [[DRILLS, 'drill_id'], [TEMPLATES, 'template_id']] as const) {
       const rows = rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, name), 'utf8'));
       const others = rows.filter((row) => row.stage_keys === '' && !laneHw(row));
       expect(others.length).toBeGreaterThan(0);
-      for (const row of others) expect([key, row.field_labels, row.evidence, row.stage_keys]).toEqual([key, '', '', '']);
+      for (const row of others) {
+        // The one existing drill lane HW gave a cue keeps blank evidence and stage keys; its labels hold only that cue's label.
+        const labels = row.field_labels.includes(HW) && Object.keys(JSON.parse(row.field_labels)).join() === 'cues' ? '' : row.field_labels;
+        expect([key, labels, row.evidence, row.stage_keys]).toEqual([key, '', '', '']);
+      }
     }
   });
   it('are 131 drills, 131 cues, 235 stop rules, 33 templates, 131 items, 1 track, 8 blocks and 40 block sessions', () => {
