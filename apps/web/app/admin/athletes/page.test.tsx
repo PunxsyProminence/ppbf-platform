@@ -169,8 +169,9 @@ describe('/admin/athletes', () => {
     const page = document.body.textContent ?? '';
     expect(page).not.toMatch(/People screen/);
     expect(page).not.toMatch(/Turn the sign-in off/);
-    expect(page).toMatch(/There is no switch that turns an athlete.s sign-in off\./);
-    expect(page).toMatch(/On Gym Office, Sign Out\s+Everywhere ends their open sessions, and Issue New Activation Code replaces their PIN\./);
+    expect(page).toMatch(/There is no switch that turns an athlete.s sign-in off for good\./);
+    expect(page).toMatch(/On Gym Office, Sign\s+Out Everywhere ends their open sessions; for a PIN athlete, Issue New Activation Code stops their PIN\s+working until the new code is redeemed\./);
+    expect(page).not.toMatch(/replaces their PIN/);
   });
 
   test('offboarding writes active_flag false and leaves the rest of the record standing', async () => {

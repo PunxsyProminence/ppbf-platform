@@ -60,3 +60,12 @@ test('a product with a checkout still offers Buy', async () => {
   expect((await screen.findByRole('link', { name: 'Buy' })).getAttribute('href')).toBe('https://checkout.example/x');
   expect(screen.queryByText('Not sold online. Ask at the gym.')).toBeNull();
 });
+
+test('an item with a checkout that is unavailable just now does not say it is not sold online', async () => {
+  await renderStore([product({ product_id: 'p3', availability: 'unavailable', checkout_url: 'https://checkout.example/y' })]);
+
+  expect(await screen.findByText('Ask at the gym.')).toBeTruthy();
+  expect(screen.getByText('Not available just now')).toBeTruthy();
+  expect(screen.queryByText(/Not sold online/)).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Buy' })).toBeNull();
+});

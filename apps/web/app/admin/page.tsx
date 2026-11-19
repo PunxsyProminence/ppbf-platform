@@ -1704,9 +1704,9 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   <div>
                     {/* OFF-12 (lane U1): this card promised "the full tutorial
                         center", but its button opens SHADOW chat. It says so. */}
-                    <h2 className="text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">Ask SHADOW</h2>
+                    <h2 className="text-[length:var(--t-lg)] font-bold text-[color:var(--bone-100)]">SHADOW Chat</h2>
                     <p className="t-body mt-[var(--s3)]">
-                      Questions about a screen? Ask SHADOW from this button.
+                      Questions about a screen? Open SHADOW Chat with this button.
                     </p>
                   </div>
                   <ShadowChatButton context="Admin Overview" />
@@ -1804,7 +1804,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   Automated publication workflow: not built yet. There is no screen for it.
                 </p>
                 <p className="t-body mt-[var(--s3)]">
-                  Automated compliance monitoring: not built yet. The Compliance Center records violations by hand.
+                  Automated compliance monitoring: not built yet. Violations are filed by hand from Video Analysis; the Compliance Center is where they are reviewed and closed.
                 </p>
               </article>
 

@@ -157,7 +157,7 @@ test('no fixed priority panel, no link to the sign-in page, and the help line na
   expect(screen.queryByRole('link', { name: 'The Bell' })).toBeNull();
   expect(document.querySelector('a[href="/login"]')).toBeNull();
   expect(screen.queryByText(/tutorial center/i)).toBeNull();
-  expect(screen.getByText('Questions about a screen? Ask SHADOW from this button.')).toBeTruthy();
+  expect(screen.getByText('Questions about a screen? Open SHADOW Chat with this button.')).toBeTruthy();
 });
 
 // THE NIGHT FEED IS NOT FURNITURE IN THIS ROOM. The hub used to mount

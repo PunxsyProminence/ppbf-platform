@@ -112,7 +112,7 @@ it('shows no dead worker button, and a status line that is true whether the work
   expect(screen.queryByRole('button', { name: /worker not active/i })).toBeNull();
   expect(screen.queryByText(/worker not active/i)).toBeNull();
   for (const button of screen.getAllByRole('button')) expect((button as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.getByText('Reports are written by the SHADOW background worker and listed here when done. A queued report waits until the worker runs.')).toBeTruthy();
+  expect(screen.getByText('Reports are written by the SHADOW background worker. A queued report shows here as pending until the worker finishes it or it expires.')).toBeTruthy();
 });
 
 it('refuses in place rather than showing the generate control to a role the report is not scoped for', async () => {

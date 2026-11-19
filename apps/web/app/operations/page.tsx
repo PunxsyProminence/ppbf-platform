@@ -212,7 +212,7 @@ export default function OperationsHubPage() {
           <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="t-body max-w-[80ch]">
-                Questions about a screen? Ask SHADOW from this button.
+                Questions about a screen? Open SHADOW Chat with this button.
               </p>
               <ShadowChatButton context="Mission Control Start Here" />
             </div>

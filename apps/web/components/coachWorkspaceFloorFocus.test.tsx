@@ -330,6 +330,25 @@ test('a live-run read that failed shows the session gauge as unknown, never "Non
   expect(floor().queryByRole('link', { name: 'Start a session' })).toBeNull();
 });
 
+/* CF-05 (lane U1). Off the Dashboard the Group / One-on-One toggle stays, and
+   says what it switches: the Floor tab's block template, not the session. */
+test('off the Dashboard the toggle names itself a template, and the board has none', async () => {
+  await renderWorkspace();
+  expect(floor().queryByRole('button', { name: /One-on-One/ })).toBeNull();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Floor' }));
+  });
+  expect(screen.getByRole('button', { name: 'Group template' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: 'One-on-One template' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Mode$/ })).toBeNull();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'One-on-One template' }));
+  });
+  expect(screen.getByText(/This is the standard One-on-One block template/)).toBeTruthy();
+});
+
 test('a readiness feed that failed shows the readings gauge as unknown, never 0 of N', async () => {
   await renderWorkspace({
     athletesList: roster,

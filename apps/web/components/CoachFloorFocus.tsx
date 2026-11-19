@@ -367,7 +367,7 @@ export default function CoachFloorFocus({
       ? {
           label: 'Session',
           value: sessionLive ? (sessionPaused ? 'Paused' : 'Running') : 'None',
-          sub: 'Live delivery',
+          sub: sessionLive ? 'Live delivery' : 'Nothing running',
           state: 'ok',
         }
       : sessionState === 'loading'

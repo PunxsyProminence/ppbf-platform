@@ -341,19 +341,20 @@ const saveButton = () => screen.getByRole('button', { name: 'Save tracks' }) as 
    Access" card whose button opens SHADOW chat, a "Manage Login Announcements"
    link to /login (which sends a signed-in admin home; the sign-in page shows no
    announcements), and the working Compliance Center filed as "Planned". */
-it('the overview names SHADOW, links no sign-in page, and files the Compliance Center once', async () => {
+it('the overview names SHADOW Chat, links no sign-in page, and files the Compliance Center once', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
   await renderPage(fetchMock, 'organization_admin');
-  await screen.findByRole('heading', { name: 'Ask SHADOW' });
+  await screen.findByRole('heading', { name: 'SHADOW Chat' });
 
-  expect(screen.getByText('Questions about a screen? Ask SHADOW from this button.')).toBeTruthy();
+  expect(screen.getByText('Questions about a screen? Open SHADOW Chat with this button.')).toBeTruthy();
   expect(screen.queryByRole('heading', { name: 'Tutorial Access' })).toBeNull();
   expect(screen.queryByText(/tutorial center/i)).toBeNull();
   expect(screen.queryByText('Manage Login Announcements')).toBeNull();
   expect(document.querySelector('a[href="/login"]')).toBeNull();
   expect(document.querySelectorAll('a[href="/admin/compliance-center"]')).toHaveLength(1);
   expect(screen.queryByText('Automated Compliance Monitoring Surface')).toBeNull();
-  expect(screen.getByText('Automated compliance monitoring: not built yet. The Compliance Center records violations by hand.')).toBeTruthy();
+  expect(screen.getByText('Automated compliance monitoring: not built yet. Violations are filed by hand from Video Analysis; the Compliance Center is where they are reviewed and closed.')).toBeTruthy();
+  expect(screen.queryByText(/records violations by hand/)).toBeNull();
 });
 
 describe('Who Trains On What', () => {

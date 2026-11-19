@@ -336,8 +336,15 @@ test('the gauges show the counts the board was handed', () => {
   expect(gauge('Readings').textContent).toContain('1 of 2');
   expect(gauge('Session').textContent).toContain('None');
   // No mode here: the board's toggle is gone (CF-05), so the gauge names what it reads.
-  expect(gauge('Session').textContent).toContain('Live delivery');
+  expect(gauge('Session').textContent).toContain('Nothing running');
   expect(gauge('Session').textContent).not.toContain('mode');
+});
+
+test('a running session reads as live delivery on the session gauge (CF-05)', () => {
+  render(<CoachFloorFocus {...props({ sessionLive: true })} />);
+  expect(gauge('Session').textContent).toContain('Running');
+  expect(gauge('Session').textContent).toContain('Live delivery');
+  expect(gauge('Session').textContent).not.toContain('Nothing running');
 });
 
 test('a failed feed makes the needs-you gauge "?", never 0', () => {
