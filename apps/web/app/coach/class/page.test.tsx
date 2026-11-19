@@ -229,12 +229,90 @@ test('a live session on arrival: the console and Gym TVs, no Start, and nothing 
   expect(otherPosts).toEqual([]);
 });
 
-test('a failed live-session check says a session may exist, and offers no Start', async () => {
-  serve({ live: () => jsonResponse({}, false, 500) });
+test('a failed live-session check says a session may exist, and Start stays off, as it says', async () => {
+  const { posts } = serve({ live: () => jsonResponse({}, false, 500), classes: [YOUTH] });
   await open();
 
-  expect(await screen.findByRole('alert')).toHaveTextContent('Whether you have a session in progress could not be checked.');
-  expect(screen.queryByRole('button', { name: 'Start' })).toBeNull();
+  expect((await screen.findAllByRole('alert'))[0]).toHaveTextContent('Whether you have a session in progress could not be checked.');
+  expect(await screen.findByRole('radio', { name: /Youth boxing/ })).toBeChecked();
+  const start = screen.getByRole('button', { name: 'Start' });
+  expect(start).toBeDisabled();
+  fireEvent.click(start);
+  expect(posts).toEqual([]);
+});
+
+test('?restored=1 (a start elsewhere found this session running): the screen says it was restored, not restarted', async () => {
+  search = new URLSearchParams('restored=1');
+  serve({ live: () => jsonResponse({ run: plainRun() }) });
+  await open();
+  expect(await screen.findByText('You already had a session in progress. It has been restored, not restarted.')).toBeInTheDocument();
+});
+
+test('without ?restored=1 a session found on arrival carries no restored notice', async () => {
+  serve({ live: () => jsonResponse({ run: plainRun() }) });
+  await open();
+  expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+  expect(screen.queryByText(/restored, not restarted/)).toBeNull();
+});
+
+// Both reviewers of 4da00ae: Gym TVs held the switch value the page loaded with, so it told the
+// coach to switch on a control that was already on, or showed "your session" after it was off.
+test('Gym TVs follows the console: the switch it is told is the server\'s latest, and it names this screen\'s switch', async () => {
+  serve({
+    live: () => jsonResponse({ run: plainRun() }),
+    patch: (body) => jsonResponse({ run: plainRun({ show_on_wall: body.show === true }) }),
+  });
+  await open();
+  await screen.findByRole('heading', { name: 'Plain session' });
+  expect(tvPanel.props).toEqual(expect.objectContaining({
+    liveRun: { run_id: 'ssrun_1', show_on_wall: false },
+    tvSwitch: { name: 'Allow on a TV', place: 'above' },
+  }));
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
+  });
+  expect(tvPanel.props?.liveRun).toEqual({ run_id: 'ssrun_1', show_on_wall: true });
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
+  });
+  expect(tvPanel.props?.liveRun).toEqual({ run_id: 'ssrun_1', show_on_wall: false });
+});
+
+test('when Gym TVs finds the session ended elsewhere, the console goes and the screen says why; ?class is not chosen again', async () => {
+  search = new URLSearchParams('class=class-adult');
+  let live = true;
+  serve({
+    live: () => jsonResponse({ run: live ? plainRun() : null }),
+    classes: [YOUTH, ADULT],
+  });
+  await open();
+  await screen.findByRole('heading', { name: 'Plain session' });
+
+  live = false;
+  await act(async () => {
+    await (tvPanel.props?.onRunStale as () => Promise<void>)();
+  });
+
+  expect(screen.getByText('This session is no longer live on the server. Nothing further can be recorded through this screen.')).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Plain session' })).toBeNull();
+  expect(await screen.findByRole('button', { name: 'Start' })).toBeInTheDocument();
+  // The clock default stands; the link's class was for the session that has gone.
+  expect(await screen.findByRole('radio', { name: /Youth boxing/ })).toBeChecked();
+});
+
+test('when Gym TVs finds another session live, the screen shows that one', async () => {
+  let other = false;
+  serve({ live: () => jsonResponse({ run: other ? plainRun({ run_id: 'ssrun_2', show_on_wall: true }) : plainRun() }) });
+  await open();
+  await screen.findByRole('heading', { name: 'Plain session' });
+
+  other = true;
+  await act(async () => {
+    await (tvPanel.props?.onRunStale as () => Promise<void>)();
+  });
+  expect(tvPanel.props?.liveRun).toEqual({ run_id: 'ssrun_2', show_on_wall: true });
 });
 
 test('a start refused as already live shows the running session, restored, never a second start', async () => {

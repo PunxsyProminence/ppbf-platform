@@ -489,6 +489,8 @@ describe('the TV status line', () => {
   ])('when the read is %s, it says "TV status not checked" and gives no read time', async (_label, answer) => {
     await renderLive(liveRun(), { tvs: answer });
     expect(await screen.findByText('TV status not checked')).toBeInTheDocument();
+    // Unknown is not drawn like a known "not on a TV": its own glyph.
+    expect(screen.getByText('TV status not checked').textContent).toBe('?TV status not checked');
     expect(screen.queryByText(/^as of /)).toBeNull();
     expect(screen.queryByText('No TV paired')).toBeNull();
   });
@@ -1777,5 +1779,52 @@ describe("the current block's drill instructions", () => {
     });
 
     expect(await screen.findByText(/This is a failure to load, not a missing drill/)).toBeInTheDocument();
+  });
+});
+
+// Both reviewers of 4da00ae (lane U2-6a): a panel beside the console must never work from an older
+// copy of the run, and an old "ON" must not stand while the TVs are being read again.
+describe('the console tells the screen the run it holds', () => {
+  it('reports each run the server answers with, and the one it adopts when another is live', async () => {
+    const onRunChange = jest.fn();
+    mockFetch({
+      patch: () => jsonResponse({ run: liveRun({ show_on_wall: true }) }),
+    });
+    await act(async () => {
+      render(<SessionScriptLiveDelivery initialRun={liveRun()} onSettled={jest.fn()} onRunGone={jest.fn()} onRunChange={onRunChange} />);
+    });
+    expect(onRunChange).toHaveBeenLastCalledWith(expect.objectContaining({ run_id: 'ssrun_1', show_on_wall: false }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
+    });
+    expect(onRunChange).toHaveBeenLastCalledWith(expect.objectContaining({ run_id: 'ssrun_1', show_on_wall: true }));
+  });
+
+  it('while the TVs are read again after the switch changes, the old status is not shown as current', async () => {
+    let answer: (response: Response) => void = () => {};
+    let reads = 0;
+    mockFetch({
+      tvs: () => {
+        reads += 1;
+        if (reads === 1) return jsonResponse({ tvs: [{ tv_id: 'tv-1', tv_name: 'Ring TV', status: 'paired', current_run_id: 'ssrun_1' }] });
+        return new Promise<Response>((resolve) => { answer = resolve; });
+      },
+      patch: () => jsonResponse({ run: liveRun({ show_on_wall: false }) }),
+    });
+    await act(async () => {
+      render(<SessionScriptLiveDelivery initialRun={liveRun({ show_on_wall: true })} onSettled={jest.fn()} onRunGone={jest.fn()} />);
+    });
+    expect(await screen.findByText('ON Ring TV')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
+    });
+    expect(screen.queryByText('ON Ring TV')).toBeNull();
+    expect(screen.getByText('TV status not checked')).toBeInTheDocument();
+
+    await act(async () => {
+      answer(jsonResponse({ tvs: [{ tv_id: 'tv-1', tv_name: 'Ring TV', status: 'paired', current_run_id: null }] }));
+    });
+    expect(await screen.findByText('Not on a TV')).toBeInTheDocument();
   });
 });

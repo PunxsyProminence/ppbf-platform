@@ -236,6 +236,7 @@ describe('Start a session', () => {
     expect(String(posts()[0][0])).toContain('/api/pilot/session-scripts/runs');
     expect(JSON.parse(String((posts()[0][1] as RequestInit).body))).toEqual({});
     expect(onGoToClass).toHaveBeenCalledTimes(1);
+    expect(onGoToClass).toHaveBeenCalledWith(false);
     expect(onGoToSessions).not.toHaveBeenCalled();
   });
 
@@ -261,6 +262,8 @@ describe('Start a session', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
 
+    // true: the class screen says the session was restored, not restarted.
+    expect(onGoToClass).toHaveBeenCalledWith(true);
     expect(onGoToClass).toHaveBeenCalledTimes(1);
     expect(posts()).toHaveLength(1);
   });

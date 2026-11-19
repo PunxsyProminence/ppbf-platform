@@ -146,8 +146,11 @@ export interface CoachFloorFocusProps {
   readonly everythingElseHref: string;
   /** Where Start a session goes to pick a plan. Defaults to the session page; tests pass a spy. */
   readonly onGoToSessions?: () => void;
-  /** Where Start a session goes once a session is live (lane U2-6a). Defaults to the class screen; tests pass a spy. */
-  readonly onGoToClass?: () => void;
+  /**
+   * Where Start a session goes once a session is live (lane U2-6a): the class screen, told when the
+   * session was already running so it says it was restored, not restarted. Tests pass a spy.
+   */
+  readonly onGoToClass?: (restored: boolean) => void;
 }
 
 const SESSIONS_HREF = '/coach/session-scripts';
@@ -234,8 +237,7 @@ export default function CoachFloorFocus({
   // workspace tests, and the session page reads its live run on load either way.
   // eslint-disable-next-line @next/next/no-location-assign-relative-destination
   onGoToSessions = () => window.location.assign(SESSIONS_HREF),
-  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-  onGoToClass = () => window.location.assign(CLASS_HREF),
+  onGoToClass = (restored) => window.location.assign(restored ? `${CLASS_HREF}?restored=1` : CLASS_HREF),
 }: CoachFloorFocusProps) {
   /* START A SESSION, ONE TAP (Jason 2026-10-12, "allow a plain session"; issue #1523, Q2 A).
      With no live session, the tap asks which plans the gym has: none, and it starts a plain
@@ -275,7 +277,7 @@ export default function CoachFloorFocus({
       const outcome = await startClassSession({ scriptId: null, classId: choice });
       if (outcome.kind === 'started' || outcome.kind === 'already_live') {
         leaving = true;
-        onGoToClass();
+        onGoToClass(outcome.kind === 'already_live');
         return;
       }
       // A class refusal is worded by the route (another live session runs the class, and so on).

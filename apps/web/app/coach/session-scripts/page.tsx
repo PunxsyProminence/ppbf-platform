@@ -249,7 +249,8 @@ function CoachSessionScripts() {
       if (outcome.kind === 'started' || (outcome.kind === 'already_live' && outcome.run)) {
         leaving = true;
         setEditing(false);
-        router.push(CLASS_SCREEN_HREF);
+        // ?restored=1: the class screen says the running session was restored, not restarted.
+        router.push(outcome.kind === 'already_live' ? `${CLASS_SCREEN_HREF}?restored=1` : CLASS_SCREEN_HREF);
         return;
       }
       setStartError(startRefusalWords(outcome));
@@ -509,7 +510,8 @@ function CoachSessionScripts() {
         </div>
 
         {/* Lane U2-6a: the live session runs on the class screen (moved from here). While one
-            is live, this page says so and links there; plans are edited here as before. */}
+            is live, this page shows only that and the link -- the plans and starts are put away,
+            as they were while the console took this page -- and they come back when it ends. */}
         {liveRun && (
           <section data-surface="kiosk" aria-labelledby="class-running" className="mt-[var(--s5)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
             <h2 id="class-running" className="t-command text-[length:var(--t-lg)]">A class is running</h2>
@@ -697,7 +699,7 @@ function CoachSessionScripts() {
                     )}
                     <button
                       type="button"
-                      onClick={() => { setEditing(true); setEditNotice(''); }}
+                      onClick={() => { setEditing(true); setEditNotice(''); setConfirmRetireId(null); }}
                       disabled={startBusyScriptId !== null || saving}
                       className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                     >

@@ -133,7 +133,7 @@ const LOG_SAVED = 'No clear answer came back, but the server shows the intervent
 const LOG_NOT_SAVED = 'No clear answer came back, and the server does not show the intervention yet. Try again -- it will not be logged twice.';
 const LOG_UNCHECKED = 'No clear answer came back and the server could not be checked. Check The Work before logging it again.';
 const RUN_OUT_OF_DATE = 'The session shown was out of date and has been reloaded from the server.';
-const RUN_GONE = 'This session is no longer live on the server. Nothing further can be recorded through this screen.';
+export const RUN_GONE = 'This session is no longer live on the server. Nothing further can be recorded through this screen.';
 
 /** True only for a refusal: the server answered and wrote nothing. */
 function isRefusal(status: number): boolean {
@@ -176,6 +176,12 @@ interface SessionScriptLiveDeliveryProps {
    * reads the TVs again (lane U2-6a, Overwatch Q10 = A: no timer).
    */
   readonly tvStatusRefresh?: number;
+  /**
+   * Told the run this screen now holds, after every server answer that changes it (lane U2-6a),
+   * so a panel beside the console -- Gym TVs on the class screen -- never works from an older
+   * copy of the switch or of which run is live.
+   */
+  readonly onRunChange?: (run: LiveSessionScriptRun) => void;
 }
 
 /** One read of the gym's TVs, as the TV status line holds it (lane U2-6a). */
@@ -207,6 +213,7 @@ export default function SessionScriptLiveDelivery({
   onSettled,
   onRunGone,
   tvStatusRefresh = 0,
+  onRunChange,
 }: SessionScriptLiveDeliveryProps) {
   const [run, setRun] = useState<LiveSessionScriptRun>(initialRun);
   // A plain session (issue #1523) has no plan: no blocks to show or move between. Everything
@@ -223,6 +230,10 @@ export default function SessionScriptLiveDelivery({
     setDisplaySeconds(next.elapsed_seconds);
   }, []);
 
+  useEffect(() => {
+    onRunChange?.(run);
+  }, [run, onRunChange]);
+
   // WHERE THE SESSION IS ON THE TVS (lane U2-6a). Read when the console opens, after the switch
   // changes, and when the screen says Gym TVs acted (tvStatusRefresh). No timer (Q10 = A); the
   // line says when it was read. The newest read wins; a late answer to an older one is dropped.
@@ -230,6 +241,10 @@ export default function SessionScriptLiveDelivery({
   const tvReadSeq = useRef(0);
   useEffect(() => {
     const seq = ++tvReadSeq.current;
+    // Until this read answers, the last one may be out of date (the switch just changed, or Gym
+    // TVs just acted): it is not shown as current.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTvRead({ state: 'loading' });
     void (async () => {
       let next: TvStatusRead;
       try {
@@ -802,13 +817,16 @@ export default function SessionScriptLiveDelivery({
         >
           Allow on a TV
         </button>
-        <span className="t-label">{run.show_on_wall ? 'On' : 'Off'}</span>
+        {/* The switch's state in words, in sentence case: an upper-case "ON" beside "Allow on a TV"
+            would read as the TV status. aria-checked already says it to a screen reader. */}
+        <span aria-hidden="true" className="t-body text-[color:var(--bone-200)]">{run.show_on_wall ? 'On' : 'Off'}</span>
         {tvStatus.on ? (
           <span className="badge badge--cleared"><i aria-hidden="true">✓</i>{tvStatus.text}</span>
         ) : (
-          <span className="badge badge--filed"><i aria-hidden="true">—</i>{tvStatus.text}</span>
+          // Unknown is not drawn like a known "not on a TV": its own glyph, and its words.
+          <span className="badge badge--filed"><i aria-hidden="true">{tvRead.state === 'loaded' ? '—' : '?'}</i>{tvStatus.text}</span>
         )}
-        {tvReadAt && <span className="t-data text-[color:var(--bone-400)]">as of {tvReadAt}</span>}
+        {tvReadAt && <span className="t-data text-[color:var(--bone-400)]">as of {tvReadAt.toLowerCase()}</span>}
         <p className="t-data text-[color:var(--bone-400)]">
           With this on, send the session to a gym TV from Gym TVs below.
         </p>

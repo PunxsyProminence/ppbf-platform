@@ -70,6 +70,7 @@ interface PanelProps {
   onRunStale?: () => void;
   onTvsChanged?: () => void;
   sendsSessions?: boolean;
+  tvSwitch?: { name: string; place: string };
 }
 
 function panel(props: PanelProps = {}) {
@@ -81,6 +82,7 @@ function panel(props: PanelProps = {}) {
       onRunStale={props.onRunStale}
       onTvsChanged={props.onTvsChanged}
       sendsSessions={props.sendsSessions}
+      tvSwitch={props.tvSwitch}
     />
   );
 }
@@ -689,4 +691,26 @@ test('onTvsChanged is called once after a send, once after a refused take-off, a
   fireEvent.click(screen.getByRole('button', { name: 'Take off TV Ring wall' }));
   await screen.findByText(/This TV is in use by another coach/);
   expect(onTvsChanged).toHaveBeenCalledTimes(2);
+});
+
+// Lane U2-6a: on the class screen the switch is "Allow on a TV", above the panel; the panel names
+// that one, never the coach home's "Show on TV" under Today's Session.
+test('the switch-off line and the not-on-TV refusal name the switch on the screen the panel is on', async () => {
+  serve((call) => (call.method === 'POST' ? respond({ error: 'SESSION_RUN_NOT_ON_TV' }, 409) : respond({ tvs: [tv()] })));
+  openPanel({ liveRun: { run_id: 'run_mine', show_on_wall: false }, tvSwitch: { name: 'Allow on a TV', place: 'above' } });
+  await screen.findByText('PAIRED');
+  expect(screen.getByText('Your session\'s "Allow on a TV" switch is off. Switch it on above before sending.')).toBeTruthy();
+  expect(screen.queryByText(/Show on TV|Today's Session/)).toBeNull();
+});
+
+test('on the coach home (the default) the panel still names "Show on TV" under Today\'s Session', async () => {
+  serve(listOf([tv()]));
+  openPanel({ liveRun: { run_id: 'run_mine', show_on_wall: false } });
+  await screen.findByText('PAIRED');
+  expect(screen.getByText('Your session\'s "Show on TV" switch is off. Switch it on under Today\'s Session before sending.')).toBeTruthy();
+});
+
+test('describeRefusal words the not-on-TV refusal with the switch it is given', () => {
+  expect(describeRefusal('SESSION_RUN_NOT_ON_TV', 409, { name: 'Allow on a TV' })).toBe('Switch "Allow on a TV" on for your session first, then send it.');
+  expect(describeRefusal('SESSION_RUN_NOT_ON_TV', 409)).toBe('Switch "Show on TV" on for your session first, then send it.');
 });

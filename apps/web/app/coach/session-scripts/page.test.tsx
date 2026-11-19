@@ -573,7 +573,8 @@ describe('coach session plans page', () => {
     fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
     fireEvent.click(await screen.findByRole('button', { name: /start live delivery/i }));
 
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
+    // ?restored=1: the class screen says it was restored, not restarted (app/coach/class/page.test.tsx).
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class?restored=1'));
     expect(postCount).toBe(1);
   });
 
@@ -1030,6 +1031,7 @@ describe('retiring a plan', () => {
     expect(patches).toEqual([]);
 
     fireEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect(screen.queryByRole('button', { name: 'Yes, retire it' })).toBeNull();
     expect(screen.queryByText(/Retire this plan\?/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Retire this plan' })).toBeInTheDocument();
     expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
@@ -1038,6 +1040,17 @@ describe('retiring a plan', () => {
     expect(patches).toEqual([]);
   });
 
+
+  it('an open "Retire this plan?" is put away by Edit, and does not come back when the edit is cancelled', async () => {
+    const { patches } = retireFetch(() => jsonResponse({ outcome: 'retired', script: stored({ authoring_state: 'retired' }) }));
+    await openPlan();
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit minutes and titles' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByRole('button', { name: 'Retire this plan' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Yes, retire it' })).toBeNull();
+    expect(patches).toEqual([]);
+  });
 
   it('Retire this plan sends the plan and the state it was read in, closes it, and says it is kept', async () => {
     const { patches, listUrls } = retireFetch(() => jsonResponse({ outcome: 'retired', script: stored({ authoring_state: 'retired' }) }));
