@@ -3,8 +3,8 @@ import path from 'node:path';
 
 import { NextRequest } from 'next/server';
 
-import { GET } from './route';
-import { ValidationError } from '@/src/server/pilot/errors';
+import { GET, PATCH } from './route';
+import { NotFoundError, ValidationError } from '@/src/server/pilot/errors';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
   getAthleteDrillDetail,
@@ -13,6 +13,7 @@ import {
   listDrillLibrary,
   listReferenceLifecycles,
 } from '@/src/server/pilot/drillLibraryV3';
+import { editLibraryDrill } from '@/src/server/pilot/drillLibraryEdit';
 import { listFloorValidations } from '@/src/server/pilot/drillFloorValidations';
 import { resolveDrillGroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
 import type { ReferenceLifecycle } from '@/src/server/pilot/drillLibraryV3';
@@ -43,6 +44,11 @@ import type { PilotRole } from '@/src/server/pilot/contracts';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/drillLibraryEdit', () => {
+  const actual = jest.requireActual('@/src/server/pilot/drillLibraryEdit');
+  return { ...actual, editLibraryDrill: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/drillFloorValidations', () => ({
@@ -858,5 +864,67 @@ describe('only the authoring roles receive the lifecycle (W-D4C)', () => {
     expect(mockAthleteList).not.toHaveBeenCalled();
     expect(mockAthleteDetail).not.toHaveBeenCalled();
     expect(mockLifecycles).not.toHaveBeenCalled();
+  });
+});
+
+// PATCH: editing a library drill (OD-2026-11-19-005, OW25-51; Overwatch ruling
+// 2026-11-19). The edit itself is proven against a real database in
+// drillLibraryEdit.pg.test.ts; these cases prove who reaches it.
+describe('PATCH /api/pilot/drill-library (edit a library drill)', () => {
+  const mockEdit = editLibraryDrill as jest.Mock;
+  const patchRequest = (body: unknown) => new NextRequest('http://localhost/api/pilot/drill-library', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json' },
+  });
+  const EDITOR_ROLES: PilotRole[] = ['coach', 'organization_admin', 'admin'];
+  const REFUSED_ROLES: PilotRole[] = ['platform_owner', 'volunteer', 'athlete', 'parent', 'board', 'staff'];
+
+  beforeEach(() => {
+    mockEdit.mockResolvedValue({
+      changed: true, drill_id: 'drl-v2', lineage_id: 'drl-1', version: 2, previous_drill_id: 'drl-1', edited: ['purpose'],
+    });
+  });
+
+  it.each(EDITOR_ROLES)('%s edits a drill of their own gym, as themselves', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+    const response = await PATCH(patchRequest({ drill_id: 'drl-1', purpose: 'New.' }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, drill_id: 'drl-v2', version: 2, edited: ['purpose'] });
+    expect(mockEdit).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      request: { drillId: 'drl-1', fields: { purpose: 'New.' } },
+      actorAccountId: 'acct-1',
+      actorRole: role,
+    });
+  });
+
+  it.each(REFUSED_ROLES)('%s is refused before anything is read or written', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal(role));
+    const response = await PATCH(patchRequest({ drill_id: 'drl-1', purpose: 'New.' }));
+    expect(response.status).toBe(403);
+    expect(mockEdit).not.toHaveBeenCalled();
+  });
+
+  it("answers another gym's drill as not found", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    mockEdit.mockRejectedValue(new NotFoundError('Not found', 'DRILL_NOT_FOUND'));
+    const response = await PATCH(patchRequest({ drill_id: 'drl-other-gym', purpose: 'New.' }));
+    expect(response.status).toBe(404);
+    expect(mockEdit.mock.calls[0][0].organizationId).toBe('org-1');
+  });
+
+  it.each([
+    [{ drill_id: 'drl-1', colour: 'red' }, 'Unsupported field: colour'],
+    [{ drill_id: 'drl-1', field_provenance: 'PPBF owner-authored' }, 'Unsupported field: field_provenance is not editable'],
+    [{ drill_id: 'drl-1', discipline: 'wrestling' }, 'Unsupported field: discipline is not editable'],
+    [{ purpose: 'New.' }, 'Missing drill_id'],
+    [['drl-1'], 'Request body must be a JSON object'],
+  ])('refuses %j with a 400 and writes nothing', async (body, message) => {
+    mockRequirePrincipal.mockResolvedValue(principal('coach'));
+    const response = await PATCH(patchRequest(body));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe(message);
+    expect(mockEdit).not.toHaveBeenCalled();
   });
 });

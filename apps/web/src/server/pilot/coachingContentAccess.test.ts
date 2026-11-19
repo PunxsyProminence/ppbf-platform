@@ -55,7 +55,10 @@ const READER_POLICY = 'COACHING_CONTENT_READER_ROLES';
  */
 const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
   'drills/route.ts': [READER_POLICY, 'DRILL_AUTHOR_ROLES'],
-  'drill-library/route.ts': [READER_POLICY],
+  // Lane ED (OD-2026-11-19-005, OW25-51): a coach or the gym's admin edits a
+  // library drill (PATCH), writing its next version. The read keeps the reader
+  // policy; the write gates on the author list.
+  'drill-library/route.ts': [READER_POLICY, 'DRILL_AUTHOR_ROLES'],
   'coach/cue-library/route.ts': [READER_POLICY],
   // Lane L1: a coach or the gym's admin makes a session script from a workout
   // template and edits it (POST, PATCH). The reads keep the reader policy; the
@@ -195,10 +198,11 @@ describe('every surface serving this content reaches the one policy', () => {
   });
 
   it('keeps the author list identical wherever it is declared, so promotion cannot drift from authoring', () => {
-    // DRILL_AUTHOR_ROLES is declared in three route files: the drills route
+    // DRILL_AUTHOR_ROLES is declared in four route files: the drills route
     // that creates and edits a drill, the promote route that creates one from a
-    // reference drill, and the template-issue route that adopts one while
-    // assigning it. All are the same question -- who may put an assignable
+    // reference drill, the template-issue route that adopts one while
+    // assigning it, and the drill-library route that edits a library drill
+    // (lane ED). All are the same question -- who may put an assignable
     // drill in this gym -- so the literals are asserted equal here rather
     // than left to drift into different answers.
     const authorList = /const DRILL_AUTHOR_ROLES = (\[[^\]]*\]) as const;/;
@@ -207,7 +211,7 @@ describe('every surface serving this content reaches the one policy', () => {
       .filter(([, permitted]) => permitted.includes('DRILL_AUTHOR_ROLES'))
       .map(([relative]) => routeSource(relative).match(authorList)?.[1]);
 
-    expect(declarations).toHaveLength(3);
+    expect(declarations).toHaveLength(4);
     expect(new Set(declarations).size).toBe(1);
     expect(declarations[0]).toBe("['coach', 'organization_admin', 'admin']");
   });
