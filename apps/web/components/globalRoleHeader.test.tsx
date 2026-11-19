@@ -8,7 +8,7 @@
 // the triage link reaches only the people who work that queue.
 
 import type { ReactNode } from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 
 import { usePathname } from 'next/navigation';
 
@@ -35,6 +35,15 @@ jest.mock('./roleSession', () => ({
   clearRoleSession: jest.fn(),
   loadAuthoritativeRoleSession: jest.fn(),
   persistAuthoritativeRoleSession: jest.fn(),
+}));
+
+// Lane U1, AS2-b: the idle watcher itself is tested in tabletIdleSignOut.test.tsx;
+// here only where the bar mounts it, and whether with its plate.
+jest.mock('./TabletIdleSignOut', () => ({
+  __esModule: true,
+  default: ({ showPlate = true }: { readonly showPlate?: boolean }) => (
+    <span data-testid="tablet-idle-watch" data-plate={String(showPlate)} />
+  ),
 }));
 
 const mockSnapshot = getRoleSessionSnapshot as jest.MockedFunction<typeof getRoleSessionSnapshot>;
@@ -450,5 +459,30 @@ describe('the phone bar keeps the whole room name', () => {
     // The role plate and the corridor are in that same group.
     expect(group.textContent).toContain('Parent');
     expect(group.querySelector('.corridor-root')).not.toBeNull();
+  });
+});
+
+/* GYM TABLET IDLE SIGN-OUT (lane U1, AS2-b; OW25-53 A). Every signed-in screen
+   carries the watcher, refusal screens included: a marked tablet left on a
+   refusal must still sign itself out. The plate rides the full bar only. */
+describe('the gym tablet idle watcher rides every signed-in bar', () => {
+  it('is on the signed-in bar, with its plate', () => {
+    renderAs('athlete');
+    expect(screen.getByTestId('tablet-idle-watch').getAttribute('data-plate')).toBe('true');
+  });
+
+  it('is on a refusal screen too, without the plate', () => {
+    mockUsePathname.mockReturnValue('/shadow');
+    renderAs('board');
+    expect(screen.getByTestId('tablet-idle-watch').getAttribute('data-plate')).toBe('false');
+  });
+
+  it('is not mounted for a signed-out visitor or on /login', () => {
+    renderAs(null);
+    expect(screen.queryByTestId('tablet-idle-watch')).toBeNull();
+    cleanup();
+    mockUsePathname.mockReturnValue('/login');
+    renderAs('athlete');
+    expect(screen.queryByTestId('tablet-idle-watch')).toBeNull();
   });
 });

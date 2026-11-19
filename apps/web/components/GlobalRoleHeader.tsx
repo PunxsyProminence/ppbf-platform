@@ -21,6 +21,7 @@ import CardCatalog from "./CardCatalog";
 import CommandsOverlay from "./CommandsOverlay";
 import SafetyAttentionBadge from "./SafetyAttentionBadge";
 import SoundToggle from "./SoundToggle";
+import TabletIdleSignOut from "./TabletIdleSignOut";
 import { CONTROL_EXIT, CONTROL_QUIET } from "./sessionBarControls";
 
 // The queue the "Tell Us" box fills is worked by the people who can act on it:
@@ -156,6 +157,10 @@ export default function GlobalRoleHeader() {
       <header className={SHELL}>
         <div className={BAR}>
           <span className={EYEBROW}>PPBF</span>
+          {/* A refusal screen is still a signed-in screen: a marked gym tablet
+              left on one must still sign itself out (lane U1, AS2-b). No plate
+              here, so the refusal keeps its minimal chrome. */}
+          {session && pathname !== "/login" ? <TabletIdleSignOut showPlate={false} /> : null}
         </div>
       </header>
     );
@@ -214,6 +219,10 @@ export default function GlobalRoleHeader() {
           <span className="inline-flex min-h-[var(--s6)] items-center rounded-[var(--r-sm)] border border-[color:var(--brass-700)] bg-[rgba(0,0,0,.4)] px-[var(--s4)] font-mono text-[length:var(--t-xs)] uppercase tracking-[0.14em] text-[color:var(--brass-200)] shadow-[inset_0_1px_0_rgb(var(--brass-300-rgb)_/_.16)]">
             {roleWords(session.role)}
           </span>
+          {/* Gym tablet idle sign-out (lane U1, AS2-b; OW25-53 A). Renders
+              nothing on an unmarked device; on a marked one, a "Gym tablet"
+              plate beside the role, the countdown and the sign-out. */}
+          <TabletIdleSignOut />
           {/* The corridor: the other 61 routes used to be reachable only by
               typing a URL. It lives in the header so every surface gets it.
               Keyed on the pathname so walking through a door leaves it shut --

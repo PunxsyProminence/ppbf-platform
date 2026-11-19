@@ -24,18 +24,21 @@ import type { PilotRole } from './contracts';
 import { queryOne, withTransaction } from './db';
 import { ForbiddenError, ValidationError } from './errors';
 
-export const TABLET_IDLE_MINUTES = [15, 30, 60, 120, 240] as const;
-export type TabletIdleMinutes = (typeof TABLET_IDLE_MINUTES)[number];
-export const DEFAULT_TABLET_IDLE_MINUTES: TabletIdleMinutes = 60;
+// The list and the default live in src/shared/tabletIdle.ts, so the browser's
+// timer and the gym admin's select read the same values without loading pg.
+import {
+  DEFAULT_TABLET_IDLE_MINUTES,
+  isTabletIdleMinutes,
+  TABLET_IDLE_MINUTES,
+  type TabletIdleMinutes,
+} from '@/src/shared/tabletIdle';
+
+export { DEFAULT_TABLET_IDLE_MINUTES, isTabletIdleMinutes, TABLET_IDLE_MINUTES, type TabletIdleMinutes };
 
 export interface TabletIdlePolicy {
   readonly idle_minutes: TabletIdleMinutes;
   /** true when no gym admin has set it and the default applies. */
   readonly is_default: boolean;
-}
-
-export function isTabletIdleMinutes(value: unknown): value is TabletIdleMinutes {
-  return typeof value === 'number' && (TABLET_IDLE_MINUTES as readonly number[]).includes(value);
 }
 
 export async function readTabletIdlePolicy(organizationId: string): Promise<TabletIdlePolicy> {
