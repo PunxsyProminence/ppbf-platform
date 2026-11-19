@@ -98,6 +98,9 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   const bad = listItemsOrNotWritten(view.bad);
   const errors = listItemsOrNotWritten(view.commonErrors);
   const corrections = listItemsOrNotWritten(view.corrections);
+  // Lane NW-b (PK-197 A): the frozen Backbone's two fields, shown as written or as not written.
+  const exitCondition = listItemsOrNotWritten(view.exitCondition);
+  const correctionPath = listItemsOrNotWritten(view.correctionPath);
 
   return (
     <article aria-labelledby={headingId} className="mat-leather--raised space-y-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
@@ -196,6 +199,13 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
         </ul>
       </section>
 
+      <section className={SECTION}>
+        <h3 className="t-label">Exit condition</h3>
+        <ul className={LIST}>
+          {exitCondition.map((item, index) => <li key={`${view.id}-exit-${index}`}>{item}</li>)}
+        </ul>
+      </section>
+
       {view.cues.length > 0 && (
         <section className={SECTION}>
           <h3 className="t-label">Coaching cues</h3>
@@ -217,6 +227,10 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
         <summary className={EXPANDER_SUMMARY}>Corrections</summary>
         <ul className={`${LIST} mt-[var(--s2)]`}>
           {corrections.map((item, index) => <li key={`${view.id}-correction-${index}`}>{item}</li>)}
+        </ul>
+        <p className="t-label mt-[var(--s2)] text-[color:var(--bone-300)]">Correction path</p>
+        <ul className={LIST}>
+          {correctionPath.map((item, index) => <li key={`${view.id}-correction-path-${index}`}>{item}</li>)}
         </ul>
       </details>
 

@@ -455,5 +455,9 @@ describe('every migration is dispatchable and in the rebuild path', () => {
     // pilot.one_percent_nominations, which one-percent-club creates, and its
     // SQL refuses to run without that table.
     expect(at('one-percent-nomination-athlete-cascade')).toBeGreaterThan(at('one-percent-club'));
+    // drill-exit-correction-fields adds exit_condition and correction_path to
+    // pilot.drill_library, which drill-library-v3 creates; its SQL refuses to
+    // run without that table.
+    expect(at('drill-exit-correction-fields')).toBeGreaterThan(at('drill-library-v3'));
   });
 });

@@ -36,12 +36,14 @@ describe('stripGroundingClaimTags', () => {
 });
 
 describe('toAthleteInstruction', () => {
-  test('is constructive: exactly the five practical-instruction keys, each stripped', () => {
+  test('is constructive: exactly the seven practical-instruction keys, each stripped', () => {
     const row = {
       what_good_looks_like: 'Glove meets the punch [A2-070]',
       what_bad_looks_like: 'Reaching [B3-047]',
       common_errors: 'Catching late',
       corrections: 'Coach calls "catch" [A5-149]',
+      exit_condition: 'Three clean catches [A2-070]',
+      correction_path: 'Reset the guard\nCatch earlier',
       equipment_needed: 'focus mitt',
       // A key that must NOT survive the projection even if a caller passes it.
       grounding_claim_ids: ['A2-070'],
@@ -51,8 +53,10 @@ describe('toAthleteInstruction', () => {
 
     expect(Object.keys(projected).sort()).toEqual([
       'common_errors',
+      'correction_path',
       'corrections',
       'equipment_needed',
+      'exit_condition',
       'what_bad_looks_like',
       'what_good_looks_like',
     ]);
@@ -61,6 +65,8 @@ describe('toAthleteInstruction', () => {
       what_bad_looks_like: 'Reaching',
       common_errors: 'Catching late',
       corrections: 'Coach calls "catch"',
+      exit_condition: 'Three clean catches',
+      correction_path: 'Reset the guard\nCatch earlier',
       equipment_needed: 'focus mitt',
     });
     expect(JSON.stringify(projected)).not.toMatch(/\[[A-Z]\d+-\d+\]/);

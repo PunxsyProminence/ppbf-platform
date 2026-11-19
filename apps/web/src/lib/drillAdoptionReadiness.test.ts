@@ -112,6 +112,8 @@ function readyDrill(overrides: Partial<ReadinessFixture> = {}): ReadinessFixture
     common_errors: 'Admiring the shot.',
     corrections: 'Exit on the count.',
     transfer: 'Sparring exits.',
+    exit_condition: '',
+    correction_path: '',
     contact_level: 'light',
     equipment_needed: 'Gloves',
     requires_coach_authorization: false,

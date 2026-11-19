@@ -17,6 +17,9 @@ const FT1 = 'drl_000000000000f1';
 const LR = 'drl_000000000000a1';
 const YS = 'drl_000000000000a2';
 const D23 = 'drl_000000000000a3';
+// Lane NW-b: one written exit condition, one multi-line correction path (as two frozen ones are).
+const D23_EXIT = 'Three clean sets — then move on.';
+const YS_CORRECTION = 'Reset the stance.\nShorten the step, then jab again.';
 const DOC023_PROVENANCE = 'PPBF owner-authored (DOC-023 first; DOC-022 for the fields DOC-023 lacks, labelled per field)';
 const DRILLS = 'drill-library/seed_drill_library.csv';
 const CUES = 'drill-library/seed_drill_cues.csv';
@@ -52,14 +55,15 @@ function drill(id: string, extra: Json = {}): Json {
 function fixture(): Json[] {
   return [
     drill(FT1, { stage_keys: ['FT1'], field_provenance: 'PPBF owner-authored', content_class: 'PPBF class material' }),
-    drill(LR),
+    drill(LR, { exit_condition: null, correction_path: null }),
     drill(YS, {
       name: 'Jab-Only Round', field_provenance: 'PPBF owner-authored', content_class: 'PPBF youth class material - DOC-152 Youth Sparring Drill Manual',
+      correction_path: YS_CORRECTION,
       execution: 'Both athletes may throw jabs only.\nNo rear-hand punches allowed.', common_errors: null, stage_keys: ['Y3'],
       cues: [{ cue_id: 'cue_00000000000001', cue_text: 'Step with jab.', focus_type: 'unspecified', source_ref: 'DOC-152' }],
     }),
     drill(D23, {
-      name: 'Set-It-Then-Send-It', field_provenance: DOC023_PROVENANCE, content_class: 'PPBF owner-authored text (DOC-023)', contact_level: 'light_technical', difficulty: 'beginner',
+      name: 'Set-It-Then-Send-It', exit_condition: D23_EXIT, field_provenance: DOC023_PROVENANCE, content_class: 'PPBF owner-authored text (DOC-023)', contact_level: 'light_technical', difficulty: 'beginner',
       field_labels: { field_provenance: { status: 'OBSERVED', sources: ['Jason 2026-10-30 (D-PK56)'] } },
       stop_rules: [{ stop_rule_id: 'stp_00000000000001', ordinal: 1, condition_text: 'squared stance cannot be corrected.', scope: 'drill_specific' }],
     }),
@@ -245,5 +249,113 @@ describe('backbone-export-drill-library (lane 2)', () => {
     const orphan = fixture();
     orphan[2].content_class = 'some other material';
     expect(exportInto(backbone(orphan)).stderr).toContain('belong to no source group');
+  });
+});
+
+// Lane NW-b (PK-197 A): exit_condition and correction_path are carried as written, and
+// --fill-columns writes those two cells into the committed file and nothing else.
+describe('exit_condition and correction_path (lane NW-b)', () => {
+  const dir = backbone();
+  const NEW = ['exit_condition', 'correction_path'];
+
+  /**
+   * The committed drill file as it was before NW-b, without the two columns: the export's rows (one
+   * drafted), then the FT1 drill's row (the FT1 exporter's), blank in both.
+   */
+  function oldSeed(): string {
+    const seed = exportInto(dir, committedSeed()).out;
+    const table = readCsv(read(seed, DRILLS));
+    const keep = table.header.map((name, index) => (NEW.includes(name) ? -1 : index)).filter((index) => index >= 0);
+    const purpose = table.header.indexOf('purpose');
+    const id = table.header.indexOf('drill_id');
+    const rows = table.records.map(({ cells }) => keep.map((index) => (index === purpose && cells[id] === LR ? 'A drafted purpose, "kept".' : cells[index])));
+    const ft1Cells: Record<string, string> = { organization_id: ORG, drill_id: FT1, lineage_id: FT1, name: 'FT1 drill' };
+    rows.push(keep.map((index) => ft1Cells[table.header[index]] ?? ''));
+    fs.writeFileSync(path.join(seed, DRILLS), writeCsv(keep.map((index) => table.header[index]), rows));
+    return seed;
+  }
+  const fill = (seed: string, extra: string[] = []) => exportInto(dir, seed, ['--fill-columns', ...extra]);
+
+  it('the export carries both into their own columns, as written, and no longer lists them as not carried', () => {
+    const first = exportInto(dir);
+    const byId = Object.fromEntries(rowsOf(read(first.out, DRILLS)).map((row) => [row.drill_id, row]));
+    expect(byId[D23].exit_condition).toBe(D23_EXIT);
+    expect(byId[YS].correction_path).toBe(YS_CORRECTION);
+    expect([byId[LR].exit_condition, byId[LR].correction_path, byId[D23].correction_path, byId[YS].exit_condition]).toEqual(['', '', '', '']);
+    expect(first.stdout).not.toMatch(/drill\.exit_condition|drill\.correction_path/);
+  });
+
+  it('--fill-columns writes only the two cells: every other cell of every row is byte-identical, in its place', () => {
+    const seed = oldSeed();
+    const before = readCsv(read(seed, DRILLS));
+    const result = fill(seed);
+    expect(result.stderr).toBe('');
+    const after = readCsv(read(result.out, DRILLS));
+    expect(after.header).toEqual(FILE_SPECS.find((spec) => spec.file === path.basename(DRILLS))!.columns.map((column) => column.name));
+    expect(after.records).toHaveLength(before.records.length);
+    before.records.forEach((record, row) => {
+      before.header.forEach((name, column) => {
+        expect(after.records[row].cells[after.header.indexOf(name)]).toBe(record.cells[column]);
+      });
+    });
+    const byId = Object.fromEntries(rowsOf(read(result.out, DRILLS)).map((row) => [row.drill_id, row]));
+    expect(byId[D23].exit_condition).toBe(D23_EXIT);
+    expect(byId[YS].correction_path).toBe(YS_CORRECTION);
+    expect(byId['drl_0000000000aaaa'].exit_condition).toBe('');
+    expect([byId[FT1].exit_condition, byId[FT1].correction_path]).toEqual(['', '']);
+    expect(byId[LR].purpose).toBe('A drafted purpose, "kept".');
+    for (const name of [CUES, STOPS]) expect(read(result.out, name)).toBe(read(seed, name));
+  });
+
+  it('--fill-columns covers FT1 drills too, counts filled and empty, and a second run is byte-identical', () => {
+    const first = fill(oldSeed());
+    expect(first.status).toBe(2); // the fixture's counts differ from the frozen set's, by name
+    expect(first.stdout).toContain('filled from the Backbone: exit_condition 1 filled, 3 empty; correction_path 1 filled, 3 empty');
+    expect(first.stdout).toContain('COUNTS DIFFER FROM FILL_EXPECTED: drills: expected 387, observed 4; exit_condition: expected 17, observed 1; correction_path: expected 7, observed 1');
+    expect(first.stdout).toContain('committed rows: 5 (1 outside the Backbone, left as they are)');
+    const once = read(first.out, DRILLS);
+    fill(first.out);
+    expect(read(first.out, DRILLS)).toBe(once);
+  });
+
+  it('--fill-columns refuses a committed cell holding another value, and a Backbone drill with no committed row, writing nothing', () => {
+    const seed = exportInto(dir, committedSeed()).out;
+    const table = readCsv(read(seed, DRILLS));
+    const rows = table.records.map(({ cells }) => [...cells]);
+    const at = (name: string) => table.header.indexOf(name);
+    rows.find((cells) => cells[at('drill_id')] === D23)![at('exit_condition')] = 'A coach wrote this.';
+    rows.find((cells) => cells[at('drill_id')] === LR)![at('correction_path')] = 'And this.';
+    fs.writeFileSync(path.join(seed, DRILLS), writeCsv(table.header, rows));
+    const refused = fill(seed);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`${DRILLS} drill_id ${D23}: exit_condition holds "A coach wrote this."; the Backbone has ${JSON.stringify(D23_EXIT)}`);
+    expect(refused.stderr).toContain(`${DRILLS} drill_id ${LR}: correction_path holds "And this."; the Backbone has ""`);
+    expect(refused.stderr).toContain(`${DRILLS}: drill ${FT1} is in the Backbone and has no committed row`);
+    expect(refused.stderr).toContain('Nothing was written.');
+    expect(snapshot(refused.out)).toEqual(snapshot(seed));
+  });
+
+  it('--fill-columns never overwrites: it refuses --allow-overwrite', () => {
+    expect(run([dir, '--fill-columns', '--allow-overwrite']).stderr).toContain('--fill-columns never overwrites');
+  });
+});
+
+// The committed seed after the fill (OBSERVED from the frozen Backbone, manifest 38b52df4c2d8d7a1):
+// 17 drills with an exit condition and 7 with a correction path, 19 drills in all; every other row
+// is blank in both, and shows "Not written yet".
+describe('the committed seed_drill_library.csv (lane NW-b)', () => {
+  const rows = rowsOf(fs.readFileSync(path.resolve(__dirname, '../seed-data', DRILLS), 'utf8'));
+  const filled = (column: string) => rows.filter((row) => row[column] !== '').map((row) => row.drill_id).sort();
+
+  it('holds the export counts: 17 exit conditions and 7 correction paths, on these 19 drills', () => {
+    expect(filled('exit_condition')).toEqual([
+      'drl_094a6c7e0ee5f2', 'drl_14eeed32358d0a', 'drl_399d6a9854ebc4', 'drl_3b1ec1fb7207bc', 'drl_4698397d9a30a6', 'drl_631ca619421980',
+      'drl_81950b7109357f', 'drl_81a64caa3bbf52', 'drl_9e2321080691bd', 'drl_cff7d38654e1ca', 'drl_d19b5fad4e54b0', 'drl_d48de12ba7bd0c',
+      'drl_dcc881eb38f12e', 'drl_e6442ec28937a7', 'drl_e90c6f58aa44eb', 'drl_f842afc719f2c6', 'drl_ff0b0e297519b0',
+    ]);
+    expect(filled('correction_path')).toEqual([
+      'drl_3b1ec1fb7207bc', 'drl_4698397d9a30a6', 'drl_81950b7109357f', 'drl_d48de12ba7bd0c', 'drl_d6f7d5926df898', 'drl_e8f8769a5c0832', 'drl_ff0b0e297519b0',
+    ]);
+    expect(rows).toHaveLength(506);
   });
 });

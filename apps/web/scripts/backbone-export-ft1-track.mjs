@@ -85,7 +85,7 @@ const BLOCK_DETAILS = ['description', 'optional_drill_refs'];
 
 const DRILL_HEADER = ['organization_id', 'drill_id', 'lineage_id', 'version', 'supersedes_drill_id', 'superseded_at', 'name', 'discipline', 'category', 'skill_id',
   'target_behavior', 'purpose', 'standard_setup', 'execution', 'what_good_looks_like', 'what_bad_looks_like', 'common_errors', 'corrections', 'transfer',
-  'contact_level', 'equipment_needed', 'requires_coach_authorization', 'content_class', 'source_ref', 'active', 'created_by_account_id', 'difficulty',
+  'exit_condition', 'correction_path', 'contact_level', 'equipment_needed', 'requires_coach_authorization', 'content_class', 'source_ref', 'active', 'created_by_account_id', 'difficulty',
   'grounding_claim_ids', 'field_provenance', ...LABELS];
 const TEMPLATE_HEADER = ['organization_id', 'template_id', 'lineage_id', 'version', 'supersedes_template_id', 'superseded_at', 'name', 'session_type', 'difficulty',
   'age_band', 'duration_minutes', 'intent', 'coach_notes', 'requires_coach_authorization', 'active', 'created_by_account_id', 'details', ...LABELS];

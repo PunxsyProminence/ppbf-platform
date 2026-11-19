@@ -541,6 +541,46 @@ describe('editing a library drill', () => {
     expect(labels.field_labels).toEqual({ corrections: expect.objectContaining({ status: 'REPORTED' }) });
     expect(labels.evidence).toBeNull();
   });
+
+  // Lane NW-b (PK-197 A): a coach can fill the two fields the frozen Backbone often left empty.
+  it('lets a coach write the exit condition and correction path as the next version, each labelled REPORTED', async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_exit_path', name: 'Exit Path' });
+    const result = await edit(org, {
+      drill_id: 'drl_exit_path',
+      exit_condition: 'Three clean rounds.',
+      correction_path: 'Reset the stance.\nShorten the step.',
+    });
+    expect(result).toMatchObject({ changed: true, version: 2 });
+    expect([...result.edited].sort()).toEqual(['correction_path', 'exit_condition']);
+    const head = (await client.query(
+      `select exit_condition, correction_path from pilot.drill_library where organization_id = $1 and lineage_id = 'drl_exit_path' and superseded_at is null`,
+      [org],
+    )).rows[0];
+    expect(head).toEqual({ exit_condition: 'Three clean rounds.', correction_path: 'Reset the stance.\nShorten the step.' });
+    const labels = (await labelsOf(org, 'drl_exit_path', 2)).field_labels;
+    expect(labels.exit_condition).toMatchObject({ status: 'REPORTED', sources: ['In-app edit'] });
+    expect(labels.correction_path).toMatchObject({ status: 'REPORTED', sources: ['In-app edit'] });
+  });
+
+  it('carries a written exit condition and correction path into the next version when another field is edited', async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_exit_keep', name: 'Exit Keep' });
+    await client.query(
+      `update pilot.drill_library set exit_condition = 'Clean twice.', correction_path = 'Slow down.' where organization_id = $1 and drill_id = 'drl_exit_keep'`,
+      [org],
+    );
+    const result = await edit(org, { drill_id: 'drl_exit_keep', purpose: 'A coach purpose.' });
+    expect(result.edited).toEqual(['purpose']);
+    const rows = (await client.query(
+      `select version, exit_condition, correction_path from pilot.drill_library where organization_id = $1 and lineage_id = 'drl_exit_keep' order by version`,
+      [org],
+    )).rows;
+    expect(rows).toEqual([
+      { version: 1, exit_condition: 'Clean twice.', correction_path: 'Slow down.' },
+      { version: 2, exit_condition: 'Clean twice.', correction_path: 'Slow down.' },
+    ]);
+  });
 });
 
 describe('parseDrillLibraryEdit', () => {
