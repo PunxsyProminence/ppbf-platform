@@ -41,7 +41,7 @@ create table if not exists pilot.organization_tablet_idle_policy (
   set_at             timestamptz not null default clock_timestamp()
 );
 
--- Read on every signed-in page load of a marked tablet, by organization:
+-- To be read on every signed-in page load of a marked tablet (AS2-b), by organization:
 -- the primary key is the access path, so there is no other index.
 
 comment on table pilot.organization_tablet_idle_policy is

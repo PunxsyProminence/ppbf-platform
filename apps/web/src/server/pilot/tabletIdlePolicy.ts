@@ -68,6 +68,10 @@ export async function setTabletIdlePolicy(input: {
   const idleMinutes = input.idleMinutes;
 
   return withTransaction(async (client) => {
+    // Lock the gym's own row first: with no setting row yet there is nothing
+    // for the select below to lock, and two first saves at once would both
+    // audit "previous: none".
+    await client.query('select 1 from pilot.organizations where organization_id = $1 for update', [input.organizationId]);
     const before = await client.query<{ idle_minutes: number }>(
       `select idle_minutes from pilot.organization_tablet_idle_policy
         where organization_id = $1 for update`,

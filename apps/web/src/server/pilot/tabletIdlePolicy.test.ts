@@ -81,7 +81,7 @@ test('the gym admin\'s write upserts the row and audits old and new in the same 
   const client = {
     query: jest.fn(async (text: string, values: unknown[]) => {
       calls.push([text, values]);
-      return { rows: /^\s*select/i.test(text) ? [{ idle_minutes: 60 }] : [] };
+      return { rows: /^\s*select idle_minutes/i.test(text) ? [{ idle_minutes: 60 }] : [] };
     }),
   };
   mockWithTransaction.mockImplementation(async (fn: (c: unknown) => Promise<unknown>) => fn(client));
@@ -94,7 +94,9 @@ test('the gym admin\'s write upserts the row and audits old and new in the same 
   const audit = calls.find(([text]) => /insert into pilot\.audit_events/.test(text));
   // A gym setting, not a person's record: nothing is mirrored to SHADOW.
   expect(calls.map(([text]) => text).filter((text) => /shadow/i.test(text))).toEqual([]);
-  expect(calls).toHaveLength(3);
+  expect(calls).toHaveLength(4);
+  expect(calls[0][0]).toMatch(/from pilot\.organizations where organization_id = \$1 for update/);
+  expect(calls[0][1]).toEqual(['org-1']);
   expect(audit?.[1]).toEqual([
     'update', 'acct-admin', 'organization_admin', 'org-1', 'organization_tablet_idle_policy', 'org-1',
     JSON.stringify({ idle_minutes: 120, previous_idle_minutes: 60 }),

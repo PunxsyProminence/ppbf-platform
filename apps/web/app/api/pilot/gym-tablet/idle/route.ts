@@ -16,8 +16,8 @@ export const dynamic = 'force-dynamic';
  * admin sets it in gym settings, first value 1 hour).
  *
  * GET: any signed-in member, for their own gym only (the organization comes
- * from the session, never from the request). The tablet asks with whoever is
- * signed in on it, athletes included. The answer is the number and whether it
+ * from the session, never from the request). A marked gym tablet will ask
+ * (lane U1, AS2-b) with whoever is signed in on it, athletes included. The answer is the number and whether it
  * is the default, nothing about any person. Query fields are refused.
  *
  * PUT { idle_minutes }: the gym admin only (organization_admin, and 'admin',

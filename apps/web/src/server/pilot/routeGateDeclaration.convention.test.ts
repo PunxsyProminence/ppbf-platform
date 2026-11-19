@@ -499,7 +499,7 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
   [
     'app/api/pilot/gym-tablet/idle/route.ts#GET',
     'OPEN BY DESIGN to any signed-in member (lane U1, AS2-a): a marked gym '
-      + 'tablet asks how long it may sit idle with whoever is signed in on it, '
+      + 'tablet will ask (AS2-b) how long it may sit idle, with whoever is signed in on it, '
       + 'athletes included. The answer is one number per gym and whether it is '
       + 'the default; no person data. The organization comes from the principal '
       + 'only, and any query field is refused, so no other gym can be named.',

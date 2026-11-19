@@ -73,6 +73,7 @@ const OTHER_ORG_ID = 'org-tabletidle-elsewhere';
 const ADMIN_ID = 'acct-tabletidle-admin';
 const OTHER_ADMIN_ID = 'acct-tabletidle-other-admin';
 const COACH_ID = 'acct-tabletidle-coach';
+const SECOND_ADMIN_ID = 'acct-tabletidle-second-admin'; // a second gym admin in ORG_ID
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
@@ -124,9 +125,10 @@ async function freshDatabase(name: string, { preMigration = false } = {}): Promi
     `insert into pilot.accounts (account_id, role, organization_id, auth_provider, athlete_id, login_email)
      values ($1, 'organization_admin', $4, 'microsoft', null, null),
             ($2, 'organization_admin', $5, 'microsoft', null, null),
-            ($3, 'coach',              $4, 'microsoft', null, null)
+            ($3, 'coach',              $4, 'microsoft', null, null),
+            ($6, 'organization_admin', $4, 'microsoft', null, null)
      on conflict do nothing`,
-    [ADMIN_ID, OTHER_ADMIN_ID, COACH_ID, ORG_ID, OTHER_ORG_ID],
+    [ADMIN_ID, OTHER_ADMIN_ID, COACH_ID, ORG_ID, OTHER_ORG_ID, SECOND_ADMIN_ID],
   );
 
   if (preMigration) {
@@ -275,15 +277,17 @@ describe('tabletIdlePolicy.ts on a real database', () => {
     }
   });
 
-  test('the gym admin sets it, changes it, and each change is audited with the old and new value; the other gym is untouched', async () => {
+  test('the gym admin sets it, a second gym admin changes it, and each change is audited with the old and new value; the other gym is untouched', async () => {
     const client = await freshDatabase('tabletidle_set');
     activeClient = client;
     try {
       await expect(setTabletIdlePolicy({
         organizationId: ORG_ID, actorAccountId: ADMIN_ID, actorRole: 'organization_admin', idleMinutes: 30,
       })).resolves.toEqual({ idle_minutes: 30, is_default: false });
+      const first = await client.query('select set_at from pilot.organization_tablet_idle_policy where organization_id = $1', [ORG_ID]);
+      // The change is made by the gym's second admin: the row must name them and move set_at.
       await setTabletIdlePolicy({
-        organizationId: ORG_ID, actorAccountId: ADMIN_ID, actorRole: 'organization_admin', idleMinutes: 120,
+        organizationId: ORG_ID, actorAccountId: SECOND_ADMIN_ID, actorRole: 'organization_admin', idleMinutes: 120,
       });
 
       await expect(readTabletIdlePolicy(ORG_ID)).resolves.toEqual({ idle_minutes: 120, is_default: false });
@@ -292,7 +296,9 @@ describe('tabletIdlePolicy.ts on a real database', () => {
       const { rows } = await client.query(
         'select organization_id, idle_minutes, set_by_account_id from pilot.organization_tablet_idle_policy',
       );
-      expect(rows).toEqual([{ organization_id: ORG_ID, idle_minutes: 120, set_by_account_id: ADMIN_ID }]);
+      expect(rows).toEqual([{ organization_id: ORG_ID, idle_minutes: 120, set_by_account_id: SECOND_ADMIN_ID }]);
+      const second = await client.query('select set_at from pilot.organization_tablet_idle_policy where organization_id = $1', [ORG_ID]);
+      expect(second.rows[0].set_at.getTime()).toBeGreaterThan(first.rows[0].set_at.getTime());
 
       expect(await auditRows(client)).toEqual([
         {
@@ -300,7 +306,7 @@ describe('tabletIdlePolicy.ts on a real database', () => {
           entity_id: ORG_ID, details: { idle_minutes: 30, previous_idle_minutes: null },
         },
         {
-          event_type: 'update', actor_account_id: ADMIN_ID, actor_role: 'organization_admin', organization_id: ORG_ID,
+          event_type: 'update', actor_account_id: SECOND_ADMIN_ID, actor_role: 'organization_admin', organization_id: ORG_ID,
           entity_id: ORG_ID, details: { idle_minutes: 120, previous_idle_minutes: 30 },
         },
       ]);

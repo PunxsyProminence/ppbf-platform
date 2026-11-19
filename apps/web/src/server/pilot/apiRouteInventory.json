@@ -8686,7 +8686,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Returns the gym's tablet idle sign-out time (15/30/60/120/240 minutes; no row = 60) and whether it is the default. One number per gym, no person data; read by whoever is signed in on a marked gym tablet. Lane U1 AS2-a, OW25-53 A.",
+    "notes": "Returns the gym's tablet idle sign-out time (15/30/60/120/240 minutes; no row = 60) and whether it is the default. One number per gym, no person data; to be read by whoever is signed in on a marked gym tablet (AS2-b). Lane U1 AS2-a, OW25-53 A.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
