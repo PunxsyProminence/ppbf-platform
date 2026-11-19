@@ -95,7 +95,7 @@ test('the gym admin\'s write upserts the row and audits old and new in the same 
   // A gym setting, not a person's record: nothing is mirrored to SHADOW.
   expect(calls.map(([text]) => text).filter((text) => /shadow/i.test(text))).toEqual([]);
   expect(calls).toHaveLength(4);
-  expect(calls[0][0]).toMatch(/from pilot\.organizations where organization_id = \$1 for update/);
+  expect(calls[0][0]).toMatch(/from pilot\.organizations where organization_id = \$1 for no key update/);
   expect(calls[0][1]).toEqual(['org-1']);
   expect(audit?.[1]).toEqual([
     'update', 'acct-admin', 'organization_admin', 'org-1', 'organization_tablet_idle_policy', 'org-1',

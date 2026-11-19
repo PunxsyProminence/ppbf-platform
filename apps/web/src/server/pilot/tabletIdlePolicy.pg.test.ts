@@ -284,7 +284,7 @@ describe('tabletIdlePolicy.ts on a real database', () => {
       await expect(setTabletIdlePolicy({
         organizationId: ORG_ID, actorAccountId: ADMIN_ID, actorRole: 'organization_admin', idleMinutes: 30,
       })).resolves.toEqual({ idle_minutes: 30, is_default: false });
-      const first = await client.query('select set_at from pilot.organization_tablet_idle_policy where organization_id = $1', [ORG_ID]);
+      const first = await client.query('select set_at::text as set_at_text from pilot.organization_tablet_idle_policy where organization_id = $1', [ORG_ID]);
       // The change is made by the gym's second admin: the row must name them and move set_at.
       await setTabletIdlePolicy({
         organizationId: ORG_ID, actorAccountId: SECOND_ADMIN_ID, actorRole: 'organization_admin', idleMinutes: 120,
@@ -297,8 +297,12 @@ describe('tabletIdlePolicy.ts on a real database', () => {
         'select organization_id, idle_minutes, set_by_account_id from pilot.organization_tablet_idle_policy',
       );
       expect(rows).toEqual([{ organization_id: ORG_ID, idle_minutes: 120, set_by_account_id: SECOND_ADMIN_ID }]);
-      const second = await client.query('select set_at from pilot.organization_tablet_idle_policy where organization_id = $1', [ORG_ID]);
-      expect(second.rows[0].set_at.getTime()).toBeGreaterThan(first.rows[0].set_at.getTime());
+      // Compared in SQL, at microsecond precision: two fast saves can share a millisecond.
+      const moved = await client.query(
+        'select set_at > $2::timestamptz as moved from pilot.organization_tablet_idle_policy where organization_id = $1',
+        [ORG_ID, first.rows[0].set_at_text],
+      );
+      expect(moved.rows[0].moved).toBe(true);
 
       expect(await auditRows(client)).toEqual([
         {
