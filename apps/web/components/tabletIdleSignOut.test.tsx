@@ -121,6 +121,25 @@ describe('a marked gym tablet', () => {
     expect(mockEnd).not.toHaveBeenCalled();
   });
 
+  /* Review B: hidden at the press, the banner would let the tap land on the
+     page under it. A press on the banner keeps it until its own click. */
+  test('a press on "Stay signed in" keeps the banner until the click lands on the button', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(14 * MINUTE + 5_000);
+    const button = screen.getByRole('button', { name: 'Stay signed in' });
+    await act(async () => {
+      fireEvent.pointerDown(button);
+    });
+    expect(screen.getByRole('button', { name: 'Stay signed in' })).toBe(button);
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(screen.queryByText(/Signing out in/)).toBeNull();
+    await advance(10 * MINUTE);
+    expect(mockEnd).not.toHaveBeenCalled();
+  });
+
   test('"Stay signed in" keeps it signed in', async () => {
     idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
     await mount();
@@ -166,7 +185,7 @@ describe('a marked gym tablet', () => {
     await mount();
 
     await advance(15 * MINUTE);
-    expect(screen.getByRole('alert').textContent).toBe('This tablet could not finish signing out: no connection. It keeps trying.');
+    expect(screen.getByRole('alert').textContent).toBe('This tablet could not finish signing out. It keeps trying.');
     expect(mockLeave).not.toHaveBeenCalled();
     expect(mockClear).not.toHaveBeenCalled();
 
@@ -296,7 +315,7 @@ describe('a marked gym tablet', () => {
       view = render(<TabletIdleSignOut />);
     });
     await advance(15 * MINUTE);
-    expect(document.getElementById('gym-tablet-leaving')?.textContent).toBe('This tablet could not finish signing out: no connection. It keeps trying.');
+    expect(document.getElementById('gym-tablet-leaving')?.textContent).toBe('This tablet could not finish signing out. It keeps trying.');
 
     await act(async () => {
       view!.unmount();
