@@ -1016,13 +1016,20 @@ describe('athlete safety reporting', () => {
   });
 
   /* Dry run (lane U1, SC2-4): on a phone the modal's title sat under the
-     sticky role header, which is z-50 like the modal was, and the modal was
-     centred so a tall form could not scroll its top back into view. */
-  test('the pain modal sits above the sticky header and scrolls from its top', async () => {
+     sticky role header (z-50). The workspace root is a .room, which is its
+     own stacking context (isolation: isolate), so no z-index inside it can
+     rise above the header. The modal now mounts beside the room, in the
+     layer the header shares, at z-[60]; and it starts at the top and
+     scrolls. jsdom computes no stacking, so this pins the structure that
+     makes the z-index count: the overlay is outside the room. */
+  test('the pain modal mounts outside the room, at z-[60], top-aligned and scrollable', async () => {
     await openPainModal();
     const overlay = screen.getByLabelText('Pain Type').closest('.fixed') as HTMLElement;
+    const room = document.querySelector('.room') as HTMLElement;
+    expect(room).toBeTruthy();
+    expect(overlay.closest('.room')).toBeNull();
+    expect(overlay.parentElement).toBe(room.parentElement);
     expect(overlay.className).toContain('z-[60]');
-    expect(overlay.className).not.toMatch(/(^|\s)z-50(\s|$)/);
     expect(overlay.className).toContain('items-start');
     expect(overlay.className).toContain('overflow-y-auto');
     expect(screen.getByText(/Soreness Details: Neck/)).toBeTruthy();
