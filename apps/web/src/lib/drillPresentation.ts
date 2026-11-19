@@ -23,6 +23,29 @@ export function humanizeContactLevel(value: string | null | undefined): string {
 }
 
 /**
+ * What a reader sees where the content left a standard teaching field empty.
+ * One wording, one place (the design rule: an unknown value never looks blank,
+ * zero or complete). Content is shown as written; this only names the gap.
+ */
+export const NOT_WRITTEN_YET = 'Not written yet';
+
+/** True when a text field holds nothing a reader could use. */
+export function isNotWritten(text: string | null | undefined): boolean {
+  return (text ?? '').trim() === '';
+}
+
+/** The text as written, or NOT_WRITTEN_YET when it is empty. */
+export function orNotWritten(text: string | null | undefined): string {
+  return isNotWritten(text) ? NOT_WRITTEN_YET : (text as string);
+}
+
+/** Lines of a text field, or one NOT_WRITTEN_YET line when it is empty. */
+export function listItemsOrNotWritten(text: string | null | undefined): string[] {
+  const items = listItems(text);
+  return items.length > 0 ? items : [NOT_WRITTEN_YET];
+}
+
+/**
  * Ordered steps, but only where the author wrote them as steps.
  *
  * The source-manual drills separate execution steps with blank lines; the
@@ -66,13 +89,40 @@ export function scaleLevelName(level: string): string {
 }
 
 /**
- * An equipment value as a reader should see it: "none" means none is needed,
- * and so does a blank one (OD-2026-10-08-008 D8, "Treat blank as 'none
- * needed' (Recommended)"), for coaches and athletes alike.
+ * The five source-manual drills whose blank equipment Jason ruled "none needed"
+ * (OD-2026-10-08-008 D8). Identified by drill_id or lineage_id (a newer
+ * version of a drill gets a new drill_id and keeps its lineage_id; for these
+ * five the seeded lineage_id equals the drill_id). All five carry
+ * field_provenance 'PPBF source manual v3' and source_ref
+ * 'Punxsy_Drill_Library_Source_v3.docx' in seed_drill_library.csv. Every other
+ * blank equipment value is unknown, not "none" (Jason 2026-11-19, "A: Not
+ * written yet").
  */
-export function equipmentLabel(equipment: string | null | undefined): string {
+export const D8_BLANK_EQUIPMENT_IS_NONE: ReadonlySet<string> = new Set([
+  'drl_7f812fecacfee4',
+  'drl_2d0193a7c52e58',
+  'drl_08c95a746f83e9',
+  'drl_7af719b3b85e94',
+  'drl_0c72ef57315f70',
+]);
+
+/**
+ * An equipment value as a reader should see it. A written "none" means none is
+ * needed; a blank value is "Not written yet", except for the D8 drills, where
+ * the owner ruled blank means none needed.
+ */
+export function equipmentLabel(
+  equipment: string | null | undefined,
+  drillId?: string | null,
+  lineageId?: string | null,
+): string {
   const value = (equipment ?? '').trim();
-  return !value || value.toLowerCase() === 'none' ? 'No equipment needed' : value;
+  if (value.toLowerCase() === 'none') return 'No equipment needed';
+  if (!value) {
+    const isD8 = [drillId, lineageId].some((id) => !!id && D8_BLANK_EQUIPMENT_IS_NONE.has(id));
+    return isD8 ? 'No equipment needed' : NOT_WRITTEN_YET;
+  }
+  return value;
 }
 
 /**
@@ -88,6 +138,8 @@ export function equipmentLabel(equipment: string | null | undefined): string {
 export function setupAndEquipment(
   setup: string | null | undefined,
   equipment: string | null | undefined,
+  drillId?: string | null,
+  lineageId?: string | null,
 ): { setup: string | null; equipment: string } {
   const setupText = (setup ?? '').trim();
   const equipmentText = (equipment ?? '').trim();
@@ -97,7 +149,7 @@ export function setupAndEquipment(
   if (!setupText || setupIsEquipment) {
     // The equipment column is the authority on equipment; the setup word is
     // used only when equipment itself is blank.
-    return { setup: null, equipment: equipmentLabel(equipmentText || setupText) };
+    return { setup: null, equipment: equipmentLabel(equipmentText || setupText, drillId, lineageId) };
   }
-  return { setup: setupText, equipment: equipmentLabel(equipmentText) };
+  return { setup: setupText, equipment: equipmentLabel(equipmentText, drillId, lineageId) };
 }

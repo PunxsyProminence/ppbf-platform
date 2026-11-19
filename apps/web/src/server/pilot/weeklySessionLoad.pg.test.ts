@@ -255,6 +255,9 @@ describe('weekly session load on real Postgres', () => {
     const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
     expect(byWeek(rows)).toEqual({ 0: 300 + 200, 1: 120, 4: 60 });
     expect(rows.find((row) => row.week_index === 0)?.session_count).toBe(2);
+    // The under-18 family wording's minutes: the same sessions, summed.
+    expect(rows.find((row) => row.week_index === 0)?.week_minutes).toBe(60 + 50);
+    expect(rows.find((row) => row.week_index === 4)?.week_minutes).toBe(30);
   });
 
   test('a gym evening follows the gym day even though the UTC server is already on tomorrow', async () => {

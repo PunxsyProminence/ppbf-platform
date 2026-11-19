@@ -16,6 +16,7 @@ import {
   LOAD_JUMP_MIN_PRIOR_WEEKS,
   LOAD_JUMP_PRIOR_WEEKS,
   LOAD_JUMP_RATIO,
+  readFamilyLoadNumbers,
   readLoadJumps,
   type WeeklyLoadRow,
 } from './weeklySessionLoad';
@@ -30,7 +31,7 @@ afterEach(() => {
 });
 
 function week(week_index: number, week_load: number, athlete_id = 'ath-1'): WeeklyLoadRow {
-  return { athlete_id, week_index, week_load, session_count: 1 };
+  return { athlete_id, week_index, week_load, session_count: 1, week_minutes: 60 };
 }
 
 describe('the rule as Jason set it', () => {
@@ -56,6 +57,8 @@ describe('getWeeklySessionLoads SQL', () => {
     expect(text).toContain("rpe_method = 'athlete_post_session_self_report'");
     expect(text).toContain('rpe is not null and duration_minutes is not null');
     expect(text).toContain('sum(rpe * duration_minutes)');
+    // The family wording's minutes are summed over the same filtered rows.
+    expect(text).toContain('sum(duration_minutes)::float8 as week_minutes');
   });
 
   test('scoped to one organization and the given athletes, over 5 weekly buckets ending the gym day', async () => {
@@ -129,5 +132,52 @@ describe('readLoadJumps', () => {
       week_load: String(row.week_load) as unknown as number,
     }));
     expect(readLoadJumps(ORG, rows)[0].ratio).toBe(2);
+  });
+});
+
+// OD-2026-11-17-004 (OW25-31 A): the numbers an under-18 and their parents read.
+describe('readFamilyLoadNumbers', () => {
+  function bucket(week_index: number, session_count: number, week_minutes: number, week_load = session_count * 300, athlete_id = 'ath-1'): WeeklyLoadRow {
+    return { athlete_id, week_index, week_load, session_count, week_minutes };
+  }
+
+  test('this week against the low-high range of the usual weeks', () => {
+    expect(readFamilyLoadNumbers([
+      bucket(0, 6, 410), bucket(1, 3, 180), bucket(2, 4, 240), bucket(3, 3, 200), bucket(4, 4, 220),
+    ], 'ath-1')).toEqual({
+      this_week: { sessions: 6, minutes: 410 },
+      usual: { sessions_low: 3, sessions_high: 4, minutes_low: 180, minutes_high: 240 },
+    });
+  });
+
+  test('the usual weeks are the ones Rule 6 averages: an empty week is skipped, not read as zero', () => {
+    const numbers = readFamilyLoadNumbers([
+      bucket(0, 5, 300), bucket(1, 3, 150), bucket(2, 0, 0, 0), bucket(3, 2, 120), bucket(4, 3, 160),
+    ], 'ath-1');
+    expect(numbers?.usual).toEqual({ sessions_low: 2, sessions_high: 3, minutes_low: 120, minutes_high: 160 });
+  });
+
+  test('silent below the same minimum of usual weeks Rule 6 needs', () => {
+    expect(readFamilyLoadNumbers([bucket(0, 5, 300), bucket(1, 3, 150), bucket(2, 2, 120)], 'ath-1')).toBeNull();
+  });
+
+  test.each([
+    ['no row for this week', [bucket(1, 3, 150), bucket(2, 2, 120), bucket(3, 3, 160)]],
+    ['no load this week', [bucket(0, 2, 60, 0), bucket(1, 3, 150), bucket(2, 2, 120), bucket(3, 3, 160)]],
+    ['a value that is not a number', [bucket(0, 5, Number.NaN), bucket(1, 3, 150), bucket(2, 2, 120), bucket(3, 3, 160)]],
+  ])('never a made-up number: %s gives null', (_label, rows) => {
+    expect(readFamilyLoadNumbers(rows, 'ath-1')).toBeNull();
+  });
+
+  test('another athlete and buckets outside 0..4 are ignored; minutes are whole; driver strings are read as numbers', () => {
+    const numbers = readFamilyLoadNumbers([
+      { ...bucket(0, 5, 300.4), session_count: '5' as unknown as number },
+      bucket(1, 3, 150), bucket(2, 2, 120), bucket(3, 3, 160),
+      bucket(5, 1, 10), bucket(1, 9, 900, 2700, 'ath-2'),
+    ], 'ath-1');
+    expect(numbers).toEqual({
+      this_week: { sessions: 5, minutes: 300 },
+      usual: { sessions_low: 2, sessions_high: 3, minutes_low: 120, minutes_high: 160 },
+    });
   });
 });

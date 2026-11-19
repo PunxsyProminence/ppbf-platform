@@ -4,7 +4,7 @@ import type { PilotRole } from './contracts';
 import { isSystemCheckInNote } from '../../shared/sessionNoteSemantics';
 
 import { query, queryOne } from './db';
-import { familyGapDescription } from './progressionSuggestions';
+import { familyGapDescription, getFamilyGapReaders } from './progressionSuggestions';
 
 export const PASSBOOK_ATTENDANCE_STATUSES = ['present', 'late', 'absent'] as const;
 export const PASSBOOK_GYM_STATUSES = ['active', 'training', 'inactive'] as const;
@@ -622,21 +622,25 @@ export async function getAthletePassbook(
       }
       return { relationship_to_athlete: row.relationship_to_athlete };
     });
-  const progressionGaps = progressionGapRows
-    .filter((row) => belongsToOrganization(row, organizationId))
-    .map((row) => ({
+  const ownGapRows = progressionGapRows.filter((row) => belongsToOrganization(row, organizationId));
+  // The athlete (or a parent, should one ever be brought here) reads the
+  // family wording (Jason 2026-10-05; for an under-18, plain numbers,
+  // OD-2026-11-17-004); everyone else reads the stored text, as the gaps
+  // route does.
+  const familyReaders = viewerRole === 'athlete' || viewerRole === 'parent'
+    ? await getFamilyGapReaders(organizationId, athleteId, athlete.dob, ownGapRows)
+    : null;
+  const progressionGaps = ownGapRows
+    .map((row, index) => ({
       gap_id: row.gap_id,
       gap_type: row.gap_type,
-      // The athlete (or a parent, should one ever be brought here) reads the
-      // family wording (Jason 2026-10-05, Rule 6 only); everyone else reads
-      // the stored text, as the gaps route does.
-      gap_description: viewerRole !== 'athlete' && viewerRole !== 'parent'
-        ? row.gap_description
-        : familyGapDescription({
+      gap_description: familyReaders
+        ? familyGapDescription({
           gap_description: row.gap_description,
           detected_from: row.detected_from,
           detection_data: row.detection_data ?? null,
-        }),
+        }, familyReaders[index])
+        : row.gap_description,
       severity: row.severity,
       detected_from: row.detected_from,
       status: row.status,

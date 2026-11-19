@@ -229,8 +229,10 @@ describe('live surface renders the real script and run', () => {
     expect(screen.getByText('Current block')).toBeInTheDocument();
     expect(screen.getAllByText('Add slip and visual response').length).toBeGreaterThan(0);
     expect(screen.getByText(/Eyes on the chest/)).toBeInTheDocument();
-    // Null authored fields are omitted, never printed as empty labels.
-    expect(screen.queryByText('Fix:')).not.toBeInTheDocument();
+    // Null authored fields say "Not written yet", never a hidden line or an empty label:
+    // the current block has Say filled, and Explain, Watch and Fix empty.
+    expect(screen.getByText('Fix:')).toBeInTheDocument();
+    expect(screen.getAllByText('Not written yet')).toHaveLength(3);
 
     // Position labels: before the cursor is Earlier, after it is Upcoming.
     const items = screen.getAllByRole('listitem');

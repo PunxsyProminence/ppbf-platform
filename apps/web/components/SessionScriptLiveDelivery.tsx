@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
+import { orNotWritten } from '@/src/lib/drillPresentation';
 import { explainLine } from '@/src/lib/sessionScriptWords';
 import CoachLiveTiles from '@/components/CoachLiveTiles';
 import RoundTimerControls from '@/components/RoundTimerControls';
@@ -99,14 +100,16 @@ interface LoggedIntervention {
 // coach leaves in the box is what is saved. Nobody marked leaves it empty, so
 // an empty room is never recorded that nobody counted.
 
-/** The four authored coaching fields, omitting the ones the author left empty. */
+/** The four authored coaching fields; one the author left empty says "Not written yet" rather than vanishing. */
 function blockDetailLines(block: Block): { label: string; value: string }[] {
   return [
     { label: 'Say', value: block.what_to_say ?? '' },
     explainLine(block.what_to_explain ?? ''),
     { label: 'Watch', value: block.what_to_watch ?? '' },
     { label: 'Fix', value: block.what_to_fix ?? '' },
-  ].filter((line) => line.value.trim() !== '');
+  ].map((line) => (line.value.trim() === ''
+    ? { label: line.label === 'From the template' ? 'Explain' : line.label, value: orNotWritten('') }
+    : line));
 }
 
 function formatElapsed(totalSeconds: number): string {
