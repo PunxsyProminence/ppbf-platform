@@ -508,7 +508,7 @@ function ScoutReportView() {
                 (PPBF_SHADOW_WORKER_ENABLED) this page cannot see, so the line
                 says what is true either way. */}
             <p className="t-muted mt-[var(--s3)]">
-              Reports are written by the SHADOW background worker. A queued report shows here as pending until the worker finishes it or it expires.
+              Reports are written by the SHADOW background worker. A queued report shows here until the worker finishes it, or until it expires or is cancelled.
             </p>
             {generateNotice ? <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{generateNotice}</p> : null}
             {generateError ? (
