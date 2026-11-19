@@ -100,6 +100,34 @@ function expectNoMedicalStopMark(element: Element): void {
   expect(element.textContent ?? '').not.toContain('✕');
 }
 
+function installCoachFetch(rows: Array<Record<string, unknown>>): void {
+  global.fetch = jest.fn(async (input: unknown) => {
+    const url = String(input);
+    if (url.includes('/api/pilot/auth/session')) return jsonResponse({ authenticated: true, account_id: 'acct_coach_1' });
+    if (url.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Jordan P.' }] });
+    if (url.includes('/api/pilot/session-scripts/runs')) return jsonResponse({ run: null });
+    if (url.includes('/api/pilot/scheduler')) return jsonResponse({ ok: true, classes: [] });
+    if (url.includes('/api/pilot/coach/credentials')) return jsonResponse({ ok: true, items: [] });
+    if (url.includes('/api/pilot/coach/attendance-today')) {
+      return jsonResponse({ ok: true, day: '2026-08-28', covered: ['ath_1'], marks: [] });
+    }
+    if (url.includes('/api/pilot/coach/development')) return jsonResponse({ ok: true, goals: [], activities: [] });
+    if (url.includes('/api/pilot/coach/readiness-board')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/sessions/list')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/floor-plans')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/shadow/review-projection')) return jsonResponse({ queue: [] });
+    if (url.includes('/api/pilot/shadow/observation-projection')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/coach-reviews/list')) return jsonResponse({ items: [] });
+    if (url.includes('/api/pilot/announcements/get')) return jsonResponse({ ok: true, announcements: [] });
+    if (url.includes('/api/pilot/coach/pain-reports')) {
+      return jsonResponse({ ok: true, painReports: [], windowDays: 14, truncated: false });
+    }
+    if (url.includes('/api/pilot/coach/barrier-reports')) return jsonResponse({ ok: true, barrierReports: [], truncated: false });
+    if (url.includes('/api/pilot/escalations')) return jsonResponse({ ok: true, escalations: rows });
+    throw new Error(`Unexpected fetch: ${url}`);
+  }) as unknown as typeof fetch;
+}
+
 afterEach(() => {
   jest.restoreAllMocks();
 });
@@ -168,31 +196,7 @@ test('no escalation row on /admin/escalations wears the medical-stop mark', asyn
 
 test('no escalation on the coach home Safety Escalations panel wears the medical-stop mark', async () => {
   const rows = everyEscalation();
-  global.fetch = jest.fn(async (input: unknown) => {
-    const url = String(input);
-    if (url.includes('/api/pilot/auth/session')) return jsonResponse({ authenticated: true, account_id: 'acct_coach_1' });
-    if (url.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'Jordan P.' }] });
-    if (url.includes('/api/pilot/session-scripts/runs')) return jsonResponse({ run: null });
-    if (url.includes('/api/pilot/scheduler')) return jsonResponse({ ok: true, classes: [] });
-    if (url.includes('/api/pilot/coach/credentials')) return jsonResponse({ ok: true, items: [] });
-    if (url.includes('/api/pilot/coach/attendance-today')) {
-      return jsonResponse({ ok: true, day: '2026-08-28', covered: ['ath_1'], marks: [] });
-    }
-    if (url.includes('/api/pilot/coach/development')) return jsonResponse({ ok: true, goals: [], activities: [] });
-    if (url.includes('/api/pilot/coach/readiness-board')) return jsonResponse({ items: [] });
-    if (url.includes('/api/pilot/sessions/list')) return jsonResponse({ items: [] });
-    if (url.includes('/api/pilot/floor-plans')) return jsonResponse({ items: [] });
-    if (url.includes('/api/pilot/shadow/review-projection')) return jsonResponse({ queue: [] });
-    if (url.includes('/api/pilot/shadow/observation-projection')) return jsonResponse({ items: [] });
-    if (url.includes('/api/pilot/coach-reviews/list')) return jsonResponse({ items: [] });
-    if (url.includes('/api/pilot/announcements/get')) return jsonResponse({ ok: true, announcements: [] });
-    if (url.includes('/api/pilot/coach/pain-reports')) {
-      return jsonResponse({ ok: true, painReports: [], windowDays: 14, truncated: false });
-    }
-    if (url.includes('/api/pilot/coach/barrier-reports')) return jsonResponse({ ok: true, barrierReports: [], truncated: false });
-    if (url.includes('/api/pilot/escalations')) return jsonResponse({ ok: true, escalations: rows });
-    throw new Error(`Unexpected fetch: ${url}`);
-  }) as unknown as typeof fetch;
+  installCoachFetch(rows);
 
   await act(async () => {
     render(<CoachWorkspace />);
@@ -251,11 +255,16 @@ test('no escalation on the /coach/intelligence list wears the medical-stop mark'
 /* A LONE PAIN REPORT, CRITICAL OR HIGH (Overwatch, 2026-11-19, option B with a
    condition: show the pain number where the surface already holds it, with no
    new read; otherwise option A, the same mark for both, stated).
-   An escalation stores no score (painScoreLabel.ts, isPainReportEscalation):
-   its metadata is the near miss id and the trigger, and the number is in its
-   reason text. So the number shows where the reason is already shown -- the
-   /admin/escalations row and the coach panel card -- and the header badge,
-   which never shows a reason, reads the same for both (option A). */
+   An escalation filed from one pain report stores no score in its metadata
+   (the near miss id and the trigger); the number is in its reason text,
+   written by painReportAlert.ts describe() ("...at severity N/10."). The
+   /admin/escalations row, the coach panel card and /coach/intelligence show
+   that reason, so the number is on screen there. The header badge and
+   /admin/safety-review receive the reason but do not show it, so they read
+   the number out of it (painScoreFromEscalationReason; option B1): the badge
+   only for exactly one open pain report and never over a gym-floor surface.
+   The badge renders only for staff sessions (coach, organization admin), and
+   GlobalRoleHeader draws no bar on /wall (globalRoleHeader.test.tsx). */
 describe.each([
   ['critical', 8],
   ['high', 5],
@@ -286,7 +295,34 @@ describe.each([
     expectNoMedicalStopMark(tr);
   });
 
-  test('reads "PAIN REPORT" on the header badge, the same at either severity (no score in the data)', async () => {
+  test('shows its number on the coach home Safety Escalations card', async () => {
+    installCoachFetch([row]);
+    await act(async () => {
+      render(<CoachWorkspace />);
+    });
+    const panel = screen.getByRole('heading', { name: 'Safety Escalations' }).closest('section') as HTMLElement;
+    const card = panel.querySelector('article') as HTMLElement;
+    expect(card.textContent).toContain(`${score}/10`);
+    expect(card.querySelector('.badge')?.className).toContain('badge--restricted');
+    expectNoMedicalStopMark(card);
+  });
+
+  test('shows its number on the /coach/intelligence row', async () => {
+    global.fetch = jest.fn(async () => jsonResponse({
+      stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
+      open_safety_escalations: [{ ...row, athlete_name: 'Jordan P.', pain_report: true }],
+      open_compliance_violations: [],
+    })) as unknown as typeof fetch;
+    await act(async () => {
+      render(<CoachIntelligencePage />);
+    });
+    const li = screen.getByText(new RegExp(`severity ${score}/10`)).closest('li') as HTMLElement;
+    expect(li.textContent).toContain(`${score}/10`);
+    expect(li.querySelector('.badge')?.textContent).toBe('▲Pain report');
+    expectNoMedicalStopMark(li);
+  });
+
+  test('shows its number on the header badge, in both densities and the aria-label', async () => {
     global.fetch = jest.fn(async () => jsonResponse({ ok: true, escalations: [row] })) as unknown as typeof fetch;
 
     let container!: HTMLElement;
@@ -296,7 +332,96 @@ describe.each([
 
     const badge = container.querySelector('.badge') as HTMLElement;
     expect(badge.className).toContain('badge--restricted');
-    expect(badge.textContent).toBe('▲SAFETY 1 · PAIN REPORTSafety 1 pain report');
-    expect(badge.textContent).not.toContain(`${score}/10`);
+    expect(badge.textContent).toBe(`▲SAFETY 1 · PAIN REPORT ${score}/10Safety 1 pain report ${score}/10`);
+    const link = screen.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
+    expect(link.getAttribute('aria-label')).toContain(`1 pain report ${score}/10`);
+    // The number only: never the reason, the location, or the athlete.
+    expect(container.textContent).not.toMatch(/wrist|ath_1|Self-reported/);
   });
+
+  test('shows the number on /admin/safety-review', async () => {
+    global.fetch = jest.fn(async () => jsonResponse({
+      ok: true, openHolds: [], failingGates: [],
+      openEscalations: [{ ...row, athlete_name: 'Jordan T.' }],
+      openViolations: [], openFlags: [], violationsReadLimit: 200, violationsTruncated: false,
+    })) as unknown as typeof fetch;
+
+    render(<SafetyReviewPage />);
+    await screen.findByText('Open Escalations (1)');
+    const li = screen.getByText('Jordan T.').closest('li') as HTMLElement;
+    expect(li.querySelector('.badge')?.textContent).toBe(`▲Pain report ${score}/10`);
+    expect(li.textContent).not.toMatch(/wrist|Self-reported/);
+  });
+
+  test('shows no number on the header badge over a gym-floor surface', async () => {
+    global.fetch = jest.fn(async () => jsonResponse({ ok: true, escalations: [row] })) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<><SafetyAttentionBadge role="coach" /><div data-surface="kiosk" className="contents" /></>);
+    });
+
+    const badge = document.body.querySelector('.badge') as HTMLElement;
+    expect(badge.textContent).toBe('▲SAFETY 1 · PAIN REPORTSafety 1 pain report');
+    expect(document.body.textContent).not.toContain(`${score}/10`);
+  });
+});
+
+test('the header badge shows no pain number when two pain reports are open', async () => {
+  const pain = (id: string, score: number, severity: string) => ({
+    escalation_id: id, severity, status: 'open', metadata: PAIN,
+    reason: `Athlete ath_1 reported pain at the knee at severity ${score}/10. Self-reported by the athlete, not assessed by a coach or a medical provider.`,
+  });
+  global.fetch = jest.fn(async () => jsonResponse({ ok: true, escalations: [pain('p1', 8, 'critical'), pain('p2', 5, 'high')] })) as unknown as typeof fetch;
+
+  let container!: HTMLElement;
+  await act(async () => {
+    ({ container } = render(<SafetyAttentionBadge role="coach" />));
+  });
+
+  expect(container.textContent).toContain('SAFETY 2 · PAIN REPORTS');
+  expect(container.textContent).not.toMatch(/\d+\/10/);
+});
+
+test.each(['athlete', 'parent', 'board', 'platform_owner', 'volunteer'])(
+  'a %s session never gets the badge, so never the pain number',
+  async (role) => {
+    const fetchMock = jest.fn(async () => jsonResponse({ ok: true, escalations: [] }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<SafetyAttentionBadge role={role} />));
+    });
+    expect(container.innerHTML).toBe('');
+    expect(fetchMock).not.toHaveBeenCalled();
+  },
+);
+
+/* A REPEATED-PATTERN PAIN ESCALATION (metadata.trigger_key) carries no score
+   anywhere: its reason counts reports ("Triggered 'athlete_pain_report' N
+   times..."; escalationLadder.ts detectRepeatedPatternEscalations). So on
+   every surface it reads "Pain report" on the restricted mark at critical and
+   at high alike, with no number (option A, by Overwatch's condition). */
+test.each(['critical', 'high'] as const)('a %s repeated-pattern pain escalation reads "Pain report" with no number', async (severity) => {
+  const row = {
+    escalation_id: `esc_rp_${severity}`,
+    source_type: 'repeated_pattern',
+    athlete_id: 'ath_1',
+    severity,
+    reason: "Triggered 'athlete_pain_report' 3 times in the last 14 days -- review the pattern.",
+    status: 'open',
+    escalated_to_role: 'coach',
+    created_at: '2026-08-14T18:00:00.000Z',
+    metadata: { trigger_key: 'athlete_pain_report', occurrence_count: 3, window_days: 14 },
+  };
+  global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes('/auth/session')) return jsonResponse({ ok: true, role: 'admin' });
+    return jsonResponse({ ok: true, escalations: [row] });
+  }) as unknown as typeof fetch;
+
+  render(<EscalationsPage />);
+  const tr = (await screen.findByText(row.reason)).closest('tr') as HTMLElement;
+  expect(tr.querySelector('.badge')?.textContent).toBe('▲Pain report');
+  expect(tr.querySelector('.badge')?.className).toContain('badge--restricted');
+  expect(tr.textContent).not.toMatch(/\d+\/10/);
+  expectNoMedicalStopMark(tr);
 });

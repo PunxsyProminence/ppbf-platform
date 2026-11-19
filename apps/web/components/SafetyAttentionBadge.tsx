@@ -1,9 +1,10 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
-import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
+import { isPainReportEscalation, painScoreFromEscalationReason, painScoreLabel } from '@/src/shared/painScoreLabel';
 import ChromeLink from './ChromeLink';
 import { CONTROL_QUIET } from './sessionBarControls';
 
@@ -29,7 +30,9 @@ import { CONTROL_QUIET } from './sessionBarControls';
  * A COUNT AND NOTHING ELSE. This bar renders on every surface, including
  * whatever screen happens to be facing the room. So the badge carries
  * numbers and a severity word (or "pain report", #1528 Q3) -- never an athlete's name, never the reason,
- * never the source. Those live on the record, behind the same gate they
+ * never the source. The one exception is a lone pain report's N/10 (see the
+ * number rule below), which is a number and not the reason, and is not shown
+ * over a gym-floor surface. Those live on the record, behind the same gate they
  * always did, one click away. A safeguarding disclosure must not be readable
  * over a coach's shoulder because the chassis decided to be helpful.
  *
@@ -48,6 +51,8 @@ interface EscalationSummaryRow {
   severity: 'low' | 'moderate' | 'high' | 'critical';
   status: 'open' | 'acknowledged' | 'resolved';
   metadata?: Record<string, unknown> | null;
+  /** Read for one thing only: a lone pain report's N/10 (painScoreFromEscalationReason). Never shown. */
+  reason?: string | null;
 }
 
 /**
@@ -97,6 +102,10 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
   const [painCount, setPainCount] = useState(0);
   // Whether a pain-report escalation is critical.
   const [painCritical, setPainCritical] = useState(false);
+  // The score of the ONE open pain report, when exactly one is open and its
+  // reason carries one; null otherwise (see the number rule below).
+  const [lonePainScore, setLonePainScore] = useState<number | null>(null);
+  const onFloorSurface = useFloorSurface();
   const [readState, setReadState] = useState<ReadState>('loading');
 
   const serves = role !== null && ESCALATION_ROLES.has(role);
@@ -125,6 +134,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
       setHighCount(others.filter((row) => row.severity === 'high').length);
       setPainCount(pain.length);
       setPainCritical(pain.some((row) => row.severity === 'critical'));
+      setLonePainScore(pain.length === 1 ? painScoreFromEscalationReason(pain[0].reason) : null);
       setReadState('loaded');
     } catch (error) {
       if ((error as { name?: string }).name === 'AbortError') {
@@ -136,6 +146,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
       setHighCount(0);
       setPainCount(0);
       setPainCritical(false);
+      setLonePainScore(null);
       setReadState('unavailable');
     }
   }, []);
@@ -222,7 +233,19 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
   // The ordinary escalations' own worst word. It equals the set's worst word
   // unless a pain report alone holds it, and then the pain report leads.
   const worst = criticalCount > 0 ? 'CRITICAL' : 'HIGH';
-  const painPart = `${painCount} pain report${painCount === 1 ? '' : 's'}`;
+  /* THE PAIN NUMBER (Overwatch, 2026-11-19, SH-1 option B1). With critical and
+     high on one rung (OW25-48 A) and no severity word on a pain report (#1528,
+     "the number only"), a lone pain report's N/10 is what tells a critical one
+     from a high one. It is shown only when exactly ONE pain report is open
+     (with two or more, a single number would describe one of them as all of
+     them), only when its reason carries one, and never on a gym-floor surface
+     -- a page marked data-surface="kiosk", which a room can read over a
+     coach's shoulder. No name, no reason, no location: the number only, as on
+     the coach's own card. */
+  const painNumber = painCount === 1 && lonePainScore !== null && !onFloorSurface
+    ? ` ${painScoreLabel(lonePainScore)}`
+    : '';
+  const painPart = `${painCount} pain report${painCount === 1 ? '' : 's'}${painNumber}`;
   const ordinaryParts = [
     criticalCount > 0 ? `${criticalCount} critical` : null,
     highCount > 0 ? `${highCount} high` : null,
@@ -230,7 +253,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
   const label = (painCount === 0 ? ordinaryParts : painLeads ? [painPart, ...ordinaryParts] : [...ordinaryParts, painPart])
     .join(', ');
   const ordinaryCompact = ordinaryCount > 0 ? `${ordinaryCount} · ${worst}` : null;
-  const painCompact = painCount > 0 ? `${painCount} · PAIN REPORT${painCount === 1 ? '' : 'S'}` : null;
+  const painCompact = painCount > 0 ? `${painCount} · PAIN REPORT${painCount === 1 ? '' : 'S'}${painNumber}` : null;
   const compact = `SAFETY ${[painLeads ? painCompact : ordinaryCompact, painLeads ? ordinaryCompact : painCompact]
     .filter((part): part is string => part !== null)
     .join(' · ')}`;
@@ -300,6 +323,25 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
       </span>
     </ChromeLink>
   );
+}
+
+/**
+ * Whether the page under this bar is a gym-floor surface: anything marked
+ * data-surface="kiosk" (KioskSurface layouts, the athlete pages, floor panels).
+ * True until the document has been looked at, and re-checked as the page
+ * changes, so a pain number is never shown first and hidden after.
+ */
+function useFloorSurface(): boolean {
+  const pathname = usePathname();
+  const [floor, setFloor] = useState(true);
+  useEffect(() => {
+    const check = () => setFloor(document.querySelector('[data-surface="kiosk"]') !== null);
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-surface'] });
+    return () => observer.disconnect();
+  }, [pathname]);
+  return floor;
 }
 
 /**

@@ -140,8 +140,10 @@ test('escalations get ▲ and the word on the restricted rung; compliance violat
   const high = badgeOf('Fell from the apron');
   expect(high.textContent).toBe('▲high');
   expect(high.className).toContain('badge--restricted');
-  // Out of OW25-48's reach: a compliance violation's map is unchanged.
-  expect(badgeOf('Weigh-in missing').className).toContain('badge--locked');
+  // Out of OW25-48's reach: a compliance violation keeps its own map, not the
+  // escalation one. (What a critical violation should wear is not ruled here.)
+  expect(badgeOf('Weigh-in missing').className).not.toContain('badge--restricted');
+  expect(badgeOf('Weigh-in missing').textContent).toBe('critical');
 });
 
 // LC-05. Computer-form dates, and a UTC day for an instant.

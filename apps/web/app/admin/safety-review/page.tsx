@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
-import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/painScoreLabel';
+import { PAIN_ESCALATION_LABEL, isPainReportEscalation, painScoreFromEscalationReason, painScoreLabel } from '@/src/shared/painScoreLabel';
 import BackHome from '@/components/BackHome';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
@@ -37,6 +37,18 @@ interface EscalationItem {
   created_at: string;
   // Read only to tell an escalation filed from a pain report (#1528).
   metadata?: Record<string, unknown> | null;
+  // Read only for a pain report's N/10 (painScoreFromEscalationReason); never shown.
+  reason?: string | null;
+}
+
+/* A pain-report escalation's badge words: "Pain report N/10" when its reason
+   carries the score of one pain report, else "Pain report" (a repeated-pattern
+   escalation carries none). The number, never a severity word (#1528); with
+   critical and high on one rung (OW25-48 A) it is what tells them apart
+   (Overwatch, 2026-11-19, SH-1 option B1). */
+function painEscalationWords(reason: string | null | undefined): string {
+  const score = painScoreFromEscalationReason(reason);
+  return score === null ? PAIN_ESCALATION_LABEL : `${PAIN_ESCALATION_LABEL} ${painScoreLabel(score)}`;
 }
 
 interface ViolationItem {
@@ -280,7 +292,7 @@ export default function SafetyReviewPage() {
                         <span className={`badge ${SEVERITY_BADGE[escalation.severity].rung}`}>
                           <i aria-hidden="true">{SEVERITY_BADGE[escalation.severity].glyph}</i>
                           {/* A pain-report escalation reads "Pain report", not a severity word (#1528). */}
-                          {isPainReportEscalation(escalation.metadata) ? PAIN_ESCALATION_LABEL : escalation.severity}
+                          {isPainReportEscalation(escalation.metadata) ? painEscalationWords(escalation.reason) : escalation.severity}
                         </span>
                       </li>
                     ))}
