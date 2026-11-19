@@ -20,6 +20,10 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-19-006 | 2026-11-19 | Applied rulings (Overwatch, not Jason's words): SH-1, SH-2 and SH-3, under OW25-48 A, OW25-45 B and OW25-47 A | APPLIED |  | yes |
+| OD-2026-11-19-005 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19 07:06 US Eastern: cards OW25-49 to OW25-51: OW25-49 "(c) PPBF writes its own six (Recommended)"; OW25-50 "D: Defer" (against the recommendation); OW25-51 free text | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-004 | 2026-11-19 | Blank equipment on the other drills | PRIMARY |  | yes |
+| OD-2026-11-19-003 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19 00:51 US Eastern: cards OW25-45 to OW25-48: OW25-45 "B: Coaches and the office" (against the recommendation); OW25-46 "A: Change the words to 'ask the gym office'"; OW25-47 "A: Count restrictions and missing waivers, name the child"; OW25-48 "A: Medical-stop mark only for a medical stop" | RECONSTRUCTED |  | yes |
 | OD-2026-11-19-002 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19: the "Research Overwatch" session and its files are disregarded; security and credential work waits for the end of the build; cards OW25-41 to OW25-44; Rule 6 holds one build slot: OW25-41 "C: Release with DFX-b and the DB fix"; OW25-42 "B: Aerobic gate test mismatch"; OW25-43 "A: Usability walk-through finding (Recommended)"; OW25-44 free text | RECONSTRUCTED |  | yes |
 | OD-2026-11-19-001 | 2026-11-19 | Jason: start a lane for each piece that still needs doing, except the secrets | PRIMARY |  | yes |
 | OD-2026-11-18-004 | 2026-11-18 | A Rule 6 lane runs now: "A: Read, then start"; applied rulings for lane R6-a | PRIMARY |  | yes |
@@ -602,6 +606,207 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-19-006 -- Applied rulings (Overwatch, not Jason's words): SH-1, SH-2 and SH-3, under OW25-48 A, OW25-45 B and OW25-47 A
+
+**Provenance: APPLIED (REPORTED by Overwatch).** These are Overwatch's applications of rulings Jason already made (OD-2026-11-19-003), under ASKED ONCE, RULED ONCE. They are not Jason's words and they are not new rulings. The lane PRs are the evidence for what was built. New; edits no earlier entry's text.
+
+**Applied:**
+
+1. **SH-1 (#1967), under OW25-48 A.**
+   - A critical escalation that is not a medical stop wears the restricted mark and the word "Critical".
+   - A pain report's N/10 number shows only on staff admin safety pages, and on the badge only when exactly one pain report is open.
+   - The number never shows on the desk, people, floor or coach-home screens.
+   - Repeated-pattern pain reports show no number.
+2. **SH-2 (#1968), under OW25-45 B.**
+   - The gate's stored lesson text is updated by a data migration (the exact old string only; idempotent).
+   - The applied safety-gate-matrix migration is left as deployed (Overwatch's option B).
+   - The production apply waits for the release that carries SH-2's code.
+3. **SH-3, under OW25-47 A** (lane SH's PR; in review as #1969, checked 2026-11-19): the Parent Hub line names each of the parent's own children. It counts holds, gates awaiting clearance, a medical restriction in force and missing waivers. It shows no restriction type, reason or date, and no waiver type name.
+
+**Not ruled here:** a code comment in the offline database evolution script cites "Owner policy (2026-09-03): production migrations remain immutable after deployment". Overwatch found no OWNER_DECISIONS entry for it: UNVERIFIED. SH-2's "left as deployed" choice is Overwatch's, not a ruling on that policy.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-005 -- Backbone Overwatch 25 note of 2026-11-19 07:06 US Eastern: cards OW25-49 to OW25-51: OW25-49 "(c) PPBF writes its own six (Recommended)"; OW25-50 "D: Defer" (against the recommendation); OW25-51 free text
+
+**Provenance: RECONSTRUCTED.** Jason answered these three cards in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `320988691b302439` when read for this entry, the hash the note gives; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 31358, 2026-11-19T12:07:24.294Z, about 07:07 US Eastern on 2026-11-19) he pasted the Backbone Overwatch 25 note dated 07:06 US Eastern (Backbone ACTIONS A-110, A-111); the paste carries no typed words of his own, but both it and the card record quote his free-text answer to OW25-51. Withheld from this public record: the six record IDs and a contact address that the OW25-49 card names (each replaced in the quote by a square-bracketed editorial phrase, which is not the card's words); the card as shown is kept in CARDS_OW25.md (sha256[:16] `320988691b302439`); the held sheets' item details (six sheets, 42 items, Rev. 03/23/2020, are all that is recorded). New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md, with the withholdings above):**
+
+> Context (2026-11-19 07:05): overnight research landed (A-108 spot-check design db3f62739c5bf840; A-109 held-sheets options dc6ab5d303fd95d1); Jason approved the held-sheets job's www.teamusa.com access card. Their questions asked as OW25-49 to -51.
+>
+> **OW25-49** (header 'Home sheets')
+> Question, as shown (multi-select):
+> Official (OW25-49, DOC-136): Six USA Boxing High-Performance Coach Education home sheets (Rev. 03/23/2020; [six record IDs withheld from this public repo]; 42 items) are held out of the public repo under OD-2026-10-02-013 (applied, not asked). Which route for members' home sessions? (c) and (d) can be chosen together.
+> Plain: The 6 USA Boxing home workouts are held back. Should PPBF write its own, ask USA Boxing, link out, or leave them?
+>
+> Options, in the order shown:
+> 1. "(c) PPBF writes its own six (Recommended)": Six home sessions in PPBF's own words from the same training ideas; no copied text or USA Boxing titles; a coach checks them; the DOC-136 records stay held.
+> 2. "(d) You ask USA Boxing for permission": You send the draft request in the finding yourself ([contact email withheld]); then pick (b) or (c) when they answer.
+> 3. "(a) Link to USA Boxing's page": Its workout link returns 'page not found' today, so this waits until they fix it.
+> 4. "(e) Leave them held": Nothing new; the track keeps listing the six sessions by name.
+>
+> Jason's answer: "(c) PPBF writes its own six (Recommended)" (only (c)).
+>
+> **OW25-50** (header 'Draft check')
+> Question, as shown:
+> Official (OW25-50, Q-SC-1): About 3,600 AI-drafted values are live in drills and templates, unreviewed (OD-2026-11-15-011), and no screen shows which text is drafted. Riskiest: 20 under-18 sparring drills plus 1 youth sparring template (223 values, 80 stop rules). Which spot-check should run?
+> Plain: Should coaches quietly grade a mixed pile of AI-written and original text, youth sparring first, so we learn how often the AI got it wrong?
+>
+> Options, in the order shown:
+> 1. "A: Safety-first, 2 rounds, blinded, 2 coaches (Recommended)": Round 1: under-18, sparring and stop-rule groups, about 108 phone cards per coach in about 7 sittings of 15; round 2 the rest.
+> 2. "B: Full read of the 223 youth sparring values": Two coaches read every one, unblinded, with sources beside them; nothing else checked.
+> 3. "C: Minimal": One coach rates 29 youth sparring cards; fast, no agreement measure.
+> 4. "D: Defer": Keep relying on the lanes' AI reviewers, as now.
+>
+> Jason's answer: "D: Defer" (against the recommendation).
+>
+> **OW25-51** (header 'Who rates')
+> Question, as shown:
+> Official (OW25-51, Q-SC-2): Who rates the spot-check cards?
+> Plain: Two people judging alone catch more than one; a third only looks where they disagree.
+>
+> Options, in the order shown:
+> 1. "A: Two coaches, head coach settles splits (Recommended)": Rate independently; at least one coaches minors.
+> 2. "B: Three coaches": Meets the 'three or more experts' convention; more coach time.
+> 3. "C: One coach plus Jason": Smaller; Jason is the second rater.
+>
+> Jason's answer (free text): "none one just get it finishes we will make sure we have an EDit button"
+> Overwatch reading (INFERRED): no raters now; finish the build; coaches get an Edit button for drafted text. Mirror 045c0bd7 (OBSERVED): drill PATCH (app/api/pilot/drills/route.ts line 236) accepts name, category, focus, cues, difficulty, active, reinstate only; workout-templates API is GET (plus issue) only; session-scripts has PATCH.
+
+**The note (the paste, not Jason's words; copied by script):**
+
+```text
+Backbone Overwatch 25, 2026-11-19 07:06 US Eastern (add-on; paste after the 00:51 note). Jason answered three cards on the overnight research (CARDS_OW25.md sha256[:16] 320988691b302439). OW25-49 (c), from findings/2026-11-19-doc136-held-usa-boxing-home-sheets-options.md (dc6ab5d303fd95d1): PPBF writes its own six home sessions; the six DOC-136 records stay held and are never loaded. A Claude Science session is drafting them now (findings/2026-11-19-ppbf-home-week-six-sessions-draft.md, AI draft for coach edit, no USA Boxing text or titles); Overwatch will send a load note when it is checked. Jason's choice (c) is his ruling for this source outside the frozen Backbone. OW25-50 D: no AI-draft spot-check now (findings/2026-11-19-ai-draft-coach-spot-check-design.md, db3f62739c5bf840, kept for later). OW25-51, Jason's words: "none one just get it finishes we will make sure we have an EDit button". So: no raters; finish the build; coaches get an Edit button for drafted text. Overwatch read mirror 045c0bd7 (OBSERVED): the drill PATCH (app/api/pilot/drills/route.ts line 236) accepts only name, category, focus, cues, difficulty, active and reinstate, so the AI-drafted drill detail fields (what good looks like, common errors, corrections, stop rules, equipment and the rest) cannot be edited; the workout-templates API is GET (plus issue) only; session-scripts already has PATCH. Under OD-2026-11-19-001, issue an 'Edit' lane: coaches (and admins) can edit drill detail fields and workout templates and their items, keeping the existing versioning, the cue rule (OD-2026-10-06-026) and field labels (an edited value stops showing as an AI draft and records who edited it). Step 1 report first: fields, roles, versioning, how the field labels change on edit, migration needs. The App Scrub session will place the button in its stage 2 layout; build the edit path first. Record OW25-49 to -51 in the next records PR. Backbone ACTIONS A-110, A-111.
+```
+
+**Jason:** OW25-49 "(c) PPBF writes its own six (Recommended)" (only (c)); OW25-50 "D: Defer" (against the recommendation); OW25-51, free text, exactly (typos kept): *"none one just get it finishes we will make sure we have an EDit button"*
+
+**Ruling:**
+
+1. OW25-49 (c): PPBF writes its own six home sessions. The six DOC-136 records stay held and are never loaded. The note says (c) is his ruling for this source outside the frozen Backbone.
+2. OW25-50 D: no AI-draft spot-check now. The spot-check design is kept for later.
+3. OW25-51: his words are above. **INFERRED (Overwatch's reading, not his words):** no raters; finish the build; coaches get an Edit button for drafted text.
+
+**Applied (REPORTED by Overwatch, not his words):** lane ED was started under OD-2026-11-19-001 to build the edit path for drill detail fields and workout templates.
+
+**Not ruled here:** when a spot-check would run or who would rate it; the other USA Boxing routes; the layout of the Edit button (the note leaves it to the scrub's stage 2).
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-004 -- Blank equipment on the other drills: "A: Not written yet"
+
+**Provenance: PRIMARY.** Jason's typed answer "A: Not written yet", 2026-11-19T05:35:02.765Z (about 00:35 US Eastern on 2026-11-19), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 30058 (the second text block of that user message; the first is a system notice), copied by script. The box that asked it is at line 29951 (2026-11-19T05:32:53.133Z). New; edits no earlier entry's text.
+
+**What was put to him (the next-step box, quoted by script):**
+
+> **Equipment card** (asked in the next-step box, transcript line 29951, 2026-11-19T05:32:53.133Z)
+> Question, as shown:
+> For the other ~371 drills, what should blank equipment show?
+> (The box's recap: "Lane NW is building and leaves the equipment wording unchanged for now. 376 drills have no equipment written, and every one shows "No equipment needed". Your October ruling (D8) covered only 5 of them.")
+>
+> Options, in the order shown:
+> 1. "A: Not written yet"
+> 2. "B: No equipment needed"
+>
+> Jason's answer (typed, transcript line 30058, 2026-11-19T05:35:02.765Z): "A: Not written yet".
+
+**Jason:** *"A: Not written yet"*
+
+**Ruling (applied, REPORTED by Overwatch; PR #1965):**
+
+1. A blank equipment field shows "Not written yet".
+2. A literal "none" keeps "No equipment needed".
+3. The five D8 drills keep "No equipment needed" (OD-2026-10-08-008 D8).
+
+**Not ruled here:** the drill counts beyond the box's recap; any change to the content itself.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-003 -- Backbone Overwatch 25 note of 2026-11-19 00:51 US Eastern: cards OW25-45 to OW25-48: OW25-45 "B: Coaches and the office" (against the recommendation); OW25-46 "A: Change the words to 'ask the gym office'"; OW25-47 "A: Count restrictions and missing waivers, name the child"; OW25-48 "A: Medical-stop mark only for a medical stop"
+
+**Provenance: RECONSTRUCTED.** Jason answered these four cards in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `320988691b302439` when read for this entry; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 30150, 2026-11-19T05:56:34.193Z, about 00:56 US Eastern on 2026-11-19) he pasted the Backbone Overwatch 25 note dated 00:51 US Eastern (Backbone ACTIONS A-107); the paste carries no typed words of his own. The note's text below is copied by script. For OW25-47 the card record says the answer was chosen with the RULES s1 note shown. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> Context (2026-11-19 00:29): Jason: "scrub session was already going". Its stage 1 file findings/2026-11-19-app-scrub-stage-1.md (95fb1028d144b170) asked Overwatch to put its Q1-Q4 to Jason; asked as cards OW25-45 to -48.
+>
+> **OW25-45** (header 'Q1 Clearance')
+> Question, as shown:
+> Official (OW25-45, scrub Q1, CS-01): The Clearance Board tells coaches "Clearance records are set by the office" (coach/sports-medicine/page.tsx:729, 810), but the Decision Loop's "Medical Administrative Status" lets any coach with access set Pending, Cleared, Restricted or Not Cleared (coach/decision-loop/page.tsx:1404-1474). The API admits coaches on purpose and marks the question as yours (api/pilot/shadow/medical-status/route.ts:109-114). Who sets an athlete's medical clearance?
+> Plain: One screen says the office sets clearance; another lets coaches set it. Who should?
+>
+> Options, in the order shown:
+> 1. "A: Only the gym office (admin) (Recommended)": The coach control is removed, and the Clearance Board's words stay true.
+> 2. "B: Coaches and the office": Both set it, on the Clearance Board, and the words say so.
+> 3. "C: Leave both screens as they are": No change now.
+>
+> Jason's answer: "B: Coaches and the office" (against the recommendation).
+>
+> **OW25-46** (header 'Q2 PIN reset')
+> Question, as shown:
+> Official (OW25-46, scrub Q2, OFF-01): The sign-in help says a gym admin or coach "can create a new account or reset your PIN" (components/SignInPanel.tsx:829-832). The reset API admits organization admins only (api/pilot/admin/accounts/pin-reset/route.ts:28), and no coach screen has the control. What should change?
+> Plain: A child at the kiosk is told a coach can fix their PIN, but no coach can.
+>
+> Options, in the order shown:
+> 1. "A: Change the words to 'ask the gym office' (Recommended)": Words match what the app does.
+> 2. "B: Give coaches a PIN reset control": A new coach permission.
+> 3. "C: Leave as is": No change.
+>
+> Jason's answer: "A: Change the words to 'ask the gym office' (Recommended)".
+>
+> **OW25-47** (header 'Q3 Parent line')
+> Question, as shown:
+> Official (OW25-47, scrub Q3, FAM-01): The Parent Hub's "Safety & Consent" line counts training holds and flagged or blocked gates only (components/ParentHub.tsx:689-698, 1485-1493). A USA Boxing medical restriction in force, or a missing waiver, never changes it, so the neutral line can show while the Safety page shows a restriction. Your rule against new warnings (OD-2026-11-10-001, RULES s1) may apply to A; B adds no warning. What should the line do?
+> Plain: A parent glancing at the hub can read "nothing to report" while their child has a medical restriction.
+>
+> Options, in the order shown:
+> 1. "A: Count restrictions and missing waivers, name the child (Recommended)": The line reflects a restriction in force and missing waivers.
+> 2. "B: Keep the counts, add a fixed pointer": Adds the words 'Medical restrictions and waivers are on the Safety page.' No new warning.
+> 3. "C: Leave as is": No change.
+>
+> Jason's answer: "A: Count restrictions and missing waivers, name the child (Recommended)" (chosen with the RULES s1 note shown).
+>
+> **OW25-48** (header 'Q4 Escalation mark')
+> Question, as shown:
+> Official (OW25-48, scrub Q4, CS-10, CF-19): The header safety badge and the coach home's "Safety Escalations" panel use the medical-stop mark (--locked) for every critical escalation (components/SafetyAttentionBadge.tsx:197-200; components/CoachWorkspace.tsx:2977-2985). An escalation can come from a pain report, which "is not a medical stop at any severity" (OD-2026-10-03-017). Which mark should a critical escalation wear?
+> Plain: Pack rule: the medical-stop mark means a medical stop and nothing else. Today it also marks escalations that are not medical stops.
+>
+> Options, in the order shown:
+> 1. "A: Medical-stop mark only for a medical stop (Recommended)": Other critical escalations get the restricted mark, a glyph and a word.
+> 2. "B: Every critical escalation keeps the medical-stop mark": Widens what the mark means in pack 02.
+> 3. "C: Decide later": No change now.
+>
+> Jason's answer: "A: Medical-stop mark only for a medical stop (Recommended)".
+
+**The note (the paste, not Jason's words; copied by script):**
+
+```text
+Backbone Overwatch 25, 2026-11-19 00:51 US Eastern (replaces the 00:29 note, which has not reached you: OW25-45 to -48 are not in OWNER_DECISIONS.md at a0f70fb2). A Claude Science App Scrub design session wrote stage 1: research/claude-research-project/findings/2026-11-19-app-scrub-stage-1.md (sha256[:16] 95fb1028d144b170; read from mirror 045c0bd7; Overwatch re-checked 6 of its code citations, all hold). Jason answered its four questions (CARDS_OW25.md sha256[:16] 346e3a46b7813cee): OW25-45 B (scrub Q1, CS-01): coaches and the office both set medical clearance, on the Clearance Board, and its words say so; the Decision Loop's 'Medical Administrative Status' control moves to the Clearance Board (name the moved action). OW25-46 A (Q2, OFF-01): sign-in help says 'ask the gym office' for a new account or PIN reset. OW25-47 A (Q3, FAM-01): the Parent Hub 'Safety & Consent' line counts a medical restriction in force and missing waivers too, and names the child; Jason chose this with the note that OD-2026-11-10-001 RULES s1 (no new warnings) may apply, so record it as his ruling for this line. OW25-48 A (Q4, CS-10, CF-19): the medical-stop mark (--locked) only for a medical stop; other critical escalations in SafetyAttentionBadge and the coach home 'Safety Escalations' panel get the restricted mark, a glyph and a word. Under OD-2026-11-19-001 (a lane for each piece except secrets), issue a 'Scrub HIGH' lane now beside R6-a and NW: these four answers plus the stage-1 HIGH items OFF-02 (admin cannot pair a gym TV: show the existing pairing panel to organization_admin), BOA-01 (both calibration pages open on 'No clip named...' with no inbound link) and BOA-02 (Revenue & Funding Center hard-codes 'Stripe Placeholder / Not Connected' while /admin/payments holds the real connection: binding rule, no invented data). Check file overlap first: NW #1965 touches DrillDetail.tsx, drillPresentation.ts and the session-scripts and workout-templates pages; Scrub HIGH would touch SignInPanel.tsx, ParentHub.tsx, SafetyAttentionBadge.tsx, CoachWorkspace.tsx, coach/sports-medicine, coach/decision-loop, admin/calibration and RevenueFundingCenter.tsx. Step 1 report first. Layout, nesting and menu changes wait for the scrub's stage 3 fix list and Jason's approval. Research files of record now include Overwatch 25's '-v2' files (both folders; each lists its changes under 'Revision v2'): doc041 v2 52e3b49337a4be98, dpk19 v2 c3f349b4b8edee2a, load follow-up v2 a8c3a8ec5d6db573, RA-11 v2 f105b3b2945f6cb5, aerobic gate v2 a2cd49db33a1cdbd; R6-a may cite them in place of the originals. Overwatch read #1965 (head ebc7f001): display code only, no seed or content rows; empty text shows 'Not written yet'; no objection. Jason's blank-equipment answer ('A: Not written yet') is not in that head yet. Record OW25-45 to -48 in the next records PR. Backbone ACTIONS A-107.
+```
+
+**Jason:** OW25-45 "B: Coaches and the office" (against the recommendation); OW25-46 "A: Change the words to 'ask the gym office' (Recommended)"; OW25-47 "A: Count restrictions and missing waivers, name the child (Recommended)", chosen with the RULES s1 note shown (OD-2026-11-10-001); OW25-48 "A: Medical-stop mark only for a medical stop (Recommended)".
+
+**Ruling:**
+
+1. OW25-45 B: coaches and the office both set medical clearance, on the Clearance Board, and its words say so; the Decision Loop's "Medical Administrative Status" control moves to the Clearance Board.
+2. OW25-46 A: the sign-in help says "ask the gym office" for a new account or a PIN reset.
+3. OW25-47 A: the Parent Hub "Safety & Consent" line counts a medical restriction in force and missing waivers as well as holds and gates, and names the child. The note says Jason chose this knowing OD-2026-11-10-001 RULES s1 (no new warnings) may apply, and asks that it be recorded as his ruling for this line.
+4. OW25-48 A: the medical-stop mark (`--locked`) is for a medical stop only; other critical escalations in the safety badge and the coach home "Safety Escalations" panel get the restricted mark, a glyph and a word.
+5. Per the note: a "Scrub HIGH" lane is issued now beside R6-a and NW, under OD-2026-11-19-001; the "-v2" research files the note lists are files of record; layout, nesting and menu changes wait for the scrub's stage 3 fix list and Jason's approval.
+
+**Not ruled here:** anything in the stage-1 file beyond the four questions; the stage 2 and stage 3 layout work; how each ruling is built (OD-2026-11-19-006 records what Overwatch applied).
+
+**Status:** recorded 2026-11-19 by PR.
 
 ---
 
