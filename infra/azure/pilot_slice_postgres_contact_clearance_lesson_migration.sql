@@ -15,11 +15,16 @@
 -- updated_at), for gate_key 'contact_medical_clearance' only, and ONLY where
 -- the stored text is still exactly the old seed string, byte for byte. A gym
 -- that edited its own lesson keeps its own words. No other column, gate or
--- table is touched. The new seed text is the same string safetyGateSeeds.ts
--- and the safety-gate-matrix migration now insert for a new gym.
+-- table is touched. The new text is the string safetyGateSeeds.ts inserts for
+-- a gym created from now on. The safety-gate-matrix migration is left as it
+-- was deployed and still inserts the OLD text (Overwatch, option B); this
+-- migration runs after it in `all`, so a gym the matrix seeds ends on the new
+-- text too.
 --
 -- IDEMPOTENT. After one run no row holds the old string, so a re-run updates
--- nothing; a database with no such row (or no table) is left as it is.
+-- nothing, and a database with no such row is left as it is. A database with
+-- no pilot.safety_gates table is refused (CONTACT_CLEARANCE_LESSON_NOT_READY):
+-- apply the safety gate matrix migration first.
 -- ---------------------------------------------------------------------------
 
 do $$

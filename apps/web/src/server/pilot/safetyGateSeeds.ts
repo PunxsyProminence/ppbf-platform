@@ -48,8 +48,9 @@ export const DEFAULT_SAFETY_GATES: readonly SafetyGateSeed[] = [
     // the office set clearance there). The safety-gate-matrix migration still
     // inserts the earlier text, which named the Medical Status panel; the
     // contact-clearance-lesson migration, after it in `all`, replaces exactly
-    // that text with this one, so every database ends on this string
-    // (safetyGateSeedsOwnership.test.ts pins the chain).
+    // that text with this one, so every database ends on this string unless a
+    // gym edited its own lesson, which it keeps (safetyGateSeedsOwnership.test.ts
+    // pins the chain).
     requirementText:
       "This athlete needs an explicit 'cleared' medical administrative status on file before taking contact. "
       + "Set the athlete's clearance on the Clearance Board (a coach or the office) once a clearance decision has "

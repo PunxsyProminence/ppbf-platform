@@ -364,5 +364,8 @@ afterAll(async () => {
     serverProcess.once('exit', finish);
     serverProcess.kill('SIGTERM');
   });
-  await fs.rm(DATA_DIR, { recursive: true, force: true });
+  // Windows can still hold the data folder for a moment after the server
+  // exits (EBUSY); the test-start sweep in test-embedded-pg-server.mjs clears
+  // a leftover folder, so a failed removal here is not a test failure.
+  await fs.rm(DATA_DIR, { recursive: true, force: true }).catch(() => undefined);
 });
