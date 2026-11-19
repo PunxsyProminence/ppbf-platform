@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-19-013 | 2026-11-19 | Can the gym admin account also be the coach: "B: Separate coach login" (against the recommendation) | PRIMARY |  | yes |
 | OD-2026-11-19-012 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19 12:20 US Eastern: cards OW25-57 and OW25-58: OW25-57 "Coaches and admins only (OW25-54)"; OW25-58 free text on the lane cap | RECONSTRUCTED |  | yes |
 | OD-2026-11-19-011 | 2026-11-19 | Applied rulings (Overwatch, not Jason's words): lanes ED, R6-b, NW-b, IG and SI | APPLIED |  | yes |
 | OD-2026-11-19-010 | 2026-11-19 | Who may set a rest/away mark | PRIMARY |  | yes |
@@ -612,6 +613,41 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-19-013 -- Can the gym admin account also be the coach: "B: Separate coach login" (against the recommendation)
+
+**Provenance: PRIMARY.** Jason's typed answer "B: Separate coach login", 2026-11-19T17:37:49.913Z (about 12:37 US Eastern on 2026-11-19), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 34693 (the last text block of that user message; the earlier blocks are system notices), copied by script. The next-step box that asked it is at line 34660 (2026-11-19T17:36:40.987Z); the fuller question is in Overwatch's message at line 34675 (2026-11-19T17:36:52.442Z). The context is the staging dry run's blockers B1 and B2 (Overwatch's `dryrun\DR_FINDINGS.md`, not in this repo). Withheld from this public record: a login's short account name in the question (replaced by a square-bracketed editorial phrase, which is not his words). New; edits no earlier entry's text.
+
+**What was put to him (the next-step box and the message, quoted by script):**
+
+> **Admin as coach** (asked in the next-step box, transcript line 34660, 2026-11-19T17:36:40.987Z)
+> Question, as shown: "Can the gym admin account also be the coach?"
+> The box's recap: "The staging dry run is done, and no consent, waiver or minors' gate blocked the adult athlete. Four blockers stand between you and the pilot, and their fixes are routed to U1, U2 and three new cloud lanes. One of them, who can be the coach, needs your call."
+>
+> Options, in the order shown:
+> 1. "A: Admin can coach"
+> 2. "B: Separate coach login"
+>
+> **Your call (official form):** for B1 and B2, can the gym admin role (organization_admin, [account name withheld]) also act as a coach? That means opening the coach home and being picked as coach of record for athletes and classes.
+> - **A: Admin can coach (Recommended).** A permission change, built and reviewed as high-risk. You run the pilot from one login.
+> - **B: Separate coach login.** No code change. You make a coach-role account on another email you own and use it for coaching.
+>
+> **In plain English:** right now your admin login can't be anyone's coach. A lets your one login do both jobs. B means signing in with a second account whenever you coach.
+>
+> Jason's answer (typed, transcript line 34693, 2026-11-19T17:37:49.913Z): "B: Separate coach login".
+
+**Jason:** *"B: Separate coach login"* (against the recommendation, A)
+
+**Ruling (REPORTED reading by Overwatch):**
+
+1. The organization_admin role does not get the coach home or coach-of-record. Jason coaches from a separate coach-role account.
+2. The cost, as stated in the question: he signs in with a second account whenever he coaches.
+
+**Not ruled here:** which email the coach-role account uses; the other dry-run blockers (B3, B4 and the smaller items routed to lanes U1, U2 and U3).
+
+**Status:** recorded 2026-11-19 by PR.
 
 ---
 
