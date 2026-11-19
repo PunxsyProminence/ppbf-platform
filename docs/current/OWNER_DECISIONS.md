@@ -624,7 +624,7 @@ and should not try to.
    - The gate's stored lesson text is updated by a data migration (the exact old string only; idempotent).
    - The applied safety-gate-matrix migration is left as deployed (Overwatch's option B).
    - The production apply waits for the release that carries SH-2's code.
-3. **SH-3, under OW25-47 A** (lane SH's PR; in review: not yet opened when this entry was written, checked 2026-11-19): the Parent Hub line names each of the parent's own children. It counts holds, gates awaiting clearance, a medical restriction in force and missing waivers. It shows no restriction type, reason or date, and no waiver type name.
+3. **SH-3, under OW25-47 A** (lane SH's PR; in review as #1969, checked 2026-11-19): the Parent Hub line names each of the parent's own children. It counts holds, gates awaiting clearance, a medical restriction in force and missing waivers. It shows no restriction type, reason or date, and no waiver type name.
 
 **Not ruled here:** a code comment in the offline database evolution script cites "Owner policy (2026-09-03): production migrations remain immutable after deployment". Overwatch found no OWNER_DECISIONS entry for it: UNVERIFIED. SH-2's "left as deployed" choice is Overwatch's, not a ruling on that policy.
 
