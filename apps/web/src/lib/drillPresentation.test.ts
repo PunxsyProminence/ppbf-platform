@@ -1,8 +1,12 @@
 import {
+  NOT_WRITTEN_YET,
   equipmentLabel,
   executionSteps,
   humanizeContactLevel,
+  isNotWritten,
   listItems,
+  listItemsOrNotWritten,
+  orNotWritten,
   scaleLevelName,
   setupAndEquipment,
 } from './drillPresentation';
@@ -103,6 +107,22 @@ describe('setupAndEquipment', () => {
     // The athlete detail carries equipment too, but a blank one must not turn
     // a "none" setup back into setup instructions.
     expect(setupAndEquipment('none', '')).toEqual({ setup: null, equipment: 'No equipment needed' });
+  });
+});
+
+describe('NOT_WRITTEN_YET helpers', () => {
+  test('one wording', () => {
+    expect(NOT_WRITTEN_YET).toBe('Not written yet');
+  });
+  test('empty, blank and missing text read as not written; filled text is unchanged', () => {
+    for (const empty of ['', '   ', '\n', null, undefined]) {
+      expect(isNotWritten(empty)).toBe(true);
+      expect(orNotWritten(empty)).toBe('Not written yet');
+      expect(listItemsOrNotWritten(empty)).toEqual(['Not written yet']);
+    }
+    expect(orNotWritten('Keep the chin down')).toBe('Keep the chin down');
+    expect(orNotWritten('0')).toBe('0');
+    expect(listItemsOrNotWritten('a\nb')).toEqual(['a', 'b']);
   });
 });
 

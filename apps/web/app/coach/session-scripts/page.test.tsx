@@ -271,15 +271,17 @@ describe('coach session plans page', () => {
     expect(labels[1]).toContain('Runs second');
   });
 
-  it('omits coaching fields that are null rather than printing empty labels', async () => {
+  it('says "Not written yet" for coaching fields that are null, never an empty label or a hidden line', async () => {
     mockFetch((url) => (url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [FRIDAY] })));
 
     render(<CoachSessionScriptsPage />);
     fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
 
     expect(await screen.findByText(/Eyes on the chest/)).toBeInTheDocument();
-    // blk-2 has what_to_fix null and blk-1 has all four null.
-    expect(screen.queryByText('Fix:')).not.toBeInTheDocument();
+    // blk-2 has what_to_fix null and blk-1 has all four null: each says so, and a filled field is unchanged.
+    expect(screen.getAllByText('Fix:').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Not written yet').length).toBeGreaterThanOrEqual(5);
+    expect(screen.getByText(/Eyes on the chest/)).toBeInTheDocument();
   });
 
   it('surfaces the reset protocol, which a new coach needs before any drill', async () => {

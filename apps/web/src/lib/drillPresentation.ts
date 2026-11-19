@@ -23,6 +23,29 @@ export function humanizeContactLevel(value: string | null | undefined): string {
 }
 
 /**
+ * What a reader sees where the content left a standard teaching field empty.
+ * One wording, one place (the design rule: an unknown value never looks blank,
+ * zero or complete). Content is shown as written; this only names the gap.
+ */
+export const NOT_WRITTEN_YET = 'Not written yet';
+
+/** True when a text field holds nothing a reader could use. */
+export function isNotWritten(text: string | null | undefined): boolean {
+  return (text ?? '').trim() === '';
+}
+
+/** The text as written, or NOT_WRITTEN_YET when it is empty. */
+export function orNotWritten(text: string | null | undefined): string {
+  return isNotWritten(text) ? NOT_WRITTEN_YET : (text as string);
+}
+
+/** Lines of a text field, or one NOT_WRITTEN_YET line when it is empty. */
+export function listItemsOrNotWritten(text: string | null | undefined): string[] {
+  const items = listItems(text);
+  return items.length > 0 ? items : [NOT_WRITTEN_YET];
+}
+
+/**
  * Ordered steps, but only where the author wrote them as steps.
  *
  * The source-manual drills separate execution steps with blank lines; the

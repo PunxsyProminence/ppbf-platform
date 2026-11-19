@@ -1823,6 +1823,8 @@ describe('a template row with fields left empty', () => {
     expect(card.textContent).not.toMatch(/null|undefined/);
     expect(card.querySelector('.plaque')).toBeNull();
     expect(within(card as HTMLElement).getByText('11-14')).toBeInTheDocument();
+    // The blank intent says so rather than leaving the card looking complete.
+    expect(within(card as HTMLElement).getByText('Not written yet')).toBeInTheDocument();
     expect(within(card as HTMLElement).getByRole('button', { name: 'Open template' })).toBeEnabled();
   });
 

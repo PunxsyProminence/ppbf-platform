@@ -6,6 +6,7 @@ import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
+import { orNotWritten } from '@/src/lib/drillPresentation';
 import MakeSessionScript from './MakeSessionScript';
 import type {
   WorkoutTemplateItemWithDrillHead,
@@ -799,9 +800,7 @@ function CoachWorkoutTemplates() {
                   {template.difficulty && <span className="plaque">{template.difficulty}</span>}
                 </div>
                 <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
-                {template.intent.trim() !== '' && (
-                  <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{template.intent}</p>
-                )}
+                <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{orNotWritten(template.intent)}</p>
                 {template.requires_coach_authorization && (
                   <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                     Requires coach authorization before use.
