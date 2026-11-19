@@ -148,6 +148,9 @@ export function parseWorkoutTemplateEdit(body: Row): WorkoutTemplateEditRequest 
   if (body.items !== undefined) {
     if (!Array.isArray(body.items)) throw new ValidationError('Unsupported items: the whole ordered list of items');
     if (body.items.length > MAX_ITEMS) throw new ValidationError(`Unsupported items: at most ${MAX_ITEMS}`);
+    // The importer never revises a template down to no steps, and a template
+    // with none cannot be issued.
+    if (body.items.length === 0) throw new ValidationError('Unsupported items: a template keeps at least one item', 'ITEMS_EMPTY');
     const seen = new Set<string>();
     request.items = body.items.map((raw, index) => {
       if (!isPlainObject(raw)) throw new ValidationError(`Unsupported items[${index}]`);
@@ -205,6 +208,8 @@ function translateWriteError(error: unknown, name: string): never {
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** A value as the comparison reads it: text normalized as the importer reads a cell, blank text as none. */
+const comparable = (value: unknown) => (typeof value === 'string' ? normalizeCell(value) || null : value ?? null);
 
 async function rowsOf(tx: PoolClient, organizationId: string, templateId: string): Promise<Row[]> {
   const { rows } = await tx.query<{ row: Row }>(
@@ -245,10 +250,12 @@ export async function editWorkoutTemplate(input: {
     const headVersion = head.version as number;
     const oldItems = await rowsOf(tx, organizationId, headId);
 
+    // What really changes. Stored text is read the way the sent text was
+    // (normalizeCell, blank = none), so text resent unchanged keeps its label.
     const edited: EditedPart[] = [];
     const patch: Row = {};
     for (const [key, value] of Object.entries(request.fields)) {
-      if (!same(head[key], value)) {
+      if (!same(comparable(head[key]), comparable(value))) {
         patch[key] = value;
         edited.push({ field: key });
       }
@@ -258,6 +265,7 @@ export async function editWorkoutTemplate(input: {
     // sent fields laid over it.
     let newItems: Row[] | null = null;
     if (request.items !== undefined) {
+      const bases: Row[] = [];
       newItems = request.items.map((entry, index) => {
         let base: Row = {};
         if (entry.itemId !== undefined) {
@@ -265,9 +273,53 @@ export async function editWorkoutTemplate(input: {
           if (!found) throw new ValidationError(`Unsupported items[${index}].item_id: not an item of this version of the template`);
           base = found;
         }
+        bases.push(base);
         return { ...base, ...entry.content, ordinal: index + 1 };
       });
-      const content = (item: Row) => [...ITEM_CONTENT, 'details', 'ordinal'].map((key) => item[key] ?? (key === 'contact_level' ? 'none' : null));
+
+      // THE IMPORTER'S DRILL RULES (contentImport/validate.ts: withdrawn_drill,
+      // step_contact_above_drill), judged against the drill's CURRENT version --
+      // the one an issue runs (workoutTemplates.ts, planTemplateIssue) -- and only
+      // for an item whose drill or contact really changes. A new or changed drill
+      // must be one the gym runs (its current version active), and is stored as
+      // that current version, as the importer stores a step's drill. An item
+      // carried with its drill unchanged keeps the version it was written with,
+      // even an older one, so resending a whole list is never refused for it.
+      // The current version is share-locked, so a drill edit that lowers its
+      // contact waits for this edit (and then judges the steps it wrote).
+      const ladder: readonly string[] = VOCABULARIES.contact_level.values;
+      const contactOf = (item: Row) => (item.contact_level as string | undefined) ?? 'none';
+      for (const [index, item] of newItems.entries()) {
+        const base = bases[index];
+        const drillChanged = item.drill_id !== base.drill_id;
+        if (typeof item.drill_id !== 'string' || (!drillChanged && contactOf(item) === contactOf(base))) continue;
+        const { rows } = await tx.query<{ current_id: string; contact_level: string; active: boolean }>(
+          `select h.drill_id as current_id, h.contact_level, h.active
+             from pilot.drill_library d
+             join pilot.drill_library h
+               on h.organization_id = d.organization_id and h.lineage_id = d.lineage_id and h.superseded_at is null
+            where d.organization_id = $1 and d.drill_id = $2
+              for share of h`,
+          [organizationId, item.drill_id],
+        );
+        const drill = rows[0];
+        if (!drill) throw new ValidationError(`Unsupported items[${index}].drill_id: not a drill of this gym`, 'ITEM_DRILL_NOT_FOUND');
+        if (drillChanged) {
+          if (!drill.active) {
+            throw new ValidationError(`Unsupported items[${index}].drill_id: this gym has withdrawn that drill`, 'ITEM_DRILL_WITHDRAWN');
+          }
+          item.drill_id = drill.current_id;
+        }
+        if (ladder.indexOf(contactOf(item)) > ladder.indexOf(drill.contact_level)) {
+          throw new ValidationError(
+            `Unsupported items[${index}].contact_level: ${contactOf(item)} is above the drill's own contact level (${drill.contact_level})`,
+            'ITEM_CONTACT_ABOVE_DRILL',
+          );
+        }
+      }
+
+      const content = (item: Row) => [...ITEM_CONTENT, 'details', 'ordinal']
+        .map((key) => (key === 'contact_level' ? contactOf(item) : comparable(item[key])));
       if (!same(oldItems.map(content), newItems.map(content))) edited.push({ field: 'items' });
       else newItems = null;
     }
@@ -276,36 +328,15 @@ export async function editWorkoutTemplate(input: {
       return { changed: false, template_id: headId, lineage_id: lineageId, version: headVersion, previous_template_id: null, edited: [] };
     }
 
-    // A linked drill must be one this gym runs now, and an item may not run it
-    // at more contact than the drill involves -- the importer's withdrawn_drill
-    // and step_contact_above_drill rules (contentImport/validate.ts), judged
-    // for each item whose drill or contact this edit sets. An item carried
-    // unchanged keeps the drill version it was written with.
-    for (const [index, entry] of (request.items ?? []).entries()) {
-      const item = (newItems ?? [])[index];
-      if (!item || typeof item.drill_id !== 'string') continue;
-      if (entry.content.drill_id === undefined && entry.content.contact_level === undefined) continue;
-      const { rows } = await tx.query<{ contact_level: string; current: boolean }>(
-        `select contact_level, (superseded_at is null and active) as current
-           from pilot.drill_library where organization_id = $1 and drill_id = $2`,
-        [organizationId, item.drill_id],
-      );
-      const drill = rows[0];
-      if (!drill) throw new ValidationError(`Unsupported items[${index}].drill_id: not a drill of this gym`, 'ITEM_DRILL_NOT_FOUND');
-      if (entry.content.drill_id !== undefined && !drill.current) {
-        throw new ValidationError(`Unsupported items[${index}].drill_id: not the current version of a drill this gym runs`, 'ITEM_DRILL_NOT_CURRENT');
-      }
-      const ladder: readonly string[] = VOCABULARIES.contact_level.values;
-      const step = (item.contact_level as string | undefined) ?? 'none';
-      if (ladder.indexOf(step) > ladder.indexOf(drill.contact_level)) {
-        throw new ValidationError(
-          `Unsupported items[${index}].contact_level: ${step} is above the drill's own contact level (${drill.contact_level})`,
-          'ITEM_CONTACT_ABOVE_DRILL',
-        );
-      }
-    }
-
-    const newVersion = headVersion + 1;
+    // The lineage's highest version + 1, as the importer numbers a revision
+    // (templateScriptVersions.ts, maxVersions). The head is locked above; a
+    // version number or head that another write took first is refused by the
+    // lineage-version and one-head-per-lineage indexes (409).
+    const { rows: maxRows } = await tx.query<{ max_version: number }>(
+      `select max(version)::int as max_version from pilot.workout_templates where organization_id = $1 and lineage_id = $2`,
+      [organizationId, lineageId],
+    );
+    const newVersion = (maxRows[0]?.max_version ?? headVersion) + 1;
     const newId = versionId('wtp', lineageId, newVersion);
     const at = new Date().toISOString();
     const name = (patch.name ?? head.name) as string;

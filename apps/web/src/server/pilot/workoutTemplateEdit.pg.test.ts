@@ -129,16 +129,27 @@ async function newGym(): Promise<string> {
 }
 
 /** One reference drill that passes adoption readiness (scale levels, a stop rule, a cue). */
-async function seedDrill(organizationId: string, drillId: string, name: string, opts: { contact?: string; superseded?: boolean } = {}) {
+async function seedDrill(
+  organizationId: string,
+  drillId: string,
+  name: string,
+  opts: { contact?: string; lineage?: string; version?: number; active?: boolean } = {},
+) {
+  // A later version supersedes the lineage's current one first (one head per lineage).
+  if (opts.lineage) {
+    await client.query(
+      `update pilot.drill_library set superseded_at = now() where organization_id = $1 and lineage_id = $2 and superseded_at is null`,
+      [organizationId, opts.lineage],
+    );
+  }
   await client.query(
     `insert into pilot.drill_library
        (organization_id, drill_id, lineage_id, version, name, discipline, category, difficulty,
         target_behavior, purpose, standard_setup, execution, what_good_looks_like, what_bad_looks_like,
-        contact_level, superseded_at)
-     values ($1,$2,$2,1,$3,'boxing','footwork','advanced', $3 || ' target.', $3 || ' purpose.',
-             $3 || ' setup.', $3 || ' execution.', $3 || ' good.', $3 || ' bad.', $4,
-             case when $5::boolean then now() else null end)`,
-    [organizationId, drillId, name, opts.contact ?? 'none', opts.superseded ?? false],
+        contact_level, active)
+     values ($1,$2,$3,$4,$5,'boxing','footwork','advanced', $5 || ' target.', $5 || ' purpose.',
+             $5 || ' setup.', $5 || ' execution.', $5 || ' good.', $5 || ' bad.', $6, $7)`,
+    [organizationId, drillId, opts.lineage ?? drillId, opts.version ?? 1, name, opts.contact ?? 'none', opts.active ?? true],
   );
   await client.query(
     `insert into pilot.drill_scale_levels
@@ -324,7 +335,7 @@ describe('editing a workout template', () => {
     expect(v2).toMatchObject({
       template_id: newId, version: 2, supersedes_template_id: 'wtp_one', superseded_at: null, active: true,
       intent: 'Coach intent.', session_type: 'technical', coach_notes: 'Old notes.', duration_minutes: 45,
-      created_by_role: 'coach',
+      created_by_role: 'coach', created_by_account_id: `${COACH}@${org}`,
     });
 
     const items = await itemsOf(org, newId);
@@ -417,18 +428,22 @@ describe('editing a workout template', () => {
     expect(await versionsOf(orgB, 'wtp_b')).toHaveLength(1);
   });
 
-  it("refuses an item's drill that is not current here, an item above its drill's contact, and the table's item rules, writing nothing", async () => {
+  it("refuses a withdrawn or foreign drill, an item above its drill's contact, and the table's item rules, writing nothing", async () => {
     const org = await newGym();
+    const other = await newGym();
     await seedDrill(org, 'drl_jab', 'Jab');
-    await seedDrill(org, 'drl_old', 'Old Version', { superseded: true });
+    await seedDrill(org, 'drl_gone', 'Gone', { active: false });
     await seedDrill(org, 'drl_spar', 'Spar', { contact: 'controlled_sparring' });
+    await seedDrill(other, 'drl_theirs', 'Theirs');
     await seedTemplate(org, 'wtp_items', 'Items', 'drl_jab');
     const old = await itemsOf(org, 'wtp_items');
     const keep = old.map((item) => ({ item_id: item.item_id }));
 
-    expect(await rejection(edit(org, { template_id: 'wtp_items', items: [...keep, { block: 'x', drill_id: 'drl_old' }] })))
-      .toMatchObject({ status: 400, code: 'ITEM_DRILL_NOT_CURRENT' });
+    expect(await rejection(edit(org, { template_id: 'wtp_items', items: [...keep, { block: 'x', drill_id: 'drl_gone' }] })))
+      .toMatchObject({ status: 400, code: 'ITEM_DRILL_WITHDRAWN' });
     expect(await rejection(edit(org, { template_id: 'wtp_items', items: [...keep, { block: 'x', drill_id: 'drl_nowhere' }] })))
+      .toMatchObject({ status: 400, code: 'ITEM_DRILL_NOT_FOUND' });
+    expect(await rejection(edit(org, { template_id: 'wtp_items', items: [...keep, { block: 'x', drill_id: 'drl_theirs' }] })))
       .toMatchObject({ status: 400, code: 'ITEM_DRILL_NOT_FOUND' });
     expect(await rejection(edit(org, {
       template_id: 'wtp_items', items: [{ item_id: old[1].item_id, contact_level: 'controlled_sparring', duration_minutes: null }],
@@ -444,6 +459,53 @@ describe('editing a workout template', () => {
 
     const ok = await edit(org, { template_id: 'wtp_items', items: [{ block: 'spar', drill_id: 'drl_spar', contact_level: 'controlled_sparring' }] });
     expect(ok).toMatchObject({ changed: true, edited: ['items'] });
+  });
+
+  it("judges an item's drill by the drill's current version, and never refuses a carried drill resent unchanged", async () => {
+    const org = await newGym();
+    await seedDrill(org, 'drl_cond', 'Cond', { contact: 'conditioned' });
+    await seedTemplate(org, 'wtp_pinned', 'Pinned', 'drl_cond');
+    // The item stays on v1; the drill's current version (v2) is light technical.
+    await seedDrill(org, 'drl_cond_v2', 'Cond', { contact: 'light_technical', lineage: 'drl_cond', version: 2 });
+    await client.query(`update pilot.workout_template_items set contact_level = 'light_technical' where organization_id = $1 and template_id = 'wtp_pinned' and ordinal = 2`, [org]);
+    const old = await itemsOf(org, 'wtp_pinned');
+
+    // A whole list resent with the pinned drill unchanged, and an edit elsewhere: allowed, the pin kept.
+    const resent = await edit(org, {
+      template_id: 'wtp_pinned',
+      intent: 'Changed.',
+      items: old.map((item) => ({ item_id: item.item_id, block: item.block, drill_id: item.drill_id, contact_level: item.contact_level })),
+    });
+    expect(resent).toMatchObject({ changed: true, edited: ['intent'] });
+    expect((await itemsOf(org, resent.template_id))[1].drill_id).toBe('drl_cond');
+
+    // Raising the carried step to conditioned: above the current version's light technical.
+    const now = await itemsOf(org, resent.template_id);
+    expect(await rejection(edit(org, {
+      template_id: resent.template_id, items: now.map((item) => ({ item_id: item.item_id, ...(item.ordinal === 2 ? { contact_level: 'conditioned', duration_minutes: null } : {}) })),
+    }))).toMatchObject({ status: 400, code: 'ITEM_CONTACT_ABOVE_DRILL' });
+
+    // Naming an older version of a drill stores its current version, as the importer does.
+    const switched = await edit(org, { template_id: resent.template_id, items: [{ block: 'new', drill_id: 'drl_cond', contact_level: 'none' }] });
+    expect((await itemsOf(org, switched.template_id))[0].drill_id).toBe('drl_cond_v2');
+  });
+
+  it('keeps a withdrawn template withdrawn, and numbers the version from the highest in the lineage', async () => {
+    const org = await newGym();
+    await seedDrill(org, 'drl_jab', 'Jab');
+    await seedTemplate(org, 'wtp_off', 'Off', 'drl_jab');
+    await client.query(`update pilot.workout_templates set active = false where organization_id = $1 and template_id = 'wtp_off'`, [org]);
+    // A superseded version numbered above the head (the importer numbers from the highest, too).
+    await client.query(
+      `insert into pilot.workout_templates
+         (organization_id, template_id, lineage_id, version, name, session_type, intent, duration_minutes, active, superseded_at)
+       values ($1, 'wtp_off_v5', 'wtp_off', 5, 'Off v5', 'technical', 'Old.', 45, false, now())`,
+      [org],
+    );
+    const result = await edit(org, { template_id: 'wtp_off', coach_notes: 'Still off.' });
+    expect(result).toMatchObject({ version: 6, template_id: versionId('wtp', 'wtp_off', 6) });
+    const head = (await versionsOf(org, 'wtp_off')).find((row) => row.superseded_at === null);
+    expect(head).toMatchObject({ version: 6, active: false, coach_notes: 'Still off.' });
   });
 
   it('refuses a name another active template holds', async () => {
@@ -472,6 +534,7 @@ describe('parseWorkoutTemplateEdit', () => {
     expect(() => parseWorkoutTemplateEdit({ template_id: 'x', items: [{ block: 'b', free_text_drill: 'x', contact_level: 'sparring' }] })).toThrow('Unsupported items[0].contact_level');
     expect(() => parseWorkoutTemplateEdit({ template_id: 'x', items: [{ free_text_drill: 'x' }] })).toThrow('a new item needs a block');
     expect(() => parseWorkoutTemplateEdit({ template_id: 'x', name: ' ' })).toThrow('Missing name');
+    expect(() => parseWorkoutTemplateEdit({ template_id: 'x', items: [] })).toThrow('a template keeps at least one item');
     expect(parseWorkoutTemplateEdit({ template_id: 'x', coach_notes: '' }).fields.coach_notes).toBeNull();
   });
 });
