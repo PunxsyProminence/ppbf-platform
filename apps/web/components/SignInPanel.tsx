@@ -223,6 +223,11 @@ export default function SignInPanel({
           if (resolution.reason !== 'server_error') {
             clearRoleSession();
           }
+          // Nobody is signed in on this device, the server says: every sign-in
+          // starts here, so a gym tablet's idle clock starts fresh (lane U1,
+          // AS2-b). Not on the line above's other refusals: those may be a
+          // live session.
+          if (resolution.signedOut) clearGymTabletLastUse();
           return;
         }
 

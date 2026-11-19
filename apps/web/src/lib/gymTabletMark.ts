@@ -74,8 +74,9 @@ export function subscribeGymTabletMark(listener: () => void): () => void {
  *
  * Cleared only when the session is known to be gone or new: a confirmed idle
  * sign-out (TabletIdleSignOut), the server ANSWERING that nobody is signed in
- * (GlobalRoleHeader's self-heal), and a fresh sign-in (SignInPanel, the
- * athlete sign-in page, the sign-in link page). Never by a plain cache clear,
+ * (GlobalRoleHeader's self-heal, SignInPanel's check on /login, where every
+ * sign-in starts), and a fresh sign-in (SignInPanel, the athlete sign-in
+ * page, the sign-in link page). Never by a plain cache clear,
  * which can happen while the session is alive (AS2-b review A). If one is
  * ever left behind stale (a sign-in path not listed), the cost is that
  * sign-in being signed out at once; signing in again starts clean.
@@ -97,6 +98,33 @@ export function writeGymTabletLastUse(at: number): void {
     storage()?.setItem(LAST_USE_KEY, String(at));
   } catch {
     // Memory still holds it for this tab.
+  }
+}
+
+/*
+ * WHEN THIS DEVICE LAST CONFIRMED A SIGN-OUT (AS2-b review A, re-review). A
+ * tab opened before that moment shows the person who was signed out, even if
+ * the clock has since been restarted by someone new; on seeing a newer mark
+ * it covers itself and reloads /login (without ending the session, which may
+ * now be the next person's).
+ */
+const SIGNED_OUT_KEY = 'ppbf.device.gymTabletSignedOutAt';
+
+export function readGymTabletSignedOutAt(): number | null {
+  try {
+    const raw = storage()?.getItem(SIGNED_OUT_KEY);
+    const value = raw === null || raw === undefined ? NaN : Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeGymTabletSignedOutAt(at: number): void {
+  try {
+    storage()?.setItem(SIGNED_OUT_KEY, String(at));
+  } catch {
+    // This tab still leaves; another tab may not learn of it.
   }
 }
 

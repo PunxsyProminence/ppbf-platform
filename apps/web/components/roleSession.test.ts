@@ -439,7 +439,7 @@ describe('authoritative server role resolution', () => {
 
   test('unauthenticated and unknown-role server responses fail closed', () => {
     expect(resolveAuthoritativeRoleSession({ authenticated: false }))
-      .toEqual({ ok: false, reason: 'unauthenticated' });
+      .toEqual({ ok: false, reason: 'unauthenticated', signedOut: true });
     expect(resolveAuthoritativeRoleSession({
       authenticated: true,
       role: 'future_super_admin',
@@ -505,7 +505,7 @@ describe('authoritative server role resolution', () => {
     await expect(loadAuthoritativeRoleSession('/session', { fetcher: serverErrorFetcher }))
       .resolves.toEqual({ ok: false, reason: 'server_error', statusCode: 503 });
     await expect(loadAuthoritativeRoleSession('/session', { fetcher: expiredFetcher }))
-      .resolves.toEqual({ ok: false, reason: 'unauthenticated' });
+      .resolves.toEqual({ ok: false, reason: 'unauthenticated', signedOut: true });
   });
 });
 
@@ -645,5 +645,20 @@ describe('the seat survives the display cache', () => {
 
     expect(readRoleSession()).toMatchObject({ role: 'board' });
     expect(readRoleSession()?.boardSeat).toBeUndefined();
+  });
+});
+
+/* Lane U1, AS2-b: the gym tablet's idle clock is reset only when the server
+   ANSWERED that nobody is signed in, never on an unreadable answer. */
+describe('signedOut on an unauthenticated resolution', () => {
+  test('an explicit authenticated: false says the server answered nobody', () => {
+    expect(resolveAuthoritativeRoleSession({ authenticated: false } as never)).toEqual({
+      ok: false, reason: 'unauthenticated', signedOut: true,
+    });
+  });
+
+  test('no body, or no answer either way, is not a signed-out answer', () => {
+    expect(resolveAuthoritativeRoleSession(null)).toEqual({ ok: false, reason: 'unauthenticated' });
+    expect(resolveAuthoritativeRoleSession({} as never)).toEqual({ ok: false, reason: 'unauthenticated' });
   });
 });

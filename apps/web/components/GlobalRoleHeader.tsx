@@ -105,12 +105,11 @@ export default function GlobalRoleHeader() {
 
         if (resolution.ok) {
           persistAuthoritativeRoleSession(resolution.session);
-        } else if (resolution.reason === 'unauthenticated' && !('statusCode' in resolution)) {
-          // The server ANSWERED that nobody is signed in on this device (no
-          // statusCode: a 200 with authenticated false, not an error), so a gym
-          // tablet's idle clock belongs to nobody and the next person starts a
-          // fresh one (lane U1, AS2-b). An error proves nothing and clears
-          // nothing.
+        } else if (resolution.signedOut) {
+          // The server ANSWERED that nobody is signed in on this device, so a
+          // gym tablet's idle clock belongs to nobody and the next person
+          // starts a fresh one (lane U1, AS2-b). An error proves nothing and
+          // clears nothing.
           clearGymTabletLastUse();
         }
       } catch (error) {
