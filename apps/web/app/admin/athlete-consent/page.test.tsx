@@ -411,6 +411,7 @@ test.each([
   ['not_by_them', '18 or over: not recorded on their own account'],
   ['other', "18 or over: answer on file doesn't count"],
   [undefined, "18 or over: answer on file doesn't count"],
+  ['a_state_this_page_does_not_know', "18 or over: answer on file doesn't count"],
 ])('an adult whose own state is %p reads %p, on the restricted rung', async (ownState, words) => {
   global.fetch = jest.fn().mockResolvedValue(jsonResponse({
     ok: true,

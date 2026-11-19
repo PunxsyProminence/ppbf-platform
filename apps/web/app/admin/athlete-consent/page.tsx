@@ -499,7 +499,7 @@ export default function AthleteConsentAuditPage() {
                             {item.consent_basis === 'own'
                               ? item.consent_ok
                                 ? '18 or over: own consent on file'
-                                : ADULT_NOT_COUNTED[item.own_state ?? 'other']
+                                : ADULT_NOT_COUNTED[item.own_state ?? 'other'] ?? ADULT_NOT_COUNTED.other
                               : item.consent_ok
                                 ? 'Consent on file'
                                 : 'Missing'}
