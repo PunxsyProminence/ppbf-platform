@@ -181,7 +181,7 @@ Stop rule (every template): stop and tell an adult (adults: your coach) if dizzy
 | 9 | strength | `drl_44173cce2543ae` Progressive muscular relaxation | Tighten and let go (lying on the towel) | 2 minutes | 3 minutes | 3 minutes | no rest needed | Tighten hands, shoulders, jaw for a moment — then let go and feel the difference. | Skip any area that hurts. |
 | 10 | cooldown | `drl_325b6ba2613eb0` Cool-Down Walk and Breathe + `drl_786d761c9321c0` Post-Session Mobility | Home cool-down | | | | | | |
 
-## Linked drills whose stage tags omit youth stages (report only; no tag changed)
+## Drills the six name whose stage tags omit youth stages (report only; no tag changed)
 
 The track serves Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1. A coach decides whether to retag each drill or swap the item.
 
@@ -207,9 +207,9 @@ The track serves Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, 
 | `drl_f0156a0b5388f7` | Pivot circuit | T1|T2|AM1|AM2|AM3|PR1|PR2|PR3|PR4|PR5|RC1 | Y1 Y2 Y3 Y4 Y5 FT1 EX1 | D5#4 |
 | `drl_f5d68d0b9b4be7` | Side plank variants | T1|T2|AM1|AM2|AM3|PR1|PR2|PR3|PR4|PR5|RC1 | Y1 Y2 Y3 Y4 Y5 FT1 EX1 | D4#4 |
 
-17 drills omit youth stages; 16 linked drills have no stage tags; 4 cover every track stage (37 linked drills in all, warm-up and cool-down drills included).
+The six name 37 library drills, warm-up and cool-down drills included: 35 linked (drill_id, or the second drill of a warm-up, cool-down or two-drill item, or the U12 alternative) and 2 related but not linked (the two partial matches). Of the 37, 17 omit youth stages, 16 have no stage tags and 4 cover every track stage.
 
-Four items have no library drill and are words only: forearm plank (Day 4), reverse lunge, glute bridge and wall calf raise (Day 6). The drill library is not changed by this lane.
+Six main items have no linked drill: four new items with no library drill (forearm plank, Day 4; reverse lunge, glute bridge and wall calf raise, Day 6) and the two partial matches, which name a related drill without linking it. The drill library is not changed by this lane.
 
 ## Open for a coach edit (the draft's own text, carried unchanged)
 
@@ -221,6 +221,7 @@ Four items have no library drill and are words only: forearm plank (Day 4), reve
 
 ## Reviews
 
-Reviewer 1 (fidelity to the draft; no DOC-136 text): PENDING.
+Two adversarial reviewers, fresh context, Opus, read-only; each was given the draft and this sheet (OD-2026-11-15-011).
 
-Reviewer 2 (youth safety: amounts, contact, stop rules): PENDING.
+- Reviewer 1 (fidelity to the draft; no DOC-136 text). First pass at d708e663: PASS, 5 minor findings. A script compared every template, item and the track edit with the draft: no mismatch; no added line carries a held title, held id or DOC-136 source line; the track row differs from main only in sources, details and field_labels. Minor findings: the session_refs label became INFERRED for the whole field (kept, cautious); a forced Backbone re-export would restore the held refs (stated in the PR); "(P14)", block words and the ordinal numbering (all on this sheet). Re-check at ff41d307: PASS; coach_notes is the draft's text word for word; one wording note on counts, fixed here.
+- Reviewer 2 (youth safety: amounts, contact, stop rules). First pass at d708e663: FINDINGS. 1 blocking: the coach screen never shows template details, so the draft's stop rule and band lines would not reach a coach; fixed by carrying them word for word in coach_notes. Minor: the heat wording conflict, the two partial-match drills needing bands or weights (now not linked), library text beyond the home amounts, and the breathing-reset line (on this sheet as open for a coach edit). No amount, contact or band defect: U12 <= 12–17 <= Adult on every item, every item and linked drill is non-contact, and the draft's limits are all kept. Re-check at ff41d307: PASS; one wording note on counts, fixed here; coach_notes capitalises the stop rule's first letter.
