@@ -151,7 +151,7 @@ interface AssignmentCompletion {
 
 const GapBadge = ({ severity }: { severity: string }) => {
   const rungs: Record<string, { className: string; glyph: string }> = {
-    critical: { className: 'badge badge--locked', glyph: '✕' },
+    critical: { className: 'badge badge--restricted', glyph: '▲' },
     high: { className: 'badge badge--restricted', glyph: '▲' },
     medium: { className: 'badge badge--restricted', glyph: '▲' },
     low: { className: 'badge badge--cleared', glyph: '✓' },
@@ -173,13 +173,13 @@ const StatusBadge = ({ status, type }: { status: string; type: 'gap' | 'assignme
       assigned: { className: 'badge badge--monitor', glyph: '◉' },
       in_progress: { className: 'badge badge--monitor', glyph: '◉' },
       completed: { className: 'badge badge--cleared', glyph: '✓' },
-      incomplete: { className: 'badge badge--locked', glyph: '✕' },
+      incomplete: { className: 'badge badge--restricted', glyph: '▲' },
       cancelled: null,
     },
     completion: {
       pending: { className: 'badge badge--restricted', glyph: '▲' },
       verified: { className: 'badge badge--cleared', glyph: '✓' },
-      disputed: { className: 'badge badge--locked', glyph: '✕' },
+      disputed: { className: 'badge badge--restricted', glyph: '▲' },
     },
   };
 
@@ -596,8 +596,8 @@ export default function AthleteProgressionIntelligencePage() {
         </div>
 
         {errorMessage && (
-          <div className="alert alert--critical" role="alert">
-            <span className="alert-icon" aria-hidden="true">✕</span>
+          <div className="alert alert--warning" role="alert">
+            <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
               {/* "Failed", alone and in bold, is a word this gym uses about
                   rounds, not about a kid's screen. The title now says which

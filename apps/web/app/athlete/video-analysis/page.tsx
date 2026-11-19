@@ -183,8 +183,8 @@ export default function AthleteVideoAnalysisPage() {
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
           <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>Your rounds</h2>
           {videoError ? (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{videoError}</p>
@@ -221,8 +221,8 @@ export default function AthleteVideoAnalysisPage() {
           <h2 className="t-command m-0" style={{ fontSize: 'var(--t-md)' }}>What SHADOW noticed</h2>
           <div className="mt-[var(--s4)] space-y-[var(--s3)]">
             {observationError ? (
-              <div className="alert alert--critical" role="alert">
-                <span className="alert-icon" aria-hidden="true">✕</span>
+              <div className="alert alert--warning" role="alert">
+                <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
                   <p className="alert-title">Failed</p>
                   <p className="alert-msg">{observationError}</p>

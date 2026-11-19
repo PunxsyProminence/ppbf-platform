@@ -116,4 +116,14 @@ describe('/change-pin offers the session bar\'s sign-out', () => {
       .map((line) => line.trim());
     expect(logoutLine(page)).toEqual(logoutLine(header));
   });
+
+  /* Lane U1, SC2-4: the page is a kiosk surface now, and the refusal must not
+     be its smallest text. The alert sizes come from the unlayered design sheet
+     (12px title, 15px message), which no Tailwind utility can outrank, so the
+     page lifts them inline. A source check: the refusal needs the server. */
+  test('the PIN refusal is lifted to the kiosk type floor', () => {
+    const page = readFileSync(path.resolve(__dirname, 'page.tsx'), 'utf8');
+    expect(page).toContain(`<p className="alert-title" style={{ fontSize: 'var(--t-md)' }}>PIN refused</p>`);
+    expect(page).toContain(`<p className="alert-msg" style={{ fontSize: 'var(--t-md)' }}>{error}</p>`);
+  });
 });

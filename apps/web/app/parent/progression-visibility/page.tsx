@@ -80,7 +80,7 @@ interface AssignmentCompletion {
 
 const GapBadge = ({ severity }: { severity: string }) => {
   const rungs: Record<string, { className: string; glyph: string }> = {
-    critical: { className: 'badge badge--locked', glyph: '✕' },
+    critical: { className: 'badge badge--restricted', glyph: '▲' },
     high: { className: 'badge badge--restricted', glyph: '▲' },
     medium: { className: 'badge badge--restricted', glyph: '▲' },
     low: { className: 'badge badge--cleared', glyph: '✓' },
@@ -102,13 +102,13 @@ const StatusBadge = ({ status, type }: { status: string; type: 'gap' | 'assignme
       assigned: { className: 'badge badge--monitor', glyph: '◉' },
       in_progress: { className: 'badge badge--monitor', glyph: '◉' },
       completed: { className: 'badge badge--cleared', glyph: '✓' },
-      incomplete: { className: 'badge badge--locked', glyph: '✕' },
+      incomplete: { className: 'badge badge--restricted', glyph: '▲' },
       cancelled: null,
     },
     completion: {
       pending: { className: 'badge badge--restricted', glyph: '▲' },
       verified: { className: 'badge badge--cleared', glyph: '✓' },
-      disputed: { className: 'badge badge--locked', glyph: '✕' },
+      disputed: { className: 'badge badge--restricted', glyph: '▲' },
     },
   };
   const rung = statusRungs[type]?.[status];
@@ -401,9 +401,9 @@ export default function ParentProgressionVisibilityPage() {
               completions are logged by your athlete on the floor and verified by a coach.
             </p>
             {errorMessage ? (
-              <div className="alert alert--critical alert--tight mt-[var(--s4)]" role="alert">
+              <div className="alert alert--warning alert--tight mt-[var(--s4)]" role="alert">
                 <div className="alert-body">
-                  <span className="badge badge--locked"><i>✕</i>Failed</span>
+                  <span className="badge badge--restricted"><i>▲</i>Failed</span>
                   <p className="alert-msg mt-[var(--s3)]">{errorMessage}</p>
                 </div>
               </div>
