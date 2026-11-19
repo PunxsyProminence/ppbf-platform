@@ -121,8 +121,10 @@ test.describe('Coach journey', () => {
     // 1530 server-side seconds, rendered as the panel's own elapsed field. Not
     // a figure this page counted.
     await expect(page.getByText('25m 30s', { exact: true })).toBeVisible();
+    // Lane U2-6a (Overwatch Q5 = A): the floor board's way back is the class screen, where the live
+    // session now runs; the first such link on the page is the floor board's.
     await expect(page.getByRole('link', { name: 'Return to live delivery' }).first())
-      .toHaveAttribute('href', '/coach/session-scripts');
+      .toHaveAttribute('href', '/coach/class');
 
     // The sentence that used to sit here regardless of the answer.
     await expect(page.getByText(/Live session tracking is not built/i)).toHaveCount(0);
