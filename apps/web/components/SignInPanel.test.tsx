@@ -138,6 +138,22 @@ describe('every way in still works', () => {
     expect(container.querySelector('a[href="/athlete/sign-in"]')).toBeTruthy();
   });
 
+  /* OW25-46 A (Jason: the gym office). Creating an account, issuing an
+     activation code and resetting a PIN are organization admin only
+     (athlete-accounts, activation-codes and accounts/pin-reset routes), so the
+     help names the office, never a coach. */
+  test('sign-in help sends people to the gym office, not a coach', async () => {
+    const { container } = await renderPanel();
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain('Enter your Account ID and PIN. Ask the gym office if you do not have one.');
+    expect(text).toContain(
+      'If you do not have an Account ID or PIN, or if you have forgotten your PIN, ask the gym office. '
+      + 'The office can create a new account or reset your PIN.',
+    );
+    expect(text).not.toMatch(/ask your coach|coach or admin|admin or coach/i);
+  });
+
   /* The approved mobile board carried "Your PIN is local and never leaves
      your device". The PIN is POSTed to /api/pilot/auth/login, so that line is
      false, and a false security claim on a door used by children is the one

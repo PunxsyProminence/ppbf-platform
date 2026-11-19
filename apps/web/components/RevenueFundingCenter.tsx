@@ -90,14 +90,6 @@ interface DonationRecord {
   createdAt: string;
 }
 
-interface PaymentIntegrationPlaceholder {
-  provider: string;
-  status: 'Not Connected';
-  connected: false;
-  notes: string;
-  futureBackendRequired: true;
-}
-
 const revenueAccounts: RevenueAccount[] = [
   {
     id: 'ra_001',
@@ -179,20 +171,18 @@ const revenueItems: RevenueItem[] = [
   },
 ];
 
-const paymentIntegrations: PaymentIntegrationPlaceholder[] = [
-  { provider: 'Stripe Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
-  { provider: 'Square Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
-  { provider: 'PayPal Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
-  { provider: 'Donorbox / Givebutter Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
-  { provider: 'QuickBooks Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
-  { provider: 'Microsoft / Power Platform Placeholder', status: 'Not Connected', connected: false, notes: 'Future Integration | Requires Backend | Requires Compliance Review', futureBackendRequired: true },
-];
-
+// BOA-02 (lane SH): this console used to show six hard-coded "Placeholder /
+// Not Connected" payment processor cards and say "No payment processor is
+// connected". That was a claim about the gym's real payment accounts made
+// from typed-in rows, and the real state lives on /admin/payments (its own
+// read, organization admin only). This console makes no such claim now; its
+// Payment Settings tab links there.
+//
 // No donation is recorded here, because this platform holds no financial
-// records: every payment integration below reads Not Connected, and the
-// payment capability is a reserved slot that is deliberately not built
-// (docs/PAYMENT_SERVICE_SLOT.md). A seeded donor with a real amount would be
-// read by a treasurer or a board member as money the gym actually received.
+// records and the payment capability is a reserved slot that is deliberately
+// not built (docs/PAYMENT_SERVICE_SLOT.md). A seeded donor with a real amount
+// would be read by a treasurer or a board member as money the gym actually
+// received.
 const initialDonationRecords: DonationRecord[] = [];
 
 const tabs: Array<{ id: RevenueFundingTab; label: string }> = [
@@ -427,7 +417,6 @@ export default function RevenueFundingCenter() {
     ['Scholarship request placeholder', 'Scholarships', 'Pending Review', 'Yes', 'Support source not finalized.'],
     ['B2B quote placeholder', 'B2B Accounts', 'Proposal Needed', 'Yes', 'Pricing framework pending.'],
     ['Wholesale tier placeholder', 'Wholesale Accounts', 'Needs Quote', 'Yes', 'Tier validation required.'],
-    ['Processor enablement placeholder', 'Payment Integration', 'Not Connected', 'Yes', 'Backend and compliance required.'],
   ];
 
   return (
@@ -636,7 +625,6 @@ export default function RevenueFundingCenter() {
               <li>- Sponsor follow-up needed</li>
               <li>- B2B account needs next step</li>
               <li>- Scholarship review needed</li>
-              <li>- Payment processor not connected</li>
             </ul>
           </SectionCard>
 
@@ -763,7 +751,7 @@ export default function RevenueFundingCenter() {
                   <p className="text-base font-semibold">No donations are recorded.</p>
                   <p className="mt-1 text-base">
                     This platform holds no financial records. Donations, grants and fees live in the
-                    gym&apos;s own books until a payment processor is connected.
+                    gym&apos;s own books.
                   </p>
                 </div>
               )}
@@ -922,16 +910,12 @@ export default function RevenueFundingCenter() {
 
       {activeTab === 'payment-settings' && (
         <SectionCard title="Payment Settings Placeholder">
-          <div className="grid gap-3 md:grid-cols-2">
-            {paymentIntegrations.map((integration) => (
-              <article key={integration.provider} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="t-command">{integration.provider}</p>
-                <p className="t-body mt-[var(--s3)]">{integration.status}</p>
-                <p className="t-body">{integration.notes}</p>
-              </article>
-            ))}
+          <div className="mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.24)] p-[var(--s4)]">
+            <p className="t-body">Payment accounts and their real connection status are on the Payment Accounts page.</p>
+            <Link href="/admin/payments" className="btn btn--ghost mt-[var(--s3)]">
+              Open Payment Accounts
+            </Link>
           </div>
-          <p className="mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.24)] p-[var(--s4)] t-body mt-[var(--s4)]">No payment processor is connected. This application does not currently process real payments.</p>
         </SectionCard>
       )}
 
@@ -972,8 +956,7 @@ export default function RevenueFundingCenter() {
           <p>RevenueAccount: id, name, accountType, contactName, emailPlaceholder, phonePlaceholder, category, status, assignedOwner, notes, createdAt, updatedAt.</p>
           <p>RevenueItem: id, title, revenueType, amountPlaceholder, status, relatedAccountId, restrictedPurpose, reviewNeeded, notes.</p>
           <p>DonationRecord: id, donorName, amount, frequency, designation, receiptNeeded, status, notes, createdAt.</p>
-          <p>PaymentIntegrationPlaceholder: provider, status, connected, notes, futureBackendRequired.</p>
-          <p>Loaded Accounts: {revenueAccounts.length} | Loaded Items: {revenueItems.length} | Loaded Donations: {donationRecords.length} | Loaded Integrations: {paymentIntegrations.length}</p>
+          <p>Loaded Accounts: {revenueAccounts.length} | Loaded Items: {revenueItems.length} | Loaded Donations: {donationRecords.length}</p>
         </div>
       </details>
     </section>

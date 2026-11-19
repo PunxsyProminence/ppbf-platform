@@ -52,8 +52,11 @@ test('a brand-new gym: every step is to do, and the admin sign-in is the one ste
   for (const key of ['coaches', 'athletes', 'athlete-sign-in', 'waivers', 'class']) {
     expect(lines[key].state).toBe('to_do');
   }
-  // A TV is optional, and its pairing screen is the coaches', so it links nowhere.
+  // A TV is optional. It links nowhere: the office pairs one inside this
+  // line on /admin/setup itself (OFF-02).
   expect(lines.tv).toMatchObject({ state: 'optional', href: null });
+  // OFF-02: the office pairs one on this page; a coach still can from the workspace.
+  expect(lines.tv.detail).toBe('No TV paired. Pair one here, or a coach pairs one from the coach workspace.');
   // The guest invite is the platform owner's, in the platform's tenant; no gym screen does it.
   expect(lines['admin-sign-in']).toMatchObject({ href: null });
   expect(lines['admin-sign-in'].detail).toMatch(/platform’s Microsoft tenant/);

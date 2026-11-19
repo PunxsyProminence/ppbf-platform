@@ -45,9 +45,33 @@ test('each step shows its state, what the records say, and the screen where it i
   expect(within(steps[2]).getByRole('link', { name: 'Schedule a class' }).getAttribute('href')).toBe('/schedule');
   // A step with no screen for the gym admin shows no link.
   expect(within(steps[3]).queryAllByRole('link')).toHaveLength(0);
-  // Read-only: nothing on the page writes.
-  expect(screen.queryAllByRole('button')).toHaveLength(0);
-  expect(document.querySelectorAll('form')).toHaveLength(0);
+  // Read-only outside the TV line: no other step holds a control or a form.
+  for (const step of steps.slice(0, 3)) {
+    expect(within(step).queryAllByRole('button')).toHaveLength(0);
+    expect(step.querySelectorAll('form')).toHaveLength(0);
+  }
+});
+
+/* OFF-02 (lane SH): the office pairs a TV on this page. The existing gym TV
+   panel sits inside the TV line only, closed until opened (it reads nothing
+   on render), and sends no session from here. */
+test('the TV line holds the gym TV panel, closed, with no session controls; no other line does', async () => {
+  global.fetch = jest.fn() as unknown as typeof fetch;
+  mockReadGymSetupStatus.mockResolvedValue([
+    { key: 'coaches', title: 'At least one coach', state: 'done', detail: '2 active coaches.', href: '/admin/people', linkLabel: 'Add a coach' },
+    { key: 'tv', title: 'A gym TV paired', state: 'optional', detail: 'No TV paired. Pair one here, or a coach pairs one from the coach workspace.', href: null, linkLabel: null },
+  ]);
+  render(await GymSetupPage());
+
+  const steps = within(screen.getByRole('list', { name: 'Setup steps' })).getAllByRole('listitem');
+  expect(within(steps[0]).queryByRole('region', { name: 'Gym TVs' })).toBeNull();
+  const panel = within(steps[1]).getByRole('region', { name: 'Gym TVs' });
+  expect(within(panel).getByRole('button', { name: 'Open Gym TVs' })).toBeTruthy();
+  expect(within(panel).getByText(/Coaches put a live session on a TV from the coach workspace\./)).toBeTruthy();
+  expect(within(panel).queryByText(/your live session/)).toBeNull();
+  expect(screen.getAllByRole('region', { name: 'Gym TVs' })).toHaveLength(1);
+  // Closed until opened: nothing is read on render.
+  expect(global.fetch).not.toHaveBeenCalled();
 });
 
 test('with every step done or outside the app, it says so', async () => {
