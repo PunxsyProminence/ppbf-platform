@@ -97,7 +97,10 @@ function BoardEscalationMonitoringContent() {
   // only when a measured count is actually open; an empty or suppressed
   // bucket stays neutral leather.
   const severityTiles = [
-    { label: 'Critical', metric: buckets?.critical, glyph: '✕', tone: 'flex flex-col gap-[var(--s2)] rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)] px-[var(--s5)]' },
+    // Critical wears --restricted like High (Jason, card OW25-48 A: "Medical-stop
+    // mark only for a medical stop"); no escalation is a medical stop. The
+    // tile's own label says Critical.
+    { label: 'Critical', metric: buckets?.critical, glyph: '▲', tone: 'flex flex-col gap-[var(--s2)] rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)] px-[var(--s5)]' },
     { label: 'High', metric: buckets?.high, glyph: '▲', tone: 'flex flex-col gap-[var(--s2)] rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)] px-[var(--s5)]' },
     { label: 'Moderate', metric: buckets?.moderate, glyph: null, tone: null },
     { label: 'Low', metric: buckets?.low, glyph: null, tone: null },
