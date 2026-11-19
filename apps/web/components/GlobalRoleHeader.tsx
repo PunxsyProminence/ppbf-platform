@@ -105,7 +105,9 @@ export default function GlobalRoleHeader() {
 
         if (resolution.ok) {
           persistAuthoritativeRoleSession(resolution.session);
-        } else if (resolution.signedOut) {
+        } else if (resolution.signedOut && !getRoleSessionSnapshot()) {
+          // (Not when a sign-in in another tab filled the cache while this
+          // answer was on its way: that session is live. Review A, round 4 NIT.)
           // The server ANSWERED that nobody is signed in on this device: a
           // session boundary for a gym tablet (lane U1, AS2-b). The next person
           // starts a fresh idle clock, and older tabs leave. An error proves
