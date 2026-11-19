@@ -634,7 +634,7 @@ and should not try to.
 
 ## OD-2026-11-19-005 -- Backbone Overwatch 25 note of 2026-11-19 07:06 US Eastern: cards OW25-49 to OW25-51: OW25-49 "(c) PPBF writes its own six (Recommended)"; OW25-50 "D: Defer" (against the recommendation); OW25-51 free text
 
-**Provenance: RECONSTRUCTED.** Jason answered these three cards in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `320988691b302439` when read for this entry, the hash the note gives; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 31358, 2026-11-19T12:07:24.294Z, about 07:07 US Eastern on 2026-11-19) he pasted the Backbone Overwatch 25 note dated 07:06 US Eastern (Backbone ACTIONS A-110, A-111); the paste carries no typed words of his own, but both it and the card record quote his free-text answer to OW25-51. Withheld from this public record: the six record IDs and a contact address that the OW25-49 card names (each replaced in the quote by a phrase saying so); the held sheets' item details (six sheets, 42 items, Rev. 03/23/2020, are all that is recorded). New; edits no earlier entry's text.
+**Provenance: RECONSTRUCTED.** Jason answered these three cards in the Backbone Overwatch thread ("Overwatch 25"). That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `320988691b302439` when read for this entry, the hash the note gives; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 31358, 2026-11-19T12:07:24.294Z, about 07:07 US Eastern on 2026-11-19) he pasted the Backbone Overwatch 25 note dated 07:06 US Eastern (Backbone ACTIONS A-110, A-111); the paste carries no typed words of his own, but both it and the card record quote his free-text answer to OW25-51. Withheld from this public record: the six record IDs and a contact address that the OW25-49 card names (each replaced in the quote by a square-bracketed editorial phrase, which is not the card's words); the card as shown is kept in CARDS_OW25.md (sha256[:16] `320988691b302439`); the held sheets' item details (six sheets, 42 items, Rev. 03/23/2020, are all that is recorded). New; edits no earlier entry's text.
 
 **The cards, as recorded (quoted from CARDS_OW25.md, with the withholdings above):**
 
@@ -642,12 +642,12 @@ and should not try to.
 >
 > **OW25-49** (header 'Home sheets')
 > Question, as shown (multi-select):
-> Official (OW25-49, DOC-136): Six USA Boxing High-Performance Coach Education home sheets (Rev. 03/23/2020; record IDs withheld from this public repo; 42 items) are held out of the public repo under OD-2026-10-02-013 (applied, not asked). Which route for members' home sessions? (c) and (d) can be chosen together.
+> Official (OW25-49, DOC-136): Six USA Boxing High-Performance Coach Education home sheets (Rev. 03/23/2020; [six record IDs withheld from this public repo]; 42 items) are held out of the public repo under OD-2026-10-02-013 (applied, not asked). Which route for members' home sessions? (c) and (d) can be chosen together.
 > Plain: The 6 USA Boxing home workouts are held back. Should PPBF write its own, ask USA Boxing, link out, or leave them?
 >
 > Options, in the order shown:
 > 1. "(c) PPBF writes its own six (Recommended)": Six home sessions in PPBF's own words from the same training ideas; no copied text or USA Boxing titles; a coach checks them; the DOC-136 records stay held.
-> 2. "(d) You ask USA Boxing for permission": You send the draft request in the finding yourself (address withheld from this public repo); then pick (b) or (c) when they answer.
+> 2. "(d) You ask USA Boxing for permission": You send the draft request in the finding yourself ([contact email withheld]); then pick (b) or (c) when they answer.
 > 3. "(a) Link to USA Boxing's page": Its workout link returns 'page not found' today, so this waits until they fix it.
 > 4. "(e) Leave them held": Nothing new; the track keeps listing the six sessions by name.
 >
