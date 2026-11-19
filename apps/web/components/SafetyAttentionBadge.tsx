@@ -29,11 +29,12 @@ import { CONTROL_QUIET } from './sessionBarControls';
  *
  * A COUNT AND NOTHING ELSE. This bar renders on every surface, including
  * whatever screen happens to be facing the room. So the badge carries
- * numbers and a severity word (or "pain report", #1528 Q3) -- never an athlete's name, never the reason,
- * never the source. The one exception is a lone pain report's N/10 (see the
- * number rule below), which is a number and not the reason, and is shown only
- * on the office's own pages (/admin), never on a gym-floor page. Those live on the record, behind the same gate they
- * always did, one click away. A safeguarding disclosure must not be readable
+ * numbers and a severity word (or "pain report", #1528 Q3) -- never an
+ * athlete's name, never the reason, never the source. Those live on the
+ * record, behind the same gate they always did, one click away. The one
+ * addition is a lone pain report's N/10 (see the number rule below): a number,
+ * not the reason, shown only on the office's safety-record pages, never on a
+ * gym-floor page or a desk screen used with a member present. A safeguarding disclosure must not be readable
  * over a coach's shoulder because the chassis decided to be helpful.
  *
  * SILENCE MEANS NONE, AND ONLY WHEN THAT WAS ESTABLISHED. Nothing renders on
@@ -105,7 +106,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
   // The score of the ONE open pain report, when exactly one is open and its
   // reason carries one; null otherwise (see the number rule below).
   const [lonePainScore, setLonePainScore] = useState<number | null>(null);
-  const onDeskPage = isOfficeDeskPage(usePathname());
+  const onSafetyRecordPage = showsPainNumber(usePathname());
   const [readState, setReadState] = useState<ReadState>('loading');
 
   const serves = role !== null && ESCALATION_ROLES.has(role);
@@ -238,11 +239,12 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
      "the number only"), a lone pain report's N/10 is what tells a critical one
      from a high one. It is shown only when exactly ONE pain report is open
      (with two or more, a single number would describe one of them as all of
-     them), only when its reason carries one, and only on an office desk page
-     (isOfficeDeskPage) -- never on a gym-floor page a room can read over a
-     coach's shoulder. No name, no reason, no location: the number only, as on
+     them), only when its reason carries one, and only on the office's
+     safety-record pages (showsPainNumber) -- never on a gym-floor page a room
+     can read over a coach's shoulder, nor a desk screen used with a member
+     present. No name, no reason, no location: the number only, as on
      the coach's own card. */
-  const painNumber = lonePainScore !== null && onDeskPage
+  const painNumber = lonePainScore !== null && onSafetyRecordPage
     ? ` ${painScoreLabel(lonePainScore)}`
     : '';
   const painPart = `${painCount} pain report${painCount === 1 ? '' : 's'}${painNumber}`;
@@ -326,17 +328,25 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
 }
 
 /**
- * Where the bar may carry a lone pain report's N/10: the office's own pages,
- * /admin and below (the gym office's desk; the escalation records live there).
- * Every other route reads false, so a page that is not listed -- a gym-floor
- * page, the coach home's floor board, a page still checking sign-in, a route
- * not yet known -- never shows the number. A list of where it MAY show fails
- * closed by construction; looking for a floor marker on the page did not,
- * because a floor page draws its marker only after its sign-in check
- * (lane SH review, 2026-11-19).
+ * Where the bar may carry a lone pain report's N/10: the office's safety-record
+ * pages only, where staff read escalations and nobody else is at the screen.
+ * Not the rest of /admin: a PIN reset, an activation code or a member's record
+ * is done with the member standing there (Overwatch, 2026-11-19: no number "on
+ * the desk route (and any other route used with a member present)").
+ *
+ * A list of where the number MAY show, so every route not on it -- a desk
+ * screen used with a member present, a gym-floor page, the coach home, a page
+ * still checking sign-in, a route added later -- shows none. Looking for a
+ * floor marker on the page did not fail closed (lane SH review, 2026-11-19).
  */
-export function isOfficeDeskPage(pathname: string | null | undefined): boolean {
-  return pathname === '/admin' || (typeof pathname === 'string' && pathname.startsWith('/admin/'));
+const PAIN_NUMBER_ROUTES: ReadonlySet<string> = new Set([
+  '/admin/escalations',
+  '/admin/safety-review',
+  '/admin/safety-flags',
+]);
+
+export function showsPainNumber(pathname: string | null | undefined): boolean {
+  return typeof pathname === 'string' && PAIN_NUMBER_ROUTES.has(pathname);
 }
 
 /**
