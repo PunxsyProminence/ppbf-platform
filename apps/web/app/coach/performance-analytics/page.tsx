@@ -381,11 +381,22 @@ export default function PerformanceAnalyticsPage() {
   // says the marks could not be read, never that there are none. Only the
   // NEWEST read is shown: a slower, older reply (taps on two athletes in a
   // row) is dropped, so it cannot hide a mark the newer read already holds.
+  // A tap waits for the NEWEST read, not just its own: if a later tap started
+  // another read, this one's buttons stay off until that one lands too.
   const marksRead = useRef(0);
+  const latestRead = useRef<Promise<void> | null>(null);
   const refreshRestMarks = useCallback(async () => {
     const read = ++marksRead.current;
-    const next = await readRestMarks();
-    if (read === marksRead.current) setRestMarks(next);
+    let waiting: Promise<void> = (async () => {
+      const next = await readRestMarks();
+      if (read === marksRead.current) setRestMarks(next);
+    })();
+    latestRead.current = waiting;
+    await waiting;
+    while (latestRead.current && latestRead.current !== waiting) {
+      waiting = latestRead.current;
+      await waiting;
+    }
   }, []);
 
   useEffect(() => {

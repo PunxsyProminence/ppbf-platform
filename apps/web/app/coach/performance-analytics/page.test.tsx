@@ -9,7 +9,7 @@
 // halves of the window have data; and switching the window refetches with
 // the selected window_days.
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import PerformanceAnalyticsPage from './page';
@@ -468,8 +468,13 @@ describe('rest or away marks: reviewer B fixes', () => {
     // The newer read (after both taps) lands first, then the older one.
     reads[2].resolve(marksWith([A_MARK, B_MARK]));
     await screen.findByText(/Away marked/);
-    reads[1].resolve(marksWith([A_MARK]));
-    await waitFor(() => expect(screen.getByText(/Away marked/)).toBeTruthy());
+    // Let the older reply fully land before looking (reviewer B: a bare
+    // waitFor passed before it reached the screen).
+    await act(async () => {
+      reads[1].resolve(marksWith([A_MARK]));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(screen.getByText(/Away marked/)).toBeTruthy();
     expect(screen.getByText(/Rest marked/)).toBeTruthy();
   });
 
@@ -497,5 +502,54 @@ describe('rest or away marks: reviewer B fixes', () => {
     reads[1].resolve(marksWith([A_MARK]));
     await screen.findByText(/Rest marked/);
     expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('a mark starting today shows once, in the last 7 days, not under "Marked ahead"', async () => {
+    const today = { mark_id: '44444444-4444-4444-8444-444444444444', athlete_id: 'ath-1', kind: 'rest', first_day: '2026-11-19', last_day: '2026-11-25' };
+    global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('rest-marks') ? marksWith([today]) : okWith([ITEM]),
+    ) as unknown as typeof fetch;
+    render(<PerformanceAnalyticsPage />);
+    const badges = await screen.findAllByText(/Rest marked, Nov 19 – Nov 25/);
+    expect(badges).toHaveLength(1);
+    expect(badges[0].closest('li')!.textContent).toMatch(/Last 7 days/);
+    expect(screen.queryByText('Marked ahead')).toBeNull();
+  });
+
+  test("with taps on two athletes, the first athlete's buttons stay off until the newest read lands", async () => {
+    const reads: Array<ReturnType<typeof deferred<Response>>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (!url.includes('rest-marks')) return okWith([ITEM, SECOND]);
+      if (init?.method === 'POST') return { ok: true, status: 201, json: async () => ({ ok: true }) } as Response;
+      const read = deferred<Response>();
+      reads.push(read);
+      return read.promise;
+    }) as unknown as typeof fetch;
+    render(<PerformanceAnalyticsPage />);
+    await waitFor(() => expect(reads).toHaveLength(1));
+    reads[0].resolve(marksWith([]));
+    await screen.findAllByText('Last 7 days');
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Rest' })[0]); // athlete A
+    await waitFor(() => expect(reads).toHaveLength(2));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Away' })[6]); // athlete B
+    await waitFor(() => expect(reads).toHaveLength(3));
+
+    // A's own read lands first (and is dropped as older): A's buttons must stay off.
+    await act(async () => {
+      reads[1].resolve(marksWith([A_MARK]));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    const firstCard = screen.getAllByRole('region', { name: 'Rest or away, by load week' })[0];
+    for (const button of Array.from(firstCard.querySelectorAll('button'))) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+    await act(async () => {
+      reads[2].resolve(marksWith([A_MARK, B_MARK]));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect((firstCard.querySelector('button') as HTMLButtonElement).textContent).toBe('Undo');
+    expect((firstCard.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
   });
 });
