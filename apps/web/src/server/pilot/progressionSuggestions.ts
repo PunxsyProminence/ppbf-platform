@@ -809,10 +809,15 @@ export async function getFamilyGapReaders(
     if (!byDay.has(day)) {
       // A failed read costs only this gap its numbers (Overwatch 2026-11-19):
       // it reads the no-number line, and the rest of the gaps or passbook
-      // still loads. Never a ratio, never a made-up number. Logged with no
-      // athlete or record detail.
+      // still loads. Never a ratio, never a made-up number. Logged as db.ts's
+      // sanitizedPoolErrorLog logs pool errors: a validated SQLSTATE at most
+      // (the same 5-character test as db.ts's sanitizedSqlState, inlined so
+      // the many test mocks of ./db need not carry it), never the raw message
+      // (it can name the host or user), the athlete or the record.
       byDay.set(day, getWeeklySessionLoads(organizationId, [athleteId], anchor).catch((error: unknown) => {
-        console.warn('family load numbers unread', { reason: error instanceof Error ? error.message : 'unknown' });
+        const raw = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+        const code = typeof raw === 'string' && /^[0-9A-Z]{5}$/.test(raw) ? raw : null;
+        console.warn('family load numbers unread', code ? { code } : {});
         return null;
       }));
     }

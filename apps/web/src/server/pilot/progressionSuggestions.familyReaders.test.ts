@@ -116,8 +116,11 @@ describe('getFamilyGapReaders', () => {
   test('a failed load read gives that confirm day no numbers; other days and gaps still resolve', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
+      // A driver error whose message names the host and user, as a
+      // connection failure's can; only its validated SQLSTATE is logged.
+      const failure = Object.assign(new Error('connect to db-host.example as app_user failed'), { code: '08006' });
       mockQuery
-        .mockRejectedValueOnce(new Error('connection lost')) // the Nov 14 read
+        .mockRejectedValueOnce(failure) // the Nov 14 read
         .mockResolvedValueOnce(buckets()); // the Nov 10 read
       const readers = await getFamilyGapReaders('org-1', 'ath-1', null, [
         { detected_from: RULE6, created_at: CONFIRMED_AT },
@@ -128,8 +131,20 @@ describe('getFamilyGapReaders', () => {
       expect(readers.map((r) => r.minor)).toEqual([true, true, true, true]);
       expect(readers.map((r) => r.loadNumbers !== null)).toEqual([false, false, true, false]);
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith('family load numbers unread', { reason: 'connection lost' });
-      expect(JSON.stringify(warn.mock.calls)).not.toContain('ath-1');
+      expect(warn).toHaveBeenCalledWith('family load numbers unread', { code: '08006' });
+      const logged = JSON.stringify(warn.mock.calls);
+      for (const detail of ['ath-1', 'org-1', 'db-host', 'app_user']) expect(logged).not.toContain(detail);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('an error with no well-formed SQLSTATE logs the fixed line alone', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      mockQuery.mockRejectedValueOnce(Object.assign(new Error('boom'), { code: 'not a code; drop table' }));
+      await getFamilyGapReaders('org-1', 'ath-1', null, [{ detected_from: RULE6, created_at: CONFIRMED_AT }], NOW);
+      expect(warn).toHaveBeenCalledWith('family load numbers unread', {});
     } finally {
       warn.mockRestore();
     }

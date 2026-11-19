@@ -188,9 +188,23 @@ describe('GET /api/pilot/progression/gaps: who reads which words for a load jump
         'Your coach is looking at your recent training.',
         'Drops lead hand',
       ]);
+      // The queued failure was the read that failed, not an unused mock.
+      expect(warn).toHaveBeenCalledWith('family load numbers unread', expect.anything());
     } finally {
       warn.mockRestore();
     }
+  });
+
+  // Only the weekly load read falls back; a failed age read still fails the
+  // request, so an outage never reads as an adult (or as anything).
+  test('a failed date-of-birth read still fails the request', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'parent', athleteId: null }));
+    mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+    mockQuery.mockResolvedValueOnce(rows());
+    mockQueryOne.mockRejectedValueOnce(new Error('connection lost'));
+    const res = await GET(getRequest('athlete_id=ath-1'));
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain('times');
   });
 
   test('the read selects detected_from and detection_data, which the wording needs', async () => {
