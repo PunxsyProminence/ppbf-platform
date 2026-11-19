@@ -406,6 +406,8 @@ function mockIssuePage(opts: {
   items?: unknown[];
   /** The detail read's untested_drills, when the case wants one sent. */
   untested?: unknown;
+  /** The detail read's refused_drills (lane U1, U1-ISSUE), when the case wants one sent. */
+  refused?: unknown;
 } = {}) {
   return mockFetch((url) => {
     if (url.includes(ISSUE_URL)) {
@@ -419,6 +421,7 @@ function mockIssuePage(opts: {
         template: BOXING_FUNDAMENTALS,
         items: opts.items ?? [item(), item({ item_id: 'wti-2', ordinal: 2 })],
         ...(opts.untested === undefined ? {} : { untested_drills: opts.untested }),
+        ...(opts.refused === undefined ? {} : { refused_drills: opts.refused }),
       });
     }
     return jsonResponse({ templates: opts.templates ?? [BOXING_FUNDAMENTALS] });
@@ -571,6 +574,52 @@ describe('issue to athlete', () => {
       await screen.findByText('This template has no items yet.');
 
       expect(screen.queryByRole('heading', { name: 'Issue to athlete' })).not.toBeInTheDocument();
+    });
+  });
+
+  /* Lane U1, U1-ISSUE (dry run 2026-11-19; Overwatch Q-ISSUE A). The steps
+     an issue would refuse are said BEFORE Issue, in the issue's own words,
+     and Issue stays off while any would be refused: every refusal stops the
+     whole issue, so the press could only fail. */
+  describe('steps that would be refused are said before Issue', () => {
+    const WRAP = { name: 'Wrap Under Supervision', steps: [6], reason: 'It has no coaching cue. A technique drill needs at least one.' };
+
+    it('lists each refused drill with its step and reason, says nothing would be issued, and keeps Issue off', async () => {
+      const fetchMock = mockIssuePage({ refused: [WRAP] });
+
+      const picker = await openTemplate();
+      fireEvent.change(picker, { target: { value: 'ath-1' } });
+
+      expect(screen.getByText('These steps would be refused if you issue now:')).toBeInTheDocument();
+      expect(screen.getByText('Wrap Under Supervision')).toBeInTheDocument();
+      expect(screen.getByText(/\(step 6\): It has no coaching cue\. A technique drill needs at least one\./)).toBeInTheDocument();
+      expect(screen.getByText('Fix the steps above first; nothing would be issued.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Issue to athlete' })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+      expect(screen.queryByRole('button', { name: 'Confirm issue' })).not.toBeInTheDocument();
+      expect(issuePosts(fetchMock)).toHaveLength(0);
+    });
+
+    it('with nothing refused there is no list and Issue works as before', async () => {
+      mockIssuePage({ refused: [] });
+
+      const picker = await openTemplate();
+      fireEvent.change(picker, { target: { value: 'ath-1' } });
+
+      expect(screen.queryByText(/would be refused/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/could not be checked/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Issue to athlete' })).toBeEnabled();
+    });
+
+    it('a check that could not run says so and leaves Issue to the server', async () => {
+      mockIssuePage({ refused: null });
+
+      const picker = await openTemplate();
+      fireEvent.change(picker, { target: { value: 'ath-1' } });
+
+      expect(screen.getByText('Whether every step can be issued could not be checked. Issuing will check again.')).toBeInTheDocument();
+      expect(screen.queryByText(/would be refused/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Issue to athlete' })).toBeEnabled();
     });
   });
 
