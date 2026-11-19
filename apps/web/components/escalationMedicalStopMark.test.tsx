@@ -573,8 +573,15 @@ const MARK_PENDING_SC2_4 = new Map<string, number>([
   ['components/RoleSummaryPanels.tsx', 4],
 ]);
 
-/** Source with comments removed; strings (and what is inside them) kept. */
+/**
+ * Source with comments removed; strings (and what is inside them) kept.
+ * `unbalanced` is set when the file ends still inside a string: a quote the
+ * pass misread (in a regex literal or bare JSX text) has flipped which spans
+ * it treats as code, so the count for that file cannot be trusted.
+ */
+let unbalanced = false;
 function withoutComments(source: string): string {
+  unbalanced = false;
   let out = '';
   let quote: string | null = null;
   for (let i = 0; i < source.length;) {
@@ -601,12 +608,36 @@ function withoutComments(source: string): string {
       out += ' ';
       continue;
     }
+    // A regex literal: a `/` where a value starts (after an operator, an
+    // opening bracket, a comma or `return`). Its quotes and slashes are not
+    // strings or comments (/filename="([^"]+)"/ has three quotes).
+    if (c === '/' && /(^|[=(,:[!&|?{};+\-*%<>~^]|\breturn)\s*$/.test(out.slice(-12))) {
+      let j = i + 1;
+      let inClass = false;
+      while (j < source.length && source[j] !== '\n') {
+        if (source[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (source[j] === '[') inClass = true;
+        else if (source[j] === ']') inClass = false;
+        else if (source[j] === '/' && !inClass) break;
+        j += 1;
+      }
+      out += source.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
     if (c === "'" || c === '"' || c === '`') quote = c;
     out += c;
     i += 1;
   }
+  unbalanced = quote !== null;
   return out;
 }
+
+/** Files the comment pass ended inside a string: their counts are not trusted. */
+const misread: string[] = [];
 
 function markCountsInSource(): Map<string, number> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -615,14 +646,17 @@ function markCountsInSource(): Map<string, number> {
   const path = require('node:path') as typeof import('node:path');
   const webRoot = path.resolve(__dirname, '..');
   const counts = new Map<string, number>();
+  misread.length = 0;
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (entry.name !== 'node_modules') walk(full);
       } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+        const relative = path.relative(webRoot, full).split(path.sep).join('/');
         const found = withoutComments(fs.readFileSync(full, 'utf8')).match(MARK_TOKEN);
-        if (found) counts.set(path.relative(webRoot, full).split(path.sep).join('/'), found.length);
+        if (unbalanced) misread.push(relative);
+        if (found) counts.set(relative, found.length);
       }
     }
   };
@@ -635,10 +669,20 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
   const counts = markCountsInSource();
   const pending = new Map([...MARK_PENDING_SC2_3, ...MARK_PENDING_SC2_4]);
 
+  test('the comment pass skips a regex literal, whose quotes are not strings', () => {
+    expect(withoutComments('const m = /filename="([^"]+)"/.exec(h); // badge--locked\nx')).toBe('const m = /filename="([^"]+)"/.exec(h); \nx');
+    expect(unbalanced).toBe(false);
+    expect(withoutComments('a = b / c; d = "e"; // f\ng')).toBe('a = b / c; d = "e"; \ng');
+  });
+
   test('the comment pass keeps code that holds a comment marker inside a string', () => {
     expect(withoutComments('a = "video/*"; b = "badge--locked"; // badge--locked\nc = 1; /* alert--critical */ d')).toBe(
       'a = "video/*"; b = "badge--locked"; \nc = 1;   d',
     );
+  });
+
+  test('the comment pass reads every file to the end in step, so no count is guesswork', () => {
+    expect(misread).toEqual([]);
   });
 
   test('the scan sees the one real medical stop, so it is not blind', () => {
