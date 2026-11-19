@@ -244,7 +244,7 @@ function CoachCohorts() {
           </div>
 
           {reportError && (
-            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
               {reportError}
             </p>
           )}
@@ -335,7 +335,7 @@ function CoachCohorts() {
                     </button>
                   </div>
                   {saveError && (
-                    <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+                    <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
                       {saveError}
                     </p>
                   )}
@@ -391,8 +391,8 @@ function CoachCohorts() {
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
           {!loading && loadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">{loadError}</p>
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{loadError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty set of rooms.
               </p>

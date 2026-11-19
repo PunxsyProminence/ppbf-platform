@@ -183,7 +183,7 @@ export default function AdultPathwayPanel({ athleteId, athleteName }: { athleteI
           ) : null}
 
           {error ? (
-            <p className="t-body mt-[var(--s3)] text-[var(--locked-ink)]" role="alert">{error}</p>
+            <p className="t-body mt-[var(--s3)] text-[var(--restricted-ink)]" role="alert">{error}</p>
           ) : null}
         </div>
       ) : null}

@@ -725,7 +725,7 @@ function StatusBadge({ status }: { readonly status: JobStatusResult['status'] })
     pending: { className: 'badge badge--filed', glyph: '◌', label: 'Pending' },
     running: { className: 'badge badge--monitor', glyph: '◉', label: 'Running' },
     completed: { className: 'badge badge--cleared', glyph: '✓', label: 'Completed' },
-    failed: { className: 'badge badge--locked', glyph: '✕', label: 'Failed' },
+    failed: { className: 'badge badge--restricted', glyph: '▲', label: 'Failed' },
     cancelled: { className: 'badge badge--restricted', glyph: '▲', label: 'Cancelled' },
   };
   const badge = badges[status];

@@ -12,6 +12,7 @@ import { apiBase } from '@/lib/apiBase';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import { usesPin } from '@/src/server/pilot/credentialPolicy';
 import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
+import { markSessionBoundary } from '@/src/lib/gymTabletMark';
 
 interface LoginPayload {
   ok?: boolean;
@@ -80,6 +81,8 @@ export default function AthletePinSignInPage() {
         throw new Error('The athlete session could not be verified. Please sign in again.');
       }
 
+      // A fresh sign-in: a fresh gym tablet idle clock, and older tabs leave (lane U1, AS2-b).
+      markSessionBoundary();
       persistAuthoritativeRoleSession(resolution.session);
       router.replace(resolution.destination);
     } catch (submitError) {

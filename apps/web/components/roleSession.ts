@@ -85,6 +85,8 @@ export type AuthoritativeRoleSessionResolution =
         | 'pin_change_required'
         | 'server_error';
       statusCode?: number;
+      /** The server answered, and said nobody is signed in here (authenticated: false). */
+      signedOut?: true;
     };
 
 function notifyRoleSessionChange(): void {
@@ -197,6 +199,9 @@ export function clearRoleSession() {
   // child (the print hand-off, #1596 item 2b) is not left for whoever signs
   // in next on this device.
   forgetChosenChild();
+  // NOT the gym tablet's idle clock (lane U1, AS2-b review A): this runs on
+  // a cache clear too, which can happen while the session is still alive.
+  // The clock is cleared on a confirmed sign-out and on a fresh sign-in.
 
   notifyRoleSessionChange();
 }
@@ -258,7 +263,12 @@ export function resolveAuthoritativeRoleSession(
   payload: AuthoritativePilotSessionPayload | null,
 ): AuthoritativeRoleSessionResolution {
   if (!payload || payload.authenticated !== true) {
-    return { ok: false, reason: 'unauthenticated' };
+    // Only an explicit `authenticated: false` is the server saying nobody is
+    // signed in; an unreadable body is not (lane U1, AS2-b: the gym tablet's
+    // idle clock is reset on this, and only on this).
+    return payload?.authenticated === false
+      ? { ok: false, reason: 'unauthenticated', signedOut: true }
+      : { ok: false, reason: 'unauthenticated' };
   }
 
   const role = mapPilotRoleToClubRole(payload.role);
