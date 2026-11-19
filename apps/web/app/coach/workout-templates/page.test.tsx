@@ -1956,6 +1956,63 @@ describe('finding a template, and the open one drawn under its own card', () => 
     expect(picker.value).toBe('ath-1');
   });
 
+  it('a template opened from the address keeps its issue result when the list arrives afterwards', async () => {
+    // Review finding, 2026-11-19: the block used to sit in its own slot until
+    // the list arrived and then move into the list, which rebuilt it -- the
+    // "Issued to" result vanished and the request key was already spent, so a
+    // second press was a second real issue to the athlete.
+    let releaseList: () => void = () => {};
+    const listGate = new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes(ISSUE_URL)) return statusResponse(201, ISSUED_BODY);
+      if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+      if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+      await listGate;
+      return jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+    }) as unknown as typeof fetch;
+    window.history.pushState({}, '', '/coach/workout-templates?template=wt-1');
+    try {
+      render(<CoachWorkoutTemplatesPage />);
+      const picker = (await screen.findByLabelText('Athlete')) as HTMLSelectElement;
+      fireEvent.change(picker, { target: { value: 'ath-1' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Issue to athlete' }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm issue' }));
+      });
+      expect(await issuedStatus()).toHaveTextContent('Issued to Dana Reyes');
+
+      await act(async () => {
+        releaseList();
+        await listGate;
+      });
+      await screen.findByText('Conditioning Circuit 45', { selector: 'article h3' });
+
+      expect(screen.getByLabelText('Athlete')).toBe(picker);
+      expect(screen.getByRole('status')).toHaveTextContent('Issued to Dana Reyes');
+      // And it now sits under its own card.
+      expect(cardFor('Boxing Fundamentals 60').nextElementSibling).toBe(
+        screen.getByRole('region', { name: 'Boxing Fundamentals 60' }),
+      );
+    } finally {
+      window.history.pushState({}, '', '/coach/workout-templates');
+    }
+  });
+
+  it('with a template open and nothing else matching, the line says the open one is held, not that nothing matches', async () => {
+    listAndDetail();
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Open template' }))[0]);
+    await screen.findByText('Rope intervals');
+
+    type('zzz');
+    expect(cardNames()).toEqual(['Boxing Fundamentals 60']);
+    expect(screen.getByText('0 of 3 templates match. The open template stays in the list.')).toBeInTheDocument();
+    expect(screen.queryByText(/No template matches/)).not.toBeInTheDocument();
+  });
+
   it('a template the list does not hold, opened from the address, is still shown, first', async () => {
     const ELSEWHERE = { ...BOXING_FUNDAMENTALS, template_id: 'wt-9', lineage_id: 'lin-9', name: 'Old Plan 20' };
     mockFetch((url) => (url.includes('template_id')

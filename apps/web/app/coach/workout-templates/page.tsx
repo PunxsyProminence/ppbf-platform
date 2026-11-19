@@ -994,7 +994,7 @@ function CoachWorkoutTemplates() {
                   ? `${matchCount} of ${templates.length} templates match.${openHeldByFilter ? ' The open template stays in the list.' : ''}`
                   : `${templates.length} templates.`}
               </p>
-              {filtering && matchCount === 0 && (
+              {filtering && shown.length === 0 && (
                 <p className="t-body text-[color:var(--bone-300)]">
                   {`No template matches "${query.trim()}". Clear the box to see them all.`}
                 </p>
@@ -1006,12 +1006,17 @@ function CoachWorkoutTemplates() {
               drawn right under its own card instead of below the whole list,
               and moving it (another card opened, the box narrowed, the list
               arriving after an address opened it) never remounts it: an issue
-              or a plan being made from it keeps its answer. A template the
-              list does not hold (an address naming one this read did not
-              return) is drawn first. */}
+              or a plan being made from it keeps its answer. That holds only
+              because the block and the cards are ONE keyed array: React matches
+              keys within an array, so a block that moved from its own slot
+              into the array would be rebuilt and lose its answer (review,
+              2026-11-19). A template the list does not hold (an address naming
+              one this read did not return, or the list not loaded yet) is drawn
+              first. */}
           <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            {!openIsListed && detailSection}
-            {shown.flatMap((template) => {
+            {[
+              ...(openIsListed || detailSection === null ? [] : [detailSection]),
+              ...shown.flatMap((template) => {
               const card = (
                 <article key={template.template_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                   <div className="flex items-baseline justify-between gap-[var(--s3)]">
@@ -1040,7 +1045,8 @@ function CoachWorkoutTemplates() {
                 </article>
               );
               return template.template_id === openTemplateId && detailSection ? [card, detailSection] : [card];
-            })}
+            }),
+            ]}
           </div>
         </section>
 
