@@ -14,7 +14,7 @@
 // The 26th-newest notice is not reachable from any screen.
 
 import type { ReactNode } from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 
 import CustomizePage from './page';
 import { usePilotSession, type PilotSessionState } from '@/components/usePilotSession';
@@ -124,6 +124,23 @@ test('a gym admin still reads the photos and gets the desk', async () => {
   await screen.findByRole('heading', { name: /Customize the Gym/i });
   expect(gymPhotoCalls()).toHaveLength(1);
   expect(screen.queryByText(/ADMINS ONLY/)).toBeNull();
+});
+
+// Lane U1, AS2-c (OW25-53 A: the gym admin sets the tablet idle time in gym
+// settings). The section's own behaviour is gymTabletSettings.test.tsx.
+test('a gym admin gets the gym tablet sign-out section, and a platform owner does not', async () => {
+  render(<CustomizePage />);
+  await screen.findByRole('heading', { name: 'Gym tablet sign-out' });
+  expect(screen.getByText(/Phones and computers that are not marked are not signed out\./)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Mark this device as a gym tablet' })).toBeTruthy();
+  cleanup();
+
+  mockUsePilotSession.mockReturnValue(session('platform_owner'));
+  createPersistentRoleSession('platform_owner');
+  render(<CustomizePage />);
+  await screen.findByText(/ADMINS ONLY/);
+  expect(screen.queryByRole('heading', { name: 'Gym tablet sign-out' })).toBeNull();
+  clearRoleSession();
 });
 
 // Lane N4-02: each board says where it is SHOWN, not who is kept from it. The
