@@ -19,30 +19,6 @@ import {
 
 export const runtime = 'nodejs';
 
-// Read-only browse over pilot.workout_templates. GET without template_id
-// lists (filterable by session_type/difficulty/age_band); GET with
-// template_id returns the template and its ordered items.
-//
-// WHO MAY BROWSE was an open question this route used to answer alone, with
-// "any authenticated role can browse; a template carries no athlete data".
-// The second half of that is still true and is why the answer is as wide as it
-// is. The first half is now decided centrally: on 2026-08-28 the owner ruled
-// that the 2026-08-27 coaching-content read policy governs the CONTENT CLASS
-// rather than only the three routes it happened to name, and a workout
-// template is that class. So this route reaches the one policy in
-// coachingContentAccess.ts, and the board -- oversight, not coaching craft --
-// is excluded from it. Isolation is unchanged either way: the reads below take
-// the principal's organization and accept no other.
-//
-// The gate sits ABOVE the query parse deliberately. Below it, the answer to
-// "may I read this?" would depend on how well-formed the request was; that was
-// measured on the cue-library sibling rather than argued.
-//
-// WHAT EACH READER RECEIVES is a second question, answered after the gate: a
-// coach or organization admin gets the stored rows, every other admitted role
-// gets them without the author's account id and role, the coach's notes or
-// the coach's other free text (workoutTemplateProjection.ts). Both branches
-// below go through it.
 /**
  * The steps an issue of this template would refuse, said BEFORE the coach
  * presses Issue (lane U1, U1-ISSUE; dry run 2026-11-19: "Intro to Boxing --
@@ -71,6 +47,30 @@ async function refusedBeforeIssue(
   }
 }
 
+// Read-only browse over pilot.workout_templates. GET without template_id
+// lists (filterable by session_type/difficulty/age_band); GET with
+// template_id returns the template and its ordered items.
+//
+// WHO MAY BROWSE was an open question this route used to answer alone, with
+// "any authenticated role can browse; a template carries no athlete data".
+// The second half of that is still true and is why the answer is as wide as it
+// is. The first half is now decided centrally: on 2026-08-28 the owner ruled
+// that the 2026-08-27 coaching-content read policy governs the CONTENT CLASS
+// rather than only the three routes it happened to name, and a workout
+// template is that class. So this route reaches the one policy in
+// coachingContentAccess.ts, and the board -- oversight, not coaching craft --
+// is excluded from it. Isolation is unchanged either way: the reads below take
+// the principal's organization and accept no other.
+//
+// The gate sits ABOVE the query parse deliberately. Below it, the answer to
+// "may I read this?" would depend on how well-formed the request was; that was
+// measured on the cue-library sibling rather than argued.
+//
+// WHAT EACH READER RECEIVES is a second question, answered after the gate: a
+// coach or organization admin gets the stored rows, every other admitted role
+// gets them without the author's account id and role, the coach's notes or
+// the coach's other free text (workoutTemplateProjection.ts). Both branches
+// below go through it.
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);

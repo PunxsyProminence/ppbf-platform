@@ -261,6 +261,7 @@ function IssueToAthlete({
   template,
   untestedDrills,
   refusedDrills,
+  onRecheck,
   onBusyChange,
   requestKeys,
 }: {
@@ -269,6 +270,8 @@ function IssueToAthlete({
   readonly untestedDrills: readonly string[];
   /** Steps the issue would refuse, read with the template; see TemplateDetail. */
   readonly refusedDrills?: readonly RefusedDrill[] | null;
+  /** Reads the template again, so a step fixed elsewhere is seen (the open button is off while it is open). */
+  readonly onRecheck: () => void;
   /** Told while an issue is running, so the page can keep this control mounted until it answers. */
   readonly onBusyChange: (busy: boolean) => void;
   /** The page's keys of unsettled issues: they outlive this control. */
@@ -503,6 +506,12 @@ function IssueToAthlete({
               <p className={ALERT_TEXT}>These steps would be refused if you issue now:</p>
               <RefusedDrillList drills={refusedDrills} />
               <p className="t-body">Fix the steps above first; nothing would be issued.</p>
+              {/* A drill fixed in another tab is not seen until the template is
+                  read again, and this template's own open button is off while
+                  it is open (review A). */}
+              <button type="button" className="btn btn--ghost w-fit" onClick={onRecheck}>
+                Check again
+              </button>
             </div>
           )}
           {refusedDrills === null && (
@@ -966,6 +975,7 @@ function CoachWorkoutTemplates() {
                     template={detail.template}
                     untestedDrills={detail.untestedDrills}
                     refusedDrills={detail.refusedDrills}
+                    onRecheck={() => void openTemplate(detail.template.template_id)}
                     onBusyChange={setIssuing}
                     requestKeys={requestKeys}
                   />

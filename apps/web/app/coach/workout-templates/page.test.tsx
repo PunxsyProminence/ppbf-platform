@@ -600,6 +600,27 @@ describe('issue to athlete', () => {
       expect(issuePosts(fetchMock)).toHaveLength(0);
     });
 
+    it('Check again reads the template again, and a step fixed meanwhile turns Issue back on', async () => {
+      let refused: unknown = [WRAP];
+      mockFetch((url) => {
+        if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+        if (url.includes('template_id')) {
+          return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item(), item({ item_id: 'wti-2', ordinal: 2 })], refused_drills: refused });
+        }
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS] });
+      });
+
+      await openTemplate();
+      expect(screen.getByText('These steps would be refused if you issue now:')).toBeInTheDocument();
+
+      refused = []; // the coach added the cue in another tab
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+      const picker = await screen.findByLabelText('Athlete');
+      await waitFor(() => expect(screen.queryByText(/would be refused/)).not.toBeInTheDocument());
+      fireEvent.change(picker, { target: { value: 'ath-1' } });
+      expect(screen.getByRole('button', { name: 'Issue to athlete' })).toBeEnabled();
+    });
+
     it('with nothing refused there is no list and Issue works as before', async () => {
       mockIssuePage({ refused: [] });
 
