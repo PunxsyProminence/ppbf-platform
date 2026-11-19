@@ -56,8 +56,9 @@ const EMPTY: Digest = {
 };
 
 // Severity rung -> the design system's status badge, for COMPLIANCE VIOLATIONS
-// (open safety escalations use ESCALATION_BADGE below; OW25-48 is about
-// escalations and leaves this map as it was). Law 2: saturated colour is
+// (open safety escalations use ESCALATION_BADGE below). A critical violation
+// is not a medical stop either, so it is on the restricted rung too, told from
+// high by its word (OW25-48 A applied app-wide; lane U1, SC2-2). Law 2: saturated colour is
 // safety/status only, which is exactly what these are. Both vocabularies are
 // listed ('moderate' and 'medium') rather than normalized -- renaming another
 // capability's stored value on the way to the screen is how a surface starts

@@ -2402,6 +2402,9 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     type('Description', 'near miss for A');
     fireEvent.click(screen.getByRole('button', { name: 'Flag Near-Miss' }));
     await screen.findByText('rejected');
+    // A rejected recommendation is not a medical stop (OW25-48 A; lane U1, SC2-2).
+    expect(screen.getByText('rejected').closest('.badge')?.className).toContain('badge--restricted');
+    expect(screen.getByText('rejected').closest('.badge')?.className).not.toContain('badge--locked');
 
     expect(field<HTMLSelectElement>('Link to recommendation (optional)').value).toBe('');
     fireEvent.click(screen.getByRole('button', { name: 'Record Decision' }));

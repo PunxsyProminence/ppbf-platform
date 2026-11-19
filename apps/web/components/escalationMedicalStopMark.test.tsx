@@ -482,87 +482,131 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
  * mark only for a medical stop"; Overwatch Q6: the whole non-home population).
  *
  * The cases above render the escalation surfaces. This one reads the source:
- * every non-test .ts/.tsx under app/ and components/, comments stripped, for
- * the classes and tokens that draw --locked (alert--critical, badge--locked,
- * var(--locked), --locked-ink, and the --safety-locked / --status-critical /
- * --status-danger aliases). A file may carry them only if it is
- *   - ALLOWED, with the reason, and no more often than it does today; or
- *   - PENDING: still to be swept by the next U1 PRs (SC2-3, SC2-4). Each of
- *     those PRs deletes its files from the list, and a PENDING file that no
- *     longer carries the mark fails here until it is deleted, so the list can
- *     only shrink.
+ * every non-test .ts/.tsx under app/ and components/, comments removed by a
+ * string-aware pass (a `/*` or `//` inside a string such as accept="video/*"
+ * is code, not a comment), for what draws --locked: alert--critical,
+ * badge--locked, var(--locked), --locked-ink, the --safety-locked /
+ * --status-critical / --status-danger aliases, and the string 'locked', which
+ * is how a tone map reaches `badge--${tone}`. Not caught: a class built from a
+ * tone whose VALUE is 'critical' (`alert--${tone}`); app/admin/memberships is
+ * the one such page, swept in SC2-3. CSS is not read.
+ *
+ * A file may carry the mark only if it is
+ *   - ALLOWED, with the reason, and no more often than today; or
+ *   - PENDING: still to be swept by the next U1 PRs (SC2-3, SC2-4), no more
+ *     often than today. Each of those PRs deletes its files from the list, and
+ *     a PENDING file that no longer carries the mark fails here until it is
+ *     deleted, so the lists only shrink.
  * ------------------------------------------------------------------------ */
 
-const MARK_TOKEN = /alert--critical|badge--locked|--locked-ink|var\(--locked\)|var\(--safety-locked\)|var\(--status-critical\)|var\(--status-danger\)/g;
+const MARK_TOKEN = /alert--critical|badge--locked|--locked-ink|var\(--locked\)|var\(--safety-locked\)|var\(--status-critical\)|var\(--status-danger\)|['"`]locked['"`]/g;
 
 const MARK_ALLOWED = new Map<string, { readonly count: number; readonly why: string }>([
   ['app/coach/sports-medicine/page.tsx', { count: 1, why: "the Clearance Board's 'not cleared': a clearance record saying MEDICALLY_NOT_ALLOWED, the one medical stop" }],
+  ['app/coach/decision-loop/page.tsx', { count: 2, why: "the Medical Administrative Status 'not_cleared' (the clearance record), and the tone type that names it" }],
   ['components/uiStyles.ts', { count: 6, why: "token definitions (statusDanger, errorButton, errorContainer, errorText) that nothing renders" }],
-  ['components/AthleteWorkspace.tsx', { count: 4, why: "a home file: its marks are fixed with the athlete home (AS-8), not in this sweep" }],
-  ['components/ParentHub.tsx', { count: 2, why: "a home file: its marks are fixed with the parent home (AS-9), not in this sweep" }],
+  ['components/CoachWorkspace.tsx', { count: 3, why: "the coach home: its marks are fixed with the home batch (AS-7), not in this sweep" }],
+  ['components/CoachFloorFocus.tsx', { count: 1, why: "draws whatever tone the coach home hands it ('locked' included); the home batch (AS-7) owns those tones" }],
+  ['components/AthleteWorkspace.tsx', { count: 4, why: "the athlete home: its marks are fixed with the home batch (AS-8), not in this sweep" }],
+  ['components/ParentHub.tsx', { count: 2, why: "the parent home: its marks are fixed with the home batch (AS-9), not in this sweep" }],
 ]);
 
-/** Still to be swept: SC2-3 (office, board and platform pages). */
-const MARK_PENDING_SC2_3: readonly string[] = [
-  'app/admin/activation-codes/page.tsx',
-  'app/admin/athletes/page.tsx',
-  'app/admin/attendance/page.tsx',
-  'app/admin/board-seats/page.tsx',
-  'app/admin/coach-coverage/page.tsx',
-  'app/admin/community-service/page.tsx',
-  'app/admin/compliance-center/page.tsx',
-  'app/admin/consent/page.tsx',
-  'app/admin/credentials/page.tsx',
-  'app/admin/customize/page.tsx',
-  'app/admin/data-quality/page.tsx',
-  'app/admin/export/page.tsx',
-  'app/admin/feedback/page.tsx',
-  'app/admin/grants/page.tsx',
-  'app/admin/memberships/page.tsx',
-  'app/admin/organizations/page.tsx',
-  'app/admin/page.tsx',
-  'app/admin/payments/page.tsx',
-  'app/admin/people/page.tsx',
-  'app/admin/pin/page.tsx',
-  'app/admin/platform/overview/page.tsx',
-  'app/admin/platform/page.tsx',
-  'app/admin/portrait-review/page.tsx',
-  'app/admin/program-phases/page.tsx',
-  'app/admin/public-interest/page.tsx',
-  'app/admin/quotes/page.tsx',
-  'app/admin/safety-flags/page.tsx',
-  'app/admin/safety-review/page.tsx',
-  'app/admin/shadow-reviews/page.tsx',
-  'app/admin/shadow/page.tsx',
-  'app/admin/video-review/page.tsx',
-  'app/admin/volunteer-management/page.tsx',
-  'app/admin/waiver-status/page.tsx',
-  'app/audit/page.tsx',
-  'app/board/BoardSummaryPanel.tsx',
-  'app/board/compliance-monitoring/page.tsx',
-  'app/dashboard/page.tsx',
-  'app/evidence/page.tsx',
-  'app/knowledge-graph/page.tsx',
-  'app/operations/external-competition/page.tsx',
-  'app/operations/wrestling-league/page.tsx',
-  'app/rabbit-holes/page.tsx',
-  'app/research/page.tsx',
-  'app/research/review/page.tsx',
-  'app/staff-credentials/page.tsx',
-];
+/** Still to be swept, with today's count: SC2-3 (office, board and platform pages). */
+const MARK_PENDING_SC2_3 = new Map<string, number>([
+  ['app/admin/activation-codes/page.tsx', 2],
+  ['app/admin/athletes/page.tsx', 2],
+  ['app/admin/attendance/page.tsx', 3],
+  ['app/admin/board-seats/page.tsx', 2],
+  ['app/admin/coach-coverage/page.tsx', 3],
+  ['app/admin/community-service/page.tsx', 1],
+  ['app/admin/compliance-center/page.tsx', 1],
+  ['app/admin/consent/page.tsx', 3],
+  ['app/admin/credentials/page.tsx', 2],
+  ['app/admin/customize/page.tsx', 2],
+  ['app/admin/data-quality/page.tsx', 2],
+  ['app/admin/export/page.tsx', 1],
+  ['app/admin/feedback/page.tsx', 1],
+  ['app/admin/grants/page.tsx', 3],
+  ['app/admin/memberships/page.tsx', 1],
+  ['app/admin/organizations/page.tsx', 1],
+  ['app/admin/page.tsx', 2],
+  ['app/admin/payments/page.tsx', 3],
+  ['app/admin/people/page.tsx', 3],
+  ['app/admin/pin/page.tsx', 3],
+  ['app/admin/platform/overview/page.tsx', 1],
+  ['app/admin/platform/page.tsx', 1],
+  ['app/admin/portrait-review/page.tsx', 1],
+  ['app/admin/program-phases/page.tsx', 1],
+  ['app/admin/public-interest/page.tsx', 1],
+  ['app/admin/quotes/page.tsx', 1],
+  ['app/admin/safety-flags/page.tsx', 1],
+  ['app/admin/safety-review/page.tsx', 1],
+  ['app/admin/shadow-reviews/page.tsx', 4],
+  ['app/admin/shadow/page.tsx', 8],
+  ['app/admin/video-review/page.tsx', 1],
+  ['app/admin/volunteer-management/page.tsx', 1],
+  ['app/admin/waiver-status/page.tsx', 1],
+  ['app/audit/page.tsx', 2],
+  ['app/board/BoardSummaryPanel.tsx', 1],
+  ['app/board/compliance-monitoring/page.tsx', 2],
+  ['app/dashboard/page.tsx', 1],
+  ['app/evidence/page.tsx', 3],
+  ['app/knowledge-graph/page.tsx', 3],
+  ['app/operations/external-competition/page.tsx', 3],
+  ['app/operations/wrestling-league/page.tsx', 1],
+  ['app/rabbit-holes/page.tsx', 1],
+  ['app/research/page.tsx', 3],
+  ['app/research/review/page.tsx', 3],
+  ['app/staff-credentials/page.tsx', 2],
+]);
 
-/** Still to be swept: SC2-4 (athlete sign-in, athlete and parent pages). */
-const MARK_PENDING_SC2_4: readonly string[] = [
-  'app/activate/page.tsx',
-  'app/athlete/progression-intelligence/page.tsx',
-  'app/athlete/sign-in/page.tsx',
-  'app/athlete/video-analysis/page.tsx',
-  'app/change-pin/page.tsx',
-  'app/parent/progression-visibility/page.tsx',
-  'app/parent/video/page.tsx',
-  'components/ProfileSettings.tsx',
-  'components/RoleSummaryPanels.tsx',
-];
+/** Still to be swept, with today's count: SC2-4 (athlete sign-in, athlete and parent pages). */
+const MARK_PENDING_SC2_4 = new Map<string, number>([
+  ['app/activate/page.tsx', 3],
+  ['app/athlete/progression-intelligence/page.tsx', 4],
+  ['app/athlete/sign-in/page.tsx', 3],
+  ['app/athlete/video-analysis/page.tsx', 2],
+  ['app/change-pin/page.tsx', 1],
+  ['app/parent/progression-visibility/page.tsx', 5],
+  ['app/parent/video/page.tsx', 1],
+  ['components/ProfileSettings.tsx', 4],
+  ['components/RoleSummaryPanels.tsx', 4],
+]);
+
+/** Source with comments removed; strings (and what is inside them) kept. */
+function withoutComments(source: string): string {
+  let out = '';
+  let quote: string | null = null;
+  for (let i = 0; i < source.length;) {
+    const c = source[i];
+    const next = source[i + 1];
+    if (quote) {
+      out += c;
+      if (c === '\\') {
+        out += next ?? '';
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (c === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2);
+      i = end === -1 ? source.length : end + 2;
+      out += ' ';
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c;
+    out += c;
+    i += 1;
+  }
+  return out;
+}
 
 function markCountsInSource(): Map<string, number> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -577,10 +621,7 @@ function markCountsInSource(): Map<string, number> {
       if (entry.isDirectory()) {
         if (entry.name !== 'node_modules') walk(full);
       } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
-        const code = fs.readFileSync(full, 'utf8')
-          .replace(/\/\*[\s\S]*?\*\//g, '')
-          .replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-        const found = code.match(MARK_TOKEN);
+        const found = withoutComments(fs.readFileSync(full, 'utf8')).match(MARK_TOKEN);
         if (found) counts.set(path.relative(webRoot, full).split(path.sep).join('/'), found.length);
       }
     }
@@ -592,7 +633,13 @@ function markCountsInSource(): Map<string, number> {
 
 describe('the medical-stop mark appears nowhere else in the source', () => {
   const counts = markCountsInSource();
-  const pending = new Set([...MARK_PENDING_SC2_3, ...MARK_PENDING_SC2_4]);
+  const pending = new Map([...MARK_PENDING_SC2_3, ...MARK_PENDING_SC2_4]);
+
+  test('the comment pass keeps code that holds a comment marker inside a string', () => {
+    expect(withoutComments('a = "video/*"; b = "badge--locked"; // badge--locked\nc = 1; /* alert--critical */ d')).toBe(
+      'a = "video/*"; b = "badge--locked"; \nc = 1;   d',
+    );
+  });
 
   test('the scan sees the one real medical stop, so it is not blind', () => {
     expect(counts.get('app/coach/sports-medicine/page.tsx')).toBe(1);
@@ -603,13 +650,14 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
     expect(unexplained).toEqual([]);
   });
 
-  test('an allowed file carries the mark no more often than it does today', () => {
-    const grown = [...MARK_ALLOWED].filter(([file, { count }]) => (counts.get(file) ?? 0) > count).map(([file]) => file);
+  test('no allowed or pending file carries the mark more often than it does today', () => {
+    const limits = new Map([...[...MARK_ALLOWED].map(([file, { count }]) => [file, count] as const), ...pending]);
+    const grown = [...limits].filter(([file, count]) => (counts.get(file) ?? 0) > count).map(([file]) => file);
     expect(grown).toEqual([]);
   });
 
   test('the pending lists only shrink: a swept file is taken off', () => {
-    const swept = [...pending].filter((file) => !counts.has(file));
+    const swept = [...pending.keys()].filter((file) => !counts.has(file));
     expect(swept).toEqual([]);
   });
 });

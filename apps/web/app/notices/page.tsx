@@ -282,7 +282,8 @@ function NoticesAuthoringPage() {
           </p>
           {loadError ? (
             /* Law 3: the failed load carries a glyph and an uppercase label,
-               not the safety red alone. */
+               not colour alone, on the restricted rung: a failed read is not a
+               medical stop (OW25-48 A; lane U1, SC2-2). */
             <div role="alert" className="flex flex-wrap items-center gap-[var(--s3)]">
               <span className="badge badge--restricted">
                 <i aria-hidden="true">▲</i>Load failed
