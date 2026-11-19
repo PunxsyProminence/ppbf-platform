@@ -20,6 +20,13 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-19-013 | 2026-11-19 | Can the gym admin account also be the coach: "B: Separate coach login" (against the recommendation) | PRIMARY |  | yes |
+| OD-2026-11-19-012 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19 12:20 US Eastern: cards OW25-57 and OW25-58: OW25-57 "Coaches and admins only (OW25-54)"; OW25-58 free text on the lane cap | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-011 | 2026-11-19 | Applied rulings (Overwatch, not Jason's words): lanes ED, R6-b, NW-b, IG and SI | APPLIED |  | yes |
+| OD-2026-11-19-010 | 2026-11-19 | Who may set a rest/away mark | PRIMARY |  | yes |
+| OD-2026-11-19-009 | 2026-11-19 | App Scrub answers file of 2026-11-19: Q5, Q7, Q8, Q9, Q10, Q11, Q12, Q13, the walk-through, failed saves, TV clocks, alert wording, page counts, tablet care and the facts; four questions open; Q7 conflicted with OW25-54 (resolved by OW25-57, OD-2026-11-19-012) | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-008 | 2026-11-19 | S2-2 "A: Job bar + search (Recommended)" and S2-3 "A: One job page (Recommended)" replace items 4 and 3 of OD-2026-10-17-001 | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-007 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19 11:32 US Eastern: cards OW25-52 to OW25-56: OW25-52 "Dry run, then rearrange-first lanes (Recommended)"; OW25-53 "A: Gym admin, in gym settings (Recommended)"; OW25-54 free text; OW25-55 "A: Yes, a 'Looks right' press per field (Recommended)"; OW25-56 free text (NOT applied) | RECONSTRUCTED |  | yes |
 | OD-2026-11-19-006 | 2026-11-19 | Applied rulings (Overwatch, not Jason's words): SH-1, SH-2 and SH-3, under OW25-48 A, OW25-45 B and OW25-47 A | APPLIED |  | yes |
 | OD-2026-11-19-005 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19 07:06 US Eastern: cards OW25-49 to OW25-51: OW25-49 "(c) PPBF writes its own six (Recommended)"; OW25-50 "D: Defer" (against the recommendation); OW25-51 free text | RECONSTRUCTED |  | yes |
 | OD-2026-11-19-004 | 2026-11-19 | Blank equipment on the other drills | PRIMARY |  | yes |
@@ -606,6 +613,309 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-19-013 -- Can the gym admin account also be the coach: "B: Separate coach login" (against the recommendation)
+
+**Provenance: PRIMARY.** Jason's typed answer "B: Separate coach login", 2026-11-19T17:37:49.913Z (about 12:37 US Eastern on 2026-11-19), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 34693 (the last text block of that user message; the earlier blocks are system notices), copied by script. The next-step box that asked it is at line 34660 (2026-11-19T17:36:40.987Z); the fuller question is in Overwatch's message at line 34675 (2026-11-19T17:36:52.442Z). The context is the staging dry run's blockers B1 and B2 (Overwatch's `dryrun\DR_FINDINGS.md`, not in this repo). Withheld from this public record: a login's short account name in the question (replaced by a square-bracketed editorial phrase, which is not his words). New; edits no earlier entry's text.
+
+**What was put to him (the next-step box and the message, quoted by script):**
+
+> **Admin as coach** (asked in the next-step box, transcript line 34660, 2026-11-19T17:36:40.987Z)
+> Question, as shown: "Can the gym admin account also be the coach?"
+> The box's recap: "The staging dry run is done, and no consent, waiver or minors' gate blocked the adult athlete. Four blockers stand between you and the pilot, and their fixes are routed to U1, U2 and three new cloud lanes. One of them, who can be the coach, needs your call."
+>
+> Options, in the order shown:
+> 1. "A: Admin can coach"
+> 2. "B: Separate coach login"
+>
+> **Your call (official form):** for B1 and B2, can the gym admin role (organization_admin, [account name withheld]) also act as a coach? That means opening the coach home and being picked as coach of record for athletes and classes.
+> - **A: Admin can coach (Recommended).** A permission change, built and reviewed as high-risk. You run the pilot from one login.
+> - **B: Separate coach login.** No code change. You make a coach-role account on another email you own and use it for coaching.
+>
+> **In plain English:** right now your admin login can't be anyone's coach. A lets your one login do both jobs. B means signing in with a second account whenever you coach.
+>
+> Jason's answer (typed, transcript line 34693, 2026-11-19T17:37:49.913Z): "B: Separate coach login".
+
+**Jason:** *"B: Separate coach login"* (against the recommendation, A)
+
+**Ruling (REPORTED reading by Overwatch):**
+
+1. The organization_admin role does not get the coach home or coach-of-record. Jason coaches from a separate coach-role account.
+2. The cost, as stated in the question: he signs in with a second account whenever he coaches.
+
+**Not ruled here:** which email the coach-role account uses; the other dry-run blockers (B3, B4 and the smaller items routed to lanes U1, U2 and U3).
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-012 -- Backbone Overwatch 25 note of 2026-11-19 12:20 US Eastern: cards OW25-57 and OW25-58: OW25-57 "Coaches and admins only (OW25-54)"; OW25-58 free text on the lane cap
+
+**Provenance: RECONSTRUCTED.** Jason answered these two cards in the Backbone Overwatch thread ("Overwatch 25"), whose transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `bf00c33ae9036830`, printed when this session read it at transcript line 34314, 2026-11-19T17:18:46.191Z, and again when this entry was drafted; a working file that may change; it was `e92e4fe31ec3fc04` when OD-2026-11-19-007 was drafted, and the cards quoted there were re-checked against this version and are unchanged). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`) he pasted the Backbone Overwatch 25 note dated 12:20 US Eastern, which replaces a 12:10 note, at line 34298 (2026-11-19T17:18:33.543Z); the paste carries no typed words of his own. Withheld from this public record: a reviewer-finding id on the OW25-58 card (replaced by a square-bracketed editorial phrase, which is not the card's words). The answers file it cites changed after OD-2026-11-19-009 first read it (`b45b296d989a88d9`; `fe2a5fb64aa80849` when the note cites it; `b19ecb884e5ba9ce` when last read); OD-2026-11-19-009's rows are as first read, and its "Later text of the file" paragraph says what differs now. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md, with the withholding above):**
+
+> **OW25-57 (header 'AI-draft mark'), 2026-11-19 ~12:10 US Eastern**
+> Question (official): "Two of your answers on the AI-draft mark conflict, and Claude Code recorded both without deciding (STATUS 2026-11-19 ~17:00Z). On card OW25-54 you wrote: "No parents and athlete do not need to know where the drills come from". In the scrub session (Q7, file 2026-11-19-jason-answers-app-scrub.md) you chose A: athletes and parents see one plain line on a drill while any of its text is still an AI draft. Which stands?"
+> Plain: "Should athletes and parents ever see that drill text is an unchecked AI draft?"
+> Options: "Coaches and admins only (OW25-54)": Athletes and parents see no AI-draft line; coaches and admins see a mark on each drafted field. "Plus one plain line for athletes and parents (scrub Q7 A)": Athletes and parents see one plain line on a drill while any of its text is still a draft.
+> Jason's answer: "Coaches and admins only (OW25-54)".
+> Effect (INFERRED): OW25-54 stands; scrub Q7 A (jason-answers-app-scrub.md fe2a5fb64aa80849) is superseded for the athlete and parent line; the per-field mark for coaches and admins is unchanged.
+>
+> **OW25-58 (header 'Lane cap'), 2026-11-19 ~12:20 US Eastern**
+> Question (official): "The repo record says your "start lanes for each piece" (OD-2026-11-19-001) did NOT change the two-build-lane cap (OD-2026-11-16-005): main 6ea31ed2, docs/current/OWNER_DECISIONS.md line 910, "Not ruled here: ... any change to the two-build-lane cap". In practice Claude Code has run more than two all day, and now has U1 and HW building, U2 queued after the dry run, REC-3 (records only) and DR (test, no code). The App Scrub session flagged this; I had not shown it to you. Which rule holds from now?"
+> Plain: "Is it OK to run more than two building lanes at once on your PC?"
+> Options: "A: Lift the cap; hold a lane if RAM runs short (Recommended)": Matches what is running and your 'lanes for each piece'. Records and test lanes don't count. Con: this PC (16 GB) had about 2 GB free with two lanes earlier (REPORTED); a slow PC slows every lane. "B: Three code lanes at most": U1, HW and U2 can all build; a fourth waits. Records and test lanes don't count. Middle ground on RAM. "C: Keep two code lanes, as recorded": U2 waits until U1 or HW finishes. Safest on RAM and the repo record already says it; slowest.
+> Jason's answer (free text): "keep build cap with in the memory tolerance for the computer no cap for cloud lanes".
+> Overwatch reading (INFERRED): on this PC, build lanes run only as many as its memory tolerates (Claude Code holds a lane when RAM runs short; no fixed number); cloud lanes have no cap. Records-only and test lanes were not addressed. OW25-56 C (fully unattended) stays not applied until Jason's usage check. [reviewer finding id withheld] addressed by this card.
+
+**The note (the paste, not Jason's words; copied by script):**
+
+```text
+Backbone Overwatch 25 note, 2026-11-19 12:20 US Eastern (replaces the 12:10 note). (1) Card OW25-57: Jason kept OW25-54. The AI-draft mark is for coaches and admins only (per field); athletes and parents see no AI-draft line. Scrub Q7 A in 2026-11-19-jason-answers-app-scrub.md (fe2a5fb64aa80849) is superseded on that point. (2) Card OW25-58, lane cap: OWNER_DECISIONS.md line 910 at main 6ea31ed2 says OD-2026-11-19-001 did not change the two-build-lane cap (OD-2026-11-16-005). Jason now: "keep build cap with in the memory tolerance for the computer no cap for cloud lanes". Overwatch reading: on this PC run only as many build lanes as its memory tolerates and hold a lane when RAM runs short (no fixed number); cloud lanes have no cap. OW25-56 C (fully unattended) stays not applied until his usage check. Please record OW25-52 to OW25-58 together (REC-3 or the next records PR, after the release). (3) Scrub stage 2 changed at 11:44 US Eastern: it is now 07c76ec7cb218a20, not the 3c855b5f the 11:32 note cited. U2 re-reads it before building. (4) From the scrub answers file: Q10 A (every coach and admin edits), Q11 B (all 17 rooms from the Room Map, against the scrub's advice), Q12 A (live floor line on every home, parents see only their own child; FUTURE lane with a privacy review), Q13 A (tags on tablet and desk, plain bar on phones; AS-4 may go). Q14 athlete tab names still open with Jason. (5) U1 idle sign-out: fixed choices with 60 min first fit OW25-53 A only if the gym admin can change it in gym settings; Jason picks the real value after the walk-through.
+```
+
+**Jason:** OW25-57 "Coaches and admins only (OW25-54)"; OW25-58, free text, exactly (typos kept): *"keep build cap with in the memory tolerance for the computer no cap for cloud lanes"*
+
+**Ruling:**
+
+1. OW25-57: OW25-54 stands. Athletes and parents see no AI-draft line; coaches and admins see a per-field mark. The App Scrub file's Q7 A ("A: per field for coaches and admins; one plain line for athletes and parents", OD-2026-11-19-009) is superseded on the athlete and parent line. This resolves the conflict flagged in OD-2026-11-19-007 and -009. The card file labels the effect INFERRED.
+2. OW25-58: his words are above. **INFERRED (Overwatch's reading in the card file, not his words):** on this PC, build lanes run only as many as its memory tolerates, and Claude Code holds a lane when RAM runs short (no fixed number); cloud lanes have no cap. Records-only and test lanes were not addressed. This changes OD-2026-11-16-005 ruling 2 ("At most two Claude Code build lanes run at once"), which this entry does not edit.
+3. OW25-56 C (fully unattended) stays NOT APPLIED until Jason's usage check (OD-2026-11-19-007).
+
+**Not ruled here:** whether records-only and test lanes count toward any limit; what "memory tolerates" means in numbers; OW25-56. The note also relays answers from the App Scrub file (Q10 to Q13, with Q14 still open) and a note that stage 2 is now `07c76ec7cb218a20`; those are recorded in OD-2026-11-19-009 and -008.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-011 -- Applied rulings (Overwatch, not Jason's words): lanes ED, R6-b, NW-b, IG and SI
+
+**Provenance: APPLIED (REPORTED by Overwatch).** These are Overwatch's applications of rulings Jason already made, under ASKED ONCE, RULED ONCE. They are not Jason's words and they are not new rulings. The lane PRs are the evidence for what was built; merge state as checked 2026-11-19. New; edits no earlier entry's text.
+
+**Applied:**
+
+1. **ED (#1971, #1973; merged), under OD-2026-11-15-011 ruling 3 and OW25-51 (OD-2026-11-19-005).**
+   - OD-2026-11-15-011 ruling 3 is met by version-writing edits (an edit writes the next version).
+   - That entry's "Not ruled here: an in-app editor for library drills" is ruled by OW25-51 (OD-2026-11-19-005).
+   - Edited fields are labelled REPORTED "In-app edit", with the editor.
+   - `requires_coach_authorization` is editable: coaches decide, after the OD-2026-11-15-005 load.
+2. **R6-b (#1974, #1978; merged), under OD-2026-11-17-004 and "A: Coach + office" (OD-2026-11-19-010).**
+   - RATED_SHARE_MIN is 0.75. The finding calls the threshold "an app-side choice", so this value is Overwatch's.
+   - A marked rest week counts as 0 load.
+   - A week is a rest week only with at least 4 of its 7 days marked.
+3. **NW-b (#1976; merged).**
+   - The 19 drills load as new versions (no in-place fill).
+   - Overwatch checks for in-app edits before each load.
+4. **IG (merged as #1977, `6ea31ed20c6ba930df65db004ea22330abe87bf5`).**
+   - An import never overwrites an in-app edit: the item is held, not blocking.
+   - There is no override in that PR.
+   - A drill lowered below a held template's step stays a blocking reject.
+5. **SI (#1975; merged).**
+   - Blank assessment equipment shows "Not written yet".
+   - Empty plan lines in stored renderings show "Not written yet".
+
+**Not ruled here:** none of these is a new ruling by Jason. The RATED_SHARE_MIN value, the 4-of-7-days rule and the held-not-blocking handling of an in-app edit are Overwatch's calls; Jason may change any of them.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-010 -- Who may set a rest/away mark: "A: Coach + office"
+
+**Provenance: PRIMARY.** Jason's typed answer "A: Coach + office", 2026-11-19T14:22:20.717Z (about 09:22 US Eastern on 2026-11-19), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 32596 (the last text block of that user message; the earlier blocks are system notices), copied by script. The next-step box that asked it is at line 32507 (2026-11-19T13:54:59.859Z). New; edits no earlier entry's text.
+
+**What was put to him (the next-step box, quoted by script):**
+
+> **Rest/away mark** (asked in the next-step box, transcript line 32507, 2026-11-19T13:54:59.859Z)
+> Question, as shown: "Who may set a rest/away mark?"
+>
+> Options, in the order shown:
+> 1. "A: Coach + office"
+> 2. "B: Athletes too"
+>
+> Jason's answer (typed, transcript line 32596, 2026-11-19T14:22:20.717Z): "A: Coach + office".
+
+The fuller question Overwatch wrote in the same hour (transcript line 32512, 2026-11-19T13:55:06.220Z): "under OW25-30 A, who may set or clear a rest/away mark on an athlete's week?" Option A: "Coaches and organization admins only." Option B: "Athletes can mark their own weeks as well."
+
+**Jason:** *"A: Coach + office"*
+
+**Ruling (REPORTED reading by Overwatch):**
+
+1. Coaches and organization admins may set or clear a rest/away mark on an athlete's week. Athletes and families get no mark control.
+
+**Applied:** lane R6-b1 (#1974) and lane R6-b2 (#1978). See OD-2026-11-19-011.
+
+**Not ruled here:** the rated-share threshold and the rest-week rule (Overwatch's calls, OD-2026-11-19-011).
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-009 -- App Scrub answers file of 2026-11-19: Q5, Q7, Q8, Q9, Q10, Q11, Q12, Q13, the walk-through, failed saves, TV clocks, alert wording, page counts, tablet care and the facts; four questions open; Q7 conflicted with OW25-54 (resolved by OW25-57, OD-2026-11-19-012)
+
+**Provenance: RECONSTRUCTED.** The source is a Claude Science research file, not a record Jason wrote: `findings/2026-11-19-jason-answers-app-scrub.md` in the PPBF research project's outbox (sha256[:16] `b45b296d989a88d9` when first read for this entry; the research session has since rewritten it twice, to `fe2a5fb64aa80849` and then `b19ecb884e5ba9ce`. The rows and quotes below are as first read, `b45b296d989a88d9`; the current file differs, see "Later text of the file" below), headed "NOT APP SOURCE" and describing itself as Jason's answers "word for word, with what each affects; for Overwatch to record". It says it quotes his answers to question cards in the App Scrub session; this repo's sessions cannot read that session. The table rows and the Q9 line are copied by script. Its text as first read: "Overwatch records the decisions. This file does not make them rulings." New; edits no earlier entry's text.
+
+**DECIDED answers, as the file gives them (rows copied by script):**
+
+| Card | Answer (as given) | Affects |
+|---|---|---|
+| Q5 idle sign-out | "1 goahead and make it 1 hr for now" | AS-2: the gym tablet signs out after 1 hour idle (first value); risk note in the navigation map |
+| Q7 AI-draft mark | A: per field for coaches and admins; one plain line for athletes and parents | Stage 2, 3.11 |
+| Q8 Looks right | A: Yes, recorded like an edit | Stage 2, 3.11 |
+| Q10 who edits | A: Every coach and admin, as designed | Edit path (ED-1 and ED-2 are already merged on main) |
+| Q11 rooms | B: All 17 rooms from the Room Map (against my recommendation) | Navigation map; Q16 asks how rooms you can't enter show |
+| Q12 live floor line | A: on every home; parents see only their own child | Navigation map; FUTURE lane with a privacy review |
+| Q13 tag rail | A: tags on tablet and desk, plain bar on phones | AS-4 |
+| Walk-through | A, "but it will probable be just two bodies that actually do it" | Walk-through checklist: plan for two people |
+| Failed saves | A: small honesty fixes now, offline queue later | Save-failure file P1 to P6 |
+| TV clocks | A: round clock biggest; time of day small; block countdown hidden in the round | TV legibility file |
+| Alert wording | Only 'open the app' | Notifications file |
+| Page counts | B: totals only, no user, device or IP | Notifications file |
+| Tablet care | A: one named person holds the passcode; coaches do the end-of-class sign-out check | Tablet guide |
+
+The Q9 line, as the file gives it: "Q9 B, "i want these drills to get to the floor, rguardless …". Correction: template issue already allows untested drafts (Jason 2026-10-11 B, #1473; workoutTemplates.ts:262-269 at `eb3cc422`). Q9's premise was wrong, and no ruling change is needed for templates."
+
+**DECIDED, the facts (the file says "three facts" and lists four rows; copied as given):**
+
+| Card | Answer (as given) | Affects |
+|---|---|---|
+| Tablet device (fact) | "most likley two but will eventually need a mix" | Design for iPad and Android together |
+| Wi-Fi drops (fact) | "depends on which system we use" | Wi-Fi system not chosen yet; the small fixes go ahead regardless |
+| TV (fact) | More than one TV | TV legibility: size each TV; the farthest reader decides |
+| Wraps and gloves | Gloves off; wraps may stay on; tap with a bare fingertip | Gloved-touch file: 55 px stands for a bare fingertip |
+
+**OPEN as first read (the file then marked these as open; nothing is decided here):**
+
+| Card | Answer (as given) | Affects |
+|---|---|---|
+| Stage 3 plan | "you didnt give me pros cons cost time or validation" | open: re-presented with pros, cons, cost, time and sources |
+| Q6 build lanes | "i thoght we were going to look at running on the compter and in the cloud" | open: local vs cloud lanes being researched |
+| Q14 athlete tab names | "list options with pros cons cost to bild and difficulty validated by outside source" | open: being researched |
+| Outside alerts | "what is the cheapest for the gym" | open: costs being researched; changes rulings OD-2026-10-01-006 and -008 if adopted |
+
+**Later text of the file (REPORTED; not recorded here as Jason's answers):** the research file was rewritten after the rows above were read, and its current text (`b19ecb884e5ba9ce`) differs. Its Q7 row now reads "Morning: A (one plain line for athletes and parents). Afternoon, on the conflict card: "OW25-54: coaches and admins only"", and says Q7 is settled by OW25-54, kept by OW25-57 (OD-2026-11-19-012). It reports further afternoon answers: Q6 B, Q6b b ("No — the cap counts only lanes on this PC"), Q15 A, Q16 A, outside alerts A and B now with web push later, and says only Q14 is still open. This entry does not record those later answers: they are the file's quotations, were not copied here, and need their own entry, by script, from the current file. The file says "Overwatch records the decisions, and its record wins where they differ". Q6b overlaps OW25-58 (OD-2026-11-19-012); the alerts answer would change OD-2026-10-01-006 and -008, which this entry does not do.
+
+**Jason:** the answers are the "Answer (as given)" column above, as the research file quotes them (as first read). Q5, Q8, Q10, Q11, Q12, Q13, tablet care and the others are copied, not summarised.
+
+**Ruling:** none by this entry. Overwatch records the answers; the file says it "does not make them rulings". The file says the outside-alerts answer, if adopted, changes OD-2026-10-01-006 and -008; that change is not made here. On Q9 the file says "no ruling change is needed for templates" (it lists OD-2026-10-06-026 only among the entries not checked for conflicts).
+
+**Not ruled here:**
+
+- **Conflict, Q7 against OW25-54: flagged here, later resolved by OW25-57 (OD-2026-11-19-012).** The file's Q7 row reads: "A: per field for coaches and admins; one plain line for athletes and parents". The OW25-54 answer in the Backbone note (OD-2026-11-19-007) reads: "No parents and athlete do not need to know where the drills come from". In the file's `fe2a5fb64aa80849` text the conflict was "for you to settle" and "Asked again in chat on 2026-11-19"; the current file (`b19ecb884e5ba9ce`) says "Q7 vs OW25-54: resolved. Jason kept OW25-54 (OW25-57, and the same answer here)." OD-2026-11-19-012 records his answer to OW25-57, "Coaches and admins only (OW25-54)", which supersedes Q7 A on the athlete and parent line.
+- The four open questions above.
+- The file's Gaps section says the answers "were not checked against OWNER_DECISIONS for conflicts beyond those named here".
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-008 -- S2-2 "A: Job bar + search (Recommended)" and S2-3 "A: One job page (Recommended)" replace items 4 and 3 of OD-2026-10-17-001
+
+**Provenance: RECONSTRUCTED.** Jason answered these two cards in the App Scrub session, after sketches. The answers are quoted from a Claude Science research file, not from a record Jason wrote: `findings/2026-11-19-app-scrub-stage-2.md` (sha256[:16] `3c855b5fa5b14a4a` when first read for this entry, `07c76ec7cb218a20` when re-checked; the two rows below are unchanged), section 3.1 "Your answers", rows copied by script. The Backbone Overwatch 25 note of 11:32 US Eastern (OD-2026-11-19-007) says to record them as replacing that ruling's items 4 and 3. New; edits no earlier entry's text, including OD-2026-10-17-001.
+
+**The rows (copied by script):**
+
+> | Card | Your answer | What it changes |
+> |---|---|---|
+> | S2-2 Menu | "A: Job bar + search (Recommended)", after sketches | Replaces OD-2026-10-17-001 ruling 4 ("both header menus stay"): the Rooms list becomes "All pages" inside Search |
+> | S2-3 Merging pages | "A: One job page (Recommended)", after sketches | Replaces OD-2026-10-17-001 ruling 3 ("no merges"): one job page per job (3.5) |
+
+**Jason (as the file quotes him):** S2-2 *"A: Job bar + search (Recommended)"*, after sketches; S2-3 *"A: One job page (Recommended)"*, after sketches.
+
+**Replaces:**
+
+1. **OD-2026-10-17-001 item 4** ("Header menus: A, both stay (the Corridor and the Jump catalog)") is replaced by S2-2 A: a job bar and Search; the Rooms list becomes "All pages" inside Search.
+2. **OD-2026-10-17-001 item 3** ("Overlapping coach pages: they stay separate pages, cross-linked; no merges") is replaced by S2-3 A: one job page per job.
+3. Items 1 (glossary) and 2 (check-in names) of OD-2026-10-17-001 still stand. The research file says so.
+
+**Applied (Overwatch's application, not Jason's words):** OD-2026-10-17-001 item 4 is "Header menus: A, both stay". S2-2 A replaces it, so the Rooms menu (Corridor) moves into Search as "All pages" and Jump becomes Search (lane U2). Item 3 ("no merges") is replaced by S2-3 A (one job page).
+
+**Not ruled here:** the sketches Jason answered after are not in this repo. Whether the job bar is the existing Leather tag rail is the App Scrub's Q13 ("A: tags on tablet and desk, plain bar on phones", OD-2026-11-19-009). The October work was built inside OD-2026-10-17-001; this entry does not say what to remove.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-007 -- Backbone Overwatch 25 note of 2026-11-19 11:32 US Eastern: cards OW25-52 to OW25-56: OW25-52 "Dry run, then rearrange-first lanes (Recommended)"; OW25-53 "A: Gym admin, in gym settings (Recommended)"; OW25-54 free text; OW25-55 "A: Yes, a 'Looks right' press per field (Recommended)"; OW25-56 free text (NOT applied)
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone Overwatch thread ("Overwatch 25"), whose transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `e92e4fe31ec3fc04`, the hash printed when this session read it at transcript line 33601, 2026-11-19T16:37:47.231Z; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`) he pasted the Backbone Overwatch 25 note dated 11:32 US Eastern TWICE: first at line 33585 (2026-11-19T16:37:24.441Z; a shorter note "for the App Scrub session"), then at line 33634 (2026-11-19T16:38:19.265Z), introduced by his words "that may have been the wrom prompt use this one if iduplicate disreguard". This entry records the second paste, which replaces the first. Withheld from this public record: the author names in the OW25-52 source citations and a design-artifact version id (each replaced by a square-bracketed editorial phrase, which is not the card's words). New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md, with the withholdings above):**
+
+> ## OW25-52 (header 'Fix list'), shown five times, still open
+> 1st showing options: A whole plan in order, one usability lane (Recommended); B quick fixes only; C redesign first. Jason: "give me the pros and cons".
+> 2nd showing (same, with pros and cons). Jason: "when you geve pros and cons give the build dificulty validated by an outside source and ETA".
+> 3rd showing (difficulty and ETA; sources: scrub stage-3 PR estimates; repo record 40 code PRs 2026-11-12..19, lane SH 4 PRs in about 7 h; [author names withheld] 2003 DOI 10.1109/ISESE.2003.1237981, +30-40%). Jason: "is there a way to do 1 and 3 faster, VS desktop app ect validate from outside source".
+> 4th showing (added A-fast; sources added: [author names withheld] 2023 Copilot RCT 55.8% faster on one task; METR 2025 RCT 19% slower, labelled historical by METR; [author name withheld]'s law modularity). Jason: "can we have this run non stop with out clicks i also have a gpu, and i believ i do have clude as well".
+> 5th showing (A-fast recommended; A; C-fast; B). Jason: "show me a chart with the time estimates for each choice and build type". Chart saved as artifact eta_chart.png (version id withheld).
+>
+> ## OW25-53 (header 'Tablet sign-out'), scrub Q5
+> Options: "A: Gym admin, in gym settings (Recommended)": you choose the first value after a walk-through on the gym's own tablet; "B: Each coach, per tablet"; "C: One fixed value for every gym".
+> Jason's answer: "A: Gym admin, in gym settings (Recommended)".
+>
+> ## OW25-54 (header 'AI-draft mark'), scrub Q7
+> Options: "A: Staff per field; athletes and parents one line (Recommended)"; "B: Coaches and admins only"; "C: Same per-field marks for everyone".
+> Jason's answer (free text): "No parents and athlete do not need to know where the drills come from". Overwatch reading (INFERRED): B, coaches and admins only.
+>
+> ## OW25-55 (header 'Looks right'), scrub Q8
+> Options: "A: Yes, a 'Looks right' press per field (Recommended)": recorded with name and date like an edit; "B: No, only a saved change clears it".
+> Jason's answer: "A: Yes, a 'Looks right' press per field (Recommended)".
+>
+> ## OW25-56 (header 'Run nonstop')
+> Official: How far should the build run without your clicks? Sources: Claude Code docs on cloud sessions (parallel, run unattended, share your account's rate limits; the VM clones from GitHub). Connecting GitHub to cloud sessions is a permission step; you deferred security and credential work to the end of the build (OD-2026-11-18-003).
+> Options: "A: Cloud lanes, fewer clicks, your release checks stay (Recommended)"; "B: Stay on this PC, fewer clicks"; "C: Fully unattended, releases too" (risk shown: a broken safety or restriction screen for minors could reach parents before anyone signed in looks at it); "D: Keep as now".
+> Jason's answer (free text): "C id like to verify that i have the propper usage for it, i do have serveral cluade accounts the one we have been working with is the promax". Overwatch reading: C, conditional on Jason confirming his plan usage; not applied until he confirms.
+>
+> ### OW25-52 continued (2026-11-19 11:23)
+> 6th showing (chart; options A-fast cloud (Recommended), A-fast this PC, C-fast cloud, B). Jason: "will the backbone conflict with ths if i keep building on the computer does anthropic offer any other service that we can build with this quicker".
+> 7th showing (plan and setup: A-fast cloud with Projects coordinator (Recommended); A-fast this PC; C-fast cloud; B on this PC). Jason: "what gets the app functional first right now its not quite there".
+> 8th showing (Functional first, cloud (Recommended); Functional first, this PC; A-fast cloud; B dead ends only). Jason: "based on wht you know and can see what all needs done to get it to testing tha athlete and coaches, i will be running it witha nother coach that will sign up as an athlete, so legal and safe sport and mier stuff should interfere with the function".
+> 9th showing (Pilot-ready: staging dry run + 3 lanes (Recommended); Dry run only; Functional first without athlete lane). Jason: "some of that sounds like things we have already tried to build, validate". Overwatch validated from PR titles (merge status not checked): UX-A #1676-#1739 (2026-10-17/18), UXB-L1..L11 #1678-#1704, live console #1751, TV live session #1708, class tie-in #1803-#1832, How I feel today #1754; built inside OD-2026-10-17-001 (no merges; both header menus stay).
+> 10th showing: options "Dry run, then rearrange-first lanes (Recommended)"; "Dry run only, then decide"; "Lanes now, no dry run".
+> Jason's answer: "Dry run, then rearrange-first lanes (Recommended)".
+> Overwatch note: scrub stage 2's Q9 premise (templates refuse untested drafts) does not match production code eb3cc422: workoutTemplates.ts lines 262-269 'THE FLOOR TEST DOES NOT STOP AN ISSUE (Jason, 2026-10-11: "B" ... issue #1473)' (OBSERVED). Jason's Q9 chat answer (drills to the floor regardless) agrees with the code as it is.
+> ======
+> 2026-11-19-jason-answers-app-scrub.md
+> 2026-11-19-app-scrub-stage-2.md
+> 2026-11-19-app-scrub-stage-2-fig6-edit-and-ai-draft.png
+> 2026-11-19-app-scrub-stage-3.md
+> 2026-11-19-app-scrub-lane-2-prompt.md
+> 2026-11-19-app-scrub-stage-1.md
+> 2026-11-19-app-scrub-stage-2-fig5-new-screens.png
+> 2026-11-19-app-scrub-stage-2-fig4-job-page.png
+> 2026-11-19-app-scrub-stage-2-fig3-menu.png
+> 2026-11-19-app-scrub-stage-2-fig2-parent-home.png
+> 2026-11-19-app-scrub-stage-2-fig1-coach-home.png
+> de-research-project/findings/2026-11-19-app-scrub-stage-1.md 1bac7c253891d063
+
+**The note (the second paste, not Jason's words; copied by script):**
+
+```text
+Backbone Overwatch 25, 2026-11-19 11:32 US Eastern (replaces the 11:23 note: U1 now absorbs the scrub's SC2 draft; AS-4 waits on the scrub's Q13). Jason chose 'Dry run, then rearrange-first lanes' for the pilot test: he will test with a second coach signed up as an ADULT athlete; minors, legal and SafeSport steps must not block that test (CARDS_OW25.md sha256[:16] e92e4fe31ec3fc04; OW25-52 tenth showing). STEP 1, today, a STAGING dry run (no production, no real member data): make a throwaway adult test athlete (real adult date of birth; unknown DOB is treated as a minor, OD-2026-10-04-010) and walk the whole path: admin adds the athlete and issues a sign-in code; first-time activation; coach puts a class on the schedule and books the athlete; coach assigns a workout template that contains AI-drafted drills; athlete on the gym tablet and on a phone: sign in, I'm here, How I feel today, today's session, Start training, End training, report pain; coach runs the live session (register, plan, round timer, Send to TV, End Session); coach edits a drill (ED-1). Report every block or confusing step as a list, and name each gate that fires (waiver, SafeSport or USA Boxing fields, guardian prompts, clearance, minors' limits). Remove or clearly mark the test accounts after. STEP 2, rearrange-first lanes under OD-2026-11-19-001 (start each when its files do not overlap R6-b, NW-b, SI or IG): U1 = the scrub's draft lane SC2 (findings 2026-11-19-app-scrub-lane-2-prompt.md, sha256[:16] db9489b190e06d1f; written for you to check and issue; 16 items: AS-1 remainder honesty fixes + AS-3 medical-stop mark and floor-size sweep) PLUS AS-2 gym-tablet idle sign-out (OW25-53 A: the gym admin sets the time in gym settings; Jason picks the first value after a walk-through). One lane, not two: do not also issue SC2 separately. Leave items in files lane SI owns (RevenueFundingCenter.tsx payment label, PLACEHOLDER_MAP.md) until SI merges. U2 = AS-4 job bar and Search (S2-2 A), then AS-6 Class screen built from what exists (live console #1751, TV live session #1708, class tie-in and register #1803-#1832), then AS-7 coach home. AS-4 waits for Jason's answer to the scrub's Q13 (is the job bar the existing Leather tag rail on tablet and desk; findings 2026-11-19-design-assets-inventory.md, fb3d4303e7bd92d4) and, if they change the shell, Q11/Q12 (rooms behind each job section; an 'on the floor now' line; findings 2026-11-19-online-gym-as-a-room.md, 924045e0ecff60cc); U2's step 1 report can start now. U3 = after AS-4 merges, AS-8 athlete Today (opens on I'm here and How I feel today; End training beside Start training; athlete tab names wait for the scrub's Q14). All U lanes use the code design system (design-system/: buttons, tabs, layouts) and do not copy the three conflicts listed in design-assets-inventory section 3.4 (for example, delete buttons in the medical-stop red). Design source: findings 2026-11-19-app-scrub-stage-2.md (3c855b5fa5b14a4a), -stage-3.md (7214ca0b5b672d2c), stage 1 now 1bac7c253891d063. Adjust U1-U3 to what the dry run finds. Step 1 report per lane first. Overwatch validation: the October work (UX-A #1676-#1739, UXB-L1..L11, #1751, #1803-#1832) was built inside OD-2026-10-17-001 (no merges; both header menus stay); record Jason's S2-2 A (job bar and Search) and S2-3 A (one job page) as replacing that ruling's items 4 and 3. Correction to scrub stage 2: its Q9 premise that a template refuses untested drafts does not match eb3cc422 (workoutTemplates.ts lines 262-269: the floor test does not stop an issue, Jason 2026-10-11 'B', #1473); Jason's Q9 chat answer (drills to the floor regardless) needs no code change. Record in the next records PR: OW25-52 (this plan), OW25-53 A, OW25-54 (Jason: athletes and parents are not told where drills come from; the AI-draft mark is for coaches and admins only), OW25-55 A ('Looks right' press clears a field's AI-draft mark, recorded with name and date; a small follow-up to lane ED), OW25-56 C (fully unattended, releases too) PENDING Jason's usage check: do not apply it yet; until he confirms, releases still wait for his signed-in staging check and 'ship it'. Still owed from 07:22: the 'Home week' lane (A-112), after IG merges, because it loads through content import. Backbone ACTIONS A-112, A-113.
+```
+
+**Jason's lead-in to the second paste, exactly (typos kept):** *"that may have been the wrom prompt use this one if iduplicate disreguard"*
+
+**Jason:** OW25-52 final showing (the tenth) "Dry run, then rearrange-first lanes (Recommended)" (the nine earlier showings, one line each with his words, are in the cards above); OW25-53 "A: Gym admin, in gym settings (Recommended)"; OW25-54, free text, exactly (typos kept): *"No parents and athlete do not need to know where the drills come from"*; OW25-55 "A: Yes, a 'Looks right' press per field (Recommended)"; OW25-56, free text, exactly (typos kept): *"C id like to verify that i have the propper usage for it, i do have serveral cluade accounts the one we have been working with is the promax"*
+
+**Ruling:**
+
+1. OW25-52: a staging dry run with a throwaway adult test athlete, then the rearrange-first lanes U1, U2 and U3, as the note sets out.
+2. OW25-53 A: the gym admin sets the tablet sign-out time in gym settings; Jason picks the first value after a walk-through (the note). The App Scrub file's Q5 gives "1 hr for now" (OD-2026-11-19-009).
+3. OW25-54: his words are above. **INFERRED (Overwatch's reading in the card file, not his words):** option B, coaches and admins only; the note says athletes and parents are not told where drills come from and the AI-draft mark is for coaches and admins only. This conflicts with the App Scrub file's Q7 (OD-2026-11-19-009); it was later resolved by OW25-57 (OD-2026-11-19-012).
+4. OW25-55 A: a "Looks right" press clears a field's AI-draft mark, recorded with name and date; a small follow-up to lane ED.
+5. OW25-56: **NOT APPLIED.** Overwatch's reading (INFERRED, not his words): C, conditional on Jason confirming his plan usage. Until he confirms, releases still wait for his signed-in staging check and "ship it". The note says the same: "do not apply it yet".
+6. Correction recorded from the note: the scrub stage 2 Q9 premise (a template refuses untested drafts) does not match code. `apps/web/src/server/pilot/workoutTemplates.ts` lines 262-269: the floor test does not stop an issue (Jason 2026-10-11 "B", #1473). The card file records the same correction.
+7. S2-2 A and S2-3 A are recorded in OD-2026-11-19-008.
+
+**Applied (REPORTED by Overwatch, not his words):** the U1 to U3 lanes are issued through Overwatch under OD-2026-11-19-001.
+
+**Not ruled here:** OW25-56 (pending his usage check); the Q7 against OW25-54 conflict (resolved later, OD-2026-11-19-012); the first value of the tablet sign-out time beyond the App Scrub file's "1 hr for now".
+
+**Status:** recorded 2026-11-19 by PR.
 
 ---
 
