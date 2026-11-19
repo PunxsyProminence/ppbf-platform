@@ -1,4 +1,5 @@
-import { query } from './db';
+import { formatGymMonthDay, gymDayIso } from '../../lib/gymTime';
+import { query, queryOne } from './db';
 import { getTransferReadout } from './falseProgress';
 import {
   getPerformanceRollup,
@@ -9,9 +10,13 @@ import {
   getWeeklySessionLoads,
   LOAD_JUMP_PRIOR_WEEKS,
   LOAD_JUMP_RATIO,
+  readFamilyLoadNumbers,
   readLoadJumps,
+  type FamilyLoadNumbers,
   type LoadJumpReading,
+  type WeeklyLoadRow,
 } from './weeklySessionLoad';
+import { isMinor } from './wallDisplay';
 import {
   getWellnessWindows,
   readWellnessDeclines,
@@ -650,9 +655,21 @@ export interface FamilyGapSource {
  * The ratio comes from the stored evidence, rounded as the coach text rounds
  * it; when the gap carries no usable ratio, the stored text is returned rather
  * than a made-up number (overwatch, 2026-10-05).
+ *
+ * UNDER-18s (OD-2026-11-17-004, OW25-31 A, "No ratio for under-18s; plain
+ * numbers"): for a confirmed Rule 6 or Rule 7 gap, an under-18 athlete and
+ * their parents read plain numbers instead -- logged sessions and minutes in
+ * the confirmed week against the usual weeks' low-high range, Rule 7's
+ * check-in changes, and "Your coach is looking at it." No ratio and no coach
+ * phrasing. With no usable numbers they read MINOR_LOAD_FALLBACK, never the
+ * stored coach text (it carries the ratio). Adults are unchanged.
  */
-export function familyGapDescription(gap: FamilyGapSource): string {
-  if (ruleFromDetectedFrom(gap.detected_from) !== 'load_jumped') return gap.gap_description;
+export function familyGapDescription(gap: FamilyGapSource, reader: FamilyReader): string {
+  const rule = ruleFromDetectedFrom(gap.detected_from);
+  if (reader.minor && (rule === 'load_jumped' || rule === 'load_up_wellness_down')) {
+    return minorLoadSentence(rule, gap, reader);
+  }
+  if (rule !== 'load_jumped') return gap.gap_description;
   const ratio = loadJumpRatioShown(gap.detection_data, gap.gap_description);
   if (ratio === null) return gap.gap_description;
   return `Your training this week was about ${ratio} times your usual week. Your coach is keeping an eye on it.`;
@@ -669,6 +686,124 @@ function loadJumpRatioShown(data: Record<string, unknown> | null, storedText: st
   if (fromText) return fromText[1];
   const ratio = typeof data.ratio === 'number' ? data.ratio : Number.NaN;
   return Number.isFinite(ratio) && ratio > 0 ? ratio.toFixed(1) : null;
+}
+
+/** Who is reading a family gap, resolved per gap by getFamilyGapReaders. */
+export interface FamilyReader {
+  /** isMinor at read time; an unknown date of birth is a minor (OD-2026-10-04-010). */
+  minor: boolean;
+  /** The confirmed week's numbers (under-18 load gaps only), or null. */
+  loadNumbers: FamilyLoadNumbers | null;
+  /** "Nov 14": the gym day the gap was confirmed, the end of that week. */
+  weekEnding: string | null;
+}
+
+export const ADULT_FAMILY_READER: FamilyReader = Object.freeze({ minor: false, loadNumbers: null, weekEnding: null });
+
+/** What an under-18 reader gets for a load gap with no usable numbers. */
+export const MINOR_LOAD_FALLBACK = 'Your coach is looking at your recent training.';
+
+function minorLoadSentence(
+  rule: 'load_jumped' | 'load_up_wellness_down',
+  gap: FamilyGapSource,
+  reader: FamilyReader,
+): string {
+  const numbers = reader.loadNumbers;
+  if (!numbers || !reader.weekEnding) return MINOR_LOAD_FALLBACK;
+  const { this_week: week, usual } = numbers;
+  const parts = [
+    `In the 7 days to ${reader.weekEnding}: ${countOf(week.sessions, 'logged session')}, ${countOf(week.minutes, 'minute')}.`,
+    `A usual week before that: ${rangeOf(usual.sessions_low, usual.sessions_high, 'logged session')}, `
+      + `${rangeOf(usual.minutes_low, usual.minutes_high, 'minute')}.`,
+  ];
+  if (rule === 'load_up_wellness_down') {
+    const changes = wellnessChangesShown(gap);
+    if (changes.length > 0) parts.push(`Check-ins changed: ${changes.join('; ')}.`);
+  }
+  parts.push('Your coach is looking at it.');
+  return parts.join(' ');
+}
+
+function countOf(value: number, noun: string): string {
+  return `${value} ${noun}${value === 1 ? '' : 's'}`;
+}
+
+function rangeOf(low: number, high: number, noun: string): string {
+  return low === high ? countOf(low, noun) : `${low} to ${countOf(high, noun)}`;
+}
+
+const RULE7_SIGNAL_ITEMS = ['energy', 'soreness', 'readiness'] as const;
+
+/**
+ * Rule 7's check-in changes as the coach text shows them ("energy 3.8 → 2.6"),
+ * reworded "energy from 3.8 to 2.6". The coach text is read first, because
+ * rounding the stored 2-decimal averages again can disagree with it; then the
+ * stored averages. Nothing found: no check-in line, never a made-up number.
+ */
+function wellnessChangesShown(gap: FamilyGapSource): string[] {
+  const fromText = [...gap.gap_description.matchAll(/\b(energy|soreness|readiness) (\d+\.\d) → (\d+\.\d)/g)];
+  if (fromText.length > 0) return fromText.map(([, item, from, to]) => `${item} from ${from} to ${to}`);
+  const data = gap.detection_data ?? {};
+  const changes: string[] = [];
+  for (const item of RULE7_SIGNAL_ITEMS) {
+    const [fromKey, toKey] = item === 'readiness'
+      ? ['readiness_early_avg', 'readiness_late_avg']
+      : [`${item}_prior_avg`, `${item}_recent_avg`];
+    const from = data[fromKey];
+    const to = data[toKey];
+    if (typeof from === 'number' && typeof to === 'number' && Number.isFinite(from) && Number.isFinite(to)) {
+      changes.push(`${item} from ${from.toFixed(1)} to ${to.toFixed(1)}`);
+    }
+  }
+  return changes;
+}
+
+const FAMILY_LOAD_RULES: ReadonlySet<SuggestionRule> = new Set(['load_jumped', 'load_up_wellness_down']);
+
+/** The live athlete's date of birth for the family wording; null when unset or
+ * the row is gone (both read as a minor, as athleteMinorLimits.ts does). */
+export async function readAthleteDobForFamilyWording(organizationId: string, athleteId: string): Promise<string | null> {
+  const row = await queryOne<{ dob: string | null }>(
+    `select to_char(dob, 'YYYY-MM-DD') as dob
+       from pilot.athletes
+      where organization_id = $1 and athlete_id = $2 and deleted_at is null`,
+    [organizationId, athleteId],
+  );
+  return row?.dob ?? null;
+}
+
+/**
+ * One FamilyReader per gap, in order, for an athlete or parent reading this
+ * athlete's gaps. An adult needs no further read. For an under-18, each
+ * Rule 6/7 gap's numbers are read now from Rule 6's own weekly buckets
+ * anchored at the gap's created_at (when the coach confirmed it), so they
+ * describe the confirmed week whenever the family reads it. Computed at read
+ * time, never stored. One read per distinct confirm day.
+ */
+export async function getFamilyGapReaders(
+  organizationId: string,
+  athleteId: string,
+  dob: string | null | undefined,
+  gaps: readonly { detected_from: string | null; created_at: unknown }[],
+  now: Date = new Date(),
+): Promise<FamilyReader[]> {
+  if (!isMinor(dob, now)) return gaps.map(() => ADULT_FAMILY_READER);
+
+  const byDay = new Map<string, Promise<WeeklyLoadRow[]>>();
+  return Promise.all(gaps.map(async (gap): Promise<FamilyReader> => {
+    const rule = ruleFromDetectedFrom(gap.detected_from);
+    const anchor = gap.created_at instanceof Date || typeof gap.created_at === 'string'
+      ? new Date(gap.created_at)
+      : null;
+    const day = anchor && Number.isFinite(anchor.getTime()) ? gymDayIso(anchor) : null;
+    const weekEnding = anchor && day ? formatGymMonthDay(anchor) : null;
+    if (!rule || !FAMILY_LOAD_RULES.has(rule) || !anchor || !day || !weekEnding) {
+      return { minor: true, loadNumbers: null, weekEnding: null };
+    }
+    if (!byDay.has(day)) byDay.set(day, getWeeklySessionLoads(organizationId, [athleteId], anchor));
+    const rows = await byDay.get(day)!;
+    return { minor: true, loadNumbers: readFamilyLoadNumbers(rows, athleteId), weekEnding };
+  }));
 }
 
 export interface GapJustificationSource {

@@ -954,9 +954,10 @@ describe('passbook: a confirmed load jump in the family wording', () => {
   const COACH_TEXT = 'Training load jumped: 2400 over the last 7 days against a usual week of 1000 (2.4x, averaged over 4 of the 4 weeks before; session RPE x minutes, unvalidated). Worth a look.';
   const FAMILY_TEXT = 'Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.';
 
-  function arrange(): void {
+  // An adult unless told otherwise (OD-2026-11-17-004: adults unchanged).
+  function arrange(dob: string | null = '1990-05-01', weekly: Record<string, unknown>[] = []): void {
     mockQueryOne.mockResolvedValueOnce({
-      organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer', dob: '2010-05-01',
+      organization_id: 'org-1', athlete_id: 'ath-1', full_name: 'Avery Boxer', dob,
       weight_class: '125', gym_status: 'active', active_flag: true, coach_id: 'coach-1',
       created_at: '2026-01-01T00:00:00.000Z',
     });
@@ -975,7 +976,7 @@ describe('passbook: a confirmed load jump in the family wording', () => {
             created_at: '2026-10-05T11:00:00.000Z', detection_data: {},
           },
         ]
-        : [],
+        : sql.includes('as week_minutes') ? weekly : [],
     ));
   }
 
@@ -993,8 +994,32 @@ describe('passbook: a confirmed load jump in the family wording', () => {
     expect(JSON.stringify(result)).not.toContain('ratio_shown');
   });
 
+  // OD-2026-11-17-004 (OW25-31 A): under-18 family readers read plain numbers.
+  test.each(['athlete', 'parent'] as PilotRole[])('an under-18 book read by the %s shows plain numbers, no ratio', async (role) => {
+    arrange('2010-05-01', [
+      { athlete_id: 'ath-1', week_index: 0, week_load: 2400, session_count: 6, week_minutes: 410 },
+      { athlete_id: 'ath-1', week_index: 1, week_load: 1000, session_count: 3, week_minutes: 180 },
+      { athlete_id: 'ath-1', week_index: 2, week_load: 1000, session_count: 4, week_minutes: 240 },
+      { athlete_id: 'ath-1', week_index: 3, week_load: 1000, session_count: 3, week_minutes: 200 },
+    ]);
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+    expect(result?.pages.progression_gaps.map((g) => g.gap_description)).toEqual([
+      'In the 7 days to Oct 5: 6 logged sessions, 410 minutes. '
+        + 'A usual week before that: 3 to 4 logged sessions, 180 to 240 minutes. Your coach is looking at it.',
+      'Drops lead hand',
+    ]);
+    const weekly = mockQuery.mock.calls.find((entry) => (entry[0] as string).includes('as week_minutes'));
+    expect(weekly?.[1]).toEqual(['org-1', ['ath-1'], 5, '2026-10-05T12:00:00.000Z']);
+  });
+
+  test('an under-18 book with no usable numbers shows the no-number line', async () => {
+    arrange('2010-05-01');
+    const result = await getAthletePassbook('org-1', 'ath-1', 'athlete');
+    expect(result?.pages.progression_gaps[0].gap_description).toBe('Your coach is looking at your recent training.');
+  });
+
   test.each(['coach', 'organization_admin', 'admin'] as PilotRole[])('a %s keeps the stored coach text', async (role) => {
-    arrange();
+    arrange('2010-05-01');
     const result = await getAthletePassbook('org-1', 'ath-1', role);
     expect(result?.pages.progression_gaps.map((g) => g.gap_description)).toEqual([COACH_TEXT, 'Drops lead hand']);
   });

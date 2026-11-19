@@ -5,9 +5,11 @@
 // gap of the same type suppresses its suggestion).
 
 import {
+  ADULT_FAMILY_READER,
   buildGapJustifications,
   deriveSuggestions,
   familyGapDescription,
+  MINOR_LOAD_FALLBACK,
   familyGapJustifications,
   READINESS_DROP_POINTS,
   READINESS_MIN_CHECKINS_PER_HALF,
@@ -15,6 +17,7 @@ import {
   ruleFromDetectedFrom,
   TRAINING_DAYS_MIN_EARLY,
   type CompetitionLossRow,
+  type FamilyReader,
   type StalledAssignmentRow,
   type TransferFailureRow,
 } from './progressionSuggestions';
@@ -585,6 +588,8 @@ describe('buildGapJustifications', () => {
 // Jason 2026-10-05 ("A: Plain text"): athletes and parents read one plain
 // sentence for a confirmed load_jumped gap; coaches keep the stored text.
 describe('familyGapDescription', () => {
+  // An adult reader: today's sentence, byte for byte (OD-2026-11-17-004, adults unchanged).
+  const asAdult = (gap: Parameters<typeof familyGapDescription>[0]) => familyGapDescription(gap, ADULT_FAMILY_READER);
   const NONE: never[] = [];
   const RULE6 = 'deterministic_rule:load_jumped';
 
@@ -594,7 +599,7 @@ describe('familyGapDescription', () => {
   }
 
   test('a confirmed load jump reads as Jason\'s sentence, verbatim', () => {
-    expect(familyGapDescription(confirmed({ acute_load: 2400, ratio: 2.4 }))).toBe(
+    expect(asAdult(confirmed({ acute_load: 2400, ratio: 2.4 }))).toBe(
       'Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.',
     );
   });
@@ -605,13 +610,13 @@ describe('familyGapDescription', () => {
     const gap = confirmed({ acute_load: 2449, ratio: 2.449 });
     expect(gap.gap_description).toContain('(2.4x');
     expect(gap.detection_data.ratio).toBe(2.45);
-    expect(familyGapDescription(gap)).toBe(
+    expect(asAdult(gap)).toBe(
       'Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.',
     );
   });
 
   test('a gap confirmed before ratio_shown existed falls back to its stored ratio, rounded to one decimal', () => {
-    expect(familyGapDescription({
+    expect(asAdult({
       gap_description: 'Training load jumped (coach text with no ratio in it). Worth a look.',
       detected_from: RULE6,
       detection_data: { acute_load: 2100, usual_weekly_load: 1000, ratio: 2.1, prior_weeks_with_load: 4 },
@@ -619,7 +624,7 @@ describe('familyGapDescription', () => {
   });
 
   test('a gap confirmed before ratio_shown existed takes the ratio its own coach text shows, not a second rounding', () => {
-    expect(familyGapDescription({
+    expect(asAdult({
       gap_description: 'Training load jumped: 2449 over the last 7 days against a usual week of 1000 (2.4x, averaged over 4 of the 4 weeks before; session RPE x minutes, unvalidated). Worth a look.',
       detected_from: RULE6,
       detection_data: { acute_load: 2449, usual_weekly_load: 1000, ratio: 2.45, prior_weeks_with_load: 4 },
@@ -633,7 +638,7 @@ describe('familyGapDescription', () => {
     ['a zero ratio', { ratio: 0 }],
     ['a malformed ratio_shown and no ratio', { ratio_shown: 'about two' }],
   ])('never invents a ratio: %s returns the stored text', (_label, detection_data) => {
-    expect(familyGapDescription({
+    expect(asAdult({
       gap_description: 'stored coach text',
       detected_from: RULE6,
       detection_data: detection_data as Record<string, unknown> | null,
@@ -646,11 +651,137 @@ describe('familyGapDescription', () => {
     'coach_observation',
     null,
   ])('every other gap (%s) keeps its stored text', (detected_from) => {
-    expect(familyGapDescription({
+    expect(asAdult({
       gap_description: 'stored coach text',
       detected_from,
       detection_data: { ratio: 2.4, ratio_shown: '2.4' },
     })).toBe('stored coach text');
+  });
+});
+
+// OD-2026-11-17-004 (OW25-31 A, "No ratio for under-18s; plain numbers"):
+// an under-18 athlete and their parents read logged sessions and minutes
+// against a usual range for a confirmed Rule 6 or Rule 7 gap. No ratio, no
+// "times", no coach phrasing; no usable numbers gives a fixed no-number line.
+describe('familyGapDescription for an under-18 reader', () => {
+  const NONE: never[] = [];
+  const NUMBERS = {
+    this_week: { sessions: 6, minutes: 410 },
+    usual: { sessions_low: 3, sessions_high: 4, minutes_low: 180, minutes_high: 240 },
+  };
+  const MINOR: FamilyReader = { minor: true, loadNumbers: NUMBERS, weekEnding: 'Nov 14' };
+  const MINOR_NO_NUMBERS: FamilyReader = { minor: true, loadNumbers: null, weekEnding: null };
+  const LOAD_LINES = 'In the 7 days to Nov 14: 6 logged sessions, 410 minutes. '
+    + 'A usual week before that: 3 to 4 logged sessions, 180 to 240 minutes.';
+
+  function energyDecline(overrides: Partial<WellnessDecline> = {}): WellnessDecline {
+    return {
+      athlete_id: 'ath-1', item: 'energy', direction: 'higher_is_better',
+      recent_avg: 2.5, prior_avg: 4.0, recent_count: 3, prior_count: 10, ...overrides,
+    };
+  }
+
+  function confirmedGap(rollup: AthletePerformanceRow[], declines: WellnessDecline[]) {
+    const [s] = deriveSuggestions(rollup, NO_STALLED, NO_OPEN_GAPS, NONE, NONE, [loadJump({ acute_load: 2400, ratio: 2.4 })], declines);
+    return { gap_description: s.suggested_description, detected_from: `deterministic_rule:${s.rule}`, detection_data: s.evidence };
+  }
+  const rule6 = () => confirmedGap([], []);
+  const rule7 = () => confirmedGap(
+    [rollupRow({ readiness_early_avg: 7.0, readiness_late_avg: 7.0 - READINESS_DROP_POINTS })],
+    [energyDecline(), energyDecline({ item: 'soreness', direction: 'higher_is_worse', prior_avg: 2.0, recent_avg: 3.5 })],
+  );
+
+  test('Rule 6: logged sessions and minutes against the usual range, then the ruling\'s line', () => {
+    expect(rule6().detected_from).toBe('deterministic_rule:load_jumped');
+    expect(familyGapDescription(rule6(), MINOR)).toBe(`${LOAD_LINES} Your coach is looking at it.`);
+  });
+
+  test('Rule 7: the same load lines, then its check-in changes in plain words; ratio and coach phrases dropped', () => {
+    const gap = rule7();
+    expect(gap.detected_from).toBe('deterministic_rule:load_up_wellness_down');
+    expect(gap.gap_description).toContain('(2.4x)');
+    expect(familyGapDescription(gap, MINOR)).toBe(
+      `${LOAD_LINES} Check-ins changed: energy from 4.0 to 2.5; soreness from 2.0 to 3.5; readiness from 7.0 to ${(7 - READINESS_DROP_POINTS).toFixed(1)}. `
+      + 'Your coach is looking at it.',
+    );
+  });
+
+  test('Rule 7 check-in figures are the ones the coach text shows, not a second rounding of the stored averages', () => {
+    const gap = confirmedGap([], [energyDecline({ prior_avg: 3.849, recent_avg: 2.449 })]);
+    expect(gap.gap_description).toContain('energy 3.8 → 2.4');
+    expect(gap.detection_data.energy_prior_avg).toBe(3.85);
+    expect(familyGapDescription(gap, MINOR)).toContain('Check-ins changed: energy from 3.8 to 2.4.');
+  });
+
+  test('Rule 7 with no check-in figure in its text falls back to the stored averages, then to no check-in line', () => {
+    const base = { detected_from: 'deterministic_rule:load_up_wellness_down', gap_description: 'coach text' };
+    expect(familyGapDescription({ ...base, detection_data: { soreness_prior_avg: 2, soreness_recent_avg: 3.5 } }, MINOR))
+      .toBe(`${LOAD_LINES} Check-ins changed: soreness from 2.0 to 3.5. Your coach is looking at it.`);
+    expect(familyGapDescription({ ...base, detection_data: { ratio: 2.4 } }, MINOR))
+      .toBe(`${LOAD_LINES} Your coach is looking at it.`);
+  });
+
+  test('equal ends print once, and one is singular', () => {
+    const reader: FamilyReader = {
+      ...MINOR,
+      loadNumbers: { this_week: { sessions: 1, minutes: 1 }, usual: { sessions_low: 1, sessions_high: 1, minutes_low: 45, minutes_high: 45 } },
+    };
+    expect(familyGapDescription(rule6(), reader)).toBe(
+      'In the 7 days to Nov 14: 1 logged session, 1 minute. A usual week before that: 1 logged session, 45 minutes. Your coach is looking at it.',
+    );
+  });
+
+  test.each<[string, FamilyReader]>([
+    ['no numbers', MINOR_NO_NUMBERS],
+    ['numbers but no week end', { ...MINOR, weekEnding: null }],
+  ])('no usable numbers (%s): the fixed line with no numbers, never the stored coach text', (_label, reader) => {
+    expect(familyGapDescription(rule6(), reader)).toBe(MINOR_LOAD_FALLBACK);
+    expect(familyGapDescription(rule7(), reader)).toBe(MINOR_LOAD_FALLBACK);
+    expect(MINOR_LOAD_FALLBACK).toBe('Your coach is looking at your recent training.');
+  });
+
+  test.each([
+    'deterministic_rule:readiness_falling',
+    'deterministic_rule:training_days_dropping',
+    'coach_observation',
+    null,
+  ])('every other gap (%s) keeps its stored text for an under-18 too', (detected_from) => {
+    expect(familyGapDescription({ gap_description: 'stored coach text', detected_from, detection_data: null }, MINOR))
+      .toBe('stored coach text');
+  });
+
+  test('an adult reader is unchanged even when numbers are at hand: the minor flag decides', () => {
+    expect(familyGapDescription(rule6(), { ...MINOR, minor: false })).toBe(
+      'Your training this week was about 2.4 times your usual week. Your coach is keeping an eye on it.',
+    );
+    expect(familyGapDescription(rule7(), { ...MINOR, minor: false })).toBe(rule7().gap_description);
+  });
+
+  // The guard: whatever the stored text or evidence, no under-18 family text
+  // for either load rule carries a ratio, an "N.Nx", the word "times", or the
+  // coach-only phrases.
+  describe('guard: no ratio reaches an under-18 or their parents', () => {
+    const LEGACY_RULE6 = 'Training load jumped: 2449 over the last 7 days against a usual week of 1000 (2.4x, averaged over 4 of the 4 weeks before; session RPE x minutes, unvalidated). Worth a look.';
+    type Gap = { gap_description: string; detected_from: string; detection_data: Record<string, unknown> | null };
+    const gaps: [string, Gap][] = [
+      ['Rule 6 as confirmed', rule6()],
+      ['Rule 7 as confirmed', rule7()],
+      ['Rule 6, legacy evidence', { gap_description: LEGACY_RULE6, detected_from: 'deterministic_rule:load_jumped', detection_data: { ratio: 2.45 } }],
+      ['Rule 6, no evidence', { gap_description: LEGACY_RULE6, detected_from: 'deterministic_rule:load_jumped', detection_data: null }],
+      ['Rule 7, no evidence', { gap_description: rule7().gap_description, detected_from: 'deterministic_rule:load_up_wellness_down', detection_data: null }],
+      ['Rule 7, text says times', { gap_description: 'about 3 times the usual (3.0x)', detected_from: 'deterministic_rule:load_up_wellness_down', detection_data: {} }],
+    ];
+    const readers: [string, FamilyReader][] = [['with numbers', MINOR], ['without numbers', MINOR_NO_NUMBERS]];
+    const cases = gaps.flatMap(([g, gap]) => readers.map(([r, reader]): [string, Gap, FamilyReader] => [`${g}, ${r}`, gap, reader]));
+
+    test.each(cases)('%s', (_label, gap, reader) => {
+      const text = familyGapDescription(gap, reader);
+      expect(text).not.toMatch(/\d+(\.\d+)?\s*x\b/i);
+      expect(text).not.toMatch(/\btimes\b/i);
+      expect(text).not.toMatch(/ratio/i);
+      expect(text).not.toMatch(/unvalidated|lighter week|RPE/i);
+      expect(text).toMatch(/Your coach is looking at/);
+    });
   });
 });
 

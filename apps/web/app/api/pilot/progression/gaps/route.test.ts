@@ -108,10 +108,17 @@ describe('GET /api/pilot/progression/gaps: who reads which words for a load jump
     },
   ];
 
-  async function read(p: PilotPrincipal) {
+  // An adult unless a dob says otherwise (OD-2026-11-17-004: adults unchanged).
+  async function read(p: PilotPrincipal, dob: string | null = '1990-01-01', weekly?: Record<string, unknown>[]) {
     mockRequirePrincipal.mockResolvedValueOnce(p);
     mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
     mockQuery.mockResolvedValueOnce(rows());
+    // getWeeklySessionLoads runs only for an under-18; queue it only then, or
+    // the unused value would leak into the next test.
+    if (weekly) mockQuery.mockResolvedValueOnce(weekly);
+    if (p.role === 'athlete' || p.role === 'parent') {
+      mockQueryOne.mockResolvedValueOnce({ dob }); // readAthleteDobForFamilyWording
+    }
     const res = await GET(getRequest('athlete_id=ath-1'));
     expect(res.status).toBe(200);
     return (await res.json()).items as Record<string, unknown>[];
@@ -131,6 +138,34 @@ describe('GET /api/pilot/progression/gaps: who reads which words for a load jump
   ])('the %s keeps the stored coach text', async (_role, p) => {
     const items = await read(p);
     expect(items.map((i) => i.gap_description)).toEqual([COACH_TEXT, 'Drops lead hand']);
+  });
+
+  // OD-2026-11-17-004 (OW25-31 A): an under-18 and their parents read plain
+  // numbers for the confirmed week, never the ratio.
+  test.each([
+    ['athlete', principal({ role: 'athlete', athleteId: 'ath-1' }), '2012-03-01'],
+    ['parent', principal({ role: 'parent', athleteId: null }), '2012-03-01'],
+    ['athlete with no date of birth', principal({ role: 'athlete', athleteId: 'ath-1' }), null],
+  ])('an under-18 %s reads plain numbers for the confirmed week', async (_role, p, dob) => {
+    const items = await read(p, dob, [
+      { athlete_id: 'ath-1', week_index: 0, week_load: 2400, session_count: 6, week_minutes: 410 },
+      { athlete_id: 'ath-1', week_index: 1, week_load: 1000, session_count: 3, week_minutes: 180 },
+      { athlete_id: 'ath-1', week_index: 2, week_load: 1000, session_count: 4, week_minutes: 240 },
+      { athlete_id: 'ath-1', week_index: 3, week_load: 1000, session_count: 3, week_minutes: 200 },
+    ]);
+    expect(items.map((i) => i.gap_description)).toEqual([
+      'In the 7 days to Oct 5: 6 logged sessions, 410 minutes. '
+        + 'A usual week before that: 3 to 4 logged sessions, 180 to 240 minutes. Your coach is looking at it.',
+      'Drops lead hand',
+    ]);
+    const weekly = mockQuery.mock.calls[1] as [string, unknown[]];
+    expect(weekly[0]).toContain('from pilot.sessions');
+    expect(weekly[1]).toEqual(['org-1', ['ath-1'], 5, '2026-10-05T12:00:00.000Z']);
+  });
+
+  test('an under-18 with no usable numbers reads the no-number line, never the coach text', async () => {
+    const items = await read(principal({ role: 'parent', athleteId: null }), '2012-03-01', []);
+    expect(items[0].gap_description).toBe('Your coach is looking at your recent training.');
   });
 
   test('the read selects detected_from and detection_data, which the wording needs', async () => {
