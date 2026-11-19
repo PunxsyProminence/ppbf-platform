@@ -48,7 +48,7 @@ const RESULT_OPTIONS = [
 
 const RESULT_BADGE: Record<string, { className: string; glyph: string }> = {
   won: { className: 'badge badge--cleared', glyph: '✓' },
-  lost: { className: 'badge badge--locked', glyph: '✕' },
+  lost: { className: 'badge badge--restricted', glyph: '▲' },
   draw: { className: 'badge badge--monitor', glyph: '◉' },
   no_contest: { className: 'badge badge--filed', glyph: '▣' },
 };
@@ -61,7 +61,7 @@ interface AthleteOption {
 const COMPETITION_BADGE: Record<string, { className: string; glyph: string }> = {
   planned: { className: 'badge badge--monitor', glyph: '◉' },
   completed: { className: 'badge badge--filed', glyph: '▣' },
-  cancelled: { className: 'badge badge--locked', glyph: '✕' },
+  cancelled: { className: 'badge badge--restricted', glyph: '▲' },
 };
 
 const COMPETITION_ACTIONS: Record<string, Array<{ status: string; label: string }>> = {
@@ -358,8 +358,8 @@ export default function ExternalCompetitionPlatformPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical mt-[var(--s5)]" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning mt-[var(--s5)]" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>

@@ -107,8 +107,8 @@ function PaymentsSettings() {
           </header>
 
           {connectOutcome && CONNECT_OUTCOMES[connectOutcome] && (
-            <div className={connectOutcome === 'ok' ? 'alert alert--info' : 'alert alert--critical'} role="status">
-              <span className="alert-icon" aria-hidden="true">{connectOutcome === 'ok' ? '✓' : '✕'}</span>
+            <div className={connectOutcome === 'ok' ? 'alert alert--info' : 'alert alert--warning'} role="status">
+              <span className="alert-icon" aria-hidden="true">{connectOutcome === 'ok' ? '✓' : '▲'}</span>
               <div className="alert-body">
                 <p className="alert-title">{connectOutcome === 'ok' ? 'Connected' : 'Not connected'}</p>
                 <p className="alert-msg">{CONNECT_OUTCOMES[connectOutcome]}</p>
@@ -117,8 +117,8 @@ function PaymentsSettings() {
           )}
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>
@@ -152,7 +152,7 @@ function PaymentsSettings() {
                         {connected ? (
                           <span className="badge badge--cleared"><i aria-hidden="true">✓</i>connected</span>
                         ) : row?.status === 'disconnected' ? (
-                          <span className="badge badge--locked"><i aria-hidden="true">✕</i>disconnected</span>
+                          <span className="badge badge--restricted"><i aria-hidden="true">▲</i>disconnected</span>
                         ) : (
                           <span className="badge badge--monitor"><i aria-hidden="true">◉</i>not connected</span>
                         )}

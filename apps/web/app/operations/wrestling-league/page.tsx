@@ -385,8 +385,8 @@ export default function WrestlingLeagueManagementPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical mt-[var(--s5)]" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning mt-[var(--s5)]" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>

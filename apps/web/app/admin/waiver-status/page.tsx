@@ -126,6 +126,24 @@ const MEDIA_WORDS: Record<WaiverStatus, string> = {
 };
 
 /** The medical record in its own word, with the day its clearance ends or ended. */
+/*
+ * WHICH "NOT CLEARED" IS A MEDICAL STOP (Overwatch Q5, applying Jason's card
+ * OW25-48 A: "Medical-stop mark only for a medical stop"; lane U1, SC2-3).
+ * Tonight is "not cleared" when the clearance record says not_cleared OR an
+ * all-training hold is in force. Only the first is a medical stop and keeps
+ * the mark; a hold alone (which may come from a pain report, OD-2026-10-03-017)
+ * is "Not cleared" on the restricted rung. Same word either way: whether the
+ * athlete trains tonight does not change, only which mark it wears.
+ */
+const HOLD_ONLY_NOT_CLEARED = { rung: 'badge--restricted', glyph: '▲', label: 'Not cleared' };
+
+function tonightBadge(tonight: Tonight | undefined): { rung: string; glyph: string; label: string } {
+  const answer = tonight?.answer ?? 'unavailable';
+  if (answer !== 'not_cleared') return TONIGHT_BADGE[answer];
+  const medicalStop = tonight !== undefined && tonight.medical !== 'unavailable' && tonight.medical.status === 'not_cleared';
+  return medicalStop ? TONIGHT_BADGE.not_cleared : HOLD_ONLY_NOT_CLEARED;
+}
+
 function medicalWords(medical: { status: string; expires_at: string | null }): string {
   const ends = formatGymDateShort(medical.expires_at);
   const word = MEDICAL_WORDS[medical.status] ?? medical.status;
@@ -490,9 +508,9 @@ export default function WaiverComplianceAuditPage() {
                       <td className="t-body px-[var(--s4)] py-[var(--s3)]">{row.athlete_name}</td>
                       {/* A row with no answer sent is unavailable, never cleared. */}
                       <td className="px-[var(--s4)] py-[var(--s3)] align-top">
-                        <span className={`badge ${TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].rung}`}>
-                          <i>{TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].glyph}</i>
-                          {TONIGHT_BADGE[row.tonight?.answer ?? 'unavailable'].label}
+                        <span className={`badge ${tonightBadge(row.tonight).rung}`}>
+                          <i>{tonightBadge(row.tonight).glyph}</i>
+                          {tonightBadge(row.tonight).label}
                         </span>
                         {row.tonight && contactClearanceLine(row.tonight) ? (
                           <p className="t-muted mt-[var(--s2)]">{contactClearanceLine(row.tonight)}</p>

@@ -128,7 +128,7 @@ function BoardComplianceMonitoringContent() {
   // live critical or high count wears the saturated band with its glyph
   // (Law 3), the same idiom the coach panel uses for injury flags.
   const severityTiles = [
-    { label: 'Critical', metric: severityCounts?.critical, glyph: '✕', tone: 'flex flex-col gap-[var(--s2)] rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)] px-[var(--s5)]' },
+    { label: 'Critical', metric: severityCounts?.critical, glyph: '▲', tone: 'flex flex-col gap-[var(--s2)] rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)] px-[var(--s5)]' },
     { label: 'High', metric: severityCounts?.high, glyph: '▲', tone: 'flex flex-col gap-[var(--s2)] rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)] px-[var(--s5)]' },
     { label: 'Medium', metric: severityCounts?.medium, glyph: null, tone: null },
     { label: 'Low', metric: severityCounts?.low, glyph: null, tone: null },

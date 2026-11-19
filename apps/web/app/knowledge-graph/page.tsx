@@ -23,7 +23,7 @@ interface ShadowKnowledgeNode {
 const REVIEW_STATE_BADGES: Record<ShadowKnowledgeNode['review_state'], { className: string; glyph: string; label: string }> = {
   pending_review: { className: 'badge badge--monitor', glyph: '◉', label: 'Pending Review' },
   approved: { className: 'badge badge--cleared', glyph: '✓', label: 'Approved' },
-  rejected: { className: 'badge badge--locked', glyph: '✕', label: 'Rejected' },
+  rejected: { className: 'badge badge--restricted', glyph: '▲', label: 'Rejected' },
   promoted: { className: 'badge badge--cleared', glyph: '✓', label: 'Promoted' },
   /* The sheet's own administrative rung (badge--filed) replaced the
      hand-rolled chip this entry used to carry -- same ◌, same job. */
@@ -145,9 +145,9 @@ export default function KnowledgeGraphPage() {
         </section>
 
         {errorMessage ? (
-          <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
-            <span className="badge badge--locked">
-              <i>✕</i>Projection Unavailable
+          <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s4)]">
+            <span className="badge badge--restricted">
+              <i>▲</i>Projection Unavailable
             </span>
             <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
           </section>

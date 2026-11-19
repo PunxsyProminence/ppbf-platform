@@ -120,8 +120,8 @@ export default function RosterExportPage() {
             </button>
 
             {errorMessage ? (
-              <p className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--locked-ink)]">
-                ✕ Nothing was downloaded. {errorMessage}
+              <p className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s3)] py-[var(--s2)] text-[length:var(--t-sm)] leading-6 text-[color:var(--restricted-ink)]">
+                ▲ Nothing was downloaded. {errorMessage}
               </p>
             ) : null}
 

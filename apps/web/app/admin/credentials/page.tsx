@@ -146,7 +146,7 @@ export default function AdminCredentialsPage() {
   };
 
   const alertRowClass = (band: string) =>
-    band === 'expired' || band === 'revoked' ? 'alert alert--critical'
+    band === 'expired' || band === 'revoked' ? 'alert alert--warning'
       : band === 'expiring_soon' ? 'alert alert--warning'
         : '';
 
@@ -177,7 +177,7 @@ export default function AdminCredentialsPage() {
          t-* inks for the light ground. The flagged bands keep the alert
          chassis they had; only the ordinary rows move to paper. */
       <li key={key} className={wrapperClass ? `${wrapperClass} mb-[var(--s3)]` : 'mat-paper mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s5)]'}>
-        {wrapperClass && <span className="alert-icon" aria-hidden="true">{row.band === 'expiring_soon' ? '!' : '✕'}</span>}
+        {wrapperClass && <span className="alert-icon" aria-hidden="true">{row.band === 'expiring_soon' ? '!' : '▲'}</span>}
         <div className={wrapperClass ? 'alert-body' : ''}>
           <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
             <span className="t-body font-semibold">{row.person_display_name}</span>
@@ -279,8 +279,8 @@ export default function AdminCredentialsPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>

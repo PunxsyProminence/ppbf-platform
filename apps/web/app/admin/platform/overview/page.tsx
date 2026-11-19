@@ -121,8 +121,8 @@ export default function PlatformOverview() {
 
         {loading && <p className="t-muted">Loading...</p>}
         {loadError && (
-          <p role="alert" className="alert alert--critical">
-            <span className="alert-icon">✕</span>
+          <p role="alert" className="alert alert--warning">
+            <span className="alert-icon">▲</span>
             <span className="alert-msg">{loadError}</span>
           </p>
         )}

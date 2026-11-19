@@ -29,6 +29,23 @@ interface FlagRow {
   created_at: string;
 }
 
+/*
+ * WHICH BLOCKING FLAG IS A MEDICAL STOP (Overwatch Q5, applying Jason's card
+ * OW25-48 A: "Medical-stop mark only for a medical stop"; lane U1, SC2-3).
+ * Only a clinician's stop keeps the mark: concussion_rest_period and
+ * rtp_not_cleared (both human-entry only, safetyFlags.ts
+ * MEDICAL_HUMAN_ONLY_FLAG_CODES). Every other blocking flag is "blocking" on
+ * the restricted rung, ▲ and the word.
+ */
+const MEDICAL_STOP_FLAG_CODES: ReadonlySet<string> = new Set(['concussion_rest_period', 'rtp_not_cleared']);
+
+function flagBadge(flag: { severity: string; flag_code: string }): { className: string; glyph: string; label: string } {
+  if (flag.severity === 'blocking_display' && !MEDICAL_STOP_FLAG_CODES.has(flag.flag_code)) {
+    return { className: 'badge badge--restricted', glyph: '▲', label: 'blocking' };
+  }
+  return SEVERITY_BADGE[flag.severity] ?? SEVERITY_BADGE.advisory;
+}
+
 const SEVERITY_BADGE: Record<string, { className: string; glyph: string; label: string }> = {
   blocking_display: { className: 'badge badge--locked', glyph: '✕', label: 'blocking' },
   attention: { className: 'badge badge--restricted', glyph: '▲', label: 'attention' },
@@ -194,7 +211,7 @@ export default function SafetyFlagsBoardPage() {
                   return order[a.severity] - order[b.severity];
                 })
                 .map((flag) => {
-                  const badge = SEVERITY_BADGE[flag.severity] ?? SEVERITY_BADGE.advisory;
+                  const badge = flagBadge(flag);
                   const resolving = resolveDraft?.flagId === flag.flag_id;
                   return (
                     <li key={flag.flag_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">

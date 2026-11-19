@@ -270,7 +270,7 @@ function documentReviewState(metadata: Record<string, unknown> | null | undefine
 // quarantined is locked, unreviewed still awaits a human (restricted).
 function reviewStateBadge(state: DocumentReviewState): { rung: string; glyph: string } {
   if (state === 'clean') return { rung: 'badge--cleared', glyph: '✓' };
-  if (state === 'quarantined') return { rung: 'badge--locked', glyph: '✕' };
+  if (state === 'quarantined') return { rung: 'badge--restricted', glyph: '▲' };
   return { rung: 'badge--restricted', glyph: '▲' };
 }
 
@@ -373,7 +373,7 @@ function CaseDocumentsPanel({ intakeCaseId }: { intakeCaseId: string }) {
       {expanded ? (
         <div className="mt-2 space-y-2">
           {loading ? <p className="t-muted">Loading documents…</p> : null}
-          {error ? <p role="alert" className="alert alert--critical"><span className="alert-icon">✕</span><span className="alert-msg">{error}</span></p> : null}
+          {error ? <p role="alert" className="alert alert--warning"><span className="alert-icon">▲</span><span className="alert-msg">{error}</span></p> : null}
           {!loading && documents.length === 0 && !error ? (
             <p className="t-muted">No documents on this case.</p>
           ) : null}
@@ -460,7 +460,7 @@ function parsePromotionPayloadFromNotes(notes: string): Record<string, unknown> 
 function statusBadge(status: IntakeStatus): { rung: string; glyph: string } {
   if (status === 'Pending') return { rung: 'badge--restricted', glyph: '▲' };
   if (status === 'Approved') return { rung: 'badge--cleared', glyph: '✓' };
-  if (status === 'Rejected') return { rung: 'badge--locked', glyph: '✕' };
+  if (status === 'Rejected') return { rung: 'badge--restricted', glyph: '▲' };
   return { rung: 'badge--monitor', glyph: '◉' };
 }
 
@@ -757,7 +757,7 @@ function LibraryReviewFlagsPanel() {
       </p>
       <div className="mt-3 space-y-2">
         {loading ? <p className="t-muted">Loading flags…</p> : null}
-        {error ? <p role="alert" className="alert alert--critical"><span className="alert-icon">✕</span><span className="alert-msg">{error}</span></p> : null}
+        {error ? <p role="alert" className="alert alert--warning"><span className="alert-icon">▲</span><span className="alert-msg">{error}</span></p> : null}
         {!loading && !error && flags.length === 0 ? (
           <p className="t-muted">No pending flags. The Library has no unreviewed negative-outcome reports.</p>
         ) : null}
@@ -911,7 +911,7 @@ function FeatureUnlockPanel() {
       </p>
       <div className="mt-3 space-y-2">
         {loading ? <p className="t-muted">Loading thresholds…</p> : null}
-        {error ? <p role="alert" className="alert alert--critical"><span className="alert-icon">✕</span><span className="alert-msg">{error}</span></p> : null}
+        {error ? <p role="alert" className="alert alert--warning"><span className="alert-icon">▲</span><span className="alert-msg">{error}</span></p> : null}
         {rows.map((row) => {
           const busy = busyFeatureKey === row.featureKey;
           const draft = drafts[row.featureKey] ?? { minValue: String(row.minValue), activationMode: row.activationMode };
@@ -1124,7 +1124,7 @@ function renderFeedbackReviewPanel(props: {
       )}
 
       {error && (
-        <p role="alert" className="alert alert--critical mb-[var(--s4)]"><span className="alert-icon">✕</span><span className="alert-msg">{error}</span></p>
+        <p role="alert" className="alert alert--warning mb-[var(--s4)]"><span className="alert-icon">▲</span><span className="alert-msg">{error}</span></p>
       )}
 
       {retryQueue.length > 0 && (
@@ -2204,7 +2204,7 @@ export default function AdminShadowConsolePage() {
                   {isUploading ? 'Processing PDF...' : 'Upload PDF'}
                 </button>
                 {uploadedFileName && <p className="t-body">Last staged file: {uploadedFileName}</p>}
-                {uploadError && <p role="alert" className="alert alert--critical"><span className="alert-icon">✕</span><span className="alert-msg">{uploadError}</span></p>}
+                {uploadError && <p role="alert" className="alert alert--warning"><span className="alert-icon">▲</span><span className="alert-msg">{uploadError}</span></p>}
                 {lastIngestSummary && (
                   <div className="t-data border border-[color:var(--hide-700)] bg-[var(--hide-900)] p-[var(--s3)]">
                     <p>Intake Case: {lastIngestSummary.intake_case_id}</p>

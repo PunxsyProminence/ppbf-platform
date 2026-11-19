@@ -74,6 +74,23 @@ interface FlagItem {
 }
 
 // The same rungs, glyphs and words /admin/safety-flags uses for this union.
+/*
+ * WHICH BLOCKING FLAG IS A MEDICAL STOP (Overwatch Q5, applying Jason's card
+ * OW25-48 A: "Medical-stop mark only for a medical stop"; lane U1, SC2-3).
+ * Only a clinician's stop keeps the mark: concussion_rest_period and
+ * rtp_not_cleared (both human-entry only, safetyFlags.ts
+ * MEDICAL_HUMAN_ONLY_FLAG_CODES). Every other blocking flag is "blocking" on
+ * the restricted rung, ▲ and the word.
+ */
+const MEDICAL_STOP_FLAG_CODES: ReadonlySet<string> = new Set(['concussion_rest_period', 'rtp_not_cleared']);
+
+function flagBadge(flag: { severity: FlagSeverity; flag_code: string }): { rung: string; glyph: string; label: string } {
+  if (flag.severity === 'blocking_display' && !MEDICAL_STOP_FLAG_CODES.has(flag.flag_code)) {
+    return { rung: 'badge--restricted', glyph: '▲', label: 'blocking' };
+  }
+  return FLAG_BADGE[flag.severity] ?? FLAG_BADGE.advisory;
+}
+
 const FLAG_BADGE: Record<FlagSeverity, { rung: string; glyph: string; label: string }> = {
   blocking_display: { rung: 'badge--locked', glyph: '✕', label: 'blocking' },
   attention: { rung: 'badge--restricted', glyph: '▲', label: 'attention' },
@@ -314,9 +331,9 @@ export default function SafetyReviewPage() {
                         </span>
                         <span className="flex flex-wrap items-center gap-[var(--s2)]">
                           <span className="t-data text-[color:var(--bone-400)] [overflow-wrap:anywhere]">{flag.flag_code}</span>
-                          <span className={`badge ${(FLAG_BADGE[flag.severity] ?? FLAG_BADGE.advisory).rung}`}>
-                            <i aria-hidden="true">{(FLAG_BADGE[flag.severity] ?? FLAG_BADGE.advisory).glyph}</i>
-                            {(FLAG_BADGE[flag.severity] ?? FLAG_BADGE.advisory).label}
+                          <span className={`badge ${flagBadge(flag).rung}`}>
+                            <i aria-hidden="true">{flagBadge(flag).glyph}</i>
+                            {flagBadge(flag).label}
                           </span>
                         </span>
                       </li>

@@ -670,14 +670,14 @@ export default function PlatformConsole() {
             role={feedback.kind === 'error' ? 'alert' : 'status'}
             className={`alert ${
               feedback.kind === 'error'
-                ? 'alert--critical'
+                ? 'alert--warning'
                 : feedback.kind === 'success'
                   ? 'alert--success'
                   : 'alert--info'
             }`}
           >
             <span className="alert-icon">
-              {feedback.kind === 'error' ? '✕' : feedback.kind === 'success' ? '✓' : '◉'}
+              {feedback.kind === 'error' ? '▲' : feedback.kind === 'success' ? '✓' : '◉'}
             </span>
             <span className="alert-msg font-semibold">{feedback.text}</span>
           </div>

@@ -259,8 +259,8 @@ function BoardReportSection() {
         ) : null}
       </div>
       {failure ? (
-        <div role="alert" className="alert alert--critical mt-[var(--s3)]">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <div role="alert" className="alert alert--warning mt-[var(--s3)]">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <div className="alert-body">
             <p className="alert-title">Report not made</p>
             <p className="alert-msg">{failure}</p>

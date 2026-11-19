@@ -307,8 +307,8 @@ function ConsentConsole() {
 
         {rosterError ? (
           /* Law 3: a glyph and an uppercase label, never the red on its own. */
-          <div role="alert" className="alert alert--critical alert--tight">
-            <span className="alert-icon" aria-hidden="true">✕</span>
+          <div role="alert" className="alert alert--warning alert--tight">
+            <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
               <p className="alert-title">Roster unavailable</p>
               <p className="alert-msg">{rosterError}</p>
@@ -460,7 +460,7 @@ function ConsentConsole() {
                   on this page that ARE .alert both stand on the wall. */}
               {saveError ? (
                 <div role="alert" className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
-                  <span className="badge badge--locked"><i aria-hidden="true">✕</i>Not recorded</span>
+                  <span className="badge badge--restricted"><i aria-hidden="true">▲</i>Not recorded</span>
                   <p className="t-body">{saveError}</p>
                 </div>
               ) : null}
@@ -478,8 +478,8 @@ function ConsentConsole() {
           <section className="space-y-[var(--s4)]">
             <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Already on file</h2>
             {waiversError ? (
-              <div role="alert" className="alert alert--critical alert--tight">
-                <span className="alert-icon" aria-hidden="true">✕</span>
+              <div role="alert" className="alert alert--warning alert--tight">
+                <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
                   <p className="alert-title">Records unavailable</p>
                   <p className="alert-msg">{waiversError}</p>

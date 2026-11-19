@@ -239,8 +239,8 @@ export default function CoachCoveragePage() {
               immediately.
             </p>
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon">▲</span>
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}
@@ -312,8 +312,8 @@ export default function CoachCoveragePage() {
               </button>
             </form>
             {(rosterState === 'unavailable' || coachesState === 'unavailable') && (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon">▲</span>
                 <span className="alert-msg">
                   {rosterState === 'unavailable' && 'The athlete roster could not be loaded. '}
                   {coachesState === 'unavailable' && 'The coach list could not be loaded. '}
@@ -328,8 +328,8 @@ export default function CoachCoveragePage() {
               </p>
             )}
             {grantError ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon">▲</span>
                 <span className="alert-msg">{grantError}</span>
               </p>
             ) : null}

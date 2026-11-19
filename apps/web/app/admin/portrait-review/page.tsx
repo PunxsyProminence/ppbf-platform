@@ -178,8 +178,8 @@ export default function PortraitReviewPage() {
               safe direction and is never slowed down. Every portrait you open is recorded against your account.
             </p>
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon">▲</span>
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}

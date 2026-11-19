@@ -41,7 +41,7 @@ const BAND_BADGE: Record<string, { className: string; label: string }> = {
   submitted: { className: 'badge--monitor', label: 'Awaiting review' },
   revoked: { className: 'badge--restricted', label: 'Revoked' },
   not_required: { className: 'badge--filed', label: 'Not required' },
-  missing: { className: 'badge--locked', label: 'Not on file' },
+  missing: { className: 'badge--restricted', label: 'Not on file' },
 };
 
 function bandBadge(band: string) {
@@ -96,8 +96,8 @@ function StaffCredentialsBoard() {
         </header>
 
         {errorMessage && (
-          <div className="alert alert--critical" role="alert">
-            <span className="alert-icon" aria-hidden="true">✕</span>
+          <div className="alert alert--warning" role="alert">
+            <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
               <p className="alert-title">Failed</p>
               <p className="alert-msg">{errorMessage}</p>

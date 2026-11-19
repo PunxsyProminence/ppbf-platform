@@ -59,7 +59,7 @@ function formatWhen(value: string): string {
  */
 function triageBadge(status: TriageStatus): { className: string; glyph: string } {
   if (status === 'done') return { className: 'badge badge--cleared', glyph: '✓' };
-  if (status === 'declined') return { className: 'badge badge--locked', glyph: '✕' };
+  if (status === 'declined') return { className: 'badge badge--restricted', glyph: '▲' };
   if (status === 'new') return { className: 'badge badge--restricted', glyph: '▲' };
   return { className: 'badge badge--monitor', glyph: '◉' };
 }

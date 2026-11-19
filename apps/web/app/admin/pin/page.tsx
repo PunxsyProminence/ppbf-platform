@@ -255,11 +255,11 @@ function PinManagementPageContent() {
                               statusLabel === 'Active'
                                 ? 'badge--cleared'
                                 : statusLabel === 'Inactive'
-                                  ? 'badge--locked'
+                                  ? 'badge--restricted'
                                   : 'badge--restricted'
                             }`}
                           >
-                            <i>{statusLabel === 'Active' ? '✓' : statusLabel === 'Inactive' ? '✕' : '▲'}</i>
+                            <i>{statusLabel === 'Active' ? '✓' : '▲'}</i>
                             {statusLabel}
                           </span>
                         </p>
@@ -305,8 +305,8 @@ function PinManagementPageContent() {
               </div>
 
               {createError && (
-                <div role="alert" className="alert alert--critical alert--tight">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div role="alert" className="alert alert--warning alert--tight">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-msg">{createError}</p>
                   </div>
@@ -342,8 +342,8 @@ function PinManagementPageContent() {
               </p>
 
               {error && (
-                <div role="alert" className="alert alert--critical alert--tight">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div role="alert" className="alert alert--warning alert--tight">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-msg">{error}</p>
                   </div>

@@ -409,6 +409,13 @@ describe('truthful roster and save states', () => {
     expect(screen.getByText('Not saved: the list does not show Casey Stone active in Youth Boxing. Save again when ready.')).toBeTruthy();
     expect((screen.getByLabelText('Athlete') as HTMLSelectElement).value).toBe('ath-2');
     expect((screen.getByLabelText('Start date') as HTMLInputElement).value).toBe('2026-09-01');
+    // A save that did not land is not a medical stop: the warning rung and ▲,
+    // never alert--critical (OW25-48 A; lane U1, SC2-3). The class is chosen
+    // from a map, which the source guard cannot see, so it is pinned here.
+    const notice = screen.getByText(/^Not saved: the list does not show/).closest('.alert');
+    expect(notice?.className).toContain('alert--warning');
+    expect(notice?.className).not.toContain('alert--critical');
+    expect(notice?.textContent).toContain('▲');
   });
 
   test('a 500 on save re-reads the list and says what it shows', async () => {

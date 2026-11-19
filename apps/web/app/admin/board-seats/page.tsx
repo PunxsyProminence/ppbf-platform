@@ -373,8 +373,8 @@ function BoardSeatsConsole() {
         </header>
 
         {error && (
-          <div role="alert" className="alert alert--critical">
-            <span className="alert-icon" aria-hidden="true">✕</span>
+          <div role="alert" className="alert alert--warning">
+            <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
               <p className="alert-msg">{error}</p>
             </div>
@@ -583,7 +583,7 @@ function BoardSeatsConsole() {
 
             {primaryConflict && currentPrimary && (
               <div role="alert" className="space-y-[var(--s3)] rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">
+                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--restricted-ink)]">
                   ▲ {seatLabelFor(draftSeat)} is held by {nameFor(currentPrimary.account_id)}. A seat has one officer of
                   record, so this cannot be a second — choose which one you meant.
                 </p>

@@ -308,6 +308,11 @@ test('open safety flags are listed, worst first, and lead to the flags queue', a
   expect(within(section).getByText('Jordan T.')).toBeTruthy();
   expect(within(section).getByText('An account (no athlete record)')).toBeTruthy();
   expect(within(section).getByText('blocking')).toBeTruthy();
+  // medical_clearance_missing is paperwork, not a clinician's stop: restricted,
+  // not the medical-stop mark (Q5 / OW25-48 A; lane U1, SC2-3).
+  const blocking = within(section).getByText('blocking').closest('.badge') as HTMLElement;
+  expect(blocking.className).toContain('badge--restricted');
+  expect(blocking.className).not.toContain('badge--locked');
   expect(within(section).getByRole('link', { name: 'Open the safety flags queue' }).getAttribute('href')).toBe('/admin/safety-flags');
   expect(screen.queryByText('Nothing open right now')).toBeNull();
 });

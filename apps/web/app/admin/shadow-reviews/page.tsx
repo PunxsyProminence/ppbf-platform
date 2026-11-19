@@ -135,7 +135,7 @@ const STATUS_TABS: { value: ReviewStatus; label: string }[] = [
  * defined, so it rendered unstyled until it moved onto the shared ones.
  */
 const SEVERITY_STYLE: Record<Severity, { label: string; rung: string; glyph: string }> = {
-  critical: { label: 'CRITICAL', rung: 'badge--locked', glyph: '✕' },
+  critical: { label: 'CRITICAL', rung: 'badge--restricted', glyph: '▲' },
   high: { label: 'HIGH', rung: 'badge--restricted', glyph: '▲' },
   moderate: { label: 'MODERATE', rung: 'badge--monitor', glyph: '◉' },
 };
@@ -306,8 +306,8 @@ function ShadowReviewsConsole() {
       </header>
 
       {status === 'open' && criticalCount > 0 && (
-        <p role="status" className="alert alert--critical">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <p role="status" className="alert alert--warning">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <span className="alert-msg">
             {criticalCount} critical {criticalCount === 1 ? 'ticket' : 'tickets'} waiting.
             Critical means the classifier read chest pain, fainting, loss of
@@ -334,8 +334,8 @@ function ShadowReviewsConsole() {
       </nav>
 
       {error && (
-        <p role="alert" className="alert alert--critical">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <p role="alert" className="alert alert--warning">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <span className="alert-msg">{error}</span>
         </p>
       )}
@@ -422,8 +422,8 @@ function ShadowReviewsConsole() {
                 )}
                 {exchange?.kind === 'loading' && <p className="t-muted">Reading the flagged exchange…</p>}
                 {exchange?.kind === 'error' && (
-                  <p role="alert" className="alert alert--critical">
-                    <span className="alert-icon" aria-hidden="true">✕</span>
+                  <p role="alert" className="alert alert--warning">
+                    <span className="alert-icon" aria-hidden="true">▲</span>
                     <span className="alert-msg">{exchange.message}</span>
                   </p>
                 )}

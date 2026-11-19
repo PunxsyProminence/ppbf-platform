@@ -742,7 +742,7 @@ function TrackAssignmentControl({ canAssign }: { readonly canAssign: boolean | n
             counts on each card are a planning preview, not live wiring — read them as intent, not as what is switched on.
           </p>
           {loadError && (
-            <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-sm)] text-[var(--locked-ink)]">
+            <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-sm)] text-[var(--restricted-ink)]">
               {loadError}. Tracks cannot be shown or saved until this loads; reload to try again.
             </p>
           )}
@@ -1624,7 +1624,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
         </section>
 
         {(capabilityStoreError || gymCapabilityStoreError) && (
-          <section role="alert" className="border-b border-[color:var(--brass-700)] bg-[var(--rust-900)] px-6 py-3 text-[length:var(--t-sm)] text-[var(--locked-ink)]">
+          <section role="alert" className="border-b border-[color:var(--brass-700)] bg-[var(--rust-900)] px-6 py-3 text-[length:var(--t-sm)] text-[var(--restricted-ink)]">
             {capabilityStoreError && <p>{capabilityStoreError}</p>}
             {gymCapabilityStoreError && <p className={capabilityStoreError ? 'mt-1' : undefined}>{gymCapabilityStoreError}</p>}
           </section>

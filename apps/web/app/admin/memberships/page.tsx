@@ -127,10 +127,19 @@ async function sendWrite(method: 'POST' | 'PATCH', body: unknown): Promise<Respo
 /** A 4xx: the server refused before writing. */
 const isRefusal = (status: number) => status >= 400 && status < 500;
 
+/* The class is chosen, not built from the tone: a 'critical' notice (a save
+   that did not land) is not a medical stop, so it is never alert--critical,
+   the medical-stop mark (OW25-48 A; lane U1, SC2-3). Its word says "Not saved". */
+const NOTICE_CLASS: Record<Notice['tone'], string> = {
+  critical: 'alert--warning',
+  warning: 'alert--warning',
+  success: 'alert--success',
+};
+
 function OutcomeNotice({ notice, checking, onCheckAgain }: { notice: Notice; checking: boolean; onCheckAgain: () => void }) {
   return (
-    <div className={`alert alert--${notice.tone} mb-[var(--s4)]`} role={notice.tone === 'critical' ? 'alert' : 'status'}>
-      <span className="alert-icon" aria-hidden="true">{notice.tone === 'success' ? '✓' : notice.tone === 'warning' ? '▲' : '✕'}</span>
+    <div className={`alert ${NOTICE_CLASS[notice.tone]} mb-[var(--s4)]`} role={notice.tone === 'critical' ? 'alert' : 'status'}>
+      <span className="alert-icon" aria-hidden="true">{notice.tone === 'success' ? '✓' : '▲'}</span>
       <div className="alert-body">
         <p className="alert-msg">{notice.text}</p>
         {notice.recheck && (
@@ -715,8 +724,8 @@ export default function MembershipsPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>
