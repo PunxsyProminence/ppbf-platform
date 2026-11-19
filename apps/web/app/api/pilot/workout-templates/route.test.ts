@@ -11,6 +11,7 @@ import { editWorkoutTemplate } from '@/src/server/pilot/workoutTemplateEdit';
 import {
   getWorkoutTemplateWithItems,
   listUntestedTemplateDrills,
+  planTemplateIssue,
   listWorkoutTemplates,
 } from '@/src/server/pilot/workoutTemplates';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
@@ -51,6 +52,7 @@ jest.mock('@/src/server/pilot/workoutTemplates', () => {
     listWorkoutTemplates: jest.fn(),
     getWorkoutTemplateWithItems: jest.fn(),
     listUntestedTemplateDrills: jest.fn(async () => []),
+    planTemplateIssue: jest.fn(async () => ({ refused: [] })),
   };
 });
 
@@ -58,6 +60,7 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 const mockList = listWorkoutTemplates as jest.Mock;
 const mockDetail = getWorkoutTemplateWithItems as jest.Mock;
 const mockUntested = listUntestedTemplateDrills as jest.Mock;
+const mockPlan = planTemplateIssue as jest.Mock;
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -141,6 +144,7 @@ describe('the detail branch', () => {
       template: TEMPLATE,
       items: [{ item_id: 'item-1' }],
       untested_drills: [],
+      refused_drills: [],
     });
     expect(mockDetail).toHaveBeenCalledWith('org-1', 'tpl-1');
     expect(mockList).not.toHaveBeenCalled();
@@ -154,6 +158,41 @@ describe('the detail branch', () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'WORKOUT_TEMPLATE_NOT_FOUND' });
+  });
+});
+
+/* Lane U1, U1-ISSUE (dry run 2026-11-19): the steps an issue would refuse,
+   said with the template, from the issue's own plan, before Issue. */
+describe('refused_drills on the detail read', () => {
+  test("names each refused drill with its steps and the plan's own reason, for the session gym", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    const items = [{ item_id: 'item-6', ordinal: 6 }];
+    mockDetail.mockResolvedValue({ template: TEMPLATE, items });
+    mockPlan.mockResolvedValueOnce({
+      refused: [{ drill_id: 'drill-wrap', name: 'Wrap Under Supervision', steps: [6], reason: 'It has no coaching cue.' }],
+    });
+
+    const body = await (await GET(getRequest('template_id=tpl-1'))).json();
+
+    expect(body.refused_drills).toEqual([{ name: 'Wrap Under Supervision', steps: [6], reason: 'It has no coaching cue.' }]);
+    expect(mockPlan).toHaveBeenCalledWith('org-1', items);
+  });
+
+  test('a plan that could not run is null, and the template still opens', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockDetail.mockResolvedValue({ template: TEMPLATE, items: [{ item_id: 'item-1' }] });
+    mockPlan.mockRejectedValueOnce(Object.assign(new Error('connection to 10.0.0.1 refused'), { code: 'ECONNREFUSED' }));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await GET(getRequest('template_id=tpl-1'));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.refused_drills).toBeNull();
+    expect(body.template).toEqual(TEMPLATE);
+    // The log carries the code, never the message.
+    expect(JSON.stringify(log.mock.calls)).not.toContain('10.0.0.1');
+    log.mockRestore();
   });
 });
 
@@ -520,6 +559,9 @@ describe('what each reader receives', () => {
       // No untested list for a reader who cannot issue, and none is even read.
       expect(body).not.toHaveProperty('untested_drills');
       expect(mockUntested).not.toHaveBeenCalled();
+      // Nor the refusal plan (lane U1, U1-ISSUE): only those who issue get it.
+      expect(body).not.toHaveProperty('refused_drills');
+      expect(mockPlan).not.toHaveBeenCalled();
     });
   });
 
@@ -540,8 +582,8 @@ describe('what each reader receives', () => {
 
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(body).toEqual({ ...STORED_DETAIL, untested_drills: UNTESTED });
-      expect(Object.keys(body)).toEqual(['template', 'items', 'coach_only_extra', 'untested_drills']);
+      expect(body).toEqual({ ...STORED_DETAIL, untested_drills: UNTESTED, refused_drills: [] });
+      expect(Object.keys(body)).toEqual(['template', 'items', 'coach_only_extra', 'untested_drills', 'refused_drills']);
       // Read for the session gym, from the items this read returned.
       expect(mockUntested).toHaveBeenCalledWith('org-1', STORED_DETAIL.items);
     });

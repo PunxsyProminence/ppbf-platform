@@ -15521,7 +15521,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "COACHING_CONTENT_READER_ROLES (coachingContentAccess.ts:93) admits everyone except board. Reads org workout templates and items (workoutTemplates.ts); a content library, not per-athlete data. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in workoutTemplateProjection.ts (no author account id or role, no coach notes or other coach-written text; issue #1475). The detail read also carries untested_drills (drills no coach of this gym has floor-tested) for coach and organization admin only (issue #1473).",
+    "notes": "COACHING_CONTENT_READER_ROLES (coachingContentAccess.ts:93) admits everyone except board. Reads org workout templates and items (workoutTemplates.ts); a content library, not per-athlete data. Coach and organization admin get the stored rows; every other admitted role gets the allow-list in workoutTemplateProjection.ts (no author account id or role, no coach notes or other coach-written text; issue #1475). The detail read also carries untested_drills (drills no coach of this gym has floor-tested) for coach and organization admin only (issue #1473). The detail read also gives coach and organization admin refused_drills: the steps an issue would refuse, from planTemplateIssue (read-only, the issue's own plan; null if it could not run). Lane U1, U1-ISSUE.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

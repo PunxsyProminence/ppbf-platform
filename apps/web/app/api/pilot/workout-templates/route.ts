@@ -13,10 +13,39 @@ import {
   getWorkoutTemplateWithItems,
   listUntestedTemplateDrills,
   listWorkoutTemplates,
+  planTemplateIssue,
   type WorkoutTemplateDifficulty,
 } from '@/src/server/pilot/workoutTemplates';
 
 export const runtime = 'nodejs';
+
+/**
+ * The steps an issue of this template would refuse, said BEFORE the coach
+ * presses Issue (lane U1, U1-ISSUE; dry run 2026-11-19: "Intro to Boxing --
+ * Session 1" could not be issued and the coach learned why only after
+ * confirming). planTemplateIssue is the issue's own read-only plan, so this
+ * adds no rule: same drills, same reasons. It is drill-level and names no
+ * athlete; refusals that depend on the athlete still come after Confirm.
+ *
+ * null when the check itself could not run: the template still opens, and
+ * the page says the steps could not be checked rather than "none refused".
+ */
+async function refusedBeforeIssue(
+  organizationId: string,
+  items: Parameters<typeof planTemplateIssue>[1],
+): Promise<Array<{ name: string; steps: number[]; reason: string }> | null> {
+  try {
+    const plan = await planTemplateIssue(organizationId, items);
+    return plan.refused.map((drill) => ({ name: drill.name, steps: drill.steps, reason: drill.reason }));
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : undefined;
+    console.error({
+      event: 'workout-template-refusal-check-failed',
+      ...(typeof code === 'string' ? { code } : {}),
+    });
+    return null;
+  }
+}
 
 // Read-only browse over pilot.workout_templates. GET without template_id
 // lists (filterable by session_type/difficulty/age_band); GET with
@@ -65,6 +94,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           ...projected,
           untested_drills: await listUntestedTemplateDrills(principal.organizationId, detail.items),
+          refused_drills: await refusedBeforeIssue(principal.organizationId, detail.items),
         });
       }
       return NextResponse.json(projected);

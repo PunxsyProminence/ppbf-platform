@@ -223,7 +223,32 @@ function reshape(text: string, keep: (row: Row) => boolean, drop: string[] = [])
 const FT1_PACKAGES: readonly DatasetName[] = ['drill-library', 'workout-templates', 'training-tracks'];
 // The stages a stage_keys cell names must be loaded: the pathway catalog comes with the registries.
 const REGISTRIES: readonly DatasetName[] = ['disciplines', 'competence-levels', 'cohort-definitions', 'pathway-catalog'];
-const committed = readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES);
+/**
+ * Lane HW (OD-2026-11-19-005) came after this lane, so its rows are left out here, as a later lane's are:
+ * its six home templates and their items, the six drills it wrote with their child rows, and the cue (and
+ * that cue's label) it added to one existing drill. Its own checks are hwContentPackage.test.ts.
+ */
+const HW_MARK = '"draft":"AI draft, lane HW, 2026-11-19';
+const HW_SOURCE = 'research finding 2026-11-19-ppbf-home-week-six-sessions-draft.md';
+function withoutLaneHw(files: Record<string, string>): Record<string, string> {
+  const hwDrillIds = new Set(rowsOf(files[DRILLS_CSV]).filter((row) => row.content_class.startsWith('AI DRAFT - lane HW')).map((row) => row.drill_id));
+  const hwTemplateIds = new Set(rowsOf(files[TEMPLATES_CSV]).filter((row) => row.field_labels.includes(HW_MARK)).map((row) => row.template_id));
+  const rewrite = (text: string, keep: (row: Row) => boolean, edit: (row: Row) => Row = (row) => row) => {
+    const header = readCsv(text).header;
+    return writeCsv(header, rowsOf(text).filter(keep).map(edit).map((row) => header.map((name) => row[name] ?? '')));
+  };
+  const out = { ...files };
+  // The one existing drill lane HW touched carries only lane HW's label; before lane HW it had none.
+  out[DRILLS_CSV] = rewrite(files[DRILLS_CSV], (row) => !hwDrillIds.has(row.drill_id),
+    (row) => (row.field_labels.includes(HW_MARK) ? { ...row, field_labels: '' } : row));
+  for (const name of [CUES_CSV, STOPS_CSV, 'drill-library/seed_drill_scale_levels.csv']) {
+    out[name] = rewrite(files[name], (row) => !hwDrillIds.has(row.drill_id) && !(row.source_ref ?? '').startsWith(HW_SOURCE));
+  }
+  out[TEMPLATES_CSV] = rewrite(files[TEMPLATES_CSV], (row) => !hwTemplateIds.has(row.template_id));
+  out[ITEMS_CSV] = rewrite(files[ITEMS_CSV], (row) => !hwTemplateIds.has(row.template_id));
+  return out;
+}
+const committed = withoutLaneHw(readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES));
 const ft1DrillIds = new Set(rowsOf(committed[DRILLS_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.drill_id));
 const ft1TemplateIds = new Set(rowsOf(committed[TEMPLATES_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.template_id));
 // Every Backbone template (stage_keys not blank): FT1's 33 plus lane YR's youth and recreational ones.

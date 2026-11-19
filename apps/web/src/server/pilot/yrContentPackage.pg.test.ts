@@ -231,6 +231,12 @@ const ofLaterLane = (row: Row) => row.stage_keys !== 'FT1' && !row.stage_keys.sp
   && row.stage_keys.split('|').some((key) => LATER_STAGES.includes(key));
 const laterTemplateIds = new Set(rowsOf(allCommitted[TEMPLATES_CSV]).filter(ofLaterLane).map((row) => row.template_id));
 const laterTrackIds = new Set(rowsOf(allCommitted[TRACKS_CSV]).filter(ofLaterLane).map((row) => row.track_id));
+// Lane HW's six home templates (OD-2026-11-19-005; blank stage keys, AI-draft labels) came after this lane
+// and are left out the same way; hwContentPackage.test.ts checks them. Its track edit stays: that track is
+// this lane's, and names the templates only inside details.
+for (const row of rowsOf(allCommitted[TEMPLATES_CSV])) {
+  if (row.field_labels.includes('"draft":"AI draft, lane HW, 2026-11-19')) laterTemplateIds.add(row.template_id);
+}
 const committed: Record<string, string> = {
   ...allCommitted,
   [TEMPLATES_CSV]: reshape(allCommitted[TEMPLATES_CSV], (row) => !laterTemplateIds.has(row.template_id)),
