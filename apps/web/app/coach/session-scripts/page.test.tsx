@@ -88,6 +88,40 @@ function detail(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * A drill as GET /api/pilot/drill-library?drill_id= answers a coach (the author shape), for the
+ * lane U2-6e fallback: a plan line left empty shows the linked drill's text.
+ */
+function libraryDrill(overrides: Record<string, unknown> = {}) {
+  return {
+    drill_id: 'drl-1',
+    name: 'Slip drill',
+    discipline: 'boxing',
+    category: 'defense',
+    difficulty: 'beginner',
+    version: 1,
+    active: true,
+    superseded_at: null,
+    purpose: '',
+    standard_setup: '',
+    execution: '',
+    what_good_looks_like: '',
+    what_bad_looks_like: '',
+    common_errors: '',
+    corrections: '',
+    contact_level: 'light_technical',
+    requires_coach_authorization: false,
+    cues: [],
+    scale_levels: [],
+    stop_rules: [],
+    universal_stop_rules: [],
+    secondary_skills: [],
+    grounding_claim_ids: [],
+    field_drafts: { cues: false, what_good_looks_like: false, what_bad_looks_like: false, corrections: false },
+    ...overrides,
+  };
+}
+
 function mockFetch(handler: (url: string, init?: RequestInit) => Response) {
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => handler(String(input), init));
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -272,7 +306,12 @@ describe('coach session plans page', () => {
   });
 
   it('says "Not written yet" for coaching fields that are null, never an empty label or a hidden line', async () => {
-    mockFetch((url) => (url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [FRIDAY] })));
+    // blk-2 links a drill whose corrections are not written either, so its empty Fix line has
+    // nothing to fall back to (lane U2-6e) and still says "Not written yet".
+    mockFetch((url) => {
+      if (url.includes('/api/pilot/drill-library')) return jsonResponse({ drill: libraryDrill() });
+      return url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [FRIDAY] });
+    });
 
     render(<CoachSessionScriptsPage />);
     fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
@@ -286,9 +325,113 @@ describe('coach session plans page', () => {
       expect(first.textContent).toContain(label);
     }
     expect(within(first).getAllByText('Not written yet')).toHaveLength(4);
+    expect(await within(second).findByText('Not written yet')).toBeInTheDocument();
     expect(within(second).getAllByText('Not written yet')).toHaveLength(1);
     expect(within(second).getByText(/Eyes on the chest/)).toBeInTheDocument();
     expect(within(second).getByText(/Chin lifting/)).toBeInTheDocument();
+  });
+
+  // Lane U2-6e (Overwatch option A, Q1 = A, Q2 = A, Q4 = A, 2026-11-19).
+  describe('an empty Say, Watch or Fix line shows the linked drill\'s text', () => {
+    function emptyLinesDetail() {
+      const base = detail();
+      return {
+        ...base,
+        blocks: [
+          base.blocks[0],
+          { ...base.blocks[1], what_to_say: null, what_to_watch: null, what_to_fix: null },
+        ],
+      };
+    }
+    const SLIP_DRILL = libraryDrill({
+      cues: [{ cue_text: 'Eyes on the chest', cue_family: 'eyes' }, { cue_text: 'Small slip', cue_family: 'head' }],
+      what_good_looks_like: 'Head moves off the line.',
+      what_bad_looks_like: 'Dropping the hands.',
+      corrections: 'Bend the knees, not the waist.',
+      field_drafts: { cues: true, what_good_looks_like: false, what_bad_looks_like: null, corrections: true },
+    });
+
+    async function openWith(drillAnswer: () => Response, script: unknown = emptyLinesDetail()) {
+      const fetchMock = mockFetch((url) => {
+        if (url.includes('/api/pilot/drill-library')) return drillAnswer();
+        return url.includes('script_id') ? jsonResponse({ script }) : jsonResponse({ scripts: [FRIDAY] });
+      });
+      render(<CoachSessionScriptsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+      const blocks = await screen.findByRole('list', { name: /blocks/i });
+      return { fetchMock, blocks };
+    }
+
+    it('labels each drill line "From the drill", with good and bad as two Watch lines', async () => {
+      const { blocks } = await openWith(() => jsonResponse({ drill: SLIP_DRILL }));
+      const second = within(blocks).getAllByRole('listitem')[1];
+      expect(await within(second).findByText('Eyes on the chest · Small slip')).toBeInTheDocument();
+      const lines = Array.from(second.querySelectorAll('p')).map((line) => line.textContent);
+      expect(lines).toEqual([
+        'Say (From the drill): Eyes on the chest · Small slip ◉DRAFT, FOR COACH REVIEW',
+        'Explain: Slipping is a decision, not a flinch.',
+        'Watch (From the drill): Head moves off the line.',
+        'What to avoid (From the drill): Dropping the hands. (draft status not checked)',
+        'Fix (From the drill): Bend the knees, not the waist. ◉DRAFT, FOR COACH REVIEW',
+      ]);
+      // A block with no linked drill is unchanged.
+      expect(within(within(blocks).getAllByRole('listitem')[0]).getAllByText('Not written yet')).toHaveLength(4);
+    });
+
+    it('the AI-draft mark is the filed badge, never the medical-stop mark (OW25-57; --locked is a medical stop only)', async () => {
+      const { blocks } = await openWith(() => jsonResponse({ drill: SLIP_DRILL }));
+      const marks = await within(blocks).findAllByText('DRAFT, FOR COACH REVIEW');
+      expect(marks).toHaveLength(2);
+      for (const mark of marks) {
+        expect(mark.className).toBe('badge badge--filed ml-[var(--s2)]');
+        expect(mark.outerHTML).not.toMatch(/locked/);
+      }
+    });
+
+    it('reads one drill per linked block with an empty line, and none for a block whose lines are all written', async () => {
+      const base = detail();
+      const script = {
+        ...base,
+        blocks: [
+          { ...base.blocks[1], what_to_fix: 'Turn the hip.' },
+          { ...base.blocks[1], block_id: 'blk-3', block_order: 3, drill_id: 'drl-3', what_to_say: null },
+          { ...base.blocks[1], block_id: 'blk-4', block_order: 4, drill_id: 'drl-3', what_to_watch: null },
+        ],
+      };
+      const { fetchMock, blocks } = await openWith(() => jsonResponse({ drill: libraryDrill({ drill_id: 'drl-3', cues: [{ cue_text: 'Stay tall', cue_family: 'posture' }] }) }), script);
+      expect(await within(blocks).findByText('Stay tall')).toBeInTheDocument();
+      const reads = fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('drill-library'));
+      expect(reads).toEqual(['/api/pilot/drill-library?drill_id=drl-3']);
+      expect(within(within(blocks).getAllByRole('listitem')[0]).getByText('Turn the hip.')).toBeInTheDocument();
+    });
+
+    it('a drill that could not be read says so on each empty line, never blank and never as the plan\'s own text', async () => {
+      const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const { blocks } = await openWith(() => jsonResponse({ error: 'DRILL_NOT_FOUND' }, false));
+      const second = within(blocks).getAllByRole('listitem')[1];
+      expect(await within(second).findAllByText("Not written yet. The drill's text could not be loaded.")).toHaveLength(3);
+      expect(within(second).queryByText(/From the drill/)).not.toBeInTheDocument();
+      log.mockRestore();
+    });
+
+    it('while the drill is loading, the empty lines say so', async () => {
+      let answer: (response: Response) => void = () => {};
+      const pending = new Promise<Response>((resolve) => { answer = resolve; });
+      const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/pilot/drill-library')) return pending;
+        return url.includes('script_id') ? jsonResponse({ script: emptyLinesDetail() }) : jsonResponse({ scripts: [FRIDAY] });
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+      render(<CoachSessionScriptsPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
+      expect(await screen.findAllByText("Loading the drill's text...")).toHaveLength(3);
+      await act(async () => {
+        answer(jsonResponse({ drill: SLIP_DRILL }));
+      });
+      expect(await screen.findByText('Bend the knees, not the waist.')).toBeInTheDocument();
+      expect(screen.queryByText("Loading the drill's text...")).not.toBeInTheDocument();
+    });
   });
 
   it('surfaces the reset protocol, which a new coach needs before any drill', async () => {

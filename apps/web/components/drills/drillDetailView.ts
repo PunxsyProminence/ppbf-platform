@@ -88,6 +88,20 @@ export interface DrillCoachContext {
    * instruction). The screen says which, rather than showing bare ids.
    */
   groundingEvidence: GroundingEvidence[] | null | undefined;
+  /**
+   * Whether each field a session plan falls back to (lane U2-6e) is still an
+   * AI draft, per field (OW25-57: coaches and admins only). null = NOT CHECKED:
+   * the server could not tell, or the response carried no answer. A screen
+   * says so; null never reads as "not a draft".
+   */
+  fieldDrafts: DrillFieldDraftsView;
+}
+
+export interface DrillFieldDraftsView {
+  cues: boolean | null;
+  good: boolean | null;
+  bad: boolean | null;
+  corrections: boolean | null;
 }
 
 export interface DrillDetailView {
@@ -198,6 +212,12 @@ export function fromCoachDrillDetail(
       sourceRef: drill.source_ref,
       groundingClaimIds: [...new Set((drill.grounding_claim_ids ?? []).map((id) => id.trim()).filter(Boolean))],
       groundingEvidence,
+      fieldDrafts: {
+        cues: drill.field_drafts?.cues ?? null,
+        good: drill.field_drafts?.what_good_looks_like ?? null,
+        bad: drill.field_drafts?.what_bad_looks_like ?? null,
+        corrections: drill.field_drafts?.corrections ?? null,
+      },
     },
   };
 }

@@ -4,13 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
-import { orNotWritten } from '@/src/lib/drillPresentation';
-import { explainLine } from '@/src/lib/sessionScriptWords';
+import { AI_DRAFT_MARK, DRAFT_NOT_CHECKED, blockCoachingLines, blockNeedsDrillText } from '@/src/lib/sessionScriptWords';
 import CoachLiveTiles from '@/components/CoachLiveTiles';
 import RoundTimerControls from '@/components/RoundTimerControls';
 import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
 import { readReferenceInstruction } from '@/components/drills/drillInstructionRead';
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
+import { useLinkedDrillText } from '@/components/drills/useLinkedDrillText';
 import { BlockKindIcon, blockKindWord } from '@/components/blockKindIcons';
 import SessionRunPresence from '@/components/SessionRunPresence';
 import SessionRunClass from '@/components/SessionRunClass';
@@ -99,18 +99,6 @@ interface LoggedIntervention {
 // starts from the number marked here, until the coach types in it; what the
 // coach leaves in the box is what is saved. Nobody marked leaves it empty, so
 // an empty room is never recorded that nobody counted.
-
-/** The four authored coaching fields; one the author left empty says "Not written yet" rather than vanishing. */
-function blockDetailLines(block: Block): { label: string; value: string }[] {
-  return [
-    { label: 'Say', value: block.what_to_say ?? '' },
-    explainLine(block.what_to_explain ?? ''),
-    { label: 'Watch', value: block.what_to_watch ?? '' },
-    { label: 'Fix', value: block.what_to_fix ?? '' },
-  ].map((line) => (line.value.trim() === ''
-    ? { label: line.label === 'From the template' ? 'Explain' : line.label, value: orNotWritten('') }
-    : line));
-}
 
 function formatElapsed(totalSeconds: number): string {
   const seconds = Math.max(0, totalSeconds);
@@ -248,6 +236,12 @@ export default function SessionScriptLiveDelivery({
   const currentBlock = currentIndex >= 0 ? blocks[currentIndex] : null;
   const previousBlock = currentIndex > 0 ? blocks[currentIndex - 1] : null;
   const nextBlock = currentIndex >= 0 && currentIndex < blocks.length - 1 ? blocks[currentIndex + 1] : null;
+
+  // Lane U2-6e (Overwatch Q4 = A): the current block's linked drill is read
+  // when one of its Say, Watch or Fix lines is empty, and kept for the rest of
+  // the run, so those lines show the drill's text instead of "Not written yet".
+  const currentNeedsDrill = currentBlock !== null && blockNeedsDrillText(currentBlock);
+  const drillTexts = useLinkedDrillText(currentNeedsDrill ? [currentBlock.drill_id as string] : []);
 
   // THE DRILL BEHIND THE CURRENT BLOCK (audit 2026-10-17 item 1). A plan made
   // from a template copies a step's name, minutes, scale, contact and note, not
@@ -818,10 +812,26 @@ export default function SessionScriptLiveDelivery({
                 )}
                 {currentBlock.scale_level && <span className="t-label">Scale {currentBlock.scale_level}</span>}
               </div>
-              {blockDetailLines(currentBlock).map((line) => (
+              {blockCoachingLines(
+                currentBlock,
+                currentNeedsDrill ? drillTexts.get(currentBlock.drill_id as string) ?? { state: 'loading' } : null,
+              ).map((line) => (
                 <p key={`${currentBlock.block_id}-${line.label}`} className="t-body mt-[var(--s2)] text-[color:var(--bone-200)]">
                   <span className="t-label">{line.label}: </span>
                   {line.value}
+                  {/* OW25-57: the per-field AI-draft mark, for coaches and admins (the only roles this console renders for). */}
+                  {line.fromDrill && line.draft === true && (
+                    <>
+                      {' '}
+                      <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>
+                    </>
+                  )}
+                  {line.fromDrill && line.draft === null && (
+                    <>
+                      {' '}
+                      <span className="t-muted">({DRAFT_NOT_CHECKED})</span>
+                    </>
+                  )}
                 </p>
               ))}
               {currentBlock.drill_id !== null && (
