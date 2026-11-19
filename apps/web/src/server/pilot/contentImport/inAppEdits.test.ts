@@ -48,7 +48,7 @@ describe('recognising an in-app edit label', () => {
     const reason = heldReason(3, { path: 'purpose', role: 'coach', date: '2026-11-19' });
     expect(reason).toBe(
       "kept: its current version v3 holds an in-app edit (purpose) by coach, 2026-11-19; the package's version was not loaded. "
-      + "A coach who wants the package's text edits it in the app.",
+      + "The coach's version stays in use and is held on every later plan; a coach who wants the package's text enters it in the app.",
     );
     expect(reason).not.toContain('acct-');
   });

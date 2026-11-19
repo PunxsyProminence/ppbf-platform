@@ -85,7 +85,8 @@ Research releases have their own contract (not in this file yet).
   version a coach edited in the app is HELD instead: nothing is written for it, the plan and the dry run list it
   with the reason, and the rest of the hand-off still loads. A child file counts (a drill's cues, a template's
   items). A template step that links a held drill must fit the coach's kept version, or that template is held too.
-  A held item stays listed on every plan until a coach changes it in the app. A package may not carry an
+  A held item is held on every later plan: the coach's version stays the one in use, and a coach who wants the
+  package's text enters it in the app. Session scripts are not covered. A package may not carry an
   "In-app edit" field label: only the app writes that label (blocking: in_app_edit_label).
 - The seed workflow and `npm run seed:<dataset>` load through this rule (the content-import core). A dataset
   with no loader yet says so under "Loaded today", and a load that names it is refused, not skipped.

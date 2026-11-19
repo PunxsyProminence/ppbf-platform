@@ -31,6 +31,9 @@ import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, Uni
 //                edit (inAppEdits.ts), or a step links a HELD drill whose kept
 //                version it would not fit (withdrawn, or less contact than the
 //                step). Nothing is written; the rest of the package applies.
+//                Session scripts are NOT guarded against in-app edits: their
+//                authoring writes no in-app labels and sessionScripts.ts names
+//                no audit entity, so only the held-drill check applies to them.
 //
 // ONE UNIT = the root row plus its child rows. A child file replaces a
 // parent's rows only when it has at least one row for that parent; a parent
@@ -604,7 +607,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           for (const [index, cells] of (children.get(child.spec) ?? []).entries()) {
             const lineage = cells[drill.name];
             if (!lineage || !heldDrills.has(lineage)) continue;
-            const at = `${child.spec.file} row ${cells.ordinal || index + 1}`;
+            const at = `${child.spec.file} row ${cells.ordinal || cells.block_order || index + 1}`;
             const head = drillHeads.get(lineage);
             const kept = `drill ${lineage} is held (its in-app-edited version is kept)`;
             if (!head) return `${at} links ${kept}, and that version could not be read`;
@@ -667,6 +670,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           unit.outcome = 'unchanged';
         } else if (edited.has(key)) {
           unit.outcome = 'held';
+          unit.heldBy = 'in_app_edit';
           unit.reasons = [heldReason(head.version, edited.get(key) as InAppEditedHead)];
         } else {
           unit.outcome = 'new_version';
@@ -677,6 +681,7 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           const misfit = misfitWithHeldDrill(children);
           if (misfit) {
             unit.outcome = 'held';
+            unit.heldBy = 'held_dependency';
             unit.reasons = [`${head ? 'kept' : 'not loaded'}: ${misfit}`];
             delete unit.fromVersion;
             delete unit.toVersion;

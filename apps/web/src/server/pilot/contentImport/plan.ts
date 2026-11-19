@@ -10,10 +10,12 @@ import {
   type UnitPlan,
 } from './datasets';
 import { stageKeyFindings } from './datasets/pathwayCatalog';
+import { heldStepFindings } from './inAppEdits';
 import { loadDatabaseReferenceSets } from './referenceSetsDb';
 import { DATASETS } from './specs';
 import type { DatasetName, Finding, PackageFileInput, ParsedFile, Warning } from './types';
 import { parsePackage, validateParsed } from './validate';
+import { VOCABULARIES } from './vocabularies';
 
 // STAGE 3 OF THE CONTENT-IMPORT CORE: PLAN. READ-ONLY.
 //
@@ -107,6 +109,8 @@ function computePlanHash(organizationId: string, actor: ImportActor, datasets: D
     unit.recordsBefore ?? false,
     // Only when set, so every plan without a retirement hashes as before.
     ...(unit.retires ? ['retires'] : []),
+    // Likewise only on a held item.
+    ...(unit.heldBy ? [unit.heldBy] : []),
   ]);
   const findingRows = blocking
     .map((finding) => JSON.stringify([finding.code, finding.file, finding.line ?? null, finding.column ?? null, finding.key ?? null, finding.message]))
@@ -157,11 +161,35 @@ export async function planWithState(request: ImportRequest, checkedActor?: Impor
     if (keys.length > 0) held.set(engine.spec.name, new Set(keys));
   }
 
+  // A held template's or script's stored steps stay: a drill revised in this
+  // plan may not go below them (inAppEdits.ts heldStepFindings).
+  const heldStepRejects: Finding[] = [];
+  const heldParents = new Set(datasetPlans
+    .filter((datasetPlan) => datasetPlan.dataset === 'workout-templates' || datasetPlan.dataset === 'session-scripts')
+    .flatMap((datasetPlan) => datasetPlan.units.filter((unit) => unit.outcome === 'held').map((unit) => unit.key)));
+  const drillPlan = datasetPlans.find((datasetPlan) => datasetPlan.dataset === 'drill-library');
+  if (drillPlan && heldParents.size > 0) {
+    const drillFile = parsed.files.find((file) => file.spec.file === 'seed_drill_library.csv');
+    const revised = new Set(drillPlan.units.filter((unit) => unit.outcome === 'new_version').map((unit) => unit.key));
+    for (const { lineage, finding } of heldStepFindings(
+      drillFile?.rows ?? [], drillFile?.path, references.committedSteps, heldParents, revised, VOCABULARIES.contact_level.values,
+    )) {
+      const unit = drillPlan.units.find((candidate) => candidate.key === lineage);
+      if (unit) {
+        unit.outcome = 'reject';
+        unit.reasons = [...(unit.reasons ?? []), finding.message];
+        delete unit.fromVersion;
+        delete unit.toVersion;
+      }
+      heldStepRejects.push(finding);
+    }
+  }
+
   const units = datasetPlans.flatMap((plan) => plan.units).sort(compareUnits);
   // The stages content items name (stage_keys) against the pathway catalog
   // they will be linked to; offline only the backbone's 18 are known (validate.ts).
   const stageKeys = await stageKeyFindings(client, organizationId, parsed);
-  const blocking = [...validation.blocking, ...unloadable, ...stageKeys, ...datasetPlans.flatMap((plan) => plan.findings)];
+  const blocking = [...validation.blocking, ...unloadable, ...stageKeys, ...datasetPlans.flatMap((plan) => plan.findings), ...heldStepRejects];
   const datasets = engines.map((engine) => engine.spec.name);
 
   const counts: Partial<Record<DatasetName, OutcomeCounts>> = {};

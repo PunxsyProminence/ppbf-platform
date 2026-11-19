@@ -14,9 +14,11 @@ import type { DbClient } from './actor';
 // THE RULE. A unit that would be a new version over a current version that
 // holds an in-app edit is HELD instead (datasets/index.ts): nothing is written
 // for it, the plan says why, and nothing else in the package waits on it. The
-// coach's edit wins (Overwatch, F1 = A: no override); a coach who wants the
-// package's text back edits it in the app. A held item is listed on every plan
-// and dry run until then.
+// coach's edit wins (Overwatch, F1 = A: no override). The coach's version stays
+// the one in use and the item is held on EVERY later plan and dry run: once
+// edited, its stored labels carry in-app labels no package can carry (the
+// validator refuses them), so it never plans unchanged again. A coach who
+// wants the package's text enters it in the app.
 //
 // HOW AN IN-APP EDIT IS RECOGNISED, either of:
 //   (a) the current version's stored field_labels hold an in-app label at any
@@ -152,5 +154,52 @@ export async function inAppEditedHeads(
 export function heldReason(version: number, edit: InAppEditedHead): string {
   const who = [edit.role, edit.date].filter(Boolean).join(', ');
   return `kept: its current version v${version} holds an in-app edit${edit.path ? ` (${edit.path})` : ''}${who ? ` by ${who}` : ''}; `
-    + 'the package\'s version was not loaded. A coach who wants the package\'s text edits it in the app.';
+    + 'the package\'s version was not loaded. The coach\'s version stays in use and is held on every later plan; '
+    + 'a coach who wants the package\'s text enters it in the app.';
+}
+
+/**
+ * THE KEPT STEPS OF A HELD TEMPLATE OR SCRIPT (lane IG). The validator's
+ * drill_contact_below_steps skips a template's or script's stored steps when
+ * the package carries step rows for it, because those rows replace them. A
+ * HELD template or script is not written, so its stored steps stay -- and a
+ * step is issued against its drill's NEWEST version (workoutTemplates.ts,
+ * "A STEP NAMES THE NEWEST VERSION"). So a drill this plan revises may not go
+ * below a kept step of a held parent: that drill is rejected (blocking), as
+ * the validator would have rejected it had the parent not been in the package.
+ */
+export function heldStepFindings(
+  drillRows: readonly { line: number; values: Readonly<Record<string, string>> }[],
+  drillFile: string | undefined,
+  committedSteps: ReadonlyMap<string, readonly { parent: string; position: number; contactLevel: string; file: string }[]> | undefined,
+  heldParents: ReadonlySet<string>,
+  revisedDrills: ReadonlySet<string>,
+  ladder: readonly string[],
+): { lineage: string; finding: { code: 'drill_contact_below_steps'; file: string; line: number; column: string; key: string; message: string } }[] {
+  if (!committedSteps || !drillFile || heldParents.size === 0) return [];
+  const out: ReturnType<typeof heldStepFindings> = [];
+  for (const row of drillRows) {
+    const lineage = row.values.drill_id;
+    const level = row.values.contact_level;
+    if (!lineage || !revisedDrills.has(lineage) || !ladder.includes(level)) continue;
+    const above = (committedSteps.get(lineage) ?? []).filter(
+      (step) => heldParents.has(step.parent) && ladder.indexOf(step.contactLevel) > ladder.indexOf(level),
+    );
+    if (above.length === 0) continue;
+    const named = above.slice(0, 5).map((step) => `${step.parent} / ${step.position} (${step.contactLevel})`).join(', ');
+    out.push({
+      lineage,
+      finding: {
+        code: 'drill_contact_below_steps',
+        file: drillFile,
+        line: row.line,
+        column: 'contact_level',
+        key: lineage,
+        message: `contact_level ${level} is below ${above.length} kept step${above.length === 1 ? '' : 's'} linking drill '${lineage}' `
+          + `in a template or script that is held because a coach edited it in the app: ${named}${above.length > 5 ? ', ...' : ''}. `
+          + 'Those steps stay as they are, so keep the drill\'s contact_level.',
+      },
+    });
+  }
+  return out;
 }

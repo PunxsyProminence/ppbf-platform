@@ -80,6 +80,9 @@ const REGISTRIES: readonly DatasetName[] = ['disciplines', 'competence-levels', 
 const LIBRARY_CSV = 'drill-library/seed_drill_library.csv';
 const CUES_CSV = 'drill-library/seed_drill_cues.csv';
 const TEMPLATES_CSV = 'workout-templates/seed_workout_templates.csv';
+const TRACKS_CSV = 'training-tracks/seed_training_tracks.csv';
+const TRACK_BLOCKS_CSV = 'training-tracks/seed_track_blocks.csv';
+const TRACK_SESSIONS_CSV = 'training-tracks/seed_track_block_sessions.csv';
 const ITEMS_CSV = 'workout-templates/seed_workout_template_items.csv';
 const LABEL_COLUMNS = ['field_labels', 'evidence', 'stage_keys'];
 
@@ -268,6 +271,33 @@ function templates(items: Row[] = [itemRow(T1, 1, D2), itemRow(T2, 1, D3)], root
   return { [TEMPLATES_CSV]: csv(TEMPLATES_CSV, roots), [ITEMS_CSV]: csv(ITEMS_CSV, items) };
 }
 
+/** One track of one block whose single session names `template`: the committed first track and block, re-keyed. */
+function track(trackId: string, template: string): Files {
+  const committed = readDatasetFiles(SEED_DATA_DIR, ['training-tracks']);
+  const blockId = `trb_${trackId.slice(4)}`;
+  const root = { ...rowsOf(committed, TRACKS_CSV)[0], track_id: trackId, lineage_id: trackId, name: `Track ${trackId}` };
+  const block = { ...rowsOf(committed, TRACK_BLOCKS_CSV)[0], track_id: trackId, track_block_id: blockId, block_lineage_id: blockId, block_order: '1' };
+  const session = { organization_id: '{{PPBF_ORG_ID}}', block_session_id: '', track_id: trackId, block_order: '1', ordinal: '1', week: '1', day: 'Monday', template_lineage_id: template };
+  return {
+    [TRACKS_CSV]: withRows(committed, TRACKS_CSV, [root])[TRACKS_CSV],
+    [TRACK_BLOCKS_CSV]: withRows(committed, TRACK_BLOCKS_CSV, [block])[TRACK_BLOCKS_CSV],
+    [TRACK_SESSIONS_CSV]: withRows(committed, TRACK_SESSIONS_CSV, [session])[TRACK_SESSIONS_CSV],
+  };
+}
+
+function mergeFiles(a: Files, b: Files): Files {
+  const out: Files = { ...a };
+  for (const [file, text] of Object.entries(b)) {
+    if (!out[file]) {
+      out[file] = text;
+      continue;
+    }
+    const header = readCsv(out[file]).header;
+    out[file] = withRows(out, file, [...rowsOf(out, file), ...rowsOf(b, file)], header)[file];
+  }
+  return out;
+}
+
 async function createGym(): Promise<{ org: string; admin: string }> {
   gyms += 1;
   const org = `gym_ig_${gyms}`;
@@ -365,6 +395,7 @@ describe('a drill a coach edited in the app', () => {
     expect(shown.blocking).toEqual([]);
     const held = unitOf(shown, 'drill-library', D1);
     expect(held.outcome).toBe('held');
+    expect(held.heldBy).toBe('in_app_edit');
     expect(held.fromVersion).toBeUndefined();
     expect(held.toVersion).toBeUndefined();
     expect(held.reasons).toEqual([
@@ -442,7 +473,7 @@ describe('a workout template a coach edited in the app', () => {
     ])[ITEMS_CSV] };
     const shown = await plan(org, admin, itemsOnly);
     expect(shown.blocking).toEqual([]);
-    expect(unitOf(shown, 'workout-templates', T1)).toMatchObject({ outcome: 'held' });
+    expect(unitOf(shown, 'workout-templates', T1)).toMatchObject({ outcome: 'held', heldBy: 'in_app_edit' });
     expect(unitOf(shown, 'workout-templates', T1).reasons?.[0]).toMatch(/^kept: its current version v2 holds an in-app edit \(intent\) by coach/);
     expect(unitOf(shown, 'workout-templates', T2)).toMatchObject({ outcome: 'new_version', fromVersion: 1, toVersion: 2 });
     expect(formatPlan(shown)).toContain('  workout-templates: 0 new, 1 new version, 0 unchanged, 0 absent, 0 reject, 1 held');
@@ -480,6 +511,7 @@ describe('a workout template a coach edited in the app', () => {
     expect(unitOf(shown, 'drill-library', D1).outcome).toBe('held');
     expect(unitOf(shown, 'workout-templates', T3)).toMatchObject({
       outcome: 'held',
+      heldBy: 'held_dependency',
       reasons: [`not loaded: seed_workout_template_items.csv row 1 links drill ${D1} is held (its in-app-edited version is kept), whose contact_level is none, below the step's light_technical`],
     });
     expect(unitOf(shown, 'workout-templates', T4).outcome).toBe('new');
@@ -535,5 +567,61 @@ describe('the dry run and the plan hash', () => {
     await expect(applyCommitted(org, admin, files, before.planHash)).rejects.toBeInstanceOf(ContentImportRefusal);
     expect(await head(org, 'drill_library', D1)).toMatchObject({ version: 2, purpose: 'Coach purpose.' });
     expect((await head(org, 'drill_library', D2)).version).toBe(1);
+  });
+});
+
+describe('what depends on a held item', () => {
+  it('holds a track whose session names a template that is held and was never loaded; a track naming a loaded one loads', async () => {
+    const { org, admin } = await loadedGym();
+    await coachEditsDrill(org, D1, { contact_level: 'none' });
+
+    const T3 = 'wtp_3c00000000000c';
+    const T4 = 'wtp_4d00000000000d';
+    const K1 = 'trk_1e00000000000e';
+    const K2 = 'trk_2f00000000000f';
+    const files = {
+      ...drillsWith({ [D1]: { purpose: 'Package purpose.' } }),
+      ...templates(
+        [itemRow(T3, 1, D1, { contact_level: 'light_technical' }), itemRow(T4, 1, D1, { contact_level: 'none' })],
+        [templateRow(T3), templateRow(T4)],
+      ),
+      ...mergeFiles(track(K1, T3), track(K2, T4)),
+    };
+    const shown = await plan(org, admin, files);
+    expect(shown.blocking).toEqual([]);
+    expect(unitOf(shown, 'workout-templates', T3)).toMatchObject({ outcome: 'held', heldBy: 'held_dependency' });
+    expect(unitOf(shown, 'training-tracks', K1)).toMatchObject({
+      outcome: 'held',
+      heldBy: 'held_dependency',
+      reasons: [`not loaded: track ${K1} block 1 session 1 names template ${T3}, which is held in this package and was never loaded`],
+    });
+    expect(unitOf(shown, 'training-tracks', K2).outcome).toBe('new');
+
+    await applyCommitted(org, admin, files, shown.planHash);
+    const tracks = (await client.query(`select lineage_id from pilot.training_tracks where organization_id = $1 order by lineage_id`, [org])).rows;
+    expect(tracks).toEqual([{ lineage_id: K2 }]);
+  });
+
+  it('refuses to lower a drill below a kept step of a template held for an in-app edit', async () => {
+    const { org, admin } = await createGym();
+    const T5 = 'wtp_5a00000000000a';
+    await applyCommitted(org, admin, { ...DRILLS, ...templates([itemRow(T5, 1, D1, { contact_level: 'light_technical' })], [templateRow(T5)]) });
+    await coachEditsTemplate(org, T5, { intent: 'Coach intent.' });
+
+    // The package lowers D1 to none and brings T5's step down with it, so the
+    // validator does not judge T5's stored step -- but T5 is held and keeps it.
+    const files = {
+      ...drillsWith({ [D1]: { contact_level: 'none' } }),
+      ...templates([itemRow(T5, 1, D1, { contact_level: 'none' })], [templateRow(T5)]),
+    };
+    const shown = await plan(org, admin, files);
+    expect(unitOf(shown, 'workout-templates', T5)).toMatchObject({ outcome: 'held', heldBy: 'in_app_edit' });
+    expect(unitOf(shown, 'drill-library', D1).outcome).toBe('reject');
+    const finding = shown.blocking.find((candidate) => candidate.code === 'drill_contact_below_steps');
+    expect(finding).toMatchObject({ file: LIBRARY_CSV, column: 'contact_level', key: D1 });
+    expect(finding?.message).toContain(`contact_level none is below 1 kept step linking drill '${D1}'`);
+    expect(finding?.message).toContain(`${T5} / 1 (light_technical)`);
+    await expect(applyCommitted(org, admin, files, shown.planHash)).rejects.toMatchObject({ code: 'PLAN_BLOCKED' });
+    expect((await head(org, 'drill_library', D1)).contact_level).toBe('light_technical');
   });
 });

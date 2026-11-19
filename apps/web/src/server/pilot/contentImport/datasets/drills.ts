@@ -450,6 +450,7 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
         unit.outcome = 'unchanged';
       } else if (edited.has(key)) {
         unit.outcome = 'held';
+        unit.heldBy = 'in_app_edit';
         unit.reasons = [heldReason(head.version, edited.get(key) as InAppEditedHead)];
       } else {
         unit.outcome = 'new_version';

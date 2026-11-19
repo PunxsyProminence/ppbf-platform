@@ -100,8 +100,18 @@ const OUTCOME_MARK: Record<PlanUnitView['outcome'], { glyph: '✓' | '◉' | '�
    the same). ◉, the mark of ABSENT: it leaves use, it does not go in. */
 const RETIRE_MARK = { glyph: '◉', label: 'RETIRE' } as const;
 
-function OutcomeBadge({ outcome, retires }: { readonly outcome: PlanUnitView['outcome']; readonly retires?: true }) {
-  const mark = retires ? RETIRE_MARK : OUTCOME_MARK[outcome];
+/* Held only because it depends on an item a coach edited in the app (a step
+   linking a held drill it would not fit, a track naming a held template that was
+   never loaded; lane IG). Nobody edited this item, so it is not KEPT; it may
+   not exist yet at all. */
+const HELD_DRILL_MARK = { glyph: '◉', label: 'NOT LOADED' } as const;
+
+function OutcomeBadge({ outcome, retires, heldBy }: {
+  readonly outcome: PlanUnitView['outcome'];
+  readonly retires?: true;
+  readonly heldBy?: PlanUnitView['held_by'];
+}) {
+  const mark = retires ? RETIRE_MARK : heldBy === 'held_dependency' ? HELD_DRILL_MARK : OUTCOME_MARK[outcome];
   return (
     <span className="badge badge--filed">
       <i aria-hidden="true">{mark.glyph}</i>
@@ -163,7 +173,7 @@ function UnitList({ units, title, note }: { readonly units: PlanUnitView[]; read
       <ul className="t-body space-y-[var(--s2)]">
         {units.map((unit) => (
           <li key={`${unit.dataset}-${unit.key}`} className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
-            <OutcomeBadge outcome={unit.outcome} retires={unit.retires} />{' '}
+            <OutcomeBadge outcome={unit.outcome} retires={unit.retires} heldBy={unit.held_by} />{' '}
             {datasetLabel(unit.dataset)}: {unitName(unit)}
             {unit.retires ? ' ' : null}
             {unit.retires ? <span className="t-muted">left out of the file; kept, marked inactive</span> : null}
@@ -542,9 +552,14 @@ function ContentImportScreen() {
 
             <UnitList units={byOutcome('reject')} title="Cannot be loaded" />
             <UnitList
-              units={byOutcome('held')}
+              units={byOutcome('held').filter((unit) => unit.held_by !== 'held_dependency')}
               title="Kept: edited in the app"
-              note="A coach edited these in the app, so the files' version is not loaded and the coach's stays. The rest still applies. A coach who wants the files' text edits it in the app."
+              note="A coach edited these in the app, so the files' version is not loaded and the coach's stays in use. They stay held on every later check; a coach who wants the files' text enters it in the app. The rest still applies."
+            />
+            <UnitList
+              units={byOutcome('held').filter((unit) => unit.held_by === 'held_dependency')}
+              title="Not loaded: depends on an item kept from the app"
+              note="These link a drill, or name a template, that a coach edited in the app and that is held, and would not fit the coach's version. Nothing is written for these; the rest still applies."
             />
             <UnitList units={byOutcome('new')} title="New" />
             <UnitList units={byOutcome('new_version')} title="New version (the old one is kept)" />

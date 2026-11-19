@@ -56,6 +56,13 @@ export interface UnitPlan {
   retires?: true;
   /** For a reject or a held item: why, in plain English. */
   reasons?: string[];
+  /**
+   * Why a held item is held: its current version holds a coach's in-app edit,
+   * or it depends on a held item it cannot be written against (a template or
+   * script step linking a held drill it would not fit; a track session naming
+   * a template that is held and was never loaded).
+   */
+  heldBy?: 'in_app_edit' | 'held_dependency';
 }
 
 export interface EngineContext {

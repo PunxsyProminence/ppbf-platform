@@ -379,8 +379,12 @@ test('an item a coach edited in the app is listed as kept, with its reason, and 
   reply = {
     status: 200,
     body: planBody({
-      counts: { 'drill-library': { new: 1, new_version: 0, unchanged: 0, absent: 0, reject: 0, held: 1 } },
-      totals: { new: 1, new_version: 0, unchanged: 0, absent: 0, reject: 0, held: 1 },
+      datasets: ['drill-library', 'workout-templates'],
+      counts: {
+        'drill-library': { new: 1, new_version: 0, unchanged: 0, absent: 0, reject: 0, held: 1 },
+        'workout-templates': { new: 0, new_version: 0, unchanged: 0, absent: 0, reject: 0, held: 1 },
+      },
+      totals: { new: 1, new_version: 0, unchanged: 0, absent: 0, reject: 0, held: 2 },
       changes: 1,
       units: [
         { dataset: 'drill-library', key: 'drl_0000000000000a', outcome: 'new', label: 'Jab Ladder', to_version: 1 },
@@ -388,8 +392,17 @@ test('an item a coach edited in the app is listed as kept, with its reason, and 
           dataset: 'drill-library',
           key: 'drl_0000000000000g',
           outcome: 'held',
+          held_by: 'in_app_edit',
           label: 'Coach Drill',
           reasons: ["kept: its current version v2 holds an in-app edit (purpose) by coach, 2026-11-19; the package's version was not loaded."],
+        },
+        {
+          dataset: 'workout-templates',
+          key: 'wtp_0000000000000h',
+          outcome: 'held',
+          held_by: 'held_dependency',
+          label: 'New Template',
+          reasons: ['not loaded: seed_workout_template_items.csv row 1 links drill drl_0000000000000g is held (its in-app-edited version is kept)'],
         },
       ],
     }),
@@ -401,9 +414,13 @@ test('an item a coach edited in the app is listed as kept, with its reason, and 
   const plan = screen.getByRole('region', { name: 'Plan' });
   expect(plan.textContent).toContain('1 new · 0 new version · 0 unchanged · 0 absent · 0 reject · 1 held');
   expect(within(plan).getByRole('heading', { name: 'Kept: edited in the app (1)' })).toBeTruthy();
+  // Held only for linking a held drill: nobody edited it, so it is never called KEPT or "edited in the app".
+  expect(within(plan).getByRole('heading', { name: 'Not loaded: depends on an item kept from the app (1)' })).toBeTruthy();
   const badges = Array.from(plan.querySelectorAll('.badge'));
-  expect(badges.map((badge) => badge.textContent)).toEqual(['◉KEPT', '✓NEW']);
-  expect(badges[0].className).toBe('badge badge--filed');
+  expect(badges.map((badge) => badge.textContent)).toEqual(['◉KEPT', '◉NOT LOADED', '✓NEW']);
+  for (const badge of badges) expect(badge.className).toBe('badge badge--filed');
+  expect((badges[1].closest('li') as HTMLElement).textContent).toContain('New Template');
+  expect((badges[1].closest('section') as HTMLElement).textContent).not.toContain('Coach Drill');
   const kept = badges[0].closest('li') as HTMLElement;
   expect(kept.textContent).toContain('Coach Drill');
   expect(kept.textContent).toContain('holds an in-app edit (purpose) by coach');

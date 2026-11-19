@@ -1,4 +1,5 @@
 import { hex14 } from '../ids';
+import { templateLineageHeads } from '../lineage';
 import { datasetSpec, rootFileSpec } from '../specs';
 import { BLOCKS_FILE, SESSIONS_FILE } from '../specs/trainingTracks';
 import type { Finding } from '../types';
@@ -104,6 +105,13 @@ export const trainingTracksEngine: DatasetEngine = {
       [ctx.organizationId],
     );
     const withdrawnTemplates = new Set(rows.map((row) => row.lineage_id));
+    // A template held in this same plan (inAppEdits.ts) that has no stored
+    // version is never written, so a session naming it would name nothing;
+    // the validator passed it because it is in the package. Such a track is
+    // held too. A held template that HAS a stored version keeps it, and a
+    // session names its lineage, so it opens the coach's version.
+    const heldTemplates = input.held?.get('workout-templates') ?? new Set<string>();
+    const storedTemplates = heldTemplates.size > 0 ? await templateLineageHeads(ctx.client, ctx.organizationId) : new Map();
     const sessionFile = input.files.find((file) => file.spec === sessions);
     const lineOf = (trackId: string, cells: Readonly<Record<string, string>>) =>
       sessionFile?.rows.find(
@@ -162,6 +170,14 @@ export const trainingTracksEngine: DatasetEngine = {
           findings.push({ code: 'orphan_reference', file, line, column: 'block_order', key: unit.key, message });
         }
         const template = cells.template_lineage_id;
+        if (template && heldTemplates.has(template) && !storedTemplates.has(template)
+          && (unit.outcome === 'new' || unit.outcome === 'new_version')) {
+          unit.outcome = 'held';
+          unit.heldBy = 'held_dependency';
+          unit.reasons = [`${item.head ? 'kept' : 'not loaded'}: ${at} names template ${template}, which is held in this package and was never loaded`];
+          delete unit.fromVersion;
+          delete unit.toVersion;
+        }
         if (template && withdrawnTemplates.has(template)) {
           const message = `${at} names template ${template}, whose current version in ${ctx.organizationId} is withdrawn. Name an active template, or restore it first.`;
           reject(item, message);
