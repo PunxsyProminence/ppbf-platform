@@ -14,6 +14,10 @@ const runnerPath = path.join(
   'apps/web/scripts/pilot-apply-safety-gate-matrix-migration.mjs',
 );
 const workflowPath = path.join(repositoryRoot, '.github/workflows/apply-migrations.yml');
+const lessonMigrationPath = path.join(
+  repositoryRoot,
+  'infra/azure/pilot_slice_postgres_contact_clearance_lesson_migration.sql',
+);
 const packageJsonPath = path.join(repositoryRoot, 'apps/web/package.json');
 
 const DEFAULT_GATE_KEYS = ['contact_medical_clearance', 'training_hold'];
@@ -127,8 +131,39 @@ describe('safety gate seeds ownership', () => {
         // The requirement_text is long and contains a doubled single-quote
         // (the SQL-escaped apostrophe in "'cleared'"), so it is checked
         // separately rather than folded into the tuple regex above.
-        expect(statements).toContain(gate.requirementText.replace(/'/g, "''"));
+        if (gate.gateKey !== 'contact_medical_clearance') {
+          expect(statements).toContain(gate.requirementText.replace(/'/g, "''"));
+        }
       }
+    });
+
+    /* THE MATRIX LITERAL, SUPERSEDED BY THE LESSON MIGRATION (OW25-45 B; lane SH,
+       PR SH-2; Overwatch chose to leave the deployed matrix migration
+       untouched). The matrix still inserts the earlier lesson, which named the
+       Medical Status panel. The contact-clearance-lesson migration, after it in
+       `all`, replaces exactly that string with the seed module's text. So the
+       chain is: the matrix inserts X; the lesson migration turns exactly X into
+       the seed's Y. Both halves are pinned here, so neither can drift alone
+       (contactClearanceLesson.pg.test.ts proves it on a real database). */
+    test('contact_medical_clearance: the matrix literal is the one the lesson migration replaces with the seed text', () => {
+      const gate = DEFAULT_SAFETY_GATES.find((seed) => seed.gateKey === 'contact_medical_clearance');
+      expect(gate).toBeDefined();
+      const lesson = statementsOnly(fs.readFileSync(lessonMigrationPath, 'utf8'));
+      const constant = (name: string) => {
+        const match = lesson.match(new RegExp(`${name}\\s+constant\\s+text\\s*:=\\s*'((?:[^']|'')*)'`));
+        expect(match).not.toBeNull();
+        return (match as RegExpMatchArray)[1];
+      };
+      const oldLesson = constant('old_lesson');
+      const newLesson = constant('new_lesson');
+
+      // The matrix inserts exactly the text the lesson migration looks for ...
+      expect(statements).toContain(`'${oldLesson}'`);
+      // ... and turns it into exactly the seed module's text.
+      expect(newLesson.replace(/''/g, "'")).toBe(gate!.requirementText);
+      expect(oldLesson).not.toBe(newLesson);
+      expect(lesson).toMatch(/set requirement_text = new_lesson/);
+      expect(lesson).toMatch(/where gate_key = 'contact_medical_clearance'\s+and requirement_text = old_lesson/);
     });
 
     test('both paths build the same deterministic gate id', () => {

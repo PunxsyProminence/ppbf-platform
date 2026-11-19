@@ -106,11 +106,10 @@ export async function POST(request: NextRequest) {
     // organization-private health information and platform_owner must never
     // reach it. See shadowRoleSets.ts for why Omega is narrower here, not wider.
     //
-    // NOTE: this set admits any coach with access to the athlete, and that is
-    // deliberately UNCHANGED here. Whether writing a clearance should require
-    // narrower authority than coaching the athlete is an escalated
-    // authorization question for the owner, not something to settle inside a
-    // fix; see the PR that added the authority check below.
+    // This set admits any coach with access to the athlete, and the owner has
+    // ruled that it should: Jason's card OW25-45 B (2026-11-19), "Coaches and
+    // the office" set an athlete's clearance, on the Clearance Board
+    // (/coach/sports-medicine), which is this route's one writer.
     requireRole(principal, [...SHADOW_PHI_ROLES]);
 
     const body = (await request.json().catch(() => ({}))) as MedicalStatusRequestBody;

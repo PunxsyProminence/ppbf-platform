@@ -44,11 +44,17 @@ export const DEFAULT_SAFETY_GATES: readonly SafetyGateSeed[] = [
     name: 'Contact Requires Medical Clearance',
     category: 'medical',
     enforcement: 'flag',
+    // The lesson names the Clearance Board (Jason, card OW25-45 B: coaches and
+    // the office set clearance there). The safety-gate-matrix migration still
+    // inserts the earlier text, which named the Medical Status panel; the
+    // contact-clearance-lesson migration, after it in `all`, replaces exactly
+    // that text with this one, so every database ends on this string
+    // (safetyGateSeedsOwnership.test.ts pins the chain).
     requirementText:
       "This athlete needs an explicit 'cleared' medical administrative status on file before taking contact. "
-      + "Set status to 'cleared' in the Medical Status panel once a clearance decision has been made; the "
-      + 'observation is kept either way, and contact logged without a current clearance raises a near miss for '
-      + 'coach/admin review.',
+      + "Set the athlete's clearance on the Clearance Board (a coach or the office) once a clearance decision has "
+      + 'been made; the observation is kept either way, and contact logged without a current clearance raises a '
+      + 'near miss for coach/admin review.',
   },
   {
     // #82: the hold is a CONDITION this gate reads (trainingHolds.ts), the
