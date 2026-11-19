@@ -388,6 +388,8 @@ function pinnedInstruction(label: string, name: string) {
     what_bad_looks_like: `${label} bad`,
     common_errors: `${label} errors`,
     corrections: `${label} correction`,
+    exit_condition: '',
+    correction_path: '',
     equipment_needed: 'focus mitts',
     scale_levels: [
       {
@@ -935,6 +937,8 @@ describe('a promoted, live reference (real database)', () => {
       what_bad_looks_like: 'Live bad',
       common_errors: 'Live errors',
       corrections: 'Live correction',
+      exit_condition: '',
+      correction_path: '',
       equipment_needed: 'focus mitts',
       scale_levels: [
         {
