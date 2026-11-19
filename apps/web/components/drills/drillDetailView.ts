@@ -101,6 +101,9 @@ export interface DrillDetailView {
   bad: string;
   commonErrors: string;
   corrections: string;
+  /** Lane NW-b (PK-197 A): '' when the source wrote none; the screen says "Not written yet". */
+  exitCondition: string;
+  correctionPath: string;
   contactLevel: string;
   requiresCoachAuthorization: boolean;
   cues: string[];
@@ -121,6 +124,8 @@ export function fromAthleteDrillDetail(drill: AthleteDrillDetail): DrillDetailVi
     bad: drill.what_bad_looks_like ?? '',
     commonErrors: drill.common_errors ?? '',
     corrections: drill.corrections ?? '',
+    exitCondition: drill.exit_condition ?? '',
+    correctionPath: drill.correction_path ?? '',
     contactLevel: drill.contact_level,
     requiresCoachAuthorization: Boolean(drill.requires_coach_authorization),
     cues: drill.cues ?? [],
@@ -160,6 +165,8 @@ export function fromCoachDrillDetail(
     bad: drill.what_bad_looks_like ?? '',
     commonErrors: drill.common_errors ?? '',
     corrections: drill.corrections ?? '',
+    exitCondition: drill.exit_condition ?? '',
+    correctionPath: drill.correction_path ?? '',
     contactLevel: drill.contact_level,
     requiresCoachAuthorization: Boolean(drill.requires_coach_authorization),
     cues,

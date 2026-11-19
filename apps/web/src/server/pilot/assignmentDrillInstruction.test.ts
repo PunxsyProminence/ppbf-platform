@@ -202,6 +202,8 @@ function athleteDetail(overrides: Partial<AthleteDrillDetail> = {}): AthleteDril
     what_bad_looks_like: 'Reaching',
     common_errors: 'Catching late',
     corrections: 'Coach calls "catch"',
+    exit_condition: '',
+    correction_path: '',
     equipment_needed: 'focus mitt',
     scale_levels: [
       {
@@ -245,6 +247,8 @@ function coachDetail(overrides: Partial<DrillWithDetail> = {}): DrillWithDetail 
     common_errors: 'Catching late',
     corrections: 'Coach calls "catch" [A5-149]',
     transfer: 'Carries into sparring defense',
+    exit_condition: '',
+    correction_path: '',
     contact_level: 'light',
     equipment_needed: 'focus mitt',
     requires_coach_authorization: false,
@@ -420,10 +424,12 @@ describe('resolveAssignmentDrillInstruction: athlete', () => {
     expect(expectedKeys).toEqual([
       'common_errors',
       'contact_level',
+      'correction_path',
       'corrections',
       'cues',
       'equipment_needed',
       'execution',
+      'exit_condition',
       'name',
       'purpose',
       'requires_coach_authorization',

@@ -41,6 +41,9 @@ export interface DrillLibraryRow {
   common_errors: string;
   corrections: string;
   transfer: string;
+  /** Lane NW-b (PK-197 A): as the frozen Backbone writes it; '' = not written yet. */
+  exit_condition: string;
+  correction_path: string;
   contact_level: string;
   equipment_needed: string;
   requires_coach_authorization: boolean;
@@ -178,7 +181,7 @@ export interface DrillWithDetail extends DrillLibraryRow {
 const DRILL_FIELDS =
   'organization_id, drill_id, lineage_id, version, supersedes_drill_id, superseded_at, name, '
   + 'discipline, category, difficulty, skill_id, target_behavior, purpose, standard_setup, execution, '
-  + 'what_good_looks_like, what_bad_looks_like, common_errors, corrections, transfer, contact_level, '
+  + 'what_good_looks_like, what_bad_looks_like, common_errors, corrections, transfer, exit_condition, correction_path, contact_level, '
   + 'equipment_needed, requires_coach_authorization, content_class, source_ref, grounding_claim_ids, '
   + 'field_provenance, active, created_by_account_id, created_by_role, created_at, updated_at';
 
@@ -880,6 +883,9 @@ export interface AthleteDrillDetail extends AthleteDrillSummary {
   what_bad_looks_like: string;
   common_errors: string;
   corrections: string;
+  /** Lane NW-b: shown to athletes and coaches alike; '' reads "Not written yet" (PK-197 A). */
+  exit_condition: string;
+  correction_path: string;
   /**
    * Practical: what to bring. It is here so the screen can say "Equipment"
    * rather than print an equipment word under "Setup" -- in 114 of the 119
@@ -900,13 +906,15 @@ export interface AthleteDrillDetail extends AthleteDrillSummary {
  * is fetched on this path.
  */
 const ATHLETE_INSTRUCTION_FIELDS =
-  'd.what_good_looks_like, d.what_bad_looks_like, d.common_errors, d.corrections, d.equipment_needed';
+  'd.what_good_looks_like, d.what_bad_looks_like, d.common_errors, d.corrections, d.exit_condition, d.correction_path, d.equipment_needed';
 
 interface AthleteInstructionRow {
   what_good_looks_like: string;
   what_bad_looks_like: string;
   common_errors: string;
   corrections: string;
+  exit_condition: string;
+  correction_path: string;
   equipment_needed: string;
 }
 
@@ -943,6 +951,8 @@ export function toAthleteInstruction(row: AthleteInstructionRow): AthleteInstruc
     what_bad_looks_like: stripGroundingClaimTags(row.what_bad_looks_like ?? ''),
     common_errors: stripGroundingClaimTags(row.common_errors ?? ''),
     corrections: stripGroundingClaimTags(row.corrections ?? ''),
+    exit_condition: stripGroundingClaimTags(row.exit_condition ?? ''),
+    correction_path: stripGroundingClaimTags(row.correction_path ?? ''),
     equipment_needed: stripGroundingClaimTags(row.equipment_needed ?? ''),
   };
 }

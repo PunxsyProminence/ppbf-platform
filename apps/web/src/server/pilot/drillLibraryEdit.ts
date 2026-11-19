@@ -45,7 +45,7 @@ import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 export const DRILL_TEXT_FIELDS = [
   'target_behavior', 'purpose', 'standard_setup', 'execution', 'what_good_looks_like', 'what_bad_looks_like',
-  'common_errors', 'corrections', 'transfer', 'equipment_needed',
+  'common_errors', 'corrections', 'transfer', 'equipment_needed', 'exit_condition', 'correction_path',
 ] as const;
 const SHORT_FIELDS = ['name', 'category'] as const;
 const VOCABULARY_FIELDS = ['difficulty', 'contact_level'] as const;
