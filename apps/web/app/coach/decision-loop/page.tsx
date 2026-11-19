@@ -341,7 +341,11 @@ const BADGE_GLYPH: Record<Exclude<BadgeTone, 'neutral'>, string> = {
 function statusBadgeTone(status: string): BadgeTone {
   if (status === 'accepted' || status === 'cleared' || status === 'active' || status === 'match') return 'cleared';
   if (status === 'provisional' || status === 'pending' || status === 'partial' || status === 'cleared_expired') return 'restricted';
-  if (status === 'rejected' || status === 'not_cleared' || status === 'miss') return 'locked';
+  // Only a clearance record's not_cleared is a medical stop, and keeps the mark;
+  // a rejected recommendation or a missed outcome is not one (OW25-48 A; lane
+  // U1, SC2-2).
+  if (status === 'not_cleared') return 'locked';
+  if (status === 'rejected' || status === 'miss') return 'restricted';
   return 'neutral';
 }
 

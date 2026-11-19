@@ -84,7 +84,7 @@ export default function TaggedClipsList({
         </select>
       </div>
       {error ? (
-        <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{error}</p>
+        <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{error}</p>
       ) : clips === null ? (
         <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">Loading clips...</p>
       ) : clips.length === 0 ? (

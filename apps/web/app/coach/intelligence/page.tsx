@@ -56,15 +56,16 @@ const EMPTY: Digest = {
 };
 
 // Severity rung -> the design system's status badge, for COMPLIANCE VIOLATIONS
-// (open safety escalations use ESCALATION_BADGE below; OW25-48 is about
-// escalations and leaves this map as it was). Law 2: saturated colour is
+// (open safety escalations use ESCALATION_BADGE below). A critical violation
+// is not a medical stop either, so it is on the restricted rung too, told from
+// high by its word (OW25-48 A applied app-wide; lane U1, SC2-2). Law 2: saturated colour is
 // safety/status only, which is exactly what these are. Both vocabularies are
 // listed ('moderate' and 'medium') rather than normalized -- renaming another
 // capability's stored value on the way to the screen is how a surface starts
 // lying about the record. Anything unrecognized falls to 'monitor' rather than
 // disappearing: an unbadged safety row is still a safety row a coach must see.
 const SEVERITY_BADGE: Record<string, string> = {
-  critical: 'badge--locked',
+  critical: 'badge--restricted',
   high: 'badge--restricted',
   moderate: 'badge--monitor',
   medium: 'badge--monitor',
@@ -73,6 +74,12 @@ const SEVERITY_BADGE: Record<string, string> = {
 
 function severityBadgeClass(severity: string): string {
   return SEVERITY_BADGE[severity] ?? 'badge--monitor';
+}
+
+/* Law 3: the glyph of the rung, beside the word. Critical and high now share a
+   rung, so the word tells them apart and the glyph says which rung it is. */
+function severityGlyph(severity: string): string {
+  return severityBadgeClass(severity) === 'badge--restricted' ? '▲' : '◉';
 }
 
 // Open safety escalations: the same rungs and glyphs as /admin/escalations, so
@@ -149,8 +156,8 @@ export default function CoachIntelligencePage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage} Items may exist that are not shown here.</p>
@@ -197,7 +204,7 @@ export default function CoachIntelligencePage() {
                   <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                     {digest.open_compliance_violations.map((item) => (
                       <li key={item.violation_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                        <span className={`badge ${severityBadgeClass(item.severity)}`}>{item.severity}</span>
+                        <span className={`badge ${severityBadgeClass(item.severity)}`}><i aria-hidden="true">{severityGlyph(item.severity)}</i>{item.severity}</span>
                         {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
                         {' '}— {item.rule_name} ({humanize(item.status)}, open {item.days_open} days).
                         {' '}Closing one out is an organization admin action.

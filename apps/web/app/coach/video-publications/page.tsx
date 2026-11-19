@@ -29,27 +29,29 @@ interface VideoSession {
 }
 
 /* Publication lifecycle states are queue outcomes, so they wear the design
-   system's four-rung badge ladder with a glyph + uppercase label, never colour
-   alone (Laws 2 + 3). */
-type BadgeTone = 'cleared' | 'monitor' | 'restricted' | 'locked';
+   system's badge ladder (three rungs here) with a glyph + uppercase label,
+   never colour alone (Laws 2 + 3). */
+// No medical-stop rung here: a rejected or retracted publication, or a failed
+// compliance check, is not a medical stop (OW25-48 A; lane U1, SC2-2). The
+// word says which outcome it is.
+type BadgeTone = 'cleared' | 'monitor' | 'restricted';
 
 const STATUS_GLYPH: Record<BadgeTone, string> = {
   cleared: '✓',
   monitor: '◉',
   restricted: '▲',
-  locked: '✕',
 };
 
 function statusTone(status: VideoPublication['status']): BadgeTone {
   if (status === 'published' || status === 'approved') return 'cleared';
-  if (status === 'rejected' || status === 'retracted') return 'locked';
+  if (status === 'rejected' || status === 'retracted') return 'restricted';
   if (status === 'pending_review') return 'restricted';
   return 'monitor'; // draft, archived: in-process / dormant, not an outcome
 }
 
 function complianceTone(check: string): BadgeTone {
   if (check === 'passed') return 'cleared';
-  if (check === 'failed') return 'locked';
+  if (check === 'failed') return 'restricted';
   if (check === 'manual_review') return 'restricted';
   return 'monitor';
 }
@@ -300,7 +302,7 @@ export default function CoachVideoPublicationsPage() {
             <li>4. A passing check approves it; a failing check rejects it.</li>
             <li>5. You publish an approved publication to the research library.</li>
           </ol>
-          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{errorMessage}</p> : null}
+          {errorMessage ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{errorMessage}</p> : null}
         </header>
 
         {/* Create Publication Form */}

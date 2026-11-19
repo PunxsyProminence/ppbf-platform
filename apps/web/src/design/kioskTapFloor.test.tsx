@@ -127,6 +127,14 @@ const FLOOR_ROUTES = [
   'coach/injuries',
   'coach/medical-restrictions', // OD-2026-11-17-009 ruling 4 (OW25-37 A)
   'coach/drills', // OD-2026-11-17-009 ruling 4 (OW25-37 A)
+  'coach/behavior-standards', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/cue-library', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/transfer-check', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/passbook', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/passbook-gaps', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/one-percent-club', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/mental-skills', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/development-blocks', // app scrub CF-24 (lane U1, SC2-2)
   'shadow',
   'parent/safety',
 ] as const;
