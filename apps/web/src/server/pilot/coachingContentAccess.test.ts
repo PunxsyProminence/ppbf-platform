@@ -44,9 +44,9 @@ const READER_POLICY = 'COACHING_CONTENT_READER_ROLES';
  * THIS MAP IS THE SUBJECT LIST for every case below, so adding a route here is
  * how a surface joins the policy and is the only edit that makes the sweeps
  * cover it. session-scripts and workout-templates were added on 2026-08-28
- * when the owner ruled the policy governs the content class. workout-templates
- * does not write, so it gets no author list; session-scripts has had one since
- * lane L1 (below).
+ * when the owner ruled the policy governs the content class. session-scripts
+ * has had an author list since lane L1, and workout-templates since lane ED
+ * (both below).
  *
  * NOT here, deliberately: session-scripts/runs/**. It carries per-night
  * athlete data behind a narrower gate of its own, and listing it would assert
@@ -65,7 +65,10 @@ const PERMITTED_GATE_CONSTANTS: Record<string, string[]> = {
   // two writes gate on the route's own author list, the same three names as
   // DRILL_AUTHOR_ROLES.
   'session-scripts/route.ts': [READER_POLICY, 'SESSION_SCRIPT_AUTHOR_ROLES'],
-  'workout-templates/route.ts': [READER_POLICY],
+  // Lane ED: a coach or the gym's admin edits a template and its items (PATCH),
+  // writing its next version. The read keeps the reader policy; the write gates
+  // on the author list.
+  'workout-templates/route.ts': [READER_POLICY, 'DRILL_AUTHOR_ROLES'],
   'drills/promote/route.ts': ['DRILL_AUTHOR_ROLES'],
   // OD-2026-10-06-026 ruling 3: a coach or the gym's admin marks a draft
   // reference drill floor-tested for their gym. POST-only, like promote.
@@ -198,11 +201,11 @@ describe('every surface serving this content reaches the one policy', () => {
   });
 
   it('keeps the author list identical wherever it is declared, so promotion cannot drift from authoring', () => {
-    // DRILL_AUTHOR_ROLES is declared in four route files: the drills route
+    // DRILL_AUTHOR_ROLES is declared in five route files: the drills route
     // that creates and edits a drill, the promote route that creates one from a
     // reference drill, the template-issue route that adopts one while
-    // assigning it, and the drill-library route that edits a library drill
-    // (lane ED). All are the same question -- who may put an assignable
+    // assigning it, and the drill-library and workout-templates routes that
+    // edit a library drill and a template (lane ED). All are the same question -- who may put an assignable
     // drill in this gym -- so the literals are asserted equal here rather
     // than left to drift into different answers.
     const authorList = /const DRILL_AUTHOR_ROLES = (\[[^\]]*\]) as const;/;
@@ -211,7 +214,7 @@ describe('every surface serving this content reaches the one policy', () => {
       .filter(([, permitted]) => permitted.includes('DRILL_AUTHOR_ROLES'))
       .map(([relative]) => routeSource(relative).match(authorList)?.[1]);
 
-    expect(declarations).toHaveLength(4);
+    expect(declarations).toHaveLength(5);
     expect(new Set(declarations).size).toBe(1);
     expect(declarations[0]).toBe("['coach', 'organization_admin', 'admin']");
   });

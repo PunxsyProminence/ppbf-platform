@@ -3,9 +3,11 @@ import path from 'node:path';
 
 import { NextRequest } from 'next/server';
 
-import { GET } from './route';
+import { GET, PATCH } from './route';
 import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { NotFoundError } from '@/src/server/pilot/errors';
+import { editWorkoutTemplate } from '@/src/server/pilot/workoutTemplateEdit';
 import {
   getWorkoutTemplateWithItems,
   listUntestedTemplateDrills,
@@ -35,6 +37,11 @@ import type { PilotRole } from '@/src/server/pilot/contracts';
 jest.mock('@/src/server/pilot/http', () => {
   const actual = jest.requireActual('@/src/server/pilot/http');
   return { ...actual, requirePrincipal: jest.fn() };
+});
+
+jest.mock('@/src/server/pilot/workoutTemplateEdit', () => {
+  const actual = jest.requireActual('@/src/server/pilot/workoutTemplateEdit');
+  return { ...actual, editWorkoutTemplate: jest.fn() };
 });
 
 jest.mock('@/src/server/pilot/workoutTemplates', () => {
@@ -548,5 +555,68 @@ describe('what each reader receives', () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'WORKOUT_TEMPLATE_NOT_FOUND' });
+  });
+});
+
+// PATCH: editing a workout template and its items (OD-2026-11-19-005, OW25-51;
+// Overwatch ruling 2026-11-19). The edit itself is proven against a real
+// database in workoutTemplateEdit.pg.test.ts; these cases prove who reaches it.
+describe('PATCH /api/pilot/workout-templates (edit a template)', () => {
+  const mockEdit = editWorkoutTemplate as jest.Mock;
+  const patchRequest = (body: unknown) => new NextRequest('http://localhost/api/pilot/workout-templates', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json' },
+  });
+  const EDITOR_ROLES: PilotRole[] = ['coach', 'organization_admin', 'admin'];
+  const REFUSED_ROLES: PilotRole[] = ['platform_owner', 'volunteer', 'athlete', 'parent', 'board', 'staff'];
+
+  beforeEach(() => {
+    mockEdit.mockResolvedValue({
+      changed: true, template_id: 'wtp-v2', lineage_id: 'wtp-1', version: 2, previous_template_id: 'wtp-1', edited: ['intent'],
+    });
+  });
+
+  it.each(EDITOR_ROLES)('%s edits a template of their own gym, as themselves', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+    const response = await PATCH(patchRequest({ template_id: 'wtp-1', intent: 'New.' }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, template_id: 'wtp-v2', version: 2, edited: ['intent'] });
+    expect(mockEdit).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      request: { templateId: 'wtp-1', fields: { intent: 'New.' } },
+      actorAccountId: 'acct-1',
+      actorRole: role,
+    });
+  });
+
+  it.each(REFUSED_ROLES)('%s is refused before anything is read or written', async (role) => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role }));
+    const response = await PATCH(patchRequest({ template_id: 'wtp-1', intent: 'New.' }));
+    expect(response.status).toBe(403);
+    expect(mockEdit).not.toHaveBeenCalled();
+  });
+
+  it("answers another gym's template as not found", async () => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    mockEdit.mockRejectedValue(new NotFoundError('Not found', 'WORKOUT_TEMPLATE_NOT_FOUND'));
+    const response = await PATCH(patchRequest({ template_id: 'wtp-other-gym', intent: 'New.' }));
+    expect(response.status).toBe(404);
+    expect(mockEdit.mock.calls[0][0].organizationId).toBe('org-1');
+  });
+
+  it.each([
+    [{ template_id: 'wtp-1', colour: 'red' }, 'Unsupported field: colour'],
+    [{ template_id: 'wtp-1', details: {} }, 'Unsupported field: details is not editable'],
+    [{ template_id: 'wtp-1', active: false }, 'Unsupported field: active is not editable'],
+    [{ template_id: 'wtp-1', items: [{ item_id: 'wti-1', details: {} }] }, 'Unsupported field: items.details is not editable'],
+    [{ intent: 'New.' }, 'Missing template_id'],
+    [['wtp-1'], 'Request body must be a JSON object'],
+  ])('refuses %j with a 400 and writes nothing', async (body, message) => {
+    mockRequirePrincipal.mockResolvedValue(principal());
+    const response = await PATCH(patchRequest(body));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe(message);
+    expect(mockEdit).not.toHaveBeenCalled();
   });
 });
