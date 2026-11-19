@@ -12,6 +12,8 @@ Source: research finding `2026-11-19-ppbf-home-week-six-sessions-draft.md` (Clau
 - Item shape: 1 home warm-up item (drill `drl_dbb0347500e7eb`, second drill `drl_0eaa11e875ffef` in details), 1 session-primer item, the draft's 6 (Day 6: 7) items, 1 home cool-down item (drill `drl_325b6ba2613eb0`, second drill `drl_786d761c9321c0` in details). Amounts for U12 / 12–17 / Adult, rest, cue and safety are in item details; the duration_minutes and rep_count columns are blank because the amounts differ by band. contact_level none on every item.
 - duration_minutes column = the draft's Adult total (Overwatch Q3); all three band totals in `details.duration_minutes_by_band`.
 - session_type: the in-use word nearest the draft's Focus. Day 4 (Focus "Core and trunk; mobility") is `strength`; no in-use value names core or mobility. **Flag** for the reviewer.
+- coach_notes (shown on the coach screen) carries the draft's before-every-session lines and stop rule word for word, and on Day 6 its Day 7 rest line: the coach screen does not show template details (reviewer 2, finding 1). Labelled like every other drafted field.
+- The two partial-match items (Day 2 floor Y and T raises; Day 6 towel squeeze and wring) name their related library drill in `details.related_drill` and do not link it: both library drills call for bands, dumbbells, carry weights or a wrist roller (reviewer 2, finding 3).
 - Day 7 (rest) is not a template: its line is in Day 6's `details.rest_day_after`.
 - The track row `trk_55480ac4429113`: `details.groups` orders 2-7 and `details.session_refs` entries 2-7 now name the six templates below; the row's `sources` gain the OD-2026-11-19-005 ruling; `field_labels.groups` and `field_labels.session_refs` become `INFERRED` with the draft marker for entries 2-7. Orders 1 and 8 are unchanged. The track has no blocks or block sessions, before or after.
 
@@ -97,7 +99,7 @@ Stop rule (every template): stop and tell an adult (adults: your coach) if dizzy
 | 4 | strength | `drl_edb69a2d822df7` Bodyweight Upper Push | Push-up, scaled | 2 × 6 (wall or knees) | 3 × 6–10 (knees or full) | 3 × 8–15 | 60 s | Move as one straight plank, chest to the floor or wall. | Hips sagging: switch to the wall or knee version. |
 | 5 | strength | `drl_8549299fc8d8c7` Hinge Pattern | Hip hinge to the wall | 2 × 8 | 3 × 10 | 3 × 12 | 45 s | Push your hips back to touch the wall behind you; back stays long. | No rounding the lower back; stop if it pinches. |
 | 6 | strength | `drl_d75b4c493c3c82` Split Squat Iso Hold | Split-squat hold | 2 × 15 s each leg | 3 × 20 s each leg | 3 × 30 s each leg | 30 s | Front heel heavy; back knee hovers above the floor. | A hand on the wall for balance is fine. |
-| 7 | strength | `drl_d0d14430bb0ddb` Face pulls, external rotation at multiple angles, prone Y/T/W, serratus work — partial match | Floor Y and T raises (on the towel) | 2 × 6 (3 Y + 3 T) | 2 × 8 | 3 × 10 | 30 s | Thumbs up; draw the shoulder blades down and back. | Small lifts; forehead rests on the towel, neck long. |
+| 7 | strength | (none) (related, not linked: `drl_d0d14430bb0ddb` Face pulls, external rotation at multiple angles, prone Y/T/W, serratus work) — partial match: related library drill in related_drill, not linked (its library version uses bands, weights or other kit) | Floor Y and T raises (on the towel) | 2 × 6 (3 Y + 3 T) | 2 × 8 | 3 × 10 | 30 s | Thumbs up; draw the shoulder blades down and back. | Small lifts; forehead rests on the towel, neck long. |
 | 8 | strength | `drl_2d3741d101a571` Dead bug, bird dog | Bird dog | 2 × 5 each side | 2 × 8 each side | 3 × 8 each side, 3 s hold | 30 s | Keep your back still enough to balance a cup on it. | Move slowly; stop if the lower back aches. |
 | 9 | cooldown | `drl_325b6ba2613eb0` Cool-Down Walk and Breathe + `drl_786d761c9321c0` Post-Session Mobility | Home cool-down | | | | | | |
 
@@ -174,7 +176,7 @@ Stop rule (every template): stop and tell an adult (adults: your coach) if dizzy
 | 4 | strength | `drl_8ca8814b596907` Push-Up Iso Hold | Push-up hold | 2 × 10 s (wall or knees) | 3 × 15 s | 3 × 20–30 s | 45 s | Elbows about 45° from the body; body straight. | Stop the hold when the hips drop. |
 | 5 | strength | (none) — new item: no library drill | Glute bridge | 2 × 8 | 3 × 10 | 3 × 10 each leg (single-leg) or 3 × 15 | 30 s / 45 s / 45 s | Push through the heels; squeeze 2 seconds at the top. | Ribs down; don't arch the lower back. |
 | 6 | strength | `drl_83057d7afff22a` Punch Iso Hold + `drl_85a93f6757497a` Punch Burst | Punch hold, then snap | 2 × (5 s hold + 3 snaps) each hand | 3 × (10 s hold + 5 snaps) each hand | 3 × (15 s hold + 5 snaps) each hand | 30 s | Wrist, elbow and shoulder in one line — then 3–5 fast snaps. | Arm long but never locked. |
-| 7 | strength | `drl_179419bceeab59` Grip, forearm and wrist strengthening — partial match | Towel squeeze and wring | 2 × 10 s squeeze | 3 × (15 s squeeze + 5 wrings each way) | 3 × (20 s squeeze + 8 wrings each way) | 30 s | Squeeze with the whole hand; keep the wrist straight. | Stop if the wrist or knuckles hurt. |
+| 7 | strength | (none) (related, not linked: `drl_179419bceeab59` Grip, forearm and wrist strengthening) — partial match: related library drill in related_drill, not linked (its library version uses bands, weights or other kit) | Towel squeeze and wring | 2 × 10 s squeeze | 3 × (15 s squeeze + 5 wrings each way) | 3 × (20 s squeeze + 8 wrings each way) | 30 s | Squeeze with the whole hand; keep the wrist straight. | Stop if the wrist or knuckles hurt. |
 | 8 | strength | (none) — new item: no library drill | Wall calf raise | 2 × 10 | 3 × 12 | 3 × 15 | 30 s | Up for 1 count, down for 3. | Keep a hand on the wall. |
 | 9 | strength | `drl_44173cce2543ae` Progressive muscular relaxation | Tighten and let go (lying on the towel) | 2 minutes | 3 minutes | 3 minutes | no rest needed | Tighten hands, shoulders, jaw for a moment — then let go and feel the difference. | Skip any area that hurts. |
 | 10 | cooldown | `drl_325b6ba2613eb0` Cool-Down Walk and Breathe + `drl_786d761c9321c0` Post-Session Mobility | Home cool-down | | | | | | |
@@ -182,6 +184,8 @@ Stop rule (every template): stop and tell an adult (adults: your coach) if dizzy
 ## Linked drills whose stage tags omit youth stages (report only; no tag changed)
 
 The track serves Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, PR5, RC1, FT1, EX1. A coach decides whether to retag each drill or swap the item.
+
+"Used in" gives Day and template ordinal: ordinal 1 is the home warm-up and 2 the session primer, so the draft's item N is ordinal N+2.
 
 | drill | name | stage_keys | omits | used in |
 |---|---|---|---|---|
@@ -206,6 +210,14 @@ The track serves Y1, Y2, Y3, Y4, Y5, T1, T2, AM1, AM2, AM3, PR1, PR2, PR3, PR4, 
 17 drills omit youth stages; 16 linked drills have no stage tags; 4 cover every track stage (37 linked drills in all, warm-up and cool-down drills included).
 
 Four items have no library drill and are words only: forearm plank (Day 4), reverse lunge, glute bridge and wall calf raise (Day 6). The drill library is not changed by this lane.
+
+## Open for a coach edit (the draft's own text, carried unchanged)
+
+- Heat: the before-every-session line says "If the room is hot, do Day 4 instead or skip the session"; the stop rule says "Not today ... in a hot room". One wording should replace both.
+- The adults line ends "(P14)", a pointer to the research finding's principle list, which the app does not show.
+- Day 3 breathing reset (ordinal 8) says "Breathing still hard after the cool-down: stop and tell someone"; it comes before the cool-down, and the stop rule says "an adult".
+- Block words are the lane's, not the draft's: every main item takes its day's session_type, so Day 4's mobility items (open book, ankle rocks) and Day 6's tighten-and-let-go sit under `strength`, and Day 3's breathing reset under `conditioning`.
+- Linked library drills whose own text goes beyond the home amounts (the item text is what the athlete does): `drl_6bd0ad1ffb7a50` Shadow boxing intervals (maximal-velocity intervals; 12–17 do no maximal efforts), `drl_5ff7db8ae359c1` Combination 1-2-pivot (shadow, bag or pads; the U12 Y1–Y2 alternative is only in details), `drl_8549299fc8d8c7` Hinge Pattern (loaded once the unloaded pattern is consistent; home is unloaded).
 
 ## Reviews
 

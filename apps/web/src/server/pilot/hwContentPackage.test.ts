@@ -19,7 +19,7 @@ const DRILLS = 'drill-library/seed_drill_library.csv';
 const TRACK_ID = 'trk_55480ac4429113';
 const MARKER = 'AI draft, lane HW, 2026-11-19 (OD-2026-11-19-005; OD-2026-11-15-011)';
 const BANDS = ['U12', '12–17', 'Adult'];
-const DRAFTED = ['name', 'session_type', 'difficulty', 'age_band', 'duration_minutes', 'intent', 'details', 'items'];
+const DRAFTED = ['coach_notes', 'name', 'session_type', 'difficulty', 'age_band', 'duration_minutes', 'intent', 'details', 'items'];
 
 type Row = Record<string, string>;
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -63,12 +63,15 @@ describe('lane HW: the six PPBF home sessions', () => {
     }
   });
 
-  it('carry the same stop rule and the under-12 adult-in-the-room line in all six', () => {
+  it('carry the same stop rule and the under-12 adult-in-the-room line in all six, in details and in the coach notes the coach screen shows', () => {
     const stopRules = new Set(home.map((row) => json(row.details).stop_rule));
     expect(stopRules.size).toBe(1);
     expect([...stopRules][0]).toContain('call 911');
     for (const row of home) {
       expect((json(row.details).before_every_session as string[]).some((line) => line.startsWith('Under 12: an adult is at home and in the room for the whole session'))).toBe(true);
+      // The coach screen shows coach_notes, not template details (reviewer 2, finding 1).
+      for (const line of json(row.details).before_every_session as string[]) expect(row.coach_notes).toContain(line);
+      expect(row.coach_notes).toContain('call 911');
     }
   });
 
@@ -83,13 +86,16 @@ describe('lane HW: the six PPBF home sessions', () => {
       }
     }
     expect(items.filter((item) => item.drill_id === '').map((item) => item.free_text_drill).filter((text) => !text.startsWith('Session primer')))
-      .toEqual(['Forearm plank', 'Reverse lunge', 'Glute bridge', 'Wall calf raise']);
+      .toEqual(['Floor Y and T raises (on the towel)', 'Forearm plank', 'Reverse lunge', 'Glute bridge', 'Towel squeeze and wring', 'Wall calf raise']);
+    // Reviewer 2: the two partial matches name their library drill (which uses bands or weights) without linking it.
+    expect(items.filter((item) => json(item.details).related_drill).map((item) => [item.drill_id, json(item.details).related_drill]))
+      .toEqual([['', 'drl_d0d14430bb0ddb'], ['', 'drl_179419bceeab59']]);
   });
 
   it('name only drills the committed library holds', () => {
     const named = items.flatMap((item) => {
       const details = json(item.details);
-      return [item.drill_id, ...(details.also_drills ?? []), details.alternate_drill?.drill_id].filter(Boolean) as string[];
+      return [item.drill_id, ...(details.also_drills ?? []), details.alternate_drill?.drill_id, details.related_drill].filter(Boolean) as string[];
     });
     expect(named.filter((id) => !drills.has(id))).toEqual([]);
     expect(new Set(named).size).toBe(37);
@@ -120,7 +126,7 @@ describe('lane HW: the six PPBF home sessions', () => {
     };
     const named = new Set(items.flatMap((item) => {
       const details = json(item.details);
-      return [item.drill_id, ...(details.also_drills ?? []), details.alternate_drill?.drill_id].filter(Boolean) as string[];
+      return [item.drill_id, ...(details.also_drills ?? []), details.alternate_drill?.drill_id, details.related_drill].filter(Boolean) as string[];
     }));
     const omitting = [...named].filter((id) => {
       const keys = drills.get(id)?.stage_keys.split('|').filter(Boolean) ?? [];
