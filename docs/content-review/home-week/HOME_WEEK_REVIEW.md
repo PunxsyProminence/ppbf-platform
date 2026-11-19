@@ -222,7 +222,7 @@ Each is discipline `conditioning` (as the library files Bodyweight Lower Push), 
 - Stop rule 1 (safety): Stop and tell an adult (adults: your coach) if dizzy or faint, chest pain or tightness, breathing much harder than the effort, a racing or skipping heartbeat, or sharp joint pain. Not today after any knock to the head, with a fever or feeling ill, or in a hot room. Chest pain or fainting: call 911.
 - Scale A (from the draft): A hand on the wall for balance.
 - Scale B (as the draft writes it, starting point): The drill as written, at your band's amount (U12: 2 × 5 each leg, hand on wall · 12–17: 3 × 8 each leg · Adult: 3 × 10 each leg · rest 45 s / 60 s / 60 s).
-- Scale C (AI-drafted): Slower lowering, 3 counts down and 1 count up; the same reps. U12: hand on the wall; anyone wobbly: hand on the wall.
+- Scale C (AI-drafted; its closing sentence is the lane's wording from the draft): Slower lowering, 3 counts down and 1 count up; the same reps. U12: hand on the wall; anyone wobbly: hand on the wall.
 
 ### Glute bridge (`drl_cbc25e710fb3e3`)
 
@@ -235,7 +235,7 @@ Each is discipline `conditioning` (as the library files Bodyweight Lower Push), 
 - Stop rule 1 (safety): Stop and tell an adult (adults: your coach) if dizzy or faint, chest pain or tightness, breathing much harder than the effort, a racing or skipping heartbeat, or sharp joint pain. Not today after any knock to the head, with a fever or feeling ill, or in a hot room. Chest pain or fainting: call 911.
 - Scale A (AI-drafted): A smaller lift with no pause at the top; the same reps.
 - Scale B (as the draft writes it, starting point): The drill as written, at your band's amount (U12: 2 × 8 · 12–17: 3 × 10 · Adult: 3 × 10 each leg (single-leg) or 3 × 15 · rest 30 s / 45 s / 45 s).
-- Scale C (from the draft): Single-leg bridge, each leg: the Adult band's option (3 × 10 each leg). U12 and 12–17 do only their own band's amounts.
+- Scale C (from the draft; its closing sentence is the lane's wording from the draft): Single-leg bridge, each leg: the Adult band's option (3 × 10 each leg). U12 and 12–17 do only their own band's amounts.
 
 ### Towel squeeze and wring (`drl_564171b28b3667`)
 
@@ -322,4 +322,4 @@ Round 2, at 84e2d8aa: the six drills, the primer fold and the added cue (Overwat
 - Reviewer 1 (fidelity): PASS. Every field that claims the draft's words is word for word; every lane-written field is labelled as lane wording; the Shadow drill differs from main only in field_labels; no DOC-136 text. Minor, fixed: scale texts that said "the draft" on screen; Floor Y and T purpose ("with only a towel") and its name label; the stop-rule label notes the capital first letter; the FT1 exporter test again checks the Shadow drill's evidence and stage keys. Noted for Overwatch: the ruling's "10 missing A/C rows" are 9 (6 drills × 2, less the draft's 3).
 - Reviewer 2 (youth safety): FINDINGS, 2 blocking, both fixed. (1) An issued card carries only the item's coach_note, scale level and contact level, so minors would see the library drills' own amounts and not the home stop rule: every item's coach_note now carries the draft's words for the step, step 1 the band and supervision lines and the stop rule, and Day 5's one-two-then-pivot prefers the shadow-only level A. (2) Reverse lunge level C dropped the draft's wall hand for U12: it now keeps "U12: hand on the wall; anyone wobbly: hand on the wall". (3) CONFLICT with Q4 (bridge C carried as written gave every band the adult amount): resolved within the draft's words: "the Adult band's option (3 × 10 each leg). U12 and 12–17 do only their own band's amounts"; for Overwatch to confirm. No other defect: the 9 AI-drafted levels add no weight, jumping or maximal effort; the stop rules, cue and primers are kept.
 
-Round 3, re-check of these fixes: PENDING.
+Round 3, at a7b69cbc: reviewer 2 (youth safety) PASS: every card note carries the step's band amounts, rest, cue and safety; step 1 carries the band and supervision lines and the stop rule; no note over 1000 characters; lunge C and bridge C no longer over-prescribe for minors (its bridge C conflict cleared; the ruling's reading is Overwatch's). Its minor notes, left as they are: the effort line ('Under-12s stay Easy to Steady') and the warm-up steps are not on the card (in coach_notes and the warm-up details); library pages still show above-band levels beside the note. Reviewer 1 (fidelity) FINDINGS, 2 minor, both fixed after a7b69cbc: two notes read 'rest no rest needed' (now 'no rest needed', and the test refuses the old form); the lunge C and bridge C labels now name the closing sentence the lane added. Nothing else changed and no DOC-136 text came in.

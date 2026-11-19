@@ -215,7 +215,10 @@ describe('lane HW: the six PPBF home sessions', () => {
       expect(item.coach_note.length).toBeLessThanOrEqual(1000);
       if (details.amounts) {
         for (const band of BANDS) expect(item.coach_note).toContain(`${band}: ${details.amounts[band]}`);
-        for (const line of [`rest ${details.rest}`, `Cue: ${details.cue}`, `Safety: ${details.safety}`]) expect(item.coach_note).toContain(line);
+        // "no rest needed" stands alone; any other rest reads "rest <amount>".
+        const rest = details.rest.startsWith('no rest') ? `· ${details.rest}` : `· rest ${details.rest}`;
+        for (const line of [rest, `Cue: ${details.cue}`, `Safety: ${details.safety}`]) expect(item.coach_note).toContain(line);
+        expect(item.coach_note).not.toContain('rest no rest');
       }
     }
     for (const row of home) {
