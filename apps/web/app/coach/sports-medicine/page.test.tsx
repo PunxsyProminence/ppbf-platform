@@ -16,6 +16,9 @@
 // board still learns the hold's state from the same GET it always used, not
 // from the write's own response.
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 import type { ReactNode } from 'react';
@@ -2509,13 +2512,18 @@ describe('setting clearance on the board (OW25-45 B)', () => {
   function clearanceFetch(options: {
     post?: (body: Record<string, unknown>) => Response | Promise<Response>;
     after?: () => Response;
+    roster?: Array<{ athlete_id: string; full_name: string }>;
   } = {}) {
     let afterPost = false;
+    // What a read returns once something has been posted: the posted status,
+    // on that athlete's row -- the record the route would now hold.
+    const posted = new Map<string, string>();
     const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/shadow/medical-status') && init?.method === 'POST') {
         afterPost = true;
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        posted.set(String(body.athleteId), String(body.status));
         if (options.post) return options.post(body);
         return {
           ok: true,
@@ -2524,10 +2532,14 @@ describe('setting clearance on the board (OW25-45 B)', () => {
       }
       if (url.includes('/shadow/medical-status')) {
         if (afterPost && options.after) return options.after();
-        const status = afterPost ? NOT_CLEARED_STATUS : CLEARED_STATUS;
+        const athleteId = new URL(url, 'http://x').searchParams.get('athleteId') ?? 'ath-1';
+        const postedStatus = posted.get(athleteId);
+        const status = postedStatus
+          ? { ...NOT_CLEARED_STATUS, athlete_id: athleteId, status: postedStatus }
+          : { ...CLEARED_STATUS, athlete_id: athleteId };
         return { ok: true, json: async () => ({ ok: true, status, effectiveStatus: status.status }) } as Response;
       }
-      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+      if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: options.roster ?? [ATHLETE] }) } as Response;
       if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
       return { ok: true, json: async () => ({ items: [] }) } as Response;
     });
@@ -2656,7 +2668,8 @@ describe('setting clearance on the board (OW25-45 B)', () => {
 
     expect(await screen.findByText(/Status Not Confirmed/)).toBeTruthy();
     expect(screen.queryByText('Status set.')).toBeNull();
-    expect(screen.getByText('not cleared')).toBeTruthy();
+    // The row shows the read, not the picker: here the record now reads pending.
+    expect(screen.getByText('pending')).toBeTruthy();
   });
 
   test('a confirmed write whose read-back fails shows unavailable, never the status that was picked', async () => {
@@ -2691,5 +2704,165 @@ describe('setting clearance on the board (OW25-45 B)', () => {
       release?.();
     });
     expect(await screen.findByText('Status set.')).toBeTruthy();
+  });
+
+  test.each([
+    ['a 5xx', () => ({ ok: false, status: 503, json: async () => ({ error: 'upstream' }) }) as Response],
+    ['no response at all', () => { throw new TypeError('Failed to fetch'); }],
+  ])('%s is not called a refusal: the write may have landed, and the form stays open', async (_name, post) => {
+    clearanceFetch({ post });
+    await openForm();
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(await screen.findByText(/Status Not Confirmed/)).toBeTruthy();
+    expect(screen.getByText(/may or may not have been recorded/)).toBeTruthy();
+    expect(screen.queryByText(/Status Not Set/)).toBeNull();
+    expect(screen.queryByText(/Failed to fetch/)).toBeNull();
+    expect(screen.getByLabelText('New status')).toBeTruthy();
+  });
+
+  test('a confirmed write whose read-back says something else is not "Status set."', async () => {
+    clearanceFetch({
+      after: () => ({ ok: true, json: async () => ({ ok: true, status: { ...CLEARED_STATUS }, effectiveStatus: 'cleared' }) }) as Response,
+    });
+    await openForm();
+    fireEvent.change(screen.getByLabelText('New status'), { target: { value: 'not_cleared' } });
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+
+    expect(await screen.findByText(/Status Not Read Back/)).toBeTruthy();
+    expect(screen.getByText(/now reads something else/)).toBeTruthy();
+    expect(screen.queryByText('Status set.')).toBeNull();
+    expect(screen.getByText('cleared')).toBeTruthy();
+  });
+
+  test('a write for one athlete that returns while another athlete’s form is open lands on its own row only', async () => {
+    let release: (() => void) | undefined;
+    const fetchMock = clearanceFetch({
+      roster: [ATHLETE, { athlete_id: 'ath-2', full_name: 'Sam Roe' }],
+      post: (body) => new Promise<Response>((resolve) => {
+        release = () => resolve({
+          ok: true,
+          json: async () => ({ ok: true, status: { ...NOT_CLEARED_STATUS, status: body.status, athlete_id: body.athleteId } }),
+        } as Response);
+      }),
+    });
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+    const rowOf = (name: string) => screen.getByText(name).closest('li') as HTMLElement;
+
+    fireEvent.click(within(rowOf('Jordan Doe')).getByRole('button', { name: 'Set clearance status' }));
+    fireEvent.change(screen.getByLabelText('New status'), { target: { value: 'not_cleared' } });
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    await waitFor(() => expect(posts(fetchMock)).toHaveLength(1));
+
+    // The coach moves on to Sam's row and starts a form there.
+    fireEvent.click(within(rowOf('Sam Roe')).getByRole('button', { name: 'Set clearance status' }));
+    fireEvent.change(within(rowOf('Sam Roe')).getByLabelText('New status'), { target: { value: 'restricted' } });
+    await act(async () => {
+      release?.();
+    });
+
+    await within(rowOf('Jordan Doe')).findByText('Status set.');
+    expect(within(rowOf('Jordan Doe')).getByText('not cleared')).toBeTruthy();
+    // Sam's form and draft are untouched, and nothing landed on Sam's row.
+    expect((within(rowOf('Sam Roe')).getByLabelText('New status') as HTMLSelectElement).value).toBe('restricted');
+    expect(within(rowOf('Sam Roe')).queryByText('Status set.')).toBeNull();
+    expect(within(rowOf('Sam Roe')).getByText('cleared')).toBeTruthy();
+    expect(JSON.parse(String((posts(fetchMock)[0][1] as RequestInit).body)).athleteId).toBe('ath-1');
+  });
+
+  test('a clearance refusal and a hold refusal on the same row do not erase each other', async () => {
+    clearanceFetch({
+      post: () => ({ ok: false, status: 403, json: async () => ({ error: 'Forbidden: role not allowed' }) }) as Response,
+    });
+    await openForm();
+    pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+    expect(await screen.findByText(/Status Not Set/)).toBeTruthy();
+
+    // A hold attempt on the same row with no sentence is refused on the page.
+    fireEvent.click(screen.getByRole('button', { name: 'Place a training hold' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    expect(await screen.findByText(/Hold Not Placed/)).toBeTruthy();
+    expect(screen.getByText(/Status Not Set/)).toBeTruthy();
+  });
+
+  test('only coach and admin (organization admin) sessions reach this board, the same roles the route admits', () => {
+    // RoleStandaloneView is stubbed in this file, so the gate is pinned at its
+    // source: the page's allowedRoles, and the session mapping that decides
+    // which roles count as 'admin'. The route's own gate is pinned in
+    // app/api/pilot/shadow/medical-status/route.test.ts.
+    const page = readFileSync(path.resolve(__dirname, 'page.tsx'), 'utf8');
+    const gates = page.match(/allowedRoles=\{\[[^\]]*\]\}/g) ?? [];
+    expect(gates).toEqual(["allowedRoles={['coach', 'admin']}"]);
+
+    const session = readFileSync(path.resolve(__dirname, '../../../components/roleSession.ts'), 'utf8');
+    expect(session).toMatch(/role === 'organization_admin' \|\| role === 'admin'/);
+  });
+
+  test('an expiry re-read that started before the write cannot repaint the old status after it', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    try {
+      const soon = new Date(Date.now() + 5_000).toISOString();
+      let releaseStale: (() => void) | undefined;
+      let posted = false;
+      let staleStarted = false;
+      const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/shadow/medical-status') && init?.method === 'POST') {
+          posted = true;
+          return { ok: true, json: async () => ({ ok: true, status: { ...NOT_CLEARED_STATUS } }) } as Response;
+        }
+        if (url.includes('/shadow/medical-status')) {
+          if (posted) {
+            return { ok: true, json: async () => ({ ok: true, status: NOT_CLEARED_STATUS, effectiveStatus: 'not_cleared' }) } as Response;
+          }
+          // The board's first read, before the end date: cleared.
+          if (!staleStarted && Date.now() < Date.parse(soon)) {
+            return { ok: true, json: async () => ({ ok: true, status: { ...CLEARED_STATUS, expires_at: soon }, effectiveStatus: 'cleared' }) } as Response;
+          }
+          // The expiry re-read: held until after the write, and still saying cleared.
+          staleStarted = true;
+          return new Promise<Response>((resolve) => {
+            releaseStale = () => resolve({ ok: true, json: async () => ({ ok: true, status: { ...CLEARED_STATUS, expires_at: soon }, effectiveStatus: 'cleared' }) } as Response);
+          });
+        }
+        if (url.includes('/athletes/list')) return { ok: true, json: async () => ({ items: [ATHLETE] }) } as Response;
+        if (url.includes('/training-holds')) return { ok: true, json: async () => ({ ok: true, holds: [] }) } as Response;
+        return { ok: true, json: async () => ({ items: [] }) } as Response;
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      render(<SportsMedicinePage />);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      await screen.findByText('Jordan Doe');
+      expect(screen.getByText('cleared')).toBeTruthy();
+
+      // The clearance's end date passes: the board asks again, and that read is held.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(6_000);
+      });
+      expect(staleStarted).toBe(true);
+
+      // Meanwhile a coach sets Not Cleared; the write and its read-back land.
+      fireEvent.click(screen.getByRole('button', { name: 'Set clearance status' }));
+      fireEvent.change(screen.getByLabelText('New status'), { target: { value: 'not_cleared' } });
+      pressArmed(screen.getByRole('button', { name: 'Set Status' }));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText('not cleared')).toBeTruthy();
+
+      // The stale read, started before the write, finally answers "cleared".
+      await act(async () => {
+        releaseStale?.();
+        await jest.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText('not cleared')).toBeTruthy();
+      expect(screen.queryByText('cleared')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

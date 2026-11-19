@@ -2909,7 +2909,8 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     expect(screen.getAllByRole('button', { name: 'Check again' }).length).toBeGreaterThanOrEqual(3);
   });
 
-  /* UXB-02: THE SIX WRITES THAT USED TO TAKE A DOUBLE TAP. Each one is pressed,
+  /* UXB-02: THE WRITES THAT USED TO TAKE A DOUBLE TAP (the medical status set
+     moved to the Clearance Board, OW25-45 B). Each one is pressed,
      and while its answer is held a second press (or a second submit of its
      form) is sent; only one request may go. Then each says that it landed,
      under its own form. */
@@ -2978,7 +2979,7 @@ describe('switching athletes never leaves the previous athlete on screen', () =>
     await openAthleteA();
 
     fill?.();
-    // Held by node: while busy its words change ("Filing…").
+    // Held by node: while busy its words change.
     const pressed = button();
     press(pressed);
     await waitFor(() =>

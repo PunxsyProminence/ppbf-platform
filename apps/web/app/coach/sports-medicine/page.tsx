@@ -713,6 +713,17 @@ export default function SportsMedicinePage() {
   const statusDraft = settingStatus?.draft ?? EMPTY_STATUS_DRAFT;
   const setStatusDraft = (update: (current: typeof EMPTY_STATUS_DRAFT) => typeof EMPTY_STATUS_DRAFT) =>
     setSettingStatus((current) => (current ? { ...current, draft: update(current.draft) } : current));
+  // The clearance form's own refusal per athlete, apart from the hold
+  // refusals: a hold action on the same row must not wipe a "Status Not Set"
+  // reason, and setting clearance must not wipe a "Hold Not Placed" one (Law 7).
+  const [statusRefusals, setStatusRefusals] = useState<ReadonlyMap<string, Refusal>>(new Map());
+  const setStatusRefusalFor = (athleteId: string, refusal: Refusal | null) =>
+    setStatusRefusals((current) => {
+      const next = new Map(current);
+      if (refusal) next.set(athleteId, refusal);
+      else next.delete(athleteId);
+      return next;
+    });
   // "Status set." under the row it was set on, until that row is touched again.
   const [statusSetFor, setStatusSetFor] = useState<ReadonlySet<string>>(new Set());
   const markStatusSet = (athleteId: string, set: boolean) =>
@@ -740,8 +751,14 @@ export default function SportsMedicinePage() {
   const setClearance = async (athleteId: string) => {
     const sent = statusDraft;
     setBusy(athleteId, true);
-    setRefusalFor(athleteId, null);
+    setStatusRefusalFor(athleteId, null);
     markStatusSet(athleteId, false);
+    // What the server said, in three kinds: it refused (4xx: nothing was
+    // written), it answered (2xx: confirmed or not), or it did not answer
+    // clearly (5xx or no response: the write may or may not have landed).
+    let outcome: 'refused' | 'answered' | 'unclear' = 'unclear';
+    let refusal = '';
+    let confirmed = false;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/shadow/medical-status`, {
         method: 'POST',
@@ -753,33 +770,53 @@ export default function SportsMedicinePage() {
           sourceReference: sent.sourceReference.trim() || undefined,
         }),
       });
-      if (!response.ok) {
+      if (response.ok) {
+        outcome = 'answered';
+        confirmed = isConfirmedStatus(await response.json().catch(() => null), athleteId, sent.status);
+      } else if (response.status < 500) {
+        outcome = 'refused';
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(refusalWords({ error: payload.error, status: response.status }));
+        refusal = refusalWords({ error: payload.error, status: response.status });
       }
-      const confirmed = isConfirmedStatus(await response.json().catch(() => null), athleteId, sent.status);
+    } catch {
+      outcome = 'unclear';
+    }
+    try {
+      // Always read the row again: the board shows what is on record now.
       const reading = await rereadClearance(athleteId);
-      setSettingStatus((current) => (current?.athleteId === athleteId ? null : current));
-      if (confirmed && reading.clearance !== 'unavailable') {
+      if (outcome === 'answered') {
+        setSettingStatus((current) => (current?.athleteId === athleteId ? null : current));
+      }
+      if (confirmed && reading.clearance === sent.status) {
         markStatusSet(athleteId, true);
         return;
       }
-      setRefusalFor(athleteId, {
-        athleteId,
-        stamp: confirmed ? 'Status Not Read Back' : 'Status Not Confirmed',
-        message: confirmed
-          ? 'The gym’s server recorded this status, but the board could not read it back. Check again before relying on it.'
-          : 'The gym’s server did not confirm this status. The row shows what it reads now; check it before relying on it, and set it again if it is not what you meant.',
-      });
-    } catch (error) {
-      setRefusalFor(athleteId, {
-        athleteId,
-        stamp: 'Status Not Set',
-        message: error instanceof Error ? error.message : 'The status was not set.',
-      });
-      // A refusal is news about the row too: read it again, so the board shows
-      // what is on record now rather than what it believed before the press.
-      await rereadClearance(athleteId);
+      const why: Refusal = outcome === 'refused'
+        ? { athleteId, stamp: 'Status Not Set', message: refusal || 'The status was not set.' }
+        : outcome === 'unclear'
+          ? {
+            athleteId,
+            stamp: 'Status Not Confirmed',
+            message: 'The gym’s server did not answer clearly, so this status may or may not have been recorded. The row shows what it reads now; reload the board before relying on it.',
+          }
+          : !confirmed
+            ? {
+              athleteId,
+              stamp: 'Status Not Confirmed',
+              message: 'The gym’s server did not confirm this status. The row shows what it reads now; reload the board before relying on it, and set it again if it is not what you meant.',
+            }
+            : reading.clearance === 'unavailable'
+              ? {
+                athleteId,
+                stamp: 'Status Not Read Back',
+                message: 'The gym’s server recorded this status, but the board could not read it back. Reload the board before relying on it.',
+              }
+              : {
+                athleteId,
+                stamp: 'Status Not Read Back',
+                message: 'The gym’s server recorded this status, but the row now reads something else -- someone may have set it at the same moment. The row shows what is on record; check it before relying on it.',
+              };
+      setStatusRefusalFor(athleteId, why);
     } finally {
       setBusy(athleteId, false);
     }
@@ -949,7 +986,7 @@ export default function SportsMedicinePage() {
                         <p className="t-eyebrow">Set clearance status</p>
                         <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
                           Setting a new status never clears an existing restriction automatically — each change
-                          is its own record, with your name on it.
+                          is its own record, attributed to you.
                         </p>
                         <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
                           <div className="field">
@@ -974,6 +1011,7 @@ export default function SportsMedicinePage() {
                               className="input"
                               aria-describedby={`status-ref-hint-${row.athlete_id}`}
                               placeholder="e.g. physician note, incident id"
+                              maxLength={500}
                               value={statusDraft.sourceReference}
                               onChange={(event) => setStatusDraft((d) => ({ ...d, sourceReference: event.target.value }))}
                             />
@@ -987,13 +1025,13 @@ export default function SportsMedicinePage() {
                           </div>
                         </div>
                         <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
-                          {/* The one danger-face control on this board: it
-                              operates the medical gate itself, as it did on the
-                              Decision Loop. Red is not reserved
-                              (OD-2026-09-29-001); this is a button, not the
-                              not-cleared mark. */}
+                          {/* A plain button, like "Place hold", the board's other
+                              medical write: inside .ge-clinic every .btn wears
+                              the clinic's brass, and the medical-stop red stays
+                              the not-cleared badge's alone. The armed second
+                              press (UXB-03) is what guards this write. */}
                           <ArmedButton
-                            className="btn btn--danger"
+                            className="btn"
                             armKey={`${row.athlete_id}:${statusDraft.status}`}
                             busy={busy}
                             busyLabel="Setting…"
@@ -1021,6 +1059,7 @@ export default function SportsMedicinePage() {
                           onClick={() => {
                             setSettingStatus({ athleteId: row.athlete_id, draft: { ...EMPTY_STATUS_DRAFT } });
                             markStatusSet(row.athlete_id, false);
+                            setStatusRefusalFor(row.athlete_id, null);
                           }}
                         >
                           Set clearance status
@@ -1286,6 +1325,18 @@ export default function SportsMedicinePage() {
                       athleteName={row.full_name}
                       reloadKey={row.hold?.hold_id ?? 'none'}
                     />
+                    {statusRefusals.get(row.athlete_id) ? (
+                      <div className="mt-[var(--s3)]" role="alert">
+                        {/* Brass and ▲, as the hold refusals below: a write the
+                            server bounced is CANNOT_BE_DONE, never the red. */}
+                        <span className="stamp stamp--brass stamp--flat">
+                          <i aria-hidden="true">▲</i> {statusRefusals.get(row.athlete_id)?.stamp}
+                        </span>
+                        <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                          {statusRefusals.get(row.athlete_id)?.message}
+                        </p>
+                      </div>
+                    ) : null}
                     {rowRefusal ? (
                       <div className="mt-[var(--s3)]" role="alert">
                         {/* Brass, not red. The bare .stamp renders in

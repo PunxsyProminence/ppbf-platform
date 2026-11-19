@@ -407,7 +407,7 @@ const EMPTY_DRAFTS: Drafts = {
   outcomeNotes: '',
 };
 
-/* The six writes below the first three lock while in flight and say when they
+/* The writes below the first three lock while in flight and say when they
    landed (UXB-02): a double tap used to write two records to a child's file. */
 type DoneKind = 'recommendation' | 'decision' | 'nearMiss' | 'outcome';
 type SubmitKind = 'incident' | 'behaviorNote' | 'messageHome' | DoneKind;
