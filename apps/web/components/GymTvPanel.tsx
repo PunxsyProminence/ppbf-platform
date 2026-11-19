@@ -51,6 +51,12 @@ interface GymTvPanelProps {
   /** Called when the server says the run the dashboard holds is no longer live, so it re-reads it. */
   readonly onRunStale?: () => void | Promise<void>;
   /**
+   * Called after each send, take-off or disconnect, whatever its answer, so a TV status shown
+   * elsewhere on the same screen reads the TVs again (lane U2-6a, the class screen; Overwatch
+   * Q10 = A: no timer).
+   */
+  readonly onTvsChanged?: () => void;
+  /**
    * False where nobody has a live session to send: the office's Gym Setup
    * page (lane SH, OFF-02). Pairing, the list, the code and disconnect are
    * unchanged; the send and take-off controls and the live-session lines are
@@ -115,6 +121,7 @@ export default function GymTvPanel({
   liveRunKnown,
   coachAccountId,
   onRunStale,
+  onTvsChanged,
   sendsSessions = true,
 }: GymTvPanelProps) {
   const [listState, setListState] = useState<ListState>('closed');
@@ -256,9 +263,10 @@ export default function GymTvPanel({
         actionLock.current = false;
         setBusyTvId(null);
         setConfirmDisconnectId((current) => (current === tv.tv_id ? null : current));
+        onTvsChanged?.();
       }
     },
-    [loadTvs, onRunStale],
+    [loadTvs, onRunStale, onTvsChanged],
   );
 
   const sendToTv = (tv: GymTvListItem) => {

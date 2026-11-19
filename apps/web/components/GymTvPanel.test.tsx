@@ -68,6 +68,7 @@ interface PanelProps {
   liveRunKnown?: boolean;
   coachAccountId?: string;
   onRunStale?: () => void;
+  onTvsChanged?: () => void;
   sendsSessions?: boolean;
 }
 
@@ -78,6 +79,7 @@ function panel(props: PanelProps = {}) {
       liveRunKnown={props.liveRunKnown ?? true}
       coachAccountId={props.coachAccountId ?? ME}
       onRunStale={props.onRunStale}
+      onTvsChanged={props.onTvsChanged}
       sendsSessions={props.sendsSessions}
     />
   );
@@ -660,4 +662,31 @@ describe('on the office Gym Setup page (sendsSessions false)', () => {
 test('coach home is unchanged: the closed panel still offers to put your live session on a TV', () => {
   render(panel());
   expect(screen.getByText("Pair the gym's TVs, see which are connected, and put your live session on one.")).toBeTruthy();
+});
+
+// Lane U2-6a (Overwatch Q10 = A): on the class screen the console's TV status reads the TVs again
+// after each action here, whatever the answer -- a refused or unanswered one may have changed them.
+test('onTvsChanged is called once after a send, once after a refused take-off, and never by reading the list', async () => {
+  let refuse = false;
+  serve((call) => {
+    if (call.method !== 'GET') {
+      return refuse
+        ? respond({ error: 'TV_IN_USE' }, 409)
+        : respond({ tv: tv({ current_run_id: 'run_mine', current_run_set_by_account_id: ME }) });
+    }
+    return respond({ tvs: [tv()] });
+  });
+  const onTvsChanged = jest.fn();
+  openPanel({ liveRun: LIVE, onTvsChanged });
+  await screen.findByText('PAIRED');
+  expect(onTvsChanged).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Send to TV Ring wall' }));
+  await screen.findByText('Showing your session');
+  expect(onTvsChanged).toHaveBeenCalledTimes(1);
+
+  refuse = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Take off TV Ring wall' }));
+  await screen.findByText(/This TV is in use by another coach/);
+  expect(onTvsChanged).toHaveBeenCalledTimes(2);
 });

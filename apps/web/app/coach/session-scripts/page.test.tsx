@@ -21,6 +21,10 @@ jest.mock('next/link', () => ({
 }));
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
+// Lane U2-6a: a start opens the class screen through the router. ONE router object for the whole
+// file (AGENT_KERNEL.md: a fresh object per render can loop with the role-session store).
+const mockRouter = { push: jest.fn(), replace: jest.fn() };
+jest.mock('next/navigation', () => ({ ...jest.requireActual('next/navigation'), useRouter: () => mockRouter }));
 // The finished-sessions list (F-067) has its own route read and its own suite
 // (finishedSessions.test.tsx); here it is a marker, so these tests keep owning every fetch.
 jest.mock('@/components/FinishedSessions', () => ({
@@ -204,7 +208,7 @@ describe('coach session plans page', () => {
 
     routedFetch({ runsGet: () => jsonResponse({ run: liveRunRow() }) });
     render(<CoachSessionScriptsPage />);
-    expect(await screen.findByText('Delivering now')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'A class is running' })).toBeInTheDocument();
     expect(screen.queryByTestId('finished-sessions')).not.toBeInTheDocument();
   });
 
@@ -487,22 +491,20 @@ describe('coach session plans page', () => {
     });
   });
 
-  it('an existing live run is restored on load, without starting anything', async () => {
+  // Lane U2-6a: the live console moved to the class screen. This page says a class is running
+  // and links there; it starts nothing and mounts no console.
+  it('an existing live run shows "A class is running" and the class screen link, without starting anything', async () => {
     const fetchMock = routedFetch({ runsGet: () => jsonResponse({ run: liveRunRow() }) });
 
     render(<CoachSessionScriptsPage />);
 
-    expect(await screen.findByText('Delivering now')).toBeInTheDocument();
-    expect(screen.getByText(/already in progress was restored/)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'A class is running' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Class screen' })).toHaveAttribute('href', '/coach/class');
     // The browse-and-start flow is out of the way while a session is live.
     expect(screen.queryByRole('button', { name: /open plan/i })).not.toBeInTheDocument();
-    // Restoration is a read. Reloading must never create a second run. The one POST the console
-    // makes on load is the SHADOW queue's count (CoachLiveTiles), a read that route takes as POST.
-    const posts = fetchMock.mock.calls.filter(
-      (call) =>
-        (call[1] as RequestInit | undefined)?.method === 'POST' && String(call[0]) !== '/api/pilot/shadow/review-projection',
-    );
-    expect(posts).toHaveLength(0);
+    expect(screen.queryByText('Delivering now')).not.toBeInTheDocument();
+    // A read only: no POST of any kind, so no second run.
+    expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')).toHaveLength(0);
   });
 
   it('a failed live-run check says a session may exist, and disables starting', async () => {
@@ -515,7 +517,7 @@ describe('coach session plans page', () => {
     expect(await screen.findByRole('button', { name: /start live delivery/i })).toBeDisabled();
   });
 
-  it('starting a delivery posts the narrow contract and swaps to the live surface', async () => {
+  it('starting a delivery posts the narrow contract and opens the class screen', async () => {
     const posted: Record<string, unknown>[] = [];
     routedFetch({
       runsGet: () => jsonResponse({ run: null }),
@@ -529,7 +531,7 @@ describe('coach session plans page', () => {
     fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
     fireEvent.click(await screen.findByRole('button', { name: /start live delivery/i }));
 
-    expect(await screen.findByText('Delivering now')).toBeInTheDocument();
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
     // script_id only: no run_state, no started_at, no elapsed time -- the
     // server owns all three.
     expect(posted).toEqual([{ script_id: 'scr-friday' }]);
@@ -550,7 +552,7 @@ describe('coach session plans page', () => {
     expect(screen.queryByRole('button', { name: /start live delivery/i })).not.toBeInTheDocument();
   });
 
-  it('a start refused as already-live restores the actual live run instead of retrying', async () => {
+  it('a start refused as already-live opens the class screen on the actual live run instead of retrying', async () => {
     let postCount = 0;
     routedFetch({
       // First GET (mount): nothing live. Second GET (recovery): the real run.
@@ -571,8 +573,7 @@ describe('coach session plans page', () => {
     fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
     fireEvent.click(await screen.findByRole('button', { name: /start live delivery/i }));
 
-    expect(await screen.findByText('Delivering now')).toBeInTheDocument();
-    expect(screen.getByText(/restored, not restarted/)).toBeInTheDocument();
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
     expect(postCount).toBe(1);
   });
 
@@ -589,59 +590,11 @@ describe('coach session plans page', () => {
 
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.queryByText(/SESSION_SCRIPT_SUPERSEDED/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Delivering now')).not.toBeInTheDocument();
+    expect(mockRouter.push).not.toHaveBeenCalled();
   });
 
-  it('a settled run leaves the live surface and says so, returning to browse', async () => {
-    routedFetch({
-      runsGet: () => jsonResponse({ run: liveRunRow() }),
-      runPatch: (body) => jsonResponse({
-        run: liveRunRow({ run_state: body.run_state, ended_at: '2026-08-14T23:00:00.000Z' }),
-      }),
-    });
-
-    render(<CoachSessionScriptsPage />);
-    fireEvent.click(await screen.findByText('End session...'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Record as completed' }));
-
-    expect(await screen.findByText(/recorded as completed/i)).toBeInTheDocument();
-    expect(screen.getByText(/can no longer be changed/)).toBeInTheDocument();
-    // Back to browse; the settled run has no live controls anywhere.
-    expect(await screen.findByRole('button', { name: /open plan/i })).toBeInTheDocument();
-    expect(screen.queryByText('Delivering now')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Pause session' })).not.toBeInTheDocument();
-  });
-
-  it('refreshes the open plan history when its live delivery settles', async () => {
-    let historyReads = 0;
-    routedFetch({
-      runsGet: () => jsonResponse({ run: null }),
-      runsPost: () => jsonResponse({ run: liveRunRow() }),
-      runsHistory: () => {
-        historyReads += 1;
-        return jsonResponse({
-          runs: historyReads === 1
-            ? []
-            : [liveRunRow({ run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' })],
-        });
-      },
-      runPatch: (body) => jsonResponse({
-        run: liveRunRow({ run_state: body.run_state, ended_at: '2026-08-14T23:00:00.000Z' }),
-      }),
-    });
-
-    render(<CoachSessionScriptsPage />);
-    fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
-    expect(await screen.findByText(/No deliveries recorded for this plan yet/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /start live delivery/i }));
-    fireEvent.click(await screen.findByText('End session...'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Record as completed' }));
-
-    expect(await screen.findByText('Completed')).toBeInTheDocument();
-    expect(screen.queryByText(/No deliveries recorded for this plan yet/)).not.toBeInTheDocument();
-    expect(historyReads).toBe(2);
-  });
+  // The settled-run notice moved with the console to the class screen (app/coach/class/page.test.tsx).
+  // A plan's delivery history is read when the plan is opened, so a class run elsewhere shows there.
 
   it('opening a plan shows its past deliveries with only the recorded fields', async () => {
     routedFetch({
@@ -750,7 +703,8 @@ describe('a plain session', () => {
     await waitFor(() => expect(start).not.toBeDisabled());
     fireEvent.click(start);
 
-    expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+    // Lane U2-6a (Overwatch Q5 = A): the session opens on the class screen.
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
     expect(posts).toEqual([{}]);
   });
 
@@ -788,7 +742,8 @@ it('a double tap on Start a plain session starts one session', async () => {
     finish?.(jsonResponse({ run: liveRunRow({ script_id: null, script_version: null, current_block_id: null }) }));
   });
 
-  expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+  await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
+  expect(mockRouter.push).toHaveBeenCalledTimes(1);
   expect(posts).toEqual([{}]);
 });
 
@@ -804,7 +759,7 @@ it('a failed plain start says so beside its button', async () => {
   fireEvent.click(start);
 
   expect(await screen.findByRole('alert')).toBeInTheDocument();
-  expect(screen.queryByRole('heading', { name: 'Plain session' })).toBeNull();
+  expect(mockRouter.push).not.toHaveBeenCalled();
 });
 
 // ---------------------------------------------------------------------------
@@ -1001,12 +956,9 @@ describe('a coach-made plan', () => {
     await waitFor(() => expect(listReads()).toBe(2));
   });
 
-  it('a plain session started while a plan is being edited: when it ends, the plan is back as stored, not in edit mode', async () => {
+  it('a plain session started while a plan is being edited opens the class screen, and the form is put away unsent', async () => {
     const plainRun = liveRunRow({ script_id: null, script_version: null, current_block_id: null });
-    mockFetch((url, init) => {
-      if (url.includes('/api/pilot/session-scripts/runs/')) {
-        return jsonResponse({ run: { ...plainRun, run_state: 'completed', ended_at: '2026-08-14T23:00:00.000Z' } });
-      }
+    const fetchMock = mockFetch((url, init) => {
       if (url.includes('/api/pilot/session-scripts/runs')) {
         if (init?.method === 'POST') return jsonResponse({ run: plainRun });
         return url.includes('script_id=') ? jsonResponse({ runs: [] }) : jsonResponse({ run: null });
@@ -1018,15 +970,11 @@ describe('a coach-made plan', () => {
     const plain = screen.getByRole('button', { name: 'Start a plain session' });
     await waitFor(() => expect(plain).not.toBeDisabled());
     fireEvent.click(plain);
-    await screen.findByRole('heading', { name: 'Plain session' });
-    fireEvent.click(await screen.findByText('End session...'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Record as completed' }));
 
-    expect(await screen.findByText(/recorded as completed/i)).toBeInTheDocument();
-    // The plan that was open is shown as stored; the form the session took away does not come back.
-    expect(await screen.findByText('Arrival and wraps')).toBeInTheDocument();
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
     expect(screen.queryByRole('form', { name: 'Edit plan' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Edit minutes and titles' })).toBeInTheDocument();
+    // Nothing of the form was sent: no PATCH of the plan.
+    expect(fetchMock.mock.calls.filter((call) => (call[1] as RequestInit | undefined)?.method === 'PATCH')).toHaveLength(0);
   });
 });
 
@@ -1067,12 +1015,36 @@ describe('retiring a plan', () => {
 
   const refusal = (status: number, body: unknown) => ({ ok: false, status, json: async () => body }) as Response;
 
+  /** Jason, "A: Add a confirm" (lane U2-6a): Retire this plan asks first; this answers yes. */
+  function confirmRetire() {
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, retire it' }));
+  }
+
+  it('Retire this plan asks "Retire this plan?" first; Keep it sends nothing and leaves the plan as it was', async () => {
+    const { patches } = retireFetch(() => jsonResponse({ outcome: 'retired', script: stored({ authoring_state: 'retired' }) }));
+    await openPlan();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    expect(screen.getByText('Retire this plan? It leaves the plan list. It is kept, and you can bring it back.')).toBeInTheDocument();
+    expect(patches).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect(screen.queryByText(/Retire this plan\?/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retire this plan' })).toBeInTheDocument();
+    expect(screen.getByText('Arrival and wraps')).toBeInTheDocument();
+    // Nothing was sent, now or after a moment.
+    await act(async () => {});
+    expect(patches).toEqual([]);
+  });
+
+
   it('Retire this plan sends the plan and the state it was read in, closes it, and says it is kept', async () => {
     const { patches, listUrls } = retireFetch(() => jsonResponse({ outcome: 'retired', script: stored({ authoring_state: 'retired' }) }));
     await openPlan();
     expect(listUrls()).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    confirmRetire();
 
     // Announced, and true whether or not retired plans are being shown.
     expect(await screen.findByRole('status')).toHaveTextContent('Friday sparring is retired. It is kept, and is left out of the list unless retired plans are shown.');
@@ -1137,7 +1109,7 @@ describe('retiring a plan', () => {
     retireFetch(() => refusal(status, body));
     await openPlan();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    confirmRetire();
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(sentence);
@@ -1159,7 +1131,7 @@ describe('retiring a plan', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Open plan' }));
       await screen.findByText('Arrival and wraps');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+      confirmRetire();
 
       const alert = await screen.findByRole('alert');
       expect(alert).toHaveTextContent(/it is not known whether the plan was changed/);
@@ -1174,7 +1146,8 @@ describe('retiring a plan', () => {
     await openPlan();
     const plain = screen.getByRole('button', { name: 'Start a plain session' });
     await waitFor(() => expect(plain).not.toBeDisabled());
-    const retire = screen.getByRole('button', { name: 'Retire this plan' });
+    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    const retire = screen.getByRole('button', { name: 'Yes, retire it' });
 
     await act(async () => {
       fireEvent.click(retire);
@@ -1235,7 +1208,7 @@ describe('retiring a plan', () => {
     });
     await openPlan();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    confirmRetire();
     expect(await screen.findByRole('status')).toHaveTextContent('Friday sparring is retired. It is kept, and is left out of the list unless retired plans are shown.');
     expect(await screen.findByText('No session plans in the list.')).toBeInTheDocument();
 
@@ -1255,7 +1228,7 @@ describe('retiring a plan', () => {
   it('opening a plan drops the refusal of the last one', async () => {
     retireFetch(() => refusal(409, { error: 'SESSION_SCRIPT_CHANGED' }));
     await openPlan();
-    fireEvent.click(screen.getByRole('button', { name: 'Retire this plan' }));
+    confirmRetire();
     await screen.findByRole('alert');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Showing plan' })).not.toBeDisabled());
 
@@ -1450,7 +1423,7 @@ describe('the class a new session is for', () => {
     const start = screen.getByRole('button', { name: 'Start a plain session' });
     await waitFor(() => expect(start).not.toBeDisabled());
     fireEvent.click(start);
-    expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
     expect(posts).toEqual([{ class_id: 'class-youth' }]);
   });
 
@@ -1463,7 +1436,7 @@ describe('the class a new session is for', () => {
     const start = screen.getByRole('button', { name: 'Start a plain session' });
     await waitFor(() => expect(start).not.toBeDisabled());
     fireEvent.click(start);
-    expect(await screen.findByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith('/coach/class'));
     expect(posts).toEqual([{}]);
   });
 

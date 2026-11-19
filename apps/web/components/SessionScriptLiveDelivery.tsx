@@ -17,6 +17,8 @@ import SessionRunClass from '@/components/SessionRunClass';
 import SessionNoShows from '@/components/SessionNoShows';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import type { SessionScriptBlockRow, SessionScriptWithDetail } from '@/src/server/pilot/sessionScripts';
+import type { GymTvListItem } from '@/src/server/pilot/gymTvs';
+import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 
 // The live surface of a session script run: one coach, one room, one row in
 // pilot.session_script_runs. This component renders and moves that row through
@@ -152,7 +154,8 @@ function savedRunWords(body: Record<string, unknown>, live: LiveSessionScriptRun
     }
     case 'show_on_wall':
       if (live.show_on_wall !== body.show) return null;
-      return live.show_on_wall ? 'the session is on the TV' : 'the session is off the TV';
+      // Lane U2-6a: the switch allows a TV; it does not put the session on one.
+      return live.show_on_wall ? 'the session is allowed on a TV' : 'the session is not allowed on a TV';
     default:
       return null;
   }
@@ -168,12 +171,42 @@ interface SessionScriptLiveDeliveryProps {
   readonly onSettled: (run: SettledRunSummary) => void;
   /** The run is no longer live server-side and no live run replaced it. */
   readonly onRunGone: (message: string) => void;
+  /**
+   * Bumped by the screen when Gym TVs sends, takes off or disconnects a TV, so the TV status line
+   * reads the TVs again (lane U2-6a, Overwatch Q10 = A: no timer).
+   */
+  readonly tvStatusRefresh?: number;
+}
+
+/** One read of the gym's TVs, as the TV status line holds it (lane U2-6a). */
+export type TvStatusRead =
+  | { readonly state: 'loading' }
+  | { readonly state: 'failed' }
+  | {
+      readonly state: 'loaded';
+      readonly tvs: readonly Pick<GymTvListItem, 'tv_name' | 'status' | 'current_run_id'>[];
+      readonly readAt: number;
+    };
+
+/**
+ * Where this session is, said only as far as the TV read can know it (Overwatch's 6a ruling, with
+ * its Q1 correction: "TV status not checked" for ANY role whenever the read is refused or fails,
+ * and until it has answered). "ON" only when a paired TV's current_run_id is this run.
+ */
+export function tvStatusLine(read: TvStatusRead, runId: string): { readonly on: boolean; readonly text: string } {
+  if (read.state !== 'loaded') return { on: false, text: 'TV status not checked' };
+  const paired = read.tvs.filter((tv) => tv.status === 'paired');
+  const showing = paired.filter((tv) => tv.current_run_id === runId).map((tv) => tv.tv_name);
+  if (showing.length > 0) return { on: true, text: `ON ${showing.join(', ')}` };
+  if (paired.length === 0) return { on: false, text: 'No TV paired' };
+  return { on: false, text: 'Not on a TV' };
 }
 
 export default function SessionScriptLiveDelivery({
   initialRun,
   onSettled,
   onRunGone,
+  tvStatusRefresh = 0,
 }: SessionScriptLiveDeliveryProps) {
   const [run, setRun] = useState<LiveSessionScriptRun>(initialRun);
   // A plain session (issue #1523) has no plan: no blocks to show or move between. Everything
@@ -189,6 +222,30 @@ export default function SessionScriptLiveDelivery({
     setRun(next);
     setDisplaySeconds(next.elapsed_seconds);
   }, []);
+
+  // WHERE THE SESSION IS ON THE TVS (lane U2-6a). Read when the console opens, after the switch
+  // changes, and when the screen says Gym TVs acted (tvStatusRefresh). No timer (Q10 = A); the
+  // line says when it was read. The newest read wins; a late answer to an older one is dropped.
+  const [tvRead, setTvRead] = useState<TvStatusRead>({ state: 'loading' });
+  const tvReadSeq = useRef(0);
+  useEffect(() => {
+    const seq = ++tvReadSeq.current;
+    void (async () => {
+      let next: TvStatusRead;
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/gym-tvs`, { credentials: 'include' });
+        const payload = (await response.json().catch(() => null)) as { tvs?: unknown } | null;
+        next = response.ok && payload && Array.isArray(payload.tvs)
+          ? { state: 'loaded', tvs: payload.tvs as GymTvListItem[], readAt: Date.now() }
+          : { state: 'failed' };
+      } catch {
+        next = { state: 'failed' };
+      }
+      if (seq === tvReadSeq.current) setTvRead(next);
+    })();
+  }, [run.run_id, run.show_on_wall, tvStatusRefresh]);
+  const tvStatus = tvStatusLine(tvRead, run.run_id);
+  const tvReadAt = tvRead.state === 'loaded' ? formatGymTimeOfDay(new Date(tvRead.readAt)) : null;
 
   // Tick once a second while running. While paused the interval is off and the
   // display holds the server's frozen reading.
@@ -728,28 +785,32 @@ export default function SessionScriptLiveDelivery({
         )}
       </div>
 
-      {/* The coach's "Show on TV" switch. Off by default on every run: a private
-          lesson stays off the gym wall unless the coach puts it up. The button
-          sends the value it wants, not "toggle", so a retried tap cannot flip it
-          back. The state shown is the server's, from the response. */}
+      {/* The coach's "Allow on a TV" switch (Overwatch's 6a ruling; Q2 = A). Off by default on
+          every run: a private lesson stays off the gym wall unless the coach allows it. The button
+          sends the value it wants, not "toggle", so a retried tap cannot flip it back; its state is
+          the server's, in words beside it, not colour alone. The switch puts nothing on a TV: the
+          coach sends the session from Gym TVs below (GymTvPanel), which refuses while it is off.
+          The status beside it is the TVs' own answer, never the switch's. */}
       <div className="mt-[var(--s3)] flex flex-wrap items-center gap-[var(--s3)]">
-        {run.show_on_wall ? (
-          <span className="badge badge--cleared"><i aria-hidden="true">✓</i>ON THE TV</span>
-        ) : (
-          <span className="badge badge--filed"><i aria-hidden="true">—</i>NOT ON THE TV</span>
-        )}
         <button
           type="button"
+          role="switch"
+          aria-checked={run.show_on_wall}
           onClick={() => void mutateRun({ action: 'show_on_wall', show: !run.show_on_wall }, 'show-on-wall')}
           disabled={actionBusy !== null}
           className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {run.show_on_wall ? 'Take off the TV' : 'Show on TV'}
+          Allow on a TV
         </button>
-        {/* The switch alone puts nothing on a TV: the coach sends the run from
-            Gym TVs on coach home (GymTvPanel), which refuses while it is off. */}
+        <span className="t-label">{run.show_on_wall ? 'On' : 'Off'}</span>
+        {tvStatus.on ? (
+          <span className="badge badge--cleared"><i aria-hidden="true">✓</i>{tvStatus.text}</span>
+        ) : (
+          <span className="badge badge--filed"><i aria-hidden="true">—</i>{tvStatus.text}</span>
+        )}
+        {tvReadAt && <span className="t-data text-[color:var(--bone-400)]">as of {tvReadAt}</span>}
         <p className="t-data text-[color:var(--bone-400)]">
-          Switching this on lets you send the session to a gym TV from Gym TVs on your coach home.
+          With this on, send the session to a gym TV from Gym TVs below.
         </p>
       </div>
 

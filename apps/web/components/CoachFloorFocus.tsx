@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React, { useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import { startClassSession } from '@/src/client/startClassSession';
 import { defaultClassChoice } from '@/src/shared/sessionClassChoice';
 import { fetchTieableClasses } from './SessionClassPicker';
 import ArmedButton from './ArmedButton';
@@ -143,11 +144,15 @@ export interface CoachFloorFocusProps {
   readonly sessionPaused?: boolean;
   /** Where the rest of the dashboard starts, for the "everything else" link. */
   readonly everythingElseHref: string;
-  /** Where Start a session goes once it has acted. Defaults to the session page; tests pass a spy. */
+  /** Where Start a session goes to pick a plan. Defaults to the session page; tests pass a spy. */
   readonly onGoToSessions?: () => void;
+  /** Where Start a session goes once a session is live (lane U2-6a). Defaults to the class screen; tests pass a spy. */
+  readonly onGoToClass?: () => void;
 }
 
 const SESSIONS_HREF = '/coach/session-scripts';
+/** The class screen, where a live session runs (lane U2-6a, Overwatch Q5 = A). */
+const CLASS_HREF = '/coach/class';
 
 /* The band, in the workspace's own words (the roster says "Readiness:
    GREEN"). Not "Ready": a readiness band is not clearance, and a word that
@@ -229,6 +234,8 @@ export default function CoachFloorFocus({
   // workspace tests, and the session page reads its live run on load either way.
   // eslint-disable-next-line @next/next/no-location-assign-relative-destination
   onGoToSessions = () => window.location.assign(SESSIONS_HREF),
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  onGoToClass = () => window.location.assign(CLASS_HREF),
 }: CoachFloorFocusProps) {
   /* START A SESSION, ONE TAP (Jason 2026-10-12, "allow a plain session"; issue #1523, Q2 A).
      With no live session, the tap asks which plans the gym has: none, and it starts a plain
@@ -263,21 +270,16 @@ export default function CoachFloorFocus({
         onGoToSessions();
         return;
       }
-      const started = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(choice ? { class_id: choice } : {}),
-      });
-      const result = (await started.json().catch(() => ({}))) as { error?: string; message?: string };
-      // Already live (a double tap, another tab): the session page restores it.
-      if (started.ok || result.error === 'SESSION_RUN_ALREADY_LIVE') {
+      // The shared start (src/client/startClassSession.ts, lane U2-6a). Started, or already live
+      // (a double tap, another tab): the class screen shows the live session (Overwatch Q5 = A).
+      const outcome = await startClassSession({ scriptId: null, classId: choice });
+      if (outcome.kind === 'started' || outcome.kind === 'already_live') {
         leaving = true;
-        onGoToSessions();
+        onGoToClass();
         return;
       }
       // A class refusal is worded by the route (another live session runs the class, and so on).
-      refusal = result.message ? ` ${result.message}` : '';
+      refusal = outcome.kind === 'refused' && outcome.message ? ` ${outcome.message}` : '';
       throw new Error('start');
     } catch {
       setStartError(`No session was started.${refusal} Open the session page to start one.`);
@@ -578,7 +580,8 @@ export default function CoachFloorFocus({
               ) : null}
             </>
           ) : (
-            <Link href={SESSIONS_HREF} className="btn coach-floor-focus__btn">
+            /* A live session runs on the class screen (lane U2-6a); an unread state still opens Session Plans. */
+            <Link href={sessionState !== 'loaded' ? SESSIONS_HREF : CLASS_HREF} className="btn coach-floor-focus__btn">
               {sessionState !== 'loaded' ? 'Open Session Plans' : 'Return to live delivery'}
             </Link>
           )}

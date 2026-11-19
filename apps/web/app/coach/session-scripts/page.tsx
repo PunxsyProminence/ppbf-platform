@@ -2,14 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
-import SessionScriptLiveDelivery from '@/components/SessionScriptLiveDelivery';
 import FinishedSessions from '@/components/FinishedSessions';
 import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
 import { type ClassChoice, type TieableClassView, defaultClassChoice } from '@/src/shared/sessionClassChoice';
 import { apiBase } from '@/lib/apiBase';
+import { fetchOwnLiveRun, startClassSession, startRefusalWords } from '@/src/client/startClassSession';
 import {
   AI_DRAFT_MARK,
   DRAFT_NOT_CHECKED,
@@ -51,6 +52,8 @@ type Block = SessionScriptBlockRow;
 // into a category it does not belong to.
 // The busy marker of the plain-session start button; no script_id can equal it.
 const PLAIN_START = '__plain_session__';
+/** The class screen, where a live session runs (lane U2-6a). */
+const CLASS_SCREEN_HREF = '/coach/class';
 
 const NOTABLE_KINDS: Record<string, string> = {
   drill_round: 'Drill',
@@ -144,11 +147,6 @@ function CoachSessionScripts() {
     classPick.current = info;
     setClassChoice(choice);
   }, []);
-  // A new start begins undecided (the picker is mounted again and reads today's classes afresh).
-  const resetClassChoice = useCallback(() => {
-    classPick.current = { picked: false, classes: [] };
-    setClassChoice(undefined);
-  }, []);
 
   // Changing the open plan (lane L1): its name, block titles and minutes. The
   // notice says what the save did, in the server's terms -- changed where it
@@ -164,6 +162,9 @@ function CoachSessionScripts() {
   // so a coach can find one and bring it back.
   const [showRetired, setShowRetired] = useState(false);
   const [retireError, setRetireError] = useState('');
+  // Jason, "A: Add a confirm" (Overwatch's 6a ruling): retiring asks first. The plan whose
+  // "Retire this plan?" is showing; nothing is sent until "Yes, retire it".
+  const [confirmRetireId, setConfirmRetireId] = useState<string | null>(null);
 
   // No state is set before the first await, matching the drill library: a
   // synchronous setState inside an effect cascades a render before the request
@@ -201,36 +202,30 @@ function CoachSessionScripts() {
     })();
   }, [load]);
 
-  const fetchLiveRun = useCallback(async (): Promise<LiveSessionScriptRun | null> => {
-    const response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
-      method: 'GET',
-      credentials: 'include',
-    });
-    if (!response.ok) throw new Error('live-run');
-    const payload = (await response.json()) as { run?: LiveSessionScriptRun | null };
-    return payload.run ?? null;
-  }, []);
-
+  // Lane U2-6a: a live session runs on the class screen. This page still asks
+  // first whether one is live, so it can say so and link there instead of
+  // offering a start the server would refuse.
   useEffect(() => {
     void (async () => {
       try {
-        const run = await fetchLiveRun();
+        const run = await fetchOwnLiveRun();
         setLiveRun(run);
         setLiveRunCheck('checked');
-        if (run) {
-          setEditing(false);
-          setLiveNotice('A session already in progress was restored -- the clock kept running on the server.');
-        }
+        if (run) setEditing(false);
       } catch {
         setLiveRunCheck('unavailable');
       }
     })();
-  }, [fetchLiveRun]);
+  }, []);
 
   // scriptId null starts a PLAIN session (Jason 2026-10-12, issue #1523): no plan, the clock,
   // pause, TV and finish only. Its busy marker is PLAIN_START so no script's button reads busy.
   // One start per press: the busy state disables the buttons only after a render, so two taps
   // landing before it would both start; the in-flight mark is a ref.
+  // The start itself is the shared one (src/client/startClassSession.ts, lane U2-6a). A session
+  // that starts, or one the server says was already running, opens on the class screen
+  // (Overwatch Q5 = A); a refusal is said here, beside the button that was pressed.
+  const router = useRouter();
   const startInFlight = useRef(false);
   const startDelivery = useCallback(async (scriptId: string | null) => {
     if (startBusyScriptId || startInFlight.current || classChoice === undefined) return;
@@ -248,76 +243,24 @@ function CoachSessionScripts() {
     setStartErrorFor(scriptId ?? PLAIN_START);
     setStartError('');
     setLiveNotice('');
+    let leaving = false;
     try {
-      let response: Response;
-      try {
-        response = await fetch(`${apiBase()}/api/pilot/session-scripts/runs`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...(scriptId ? { script_id: scriptId } : {}), ...(classChoice ? { class_id: classChoice } : {}) }),
-        });
-      } catch {
-        setStartError('Network error -- no session was started.');
-        return;
-      }
-
-      const payload = (await response.json().catch(() => ({}))) as {
-        run?: LiveSessionScriptRun;
-        error?: string;
-        message?: string;
-      };
-
-      if (response.ok && payload.run) {
-        setLiveRun(payload.run);
-        setLiveRunCheck('checked');
-        // The live surface replaces the plan; it is not left in edit mode behind it.
+      const outcome = await startClassSession({ scriptId, classId: classChoice });
+      if (outcome.kind === 'started' || (outcome.kind === 'already_live' && outcome.run)) {
+        leaving = true;
         setEditing(false);
+        router.push(CLASS_SCREEN_HREF);
         return;
       }
-
-      // The one-live-per-coach refusal. The honest recovery is to fetch and
-      // show the session the server says is already running -- not to retry
-      // the start, and not to pretend nothing is live.
-      if (payload.error === 'SESSION_RUN_ALREADY_LIVE') {
-        try {
-          const existing = await fetchLiveRun();
-          if (existing) {
-            setLiveRun(existing);
-            setLiveRunCheck('checked');
-            setEditing(false);
-            setLiveNotice('You already had a session in progress. It has been restored, not restarted.');
-            return;
-          }
-        } catch {
-          // Fall through to the message below.
-        }
-        setStartError('The server reports a session already in progress, but it could not be loaded. Reload this page to recover it.');
-        return;
-      }
-
-      if (payload.error === 'SESSION_SCRIPT_HAS_NO_BLOCKS') {
-        setStartError('This plan has no blocks, so there is nothing to deliver. It stays start-disabled until blocks exist.');
-        return;
-      }
-      if (payload.error === 'SESSION_SCRIPT_NOT_FOUND') {
-        setStartError('That plan could not be found, so no session was started.');
-        return;
-      }
-      // A newer version of this plan loaded after the list was read. The route words this one
-      // itself (session-scripts/runs/route.ts), so its text is shown rather than a second copy here.
-      if (payload.error === 'SESSION_SCRIPT_SUPERSEDED') {
-        setStartError(payload.message ?? 'This plan has been replaced by a newer version, so no session was started.');
-        return;
-      }
-      // The class refusals (not today, cancelled, not yours, another session runs it) are worded
-      // by the route (session-scripts/runs/route.ts), so its text is shown.
-      setStartError(payload.message ?? `The server refused to start the session${payload.error ? `: ${payload.error}` : '.'}`);
+      setStartError(startRefusalWords(outcome));
     } finally {
-      startInFlight.current = false;
-      setStartBusyScriptId(null);
+      // Busy until the page changes: a navigation in flight is not a reason to offer Start again.
+      if (!leaving) {
+        startInFlight.current = false;
+        setStartBusyScriptId(null);
+      }
     }
-  }, [classChoice, fetchLiveRun, startBusyScriptId]);
+  }, [classChoice, router, startBusyScriptId]);
 
   const loadDeliveries = useCallback(async (scriptId: string) => {
     setDeliveries([]);
@@ -349,6 +292,7 @@ function CoachSessionScripts() {
     setEditing(false);
     setEditNotice('');
     setRetireError('');
+    setConfirmRetireId(null);
     // "X is retired" must not sit above X once it is opened and brought back.
     setLiveNotice('');
     setDeliveries([]);
@@ -564,29 +508,15 @@ function CoachSessionScripts() {
         )}
         </div>
 
+        {/* Lane U2-6a: the live session runs on the class screen (moved from here). While one
+            is live, this page says so and links there; plans are edited here as before. */}
         {liveRun && (
-          <div data-surface="kiosk" className="mt-[var(--s5)]">
-            <SessionScriptLiveDelivery
-              key={liveRun.run_id}
-              initialRun={liveRun}
-              onSettled={(settled) => {
-                setLiveRun(null);
-                resetClassChoice();
-                if (settled.script_id && openScriptId === settled.script_id) {
-                  void loadDeliveries(settled.script_id);
-                }
-                setLiveNotice(
-                  `This session was recorded as ${settled.run_state === 'abandoned' ? 'abandoned' : 'completed'}. `
-                  + 'It is settled and can no longer be changed from this screen.',
-                );
-              }}
-              onRunGone={(message) => {
-                setLiveRun(null);
-                resetClassChoice();
-                setLiveNotice(message);
-              }}
-            />
-          </div>
+          <section data-surface="kiosk" aria-labelledby="class-running" className="mt-[var(--s5)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+            <h2 id="class-running" className="t-command text-[length:var(--t-lg)]">A class is running</h2>
+            <Link href={CLASS_SCREEN_HREF} className="btn mt-[var(--s3)]">
+              Class screen
+            </Link>
+          </section>
         )}
 
         {!liveRun && (<>
@@ -783,14 +713,41 @@ function CoachSessionScripts() {
                         Mark reviewed
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => void setPlanRetired(detail, true)}
-                      disabled={startBusyScriptId !== null || saving}
-                      className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Retire this plan
-                    </button>
+                    {confirmRetireId !== detail.script_id && (
+                      <button
+                        type="button"
+                        onClick={() => { setConfirmRetireId(detail.script_id); setRetireError(''); }}
+                        disabled={startBusyScriptId !== null || saving}
+                        className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Retire this plan
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!editing && confirmRetireId === detail.script_id && (
+                  <div className="mt-[var(--s3)] space-y-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
+                    <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
+                      Retire this plan? It leaves the plan list. It is kept, and you can bring it back.
+                    </p>
+                    <div className="flex flex-wrap gap-[var(--s3)]">
+                      <button
+                        type="button"
+                        onClick={() => { setConfirmRetireId(null); void setPlanRetired(detail, true); }}
+                        disabled={startBusyScriptId !== null || saving}
+                        className="btn disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Yes, retire it
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRetireId(null)}
+                        disabled={saving}
+                        className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Keep it
+                      </button>
+                    </div>
                   </div>
                 )}
                 {retireError && (
