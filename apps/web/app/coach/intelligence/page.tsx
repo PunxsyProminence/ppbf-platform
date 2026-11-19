@@ -76,6 +76,12 @@ function severityBadgeClass(severity: string): string {
   return SEVERITY_BADGE[severity] ?? 'badge--monitor';
 }
 
+/* Law 3: the glyph of the rung, beside the word. Critical and high now share a
+   rung, so the word tells them apart and the glyph says which rung it is. */
+function severityGlyph(severity: string): string {
+  return severityBadgeClass(severity) === 'badge--restricted' ? '▲' : '◉';
+}
+
 // Open safety escalations: the same rungs and glyphs as /admin/escalations, so
 // one escalation does not read two ways on two staff surfaces. Critical shares
 // --restricted and ▲ with high (Jason, card OW25-48 A: "Medical-stop mark only
@@ -198,7 +204,7 @@ export default function CoachIntelligencePage() {
                   <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                     {digest.open_compliance_violations.map((item) => (
                       <li key={item.violation_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                        <span className={`badge ${severityBadgeClass(item.severity)}`}>{item.severity}</span>
+                        <span className={`badge ${severityBadgeClass(item.severity)}`}><i aria-hidden="true">{severityGlyph(item.severity)}</i>{item.severity}</span>
                         {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
                         {' '}— {item.rule_name} ({humanize(item.status)}, open {item.days_open} days).
                         {' '}Closing one out is an organization admin action.

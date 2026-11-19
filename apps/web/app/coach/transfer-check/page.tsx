@@ -174,12 +174,12 @@ export default function TransferCheckPage() {
                         <span className="t-body font-semibold text-[color:var(--bone-100)]">
                           {row.metric_kind.replaceAll('_', ' ')}
                         </span>
-                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                        <span className="t-data">
                           practice: {row.controlled_makes} of {row.controlled_makes + row.controlled_misses} made
                           {' · '}live: {row.live_makes} of {row.live_makes + row.live_misses} made
                         </span>
                       </div>
-                      <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{display.copy}</p>
+                      <p className="t-body mt-[var(--s2)]">{display.copy}</p>
                     </li>
                   );
                 })}

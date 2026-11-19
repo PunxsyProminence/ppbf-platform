@@ -280,7 +280,7 @@ export default function BehaviorStandardsPage() {
                         <i aria-hidden="true">▣</i>{standard.recognition_kind.replace(/_/g, ' ')}
                       </span>
                       {standard.description ? (
-                        <span className="t-body" style={{ fontSize: 'var(--t-sm)' }}>{standard.description}</span>
+                        <span className="t-body">{standard.description}</span>
                       ) : null}
                       <OrgAdminOnly>
                         <button type="button" className="btn btn--ghost" disabled={busy}
@@ -332,7 +332,7 @@ export default function BehaviorStandardsPage() {
 
               <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h2 className="t-label mb-[var(--s2)]">Raise a concern</h2>
-                <p className="t-body mb-[var(--s3)]" style={{ fontSize: 'var(--t-sm)' }}>
+                <p className="t-body mb-[var(--s3)]">
                   This goes to the safeguarding queue, not into a file on the athlete. An org admin
                   sees it, and it stays open until somebody resolves it on the record. If it is
                   urgent or unsafe, tell someone in person as well.

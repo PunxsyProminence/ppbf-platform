@@ -29,8 +29,8 @@ interface VideoSession {
 }
 
 /* Publication lifecycle states are queue outcomes, so they wear the design
-   system's four-rung badge ladder with a glyph + uppercase label, never colour
-   alone (Laws 2 + 3). */
+   system's badge ladder (three rungs here) with a glyph + uppercase label,
+   never colour alone (Laws 2 + 3). */
 // No medical-stop rung here: a rejected or retracted publication, or a failed
 // compliance check, is not a medical stop (OW25-48 A; lane U1, SC2-2). The
 // word says which outcome it is.

@@ -236,7 +236,7 @@ export default function OnePercentClubPage() {
                       onChange={(e) => setNominateForm((f) => ({ ...f, milestone_key: e.target.value }))} />
                   </div>
                 </div>
-                <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                <p className="t-body mt-[var(--s2)]">
                   A milestone is only kept if the athlete actually holds that award -- an unearned
                   one is dropped and the nomination is filed as an ordinary nomination instead.
                 </p>
@@ -267,17 +267,17 @@ export default function OnePercentClubPage() {
                           <span className="badge badge--filed">
                             <i aria-hidden="true">▣</i>{SOURCE_LABEL[nomination.source]}
                           </span>
-                          <span className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+                          <span className="t-body">
                             filed by {nomination.nominated_by_display_name} · voting closes {formatDate(nomination.expires_at)}
                           </span>
                         </div>
                         {nomination.milestone_key ? (
-                          <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                          <p className="t-body mt-[var(--s2)]">
                             Milestone cited: <span style={{ fontFamily: 'var(--font-mono)' }}>{nomination.milestone_key}</span>
                           </p>
                         ) : null}
                         {nomination.nominator_note ? (
-                          <p className="t-body mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{nomination.nominator_note}</p>
+                          <p className="t-body mt-[var(--s2)]">{nomination.nominator_note}</p>
                         ) : null}
                         <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                           <button type="button" className="btn" disabled={busy} onClick={() => void handleVote(nomination.nomination_id, 'yes')}>
@@ -322,7 +322,7 @@ export default function OnePercentClubPage() {
                         <span className="t-body font-semibold text-[color:var(--bone-100)]">
                           {member.athlete_name ?? member.athlete_id}
                         </span>
-                        <span className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
+                        <span className="t-body">
                           confirmed {member.decided_at ? formatDate(member.decided_at) : ''}
                         </span>
                       </li>
@@ -338,11 +338,11 @@ export default function OnePercentClubPage() {
                     {closedNominations.filter((n) => n.status !== 'confirmed').map((nomination) => (
                       <li key={nomination.nomination_id} className="flex flex-wrap items-baseline gap-[var(--s3)]">
                         <span className="badge badge--restricted">
-                          <i aria-hidden="true">✕</i>{nomination.status}
+                          <i aria-hidden="true">▲</i>{nomination.status}
                         </span>
                         <span className="t-body">{nomination.athlete_name ?? nomination.athlete_id}</span>
                         {nomination.withdrawal_reason ? (
-                          <span className="t-body" style={{ fontSize: 'var(--t-sm)' }}>{nomination.withdrawal_reason}</span>
+                          <span className="t-body">{nomination.withdrawal_reason}</span>
                         ) : null}
                       </li>
                     ))}

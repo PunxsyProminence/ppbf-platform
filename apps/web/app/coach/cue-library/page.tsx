@@ -147,11 +147,11 @@ export default function CueLibraryPage() {
                             nearly every target on the page: it carries the
                             gym-floor height itself, because the app's 44px
                             floor (globals.css) deliberately skips links. */}
-                        <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>
+                        <p className="t-data mt-[var(--s1)]">
                           {cue.focus_type} · from <Link className="inline-flex min-h-[var(--tap)] items-center underline" href="/coach/drills">{cue.drill_name}</Link> ({cue.discipline} / {cue.category})
                         </p>
                         {cue.evidence_note ? (
-                          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]" style={{ fontSize: 'var(--t-sm)' }}>{cue.evidence_note}</p>
+                          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]">{cue.evidence_note}</p>
                         ) : null}
                       </li>
                     ))}

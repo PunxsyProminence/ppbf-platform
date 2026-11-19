@@ -145,7 +145,7 @@ test('escalations get ▲ and the word on the restricted rung; compliance violat
   // A applied to the whole app, Overwatch Q6; lane U1, SC2-2).
   expect(badgeOf('Weigh-in missing').className).toContain('badge--restricted');
   expect(badgeOf('Weigh-in missing').className).not.toContain('badge--locked');
-  expect(badgeOf('Weigh-in missing').textContent).toBe('critical');
+  expect(badgeOf('Weigh-in missing').textContent).toBe('▲critical');
 });
 
 // LC-05. Computer-form dates, and a UTC day for an instant.

@@ -285,7 +285,7 @@ export default function CoachPassbookPage() {
                 {pages.progression_gaps.map((g) => (
                   <li key={g.gap_id}>
                     <span className="font-semibold">{humanize(g.gap_type)}</span> — {g.gap_description}
-                    <span className="block text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    <span className="block text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                       {g.severity} · {humanize(g.status)} · opened {day(g.created_at)}
                     </span>
                   </li>

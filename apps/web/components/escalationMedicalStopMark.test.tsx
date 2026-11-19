@@ -611,7 +611,8 @@ function withoutComments(source: string): string {
     // A regex literal: a `/` where a value starts (after an operator, an
     // opening bracket, a comma or `return`). Its quotes and slashes are not
     // strings or comments (/filename="([^"]+)"/ has three quotes).
-    if (c === '/' && /(^|[=(,:[!&|?{};+\-*%<>~^]|\breturn)\s*$/.test(out.slice(-12))) {
+    // Not after `<`: `</div>` closes a tag, it is not a regex.
+    if (c === '/' && /(^|[=(,:[!&|?{};+\-*%~^]|\breturn)\s*$/.test(out.slice(-12))) {
       let j = i + 1;
       let inClass = false;
       while (j < source.length && source[j] !== '\n') {
@@ -681,7 +682,9 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
     );
   });
 
-  test('the comment pass reads every file to the end in step, so no count is guesswork', () => {
+  // What this proves: no file ENDS inside a string. A quote misread mid-file
+  // that a later quote happens to re-balance is not caught here.
+  test('the comment pass ends every file outside a string', () => {
     expect(misread).toEqual([]);
   });
 

@@ -84,7 +84,7 @@ test('the chain renders in order with counterevidence visible and the unreviewed
   expect(screen.getByText(/round-3 output fell again/)).toBeTruthy();
   expect(screen.getByText('Not yet reviewed by a human.')).toBeTruthy();
 
-  // The inadmissible film-study row is stamped in refusal ink, and STILL
+  // The inadmissible film-study row is stamped on the restricted rung, and STILL
   // rendered -- annotation, never a hidden row; the admissible row wears no
   // such stamp.
   const stamp = screen.getByText('inadmissible — no accepted proposal');

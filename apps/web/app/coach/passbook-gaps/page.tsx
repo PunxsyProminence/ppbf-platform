@@ -111,8 +111,8 @@ export default function CoachPassbookGapsPage() {
           signal: controller.signal,
         });
         // Law 7: a refusal is a stamp, not an error toast. The API refusing
-        // this role is a governed answer -- it gets the mark, not the red
-        // "something broke" banner a genuine failure gets.
+        // this role is a governed answer -- it gets the mark, not the
+        // "something broke" warning banner a genuine failure gets.
         if (response.status === 401 || response.status === 403) {
           if (controller.signal.aborted) return;
           setRefused(true);
