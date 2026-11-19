@@ -334,11 +334,19 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
       ) : null}
       {counting
         ? createPortal(
+          /* PINNED INLINE, AS THE COVER IS (lane U1, AS2-d). A direct child of
+             <body> meets app/globals.css's unlayered `body > * { position:
+             relative; z-index: 2 }`, which beats Tailwind's layered `fixed`
+             and `z-[1000]` whatever their specificity. With classes alone the
+             banner was laid out at the end of the document, so on a long page
+             nobody would see "Stay signed in" before the sign-out. An inline
+             style outranks both. */
           <div
             ref={bannerRef}
             data-surface="kiosk"
             role="alert"
-            className="mat-leather--raised fixed inset-x-0 bottom-0 z-[1000] border-t-2 border-[color:var(--brass-500)] p-[var(--s5)]"
+            style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1000 }}
+            className="mat-leather--raised border-t-2 border-[color:var(--brass-500)] p-[var(--s5)]"
           >
             <div className="mx-auto flex max-w-[1000px] flex-wrap items-center justify-between gap-[var(--s4)]">
               <p className="t-body text-[length:var(--t-md)] text-[color:var(--bone-100)]">

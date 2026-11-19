@@ -109,6 +109,17 @@ describe('a marked gym tablet', () => {
     expect(banner.textContent).toContain('No one has used this tablet for a while. Signing out in 0:59.');
     expect(banner.textContent).toContain('Tap anywhere to stay signed in. Anything not saved on this screen will be lost.');
     expect(banner.getAttribute('data-surface')).toBe('kiosk');
+    /* AS2-d: pinned by inline style, because app/globals.css's unlayered
+       `body > *` (position: relative; z-index: 2) beats Tailwind's layered
+       `fixed`. jsdom applies no stylesheet cascade, so this pins the inline
+       style that wins it; that the banner sits at the bottom of a long page
+       is for the signed-in tablet check. */
+    expect(banner.parentElement).toBe(document.body);
+    expect(banner.style.position).toBe('fixed');
+    expect(banner.style.bottom).toBe('0px');
+    expect(banner.style.left).toBe('0px');
+    expect(banner.style.right).toBe('0px');
+    expect(banner.style.zIndex).toBe('1000');
 
     await act(async () => {
       fireEvent.pointerDown(document.body);
