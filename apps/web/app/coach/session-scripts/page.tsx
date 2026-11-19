@@ -10,8 +10,16 @@ import FinishedSessions from '@/components/FinishedSessions';
 import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
 import { type ClassChoice, type TieableClassView, defaultClassChoice } from '@/src/shared/sessionClassChoice';
 import { apiBase } from '@/lib/apiBase';
-import { orNotWritten } from '@/src/lib/drillPresentation';
-import { authoringStateWords, explainLine, renderingFormatWords, renderingOriginWords } from '@/src/lib/sessionScriptWords';
+import {
+  AI_DRAFT_MARK,
+  DRAFT_NOT_CHECKED,
+  authoringStateWords,
+  blockCoachingLines,
+  blockNeedsDrillText,
+  renderingFormatWords,
+  renderingOriginWords,
+} from '@/src/lib/sessionScriptWords';
+import { useLinkedDrillText } from '@/components/drills/useLinkedDrillText';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
 import { formatCalendarDay } from '@/lib/calendarDay';
@@ -91,23 +99,6 @@ function blockWindow(block: Block): string {
   return `${block.start_offset_min}-${block.end_offset_min} min`;
 }
 
-/**
- * The four authored coaching fields, in the order a coach reads them mid-session. A field the
- * script left empty stays on the line list and says "Not written yet": a hidden line made the
- * block look complete.
- */
-function blockDetailLines(block: Block): { label: string; value: string }[] {
-  return [
-    { label: 'Say', value: block.what_to_say ?? '' },
-    // Template facts are labelled as the template's, and stored codes read as words (F-078).
-    explainLine(block.what_to_explain ?? ''),
-    { label: 'Watch', value: block.what_to_watch ?? '' },
-    { label: 'Fix', value: block.what_to_fix ?? '' },
-  ].map((line) => (line.value.trim() === ''
-    ? { label: line.label === 'From the template' ? 'Explain' : line.label, value: orNotWritten('') }
-    : line));
-}
-
 function CoachSessionScripts() {
   const [scripts, setScripts] = useState<Script[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,6 +106,12 @@ function CoachSessionScripts() {
 
   const [openScriptId, setOpenScriptId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ScriptDetail | null>(null);
+  // Lane U2-6e (Overwatch Q4 = A): when a plan opens, one read per linked drill
+  // whose block has an empty Say, Watch or Fix line, so the line can show the
+  // drill's text instead of "Not written yet".
+  const drillTexts = useLinkedDrillText(
+    (detail?.blocks ?? []).filter(blockNeedsDrillText).map((block) => block.drill_id as string),
+  );
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
@@ -850,13 +847,25 @@ function CoachSessionScripts() {
                         )}
                       </div>
 
-                      {blockDetailLines(block).map((line) => (
+                      {blockCoachingLines(
+                        block,
+                        block.drill_id !== null && blockNeedsDrillText(block)
+                          ? drillTexts.get(block.drill_id) ?? { state: 'loading' }
+                          : null,
+                      ).map((line) => (
                         <p
                           key={`${block.block_id}-${line.label}`}
                           className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]"
                         >
                           <span className="t-label">{line.label}: </span>
                           {line.value}
+                          {/* OW25-57: the per-field AI-draft mark, for coaches and admins (this page's gate). */}
+                          {line.fromDrill && line.draft === true && (
+                            <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>
+                          )}
+                          {line.fromDrill && line.draft === null && (
+                            <span className="t-label ml-[var(--s2)]">{DRAFT_NOT_CHECKED}</span>
+                          )}
                         </p>
                       ))}
                     </li>

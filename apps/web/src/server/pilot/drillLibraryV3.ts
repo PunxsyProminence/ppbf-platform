@@ -168,6 +168,28 @@ export interface DrillSecondarySkillRow {
   skill_id: string;
 }
 
+/**
+ * The four drill fields a session plan falls back to when its own Say, Watch or
+ * Fix line is empty (lane U2-6e, Overwatch option A, 2026-11-19): cues for Say,
+ * what good and bad look like for Watch, corrections for Fix.
+ */
+export const DRILL_DRAFT_FIELDS = ['cues', 'what_good_looks_like', 'what_bad_looks_like', 'corrections'] as const;
+export type DrillDraftField = (typeof DRILL_DRAFT_FIELDS)[number];
+
+/**
+ * Whether each of those fields of THIS drill version is still an AI draft
+ * (OW25-57, OD-2026-11-19-012: coaches and admins see a mark on each drafted
+ * field; athletes and parents see no AI-draft line).
+ *
+ *   true   the field's label carries a `draft` key: an AI draft nobody has
+ *          edited (contentLabels.ts inAppEditLabel writes no `draft` key).
+ *   false  the version has no label for the field, or its label is not a draft.
+ *   null   NOT CHECKED: the labels table is not there, the read failed, or the
+ *          label is not in a shape this reader knows. A screen says so; it
+ *          never treats null as "not a draft".
+ */
+export type DrillFieldDrafts = Record<DrillDraftField, boolean | null>;
+
 export interface DrillWithDetail extends DrillLibraryRow {
   scale_levels: DrillScaleLevelRow[];
   /** The drill's OWN stop rules: every pilot.drill_stop_rules row of this version. */
@@ -176,6 +198,14 @@ export interface DrillWithDetail extends DrillLibraryRow {
   universal_stop_rules: UniversalStopRuleRow[];
   cues: DrillCueRow[];
   secondary_skills: DrillSecondarySkillRow[];
+  /**
+   * Staff only. This is the coach and admin read; the athlete projection
+   * (getAthleteDrillDetail, readAthleteDrillDetail) has its own column list and
+   * never carries this key. getDrillWithDetail always sets it; it is optional
+   * in the type so a drill built without it (a fixture, an older response)
+   * still types, and a reader treats a missing key as "not checked".
+   */
+  field_drafts?: DrillFieldDrafts;
 }
 
 const DRILL_FIELDS =
@@ -373,7 +403,7 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
     return null;
   }
 
-  const [scaleLevels, stopRules, universalStopRules, cues, secondarySkills] = await Promise.all([
+  const [scaleLevels, stopRules, universalStopRules, cues, secondarySkills, fieldDrafts] = await Promise.all([
     query<DrillScaleLevelRow>(
       `select ${SCALE_FIELDS} from pilot.drill_scale_levels
        where organization_id = $1 and drill_id = $2
@@ -397,6 +427,7 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
        order by skill_id`,
       [organizationId, drillId],
     ),
+    readDrillFieldDrafts(organizationId, drill.lineage_id, drill.version, drillId),
   ]);
 
   return {
@@ -406,7 +437,86 @@ export async function getDrillWithDetail(organizationId: string, drillId: string
     universal_stop_rules: universalStopRules,
     cues,
     secondary_skills: secondarySkills,
+    field_drafts: fieldDrafts,
   };
+}
+
+const DRAFTS_NOT_CHECKED: DrillFieldDrafts = {
+  cues: null,
+  what_good_looks_like: null,
+  what_bad_looks_like: null,
+  corrections: null,
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * One field's label read as draft or not. A label is the field's group-level
+ * label (status, sources, draft) and may hold part labels beside it
+ * (contentLabels.ts writeEditedVersionLabels: a part label wins over its
+ * group). The field counts as a draft when the group carries `draft` or any part
+ * does: the writer removes the group's `draft` once every part has been edited,
+ * so a group still marked draft still speaks for a part nobody edited.
+ */
+function labelIsDraft(label: unknown): boolean | null {
+  if (label === undefined || label === null) return false;
+  if (!isPlainObject(label)) return null;
+  if ('draft' in label) return true;
+  return Object.values(label).some((part) => isPlainObject(part) && 'draft' in part);
+}
+
+/**
+ * The four 6e fields' draft state from one version's field_labels (the
+ * pilot.content_record_labels column). No row, or a row with no field labels,
+ * means no label was recorded for that version: nothing is a draft by label.
+ * Exported for its test.
+ */
+export function drillFieldDrafts(fieldLabels: unknown): DrillFieldDrafts {
+  if (fieldLabels === undefined || fieldLabels === null) {
+    return { cues: false, what_good_looks_like: false, what_bad_looks_like: false, corrections: false };
+  }
+  if (!isPlainObject(fieldLabels)) return { ...DRAFTS_NOT_CHECKED };
+  return {
+    cues: labelIsDraft(fieldLabels.cues),
+    what_good_looks_like: labelIsDraft(fieldLabels.what_good_looks_like),
+    what_bad_looks_like: labelIsDraft(fieldLabels.what_bad_looks_like),
+    corrections: labelIsDraft(fieldLabels.corrections),
+  };
+}
+
+/**
+ * The labels of this drill VERSION (target_kind 'drill' is contentLabels.ts
+ * labelTargetKind('drill-library'), written by the content import and by an
+ * in-app edit, drillLibraryEdit.ts, under the drill's lineage_id and version).
+ * Spelled out rather than imported: contentImport/ids.ts imports this module.
+ *
+ * A failed read answers "not checked" for all four rather than failing the
+ * drill: the drill's own text is still worth showing, and the screen says the
+ * draft state was not checked. Before the content_labels migration the table
+ * is not there (42P01); that is answered the same way, without a log line.
+ */
+async function readDrillFieldDrafts(
+  organizationId: string,
+  lineageId: string,
+  version: number,
+  drillId: string,
+): Promise<DrillFieldDrafts> {
+  try {
+    const row = await queryOne<{ field_labels: unknown }>(
+      `select field_labels from pilot.content_record_labels
+       where organization_id = $1 and target_kind = 'drill' and target_lineage_id = $2 and target_version = $3`,
+      [organizationId, lineageId, version],
+    );
+    return drillFieldDrafts(row?.field_labels ?? null);
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code !== '42P01') {
+      console.error({ event: 'drill-field-drafts-read-failed', drill_id: drillId, ...(typeof code === 'string' ? { code } : {}) });
+    }
+    return { ...DRAFTS_NOT_CHECKED };
+  }
 }
 
 /**

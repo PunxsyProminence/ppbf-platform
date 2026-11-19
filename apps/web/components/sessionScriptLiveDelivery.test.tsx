@@ -1552,12 +1552,15 @@ describe("the current block's drill instructions", () => {
       fireEvent.click(await screen.findByRole('button', { name: 'View instructions: Jab drill' }));
     });
 
-    // Every request opening the drill sent is a read, to any route.
-    expect(fetchMock.mock.calls.slice(sentBefore).map((call) => (call[1] as RequestInit | undefined)?.method ?? 'GET'))
-      .toEqual(['GET']);
-    // The version the block links, by the drill library's own read.
-    expect(fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('drill-library')))
-      .toEqual(['/api/pilot/drill-library?drill_id=ref-jab-v1']);
+    // Every request opening the drill sent is a read, to any route: the version the block links,
+    // by the drill library's own read.
+    const opening = fetchMock.mock.calls.slice(sentBefore);
+    expect(opening.map((call) => (call[1] as RequestInit | undefined)?.method ?? 'GET')).toEqual(['GET']);
+    expect(opening.map((call) => String(call[0]))).toEqual(['/api/pilot/drill-library?drill_id=ref-jab-v1']);
+    // Lane U2-6e: before the click, the block's empty plan lines had already read that same version,
+    // and no other drill, to show the drill's text.
+    expect(new Set(fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('drill-library'))))
+      .toEqual(new Set(['/api/pilot/drill-library?drill_id=ref-jab-v1']));
     const drill = await screen.findByRole('article', { name: 'Jab drill' });
     expect(within(drill).getByText('Partners at jab distance, one with pads.')).toBeInTheDocument();
     expect(within(drill).getByText('Step and jab on the call, then return to guard.')).toBeInTheDocument();
@@ -1572,6 +1575,32 @@ describe("the current block's drill instructions", () => {
     expect(patchCalls(fetchMock)).toEqual([]);
     expect(screen.getByRole('button', { name: 'Hide instructions: Jab drill' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('button', { name: 'Next block' })).toBeInTheDocument();
+  });
+
+  // Lane U2-6e (Overwatch option A, Q1 = A, Q2 = A, Q4 = A, 2026-11-19).
+  it("the current block's empty lines show its drill's text, labelled \"From the drill\", before anything is opened", async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: LINKED }),
+      drill: () => jsonResponse({
+        drill: { ...referenceDrill(), field_drafts: { cues: true, what_good_looks_like: null, what_bad_looks_like: false, corrections: false } },
+      }),
+    });
+
+    const card = (await screen.findByText('Current block')).parentElement as HTMLElement;
+    expect(await within(card).findByText('Snap it back')).toBeInTheDocument();
+    expect(Array.from(card.querySelectorAll('p.t-body')).map((line) => line.textContent)).toEqual([
+      'Say (From the drill): Snap it back◉DRAFT, FOR COACH REVIEW',
+      'Explain: Not written yet',
+      'Watch (From the drill): The hand comes straight back to the chin.Draft status not checked',
+      'Fix (From the drill): Elbow in before the next one.',
+    ]);
+    // Only the current block's drill was read, by GET, and nothing was written.
+    const reads = fetchMock.mock.calls.filter(([url]) => String(url).includes('drill-library'));
+    expect(reads.map(([url, init]) => [String(url), (init as RequestInit | undefined)?.method ?? 'GET']))
+      .toEqual([['/api/pilot/drill-library?drill_id=ref-jab-v1', 'GET']]);
+    expect(patchCalls(fetchMock)).toEqual([]);
+    // The drill's own panel is still closed until the coach opens it.
+    expect(screen.queryByRole('article', { name: 'Jab drill' })).not.toBeInTheDocument();
   });
 
   it('closes back to the block, and the running session is untouched', async () => {

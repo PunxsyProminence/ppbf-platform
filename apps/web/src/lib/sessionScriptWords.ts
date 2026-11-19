@@ -2,6 +2,7 @@
 // from a client component: the plan page, the live screen and the server's template-to-script
 // step all use it, so a word on screen and a word written to a block cannot drift.
 
+import { listItems, NOT_WRITTEN_YET } from '@/src/lib/drillPresentation';
 import type { SessionScriptRenderingFormat } from '@/src/server/pilot/sessionScripts';
 
 const STATE_WORDS: Readonly<Record<string, string>> = {
@@ -59,6 +60,117 @@ export function explainLine(explain: string): { label: string; value: string } {
     return { label: 'Explain', value: stored[2] ? `${section}, ${stored[2]} reps` : section };
   }
   return { label: 'Explain', value: explain };
+}
+
+/**
+ * The linked drill's text, as a coach screen holds it while a plan line falls back to it (lane
+ * U2-6e). `drafts` is per field: true = still an AI draft, null = draft status not checked.
+ */
+export type LinkedDrillText =
+  | { readonly state: 'loading' }
+  | { readonly state: 'failed' }
+  | {
+      readonly state: 'loaded';
+      readonly cues: readonly string[];
+      readonly good: string;
+      readonly bad: string;
+      readonly corrections: string;
+      readonly drafts: {
+        readonly cues: boolean | null;
+        readonly good: boolean | null;
+        readonly bad: boolean | null;
+        readonly corrections: boolean | null;
+      };
+    };
+
+/** One line of a block's coaching text, as the plan page and the live console show it. */
+export interface CoachingLine {
+  label: string;
+  value: string;
+  /** Lane U2-6e: the text is the linked drill's, not the plan's. */
+  fromDrill: boolean;
+  /** On a drill line only: true = AI draft (marked), null = draft status not checked, false = no mark. */
+  draft?: boolean | null;
+}
+
+/** Lane U2-6e wording (Overwatch Q2 = A, 2026-11-19). */
+export const FROM_THE_DRILL = 'From the drill';
+export const DRILL_TEXT_LOADING = "Loading the drill's text...";
+export const DRILL_TEXT_FAILED = `${NOT_WRITTEN_YET}. The drill's text could not be loaded.`;
+/** The mark /coach/drills already shows on a drafted KPI (app/coach/drills/page.tsx). */
+export const AI_DRAFT_MARK = 'DRAFT, FOR COACH REVIEW';
+export const DRAFT_NOT_CHECKED = 'Draft status not checked';
+
+/** A drill field held as one line: its own lines joined with " · ", as the cues are. */
+function oneLine(items: readonly string[]): string {
+  return items.join(' · ');
+}
+
+type CoachingBlock = {
+  what_to_say: string | null;
+  what_to_explain: string | null;
+  what_to_watch: string | null;
+  what_to_fix: string | null;
+};
+
+/**
+ * A block's four authored coaching fields, in the order a coach reads them mid-session.
+ *
+ * A field the plan wrote is shown as written and the drill is not consulted for it. A field the
+ * plan left empty falls back to the block's linked drill (lane U2-6e, Overwatch option A): Say to
+ * the drill's cues, Watch to what good looks like with what bad looks like as a second line, Fix to
+ * its corrections -- each labelled "From the drill" and carrying the drill field's draft state.
+ * Explain has no drill counterpart and is unchanged. Nothing is ever a blank line: an empty field
+ * with no drill text says "Not written yet", while the drill loads it says so, and a drill that
+ * could not be read says that too. `drill` is null when the block links no drill.
+ */
+export function blockCoachingLines(block: CoachingBlock, drill: LinkedDrillText | null): CoachingLine[] {
+  const own = (label: string, text: string | null): CoachingLine | null =>
+    (text ?? '').trim() === '' ? null : { label, value: text as string, fromDrill: false };
+  const notWritten = (label: string): CoachingLine => ({ label, value: NOT_WRITTEN_YET, fromDrill: false });
+  const pending = (label: string): CoachingLine | null => {
+    if (drill === null) return notWritten(label);
+    if (drill.state === 'loading') return { label, value: DRILL_TEXT_LOADING, fromDrill: false };
+    if (drill.state === 'failed') return { label, value: DRILL_TEXT_FAILED, fromDrill: false };
+    return null;
+  };
+  const fromDrill = (label: string, items: readonly string[], draft: boolean | null): CoachingLine | null =>
+    items.length === 0 ? null : { label: `${label} (${FROM_THE_DRILL})`, value: oneLine(items), fromDrill: true, draft };
+
+  const say = own('Say', block.what_to_say)
+    ?? pending('Say')
+    ?? (drill?.state === 'loaded' ? fromDrill('Say', drill.cues.map((cue) => cue.trim()).filter(Boolean), drill.drafts.cues) : null)
+    ?? notWritten('Say');
+
+  const explained = explainLine(block.what_to_explain ?? '');
+  const explain: CoachingLine = explained.value.trim() === ''
+    ? notWritten(explained.label === 'From the template' ? 'Explain' : explained.label)
+    : { ...explained, fromDrill: false };
+
+  const watchOwn = own('Watch', block.what_to_watch);
+  const watch: CoachingLine[] = watchOwn
+    ? [watchOwn]
+    : (() => {
+        const waiting = pending('Watch');
+        if (waiting) return [waiting];
+        if (drill?.state !== 'loaded') return [notWritten('Watch')];
+        const good = fromDrill('Watch', listItems(drill.good), drill.drafts.good) ?? notWritten('Watch');
+        const bad = fromDrill('What to avoid', listItems(drill.bad), drill.drafts.bad);
+        return bad ? [good, bad] : [good];
+      })();
+
+  const fix = own('Fix', block.what_to_fix)
+    ?? pending('Fix')
+    ?? (drill?.state === 'loaded' ? fromDrill('Fix', listItems(drill.corrections), drill.drafts.corrections) : null)
+    ?? notWritten('Fix');
+
+  return [say, explain, ...watch, fix];
+}
+
+/** Whether any of the block's Say, Watch or Fix lines is empty, so its linked drill is worth reading. */
+export function blockNeedsDrillText(block: CoachingBlock & { drill_id: string | null }): boolean {
+  return block.drill_id !== null
+    && [block.what_to_say, block.what_to_watch, block.what_to_fix].some((text) => (text ?? '').trim() === '');
 }
 
 /**
