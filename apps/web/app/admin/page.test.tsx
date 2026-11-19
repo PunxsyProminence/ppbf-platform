@@ -337,6 +337,25 @@ async function chooseAthlete(athleteId: string) {
 const trackButton = (name: RegExp) => screen.getByRole('button', { name }) as HTMLButtonElement;
 const saveButton = () => screen.getByRole('button', { name: 'Save tracks' }) as HTMLButtonElement;
 
+/* OFF-12 (lane U1). Controls that did not do what they said: a "Tutorial
+   Access" card whose button opens SHADOW chat, a "Manage Login Announcements"
+   link to /login (which sends a signed-in admin home; the sign-in page shows no
+   announcements), and the working Compliance Center filed as "Planned". */
+it('the overview names SHADOW, links no sign-in page, and files the Compliance Center once', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+  await renderPage(fetchMock, 'organization_admin');
+  await screen.findByRole('heading', { name: 'Ask SHADOW' });
+
+  expect(screen.getByText('Questions about a screen? Ask SHADOW from this button.')).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Tutorial Access' })).toBeNull();
+  expect(screen.queryByText(/tutorial center/i)).toBeNull();
+  expect(screen.queryByText('Manage Login Announcements')).toBeNull();
+  expect(document.querySelector('a[href="/login"]')).toBeNull();
+  expect(document.querySelectorAll('a[href="/admin/compliance-center"]')).toHaveLength(1);
+  expect(screen.queryByText('Automated Compliance Monitoring Surface')).toBeNull();
+  expect(screen.getByText('Automated compliance monitoring: not built yet. The Compliance Center records violations by hand.')).toBeTruthy();
+});
+
 describe('Who Trains On What', () => {
   it("lists the gym's real athletes by name, and writes nothing on load", async () => {
     const fetchMock = trackFetch({ roster: [BEN, ADA], stored: {} });

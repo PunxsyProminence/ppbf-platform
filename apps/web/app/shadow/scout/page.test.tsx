@@ -99,6 +99,22 @@ it('opens on a cold load for an admin instead of redirecting to /login', async (
   expect(screen.getByRole('button', { name: /generate scout report/i })).toBeTruthy();
 });
 
+/* CS-17 (lane U1). An always-disabled "Scout Report worker not active" button
+   sat beside the working Generate. Whether the worker runs is a deployment
+   setting the page cannot read, so a status line says what holds either way. */
+it('shows no dead worker button, and a status line that is true whether the worker runs or not', async () => {
+  global.fetch = scoutFetchMock('organization_admin') as unknown as typeof fetch;
+  mockUsePilotSession.mockReturnValue(session('organization_admin'));
+
+  render(<ScoutReportPage />);
+
+  await screen.findByRole('heading', { level: 1, name: 'Scout Reports' });
+  expect(screen.queryByRole('button', { name: /worker not active/i })).toBeNull();
+  expect(screen.queryByText(/worker not active/i)).toBeNull();
+  for (const button of screen.getAllByRole('button')) expect((button as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText('Reports are written by the SHADOW background worker and listed here when done. A queued report waits until the worker runs.')).toBeTruthy();
+});
+
 it('refuses in place rather than showing the generate control to a role the report is not scoped for', async () => {
   global.fetch = scoutFetchMock('board') as unknown as typeof fetch;
   mockUsePilotSession.mockReturnValue(session('board'));

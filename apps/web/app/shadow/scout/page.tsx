@@ -302,14 +302,6 @@ function ScoutReportView() {
             <Link href="/shadow" className="btn btn--ghost">
               ← SHADOW
             </Link>
-            <button
-              type="button"
-              disabled
-              title="Requires the secure scheduled SHADOW worker"
-              className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Scout Report worker not active
-            </button>
           </div>
         </div>
       </header>
@@ -510,6 +502,14 @@ function ScoutReportView() {
                 </button>
               ) : null}
             </div>
+            {/* CS-17 (lane U1): this replaces an always-disabled header button,
+                "Scout Report worker not active", that sat beside a working
+                Generate. Whether the worker runs is a deployment setting
+                (PPBF_SHADOW_WORKER_ENABLED) this page cannot see, so the line
+                says what is true either way. */}
+            <p className="t-muted mt-[var(--s3)]">
+              Reports are written by the SHADOW background worker and listed here when done. A queued report waits until the worker runs.
+            </p>
             {generateNotice ? <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--brass-300)]">{generateNotice}</p> : null}
             {generateError ? (
               <div role="alert" className="mt-[var(--s3)]">

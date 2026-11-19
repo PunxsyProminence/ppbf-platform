@@ -71,8 +71,6 @@ function props(overrides: Partial<CoachFloorFocusProps> = {}): CoachFloorFocusPr
     readinessState: 'loaded',
     sessionState: 'loaded',
     sessionLive: false,
-    sessionMode: 'Group',
-    onSessionMode: jest.fn(),
     everythingElseHref: '#coach-dashboard-details',
     ...overrides,
   };
@@ -229,7 +227,7 @@ describe('Start a session', () => {
     render(<CoachFloorFocus {...props({ onGoToSessions })} />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
 
     expect(posts()).toHaveLength(1);
@@ -244,7 +242,7 @@ describe('Start a session', () => {
     render(<CoachFloorFocus {...props({ onGoToSessions })} />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
 
     expect(posts()).toHaveLength(0);
@@ -257,7 +255,7 @@ describe('Start a session', () => {
     render(<CoachFloorFocus {...props({ onGoToSessions })} />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
 
     expect(onGoToSessions).toHaveBeenCalledTimes(1);
@@ -272,7 +270,7 @@ describe('Start a session', () => {
     render(<CoachFloorFocus {...props({ onGoToSessions })} />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
 
     expect(onGoToSessions).not.toHaveBeenCalled();
@@ -290,12 +288,31 @@ describe('Start a session', () => {
   });
 });
 
-test('session mode is a real toggle with its state announced', () => {
-  const onSessionMode = jest.fn();
-  render(<CoachFloorFocus {...props({ onSessionMode })} />);
-  expect(screen.getByRole('button', { name: 'Group' }).getAttribute('aria-pressed')).toBe('true');
-  fireEvent.click(screen.getByRole('button', { name: 'One-on-One' }));
-  expect(onSessionMode).toHaveBeenCalledWith('One-on-One');
+/* CF-05 (lane U1). The Group / One-on-One toggle switched only the Floor tab's
+   block template, never the session Start begins, so the board no longer
+   offers it. The board names where it went instead (a removed action is named). */
+test('the board offers no Group / One-on-One toggle and names where the templates are', () => {
+  render(<CoachFloorFocus {...props()} />);
+  expect(screen.queryByRole('group', { name: 'Session mode' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^(✓ )?Group$/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^(✓ )?One-on-One$/ })).toBeNull();
+  expect(screen.getByText('Group / One-on-One block templates are on the Floor tab.')).toBeTruthy();
+});
+
+/* CF-04 (lane U1). With a plan written the tap opens Session Plans to pick one,
+   so the button does not say it starts one outright. */
+test('the start button says it may open the plans to pick one', () => {
+  render(<CoachFloorFocus {...props()} />);
+  expect(screen.queryByRole('button', { name: 'Start a session' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Start or pick a session' })).toBeTruthy();
+});
+
+/* CS-04 (lane U1). The Morning Read has no pain-report or family-barrier read,
+   so the link does not call it the full list. */
+test('the Morning Read link does not claim to be the full list', () => {
+  render(<CoachFloorFocus {...props()} />);
+  expect(screen.queryByText(/Full list/)).toBeNull();
+  expect(screen.getByRole('link', { name: 'More reads: The Morning Read' }).getAttribute('href')).toBe('/coach/intelligence');
 });
 
 test('everything else on the dashboard stays one tap away', () => {
@@ -318,8 +335,9 @@ test('the gauges show the counts the board was handed', () => {
   // One GREEN, one UNKNOWN: one reading, out of two.
   expect(gauge('Readings').textContent).toContain('1 of 2');
   expect(gauge('Session').textContent).toContain('None');
-  // The mode is the coach's own setting, and says so.
-  expect(gauge('Session').textContent).toContain('Your mode: Group');
+  // No mode here: the board's toggle is gone (CF-05), so the gauge names what it reads.
+  expect(gauge('Session').textContent).toContain('Live delivery');
+  expect(gauge('Session').textContent).not.toContain('mode');
 });
 
 test('a failed feed makes the needs-you gauge "?", never 0', () => {
@@ -349,7 +367,7 @@ test('a live-run read that failed is never shown as "no session"', () => {
   render(<CoachFloorFocus {...props({ sessionState: 'error' })} />);
   expect(gauge('Session').textContent).toContain('?');
   expect(gauge('Session').textContent).not.toContain('None');
-  expect(screen.queryByRole('link', { name: 'Start a session' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Start or pick a session' })).toBeNull();
   expect(screen.getByRole('link', { name: 'Open Session Plans' }).getAttribute('href')).toBe('/coach/session-scripts');
 });
 
@@ -481,7 +499,7 @@ test('Start a session sends one start however fast it is tapped, and stays busy 
   const onGoToSessions = jest.fn();
   render(<CoachFloorFocus {...props({ onGoToSessions })} />);
 
-  const button = screen.getByRole('button', { name: 'Start a session' });
+  const button = screen.getByRole('button', { name: 'Start or pick a session' });
   await act(async () => {
     fireEvent.click(button);
     fireEvent.click(button);
@@ -625,7 +643,7 @@ describe('Start a session, and the class', () => {
     const onGoToSessions = jest.fn();
     render(<CoachFloorFocus {...props({ onGoToSessions })} />);
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
     expect(JSON.parse(String((posts()[0][1] as RequestInit).body))).toEqual({ class_id: 'class-youth' });
     expect(onGoToSessions).toHaveBeenCalledTimes(1);
@@ -639,7 +657,7 @@ describe('Start a session, and the class', () => {
     const onGoToSessions = jest.fn();
     render(<CoachFloorFocus {...props({ onGoToSessions })} />);
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start a session' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
     expect(posts()).toHaveLength(0);
     expect(onGoToSessions).toHaveBeenCalledTimes(1);

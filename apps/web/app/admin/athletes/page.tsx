@@ -623,7 +623,7 @@ function AthleteRecordsConsoleContent() {
             </div>
           ) : roster.length === 0 ? (
             <p className="t-body">
-              There are no athlete records in your gym yet. Add one on the People screen first.
+              There are no athlete records in your gym yet. Add one on Gym Office first.
             </p>
           ) : (
             <>
@@ -943,7 +943,8 @@ function AthleteRecordsConsoleContent() {
                 </p>
                 <p className="t-body mt-[var(--s3)]">
                   Two things it does not do: it does not switch off their sign-in, and it does not take them off their
-                  coach&apos;s lists. Turn the sign-in off on the People screen.
+                  coach&apos;s lists. There is no switch that turns an athlete&apos;s sign-in off. On Gym Office, Sign Out
+                  Everywhere ends their open sessions, and Issue New Activation Code replaces their PIN.
                 </p>
               </div>
 

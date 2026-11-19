@@ -195,7 +195,7 @@ const tabs: Array<{ id: RevenueFundingTab; label: string }> = [
   { id: 'grants', label: 'Grants' },
   { id: 'scholarships', label: 'Scholarships' },
   { id: 'products', label: 'Products / Equipment' },
-  { id: 'payment-settings', label: 'Payment Settings Placeholder' },
+  { id: 'payment-settings', label: 'Payment Accounts' },
   { id: 'treasurer-review', label: 'Treasurer Review' },
 ];
 
@@ -909,7 +909,7 @@ export default function RevenueFundingCenter() {
       )}
 
       {activeTab === 'payment-settings' && (
-        <SectionCard title="Payment Settings Placeholder">
+        <SectionCard title="Payment Accounts">
           <div className="mat-leather rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.24)] p-[var(--s4)]">
             <p className="t-body">Payment accounts and their real connection status are on the Payment Accounts page.</p>
             <Link href="/admin/payments" className="btn btn--ghost mt-[var(--s3)]">
