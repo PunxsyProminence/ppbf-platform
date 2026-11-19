@@ -14,6 +14,7 @@ import {
   REST_MARK_KINDS,
   REST_MARK_ROLES,
   type RestMarkRow,
+  restMarkReadWindow,
   restMarkUnknownFieldsError,
 } from '@/src/server/pilot/restMarks';
 import { gymDayIso } from '@/src/lib/gymTime';
@@ -26,9 +27,10 @@ export const dynamic = 'force-dynamic';
  * away mark (no health reason asked for minors)").
  *
  *   GET                                           the 5 load weeks (Rule 6's 7-day buckets,
- *                                                 newest first) and the live marks over them,
- *                                                 for the athletes this caller's analytics
- *                                                 shows (the Performance Analytics roster)
+ *                                                 newest first) and the live marks from the
+ *                                                 oldest of them to 34 days ahead (a planned
+ *                                                 holiday shows and can be undone), for the
+ *                                                 athletes this caller's analytics shows
  *   POST   { athlete_id, kind, first_day, last_day }   records one mark (one tap = one week)
  *   DELETE ?athlete_id=&mark_id=                  undoes one mark (the row is kept)
  *
@@ -87,7 +89,8 @@ export async function GET(request: NextRequest) {
     const today = requireToday();
     const weeks = loadWeekWindows(today);
     const ids = await rosterIds(principal);
-    const marks = await listRestMarks(actorOf(principal), ids, weeks[weeks.length - 1].first_day, weeks[0].last_day);
+    const readWindow = restMarkReadWindow(today);
+    const marks = await listRestMarks(actorOf(principal), ids, readWindow.from_day, readWindow.to_day);
     return NextResponse.json(
       { ok: true, today, kinds: [...REST_MARK_KINDS], weeks, marks: marks.map(present) },
       { headers: { 'Cache-Control': 'no-store' } },

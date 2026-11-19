@@ -5,6 +5,7 @@ import {
   REST_MARK_KINDS,
   REST_MARK_MAX_DAYS,
   REST_MARK_ROLES,
+  restMarkReadWindow,
   restMarkShapeError,
   restMarkUnknownFieldsError,
 } from './restMarks';
@@ -113,5 +114,13 @@ describe('loadWeekWindows: the same 7-day buckets Rule 6 reads', () => {
   test('crosses a month and a year boundary by calendar days, and refuses a non-day', () => {
     expect(loadWeekWindows('2027-01-02')[0]).toEqual({ week_index: 0, first_day: '2026-12-27', last_day: '2027-01-02' });
     expect(() => loadWeekWindows('2026-13-01')).toThrow(/Not a gym day/);
+  });
+});
+
+describe("restMarkReadWindow: the strip reads from Rule 6's oldest day to the last day a mark may end", () => {
+  test('34 days back and 34 days ahead, matching the shape limits', () => {
+    expect(restMarkReadWindow(TODAY)).toEqual({ from_day: '2026-10-16', to_day: '2026-12-23' });
+    expect(restMarkShapeError({ kind: 'away', firstDay: '2026-12-23', lastDay: '2026-12-23' }, TODAY)).toBeNull();
+    expect(loadWeekWindows(TODAY)[4].first_day).toBe(restMarkReadWindow(TODAY).from_day);
   });
 });

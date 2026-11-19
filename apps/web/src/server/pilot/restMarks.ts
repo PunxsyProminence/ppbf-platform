@@ -4,6 +4,7 @@ import { gymDayIso } from '../../lib/gymTime';
 import { type ActorIdentity, assertActorCanAccessAthlete } from './access';
 import { writePilotAuditEvent } from './audit';
 import { query, queryOne, withTransaction } from './db';
+import { athleteNotDeletedSql } from './deletedAthletes';
 import { ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { LOAD_JUMP_PRIOR_WEEKS } from './weeklySessionLoad';
 
@@ -106,6 +107,20 @@ export function loadWeekWindows(today: string): LoadWeekWindow[] {
 }
 
 /**
+ * Pure: the days the strip reads marks over, from the oldest day Rule 6 reads
+ * to the last day a mark may end (REST_MARK_MAX_DAYS - 1 days ahead), so a
+ * planned holiday marked ahead of time is shown and can be undone.
+ */
+export function restMarkReadWindow(today: string): { from_day: string; to_day: string } {
+  const todayNumber = dayNumber(today);
+  if (todayNumber === null) throw new Error(`Not a gym day: ${today}`);
+  return {
+    from_day: dayFromNumber(todayNumber - (REST_MARK_MAX_DAYS - 1)),
+    to_day: dayFromNumber(todayNumber + (REST_MARK_MAX_DAYS - 1)),
+  };
+}
+
+/**
  * Pure: the refusal for a request body carrying any field outside `allowed`,
  * or null. A reason, a note, a health word -- anything not in the list -- is
  * refused out loud, never dropped silently, so a screen that starts sending
@@ -195,7 +210,8 @@ async function assertRestMarkAccess(actor: ActorIdentity, athleteId: string): Pr
  * caller has already cleared through the athlete-access contract (the same
  * roster the staff analytics read uses). There is no "all" mode; an empty
  * list answers without the database. The actor must still hold a
- * REST_MARK_ROLES membership here.
+ * REST_MARK_ROLES membership here. A deleted athlete's marks are never
+ * returned, whatever list the caller passes.
  */
 export async function listRestMarks(
   actor: ActorIdentity,
@@ -213,6 +229,7 @@ export async function listRestMarks(
       where organization_id = $1 and athlete_id = any($2::text[])
         and cleared_at is null
         and first_day <= $4::date and last_day >= $3::date
+        and ${athleteNotDeletedSql('pilot.athlete_rest_marks')}
       order by athlete_id, first_day, marked_at`,
     [actor.organizationId, [...clearedAthleteIds], fromDay, toDay],
   );
@@ -300,7 +317,8 @@ export async function clearRestMark(input: {
         returning mark_id::text as mark_id`,
       [input.actor.organizationId, input.athleteId, input.markId, input.actor.accountId],
     );
-    if (cleared.rowCount === 0) throw new NotFoundError('No such rest mark.', 'REST_MARK_NOT_FOUND');
+    const clearedId = cleared.rows[0]?.mark_id;
+    if (!clearedId) throw new NotFoundError('No such rest mark.', 'REST_MARK_NOT_FOUND');
 
     await writePilotAuditEvent({
       event_type: 'update',
@@ -308,7 +326,9 @@ export async function clearRestMark(input: {
       actor_role: role,
       organization_id: input.actor.organizationId,
       entity_type: 'athlete_rest_mark',
-      entity_id: input.markId,
+      // The id as stored (lower case), so the clear's audit row matches the
+      // create's even if the caller sent the uuid in upper case.
+      entity_id: clearedId,
       details: { athlete_id: input.athleteId, action: 'clear' },
       shadow_mirror: false,
     }, client);

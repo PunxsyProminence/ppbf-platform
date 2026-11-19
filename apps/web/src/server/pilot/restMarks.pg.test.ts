@@ -607,3 +607,36 @@ describe('restMarks.ts against real rows', () => {
     }
   });
 });
+
+describe('restMarks.ts: deleted athletes and id case (reviewer A NITs)', () => {
+  test('a soft-deleted athlete cannot be marked, cleared or listed, even when the caller names them', async () => {
+    const client = await migratedDatabase('restmarks_deleted');
+    try {
+      const { mark } = await addRestMark({ actor: COACH, athleteId: SECOND_ATHLETE_ID, kind: 'rest', ...THIS_WEEK, today: TODAY });
+      await client.query(
+        'update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2',
+        [ORG_ID, SECOND_ATHLETE_ID],
+      );
+      await expect(addRestMark({ actor: COACH, athleteId: SECOND_ATHLETE_ID, kind: 'away', ...THIS_WEEK, today: TODAY }))
+        .rejects.toBeInstanceOf(ForbiddenError);
+      await expect(clearRestMark({ actor: ADMIN, athleteId: SECOND_ATHLETE_ID, markId: mark.mark_id }))
+        .rejects.toBeInstanceOf(ForbiddenError);
+      expect(await listRestMarks(ADMIN, [SECOND_ATHLETE_ID], '2026-10-16', TODAY)).toEqual([]);
+      expect(await markCount(client, { live: true })).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
+
+  test('an undo sent with an upper-case id is audited under the stored id, matching the create', async () => {
+    const client = await migratedDatabase('restmarks_idcase');
+    try {
+      const { mark } = await addRestMark({ actor: COACH, athleteId: ATHLETE_ID, kind: 'rest', ...THIS_WEEK, today: TODAY });
+      await clearRestMark({ actor: COACH, athleteId: ATHLETE_ID, markId: mark.mark_id.toUpperCase() });
+      const ids = (await auditRows(client)).map((row) => row.entity_id);
+      expect(ids).toEqual([mark.mark_id, mark.mark_id]);
+    } finally {
+      await client.end();
+    }
+  });
+});

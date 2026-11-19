@@ -408,3 +408,94 @@ describe('rest or away marks on the card (lane R6-b1, OD-2026-11-17-004)', () =>
     expect((await screen.findByRole('alert')).textContent).toMatch(/may not record or read rest marks/);
   });
 });
+
+describe('rest or away marks: reviewer B fixes', () => {
+  const WEEKS = [
+    { week_index: 0, first_day: '2026-11-13', last_day: '2026-11-19' },
+    { week_index: 1, first_day: '2026-11-06', last_day: '2026-11-12' },
+    { week_index: 2, first_day: '2026-10-30', last_day: '2026-11-05' },
+    { week_index: 3, first_day: '2026-10-23', last_day: '2026-10-29' },
+    { week_index: 4, first_day: '2026-10-16', last_day: '2026-10-22' },
+  ];
+  const A_MARK = { mark_id: '11111111-1111-4111-8111-111111111111', athlete_id: 'ath-1', kind: 'rest', first_day: '2026-11-13', last_day: '2026-11-19' };
+  const B_MARK = { mark_id: '22222222-2222-4222-8222-222222222222', athlete_id: 'ath-2', kind: 'away', first_day: '2026-11-13', last_day: '2026-11-19' };
+  const marksWith = (marks: unknown[]) =>
+    ({ ok: true, json: async () => ({ ok: true, today: '2026-11-19', kinds: ['rest', 'away'], weeks: WEEKS, marks }) }) as Response;
+  const SECOND = { ...ITEM, athlete_id: 'ath-2', full_name: 'Sam Roe', open_gaps: 0, readiness_early_avg: null, readiness_late_avg: null };
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  }
+
+  test('a holiday marked ahead of time shows under "Marked ahead" and can be undone', async () => {
+    const ahead = { mark_id: '33333333-3333-4333-8333-333333333333', athlete_id: 'ath-1', kind: 'away', first_day: '2026-12-01', last_day: '2026-12-05' };
+    global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('rest-marks') ? marksWith([ahead]) : okWith([ITEM]),
+    ) as unknown as typeof fetch;
+    render(<PerformanceAnalyticsPage />);
+    const row = (await screen.findByText('Marked ahead')).closest('li')!;
+    expect(row.textContent).toMatch(/Away marked, Dec 1 – Dec 5/);
+    expect(row.querySelector('button')?.textContent).toBe('Undo');
+    // No load week holds it: all five weeks still offer one-tap Rest.
+    expect(screen.getAllByRole('button', { name: 'Rest' })).toHaveLength(6);
+  });
+
+  test("an older marks reply arriving after a newer one is dropped, so it cannot hide the newer mark", async () => {
+    const reads: Array<ReturnType<typeof deferred<Response>>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (!url.includes('rest-marks')) return okWith([ITEM, SECOND]);
+      if (init?.method === 'POST') return { ok: true, status: 201, json: async () => ({ ok: true }) } as Response;
+      const read = deferred<Response>();
+      reads.push(read);
+      return read.promise;
+    }) as unknown as typeof fetch;
+
+    render(<PerformanceAnalyticsPage />);
+    await waitFor(() => expect(reads).toHaveLength(1));
+    reads[0].resolve(marksWith([]));
+    await screen.findAllByText('Last 7 days');
+
+    const [restA] = screen.getAllByRole('button', { name: 'Rest' });
+    fireEvent.click(restA); // athlete A (first card)
+    await waitFor(() => expect(reads).toHaveLength(2));
+    const awayB = screen.getAllByRole('button', { name: 'Away' })[6]; // athlete B's week 0 (A has 6 Away buttons)
+    fireEvent.click(awayB);
+    await waitFor(() => expect(reads).toHaveLength(3));
+
+    // The newer read (after both taps) lands first, then the older one.
+    reads[2].resolve(marksWith([A_MARK, B_MARK]));
+    await screen.findByText(/Away marked/);
+    reads[1].resolve(marksWith([A_MARK]));
+    await waitFor(() => expect(screen.getByText(/Away marked/)).toBeTruthy());
+    expect(screen.getByText(/Rest marked/)).toBeTruthy();
+  });
+
+  test('after a tap the buttons stay off until the strip shows the new mark', async () => {
+    const reads: Array<ReturnType<typeof deferred<Response>>> = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (!url.includes('rest-marks')) return okWith([ITEM]);
+      if (init?.method === 'POST') return { ok: true, status: 201, json: async () => ({ ok: true }) } as Response;
+      const read = deferred<Response>();
+      reads.push(read);
+      return read.promise;
+    }) as unknown as typeof fetch;
+    render(<PerformanceAnalyticsPage />);
+    await waitFor(() => expect(reads).toHaveLength(1));
+    reads[0].resolve(marksWith([]));
+    await screen.findByText('Last 7 days');
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Rest' })[0]);
+    await waitFor(() => expect(reads).toHaveLength(2));
+    // Saved, but the re-read has not landed: no second tap is possible.
+    for (const button of screen.getAllByRole('button', { name: /^(Rest|Away)$/ })) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+    reads[1].resolve(marksWith([A_MARK]));
+    await screen.findByText(/Rest marked/);
+    expect((screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});

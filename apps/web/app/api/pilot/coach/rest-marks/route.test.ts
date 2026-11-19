@@ -156,13 +156,13 @@ describe('DELETE: undo takes its two ids and nothing else', () => {
 });
 
 describe('GET: the analytics roster, the 5 load weeks, no marker ids', () => {
-  test("a coach reads marks for athleteIdsForCoach's athletes over Rule 6's window", async () => {
+  test("a coach reads marks for athleteIdsForCoach's athletes from Rule 6's oldest day to 34 days ahead", async () => {
     mockCoachIds.mockResolvedValue(['ath-1', 'ath-2']);
     mockList.mockResolvedValue([{ ...MARK, marked_by_account_id: 'acct-coach' }]);
     const response = await get();
     expect(response.status).toBe(200);
     expect(mockCoachIds).toHaveBeenCalledWith('org-1', 'acct-coach');
-    expect(mockList).toHaveBeenCalledWith(ACTOR, ['ath-1', 'ath-2'], '2026-10-16', '2026-11-19');
+    expect(mockList).toHaveBeenCalledWith(ACTOR, ['ath-1', 'ath-2'], '2026-10-16', '2026-12-23');
     const body = await response.json();
     expect(body.weeks).toHaveLength(5);
     expect(body.weeks[0]).toEqual({ week_index: 0, first_day: '2026-11-13', last_day: '2026-11-19' });
@@ -183,7 +183,7 @@ describe('GET: the analytics roster, the 5 load weeks, no marker ids', () => {
       { accountId: 'acct-admin', role: 'organization_admin', organizationId: 'org-1', athleteId: null },
       ['ath-1', 'ath-9'],
       '2026-10-16',
-      '2026-11-19',
+      '2026-12-23',
     );
   });
 

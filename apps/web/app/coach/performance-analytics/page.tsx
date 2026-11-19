@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
@@ -219,6 +219,19 @@ function dayRange(first: string, last: string): string {
   return first === last ? a : `${a} – ${b}`;
 }
 
+/** One read of the marks. Returns the state to show; never "no marks" on a failure. */
+async function readRestMarks(): Promise<RestMarksState> {
+  try {
+    const response = await fetch(`${apiBase()}/api/pilot/coach/rest-marks`, { method: 'GET', credentials: 'include' });
+    if (!response.ok) throw new Error(String(response.status));
+    const payload = (await response.json()) as { today?: string; weeks?: LoadWeek[]; marks?: RestMark[] };
+    if (!payload.today || !Array.isArray(payload.weeks) || !Array.isArray(payload.marks)) throw new Error('shape');
+    return { status: 'loaded', today: payload.today, weeks: payload.weeks, marks: payload.marks };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}
+
 function RestAwayWeeks({
   athleteId,
   state,
@@ -226,7 +239,8 @@ function RestAwayWeeks({
 }: {
   athleteId: string;
   state: RestMarksState;
-  onChanged: () => void;
+  /** Reads the marks again; resolves once the strip shows the new state. */
+  onChanged: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -255,9 +269,15 @@ function RestAwayWeeks({
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error ?? `Not saved (${response.status}).`);
       }
-      onChanged();
     } catch (error) {
       setFailure(error instanceof Error ? error.message : 'Not saved.');
+      setBusy(false);
+      return;
+    }
+    // The buttons stay off until the strip shows what was just recorded, so a
+    // second tap cannot land on a week that already carries a mark.
+    try {
+      await onChanged();
     } finally {
       setBusy(false);
     }
@@ -268,6 +288,8 @@ function RestAwayWeeks({
   const undo = (markId: string) =>
     send('DELETE', { query: `?athlete_id=${encodeURIComponent(athleteId)}&mark_id=${encodeURIComponent(markId)}` });
   const mine = state.marks.filter((m) => m.athlete_id === athleteId);
+  // Marked ahead of time (a planned holiday): starts after today, so no load week holds it yet.
+  const ahead = mine.filter((m) => m.first_day > state.today);
 
   return (
     <section className="mt-[var(--s4)]" aria-label="Rest or away, by load week">
@@ -307,6 +329,22 @@ function RestAwayWeeks({
             </li>
           );
         })}
+        {ahead.length > 0 ? (
+          <li className="flex flex-wrap items-center gap-[var(--s3)]">
+            <span className="min-w-[10rem] text-[color:var(--bone-200)]">Marked ahead</span>
+            {ahead.map((m) => (
+              <span key={m.mark_id} className="flex items-center gap-[var(--s2)]">
+                <span className="badge badge--monitor">
+                  <i aria-hidden="true">{KIND_WORDS[m.kind].glyph}</i>
+                  {KIND_WORDS[m.kind].word} marked, {dayRange(m.first_day, m.last_day)}
+                </span>
+                <button type="button" className="btn btn--ghost" disabled={busy} onClick={() => void undo(m.mark_id)}>
+                  Undo
+                </button>
+              </span>
+            ))}
+          </li>
+        ) : null}
       </ul>
       <details className="mt-[var(--s3)]">
         <summary className="cursor-pointer text-[color:var(--bone-300)]">Mark days</summary>
@@ -340,24 +378,23 @@ export default function PerformanceAnalyticsPage() {
   const [restMarks, setRestMarks] = useState<RestMarksState>({ status: 'loading' });
 
   // Marks are their own read: a failure here leaves the rollup on screen and
-  // says the marks could not be read, never that there are none. `marksRead`
-  // bumps after each tap so the strip reads the marks again.
-  const [marksRead, setMarksRead] = useState(0);
-  const reloadRestMarks = useCallback(() => setMarksRead((count) => count + 1), []);
+  // says the marks could not be read, never that there are none. Only the
+  // NEWEST read is shown: a slower, older reply (taps on two athletes in a
+  // row) is dropped, so it cannot hide a mark the newer read already holds.
+  const marksRead = useRef(0);
+  const refreshRestMarks = useCallback(async () => {
+    const read = ++marksRead.current;
+    const next = await readRestMarks();
+    if (read === marksRead.current) setRestMarks(next);
+  }, []);
 
   useEffect(() => {
     void (async () => {
-      try {
-        const response = await fetch(`${apiBase()}/api/pilot/coach/rest-marks`, { method: 'GET', credentials: 'include' });
-        if (!response.ok) throw new Error(String(response.status));
-        const payload = (await response.json()) as { today?: string; weeks?: LoadWeek[]; marks?: RestMark[] };
-        if (!payload.today || !Array.isArray(payload.weeks) || !Array.isArray(payload.marks)) throw new Error('shape');
-        setRestMarks({ status: 'loaded', today: payload.today, weeks: payload.weeks, marks: payload.marks });
-      } catch {
-        setRestMarks({ status: 'unavailable' });
-      }
+      const read = ++marksRead.current;
+      const next = await readRestMarks();
+      if (read === marksRead.current) setRestMarks(next);
     })();
-  }, [marksRead]);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -521,7 +558,7 @@ export default function PerformanceAnalyticsPage() {
                       ) : null}
                     </Figure>
                   </dl>
-                  <RestAwayWeeks athleteId={item.athlete_id} state={restMarks} onChanged={reloadRestMarks} />
+                  <RestAwayWeeks athleteId={item.athlete_id} state={restMarks} onChanged={refreshRestMarks} />
                 </li>
               );
             })}
