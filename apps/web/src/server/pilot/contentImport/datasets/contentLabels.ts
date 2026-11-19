@@ -205,6 +205,113 @@ export async function writeItemLabels(
   }
 }
 
+/** One part of an item a coach changed in the app: a field, or one part of a field (a scale level, a stop rule by ordinal). */
+export interface EditedPart {
+  field: string;
+  /** The part within the field (field_labels[field][part]), or undefined for the whole field. */
+  part?: string;
+}
+
+export interface LabelEditor {
+  accountId: string;
+  role: string;
+  /** ISO time of the edit. */
+  at: string;
+}
+
+/** The label a coach's own in-app edit carries: REPORTED, the editor and time, and no AI-draft marker. */
+export function inAppEditLabel(editor: LabelEditor): Record<string, unknown> {
+  return {
+    status: 'REPORTED',
+    sources: ['In-app edit'],
+    edited: { by_account_id: editor.accountId, by_role: editor.role, at: editor.at },
+  };
+}
+
+/**
+ * THE LABELS OF A VERSION A COACH EDITED IN THE APP (OD-2026-11-19-005, OW25-51;
+ * OD-2026-11-15-011 ruling 2). The new version starts from the edited version's
+ * own field_labels and evidence, and only the EDITED parts change: each becomes
+ * inAppEditLabel -- REPORTED, who and when, no `draft` key -- so an edited value
+ * stops reading as an AI draft and an untouched one keeps its draft label.
+ *
+ * A PART LABEL WINS OVER ITS GROUP. A part label (field_labels[field][part]: a
+ * scale level 'A', a stop rule '2') sits beside the field's own group-level
+ * label (status, sources, draft) and is the label of that part; the group-level
+ * label still speaks for every part nobody edited. A reader of field_labels
+ * must look for the part's own label first. When every part the new version
+ * has (groupParts) carries an in-app edit, the group-level label is replaced by
+ * the edit's too, so the group as a whole no longer reads as a draft.
+ *
+ * Unlike carryLabelsToNewVersion this always writes a row when anything was
+ * edited -- a version with no labels gets one holding only the edited parts:
+ * the edit is a recorded fact, not an invented label. import_id names the edit,
+ * recorded_by is the editor. Nothing is written before the content_labels
+ * migration (returns false); the audit row still records the edit.
+ */
+export async function writeEditedVersionLabels(
+  client: DbClient,
+  input: {
+    organizationId: string;
+    dataset: DatasetName;
+    lineageId: string;
+    fromVersion: number;
+    toVersion: number;
+    editId: string;
+    editor: LabelEditor;
+    edited: readonly EditedPart[];
+    /** Per group field, every part key the new version has. */
+    groupParts?: Readonly<Record<string, readonly string[]>>;
+  },
+): Promise<boolean> {
+  if (input.edited.length === 0 || !(await labelTablesExist(client))) return false;
+  const kind = labelTargetKind(input.dataset);
+  const { rows } = await client.query<{ field_labels: unknown; evidence: unknown; backbone_version: string | null }>(
+    `select field_labels, evidence, backbone_version from pilot.content_record_labels
+      where organization_id = $1 and target_kind = $2 and target_lineage_id = $3 and target_version = $4`,
+    [input.organizationId, kind, input.lineageId, input.fromVersion],
+  );
+  const previous = rows[0];
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+  const labels: Record<string, unknown> = isObject(previous?.field_labels) ? structuredClone(previous.field_labels) : {};
+  const label = inAppEditLabel(input.editor);
+  for (const { field, part } of input.edited) {
+    if (part === undefined) {
+      labels[field] = structuredClone(label);
+    } else {
+      const group = isObject(labels[field]) ? (labels[field] as Record<string, unknown>) : {};
+      group[part] = structuredClone(label);
+      labels[field] = group;
+    }
+  }
+  const isInAppEdit = (value: unknown) => isObject(value) && isObject(value.edited) && !('draft' in value);
+  for (const field of new Set(input.edited.filter((part) => part.part !== undefined).map((part) => part.field))) {
+    const parts = input.groupParts?.[field] ?? [];
+    const group = labels[field] as Record<string, unknown>;
+    if (parts.length > 0 && parts.every((part) => isInAppEdit(group[part]))) {
+      delete group.draft;
+      Object.assign(group, structuredClone(label));
+    }
+  }
+  await client.query(
+    `insert into pilot.content_record_labels
+       (organization_id, target_kind, target_lineage_id, target_version, field_labels, evidence, backbone_version,
+        import_id, recorded_by_account_id, recorded_by_role)
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10)`,
+    [
+      input.organizationId, kind, input.lineageId, input.toVersion,
+      JSON.stringify(labels),
+      previous?.evidence === null || previous?.evidence === undefined ? null : JSON.stringify(previous.evidence),
+      previous?.backbone_version ?? null,
+      `in-app-edit:${input.editId}`,
+      input.editor.accountId,
+      input.editor.role,
+    ],
+  );
+  return true;
+}
+
 /**
  * An in-app edit that writes a new version of a labelled item (an edited script
  * that has a run) carries the CURRENT version's field_labels and evidence to the

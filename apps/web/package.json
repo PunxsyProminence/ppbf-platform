@@ -669,6 +669,7 @@
     "test:migrations:audit-events-entity-index": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/auditEventsEntityIndex.pg.test.ts --testTimeout=180000",
     "test:migrations:paper-only-guardian": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/paperOnlyGuardian.pg.test.ts --testTimeout=180000",
     "test:migrations:w2-identity-reach": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/w2IdentityReach.pg.test.ts --testTimeout=240000",
+    "test:migrations:drill-library-edit": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/drillLibraryEdit.pg.test.ts --testTimeout=240000",
     "test:migrations:personal-goal-undo": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/personalGoalUndo.pg.test.ts --testTimeout=180000"
   },
   "dependencies": {
