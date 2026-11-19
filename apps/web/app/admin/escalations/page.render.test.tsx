@@ -239,8 +239,10 @@ describe('a pain-report escalation reads "Pain report", not a severity word (#15
     await screen.findByText(FROM_NEAR_MISS.reason);
 
     const critical = badgeOf(FROM_NEAR_MISS.reason);
-    expect(critical.textContent).toBe('✕Pain report');
-    expect(critical.className).toContain('badge--locked');
+    // OW25-48 A: critical wears --restricted and ▲; --locked is a medical stop.
+    expect(critical.textContent).toBe('▲Pain report');
+    expect(critical.className).toContain('badge--restricted');
+    expect(critical.className).not.toContain('badge--locked');
     expect(row(FROM_NEAR_MISS.reason).textContent).not.toMatch(SEVERITY_WORD);
 
     const high = badgeOf(REPEATED.reason);

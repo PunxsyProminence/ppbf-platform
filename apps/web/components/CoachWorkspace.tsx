@@ -2975,14 +2975,18 @@ export default function CoachWorkspace() {
         </section>
 
         {/* SAFETY ESCALATIONS -- also outside the tab switch, directly under
-            the pain reports and wearing the locked band: an escalation is
-            what a near miss, pain report, or safety-gate flag becomes when it
-            is severe enough to auto-escalate, and this pull surface is the
-            platform's only alarm. The coach acknowledges ("I have seen this");
-            resolving stays an admin call server-side and is not offered. */}
-        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--locked)] p-[var(--s4)] space-y-[var(--s3)]">
+            the pain reports: an escalation is what a near miss, pain report,
+            or safety-gate flag becomes when it is severe enough to
+            auto-escalate, and this pull surface is the platform's only alarm.
+            The coach acknowledges ("I have seen this"); resolving stays an
+            admin call server-side and is not offered.
+            Drawn --restricted, not --locked, at every severity (Jason, card
+            OW25-48 A: "Medical-stop mark only for a medical stop"). --locked is
+            the medical stop, and no escalation source is one; each card's badge
+            still names its severity. */}
+        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--locked-ink)]">
+            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--restricted-ink)]">
               Safety Escalations
             </h2>
             <button
@@ -3022,7 +3026,7 @@ export default function CoachWorkspace() {
                 return (
                   <article
                     key={escalation.escalation_id}
-                    className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s3)] space-y-[var(--s2)]"
+                    className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s3)] space-y-[var(--s2)]"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
                       <div>
@@ -3080,7 +3084,7 @@ export default function CoachWorkspace() {
             who wrote "something at home is in the way of training" was told it
             was sent to their child's coach; this panel is where that promise
             is kept. Lower urgency than pain, so brass trim rather than the
-            locked band. */}
+            restricted band the pain and escalation panels wear. */}
         <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">

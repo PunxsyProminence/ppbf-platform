@@ -106,9 +106,11 @@ describe('the badge appears where a coach cannot walk past it', () => {
     expect(screen.queryByText(/critical/)).toBeNull();
   });
 
-  test('one critical among many highs still wears the top rung', async () => {
+  test('one critical among many highs is named CRITICAL, on the restricted rung (OW25-48)', async () => {
     // The badge stands for the worst thing waiting. A set containing a
-    // critical is a critical situation however many highs sit beside it.
+    // critical is a critical situation however many highs sit beside it, and
+    // the word says so. The colour is --restricted: --locked is a medical stop
+    // (Jason, card OW25-48 A), and an escalation is not one.
     const { container } = { container: document.body };
     await renderBadge('coach', {
       escalations: [
@@ -117,11 +119,12 @@ describe('the badge appears where a coach cannot walk past it', () => {
       ],
     });
 
-    expect(container.querySelector('.badge--locked')).toBeTruthy();
-    expect(container.querySelector('.badge--restricted')).toBeNull();
+    expect(container.querySelector('.badge--restricted')?.textContent).toContain('SAFETY 2 · CRITICAL');
+    expect(container.querySelector('.badge--restricted i')?.textContent).toBe('▲');
+    expect(container.querySelector('.badge--locked')).toBeNull();
   });
 
-  test('a high-only set wears the rung below it', async () => {
+  test('a high-only set wears the same rung, named HIGH', async () => {
     await renderBadge('coach', { escalations: [escalation()] });
 
     expect(document.body.querySelector('.badge--restricted')).toBeTruthy();
@@ -227,7 +230,7 @@ describe('the phone gets a denser summary, not a smaller or vaguer one', () => {
     expect(link.className).toContain('min-h-[var(--tap)]');
   });
 
-  test('both densities wear the rung of the worst escalation, never two rungs', async () => {
+  test('both densities sit in one restricted badge, never two rungs', async () => {
     await renderBadge('coach', {
       escalations: [
         escalation({ escalation_id: 'e1', severity: 'critical' }),
@@ -237,11 +240,12 @@ describe('the phone gets a denser summary, not a smaller or vaguer one', () => {
 
     // One badge element, one rung, both summaries inside it. A second
     // derivation of "worst" would be a second answer to how bad this is.
-    const badge = document.body.querySelector('.badge--locked');
+    const badge = document.body.querySelector('.badge--restricted');
     expect(badge).toBeTruthy();
     expect(badge?.textContent).toContain('SAFETY 2 · CRITICAL');
     expect(badge?.textContent).toContain('Safety 1 critical, 1 high');
-    expect(document.body.querySelector('.badge--restricted')).toBeNull();
+    expect(document.body.querySelectorAll('.badge')).toHaveLength(1);
+    expect(document.body.querySelector('.badge--locked')).toBeNull();
   });
 });
 
@@ -543,13 +547,14 @@ describe('refused team clips are counted on the organization admin bar', () => {
 describe('a pain report is counted on its own line, never under a severity word (#1528 Q3)', () => {
   const PAIN = { trigger: 'athlete_pain_report', near_miss_id: 'nm_1' };
 
-  test('a single critical pain report reads as a pain report, on the top rung', async () => {
+  test('a single critical pain report reads as a pain report, on the restricted rung', async () => {
     await renderBadge('coach', { escalations: [escalation({ severity: 'critical', metadata: PAIN })] });
 
     expect(screen.getByText('Safety 1 pain report')).toBeTruthy();
     const compact = screen.getByText('SAFETY 1 · PAIN REPORT');
-    // The stored rung still sets the tone: the badge is not quieter for it.
-    expect(compact.closest('.badge')?.className).toContain('badge--locked');
+    // A pain report is not a medical stop at any severity (OD-2026-10-03-017).
+    expect(compact.closest('.badge')?.className).toContain('badge--restricted');
+    expect(compact.closest('.badge')?.className).not.toContain('badge--locked');
     const link = screen.getByRole('link', { name: /Safety escalations needing acknowledgement/i });
     expect(link.getAttribute('aria-label')).toContain('1 pain report');
     expect(link.getAttribute('aria-label')).not.toMatch(/critical|high/i);
@@ -570,7 +575,7 @@ describe('a pain report is counted on its own line, never under a severity word 
     expect(screen.getByText('SAFETY 2 · CRITICAL · 2 · PAIN REPORTS')).toBeTruthy();
   });
 
-  test('a critical pain report beside an ordinary high names the pain report on the top rung', async () => {
+  test('a critical pain report beside an ordinary high names the pain report first', async () => {
     await renderBadge('coach', {
       escalations: [
         escalation({ escalation_id: 'e1', severity: 'high' }),
@@ -578,10 +583,10 @@ describe('a pain report is counted on its own line, never under a severity word 
       ],
     });
 
-    // The pain report earned the top rung, so it is named first; the ordinary
-    // high keeps its own number and word.
+    // The pain report is the worst thing waiting, so it is named first; the
+    // ordinary high keeps its own number and word.
     const compact = screen.getByText('SAFETY 1 · PAIN REPORT · 1 · HIGH');
-    expect(compact.closest('.badge')?.className).toContain('badge--locked');
+    expect(compact.closest('.badge')?.className).toContain('badge--restricted');
     expect(screen.getByText('Safety 1 pain report, 1 high')).toBeTruthy();
   });
 
@@ -597,7 +602,7 @@ describe('a pain report is counted on its own line, never under a severity word 
     expect(screen.getByText('Safety 1 high, 5 pain reports')).toBeTruthy();
   });
 
-  test('a high pain report alone wears the rung below the top, named as a pain report', async () => {
+  test('a high pain report alone is on the restricted rung, named as a pain report', async () => {
     await renderBadge('coach', { escalations: [escalation({ severity: 'high', metadata: PAIN })] });
 
     const compact = screen.getByText('SAFETY 1 · PAIN REPORT');

@@ -108,6 +108,11 @@ test('a live critical count wears the severity band with its count', async () =>
   const critical = tile('Critical');
   expect(critical.textContent).toContain('7');
   expect(critical.textContent).toContain('Open escalations staff have raised');
+  // OW25-48 A: the restricted band, ▲ and the word Critical; never --locked.
+  expect(critical.textContent).toContain('▲');
+  expect(critical.textContent).not.toContain('✕');
+  expect(critical.className).toContain('--restricted');
+  expect(critical.className).not.toContain('--locked');
 });
 
 test('a failed read is an error, never an empty ladder', async () => {

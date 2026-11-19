@@ -40,8 +40,12 @@ interface SafetyEscalation {
 const severityText = (item: SafetyEscalation) =>
   isPainReportEscalation(item.metadata) ? PAIN_ESCALATION_LABEL : item.severity;
 
+// Critical shares --restricted with high (Jason, card OW25-48 A: "Medical-stop
+// mark only for a medical stop"). --locked and its ✕ mean a medical stop
+// (OD-2026-09-29-001), and no escalation source_type is one, so no row here
+// wears it. The severity word in the badge tells critical from high.
 const SEVERITY_BADGE: Record<EscalationSeverity, { rung: string; glyph: string }> = {
-  critical: { rung: 'badge--locked', glyph: '✕' },
+  critical: { rung: 'badge--restricted', glyph: '▲' },
   high: { rung: 'badge--restricted', glyph: '▲' },
   moderate: { rung: 'badge--monitor', glyph: '◉' },
   low: { rung: 'badge--monitor', glyph: '◉' },

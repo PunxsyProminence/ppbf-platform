@@ -55,3 +55,30 @@ export function isPainReportEscalation(metadata: unknown): boolean {
 }
 
 export const PAIN_ESCALATION_LABEL = 'Pain report';
+
+/**
+ * The score of a pain-report escalation filed from ONE pain report, read from
+ * its reason text, or null.
+ *
+ * Such an escalation stores no score in its metadata (the near miss id and the
+ * trigger); its reason is the near miss's description, written by
+ * painReportAlert.ts describe(): "Athlete <id> reported pain at <location>
+ * [(<type>)] at severity N/10. <who reported it>". The LAST "at severity N/10."
+ * is taken, followed by one of describe()'s fixed provenance openings, because
+ * the location and type before it are typed by a person and could contain the
+ * same words. painScoreReason.test.ts pins describe()'s wording to this parser.
+ *
+ * Anything else reads null, and the caller shows no number: a repeated-pattern
+ * escalation (its reason counts reports and carries no score), text written
+ * before this wording, or a value outside 1-10. (Overwatch, 2026-11-19, SH-1
+ * option B1: the number on staff surfaces that already receive the reason.)
+ */
+export function painScoreFromEscalationReason(reason: unknown): number | null {
+  if (typeof reason !== 'string') return null;
+  const pattern = /at severity (\d+(?:\.\d+)?)\/10\. (?=Self-reported by the athlete|Entered by|The reporter of this observation)/g;
+  let last: string | null = null;
+  for (const match of reason.matchAll(pattern)) last = match[1];
+  if (last === null) return null;
+  const score = Number(last);
+  return Number.isFinite(score) && score > 0 && score <= 10 ? score : null;
+}

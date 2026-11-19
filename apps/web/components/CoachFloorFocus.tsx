@@ -78,7 +78,7 @@ export interface FocusItem {
   readonly id: string;
   /** What kind of thing this is, as the coach reads it: "Pain report". */
   readonly kind: string;
-  /** Pain and safety items wear the locked band the panels below wear. */
+  /** Pain and safety items are marked urgent (the rust edge); their badge tone is set per item. */
   readonly urgent: boolean;
   readonly title: string;
   readonly meta: string;

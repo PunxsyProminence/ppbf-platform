@@ -1,9 +1,10 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
-import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
+import { isPainReportEscalation, painScoreFromEscalationReason, painScoreLabel } from '@/src/shared/painScoreLabel';
 import ChromeLink from './ChromeLink';
 import { CONTROL_QUIET } from './sessionBarControls';
 
@@ -28,10 +29,14 @@ import { CONTROL_QUIET } from './sessionBarControls';
  *
  * A COUNT AND NOTHING ELSE. This bar renders on every surface, including
  * whatever screen happens to be facing the room. So the badge carries
- * numbers and a severity word (or "pain report", #1528 Q3) -- never an athlete's name, never the reason,
- * never the source. Those live on the record, behind the same gate they
- * always did, one click away. A safeguarding disclosure must not be readable
- * over a coach's shoulder because the chassis decided to be helpful.
+ * numbers and a severity word (or "pain report", #1528 Q3) -- never an
+ * athlete's name, never the reason, never the source. Those live on the
+ * record, behind the same gate they always did, one click away. The one
+ * addition is a lone pain report's N/10 (see the number rule below): a number,
+ * not the reason, shown only on the office's safety-record pages, never on a
+ * gym-floor page or a desk screen used with a member present. A safeguarding
+ * disclosure must not be readable over a coach's shoulder because the chassis
+ * decided to be helpful.
  *
  * SILENCE MEANS NONE, AND ONLY WHEN THAT WAS ESTABLISHED. Nothing renders on
  * a confirmed-clear read, because a permanent "0 open" chip on every screen
@@ -48,6 +53,8 @@ interface EscalationSummaryRow {
   severity: 'low' | 'moderate' | 'high' | 'critical';
   status: 'open' | 'acknowledged' | 'resolved';
   metadata?: Record<string, unknown> | null;
+  /** Read for one thing only: a lone pain report's N/10 (painScoreFromEscalationReason). Never shown. */
+  reason?: string | null;
 }
 
 /**
@@ -95,8 +102,12 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
   // (#1528 Q3): no severity word is attached to a pain report, here or on
   // its record.
   const [painCount, setPainCount] = useState(0);
-  // Whether a pain-report escalation holds the critical rung.
+  // Whether a pain-report escalation is critical.
   const [painCritical, setPainCritical] = useState(false);
+  // The score of the ONE open pain report, when exactly one is open and its
+  // reason carries one; null otherwise (see the number rule below).
+  const [lonePainScore, setLonePainScore] = useState<number | null>(null);
+  const onSafetyRecordPage = showsPainNumber(usePathname());
   const [readState, setReadState] = useState<ReadState>('loading');
 
   const serves = role !== null && ESCALATION_ROLES.has(role);
@@ -125,6 +136,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
       setHighCount(others.filter((row) => row.severity === 'high').length);
       setPainCount(pain.length);
       setPainCritical(pain.some((row) => row.severity === 'critical'));
+      setLonePainScore(pain.length === 1 ? painScoreFromEscalationReason(pain[0].reason) : null);
       setReadState('loaded');
     } catch (error) {
       if ((error as { name?: string }).name === 'AbortError') {
@@ -136,6 +148,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
       setHighCount(0);
       setPainCount(0);
       setPainCritical(false);
+      setLonePainScore(null);
       setReadState('unavailable');
     }
   }, []);
@@ -188,35 +201,54 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
     return null;
   }
 
-  /* Critical anywhere in the set drives the rung, because the badge stands for
-     the worst thing waiting -- a set containing one critical is a critical
-     situation regardless of how many highs sit beside it. The vocabulary is
-     the design system's own ladder and matches what /admin/escalations puts on
-     the individual rows, so the summary and the record cannot describe the
-     same escalation at two different severities. */
-  // The rung is the worst stored severity across every open escalation, a
-  // pain report's included: its tone and alerting are unchanged (#1528 Q3).
+  /* Critical anywhere in the set drives the severity WORD, because the badge
+     stands for the worst thing waiting -- a set containing one critical is a
+     critical situation regardless of how many highs sit beside it. The rung
+     matches what /admin/escalations puts on the individual rows, so the
+     summary and the record cannot describe the same escalation two ways. */
+  // `critical` is the worst stored severity across every open escalation, a
+  // pain report's included (#1528 Q3). It still decides the WORD and which
+  // count is named first; it no longer decides the colour.
   const critical = criticalCount > 0 || painCritical;
-  const rung = critical ? 'badge--locked' : 'badge--restricted';
-  const glyph = critical ? '✕' : '▲';
-  /* The worst severity as one word, taken off the SAME predicate that chose
-     the rung and the glyph on the two lines above. Deriving it a second time
-     is how a badge ends up wearing the critical rung while its own summary
-     says HIGH, and the two would then be describing one set of escalations at
-     two different severities -- the thing the paragraph above exists to
-     prevent between this summary and /admin/escalations. */
+  /* ONE RUNG, --restricted, AT BOTH SEVERITIES (Jason, card OW25-48 A: "Medical-
+     stop mark only for a medical stop"; other critical escalations get "the
+     restricted mark, a glyph and a word"). --locked and its ✕ mean a medical
+     stop, MEDICALLY_NOT_ALLOWED (OD-2026-09-29-001), and no escalation
+     source_type is one (escalationLadder.ts SAFETY_ESCALATION_SOURCE_TYPES;
+     a pain report is not one at any severity, OD-2026-10-03-017). So this
+     badge never wears --locked. CRITICAL and HIGH are told apart by the word,
+     which every rendering below carries. */
+  const rung = 'badge--restricted';
+  const glyph = '▲';
+  /* The worst severity as one word, taken off the SAME `critical` predicate
+     above. Deriving it a second time is how a summary says HIGH while a
+     critical is waiting, and the badge and /admin/escalations would then be
+     describing one set of escalations at two different severities. */
   /* Pain reports (#1528 Q3) are a separate count at both densities, never
      inside a number captioned CRITICAL or HIGH. When pain reports alone hold
-     the rung (a critical pain report beside ordinary highs, or pain reports
-     only) they are named FIRST, so the rung sits beside what earned it --
-     the same predicate as the rung, as above. The compact form for a set with
-     no pain report is exactly what it was. */
+     the worst severity (a critical pain report beside ordinary highs, or pain
+     reports only) they are named FIRST, so the worst thing waiting is named
+     first -- the same `critical` predicate, as above. The compact form for a
+     set with no pain report is exactly what it was. */
   const ordinaryCount = criticalCount + highCount;
   const painLeads = critical ? criticalCount === 0 : highCount === 0;
-  // The ordinary escalations' own worst word. It equals the rung's word unless
-  // a pain report alone holds the rung, and then the pain report leads.
+  // The ordinary escalations' own worst word. It equals the set's worst word
+  // unless a pain report alone holds it, and then the pain report leads.
   const worst = criticalCount > 0 ? 'CRITICAL' : 'HIGH';
-  const painPart = `${painCount} pain report${painCount === 1 ? '' : 's'}`;
+  /* THE PAIN NUMBER (Overwatch, 2026-11-19, SH-1 option B1). With critical and
+     high on one rung (OW25-48 A) and no severity word on a pain report (#1528,
+     "the number only"), a lone pain report's N/10 is what tells a critical one
+     from a high one. It is shown only when exactly ONE pain report is open
+     (with two or more, a single number would describe one of them as all of
+     them), only when its reason carries one, and only on the office's
+     safety-record pages (showsPainNumber) -- never on a gym-floor page a room
+     can read over a coach's shoulder, nor a desk screen used with a member
+     present. No name, no reason, no location: the number only, as on
+     the coach's own card. */
+  const painNumber = lonePainScore !== null && onSafetyRecordPage
+    ? ` ${painScoreLabel(lonePainScore)}`
+    : '';
+  const painPart = `${painCount} pain report${painCount === 1 ? '' : 's'}${painNumber}`;
   const ordinaryParts = [
     criticalCount > 0 ? `${criticalCount} critical` : null,
     highCount > 0 ? `${highCount} high` : null,
@@ -224,7 +256,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
   const label = (painCount === 0 ? ordinaryParts : painLeads ? [painPart, ...ordinaryParts] : [...ordinaryParts, painPart])
     .join(', ');
   const ordinaryCompact = ordinaryCount > 0 ? `${ordinaryCount} · ${worst}` : null;
-  const painCompact = painCount > 0 ? `${painCount} · PAIN REPORT${painCount === 1 ? '' : 'S'}` : null;
+  const painCompact = painCount > 0 ? `${painCount} · PAIN REPORT${painCount === 1 ? '' : 'S'}${painNumber}` : null;
   const compact = `SAFETY ${[painLeads ? painCompact : ordinaryCompact, painLeads ? ordinaryCompact : painCompact]
     .filter((part): part is string => part !== null)
     .join(' · ')}`;
@@ -254,12 +286,12 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
             this badge stay on the phone bar rather than step off it.
 
             Below 640px: the glyph, the word SAFETY, the REAL total and the
-            worst REAL severity -- "✕ SAFETY 2 · CRITICAL". From 640px up: the
+            worst REAL severity -- "▲ SAFETY 2 · CRITICAL". From 640px up: the
             breakdown this badge has always carried -- "Safety 1 critical,
             1 high". The only thing the narrow form drops is the SPLIT between
-            the two rungs. It cannot understate either half of what is waiting:
+            the two severities. It cannot understate either half of what is waiting:
             the number is criticalCount + highCount, and the word is the worst
-            severity actually present, off the same predicate as the rung.
+            severity actually present, off the `critical` predicate above.
             Pain reports (#1528 Q3) are their own number and words beside it,
             "SAFETY 1 · HIGH · 2 · PAIN REPORTS", never inside that total.
 
@@ -272,7 +304,7 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
             above supplies that link's accessible name outright, and visible
             text does not contribute to a name that is given that way, so a
             screen reader hears "1 critical, 1 high" on the 412px phone this
-            slice was measured on, while the eye reads "✕ SAFETY 2 · CRITICAL".
+            slice was measured on, while the eye reads "▲ SAFETY 2 · CRITICAL".
             That sentence does not move with the breakpoint, because it was
             never rendered from the visible text in the first place.
 
@@ -294,6 +326,29 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
       </span>
     </ChromeLink>
   );
+}
+
+/**
+ * Where the bar may carry a lone pain report's N/10: the office's safety-record
+ * pages only, which staff open to read safety records and which are not member
+ * tasks (escalations and safety-review already show the record itself, reason
+ * and number included, to the same viewer). Not the rest of /admin: a PIN reset, an activation code or a member's record
+ * is done with the member standing there (Overwatch, 2026-11-19: no number "on
+ * the desk route (and any other route used with a member present)").
+ *
+ * A list of where the number MAY show, so every route not on it -- a desk
+ * screen used with a member present, a gym-floor page, the coach home, a page
+ * still checking sign-in, a route added later -- shows none. Looking for a
+ * floor marker on the page did not fail closed (lane SH review, 2026-11-19).
+ */
+const PAIN_NUMBER_ROUTES: ReadonlySet<string> = new Set([
+  '/admin/escalations',
+  '/admin/safety-review',
+  '/admin/safety-flags',
+]);
+
+export function showsPainNumber(pathname: string | null | undefined): boolean {
+  return typeof pathname === 'string' && PAIN_NUMBER_ROUTES.has(pathname);
 }
 
 /**
