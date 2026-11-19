@@ -632,7 +632,7 @@ and should not try to.
 3. **NW-b (#1976; merged).**
    - The 19 drills load as new versions (no in-place fill).
    - Overwatch checks for in-app edits before each load.
-4. **IG (#1977; in review when first written, merged 2026-11-19T16:47:10Z when re-checked).**
+4. **IG (merged as #1977, `6ea31ed20c6ba930df65db004ea22330abe87bf5`).**
    - An import never overwrites an in-app edit: the item is held, not blocking.
    - There is no override in that PR.
    - A drill lowered below a held template's step stays a blocking reject.
@@ -751,6 +751,8 @@ The Q9 line, as the file gives it: "Q9 B, "i want these drills to get to the flo
 1. **OD-2026-10-17-001 item 4** ("Header menus: A, both stay (the Corridor and the Jump catalog)") is replaced by S2-2 A: a job bar and Search; the Rooms list becomes "All pages" inside Search.
 2. **OD-2026-10-17-001 item 3** ("Overlapping coach pages: they stay separate pages, cross-linked; no merges") is replaced by S2-3 A: one job page per job.
 3. Items 1 (glossary) and 2 (check-in names) of OD-2026-10-17-001 still stand. The research file says so.
+
+**Applied (Overwatch's application, not Jason's words):** OD-2026-10-17-001 item 4 is "Header menus: A, both stay". S2-2 A replaces it, so the Rooms menu (Corridor) moves into Search as "All pages" and Jump becomes Search (lane U2). Item 3 ("no merges") is replaced by S2-3 A (one job page).
 
 **Not ruled here:** the sketches Jason answered after are not in this repo. Whether the job bar is the existing Leather tag rail is the App Scrub's Q13 ("A: tags on tablet and desk, plain bar on phones", OD-2026-11-19-009). The October work was built inside OD-2026-10-17-001; this entry does not say what to remove.
 
