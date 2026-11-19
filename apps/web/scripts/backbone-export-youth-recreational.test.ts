@@ -441,6 +441,8 @@ describe('the committed youth + recreational rows', () => {
     expect(templates.find((row) => row.template_id === 'wtp_b314d9a0582d20')?.duration_minutes).toBe('10');
   });
 
+  const HW_TRACK = 'trk_55480ac4429113';
+  const HW_TRACK_COLUMNS = ['sources', 'details', 'field_labels'];
   const haveFrozen = fs.existsSync(path.join(FROZEN, 'FREEZE_MANIFEST.json'));
   (haveFrozen ? it : it.skip)('differ from a fresh export of the frozen Backbone only in the drafted cells and their labels (skipped where that folder is absent)', () => {
     // The guard refuses to put the frozen blanks back over the drafts, naming only the drafted templates.
@@ -449,15 +451,26 @@ describe('the committed youth + recreational rows', () => {
     const named = [...refused.stderr.matchAll(/^ {2}(\S+) \w+ (\S+): changes ([\w, ]+) of /gm)].map((match) => [match[1], match[2], match[3]]);
     const draftedIds = templates.filter((row) => DRAFTED.some((field) => (JSON.parse(row.field_labels)[field] ?? {}).draft)).map((row) => row.template_id).sort();
     expect(draftedIds).toHaveLength(17);
-    expect(named.map(([file]) => file).every((file) => file === TEMPLATES)).toBe(true);
-    expect(named.map(([, id]) => id).sort()).toEqual(draftedIds);
+    // Lane HW (OD-2026-11-19-005; Overwatch R1): the Personal and Home Training track names the six PPBF
+    // home sessions in days 1-6 in place of the held six, so its details, sources and field_labels differ
+    // from the frozen Backbone, and the guard refuses to write the frozen row back over them.
+    expect(named.filter(([file]) => file !== TEMPLATES)).toEqual([[TRACKS, HW_TRACK, HW_TRACK_COLUMNS.join(', ')]]);
+    expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort()).toEqual(draftedIds);
 
     // Written anyway: every file but the templates file is byte-identical, and the templates differ
     // only in the drafted cells (blank in the export) and their field_labels.
     const forced = exportInto(FROZEN, SEED_DIR, ['--allow-overwrite']);
     expect(forced.status).toBe(0);
     expect(forced.stdout).toContain('counts: besideLines 2, tracks 53, blocks 3, blockSessions 48, templates 27, items 240, heldTemplates 6, heldItems 42, scripts 1, scriptBlocks 13, quoteKeys 469, ownerPassages 354, sp10Sentences 1');
-    for (const name of WRITTEN.filter((file) => file !== TEMPLATES)) expect(read(forced.out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, name), 'utf8'));
+    for (const name of WRITTEN.filter((file) => file !== TEMPLATES && file !== TRACKS)) expect(read(forced.out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, name), 'utf8'));
+    // The tracks file: identical but for lane HW's three cells on its one track.
+    const exportedTracks = rowsOf(read(forced.out, TRACKS));
+    const committedTracks = rows(TRACKS);
+    expect(exportedTracks.map((row) => row.track_id)).toEqual(committedTracks.map((row) => row.track_id));
+    exportedTracks.forEach((row, index) => {
+      const differing = Object.keys(row).filter((column) => row[column] !== committedTracks[index][column]);
+      expect({ id: row.track_id, differing }).toEqual({ id: row.track_id, differing: row.track_id === HW_TRACK ? HW_TRACK_COLUMNS : [] });
+    });
     const exported = rowsOf(read(forced.out, TEMPLATES));
     const committedRows = rows(TEMPLATES);
     expect(exported.map((row) => row.template_id)).toEqual(committedRows.map((row) => row.template_id));
