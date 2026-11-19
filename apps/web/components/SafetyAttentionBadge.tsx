@@ -34,8 +34,9 @@ import { CONTROL_QUIET } from './sessionBarControls';
  * record, behind the same gate they always did, one click away. The one
  * addition is a lone pain report's N/10 (see the number rule below): a number,
  * not the reason, shown only on the office's safety-record pages, never on a
- * gym-floor page or a desk screen used with a member present. A safeguarding disclosure must not be readable
- * over a coach's shoulder because the chassis decided to be helpful.
+ * gym-floor page or a desk screen used with a member present. A safeguarding
+ * disclosure must not be readable over a coach's shoulder because the chassis
+ * decided to be helpful.
  *
  * SILENCE MEANS NONE, AND ONLY WHEN THAT WAS ESTABLISHED. Nothing renders on
  * a confirmed-clear read, because a permanent "0 open" chip on every screen
@@ -329,8 +330,9 @@ function EscalationBadge({ role }: { readonly role: string | null }) {
 
 /**
  * Where the bar may carry a lone pain report's N/10: the office's safety-record
- * pages only, where staff read escalations and nobody else is at the screen.
- * Not the rest of /admin: a PIN reset, an activation code or a member's record
+ * pages only, which staff open to read safety records and which are not member
+ * tasks (escalations and safety-review already show the record itself, reason
+ * and number included, to the same viewer). Not the rest of /admin: a PIN reset, an activation code or a member's record
  * is done with the member standing there (Overwatch, 2026-11-19: no number "on
  * the desk route (and any other route used with a member present)").
  *
