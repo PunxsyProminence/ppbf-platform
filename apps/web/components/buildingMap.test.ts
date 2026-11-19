@@ -495,6 +495,17 @@ describe('searchDoors', () => {
     expect(searchDoors('coach', 'concussion')[0].href).toBe('/coach/sports-medicine');
   });
 
+  /* CF-14 (lane U1). No page answers "who has stopped coming"; Passbook Gaps
+     says it is not that check (passbook-gaps/page.tsx). Its door must not
+     claim the words, so a coach searching them is not sent there. */
+  it('no door claims "stopped coming" until a page answers it', () => {
+    const gaps = BUILDING.find((d) => d.href === '/coach/passbook-gaps');
+    expect(gaps).toBeDefined();
+    for (const door of BUILDING) {
+      expect(`${door.label} ${door.keywords ?? ''} ${door.hint ?? ''}`).not.toMatch(/stopped coming/i);
+    }
+  });
+
   it('matches a subsequence, so an abbreviation finds the surface', () => {
     expect(searchDoors('coach', 'wtmpl').map((d) => d.href)).toContain('/coach/workout-templates');
   });

@@ -141,8 +141,6 @@ export interface CoachFloorFocusProps {
   readonly sessionState: 'loading' | 'error' | 'loaded';
   readonly sessionLive: boolean;
   readonly sessionPaused?: boolean;
-  readonly sessionMode: 'Group' | 'One-on-One';
-  readonly onSessionMode: (mode: 'Group' | 'One-on-One') => void;
   /** Where the rest of the dashboard starts, for the "everything else" link. */
   readonly everythingElseHref: string;
   /** Where Start a session goes once it has acted. Defaults to the session page; tests pass a spy. */
@@ -226,8 +224,6 @@ export default function CoachFloorFocus({
   sessionState,
   sessionLive,
   sessionPaused = false,
-  sessionMode,
-  onSessionMode,
   everythingElseHref,
   // A full page load, not the router: this component renders outside the app router in many
   // workspace tests, and the session page reads its live run on load either way.
@@ -371,7 +367,7 @@ export default function CoachFloorFocus({
       ? {
           label: 'Session',
           value: sessionLive ? (sessionPaused ? 'Paused' : 'Running') : 'None',
-          sub: `Your mode: ${sessionMode}`,
+          sub: sessionLive ? 'Live delivery' : 'Nothing running',
           state: 'ok',
         }
       : sessionState === 'loading'
@@ -436,7 +432,7 @@ export default function CoachFloorFocus({
               Cross-link now"): The Morning Read is every read, most urgent
               first. Copy PROPOSED. */}
           <p className="coach-floor-focus__label">
-            <Link href="/coach/intelligence" className="underline">Full list: The Morning Read</Link>
+            <Link href="/coach/intelligence" className="underline">More reads: The Morning Read</Link>
           </p>
 
           {ackLanded && (
@@ -573,7 +569,7 @@ export default function CoachFloorFocus({
                 onClick={() => void startSession()}
                 disabled={starting}
               >
-                {starting ? 'Starting...' : 'Start a session'}
+                {starting ? 'Starting...' : 'Start or pick a session'}
               </button>
               {startError ? (
                 <p role="alert" className="coach-floor-focus__alert">
@@ -586,20 +582,12 @@ export default function CoachFloorFocus({
               {sessionState !== 'loaded' ? 'Open Session Plans' : 'Return to live delivery'}
             </Link>
           )}
-          <div role="group" aria-label="Session mode" className="coach-floor-focus__row">
-            {(['Group', 'One-on-One'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={sessionMode === mode}
-                onClick={() => onSessionMode(mode)}
-                className={sessionMode === mode ? 'btn coach-floor-focus__btn' : 'btn btn--ghost coach-floor-focus__btn'}
-              >
-                {sessionMode === mode && <span aria-hidden="true">✓ </span>}
-                {mode}
-              </button>
-            ))}
-          </div>
+          {/* CF-05 (app scrub, lane U1): a Group / One-on-One toggle stood here.
+              It changed only the Floor tab's code-written block template, not
+              the session Start begins (that sends the class alone), so on the
+              board it looked like a setting that did nothing. The toggle lives
+              where its effect is; this line names where it went. */}
+          <p className="coach-floor-focus__quiet">Group / One-on-One block templates are on the Floor tab.</p>
           <Link href="/coach/decision-loop" className="btn coach-floor-focus__btn btn--ghost">
             Open Decision Loop
           </Link>

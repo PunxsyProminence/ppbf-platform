@@ -13,20 +13,10 @@ import { OPERATIONS_ROLES, canUseOperationsHub } from '@/components/operationsAc
    bounced the click home with nothing said. Each role reaches its own home from
    sign-in; this page is administration only (operationsAccess.ts). */
 
-const priorityLanes = [
-  {
-    lane: 'PROGRAM',
-    summary: 'Floor coverage, readiness signals, and session execution windows.',
-  },
-  {
-    lane: 'BOARD',
-    summary: 'Governance actions, approvals, and oversight checkpoints.',
-  },
-  {
-    lane: 'SYSTEM',
-    summary: 'Platform integrity, audit state, and release-path integrity checks.',
-  },
-];
+/* OFF-12 (lane U1): a "MY PRIORITIES TODAY" panel of three fixed cards
+   (PROGRAM / BOARD / SYSTEM, the same words every day, read from nothing) sat
+   here. A heading that says "today" over text that never changes is not a
+   priority list, so the panel is gone rather than relabelled. */
 
 
 /* The OTHER DESKS section below renders only for the admin desks -- see
@@ -58,7 +48,6 @@ const developmentLab = [
 ];
 
 const utilityLinks = [
-  { label: 'The Bell', href: '/login' },
   { label: 'Notices & Motivation', href: '/notices' },
   { label: 'Home', href: '/dashboard' },
   { label: 'Revenue Center', href: '/admin?tab=revenue' },
@@ -223,7 +212,7 @@ export default function OperationsHubPage() {
           <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="t-body max-w-[80ch]">
-                Need orientation? Open the full tutorial center from one button instead of rendering all tutorial content inline.
+                Questions about a screen? Open SHADOW Chat with this button.
               </p>
               <ShadowChatButton context="Mission Control Start Here" />
             </div>
@@ -268,18 +257,6 @@ export default function OperationsHubPage() {
 
           <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-6">
-              <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
-                <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>MY PRIORITIES TODAY</h2>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {priorityLanes.map((lane) => (
-                    <article key={lane.lane} className="mat-leather--raised rounded-[var(--r-md)] px-[var(--s4)] py-[var(--s4)]">
-                      <p className="t-eyebrow">{lane.lane}</p>
-                      <p className="t-body mt-[var(--s3)]">{lane.summary}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-
               {showsLabDesks && (
                 <section className="space-y-[var(--s4)] mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] px-[var(--s5)] py-[var(--s5)]">
                   <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>OTHER DESKS</h2>

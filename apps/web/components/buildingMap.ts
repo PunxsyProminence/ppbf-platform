@@ -459,7 +459,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/environment/intake-router', label: 'Coach Workspace', room: 'floor',
     roles: ['coach'], keywords: 'home dashboard intake router routing new athlete triage' },
   { href: '/coach/passbook-gaps', label: 'Passbook Gaps', room: 'floor', roles: ['coach', 'admin'],
-    keywords: 'passbook gap retention stopped coming absent last seen queue triage book athlete record',
+    keywords: 'passbook gap retention absent last seen queue triage book athlete record',
     hint: 'Open gaps in your athletes\u2019 books, worst attendance first \u2014 last seen, and absent days since.' },
   { href: '/coach/passbook', label: 'Passbook', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'passbook book athlete record attendance sessions readiness goals corner gaps one athlete',

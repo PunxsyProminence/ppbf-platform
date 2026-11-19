@@ -114,8 +114,8 @@ describe('the coach home', () => {
     expect(workspace).toContain('{CLINIC_DOORS.map((door) => (');
   });
 
-  test('"Needs you now" links The Morning Read as the full list', () => {
-    expect(floor).toMatch(/<Link href="\/coach\/intelligence"[^>]*>Full list: The Morning Read<\/Link>/);
+  test('"Needs you now" links The Morning Read, not as the full list (CS-04)', () => {
+    expect(floor).toMatch(/<Link href="\/coach\/intelligence"[^>]*>More reads: The Morning Read<\/Link>/);
   });
 
   test('renders one h1: the tab masthead is an h2 under "Coach Workspace"', () => {
