@@ -131,7 +131,8 @@ test('a gym admin still reads the photos and gets the desk', async () => {
 test('a gym admin gets the gym tablet sign-out section, and a platform owner does not', async () => {
   render(<CustomizePage />);
   await screen.findByRole('heading', { name: 'Gym tablet sign-out' });
-  expect(screen.getByText(/Phones and computers that are not marked are not signed out\./)).toBeTruthy();
+  expect(screen.getByText(/Phones and computers that are not marked are not signed out by this\./)).toBeTruthy();
+  expect(screen.queryByText(/never sees the last one/)).toBeNull();
   expect(screen.getByRole('button', { name: 'Mark this device as a gym tablet' })).toBeTruthy();
   cleanup();
 

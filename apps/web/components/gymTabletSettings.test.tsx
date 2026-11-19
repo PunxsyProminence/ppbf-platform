@@ -78,6 +78,21 @@ test('a failed read offers no control and says it could not be read', async () =
   expect(screen.queryByLabelText('Sign out after')).toBeNull();
 });
 
+test('a browser that will not save the mark says so, and nothing changes', async () => {
+  respond({ ok: true, body: { idle_minutes: 60, is_default: true } });
+  await mount();
+  const spy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('QuotaExceededError');
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Mark this device as a gym tablet' }));
+  });
+  spy.mockRestore();
+  expect(screen.getByRole('alert').textContent).toBe('This browser would not save the change (private mode or blocked storage). Nothing changed.');
+  expect(isGymTabletMarked()).toBe(false);
+  expect(screen.getByText('This device is not marked as a gym tablet.')).toBeTruthy();
+});
+
 test('marking and unmarking this device change the mark this browser keeps', async () => {
   respond({ ok: true, body: { idle_minutes: 60, is_default: true } });
   await mount();

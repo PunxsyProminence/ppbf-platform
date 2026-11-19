@@ -363,9 +363,11 @@ export default function AdminCustomizePage() {
           Gym tablet sign-out
         </h2>
         <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
-          A device marked as a gym tablet signs itself out after this long with no one using it, so the next
-          person never sees the last one&apos;s screen. A one-minute countdown shows first, and a tap keeps it
-          signed in. Phones and computers that are not marked are not signed out.
+          A device marked as a gym tablet signs itself out after this long with no one using it, so a tablet
+          left alone does not stay signed in as the last person. While the screen stays on, a one-minute
+          countdown shows first and a tap keeps it signed in; a tablet that slept past the time signs out as it
+          wakes. Phones and computers that are not marked are not signed out by this. A changed time reaches a
+          tablet the next time a page loads there.
         </p>
         <div className="mt-[var(--s4)]">
           <GymTabletSettings />

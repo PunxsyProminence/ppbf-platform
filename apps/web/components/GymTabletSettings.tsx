@@ -83,7 +83,7 @@ export default function GymTabletSettings() {
 
   const mark = (next: boolean) => {
     const kept = setGymTabletMark(next);
-    setMarkLine(kept ? '' : 'This browser would not keep the mark (private mode or blocked storage). Nothing changed.');
+    setMarkLine(kept ? '' : 'This browser would not save the change (private mode or blocked storage). Nothing changed.');
   };
 
   return (
@@ -131,9 +131,9 @@ export default function GymTabletSettings() {
           {marked ? 'This device is marked as a gym tablet.' : 'This device is not marked as a gym tablet.'}
         </p>
         <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
-          The mark is kept in this device&apos;s browser, so set it on the gym tablet itself. A marked device shows
-          &quot;Gym tablet&quot; in the bar at the top. If the browser&apos;s data is cleared, the mark is lost and that
-          device stops signing itself out.
+          The mark is kept in this device&apos;s browser, so set it on the gym tablet itself. While someone is
+          signed in, a marked device shows &quot;Gym tablet&quot; in the bar at the top. If the browser&apos;s data is
+          cleared, the mark is lost and that device stops signing itself out.
         </p>
         <button type="button" className="btn btn--ghost mt-[var(--s3)]" onClick={() => mark(!marked)}>
           {marked ? 'Unmark this device' : 'Mark this device as a gym tablet'}
