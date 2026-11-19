@@ -3084,7 +3084,7 @@ export default function CoachWorkspace() {
             who wrote "something at home is in the way of training" was told it
             was sent to their child's coach; this panel is where that promise
             is kept. Lower urgency than pain, so brass trim rather than the
-            locked band. */}
+            restricted band the pain and escalation panels wear. */}
         <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">

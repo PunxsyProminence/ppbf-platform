@@ -602,7 +602,7 @@ describe('a pain report is counted on its own line, never under a severity word 
     expect(screen.getByText('Safety 1 high, 5 pain reports')).toBeTruthy();
   });
 
-  test('a high pain report alone wears the rung below the top, named as a pain report', async () => {
+  test('a high pain report alone is on the restricted rung, named as a pain report', async () => {
     await renderBadge('coach', { escalations: [escalation({ severity: 'high', metadata: PAIN })] });
 
     const compact = screen.getByText('SAFETY 1 · PAIN REPORT');

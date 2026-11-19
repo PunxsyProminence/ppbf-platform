@@ -11,12 +11,17 @@
  * (OD-2026-09-29-001). That comes from the clearance record, never from
  * pilot.safety_escalations: no escalation source_type is a medical stop, and a
  * pain report is not one at any severity (OD-2026-10-03-017). So every source
- * type at every severity is rendered on the three escalation surfaces the
- * ruling reaches, and none of them may carry the mark:
+ * type at every severity is rendered on the escalation surfaces the ruling
+ * reaches, and none of them may carry the mark:
  *   - the header badge (SafetyAttentionBadge),
- *   - the coach home's Safety Escalations panel and floor view (CoachWorkspace),
- *   - the /admin/escalations rows.
- * (The board's aggregate Critical tile is pinned in its own page test.)
+ *   - the coach home's Safety Escalations panel (CoachWorkspace),
+ *   - the /admin/escalations rows,
+ *   - the /admin/safety-review Open Escalations list,
+ *   - the /coach/intelligence Open safety escalations list.
+ * The board's aggregate Critical tile is pinned in its own page test. The
+ * coach floor view shows one queue item at a time, so it is not swept here;
+ * its badge tone is painSeverityTone, which coachWorkspacePainTone.test.tsx
+ * pins to restricted for a critical escalation on the floor.
  *
  * The source types come from /admin/escalations' SOURCE_LABEL, which the
  * compiler holds to every value of SafetyEscalationSourceType, and which
@@ -29,6 +34,8 @@ import type { ReactNode } from 'react';
 import { act, render, screen } from '@testing-library/react';
 
 import EscalationsPage, { SOURCE_LABEL } from '@/app/admin/escalations/page';
+import SafetyReviewPage from '@/app/admin/safety-review/page';
+import CoachIntelligencePage from '@/app/coach/intelligence/page';
 import CoachWorkspace from './CoachWorkspace';
 import SafetyAttentionBadge from './SafetyAttentionBadge';
 
@@ -159,7 +166,7 @@ test('no escalation row on /admin/escalations wears the medical-stop mark', asyn
   expect(critical?.textContent).toBe('▲critical');
 });
 
-test('no escalation on the coach home panel or floor view wears the medical-stop mark', async () => {
+test('no escalation on the coach home Safety Escalations panel wears the medical-stop mark', async () => {
   const rows = everyEscalation();
   global.fetch = jest.fn(async (input: unknown) => {
     const url = String(input);
@@ -187,17 +194,109 @@ test('no escalation on the coach home panel or floor view wears the medical-stop
     throw new Error(`Unexpected fetch: ${url}`);
   }) as unknown as typeof fetch;
 
-  let container!: HTMLElement;
   await act(async () => {
-    ({ container } = render(<CoachWorkspace />));
+    render(<CoachWorkspace />);
   });
 
   const panel = screen.getByRole('heading', { name: 'Safety Escalations' }).closest('section') as HTMLElement;
   expect(panel.querySelectorAll('article')).toHaveLength(rows.length);
   expectNoMedicalStopMark(panel);
   expect(panel.className).toContain('--restricted');
+});
 
-  const floor = container.querySelectorAll('.coach-floor-focus__badge');
-  expect(floor.length).toBeGreaterThan(0);
-  floor.forEach((badge) => expect(badge.className).not.toContain('badge--locked'));
+test('no escalation on the /admin/safety-review list wears the medical-stop mark', async () => {
+  const rows = everyEscalation().map((row) => ({ ...row, athlete_name: String(row.reason) }));
+  global.fetch = jest.fn(async () => jsonResponse({
+    ok: true,
+    openHolds: [],
+    failingGates: [],
+    openEscalations: rows,
+    openViolations: [],
+    openFlags: [],
+    violationsReadLimit: 200,
+    violationsTruncated: false,
+  })) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+  const heading = await screen.findByText(`Open Escalations (${rows.length})`);
+  const section = heading.closest('section') as HTMLElement;
+  expect(section.querySelectorAll('li')).toHaveLength(rows.length);
+  expectNoMedicalStopMark(section);
+});
+
+test('no escalation on the /coach/intelligence list wears the medical-stop mark', async () => {
+  const rows = everyEscalation().map((row) => ({
+    ...row,
+    athlete_name: 'Jordan P.',
+    pain_report: row.metadata === PAIN,
+  }));
+  global.fetch = jest.fn(async () => jsonResponse({
+    stalled_gaps: [],
+    readiness_concerns: [],
+    fading_attendance: [],
+    unreviewed_sessions: [],
+    expiring_holds: [],
+    open_safety_escalations: rows,
+    open_compliance_violations: [],
+  })) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<CoachIntelligencePage />);
+  });
+  const section = screen.getByRole('heading', { name: 'Open safety escalations' }).closest('section') as HTMLElement;
+  expect(section.querySelectorAll('li')).toHaveLength(rows.length);
+  expectNoMedicalStopMark(section);
+});
+
+/* A LONE PAIN REPORT, CRITICAL OR HIGH (Overwatch, 2026-11-19, option B with a
+   condition: show the pain number where the surface already holds it, with no
+   new read; otherwise option A, the same mark for both, stated).
+   An escalation stores no score (painScoreLabel.ts, isPainReportEscalation):
+   its metadata is the near miss id and the trigger, and the number is in its
+   reason text. So the number shows where the reason is already shown -- the
+   /admin/escalations row and the coach panel card -- and the header badge,
+   which never shows a reason, reads the same for both (option A). */
+describe.each([
+  ['critical', 8],
+  ['high', 5],
+] as const)('a lone %s pain-report escalation', (severity, score) => {
+  const row = {
+    escalation_id: `esc_pain_${severity}`,
+    source_type: 'near_miss',
+    athlete_id: 'ath_1',
+    severity,
+    reason: `Athlete ath_1 reported pain at the left wrist at severity ${score}/10. Self-reported by the athlete, not assessed by a coach or a medical provider.`,
+    status: 'open',
+    escalated_to_role: 'coach',
+    created_at: '2026-08-14T18:00:00.000Z',
+    metadata: PAIN,
+  };
+
+  test('shows its number on the /admin/escalations row, beside the restricted mark', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/auth/session')) return jsonResponse({ ok: true, role: 'admin' });
+      return jsonResponse({ ok: true, escalations: [row] });
+    }) as unknown as typeof fetch;
+
+    render(<EscalationsPage />);
+    const reason = await screen.findByText(row.reason);
+    const tr = reason.closest('tr') as HTMLElement;
+    expect(tr.textContent).toContain(`${score}/10`);
+    expect(tr.querySelector('.badge')?.textContent).toBe('▲Pain report');
+    expectNoMedicalStopMark(tr);
+  });
+
+  test('reads "PAIN REPORT" on the header badge, the same at either severity (no score in the data)', async () => {
+    global.fetch = jest.fn(async () => jsonResponse({ ok: true, escalations: [row] })) as unknown as typeof fetch;
+
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<SafetyAttentionBadge role="coach" />));
+    });
+
+    const badge = container.querySelector('.badge') as HTMLElement;
+    expect(badge.className).toContain('badge--restricted');
+    expect(badge.textContent).toBe('▲SAFETY 1 · PAIN REPORTSafety 1 pain report');
+    expect(badge.textContent).not.toContain(`${score}/10`);
+  });
 });

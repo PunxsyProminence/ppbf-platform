@@ -55,16 +55,14 @@ const EMPTY: Digest = {
   stalled_gaps: [], readiness_concerns: [], fading_attendance: [], unreviewed_sessions: [], expiring_holds: [],
 };
 
-// Severity rung -> the design system's status badge, the same mapping
-// /admin/escalations already uses, so one severity does not read as two
-// different colours on two staff surfaces. Law 2: saturated colour is
-// safety/status only, which is exactly what these are. The two registers
-// carry different vocabularies ('moderate' on escalations, 'medium' on
-// compliance violations) and both are listed rather than normalized --
-// renaming another capability's stored value on the way to the screen is how
-// a surface starts lying about the record. Anything unrecognized falls to
-// 'monitor' rather than disappearing: an unbadged safety row is still a
-// safety row a coach must see.
+// Severity rung -> the design system's status badge, for COMPLIANCE VIOLATIONS
+// (open safety escalations use ESCALATION_BADGE below; OW25-48 is about
+// escalations and leaves this map as it was). Law 2: saturated colour is
+// safety/status only, which is exactly what these are. Both vocabularies are
+// listed ('moderate' and 'medium') rather than normalized -- renaming another
+// capability's stored value on the way to the screen is how a surface starts
+// lying about the record. Anything unrecognized falls to 'monitor' rather than
+// disappearing: an unbadged safety row is still a safety row a coach must see.
 const SEVERITY_BADGE: Record<string, string> = {
   critical: 'badge--locked',
   high: 'badge--restricted',
@@ -75,6 +73,23 @@ const SEVERITY_BADGE: Record<string, string> = {
 
 function severityBadgeClass(severity: string): string {
   return SEVERITY_BADGE[severity] ?? 'badge--monitor';
+}
+
+// Open safety escalations: the same rungs and glyphs as /admin/escalations, so
+// one escalation does not read two ways on two staff surfaces. Critical shares
+// --restricted and ▲ with high (Jason, card OW25-48 A: "Medical-stop mark only
+// for a medical stop"); --locked means a medical stop, and no escalation is
+// one. A glyph and the word on every row, never colour alone (Law 3).
+// Anything unrecognized falls to monitor rather than disappearing.
+const ESCALATION_BADGE: Record<string, { rung: string; glyph: string }> = {
+  critical: { rung: 'badge--restricted', glyph: '▲' },
+  high: { rung: 'badge--restricted', glyph: '▲' },
+  moderate: { rung: 'badge--monitor', glyph: '◉' },
+  low: { rung: 'badge--monitor', glyph: '◉' },
+};
+
+function escalationBadge(severity: string): { rung: string; glyph: string } {
+  return ESCALATION_BADGE[severity] ?? { rung: 'badge--monitor', glyph: '◉' };
 }
 
 // The stored source_type/status values read as database enums, so they are
@@ -163,7 +178,10 @@ export default function CoachIntelligencePage() {
                     {digest.open_safety_escalations.map((item) => (
                       <li key={item.escalation_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                         {/* A pain-report escalation reads "Pain report", not a severity word (#1528). */}
-                        <span className={`badge ${severityBadgeClass(item.severity)}`}>{item.pain_report ? PAIN_ESCALATION_LABEL : item.severity}</span>
+                        <span className={`badge ${escalationBadge(item.severity).rung}`}>
+                          <i aria-hidden="true">{escalationBadge(item.severity).glyph}</i>
+                          {item.pain_report ? PAIN_ESCALATION_LABEL : item.severity}
+                        </span>
                         {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
                         {' '}— {humanize(item.source_type)}: {item.reason}
                         {' '}(filed {gymDay(item.created_at)}). <Link className="underline" href="/admin/escalations">Escalation queue</Link>

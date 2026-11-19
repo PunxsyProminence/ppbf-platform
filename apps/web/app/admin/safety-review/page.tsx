@@ -85,10 +85,13 @@ interface SafetyReview {
 // Law 3: a severity badge carries a glyph and an uppercase label, never colour
 // alone. This one shipped as a bare rung while both of its siblings --
 // /admin/escalations over the same four-value union, and
-// /admin/compliance-center -- supply the glyphs. Same glyphs as escalations,
-// because it is the same ladder read from a different page.
+// /admin/compliance-center -- supply the glyphs. Same rungs and glyphs as
+// /admin/escalations, because it is the same ladder read from a different page:
+// critical shares --restricted and ▲ with high (Jason, card OW25-48 A:
+// "Medical-stop mark only for a medical stop"); --locked and ✕ mean a medical
+// stop, and no escalation is one. The word tells critical from high.
 const SEVERITY_BADGE: Record<EscalationSeverity, { rung: string; glyph: string }> = {
-  critical: { rung: 'badge--locked', glyph: '✕' },
+  critical: { rung: 'badge--restricted', glyph: '▲' },
   high: { rung: 'badge--restricted', glyph: '▲' },
   moderate: { rung: 'badge--monitor', glyph: '◉' },
   low: { rung: 'badge--monitor', glyph: '◉' },

@@ -100,14 +100,48 @@ test('a pain-report escalation badge reads "Pain report" in its severity colour;
   const item = (reason: string) => screen.getByText(new RegExp(reason)).closest('li') as HTMLElement;
   const badgeOf = (reason: string) => item(reason).querySelector('.badge') as HTMLElement;
 
+  // A critical pain report wears --restricted and ▲ (OW25-48 A); its number
+  // is in the reason on the same row.
   const pain = badgeOf('Pain 9/10 reported');
-  expect(pain.textContent).toBe('Pain report');
-  expect(pain.className).toContain('badge--locked');
+  expect(pain.textContent).toBe('▲Pain report');
+  expect(pain.className).toContain('badge--restricted');
+  expect(pain.className).not.toContain('badge--locked');
+  expect(item('Pain 9/10 reported').textContent).toContain('9/10');
   expect(item('Pain 9/10 reported').textContent).not.toMatch(/\b(low|moderate|medium|high|critical)\b/i);
 
   const other = badgeOf('Slipped on the apron');
-  expect(other.textContent).toBe('moderate');
+  expect(other.textContent).toBe('◉moderate');
   expect(other.className).toContain('badge--monitor');
+});
+
+test('escalations get ▲ and the word on the restricted rung; compliance violations keep their own map (OW25-48)', async () => {
+  global.fetch = mockFetch({
+    digest: {
+      ...DIGEST,
+      open_safety_escalations: [
+        { source_type: 'incident', created_at: '2026-08-10T12:00:00.000Z', athlete_id: 'ath-1', athlete_name: 'Jordan P.', escalation_id: 'esc-1', severity: 'critical', reason: 'Head contact in drills.', pain_report: false },
+        { source_type: 'incident', created_at: '2026-08-10T12:00:00.000Z', athlete_id: 'ath-2', athlete_name: 'Sam R.', escalation_id: 'esc-2', severity: 'high', reason: 'Fell from the apron.', pain_report: false },
+      ],
+      open_compliance_violations: [
+        { violation_id: 'v-1', athlete_id: 'ath-3', athlete_name: 'Rosa D.', rule_name: 'Weigh-in missing', status: 'open', severity: 'critical', days_open: 3 },
+      ],
+    },
+  });
+
+  await act(async () => {
+    render(<CoachIntelligencePage />);
+  });
+
+  const badgeOf = (text: string) => (screen.getByText(new RegExp(text)).closest('li') as HTMLElement).querySelector('.badge') as HTMLElement;
+  const critical = badgeOf('Head contact in drills');
+  expect(critical.textContent).toBe('▲critical');
+  expect(critical.className).toContain('badge--restricted');
+  expect(critical.className).not.toContain('badge--locked');
+  const high = badgeOf('Fell from the apron');
+  expect(high.textContent).toBe('▲high');
+  expect(high.className).toContain('badge--restricted');
+  // Out of OW25-48's reach: a compliance violation's map is unchanged.
+  expect(badgeOf('Weigh-in missing').className).toContain('badge--locked');
 });
 
 // LC-05. Computer-form dates, and a UTC day for an instant.

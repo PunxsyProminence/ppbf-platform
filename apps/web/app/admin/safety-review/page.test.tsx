@@ -144,8 +144,9 @@ test('a severity badge carries a glyph, not colour alone (Law 3)', async () => {
   // This page shipped a bare rung while both of its siblings -- the escalation
   // queue over the same four-value union and the compliance register -- supply
   // the glyphs, so severity here was carried by colour alone.
+  // Critical carries ▲ on the restricted rung (OW25-48 A); ✕ is the medical stop.
   const critical = await screen.findByText('critical');
-  expect(critical.textContent).toContain('✕');
+  expect(critical.textContent).toContain('▲');
   expect(screen.getByText('moderate').textContent).toContain('◉');
 });
 
@@ -244,9 +245,12 @@ test('a pain-report escalation badge reads "Pain report", keeps its colour, and 
   const badgeFor = (name: string) => (screen.getByText(name).closest('li') as HTMLElement).querySelector('.badge') as HTMLElement;
   const SEVERITY_WORD = /\b(low|moderate|high|critical)\b/i;
 
+  // A critical pain report wears --restricted and ▲ (OW25-48 A): --locked is a
+  // medical stop, and a pain report is not one at any severity.
   const fromNearMiss = badgeFor('Jordan T.');
-  expect(fromNearMiss.textContent).toBe('✕Pain report');
-  expect(fromNearMiss.className).toContain('badge--locked');
+  expect(fromNearMiss.textContent).toBe('▲Pain report');
+  expect(fromNearMiss.className).toContain('badge--restricted');
+  expect(fromNearMiss.className).not.toContain('badge--locked');
   expect((screen.getByText('Jordan T.').closest('li') as HTMLElement).textContent).not.toMatch(SEVERITY_WORD);
 
   const repeated = badgeFor('Sam R.');
@@ -257,6 +261,30 @@ test('a pain-report escalation badge reads "Pain report", keeps its colour, and 
   const other = badgeFor('Alex P.');
   expect(other.textContent).toBe('◉moderate');
   expect(other.className).toContain('badge--monitor');
+});
+
+test('a critical escalation reads ▲ and its word on the restricted rung, never the medical-stop mark (OW25-48)', async () => {
+  global.fetch = jest.fn().mockResolvedValue(
+    jsonResponse({
+      ok: true,
+      openHolds: [],
+      failingGates: [],
+      openEscalations: [
+        { athlete_id: 'ath-1', source_type: 'incident', status: 'open', created_at: '2026-08-01T00:00:00.000Z', escalation_id: 'esc-1', athlete_name: 'Jordan T.', severity: 'critical', metadata: null },
+      ],
+      openViolations: [], openFlags: [],
+      violationsReadLimit: 200,
+      violationsTruncated: false,
+    }),
+  ) as unknown as typeof fetch;
+
+  render(<SafetyReviewPage />);
+
+  await screen.findByText('Open Escalations (1)');
+  const badge = (screen.getByText('Jordan T.').closest('li') as HTMLElement).querySelector('.badge') as HTMLElement;
+  expect(badge.textContent).toBe('▲critical');
+  expect(badge.className).toContain('badge--restricted');
+  expect(badge.className).not.toContain('badge--locked');
 });
 
 // Lane U2 (audit UX-A A-2): open safety flags are the fifth feed. An open flag
