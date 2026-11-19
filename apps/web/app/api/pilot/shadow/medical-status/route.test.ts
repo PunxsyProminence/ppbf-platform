@@ -313,7 +313,9 @@ describe('legitimate writes still succeed, and the role gate is unchanged', () =
     expect(mockSetStatus).toHaveBeenCalledTimes(1);
   });
 
-  test.each(['parent', 'athlete', 'volunteer', 'staff', 'platform_owner'])(
+  // OW25-45 B (coaches and the office set clearance) keeps this gate as it is:
+  // nobody else may write it, a parent of the child included.
+  test.each(['parent', 'athlete', 'volunteer', 'staff', 'platform_owner', 'board'])(
     '%s is refused before the authority check or the write',
     async (role) => {
       mockRequirePrincipal.mockResolvedValue(principal({ role: role as PilotPrincipal['role'] }));

@@ -321,6 +321,12 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
     // The guard's purpose is unchanged: a visual pass may not invent or
     // delete a clinic control, and the count below still pins that.
     'Check again',
+    // Added 2026-11-19 by an owner decision, not a mockup: Jason's card
+    // OW25-45 B ("Coaches and the office" set clearance, on the Clearance
+    // Board). The Set Status control moved here from the Decision Loop; the
+    // row button that opens its form is part of it.
+    'Set clearance status',
+    'Set Status',
     'Progression Intelligence',
     'Performance Analytics',
   ] as const;
@@ -400,8 +406,9 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
 
   test('no toggle or switch was invented from the reference image', () => {
     // Five of them in the image, none on the route. A toggle here would imply a
-    // coach can flip a clearance or a hold directly; holds are placed through a
-    // form the server validates, and clearance is set by the office.
+    // clearance or a hold can be flipped with one tap; both are set through a
+    // form the server validates (clearance by a coach or the office, OW25-45 B,
+    // behind an armed second press).
     expect(PAGE).not.toContain('type="checkbox"');
     expect(PAGE).not.toContain('role="switch"');
     expect(PAGE).not.toMatch(/\btoggle\b/i);
