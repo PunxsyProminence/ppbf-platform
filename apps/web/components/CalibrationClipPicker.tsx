@@ -76,11 +76,13 @@ export default function CalibrationClipPicker({ basePath }: CalibrationClipPicke
         const response = await fetch(`${apiBase()}/api/pilot/calibration/projects`, { credentials: 'include' });
         const payload = (await response.json().catch(() => null)) as { projects?: unknown } | null;
         if (!live) return;
-        if (!response.ok || !Array.isArray(payload?.projects)) {
+        // UXB-24: an answer this picker cannot read -- no list, or any row
+        // without the fields it needs -- is "could not be read", never "none".
+        if (!response.ok || !Array.isArray(payload?.projects) || !payload.projects.every(isStudyRow)) {
           setStudiesState('failed');
           return;
         }
-        setStudies(payload.projects.filter(isStudyRow));
+        setStudies(payload.projects);
         setStudiesState('ready');
       } catch {
         if (live) setStudiesState('failed');
@@ -108,11 +110,18 @@ export default function CalibrationClipPicker({ basePath }: CalibrationClipPicke
       );
       const payload = (await response.json().catch(() => null)) as { clips?: unknown } | null;
       if (seq !== clipsSeq.current) return;
-      if (!response.ok || !Array.isArray(payload?.clips)) {
+      if (!response.ok || !Array.isArray(payload?.clips) || !payload.clips.every(isClipRow)) {
         setClipsState('failed');
         return;
       }
-      setClips(payload.clips.filter(isClipRow));
+      // Only the code and times are kept: the athlete and footage ids on a
+      // clip row never reach this picker's screen.
+      setClips(payload.clips.map(({ calibration_clip_id, clip_code, start_ms, end_ms }) => ({
+        calibration_clip_id,
+        clip_code,
+        start_ms,
+        end_ms,
+      })));
       setClipsState('ready');
     } catch {
       if (seq === clipsSeq.current) setClipsState('failed');

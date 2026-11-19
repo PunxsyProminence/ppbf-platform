@@ -28,9 +28,17 @@ const STUDIES = [
   { calibration_project_id: 'proj-1', name: 'Jab study', ontology_version: '0.1', status: 'draft' },
   { calibration_project_id: 'proj-2', name: 'Hook study', ontology_version: '0.1', status: 'draft' },
 ];
+// The rows carry the athlete and footage ids the clips route really sends;
+// the picker must never put either on screen.
 const CLIPS = [
-  { calibration_clip_id: 'clip-a', calibration_project_id: 'proj-1', clip_code: 'C-001', start_ms: 12_000, end_ms: 18_000, playable: true },
-  { calibration_clip_id: 'clip b/2', calibration_project_id: 'proj-1', clip_code: 'C-002', start_ms: 61_500, end_ms: 67_500, playable: false },
+  {
+    calibration_clip_id: 'clip-a', calibration_project_id: 'proj-1', video_session_id: 'video-session-77', athlete_id: 'athlete-id-42',
+    clip_code: 'C-001', start_ms: 12_000, end_ms: 18_000, primary_sampling_reason: 'random', playable: true,
+  },
+  {
+    calibration_clip_id: 'clip b/2', calibration_project_id: 'proj-1', video_session_id: 'video-session-78', athlete_id: 'athlete-id-43',
+    clip_code: 'C-002', start_ms: 61_500, end_ms: 67_500, primary_sampling_reason: 'random', playable: false,
+  },
 ];
 
 function respond(body: unknown, ok = true): Response {
@@ -78,6 +86,12 @@ test('reads the studies, then the chosen study\'s clips, and opens this page wit
   ]);
   expect(clipOptionLabel(CLIPS[0])).toBe('C-001 · 0:12.000 to 0:18.000');
 
+  // No athlete or footage id reaches the screen, in any option or line.
+  const text = document.body.textContent ?? '';
+  for (const hidden of ['athlete-id-42', 'athlete-id-43', 'video-session-77', 'video-session-78']) {
+    expect(text).not.toContain(hidden);
+  }
+
   fireEvent.change(clip, { target: { value: 'clip b/2' } });
   const open = screen.getByRole('link', { name: 'Open clip' });
   expect(open.getAttribute('href')).toBe(`${BASE}?calibration_clip_id=clip%20b%2F2`);
@@ -99,6 +113,8 @@ test('no studies yet says where studies are made', async () => {
 test.each([
   ['a refused read', () => respond({ error: 'Forbidden' }, false)],
   ['an answer with no study list', () => respond({ ok: true })],
+  ['a study list whose rows cannot be read', () => respond({ ok: true, projects: [{ id: 'p1', title: 'Jab' }] })],
+  ['a study list with one unreadable row among good ones', () => respond({ ok: true, projects: [STUDIES[0], { id: 'p2' }] })],
   ['no answer at all', () => { throw new TypeError('Failed to fetch'); }],
 ])('%s says the studies could not be read, never "no studies"', async (_name, answer) => {
   serve(answer as Handler);
@@ -119,8 +135,13 @@ test('a study with no clips says so, and nothing can be opened', async () => {
   expect(screen.queryByRole('link', { name: 'Open clip' })).toBeNull();
 });
 
-test('a failed clip read says so, never "no clips"', async () => {
-  serve((url) => (url.includes('/projects') ? respond({ ok: true, projects: STUDIES }) : respond({ error: 'x' }, false)));
+test.each([
+  ['a refused read', () => respond({ error: 'x' }, false)],
+  ['an answer with no clip list', () => respond({ ok: true })],
+  ['a clip list whose rows cannot be read', () => respond({ ok: true, clips: [{ id: 'c1', code: 'C-001' }] })],
+  ['a clip list with one unreadable row among good ones', () => respond({ ok: true, clips: [CLIPS[0], { calibration_clip_id: 'c9' }] })],
+])('%s for clips says so, never "no clips"', async (_name, answer) => {
+  serve((url) => (url.includes('/projects') ? respond({ ok: true, projects: STUDIES }) : (answer as () => Response)()));
   render(<CalibrationClipPicker basePath={BASE} />);
   const study = await screen.findByLabelText('Study');
   await act(async () => {

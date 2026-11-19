@@ -45,11 +45,11 @@ test('each step shows its state, what the records say, and the screen where it i
   expect(within(steps[2]).getByRole('link', { name: 'Schedule a class' }).getAttribute('href')).toBe('/schedule');
   // A step with no screen for the gym admin shows no link.
   expect(within(steps[3]).queryAllByRole('link')).toHaveLength(0);
-  // Read-only outside the TV line: no other step holds a control or a form.
-  for (const step of steps.slice(0, 3)) {
-    expect(within(step).queryAllByRole('button')).toHaveLength(0);
-    expect(step.querySelectorAll('form')).toHaveLength(0);
-  }
+  // Read-only outside the gym TV panel: every control and form on the page
+  // sits inside that one panel, in the TV line.
+  const panel = within(steps[3]).getByRole('region', { name: 'Gym TVs' });
+  for (const button of screen.queryAllByRole('button')) expect(panel.contains(button)).toBe(true);
+  for (const form of Array.from(document.querySelectorAll('form'))) expect(panel.contains(form)).toBe(true);
 });
 
 /* OFF-02 (lane SH): the office pairs a TV on this page. The existing gym TV
