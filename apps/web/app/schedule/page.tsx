@@ -813,7 +813,8 @@ export default function SchedulerPage() {
         </p>
         <p className="t-data">
           Seats: {item.registered_count ?? 0}/{item.capacity}
-          {/* staffName() already says "Coach <name>": no second "Coach:" (lane U1, SC2-5; dry-run line 34). */}
+          {/* staffName() already reads as the coach ("Coach <name>", "Your coach" or
+              "coach name not available"): no second "Coach:" (lane U1, SC2-5; dry-run line 34). */}
           {item.coach_account_id ? ` | ${staffName(item.coach_account_id)}` : ''}
           {item.covering_coach_account_id ? ` | Cover: ${staffName(item.covering_coach_account_id)}` : ''}
         </p>

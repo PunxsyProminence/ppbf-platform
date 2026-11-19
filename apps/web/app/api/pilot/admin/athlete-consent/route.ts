@@ -160,7 +160,8 @@ const DECISIONS = new Set<ConsentDecision>(['grant', 'withdraw']);
  * T-008: THE ORG-WIDE CONSENT AUDIT, AND THE STAFF-SIDE CONSENT WRITER.
  *
  * GET is the audit: every athlete in the organization with their current
- * guardian media-consent status -- including athletes with zero linked
+ * media-consent status -- their guardians' under 18, their own from 18 (see
+ * adultOwnConsent below) -- including athletes with zero linked
  * guardians, which is itself the finding someone auditing this needs to see
  * (checkGuardianMediaConsent treats that as "unverifiable", not vacuously
  * satisfied). See guardianConsent.ts for the full reasoning.

@@ -377,6 +377,8 @@ const ADULTS = [
 ];
 
 test('an adult row reads its own consent, and its guardians as not needed', async () => {
+  // An admin session, which is offered "Add paper-only guardian" on a minor's row.
+  sessionRole = 'admin';
   global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: ADULTS })) as unknown as typeof fetch;
 
   render(<AthleteConsentAuditPage />);
@@ -386,6 +388,8 @@ test('an adult row reads its own consent, and its guardians as not needed', asyn
   expect(within(without).getByText('Not needed (18 or over)')).toBeInTheDocument();
   expect(within(without).queryByText('Missing')).not.toBeInTheDocument();
   expect(within(without).queryByText('No guardians on file')).not.toBeInTheDocument();
+  // No paper-only guardian add on an adult row either: its recorder would be refused.
+  expect(within(without).queryByRole('button', { name: 'Add paper-only guardian' })).not.toBeInTheDocument();
   // A guardian's consent cannot be recorded for an adult: no dead-end Record.
   const record = within(without).getByRole('button', { name: 'They record it, signed in' });
   expect(record).toBeDisabled();

@@ -426,7 +426,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
   /* The coach picker names each coach as the gym typed it (staff name), or as
      their login reads when none is typed (lane U1, SC2-5; dry-run line 23: it
      showed a bare login email). Two coaches who read the same get their login
-     after the name, so the admin can still tell them apart. */
+     (or, with none, their account id) after the name, so the admin can still
+     tell them apart. */
   const coachPickerLabels = useMemo(() => {
     const named = coachOptions.map((coach) => ({
       id: coach.account_id,

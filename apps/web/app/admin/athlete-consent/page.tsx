@@ -278,7 +278,7 @@ export default function AthleteConsentAuditPage() {
       }
       setOpenAthleteId(null);
       // Re-read rather than patching local state: whether this athlete is now
-      // cleared depends on EVERY guardian, which only the server knows.
+      // cleared depends on EVERY guardian (under 18), which only the server knows.
       await load();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'That could not be recorded.');
@@ -320,9 +320,9 @@ export default function AthleteConsentAuditPage() {
               Media Consent Audit
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
-              Every athlete in the organization and whether every one of their guardians has a current photo/video
-              consent on file. An athlete with no guardians on file cannot have consent verified at all -- that
-              shows as missing, not as cleared.
+              Every athlete in the organization and whether their photo/video consent is on file. Under 18, that
+              means every one of their guardians has a current consent on file; an athlete under 18 with no
+              guardians on file cannot have consent verified at all -- that shows as missing, not as cleared.
             </p>
             {/* OD-2026-10-08-015: from 18 only the athlete's own consent counts,
                 and only they can record it, signed in (lane U1, SC2-5). */}
@@ -515,7 +515,10 @@ export default function AthleteConsentAuditPage() {
                                   ? 'Close'
                                   : 'Record'}
                             </button>
-                            {canAddGuardian ? (
+                            {/* Not on an adult's row: a guardian's consent cannot be
+                                recorded for them (the server refuses it), so adding a
+                                guardian here would open a recorder that can only fail. */}
+                            {canAddGuardian && item.consent_basis !== 'own' ? (
                               <button
                                 type="button"
                                 className="btn btn--ghost"
