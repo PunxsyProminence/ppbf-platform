@@ -262,6 +262,7 @@ function IssueToAthlete({
   untestedDrills,
   refusedDrills,
   onRecheck,
+  recheckBlocked,
   onBusyChange,
   requestKeys,
 }: {
@@ -272,6 +273,8 @@ function IssueToAthlete({
   readonly refusedDrills?: readonly RefusedDrill[] | null;
   /** Reads the template again, so a step fixed elsewhere is seen (the open button is off while it is open). */
   readonly onRecheck: () => void;
+  /** True while a session plan is being made below: a re-read would unmount it and lose the answer. */
+  readonly recheckBlocked: boolean;
   /** Told while an issue is running, so the page can keep this control mounted until it answers. */
   readonly onBusyChange: (busy: boolean) => void;
   /** The page's keys of unsettled issues: they outlive this control. */
@@ -509,7 +512,7 @@ function IssueToAthlete({
               {/* A drill fixed in another tab is not seen until the template is
                   read again, and this template's own open button is off while
                   it is open (review A). */}
-              <button type="button" className="btn btn--ghost w-fit" onClick={onRecheck}>
+              <button type="button" className="btn btn--ghost w-fit" disabled={recheckBlocked || busy} onClick={onRecheck}>
                 Check again
               </button>
             </div>
@@ -794,9 +797,11 @@ function CoachWorkoutTemplates() {
           template: payload.template,
           items: payload.items ?? [],
           untestedDrills: namedDrills(payload.untested_drills),
+          // Not sent: undefined. Sent but not a list (null, or a shape this
+          // screen cannot read): "could not be checked", never "none refused".
           refusedDrills: payload.refused_drills === undefined
             ? undefined
-            : payload.refused_drills === null ? null : refusedDrillsFrom(payload.refused_drills),
+            : Array.isArray(payload.refused_drills) ? refusedDrillsFrom(payload.refused_drills) : null,
         });
       }
     } catch (error) {
@@ -976,6 +981,10 @@ function CoachWorkoutTemplates() {
                     untestedDrills={detail.untestedDrills}
                     refusedDrills={detail.refusedDrills}
                     onRecheck={() => void openTemplate(detail.template.template_id)}
+                    // Not while a session plan is being made: re-reading the
+                    // template unmounts it and its answer (review B), the
+                    // reason the Open template button waits too.
+                    recheckBlocked={issuing || making}
                     onBusyChange={setIssuing}
                     requestKeys={requestKeys}
                   />

@@ -621,6 +621,39 @@ describe('issue to athlete', () => {
       expect(screen.getByRole('button', { name: 'Issue to athlete' })).toBeEnabled();
     });
 
+    it('Check again waits while a session plan is being made, so that answer is not lost', async () => {
+      let finishMaking: (response: Response) => void = () => {};
+      mockFetch((url) => {
+        if (url.includes('/api/pilot/session-scripts')) {
+          return new Promise<Response>((resolve) => { finishMaking = resolve; }) as unknown as Response;
+        }
+        if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+        if (url.includes('template_id')) {
+          return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()], refused_drills: [WRAP] });
+        }
+        return jsonResponse({ templates: [BOXING_FUNDAMENTALS] });
+      });
+
+      await openTemplate();
+      expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Make a session plan' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Check again' })).toBeDisabled());
+
+      await act(async () => {
+        finishMaking({ ok: true, status: 201, json: async () => ({ script: { script_id: 'scr-9', name: 'Plan', blocks: [{}] } }) } as Response);
+      });
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled());
+    });
+
+    it('a refusal list this screen cannot read says "could not be checked", not "none refused"', async () => {
+      mockIssuePage({ refused: { unexpected: true } });
+
+      const picker = await openTemplate();
+      fireEvent.change(picker, { target: { value: 'ath-1' } });
+
+      expect(screen.getByText('Whether every step can be issued could not be checked. Issuing will check again.')).toBeInTheDocument();
+    });
+
     it('with nothing refused there is no list and Issue works as before', async () => {
       mockIssuePage({ refused: [] });
 
