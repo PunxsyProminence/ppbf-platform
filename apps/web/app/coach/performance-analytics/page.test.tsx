@@ -319,7 +319,7 @@ describe('rest or away marks on the card (lane R6-b1, OD-2026-11-17-004)', () =>
   ];
   const MARK_ID = '4f9d2c1e-6b3a-4e8f-9c2d-1a2b3c4d5e6f';
   const marksWith = (marks: unknown[]) =>
-    ({ ok: true, json: async () => ({ ok: true, today: '2026-11-19', kinds: ['rest', 'away'], weeks: WEEKS, marks }) }) as Response;
+    ({ ok: true, json: async () => ({ ok: true, today: '2026-11-19', kinds: ['rest', 'away'], weeks: WEEKS, marks, coverage: [] }) }) as Response;
 
   type Call = { url: string; init?: RequestInit };
   function routed(marks: () => unknown[], calls: Call[], write?: () => Response) {
@@ -420,7 +420,7 @@ describe('rest or away marks: reviewer B fixes', () => {
   const A_MARK = { mark_id: '11111111-1111-4111-8111-111111111111', athlete_id: 'ath-1', kind: 'rest', first_day: '2026-11-13', last_day: '2026-11-19' };
   const B_MARK = { mark_id: '22222222-2222-4222-8222-222222222222', athlete_id: 'ath-2', kind: 'away', first_day: '2026-11-13', last_day: '2026-11-19' };
   const marksWith = (marks: unknown[]) =>
-    ({ ok: true, json: async () => ({ ok: true, today: '2026-11-19', kinds: ['rest', 'away'], weeks: WEEKS, marks }) }) as Response;
+    ({ ok: true, json: async () => ({ ok: true, today: '2026-11-19', kinds: ['rest', 'away'], weeks: WEEKS, marks, coverage: [] }) }) as Response;
   const SECOND = { ...ITEM, athlete_id: 'ath-2', full_name: 'Sam Roe', open_gaps: 0, readiness_early_avg: null, readiness_late_avg: null };
 
   function deferred<T>() {
@@ -551,5 +551,74 @@ describe('rest or away marks: reviewer B fixes', () => {
     });
     expect((firstCard.querySelector('button') as HTMLButtonElement).textContent).toBe('Undo');
     expect((firstCard.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+// Lane R6-b2 (OD-2026-11-17-004): each week's completeness, and the guard
+// that no week that is not logged ever shows a load figure or a zero.
+describe('week status and rated share on the strip (lane R6-b2)', () => {
+  const WEEKS = [
+    { week_index: 0, first_day: '2026-11-13', last_day: '2026-11-19' },
+    { week_index: 1, first_day: '2026-11-06', last_day: '2026-11-12' },
+    { week_index: 2, first_day: '2026-10-30', last_day: '2026-11-05' },
+    { week_index: 3, first_day: '2026-10-23', last_day: '2026-10-29' },
+    { week_index: 4, first_day: '2026-10-16', last_day: '2026-10-22' },
+  ];
+  const COVERAGE = [
+    { athlete_id: 'ath-1', week_index: 0, attended: 4, rated: 3, marked_days: 0, status: 'logged' },
+    { athlete_id: 'ath-1', week_index: 1, attended: 4, rated: 2, marked_days: 0, status: 'partly_logged' },
+    { athlete_id: 'ath-1', week_index: 2, attended: 0, rated: 0, marked_days: 7, status: 'rest_marked' },
+    { athlete_id: 'ath-1', week_index: 3, attended: 0, rated: 0, marked_days: 0, status: 'not_logged' },
+  ];
+  const REST_MARK = { mark_id: '55555555-5555-4555-8555-555555555555', athlete_id: 'ath-1', kind: 'rest', first_day: '2026-10-30', last_day: '2026-11-05' };
+  const respond = (coverage: unknown) =>
+    jest.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('rest-marks')
+        ? ({ ok: true, json: async () => ({ ok: true, today: '2026-11-19', kinds: ['rest', 'away'], weeks: WEEKS, marks: [REST_MARK], coverage }) } as Response)
+        : okWith([ITEM]),
+    ) as unknown as typeof fetch;
+
+  function rowOf(label: string): HTMLElement {
+    return screen.getByText(label).closest('li') as HTMLElement;
+  }
+
+  test('each week says its status in a word and a glyph, with "N of M rated" or "no sessions"', async () => {
+    global.fetch = respond(COVERAGE);
+    render(<PerformanceAnalyticsPage />);
+    await screen.findByText('Last 7 days');
+    const status = (label: string) => rowOf(label).querySelector('[data-week-status]') as HTMLElement;
+
+    expect(status('Last 7 days').textContent).toBe('✓ Logged · 3 of 4 rated');
+    expect(status('1 week before').textContent).toBe('◐ Partly logged · 2 of 4 rated');
+    expect(status('2 weeks before').textContent).toBe('— Rest (marked) · no sessions');
+    expect(status('3 weeks before').textContent).toBe('? Not logged · no sessions');
+    // No coverage row for the week: said, not guessed.
+    expect(status('4 weeks before').textContent).toBe('Status not read');
+    // Every status carries a glyph as well as its word.
+    for (const label of ['Last 7 days', '1 week before', '2 weeks before', '3 weeks before']) {
+      expect(status(label).querySelector('i')?.textContent).toMatch(/\S/);
+    }
+  });
+
+  test('GUARD: a week that is not logged shows no load figure and no zero, anywhere in its row', async () => {
+    global.fetch = respond(COVERAGE);
+    render(<PerformanceAnalyticsPage />);
+    await screen.findByText('Last 7 days');
+    for (const label of ['2 weeks before', '3 weeks before', '4 weeks before']) {
+      const text = rowOf(label).textContent ?? '';
+      // Strip the row's label ("2 weeks before") and dates ("Oct 30 – Nov 5"); nothing numeric may remain.
+      const withoutDates = text.replace(label, '').replace(/[A-Z][a-z]{2} \d{1,2}/g, '');
+      expect(withoutDates).not.toMatch(/\d/);
+      expect(text.toLowerCase()).not.toMatch(/load|rpe|×|\bx\b/);
+    }
+    // The partly logged week shows counts of sessions, never a load.
+    expect(rowOf('1 week before').textContent?.toLowerCase()).not.toMatch(/load|rpe|×/);
+  });
+
+  test('a response without coverage is treated as unread, not as weeks with nothing in them', async () => {
+    global.fetch = respond(undefined);
+    render(<PerformanceAnalyticsPage />);
+    await screen.findByText(/Rest and away marks could not be loaded. This is not a statement that none are recorded./);
+    expect(screen.queryByText(/Not logged/)).toBeNull();
   });
 });

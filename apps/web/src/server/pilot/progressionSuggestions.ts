@@ -7,6 +7,7 @@ import {
   type AthletePerformanceRow,
 } from './performanceAnalytics';
 import {
+  getWeeklyLoadCoverage,
   getWeeklySessionLoads,
   LOAD_JUMP_PRIOR_WEEKS,
   LOAD_JUMP_RATIO,
@@ -532,7 +533,7 @@ export async function getGapSuggestions(
   athleteIds: readonly string[],
 ): Promise<GapSuggestion[]> {
   if (athleteIds.length === 0) return [];
-  const [rollup, stalled, openGaps, transferFailures, competitionLosses, weeklyLoads, wellnessWindows] = await Promise.all([
+  const [rollup, stalled, openGaps, transferFailures, competitionLosses, weeklyLoads, wellnessWindows, loadCoverage] = await Promise.all([
     getPerformanceRollup(organizationId, athleteIds, PERFORMANCE_WINDOW_DAYS_DEFAULT),
     getStalledAssignments(organizationId, athleteIds),
     getOpenGapTypes(organizationId, athleteIds),
@@ -540,6 +541,9 @@ export async function getGapSuggestions(
     getCompetitionLosses(organizationId, athleteIds),
     getWeeklySessionLoads(organizationId, athleteIds),
     getWellnessWindows(organizationId, athleteIds),
+    // Which weeks are complete enough for Rule 6 (and so Rule 7) to speak:
+    // attended vs rated sessions and the coach's rest/away marks (R6-b2).
+    getWeeklyLoadCoverage(organizationId, athleteIds),
   ]);
   return deriveSuggestions(
     rollup,
@@ -547,7 +551,7 @@ export async function getGapSuggestions(
     openGaps,
     transferFailures,
     competitionLosses,
-    readLoadJumps(organizationId, weeklyLoads),
+    readLoadJumps(organizationId, weeklyLoads, loadCoverage),
     readWellnessDeclines(wellnessWindows),
   );
 }

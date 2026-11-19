@@ -17,6 +17,7 @@ import {
   restMarkReadWindow,
   restMarkUnknownFieldsError,
 } from '@/src/server/pilot/restMarks';
+import { getWeeklyLoadCoverage, readLoadWeekCoverage } from '@/src/server/pilot/weeklySessionLoad';
 import { gymDayIso } from '@/src/lib/gymTime';
 
 export const runtime = 'nodejs';
@@ -29,7 +30,9 @@ export const dynamic = 'force-dynamic';
  *   GET                                           the 5 load weeks (Rule 6's 7-day buckets,
  *                                                 newest first) and the live marks from the
  *                                                 oldest of them to 34 days ahead (a planned
- *                                                 holiday shows and can be undone), for the
+ *                                                 holiday shows and can be undone), and each
+ *                                                 week's attended / rated / marked counts and
+ *                                                 status (lane R6-b2; no load figure), for the
  *                                                 athletes this caller's analytics shows
  *   POST   { athlete_id, kind, first_day, last_day }   records one mark (one tap = one week)
  *   DELETE ?athlete_id=&mark_id=                  undoes one mark (the row is kept)
@@ -73,8 +76,8 @@ async function rosterIds(principal: ActorIdentity): Promise<string[]> {
   return [];
 }
 
-function requireToday(): string {
-  const today = gymDayIso();
+function requireToday(now: Date = new Date()): string {
+  const today = gymDayIso(now);
   if (!today) throw new Error('Unable to resolve the gym date.');
   return today;
 }
@@ -86,13 +89,23 @@ export async function GET(request: NextRequest) {
     const extra = restMarkUnknownFieldsError(Object.fromEntries(request.nextUrl.searchParams), []);
     if (extra) throw new ValidationError(extra, 'REST_MARK_UNKNOWN_FIELD');
 
-    const today = requireToday();
+    // One instant for the weeks, the marks and the coverage, so all three
+    // describe the same gym day even across midnight.
+    const now = new Date();
+    const today = requireToday(now);
     const weeks = loadWeekWindows(today);
     const ids = await rosterIds(principal);
     const readWindow = restMarkReadWindow(today);
+    // The marks read also checks the caller's staff membership here; the
+    // coverage read runs only after it passes.
     const marks = await listRestMarks(actorOf(principal), ids, readWindow.from_day, readWindow.to_day);
+    // Each week's status and rated share (lane R6-b2): counts and a status
+    // word, never a load figure. Same roster as the marks.
+    const coverageRows = await getWeeklyLoadCoverage(principal.organizationId, ids, now);
+    const coverage = ids.flatMap((athleteId) =>
+      readLoadWeekCoverage(coverageRows, athleteId).map((week) => ({ athlete_id: athleteId, ...week })));
     return NextResponse.json(
-      { ok: true, today, kinds: [...REST_MARK_KINDS], weeks, marks: marks.map(present) },
+      { ok: true, today, kinds: [...REST_MARK_KINDS], weeks, marks: marks.map(present), coverage },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

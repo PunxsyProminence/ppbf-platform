@@ -184,7 +184,13 @@ function Figure({ label, children }: { label: string; children: ReactNode }) {
  * reason asked for minors)". One tap marks one of Rule 6's 7-day load weeks
  * as rest or away; Undo takes the mark back. There is no reason field, and
  * none is ever sent. Nothing here shows a load number: a marked week is a
- * word, never a zero. The rated share per week arrives with lane R6-b2.
+ * word, never a zero.
+ *
+ * Lane R6-b2: each week also says how complete it is -- logged, partly logged
+ * ("2 of 4 rated"), rest (marked) or not logged -- in a word and a glyph,
+ * never colour alone. A week with no sessions says "no sessions", never "0 of
+ * 0" and never a load figure. Rule 6's load-jump ratio speaks only on logged
+ * weeks (weeklySessionLoad.ts).
  */
 interface LoadWeek {
   week_index: number;
@@ -198,10 +204,31 @@ interface RestMark {
   first_day: string;
   last_day: string;
 }
+type LoadWeekStatus = 'logged' | 'partly_logged' | 'rest_marked' | 'not_logged';
+interface WeekCoverage {
+  athlete_id: string;
+  week_index: number;
+  attended: number;
+  rated: number;
+  marked_days: number;
+  status: LoadWeekStatus;
+}
 type RestMarksState =
   | { status: 'loading' }
   | { status: 'unavailable' }
-  | { status: 'loaded'; today: string; weeks: LoadWeek[]; marks: RestMark[] };
+  | { status: 'loaded'; today: string; weeks: LoadWeek[]; marks: RestMark[]; coverage: WeekCoverage[] };
+
+const STATUS_WORDS: Record<LoadWeekStatus, { word: string; glyph: string }> = {
+  logged: { word: 'Logged', glyph: '✓' },
+  partly_logged: { word: 'Partly logged', glyph: '◐' },
+  rest_marked: { word: 'Rest (marked)', glyph: '—' },
+  not_logged: { word: 'Not logged', glyph: '?' },
+};
+
+/** "3 of 4 rated", or "no sessions": never "0 of 0", never a load figure. */
+function shareWords(week: WeekCoverage): string {
+  return week.attended > 0 ? `${week.rated} of ${week.attended} rated` : 'no sessions';
+}
 
 const KIND_WORDS: Record<RestMark['kind'], { word: string; glyph: string }> = {
   rest: { word: 'Rest', glyph: '—' },
@@ -224,9 +251,13 @@ async function readRestMarks(): Promise<RestMarksState> {
   try {
     const response = await fetch(`${apiBase()}/api/pilot/coach/rest-marks`, { method: 'GET', credentials: 'include' });
     if (!response.ok) throw new Error(String(response.status));
-    const payload = (await response.json()) as { today?: string; weeks?: LoadWeek[]; marks?: RestMark[] };
-    if (!payload.today || !Array.isArray(payload.weeks) || !Array.isArray(payload.marks)) throw new Error('shape');
-    return { status: 'loaded', today: payload.today, weeks: payload.weeks, marks: payload.marks };
+    const payload = (await response.json()) as {
+      today?: string; weeks?: LoadWeek[]; marks?: RestMark[]; coverage?: WeekCoverage[];
+    };
+    if (!payload.today || !Array.isArray(payload.weeks) || !Array.isArray(payload.marks) || !Array.isArray(payload.coverage)) {
+      throw new Error('shape');
+    }
+    return { status: 'loaded', today: payload.today, weeks: payload.weeks, marks: payload.marks, coverage: payload.coverage };
   } catch {
     return { status: 'unavailable' };
   }
@@ -297,6 +328,7 @@ function RestAwayWeeks({
       <ul className="mt-[var(--s2)] space-y-[var(--s2)]">
         {state.weeks.map((week) => {
           const onWeek = mine.filter((m) => m.first_day <= week.last_day && m.last_day >= week.first_day);
+          const cover = state.coverage.find((c) => c.athlete_id === athleteId && c.week_index === week.week_index);
           return (
             <li key={week.week_index} className="flex flex-wrap items-center gap-[var(--s3)]">
               <span className="min-w-[10rem] text-[color:var(--bone-200)]">
@@ -305,6 +337,14 @@ function RestAwayWeeks({
                   ({dayRange(week.first_day, week.last_day)})
                 </span>
               </span>
+              {cover ? (
+                <span className="text-[color:var(--bone-200)]" data-week-status={cover.status}>
+                  <i aria-hidden="true">{STATUS_WORDS[cover.status].glyph}</i>{' '}
+                  {STATUS_WORDS[cover.status].word} · {shareWords(cover)}
+                </span>
+              ) : (
+                <span className="t-muted" data-week-status="unread">Status not read</span>
+              )}
               {onWeek.map((m) => (
                 <span key={m.mark_id} className="flex items-center gap-[var(--s2)]">
                   <span className="badge badge--monitor">
