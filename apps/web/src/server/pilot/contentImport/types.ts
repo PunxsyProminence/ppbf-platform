@@ -246,6 +246,8 @@ export type FindingCode =
   | 'unknown_status'
   | 'unknown_evidence_label'
   | 'unknown_stage_key'
+  // A field_labels label that claims a coach's in-app edit (inAppEdits.ts): only the app writes one.
+  | 'in_app_edit_label'
   // Raised by the database plan stage (plan.ts, datasets/), never offline:
   // they compare a package with what the target organization already holds.
   | 'ordinal_change'

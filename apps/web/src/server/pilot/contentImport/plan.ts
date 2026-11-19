@@ -1,19 +1,21 @@
 import { assertImportActor, type DbClient, type ImportActor } from './actor';
 import { sha256Hex } from './canonical';
 import {
+  type CountedOutcome,
   DATASET_ENGINES,
   datasetEngine,
   type DatasetPlan,
   type EngineContext,
   UNIT_OUTCOMES,
-  type UnitOutcome,
   type UnitPlan,
 } from './datasets';
 import { stageKeyFindings } from './datasets/pathwayCatalog';
+import { heldStepFindings } from './inAppEdits';
 import { loadDatabaseReferenceSets } from './referenceSetsDb';
 import { DATASETS } from './specs';
 import type { DatasetName, Finding, PackageFileInput, ParsedFile, Warning } from './types';
 import { parsePackage, validateParsed } from './validate';
+import { VOCABULARIES } from './vocabularies';
 
 // STAGE 3 OF THE CONTENT-IMPORT CORE: PLAN. READ-ONLY.
 //
@@ -30,6 +32,9 @@ import { parsePackage, validateParsed } from './validate';
 //   unchanged    in the database with the same content; nothing is written
 //   absent       in the database, not in the package; listed, never touched
 //   reject       has a blocking finding; the whole plan cannot be applied
+//   held         would be revised, but its current version holds a coach's
+//                in-app edit (inAppEdits.ts); nothing is written for it and
+//                the rest of the plan applies
 // plus the validator's blocking findings and warnings (validate.ts), judged
 // against what THIS organization holds (referenceSetsDb.ts), and a plan_hash.
 //
@@ -47,7 +52,8 @@ export interface ImportRequest {
   files: Readonly<Record<string, string>>;
 }
 
-export type OutcomeCounts = Record<UnitOutcome, number>;
+/** `held` is present only when the plan has a held item, so a plan without one counts exactly as before. */
+export type OutcomeCounts = Record<CountedOutcome, number> & { held?: number };
 
 export interface ImportPlan {
   organizationId: string;
@@ -103,6 +109,8 @@ function computePlanHash(organizationId: string, actor: ImportActor, datasets: D
     unit.recordsBefore ?? false,
     // Only when set, so every plan without a retirement hashes as before.
     ...(unit.retires ? ['retires'] : []),
+    // Likewise only on a held item.
+    ...(unit.heldBy ? [unit.heldBy] : []),
   ]);
   const findingRows = blocking
     .map((finding) => JSON.stringify([finding.code, finding.file, finding.line ?? null, finding.column ?? null, finding.key ?? null, finding.message]))
@@ -142,24 +150,55 @@ export async function planWithState(request: ImportRequest, checkedActor?: Impor
   const validation = validateParsed(parsed, { references, baseline: { files: baseline } }, findings, warnings);
 
   const datasetPlans: DatasetPlan[] = [];
+  // Engines plan in dependency order, so a dataset sees what the ones it
+  // references hold (a template step linking a held drill).
+  const held = new Map<DatasetName, Set<string>>();
   for (const engine of engines) {
     const files = parsed.files.filter((file) => file.spec.dataset === engine.spec.name);
-    datasetPlans.push(await engine.plan(context, { files, validation, all: parsed.files }));
+    const datasetPlan = await engine.plan(context, { files, validation, all: parsed.files, held });
+    datasetPlans.push(datasetPlan);
+    const keys = datasetPlan.units.filter((unit) => unit.outcome === 'held').map((unit) => unit.key);
+    if (keys.length > 0) held.set(engine.spec.name, new Set(keys));
+  }
+
+  // A held template's or script's stored steps stay: a drill revised in this
+  // plan may not go below them (inAppEdits.ts heldStepFindings).
+  const heldStepRejects: Finding[] = [];
+  const heldParents = new Set(datasetPlans
+    .filter((datasetPlan) => datasetPlan.dataset === 'workout-templates' || datasetPlan.dataset === 'session-scripts')
+    .flatMap((datasetPlan) => datasetPlan.units.filter((unit) => unit.outcome === 'held').map((unit) => unit.key)));
+  const drillPlan = datasetPlans.find((datasetPlan) => datasetPlan.dataset === 'drill-library');
+  if (drillPlan && heldParents.size > 0) {
+    const drillFile = parsed.files.find((file) => file.spec.file === 'seed_drill_library.csv');
+    const revised = new Set(drillPlan.units.filter((unit) => unit.outcome === 'new_version').map((unit) => unit.key));
+    for (const { lineage, finding } of heldStepFindings(
+      drillFile?.rows ?? [], drillFile?.path, references.committedSteps, heldParents, revised, VOCABULARIES.contact_level.values,
+    )) {
+      const unit = drillPlan.units.find((candidate) => candidate.key === lineage);
+      if (unit) {
+        unit.outcome = 'reject';
+        unit.reasons = [...(unit.reasons ?? []), finding.message];
+        delete unit.fromVersion;
+        delete unit.toVersion;
+      }
+      heldStepRejects.push(finding);
+    }
   }
 
   const units = datasetPlans.flatMap((plan) => plan.units).sort(compareUnits);
   // The stages content items name (stage_keys) against the pathway catalog
   // they will be linked to; offline only the backbone's 18 are known (validate.ts).
   const stageKeys = await stageKeyFindings(client, organizationId, parsed);
-  const blocking = [...validation.blocking, ...unloadable, ...stageKeys, ...datasetPlans.flatMap((plan) => plan.findings)];
+  const blocking = [...validation.blocking, ...unloadable, ...stageKeys, ...datasetPlans.flatMap((plan) => plan.findings), ...heldStepRejects];
   const datasets = engines.map((engine) => engine.spec.name);
 
   const counts: Partial<Record<DatasetName, OutcomeCounts>> = {};
   const totals = emptyCounts();
   for (const name of datasets) counts[name] = emptyCounts();
   for (const unit of units) {
-    (counts[unit.dataset] as OutcomeCounts)[unit.outcome] += 1;
-    totals[unit.outcome] += 1;
+    const datasetCounts = counts[unit.dataset] as OutcomeCounts;
+    datasetCounts[unit.outcome] = (datasetCounts[unit.outcome] ?? 0) + 1;
+    totals[unit.outcome] = (totals[unit.outcome] ?? 0) + 1;
   }
 
   const plan: ImportPlan = {

@@ -39,9 +39,10 @@ import { ConflictError, NotFoundError, ValidationError } from './errors';
 // touched (OD-2026-11-15-011 ruling 2). Each edited part's label becomes REPORTED
 // with the editor (contentLabels.ts#writeEditedVersionLabels).
 //
-// KNOWN GAP (Overwatch 2026-11-19, flagged not fixed): a later content-import
-// package that revises this drill compares the package to the head and writes
-// v(n+2) over the coach's text.
+// IMPORTS DO NOT OVERWRITE AN EDIT (lane IG closed the known gap): a later
+// content-import package that would revise this drill is held instead --
+// nothing written, the plan says why -- because the edited version carries
+// in-app labels and an in_app_edit audit event (contentImport/inAppEdits.ts).
 
 export const DRILL_TEXT_FIELDS = [
   'target_behavior', 'purpose', 'standard_setup', 'execution', 'what_good_looks_like', 'what_bad_looks_like',

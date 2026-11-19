@@ -20,9 +20,20 @@ import { UNIVERSAL_STOP_RULES_ENGINE } from './universalStopRules';
 // claims) is refused at plan with dataset_not_loadable,
 // rather than half-loaded.
 
-export type UnitOutcome = 'new' | 'new_version' | 'unchanged' | 'absent' | 'reject';
+/** The outcomes every plan counts, held or not. */
+export type CountedOutcome = 'new' | 'new_version' | 'unchanged' | 'absent' | 'reject';
 
-export const UNIT_OUTCOMES: readonly UnitOutcome[] = ['new', 'new_version', 'unchanged', 'absent', 'reject'];
+/**
+ * held: in the database, and the package would revise it, but its current
+ * version holds a coach's in-app edit (inAppEdits.ts), or it links a drill
+ * that is held and would not fit that drill's kept version. Nothing is
+ * written for it and nothing else waits on it; unlike reject it does not
+ * block the package. Counted only when a plan has one, so every plan without
+ * a held item reads exactly as before.
+ */
+export type UnitOutcome = CountedOutcome | 'held';
+
+export const UNIT_OUTCOMES: readonly CountedOutcome[] = ['new', 'new_version', 'unchanged', 'absent', 'reject'];
 
 /** One item's fate in a plan. */
 export interface UnitPlan {
@@ -43,8 +54,15 @@ export interface UnitPlan {
   recordsBefore?: boolean;
   /** The revision only retires the row: the file leaves it out, so it is kept and marked inactive (pathway and assessment catalogs). */
   retires?: true;
-  /** For a reject: why, in plain English. */
+  /** For a reject or a held item: why, in plain English. */
   reasons?: string[];
+  /**
+   * Why a held item is held: its current version holds a coach's in-app edit,
+   * or it depends on a held item it cannot be written against (a template or
+   * script step linking a held drill it would not fit; a track session naming
+   * a template that is held and was never loaded).
+   */
+  heldBy?: 'in_app_edit' | 'held_dependency';
 }
 
 export interface EngineContext {
@@ -76,8 +94,18 @@ export interface DatasetEngine {
   readBaseline(ctx: EngineContext): Promise<ParsedFile[]>;
   /** SELECT ... FOR UPDATE on the rows these keys name (those that exist). */
   lockKeys(ctx: EngineContext, keys: readonly string[]): Promise<void>;
-  /** `files`: this dataset's; `all`: every file of the package (a catalog may check a reference against another dataset's file). */
-  plan(ctx: EngineContext, input: { files: readonly ParsedFile[]; validation: ValidationResult; all?: readonly ParsedFile[] }): Promise<DatasetPlan>;
+  /**
+   * `files`: this dataset's; `all`: every file of the package (a catalog may
+   * check a reference against another dataset's file); `held`: the keys the
+   * datasets planned before this one hold, by dataset (a template step that
+   * links a held drill is checked against the drill's kept version).
+   */
+  plan(ctx: EngineContext, input: {
+    files: readonly ParsedFile[];
+    validation: ValidationResult;
+    all?: readonly ParsedFile[];
+    held?: ReadonlyMap<DatasetName, ReadonlySet<string>>;
+  }): Promise<DatasetPlan>;
   /** Writes exactly what `plan` decided. Called only with a plan made inside the same transaction. */
   apply(ctx: EngineContext, plan: DatasetPlan, write: { importId: string }): Promise<DatasetWriteResult>;
 }

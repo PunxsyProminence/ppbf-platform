@@ -1,5 +1,6 @@
 import { type CellInput, sha256Hex, unitContentHash } from '../canonical';
 import { isNewId, MINT } from '../ids';
+import { heldReason, type InAppEditedHead, inAppEditedHeads } from '../inAppEdits';
 import { datasetSpec, rootFileSpec } from '../specs';
 import type { FileSpec, Finding, ParsedFile, ParsedRow } from '../types';
 import type { ValidationResult } from '../validate';
@@ -44,6 +45,10 @@ import {
 //                drl_ formula for a new:<short-name>), children keep the ids
 //                the files give them.
 //   absent    -> a current drill the package does not name is left alone.
+//   held      -> changed, but the current version holds a coach's in-app
+//                edit (inAppEdits.ts): nothing is written, the plan says why,
+//                and the rest of the package applies. Child files count: a
+//                package of cues alone is a revision too.
 //
 // A PACKAGE NAMES A DRILL BY ITS LINEAGE KEY -- the id of its first version --
 // in every file (contract "Identity"), so every key here is resolved to the
@@ -348,6 +353,17 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
       findings.push(finding(code, rootFile?.path ?? files[0]?.path ?? DATASET.folder, key, message));
     };
 
+    // The current versions this package names that a coach edited in the app.
+    const edited = await inAppEditedHeads(
+      ctx.client,
+      ctx.organizationId,
+      'drill_library',
+      [...packageKeys.keys()].flatMap((key) => {
+        const head = heads.get(key);
+        return head ? [{ lineage: head.lineageId, id: head.drillId, fieldLabels: head.row.field_labels }] : [];
+      }),
+    );
+
     const items: DrillItem[] = [];
     for (const key of [...packageKeys.keys()].sort()) {
       const raw = packageKeys.get(key) ?? key;
@@ -432,6 +448,10 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
         item.drillId = key;
       } else if (unit.fileSha256 === unit.databaseSha256) {
         unit.outcome = 'unchanged';
+      } else if (edited.has(key)) {
+        unit.outcome = 'held';
+        unit.heldBy = 'in_app_edit';
+        unit.reasons = [heldReason(head.version, edited.get(key) as InAppEditedHead)];
       } else {
         unit.outcome = 'new_version';
         unit.fromVersion = head.version;

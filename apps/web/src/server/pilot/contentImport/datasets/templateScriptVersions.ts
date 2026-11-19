@@ -1,10 +1,12 @@
 import { type CellInput, isContentColumn, unitContentHash } from '../canonical';
 import { hex14, isNewId } from '../ids';
-import { drillLineageHeads } from '../lineage';
+import { heldReason, type InAppEditedHead, inAppEditedHeads } from '../inAppEdits';
+import { type DrillHead, drillLineageHeads } from '../lineage';
 import { rootFileSpec } from '../specs';
-import type { ColumnSpec, DatasetSpec, FileSpec, Finding, ParsedFile, ParsedRow, RowValues } from '../types';
+import type { ColumnSpec, DatasetName, DatasetSpec, FileSpec, Finding, ParsedFile, ParsedRow, RowValues } from '../types';
 import { newIdKindOf, rowKey, type MintedIds, type ValidationResult } from '../validate';
 import { integerText, normalizeCell, numberText, parseBoolean, splitList } from '../values';
+import { VOCABULARIES } from '../vocabularies';
 import { isTableContent, overlayStoredLabels, withStoredLabels, writeItemLabels } from './contentLabels';
 import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, UnitPlan } from './index';
 
@@ -25,6 +27,13 @@ import type { DatasetEngine, DatasetPlan, DatasetWriteResult, EngineContext, Uni
 //   new       -> inserted as v1 under its key.
 //   absent    -> a lineage the database holds and the root file does not name
 //                is left alone and listed.
+//   held      -> changed, but the current version holds a coach's in-app
+//                edit (inAppEdits.ts), or a step links a HELD drill whose kept
+//                version it would not fit (withdrawn, or less contact than the
+//                step). Nothing is written; the rest of the package applies.
+//                Session scripts are NOT guarded against in-app edits: their
+//                authoring writes no in-app labels and sessionScripts.ts names
+//                no audit entity, so only the held-drill check applies to them.
 //
 // ONE UNIT = the root row plus its child rows. A child file replaces a
 // parent's rows only when it has at least one row for that parent; a parent
@@ -117,6 +126,8 @@ export interface VersionedDatasetConfig {
    * refuse the other order); scripts supersede by existing, so they omit it.
    */
   supersede?(ctx: EngineContext, head: VersionHead): Promise<void>;
+  /** pilot.audit_events entity_type an in-app edit of this table is recorded under (inAppEdits.ts (b)); undefined = labels only. */
+  inAppEditAuditEntity?: string;
 }
 
 /** A dataset's child file by name; a renamed file fails at import time, not mid-load. */
@@ -500,7 +511,11 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
       );
     },
 
-    async plan(ctx, input: { files: readonly ParsedFile[]; validation: ValidationResult }): Promise<DatasetPlan> {
+    async plan(ctx, input: {
+      files: readonly ParsedFile[];
+      validation: ValidationResult;
+      held?: ReadonlyMap<DatasetName, ReadonlySet<string>>;
+    }): Promise<DatasetPlan> {
       const { minted } = input.validation;
       const columns = await columnInfo(ctx);
       const rootFile = input.files.find((file) => file.spec === rootSpec);
@@ -568,6 +583,45 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
         columns,
       );
 
+      // The current versions this package names that a coach edited in the app.
+      const edited = await inAppEditedHeads(
+        ctx.client,
+        ctx.organizationId,
+        config.inAppEditAuditEntity,
+        keys.flatMap((key) => {
+          const head = heads.get(key);
+          return head ? [{ lineage: head.lineageId, id: head.id, fieldLabels: head.row.field_labels }] : [];
+        }),
+      );
+      // A step's drill is written as the lineage's head at apply. A HELD drill
+      // keeps the coach's version, which the validator did not judge the step
+      // against (it read the package's drill row), so it is judged here.
+      const heldDrills = input.held?.get('drill-library') ?? new Set<string>();
+      const drillHeads: Map<string, DrillHead> = heldDrills.size > 0 ? await drillLineageHeads(ctx.client, ctx.organizationId) : new Map();
+      const ladder: readonly string[] = VOCABULARIES.contact_level.values;
+      const misfitWithHeldDrill = (children: ReadonlyMap<FileSpec, Cells[]>): string | undefined => {
+        for (const child of config.children) {
+          const drill = drillColumnOf(child.spec);
+          if (!drill) continue;
+          const carriesContact = child.spec.columns.some((column) => column.name === 'contact_level');
+          for (const [index, cells] of (children.get(child.spec) ?? []).entries()) {
+            const lineage = cells[drill.name];
+            if (!lineage || !heldDrills.has(lineage)) continue;
+            const at = `${child.spec.file} row ${cells.ordinal || cells.block_order || index + 1}`;
+            const head = drillHeads.get(lineage);
+            const kept = `drill ${lineage} is held (its in-app-edited version is kept)`;
+            if (!head) return `${at} links ${kept}, and that version could not be read`;
+            if (!head.active) return `${at} links ${kept}, and that version is withdrawn, so the step cannot link it`;
+            const step = cells.contact_level || 'none';
+            if (carriesContact && ladder.includes(step) && ladder.includes(head.contactLevel)
+              && ladder.indexOf(step) > ladder.indexOf(head.contactLevel)) {
+              return `${at} links ${kept}, whose contact_level is ${head.contactLevel}, below the step's ${step}`;
+            }
+          }
+        }
+        return undefined;
+      };
+
       const findings: Finding[] = [];
       const items: VersionedItem[] = [];
       for (const key of keys) {
@@ -614,10 +668,24 @@ export function versionedDatasetEngine(config: VersionedDatasetConfig): DatasetE
           unit.toVersion = 1;
         } else if (unit.fileSha256 === unit.databaseSha256) {
           unit.outcome = 'unchanged';
+        } else if (edited.has(key)) {
+          unit.outcome = 'held';
+          unit.heldBy = 'in_app_edit';
+          unit.reasons = [heldReason(head.version, edited.get(key) as InAppEditedHead)];
         } else {
           unit.outcome = 'new_version';
           unit.fromVersion = head.version;
           unit.toVersion = (versions.get(key) ?? head.version) + 1;
+        }
+        if (unit.outcome === 'new' || unit.outcome === 'new_version') {
+          const misfit = misfitWithHeldDrill(children);
+          if (misfit) {
+            unit.outcome = 'held';
+            unit.heldBy = 'held_dependency';
+            unit.reasons = [`${head ? 'kept' : 'not loaded'}: ${misfit}`];
+            delete unit.fromVersion;
+            delete unit.toVersion;
+          }
         }
         const item: VersionedItem = { unit, root, children, head };
         if (unit.outcome === 'new' || unit.outcome === 'new_version') assignWriteIds(item);

@@ -1,4 +1,5 @@
 import { readCsv } from './csv';
+import { findInAppEditLabels, IN_APP_EDIT_SOURCE } from './inAppEdits';
 import {
   idPattern,
   idShapeText,
@@ -333,6 +334,18 @@ function checkAnnotation(file: ParsedFile, row: ParsedRow, column: ColumnSpec, v
     badStatuses(parsed, '', bad);
     for (const problem of bad) {
       out.push(finding(file, row, column.name, 'unknown_status', `status ${problem}. Allowed: ${RECORD_STATUSES.join(' | ')}`));
+    }
+    // Only the app records that a coach edited a field (lane IG): a package
+    // that says so would put a coach's name on text it loads.
+    for (const { path } of findInAppEditLabels(parsed)) {
+      out.push(finding(
+        file,
+        row,
+        column.name,
+        'in_app_edit_label',
+        `field_labels ${path} claims an in-app edit (the "${IN_APP_EDIT_SOURCE}" source, or an editor record without a draft). `
+        + 'Only the app writes that label; remove it from the package.',
+      ));
     }
     return;
   }

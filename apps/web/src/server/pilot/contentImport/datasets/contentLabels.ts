@@ -1,5 +1,6 @@
 import type { DbClient } from '../actor';
 import { type CellInput, isContentColumn } from '../canonical';
+import { findInAppEditLabels } from '../inAppEdits';
 import type { ColumnSpec, DatasetName } from '../types';
 import { normalizeCell, splitList } from '../values';
 import type { DatasetWriteResult, EngineContext } from './index';
@@ -140,6 +141,12 @@ function text(value: CellInput): string {
  * item's current stage links to the set its package row names (blank = none).
  * The rows are listed in `result` (inserted / revised), so a dry run and the
  * audit row show them.
+ *
+ * NEVER AN "IN-APP EDIT" LABEL (lane IG). Only the app writes that label
+ * (writeEditedVersionLabels). The plan holds every revision over an in-app
+ * edit (inAppEdits.ts) and the validator refuses a package that claims one, so
+ * this cannot happen today; if it ever does, the import fails here and rolls
+ * back rather than put a coach's name on text the coach did not write.
  */
 export async function writeItemLabels(
   ctx: EngineContext,
@@ -152,6 +159,15 @@ export async function writeItemLabels(
   const kind = labelTargetKind(dataset);
   const wanted = new Map(writes.map((write) => [write.lineage, new Set(splitList(text(write.cells.stage_keys), '|'))]));
   const labelled = writes.filter((write) => text(write.cells.field_labels) || text(write.cells.evidence));
+  for (const write of labelled) {
+    const found = findInAppEditLabels(text(write.cells.field_labels));
+    if (found.length > 0) {
+      throw new Error(
+        `content-import: refusing to write an "In-app edit" label (${found.map((label) => label.path).join(', ')}) `
+        + `onto ${dataset} ${write.lineage} v${write.version}: only the app writes that label, and an import never carries it onto text it loads`,
+      );
+    }
+  }
 
   if (!(await labelTablesExist(ctx.client))) {
     if (labelled.length === 0 && [...wanted.values()].every((keys) => keys.size === 0)) return;

@@ -280,6 +280,8 @@ export interface PlanUnitView {
   reasons?: string[];
   /** The revision only retires the item: the files leave it out, so it is kept and marked inactive. Counted as a new_version in `counts`. */
   retires?: true;
+  /** Why a held item is held (datasets/index.ts UnitPlan.heldBy). */
+  held_by?: 'in_app_edit' | 'held_dependency';
 }
 
 export interface PlanView {
@@ -341,6 +343,7 @@ export function planView(plan: ImportPlan, files: Readonly<Record<string, string
         ...(unit.toVersion !== undefined ? { to_version: unit.toVersion } : {}),
         ...(unit.reasons?.length ? { reasons: unit.reasons } : {}),
         ...(unit.retires ? { retires: true as const } : {}),
+        ...(unit.heldBy ? { held_by: unit.heldBy } : {}),
       };
     }),
     blocking: plan.blocking,
