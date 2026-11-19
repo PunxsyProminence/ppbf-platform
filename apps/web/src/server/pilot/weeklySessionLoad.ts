@@ -61,6 +61,17 @@ export const LOAD_JUMP_MIN_PRIOR_WEEKS = 3;
  */
 export const RATED_SHARE_MIN = 0.75;
 
+/**
+ * Marked days a week with nothing attended needs to count as a rest week
+ * (Overwatch 2026-11-19, R6-b2 review). The weeks roll forward a day at a
+ * time, so a 7-day mark straddles two of them on 6 days out of 7; at 4 of 7
+ * it lands in exactly one, and one tap is one rest week, never two zeros.
+ * COST: a short mark (1-3 days) in an otherwise empty week makes no rest
+ * week: that week stays "not logged" (unknown, skipped), never 0.
+ * Change here only.
+ */
+export const REST_WEEK_MIN_MARKED_DAYS = 4;
+
 const SESSION_RPE_SELF_REPORT: SessionRpeMethod = 'athlete_post_session_self_report';
 
 /** One athlete's summed session load for one 7-day bucket. week_index 0 is
@@ -209,11 +220,12 @@ export async function getWeeklyLoadCoverage(
 
 /**
  * Pure: one week's status. Nothing attended is never a share ("0 of 0"): it
- * is rest when a coach marked any day of it, otherwise not logged. A mark on
- * a week the athlete attended does not hide the sessions: the share decides.
+ * is rest when a coach marked at least REST_WEEK_MIN_MARKED_DAYS of its days,
+ * otherwise not logged. A mark on a week the athlete attended does not hide
+ * the sessions: the share decides.
  */
 export function classifyLoadWeek(attended: number, rated: number, markedDays: number): LoadWeekStatus {
-  if (!(attended > 0)) return markedDays > 0 ? 'rest_marked' : 'not_logged';
+  if (!(attended > 0)) return markedDays >= REST_WEEK_MIN_MARKED_DAYS ? 'rest_marked' : 'not_logged';
   return rated / attended >= RATED_SHARE_MIN ? 'logged' : 'partly_logged';
 }
 
@@ -341,9 +353,13 @@ export interface FamilyLoadNumbers {
 
 /**
  * Pure: one athlete's family numbers from the same bucketed rows Rule 6
- * reads. The usual weeks are exactly the ones readLoadJumps averages (weeks
- * 1..LOAD_JUMP_PRIOR_WEEKS with load above zero; an empty week is unknown,
- * not zero) under the same LOAD_JUMP_MIN_PRIOR_WEEKS floor. Null when there is
+ * reads. The usual weeks are the weeks 1..LOAD_JUMP_PRIOR_WEEKS with logged
+ * load (an empty week is unknown, not zero), under the same
+ * LOAD_JUMP_MIN_PRIOR_WEEKS floor. Since lane R6-b2, readLoadJumps also counts
+ * marked rest weeks (as 0) and goes silent on partly logged weeks; this
+ * read does not count rest weeks, so when they made up Rule 6's floor it
+ * returns null and the family reads R6-a's fixed no-number line (Overwatch
+ * 2026-11-19, R6-b2 design point 4). Null when there is
  * no honest number to show: too few usual weeks, nothing in this week, or a
  * value that is not a finite number. Never a made-up figure.
  */

@@ -100,10 +100,21 @@ export async function GET(request: NextRequest) {
     // coverage read runs only after it passes.
     const marks = await listRestMarks(actorOf(principal), ids, readWindow.from_day, readWindow.to_day);
     // Each week's status and rated share (lane R6-b2): counts and a status
-    // word, never a load figure. Same roster as the marks.
-    const coverageRows = await getWeeklyLoadCoverage(principal.organizationId, ids, now);
-    const coverage = ids.flatMap((athleteId) =>
-      readLoadWeekCoverage(coverageRows, athleteId).map((week) => ({ athlete_id: athleteId, ...week })));
+    // word, never a load figure. Same roster as the marks. A failed read
+    // must not take marking down (Overwatch 2026-11-19): the marks still go
+    // back, `coverage` is null, and the strip says "Status not read" per
+    // week -- never blank, never zero. Logged with a validated SQLSTATE at
+    // most, never the raw message (it can name the host or user).
+    let coverage: Array<Record<string, unknown>> | null = null;
+    try {
+      const coverageRows = await getWeeklyLoadCoverage(principal.organizationId, ids, now);
+      coverage = ids.flatMap((athleteId) =>
+        readLoadWeekCoverage(coverageRows, athleteId).map((week) => ({ athlete_id: athleteId, ...week })));
+    } catch (error) {
+      const raw = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      const code = typeof raw === 'string' && /^[0-9A-Z]{5}$/.test(raw) ? raw : null;
+      console.warn('rest-marks week coverage unread', code ? { code } : {});
+    }
     return NextResponse.json(
       { ok: true, today, kinds: [...REST_MARK_KINDS], weeks, marks: marks.map(present), coverage },
       { headers: { 'Cache-Control': 'no-store' } },

@@ -621,4 +621,15 @@ describe('week status and rated share on the strip (lane R6-b2)', () => {
     await screen.findByText(/Rest and away marks could not be loaded. This is not a statement that none are recorded./);
     expect(screen.queryByText(/Not logged/)).toBeNull();
   });
+
+  test('coverage null (the server could not read the statuses): marking still works and every week says "Status not read"', async () => {
+    global.fetch = respond(null);
+    render(<PerformanceAnalyticsPage />);
+    await screen.findByText('Last 7 days');
+    const statuses = Array.from(document.querySelectorAll('[data-week-status]')).map((el) => el.textContent);
+    expect(statuses).toEqual(Array(5).fill('Status not read'));
+    expect(screen.getAllByRole('button', { name: 'Rest' }).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Rest marked/)).toBeTruthy();
+    expect(screen.queryByText(/Not logged|no sessions/)).toBeNull();
+  });
 });

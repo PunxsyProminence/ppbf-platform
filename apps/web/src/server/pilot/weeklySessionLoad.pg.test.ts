@@ -416,7 +416,7 @@ describe('getWeeklyLoadCoverage on real rows (lane R6-b2)', () => {
   test('rest marks: live marks count their days in each week; a cleared mark and another athlete do not', async () => {
     // Days 7..20 back: all of week 1 (7..13) and all of week 2 (14..20).
     await addMark(gymDaysBefore(20), gymDaysBefore(7));
-    // Straddles weeks 3 and 4: days 26..29.
+    // Straddles weeks 3 and 4 with 2 days in each: fewer than 4, so neither is a rest week.
     await addMark(gymDaysBefore(29), gymDaysBefore(26));
     // Overlapping marks count a day once.
     await addMark(gymDaysBefore(8), gymDaysBefore(7));
@@ -430,9 +430,26 @@ describe('getWeeklyLoadCoverage on real rows (lane R6-b2)', () => {
       [0, 0, 0, 0, 'not_logged'],
       [1, 0, 0, 7, 'rest_marked'],
       [2, 0, 0, 7, 'rest_marked'],
-      [3, 0, 0, 2, 'rest_marked'],
-      [4, 0, 0, 2, 'rest_marked'],
+      [3, 0, 0, 2, 'not_logged'],
+      [4, 0, 0, 2, 'not_logged'],
     ]);
+  });
+
+  test('a week marked Nov 6-12, read three days later, is exactly one rest week (4 + 3 days)', async () => {
+    // On the read day the mark covers days 10..16 back: 4 days of week 1 (7..13), 3 of week 2 (14..20).
+    await addMark(gymDaysBefore(16), gymDaysBefore(10));
+    await addSession({ date: gymDaysBefore(1), rpe: 5, minutes: 200 }); // week 0: 1000
+    await addSession({ date: gymDaysBefore(22), rpe: 5, minutes: 200 }); // week 3: 1000
+    await addSession({ date: gymDaysBefore(30), rpe: 5, minutes: 200 }); // week 4: 1000
+    const coverage = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(statusOf(coverage).slice(1, 3)).toEqual([
+      [1, 0, 0, 4, 'rest_marked'],
+      [2, 0, 0, 3, 'not_logged'],
+    ]);
+    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    const [reading] = readLoadJumps(ORG_ID, rows, coverage);
+    expect(reading.prior_weeks_with_load).toBe(3);
+    expect(reading.usual_weekly_load).toBeCloseTo(2000 / 3, 6);
   });
 
   test('a rest mark on a week the athlete attended does not hide the sessions', async () => {

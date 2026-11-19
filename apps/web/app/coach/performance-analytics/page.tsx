@@ -252,12 +252,17 @@ async function readRestMarks(): Promise<RestMarksState> {
     const response = await fetch(`${apiBase()}/api/pilot/coach/rest-marks`, { method: 'GET', credentials: 'include' });
     if (!response.ok) throw new Error(String(response.status));
     const payload = (await response.json()) as {
-      today?: string; weeks?: LoadWeek[]; marks?: RestMark[]; coverage?: WeekCoverage[];
+      today?: string; weeks?: LoadWeek[]; marks?: RestMark[]; coverage?: WeekCoverage[] | null;
     };
-    if (!payload.today || !Array.isArray(payload.weeks) || !Array.isArray(payload.marks) || !Array.isArray(payload.coverage)) {
+    // coverage null = the server could not read the week statuses: the marks
+    // still work and every week says "Status not read". Absent = not this API.
+    const coverageOk = Array.isArray(payload.coverage) || payload.coverage === null;
+    if (!payload.today || !Array.isArray(payload.weeks) || !Array.isArray(payload.marks) || !coverageOk) {
       throw new Error('shape');
     }
-    return { status: 'loaded', today: payload.today, weeks: payload.weeks, marks: payload.marks, coverage: payload.coverage };
+    return {
+      status: 'loaded', today: payload.today, weeks: payload.weeks, marks: payload.marks, coverage: payload.coverage ?? [],
+    };
   } catch {
     return { status: 'unavailable' };
   }

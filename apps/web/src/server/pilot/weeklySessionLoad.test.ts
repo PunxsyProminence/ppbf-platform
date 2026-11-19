@@ -20,6 +20,7 @@ import {
   LOAD_JUMP_PRIOR_WEEKS,
   LOAD_JUMP_RATIO,
   RATED_SHARE_MIN,
+  REST_WEEK_MIN_MARKED_DAYS,
   readFamilyLoadNumbers,
   readLoadJumps,
   readLoadWeekCoverage,
@@ -202,13 +203,16 @@ describe('readFamilyLoadNumbers', () => {
 // Lane R6-b2 (OD-2026-11-17-004): a per-week share of rated sessions, and a
 // ratio that stays silent otherwise; no imputed numbers.
 describe('week status: attended, rated and rest-marked', () => {
-  test('the threshold is 3 of 4 (Overwatch 2026-11-19)', () => {
+  test('the thresholds: 3 of 4 rated; a rest week needs 4 of 7 days marked (Overwatch 2026-11-19)', () => {
     expect(RATED_SHARE_MIN).toBe(0.75);
+    expect(REST_WEEK_MIN_MARKED_DAYS).toBe(4);
   });
 
   test.each([
     ['nothing attended, nothing marked', 0, 0, 0, 'not_logged'],
-    ['nothing attended, a day marked', 0, 0, 1, 'rest_marked'],
+    ['nothing attended, 1 day marked: no rest week', 0, 0, 1, 'not_logged'],
+    ['nothing attended, 3 days marked: no rest week', 0, 0, 3, 'not_logged'],
+    ['nothing attended, 4 days marked', 0, 0, 4, 'rest_marked'],
     ['nothing attended, the whole week marked', 0, 0, 7, 'rest_marked'],
     ['every session rated', 3, 3, 0, 'logged'],
     ['3 of 4 rated', 4, 3, 0, 'logged'],
@@ -273,6 +277,23 @@ describe('readLoadJumps speaks only on complete weeks', () => {
     expect(readLoadJumps(ORG, [week(0, 2000)], allRest)).toEqual([]);
     const twoKnown = [cover(0, 2, 2), cover(1, 2, 2), cover(2, 0, 0, 7), cover(3, 0, 0, 0), cover(4, 0, 0, 0)];
     expect(readLoadJumps(ORG, [week(0, 2000), week(1, 1000)], twoKnown)).toEqual([]);
+  });
+
+  // Reviewer B / Overwatch 2026-11-19: the weeks roll forward a day at a
+  // time, so a 7-day mark read 3 days later sits 4 days in one week and 3 in
+  // the next. It is ONE rest week, never two zeros.
+  test('a 7-day mark straddling two weeks (4 + 3 days) counts as exactly one rest week', () => {
+    const rows = [week(0, 1000), week(3, 1000), week(4, 1000)];
+    const coverage = [cover(0, 2, 2), cover(1, 0, 0, 4), cover(2, 0, 0, 3), cover(3, 2, 2), cover(4, 2, 2)];
+    const [reading] = readLoadJumps(ORG, rows, coverage);
+    expect(reading.prior_weeks_with_load).toBe(3); // weeks 1 (rest), 3, 4; week 2 is unknown
+    expect(reading.usual_weekly_load).toBeCloseTo(2000 / 3, 6);
+  });
+
+  test('a 1-3 day mark in an empty week makes no rest week: that week stays unknown', () => {
+    const rows = [week(0, 2000), week(1, 1000), week(2, 1000)];
+    const coverage = [cover(0, 2, 2), cover(1, 2, 2), cover(2, 2, 2), cover(3, 0, 0, 3), cover(4, 0, 0, 0)];
+    expect(readLoadJumps(ORG, rows, coverage)).toEqual([]); // only 2 known usual weeks
   });
 
   // Overwatch 2026-11-19: the small-usual case is the intended flag after a

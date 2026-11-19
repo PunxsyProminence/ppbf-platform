@@ -231,4 +231,19 @@ describe("GET: each week's status and rated share (lane R6-b2)", () => {
     expect((await get()).status).toBe(403);
     expect(mockCoverage).not.toHaveBeenCalled();
   });
+
+  test('a failed coverage read keeps the marks: coverage is null, and only a SQLSTATE is logged', async () => {
+    mockCoachIds.mockResolvedValue(['ath-1']);
+    mockList.mockResolvedValue([MARK]);
+    mockCoverage.mockRejectedValue(Object.assign(new Error('connect to db-host.example as admin_user failed'), { code: '08006' }));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const response = await get();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.coverage).toBeNull();
+    expect(body.marks).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith('rest-marks week coverage unread', { code: '08006' });
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/db-host|admin_user|ath-1/);
+    warn.mockRestore();
+  });
 });
