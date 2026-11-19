@@ -497,6 +497,14 @@ const NO_AUTHORIZATION_GATE_ALLOWLIST = new Map<string, string>([
       + 'else -- there is no organization parameter to name another gym with.',
   ],
   [
+    'app/api/pilot/gym-tablet/idle/route.ts#GET',
+    'OPEN BY DESIGN to any signed-in member (lane U1, AS2-a): a marked gym '
+      + 'tablet asks how long it may sit idle with whoever is signed in on it, '
+      + 'athletes included. The answer is one number per gym and whether it is '
+      + 'the default; no person data. The organization comes from the principal '
+      + 'only, and any query field is refused, so no other gym can be named.',
+  ],
+  [
     'app/api/pilot/profile/me/route.ts#GET',
     'SELF-SCOPED, structurally: there is no account_id parameter and the '
       + 'header records that there must never be one, because "a route that can '

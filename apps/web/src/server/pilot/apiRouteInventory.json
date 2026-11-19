@@ -8673,6 +8673,57 @@
     }
   },
   {
+    "id": "app/api/pilot/gym-tablet/idle/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/gym-tablet/idle",
+    "gate": "requirePrincipal; organization from the session; refuses any query field",
+    "rolesAdmitted": [
+      "any-authenticated"
+    ],
+    "athleteData": false,
+    "writes": false,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Returns the gym's tablet idle sign-out time (15/30/60/120/240 minutes; no row = 60) and whether it is the default. One number per gym, no person data; read by whoever is signed in on a marked gym tablet. Lane U1 AS2-a, OW25-53 A.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [],
+      "roleLiterals": []
+    }
+  },
+  {
+    "id": "app/api/pilot/gym-tablet/idle/route.ts#PUT",
+    "method": "PUT",
+    "path": "/api/pilot/gym-tablet/idle",
+    "gate": "requirePrincipal + requireRole(['organization_admin']) ('admin' by alias) + isOrganizationAdminRole again in setTabletIdlePolicy",
+    "rolesAdmitted": [
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": false,
+    "writes": true,
+    "coachReachRule": "n/a",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "The gym admin sets the gym tablet idle sign-out time for its own gym (organization from the session). Body is exactly { idle_minutes } from the fixed list; the table CHECK holds the same list. Upsert and audit row (old and new value) in one transaction, not mirrored. Lane U1 AS2-a, OW25-53 A.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "organization_admin"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/incidents/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/incidents",
