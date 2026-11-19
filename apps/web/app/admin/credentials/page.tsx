@@ -146,9 +146,7 @@ export default function AdminCredentialsPage() {
   };
 
   const alertRowClass = (band: string) =>
-    band === 'expired' || band === 'revoked' ? 'alert alert--critical'
-      : band === 'expiring_soon' ? 'alert alert--warning'
-        : '';
+    band === 'expired' || band === 'revoked' || band === 'expiring_soon' ? 'alert alert--warning' : '';
 
   const bandLabel: Record<string, string> = {
     current: 'Current', expiring_soon: 'Expiring soon', expired: 'Expired', submitted: 'Awaiting review',
@@ -177,8 +175,11 @@ export default function AdminCredentialsPage() {
          t-* inks for the light ground. The flagged bands keep the alert
          chassis they had; only the ordinary rows move to paper. */
       <li key={key} className={wrapperClass ? `${wrapperClass} mb-[var(--s3)]` : 'mat-paper mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s5)]'}>
-        {wrapperClass && <span className="alert-icon" aria-hidden="true">{row.band === 'expiring_soon' ? '!' : '✕'}</span>}
+        {wrapperClass && <span className="alert-icon" aria-hidden="true">{row.band === 'expiring_soon' ? '!' : '▲'}</span>}
         <div className={wrapperClass ? 'alert-body' : ''}>
+          {/* All three flagged bands share the warning rung (none is a medical
+              stop, OW25-48 A), so the band's own word leads the card. */}
+          {wrapperClass && <p className="alert-title">{bandLabel[row.band] ?? row.band}</p>}
           <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
             <span className="t-body font-semibold">{row.person_display_name}</span>
             {/* .t-data pins bone-200, a dark-ground ink; .t-label is restated
@@ -279,8 +280,8 @@ export default function AdminCredentialsPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Failed</p>
                 <p className="alert-msg">{errorMessage}</p>

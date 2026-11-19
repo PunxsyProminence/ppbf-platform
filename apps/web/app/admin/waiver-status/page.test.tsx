@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 
 import WaiverComplianceAuditPage from './page';
 
@@ -196,7 +196,8 @@ test('each athlete shows one cleared-tonight answer, with glyph and label', asyn
 test.each([
   ['cleared_to_train', 'Cleared to train', 'badge--cleared'],
   ['cleared_no_contact', 'Cleared, no contact', 'badge--monitor'],
-  ['not_cleared', 'Not cleared', 'badge--locked'],
+  // An all-training hold alone: not a medical stop, so not the mark (Q5 / OW25-48 A).
+  ['not_cleared', 'Not cleared', 'badge--restricted'],
   // Not "Unavailable": under a column headed Tonight that reads as the athlete
   // being away. The label says what happened to the read.
   ['unavailable', 'Could not be read', 'badge--restricted'],
@@ -206,6 +207,29 @@ test.each([
   expect(answerBadge(row, label).className).toContain(rung);
   // Exactly one answer per athlete.
   expect(row.querySelectorAll('td:nth-child(2) .badge')).toHaveLength(1);
+});
+
+/* Overwatch Q5, applying OW25-48 A (lane U1, SC2-3): "Not cleared" keeps the
+   medical-stop mark only when the clearance record itself says not_cleared. */
+test('a not-cleared clearance record keeps the medical-stop mark; a hold alone does not', async () => {
+  const medicalStop = await renderRow({
+    tonight: tonight({ answer: 'not_cleared', medical: { status: 'not_cleared', current: true, expires_at: null } }),
+  });
+  const stop = answerBadge(medicalStop, 'Not cleared');
+  expect(stop.className).toContain('badge--locked');
+  expect(stop.textContent).toContain('✕');
+  cleanup();
+
+  const holdOnly = await renderRow({
+    tonight: tonight({
+      answer: 'not_cleared',
+      hold: { scope: 'all_training', athlete_explanation: 'Rest this week.', lift_condition_text: '', expires_at: null },
+    }),
+  });
+  const hold = answerBadge(holdOnly, 'Not cleared');
+  expect(hold.className).toContain('badge--restricted');
+  expect(hold.className).not.toContain('badge--locked');
+  expect(hold.textContent).toContain('▲');
 });
 
 // REVIEW FINDING (PR #1457): one list under "Why" put a missing paper and the

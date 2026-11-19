@@ -248,18 +248,15 @@ function PinManagementPageContent() {
                         <p className="t-data mt-[var(--s1)] text-[color:var(--bone-400)]">Account ID: {item.account_id ?? 'Unlinked'}</p>
                         <p className="mt-[var(--s2)]">
                           {/* Credential states ride the badge ladder: a key
-                              that works is cleared, a pending or missing key
-                              is restricted, a switched-off account is locked. */}
+                              that works is cleared; a pending, missing or
+                              switched-off key is restricted (an account state is
+                              not a medical stop, OW25-48 A). */}
                           <span
                             className={`badge ${
-                              statusLabel === 'Active'
-                                ? 'badge--cleared'
-                                : statusLabel === 'Inactive'
-                                  ? 'badge--locked'
-                                  : 'badge--restricted'
+                              statusLabel === 'Active' ? 'badge--cleared' : 'badge--restricted'
                             }`}
                           >
-                            <i>{statusLabel === 'Active' ? '✓' : statusLabel === 'Inactive' ? '✕' : '▲'}</i>
+                            <i>{statusLabel === 'Active' ? '✓' : '▲'}</i>
                             {statusLabel}
                           </span>
                         </p>
@@ -305,8 +302,8 @@ function PinManagementPageContent() {
               </div>
 
               {createError && (
-                <div role="alert" className="alert alert--critical alert--tight">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div role="alert" className="alert alert--warning alert--tight">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-msg">{createError}</p>
                   </div>
@@ -342,8 +339,8 @@ function PinManagementPageContent() {
               </p>
 
               {error && (
-                <div role="alert" className="alert alert--critical alert--tight">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div role="alert" className="alert alert--warning alert--tight">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-msg">{error}</p>
                   </div>

@@ -42,7 +42,7 @@ const APPLICABILITY_BADGES: Record<ApplicabilityState, { className: string; glyp
   unreviewed: { className: 'badge badge--monitor', glyph: '◉', label: 'Unreviewed' },
   responsive: { className: 'badge badge--cleared', glyph: '✓', label: 'Responsive' },
   partially_responsive: { className: 'badge badge--restricted', glyph: '▲', label: 'Partially Responsive' },
-  not_responsive: { className: 'badge badge--locked', glyph: '✕', label: 'Not Responsive' },
+  not_responsive: { className: 'badge badge--restricted', glyph: '▲', label: 'Not Responsive' },
   duplicate: { className: 'badge badge--filed', glyph: '◌', label: 'Duplicate' },
 };
 
@@ -298,9 +298,9 @@ export default function ResearchSubmissionReviewPage() {
         </header>
 
         {errorMessage ? (
-          <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s4)]">
-            <span className="badge badge--locked">
-              <i>✕</i>Unable to Load
+          <section role="alert" className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s4)]">
+            <span className="badge badge--restricted">
+              <i>▲</i>Unable to Load
             </span>
             <p className="t-body mt-[var(--s3)]">{errorMessage}</p>
           </section>

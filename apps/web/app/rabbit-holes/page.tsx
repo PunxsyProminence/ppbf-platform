@@ -270,8 +270,8 @@ function RabbitHoleAuthoringPage() {
           </p>
           {loadError ? (
             <div role="alert" className="mt-[var(--s4)]">
-              <span className="badge badge--locked">
-                <i>✕</i>Load Failed
+              <span className="badge badge--restricted">
+                <i>▲</i>Load Failed
               </span>
               <p className="t-body mt-[var(--s2)]">{loadError}</p>
             </div>

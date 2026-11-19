@@ -217,8 +217,8 @@ function AttendanceReportDownload() {
         </button>
       </div>
       {failure ? (
-        <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <span className="alert-msg">{failure}</span>
         </p>
       ) : null}
@@ -344,8 +344,8 @@ function ClassAttendanceReport() {
         </button>
       </div>
       {failure ? (
-        <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-          <span className="alert-icon" aria-hidden="true">✕</span>
+        <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+          <span className="alert-icon" aria-hidden="true">▲</span>
           <span className="alert-msg">{failure}</span>
         </p>
       ) : null}
@@ -495,8 +495,8 @@ export default function AttendanceDashboardPage() {
               those two facts are shown separately below.
             </p>
             {errorMessage ? (
-              <p role="alert" className="alert alert--critical mt-[var(--s3)]">
-                <span className="alert-icon">✕</span>
+              <p role="alert" className="alert alert--warning mt-[var(--s3)]">
+                <span className="alert-icon">▲</span>
                 <span className="alert-msg">{errorMessage}</span>
               </p>
             ) : null}

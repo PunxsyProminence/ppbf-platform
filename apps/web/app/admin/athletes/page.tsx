@@ -581,8 +581,8 @@ function AthleteRecordsConsoleContent() {
         </header>
 
         {error && (
-          <div role="alert" className="alert alert--critical">
-            <span className="alert-icon" aria-hidden="true">✕</span>
+          <div role="alert" className="alert alert--warning">
+            <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
               <p className="alert-msg">{error}</p>
             </div>
@@ -628,7 +628,7 @@ function AthleteRecordsConsoleContent() {
           ) : (
             <>
               {unreadableRows > 0 && (
-                <p className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--locked-ink)]">
+                <p className="rounded-[var(--r-md)] border border-[color:var(--brass-700)] bg-[var(--rust-900)] px-[var(--s4)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--restricted-ink)]">
                   ▲ {unreadableRows} record{unreadableRows === 1 ? '' : 's'} could not be read and {unreadableRows === 1 ? 'is' : 'are'} not
                   listed below. They still exist — this screen cannot correct them.
                 </p>

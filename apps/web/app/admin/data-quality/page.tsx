@@ -71,8 +71,8 @@ export default function DataQualityPage() {
           </header>
 
           {errorMessage && (
-            <div className="alert alert--critical" role="alert">
-              <span className="alert-icon" aria-hidden="true">✕</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">Check failed</p>
                 <p className="alert-msg">{errorMessage} Duplicates may exist that are not shown here.</p>
@@ -101,7 +101,7 @@ export default function DataQualityPage() {
                       <li key={group.parent_ids.join(':')} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                         <div className="flex flex-wrap items-center gap-[var(--s3)]">
                           <span className="t-body font-semibold text-[color:var(--bone-100)]">{group.email}</span>
-                          <span className="badge badge--locked"><i aria-hidden="true">✕</i>{group.hidden_athlete_ids.length} hidden</span>
+                          <span className="badge badge--restricted"><i aria-hidden="true">▲</i>{group.hidden_athlete_ids.length} hidden</span>
                           <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
                             {group.record_count} records ({group.claimed_count} claimed, {group.unclaimed_count} unclaimed)
                           </span>

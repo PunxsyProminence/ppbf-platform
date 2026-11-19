@@ -144,9 +144,9 @@ function AuditTrace() {
         {/* A failed read and an empty trail must never look the same: one means
             nothing has happened, the other means we do not know what has. */}
         {loadState === 'failed' && (
-          <div className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--locked)] p-[var(--s5)]" role="alert">
-            <span className="badge badge--locked">
-              <i>✕</i>Trail Not Read
+          <div className="mat-leather rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s5)]" role="alert">
+            <span className="badge badge--restricted">
+              <i>▲</i>Trail Not Read
             </span>
             <p className="t-body mt-[var(--s3)]">
               The audit trail could not be loaded, so this is not a record of nothing happening -- it is a record of

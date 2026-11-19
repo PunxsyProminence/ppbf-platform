@@ -388,9 +388,13 @@ describe('the 010 mockup did not delete or invent research controls', () => {
 
   test('the failed-read refusal is still its own state', () => {
     // A projection that could not be read is not an empty archive. Both
-    // states, and the --locked panel that carries the first, survive.
-    expect(PAGE).toContain('badge badge--locked');
-    expect(PAGE).toContain('border-[color:var(--locked)]');
+    // states, and the panel that carries the first, survive. The panel moved
+    // off the --locked mark to the restricted rung (Jason's card OW25-48 A,
+    // "Medical-stop mark only for a medical stop"; lane U1, SC2-3): a failed
+    // read is not a medical stop. Its words still say what it is.
+    expect(PAGE).toContain('<i>\u25b2</i>Projection Unavailable');
+    expect(PAGE).toContain('border-[color:var(--restricted)]');
+    expect(PAGE).not.toContain('badge badge--locked');
     expect(PAGE).toContain('No SHADOW research projection items exist');
   });
 

@@ -190,7 +190,7 @@ export default function AdminCustomizePage() {
         <div className="mat-leather max-w-[610px] p-[var(--s5)]">
           <p className="t-eyebrow">Customize the gym</p>
           <p className="t-body mt-[var(--s3)]">
-            <span className="badge badge--locked"><span aria-hidden="true">✕</span> ADMINS ONLY</span>
+            <span className="badge badge--restricted"><span aria-hidden="true">▲</span> ADMINS ONLY</span>
           </p>
           <p className="t-muted mt-[var(--s3)]">
             Changing how the gym looks is an administrator&apos;s decision. Ask your organization admin.
@@ -313,7 +313,7 @@ export default function AdminCustomizePage() {
                 {notice && (
                   <p role={notice.tone === 'error' ? 'alert' : 'status'} className="t-body mt-[var(--s3)]">
                     {notice.tone === 'error' ? (
-                      <span className="badge badge--locked"><span aria-hidden="true">✕</span> NOT HUNG</span>
+                      <span className="badge badge--restricted"><span aria-hidden="true">▲</span> NOT HUNG</span>
                     ) : (
                       <span className="badge badge--cleared"><span aria-hidden="true">✓</span> DONE</span>
                     )}
