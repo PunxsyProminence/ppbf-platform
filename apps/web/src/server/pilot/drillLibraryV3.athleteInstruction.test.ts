@@ -43,7 +43,7 @@ describe('toAthleteInstruction', () => {
       common_errors: 'Catching late',
       corrections: 'Coach calls "catch" [A5-149]',
       exit_condition: 'Three clean catches [A2-070]',
-      correction_path: 'Reset the guard\nCatch earlier',
+      correction_path: 'Reset the guard [B3-047]\nCatch earlier [PS-012]',
       equipment_needed: 'focus mitt',
       // A key that must NOT survive the projection even if a caller passes it.
       grounding_claim_ids: ['A2-070'],
