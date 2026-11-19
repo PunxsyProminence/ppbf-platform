@@ -235,9 +235,13 @@ export function inAppEditLabel(editor: LabelEditor): Record<string, unknown> {
  * inAppEditLabel -- REPORTED, who and when, no `draft` key -- so an edited value
  * stops reading as an AI draft and an untouched one keeps its draft label.
  *
- * A part label (field_labels[field][part]: a scale level 'A', a stop rule '2')
- * sits beside the field's own group-level label and is the label of that part;
- * the group-level label still speaks for every part nobody edited.
+ * A PART LABEL WINS OVER ITS GROUP. A part label (field_labels[field][part]: a
+ * scale level 'A', a stop rule '2') sits beside the field's own group-level
+ * label (status, sources, draft) and is the label of that part; the group-level
+ * label still speaks for every part nobody edited. A reader of field_labels
+ * must look for the part's own label first. When every part the new version
+ * has (groupParts) carries an in-app edit, the group-level label is replaced by
+ * the edit's too, so the group as a whole no longer reads as a draft.
  *
  * Unlike carryLabelsToNewVersion this always writes a row when anything was
  * edited -- a version with no labels gets one holding only the edited parts:
@@ -256,6 +260,8 @@ export async function writeEditedVersionLabels(
     editId: string;
     editor: LabelEditor;
     edited: readonly EditedPart[];
+    /** Per group field, every part key the new version has. */
+    groupParts?: Readonly<Record<string, readonly string[]>>;
   },
 ): Promise<boolean> {
   if (input.edited.length === 0 || !(await labelTablesExist(client))) return false;
@@ -277,6 +283,15 @@ export async function writeEditedVersionLabels(
       const group = isObject(labels[field]) ? (labels[field] as Record<string, unknown>) : {};
       group[part] = structuredClone(label);
       labels[field] = group;
+    }
+  }
+  const isInAppEdit = (value: unknown) => isObject(value) && isObject(value.edited) && !('draft' in value);
+  for (const field of new Set(input.edited.filter((part) => part.part !== undefined).map((part) => part.field))) {
+    const parts = input.groupParts?.[field] ?? [];
+    const group = labels[field] as Record<string, unknown>;
+    if (parts.length > 0 && parts.every((part) => isInAppEdit(group[part]))) {
+      delete group.draft;
+      Object.assign(group, structuredClone(label));
     }
   }
   await client.query(

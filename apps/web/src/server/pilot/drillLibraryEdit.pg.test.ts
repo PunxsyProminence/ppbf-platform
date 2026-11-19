@@ -428,12 +428,91 @@ describe('editing a library drill', () => {
     });
   });
 
-  it('refuses a value the table does not allow, and writes nothing', async () => {
+  it("refuses a value outside the importer's lists, and writes nothing", async () => {
     const org = await newGym();
     await seedDrill(org, { drillId: 'drl_bad_value', name: 'Bad Value' });
-    const refused = await rejection(edit(org, { drill_id: 'drl_bad_value', contact_level: 'full_contact' }));
-    expect(refused).toMatchObject({ status: 400, code: 'VALUE_NOT_ALLOWED', message: 'Unsupported value: contact_level' });
+    for (const body of [
+      { contact_level: 'full_contact' },
+      // drill_scale_levels.contact_level has no CHECK: the list is the only guard.
+      { scale_levels: { B: { contact_level: 'light-technical' } } },
+      { stop_rules: [{ ordinal: 1, rule_kind: 'tired' }] },
+      { difficulty: 'expert' },
+    ]) {
+      const refused = await rejection(edit(org, { drill_id: 'drl_bad_value', ...body }));
+      expect(refused).toMatchObject({ status: 400, code: 'VALUE_NOT_ALLOWED' });
+    }
     expect(await versionsOf(org, 'drl_bad_value')).toHaveLength(1);
+  });
+
+  it("refuses lowering a drill's contact below a current template step that runs it, and allows raising it", async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_contact', name: 'Contact' });
+    await client.query(`update pilot.drill_library set contact_level = 'controlled_sparring' where organization_id = $1 and drill_id = 'drl_contact'`, [org]);
+    await client.query(
+      `insert into pilot.workout_templates (organization_id, template_id, lineage_id, version, name, session_type, intent, duration_minutes)
+       values ($1, 'wtp_contact', 'wtp_contact', 1, 'Contact Night', 'technical', 'Spar.', 60)`,
+      [org],
+    );
+    await client.query(
+      `insert into pilot.workout_template_items (organization_id, item_id, template_id, ordinal, block, drill_id, contact_level)
+       values ($1, 'wti_contact', 'wtp_contact', 1, 'main', 'drl_contact', 'controlled_sparring')`,
+      [org],
+    );
+    const refused = await rejection(edit(org, { drill_id: 'drl_contact', contact_level: 'light_technical' }));
+    expect(refused).toMatchObject({ status: 409, code: 'DRILL_CONTACT_BELOW_STEPS' });
+    expect(refused.message).toContain('template wtp_contact step 1 (controlled_sparring)');
+    expect(await versionsOf(org, 'drl_contact')).toHaveLength(1);
+
+    const raised = await edit(org, { drill_id: 'drl_contact', contact_level: 'open_sparring' });
+    expect(raised).toMatchObject({ changed: true, edited: ['contact_level'] });
+  });
+
+  it('chains edits: the next edit names the new version and writes v3', async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_chain', name: 'Chain' });
+    const first = await edit(org, { drill_id: 'drl_chain', purpose: 'Second.' });
+    const second = await edit(org, { drill_id: first.drill_id, execution: 'Third.' });
+    expect(second).toMatchObject({ version: 3, drill_id: MINT.drillVersion('drl_chain', 3), previous_drill_id: first.drill_id });
+    const versions = await versionsOf(org, 'drl_chain');
+    expect(versions.map((row) => [row.version, row.purpose, row.execution, row.superseded_at === null])).toEqual([
+      [1, 'Old purpose.', 'Old execution.', false],
+      [2, 'Second.', 'Old execution.', false],
+      [3, 'Second.', 'Third.', true],
+    ]);
+    const labels = (await labelsOf(org, 'drl_chain', 3)).field_labels;
+    expect(labels.purpose.status).toBe('REPORTED');
+    expect(labels.execution.status).toBe('REPORTED');
+  });
+
+  it('treats line endings, Unicode form and cue order a client resends as no change', async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_resend', name: 'Resend', cues: ['Eyes up', 'Chin down'] });
+    await client.query(`update pilot.drill_library set corrections = E'Line one.\\nLine two.' where organization_id = $1 and drill_id = 'drl_resend'`, [org]);
+    const result = await edit(org, {
+      drill_id: 'drl_resend',
+      corrections: 'Line one.\r\nLine two.  ',
+      cues: ['Chin down', 'Eyes up', 'Eyes up '],
+      name: 'Resend'.normalize('NFD'),
+    });
+    expect(result).toMatchObject({ changed: false, edited: [] });
+  });
+
+  it("relabels an edited rule kind under the rule kinds' own label, and clears a group's draft once every part is edited", async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_groups', name: 'Groups' });
+    const result = await edit(org, {
+      drill_id: 'drl_groups',
+      stop_rules: [{ ordinal: 1, rule_kind: 'safety' }],
+      scale_levels: { A: { demand_description: 'Coach A.' }, B: { demand_description: 'Coach B.' } },
+    });
+    expect(result.edited).toEqual(['scale_levels.A', 'scale_levels.B', 'stop_rules.1']);
+    const labels = (await labelsOf(org, 'drl_groups', 2)).field_labels;
+    expect(labels['stop_rules.rule_kind']['1']).toMatchObject({ status: 'REPORTED' });
+    // Stop rule 2 was not edited: the group keeps its draft label.
+    expect(labels.stop_rules.draft).toBe(DRAFT);
+    // Both scale levels the drill has were edited: the group no longer reads as a draft.
+    expect(labels.scale_levels).not.toHaveProperty('draft');
+    expect(labels.scale_levels).toMatchObject({ status: 'REPORTED', sources: ['In-app edit'], A: { status: 'REPORTED' }, B: { status: 'REPORTED' } });
   });
 
   it('refuses a name another current drill of the discipline holds', async () => {

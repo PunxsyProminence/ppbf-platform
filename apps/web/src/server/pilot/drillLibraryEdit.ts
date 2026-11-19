@@ -4,6 +4,8 @@ import type { PoolClient } from 'pg';
 
 import { writePilotAuditEvent } from './audit';
 import { MINT } from './contentImport/ids';
+import { normalizeCell } from './contentImport/values';
+import { VOCABULARIES, type VocabularyName } from './contentImport/vocabularies';
 import { writeEditedVersionLabels, type EditedPart } from './contentImport/datasets/contentLabels';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
@@ -95,18 +97,30 @@ function isPlainObject(value: unknown): value is Row {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// Read as the content importer reads a cell (NFC, LF line breaks, no edge
+// whitespace; contentImport/values.ts#normalizeCell), so text a client resends
+// unchanged compares equal to what the import stored and is not an edit.
 function text(raw: unknown, key: string, max: number, required: boolean): string {
   if (typeof raw !== 'string') throw new ValidationError(`Unsupported ${key}: must be text`);
-  const value = raw.trim();
+  const value = normalizeCell(raw);
   if (required && !value) throw new ValidationError(`Missing ${key}: it cannot be blank`);
   if (value.length > max) throw new ValidationError(`Unsupported ${key}: at most ${max} characters`);
   return value;
 }
 
+// The content importer's own lists (contentImport/vocabularies.ts), applied
+// here as the importer applies them: drill_scale_levels.contact_level has no
+// CHECK of its own, so the list is the only thing that keeps a typo out.
+function inVocabulary(value: string, key: string, name: VocabularyName): string {
+  if (!VOCABULARIES[name].values.includes(value)) {
+    throw new ValidationError(`Unsupported ${key}: one of ${VOCABULARIES[name].values.join(', ')}`, 'VALUE_NOT_ALLOWED');
+  }
+  return value;
+}
+
 /**
  * Parses and bounds a PATCH body. Refuses an unknown key, a never-editable key,
- * and malformed parts; leaves vocabulary checks (difficulty, contact_level,
- * rule_kind) to the table's own CHECK constraints so the two cannot drift.
+ * a value outside the importer's vocabulary, and malformed parts.
  */
 export function parseDrillLibraryEdit(body: Row): DrillLibraryEditRequest {
   for (const key of Object.keys(body)) {
@@ -125,7 +139,7 @@ export function parseDrillLibraryEdit(body: Row): DrillLibraryEditRequest {
     if (body[key] !== undefined) request.fields[key] = text(body[key], key, MAX_SHORT_TEXT, true);
   }
   for (const key of VOCABULARY_FIELDS) {
-    if (body[key] !== undefined) request.fields[key] = text(body[key], key, MAX_SHORT_TEXT, true);
+    if (body[key] !== undefined) request.fields[key] = inVocabulary(text(body[key], key, MAX_SHORT_TEXT, true), key, key);
   }
   for (const key of DRILL_TEXT_FIELDS) {
     if (body[key] !== undefined) request.fields[key] = text(body[key], key, MAX_LONG_TEXT, false);
@@ -143,7 +157,7 @@ export function parseDrillLibraryEdit(body: Row): DrillLibraryEditRequest {
     }
     // Blank lines are dropped (a cue nobody wrote is not a cue); a repeat is one
     // cue -- the table keys a cue by its words (MINT.cue).
-    const cues = [...new Set((body.cues as string[]).map((cue) => cue.trim()).filter((cue) => cue.length > 0))];
+    const cues = [...new Set((body.cues as string[]).map((cue) => normalizeCell(cue)).filter((cue) => cue.length > 0))];
     if (cues.length > MAX_CUES) throw new ValidationError(`Unsupported cues: at most ${MAX_CUES}`);
     if (cues.some((cue) => cue.length > MAX_CUE_TEXT)) throw new ValidationError(`Unsupported cues: at most ${MAX_CUE_TEXT} characters each`);
     request.cues = cues;
@@ -161,7 +175,10 @@ export function parseDrillLibraryEdit(body: Row): DrillLibraryEditRequest {
         if (!(SCALE_FIELDS as readonly string[]).includes(key)) {
           throw new ValidationError(`Unsupported field: scale_levels.${level}.${key}`, 'UNKNOWN_FIELD');
         }
-        edit[key as (typeof SCALE_FIELDS)[number]] = text(value, `scale_levels.${level}.${key}`, MAX_LONG_TEXT, key === 'demand_description' || key === 'contact_level');
+        const read = text(value, `scale_levels.${level}.${key}`, MAX_LONG_TEXT, key === 'demand_description' || key === 'contact_level');
+        edit[key as (typeof SCALE_FIELDS)[number]] = key === 'contact_level'
+          ? inVocabulary(read, `scale_levels.${level}.contact_level`, 'contact_level')
+          : read;
       }
       request.scaleLevels[level] = edit;
     }
@@ -183,7 +200,8 @@ export function parseDrillLibraryEdit(body: Row): DrillLibraryEditRequest {
         if (!(STOP_RULE_FIELDS as readonly string[]).includes(key)) {
           throw new ValidationError(`Unsupported field: stop_rules.${key}`, 'UNKNOWN_FIELD');
         }
-        edit[key as (typeof STOP_RULE_FIELDS)[number]] = text(value, `stop_rules.${key}`, MAX_STOP_RULE_TEXT, true);
+        const read = text(value, `stop_rules.${key}`, MAX_STOP_RULE_TEXT, true);
+        edit[key as (typeof STOP_RULE_FIELDS)[number]] = key === 'rule_kind' ? inVocabulary(read, 'stop_rules.rule_kind', 'stop_rule_kind') : read;
       }
       return edit;
     });
@@ -208,22 +226,22 @@ async function insertCopies(tx: PoolClient, table: string, rows: Row[]): Promise
   );
 }
 
-const CHECK_FIELD: Readonly<Record<string, string>> = {
-  pilot_drill_library_difficulty_check: 'difficulty',
-  pilot_drill_library_contact_check: 'contact_level',
-};
-
-/** A value a CHECK refused is the request's fault: said as a 400, naming the constraint, never the SQL. */
+/** A value a CHECK refused is the request's fault: said as a 400, never naming the SQL or the constraint. */
 function translateWriteError(error: unknown, name: string): never {
   const { code, constraint } = (error ?? {}) as { code?: unknown; constraint?: unknown };
-  if (code === '23514' && typeof constraint === 'string') {
-    throw new ValidationError(`Unsupported value: ${CHECK_FIELD[constraint] ?? constraint}`, 'VALUE_NOT_ALLOWED');
+  if (code === '23514') {
+    throw new ValidationError('Unsupported value', 'VALUE_NOT_ALLOWED');
   }
   if (code === '23505' && constraint === 'pilot_drill_library_one_active_name') {
     throw new ConflictError(`A drill named "${name}" already exists in this discipline. Choose another name.`, 'DRILL_NAME_TAKEN');
   }
   if (code === '23505' && (constraint === 'pilot_drill_library_lineage_version' || constraint === 'pilot_drill_library_one_head_per_lineage')) {
     throw new ConflictError('This drill changed while it was being edited. Reload it and try again.', 'DRILL_VERSION_STALE');
+  }
+  // Two cues, or two transfer claims, that read the same once normalized mint
+  // the same id.
+  if (code === '23505' && (constraint === 'pilot_drill_cues_pkey' || constraint === 'pilot_transfer_pkey')) {
+    throw new ConflictError('Two of the cues or claims say the same thing. Remove one and try again.', 'DRILL_PART_DUPLICATE');
   }
   throw error;
 }
@@ -297,10 +315,15 @@ export async function editLibraryDrill(input: {
       if (Object.keys(changes).length > 0) {
         stopEdits.set(ordinal, changes);
         edited.push({ field: 'stop_rules', part: String(ordinal) });
+        // The rule kinds carry a label of their own (the literal key
+        // 'stop_rules.rule_kind' in the drill's field_labels), so a changed
+        // kind is relabelled there too.
+        if (changes.rule_kind !== undefined) edited.push({ field: 'stop_rules.rule_kind', part: String(ordinal) });
       }
     }
 
     const describe = (part: EditedPart) => (part.part === undefined ? part.field : `${part.field}.${part.part}`);
+    const reported = edited.filter((part) => part.field !== 'stop_rules.rule_kind').map(describe);
     if (edited.length === 0) {
       return { changed: false, drill_id: headId, lineage_id: lineageId, version: headVersion, previous_drill_id: null, edited: [] };
     }
@@ -318,6 +341,46 @@ export async function editLibraryDrill(input: {
         cues: request.cues ?? [],
         referenceDrillId: headId,
       }, tx);
+    }
+
+    // A DRILL'S CONTACT MAY NOT DROP BELOW A STEP THAT RUNS IT -- the content
+    // importer's drill_contact_below_steps rule (contentImport/validate.ts,
+    // checkDrillsAgainstCommittedSteps), read from the same committed steps
+    // (referenceSetsDb.ts): the current templates' items and the newest script
+    // versions' blocks that link any version of this drill.
+    if (patch.contact_level !== undefined) {
+      const ladder: readonly string[] = VOCABULARIES.contact_level.values;
+      const level = patch.contact_level as string;
+      const { rows: steps } = await tx.query<{ kind: string; parent: string; position: number; contact_level: string }>(
+        `select 'template' as kind, t.lineage_id as parent, i.ordinal as position, i.contact_level
+           from pilot.workout_template_items i
+           join pilot.workout_templates t
+             on t.organization_id = i.organization_id and t.template_id = i.template_id and t.superseded_at is null
+           join pilot.drill_library d on d.organization_id = i.organization_id and d.drill_id = i.drill_id
+          where i.organization_id = $1 and d.lineage_id = $2
+         union all
+         select 'session script', s.lineage_id, b.block_order, b.contact_level
+           from pilot.session_script_blocks b
+           join (
+             select distinct on (lineage_id) script_id, lineage_id
+               from pilot.session_scripts
+              where organization_id = $1
+              order by lineage_id, version desc
+           ) s on s.script_id = b.script_id
+           join pilot.drill_library d on d.organization_id = b.organization_id and d.drill_id = b.drill_id
+          where b.organization_id = $1 and d.lineage_id = $2
+          order by 1, 2, 3`,
+        [organizationId, lineageId],
+      );
+      const above = steps.filter((step) => ladder.indexOf(step.contact_level) > ladder.indexOf(level));
+      if (above.length > 0) {
+        const named = above.slice(0, 5).map((step) => `${step.kind} ${step.parent} step ${step.position} (${step.contact_level})`).join(', ');
+        throw new ConflictError(
+          `Contact level ${level} is below ${above.length} step${above.length === 1 ? '' : 's'} that run this drill: `
+          + `${named}${above.length > 5 ? ', ...' : ''}. Lower those steps first, or keep the drill's contact level.`,
+          'DRILL_CONTACT_BELOW_STEPS',
+        );
+      }
     }
 
     const newVersion = headVersion + 1;
@@ -383,6 +446,7 @@ export async function editLibraryDrill(input: {
       await insertCopies(tx, 'transfer_claims',
         (await rowsOf(tx, 'transfer_claims', organizationId, headId)).map((row) => ({
           ...row,
+          created_at: at,
           drill_id: newId,
           transfer_id: MINT.transfer(newId, row.claim_kind as string, row.statement as string),
         })));
@@ -400,6 +464,13 @@ export async function editLibraryDrill(input: {
       editId,
       editor: { accountId: input.actorAccountId, role: input.actorRole, at },
       edited,
+      // Every part the new version has, so a group whose parts have ALL been
+      // edited stops reading as an AI draft as a whole.
+      groupParts: {
+        scale_levels: scales.map((row) => row.scale_level as string),
+        stop_rules: stops.map((row) => String(row.ordinal)),
+        'stop_rules.rule_kind': stops.map((row) => String(row.ordinal)),
+      },
     });
 
     await writePilotAuditEvent({
@@ -415,7 +486,7 @@ export async function editLibraryDrill(input: {
         lineage_id: lineageId,
         version: newVersion,
         from_drill_id: headId,
-        edited: edited.map(describe),
+        edited: reported,
       },
     }, tx);
 
@@ -425,7 +496,7 @@ export async function editLibraryDrill(input: {
       lineage_id: lineageId,
       version: newVersion,
       previous_drill_id: headId,
-      edited: edited.map(describe),
+      edited: reported,
     };
   });
 }
