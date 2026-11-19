@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import {
   D8_BLANK_EQUIPMENT_IS_NONE,
   NOT_WRITTEN_YET,
@@ -131,6 +134,18 @@ describe('NOT_WRITTEN_YET helpers', () => {
   });
 });
 
+describe('D8 drill ids match the committed seed', () => {
+  // Without this a typo, or a re-versioned drill_id, would silently turn a D8 drill's
+  // blank equipment into "Not written yet".
+  test('the five ids are exactly the seed rows from the v3 source manual', () => {
+    const csv = readFileSync(path.join(__dirname, '../../seed-data/drill-library/seed_drill_library.csv'), 'utf8');
+    expect(csv.split('Punxsy_Drill_Library_Source_v3.docx').length - 1).toBe(5);
+    for (const id of D8_BLANK_EQUIPMENT_IS_NONE) {
+      expect(csv).toContain(`,${id},${id},1,`);
+    }
+  });
+});
+
 describe('equipmentLabel', () => {
   test('reads "none" as none needed, and real equipment as itself', () => {
     expect(equipmentLabel('none')).toBe('No equipment needed');
@@ -159,5 +174,12 @@ describe('equipmentLabel', () => {
       expect(equipmentLabel(null, id)).toBe('No equipment needed');
       expect(equipmentLabel('gloves', id)).toBe('gloves');
     }
+    // A newer version of a D8 drill has a new drill_id and keeps the lineage_id.
+    expect(equipmentLabel('', 'drl_newer_version', 'drl_7f812fecacfee4')).toBe('No equipment needed');
+    expect(equipmentLabel('', 'drl_newer_version', 'drl_9de5719225a39c')).toBe('Not written yet');
+    expect(setupAndEquipment('', '', 'drl_newer_version', 'drl_7f812fecacfee4')).toEqual({
+      setup: null,
+      equipment: 'No equipment needed',
+    });
   });
 });

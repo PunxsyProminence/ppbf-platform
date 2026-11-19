@@ -90,7 +90,9 @@ export function scaleLevelName(level: string): string {
 
 /**
  * The five source-manual drills whose blank equipment Jason ruled "none needed"
- * (OD-2026-10-08-008 D8). Identified by drill_id: all five carry
+ * (OD-2026-10-08-008 D8). Identified by drill_id or lineage_id (a newer
+ * version of a drill gets a new drill_id and keeps its lineage_id; for these
+ * five the seeded lineage_id equals the drill_id). All five carry
  * field_provenance 'PPBF source manual v3' and source_ref
  * 'Punxsy_Drill_Library_Source_v3.docx' in seed_drill_library.csv. Every other
  * blank equipment value is unknown, not "none" (Jason 2026-11-19, "A: Not
@@ -109,10 +111,17 @@ export const D8_BLANK_EQUIPMENT_IS_NONE: ReadonlySet<string> = new Set([
  * needed; a blank value is "Not written yet", except for the D8 drills, where
  * the owner ruled blank means none needed.
  */
-export function equipmentLabel(equipment: string | null | undefined, drillId?: string | null): string {
+export function equipmentLabel(
+  equipment: string | null | undefined,
+  drillId?: string | null,
+  lineageId?: string | null,
+): string {
   const value = (equipment ?? '').trim();
   if (value.toLowerCase() === 'none') return 'No equipment needed';
-  if (!value) return drillId && D8_BLANK_EQUIPMENT_IS_NONE.has(drillId) ? 'No equipment needed' : NOT_WRITTEN_YET;
+  if (!value) {
+    const isD8 = [drillId, lineageId].some((id) => !!id && D8_BLANK_EQUIPMENT_IS_NONE.has(id));
+    return isD8 ? 'No equipment needed' : NOT_WRITTEN_YET;
+  }
   return value;
 }
 
@@ -130,6 +139,7 @@ export function setupAndEquipment(
   setup: string | null | undefined,
   equipment: string | null | undefined,
   drillId?: string | null,
+  lineageId?: string | null,
 ): { setup: string | null; equipment: string } {
   const setupText = (setup ?? '').trim();
   const equipmentText = (equipment ?? '').trim();
@@ -139,7 +149,7 @@ export function setupAndEquipment(
   if (!setupText || setupIsEquipment) {
     // The equipment column is the authority on equipment; the setup word is
     // used only when equipment itself is blank.
-    return { setup: null, equipment: equipmentLabel(equipmentText || setupText, drillId) };
+    return { setup: null, equipment: equipmentLabel(equipmentText || setupText, drillId, lineageId) };
   }
-  return { setup: setupText, equipment: equipmentLabel(equipmentText, drillId) };
+  return { setup: setupText, equipment: equipmentLabel(equipmentText, drillId, lineageId) };
 }

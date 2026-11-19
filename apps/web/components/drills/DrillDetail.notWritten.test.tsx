@@ -95,7 +95,13 @@ describe('empty drill fields read "Not written yet"', () => {
     second.unmount();
 
     const d8 = { ...filled, drill_id: 'drl_7f812fecacfee4', equipment_needed: '' } as unknown as DrillWithDetail;
-    render(<DrillDetail view={fromCoachDrillDetail(d8)} audience="coach" />);
+    const third = render(<DrillDetail view={fromCoachDrillDetail(d8)} audience="coach" />);
+    expect(screen.getByText('Equipment').nextElementSibling).toHaveTextContent('No equipment needed');
+    third.unmount();
+
+    // A newer version of a D8 drill: new drill_id, same lineage_id.
+    const newer = { ...d8, drill_id: 'drl_newer_version', lineage_id: 'drl_7f812fecacfee4' } as unknown as DrillWithDetail;
+    render(<DrillDetail view={fromCoachDrillDetail(newer)} audience="coach" />);
     expect(screen.getByText('Equipment').nextElementSibling).toHaveTextContent('No equipment needed');
   });
 
