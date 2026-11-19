@@ -351,7 +351,7 @@ describe('coach session plans page', () => {
       field_drafts: { cues: true, what_good_looks_like: false, what_bad_looks_like: null, corrections: true },
     });
 
-    async function openWith(drillAnswer: () => Response, script = emptyLinesDetail()) {
+    async function openWith(drillAnswer: () => Response, script: unknown = emptyLinesDetail()) {
       const fetchMock = mockFetch((url) => {
         if (url.includes('/api/pilot/drill-library')) return drillAnswer();
         return url.includes('script_id') ? jsonResponse({ script }) : jsonResponse({ scripts: [FRIDAY] });

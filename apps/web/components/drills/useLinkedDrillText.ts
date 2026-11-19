@@ -42,7 +42,6 @@ export function useLinkedDrillText(drillIds: readonly string[]): ReadonlyMap<str
         known.set(drillId, text.state);
         setTexts((previous) => new Map(previous).set(drillId, text));
       };
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTexts((previous) => new Map(previous).set(drillId, { state: 'loading' }));
       void readReferenceInstruction(drillId, controller.signal)
         .then((opened) => {
