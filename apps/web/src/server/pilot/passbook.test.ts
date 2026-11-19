@@ -186,9 +186,9 @@ describe('getAthletePassbook', () => {
       'note_text',
       'note_type',
     ]);
+    // No detected_from: an internal rule name is not family wording (R4).
     expect(Object.keys(result?.pages.progression_gaps[0] ?? {}).sort()).toEqual([
       'created_at',
-      'detected_from',
       'gap_description',
       'gap_id',
       'gap_type',
@@ -1035,6 +1035,23 @@ describe('passbook: a confirmed load jump in the family wording', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  // OD-2026-10-08-003 R4: a rule name is never family wording.
+  test.each(['athlete', 'parent'] as PilotRole[])('the %s never receives a rule name, as a key or in the payload', async (role) => {
+    arrange();
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+    for (const gap of result?.pages.progression_gaps ?? []) expect(gap).not.toHaveProperty('detected_from');
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('detected_from');
+    expect(serialized).not.toContain('deterministic_rule');
+    expect(serialized).not.toContain('load_jumped');
+  });
+
+  test.each(['coach', 'organization_admin', 'admin'] as PilotRole[])('a %s still receives detected_from', async (role) => {
+    arrange();
+    const result = await getAthletePassbook('org-1', 'ath-1', role);
+    expect(result?.pages.progression_gaps.map((g) => g.detected_from)).toEqual(['deterministic_rule:load_jumped', 'coach_observation']);
   });
 
   test.each(['coach', 'organization_admin', 'admin'] as PilotRole[])('a %s keeps the stored coach text', async (role) => {
