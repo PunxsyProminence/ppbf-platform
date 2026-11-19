@@ -11,7 +11,13 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import TabletIdleSignOut, { resetTabletSignOutForTests } from './TabletIdleSignOut';
 import { clearRoleSession } from './roleSession';
-import { readGymTabletLastUse, setGymTabletMark, writeGymTabletLastUse } from '@/src/lib/gymTabletMark';
+import {
+  readGymTabletLastUse,
+  readGymTabletSignedOutAt,
+  setGymTabletMark,
+  writeGymTabletLastUse,
+  writeGymTabletSignedOutAt,
+} from '@/src/lib/gymTabletMark';
 import { endThisSession, leaveForLogin } from '@/src/lib/signOut';
 
 jest.mock('./roleSession', () => ({ clearRoleSession: jest.fn() }));
@@ -319,6 +325,63 @@ describe('a marked gym tablet', () => {
     await mount();
     await advance(15 * MINUTE);
     expect(mockEnd).toHaveBeenCalledTimes(1);
+  });
+
+  /* AS2-b review A, round 3: a tab opened before a sign-out confirmed in
+     another tab shows the person signed out, even after someone new has
+     restarted the clock. It covers itself and reloads /login, ending
+     nothing: the session may now be the next person's. */
+  test('a tab older than a sign-out confirmed elsewhere covers itself and reloads /login, ending nothing', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(5 * MINUTE);
+    writeGymTabletSignedOutAt(Date.now()); // the other tab confirmed a sign-out
+    writeGymTabletLastUse(Date.now()); // and someone new signed in there
+    await advance(1_000);
+    expect(document.getElementById('gym-tablet-leaving')?.textContent).toBe('Signing out…');
+    expect(mockLeave).toHaveBeenCalledTimes(1);
+    expect(mockEnd).not.toHaveBeenCalled();
+    expect(mockClear).not.toHaveBeenCalled();
+  });
+
+  test('a signed-out mark in the future (a clock set back) does not send a new page round /login', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    writeGymTabletSignedOutAt(Date.now() + 60 * MINUTE);
+    await mount();
+    await advance(5 * MINUTE);
+    expect(mockLeave).not.toHaveBeenCalled();
+    expect(readGymTabletSignedOutAt()).toBeNull();
+  });
+
+  test('a tab opened after an earlier sign-out is not treated as stale', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    writeGymTabletSignedOutAt(Date.now() - 60_000);
+    await mount();
+    await advance(5 * MINUTE);
+    expect(mockLeave).not.toHaveBeenCalled();
+  });
+
+  test("a confirmed sign-out leaves the signed-out mark for the device's other tabs", async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    expect(readGymTabletSignedOutAt()).toBeNull();
+    await advance(15 * MINUTE);
+    expect(readGymTabletSignedOutAt()).toBe(Date.now());
+  });
+
+  test('a dialog the page adds after the cover went up is inert too', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    mockEnd.mockResolvedValue(false);
+    await mount();
+    await advance(15 * MINUTE);
+    const late = document.createElement('div');
+    await act(async () => {
+      document.body.appendChild(late);
+      await Promise.resolve();
+    });
+    expect(late.hasAttribute('inert')).toBe(true);
+    expect(document.getElementById('gym-tablet-leaving')?.hasAttribute('inert')).toBe(false);
+    late.remove();
   });
 
   test('unmarking stops it', async () => {

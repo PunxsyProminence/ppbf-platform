@@ -22,7 +22,7 @@ import CommandsOverlay from "./CommandsOverlay";
 import SafetyAttentionBadge from "./SafetyAttentionBadge";
 import SoundToggle from "./SoundToggle";
 import TabletIdleSignOut from "./TabletIdleSignOut";
-import { clearGymTabletLastUse } from "@/src/lib/gymTabletMark";
+import { markSessionBoundary } from "@/src/lib/gymTabletMark";
 import { CONTROL_EXIT, CONTROL_QUIET } from "./sessionBarControls";
 
 // The queue the "Tell Us" box fills is worked by the people who can act on it:
@@ -105,13 +105,14 @@ export default function GlobalRoleHeader() {
 
         if (resolution.ok) {
           persistAuthoritativeRoleSession(resolution.session);
-        } else if (resolution.reason === 'unauthenticated' && !('statusCode' in resolution)) {
-          // The server ANSWERED that nobody is signed in on this device (no
-          // statusCode: a 200 with authenticated false, not an error), so a gym
-          // tablet's idle clock belongs to nobody and the next person starts a
-          // fresh one (lane U1, AS2-b). An error proves nothing and clears
-          // nothing.
-          clearGymTabletLastUse();
+        } else if (resolution.signedOut && !getRoleSessionSnapshot()) {
+          // (Not when a sign-in in another tab filled the cache while this
+          // answer was on its way: that session is live. Review A, round 4 NIT.)
+          // The server ANSWERED that nobody is signed in on this device: a
+          // session boundary for a gym tablet (lane U1, AS2-b). The next person
+          // starts a fresh idle clock, and older tabs leave. An error proves
+          // nothing and marks nothing.
+          markSessionBoundary();
         }
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {

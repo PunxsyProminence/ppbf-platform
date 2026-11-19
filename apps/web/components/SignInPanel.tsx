@@ -14,7 +14,7 @@ import {
 } from '@/components/roleSession';
 import { createMicrosoftSignInHandler } from '@/src/client/loginPageHelpers';
 import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
-import { clearGymTabletLastUse } from '@/src/lib/gymTabletMark';
+import { markSessionBoundary } from '@/src/lib/gymTabletMark';
 
 /**
  * RefusalStamp's `detail` is appended after the stamp's standard sentence,
@@ -223,6 +223,11 @@ export default function SignInPanel({
           if (resolution.reason !== 'server_error') {
             clearRoleSession();
           }
+          // Nobody is signed in on this device, the server says: every sign-in
+          // starts here, so a gym tablet's idle clock starts fresh (lane U1,
+          // AS2-b). Not on the line above's other refusals: those may be a
+          // live session.
+          if (resolution.signedOut) markSessionBoundary();
           return;
         }
 
@@ -359,8 +364,8 @@ export default function SignInPanel({
         return;
       }
 
-      // A fresh sign-in starts a fresh gym tablet idle clock (lane U1, AS2-b).
-      clearGymTabletLastUse();
+      // A fresh sign-in: a fresh gym tablet idle clock, and older tabs leave (lane U1, AS2-b).
+      markSessionBoundary();
       persistAuthoritativeRoleSession(resolution.session);
       router.replace(resolution.destination);
     } catch {
@@ -441,8 +446,8 @@ export default function SignInPanel({
         return;
       }
 
-      // A fresh sign-in starts a fresh gym tablet idle clock (lane U1, AS2-b).
-      clearGymTabletLastUse();
+      // A fresh sign-in: a fresh gym tablet idle clock, and older tabs leave (lane U1, AS2-b).
+      markSessionBoundary();
       persistAuthoritativeRoleSession(resolution.session);
       router.replace(resolution.destination);
     } catch (error) {

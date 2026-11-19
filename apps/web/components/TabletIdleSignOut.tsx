@@ -5,9 +5,10 @@ import { createPortal } from 'react-dom';
 
 import { apiBase } from '@/lib/apiBase';
 import {
-  clearGymTabletLastUse,
   isGymTabletMarked,
+  markSessionBoundary,
   readGymTabletLastUse,
+  readGymTabletSignedOutAt,
   subscribeGymTabletMark,
   writeGymTabletLastUse,
 } from '@/src/lib/gymTabletMark';
@@ -70,6 +71,8 @@ const COVER_ID = 'gym-tablet-leaving';
 const SIGNING_OUT_WORDS = 'Signing out…';
 const OFFLINE_WORDS = 'This tablet could not finish signing out: no connection. It keeps trying.';
 
+let lateNodes: MutationObserver | null = null;
+
 /** A plain cover over the whole page; it stays until the document is replaced. */
 function pinCover(text: string): HTMLElement {
   let cover = document.getElementById(COVER_ID);
@@ -85,6 +88,17 @@ function pinCover(text: string): HTMLElement {
     if (child !== cover) child.setAttribute('inert', '');
   }
   (document.activeElement as HTMLElement | null)?.blur?.();
+  // A dialog or toast the page adds to <body> afterwards is made inert too.
+  if (!lateNodes && typeof MutationObserver !== 'undefined') {
+    lateNodes = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of Array.from(record.addedNodes)) {
+          if (node instanceof Element && node.id !== COVER_ID) node.setAttribute('inert', '');
+        }
+      }
+    });
+    lateNodes.observe(document.body, { childList: true });
+  }
   cover.textContent = text;
   return cover;
 }
@@ -94,6 +108,8 @@ function pinCover(text: string): HTMLElement {
  * One per page load; a second start is ignored.
  */
 let leaving = false;
+/** When this document's first watcher started: a soft navigation does not move it. */
+let documentWatchedSince: number | null = null;
 
 export function startTabletSignOut(): void {
   if (leaving || typeof window === 'undefined') return;
@@ -109,7 +125,8 @@ export function startTabletSignOut(): void {
     if (done) {
       window.clearTimeout(retry);
       window.removeEventListener('online', onOnline);
-      clearGymTabletLastUse();
+      // A session boundary: a fresh clock, and the device's older tabs leave.
+      markSessionBoundary();
       clearRoleSession();
       leaveForLogin();
       return;
@@ -124,9 +141,20 @@ export function startTabletSignOut(): void {
   void attempt();
 }
 
+/** This tab shows a person since signed out on this device: cover it and reload /login, ending nothing. */
+function leaveStaleTab(): void {
+  if (leaving) return;
+  leaving = true;
+  pinCover(SIGNING_OUT_WORDS);
+  leaveForLogin();
+}
+
 /** Tests only: a fresh page load. */
 export function resetTabletSignOutForTests(): void {
   leaving = false;
+  documentWatchedSince = null;
+  lateNodes?.disconnect();
+  lateNodes = null;
   document.getElementById(COVER_ID)?.remove();
   for (const child of Array.from(document.body.children)) child.removeAttribute('inert');
 }
@@ -184,6 +212,14 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
   const check = useCallback(() => {
     if (leaving || lastUse.current === 0) return;
     const now = Date.now();
+    // A sign-out confirmed on this device after this page opened (in another
+    // tab): this page shows that person. It leaves, ending nothing.
+    const signedOutAt = readGymTabletSignedOutAt();
+    if (signedOutAt !== null && documentWatchedSince !== null && signedOutAt >= documentWatchedSince) {
+      showCountdown(false);
+      leaveStaleTab();
+      return;
+    }
     // Another tab's use counts: the clock is the device's, not this tab's.
     // A stored time in the future (a clock set back) is written back as now,
     // once: left in place it would keep pulling the clock forward every tick.
@@ -214,10 +250,13 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
   // signs out without a countdown.
   useEffect(() => {
     const now = Date.now();
+    documentWatchedSince ??= now;
     const stored = readGymTabletLastUse();
     lastUse.current = stored === null ? now : Math.min(stored, now);
     if (stored === null || stored > now) writeGymTabletLastUse(lastUse.current);
-    check();
+    // Checked on the next turn, not inside the effect's own render pass.
+    const first = window.setTimeout(check, 0);
+    return () => window.clearTimeout(first);
   }, [check]);
 
   // The gym's time. A failed read keeps the default; it never turns the
