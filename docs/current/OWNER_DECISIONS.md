@@ -20,6 +20,14 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-19-022 | 2026-11-19 | AI working rule: tie every claim to a source or ask | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-021 | 2026-11-19 | The gym's coach login exists; the admin login is ppbf (fact) | RECONSTRUCTED |  |  |
+| OD-2026-11-19-020 | 2026-11-19 | Scrub validation deferred | RECONSTRUCTED |  |  |
+| OD-2026-11-19-019 | 2026-11-19 | Outside alerts: "1 and 2 now we will do 3 later". Changes OD-2026-10-01-006/-008 | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-018 | 2026-11-19 | App Scrub Q6 "B" (build on the machine) and Q6b "b" (the lane cap counts only lanes on this PC) | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-017 | 2026-11-19 | App Scrub answers Q14, Q15, Q16: "A" on each | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-016 | 2026-11-19 | Done means (OW26-02): "C: Everything, FUTURE items too" (against the recommendation) | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-015 | 2026-11-19 | Staging checks (OW26-01) | RECONSTRUCTED |  | yes |
 | OD-2026-11-19-014 | 2026-11-19 | Laptop maintenance lane: its purpose, and four card answers (takeover, home folder, standing authority, reporting) | PRIMARY |  | yes |
 | OD-2026-11-19-013 | 2026-11-19 | Can the gym admin account also be the coach: "B: Separate coach login" (against the recommendation) | PRIMARY |  | yes |
 | OD-2026-11-19-012 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19 12:20 US Eastern: cards OW25-57 and OW25-58: OW25-57 "Coaches and admins only (OW25-54)"; OW25-58 free text on the lane cap | RECONSTRUCTED |  | yes |
@@ -614,6 +622,125 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-19-022 -- AI working rule: tie every claim to a source or ask
+
+**Provenance: RECONSTRUCTED.** Copied, by script, from the table in `2026-11-19-jason-answers-app-scrub.md` (Documents\PPBF-overwatch\research\claude-research-project\findings, sha256[:16] `b81b3603c9488e6b`; a Claude Science research file that quotes him); also note 3 of `TO_APP_OVERWATCH.md`. New; edits no earlier entry's text.
+
+**Jason:** *"simple if you cant tie it to a source then ask questions"*
+
+**Ruling (REPORTED by the file):** applies to every AI session: a claim that cannot be tied to a source is asked as a question, not filled in.
+
+**Not ruled here:** background only, not ruled: `2026-11-19-ai-guessing-audit.md` (`fc00842a0f381f22`). Its GYM FACTS file and four habits are options.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-021 -- The gym's coach login exists; the admin login is ppbf (fact)
+
+**Provenance: RECONSTRUCTED.** Copied, by script, from the table in `2026-11-19-jason-answers-app-scrub.md` (Documents\PPBF-overwatch\research\claude-research-project\findings, sha256[:16] `b81b3603c9488e6b`; a Claude Science research file that quotes him). Withheld from this public record: the login's address (replaced by a square-bracketed editorial phrase, which is not his words). New; edits no earlier entry's text.
+
+**Jason:** *"we have a coach login [coach login address withheld from this public repo]  PPBF@ is the admin for the gym"*
+
+**Applied:** it answers OD-2026-11-19-013's "Not ruled here: which email": Jason coaches from the gym's existing coach login, consistent with OD-2026-10-19-012 ("i dont want to create new emails"). OD-2026-11-19-013 stands (the admin login is not the coach).
+
+**Applied (OBSERVED by Overwatch, not Jason's words):** on 2026-11-19 Overwatch read the signed-in role through `POST /api/pilot/auth/session` in the coach browser slot, on both staging and the live app; the role is coach (roles only, no account ids). Source: Overwatch's `backbone-crossover\\STATUS.md` line 570, "Sign-in check (roles only, OBSERVED)" (file sha256[:16] `ae06d48a821386db`, read when this entry was drafted): "Browser 2 coach both". The endpoint detail is from Overwatch's message to this lane, not from that line.
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-020 -- Scrub validation deferred
+
+**Provenance: RECONSTRUCTED.** Copied, by script, from the table in `2026-11-19-jason-answers-app-scrub.md` (Documents\PPBF-overwatch\research\claude-research-project\findings, sha256[:16] `b81b3603c9488e6b`; a Claude Science research file that quotes him); also note 3 of `TO_APP_OVERWATCH.md`. New; edits no earlier entry's text.
+
+**Jason:** *"we will get to it, the goal is to get to where me an another coach can use it between the two of us"*
+
+**Ruling (REPORTED by the file):** no extra validation pass now. The goal is an app that Jason and one other coach can use together; the two-person walk-through stays the planned check.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-019 -- Outside alerts: "1 and 2 now we will do 3 later". Changes OD-2026-10-01-006/-008
+
+**Provenance: RECONSTRUCTED.** Copied, by script, from the table in `2026-11-19-jason-answers-app-scrub.md` (Documents\PPBF-overwatch\research\claude-research-project\findings, sha256[:16] `b81b3603c9488e6b`; a Claude Science research file that quotes him). New; edits no earlier entry's text.
+
+**Jason:** *"1 and 2 now we will do 3 later"* (afternoon; the morning question was "what is the cheapest for the gym").
+
+**Ruling (REPORTED by the file):** in-app alerts and an opt-in, content-free email from the gym's Microsoft 365 mailbox that says only "open the app" are done now; web push is later; SMS was not chosen. The file and `decision-options-validated.md` (`c0c62f9a8d215df0`, Decision 4) say changing this needs his ruling; his answer is that ruling, so this entry CHANGES OD-2026-10-01-006 and OD-2026-10-01-008 for outside alerts. Those entries' text is not edited.
+
+**Not ruled here:** the email lane's build; web push.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-018 -- App Scrub Q6 "B" (build on the machine) and Q6b "b" (the lane cap counts only lanes on this PC)
+
+**Provenance: RECONSTRUCTED.** Copied, by script, from the table in `2026-11-19-jason-answers-app-scrub.md` (Documents\PPBF-overwatch\research\claude-research-project\findings, sha256[:16] `b81b3603c9488e6b`; a Claude Science research file that quotes him). New; edits no earlier entry's text.
+
+**Q6 (where lanes run):** morning: *"i thoght we were going to look at running on the compter and in the cloud"*; afternoon: *"B can i still build on the machine"* (option B, asked as a question). The file says the question was answered "yes" in chat and that reading it as "cloud by default, local still allowed" is INFERRED (close to option C).
+
+**Q6b (the cap):** *"No — the cap counts only lanes on this PC"* (option b).
+
+**Ruling (REPORTED by the file):** B and b. The file says Overwatch's record wins where they differ, and that Q6b agrees with OW25-58 (OD-2026-11-19-012).
+
+**Not ruled here:** the exact cap numbers.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-017 -- App Scrub answers Q14, Q15, Q16: "A" on each
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the App Scrub research session; the answers are copied, by script, from the table in `2026-11-19-jason-answers-app-scrub.md` (Documents\PPBF-overwatch\research\claude-research-project\findings, sha256[:16] `b81b3603c9488e6b`; a Claude Science research file that quotes him). New; edits no earlier entry's text.
+
+**Q14 (athlete tab names):** *"A: Today · Progress · Learn · Schedule · SHADOW (Recommended)"* (the file: the Development tab is renamed Progress, label only; the same five on phone and tablet).
+
+**Q15 (room conflicts):** *"A: The job section's room — one button, one room (Recommended)"*
+
+**Q16 (rooms you can't enter):** *"A: Only rooms they can enter (Recommended)"*
+
+**Ruling (REPORTED by the file):** A on all three. Overwatch records the answers; the file does not make them rulings.
+
+**Not ruled here:** the build of the tabs and rooms.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-016 -- Done means (OW26-02): "C: Everything, FUTURE items too" (against the recommendation)
+
+**Provenance: RECONSTRUCTED.** Card OW26-02 (header 'Done means', 2026-11-19 14:09 US Eastern), copied by script from OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW26.md` (sha256[:16] `4e1bea50bd707810`); also note 6 of `TO_APP_OVERWATCH.md`. New; edits no earlier entry's text.
+
+**What was put to him (from the card):** "what counts as "app completion"?" Options in the order shown: "A: Pilot + scrub + email alerts + security cleanup (Recommended)", "B: Same, without email alerts", "C: Everything, FUTURE items too". Option C's stated con: "None of these is sized in any file; no ETA can be given until they are."
+
+**Jason:** *"C: Everything, FUTURE items too"* (against the recommendation, A)
+
+**Ruling (INFERRED effect, per the card):** completion = waves W0-W3, the finish, the email alert lane, and a W4 of the FUTURE items. No completion ETA until each W4 item is sized.
+
+**Not ruled here:** the size of any W4 item; the rulings the FUTURE items need first.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-015 -- Staging checks (OW26-01): "i like the wave Idea validate the most efficient wave build( we can build the pilot in waves as well) from where we are at now to app completion"
+
+**Provenance: RECONSTRUCTED.** Jason answered card OW26-01 (header 'Staging checks', 2026-11-19 ~14:00 US Eastern) in the Backbone Overwatch 26 thread, whose transcript is not readable from this repo's sessions. The card and his answer are copied, by script, from OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW26.md` (sha256[:16] `4e1bea50bd707810`), a working file that may change; Overwatch also relayed it as note 4 of `TO_APP_OVERWATCH.md` (`eb63fc9f2eac142b`). New; edits no earlier entry's text.
+
+**What was put to him (from the card):** "While cloud lanes run, how often do you do the signed-in staging check that G3 (OD-2026-09-30-003) requires for sign-in, minors' data and safety screens?" Options in the order shown: "A: Once per wave (Recommended)", "B: Once a day at a set time", "C: Every release, as now".
+
+**Jason (free text):** *"i like the wave Idea validate the most efficient wave build( we can build the pilot in waves as well) from where we are at now to app completion"*
+
+**Ruling (INFERRED reading by Overwatch, per the card):** option A. His signed-in G3 staging check runs once per wave, not per release, and he asks for a checked wave plan from where the build is now to app completion. Production approval stays per release (OW25-56 C not applied).
+
+**Not ruled here:** the wave plan itself (a proposal, not decided).
+
+**Status:** recorded 2026-11-19 by PR.
 
 ---
 
