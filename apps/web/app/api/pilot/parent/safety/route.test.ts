@@ -418,6 +418,55 @@ test('an account backing zero linked athletes gets an empty list, not an error',
   expect(mockGetActiveTrainingHold).not.toHaveBeenCalled();
 });
 
+/* A PARENT OF ANOTHER CHILD (OW25-47 A; lane SH, PR SH-3). The Parent Hub's
+   Safety & Consent line is built from this route alone, so this route is
+   what keeps one family's line from naming or counting another family's
+   child. Role refusal (below) does not show that; these do. The child list
+   is guardianAthleteIds(org, the caller's own account) -- nothing the request
+   carries can widen it -- and every per-child read is asked only about those
+   children. */
+test('a parent asking about another family\'s child gets nothing about that child', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal());
+  // This account guards ath-1 only; ath-other belongs to another family.
+  mockGuardianAthleteIds.mockResolvedValueOnce(['ath-1']);
+
+  const response = await GET(new NextRequest(
+    'http://localhost/api/pilot/parent/safety?athleteId=ath-other&athlete_id=ath-other&accountId=acct-other-parent',
+  ));
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(mockGuardianAthleteIds).toHaveBeenCalledWith('org-a', 'acct-parent');
+  expect(mockGuardianAthleteIds).toHaveBeenCalledTimes(1);
+  expect(body.items.map((entry: { athlete_id: string }) => entry.athlete_id)).toEqual(['ath-1']);
+  for (const reader of [mockGetAthleteById, mockGetActiveTrainingHold, mockGetGuardianGateSummary, mockFamilyMedicalRestriction]) {
+    expect(reader.mock.calls.map((call) => call[1])).toEqual(['ath-1']);
+  }
+  // general, medical_release and travel; photo_media goes through the consent check.
+  expect(mockGetAthleteWaiverStatus.mock.calls.map((call) => call[1])).toEqual(['ath-1', 'ath-1', 'ath-1']);
+  expect(mockCheckGuardianMediaConsent.mock.calls).toEqual([['org-a', 'ath-1']]);
+  expect(mockCallerParentIdSet.mock.calls).toEqual([['org-a', 'acct-parent']]);
+  expect(JSON.stringify(body)).not.toContain('ath-other');
+  expect(JSON.stringify(body)).not.toContain('acct-other-parent');
+});
+
+test('a parent linked to no child gets an empty list, even when asking about one by id', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal({ accountId: 'acct-other-parent' }));
+  mockGuardianAthleteIds.mockResolvedValueOnce([]);
+
+  const response = await GET(new NextRequest('http://localhost/api/pilot/parent/safety?athleteId=ath-1'));
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(body.items).toEqual([]);
+  expect(mockGuardianAthleteIds).toHaveBeenCalledWith('org-a', 'acct-other-parent');
+  expect(mockGetAthleteById).not.toHaveBeenCalled();
+  expect(mockGetActiveTrainingHold).not.toHaveBeenCalled();
+  expect(mockGetGuardianGateSummary).not.toHaveBeenCalled();
+  expect(mockGetAthleteWaiverStatus).not.toHaveBeenCalled();
+  expect(mockFamilyMedicalRestriction).not.toHaveBeenCalled();
+});
+
 test.each(['coach', 'admin', 'organization_admin', 'athlete', 'board', 'platform_owner', 'volunteer'] as const)(
   'denies the %s role',
   async (role) => {

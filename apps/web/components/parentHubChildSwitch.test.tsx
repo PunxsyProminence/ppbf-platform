@@ -551,7 +551,7 @@ describe('Safety & Consent card on the parent hub', () => {
       render(<ParentHub />);
     });
 
-    expect(screen.getByText(/1 active training hold\(s\) and 1 gate\(s\) awaiting clearance/)).toBeDefined();
+    expect(screen.getByText(/Your child: 1 active training hold, 1 gate awaiting clearance\./)).toBeDefined();
     expect(screen.getByText(/This is not a punishment/)).toBeDefined();
     // Never staff detail -- reason_text/reason_category never leave the server.
     expect(screen.queryByText('Taking a short break.')).toBeNull();
