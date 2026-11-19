@@ -145,8 +145,8 @@ function CoachDisciplines() {
           {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
 
           {!loading && loadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">{loadError}</p>
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{loadError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty list of disciplines.
               </p>
@@ -226,7 +226,7 @@ function CoachDisciplines() {
           </div>
 
           {lookupError && (
-            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--locked)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--locked-ink)]">
+            <p role="alert" className="mt-[var(--s4)] rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
               {lookupError}
             </p>
           )}
@@ -256,7 +256,7 @@ function CoachDisciplines() {
                 <li
                   key={row.exposure_id}
                   className={`rounded-[var(--r-md)] border-2 bg-[rgba(0,0,0,.28)] p-[var(--s4)] ${
-                    needsAttention(row) ? 'border-[var(--locked)]' : 'border-[color:rgb(var(--brass-400-rgb)_/_.22)]'
+                    needsAttention(row) ? 'border-[var(--restricted)]' : 'border-[color:rgb(var(--brass-400-rgb)_/_.22)]'
                   }`}
                 >
                   <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
@@ -272,13 +272,13 @@ function CoachDisciplines() {
                   </p>
 
                   {row.athlete_presentation !== null && row.athlete_presentation !== 'normal' && (
-                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">
+                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">
                       Athlete presented {row.athlete_presentation.replace(/_/g, ' ')}.
                     </p>
                   )}
 
                   {row.stopped_early && (
-                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">
+                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">
                       Stopped early{row.stop_reason ? `: ${row.stop_reason}` : '.'}
                     </p>
                   )}

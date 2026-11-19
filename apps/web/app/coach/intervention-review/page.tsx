@@ -303,8 +303,8 @@ export default function InterventionReviewPage() {
           </header>
 
           {errorMessage && (
-            <div className={`alert ${errorMessage === NOT_REFRESHED ? 'alert--warning' : 'alert--critical'}`} role="alert">
-              <span className="alert-icon" aria-hidden="true">{errorMessage === NOT_REFRESHED ? '▲' : '✕'}</span>
+            <div className="alert alert--warning" role="alert">
+              <span className="alert-icon" aria-hidden="true">▲</span>
               <div className="alert-body">
                 <p className="alert-title">{errorMessage === NOT_REFRESHED ? 'Saved' : 'Failed'}</p>
                 <p className="alert-msg">{errorMessage}</p>
@@ -359,14 +359,14 @@ export default function InterventionReviewPage() {
                             <ul className="space-y-[var(--s1)]">
                               {evidence.map((link) => (
                                 <li key={link.link_id}>
-                                  <span className={`badge ${link.status === 'removed' ? 'badge--locked' : link.evidence_role === 'counterevidence' || link.evidence_role === 'adverse_response' ? 'badge--locked' : 'badge--monitor'}`}>
+                                  <span className={`badge ${link.status === 'removed' ? 'badge--restricted' : link.evidence_role === 'counterevidence' || link.evidence_role === 'adverse_response' ? 'badge--restricted' : 'badge--monitor'}`}>
                                     <i aria-hidden="true">▪</i>{words(link.evidence_role)}
                                   </span>{' '}
                                   {words(link.source_kind)} {link.source_id}
                                   {link.source_admissible === false && (
                                     <>
                                       {' '}
-                                      <span className="badge badge--locked">
+                                      <span className="badge badge--restricted">
                                         <i aria-hidden="true">▪</i>inadmissible — no accepted proposal
                                       </span>
                                     </>

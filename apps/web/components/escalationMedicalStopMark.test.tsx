@@ -476,3 +476,235 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
   expect(screen.getByText('SAFETY 1 · PAIN REPORT 8/10 · 1 · HIGH')).toBeTruthy();
   expect(screen.getByText('Safety 1 pain report 8/10, 1 high')).toBeTruthy();
 });
+
+/* ------------------------------------------------------------------------
+ * THE MARK ANYWHERE ELSE (lane U1, SC2-2; Jason, card OW25-48 A: "Medical-stop
+ * mark only for a medical stop"; Overwatch Q6: the whole non-home population).
+ *
+ * The cases above render the escalation surfaces. This one reads the source:
+ * every non-test .ts/.tsx under app/ and components/, comments removed by a
+ * string-aware pass (a `/*` or `//` inside a string such as accept="video/*"
+ * is code, not a comment), for what draws --locked: alert--critical,
+ * badge--locked, var(--locked), --locked-ink, the --safety-locked /
+ * --status-critical / --status-danger aliases, and the string 'locked', which
+ * is how a tone map reaches `badge--${tone}`. Not caught: a class built from a
+ * tone whose VALUE is 'critical' (`alert--${tone}`); app/admin/memberships is
+ * the one such page, swept in SC2-3. CSS is not read.
+ *
+ * A file may carry the mark only if it is
+ *   - ALLOWED, with the reason, and no more often than today; or
+ *   - PENDING: still to be swept by the next U1 PRs (SC2-3, SC2-4), no more
+ *     often than today. Each of those PRs deletes its files from the list, and
+ *     a PENDING file that no longer carries the mark fails here until it is
+ *     deleted, so the lists only shrink.
+ * ------------------------------------------------------------------------ */
+
+const MARK_TOKEN = /alert--critical|badge--locked|--locked-ink|var\(--locked\)|var\(--safety-locked\)|var\(--status-critical\)|var\(--status-danger\)|['"`]locked['"`]/g;
+
+const MARK_ALLOWED = new Map<string, { readonly count: number; readonly why: string }>([
+  ['app/coach/sports-medicine/page.tsx', { count: 1, why: "the Clearance Board's 'not cleared': a clearance record saying MEDICALLY_NOT_ALLOWED, the one medical stop" }],
+  ['app/coach/decision-loop/page.tsx', { count: 2, why: "the Medical Administrative Status 'not_cleared' (the clearance record), and the tone type that names it" }],
+  ['components/uiStyles.ts', { count: 6, why: "token definitions (statusDanger, errorButton, errorContainer, errorText) that nothing renders" }],
+  ['components/CoachWorkspace.tsx', { count: 3, why: "the coach home: its marks are fixed with the home batch (AS-7), not in this sweep" }],
+  ['components/CoachFloorFocus.tsx', { count: 1, why: "draws whatever tone the coach home hands it ('locked' included); the home batch (AS-7) owns those tones" }],
+  ['components/AthleteWorkspace.tsx', { count: 4, why: "the athlete home: its marks are fixed with the home batch (AS-8), not in this sweep" }],
+  ['components/ParentHub.tsx', { count: 2, why: "the parent home: its marks are fixed with the home batch (AS-9), not in this sweep" }],
+]);
+
+/** Still to be swept, with today's count: SC2-3 (office, board and platform pages). */
+const MARK_PENDING_SC2_3 = new Map<string, number>([
+  ['app/admin/activation-codes/page.tsx', 2],
+  ['app/admin/athletes/page.tsx', 2],
+  ['app/admin/attendance/page.tsx', 3],
+  ['app/admin/board-seats/page.tsx', 2],
+  ['app/admin/coach-coverage/page.tsx', 3],
+  ['app/admin/community-service/page.tsx', 1],
+  ['app/admin/compliance-center/page.tsx', 1],
+  ['app/admin/consent/page.tsx', 3],
+  ['app/admin/credentials/page.tsx', 2],
+  ['app/admin/customize/page.tsx', 2],
+  ['app/admin/data-quality/page.tsx', 2],
+  ['app/admin/export/page.tsx', 1],
+  ['app/admin/feedback/page.tsx', 1],
+  ['app/admin/grants/page.tsx', 3],
+  ['app/admin/memberships/page.tsx', 1],
+  ['app/admin/organizations/page.tsx', 1],
+  ['app/admin/page.tsx', 2],
+  ['app/admin/payments/page.tsx', 3],
+  ['app/admin/people/page.tsx', 3],
+  ['app/admin/pin/page.tsx', 3],
+  ['app/admin/platform/overview/page.tsx', 1],
+  ['app/admin/platform/page.tsx', 1],
+  ['app/admin/portrait-review/page.tsx', 1],
+  ['app/admin/program-phases/page.tsx', 1],
+  ['app/admin/public-interest/page.tsx', 1],
+  ['app/admin/quotes/page.tsx', 1],
+  ['app/admin/safety-flags/page.tsx', 1],
+  ['app/admin/safety-review/page.tsx', 1],
+  ['app/admin/shadow-reviews/page.tsx', 4],
+  ['app/admin/shadow/page.tsx', 8],
+  ['app/admin/video-review/page.tsx', 1],
+  ['app/admin/volunteer-management/page.tsx', 1],
+  ['app/admin/waiver-status/page.tsx', 1],
+  ['app/audit/page.tsx', 2],
+  ['app/board/BoardSummaryPanel.tsx', 1],
+  ['app/board/compliance-monitoring/page.tsx', 2],
+  ['app/dashboard/page.tsx', 1],
+  ['app/evidence/page.tsx', 3],
+  ['app/knowledge-graph/page.tsx', 3],
+  ['app/operations/external-competition/page.tsx', 3],
+  ['app/operations/wrestling-league/page.tsx', 1],
+  ['app/rabbit-holes/page.tsx', 1],
+  ['app/research/page.tsx', 3],
+  ['app/research/review/page.tsx', 3],
+  ['app/staff-credentials/page.tsx', 2],
+]);
+
+/** Still to be swept, with today's count: SC2-4 (athlete sign-in, athlete and parent pages). */
+const MARK_PENDING_SC2_4 = new Map<string, number>([
+  ['app/activate/page.tsx', 3],
+  ['app/athlete/progression-intelligence/page.tsx', 4],
+  ['app/athlete/sign-in/page.tsx', 3],
+  ['app/athlete/video-analysis/page.tsx', 2],
+  ['app/change-pin/page.tsx', 1],
+  ['app/parent/progression-visibility/page.tsx', 5],
+  ['app/parent/video/page.tsx', 1],
+  ['components/ProfileSettings.tsx', 4],
+  ['components/RoleSummaryPanels.tsx', 4],
+]);
+
+/**
+ * Source with comments removed; strings (and what is inside them) kept.
+ * `unbalanced` is set when the file ends still inside a string: a quote the
+ * pass misread (in a regex literal or bare JSX text) has flipped which spans
+ * it treats as code, so the count for that file cannot be trusted.
+ */
+let unbalanced = false;
+function withoutComments(source: string): string {
+  unbalanced = false;
+  let out = '';
+  let quote: string | null = null;
+  for (let i = 0; i < source.length;) {
+    const c = source[i];
+    const next = source[i + 1];
+    if (quote) {
+      out += c;
+      if (c === '\\') {
+        out += next ?? '';
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (c === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      const end = source.indexOf('*/', i + 2);
+      i = end === -1 ? source.length : end + 2;
+      out += ' ';
+      continue;
+    }
+    // A regex literal: a `/` where a value starts (after an operator, an
+    // opening bracket, a comma or `return`). Its quotes and slashes are not
+    // strings or comments (/filename="([^"]+)"/ has three quotes).
+    // Not after `<`: `</div>` closes a tag, it is not a regex.
+    if (c === '/' && /(^|[=(,:[!&|?{};+\-*%~^]|\breturn)\s*$/.test(out.slice(-12))) {
+      let j = i + 1;
+      let inClass = false;
+      while (j < source.length && source[j] !== '\n') {
+        if (source[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (source[j] === '[') inClass = true;
+        else if (source[j] === ']') inClass = false;
+        else if (source[j] === '/' && !inClass) break;
+        j += 1;
+      }
+      out += source.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c;
+    out += c;
+    i += 1;
+  }
+  unbalanced = quote !== null;
+  return out;
+}
+
+/** Files the comment pass ended inside a string: their counts are not trusted. */
+const misread: string[] = [];
+
+function markCountsInSource(): Map<string, number> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as typeof import('node:fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('node:path') as typeof import('node:path');
+  const webRoot = path.resolve(__dirname, '..');
+  const counts = new Map<string, number>();
+  misread.length = 0;
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') walk(full);
+      } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+        const relative = path.relative(webRoot, full).split(path.sep).join('/');
+        const found = withoutComments(fs.readFileSync(full, 'utf8')).match(MARK_TOKEN);
+        if (unbalanced) misread.push(relative);
+        if (found) counts.set(relative, found.length);
+      }
+    }
+  };
+  walk(path.join(webRoot, 'app'));
+  walk(path.join(webRoot, 'components'));
+  return counts;
+}
+
+describe('the medical-stop mark appears nowhere else in the source', () => {
+  const counts = markCountsInSource();
+  const pending = new Map([...MARK_PENDING_SC2_3, ...MARK_PENDING_SC2_4]);
+
+  test('the comment pass skips a regex literal, whose quotes are not strings', () => {
+    expect(withoutComments('const m = /filename="([^"]+)"/.exec(h); // badge--locked\nx')).toBe('const m = /filename="([^"]+)"/.exec(h); \nx');
+    expect(unbalanced).toBe(false);
+    expect(withoutComments('a = b / c; d = "e"; // f\ng')).toBe('a = b / c; d = "e"; \ng');
+  });
+
+  test('the comment pass keeps code that holds a comment marker inside a string', () => {
+    expect(withoutComments('a = "video/*"; b = "badge--locked"; // badge--locked\nc = 1; /* alert--critical */ d')).toBe(
+      'a = "video/*"; b = "badge--locked"; \nc = 1;   d',
+    );
+  });
+
+  // What this proves: no file ENDS inside a string. A quote misread mid-file
+  // that a later quote happens to re-balance is not caught here.
+  test('the comment pass ends every file outside a string', () => {
+    expect(misread).toEqual([]);
+  });
+
+  test('the scan sees the one real medical stop, so it is not blind', () => {
+    expect(counts.get('app/coach/sports-medicine/page.tsx')).toBe(1);
+  });
+
+  test('every file that carries the mark is allowed, with its reason, or still pending a sweep', () => {
+    const unexplained = [...counts.keys()].filter((file) => !MARK_ALLOWED.has(file) && !pending.has(file));
+    expect(unexplained).toEqual([]);
+  });
+
+  test('no allowed or pending file carries the mark more often than it does today', () => {
+    const limits = new Map([...[...MARK_ALLOWED].map(([file, { count }]) => [file, count] as const), ...pending]);
+    const grown = [...limits].filter(([file, count]) => (counts.get(file) ?? 0) > count).map(([file]) => file);
+    expect(grown).toEqual([]);
+  });
+
+  test('the pending lists only shrink: a swept file is taken off', () => {
+    const swept = [...pending.keys()].filter((file) => !counts.has(file));
+    expect(swept).toEqual([]);
+  });
+});

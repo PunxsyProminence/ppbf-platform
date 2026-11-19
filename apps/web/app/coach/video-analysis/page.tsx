@@ -877,7 +877,7 @@ export default function CoachVideoAnalysisPage() {
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
             <h2 className="t-eyebrow">SHADOW Observation Stream</h2>
             <div className="mt-[var(--s3)] space-y-[var(--s3)] max-h-72 overflow-y-auto">
-              {observationError ? <p className="text-[length:var(--t-xs)] text-[var(--locked-ink)]">{observationError}</p> : null}
+              {observationError ? <p className="text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{observationError}</p> : null}
               {!observationError && observations.length === 0 ? <p className="t-muted text-[color:var(--bone-300)]">No observations available.</p> : null}
               {observations.slice(0, 8).map((item) => (
                 <div key={item.id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
@@ -891,7 +891,7 @@ export default function CoachVideoAnalysisPage() {
 
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
           <h2 className="t-eyebrow">Video Library</h2>
-          {videoError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{videoError}</p> : null}
+          {videoError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{videoError}</p> : null}
           {!videoError && videos.length === 0 ? (
             <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">No videos uploaded yet.</p>
           ) : (
@@ -999,7 +999,7 @@ export default function CoachVideoAnalysisPage() {
               is what the heading says. */}
           <h2 className="t-eyebrow">How Often Coaches Accept This Model</h2>
           {validationError ? (
-            <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{validationError}</p>
+            <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{validationError}</p>
           ) : validation === null ? (
             <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>
           ) : (
@@ -1048,7 +1048,7 @@ export default function CoachVideoAnalysisPage() {
             A vision observation about an athlete never touches their record on its own -- it lands here first, and
             only a human verdict settles it.
           </p>
-          {proposalsError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{proposalsError}</p> : null}
+          {proposalsError ? <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{proposalsError}</p> : null}
           {proposals.length > 0 && complianceRulesError ? (
             <p className="t-muted mt-[var(--s3)] text-[color:var(--bone-300)]">{complianceRulesError}</p>
           ) : null}
@@ -1236,7 +1236,7 @@ export default function CoachVideoAnalysisPage() {
             />
           </div>
           {missedError ? (
-            <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--locked-ink)]">{missedError}</p>
+            <p className="mt-[var(--s3)] text-[length:var(--t-xs)] text-[var(--restricted-ink)]">{missedError}</p>
           ) : null}
           <div className="mt-[var(--s3)]">
             <button

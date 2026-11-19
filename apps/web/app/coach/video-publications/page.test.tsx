@@ -174,6 +174,23 @@ describe('coach publication workflow', () => {
     expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull();
   });
 
+  /* OW25-48 A (lane U1, SC2-2): a rejected or retracted publication and a
+     failed check are outcomes, not medical stops: the restricted rung and ▲. */
+  test.each([
+    ['rejected', 'failed'],
+    ['retracted', 'passed'],
+  ] as const)('a %s publication (check %s) is on the restricted rung, never the medical-stop mark', async (status, check) => {
+    global.fetch = mockFetch([publication({ status, compliance_check_status: check })]) as unknown as typeof fetch;
+
+    const { container } = render(<CoachVideoPublicationsPage />);
+
+    await screen.findByText(status);
+    expect(container.querySelector('.badge--locked')).toBeNull();
+    const badge = screen.getByText(status).closest('.badge');
+    expect(badge?.className).toContain('badge--restricted');
+    expect(badge?.textContent).toContain('▲');
+  });
+
   test('a cleared publication this coach submitted offers Publish', async () => {
     global.fetch = mockFetch([publication()]) as unknown as typeof fetch;
 

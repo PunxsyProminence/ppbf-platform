@@ -75,4 +75,6 @@ export const CONTROL_SAFEGUARD =
 /** Leaving. Rust rim, so it does not read as one more place to go. */
 export const CONTROL_EXIT =
   `${CONTROL} border-[color:var(--rust-500)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)] `
-  + 'hover:border-[color:var(--locked)] hover:text-[color:var(--bone-100)]';
+  // Rust brightening on hover, not --locked: leaving is not a medical stop
+  // (OW25-48 A; lane U1, SC2-2).
+  + 'hover:border-[color:var(--rust-300)] hover:text-[color:var(--bone-100)]';

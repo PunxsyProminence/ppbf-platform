@@ -1165,7 +1165,7 @@ export default function CoachDevelopmentBlocksPage() {
 
           {rosterState === 'unavailable' && (
             <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-              <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+              <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                 Your athletes could not be loaded, so there is nobody to choose. This is not a statement
                 that your gym has none — reload and try again.
               </p>
@@ -1316,7 +1316,7 @@ export default function CoachDevelopmentBlocksPage() {
             {message ? <p className="t-data text-[color:var(--brass-300)]">{message}</p> : null}
             {errorMessage ? (
               <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">{errorMessage}</p>
+                <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">{errorMessage}</p>
               </div>
             ) : null}
           </section>
@@ -1330,7 +1330,7 @@ export default function CoachDevelopmentBlocksPage() {
 
             {blocksState === 'unavailable' && (
               <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                   This athlete&apos;s blocks could not be read. This is not a statement that they have none —
                   do not write a new one over a plan you cannot see.
                 </p>
@@ -1392,7 +1392,7 @@ export default function CoachDevelopmentBlocksPage() {
                             {block.target.sanctioning_body ? ` · ${block.target.sanctioning_body}` : ''}
                           </p>
                           {block.target.status === 'cancelled' && (
-                            <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                            <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                               This event was cancelled. The block is still pointed at it — change or clear the
                               target if the plan has moved.
                             </p>
@@ -1403,7 +1403,7 @@ export default function CoachDevelopmentBlocksPage() {
                       )}
 
                       {targetOptionsState === 'unavailable' && (
-                        <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                        <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                           The gym&apos;s competitions and events could not be loaded, so there is nothing to
                           choose from. This is not a statement that none are scheduled.
                         </p>
@@ -1484,7 +1484,7 @@ export default function CoachDevelopmentBlocksPage() {
 
                       {sessionsStateByBlock[block.block_id] === 'unavailable' && (
                         <div className="rounded-[var(--r-sm)] border-2 border-[var(--restricted)] p-[var(--s2)]">
-                          <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                          <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                             The linked sessions could not be read. This is not a statement that none
                             are linked — nobody could look.
                           </p>
@@ -1596,7 +1596,7 @@ export default function CoachDevelopmentBlocksPage() {
 
                       {runOptionsState === 'unavailable' && (
                         <div className="rounded-[var(--r-sm)] border-2 border-[var(--restricted)] p-[var(--s2)]">
-                          <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                          <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                             The list of delivered sessions could not be read, so there is nothing to
                             choose from. This is not a statement that none have been delivered.
                           </p>
@@ -1696,7 +1696,7 @@ export default function CoachDevelopmentBlocksPage() {
 
                       {reviewStateByBlock[block.block_id] === 'unavailable' && (
                         <div className="rounded-[var(--r-sm)] border-2 border-[var(--restricted)] p-[var(--s2)]">
-                          <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                          <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                             The record for this block could not be read. This is not a statement
                             that nothing was recorded — nobody could look.
                           </p>
@@ -1974,7 +1974,7 @@ export default function CoachDevelopmentBlocksPage() {
                           )}
 
                           {objectivesState[block.block_id] === 'unavailable' && (
-                            <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                            <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                               This block&apos;s objectives could not be loaded. This is not a statement that
                               it has none — reload and try again before writing new ones.
                             </p>
@@ -2039,7 +2039,7 @@ export default function CoachDevelopmentBlocksPage() {
                           )}
 
                           {domainsState === 'unavailable' && (
-                            <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                            <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                               The development domains could not be loaded, so there is nothing to choose
                               from. Reload before writing an objective.
                             </p>

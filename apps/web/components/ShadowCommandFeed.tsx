@@ -111,7 +111,7 @@ export default function ShadowCommandFeed() {
 
   if (errorMessage) {
     return (
-      <div className="alert alert--critical alert--tight" role="alert">
+      <div className="alert alert--warning alert--tight" role="alert">
         <div className="alert-body">
           <p className="alert-msg">
             {errorMessage} A failed read means this panel is blind right now, not that the floor is clear.
