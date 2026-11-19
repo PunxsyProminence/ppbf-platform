@@ -1859,3 +1859,117 @@ describe('ordinary errors on this page', () => {
     }
   });
 });
+
+// Staging dry run, 2026-11-19 (lane U2, PR 4f): about 130 templates in one
+// list with no way to look one up, and an opened template drawn below the
+// whole list while its button only changed its words.
+describe('finding a template, and the open one drawn under its own card', () => {
+  const YOUTH_FOOTWORK = {
+    ...BOXING_FUNDAMENTALS,
+    template_id: 'wt-3',
+    lineage_id: 'lin-3',
+    name: 'Youth Footwork 30',
+    age_band: '8-10',
+    duration_minutes: 30,
+    intent: 'Ladders and pivots.',
+  };
+
+  function listAndDetail() {
+    return mockFetch((url) => {
+      if (url.includes(ATHLETES_URL)) return jsonResponse({ ok: true, items: ATHLETES });
+      if (url.includes('template_id=wt-2')) return jsonResponse({ template: CONDITIONING_ADV, items: [item({ template_id: 'wt-2' })] });
+      if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+      return jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV, YOUTH_FOOTWORK] });
+    });
+  }
+
+  const cardNames = () => Array.from(document.querySelectorAll('article h3')).map((heading) => heading.textContent);
+  const cardFor = (name: string) => screen.getByText(name, { selector: 'article h3' }).closest('article') as HTMLElement;
+  const findBox = () => screen.getByLabelText('Find a template');
+  const type = (value: string) => fireEvent.change(findBox(), { target: { value } });
+
+  it('every word typed must appear, in any order and any case; the count says how many match', async () => {
+    listAndDetail();
+    render(<CoachWorkoutTemplatesPage />);
+    await screen.findByText('Youth Footwork 30');
+    expect(screen.getByText('3 templates.')).toBeInTheDocument();
+
+    type('CONDITIONING');
+    expect(cardNames()).toEqual(['Conditioning Circuit 45']);
+    expect(screen.getByText('1 of 3 templates match.')).toBeInTheDocument();
+
+    type('8-10 beginner');
+    expect(cardNames()).toEqual(['Youth Footwork 30']);
+
+    // The session type's underscores read as spaces, as the card prints it.
+    type('group class');
+    expect(cardNames()).toEqual(['Boxing Fundamentals 60', 'Youth Footwork 30']);
+  });
+
+  it('no match is said as no match, never as an empty catalog, and clearing the box brings every card back', async () => {
+    listAndDetail();
+    render(<CoachWorkoutTemplatesPage />);
+    await screen.findByText('Youth Footwork 30');
+
+    type('zzz');
+    expect(cardNames()).toEqual([]);
+    expect(screen.getByText('No template matches "zzz". Clear the box to see them all.')).toBeInTheDocument();
+    expect(screen.queryByText(/No workout templates are loaded/i)).not.toBeInTheDocument();
+
+    type('');
+    expect(cardNames()).toHaveLength(3);
+  });
+
+  it('the opened template is drawn right under its own card, before the next card', async () => {
+    listAndDetail();
+    render(<CoachWorkoutTemplatesPage />);
+    await screen.findByText('Youth Footwork 30');
+
+    fireEvent.click(within(cardFor('Conditioning Circuit 45')).getByRole('button', { name: 'Open template' }));
+    await screen.findByText('Rope intervals');
+    const detail = screen.getByRole('region', { name: 'Conditioning Circuit 45' });
+    expect(cardFor('Conditioning Circuit 45').nextElementSibling).toBe(detail);
+    expect(detail.nextElementSibling).toBe(cardFor('Youth Footwork 30'));
+  });
+
+  it("focus moves to the opened template's heading, so the coach is taken to it", async () => {
+    listAndDetail();
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Open template' }))[0]);
+
+    const heading = await screen.findByRole('heading', { level: 2, name: 'Boxing Fundamentals 60' });
+    expect(heading).toHaveFocus();
+  });
+
+  it('narrowing the list never takes the open template off the screen, and its issue control is not rebuilt', async () => {
+    listAndDetail();
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Open template' }))[0]);
+    const picker = (await screen.findByLabelText('Athlete')) as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: 'ath-1' } });
+
+    type('conditioning');
+    expect(cardNames()).toEqual(['Boxing Fundamentals 60', 'Conditioning Circuit 45']);
+    expect(screen.getByText('1 of 3 templates match. The open template stays in the list.')).toBeInTheDocument();
+    // The same picker, still holding the choice: the block was moved, not remounted.
+    expect(screen.getByLabelText('Athlete')).toBe(picker);
+    expect(picker.value).toBe('ath-1');
+  });
+
+  it('a template the list does not hold, opened from the address, is still shown, first', async () => {
+    const ELSEWHERE = { ...BOXING_FUNDAMENTALS, template_id: 'wt-9', lineage_id: 'lin-9', name: 'Old Plan 20' };
+    mockFetch((url) => (url.includes('template_id')
+      ? jsonResponse({ template: ELSEWHERE, items: [item({ template_id: 'wt-9' })] })
+      : jsonResponse({ templates: [BOXING_FUNDAMENTALS] })));
+    window.history.pushState({}, '', '/coach/workout-templates?template=wt-9');
+    try {
+      render(<CoachWorkoutTemplatesPage />);
+      await screen.findByText('Rope intervals');
+      await screen.findByText('Boxing Fundamentals 60', { selector: 'article h3' });
+      const detail = screen.getByRole('region', { name: 'Old Plan 20' });
+      expect(detail.nextElementSibling).toBe(cardFor('Boxing Fundamentals 60'));
+    } finally {
+      window.history.pushState({}, '', '/coach/workout-templates');
+    }
+  });
+});

@@ -648,10 +648,33 @@ function templateFacts(template: Template): string {
   ].filter((part) => part.trim() !== '').join(' -- ');
 }
 
+/**
+ * Does a template match what the coach typed in "Find a template"? Every word
+ * typed must appear somewhere in the template's name, intent, session type,
+ * age group or difficulty, in any order and any case. An empty box matches all.
+ * (Staging dry run, 2026-11-19: about 130 templates in one list, no way to look one up.)
+ */
+function templateMatches(template: Template, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter((word) => word !== '');
+  if (words.length === 0) return true;
+  const hay = [template.name, template.intent, template.session_type, template.age_band, template.difficulty ?? '']
+    .join(' ')
+    .replace(/_/g, ' ')
+    .toLowerCase();
+  return words.every((word) => hay.includes(word));
+}
+
 function CoachWorkoutTemplates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  // What the coach typed in "Find a template". It only narrows the list on
+  // screen; the open template always stays (see `shown` below).
+  const [query, setQuery] = useState('');
+  // Bumped on every open, so focus moves to the opened template each time,
+  // including a second open of the same one after an error.
+  const [focusDetail, setFocusDetail] = useState(0);
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const [openTemplateId, setOpenTemplateId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TemplateDetail | null>(null);
@@ -711,6 +734,7 @@ function CoachWorkoutTemplates() {
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
+    setFocusDetail((count) => count + 1);
     try {
       const response = await fetch(
         `${apiBase()}/api/pilot/workout-templates?template_id=${encodeURIComponent(templateId)}`,
@@ -750,82 +774,43 @@ function CoachWorkoutTemplates() {
     })();
   }, [openTemplate]);
 
-  return (
-    <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
-      <div className="mx-auto max-w-5xl">
-        <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
-          <p className="t-eyebrow">Coach Workspace</p>
-          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Workout Templates</h1>
-          <ClusterNav cluster="planning" />
-          <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
-            The reusable session shapes behind the plans: what a session of each type looks like,
-            block by block. Open one to issue it to an athlete, or to make a session plan from
-            it. Delivering a session live happens from Session Plans.
-          </p>
-          <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/coach/session-scripts" className="btn btn--ghost">
-              Go to Session Plans
-            </Link>
-            <Link href="/coach/drills" className="btn btn--ghost">
-              Back to drill library
-            </Link>
-          </div>
-        </header>
+  // The opened template is drawn right under its own card (below), and focus
+  // goes to its heading, so the coach is taken to it rather than left at a
+  // button that only changed its words while the template sat at the foot of
+  // a long list (staging dry run, 2026-11-19). No smooth scroll: an instant
+  // move needs no reduced-motion exception.
+  useEffect(() => {
+    if (focusDetail === 0) return;
+    const heading = detailHeadingRef.current;
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView?.({ block: 'start' });
+  }, [focusDetail]);
 
-        <section className="mt-[var(--s6)]">
-          <h2 className="t-command text-[length:var(--t-lg)]">Templates</h2>
+  // What the list shows: the templates that match the box, and always the open
+  // one. Filtering never takes the open template off the screen, because an
+  // issue or a plan being made from it answers to that block, and a result
+  // with nowhere to show would be lost.
+  const shown = templates.filter(
+    (template) => template.template_id === openTemplateId || templateMatches(template, query),
+  );
+  const openIsListed = openTemplateId !== null && templates.some((template) => template.template_id === openTemplateId);
+  const filtering = query.trim() !== '';
+  const matchCount = templates.filter((template) => templateMatches(template, query)).length;
+  const openHeldByFilter = filtering && openIsListed
+    && !templates.some((template) => template.template_id === openTemplateId && templateMatches(template, query));
 
-          {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
-
-          {!loading && loadError && (
-            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
-              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                This is a failure to load, not an empty catalog of templates.
-              </p>
-            </div>
-          )}
-
-          {!loading && !loadError && templates.length === 0 && (
-            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
-              No workout templates are loaded in this environment yet.
-            </p>
-          )}
-
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            {templates.map((template) => (
-              <article key={template.template_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
-                <div className="flex items-baseline justify-between gap-[var(--s3)]">
-                  <h3 className="t-command text-[length:var(--t-md)]">{template.name}</h3>
-                  {template.difficulty && <span className="plaque">{template.difficulty}</span>}
-                </div>
-                <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
-                <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{orNotWritten(template.intent)}</p>
-                {template.requires_coach_authorization && (
-                  <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
-                    Requires coach authorization before use.
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void openTemplate(template.template_id)}
-                  className="btn btn--ghost mt-[var(--s4)]"
-                  // Not while an issue runs (its answer would be lost), and not
-                  // for the template already showing with its issue control (a
-                  // stray tap would wipe the result the coach is reading). A
-                  // template with no steps has no control, and can be re-read.
-                  disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
-                >
-                  {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
-                </button>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        {openTemplateId !== null && (
-          <section className="mat-leather mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s5)]">
-            <h2 className="t-command text-[length:var(--t-lg)]">
+  const detailSection = openTemplateId === null ? null : (
+          <section
+            key="open-template"
+            aria-labelledby="open-template-heading"
+            className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] md:col-span-2"
+          >
+            <h2
+              id="open-template-heading"
+              ref={detailHeadingRef}
+              tabIndex={-1}
+              className="t-command text-[length:var(--t-lg)]"
+            >
               {detail ? detail.template.name : 'Workout template'}
             </h2>
 
@@ -948,7 +933,116 @@ function CoachWorkoutTemplates() {
               </>
             )}
           </section>
-        )}
+  );
+
+  return (
+    <main className="room room--floor min-h-screen bg-[var(--hide-950)] px-[var(--s5)] py-[var(--s6)] text-[color:var(--bone-200)]">
+      <div className="mx-auto max-w-5xl">
+        <header className="border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
+          <p className="t-eyebrow">Coach Workspace</p>
+          <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-2xl)]">Workout Templates</h1>
+          <ClusterNav cluster="planning" />
+          <p className="t-body mt-[var(--s3)] max-w-3xl text-[color:var(--bone-300)]">
+            The reusable session shapes behind the plans: what a session of each type looks like,
+            block by block. Open one to issue it to an athlete, or to make a session plan from
+            it. Delivering a session live happens from Session Plans.
+          </p>
+          <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/coach/session-scripts" className="btn btn--ghost">
+              Go to Session Plans
+            </Link>
+            <Link href="/coach/drills" className="btn btn--ghost">
+              Back to drill library
+            </Link>
+          </div>
+        </header>
+
+        <section className="mt-[var(--s6)]">
+          <h2 className="t-command text-[length:var(--t-lg)]">Templates</h2>
+
+          {loading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading...</p>}
+
+          {!loading && loadError && (
+            <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
+              <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+                This is a failure to load, not an empty catalog of templates.
+              </p>
+            </div>
+          )}
+
+          {!loading && !loadError && templates.length === 0 && (
+            <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+              No workout templates are loaded in this environment yet.
+            </p>
+          )}
+
+          {!loading && !loadError && templates.length > 0 && (
+            <div className="mt-[var(--s4)] flex max-w-xl flex-col gap-[var(--s2)]">
+              <label className="t-label" htmlFor="template-find">Find a template</label>
+              <input
+                id="template-find"
+                type="search"
+                className="input"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Name, session type, age group or level"
+                autoComplete="off"
+              />
+              <p aria-live="polite" className="t-label text-[color:var(--bone-400)]">
+                {filtering
+                  ? `${matchCount} of ${templates.length} templates match.${openHeldByFilter ? ' The open template stays in the list.' : ''}`
+                  : `${templates.length} templates.`}
+              </p>
+              {filtering && matchCount === 0 && (
+                <p className="t-body text-[color:var(--bone-300)]">
+                  {`No template matches "${query.trim()}". Clear the box to see them all.`}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* One grid holds the cards AND the open template, so the template is
+              drawn right under its own card instead of below the whole list,
+              and moving it (another card opened, the box narrowed, the list
+              arriving after an address opened it) never remounts it: an issue
+              or a plan being made from it keeps its answer. A template the
+              list does not hold (an address naming one this read did not
+              return) is drawn first. */}
+          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
+            {!openIsListed && detailSection}
+            {shown.flatMap((template) => {
+              const card = (
+                <article key={template.template_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
+                  <div className="flex items-baseline justify-between gap-[var(--s3)]">
+                    <h3 className="t-command text-[length:var(--t-md)]">{template.name}</h3>
+                    {template.difficulty && <span className="plaque">{template.difficulty}</span>}
+                  </div>
+                  <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
+                  <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{orNotWritten(template.intent)}</p>
+                  {template.requires_coach_authorization && (
+                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                      Requires coach authorization before use.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void openTemplate(template.template_id)}
+                    className="btn btn--ghost mt-[var(--s4)]"
+                    // Not while an issue runs (its answer would be lost), and not
+                    // for the template already showing with its issue control (a
+                    // stray tap would wipe the result the coach is reading). A
+                    // template with no steps has no control, and can be re-read.
+                    disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
+                  >
+                    {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
+                  </button>
+                </article>
+              );
+              return template.template_id === openTemplateId && detailSection ? [card, detailSection] : [card];
+            })}
+          </div>
+        </section>
 
       {/* The four words, at the foot of the page — the same foot the
           approved boards put under every full screen. See WorkAxis. */}
