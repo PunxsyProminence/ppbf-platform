@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 
 import { apiBase } from '@/lib/apiBase';
 import {
+  clearGymTabletLastUse,
   isGymTabletMarked,
   readGymTabletLastUse,
   subscribeGymTabletMark,
@@ -22,33 +23,39 @@ import { clearRoleSession } from './roleSession';
 /**
  * GYM TABLET IDLE SIGN-OUT (lane U1, AS2-b; app scrub ATH-10 / stage 3 AS-2).
  *
- * Jason's ruling OW25-53 A: the gym admin sets the idle time (first value 1
- * hour). Overwatch Q1 = A: only a device the gym admin has MARKED as a gym
- * tablet signs itself out; personal phones and computers are not.
+ * Jason's ruling OW25-53 A (OD-2026-11-19-007): the gym admin sets the idle
+ * time (first value 1 hour). Overwatch Q1 = A: only a device the gym admin
+ * has MARKED as a gym tablet signs itself out; personal phones and computers
+ * are not.
  *
  * Mounted by GlobalRoleHeader on every signed-in page (refusal screens
  * included), and on /change-pin, whose session is never cached. On a marked
  * device:
- *  - Use = a pointer press, a touch, a key or a wheel turn. Time is measured
- *    from timestamps, not from a running timer, so a tablet that slept is
- *    judged by how long it was really left.
+ *  - Use = a pointer press, a touch, a key or a wheel turn. The clock is the
+ *    DEVICE's: the last use is kept in this browser's storage and shared by
+ *    its tabs, so a page the browser reloads on waking resumes it instead of
+ *    starting again (review A, BLOCKER), and a hidden tab does not sign out
+ *    someone working in another. A time in the future (a clock set back)
+ *    counts as now.
  *  - In the last minute a banner counts down. Any use hides it and starts
  *    the time again.
- *  - At the limit the page is covered at once and the session is ended. The
- *    tablet leaves for /login only once the server confirms; the cookie is
- *    HttpOnly, so a request that did not land would leave the next person
- *    one tap from the last one's account. Until then the cover stays and it
- *    retries every 15 seconds and when the connection comes back.
- *  - Woken after the limit has passed: covered and signed out at once, with
- *    no countdown. The clock is kept in this device's storage, shared by its
- *    tabs, so a page the browser RELOADS on waking resumes it rather than
- *    starting again; the page can show for the moment before the first check.
- *  - While covered, the page under it is inert and loses focus. On leaving,
- *    a plain cover stays until /login replaces the document.
+ *  - At the limit, sign-out starts and NOTHING ON THE PAGE CAN STOP IT: a
+ *    plain cover (not React's) goes over everything, the page under it is
+ *    made inert and loses focus, and the session is ended. Only once the
+ *    server confirms does the device leave for /login, as a full load. With
+ *    no connection the cover says so and it retries every 15 seconds and when
+ *    the connection returns. This runs outside React on purpose (review A):
+ *    another component clearing the role cache, or a soft move to /login,
+ *    would otherwise unmount the cover and the retry while the session lives.
+ *  - Opened or woken past the limit: sign-out starts at once, no countdown.
+ *    The page can show for the moment before the first check.
  *  - The time comes from GET /api/pilot/gym-tablet/idle. If that read fails
  *    (a session that still owes a PIN change is refused by it), the default
  *    applies: one hour, never "no sign-out" (AS2-a review carry-over).
  *  - Unsaved typing on the screen is lost; the banner says so.
+ *  - The clock is cleared on a confirmed sign-out here, on a fresh sign-in,
+ *    and when the server says nobody is signed in; never by a mere cache
+ *    clear, which can happen while the session is still alive (review A).
  *
  * On EVERY device, marked or not: a page restored from the browser's
  * back/forward cache re-asks the server who is signed in, and leaves for
@@ -59,26 +66,69 @@ import { clearRoleSession } from './roleSession';
 const ACTIVITY_EVENTS = ['pointerdown', 'touchstart', 'keydown', 'wheel'] as const;
 const RETRY_MS = 15_000;
 const TICK_MS = 1_000;
+const COVER_ID = 'gym-tablet-leaving';
+const SIGNING_OUT_WORDS = 'Signing out…';
+const OFFLINE_WORDS = 'This tablet could not finish signing out: no connection. It keeps trying.';
 
-type Phase = 'watching' | 'countdown' | 'signing-out' | 'offline';
-
-/**
- * A cover that is not React's (AS2-b review A). Leaving for /login clears the
- * role session first, and the header then unmounts this component and its
- * cover with it, while the last person's page is still on screen until /login
- * loads. This plain node stays until the document is replaced.
- */
-function pinStaticCover(text: string): void {
-  if (document.getElementById('gym-tablet-leaving')) return;
-  const cover = document.createElement('div');
-  cover.id = 'gym-tablet-leaving';
-  cover.setAttribute('role', 'alert');
-  cover.textContent = text;
-  cover.style.cssText = 'position:fixed;inset:0;z-index:1002;display:flex;align-items:center;justify-content:center;'
-    + 'background:var(--hide-950,#0b0906);color:var(--bone-100,#f7f1e1);font-size:var(--t-md,19px);padding:24px;text-align:center;';
-  for (const child of Array.from(document.body.children)) child.setAttribute('inert', '');
+/** A plain cover over the whole page; it stays until the document is replaced. */
+function pinCover(text: string): HTMLElement {
+  let cover = document.getElementById(COVER_ID);
+  if (!cover) {
+    cover = document.createElement('div');
+    cover.id = COVER_ID;
+    cover.setAttribute('role', 'alert');
+    cover.style.cssText = 'position:fixed;inset:0;z-index:1002;display:flex;align-items:center;justify-content:center;'
+      + 'background:var(--hide-950,#0b0906);color:var(--bone-100,#f7f1e1);font-size:var(--t-md,19px);padding:24px;text-align:center;';
+    document.body.appendChild(cover);
+  }
+  for (const child of Array.from(document.body.children)) {
+    if (child !== cover) child.setAttribute('inert', '');
+  }
   (document.activeElement as HTMLElement | null)?.blur?.();
-  document.body.appendChild(cover);
+  cover.textContent = text;
+  return cover;
+}
+
+/*
+ * THE SIGN-OUT, ONCE STARTED, BELONGS TO THE DOCUMENT, NOT TO A COMPONENT.
+ * One per page load; a second start is ignored.
+ */
+let leaving = false;
+
+export function startTabletSignOut(): void {
+  if (leaving || typeof window === 'undefined') return;
+  leaving = true;
+  const cover = pinCover(SIGNING_OUT_WORDS);
+  let inFlight = false;
+  let retry: number | undefined;
+  const attempt = async () => {
+    if (inFlight) return;
+    inFlight = true;
+    const done = await endThisSession();
+    inFlight = false;
+    if (done) {
+      window.clearTimeout(retry);
+      window.removeEventListener('online', onOnline);
+      clearGymTabletLastUse();
+      clearRoleSession();
+      leaveForLogin();
+      return;
+    }
+    cover.textContent = OFFLINE_WORDS;
+    pinCover(OFFLINE_WORDS); // whatever the page drew since is made inert too
+    window.clearTimeout(retry);
+    retry = window.setTimeout(() => void attempt(), RETRY_MS);
+  };
+  const onOnline = () => void attempt();
+  window.addEventListener('online', onOnline);
+  void attempt();
+}
+
+/** Tests only: a fresh page load. */
+export function resetTabletSignOutForTests(): void {
+  leaving = false;
+  document.getElementById(COVER_ID)?.remove();
+  for (const child of Array.from(document.body.children)) child.removeAttribute('inert');
 }
 
 function countdownWords(seconds: number): string {
@@ -101,7 +151,7 @@ export default function TabletIdleSignOut({ showPlate = true }: { readonly showP
           });
           const body = (await response.json().catch(() => null)) as { authenticated?: unknown } | null;
           if (response.ok && body?.authenticated === false) {
-            pinStaticCover('Signing out…');
+            pinCover(SIGNING_OUT_WORDS);
             clearRoleSession();
             leaveForLogin();
           }
@@ -118,63 +168,55 @@ export default function TabletIdleSignOut({ showPlate = true }: { readonly showP
 }
 
 function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
-  const [phase, setPhase] = useState<Phase>('watching');
+  const [counting, setCounting] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(TABLET_IDLE_COUNTDOWN_SECONDS);
-  const phaseRef = useRef<Phase>('watching');
+  const countingRef = useRef(false);
   const limitMs = useRef(DEFAULT_TABLET_IDLE_MINUTES * 60_000);
   // Set when the watch starts (the first effect below), not during render.
   const lastUse = useRef(0);
-  const inFlight = useRef(false);
   const lastWritten = useRef(0);
 
-  const moveTo = useCallback((next: Phase) => {
-    phaseRef.current = next;
-    setPhase(next);
+  const showCountdown = useCallback((next: boolean) => {
+    countingRef.current = next;
+    setCounting(next);
   }, []);
 
-  const attemptSignOut = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    const done = await endThisSession();
-    inFlight.current = false;
-    if (done) {
-      pinStaticCover('Signing out…');
-      clearRoleSession();
-      leaveForLogin();
-      return;
-    }
-    moveTo('offline');
-  }, [moveTo]);
-
   const check = useCallback(() => {
-    const current = phaseRef.current;
-    if (current === 'signing-out' || current === 'offline' || lastUse.current === 0) return;
+    if (leaving || lastUse.current === 0) return;
+    const now = Date.now();
     // Another tab's use counts: the clock is the device's, not this tab's.
-    const stored = readGymTabletLastUse();
+    // A stored time in the future (a clock set back) is written back as now,
+    // once: left in place it would keep pulling the clock forward every tick.
+    let stored = readGymTabletLastUse();
+    if (stored !== null && stored > now) {
+      writeGymTabletLastUse(now);
+      stored = now;
+    }
     if (stored !== null && stored > lastUse.current) lastUse.current = stored;
-    const idle = Date.now() - lastUse.current;
+    if (lastUse.current > now) lastUse.current = now;
+    const idle = now - lastUse.current;
     if (idle >= limitMs.current) {
-      moveTo('signing-out');
-      void attemptSignOut();
+      showCountdown(false);
+      startTabletSignOut();
       return;
     }
     const left = limitMs.current - idle;
     if (left <= TABLET_IDLE_COUNTDOWN_SECONDS * 1000) {
       setSecondsLeft(Math.ceil(left / 1000));
-      if (current !== 'countdown') moveTo('countdown');
-    } else if (current === 'countdown') {
-      moveTo('watching');
+      if (!countingRef.current) showCountdown(true);
+    } else if (countingRef.current) {
+      showCountdown(false);
     }
-  }, [attemptSignOut, moveTo]);
+  }, [showCountdown]);
 
-  // The watch resumes the device's clock (a reloaded page must not restart it:
-  // AS2-b review A, BLOCKER), or starts it when there is none (a fresh sign-in;
-  // clearRoleSession removed the last one). A page opened past the limit signs
-  // out at once.
+  // Resume the device's clock, or start it when there is none (a fresh
+  // sign-in cleared it), then check at once: a page opened past the limit
+  // signs out without a countdown.
   useEffect(() => {
+    const now = Date.now();
     const stored = readGymTabletLastUse();
-    lastUse.current = stored ?? Date.now();
-    if (stored === null) writeGymTabletLastUse(lastUse.current);
+    lastUse.current = stored === null ? now : Math.min(stored, now);
+    if (stored === null || stored > now) writeGymTabletLastUse(lastUse.current);
     check();
   }, [check]);
 
@@ -200,72 +242,41 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
     };
   }, [check]);
 
+  const markUse = useCallback(() => {
+    if (leaving) return;
+    lastUse.current = Date.now();
+    // At most one write every two seconds: a finger on a scrolling list is
+    // many events.
+    if (lastUse.current - lastWritten.current >= 2_000) {
+      lastWritten.current = lastUse.current;
+      writeGymTabletLastUse(lastUse.current);
+    }
+    if (countingRef.current) showCountdown(false);
+  }, [showCountdown]);
+
   // Use, the tick, and the moments a sleeping tablet comes back.
   useEffect(() => {
-    const onUse = () => {
-      const current = phaseRef.current;
-      if (current === 'signing-out' || current === 'offline') return;
-      lastUse.current = Date.now();
-      // At most one write every two seconds: a finger on a scrolling list is
-      // many events.
-      if (lastUse.current - lastWritten.current >= 2_000) {
-        lastWritten.current = lastUse.current;
-        writeGymTabletLastUse(lastUse.current);
-      }
-      if (current === 'countdown') moveTo('watching');
-    };
     const onWake = () => {
       if (document.visibilityState !== 'hidden') check();
     };
-    for (const name of ACTIVITY_EVENTS) window.addEventListener(name, onUse, { capture: true, passive: true });
+    for (const name of ACTIVITY_EVENTS) window.addEventListener(name, markUse, { capture: true, passive: true });
     document.addEventListener('visibilitychange', onWake);
     window.addEventListener('focus', onWake);
     window.addEventListener('pageshow', onWake);
     const tick = window.setInterval(check, TICK_MS);
     return () => {
-      for (const name of ACTIVITY_EVENTS) window.removeEventListener(name, onUse, { capture: true });
+      for (const name of ACTIVITY_EVENTS) window.removeEventListener(name, markUse, { capture: true });
       document.removeEventListener('visibilitychange', onWake);
       window.removeEventListener('focus', onWake);
       window.removeEventListener('pageshow', onWake);
       window.clearInterval(tick);
     };
-  }, [check, moveTo]);
-
-  // No connection: keep the cover, keep trying.
-  useEffect(() => {
-    if (phase !== 'offline') return undefined;
-    const retry = () => void attemptSignOut();
-    const timer = window.setInterval(retry, RETRY_MS);
-    window.addEventListener('online', retry);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('online', retry);
-    };
-  }, [phase, attemptSignOut]);
+  }, [check, markUse]);
 
   const stay = () => {
-    lastUse.current = Date.now();
-    lastWritten.current = lastUse.current;
-    writeGymTabletLastUse(lastUse.current);
-    moveTo('watching');
+    lastWritten.current = 0;
+    markUse();
   };
-
-  // While covered, nothing under the cover can be focused or typed into: a
-  // focused field would otherwise keep taking keys (AS2-b review A).
-  const coverRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (phase !== 'signing-out' && phase !== 'offline') return undefined;
-    const silenced: Element[] = [];
-    for (const child of Array.from(document.body.children)) {
-      if (child === coverRef.current || child.hasAttribute('inert')) continue;
-      child.setAttribute('inert', '');
-      silenced.push(child);
-    }
-    (document.activeElement as HTMLElement | null)?.blur?.();
-    return () => {
-      for (const child of silenced) child.removeAttribute('inert');
-    };
-  }, [phase]);
 
   return (
     <>
@@ -274,7 +285,7 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
           Gym tablet
         </span>
       ) : null}
-      {phase === 'countdown'
+      {counting
         ? createPortal(
           <div
             data-surface="kiosk"
@@ -290,22 +301,6 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
                 Stay signed in
               </button>
             </div>
-          </div>,
-          document.body,
-        )
-        : null}
-      {phase === 'signing-out' || phase === 'offline'
-        ? createPortal(
-          <div
-            ref={coverRef}
-            role="alert"
-            className="fixed inset-0 z-[1001] flex items-center justify-center bg-[var(--hide-950)] p-[var(--s6)] text-center"
-          >
-            <p className="t-body max-w-[48ch] text-[length:var(--t-md)] text-[color:var(--bone-100)]">
-              {phase === 'signing-out'
-                ? 'Signing out…'
-                : 'This tablet could not finish signing out: no connection. It keeps trying.'}
-            </p>
           </div>,
           document.body,
         )

@@ -14,6 +14,7 @@ import {
 } from '@/components/roleSession';
 import { createMicrosoftSignInHandler } from '@/src/client/loginPageHelpers';
 import { DEFAULT_PIN_LENGTH } from '@/src/server/pilot/pinPolicy';
+import { clearGymTabletLastUse } from '@/src/lib/gymTabletMark';
 
 /**
  * RefusalStamp's `detail` is appended after the stamp's standard sentence,
@@ -358,6 +359,8 @@ export default function SignInPanel({
         return;
       }
 
+      // A fresh sign-in starts a fresh gym tablet idle clock (lane U1, AS2-b).
+      clearGymTabletLastUse();
       persistAuthoritativeRoleSession(resolution.session);
       router.replace(resolution.destination);
     } catch {
@@ -438,6 +441,8 @@ export default function SignInPanel({
         return;
       }
 
+      // A fresh sign-in starts a fresh gym tablet idle clock (lane U1, AS2-b).
+      clearGymTabletLastUse();
       persistAuthoritativeRoleSession(resolution.session);
       router.replace(resolution.destination);
     } catch (error) {
