@@ -413,6 +413,13 @@ describe('editing a workout template', () => {
     });
     expect(result).toMatchObject({ changed: false, version: 1, edited: [] });
     expect(await versionsOf(org, 'wtp_same')).toHaveLength(1);
+
+    // Stored text the importer did not normalize, and a stored blank, read the same way as the resend.
+    await client.query(
+      `update pilot.workout_templates set session_type = E' technical\\r\\n', coach_notes = '' where organization_id = $1 and template_id = 'wtp_same'`,
+      [org],
+    );
+    expect(await edit(org, { template_id: 'wtp_same', session_type: 'technical', coach_notes: '' })).toMatchObject({ changed: false });
   });
 
   it("refuses a version that is no longer current, and another gym's template", async () => {

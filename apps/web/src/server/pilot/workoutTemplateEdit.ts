@@ -285,8 +285,9 @@ export async function editWorkoutTemplate(input: {
       // that current version, as the importer stores a step's drill. An item
       // carried with its drill unchanged keeps the version it was written with,
       // even an older one, so resending a whole list is never refused for it.
-      // The current version is share-locked, so a drill edit that lowers its
-      // contact waits for this edit (and then judges the steps it wrote).
+      // The current version is share-locked against a drill edit (which locks
+      // it for update): a drill edit that comes second judges the steps this
+      // edit wrote; one that comes first leaves this edit a 409 to reload.
       const ladder: readonly string[] = VOCABULARIES.contact_level.values;
       const contactOf = (item: Row) => (item.contact_level as string | undefined) ?? 'none';
       for (const [index, item] of newItems.entries()) {
@@ -303,7 +304,19 @@ export async function editWorkoutTemplate(input: {
           [organizationId, item.drill_id],
         );
         const drill = rows[0];
-        if (!drill) throw new ValidationError(`Unsupported items[${index}].drill_id: not a drill of this gym`, 'ITEM_DRILL_NOT_FOUND');
+        if (!drill) {
+          // A drill edit that replaced the current version while this edit
+          // waited on its lock leaves the locked read empty: that is a change
+          // to reload, not a drill that does not exist.
+          const { rows: exists } = await tx.query(
+            `select 1 from pilot.drill_library where organization_id = $1 and drill_id = $2`,
+            [organizationId, item.drill_id],
+          );
+          if (exists.length > 0) {
+            throw new ConflictError('A drill in this template changed while it was being edited. Reload it and try again.', 'TEMPLATE_DRILL_CHANGED');
+          }
+          throw new ValidationError(`Unsupported items[${index}].drill_id: not a drill of this gym`, 'ITEM_DRILL_NOT_FOUND');
+        }
         if (drillChanged) {
           if (!drill.active) {
             throw new ValidationError(`Unsupported items[${index}].drill_id: this gym has withdrawn that drill`, 'ITEM_DRILL_WITHDRAWN');
