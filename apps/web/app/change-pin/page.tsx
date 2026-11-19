@@ -141,8 +141,8 @@ export default function ChangePinPage() {
               {error && (
                 /* Law 3: glyph + uppercase label carry the refusal, so it
                    survives greyscale; the red is the third channel. */
-                <div id="change-pin-error" role="alert" className="alert alert--critical alert--tight">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div id="change-pin-error" role="alert" className="alert alert--warning alert--tight">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-title">PIN refused</p>
                     <p className="alert-msg">{error}</p>

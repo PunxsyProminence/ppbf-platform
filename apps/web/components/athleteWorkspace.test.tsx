@@ -1015,6 +1015,19 @@ describe('athlete safety reporting', () => {
     });
   });
 
+  /* Dry run (lane U1, SC2-4): on a phone the modal's title sat under the
+     sticky role header, which is z-50 like the modal was, and the modal was
+     centred so a tall form could not scroll its top back into view. */
+  test('the pain modal sits above the sticky header and scrolls from its top', async () => {
+    await openPainModal();
+    const overlay = screen.getByLabelText('Pain Type').closest('.fixed') as HTMLElement;
+    expect(overlay.className).toContain('z-[60]');
+    expect(overlay.className).not.toMatch(/(^|\s)z-50(\s|$)/);
+    expect(overlay.className).toContain('items-start');
+    expect(overlay.className).toContain('overflow-y-auto');
+    expect(screen.getByText(/Soreness Details: Neck/)).toBeTruthy();
+  });
+
   test('a pain report is sent with a kind and unit the observations API accepts', async () => {
     painObservationResponse = jsonResponse({ ok: true, painReport: { coachNotified: true, severity: 'high' } });
     await openPainReport();

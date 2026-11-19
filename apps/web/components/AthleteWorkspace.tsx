@@ -4444,7 +4444,7 @@ export default function AthleteWorkspace() {
 
         {/* PAIN MODAL */}
         {showPainModal && selectedPainLocation && (
-          <div className="fixed inset-0 bg-[var(--hide-950)]/80 backdrop-blur-sm flex items-center justify-center z-50 p-[var(--s4)]">
+          <div className="fixed inset-0 bg-[var(--hide-950)]/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto z-[60] p-[var(--s4)] pt-[var(--s7)]">
             <div className="mat-leather--raised w-full max-w-md space-y-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]">
               <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Soreness Details: {selectedPainLocation}</h3>
               <div className="space-y-[var(--s4)]">

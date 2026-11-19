@@ -176,9 +176,9 @@ export default function AthletePinSignInPage() {
                athlete. It was previously colour and copy alone. */
             <p
               role="alert"
-              className="flex items-start gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] px-[var(--s4)] py-[var(--s4)] text-[length:var(--t-sm)] text-[color:var(--hide-950)]"
+              className="flex items-start gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_12%,var(--paper))] px-[var(--s4)] py-[var(--s4)] text-[length:var(--t-sm)] text-[color:var(--hide-950)]"
             >
-              <span aria-hidden="true" className="font-bold text-[color:var(--locked)]">✕</span>
+              <span aria-hidden="true" className="font-bold text-[color:var(--restricted)]">▲</span>
               <span>{error}</span>
             </p>
           )}

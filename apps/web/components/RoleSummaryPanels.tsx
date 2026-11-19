@@ -302,12 +302,12 @@ export function CoachSummaryPanel({
 
       {/* Injury Flags */}
       <div className={injuriesFlagged
-        ? 'rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)]'
+        ? 'rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)]'
         : KPI_TILE}
       >
         <p className="t-label">Injuries</p>
         <p className={KPI_VALUE}>
-          {injuriesFlagged ? <span aria-hidden="true">✕ </span> : null}
+          {injuriesFlagged ? <span aria-hidden="true">▲ </span> : null}
           <span>{count(injuryFlags)}</span>
         </p>
       </div>
@@ -436,12 +436,12 @@ export function AdminSummaryPanel({
     <div className="mb-[var(--s6)] grid grid-cols-2 gap-[var(--s4)] md:grid-cols-5">
       {/* Program Alerts */}
       <div className={programFlagged
-        ? 'rounded-[var(--r-md)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_16%,transparent)] p-[var(--s4)]'
+        ? 'rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_16%,transparent)] p-[var(--s4)]'
         : KPI_TILE}
       >
         <p className="t-label">Program</p>
         <p className={KPI_VALUE}>
-          {programFlagged ? <span aria-hidden="true">✕ </span> : null}
+          {programFlagged ? <span aria-hidden="true">▲ </span> : null}
           <span>{programAlerts}</span>
         </p>
       </div>
@@ -494,7 +494,7 @@ export function HelpPanel({
     <div className="rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-600)] p-[var(--s4)]">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex min-h-[44px] w-full items-center justify-between text-left"
+        className="flex w-full items-center justify-between text-left"
         aria-expanded={expanded}
       >
         <h3 className="t-label">HELP: {title}</h3>

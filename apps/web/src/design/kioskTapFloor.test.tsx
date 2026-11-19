@@ -118,6 +118,8 @@ describe('kiosk tap floor', () => {
  * fails here by name.
  */
 const FLOOR_ROUTES = [
+  'activate', // ATH-14: a PIN athlete's first screen on the tablet (lane U1, SC2-4)
+  'change-pin', // ATH-14: the PIN change that follows it
   'coach/environment/intake-router', // coach home: CoachWorkspace and Needs You
   'coach/sports-medicine',
   'coach/sparring-exposure',

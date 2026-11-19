@@ -521,17 +521,7 @@ const MARK_PENDING_SC2_3 = new Map<string, number>([
 ]);
 
 /** Still to be swept, with today's count: SC2-4 (athlete sign-in, athlete and parent pages). */
-const MARK_PENDING_SC2_4 = new Map<string, number>([
-  ['app/activate/page.tsx', 3],
-  ['app/athlete/progression-intelligence/page.tsx', 4],
-  ['app/athlete/sign-in/page.tsx', 3],
-  ['app/athlete/video-analysis/page.tsx', 2],
-  ['app/change-pin/page.tsx', 1],
-  ['app/parent/progression-visibility/page.tsx', 5],
-  ['app/parent/video/page.tsx', 1],
-  ['components/ProfileSettings.tsx', 4],
-  ['components/RoleSummaryPanels.tsx', 4],
-]);
+const MARK_PENDING_SC2_4 = new Map<string, number>([]);
 
 /**
  * Source with comments removed; strings (and what is inside them) kept.

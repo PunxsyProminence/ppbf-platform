@@ -22,8 +22,8 @@ const PIN_PATTERN = /^\d{6}$/;
    The cards were bg-white with rounded-2xl and rounded-xl fields: white is not
    one of Golden Era's materials and neither radius is on the Fibonacci scale. They
    are paper now. The chrome came off the safety gate's red alias, since a
-   Continue button is not a safety state. --locked survives only on the
-   genuine refusal (red itself is not reserved, OD-2026-09-29-001), and the
+   Continue button is not a safety state. A refused code is not a medical stop
+   either, so it is on the restricted rung with ▲ (OW25-48 A; lane U1, SC2-4), and the
    success panel takes the ladder's own --cleared instead of the hardcoded
    material-green hex it used to carry.
 
@@ -42,8 +42,8 @@ const FIELD_HINT = 'mt-[var(--s3)] text-[length:var(--t-sm)] leading-[1.5] text-
 const PIN_INPUT =
   'input input--kiosk mt-[var(--s3)] text-center tracking-[0.35em] font-[family-name:var(--font-mono)]';
 const ALERT =
-  'flex items-start gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[color:var(--locked)] ' +
-  'bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] px-[var(--s4)] py-[var(--s4)] ' +
+  'flex items-start gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[color:var(--restricted)] ' +
+  'bg-[color-mix(in_srgb,var(--restricted)_12%,var(--paper))] px-[var(--s4)] py-[var(--s4)] ' +
   'text-[length:var(--t-sm)] font-semibold text-[color:var(--hide-950)]';
 const STEP_ON = 'font-bold text-[color:var(--brass-800)]';
 const STEP_OFF = 'text-[color:var(--hide-600)]';
@@ -199,10 +199,10 @@ function ActivatePageContent() {
 
         {error && (
           /* Law 3 -- the glyph carries the state alongside the colour, so this
-             survives greyscale and colour blindness. Red is correct here: it is
-             a genuine refusal, not chrome. */
+             survives greyscale and colour blindness. A refused code is not a
+             medical stop, so it is restricted, not the --locked mark (OW25-48 A). */
           <p role="alert" className={ALERT}>
-            <span aria-hidden="true" className="font-bold text-[color:var(--locked)]">✕</span>
+            <span aria-hidden="true" className="font-bold text-[color:var(--restricted)]">▲</span>
             <span>{error}</span>
           </p>
         )}
