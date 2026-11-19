@@ -278,10 +278,17 @@ describe('coach session plans page', () => {
     fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
 
     expect(await screen.findByText(/Eyes on the chest/)).toBeInTheDocument();
-    // blk-2 has what_to_fix null and blk-1 has all four null: each says so, and a filled field is unchanged.
-    expect(screen.getAllByText('Fix:').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Not written yet').length).toBeGreaterThanOrEqual(5);
-    expect(screen.getByText(/Eyes on the chest/)).toBeInTheDocument();
+    // blk-1 has all four null: all four labels, each reading "Not written yet". blk-2 has only
+    // what_to_fix null: that one line says so, and its filled fields are unchanged.
+    const blocks = screen.getByRole('list', { name: /blocks/i });
+    const [first, second] = within(blocks).getAllByRole('listitem');
+    for (const label of ['Say:', 'Explain:', 'Watch:', 'Fix:']) {
+      expect(first.textContent).toContain(label);
+    }
+    expect(within(first).getAllByText('Not written yet')).toHaveLength(4);
+    expect(within(second).getAllByText('Not written yet')).toHaveLength(1);
+    expect(within(second).getByText(/Eyes on the chest/)).toBeInTheDocument();
+    expect(within(second).getByText(/Chin lifting/)).toBeInTheDocument();
   });
 
   it('surfaces the reset protocol, which a new coach needs before any drill', async () => {

@@ -1,4 +1,5 @@
 import {
+  D8_BLANK_EQUIPMENT_IS_NONE,
   NOT_WRITTEN_YET,
   equipmentLabel,
   executionSteps,
@@ -92,8 +93,12 @@ describe('setupAndEquipment', () => {
       setup: 'Partners at technical distance.',
       equipment: 'focus mitts',
     });
-    // A blank equipment column means none is needed (OD-2026-10-08-008 D8).
+    // A blank equipment column is unknown, not none (Jason 2026-11-19), unless the drill is a D8 drill.
     expect(setupAndEquipment('Use controlled partner touch.', '')).toEqual({
+      setup: 'Use controlled partner touch.',
+      equipment: 'Not written yet',
+    });
+    expect(setupAndEquipment('Use controlled partner touch.', '', 'drl_7f812fecacfee4')).toEqual({
       setup: 'Use controlled partner touch.',
       equipment: 'No equipment needed',
     });
@@ -132,12 +137,27 @@ describe('equipmentLabel', () => {
     expect(equipmentLabel('gloves')).toBe('gloves');
   });
 
-  // OD-2026-10-08-008 D8: "Treat blank as 'none needed' (Recommended)".
-  test('reads blank equipment as none needed, never as nothing to say', () => {
-    expect(equipmentLabel('')).toBe('No equipment needed');
-    expect(equipmentLabel('   ')).toBe('No equipment needed');
-    expect(equipmentLabel(null)).toBe('No equipment needed');
-    expect(equipmentLabel(undefined)).toBe('No equipment needed');
-    expect(setupAndEquipment('', '')).toEqual({ setup: null, equipment: 'No equipment needed' });
+  // Jason 2026-11-19, "A: Not written yet": a blank value is unknown, not "none".
+  test('reads blank equipment as not written yet, never as none needed', () => {
+    for (const blank of ['', '   ', null, undefined]) {
+      expect(equipmentLabel(blank)).toBe('Not written yet');
+      expect(equipmentLabel(blank, 'drl_9de5719225a39c')).toBe('Not written yet');
+    }
+    expect(setupAndEquipment('', '')).toEqual({ setup: null, equipment: 'Not written yet' });
+  });
+
+  test('a written "none" stays "No equipment needed", for any drill', () => {
+    expect(equipmentLabel('none')).toBe('No equipment needed');
+    expect(equipmentLabel(' None ', 'drl_9de5719225a39c')).toBe('No equipment needed');
+  });
+
+  // OD-2026-10-08-008 D8: blank equipment on the five source-manual drills means none needed.
+  test('the five D8 drills keep "No equipment needed" when blank; a written value is unchanged', () => {
+    expect(D8_BLANK_EQUIPMENT_IS_NONE.size).toBe(5);
+    for (const id of D8_BLANK_EQUIPMENT_IS_NONE) {
+      expect(equipmentLabel('', id)).toBe('No equipment needed');
+      expect(equipmentLabel(null, id)).toBe('No equipment needed');
+      expect(equipmentLabel('gloves', id)).toBe('gloves');
+    }
   });
 });

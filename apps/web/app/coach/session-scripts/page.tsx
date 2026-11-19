@@ -103,7 +103,9 @@ function blockDetailLines(block: Block): { label: string; value: string }[] {
     explainLine(block.what_to_explain ?? ''),
     { label: 'Watch', value: block.what_to_watch ?? '' },
     { label: 'Fix', value: block.what_to_fix ?? '' },
-  ].map((line) => ({ ...line, value: orNotWritten(line.value) }));
+  ].map((line) => (line.value.trim() === ''
+    ? { label: line.label === 'From the template' ? 'Explain' : line.label, value: orNotWritten('') }
+    : line));
 }
 
 function CoachSessionScripts() {

@@ -1259,9 +1259,9 @@ function CoachDrillLibrary() {
                 <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
                   <span className="font-semibold text-[color:var(--bone-200)]">Contact:</span> {humanizeContactLevel(drill.contact_level)}
                 </p>
-                {equipmentLabel(drill.equipment_needed) && (
+                {equipmentLabel(drill.equipment_needed, drill.drill_id) && (
                   <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
-                    <span className="font-semibold text-[color:var(--bone-200)]">Equipment:</span> {equipmentLabel(drill.equipment_needed)}
+                    <span className="font-semibold text-[color:var(--bone-200)]">Equipment:</span> {equipmentLabel(drill.equipment_needed, drill.drill_id)}
                   </p>
                 )}
                 {/* .t-body: the parchment card's dark ink (golden-era .mat-leather--raised .t-body) and the kiosk size. */}

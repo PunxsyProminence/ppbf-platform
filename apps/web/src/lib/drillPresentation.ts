@@ -89,13 +89,31 @@ export function scaleLevelName(level: string): string {
 }
 
 /**
- * An equipment value as a reader should see it: "none" means none is needed,
- * and so does a blank one (OD-2026-10-08-008 D8, "Treat blank as 'none
- * needed' (Recommended)"), for coaches and athletes alike.
+ * The five source-manual drills whose blank equipment Jason ruled "none needed"
+ * (OD-2026-10-08-008 D8). Identified by drill_id: all five carry
+ * field_provenance 'PPBF source manual v3' and source_ref
+ * 'Punxsy_Drill_Library_Source_v3.docx' in seed_drill_library.csv. Every other
+ * blank equipment value is unknown, not "none" (Jason 2026-11-19, "A: Not
+ * written yet").
  */
-export function equipmentLabel(equipment: string | null | undefined): string {
+export const D8_BLANK_EQUIPMENT_IS_NONE: ReadonlySet<string> = new Set([
+  'drl_7f812fecacfee4',
+  'drl_2d0193a7c52e58',
+  'drl_08c95a746f83e9',
+  'drl_7af719b3b85e94',
+  'drl_0c72ef57315f70',
+]);
+
+/**
+ * An equipment value as a reader should see it. A written "none" means none is
+ * needed; a blank value is "Not written yet", except for the D8 drills, where
+ * the owner ruled blank means none needed.
+ */
+export function equipmentLabel(equipment: string | null | undefined, drillId?: string | null): string {
   const value = (equipment ?? '').trim();
-  return !value || value.toLowerCase() === 'none' ? 'No equipment needed' : value;
+  if (value.toLowerCase() === 'none') return 'No equipment needed';
+  if (!value) return drillId && D8_BLANK_EQUIPMENT_IS_NONE.has(drillId) ? 'No equipment needed' : NOT_WRITTEN_YET;
+  return value;
 }
 
 /**
@@ -111,6 +129,7 @@ export function equipmentLabel(equipment: string | null | undefined): string {
 export function setupAndEquipment(
   setup: string | null | undefined,
   equipment: string | null | undefined,
+  drillId?: string | null,
 ): { setup: string | null; equipment: string } {
   const setupText = (setup ?? '').trim();
   const equipmentText = (equipment ?? '').trim();
@@ -120,7 +139,7 @@ export function setupAndEquipment(
   if (!setupText || setupIsEquipment) {
     // The equipment column is the authority on equipment; the setup word is
     // used only when equipment itself is blank.
-    return { setup: null, equipment: equipmentLabel(equipmentText || setupText) };
+    return { setup: null, equipment: equipmentLabel(equipmentText || setupText, drillId) };
   }
-  return { setup: setupText, equipment: equipmentLabel(equipmentText) };
+  return { setup: setupText, equipment: equipmentLabel(equipmentText, drillId) };
 }

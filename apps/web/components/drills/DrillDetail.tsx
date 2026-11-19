@@ -92,7 +92,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   const ownStops = view.stopRules.filter((rule) => rule.origin === 'drill' && rule.kind !== 'warmup_decay');
   const readiness = view.stopRules.filter((rule) => rule.kind === 'warmup_decay');
   const everyDrillStops = view.stopRules.filter((rule) => rule.origin === 'universal' && rule.kind !== 'warmup_decay');
-  const { setup, equipment } = setupAndEquipment(view.setup, view.equipment);
+  const { setup, equipment } = setupAndEquipment(view.setup, view.equipment, view.id);
   const coachStatus = view.coach ? referenceStatus(view.coach) : null;
   const good = listItemsOrNotWritten(view.good);
   const bad = listItemsOrNotWritten(view.bad);

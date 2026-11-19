@@ -79,7 +79,24 @@ describe('empty drill fields read "Not written yet"', () => {
 
   it('athlete view: the teaching sections say so', () => {
     render(<DrillDetail view={fromAthleteDrillDetail(empty as never)} audience="athlete" />);
-    expect(screen.getAllByText('Not written yet').length).toBeGreaterThanOrEqual(4);
+    // good, bad, common errors, corrections; transfer is coach-only.
+    expect(screen.getAllByText('Not written yet')).toHaveLength(4);
+  });
+
+  it('blank equipment reads "Not written yet"; "none" and the D8 drills read "No equipment needed"', () => {
+    const blank = { ...filled, equipment_needed: '' } as unknown as DrillWithDetail;
+    const { unmount } = render(<DrillDetail view={fromCoachDrillDetail(blank)} audience="coach" />);
+    expect(screen.getByText('Equipment').nextElementSibling).toHaveTextContent('Not written yet');
+    unmount();
+
+    const none = { ...filled, equipment_needed: 'none' } as unknown as DrillWithDetail;
+    const second = render(<DrillDetail view={fromCoachDrillDetail(none)} audience="coach" />);
+    expect(screen.getByText('Equipment').nextElementSibling).toHaveTextContent('No equipment needed');
+    second.unmount();
+
+    const d8 = { ...filled, drill_id: 'drl_7f812fecacfee4', equipment_needed: '' } as unknown as DrillWithDetail;
+    render(<DrillDetail view={fromCoachDrillDetail(d8)} audience="coach" />);
+    expect(screen.getByText('Equipment').nextElementSibling).toHaveTextContent('No equipment needed');
   });
 
   it('filled fields are shown as written and no "Not written yet" appears', () => {
