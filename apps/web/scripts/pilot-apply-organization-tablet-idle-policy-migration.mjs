@@ -20,7 +20,7 @@ function sslConfig() {
 // Asserts the table, its exact column list, the one CHECK compared IN FULL
 // against the text Postgres stores (tabletIdlePolicy.pg.test.ts drives this
 // runner against a real database, so a deparse mismatch fails there first),
-// the primary key, and both foreign keys by target and delete rule.
+// the primary key, and both foreign keys by column, target and delete rule.
 const EXPECTED_CHECKS = {
   pilot_org_tablet_idle_minutes_check:
     'CHECK ((idle_minutes = ANY (ARRAY[15, 30, 60, 120, 240])))',
@@ -60,11 +60,19 @@ const READINESS_QUERY = `
       select 1 from pg_constraint c
       where c.conrelid = to_regclass('pilot.organization_tablet_idle_policy') and c.contype = 'f'
         and c.convalidated and c.confrelid = to_regclass('pilot.organizations') and c.confdeltype = 'c'
+        and (select array_agg(a.attname::text)
+               from unnest(c.conkey) k(attnum)
+               join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
+            = array['organization_id']
     ) as organization_fk_ready,
     exists (
       select 1 from pg_constraint c
       where c.conrelid = to_regclass('pilot.organization_tablet_idle_policy') and c.contype = 'f'
         and c.convalidated and c.confrelid = to_regclass('pilot.accounts') and c.confdeltype = 'n'
+        and (select array_agg(a.attname::text)
+               from unnest(c.conkey) k(attnum)
+               join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum)
+            = array['set_by_account_id']
     ) as set_by_fk_ready
 `;
 const READINESS_PARAMS = [

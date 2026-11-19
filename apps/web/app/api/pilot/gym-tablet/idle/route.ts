@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
  *
  * PUT { idle_minutes }: the gym admin only (organization_admin, and 'admin',
  * its alias). Platform owner, coach, athlete, parent and board are refused.
- * One of 15, 30, 60, 120 or 240; any other field or value is refused. The
+ * One of 15, 30, 60, 120 or 240; any other field, query field or value is refused. The
  * write and its audit row commit together.
  */
 
@@ -44,6 +44,9 @@ export async function PUT(request: NextRequest) {
     const principal = await requirePrincipal(request);
     // organization_admin; 'admin' satisfies it too (http.ts requireRole alias).
     requireRole(principal, ['organization_admin']);
+    if (request.nextUrl.searchParams.size > 0) {
+      throw new ValidationError('Unsupported query: send idle_minutes in the body only');
+    }
     const body: unknown = await request.json().catch(() => null);
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       throw new ValidationError('Request body must be a JSON object with idle_minutes');

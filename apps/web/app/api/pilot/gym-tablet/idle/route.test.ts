@@ -94,6 +94,13 @@ describe('PUT', () => {
     expect(mockSet).not.toHaveBeenCalled();
   });
 
+  it('refuses a query field on the write, so no request can name a gym', async () => {
+    mockPrincipal.mockResolvedValue(principal('organization_admin'));
+    const response = await PUT(new NextRequest(`${URL}?organization_id=org-2`, { method: 'PUT', body: JSON.stringify({ idle_minutes: 30 }) }));
+    expect(response.status).toBe(400);
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
   it('passes the value through for the module to refuse a time off the list', async () => {
     mockPrincipal.mockResolvedValue(principal('organization_admin'));
     mockSet.mockImplementation(jest.requireActual('@/src/server/pilot/tabletIdlePolicy').setTabletIdlePolicy);
