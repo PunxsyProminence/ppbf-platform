@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { COACHING_CONTENT_READER_ROLES } from '@/src/server/pilot/coachingContentAccess';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
+import { editWorkoutTemplate, parseWorkoutTemplateEdit } from '@/src/server/pilot/workoutTemplateEdit';
 import {
   projectWorkoutTemplateDetailForReader,
   projectWorkoutTemplatesForReader,
@@ -75,6 +76,43 @@ export async function GET(request: NextRequest) {
       ageBand: searchParams.get('age_band') ?? undefined,
     });
     return NextResponse.json({ templates: projectWorkoutTemplatesForReader(principal.role, templates) });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+// WHO MAY EDIT A WORKOUT TEMPLATE (OD-2026-11-19-005, OW25-51; Overwatch ruling
+// 2026-11-19): a coach or organization admin of THIS gym ('admin' is the legacy
+// row name for organization_admin, roleAlias.ts:17-24) -- the author list that
+// issues templates (workout-templates/issue), held identical across routes by
+// coachingContentAccess.test.ts. The platform owner is refused: a gym's
+// templates are the gym's content (contentImport/actor.ts:31-38). Every other
+// role is refused. Another gym's template reads as not found, because the edit
+// looks it up by principal.organizationId and no other.
+const DRILL_AUTHOR_ROLES = ['coach', 'organization_admin', 'admin'] as const;
+
+// Edits one workout template and its items: the body names the version being
+// edited (template_id, which must still be the current version), the template
+// fields that change, and optionally the whole ordered item list. The edit is
+// written as the template's next version (workoutTemplateEdit.ts); workouts
+// already issued keep what they were issued.
+export async function PATCH(request: NextRequest) {
+  try {
+    const principal = await requirePrincipal(request);
+    requireRole(principal, [...DRILL_AUTHOR_ROLES]);
+
+    const body = await request.json().catch(() => null);
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new Error('Request body must be a JSON object');
+    }
+
+    const result = await editWorkoutTemplate({
+      organizationId: principal.organizationId,
+      request: parseWorkoutTemplateEdit(body as Record<string, unknown>),
+      actorAccountId: principal.accountId,
+      actorRole: principal.role,
+    });
+    return NextResponse.json({ ok: true, organization_id: principal.organizationId, ...result });
   } catch (error) {
     return jsonError(error);
   }
