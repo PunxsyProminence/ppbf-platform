@@ -20,6 +20,14 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-19-002 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19: the "Research Overwatch" session and its files are disregarded; security and credential work waits for the end of the build; cards OW25-41 to OW25-44; Rule 6 holds one build slot: OW25-41 "C: Release with DFX-b and the DB fix"; OW25-42 "B: Aerobic gate test mismatch"; OW25-43 "A: Usability walk-through finding (Recommended)"; OW25-44 free text | RECONSTRUCTED |  | yes |
+| OD-2026-11-19-001 | 2026-11-19 | Jason: start a lane for each piece that still needs doing, except the secrets | PRIMARY |  | yes |
+| OD-2026-11-18-004 | 2026-11-18 | A Rule 6 lane runs now: "A: Read, then start"; applied rulings for lane R6-a | PRIMARY |  | yes |
+| OD-2026-11-18-003 | 2026-11-18 | Security and credential work waits for the end of the build | PRIMARY |  | yes |
+| OD-2026-11-18-002 | 2026-11-18 | Runner Azure objects kept; the platform admin account holds the Key Vault write role until the key is pasted; a security-cleanup lane is queued after lane DBT: "A: Keep them (Recommended)"; "A: Admin@ (Recommended)"; "A: Remove after paste (Recommended)"; "A: Yes, after DBT (Recommended)" | PRIMARY |  | yes |
+| OD-2026-11-18-001 | 2026-11-18 | GitHub's production environment accepts deployments only from main | PRIMARY |  | yes |
+| OD-2026-11-17-012 | 2026-11-17 | The runner design is approved: fork-PR approval for all outside contributors, and staging uses the Azure runners too: "A: Approve as designed (Recommended)"; "A: All outside (Recommended)"; "A: Staging too (Recommended)" | PRIMARY |  | yes |
+| OD-2026-11-17-011 | 2026-11-17 | The record count of old pre-set values runs as a read-only GitHub job | PRIMARY |  | yes |
 | OD-2026-11-17-010 | 2026-11-17 | A Claude Science research session designs a club test-retest study (RA-11); one findings file, nothing built | RECONSTRUCTED |  |  |
 | OD-2026-11-17-009 | 2026-11-17 | Coach and family screen design fixes: all small fixes go to Claude Code, the loss-of-consciousness default first and ahead of the database lane; a neutral "could not be checked" line, gym-floor size for two pages, and a "Restricted" mark: OW25-34 to OW25-39, all A | RECONSTRUCTED |  |  |
 | OD-2026-11-17-008 | 2026-11-17 | Production-database jobs move to short-lived self-hosted runners inside Azure (main branch only); a GitHub runner credential and usage-billed Azure resources are approved | PRIMARY |  | yes |
@@ -594,6 +602,329 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-19-002 -- Backbone Overwatch 25 note of 2026-11-19: the "Research Overwatch" session and its files are disregarded; security and credential work waits for the end of the build; cards OW25-41 to OW25-44; Rule 6 holds one build slot: OW25-41 "C: Release with DFX-b and the DB fix"; OW25-42 "B: Aerobic gate test mismatch"; OW25-43 "A: Usability walk-through finding (Recommended)"; OW25-44 free text
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone Overwatch thread ("Overwatch 25"), 2026-11-18. That transcript is not readable from this repo's sessions. The card text, the options in the order shown and his answers are copied, by script, from the record that thread wrote: OneDrive `PPBF-AI-Lanes\Research\Backbone\working\overwatch\CARDS_OW25.md` (sha256[:16] `e310df69182e5672` is the hash the note gives and Overwatch matched on 2026-11-19; when read for this entry the file had since been extended (hash `346e3a46b7813cee`, later cards appended) and the OW25-41 to OW25-44 sections were unchanged; a working file that may change). In this session (Overwatch, app side; transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 29738, 2026-11-19T05:23:23.164Z, about 00:23 US Eastern on 2026-11-19) he pasted the Backbone Overwatch 25 note of 2026-11-19 00:15 US Eastern asking for these records ("Record this ruling in the next records PR beside OW25-41 C, OW25-42 B, OW25-43 A and OW25-44"; Backbone ACTIONS A-102, A-104, A-105); the paste carries no typed words of his own. The note's quote from Jason, "any security code stuff or credentials can be taken care of at the end of the build", is the note's report of what he said in chat; it is not copied here from the chat itself. New; edits no earlier entry's text.
+
+**The cards, as recorded (quoted from CARDS_OW25.md):**
+
+> **OW25-41** (header 'Release DFX-a')
+> Question, as shown:
+> Official (OW25-41): #1955 (DFX-a, OW25-36 A) is merged at main 45f1da70, but production still runs dc0f4a5e. Until a release, new medical restriction records in production still start with Source 'ringside affidavit' and Loss of consciousness 'none'. A release opens a release window that holds merges for about an hour (DBT #1957 and DFX-count #1956 wait). When should DFX-a ship?
+> Plain: The medical form fix is built but not live yet. Ship it now, or wait and ship it with the rest of the design fixes?
+>
+> Options, in the order shown:
+> 1. "A: Release now (Recommended)": Claude Code releases main 45f1da70 to production now, with the usual staging check and your approval. Pros: Stops pre-picked medical answers being saved soonest (the reason for OW25-39 A). Cons: About an hour of merge hold; DFX-b needs a second release later.
+> 2. "B: Release with DFX-b": One release for the whole design-fix lane when DFX-b merges (about tomorrow). Pros: One release window. Cons: The form keeps pre-picking answers until then.
+> 3. "C: Release with DFX-b and the DB fix": One release after DFX-b and DBT #1957 both merge. Pros: Fewest releases. Cons: Longest wait for the medical form fix.
+>
+> Jason's answer: "C: Release with DFX-b and the DB fix" (against the recommendation).
+
+> **OW25-42** (header 'Parallel research')
+> Question, as shown (multi-select):
+> Official (OW25-42): Both build slots are full (DBT and DFX; two-lane cap OD-2026-11-16-005, OW25-27 A). Research here takes no build slot: each sub-agent writes one findings file and builds nothing. I suggest at most two at once (about 2 GB RAM free). Which should start now?
+> Plain: The builders are busy. Which research jobs should I run here meanwhile?
+>
+> Options, in the order shown:
+> 1. "A: Blind coach check of AI drafts (Recommended)": D-PK09: design a small blinded check coaches can run on the AI-drafted drill and template text now live without your review (OD-2026-11-15-011), youth sparring drills first. Pros: A safety net for unread drafts. Cons: Coaches' time later to run it.
+> 2. "B: Aerobic gate test mismatch": The T1 and AM1 gates set 30-15 intermittent run (VIFT) targets, but the app records a 20-m shuttle (A-101, Q-RA11-1). Research whether one can stand in for the other, and how. Pros: Without it those gates cannot be judged from app data. Cons: May end in 'no valid conversion'.
+> 3. "C: The 6 held DOC-136 templates": What USA Boxing's terms allow for its HPCE home sheets, and how members could get them without the public repo. Pros: Turns 'held' into a real option. Cons: May need USA Boxing's answer.
+> 4. "D: 'Not written' fields check": Code read: does the app show the 151 missing exit conditions and 190 missing correction paths as 'not written', never empty or complete? Pros: Checks a binding display rule on live content. Cons: Reads code, not screens.
+>
+> Jason's answer: "B: Aerobic gate test mismatch" (only B chosen; A, C, D not started).
+>
+> Context (chat, 2026-11-18): Jason: "so i wasn looking aroun in the live app, it doesnt seem ver functional for th euser".
+
+> **OW25-43** (header 'App usability')
+> Question, as shown:
+> Official (OW25-43): Jason reports the live app "doesn't seem very functional for the user". So far Overwatch checks covered data fidelity and binding rules, not whether each user can finish their main tasks. How should this be tackled first?
+> Plain: How do we find out what's wrong with the app for real users?
+>
+> Options, in the order shown:
+> 1. "A: Usability walk-through finding (Recommended)": A Claude Science research session reads the app code (read-only mirror) for each role and device, maps each main task end to end, and lists dead ends, empty screens, controls that do nothing and confusing words, with fixes ranked. One findings file; builds nothing. Pros: Fast; covers every role; gives Claude Code a fix list. Cons: Code reading, not clicking the live screens; your notes make it sharper.
+> 2. "B: Your notes first, then a fix list": You write down what you tried and what went wrong (role, device, screen); I turn it into a ranked fix list and check each item against the code. Pros: Starts from what you actually felt. Cons: Covers only what you tried.
+> 3. "C: Pause new build lanes for a design review": Hold the Rule 6 and 'not written' lanes until A or B is done, so build time goes to usability fixes first. Pros: Build time goes where users feel it. Cons: Delays the queued lanes.
+>
+> Jason's answer: "A: Usability walk-through finding (Recommended)".
+
+> **OW25-44** (header 'Which users')
+> Question, as shown (multi-select):
+> Official (OW25-44): Which roles and devices should the usability check cover first? (Pick all that apply.)
+> Plain: Who were you trying the app as, and on what?
+>
+> Options, in the order shown:
+> 1. "Coach on tablet or phone (Recommended)": Planning and running a class, drills, templates, tracks, safety records.
+> 2. "Athlete (adult or minor)": Today's session, progress, what to do next.
+> 3. "Parent": Safety page, child's schedule and progress.
+> 4. "Gym kiosk tablet or wall TV": Check-in, round timer, class display.
+>
+> Jason's answer (free text): "make this a seperate session/lane all of it need scrubbed, there are things that are in the wrong place, its not ver intitive and the over all lay out is tool scroll up and down to find, things hsould be nested and have a flow to it rather than looking andhunting for features"
+> Overwatch reading (INFERRED): all roles and devices; a separate session for a whole-app scrub of layout, placement, nesting and flow.
+
+**What the note reported (the paste, not Jason's words):**
+
+1. Disregard the Claude Science session called "Research Overwatch" and every file it wrote in `research/claude-research-project/findings` (the note lists `2026-11-18-research-overwatch-live.md`, `2026-11-18-research-status-for-overwatch.md`, `2026-11-18-aerobic-gate-vift-vs-20m-shuttle.md` and the five "-r2" files of the 2026-11-16 and 2026-11-17 findings). The note says Jason said it ran under the wrong login. Backbone Overwatch 25 remains the Claude Science Overwatch for research and issues its own "-v2" fixes for the files the 06:00 digest rated NEEDS FIXES.
+2. The note quotes Jason, in chat: "any security code stuff or credentials can be taken care of at the end of the build". The security cleanup lane does not start now. It joins the deferred Azure runner secret steps at the end of the build: the service principal's User Access Administrator role at subscription scope, the container registry's admin user, the GitHub App key, the grant, the guard check and the pilot.
+3. Rule 6 holds one build slot: lane R6-a first, then R6-b. The second slot goes to a "Not written yet" display lane under the standing go (OD-2026-11-15-010): drill and template fields the frozen Backbone left empty (for example exit condition and correction path) show as "Not written yet" on coach and athlete screens, never blank, zero or complete. Its step 1 report comes first.
+4. The note says OW25-41 C is met by the b833306f release.
+
+**Jason:** OW25-41 "C: Release with DFX-b and the DB fix" (against the recommendation); OW25-42 "B: Aerobic gate test mismatch" (only B chosen); OW25-43 "A: Usability walk-through finding (Recommended)"; OW25-44, free text, quoted in the card record above.
+
+**Ruling:**
+
+1. OW25-41 C: the medical-form fix (DFX-a) ships in one release with DFX-b and the database fix. The note reports it met by the b833306f release (REPORTED, not checked here).
+2. OW25-42 B: one research session works on the aerobic gate test mismatch (the 30-15 intermittent run targets against the 20-m shuttle the app records). The other three research options on that card were not started.
+3. OW25-43 A: a Claude Science research session does a usability walk-through of the app code for each role and device and writes one findings file; it builds nothing.
+4. OW25-44: a separate whole-app usability and layout scrub session (Backbone ACTIONS A-105); all roles and devices (the card record's reading, INFERRED).
+5. Per the note, the security cleanup lane does not start now and is deferred with the runner secret steps (see OD-2026-11-18-003).
+6. The "Research Overwatch" session's files are disregarded, as the note states; nothing in them is cited as support for any ruling.
+
+**Not ruled here:** the contents of the disregarded files; the date the deferred security steps run; the second build slot's lane beyond what OD-2026-11-15-010 already allows.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-19-001 -- Jason: start a lane for each piece that still needs doing, except the secrets: "ok start lanes for eacg piece that still needs done except secrets"
+
+**Provenance: PRIMARY.** Jason's typed message, 2026-11-19T05:20:10.433Z (about 00:20 US Eastern on 2026-11-19), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 29645, `origin.kind` human, copied by script. New; edits no earlier entry's text.
+
+**What he typed, exactly (typos kept):**
+
+> ok start lanes for eacg piece that still needs done except secrets
+
+**Jason:** *"ok start lanes for eacg piece that still needs done except secrets"*
+
+**Ruling:**
+
+1. A lane is started for each piece of work that still needs doing, except the secrets work (see OD-2026-11-18-003).
+
+**Not ruled here:** which pieces count, their order, or any change to the two-build-lane cap (OD-2026-11-16-005); each lane still starts from a brief.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-18-004 -- A Rule 6 lane runs now: "A: Read, then start"; applied rulings for lane R6-a
+
+**Provenance: PRIMARY.** Jason's typed reply "A: Read, then start", 2026-11-19T04:54:34.127Z (about 23:54 US Eastern on 2026-11-18), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 29455, `origin.kind` human, copied by script. The next-step box that asked it is at line 29447 (2026-11-19T04:51:28.891Z). New; edits no earlier entry's text.
+
+**What was put to him (the next-step box at line 29447, quoted):**
+
+> **Next-step box** (recap, question and buttons, as shown)
+> Recap: No new research is needed for Rule 6: both of its choices are already ruled. Claude Science has since corrected the two research papers behind them (-r2 files, 2026-11-18), and I haven't read those yet.
+> Question: Read the two corrected papers, then start the Rule 6 lane?
+>
+> Buttons, in the order shown:
+> 1. "A: Read, then start"
+> 2. "B: Start now"
+
+**Jason:** *"A: Read, then start"*
+
+**Ruling:**
+
+1. A Rule 6 lane runs now. This settles what OD-2026-11-17-004 left open ("Not ruled here: whether or when a Rule 6 lane runs"); that entry is not edited. The ruling rests on the original finding (sha256[:16] `5f6b74c64b09054d`), as OD-2026-11-17-004 already says.
+2. **Applied (REPORTED by Overwatch):** Overwatch started lane R6-a. Overwatch also read two "-r2" research files; those files were later disregarded (OD-2026-11-19-002) and are not cited as support.
+
+**Applied rulings for lane R6-a (Overwatch's, under ASKED ONCE, RULED ONCE; REPORTED from its message to lane R6-a, 2026-11-19; not Jason's words):**
+
+1. OW25-31 A ("A: No ratio for under-18s; plain numbers (Recommended)", OD-2026-11-17-004) covers Rule 7 (load up, wellness down) too.
+2. Minors keep their wellness check-in changes in plain words.
+3. Under-18s with no usable numbers see "Your coach is looking at your recent training."
+4. An unknown date of birth counts as a minor (OD-2026-10-04-010).
+
+**Not ruled here:** the lane's design beyond the four applied rulings; any Rule 6 change for adults beyond OD-2026-11-17-004.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-18-003 -- Security and credential work waits for the end of the build: "Don't worry about the secrets we will deal with that when we finish the build"
+
+**Provenance: PRIMARY.** Jason's typed message, 2026-11-19T00:01:30.080Z (about 19:01 US Eastern on 2026-11-18), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 28559, `origin.kind` human, copied by script. It came after the four Azure cards of OD-2026-11-18-002. New; edits no earlier entry's text.
+
+**What he typed, exactly:**
+
+> Don't worry about the secrets we will deal with that when we finish the build
+
+**Jason:** *"Don't worry about the secrets we will deal with that when we finish the build"*
+
+**Ruling:**
+
+1. The secrets work waits until the build is finished.
+2. **Applied (Overwatch):** the GitHub App, its key, the grant, the guard check and the pilot are deferred to the end of the build; lane DBT was closed at #1962.
+3. **Overwatch's reading, not his words:** the security cleanup lane from the fourth card of OD-2026-11-18-002 ("A: Yes, after DBT (Recommended)") is part of the same deferred work. The Backbone Overwatch 25 note reports the same (OD-2026-11-19-002).
+
+**Not ruled here:** the date "when we finish the build" falls on; the Azure object and role answers in OD-2026-11-18-002 stand.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-18-002 -- Runner Azure objects kept; the platform admin account holds the Key Vault write role until the key is pasted; a security-cleanup lane is queued after lane DBT: "A: Keep them (Recommended)"; "A: Admin@ (Recommended)"; "A: Remove after paste (Recommended)"; "A: Yes, after DBT (Recommended)"
+
+**Provenance: PRIMARY.** Jason's answers on the card, 2026-11-18T21:14:33.331Z (about 16:14 US Eastern), the tool result at transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 28414, checked against the card by script. The card is at line 28413 (2026-11-18T21:11:56.833Z). Email addresses in the card text are replaced by role names in this public file; the rest is copied by script. New; edits no earlier entry's text.
+
+**Context (REPORTED by Overwatch, from lane DBT's report):** at about 10:22Z on 2026-11-18 a lane test reached the real Azure command line and created three Azure objects (a runner identity, its image-pull role and an empty Key Vault) without approval. The Azure activity log showed no other writes and no deletes. The fixes landed in #1961.
+
+**What was put to him (the card at line 28413, quoted):**
+
+> **Azure objs**
+> Question, as shown:
+> Retain or remove the 3 Azure objects lane DBT's test created without approval: id-ppbf-gh-runner, its AcrPull role on acrppbfenterprise, and empty key vault kv-ppbf-gh-runner? (Plain: the test built 3 of the 5 runner pieces early, correctly and locked. Keep them, or tear them down and rebuild?)
+>
+> Options, in the order shown:
+> 1. "A: Keep them (Recommended)": They match the approved design exactly. The setup script treats them as already built. Nothing changes for the gym.
+> 2. "B: Delete them": The identity and role delete cleanly. The vault name stays reserved for 90 days, so the setup uses a new vault name. Adds a small rename PR.
+
+> **Key writer**
+> Question, as shown:
+> Which Entra account gets the 'Key Vault Secrets Officer' role on kv-ppbf-gh-runner, so it can paste the GitHub App private key? (Plain: which login you'll use in the Azure portal to paste the runner's key. Without this role even the subscription owner can't paste it.)
+>
+> Options, in the order shown:
+> 1. "A: Admin@ (Recommended)": [the platform admin account's address, omitted from this public file]: the platform admin, and the login Azure runs under on this PC. The runner key is platform work, not gym data.
+> 2. "B: ppbf@": [the organization admin account's address, omitted from this public file], the organization admin. Its Azure access is unverified; I'd check first.
+
+> **After paste**
+> Question, as shown:
+> After the key is pasted, remove the Secrets Officer role from that account (re-grant only when the key is rotated), or leave it in place? (Plain: once the key is in, should your login lose the ability to change it until next time?)
+>
+> Options, in the order shown:
+> 1. "A: Remove after paste (Recommended)": Only the runner's login can read the key. A key rotation (rare) needs one re-grant first.
+> 2. "B: Keep it": Your login can replace the key at any time without a setup step. One more standing permission on a key that controls the repo.
+
+> **Security**
+> Question, as shown:
+> Queue a security-cleanup lane after DBT closes, to investigate and fix: (1) sp-ppbf-autopilot holds User Access Administrator on the whole subscription; (2) the container registry's shared admin login is on. Each actual change would come to you as a card first. (Plain: two setup shortcuts make the deploy account and the image store more powerful than they need to be; fix them after the runners are done?)
+>
+> Options, in the order shown:
+> 1. "A: Yes, after DBT (Recommended)": Goes in the queue after Rule 6, dependabot and the weigh-in sheets, or ahead of them if you say so. Each change gets carded to you before it's made.
+> 2. "B: Not now": Leave both as they are. They stay noted in STATUS.
+
+**Jason:** "A: Keep them (Recommended)"; "A: Admin@ (Recommended)"; "A: Remove after paste (Recommended)"; "A: Yes, after DBT (Recommended)"
+
+**Ruling:**
+
+1. The three objects the lane test created are kept; the setup script treats them as already built.
+2. The platform admin account (not the organization admin account) holds the Key Vault Secrets Officer role on the runner's vault, so it can paste the GitHub App private key.
+3. The role is removed from that account after the key is pasted, and re-granted only when the key is rotated.
+4. A security-cleanup lane is queued after DBT closes, to investigate the deploy account's subscription-wide User Access Administrator role and the container registry's shared admin login; each actual change comes to Jason as a card first.
+
+**Not ruled here:** when the cleanup lane runs. Later the same evening Jason said the secrets work waits for the end of the build (OD-2026-11-18-003); Overwatch reads that as covering the cleanup lane.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-18-001 -- GitHub's production environment accepts deployments only from main: "A: Main only"
+
+**Provenance: PRIMARY.** Jason's typed reply "A: Main only", 2026-11-18T11:42:53.003Z (about 06:42 US Eastern), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 28307, `origin.kind` human, copied by script. The next-step box that asked it is at line 28140 (2026-11-18T10:54:34.466Z); the finding behind it is in Overwatch's message at line 28144. New; edits no earlier entry's text.
+
+**The finding behind it (OBSERVED by Overwatch):** the service login used for production sign-in to Azure trusted any run in GitHub's production environment, and that environment had a required reviewer but no rule limiting the branch. A side-branch run someone approved would have received the production sign-in. Of 303 past production deployments, 301 came from main; the other two came from `claude/` branches in August, and one of them ran (2026-08-28).
+
+**What was put to him (the next-step box at line 28140, quoted):**
+
+> **Next-step box** (recap, question and buttons, as shown)
+> Recap: Lane DBT has opened #1961 (Azure setup script; CI running, I merge when green) and #1962 (runner launch, stacked on it). Its review found that any branch can run under GitHub's production environment once approved. Your keep/delete call on the three Azure objects is still open.
+> Question: Limit GitHub's production environment to the main branch?
+>
+> Buttons, in the order shown:
+> 1. "A: Main only"
+> 2. "B: Leave as is"
+
+**Jason:** *"A: Main only"*
+
+**Ruling:**
+
+1. GitHub's production environment accepts deployments only from branch main.
+2. **Applied (REPORTED, verified by Overwatch):** the environment now has that branch rule; the required reviewer is unchanged.
+3. **Applied (Overwatch):** before approving any production run, Overwatch also checks that its head branch is main.
+
+**Not ruled here:** any other change to the production environment or its reviewers.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-17-012 -- The runner design is approved: fork-PR approval for all outside contributors, and staging uses the Azure runners too: "A: Approve as designed (Recommended)"; "A: All outside (Recommended)"; "A: Staging too (Recommended)"
+
+**Provenance: PRIMARY.** Jason's answers on the card, 2026-11-17T20:07:48.394Z (about 15:07 US Eastern), the tool result at transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 27205, checked against the card by script. The card is at line 27203 (2026-11-17T20:07:28.132Z). It builds on OD-2026-11-17-008, which is not edited. New; edits no earlier entry's text.
+
+**What was put to him (the card at line 27203, quoted):**
+
+> **Runner model**
+> Question, as shown:
+> Official: Lane DBT's design for OD-2026-11-17-008 (our own Azure runners): short-lived Container Apps jobs in the existing East US environment, about $5-10 a month (INFERRED). Each runner is single-use (GitHub's "JIT" kind), gets a random label, and is checked by a guard hook (main branch, dispatch or schedule, listed workflows only). It is started by a GitHub App whose permission ("Administration: write") is repo-admin-equivalent, because the repo is on a personal account, not an organization. The App key would live only in a dedicated Key Vault, never in GitHub secrets or the runner. GitHub advises against self-hosted runners on public repos; single-use runners are its stated mitigation. Approve this security model?
+>
+> Plain: To build our own Azure runners, a small GitHub 'robot' needs near-admin rights on the repo, and its key would sit locked in Azure. The design adds several safety layers. Go ahead, move the repo to a free GitHub organization first (narrower rights, more setup), or stop at the fast-fail check?
+>
+> Options, in the order shown:
+> 1. "A: Approve as designed (Recommended)": Build it: three PRs, I create the Azure resources, you create the GitHub App and paste its key into Key Vault yourself. Pros: fixes every blocked job; no firewall change. Cons: a near-admin key exists (locked in Key Vault).
+> 2. "B: Move to a GitHub org first": Create a free organization and move the repo, so runners can be limited to listed workflows and the App needs less power. Pros: narrower rights. Cons: more setup; Azure sign-in links and repo URLs change.
+> 3. "C: Stop at the fast-fail check": No self-hosted runners. Blocked jobs fail fast with a clear message and I re-run them. Pros: no new key. Cons: manual re-runs at a rising rate.
+
+> **Fork approval**
+> Question, as shown:
+> Official: Today the repo asks for approval before Actions run on pull requests from first-time contributors only (setting: first_time_contributors). The design recommends requiring approval for ALL outside contributors' pull requests, so no outside code can reach a workflow without your click. Change it?
+>
+> Plain: Make GitHub wait for your OK before running any outsider's code, not just first-timers'.
+>
+> Options, in the order shown:
+> 1. "A: All outside (Recommended)": Approval required for every outside contributor's pull request. Pros: tighter. Cons: an extra click if outsiders ever contribute (none do today).
+> 2. "B: Keep first-time only": Leave the setting as it is.
+
+> **Staging too**
+> Question, as shown:
+> Official: 15 of the 19 production-database jobs also run against staging when dispatched with target=staging. Staging timed out 3 times in 14 days for the same reason. Should staging dispatches of those shared workflows also use the Azure runners (cost about nothing extra)?
+>
+> Plain: Use our own runners for staging runs too, or only for production?
+>
+> Options, in the order shown:
+> 1. "A: Staging too (Recommended)": Same runners for both targets. Pros: staging stops timing out; one path to maintain. Cons: none material.
+> 2. "B: Production only": Staging keeps GitHub's runners and occasional re-runs.
+
+**Jason:** "A: Approve as designed (Recommended)"; "A: All outside (Recommended)"; "A: Staging too (Recommended)"
+
+**Ruling:**
+
+1. The security model for the own-Azure-runners design (single-use runners, a guard hook, a GitHub App started with repo-admin-equivalent rights, its key only in a dedicated Key Vault) is approved as designed. Jason creates the GitHub App and pastes its key himself (the card's option A).
+2. Pull requests from all outside contributors need approval before Actions run.
+3. Staging dispatches of the shared production-database workflows use the Azure runners too.
+4. **Applied (REPORTED, Overwatch STATUS):** the fork-PR approval setting was changed to all outside contributors and verified by a read of the setting.
+
+**Not ruled here:** the secret steps (the GitHub App, key, grant, guard check and pilot), deferred by OD-2026-11-18-003.
+
+**Status:** recorded 2026-11-19 by PR.
+
+---
+
+## OD-2026-11-17-011 -- The record count of old pre-set values runs as a read-only GitHub job: "Count via GitHub job"
+
+**Provenance: PRIMARY.** Jason's typed reply "Count via GitHub job", 2026-11-17T19:15:43.351Z (about 14:15 US Eastern), transcript `~/.claude/projects/C--Dev/36c40fe1-f38b-4561-beab-f5f203db0c40.jsonl`, line 26793, `origin.kind` human, copied by script. The next-step box that asked it is at line 26769 (2026-11-17T19:15:31.970Z). OWNER_DECISIONS line 718 (in OD-2026-11-17-009, left unedited) already notes the choice in one line without a quote or the result; this entry records both. New; edits no earlier entry's text.
+
+**What was put to him (the next-step box at line 26769, quoted):**
+
+> **Next-step box** (recap, question and buttons, as shown)
+> Recap: Lane DFX is cleared to build. Its first PR fixes the loss-of-consciousness default, and the server already refuses a missing answer. The record count is blocked: this PC's address is not on the production database firewall, so my read-only count timed out.
+> Question: How should I get the record count?
+>
+> Buttons, in the order shown:
+> 1. "Count via GitHub job"
+> 2. "Temporary firewall rule"
+
+**Jason:** *"Count via GitHub job"*
+
+**Ruling:**
+
+1. The count of existing records saved with the old pre-set values runs as a read-only check from GitHub Actions, as a count only. The temporary firewall rule was not taken.
+2. **Applied (REPORTED, Overwatch STATUS):** the production count run returned 0 records, 0 with both preset values, and 0 not voided.
+
+**Not ruled here:** any change to records, or any firewall change.
+
+**Status:** recorded 2026-11-19 by PR.
 
 ---
 
