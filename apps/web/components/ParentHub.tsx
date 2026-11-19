@@ -225,9 +225,67 @@ interface SchedulerFeedAttendance {
   checked_in_at: string;
 }
 
-interface SafetySummary {
+/* OW25-47 A (Jason: "A: Count restrictions and missing waivers, name the
+   child (Recommended)"; lane SH, PR SH-3). One entry per child the parent
+   safety route returned -- that route answers only for this account's own
+   linked children (guardianAthleteIds). The Safety & Consent line names only
+   what the ruling names: the child, counts of holds, gates and missing
+   waivers, "a medical restriction in force", or "could not be checked". No
+   restriction detail, date, release flag or waiver type reaches it; those
+   stay on the Safety page. */
+interface SafetyChild {
+  name: string | null;
   activeHolds: number;
   flaggedGates: number;
+  restrictionInForce: boolean;
+  restrictionUnread: boolean;
+  missingWaivers: number;
+}
+
+interface SafetySummary {
+  children: SafetyChild[];
+}
+
+interface ParentSafetyItem {
+  athlete_name?: string | null;
+  hold?: unknown;
+  gates?: Array<{ outcome: string }>;
+  waivers?: Record<string, unknown> | null;
+  medical_restriction?: unknown;
+  medical_restriction_unread?: boolean;
+}
+
+export function safetyChildFromItem(item: ParentSafetyItem): SafetyChild {
+  const name = typeof item.athlete_name === 'string' && item.athlete_name.trim() ? item.athlete_name.trim() : null;
+  const restrictionUnread = item.medical_restriction_unread === true;
+  return {
+    name,
+    activeHolds: item.hold ? 1 : 0,
+    flaggedGates: (item.gates ?? []).filter((gate) => gate.outcome === 'flagged' || gate.outcome === 'blocked').length,
+    // An unread restriction is "could not be checked", never "in force" and
+    // never "none" (UXB-24).
+    restrictionInForce: !restrictionUnread && item.medical_restriction != null,
+    restrictionUnread,
+    // Only 'missing' counts. Declined and withdrawn are a guardian's answer,
+    // not a form left undone.
+    missingWaivers: Object.values(item.waivers ?? {}).filter((status) => status === 'missing').length,
+  };
+}
+
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/** The child's sentence, or null when there is nothing to say about them. */
+export function safetyChildSentence(child: SafetyChild): string | null {
+  const parts: string[] = [];
+  if (child.activeHolds > 0) parts.push(counted(child.activeHolds, 'active training hold', 'active training holds'));
+  if (child.flaggedGates > 0) parts.push(counted(child.flaggedGates, 'gate awaiting clearance', 'gates awaiting clearance'));
+  if (child.restrictionInForce) parts.push('a medical restriction in force');
+  if (child.restrictionUnread) parts.push('medical restriction could not be checked');
+  if (child.missingWaivers > 0) parts.push(counted(child.missingWaivers, 'waiver missing', 'waivers missing'));
+  if (parts.length === 0) return null;
+  return `${child.name ?? 'Your child'}: ${parts.join(', ')}.`;
 }
 
 /* This hub sits on the warm canvas ground (Law 6 — family-facing), so every
@@ -674,6 +732,9 @@ export default function ParentHub() {
   // UXB-24: a refused or broken read is not "nothing to report". Until the
   // read answers the card says it is checking; if it fails, it says so.
   const [safetyFailed, setSafetyFailed] = useState(false);
+  const safetySentences = (safetySummary?.children ?? [])
+    .map(safetyChildSentence)
+    .filter((sentence): sentence is string => sentence !== null);
 
   useEffect(() => {
     void (async () => {
@@ -686,16 +747,8 @@ export default function ParentHub() {
           setSafetyFailed(true);
           return;
         }
-        const payload = (await response.json()) as {
-          items?: Array<{ hold: unknown; gates?: Array<{ outcome: string }> }>;
-        };
-        const items = payload.items ?? [];
-        const activeHolds = items.filter((item) => item.hold).length;
-        const flaggedGates = items.reduce(
-          (total, item) => total + (item.gates ?? []).filter((gate) => gate.outcome === 'flagged' || gate.outcome === 'blocked').length,
-          0,
-        );
-        setSafetySummary({ activeHolds, flaggedGates });
+        const payload = (await response.json()) as { items?: ParentSafetyItem[] };
+        setSafetySummary({ children: (payload.items ?? []).map(safetyChildFromItem) });
       } catch {
         // The links still work; the card says the check did not answer.
         setSafetyFailed(true);
@@ -1482,12 +1535,9 @@ export default function ParentHub() {
                   it names a scope/outcome, never staff detail. */}
               <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h3 className="t-label">Safety &amp; Consent</h3>
-                {safetySummary && (safetySummary.activeHolds > 0 || safetySummary.flaggedGates > 0) ? (
-                  <p className="t-body mt-[var(--s2)]">
-                    {safetySummary.activeHolds > 0 ? `${safetySummary.activeHolds} active training hold(s)` : null}
-                    {safetySummary.activeHolds > 0 && safetySummary.flaggedGates > 0 ? ' and ' : null}
-                    {safetySummary.flaggedGates > 0 ? `${safetySummary.flaggedGates} gate(s) awaiting clearance` : null}
-                    {' '}across your children. This is not a punishment — see the Safety page for details.
+                {safetySummary && safetySentences.length > 0 ? (
+                  <p className="t-body mt-[var(--s2)]" data-testid="parent-safety-line">
+                    {safetySentences.join(' ')} This is not a punishment — see the Safety page for details.
                   </p>
                 ) : safetySummary ? (
                   <p className="t-body mt-[var(--s2)]">Check your child&apos;s active training-hold and safety-gate status, and manage photo/video consent.</p>
