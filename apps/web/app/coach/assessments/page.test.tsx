@@ -318,3 +318,33 @@ test('a late failure from an earlier pick never hides the newer queue for the sa
   expect(queueSection('Ana Boxer').textContent).toContain('Retest broad jump');
   expect(queueSection('Ana Boxer').textContent).not.toContain('could not be loaded');
 });
+
+// OD-2026-11-19-004: a protocol with no equipment written never reads "Needs: ."
+test('equipment reads "Needs: X.", "No equipment needed." for none, and "Equipment: Not written yet." when blank', async () => {
+  const base = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/api/pilot/coach/assessments?athlete_id=ath-1')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ...PAYLOAD,
+          jump_protocols: [
+            { protocol_id: 'p-filled', name: 'Filled', summary: 'Jump up.', equipment: 'Jump app' },
+            { protocol_id: 'p-none', name: 'None', summary: 'Jump up.', equipment: ' None ' },
+            { protocol_id: 'p-blank', name: 'Blank', summary: 'Jump up.', equipment: '  ' },
+          ],
+        }),
+      } as Response;
+    }
+    return base(input, init);
+  });
+  await chooseAthlete();
+  const field = (name: string) => screen.getByText(name).parentElement!.textContent ?? '';
+  expect(field('Filled')).toContain('Jump up. Needs: Jump app.');
+  expect(field('None')).toContain('Jump up. No equipment needed.');
+  expect(field('None')).not.toContain('Needs:');
+  expect(field('Blank')).toContain('Jump up. Equipment: Not written yet.');
+  expect(field('Blank')).not.toContain('Needs: .');
+});
