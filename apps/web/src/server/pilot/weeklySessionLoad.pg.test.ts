@@ -11,7 +11,15 @@
 //     follow the GYM's day;
 //   * the provenance filter: only athlete post-session self-reports with both
 //     RPE and minutes are summed;
-//   * the end-to-end ratio on real rows through readLoadJumps (CORE-13).
+//   * the end-to-end ratio on real rows through readLoadJumps (CORE-13);
+//   * lane R6-b2: what a week's attended / rated / rest-marked counts are on
+//     real rows (session rows, the reconciled register view, rest marks), and
+//     that loadWeekWindows (the coach's strip) is the same 7-day bucketing as
+//     this module's SQL.
+//
+// Built on the FULL production schema (scripts/lib/full-schema.mjs, in the
+// workflow's `all` order), once, as a template database each test copies:
+// the coverage read needs the register view and pilot.athlete_rest_marks.
 //
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
@@ -23,6 +31,8 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Readable } from 'node:stream';
+
+import { pathToFileURL } from 'node:url';
 
 import { Client } from 'pg';
 
@@ -36,7 +46,8 @@ jest.mock('./db', () => ({
   }),
 }));
 
-import { getWeeklySessionLoads, readLoadJumps } from './weeklySessionLoad';
+import { loadWeekWindows } from './restMarks';
+import { getWeeklyLoadCoverage, getWeeklySessionLoads, readLoadJumps, readLoadWeekCoverage } from './weeklySessionLoad';
 
 jest.setTimeout(180_000);
 
@@ -46,15 +57,12 @@ const DATA_DIR = path.join(os.tmpdir(), `ppbf-weekly-load-pg-test-${Date.now()}`
 const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
 const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
 
-// The order the `all` chain runs them; pilot.sessions gains rpe_method and
-// then duration_minutes.
-const MIGRATIONS = [
-  'pilot_slice_postgres_progression_migration.sql',
-  'pilot_slice_postgres_activity_log_migration.sql',
-  'pilot_slice_postgres_readiness_provenance_migration.sql',
-  'pilot_slice_postgres_session_rpe_semantics_migration.sql',
-  'pilot_slice_postgres_session_duration_migration.sql',
-];
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
+const TEMPLATE_DB = 'weekly_load_template';
+
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
 
 const ORG_ID = 'org-weekly-load';
 const OTHER_ORG_ID = 'org-weekly-load-other';
@@ -80,8 +88,6 @@ function gymDaysBefore(days: number): string {
 
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
-let baseSchemaSql: string;
-let migrationSql: string[];
 let client: Client;
 let sessionSeq = 0;
 
@@ -110,7 +116,7 @@ async function freshDatabase(name: string): Promise<Client> {
   const admin = new Client({ connectionString: connectionStringFor('postgres') });
   await admin.connect();
   await admin.query(`drop database if exists ${name}`);
-  await admin.query(`create database ${name}`);
+  await admin.query(`create database ${name} template ${TEMPLATE_DB}`);
   await admin.end();
 
   const db = new Client({ connectionString: connectionStringFor(name) });
@@ -118,7 +124,6 @@ async function freshDatabase(name: string): Promise<Client> {
   // Azure Database for PostgreSQL runs in UTC; pin it so the time zone edge
   // below is tested against the server zone production actually has.
   await db.query(`set time zone 'UTC'`);
-  await db.query(baseSchemaSql);
   for (const orgId of [ORG_ID, OTHER_ORG_ID]) {
     await db.query(
       `insert into pilot.organizations (organization_id, organization_name, status)
@@ -140,9 +145,6 @@ async function freshDatabase(name: string): Promise<Client> {
       [orgId, athleteId, COACH_ID],
     );
   }
-  for (const sql of migrationSql) {
-    await db.query(sql);
-  }
   return db;
 }
 
@@ -153,20 +155,49 @@ async function addSession(values: {
   method?: string;
   athleteId?: string;
   orgId?: string;
+  completed?: boolean;
 }) {
   sessionSeq += 1;
   await client.query(
     `insert into pilot.sessions
        (organization_id, session_id, athlete_id, date, rpe, rpe_method, notes, completed_flag, created_at, updated_at, duration_minutes)
-     values ($1, $2, $3, $4::date, $5, $6, 'n', true, now(), now(), $7)`,
+     values ($1, $2, $3, $4::date, $5, $6, 'n', $8, now(), now(), $7)`,
     [
       values.orgId ?? ORG_ID,
       `sess-${sessionSeq}`,
       values.athleteId ?? ATHLETE_ID,
       values.date,
       values.rpe,
-      values.method ?? SELF_REPORT,
+      values.method ?? (values.rpe == null ? 'UNKNOWN' : SELF_REPORT),
       values.minutes,
+      values.completed ?? true,
+    ],
+  );
+}
+
+/** A register mark in the legacy table, which the reconciled view reads. */
+async function addRegister(date: string, status: string, athleteId = ATHLETE_ID, orgId = ORG_ID) {
+  await client.query(
+    `insert into pilot.attendance (organization_id, attendance_id, athlete_id, attendance_date, status)
+     values ($1, gen_random_uuid(), $2, $3::date, $4)`,
+    [orgId, athleteId, date, status],
+  );
+}
+
+async function addMark(firstDay: string, lastDay: string, options: { cleared?: boolean; athleteId?: string; orgId?: string } = {}) {
+  await client.query(
+    `insert into pilot.athlete_rest_marks
+       (organization_id, mark_id, athlete_id, kind, first_day, last_day, marked_by_account_id, marked_by_role,
+        cleared_at, cleared_by_account_id)
+     values ($1, gen_random_uuid(), $2, 'rest', $3::date, $4::date, $5, 'coach', $6, $7)`,
+    [
+      options.orgId ?? ORG_ID,
+      options.athleteId ?? ATHLETE_ID,
+      firstDay,
+      lastDay,
+      COACH_ID,
+      options.cleared ? new Date() : null,
+      options.cleared ? COACH_ID : null,
     ],
   );
 }
@@ -212,8 +243,21 @@ beforeAll(async () => {
     });
   });
 
-  baseSchemaSql = await fs.readFile(path.join(INFRA_DIR, 'pilot_slice_postgres.sql'), 'utf8');
-  migrationSql = await Promise.all(MIGRATIONS.map((file) => fs.readFile(path.join(INFRA_DIR, file), 'utf8')));
+  // The full production schema, once, as a template every test copies.
+  const fullSchema = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  const applyFullSchema = fullSchema.applyFullSchema as (db: Client, opts?: { infraDir?: string }) => Promise<unknown>;
+  const admin = new Client({ connectionString: connectionStringFor('postgres') });
+  await admin.connect();
+  await admin.query(`drop database if exists ${TEMPLATE_DB}`);
+  await admin.query(`create database ${TEMPLATE_DB}`);
+  await admin.end();
+  const template = new Client({ connectionString: connectionStringFor(TEMPLATE_DB) });
+  await template.connect();
+  try {
+    await applyFullSchema(template, { infraDir: INFRA_DIR });
+  } finally {
+    await template.end();
+  }
 });
 
 afterAll(async () => {
@@ -304,7 +348,8 @@ describe('weekly session load on real Postgres', () => {
     await addSession({ date: gymDaysBefore(23), rpe: 5, minutes: 100 }); // week 3: 500
 
     const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
-    expect(readLoadJumps(ORG_ID, rows)).toEqual([
+    const coverage = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(readLoadJumps(ORG_ID, rows, coverage)).toEqual([
       {
         athlete_id: ATHLETE_ID,
         acute_load: 1000,
@@ -312,6 +357,150 @@ describe('weekly session load on real Postgres', () => {
         ratio: 2,
         prior_weeks_with_load: 3,
       },
+    ]);
+  });
+});
+
+describe('getWeeklyLoadCoverage on real rows (lane R6-b2)', () => {
+  function statusOf(rows: Awaited<ReturnType<typeof getWeeklyLoadCoverage>>, athleteId = ATHLETE_ID) {
+    return readLoadWeekCoverage(rows, athleteId).map((week) => [week.week_index, week.attended, week.rated, week.marked_days, week.status]);
+  }
+
+  test('one row per week for every athlete named, zeros included: nothing logged reads as not logged', async () => {
+    const rows = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID, OTHER_ATHLETE_ID], GYM_NOON);
+    expect(rows).toHaveLength(10);
+    expect(statusOf(rows, OTHER_ATHLETE_ID)).toEqual([
+      [0, 0, 0, 0, 'not_logged'], [1, 0, 0, 0, 'not_logged'], [2, 0, 0, 0, 'not_logged'],
+      [3, 0, 0, 0, 'not_logged'], [4, 0, 0, 0, 'not_logged'],
+    ]);
+  });
+
+  test('attended = session rows plus register-only days; rated = the sessions Rule 6 counts', async () => {
+    // Week 0: two rated, one checked out without a rating, one register-only day.
+    await addSession({ date: gymDaysBefore(0), rpe: 6, minutes: 60 });
+    await addSession({ date: gymDaysBefore(2), rpe: 6, minutes: 60 });
+    await addSession({ date: gymDaysBefore(3), rpe: null, minutes: null });
+    await addRegister(gymDaysBefore(4), 'present');
+    // A register day that already has a session row is that session, not another.
+    await addRegister(gymDaysBefore(2), 'present');
+    // Absent and excused register days are not attendance.
+    await addRegister(gymDaysBefore(5), 'absent');
+    await addRegister(gymDaysBefore(6), 'excused');
+    // Week 1: rated, but an UNKNOWN-method rating is not Rule 6's.
+    await addSession({ date: gymDaysBefore(8), rpe: 5, minutes: 60 });
+    await addSession({ date: gymDaysBefore(9), rpe: 5, minutes: 60, method: 'UNKNOWN' });
+    // Another gym's rows for the same athlete id never count here.
+    await addSession({ date: gymDaysBefore(1), rpe: 9, minutes: 90, orgId: OTHER_ORG_ID });
+    await addRegister(gymDaysBefore(1), 'present', ATHLETE_ID, OTHER_ORG_ID);
+
+    const rows = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(statusOf(rows).slice(0, 2)).toEqual([
+      [0, 4, 2, 0, 'partly_logged'],
+      [1, 2, 1, 0, 'partly_logged'],
+    ]);
+  });
+
+  test("an open session dated today is not counted yet; a finished one is", async () => {
+    await addSession({ date: gymDaysBefore(1), rpe: 6, minutes: 60 });
+    await addSession({ date: gymDaysBefore(0), rpe: null, minutes: null, completed: false });
+    await addRegister(gymDaysBefore(0), 'present');
+    let rows = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(statusOf(rows)[0]).toEqual([0, 1, 1, 0, 'logged']);
+
+    // The same open row dated yesterday is a session that was never closed: counted, unrated.
+    await addSession({ date: gymDaysBefore(2), rpe: null, minutes: null, completed: false });
+    rows = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(statusOf(rows)[0]).toEqual([0, 2, 1, 0, 'partly_logged']);
+  });
+
+  test('rest marks: live marks count their days in each week; a cleared mark and another athlete do not', async () => {
+    // Days 7..20 back: all of week 1 (7..13) and all of week 2 (14..20).
+    await addMark(gymDaysBefore(20), gymDaysBefore(7));
+    // Straddles weeks 3 and 4 with 2 days in each: fewer than 4, so neither is a rest week.
+    await addMark(gymDaysBefore(29), gymDaysBefore(26));
+    // Overlapping marks count a day once.
+    await addMark(gymDaysBefore(8), gymDaysBefore(7));
+    await addMark(gymDaysBefore(1), gymDaysBefore(0), { cleared: true });
+    await addMark(gymDaysBefore(1), gymDaysBefore(0), { athleteId: OTHER_ATHLETE_ID });
+    // Ahead of today: not in any week.
+    await addMark(gymDaysBefore(-3), gymDaysBefore(-5));
+
+    const rows = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(statusOf(rows)).toEqual([
+      [0, 0, 0, 0, 'not_logged'],
+      [1, 0, 0, 7, 'rest_marked'],
+      [2, 0, 0, 7, 'rest_marked'],
+      [3, 0, 0, 2, 'not_logged'],
+      [4, 0, 0, 2, 'not_logged'],
+    ]);
+  });
+
+  test('a week marked Nov 6-12, read three days later, is exactly one rest week (4 + 3 days)', async () => {
+    // On the read day the mark covers days 10..16 back: 4 days of week 1 (7..13), 3 of week 2 (14..20).
+    await addMark(gymDaysBefore(16), gymDaysBefore(10));
+    await addSession({ date: gymDaysBefore(1), rpe: 5, minutes: 200 }); // week 0: 1000
+    await addSession({ date: gymDaysBefore(22), rpe: 5, minutes: 200 }); // week 3: 1000
+    await addSession({ date: gymDaysBefore(30), rpe: 5, minutes: 200 }); // week 4: 1000
+    const coverage = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(statusOf(coverage).slice(1, 3)).toEqual([
+      [1, 0, 0, 4, 'rest_marked'],
+      [2, 0, 0, 3, 'not_logged'],
+    ]);
+    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    const [reading] = readLoadJumps(ORG_ID, rows, coverage);
+    expect(reading.prior_weeks_with_load).toBe(3);
+    expect(reading.usual_weekly_load).toBeCloseTo(2000 / 3, 6);
+  });
+
+  test('a rest mark on a week the athlete attended does not hide the sessions', async () => {
+    await addMark(gymDaysBefore(6), gymDaysBefore(0));
+    await addSession({ date: gymDaysBefore(2), rpe: 6, minutes: 60 });
+    const rows = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(statusOf(rows)[0]).toEqual([0, 1, 1, 7, 'logged']);
+  });
+
+  test('the gym evening edge: the coverage weeks follow the GYM day, as the load does', async () => {
+    // At 10:30pm on the 15th in Punxsutawney it is already the 16th in UTC;
+    // the gym's day is still the 15th, so the 16th is in the future.
+    await addSession({ date: gymDaysBefore(-1), rpe: 6, minutes: 60 }); // the 16th: future at the gym
+    await addSession({ date: gymDaysBefore(6), rpe: 6, minutes: 60 }); // the 9th: still week 0
+    const rows = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_EVENING);
+    expect(statusOf(rows)[0]).toEqual([0, 1, 1, 0, 'logged']);
+  });
+
+  test("loadWeekWindows (the coach's strip) is exactly this module's SQL bucketing, on every day of the window", async () => {
+    // One rated session on each of the 36 days around the window.
+    for (let day = -1; day <= 35; day += 1) await addSession({ date: gymDaysBefore(day), rpe: 1, minutes: day + 2 });
+    const loads = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    const coverage = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    const windows = loadWeekWindows(gymDaysBefore(0));
+    for (const window of windows) {
+      let expectedLoad = 0;
+      let expectedSessions = 0;
+      for (let day = 0; day <= 35; day += 1) {
+        const iso = gymDaysBefore(day);
+        if (iso >= window.first_day && iso <= window.last_day) {
+          expectedLoad += day + 2;
+          expectedSessions += 1;
+        }
+      }
+      const load = loads.find((row) => row.week_index === window.week_index);
+      expect([window.week_index, Number(load?.week_load), Number(load?.session_count)]).toEqual([window.week_index, expectedLoad, expectedSessions]);
+      const cover = coverage.find((row) => row.week_index === window.week_index);
+      expect([window.week_index, Number(cover?.attended)]).toEqual([window.week_index, 7]);
+    }
+    expect(loads.map((row) => row.week_index).sort()).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  test('real rows, a break: 1 logged week, 2 marked rest weeks, a heavy week back speaks', async () => {
+    await addSession({ date: gymDaysBefore(1), rpe: 5, minutes: 100 }); // week 0: 500
+    await addSession({ date: gymDaysBefore(2), rpe: 5, minutes: 100 }); // week 0: 500
+    await addMark(gymDaysBefore(20), gymDaysBefore(7)); // weeks 1 and 2 rest
+    await addSession({ date: gymDaysBefore(23), rpe: 5, minutes: 100 }); // week 3: 500
+    const rows = await getWeeklySessionLoads(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    const coverage = await getWeeklyLoadCoverage(ORG_ID, [ATHLETE_ID], GYM_NOON);
+    expect(readLoadJumps(ORG_ID, rows, coverage)).toEqual([
+      { athlete_id: ATHLETE_ID, acute_load: 1000, usual_weekly_load: 500 / 3, ratio: 6, prior_weeks_with_load: 3 },
     ]);
   });
 });

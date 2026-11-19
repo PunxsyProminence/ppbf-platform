@@ -15750,7 +15750,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Returns Rule 6's five 7-day load weeks and the live rest/away marks over them for the athletes the caller's analytics card shows; no reason exists to return; marker account ids are not in the response; refuses any query field. Lane R6-b1.",
+    "notes": "Returns Rule 6's five 7-day load weeks, the live rest/away marks from the oldest of them to 34 days ahead, and each week's attended / rated / rest-marked counts and status (lane R6-b2; counts and a status word, no load figure), for the athletes the caller's analytics card shows; the coverage read runs only after the marks read's staff-membership check passes, and a failed coverage read returns coverage: null (marks still returned, a validated SQLSTATE at most logged); no reason exists to return; marker account ids are not in the response; refuses any query field. Lanes R6-b1/R6-b2.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

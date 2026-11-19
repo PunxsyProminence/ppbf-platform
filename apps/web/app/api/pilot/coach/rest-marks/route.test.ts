@@ -4,7 +4,9 @@ import { DELETE, GET, POST } from './route';
 import { athleteIdsForCoach } from '@/src/server/pilot/access';
 import { organizationActionableRoster } from '@/src/server/pilot/coachAthleteRoster';
 import { requirePrincipal } from '@/src/server/pilot/http';
+import { ForbiddenError } from '@/src/server/pilot/errors';
 import { addRestMark, clearRestMark, listRestMarks } from '@/src/server/pilot/restMarks';
+import { getWeeklyLoadCoverage } from '@/src/server/pilot/weeklySessionLoad';
 
 /*
  * The route over restMarks.ts (lane R6-b1). Who may reach which athlete is
@@ -38,6 +40,12 @@ jest.mock('@/src/server/pilot/restMarks', () => {
   return { ...actual, addRestMark: jest.fn(), clearRestMark: jest.fn(), listRestMarks: jest.fn() };
 });
 
+jest.mock('@/src/server/pilot/weeklySessionLoad', () => {
+  const actual = jest.requireActual('@/src/server/pilot/weeklySessionLoad');
+  return { ...actual, getWeeklyLoadCoverage: jest.fn(async () => []) };
+});
+
+const mockCoverage = getWeeklyLoadCoverage as jest.Mock;
 const mockPrincipal = requirePrincipal as jest.Mock;
 const mockAdd = addRestMark as jest.Mock;
 const mockClear = clearRestMark as jest.Mock;
@@ -190,5 +198,52 @@ describe('GET: the analytics roster, the 5 load weeks, no marker ids', () => {
   test('a query field is refused: there is no "all" or "athlete" switch to widen the roster', async () => {
     expect((await get('?athlete_id=ath-9')).status).toBe(400);
     expect(mockList).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET: each week's status and rated share (lane R6-b2)", () => {
+  test('coverage for every roster athlete and all 5 weeks, from the same instant; counts and a status, no load', async () => {
+    mockCoachIds.mockResolvedValue(['ath-1', 'ath-2']);
+    mockList.mockResolvedValue([]);
+    mockCoverage.mockResolvedValue([
+      { athlete_id: 'ath-1', week_index: 0, attended: 4, rated: 3, marked_days: 0 },
+      { athlete_id: 'ath-1', week_index: 1, attended: 3, rated: 1, marked_days: 0 },
+      { athlete_id: 'ath-1', week_index: 2, attended: 0, rated: 0, marked_days: 7 },
+    ]);
+    const response = await get();
+    expect(response.status).toBe(200);
+    expect(mockCoverage).toHaveBeenCalledWith('org-1', ['ath-1', 'ath-2'], expect.any(Date));
+    const body = await response.json();
+    expect(body.coverage).toHaveLength(10);
+    expect(body.coverage.slice(0, 5)).toEqual([
+      { athlete_id: 'ath-1', week_index: 0, attended: 4, rated: 3, marked_days: 0, status: 'logged' },
+      { athlete_id: 'ath-1', week_index: 1, attended: 3, rated: 1, marked_days: 0, status: 'partly_logged' },
+      { athlete_id: 'ath-1', week_index: 2, attended: 0, rated: 0, marked_days: 7, status: 'rest_marked' },
+      { athlete_id: 'ath-1', week_index: 3, attended: 0, rated: 0, marked_days: 0, status: 'not_logged' },
+      { athlete_id: 'ath-1', week_index: 4, attended: 0, rated: 0, marked_days: 0, status: 'not_logged' },
+    ]);
+    expect(JSON.stringify(body)).not.toMatch(/load/);
+  });
+
+  test('a caller the marks read refuses gets no coverage read at all', async () => {
+    mockCoachIds.mockResolvedValue(['ath-1']);
+    mockList.mockRejectedValue(new ForbiddenError('This account may not record or read rest marks for this athlete.'));
+    expect((await get()).status).toBe(403);
+    expect(mockCoverage).not.toHaveBeenCalled();
+  });
+
+  test('a failed coverage read keeps the marks: coverage is null, and only a SQLSTATE is logged', async () => {
+    mockCoachIds.mockResolvedValue(['ath-1']);
+    mockList.mockResolvedValue([MARK]);
+    mockCoverage.mockRejectedValue(Object.assign(new Error('connect to db-host.example as admin_user failed'), { code: '08006' }));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const response = await get();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.coverage).toBeNull();
+    expect(body.marks).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith('rest-marks week coverage unread', { code: '08006' });
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/db-host|admin_user|ath-1/);
+    warn.mockRestore();
   });
 });
