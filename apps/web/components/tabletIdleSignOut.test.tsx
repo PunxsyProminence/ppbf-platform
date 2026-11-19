@@ -109,6 +109,17 @@ describe('a marked gym tablet', () => {
     expect(banner.textContent).toContain('No one has used this tablet for a while. Signing out in 0:59.');
     expect(banner.textContent).toContain('Tap anywhere to stay signed in. Anything not saved on this screen will be lost.');
     expect(banner.getAttribute('data-surface')).toBe('kiosk');
+    /* AS2-d: pinned by inline style, because app/globals.css's unlayered
+       `body > *` (position: relative; z-index: 2) beats Tailwind's layered
+       `fixed`. jsdom applies no stylesheet cascade, so this pins the inline
+       style that wins it; that the banner sits at the bottom of a long page
+       is for the signed-in tablet check. */
+    expect(banner.parentElement).toBe(document.body);
+    expect(banner.style.position).toBe('fixed');
+    expect(banner.style.bottom).toBe('0px');
+    expect(banner.style.left).toBe('0px');
+    expect(banner.style.right).toBe('0px');
+    expect(banner.style.zIndex).toBe('1000');
 
     await act(async () => {
       fireEvent.pointerDown(document.body);
@@ -132,10 +143,71 @@ describe('a marked gym tablet', () => {
       fireEvent.pointerDown(button);
     });
     expect(screen.getByRole('button', { name: 'Stay signed in' })).toBe(button);
+    /* AS2-d review B: the press restarted the time, so a tick while the
+       finger is still down used to hide the banner under it. Held, it stays. */
+    await advance(1_000);
+    expect(screen.getByRole('button', { name: 'Stay signed in' })).toBe(button);
     await act(async () => {
       fireEvent.click(button);
     });
     expect(screen.queryByText(/Signing out in/)).toBeNull();
+    await advance(10 * MINUTE);
+    expect(mockEnd).not.toHaveBeenCalled();
+  });
+
+  test('a second press before the last lift is released keeps the hold', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(14 * MINUTE + 5_000);
+    const banner = screen.getByRole('alert');
+    await act(async () => {
+      fireEvent.pointerDown(banner);
+      fireEvent.pointerUp(banner);
+    });
+    await advance(200);
+    await act(async () => {
+      fireEvent.pointerDown(banner);
+    });
+    // The first lift's release (500 ms) has passed and a tick has run: still held.
+    await advance(1_500);
+    expect(screen.getByRole('alert')).toBe(banner);
+    expect(mockEnd).not.toHaveBeenCalled();
+  });
+
+  test('a hold whose lift never arrives is let go after ten seconds', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(14 * MINUTE + 5_000);
+    await act(async () => {
+      fireEvent.pointerDown(screen.getByRole('alert'));
+    });
+    await advance(9_000);
+    expect(screen.getByRole('alert')).toBeTruthy();
+    await advance(2_000);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(mockEnd).not.toHaveBeenCalled();
+  });
+
+  /* AS2-d review B: a finger that lands on the banner's text (not the button)
+     and lifts. The banner stays through the lift and the click the browser
+     makes from it, then goes, and the time has started again. */
+  test('a press held on the banner keeps it up until a moment after the lift', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(14 * MINUTE + 5_000);
+    const banner = screen.getByRole('alert');
+    await act(async () => {
+      fireEvent.pointerDown(banner);
+    });
+    await advance(2_000);
+    expect(screen.getByRole('alert')).toBe(banner);
+    await act(async () => {
+      fireEvent.pointerUp(banner);
+    });
+    await advance(300);
+    expect(screen.getByRole('alert')).toBe(banner);
+    await advance(1_500);
+    expect(screen.queryByRole('alert')).toBeNull();
     await advance(10 * MINUTE);
     expect(mockEnd).not.toHaveBeenCalled();
   });
