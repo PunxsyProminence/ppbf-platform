@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Chalkboard from '@/components/Chalkboard';
 import type { AnnouncementPlacement } from '@/components/AnnouncementBanner';
 import GymProfileForm from '@/components/GymProfileForm';
+import GymTabletSettings from '@/components/GymTabletSettings';
 import { useOrganizationProfile } from '@/components/OrganizationProfileProvider';
 import { GYM_PHOTO_SLOTS, gymPhotoSlotText, gymPhotoSrc } from '@/src/shared/gymPhotos';
 import { apiBase } from '@/lib/apiBase';
@@ -16,7 +17,7 @@ import BackHome from '@/components/BackHome';
  * THE CUSTOMIZATION CENTER -- everything the gym can change about how it looks
  * and sounds, on one page in the office.
  *
- * One desk, three drawers:
+ * One desk, four drawers:
  *
  *   1. PHOTOGRAPHS. The six wall frames from src/shared/gymPhotos.ts. Each
  *      holds a commissioned placeholder illustration today; a photograph
@@ -31,7 +32,10 @@ import BackHome from '@/components/BackHome';
  *      rubs out what was there; windows and retiring live on /notices, which
  *      shows the 25 most recent notices rather than the whole history.
  *
- *   3. THE RECORD. Links to the surfaces that keep history -- notices with
+ *   3. THE GYM TABLET. How long a marked gym tablet may sit idle before it
+ *      signs itself out (OW25-53 A), and the mark for this device (lane U1).
+ *
+ *   4. THE RECORD. Links to the surfaces that keep history -- notices with
  *      their lifecycle, and the boards' own desk page.
  *
  * The server is the real gate on every drawer: photo writes require an admin
@@ -351,7 +355,26 @@ export default function AdminCustomizePage() {
         </div>
       </section>
 
-      {/* ------------------------------------------------- 3. THE RECORD -- */}
+      {/* ------------------------------------------- 3. THE GYM TABLET -- */}
+      {/* Lane U1, AS2-b: Jason's ruling OW25-53 A puts the tablet idle time
+          in gym settings, set by the gym admin. */}
+      <section className="mt-[var(--s7)] max-w-[1000px]" aria-labelledby="customize-tablet">
+        <h2 id="customize-tablet" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+          Gym tablet sign-out
+        </h2>
+        <p className="t-muted mt-[var(--s2)] max-w-[68ch]">
+          A device marked as a gym tablet signs itself out after this long with no one using it, so a tablet
+          left alone does not stay signed in as the last person. While the screen stays on, a one-minute
+          countdown shows first and a tap keeps it signed in; a tablet that slept past the time signs out as it
+          wakes. Phones and computers that are not marked are not signed out by this. A changed time reaches a
+          tablet the next time a page loads there.
+        </p>
+        <div className="mt-[var(--s4)]">
+          <GymTabletSettings />
+        </div>
+      </section>
+
+      {/* ------------------------------------------------- 4. THE RECORD -- */}
       <section className="mt-[var(--s7)] max-w-[1000px]" aria-labelledby="customize-record">
         <h2 id="customize-record" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
           The record
