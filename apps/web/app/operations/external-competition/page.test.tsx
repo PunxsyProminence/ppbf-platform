@@ -279,6 +279,8 @@ test('a withdrawn entry is listed under Withdrawn with its history, not among th
   const withdrawn = screen.getByRole('list', { name: 'Withdrawn' });
   expect(within(withdrawn).getByText(/Riley Shaw · withdrawn/)).toBeTruthy();
   expect(within(withdrawn).getByText('lost')).toBeTruthy();
+  // A loss is a result on record, not a warning (lane U1, SC2-3).
+  expect(within(withdrawn).getByText('lost').closest('.badge')?.className).toContain('badge--filed');
   expect(within(withdrawn).getByText('Lesson: Keep the hands up late.')).toBeTruthy();
   // Not a competitor: no result or withdraw actions on the withdrawn row.
   expect(within(withdrawn).queryByRole('button', { name: /record result|correct result|withdraw/i })).toBeNull();

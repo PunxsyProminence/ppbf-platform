@@ -48,7 +48,7 @@ const RESULT_OPTIONS = [
 
 const RESULT_BADGE: Record<string, { className: string; glyph: string }> = {
   won: { className: 'badge badge--cleared', glyph: '✓' },
-  lost: { className: 'badge badge--restricted', glyph: '▲' },
+  lost: { className: 'badge badge--filed', glyph: '▣' },
   draw: { className: 'badge badge--monitor', glyph: '◉' },
   no_contest: { className: 'badge badge--filed', glyph: '▣' },
 };

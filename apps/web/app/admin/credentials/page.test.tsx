@@ -56,6 +56,24 @@ test('separates rows needing attention from everything else, and flags expired c
   expect(screen.getAllByText(/expired/i).length).toBeGreaterThan(0);
 });
 
+/* Lane U1, SC2-3 (OW25-48 A): expired, revoked and expiring soon share the
+   warning rung, so the band's word is the alert's title. */
+test('a flagged row is on the warning rung and names its band as the alert title', async () => {
+  global.fetch = mockFetch();
+
+  await act(async () => {
+    render(<AdminCredentialsPage />);
+  });
+  await screen.findByText('Jane Okafor');
+
+  const titles = Array.from(document.querySelectorAll('.alert-title')).map((el) => el.textContent);
+  expect(titles).toContain('Expired');
+  const expiredCard = Array.from(document.querySelectorAll('.alert-title')).find((el) => el.textContent === 'Expired')?.closest('.alert');
+  expect(expiredCard?.className).toContain('alert--warning');
+  expect(expiredCard?.className).not.toContain('alert--critical');
+  expect(expiredCard?.textContent).toContain('▲');
+});
+
 test('verifying requires an issued_on date and posts the verify action', async () => {
   const posts: unknown[] = [];
   global.fetch = mockFetch(posts, [SUBMITTED_ROW]);

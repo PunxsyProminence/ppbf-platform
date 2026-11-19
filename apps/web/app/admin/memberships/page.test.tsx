@@ -416,6 +416,8 @@ describe('truthful roster and save states', () => {
     expect(notice?.className).toContain('alert--warning');
     expect(notice?.className).not.toContain('alert--critical');
     expect(notice?.textContent).toContain('▲');
+    // Its title says so, so a failure does not rest on one leading "Not".
+    expect(notice?.querySelector('.alert-title')?.textContent).toBe('Not saved');
   });
 
   test('a 500 on save re-reads the list and says what it shows', async () => {

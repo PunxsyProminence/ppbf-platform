@@ -266,8 +266,9 @@ function documentReviewState(metadata: Record<string, unknown> | null | undefine
 }
 
 // Law 3: document security verdicts ride the badge ladder — a glyph plus an
-// uppercase label, never colour alone. Clean is a cleared outcome,
-// quarantined is locked, unreviewed still awaits a human (restricted).
+// uppercase label, never colour alone. Clean is a cleared outcome;
+// quarantined and unreviewed are restricted (a quarantined file is not a
+// medical stop, OW25-48 A), and the word tells them apart.
 function reviewStateBadge(state: DocumentReviewState): { rung: string; glyph: string } {
   if (state === 'clean') return { rung: 'badge--cleared', glyph: '✓' };
   if (state === 'quarantined') return { rung: 'badge--restricted', glyph: '▲' };
@@ -455,8 +456,9 @@ function parsePromotionPayloadFromNotes(notes: string): Record<string, unknown> 
 }
 
 // Law 3: intake status is a queue outcome on the badge ladder — pending
-// awaits review (restricted), approved is cleared, rejected is locked, and
-// imported is tracked downstream (monitor). Glyph + label, never colour alone.
+// awaits review (restricted), approved is cleared, rejected is restricted
+// with its word (not a medical stop, OW25-48 A), and imported is tracked
+// downstream (monitor). Glyph + label, never colour alone.
 function statusBadge(status: IntakeStatus): { rung: string; glyph: string } {
   if (status === 'Pending') return { rung: 'badge--restricted', glyph: '▲' };
   if (status === 'Approved') return { rung: 'badge--cleared', glyph: '✓' };

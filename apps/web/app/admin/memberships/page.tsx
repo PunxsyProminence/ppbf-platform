@@ -141,6 +141,7 @@ function OutcomeNotice({ notice, checking, onCheckAgain }: { notice: Notice; che
     <div className={`alert ${NOTICE_CLASS[notice.tone]} mb-[var(--s4)]`} role={notice.tone === 'critical' ? 'alert' : 'status'}>
       <span className="alert-icon" aria-hidden="true">{notice.tone === 'success' ? '✓' : '▲'}</span>
       <div className="alert-body">
+        {notice.tone === 'critical' && <p className="alert-title">Not saved</p>}
         <p className="alert-msg">{notice.text}</p>
         {notice.recheck && (
           <div className="alert-action">

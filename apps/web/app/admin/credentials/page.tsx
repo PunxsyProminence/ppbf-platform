@@ -177,6 +177,9 @@ export default function AdminCredentialsPage() {
       <li key={key} className={wrapperClass ? `${wrapperClass} mb-[var(--s3)]` : 'mat-paper mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s5)]'}>
         {wrapperClass && <span className="alert-icon" aria-hidden="true">{row.band === 'expiring_soon' ? '!' : '▲'}</span>}
         <div className={wrapperClass ? 'alert-body' : ''}>
+          {/* All three flagged bands share the warning rung (none is a medical
+              stop, OW25-48 A), so the band's own word leads the card. */}
+          {wrapperClass && <p className="alert-title">{bandLabel[row.band] ?? row.band}</p>}
           <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
             <span className="t-body font-semibold">{row.person_display_name}</span>
             {/* .t-data pins bone-200, a dark-ground ink; .t-label is restated
