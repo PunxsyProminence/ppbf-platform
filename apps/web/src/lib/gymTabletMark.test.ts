@@ -40,6 +40,15 @@ test('a role-cache clear keeps both the mark and the idle clock', () => {
   expect(readGymTabletLastUse()).toBe(1_700_000_000_000);
 });
 
+test('marking or unmarking starts the idle clock again', () => {
+  writeGymTabletLastUse(1_700_000_000_000);
+  setGymTabletMark(true);
+  expect(readGymTabletLastUse()).toBeNull();
+  writeGymTabletLastUse(1_700_000_000_000);
+  setGymTabletMark(false);
+  expect(readGymTabletLastUse()).toBeNull();
+});
+
 test('a missing or broken clock reads as none', () => {
   expect(readGymTabletLastUse()).toBeNull();
   window.localStorage.setItem('ppbf.device.gymTabletLastUse', 'soon');

@@ -47,6 +47,10 @@ export function setGymTabletMark(marked: boolean): boolean {
   } catch {
     return false;
   }
+  // Either way the idle clock starts again: a time left from before the
+  // device was unmarked must not sign it out the moment it is marked again
+  // (review B).
+  clearGymTabletLastUse();
   window.dispatchEvent(new Event(CHANGE_EVENT));
   return isGymTabletMarked() === marked;
 }

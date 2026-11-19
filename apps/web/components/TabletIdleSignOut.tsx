@@ -43,9 +43,10 @@ import { clearRoleSession } from './roleSession';
  *  - At the limit, sign-out starts and NOTHING ON THE PAGE CAN STOP IT: a
  *    plain cover (not React's) goes over everything, the page under it is
  *    made inert and loses focus, and the session is ended. Only once the
- *    server confirms does the device leave for /login, as a full load. With
- *    no connection the cover says so and it retries every 15 seconds and when
- *    the connection returns. This runs outside React on purpose (review A):
+ *    server confirms does the device leave for /login, as a full load. If
+ *    the logout does not land (no connection, a server error) the cover says
+ *    it could not finish, and it retries every 15 seconds and when the
+ *    connection returns. This runs outside React on purpose (review A):
  *    another component clearing the role cache, or a soft move to /login,
  *    would otherwise unmount the cover and the retry while the session lives.
  *  - Opened or woken past the limit: sign-out starts at once, no countdown.
@@ -69,7 +70,7 @@ const RETRY_MS = 15_000;
 const TICK_MS = 1_000;
 const COVER_ID = 'gym-tablet-leaving';
 const SIGNING_OUT_WORDS = 'Signing out…';
-const OFFLINE_WORDS = 'This tablet could not finish signing out: no connection. It keeps trying.';
+const OFFLINE_WORDS = 'This tablet could not finish signing out. It keeps trying.';
 
 let lateNodes: MutationObserver | null = null;
 
@@ -281,7 +282,9 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
     };
   }, [check]);
 
-  const markUse = useCallback(() => {
+  const bannerRef = useRef<HTMLDivElement | null>(null);
+
+  const markUse = useCallback((event?: Event) => {
     if (leaving) return;
     lastUse.current = Date.now();
     // At most one write every two seconds: a finger on a scrolling list is
@@ -290,7 +293,11 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
       lastWritten.current = lastUse.current;
       writeGymTabletLastUse(lastUse.current);
     }
-    if (countingRef.current) showCountdown(false);
+    // A press ON the banner keeps it up until its own click: hidden at the
+    // press, the tap would land on whatever is under it (review B). The next
+    // tick hides it anyway, since the time has started again.
+    const onBanner = event?.target instanceof Node && bannerRef.current?.contains(event.target);
+    if (countingRef.current && !onBanner) showCountdown(false);
   }, [showCountdown]);
 
   // Use, the tick, and the moments a sleeping tablet comes back.
@@ -315,6 +322,7 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
   const stay = () => {
     lastWritten.current = 0;
     markUse();
+    showCountdown(false);
   };
 
   return (
@@ -327,6 +335,7 @@ function MarkedTabletWatch({ showPlate }: { readonly showPlate: boolean }) {
       {counting
         ? createPortal(
           <div
+            ref={bannerRef}
             data-surface="kiosk"
             role="alert"
             className="mat-leather--raised fixed inset-x-0 bottom-0 z-[1000] border-t-2 border-[color:var(--brass-500)] p-[var(--s5)]"
