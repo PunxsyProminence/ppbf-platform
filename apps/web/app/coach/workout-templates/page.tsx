@@ -41,6 +41,12 @@ interface TemplateDetail {
   items: TemplateItem[];
   /** Names of the drills no coach of this gym has floor-tested (the detail read's untested_drills). */
   untestedDrills: string[];
+  /**
+   * The steps an issue would refuse, from the issue's own plan (the detail
+   * read's refused_drills; lane U1, U1-ISSUE). undefined: not sent to this
+   * reader. null: the check could not run.
+   */
+  refusedDrills?: RefusedDrill[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +160,22 @@ function refusedDrillsFrom(value: unknown): RefusedDrill[] {
   });
 }
 
+/** The refused drills, drawn the same before Issue and after Confirm. */
+function RefusedDrillList({ drills }: { readonly drills: readonly RefusedDrill[] }) {
+  return (
+    <ul className="flex flex-col gap-[var(--s2)]">
+      {drills.map((drill, index) => (
+        // Index key: the list is drawn once per answer and never reordered.
+        <li key={index} className="t-body">
+          <span className="font-semibold">{drill.name}</span>
+          {drill.steps.length > 0 && ` (${drill.steps.length === 1 ? 'step' : 'steps'} ${drill.steps.join(', ')})`}
+          {drill.reason !== '' && `: ${drill.reason}`}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function namedDrills(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((drill) => {
@@ -238,12 +260,21 @@ const ALERT_TEXT = 'rounded-[var(--r-md)] border-2 border-[color:var(--brass-300
 function IssueToAthlete({
   template,
   untestedDrills,
+  refusedDrills,
+  onRecheck,
+  recheckBlocked,
   onBusyChange,
   requestKeys,
 }: {
   readonly template: Template;
   /** Named in the confirm step before issuing; the result names the server's own list after. */
   readonly untestedDrills: readonly string[];
+  /** Steps the issue would refuse, read with the template; see TemplateDetail. */
+  readonly refusedDrills?: readonly RefusedDrill[] | null;
+  /** Reads the template again, so a step fixed elsewhere is seen (the open button is off while it is open). */
+  readonly onRecheck: () => void;
+  /** True while a session plan is being made below: a re-read would unmount it and lose the answer. */
+  readonly recheckBlocked: boolean;
   /** Told while an issue is running, so the page can keep this control mounted until it answers. */
   readonly onBusyChange: (busy: boolean) => void;
   /** The page's keys of unsettled issues: they outlive this control. */
@@ -468,6 +499,30 @@ function IssueToAthlete({
             ))}
           </select>
 
+          {/* BEFORE ISSUE, what the issue would refuse (lane U1, U1-ISSUE;
+              Overwatch Q-ISSUE A). Every refusal stops the whole issue, so
+              while any step would be refused the button is off and says why;
+              the reasons are the issue's own. Drill-level only: a refusal
+              that depends on the athlete chosen still comes after Confirm. */}
+          {refusedDrills && refusedDrills.length > 0 && (
+            <div className="flex flex-col gap-[var(--s2)]">
+              <p className={ALERT_TEXT}>These steps would be refused if you issue now:</p>
+              <RefusedDrillList drills={refusedDrills} />
+              <p className="t-body">Fix the steps above first; nothing would be issued.</p>
+              {/* A drill fixed in another tab is not seen until the template is
+                  read again, and this template's own open button is off while
+                  it is open (review A). */}
+              <button type="button" className="btn btn--ghost w-fit" disabled={recheckBlocked || busy} onClick={onRecheck}>
+                Check again
+              </button>
+            </div>
+          )}
+          {refusedDrills === null && (
+            <p className="t-body">
+              Whether every step can be issued could not be checked. Issuing will check again.
+            </p>
+          )}
+
           {/* Stays in its place, disabled, while the confirm step is open: a
               second tap on the same spot then lands on a dead button, never
               on Confirm. */}
@@ -475,7 +530,7 @@ function IssueToAthlete({
             ref={issueButtonRef}
             type="button"
             className="btn btn--kiosk"
-            disabled={!chosen || busy || confirming}
+            disabled={!chosen || busy || confirming || (refusedDrills?.length ?? 0) > 0}
             onClick={() => {
               setConfirming(true);
               setFocusOn('confirm');
@@ -564,16 +619,7 @@ function IssueToAthlete({
         {outcome?.kind === 'refused' && (
           <div role="alert" className="flex flex-col gap-[var(--s2)]">
             <p className={ALERT_TEXT}>{outcome.message}</p>
-            <ul className="flex flex-col gap-[var(--s2)]">
-              {outcome.drills.map((drill, index) => (
-                // Index key: the list is drawn once per answer and never reordered.
-                <li key={index} className="t-body">
-                  <span className="font-semibold">{drill.name}</span>
-                  {drill.steps.length > 0 && ` (${drill.steps.length === 1 ? 'step' : 'steps'} ${drill.steps.join(', ')})`}
-                  {drill.reason !== '' && `: ${drill.reason}`}
-                </li>
-              ))}
-            </ul>
+            <RefusedDrillList drills={outcome.drills} />
           </div>
         )}
 
@@ -741,8 +787,9 @@ function CoachWorkoutTemplates() {
         { method: 'GET', credentials: 'include' },
       );
       if (!response.ok) throw new Error('That workout template could not be opened.');
-      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills'>> & {
+      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills' | 'refusedDrills'>> & {
         untested_drills?: unknown;
+        refused_drills?: unknown;
       };
       if (!payload.template) throw new Error('That workout template could not be opened.');
       if (latest()) {
@@ -750,6 +797,11 @@ function CoachWorkoutTemplates() {
           template: payload.template,
           items: payload.items ?? [],
           untestedDrills: namedDrills(payload.untested_drills),
+          // Not sent: undefined. Sent but not a list (null, or a shape this
+          // screen cannot read): "could not be checked", never "none refused".
+          refusedDrills: payload.refused_drills === undefined
+            ? undefined
+            : Array.isArray(payload.refused_drills) ? refusedDrillsFrom(payload.refused_drills) : null,
         });
       }
     } catch (error) {
@@ -927,6 +979,12 @@ function CoachWorkoutTemplates() {
                   <IssueToAthlete
                     template={detail.template}
                     untestedDrills={detail.untestedDrills}
+                    refusedDrills={detail.refusedDrills}
+                    onRecheck={() => void openTemplate(detail.template.template_id)}
+                    // Not while a session plan is being made: re-reading the
+                    // template unmounts it and its answer (review B), the
+                    // reason the Open template button waits too.
+                    recheckBlocked={issuing || making}
                     onBusyChange={setIssuing}
                     requestKeys={requestKeys}
                   />
