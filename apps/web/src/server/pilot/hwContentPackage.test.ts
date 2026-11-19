@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { adoptionReadiness } from '../../lib/drillAdoptionReadiness';
 import { readCsv } from './contentImport/csv';
 
 // Lane HW (OD-2026-11-19-005, OW25-49 (c); Backbone ACTIONS A-112): the six PPBF home sessions on
@@ -16,6 +17,15 @@ const TEMPLATES = 'workout-templates/seed_workout_templates.csv';
 const ITEMS = 'workout-templates/seed_workout_template_items.csv';
 const TRACKS = 'training-tracks/seed_training_tracks.csv';
 const DRILLS = 'drill-library/seed_drill_library.csv';
+const SCALES = 'drill-library/seed_drill_scale_levels.csv';
+const STOPS = 'drill-library/seed_drill_stop_rules.csv';
+const CUES = 'drill-library/seed_drill_cues.csv';
+// The six drills lane HW wrote for the typed steps (Overwatch GO, Q4 A), by the draft's item title.
+const HW_DRILLS: Record<string, string> = {
+  'Floor Y and T raises (on the towel)': 'drl_7bcdd061b3f789', 'Forearm plank': 'drl_563b857233c3ee', 'Reverse lunge': 'drl_aeb2cbd5cc593d',
+  'Glute bridge': 'drl_cbc25e710fb3e3', 'Towel squeeze and wring': 'drl_564171b28b3667', 'Wall calf raise': 'drl_35aac3b481205b',
+};
+const SHADOW = 'drl_e7587c167c1ebd';
 const TRACK_ID = 'trk_55480ac4429113';
 const MARKER = 'AI draft, lane HW, 2026-11-19 (OD-2026-11-19-005; OD-2026-11-15-011)';
 const BANDS = ['U12', '12–17', 'Adult'];
@@ -72,11 +82,13 @@ describe('lane HW: the six PPBF home sessions', () => {
       // The coach screen shows coach_notes, not template details (reviewer 2, finding 1).
       for (const line of json(row.details).before_every_session as string[]) expect(row.coach_notes).toContain(line);
       expect(row.coach_notes).toContain('call 911');
+      // Overwatch Q5: the primer, folded into the warm-up, is in the warm-up line the coach notes carry.
+      expect(row.coach_notes).toContain(`Warm-up: ${json(row.details).warm_up}`);
     }
   });
 
-  it('have 55 non-contact items, each marked as an AI draft, each main item with all three bands, a rest, a cue and a safety line', () => {
-    expect(items).toHaveLength(55);
+  it('have 50 non-contact items, each marked as an AI draft, each main item with all three bands, a rest, a cue and a safety line', () => {
+    expect(items).toHaveLength(50);
     for (const item of items) {
       const details = json(item.details);
       expect([item.contact_level, details.draft]).toEqual(['none', MARKER]);
@@ -85,11 +97,15 @@ describe('lane HW: the six PPBF home sessions', () => {
         for (const key of ['rest', 'cue', 'safety']) expect(typeof details[key] === 'string' && details[key].length > 0).toBe(true);
       }
     }
-    expect(items.filter((item) => item.drill_id === '').map((item) => item.free_text_drill).filter((text) => !text.startsWith('Session primer')))
-      .toEqual(['Floor Y and T raises (on the towel)', 'Forearm plank', 'Reverse lunge', 'Glute bridge', 'Towel squeeze and wring', 'Wall calf raise']);
-    // Reviewer 2: the two partial matches name their library drill (which uses bands or weights) without linking it.
+    // Every step names a drill: a typed step is refused at issue (OD-2026-09-18-001).
+    expect(items.filter((item) => item.drill_id === '')).toEqual([]);
+    // Overwatch Q5: the five primers that name no drill are folded into the warm-up; Day 4's, which names one, stays a step.
+    expect(items.filter((item) => item.free_text_drill.startsWith('Session primer')).map((item) => item.drill_id)).toEqual(['drl_25e4934a3ab2ab']);
+    expect(items.filter((item) => json(item.details).primer).length).toBe(5);
+    // The typed steps link the lane HW drills; the two partial matches still name their related library drill (bands or weights), unlinked.
+    for (const [title, drillId] of Object.entries(HW_DRILLS)) expect(items.filter((item) => item.free_text_drill === title).map((item) => item.drill_id)).toEqual([drillId]);
     expect(items.filter((item) => json(item.details).related_drill).map((item) => [item.drill_id, json(item.details).related_drill]))
-      .toEqual([['', 'drl_d0d14430bb0ddb'], ['', 'drl_179419bceeab59']]);
+      .toEqual([[HW_DRILLS['Floor Y and T raises (on the towel)'], 'drl_d0d14430bb0ddb'], [HW_DRILLS['Towel squeeze and wring'], 'drl_179419bceeab59']]);
   });
 
   it('name only drills the committed library holds', () => {
@@ -98,7 +114,7 @@ describe('lane HW: the six PPBF home sessions', () => {
       return [item.drill_id, ...(details.also_drills ?? []), details.alternate_drill?.drill_id, details.related_drill].filter(Boolean) as string[];
     });
     expect(named.filter((id) => !drills.has(id))).toEqual([]);
-    expect(new Set(named).size).toBe(37);
+    expect(new Set(named).size).toBe(43);
   });
 
   it('are what the track lists for days 1 to 6, and every template the track names is a committed template', () => {
@@ -134,5 +150,58 @@ describe('lane HW: the six PPBF home sessions', () => {
     }).sort();
     expect(omitting).toEqual(Object.keys(expected).sort());
     for (const id of omitting) expect({ id, stage_keys: drills.get(id)?.stage_keys }).toEqual({ id, stage_keys: expected[id] });
+  });
+
+  // Overwatch GO (Q4 A, Q6): all six issue. Issuing runs adoptionReadiness on every step's drill with the
+  // floor test taken as met (workoutTemplates.ts planTemplateIssue), so every linked drill must pass it.
+  it('link only drills that pass adoption readiness from the seed files, so all six can be issued', () => {
+    const library = rows(DRILLS);
+    const scales = rows(SCALES);
+    const stops = rows(STOPS);
+    const cues = rows(CUES);
+    const truthy = (value: string) => value.trim().toLowerCase() === 'true';
+    const verdicts = [...new Set(items.map((item) => item.drill_id))].map((id) => {
+      const drill = library.find((row) => (row.lineage_id || row.drill_id) === id && row.superseded_at === '') as Row;
+      const readiness = adoptionReadiness({
+        active: truthy(drill.active || 'true'), superseded_at: drill.superseded_at || null, name: drill.name, purpose: drill.purpose,
+        discipline: drill.discipline, category: drill.category, difficulty: drill.difficulty, standard_setup: drill.standard_setup,
+        execution: drill.execution, what_good_looks_like: drill.what_good_looks_like,
+        scale_levels: scales.filter((row) => row.drill_id === id).map((row) => ({ scale_level: row.scale_level, is_starting_point: truthy(row.is_starting_point) })),
+        stop_rules: stops.filter((row) => row.drill_id === id),
+        cues: cues.filter((row) => row.drill_id === id).map((row) => ({ cue_text: row.cue_text })),
+        field_provenance: drill.field_provenance,
+        floor_tested_by_this_gym: true,
+      });
+      return { id, missing: readiness.missing };
+    });
+    expect(verdicts.length).toBe(39);
+    expect(verdicts.filter((verdict) => verdict.missing.length > 0)).toEqual([]);
+  });
+
+  it('write the six drills as non-contact AI drafts: every field labelled, the scale rows marked for coach review', () => {
+    const scales = rows(SCALES);
+    const stops = rows(STOPS);
+    const stopRule = json(home[0].details).stop_rule as string;
+    for (const drillId of Object.values(HW_DRILLS)) {
+      const drill = drills.get(drillId) as Row;
+      expect([drill.contact_level, drill.requires_coach_authorization, drill.discipline, drill.difficulty, drill.stage_keys]).toEqual(['none', 'false', 'conditioning', 'beginner', '']);
+      const labels = json(drill.field_labels);
+      for (const field of ['name', 'category', 'target_behavior', 'purpose', 'standard_setup', 'execution', 'what_good_looks_like', 'cues', 'stop_rules', 'scale_levels']) {
+        expect({ drillId, field, status: labels[field]?.status, draft: labels[field]?.draft }).toEqual({ drillId, field, status: 'INFERRED', draft: MARKER });
+      }
+      for (const level of ['A', 'B', 'C']) expect(labels.scale_levels[level]?.draft).toBe(MARKER);
+      expect(scales.filter((row) => row.drill_id === drillId).map((row) => [row.scale_level, row.authoring_state])).toEqual([
+        ['A', 'scaffold_needs_coach_review'], ['B', 'scaffold_needs_coach_review'], ['C', 'scaffold_needs_coach_review'],
+      ]);
+      // Every one carries the draft's home stop rule word for word.
+      expect(stops.some((row) => row.drill_id === drillId && row.condition_text === stopRule[0].toUpperCase() + stopRule.slice(1))).toBe(true);
+    }
+  });
+
+  it("give Shadow With an Imagined Opponent the draft's Day 1 cue, labelled as an AI draft, and nothing else", () => {
+    expect(rows(CUES).filter((row) => row.drill_id === SHADOW).map((row) => row.cue_text)).toEqual(['Picture an opponent walking at you: punch, then step off the line.']);
+    const labels = json((drills.get(SHADOW) as Row).field_labels);
+    expect(Object.keys(labels)).toEqual(['cues']);
+    expect(labels.cues.draft).toBe(MARKER);
   });
 });
