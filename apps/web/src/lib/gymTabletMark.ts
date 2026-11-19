@@ -64,3 +64,43 @@ export function subscribeGymTabletMark(listener: () => void): () => void {
     window.removeEventListener('storage', onStorage);
   };
 }
+
+/*
+ * WHEN THIS DEVICE WAS LAST USED (AS2-b review A, BLOCKER). Kept in storage,
+ * not only in memory: a tablet that wakes from sleep often RELOADS the page,
+ * and a clock kept in memory would start again from zero while the last
+ * person's session is still alive. Shared by every tab, so a hidden tab does
+ * not sign out someone working in another.
+ *
+ * Cleared only when the session is known to be gone (roleSession.ts's
+ * clearRoleSession, and the header hearing "signed out" from the server), so
+ * the next person starts a fresh clock. If it is ever left behind stale, the
+ * cost is a new sign-in being signed out at once; signing in again starts clean.
+ */
+const LAST_USE_KEY = 'ppbf.device.gymTabletLastUse';
+
+export function readGymTabletLastUse(): number | null {
+  try {
+    const raw = storage()?.getItem(LAST_USE_KEY);
+    const value = raw === null || raw === undefined ? NaN : Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeGymTabletLastUse(at: number): void {
+  try {
+    storage()?.setItem(LAST_USE_KEY, String(at));
+  } catch {
+    // Memory still holds it for this tab.
+  }
+}
+
+export function clearGymTabletLastUse(): void {
+  try {
+    storage()?.removeItem(LAST_USE_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}

@@ -11,7 +11,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import TabletIdleSignOut from './TabletIdleSignOut';
 import { clearRoleSession } from './roleSession';
-import { setGymTabletMark } from '@/src/lib/gymTabletMark';
+import { readGymTabletLastUse, setGymTabletMark, writeGymTabletLastUse } from '@/src/lib/gymTabletMark';
 import { endThisSession, leaveForLogin } from '@/src/lib/signOut';
 
 jest.mock('./roleSession', () => ({ clearRoleSession: jest.fn() }));
@@ -52,6 +52,8 @@ async function advance(ms: number) {
 const originalFetch = global.fetch;
 
 beforeEach(() => {
+  document.getElementById('gym-tablet-leaving')?.remove();
+  for (const child of Array.from(document.body.children)) child.removeAttribute('inert');
   jest.useFakeTimers();
   jest.setSystemTime(new Date('2026-11-19T18:00:00Z'));
   window.localStorage.clear();
@@ -205,6 +207,76 @@ describe('a marked gym tablet', () => {
     await advance(60 * MINUTE);
     expect(mockEnd).toHaveBeenCalledTimes(1);
     expect(mockLeave).toHaveBeenCalledTimes(1);
+  });
+
+  /* AS2-b review A, BLOCKER: a tablet that wakes often RELOADS the page. The
+     clock is the device's, kept in storage, so a reload resumes it. */
+  test("a page reloaded after the limit signs out at once: the clock is the device's, not the page's", async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    writeGymTabletLastUse(Date.now() - 20 * MINUTE);
+    await mount();
+    expect(mockEnd).toHaveBeenCalledTimes(1);
+    expect(mockLeave).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Signing out in/)).toBeNull();
+  });
+
+  test('a page reloaded inside the limit resumes the clock rather than starting it again', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    writeGymTabletLastUse(Date.now() - 10 * MINUTE);
+    await mount();
+    await advance(4 * MINUTE + 1_000);
+    expect(screen.getByRole('alert').textContent).toContain('Signing out in 0:59');
+  });
+
+  test('use in another tab counts: this tab does not sign out someone working there', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    await advance(10 * MINUTE);
+    writeGymTabletLastUse(Date.now()); // the other tab's tap
+    await advance(10 * MINUTE);
+    expect(mockEnd).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('use is written for the device, at most every two seconds', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    const start = readGymTabletLastUse();
+    await advance(5_000);
+    await act(async () => {
+      fireEvent.pointerDown(document.body);
+    });
+    expect(readGymTabletLastUse()).toBe((start ?? 0) + 5_000);
+    await advance(500);
+    await act(async () => {
+      fireEvent.pointerDown(document.body);
+    });
+    expect(readGymTabletLastUse()).toBe((start ?? 0) + 5_000);
+  });
+
+  /* AS2-b review A: nothing under the cover can take focus or keys, and a
+     plain cover stays up after the role session is cleared, until /login. */
+  test('while covered the page under it is inert, and a plain cover stays on the way to /login', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    let finish: (value: boolean) => void = () => {};
+    mockEnd.mockImplementation(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+    await mount();
+
+    await advance(15 * MINUTE);
+    expect(field.closest('[inert]')).not.toBeNull();
+    expect(document.activeElement).not.toBe(field);
+
+    await act(async () => {
+      finish(true);
+      await Promise.resolve();
+    });
+    const leaving = document.getElementById('gym-tablet-leaving');
+    expect(leaving?.textContent).toBe('Signing out…');
+    expect(mockClear).toHaveBeenCalledTimes(1);
+    field.remove();
   });
 
   test('unmarking stops it', async () => {

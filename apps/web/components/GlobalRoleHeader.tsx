@@ -22,6 +22,7 @@ import CommandsOverlay from "./CommandsOverlay";
 import SafetyAttentionBadge from "./SafetyAttentionBadge";
 import SoundToggle from "./SoundToggle";
 import TabletIdleSignOut from "./TabletIdleSignOut";
+import { clearGymTabletLastUse } from "@/src/lib/gymTabletMark";
 import { CONTROL_EXIT, CONTROL_QUIET } from "./sessionBarControls";
 
 // The queue the "Tell Us" box fills is worked by the people who can act on it:
@@ -104,6 +105,11 @@ export default function GlobalRoleHeader() {
 
         if (resolution.ok) {
           persistAuthoritativeRoleSession(resolution.session);
+        } else if (resolution.reason === 'unauthenticated') {
+          // The server says nobody is signed in on this device, so a gym
+          // tablet's idle clock belongs to nobody: the next person starts a
+          // fresh one (lane U1, AS2-b).
+          clearGymTabletLastUse();
         }
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
@@ -160,7 +166,11 @@ export default function GlobalRoleHeader() {
           {/* A refusal screen is still a signed-in screen: a marked gym tablet
               left on one must still sign itself out (lane U1, AS2-b). No plate
               here, so the refusal keeps its minimal chrome. */}
-          {session && pathname !== "/login" ? <TabletIdleSignOut showPlate={false} /> : null}
+          {/* /change-pin too, with nothing cached: a session that still owes
+              a PIN change is never written to the cache (change-pin/page.tsx),
+              and left there it would stay open to anyone who knows the
+              starting PIN (AS2-b review A). */}
+          {(session && pathname !== "/login") || pathname === "/change-pin" ? <TabletIdleSignOut showPlate={false} /> : null}
         </div>
       </header>
     );
