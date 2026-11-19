@@ -1018,6 +1018,25 @@ describe('passbook: a confirmed load jump in the family wording', () => {
     expect(result?.pages.progression_gaps[0].gap_description).toBe('Your coach is looking at your recent training.');
   });
 
+  // Overwatch 2026-11-19: a failed load read costs only that gap its numbers.
+  test('an under-18 book whose load read fails still opens; the load gap reads the no-number line', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      arrange('2010-05-01');
+      const base = mockQuery.getMockImplementation()!;
+      mockQuery.mockImplementation((sql: string, params?: unknown[]) => (
+        sql.includes('as week_minutes') ? Promise.reject(new Error('connection lost')) : base(sql, params)
+      ));
+      const result = await getAthletePassbook('org-1', 'ath-1', 'parent');
+      expect(result?.pages.progression_gaps.map((g) => g.gap_description)).toEqual([
+        'Your coach is looking at your recent training.',
+        'Drops lead hand',
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test.each(['coach', 'organization_admin', 'admin'] as PilotRole[])('a %s keeps the stored coach text', async (role) => {
     arrange('2010-05-01');
     const result = await getAthletePassbook('org-1', 'ath-1', role);

@@ -734,10 +734,20 @@ describe('familyGapDescription for an under-18 reader', () => {
   test.each<[string, FamilyReader]>([
     ['no numbers', MINOR_NO_NUMBERS],
     ['numbers but no week end', { ...MINOR, weekEnding: null }],
-  ])('no usable numbers (%s): the fixed line with no numbers, never the stored coach text', (_label, reader) => {
+  ])('no usable numbers (%s): the fixed line with no load numbers, never the stored coach text', (_label, reader) => {
     expect(familyGapDescription(rule6(), reader)).toBe(MINOR_LOAD_FALLBACK);
-    expect(familyGapDescription(rule7(), reader)).toBe(MINOR_LOAD_FALLBACK);
     expect(MINOR_LOAD_FALLBACK).toBe('Your coach is looking at your recent training.');
+    // Overwatch 2026-11-19: Rule 7 keeps the minor's own check-in changes
+    // after the fixed line; Q2's "no numbers" meant load numbers.
+    expect(familyGapDescription(rule7(), reader)).toBe(
+      `${MINOR_LOAD_FALLBACK} Check-ins changed: energy from 4.0 to 2.5; soreness from 2.0 to 3.5; `
+      + `readiness from 7.0 to ${(7 - READINESS_DROP_POINTS).toFixed(1)}.`,
+    );
+    // Rule 7 with no check-in figure anywhere: the fixed line alone.
+    expect(familyGapDescription(
+      { gap_description: 'coach text', detected_from: 'deterministic_rule:load_up_wellness_down', detection_data: null },
+      reader,
+    )).toBe(MINOR_LOAD_FALLBACK);
   });
 
   test.each([

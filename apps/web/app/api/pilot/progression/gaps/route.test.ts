@@ -172,6 +172,27 @@ describe('GET /api/pilot/progression/gaps: who reads which words for a load jump
     expect(items[0].gap_description).toBe('Your coach is looking at your recent training.');
   });
 
+  // Overwatch 2026-11-19: a failed load read costs only that gap its numbers.
+  test('an under-18 whose load read fails still gets every gap; the load gap reads the no-number line', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      mockRequirePrincipal.mockResolvedValueOnce(principal({ role: 'athlete', athleteId: 'ath-1' }));
+      mockQueryOne.mockResolvedValueOnce({ athlete_id: 'ath-1' });
+      mockQuery.mockResolvedValueOnce(rows());
+      mockQueryOne.mockResolvedValueOnce({ dob: '2012-03-01' });
+      mockQuery.mockRejectedValueOnce(new Error('connection lost'));
+      const res = await GET(getRequest('athlete_id=ath-1'));
+      expect(res.status).toBe(200);
+      const items = (await res.json()).items as Record<string, unknown>[];
+      expect(items.map((i) => i.gap_description)).toEqual([
+        'Your coach is looking at your recent training.',
+        'Drops lead hand',
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('the read selects detected_from and detection_data, which the wording needs', async () => {
     await read(principal({ role: 'athlete', athleteId: 'ath-1' }));
     const sql = mockQuery.mock.calls[0][0] as string;

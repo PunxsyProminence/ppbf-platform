@@ -111,10 +111,28 @@ describe('getFamilyGapReaders', () => {
     expect(reader.loadNumbers).toBeNull();
   });
 
-  test('a failed load read is not swallowed into a wording', async () => {
-    mockQuery.mockRejectedValueOnce(new Error('connection lost'));
-    await expect(getFamilyGapReaders('org-1', 'ath-1', null, [{ detected_from: RULE6, created_at: CONFIRMED_AT }], NOW))
-      .rejects.toThrow('connection lost');
+  // Overwatch 2026-11-19: a failed read costs only that gap its numbers; it is
+  // logged with no athlete or record detail, and the other gaps still resolve.
+  test('a failed load read gives that confirm day no numbers; other days and gaps still resolve', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      mockQuery
+        .mockRejectedValueOnce(new Error('connection lost')) // the Nov 14 read
+        .mockResolvedValueOnce(buckets()); // the Nov 10 read
+      const readers = await getFamilyGapReaders('org-1', 'ath-1', null, [
+        { detected_from: RULE6, created_at: CONFIRMED_AT },
+        { detected_from: RULE7, created_at: CONFIRMED_AT },
+        { detected_from: RULE6, created_at: '2026-11-10T17:00:00.000Z' },
+        { detected_from: 'coach_observation', created_at: CONFIRMED_AT },
+      ], NOW);
+      expect(readers.map((r) => r.minor)).toEqual([true, true, true, true]);
+      expect(readers.map((r) => r.loadNumbers !== null)).toEqual([false, false, true, false]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith('family load numbers unread', { reason: 'connection lost' });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('ath-1');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

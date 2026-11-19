@@ -661,8 +661,9 @@ export interface FamilyGapSource {
  * their parents read plain numbers instead -- logged sessions and minutes in
  * the confirmed week against the usual weeks' low-high range, Rule 7's
  * check-in changes, and "Your coach is looking at it." No ratio and no coach
- * phrasing. With no usable numbers they read MINOR_LOAD_FALLBACK, never the
- * stored coach text (it carries the ratio). Adults are unchanged.
+ * phrasing. With no usable load numbers (or a failed read) they read
+ * MINOR_LOAD_FALLBACK, plus Rule 7's check-in changes when it has them, never
+ * the stored coach text (it carries the ratio). Adults are unchanged.
  */
 export function familyGapDescription(gap: FamilyGapSource, reader: FamilyReader): string {
   const rule = ruleFromDetectedFrom(gap.detected_from);
@@ -709,18 +710,22 @@ function minorLoadSentence(
   gap: FamilyGapSource,
   reader: FamilyReader,
 ): string {
+  // Rule 7's check-in changes are the minor's own plain numbers and are kept
+  // with or without load numbers (Overwatch 2026-11-19: Q2's "no numbers"
+  // meant load numbers; Q1 keeps the wellness part).
+  const changes = rule === 'load_up_wellness_down' ? wellnessChangesShown(gap) : [];
+  const checkIns = changes.length > 0 ? `Check-ins changed: ${changes.join('; ')}.` : null;
   const numbers = reader.loadNumbers;
-  if (!numbers || !reader.weekEnding) return MINOR_LOAD_FALLBACK;
+  if (!numbers || !reader.weekEnding) {
+    return checkIns ? `${MINOR_LOAD_FALLBACK} ${checkIns}` : MINOR_LOAD_FALLBACK;
+  }
   const { this_week: week, usual } = numbers;
   const parts = [
     `In the 7 days to ${reader.weekEnding}: ${countOf(week.sessions, 'logged session')}, ${countOf(week.minutes, 'minute')}.`,
     `A usual week before that: ${rangeOf(usual.sessions_low, usual.sessions_high, 'logged session')}, `
       + `${rangeOf(usual.minutes_low, usual.minutes_high, 'minute')}.`,
   ];
-  if (rule === 'load_up_wellness_down') {
-    const changes = wellnessChangesShown(gap);
-    if (changes.length > 0) parts.push(`Check-ins changed: ${changes.join('; ')}.`);
-  }
+  if (checkIns) parts.push(checkIns);
   parts.push('Your coach is looking at it.');
   return parts.join(' ');
 }
@@ -790,7 +795,7 @@ export async function getFamilyGapReaders(
 ): Promise<FamilyReader[]> {
   if (!isMinor(dob, now)) return gaps.map(() => ADULT_FAMILY_READER);
 
-  const byDay = new Map<string, Promise<WeeklyLoadRow[]>>();
+  const byDay = new Map<string, Promise<WeeklyLoadRow[] | null>>();
   return Promise.all(gaps.map(async (gap): Promise<FamilyReader> => {
     const rule = ruleFromDetectedFrom(gap.detected_from);
     const anchor = gap.created_at instanceof Date || typeof gap.created_at === 'string'
@@ -801,9 +806,18 @@ export async function getFamilyGapReaders(
     if (!rule || !FAMILY_LOAD_RULES.has(rule) || !anchor || !day || !weekEnding) {
       return { minor: true, loadNumbers: null, weekEnding: null };
     }
-    if (!byDay.has(day)) byDay.set(day, getWeeklySessionLoads(organizationId, [athleteId], anchor));
+    if (!byDay.has(day)) {
+      // A failed read costs only this gap its numbers (Overwatch 2026-11-19):
+      // it reads the no-number line, and the rest of the gaps or passbook
+      // still loads. Never a ratio, never a made-up number. Logged with no
+      // athlete or record detail.
+      byDay.set(day, getWeeklySessionLoads(organizationId, [athleteId], anchor).catch((error: unknown) => {
+        console.warn('family load numbers unread', { reason: error instanceof Error ? error.message : 'unknown' });
+        return null;
+      }));
+    }
     const rows = await byDay.get(day)!;
-    return { minor: true, loadNumbers: readFamilyLoadNumbers(rows, athleteId), weekEnding };
+    return { minor: true, loadNumbers: rows ? readFamilyLoadNumbers(rows, athleteId) : null, weekEnding };
   }));
 }
 
