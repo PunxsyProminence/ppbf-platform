@@ -15706,6 +15706,94 @@
     }
   },
   {
+    "id": "app/api/pilot/coach/rest-marks/route.ts#DELETE",
+    "method": "DELETE",
+    "path": "/api/pilot/coach/rest-marks",
+    "gate": "requirePrincipal + requireRole(REST_MARK_ROLES) + assertRestMarkAccess in clearRestMark (active membership role here + assertActorCanAccessAthlete)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Undoes one rest/away mark (sets cleared_at and cleared_by, keeps the row); refuses any body and any query field but athlete_id and mark_id; audit row in the same transaction, not mirrored. Lane R6-b1, OD-2026-11-17-004.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...REST_MARK_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/rest-marks/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/rest-marks",
+    "gate": "requirePrincipal + requireRole(REST_MARK_ROLES) + membership role check in listRestMarks over the Performance Analytics roster (athleteIdsForCoach for a coach; organizationActionableRoster for an admin)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Returns Rule 6's five 7-day load weeks and the live rest/away marks over them for the athletes the caller's analytics card shows; no reason exists to return; marker account ids are not in the response; refuses any query field. Lane R6-b1.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "athleteIdsForCoach"
+      ],
+      "roleLiterals": [
+        "<[...REST_MARK_ROLES]>"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/rest-marks/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/rest-marks",
+    "gate": "requirePrincipal + requireRole(REST_MARK_ROLES) + assertRestMarkAccess in addRestMark (active membership role here + assertActorCanAccessAthlete)",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "Records one rest or away mark over a range of gym days (one tap = one load week); the body takes exactly athlete_id, kind, first_day, last_day and refuses any other field (no reason, no note, for any age: OD-2026-11-17-004); same live mark twice returns the first; audit row in the same transaction, not mirrored.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole"
+      ],
+      "roleLiterals": [
+        "<[...REST_MARK_ROLES]>"
+      ]
+    }
+  },
+  {
     "id": "app/api/pilot/admin/learning-policies/route.ts#GET",
     "method": "GET",
     "path": "/api/pilot/admin/learning-policies",
