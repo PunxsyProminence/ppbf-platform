@@ -145,6 +145,21 @@ test('no invented safety or governance alert is presented as live data', async (
   expect(screen.queryByText(/capture rate remains at 100%/i)).toBeNull();
 });
 
+// OFF-12 (lane U1). Three things on this hub did not do what they said: a fixed
+// "MY PRIORITIES TODAY" panel that read from nothing, a "The Bell" link to
+// /login (which sends a signed-in admin home), and a promise of "the full
+// tutorial center" over a button that opens SHADOW chat.
+test('no fixed priority panel, no link to the sign-in page, and the help line names SHADOW', async () => {
+  await renderPage();
+
+  expect(screen.queryByText('MY PRIORITIES TODAY')).toBeNull();
+  expect(screen.queryByText(/release-path integrity checks/)).toBeNull();
+  expect(screen.queryByRole('link', { name: 'The Bell' })).toBeNull();
+  expect(document.querySelector('a[href="/login"]')).toBeNull();
+  expect(screen.queryByText(/tutorial center/i)).toBeNull();
+  expect(screen.getByText('Questions about a screen? Open SHADOW Chat with this button.')).toBeTruthy();
+});
+
 // THE NIGHT FEED IS NOT FURNITURE IN THIS ROOM. The hub used to mount
 // <ShadowCommandFeed /> -- a newest-first event/telemetry feed, the After Hours
 // room's own chrome -- under a heading reading "SHADOW COMMAND NODE", inside

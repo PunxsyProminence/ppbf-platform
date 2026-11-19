@@ -117,7 +117,7 @@ describe('no payment processor claim (BOA-02)', () => {
   test('no tab says a processor is or is not connected', () => {
     render(<RevenueFundingCenter />);
     const tabs = screen.getAllByRole('button').map((button) => button.textContent ?? '');
-    for (const tab of ['Payment Settings Placeholder', 'Treasurer Review', 'Overview', 'Donations']) {
+    for (const tab of ['Payment Accounts', 'Treasurer Review', 'Overview', 'Donations']) {
       if (!tabs.includes(tab)) continue;
       openTab(tab);
       const text = document.body.textContent ?? '';
@@ -135,18 +135,26 @@ describe('no payment processor claim (BOA-02)', () => {
     for (const claim of CLAIMS) expect(code).not.toMatch(new RegExp(claim.source));
   });
 
-  test('Payment Settings links to the real Payment Accounts page', () => {
+  test('the tab and its heading carry the name of the page they point to (item 17, lane U1)', () => {
     render(<RevenueFundingCenter />);
-    openTab('Payment Settings Placeholder');
+    expect(screen.queryByText(/Payment Settings Placeholder/)).toBeNull();
+    openTab('Payment Accounts');
+    expect(screen.getByRole('heading', { name: 'Payment Accounts' })).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Payment Settings/);
+  });
+
+  test('Payment Accounts links to the real Payment Accounts page', () => {
+    render(<RevenueFundingCenter />);
+    openTab('Payment Accounts');
     expect(screen.getByText('Payment accounts and their real connection status are on the Payment Accounts page.')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open Payment Accounts' }).getAttribute('href')).toBe('/admin/payments');
   });
 
-  test('the Payment Settings tab still makes no request', () => {
+  test('the Payment Accounts tab still makes no request', () => {
     const fetchMock = jest.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
     render(<RevenueFundingCenter />);
-    openTab('Payment Settings Placeholder');
+    openTab('Payment Accounts');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

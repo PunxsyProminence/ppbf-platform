@@ -155,8 +155,14 @@ export default function GymStorePage({ params }: { params: Promise<{ organizatio
                       Buy
                     </a>
                   ) : (
-                    <p className="inline-flex min-h-[44px] w-full items-center justify-center border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-4 text-center text-xs font-bold uppercase tracking-[0.12em] text-[var(--gray-dark)]">
-                      Ask at the gym
+                    /* FAM-21 (lane U1): a line of text, not a button. It was drawn
+                       as a 44px bordered plate beside real Buy buttons, so it
+                       read as a control that did nothing when tapped. "Not sold
+                       online" only when there is no checkout at all: an item
+                       that has one but is unavailable just now is still sold
+                       online, and its availability line already says so. */
+                    <p className="text-center text-sm text-[var(--gray-dark)]">
+                      {product.checkout_url === '' ? 'Not sold online. Ask at the gym.' : 'Ask at the gym.'}
                     </p>
                   )}
                 </div>
