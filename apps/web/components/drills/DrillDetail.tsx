@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useRef } from 'react';
 import {
   executionSteps,
   humanizeContactLevel,
-  listItems,
+  listItemsOrNotWritten,
   scaleLevelName,
   setupAndEquipment,
 } from '@/src/lib/drillPresentation';
@@ -92,12 +92,12 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   const ownStops = view.stopRules.filter((rule) => rule.origin === 'drill' && rule.kind !== 'warmup_decay');
   const readiness = view.stopRules.filter((rule) => rule.kind === 'warmup_decay');
   const everyDrillStops = view.stopRules.filter((rule) => rule.origin === 'universal' && rule.kind !== 'warmup_decay');
-  const { setup, equipment } = setupAndEquipment(view.setup, view.equipment);
+  const { setup, equipment } = setupAndEquipment(view.setup, view.equipment, view.id, view.coach?.lineageId);
   const coachStatus = view.coach ? referenceStatus(view.coach) : null;
-  const good = listItems(view.good);
-  const bad = listItems(view.bad);
-  const errors = listItems(view.commonErrors);
-  const corrections = listItems(view.corrections);
+  const good = listItemsOrNotWritten(view.good);
+  const bad = listItemsOrNotWritten(view.bad);
+  const errors = listItemsOrNotWritten(view.commonErrors);
+  const corrections = listItemsOrNotWritten(view.corrections);
 
   return (
     <article aria-labelledby={headingId} className="mat-leather--raised space-y-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
@@ -178,33 +178,23 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
         </section>
       )}
 
-      {good.length > 0 && (
-        <section className={SECTION}>
-          <h3 className="t-label">What good looks like</h3>
-          <ul className={LIST}>
-            {good.map((item, index) => <li key={`${view.id}-good-${index}`}>{item}</li>)}
-          </ul>
-        </section>
-      )}
+      <section className={SECTION}>
+        <h3 className="t-label">What good looks like</h3>
+        <ul className={LIST}>
+          {good.map((item, index) => <li key={`${view.id}-good-${index}`}>{item}</li>)}
+        </ul>
+      </section>
 
-      {(bad.length > 0 || errors.length > 0) && (
-        <section className={SECTION}>
-          <h3 className="t-label">What to avoid</h3>
-          {bad.length > 0 && (
-            <ul className={LIST}>
-              {bad.map((item, index) => <li key={`${view.id}-bad-${index}`}>{item}</li>)}
-            </ul>
-          )}
-          {errors.length > 0 && (
-            <>
-              <p className="t-label text-[color:var(--bone-300)]">Common errors</p>
-              <ul className={LIST}>
-                {errors.map((item, index) => <li key={`${view.id}-error-${index}`}>{item}</li>)}
-              </ul>
-            </>
-          )}
-        </section>
-      )}
+      <section className={SECTION}>
+        <h3 className="t-label">What to avoid</h3>
+        <ul className={LIST}>
+          {bad.map((item, index) => <li key={`${view.id}-bad-${index}`}>{item}</li>)}
+        </ul>
+        <p className="t-label text-[color:var(--bone-300)]">Common errors</p>
+        <ul className={LIST}>
+          {errors.map((item, index) => <li key={`${view.id}-error-${index}`}>{item}</li>)}
+        </ul>
+      </section>
 
       {view.cues.length > 0 && (
         <section className={SECTION}>
@@ -222,15 +212,13 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
         </section>
       )}
 
-      {/* LEVEL 3: corrections, when present, one expander deep. */}
-      {corrections.length > 0 && (
-        <details className={EXPANDER}>
-          <summary className={EXPANDER_SUMMARY}>Corrections</summary>
-          <ul className={`${LIST} mt-[var(--s2)]`}>
-            {corrections.map((item, index) => <li key={`${view.id}-correction-${index}`}>{item}</li>)}
-          </ul>
-        </details>
-      )}
+      {/* LEVEL 3: corrections, one expander deep; an unwritten field says so. */}
+      <details className={EXPANDER}>
+        <summary className={EXPANDER_SUMMARY}>Corrections</summary>
+        <ul className={`${LIST} mt-[var(--s2)]`}>
+          {corrections.map((item, index) => <li key={`${view.id}-correction-${index}`}>{item}</li>)}
+        </ul>
+      </details>
 
       {view.scaleLevels.length > 0 && (
         <section className={SECTION}>
@@ -313,31 +301,25 @@ function referenceStatus(coach: NonNullable<DrillDetailView['coach']>): string {
 function CoachContext({ view }: { view: DrillDetailView }) {
   const coach = view.coach;
   if (!coach) return null;
-  const transfer = listItems(coach.transfer);
+  const transfer = listItemsOrNotWritten(coach.transfer);
   const showTarget = coach.targetBehavior && coach.targetBehavior.trim() !== view.purpose.trim();
 
   return (
     <div className="space-y-[var(--s2)]">
-      {(transfer.length > 0 || showTarget) && (
-        <details className={EXPANDER}>
-          <summary className={EXPANDER_SUMMARY}>Coaching notes</summary>
-          <div className="mt-[var(--s2)] space-y-[var(--s2)]">
-            {showTarget && (
-              <p className={BODY}>
-                <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Target behaviour:</span> {coach.targetBehavior}
-              </p>
-            )}
-            {transfer.length > 0 && (
-              <>
-                <p className="t-label text-[color:var(--bone-300)]">Transfer</p>
-                <ul className={LIST}>
-                  {transfer.map((item, index) => <li key={`${view.id}-transfer-${index}`}>{item}</li>)}
-                </ul>
-              </>
-            )}
-          </div>
-        </details>
-      )}
+      <details className={EXPANDER}>
+        <summary className={EXPANDER_SUMMARY}>Coaching notes</summary>
+        <div className="mt-[var(--s2)] space-y-[var(--s2)]">
+          {showTarget && (
+            <p className={BODY}>
+              <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Target behaviour:</span> {coach.targetBehavior}
+            </p>
+          )}
+          <p className="t-label text-[color:var(--bone-300)]">Transfer</p>
+          <ul className={LIST}>
+            {transfer.map((item, index) => <li key={`${view.id}-transfer-${index}`}>{item}</li>)}
+          </ul>
+        </div>
+      </details>
 
       <details className={EXPANDER}>
         <summary className={EXPANDER_SUMMARY}>Source and version</summary>

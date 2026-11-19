@@ -271,15 +271,24 @@ describe('coach session plans page', () => {
     expect(labels[1]).toContain('Runs second');
   });
 
-  it('omits coaching fields that are null rather than printing empty labels', async () => {
+  it('says "Not written yet" for coaching fields that are null, never an empty label or a hidden line', async () => {
     mockFetch((url) => (url.includes('script_id') ? jsonResponse({ script: detail() }) : jsonResponse({ scripts: [FRIDAY] })));
 
     render(<CoachSessionScriptsPage />);
     fireEvent.click(await screen.findByRole('button', { name: /open plan/i }));
 
     expect(await screen.findByText(/Eyes on the chest/)).toBeInTheDocument();
-    // blk-2 has what_to_fix null and blk-1 has all four null.
-    expect(screen.queryByText('Fix:')).not.toBeInTheDocument();
+    // blk-1 has all four null: all four labels, each reading "Not written yet". blk-2 has only
+    // what_to_fix null: that one line says so, and its filled fields are unchanged.
+    const blocks = screen.getByRole('list', { name: /blocks/i });
+    const [first, second] = within(blocks).getAllByRole('listitem');
+    for (const label of ['Say:', 'Explain:', 'Watch:', 'Fix:']) {
+      expect(first.textContent).toContain(label);
+    }
+    expect(within(first).getAllByText('Not written yet')).toHaveLength(4);
+    expect(within(second).getAllByText('Not written yet')).toHaveLength(1);
+    expect(within(second).getByText(/Eyes on the chest/)).toBeInTheDocument();
+    expect(within(second).getByText(/Chin lifting/)).toBeInTheDocument();
   });
 
   it('surfaces the reset protocol, which a new coach needs before any drill', async () => {

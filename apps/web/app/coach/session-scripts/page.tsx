@@ -10,6 +10,7 @@ import FinishedSessions from '@/components/FinishedSessions';
 import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
 import { type ClassChoice, type TieableClassView, defaultClassChoice } from '@/src/shared/sessionClassChoice';
 import { apiBase } from '@/lib/apiBase';
+import { orNotWritten } from '@/src/lib/drillPresentation';
 import { authoringStateWords, explainLine, renderingFormatWords, renderingOriginWords } from '@/src/lib/sessionScriptWords';
 import SessionScriptEditor, { type SessionScriptEditOutcome } from './SessionScriptEditor';
 import type { LiveSessionScriptRun, SessionScriptRunRow } from '@/src/server/pilot/sessionScriptRuns';
@@ -90,7 +91,11 @@ function blockWindow(block: Block): string {
   return `${block.start_offset_min}-${block.end_offset_min} min`;
 }
 
-/** The four authored coaching fields, in the order a coach reads them mid-session. */
+/**
+ * The four authored coaching fields, in the order a coach reads them mid-session. A field the
+ * script left empty stays on the line list and says "Not written yet": a hidden line made the
+ * block look complete.
+ */
 function blockDetailLines(block: Block): { label: string; value: string }[] {
   return [
     { label: 'Say', value: block.what_to_say ?? '' },
@@ -98,7 +103,9 @@ function blockDetailLines(block: Block): { label: string; value: string }[] {
     explainLine(block.what_to_explain ?? ''),
     { label: 'Watch', value: block.what_to_watch ?? '' },
     { label: 'Fix', value: block.what_to_fix ?? '' },
-  ].filter((line) => line.value.trim() !== '');
+  ].map((line) => (line.value.trim() === ''
+    ? { label: line.label === 'From the template' ? 'Explain' : line.label, value: orNotWritten('') }
+    : line));
 }
 
 function CoachSessionScripts() {
