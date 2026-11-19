@@ -477,6 +477,12 @@ describe('the gym tablet idle watcher rides every signed-in bar', () => {
     expect(screen.getByTestId('tablet-idle-watch').getAttribute('data-plate')).toBe('false');
   });
 
+  it('is on /change-pin with nothing cached: a session owing a PIN change is never cached', () => {
+    mockUsePathname.mockReturnValue('/change-pin');
+    renderAs(null);
+    expect(screen.getByTestId('tablet-idle-watch').getAttribute('data-plate')).toBe('false');
+  });
+
   it('is not mounted for a signed-out visitor or on /login', () => {
     renderAs(null);
     expect(screen.queryByTestId('tablet-idle-watch')).toBeNull();

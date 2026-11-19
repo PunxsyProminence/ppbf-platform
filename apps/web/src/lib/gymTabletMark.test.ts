@@ -2,7 +2,13 @@
  * @jest-environment jsdom
  */
 
-import { isGymTabletMarked, setGymTabletMark, subscribeGymTabletMark } from './gymTabletMark';
+import {
+  isGymTabletMarked,
+  readGymTabletLastUse,
+  setGymTabletMark,
+  subscribeGymTabletMark,
+  writeGymTabletLastUse,
+} from './gymTabletMark';
 import { clearRoleSession } from '@/components/roleSession';
 import { endThisSession } from './signOut';
 import { DEFAULT_TABLET_IDLE_MINUTES, TABLET_IDLE_MINUTES, tabletIdleLabel } from '@/src/shared/tabletIdle';
@@ -21,10 +27,18 @@ test('a fresh device is not marked; marking and unmarking are kept and announced
   stop();
 });
 
-test('signing out does not clear the mark: it belongs to the device, not the person', () => {
+test("signing out keeps the mark (the device's) and clears the idle clock (the person's)", () => {
   setGymTabletMark(true);
+  writeGymTabletLastUse(1_700_000_000_000);
   clearRoleSession();
   expect(isGymTabletMarked()).toBe(true);
+  expect(readGymTabletLastUse()).toBeNull();
+});
+
+test('a missing or broken clock reads as none', () => {
+  expect(readGymTabletLastUse()).toBeNull();
+  window.localStorage.setItem('ppbf.device.gymTabletLastUse', 'soon');
+  expect(readGymTabletLastUse()).toBeNull();
 });
 
 test('a browser that refuses storage reads as not marked, and marking says it was not kept', () => {
