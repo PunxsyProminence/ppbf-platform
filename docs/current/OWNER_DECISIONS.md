@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-19-012 | 2026-11-19 | Laptop maintenance lane: its purpose, and four card answers (takeover, home folder, standing authority, reporting) | PRIMARY |  | yes |
 | OD-2026-11-19-006 | 2026-11-19 | Applied rulings (Overwatch, not Jason's words): SH-1, SH-2 and SH-3, under OW25-48 A, OW25-45 B and OW25-47 A | APPLIED |  | yes |
 | OD-2026-11-19-005 | 2026-11-19 | Backbone Overwatch 25 note of 2026-11-19 07:06 US Eastern: cards OW25-49 to OW25-51: OW25-49 "(c) PPBF writes its own six (Recommended)"; OW25-50 "D: Defer" (against the recommendation); OW25-51 free text | RECONSTRUCTED |  | yes |
 | OD-2026-11-19-004 | 2026-11-19 | Blank equipment on the other drills | PRIMARY |  | yes |
@@ -606,6 +607,53 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-19-012 -- Laptop maintenance lane: its purpose, and four card answers (takeover, home folder, standing authority, reporting)
+
+**Provenance: PRIMARY.** In the desktop session "Laptop maintenance" (local_d7353a19-8f0c-4b3f-b8d4-6a2b05403b74), transcript `6048aa9a-22af-4e6e-9fef-8fe60c89638a.jsonl`: Jason's typed message at line 115 (2026-11-19T17:42:20.278Z, `origin.kind` human); his four answers on a question card, returned at line 132 (2026-11-19T17:45:40.285Z; the card itself is at line 131, 2026-11-19T17:43:30.824Z); and his typed message at line 149 (2026-11-19T17:48:23.726Z, `origin.kind` human). All copied by script. New; edits no earlier entry's text.
+
+**What he typed, exactly (typos kept):**
+
+> this lane can use work trees, when it brankes off it will use a goldy locks style prompt meet the goal, this lane is ment to maintain the laptop and all its programs and settings, if it can not excute the task due to restrictions it will navigate and i will manually work through the restrictions based on your guidance, do you have any questions, dont start anything new yet
+
+**What was put to him (question card, quoted by script):**
+
+> 1. **Old lane**: OFFICIAL: Should this lane take over the earlier PC-tuneup session's duties? That means its records in Documents\PC-tuneup, the Killer/Alienware service state, the 2026-11-12 startup-apps backup and the open Wi-Fi driver check. PLAIN: there was already a laptop-fixing chat around Nov 8–12. Should this one replace it, so one place owns the laptop?
+>    Options, in the order shown: "Take over (Recommended)"; "Keep both"
+>    Jason's answer: "Take over (Recommended)"
+>
+> 2. **Home folder**: OFFICIAL: Should this session's home move to Documents\PC-tuneup, made into a local-only git repo (never pushed to GitHub), so the lane keeps a log and can use worktrees? PLAIN: right now this chat has no folder, and its files disappear if the chat is deleted. This gives it a permanent notebook that keeps the history of every change.
+>    Options, in the order shown: "PC-tuneup + git (Recommended)"; "PC-tuneup, no git"
+>    Jason's answer: "PC-tuneup + git (Recommended)"
+>
+> 3. **Standing OK**: OFFICIAL: Standing authority. No asking: close or restart background apps (except Claude desktop, Claude Science and Chrome), clear temp/cache files, update ordinary apps, read-only checks. Ask first: uninstalls, deleting your files, drivers/BIOS, reboots, Windows Update, and anything touching the Claude apps, Chrome, Node/git/gh/az/Python or the repo. You click (my platform limit): Windows and security settings, services, registry, firewall, startup entries, admin (UAC) prompts. PLAIN: small housekeeping that can be undone, I just do. Anything that could break the build tools or lose your files, I ask first. Windows settings I'm not allowed to change myself, so I walk you through them.
+>    Options, in the order shown: "As proposed (Recommended)"; "Ask me for everything"
+>    Jason's answer: "As proposed (Recommended)"
+>
+> 4. **Reports to**: OFFICIAL: Should this lane report straight to you rather than through Overwatch? It would add a one-line note to OVERWATCH-HANDOFF-LIVE.md before any change that could interrupt build lanes (a reboot, or a Claude/Chrome/Node/git/az update), and its purpose would be added to the L2 rules file (both copies). PLAIN: you hear from me directly. Overwatch only gets a heads-up when I'm about to do something that could knock its lanes over, and every other chat learns this lane exists.
+>    Options, in the order shown: "As proposed (Recommended)"; "Through Overwatch"
+>    Jason's answer: "As proposed (Recommended)"
+
+**Then he typed (line 149):**
+
+> lets do the initial prompt first then you can finish setting up to include archiving the old lane
+
+**Jason:** *"this lane can use work trees, when it brankes off it will use a goldy locks style prompt meet the goal, this lane is ment to maintain the laptop and all its programs and settings, if it can not excute the task due to restrictions it will navigate and i will manually work through the restrictions based on your guidance, do you have any questions, dont start anything new yet"*
+
+**Ruling:**
+
+1. A laptop maintenance lane exists: the "Laptop maintenance" session. It maintains the laptop and all its programs and settings. When a restriction stops it, it navigates, and Jason works through the restriction by hand on its guidance.
+2. It may use worktrees. When it branches off, it uses a "Goldilocks"-style brief to meet the goal.
+3. It takes over the earlier laptop session's duties ("Take over (Recommended)"), and that session is archived (line 149: "archiving the old lane").
+4. Its home is Documents\PC-tuneup, a local-only git repo that is never pushed ("PC-tuneup + git (Recommended)").
+5. Standing authority as worded in card question 3 ("As proposed (Recommended)").
+6. It reports straight to Jason, puts a line in the Overwatch handoff file before any change that could interrupt build lanes, and its purpose is recorded in the L2 rules file, both copies ("As proposed (Recommended)").
+
+**Not ruled here:** what "Goldilocks" means beyond his words (the reading in the L2 rules, a brief with goal, area, one done-when sentence, stop conditions and model/effort matched to risk, is Claude's); which maintenance items run next; the one-time permission for that session's first memory pass (line 4), which is not a standing rule.
+
+**Status:** recorded 2026-11-19 by PR.
 
 ---
 
