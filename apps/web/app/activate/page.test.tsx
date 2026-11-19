@@ -70,6 +70,10 @@ test('keeps the athlete on the PIN step when the PIN is the problem', async () =
 
   // Still on the PIN step: the field they need to correct is in front of them.
   expect(screen.getByLabelText(/^Choose your PIN$/i)).toBeTruthy();
+  // The refusal names itself: ▲ is also this page's "not yet" hint (lane U1, SC2-4).
+  const alert = screen.getByRole('alert');
+  expect(alert.textContent).toContain('Not activated');
+  expect(alert.textContent).toContain('\u25b2');
   expect(screen.queryByLabelText('Activation code')).toBeNull();
 });
 

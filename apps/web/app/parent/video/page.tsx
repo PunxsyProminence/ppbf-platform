@@ -265,8 +265,8 @@ export default function ParentVideoPage() {
                   {activeChild ? `${activeChild.full_name || 'Your athlete'}'s rounds` : 'Rounds'}
                 </h2>
                 {videoError ? (
-                  <div className="alert alert--critical mt-[var(--s4)]" role="alert">
-                    <span className="alert-icon" aria-hidden="true">✕</span>
+                  <div className="alert alert--warning mt-[var(--s4)]" role="alert">
+                    <span className="alert-icon" aria-hidden="true">▲</span>
                     <div className="alert-body">
                       <p className="alert-title">Failed</p>
                       <p className="alert-msg">{videoError}</p>

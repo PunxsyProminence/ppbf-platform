@@ -173,13 +173,18 @@ export default function AthletePinSignInPage() {
           {error && (
             /* Law 3 -- the glyph carries the state as well as the colour, so
                this still reads as a refusal in greyscale or to a colour-blind
-               athlete. It was previously colour and copy alone. */
+               athlete. It was previously colour and copy alone. ▲ is also the
+               "not yet" mark, so the refusal says it in a word of its own; any
+               error here means nobody was signed in (lane U1, SC2-4). */
             <p
               role="alert"
-              className="flex items-start gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[color:var(--locked)] bg-[color-mix(in_srgb,var(--locked)_12%,var(--paper))] px-[var(--s4)] py-[var(--s4)] text-[length:var(--t-sm)] text-[color:var(--hide-950)]"
+              className="flex items-start gap-[var(--s3)] rounded-[var(--r-sm)] border-2 border-[color:var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_12%,var(--paper))] px-[var(--s4)] py-[var(--s4)] text-[length:var(--t-md)] text-[color:var(--hide-950)]"
             >
-              <span aria-hidden="true" className="font-bold text-[color:var(--locked)]">✕</span>
-              <span>{error}</span>
+              <span aria-hidden="true" className="font-bold text-[color:var(--restricted)]">▲</span>
+              <span>
+                <strong className="block">Not signed in</strong>
+                <span>{error}</span>
+              </span>
             </p>
           )}
 

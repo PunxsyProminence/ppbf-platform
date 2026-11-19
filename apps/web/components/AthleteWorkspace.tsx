@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import React, { type FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
+import React, { type FormEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
@@ -1134,6 +1135,19 @@ export default function AthleteWorkspace() {
      Log is an optional note that starts empty (checkInNotes below). */
   const [selectedPainLocation, setSelectedPainLocation] = useState<string | null>(null);
   const [showPainModal, setShowPainModal] = useState(false);
+  /* WHERE THE PAIN MODAL MOUNTS (lane U1, SC2-4; dry-run item 5). The root
+     .room is `isolation: isolate` and `.room > *` is z-index 1, so a modal
+     inside it can never paint above the sticky role header (z-50), whatever
+     its own z-index: on a phone the header covered the modal's title. The
+     header and this page share one layer (ThemeProvider's div), so the modal
+     mounts in the room's parent -- still inside the kiosk surface and the
+     .ge-locker look, outside the room -- where its z-[60] beats the header's
+     z-50. Before the room has mounted it renders in place. */
+  const [modalHost, setModalHost] = useState<HTMLElement | null>(null);
+  const roomRef = useCallback((room: HTMLDivElement | null) => {
+    setModalHost(room?.parentElement ?? null);
+  }, []);
+  const aboveTheHeader = (node: ReactNode) => (modalHost ? createPortal(node, modalHost) : node);
   /* A-FIN-07. These two started as 'Dull' and 3, so the pain modal opened with
      "Dull, 3/10" already on screen -- an answer about a child's body that the
      child had not given. It is the same false-answer defect A-FIN-01 removed
@@ -2810,7 +2824,7 @@ export default function AthleteWorkspace() {
     /* Gym-floor kiosk surface: ink ground with the floor room's brick wall
        (PAGE_MAP), the same room pattern /schedule uses. Law 5 applies to
        everything inside — targets at var(--tap), working type at var(--t-md). */
-    <div className="room room--floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
+    <div ref={roomRef} className="room room--floor min-h-screen rounded-[var(--r-lg)] bg-[var(--hide-950)] text-[color:var(--bone-200)] font-sans">
       <div className="max-w-7xl mx-auto p-[var(--s4)] space-y-[var(--s6)]">
         {/* HEADER */}
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
@@ -4443,8 +4457,8 @@ export default function AthleteWorkspace() {
         </details>
 
         {/* PAIN MODAL */}
-        {showPainModal && selectedPainLocation && (
-          <div className="fixed inset-0 bg-[var(--hide-950)]/80 backdrop-blur-sm flex items-center justify-center z-50 p-[var(--s4)]">
+        {showPainModal && selectedPainLocation && aboveTheHeader(
+          <div className="fixed inset-0 bg-[var(--hide-950)]/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto z-[60] p-[var(--s4)] text-[color:var(--bone-200)] font-sans">
             <div className="mat-leather--raised w-full max-w-md space-y-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]">
               <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Soreness Details: {selectedPainLocation}</h3>
               <div className="space-y-[var(--s4)]">
