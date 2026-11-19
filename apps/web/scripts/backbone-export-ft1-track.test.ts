@@ -360,9 +360,12 @@ describe('the committed FT1 rows', () => {
   const count = (name: string, pick: (row: Record<string, string>) => boolean) => rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, name), 'utf8')).filter(pick).length;
   it('leave every row from before the Backbone (no stage_keys) with blank label cells: only the three label columns were added to the two root files', () => {
     // The lane-2 drills (backbone-export-drill-library.mjs, lane L2b) are Backbone rows too, with their own labels and stage keys.
+    // Lane HW's six home sessions (OD-2026-11-19-005) are AI drafts off the stage map (Overwatch Q1 A): blank stage_keys,
+    // AI-draft labels; hwContentPackage.test.ts checks them.
+    const laneHw = (row: Record<string, string>) => row.name?.startsWith('PPBF Home Day ') && row.details.includes('"draft":"AI draft, lane HW, 2026-11-19');
     for (const [name, key] of [[DRILLS, 'drill_id'], [TEMPLATES, 'template_id']] as const) {
       const rows = rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, name), 'utf8'));
-      const others = rows.filter((row) => row.stage_keys === '');
+      const others = rows.filter((row) => row.stage_keys === '' && !laneHw(row));
       expect(others.length).toBeGreaterThan(0);
       for (const row of others) expect([key, row.field_labels, row.evidence, row.stage_keys]).toEqual([key, '', '', '']);
     }
