@@ -119,6 +119,8 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/shared/sparringSymptoms.ts',
   'apps/web/src/shared/staffDisplayName.ts',
   'apps/web/src/shared/staffListNames.ts',
+  // The gym tablet idle choices; tabletIdlePolicy.pg.test.ts reaches it through tabletIdlePolicy.ts (lane U1, AS2).
+  'apps/web/src/shared/tabletIdle.ts',
   // The scheduler route repeats a class weekly with it; athleteSelfDeletionMark.pg.test.ts imports that route.
   'apps/web/src/shared/weeklyClassDates.ts',
   'apps/web/src/shared/wellnessScales.ts',

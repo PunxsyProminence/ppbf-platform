@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 import { persistAuthoritativeRoleSession, loadAuthoritativeRoleSession } from '@/components/roleSession';
+import { markSessionBoundary } from '@/src/lib/gymTabletMark';
 import { apiBase } from '@/lib/apiBase';
 import { PASSWORD_RULE_SUMMARY } from '@/src/server/pilot/passwordPolicy';
 
@@ -303,6 +304,8 @@ function LinkPageContent() {
           return;
         }
 
+        // A fresh sign-in: a fresh gym tablet idle clock, and older tabs leave (lane U1, AS2-b).
+        markSessionBoundary();
         persistAuthoritativeRoleSession(resolution.session);
         // Only the server's own 'offer' shows the prompt; anything else, or
         // nothing, goes straight on as it always has.
