@@ -27,12 +27,14 @@ test('a fresh device is not marked; marking and unmarking are kept and announced
   stop();
 });
 
-test("signing out keeps the mark (the device's) and clears the idle clock (the person's)", () => {
+/* AS2-b review A: clearRoleSession runs on a mere cache clear too, which can
+   happen while the session is alive, so it must not reset the idle clock. */
+test('a role-cache clear keeps both the mark and the idle clock', () => {
   setGymTabletMark(true);
   writeGymTabletLastUse(1_700_000_000_000);
   clearRoleSession();
   expect(isGymTabletMarked()).toBe(true);
-  expect(readGymTabletLastUse()).toBeNull();
+  expect(readGymTabletLastUse()).toBe(1_700_000_000_000);
 });
 
 test('a missing or broken clock reads as none', () => {

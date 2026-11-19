@@ -2,7 +2,6 @@ import type { ClubRole } from './roleRoutes';
 import { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
 import type { BoardSeatSlug } from '@/app/board/boardWorkspaceConfig';
 import { forgetChosenChild } from '@/src/lib/chosenChild';
-import { clearGymTabletLastUse } from '@/src/lib/gymTabletMark';
 
 export { getPilotRoleDestination, isBoardSeatSlug } from '@/src/shared/pilotRoleRouting';
 
@@ -198,9 +197,9 @@ export function clearRoleSession() {
   // child (the print hand-off, #1596 item 2b) is not left for whoever signs
   // in next on this device.
   forgetChosenChild();
-  // Nor is the gym tablet's idle clock (lane U1, AS2-b): the next person
-  // starts a fresh one. The device mark itself stays.
-  clearGymTabletLastUse();
+  // NOT the gym tablet's idle clock (lane U1, AS2-b review A): this runs on
+  // a cache clear too, which can happen while the session is still alive.
+  // The clock is cleared on a confirmed sign-out and on a fresh sign-in.
 
   notifyRoleSessionChange();
 }

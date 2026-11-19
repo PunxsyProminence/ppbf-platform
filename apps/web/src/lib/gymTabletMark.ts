@@ -72,10 +72,13 @@ export function subscribeGymTabletMark(listener: () => void): () => void {
  * person's session is still alive. Shared by every tab, so a hidden tab does
  * not sign out someone working in another.
  *
- * Cleared only when the session is known to be gone (roleSession.ts's
- * clearRoleSession, and the header hearing "signed out" from the server), so
- * the next person starts a fresh clock. If it is ever left behind stale, the
- * cost is a new sign-in being signed out at once; signing in again starts clean.
+ * Cleared only when the session is known to be gone or new: a confirmed idle
+ * sign-out (TabletIdleSignOut), the server ANSWERING that nobody is signed in
+ * (GlobalRoleHeader's self-heal), and a fresh sign-in (SignInPanel, the
+ * athlete sign-in page, the sign-in link page). Never by a plain cache clear,
+ * which can happen while the session is alive (AS2-b review A). If one is
+ * ever left behind stale (a sign-in path not listed), the cost is that
+ * sign-in being signed out at once; signing in again starts clean.
  */
 const LAST_USE_KEY = 'ppbf.device.gymTabletLastUse';
 

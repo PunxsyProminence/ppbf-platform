@@ -9,7 +9,7 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import TabletIdleSignOut from './TabletIdleSignOut';
+import TabletIdleSignOut, { resetTabletSignOutForTests } from './TabletIdleSignOut';
 import { clearRoleSession } from './roleSession';
 import { readGymTabletLastUse, setGymTabletMark, writeGymTabletLastUse } from '@/src/lib/gymTabletMark';
 import { endThisSession, leaveForLogin } from '@/src/lib/signOut';
@@ -52,8 +52,7 @@ async function advance(ms: number) {
 const originalFetch = global.fetch;
 
 beforeEach(() => {
-  document.getElementById('gym-tablet-leaving')?.remove();
-  for (const child of Array.from(document.body.children)) child.removeAttribute('inert');
+  resetTabletSignOutForTests();
   jest.useFakeTimers();
   jest.setSystemTime(new Date('2026-11-19T18:00:00Z'));
   window.localStorage.clear();
@@ -277,6 +276,49 @@ describe('a marked gym tablet', () => {
     expect(leaving?.textContent).toBe('Signing out…');
     expect(mockClear).toHaveBeenCalledTimes(1);
     field.remove();
+  });
+
+  /* AS2-b review A, re-review: another component may clear the role cache
+     (and unmount this watcher) while the session is still alive. Once
+     started, the sign-out belongs to the document: the cover and the retry
+     outlive the component. */
+  test('the cover and the retry outlive the watcher being unmounted', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    mockEnd.mockResolvedValue(false);
+    let view: ReturnType<typeof render> | null = null;
+    await act(async () => {
+      view = render(<TabletIdleSignOut />);
+    });
+    await advance(15 * MINUTE);
+    expect(document.getElementById('gym-tablet-leaving')?.textContent).toBe('This tablet could not finish signing out: no connection. It keeps trying.');
+
+    await act(async () => {
+      view!.unmount();
+    });
+    expect(document.getElementById('gym-tablet-leaving')).not.toBeNull();
+    await advance(15_000);
+    expect(mockEnd).toHaveBeenCalledTimes(2);
+
+    mockEnd.mockResolvedValue(true);
+    await advance(15_000);
+    expect(mockLeave).toHaveBeenCalledTimes(1);
+  });
+
+  test("a confirmed sign-out clears the device's idle clock; the mark stays", async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    await mount();
+    expect(readGymTabletLastUse()).not.toBeNull();
+    await advance(15 * MINUTE);
+    expect(mockLeave).toHaveBeenCalledTimes(1);
+    expect(readGymTabletLastUse()).toBeNull();
+  });
+
+  test('a last use stored in the future (a clock set back) counts as now, not later', async () => {
+    idleRead({ ok: true, body: { idle_minutes: 15, is_default: false } });
+    writeGymTabletLastUse(Date.now() + 60 * MINUTE);
+    await mount();
+    await advance(15 * MINUTE);
+    expect(mockEnd).toHaveBeenCalledTimes(1);
   });
 
   test('unmarking stops it', async () => {
