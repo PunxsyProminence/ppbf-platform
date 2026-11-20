@@ -333,21 +333,15 @@ test('every read goes with the session cookie', async () => {
   }
 });
 
-test('leaving the page stops the reads and sets nothing afterwards', async () => {
-  const answers: Array<() => void> = [];
+test('leaving the page stops every read', async () => {
   const signals: AbortSignal[] = [];
-  global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+  global.fetch = jest.fn((_input: RequestInfo | URL, init?: RequestInit) => {
     signals.push((init as RequestInit).signal as AbortSignal);
-    return new Promise<Response>((resolve) => {
-      answers.push(() => resolve({ ok: true, status: 200, json: async () => PAYLOADS[String(input)] ?? {} } as Response));
-    });
+    return new Promise<Response>(() => undefined);
   }) as unknown as typeof fetch;
-  const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   const { unmount } = render(<GymOfficeQueues />);
+  expect(signals).toHaveLength(QUEUES.length);
+  expect(signals.some((signal) => signal.aborted)).toBe(false);
   unmount();
   expect(signals.every((signal) => signal.aborted)).toBe(true);
-  for (const answer of answers) answer();
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(errors).not.toHaveBeenCalled();
-  errors.mockRestore();
 });

@@ -12,8 +12,12 @@ import { apiBase } from '@/lib/apiBase';
  * office's other review queues had no count or link on its home: four were
  * reachable only from the header or the menu. Each row here names the queue's
  * page by its own title, links it, and counts what that page itself shows as
- * waiting, from the same read the page makes (one exception, Video Compliance
- * Review, below), so the number on the home is the number on the page.
+ * waiting. Six of the eight use the very read their page makes, so the number
+ * on the home is the number on the page. Two do not, each for a reason given at
+ * its entry below, and neither should be "fixed" back to the page's read:
+ * Video Compliance Review (the page's read signs footage links) and Feedback
+ * Triage (the page's read ships every status; this one asks for 'new' only, so
+ * its count can be higher than the 100 rows the page lists).
  *
  * Counts only: no name, no row detail, reaches this screen. Each read is the
  * organization admin's own, through a route that already admits them; no new
@@ -35,7 +39,7 @@ export interface QueueSpec {
   /** The queue page's own h1, so the link reads as the page it opens. */
   title: string;
   href: string;
-  /** The page's own read: the same path, method and body. */
+  /** The read the count is taken from: the page's own, except the two noted in the file header. */
   url: string;
   init?: RequestInit;
   /** The page's own words for what is waiting ("Missing a waiver" filter, "Needs attention" heading, ...). */
