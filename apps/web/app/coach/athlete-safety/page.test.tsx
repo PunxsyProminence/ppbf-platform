@@ -725,6 +725,33 @@ describe('Athlete Safety (lane AS-5)', () => {
     expect(scrolled).toHaveLength(1);
   });
 
+  test('the scroll to an old address\'s section waits until the injuries are read, so the list above is in place', async () => {
+    window.history.replaceState(null, '', '/coach/athlete-safety#medical-restrictions');
+    const base = global.fetch;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/coach/injuries?athlete_id=ath-1')) await held;
+      return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+    }) as unknown as typeof fetch;
+    render(<CoachInjuriesPage />);
+    const select = (await screen.findByLabelText('Athlete')) as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    await act(async () => {
+      fireEvent.change(select, { target: { value: 'ath-1' } });
+    });
+    expect(screen.getByTestId('restrictions-panel')).toBeTruthy();
+    expect(scrolled).toEqual([]);
+    await act(async () => {
+      release();
+      await held;
+    });
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+    expect(scrolled[0].id).toBe('medical-restrictions');
+  });
+
   // components/glossaryWords.test.ts reads app/coach/injuries/page.tsx, which is
   // a redirect now; the same guard, here, on the page that holds the words.
   test('the Injury Record names the Training Hold, not a pause', () => {
