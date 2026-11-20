@@ -18,10 +18,14 @@ recommended option first.
 - **Open PRs:** their files were read on 2026-11-20 at these heads: #2005
   `79f45ea6`, #2006 `c5c39034`, #2008 `37d9108d`, #2009 `21102636`, #2010
   `0d342ee3`, #2012 `5efdc9b6`, #2013 `de25bb6f`, #2016 `b42e3c66`, and nine
-  dependabot PRs (#1992 to #2000). A head that moves later can add overlaps.
+  dependabot PRs (#1992 `40232ce5` to #2000 `590a9b4d`). A head that moves
+  later can add overlaps. #2009, #2012 and #2013 have moved since; the citation
+  reviewer found the moves add none.
 - **Shared registration files.** A PR here that adds a route or a migration
-  also edits `apps/web/src/server/pilot/apiRouteInventory.json` or
-  `apps/web/package.json`, as AS2-a did. #2013 changes both today. INFERRED:
+  also edits `apps/web/src/server/pilot/apiRouteInventory.json`,
+  `apps/web/package.json` or, for a migration,
+  `.github/workflows/apply-migrations.yml`, as AS2-a and SH-2 did. #2013 changes
+  the first two today; no open PR changes the third. INFERRED:
   such edits usually merge line by line.
 - **Labels:** OBSERVED (read in the code, with file:line), INFERRED,
   UNVERIFIED. Paths under `apps/web/` are written in full. Migrations are under
@@ -145,9 +149,12 @@ so. Two texts bear on that:
 
 **What is missing:**
 
-- **Preferences.** A search of `infra/azure/*.sql` for `opt_in`,
-  `notification_pref`, `email_pref`, `unsubscribe` and `email_consent` found no
-  email preference; the only opt-in is cycle tracking.
+- **Preferences.** A case-insensitive search of `infra/azure/*.sql` for
+  `opt-in`, `opt_in`, `opted_in`, `opted_out`, `notification_pref`,
+  `email_pref`, `unsubscribe` and `email_consent` matched one file. Its opt-in
+  is cycle tracking
+  (`infra/azure/pilot_slice_postgres_athlete_self_report_measures_migration.sql:28`),
+  not email.
 - **A queue.** A search of `apps/web` for `outbox` found no match.
 - **So missing are:** who opted in; which events send; who receives each; a
   send log; retries and a rate limit; the opt-in screen.
@@ -210,13 +217,17 @@ so. Two texts bear on that:
 - **Q1.4 How does a person opt out?**
   - **A (recommended):** with the same switch in the app. The email holds only
     "open the app" (the recorded "Alert wording" answer).
-  - **B:** also with a link in the email.
+  - **B:** also with a link in the email. This adds a link and words beyond
+    the recorded "open the app", so it needs Jason's word. It also needs an
+    opt-out route that works without signing in, with its own token: one more
+    PR, about 200 lines (judgement, Opus).
 - **Q1.5 Which mailbox sends it?**
   - **A (recommended):** the gym mailbox that sends sign-in links today. This
     needs no Azure or Microsoft 365 change.
   - **B:** a separate gym mailbox. Jason would first set it up in Microsoft
-    365, widen the mailbox access policy (`graphMailer.ts:15-23`) and change
-    the sender constant (`magicLinkStore.ts:29`).
+    365 and widen the mailbox access policy (`graphMailer.ts:15-23`). The email
+    lane would then add its own sender constant beside the sign-in one
+    (`magicLinkStore.ts:29`).
 - **Q1.6 What may the send log keep?** The recorded "Page counts" answer, "B:
   totals only, no user, device or IP", sits against the same "Notifications
   file", and the record does not say whether it reaches an email send log.
@@ -236,7 +247,8 @@ so. Two texts bear on that:
   - **A (recommended):** no. The email says "open the app", which that person
     cannot do. This narrows who gets it, so by the standard above it needs
     Jason's direction. It covers staff logins too, which Gym Office can already
-    deactivate (OD-2026-10-07-009).
+    deactivate (OD-2026-10-07-009). Under Q1.1 D it also falls on athletes,
+    minors included.
   - **B:** yes, until they opt out.
 
 ## 2. Web push (later, per Jason)
@@ -596,6 +608,9 @@ FUTURE list names "a class that carries its session plan ahead of time
 - **Q5.1 What can a coach add?**
   - **A (recommended):** a drill from the library, as a new block.
   - **B:** A, plus a block copied from another plan.
+  - **C:** A, plus a block with its own text and no drill: a talk, a reset or a
+    transition, from the existing block kinds
+    (`infra/azure/pilot_slice_postgres_session_scripts_migration.sql:84-86`).
 - **Q5.2 What does "schedules a class from it" keep?**
   - **A (recommended):** the class keeps the plan, and Start on the class
     screen starts that plan. This is the scrub's FUTURE wording, "a class that
@@ -918,9 +933,9 @@ per PR):
 - **Size:** 32 PRs, about 9,050 changed lines outside tests, with the
   recommended answers, except item 8. Item 8 is sized at its upper bound
   (every unique line a new drill); Q8.1 A, recommended, would lower it.
-- **Larger case:** taking each item's larger case (web push without the
-  package, the "reached out" mark, offline queue B) gives 36 PRs and about
-  9,950.
+- **Larger case:** adding the four sized alternatives (web push without the
+  package, Q1.4 B's opt-out route, the "reached out" mark, offline queue B)
+  gives 37 PRs and about 10,150. Q4.4 B and Q5.1 B and C are not sized.
 - **If the judgement rows run like the measured PRs:** about 12,900 (see "How
   the sizes were made").
 - **Migrations:** 4 or 5 with the recommended answers; 2 to 6 across all
@@ -934,8 +949,8 @@ per PR):
 **Order that the dependencies allow (INFERRED):**
 
 - Item 8 can start once #2008 merges; it needs only Q8.1 and Q8.2.
-- Items 1, 4 and 6 need only their questions.
-  - Item 1's EM-3 also needs a tick confirmed.
+- Items 1, 4 and 6 need only their questions, apart from these:
+  - Item 1's EM-3 needs a tick confirmed, and EM-4 waits for #2013.
   - Item 4's PM-1 waits for #2012, and its staff side for #2010's Decision
     Loop PR.
 - Item 3 needs its privacy review signed off first.
