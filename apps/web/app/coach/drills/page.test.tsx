@@ -29,7 +29,7 @@ jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
 // The session's raw pilot role, for who is offered Adopt and Decline (#1471).
 // Mocked so the session read is not one more POST in every test's writes().
-let mockSessionRole: PilotSessionRole = 'coach';
+let mockSessionRole: PilotSessionRole | null = 'coach';
 jest.mock('@/components/usePilotSession', () => ({
   ...jest.requireActual('@/components/usePilotSession'),
   usePilotSession: () => ({ loading: false, role: mockSessionRole, organizationId: 'org-1', authProvider: null, accountId: 'acct-hidden', mustChangePin: false }),
@@ -178,6 +178,8 @@ interface RouteOptions {
   proposals?: DrillChangeProposalListing[];
   /** The versions the lineage route answers with, for any drill id. */
   versions?: PilotDrillVersionRow[];
+  /** Answers PATCH /api/pilot/drill-library (the Edit form) instead of the default next-version write. */
+  editLibrary?: (body: Record<string, unknown>) => Response | Promise<Response>;
 }
 
 /**
@@ -254,6 +256,26 @@ function routes(options: RouteOptions = {}) {
         : operational.filter((d) => (d as { drill_id: string }).drill_id !== body.drill_id);
       if (options.answerAfterCommit) return options.answerAfterCommit();
       return jsonResponse({ item: { ...promoted, drill_id: body.drill_id, active: body.active } });
+    }
+
+    // The Edit form's save (ED-1's route): by default it writes the next
+    // version as the server does -- the edited fields laid over a copy of the
+    // head under a new id, the head superseded -- so the page can only show
+    // the new version by reading it.
+    if (url === '/api/pilot/drill-library' && method === 'PATCH') {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (options.editLibrary) return options.editLibrary(body);
+      const headId = body.drill_id as string;
+      const head = details[headId] as typeof referenceDetail;
+      const { drill_id: _headId, ...edited } = body;
+      void _headId;
+      const nextId = `${headId}-v${head.version + 1}`;
+      details[headId] = { ...head, superseded_at: '2026-11-20T00:00:00.000Z' };
+      details[nextId] = { ...head, ...edited, drill_id: nextId, version: head.version + 1, supersedes_drill_id: headId };
+      return jsonResponse({
+        ok: true, organization_id: 'org-1', changed: true, drill_id: nextId, lineage_id: head.lineage_id,
+        version: head.version + 1, previous_drill_id: headId, edited: Object.keys(edited),
+      });
     }
 
     if (method !== 'GET') return jsonResponse({ error: 'unexpected write' }, false, 500);
@@ -444,7 +466,8 @@ it('shows reference drills separately from the operational drills assignments po
 
   expect(await screen.findByText('Seeded jab return')).toBeInTheDocument();
   expect(screen.getByText('Corner exit')).toBeInTheDocument();
-  expect(screen.getByText(/reference source stays read-only/i)).toBeInTheDocument();
+  // Not since the Edit button (OD-2026-11-19-005): a coach or admin edits a reference drill as its next version.
+  expect(screen.queryByText(/reference source stays read-only/i)).not.toBeInTheDocument();
   expect(screen.getByText(/does not assign the drill to any athlete/i)).toBeInTheDocument();
   expect(screen.getByText('Coach authorization required')).toBeInTheDocument();
 });
@@ -2569,5 +2592,204 @@ describe('What to score (OD-2026-11-16-003 ruling 1; lane CAT-d)', () => {
     render(<CoachDrillLibraryPage />);
     expect(await screen.findByText('The KPI lists could not be loaded.')).toBeInTheDocument();
     expect(await screen.findByText('Seeded jab return')).toBeInTheDocument();
+  });
+});
+
+// THE EDIT BUTTON (OD-2026-11-19-005, OW25-51; lane ED-UI PR1). It opens a form
+// over the opened reference drill; a save is PATCH /api/pilot/drill-library,
+// which writes the drill's next version, and the page then opens that version
+// as the server answers it.
+describe('Edit (lane ED-UI)', () => {
+  afterEach(() => {
+    mockSessionRole = 'coach';
+  });
+
+  const editButton = () => screen.queryByRole('button', { name: 'Edit: Seeded jab return' });
+
+  it.each(['coach', 'organization_admin', 'admin'] as const)('is offered to %s, the roles the edit route admits', async (role) => {
+    mockSessionRole = role;
+    global.fetch = routes() as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    const drill = await openReference();
+    expect(within(drill).getByRole('button', { name: 'Edit: Seeded jab return' })).toHaveTextContent('Edit');
+  });
+
+  it.each(['platform_owner', 'volunteer', 'staff', 'athlete', 'parent', 'board'] as const)(
+    'is not offered to %s, whom the edit route refuses',
+    async (role) => {
+      mockSessionRole = role;
+      global.fetch = routes() as unknown as typeof fetch;
+      render(<CoachDrillLibraryPage />);
+      await openReference();
+      expect(editButton()).not.toBeInTheDocument();
+    },
+  );
+
+  it('is not offered while the session role is still unread', async () => {
+    mockSessionRole = null;
+    global.fetch = routes() as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    expect(editButton()).not.toBeInTheDocument();
+  });
+
+  it('is not offered on a superseded version, which the route refuses to edit', async () => {
+    global.fetch = routes({ details: { [reference.drill_id]: { ...referenceDetail, superseded_at: '2026-11-01T00:00:00.000Z' } } }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    const drill = await openReference();
+    expect(within(drill).getByText(/Superseded by a newer version\./)).toBeInTheDocument();
+    expect(editButton()).not.toBeInTheDocument();
+  });
+
+  it('saves the change as the next version, opens that version from the server, and says so', async () => {
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+
+    const form = screen.getByRole('region', { name: 'Edit Seeded jab return' });
+    expect(screen.queryByRole('article', { name: 'Seeded jab return' })).not.toBeInTheDocument();
+    fireEvent.change(within(form).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Saved as version 2.')).toHaveAttribute('role', 'status');
+    expect(writes(fetchMock)).toEqual([
+      { method: 'PATCH', url: '/api/pilot/drill-library', body: { drill_id: 'reference-1', purpose: 'Bring the hand home.' } },
+    ]);
+    // The version shown is the server's: read by the id it answered with.
+    expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1-v2')).toBe(1);
+    const drill = await screen.findByRole('article', { name: 'Seeded jab return' });
+    expect(within(drill).getByText('Bring the hand home.')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Edit Seeded jab return' })).not.toBeInTheDocument();
+  });
+
+  it('holds Back through the re-reads after a save, until the new version is shown', async () => {
+    let release: (response: Response) => void = () => {};
+    global.fetch = routes({
+      // The second detail read is the new version's: held, to look at the page while it is in flight.
+      detailRead: (read) => (read === 2 ? (new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response) : undefined),
+    }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Loading the drill...')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Edit Seeded jab return' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeDisabled();
+    await act(async () => {
+      release(jsonResponse({ drill: { ...referenceDetail, drill_id: 'reference-1-v2', version: 2 }, lifecycle: NOT_ADOPTED, floor_tested: null }));
+    });
+    expect(await screen.findByText('Saved as version 2.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeEnabled();
+  });
+
+  it('writes nothing when nothing changed, and says so', async () => {
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Nothing changed. No new version was written.')).toBeInTheDocument();
+    expect(writes(fetchMock)).toEqual([]);
+    expect(await screen.findByRole('article', { name: 'Seeded jab return' })).toBeInTheDocument();
+  });
+
+  it('Cancel goes back to the drill and writes nothing', async () => {
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Not this.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    const drill = await screen.findByRole('article', { name: 'Seeded jab return' });
+    expect(within(drill).getByText('Return the hand to guard.')).toBeInTheDocument();
+    expect(writes(fetchMock)).toEqual([]);
+  });
+
+  it('while the form is open, Cancel is the one way out: nothing else can close it and drop what was typed', async () => {
+    global.fetch = routes({ operational: [authored, promoted], lifecycle: { [reference.drill_id]: { state: 'operational', operational_drill_id: promoted.drill_id } } }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'View instructions: Seeded jab return' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeEnabled();
+  });
+
+  it('after a 409, reads the drill again, so Cancel shows it as it now is', async () => {
+    let answer: (response: Response) => void = () => {};
+    const stale = 'This is not the current version of the drill. Reload it and edit the current version.';
+    const fetchMock = routes({
+      editLibrary: () => new Promise<Response>((resolve) => { answer = resolve; }),
+      // Another coach's edit landed first: the re-read finds this version superseded.
+      detailRead: (read) => (read >= 2
+        ? jsonResponse({ drill: { ...referenceDetail, superseded_at: '2026-11-20T00:00:00.000Z' }, lifecycle: NOT_ADOPTED, floor_tested: null })
+        : undefined),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    await act(async () => {
+      answer(jsonResponse({ error: stale, code: 'DRILL_VERSION_STALE' }, false, 409));
+    });
+
+    expect(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByRole('alert')).toHaveTextContent(stale);
+    await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1')).toBe(2));
+    // What was typed is still there to copy; Cancel then shows the drill as the server now has it.
+    expect(screen.getByLabelText('What it is for', { selector: 'textarea[id^="edit-drill-"]' })).toHaveValue('Bring the hand home.');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const drill = await screen.findByRole('article', { name: 'Seeded jab return' });
+    expect(within(drill).getByText(/Superseded by a newer version\./)).toBeInTheDocument();
+    expect(editButton()).not.toBeInTheDocument();
+  });
+
+  it('keeps Save and Cancel off until the re-read after a refusal has ended', async () => {
+    let release: (response: Response) => void = () => {};
+    global.fetch = routes({
+      editLibrary: () => jsonResponse({ error: 'Taken.', code: 'DRILL_NAME_TAKEN' }, false, 409),
+      detailRead: (read) => (read === 2 ? (new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response) : undefined),
+    }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Taken.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await act(async () => {
+      release(jsonResponse({ drill: referenceDetail, lifecycle: NOT_ADOPTED, floor_tested: null }));
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+
+  it('after an answer that never came, reads the library and the drill again', async () => {
+    const fetchMock = routes({ editLibrary: async () => { throw new TypeError('Failed to fetch'); } });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    const libraryReadsBefore = readsOf(fetchMock, '/api/pilot/drill-library');
+    fireEvent.click(editButton()!);
+    fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('It is not known whether this change was saved.')).toBeInTheDocument();
+    await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1')).toBe(2));
+    expect(readsOf(fetchMock, '/api/pilot/drill-library')).toBe(libraryReadsBefore + 1);
   });
 });

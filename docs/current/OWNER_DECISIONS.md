@@ -20,6 +20,14 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-19-030 | 2026-11-19 | OW26-05: mixed templates become library drills | RECONSTRUCTED |  |  |
+| OD-2026-11-19-029 | 2026-11-19 | Staging deploys run without asking; production does not | PRIMARY |  | yes |
+| OD-2026-11-19-028 | 2026-11-19 | OW26-04: start all five W1 lanes now | RECONSTRUCTED |  |  |
+| OD-2026-11-19-027 | 2026-11-19 | OW26-03: Claude Code writes the cloud-lane prompts | RECONSTRUCTED |  |  |
+| OD-2026-11-19-026 | 2026-11-19 | Cloud lanes run on the same Max Claude account as Overwatch | PRIMARY |  |  |
+| OD-2026-11-19-025 | 2026-11-19 | Athlete sign-in off-switch | PRIMARY |  |  |
+| OD-2026-11-19-024 | 2026-11-19 | Confirm before retiring a session plan | PRIMARY |  |  |
+| OD-2026-11-19-023 | 2026-11-19 | Waivers never block training | PRIMARY |  |  |
 | OD-2026-11-19-022 | 2026-11-19 | AI working rule: tie every claim to a source or ask | RECONSTRUCTED |  | yes |
 | OD-2026-11-19-021 | 2026-11-19 | The gym's coach login exists; the admin login is ppbf (fact) | RECONSTRUCTED |  |  |
 | OD-2026-11-19-020 | 2026-11-19 | Scrub validation deferred | RECONSTRUCTED |  |  |
@@ -622,6 +630,169 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-19-030 -- OW26-05: mixed templates become library drills
+
+**Provenance: RECONSTRUCTED.** Jason answered this card in the Backbone thread. Copied by script from `CARDS_OW26.md` (OneDrive, PPBF-AI-Lanes, Research/Backbone/working/overwatch; sha256[:16] `4f425f87684bec96`, the section headed "## OW26-05"), the card's text and his recorded answer, line 66. What is uncertain: the file is Backbone's record of his answer, written by someone else. New; edits no earlier entry's text.
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW26-05): 11 workout templates (all from the frozen Backbone, e.g. the 48-Session Youth Coaching Manual weeks 1–12, Friday Sparring Coach Sheet, Phase 1 and Phase 2 sessions) mix library drills with typed steps. Issuing refuses the whole template because of the typed steps (OD-2026-09-18-001: assignments are built only from drills). OD-2026-11-15-001 made all-typed templates "Coach-run day" but says a mixed template "is not covered". The Backbone kept some typed lines on purpose (D-OQ44). Not a pilot blocker (46 templates issue today, REPORTED). How should mixed templates work?
+Plain: Should these 11 templates be issuable, with the typed lines run by the coach?
+
+Options, in the order shown:
+1. "A: Issue the drills; typed lines are coach-run (Recommended)": The drill steps go to the athlete; the typed lines show to the coach as coach-run lines on the plan and are not sent to the athlete. Pros: All 11 become issuable with no new content; keeps drills-only assignments and the Backbone's free-text lines. Cons: Athletes don't see the warm-up or conditioning lines in their assignment; the coach runs them.
+2. "B: Turn typed lines into library drills": Each typed step becomes a drill in PPBF words, AI-draft labelled (like the home week). Pros: Athletes see every step. Cons: New content to write and check, not sized; goes against the Backbone's split (D-OQ44).
+3. "C: Leave as is": The 11 stay refused at issue and read 'Not ready'; coaches can still run them from the plan. Pros: No work. Cons: 11 scripted sessions, including the youth manual, can't be issued.
+```
+
+**Jason's answer (as recorded):** *"B: Turn typed lines into library drills" (against the recommendation).*
+
+**Went against the recommendation:** the card's recommended option was A; he chose B. The cost was stated on the card ("New content to write and check, not sized; goes against the Backbone's split (D-OQ44)").
+
+**Effect (INFERRED from the card):** the typed steps in the 11 mixed templates become library drills in PPBF words, AI-draft labelled like the home week, so the templates become issuable. The work is not sized yet and is placed after the pilot (not a pilot blocker). D-OQ44 stays as frozen in the Backbone, so the app diverges as it did for the home week.
+
+**Applied:** none yet. Lane RS (#2008) keeps these 11 allowlisted until that work lands.
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
+## OD-2026-11-19-029 -- Staging deploys run without asking; production does not
+
+**Provenance: PRIMARY.** His typed message, copied by script from Overwatch's session transcript (read-only; sha256[:16] `b8c32781b859a5f8` when this entry was drafted), line 35187, 2026-11-19T18:30:30Z. New; edits no earlier entry's text.
+
+**Jason:** *"deploy auto approve staging, we are trying to get all work that can deploy, deployed to the live app so we can get this running the next clound science and desktop run"*
+
+**Effect:** his standing word that staging deploys run without asking; it matches OD-2026-09-30-003 G2, in full (copied by script from `origin/main`; the source wraps it over two lines): "Overwatch deploys staging whenever merged work is ready, without asking.".
+
+**Not ruled here:** production. Production stays one approval per release (the approval click in GitHub), and OW25-56 C is not applied. Source: the brief for this records lane.
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
+## OD-2026-11-19-028 -- OW26-04: start all five W1 lanes now
+
+**Provenance: RECONSTRUCTED.** Jason answered this card in the Backbone thread, not in this transcript. Copied by script from `CARDS_OW26.md` (OneDrive, PPBF-AI-Lanes, Research/Backbone/working/overwatch; sha256[:16] `4f425f87684bec96` when read 2026-11-20; the file has since gained a later card, and the brief's earlier hash e66d77dc393d3fdd covered the file before that), the card's text and his recorded answer, line 53. What is uncertain: the file is Backbone's record of his answer, written by someone else. New; edits no earlier entry's text.
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW26-04): App Overwatch lists five W1 lanes as "not started (waiting on Jason's go)": ED-UI (Edit button, staff-only AI-draft mark, Looks right), the readiness sweep, U3 B4 (phone End training), AS-5 (coach safety pages) and BOA-15/AS-12a (board tidy). Your records already say "start lanes for eacg piece that still needs done except secrets" (OD-2026-11-19-001) and "no cap for cloud lanes" (OW25-58). Start them now?
+Plain: Should Claude Code start the five waiting pilot-wave lanes in the cloud right away?
+
+Options, in the order shown:
+1. "A: Start all five now (Recommended)": All five start as cloud lanes now. Claude Code merges the three pilot blockers (ED-UI, readiness sweep, U3 B4) first; AS-5 and the board tidy merge after the pilot check, in W2. Pros: Fastest to the pilot; AS-5 is ready before U2's coach home (AS-7) needs it; matches 'as many parallel lanes as possible'. Cons: More usage on the Max account that cloud lanes and App Overwatch share.
+2. "B: Only the three pilot blockers now": Start ED-UI, the readiness sweep and U3 B4 now; AS-5 and the board tidy start in W2. Pros: Less usage and review load tonight. Cons: U2 may stall at the coach home (AS-7) waiting for AS-5.
+3. "C: Wait": Keep all five queued until you say go later. Pros: No new usage now. Cons: The pilot moves later.
+```
+
+**Jason's answer (as recorded):** *"A: Start all five now (Recommended)".*
+
+**Applied (OBSERVED by Overwatch, 2026-11-20):** ED-UI (#2007), U3 B4 (lane U3, #2006), the readiness sweep (lane RS, #2008), AS-5 (#2010) and the board tidy, BOA-15/AS-12a (lane BT, #2009), run as cloud lanes. AS-5 and the board tidy merge only after the W1 pilot check (W2).
+
+**Why the card was raised:** Overwatch's setup paste had wrongly listed these lanes as "waiting on Jason's go", although OD-2026-11-19-001 already covered them.
+
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
+## OD-2026-11-19-027 -- OW26-03: Claude Code writes the cloud-lane prompts
+
+**Provenance: RECONSTRUCTED.** Jason answered this card in the Backbone thread, not in this transcript. Copied by script from `CARDS_OW26.md` (OneDrive, PPBF-AI-Lanes, Research/Backbone/working/overwatch; sha256[:16] `4f425f87684bec96` when read 2026-11-20; the file has since gained a later card, and the brief's earlier hash e66d77dc393d3fdd covered the file before that), the card's text and his recorded answer, line 40. What is uncertain: the file is Backbone's record of his answer, written by someone else. New; edits no earlier entry's text.
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW26-03): You asked me for the prompt to take to Claude Code in the cloud. Claude Code's cloud-lane protocol has it write and paste each lane's brief in full (CLOUD_LANE_PROTOCOL.md), its paste asks me to write "design and research files, not lane prompts", and your standing instruction to me is "Never do build work". Who writes the cloud lane prompts?
+Plain: Should Claude Code write the prompts for the cloud lanes (it owns which lane edits which files), or should I?
+
+Options, in the order shown:
+1. "A: Claude Code writes them (Recommended)": Claude Code writes each cloud lane's brief from the wave plan, starting with U2; you paste it into claude.ai/code. I check each new lane against the wave plan and the rulings. Pros: One author for lane prompts and file ownership, so no two lanes edit the same file; matches its protocol. Cons: You wait for Claude Code to write the brief after you confirm the setup.
+2. "B: I write the W1 prompts; Claude Code checks them": I draft the W1 cloud lane prompts from the wave plan; Claude Code checks file ownership before you paste. Pros: Prompts sooner from this thread. Cons: Two authors for lanes; changes my no-build-work rule and Claude Code's protocol; more risk of two lanes editing the same file.
+```
+
+**Jason's answer (as recorded):** *"A: Claude Code writes them (Recommended)".*
+
+**Effect:** Overwatch (the Claude Code session) writes every cloud-lane brief.
+
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
+## OD-2026-11-19-026 -- Cloud lanes run on the same Max Claude account as Overwatch
+
+**Provenance: PRIMARY.** Two records, both copied by script from Overwatch's session transcript (read-only; sha256[:16] `b8c32781b859a5f8` when this entry was drafted). (1) His answer to an AskUserQuestion card: call at line 36585 (2026-11-19T20:09:34Z), answer at line 36594 (2026-11-19T20:16:29Z). (2) A message he typed while Overwatch worked, queued at line 36597 (2026-11-19T20:16:39Z; the queued-command record at line 36604 marks its origin as human). New; edits no earlier entry's text. The card text names the other account by its address; that part is replaced here by the bracketed phrase [the admin account], which is not his words.
+
+**Question, as put to him (official, then plain):** Official: Cloud lanes. Every Chrome profile I checked is signed in to claude.ai on the gmail Max account (Overwatch's own), not [the admin account] where you set up the ppbf-platform cloud environment. Which account runs the U2 cloud lane? Plain: start the cloud builder on the account you set up, or on the one already signed in?
+
+**Options, in the order shown:**
+1. "Wait for [the admin account] (Recommended)": You sign one Chrome profile into claude.ai as [the admin account] when you're at the PC; I paste and start U2 there. U2 keeps holding meanwhile (it's waiting on U1's files anyway).
+2. "Use gmail Max now": I start it on the gmail Max account now. It shares Overwatch's usage, and that account would need its own cloud environment and GitHub link first.
+
+**Jason:** *"Use gmail Max now"*
+
+**Jason (typed, a few seconds later):** *"I want the cloud account to be the same as you"*
+
+**Effect (OBSERVED by Overwatch, not his words):** cloud lanes run on the same Max Claude account as Overwatch, not on the admin account. Their pull requests are authored by the PunxsyProminence GitHub identity (first seen on #1991). This supersedes the admin-account wording of earlier cloud-protocol drafts; those were Overwatch working files, not records.
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
+## OD-2026-11-19-025 -- Athlete sign-in off-switch
+
+**Provenance: PRIMARY.** His answer to an AskUserQuestion card, copied by script from the tool result: Overwatch's session transcript (read-only; sha256[:16] `b8c32781b859a5f8` when this entry was drafted), AskUserQuestion call at line 36585 (2026-11-19T20:09:34Z) and its answer at line 36594 (2026-11-19T20:16:29Z). New; edits no earlier entry's text.
+
+**Question, as put to him (official, then plain):** Official: Athlete sign-in switch (OFF-16). Gym Office can deactivate coach, staff and volunteer logins (OD-2026-10-07-009) but has no off switch for an athlete; today you can only sign them out everywhere or issue a new activation code. Add an athlete sign-in off switch? Plain: when a kid leaves the gym, can the office turn their login off for good?
+
+**Options, in the order shown:**
+1. "A: Add a switch (Recommended)": Deactivate for athlete logins, same as staff, reversible by the gym admin. Their records stay. A permission build (Opus, two reviewers).
+2. "B: Keep as is": Sign Out Everywhere plus a new activation code stays the only way. No build.
+
+**Jason:** *"A: Add a switch (Recommended)"*
+
+**Applied:** none yet. It is a permission build for a later wave (the card says Opus, two reviewers); no lane has started it.
+
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
+## OD-2026-11-19-024 -- Confirm before retiring a session plan
+
+**Provenance: PRIMARY.** His answer to an AskUserQuestion card, copied by script from the tool result: Overwatch's session transcript (read-only; sha256[:16] `b8c32781b859a5f8` when this entry was drafted), AskUserQuestion call at line 36585 (2026-11-19T20:09:34Z) and its answer at line 36594 (2026-11-19T20:16:29Z). New; edits no earlier entry's text.
+
+**Question, as put to him (official, then plain):** Official: Retiring a session plan (dry-run item 30). Today a coach retires a session plan with one tap and no confirmation step. Add a confirm step? Plain: should the app ask 'are you sure?' before a plan is taken out of use?
+
+**Options, in the order shown:**
+1. "A: Add a confirm (Recommended)": One 'Retire this plan?' step before it happens. Tiny build; prevents an accidental tap removing a plan.
+2. "B: Keep one tap": No change.
+
+**Jason:** *"A: Add a confirm (Recommended)"*
+
+**Applied (OBSERVED on `origin/main`):** built in #2001: the "Retire this plan?" step with "Yes, retire it" and "Keep it".
+
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
+## OD-2026-11-19-023 -- Waivers never block training
+
+**Provenance: PRIMARY.** His answer to an AskUserQuestion card, copied by script from the tool result: Overwatch's session transcript (read-only; sha256[:16] `b8c32781b859a5f8` when this entry was drafted), AskUserQuestion call at line 36585 (2026-11-19T20:09:34Z) and its answer at line 36594 (2026-11-19T20:16:29Z). New; edits no earlier entry's text.
+
+**Question, as put to him (official, then plain):** Official: Waivers (dry-run item 14). Today the app records waivers but they never stop training; only training holds and medical clearance do (clearedTonight.ts). The dry run's adult showed every waiver 'missing' and still 'cleared to train'. Should a missing waiver stop training? Plain: if someone hasn't signed their waiver, can they still train?
+
+**Options, in the order shown:**
+1. "A: Never block (Recommended)": Keep today's rule: waivers are tracked and shown, never block training. Nothing to build; the pilot isn't slowed.
+2. "B: Flag, don't block": Coaches see 'waiver missing' on the register and check-in, but the athlete can still train. Small build.
+3. "C: Block until signed": A missing waiver stops training for everyone (adults and minors) until it's signed. A new gate and a larger build; it would also stop your pilot athlete until their waiver is on file.
+
+**Jason:** *"A: Never block (Recommended)"*
+
+**Effect:** keeps today's rule: waivers are tracked and shown, and a missing waiver does not stop training. Nothing to build.
+
+**Status:** recorded 2026-11-20 by PR.
 
 ---
 
