@@ -180,3 +180,39 @@ test('the training-hold notice sits right after the pain report, never ahead of 
   expect(cells[0].getAttribute('data-section')).toBe('pain');
   expect(cells[1].textContent).toBe('Training is paused for you right now');
 });
+
+/* Lane U3 B4: the workspace's End training sits right under "Training started",
+   full width, and nowhere else the corner draws. The corner only places it. */
+describe('the End training slot', () => {
+  const slot = <button type="button">End training</button>;
+  const endCell = () => document.querySelector('[data-section="end-training"]');
+
+  test('with an open session it comes right after the Start training panel, full width', () => {
+    render(<AthleteCorner {...props({ checkedInAt: '4:05 PM', endTraining: slot })} />);
+    const cells = Array.from(document.querySelectorAll('.athlete-corner__grid > *'));
+    const at = cells.findIndex((cell) => cell.getAttribute('data-section') === 'check-in');
+    expect(cells[at].textContent).toContain('Training started 4:05 PM.');
+    expect(cells[at + 1]).toBe(endCell());
+    expect(endCell()?.classList.contains('athlete-corner__wide')).toBe(true);
+    expect(screen.getAllByRole('button', { name: 'End training' })).toHaveLength(1);
+  });
+
+  test.each([
+    ['no open session', { checkedInAt: null }],
+    ['the session read still in flight', { checkedInAt: '4:05 PM', sessionState: 'loading' as const }],
+    ['the session read failed', { checkedInAt: '4:05 PM', sessionState: 'unavailable' as const }],
+    ['no athlete sign-in', { checkedInAt: '4:05 PM', identityState: 'unavailable' as const }],
+  ])('is not drawn with %s', (_why, overrides) => {
+    render(<AthleteCorner {...props({ ...overrides, endTraining: slot })} />);
+    expect(endCell()).toBeNull();
+    expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
+  });
+
+  test('pressing what it holds makes no request of the corner\'s own', () => {
+    const onEnd = jest.fn();
+    render(<AthleteCorner {...props({ checkedInAt: '4:05 PM', endTraining: <button type="button" onClick={onEnd}>End training</button> })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

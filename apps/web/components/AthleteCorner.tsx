@@ -34,7 +34,8 @@ import React from 'react';
  * is checking, and if it failed the corner says it could not tell -- never
  * "not checked in" (which invites a second check-in) and never "checked in".
  * Start check-in is offered only when the read answered and found no open
- * session.
+ * session. While one is open, the workspace's own End training control sits
+ * right under that line (the endTraining slot); the corner only places it.
  *
  * NOT HERE, ON PURPOSE: the mock-up's "CLEARED" (the workspace reads no
  * clearance) and "Next session" (it reads no schedule; the Schedule tab hands
@@ -68,6 +69,11 @@ export interface AthleteCornerProps {
   readonly checkInFailed?: boolean;
   /** Rendered right after the pain panel, full width: the training-hold notice. */
   readonly afterPain?: React.ReactNode;
+  /**
+   * The workspace's End training (lane U3 B4), rendered right after the Start
+   * training panel, full width, only while that panel says "Training started".
+   */
+  readonly endTraining?: React.ReactNode;
 }
 
 function countLine(read: CornerCountRead, none: string, some: (count: number) => string): string {
@@ -92,6 +98,7 @@ export default function AthleteCorner({
   checkedOutToday = false,
   checkInFailed = false,
   afterPain,
+  endTraining,
 }: AthleteCornerProps) {
   const sessionKnown = identityState === 'resolved' && sessionState === 'loaded';
 
@@ -154,6 +161,14 @@ export default function AthleteCorner({
             </button>
           )}
         </div>
+
+        {/* End training (lane U3 B4): full width, so its questions keep
+            their grid on a tablet, where the panel above is half the corner. */}
+        {sessionKnown && checkedInAt && endTraining ? (
+          <div className="athlete-corner__panel athlete-corner__wide" data-section="end-training">
+            {endTraining}
+          </div>
+        ) : null}
 
         <div className="athlete-corner__panel" data-section="coach-work">
           <p className="athlete-corner__label">From your coach</p>

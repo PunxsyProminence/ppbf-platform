@@ -1077,6 +1077,37 @@ function AthleteRabbitHoleLibrary() {
   );
 }
 
+/**
+ * End training, collapsed (lane U3 B4, Overwatch Q1 B): one End training
+ * button opens the check-out questions in place, and their own End training
+ * ends the session. The opener gives way, so a screen never shows two, and
+ * focus moves to what opened. It holds only "open"; the questions and the end
+ * are the workspace's (children). A refused end is said under it (Q2 A).
+ */
+function EndTrainingControl({ children, failure }: { children: ReactNode; failure: string | null }) {
+  const [open, setOpen] = useState(false);
+  const questionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) questionsRef.current?.focus();
+  }, [open]);
+  return (
+    <div className="space-y-[var(--s4)]">
+      {open ? (
+        <div ref={questionsRef} tabIndex={-1} className="space-y-[var(--s4)]">
+          {children}
+        </div>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="btn btn--kiosk">
+          End training
+        </button>
+      )}
+      {failure ? (
+        <p role="alert" className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]">{failure}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function AthleteWorkspace() {
   const [activeTab, setActiveTabRaw] = useState<TabID>('my-dashboard');
   const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
@@ -1275,6 +1306,9 @@ export default function AthleteWorkspace() {
   const [postSessionType, setPostSessionType] = useState<{ sessionId: string; value: SessionType } | null>(null);
   // The enjoyment tap (OD-2026-10-17-026 (a)), keyed to the session the same way.
   const [postSessionEnjoyment, setPostSessionEnjoyment] = useState<{ sessionId: string; value: EnjoymentLevel } | null>(null);
+  // A refused End training, said under the button too (lane U3 B4, Q2 A):
+  // it sits far from the foot-of-page message now. Keyed the same way.
+  const [checkOutFailure, setCheckOutFailure] = useState<{ sessionId: string; text: string } | null>(null);
   // True after a check-out of a session tagged Sparring, so the after-sparring
   // symptom check asks even if its status read fails. After a refresh the
   // server's after_sparring_due brings it back until it is answered.
@@ -1417,6 +1451,10 @@ export default function AthleteWorkspace() {
   // "0" or "04" may be "045" mid-typing: check-out stays held, but the error
   // is not announced until the entry cannot become a valid answer.
   const showMinutesError = parsedMinutes.status === 'invalid' && !/^0+$/.test(minutesDraft.trim());
+  const shownCheckOutFailure = checkOutFailure !== null && activeSessionRecord !== null
+    && checkOutFailure.sessionId === activeSessionRecord.sessionId
+    ? checkOutFailure.text
+    : null;
   // Only a successful read is a number. See AthleteCountRead.
   const openCoachWorkRead: AthleteCountRead = assignedWorkError
     ? { status: 'unavailable' }
@@ -2393,6 +2431,7 @@ export default function AthleteWorkspace() {
 
     checkingOutRef.current = true;
     setIsCheckingOut(true);
+    setCheckOutFailure(null);
 
     try {
       // Every publication already on the wire, or queued, lands first, so none
@@ -2491,10 +2530,10 @@ export default function AthleteWorkspace() {
       // notes and the effort answer are still on screen, so the athlete can
       // try again instead of watching the screen empty itself.
       const detail = error instanceof Error && error.message ? `: ${error.message}` : '.';
-      setBackendSyncMessage(
-        `That did not take and your training is still going${detail} `
-        + "Press End training again, and tell a coach anything they need to know.",
-      );
+      const failure = `That did not take and your training is still going${detail} `
+        + "Press End training again, and tell a coach anything they need to know.";
+      setBackendSyncMessage(failure);
+      setCheckOutFailure({ sessionId: record.sessionId, text: failure });
     } finally {
       checkingOutRef.current = false;
       setIsCheckingOut(false);
@@ -2820,6 +2859,176 @@ export default function AthleteWorkspace() {
     }
   };
 
+  /* END TRAINING WHERE THE ATHLETE IS (lane U3 B4, #2006). The Session Log's
+     own check-out questions and End training, moved, not copied: same answers,
+     same handleCheckOut, same request. They sit where "Training started" is
+     said (My Corner on the Dashboard, the top of the Floor); one tab is drawn
+     at a time, so a screen holds one End training. Built under the Session
+     Log's conditions: athlete sign-in, an answered session read, an open
+     session. */
+  const endTraining = athleteIdentityState === 'resolved' && storedSessionLoad === 'loaded' && activeSessionRecord ? (
+    <EndTrainingControl failure={shownCheckOutFailure}>
+      {/* POST-SESSION EFFORT (A-FIN-05). Eleven choices, 0 to 10,
+          rather than a slider, for the reason the Wellness panel
+          gives: a range input always has a position, so it
+          records an answer nobody gave. Nothing is selected until
+          the athlete selects it, skipping is said out loud, and
+          only Check Out writes it -- the note publication above
+          never carries it. */}
+      <fieldset className="space-y-[var(--s2)]">
+        <legend className="t-label mb-[var(--s2)]">{POST_SESSION_EFFORT_QUESTION}</legend>
+        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+          0 means not hard at all. 10 means as hard as you could go. It goes on the session when you check out.
+        </p>
+        <div className="grid grid-cols-4 sm:grid-cols-6 gap-[var(--s2)]">
+          {POST_SESSION_EFFORT_VALUES.map((value) => {
+            const selected = answeredEffort === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-label={`${POST_SESSION_EFFORT_QUESTION} ${value}`}
+                aria-pressed={selected}
+                disabled={isCheckingOut}
+                onClick={() => setPostSessionEffort({ sessionId: activeSessionRecord.sessionId, value })}
+                className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+              >
+                <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
+              </button>
+            );
+          })}
+        </div>
+        {answeredEffort === null ? (
+          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+            Not answered — you can skip this. Ending training without it records no effort.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setPostSessionEffort(null)}
+            disabled={isCheckingOut}
+            className="btn btn--ghost"
+          >
+            Clear my answer
+          </button>
+        )}
+      </fieldset>
+      {/* ENJOYMENT (OD-2026-10-17-026 (a)). Five choices, nothing
+          selected until the athlete taps; skippable; only Check
+          Out writes it. Copy PROPOSED. */}
+      <fieldset className="space-y-[var(--s2)]">
+        <legend className="t-label mb-[var(--s2)]">{ENJOYMENT_QUESTION}</legend>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-[var(--s2)]">
+          {ENJOYMENT_LEVELS.map((level) => {
+            const selected = answeredEnjoyment === level.value;
+            return (
+              <button
+                key={level.value}
+                type="button"
+                aria-label={`${ENJOYMENT_QUESTION} ${level.value}, ${level.label}`}
+                aria-pressed={selected}
+                disabled={isCheckingOut}
+                onClick={() => setPostSessionEnjoyment({ sessionId: activeSessionRecord.sessionId, value: level.value })}
+                className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+              >
+                {/* No inline size: the kiosk type floor (--t-md) sets it on the floor. */}
+                <span className="t-data">{level.value}</span> {level.label}
+              </button>
+            );
+          })}
+        </div>
+        {answeredEnjoyment === null ? (
+          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+            Not tapped — you can skip this. It goes on the session when you check out, and your coach sees it.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setPostSessionEnjoyment(null)}
+            disabled={isCheckingOut}
+            className="btn btn--ghost"
+          >
+            Clear enjoyment
+          </button>
+        )}
+      </fieldset>
+      {/* SESSION TYPE (Jason 2026-10-18). Optional, nothing
+          selected until the athlete picks; only Check Out
+          writes it. Copy PROPOSED. */}
+      <fieldset className="space-y-[var(--s2)]">
+        <legend className="t-label mb-[var(--s2)]">{SESSION_TYPE_QUESTION}</legend>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-[var(--s2)]">
+          {SESSION_TYPES.map((type) => {
+            const selected = answeredSessionType === type.key;
+            return (
+              <button
+                key={type.key}
+                type="button"
+                aria-label={`${SESSION_TYPE_QUESTION} ${type.label}`}
+                aria-pressed={selected}
+                disabled={isCheckingOut}
+                onClick={() => setPostSessionType({ sessionId: activeSessionRecord.sessionId, value: type.key })}
+                className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+              >
+                {type.label}
+              </button>
+            );
+          })}
+        </div>
+        {answeredSessionType === null ? (
+          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+            Not picked — you can skip this. It goes on the session when you check out.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setPostSessionType(null)}
+            disabled={isCheckingOut}
+            className="btn btn--ghost"
+          >
+            Clear session type
+          </button>
+        )}
+      </fieldset>
+      {/* POST-SESSION MINUTES. Optional and empty until typed,
+          like the effort question; only Check Out writes it. A
+          number box, not a slider or a prefill, because a
+          control that already holds a value records an answer
+          nobody gave. */}
+      <div className="space-y-[var(--s2)]">
+        <label htmlFor="athlete-post-session-minutes" className="t-label block">{POST_SESSION_MINUTES_QUESTION}</label>
+        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+          Whole minutes, {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. You can skip this. It goes on the session when you check out.
+        </p>
+        <input
+          id="athlete-post-session-minutes"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={minutesDraft}
+          disabled={isCheckingOut}
+          aria-invalid={showMinutesError}
+          aria-describedby={showMinutesError ? 'athlete-post-session-minutes-error' : undefined}
+          onChange={(event) => setPostSessionMinutesDraft({ sessionId: activeSessionRecord.sessionId, draft: event.target.value })}
+          className="input input--kiosk w-[8rem]"
+        />
+        {showMinutesError ? (
+          <p id="athlete-post-session-minutes-error" role="alert" style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-100)' }}>
+            Minutes must be a whole number from {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. Fix it or clear the box to check out.
+          </p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={() => void handleCheckOut()}
+        disabled={isCheckingOut || parsedMinutes.status === 'invalid'}
+        className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
+      >
+        {isCheckingOut ? 'Ending…' : 'End training'}
+      </button>
+    </EndTrainingControl>
+  ) : null;
+
   return (
     /* Gym-floor kiosk surface: ink ground with the floor room's brick wall
        (PAGE_MAP), the same room pattern /schedule uses. Law 5 applies to
@@ -2892,6 +3101,7 @@ export default function AthleteWorkspace() {
             checkedOutToday={checkedOutToday}
             checkInFailed={checkInFailed}
             afterPain={<><TrainingHoldBanner /><MedicalRestrictionNotice /></>}
+            endTraining={endTraining}
           />
         )}
 
@@ -3264,164 +3474,6 @@ export default function AthleteWorkspace() {
                             : 'Withdraw from coach'}
                       </button>
                     ) : null}
-                    {/* POST-SESSION EFFORT (A-FIN-05). Eleven choices, 0 to 10,
-                        rather than a slider, for the reason the Wellness panel
-                        gives: a range input always has a position, so it
-                        records an answer nobody gave. Nothing is selected until
-                        the athlete selects it, skipping is said out loud, and
-                        only Check Out writes it -- the note publication above
-                        never carries it. */}
-                    <fieldset className="space-y-[var(--s2)]">
-                      <legend className="t-label mb-[var(--s2)]">{POST_SESSION_EFFORT_QUESTION}</legend>
-                      <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                        0 means not hard at all. 10 means as hard as you could go. It goes on the session when you check out.
-                      </p>
-                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-[var(--s2)]">
-                        {POST_SESSION_EFFORT_VALUES.map((value) => {
-                          const selected = answeredEffort === value;
-                          return (
-                            <button
-                              key={value}
-                              type="button"
-                              aria-label={`${POST_SESSION_EFFORT_QUESTION} ${value}`}
-                              aria-pressed={selected}
-                              disabled={isCheckingOut}
-                              onClick={() => setPostSessionEffort({ sessionId: activeSessionRecord.sessionId, value })}
-                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
-                            >
-                              <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {answeredEffort === null ? (
-                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not answered — you can skip this. Ending training without it records no effort.
-                        </p>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPostSessionEffort(null)}
-                          disabled={isCheckingOut}
-                          className="btn btn--ghost"
-                        >
-                          Clear my answer
-                        </button>
-                      )}
-                    </fieldset>
-                    {/* ENJOYMENT (OD-2026-10-17-026 (a)). Five choices, nothing
-                        selected until the athlete taps; skippable; only Check
-                        Out writes it. Copy PROPOSED. */}
-                    <fieldset className="space-y-[var(--s2)]">
-                      <legend className="t-label mb-[var(--s2)]">{ENJOYMENT_QUESTION}</legend>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-[var(--s2)]">
-                        {ENJOYMENT_LEVELS.map((level) => {
-                          const selected = answeredEnjoyment === level.value;
-                          return (
-                            <button
-                              key={level.value}
-                              type="button"
-                              aria-label={`${ENJOYMENT_QUESTION} ${level.value}, ${level.label}`}
-                              aria-pressed={selected}
-                              disabled={isCheckingOut}
-                              onClick={() => setPostSessionEnjoyment({ sessionId: activeSessionRecord.sessionId, value: level.value })}
-                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
-                            >
-                              {/* No inline size: the kiosk type floor (--t-md) sets it on the floor. */}
-                              <span className="t-data">{level.value}</span> {level.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {answeredEnjoyment === null ? (
-                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not tapped — you can skip this. It goes on the session when you check out, and your coach sees it.
-                        </p>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPostSessionEnjoyment(null)}
-                          disabled={isCheckingOut}
-                          className="btn btn--ghost"
-                        >
-                          Clear enjoyment
-                        </button>
-                      )}
-                    </fieldset>
-                    {/* SESSION TYPE (Jason 2026-10-18). Optional, nothing
-                        selected until the athlete picks; only Check Out
-                        writes it. Copy PROPOSED. */}
-                    <fieldset className="space-y-[var(--s2)]">
-                      <legend className="t-label mb-[var(--s2)]">{SESSION_TYPE_QUESTION}</legend>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-[var(--s2)]">
-                        {SESSION_TYPES.map((type) => {
-                          const selected = answeredSessionType === type.key;
-                          return (
-                            <button
-                              key={type.key}
-                              type="button"
-                              aria-label={`${SESSION_TYPE_QUESTION} ${type.label}`}
-                              aria-pressed={selected}
-                              disabled={isCheckingOut}
-                              onClick={() => setPostSessionType({ sessionId: activeSessionRecord.sessionId, value: type.key })}
-                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
-                            >
-                              {type.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {answeredSessionType === null ? (
-                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not picked — you can skip this. It goes on the session when you check out.
-                        </p>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPostSessionType(null)}
-                          disabled={isCheckingOut}
-                          className="btn btn--ghost"
-                        >
-                          Clear session type
-                        </button>
-                      )}
-                    </fieldset>
-                    {/* POST-SESSION MINUTES. Optional and empty until typed,
-                        like the effort question; only Check Out writes it. A
-                        number box, not a slider or a prefill, because a
-                        control that already holds a value records an answer
-                        nobody gave. */}
-                    <div className="space-y-[var(--s2)]">
-                      <label htmlFor="athlete-post-session-minutes" className="t-label block">{POST_SESSION_MINUTES_QUESTION}</label>
-                      <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                        Whole minutes, {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. You can skip this. It goes on the session when you check out.
-                      </p>
-                      <input
-                        id="athlete-post-session-minutes"
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="off"
-                        value={minutesDraft}
-                        disabled={isCheckingOut}
-                        aria-invalid={showMinutesError}
-                        aria-describedby={showMinutesError ? 'athlete-post-session-minutes-error' : undefined}
-                        onChange={(event) => setPostSessionMinutesDraft({ sessionId: activeSessionRecord.sessionId, draft: event.target.value })}
-                        className="input input--kiosk w-[8rem]"
-                      />
-                      {showMinutesError ? (
-                        <p id="athlete-post-session-minutes-error" role="alert" style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-100)' }}>
-                          Minutes must be a whole number from {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. Fix it or clear the box to check out.
-                        </p>
-                      ) : null}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleCheckOut()}
-                      disabled={isCheckingOut || parsedMinutes.status === 'invalid'}
-                      className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
-                    >
-                      {isCheckingOut ? 'Ending…' : 'End training'}
-                    </button>
                   </div>
                 ) : (
                   <div className="space-y-[var(--s4)]">
@@ -3495,6 +3547,15 @@ export default function AthleteWorkspace() {
               </div>
             </div>
           )}
+
+          {/* End training at the top of the Floor, in both of its states, under
+              the rail's "Training started" (lane U3 B4, Overwatch Q3 A). The
+              same element My Corner draws; see endTraining. */}
+          {activeTab === 'athlete-floor' && endTraining ? (
+            <div className={`${PANEL_RAISED} panel-settle`} data-section="end-training">
+              {endTraining}
+            </div>
+          ) : null}
 
           {/* ATHLETE FLOOR -- gated on today's check-in, and only this. */}
           {activeTab === 'athlete-floor' && floorLockedPendingCheckIn && (
