@@ -722,6 +722,14 @@ function CoachWorkoutTemplates() {
   // including a second open of the same one after an error.
   const [focusDetail, setFocusDetail] = useState(0);
   const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  // Back to Edit when the form closes with no new version; centred, clear of the sticky bar.
+  const [focusEdit, setFocusEdit] = useState(0);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (focusEdit === 0) return;
+    editButtonRef.current?.focus({ preventScroll: true });
+    editButtonRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [focusEdit]);
 
   const [openTemplateId, setOpenTemplateId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TemplateDetail | null>(null);
@@ -733,15 +741,12 @@ function CoachWorkoutTemplates() {
   const [issuing, setIssuing] = useState(false);
   // The same, while a session script is being made from the open template.
   const [making, setMaking] = useState(false);
-  // Edit (OD-2026-11-19-005, OW25-51; lane ED-UI PR2): the template whose form
-  // is open, whether its save and the reads after it are running, and what the
-  // last save did. The page's gate admits coach and organization admin, the
-  // roles PATCH /api/pilot/workout-templates admits; the route decides.
+  // Edit (OD-2026-11-19-005, OW25-51; lane ED-UI PR2). The page's gate admits coach and
+  // organization admin, the roles PATCH /api/pilot/workout-templates admits; the route decides.
   const [editingId, setEditingId] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   const [editNotice, setEditNotice] = useState('');
-  // A save refused as stale, or with no known outcome: Cancel opens the
-  // template again from the server, so what shows is current.
+  // After a stale or unknown save, Cancel opens the template again from the server.
   const rereadOnCancel = useRef(false);
   // The request key of every issue that has no settled answer yet, by template
   // and athlete. Held here, above the issue control, which comes and goes.
@@ -827,15 +832,14 @@ function CoachWorkoutTemplates() {
     }
   }, []);
 
-  // After a save: the list is read again and the new version opens, read from
-  // the server, not from the form; nothing else starts until both reads end.
+  // After a save the list is read again and the new version opens from the server.
   async function afterEditSaved(outcome: TemplateEditOutcome) {
     rereadOnCancel.current = false;
     setEditingId('');
     if (!outcome.changed) {
       setEditBusy(false);
       setEditNotice('Nothing changed. No new version was written.');
-      setFocusDetail((count) => count + 1);
+      setFocusEdit((count) => count + 1);
       return;
     }
     try {
@@ -847,9 +851,7 @@ function CoachWorkoutTemplates() {
     }
   }
 
-  // After a 409 or an unknown outcome the page may be out of date: the list is
-  // read again now, and Cancel reopens the template; the form keeps what was
-  // typed. A plain refusal changed nothing and reads nothing.
+  // After a 409 or an unknown outcome the list is read again; the form keeps what was typed.
   async function afterEditFailed(status: number | null) {
     try {
       if (status === null || status >= 500 || status === 409) {
@@ -947,7 +949,7 @@ function CoachWorkoutTemplates() {
                   onCancel={() => {
                     setEditingId('');
                     if (rereadOnCancel.current) void openTemplate(detail.template.template_id);
-                    else setFocusDetail((count) => count + 1);
+                    else setFocusEdit((count) => count + 1);
                     rereadOnCancel.current = false;
                   }}
                   onSaved={(outcome) => void afterEditSaved(outcome)}
@@ -962,16 +964,9 @@ function CoachWorkoutTemplates() {
               <>
                 {/* Only the current version: the route refuses any other (TEMPLATE_VERSION_STALE). */}
                 {detail.template.superseded_at === null && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditNotice('');
-                      setEditingId(detail.template.template_id);
-                    }}
-                    disabled={issuing || making || editBusy}
-                    className="btn btn--ghost btn--kiosk mt-[var(--s3)]"
-                    aria-label={`Edit: ${detail.template.name}`}
-                  >
+                  <button ref={editButtonRef} type="button" disabled={issuing || making || editBusy}
+                    onClick={() => { setEditNotice(''); setEditingId(detail.template.template_id); }}
+                    className="btn btn--ghost btn--tap mt-[var(--s3)]" aria-label={`Edit: ${detail.template.name}`}>
                     Edit
                   </button>
                 )}
@@ -1056,8 +1051,7 @@ function CoachWorkoutTemplates() {
               </>
             )}
 
-            {/* Hidden, not unmounted, while the form is open: an issue or a
-                plan answered before Edit is still there after Cancel (review). */}
+            {/* Hidden, not unmounted, while editing: an issue or plan answer survives Cancel. */}
             {!detailLoading && !detailError && detail && (
               <div hidden={editingId === detail.template.template_id}>
                 {/* Opening another template unmounts this whole block while

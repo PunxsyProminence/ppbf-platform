@@ -2239,19 +2239,18 @@ describe('Edit (lane ED-UI PR2)', () => {
     expect(screen.queryByRole('region', { name: 'Edit Boxing Fundamentals 60' })).not.toBeInTheDocument();
   });
 
-  it('writes nothing when nothing changed, and says so; Cancel writes nothing either; focus goes back to the template', async () => {
+  it('writes nothing when nothing changed, and says so; Cancel writes nothing either; focus goes back to Edit', async () => {
     const fetchMock = editRoutes();
     render(<CoachWorkoutTemplatesPage />);
     const form = await openAndEdit();
-    const templateHeading = screen.getByRole('heading', { level: 2, name: 'Boxing Fundamentals 60' });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('Nothing changed. No new version was written.')).toBeInTheDocument();
-    await waitFor(() => expect(templateHeading).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).toHaveFocus());
     fireEvent.click(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' }));
     expect(screen.getByRole('heading', { name: 'Edit Boxing Fundamentals 60' })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(await screen.findByText('Rope intervals')).toBeInTheDocument();
-    await waitFor(() => expect(templateHeading).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).toHaveFocus());
     expect(writesOf(fetchMock)).toEqual([]);
   });
 

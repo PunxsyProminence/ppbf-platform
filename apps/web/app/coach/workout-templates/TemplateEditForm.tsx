@@ -66,11 +66,7 @@ function initialValues(template: Template, items: readonly Item[]): Values {
   };
 }
 
-/**
- * A typed number as the route takes it: a whole number, or null when the box is
- * empty. Anything else is sent as typed, for the route to refuse. The boxes are
- * text, not type="number", which reads mistyped text as empty and would clear it.
- */
+/** A whole number, null when empty, else sent as typed for the route to refuse (text boxes: type="number" reads a typo as empty). */
 function numberOrNull(typed: string): number | null | string {
   const trimmed = typed.trim();
   if (trimmed === '') return null;
@@ -166,11 +162,11 @@ export default function TemplateEditForm({
   const alertRef = useRef<HTMLDivElement | null>(null);
   const id = (key: string) => `edit-template-${template.template_id}-${key}`;
 
-  useEffect(() => {
-    headingRef.current?.focus();
+  useEffect(() => { // Centred: the fields below show, clear of the sticky bar.
+    headingRef.current?.focus({ preventScroll: true });
+    headingRef.current?.scrollIntoView?.({ block: 'center' });
   }, []);
-  // Save disables itself while it runs, so focus would fall to the page; it goes to what went wrong.
-  useEffect(() => {
+  useEffect(() => { // Save disables itself while it runs; focus goes to what went wrong, not the page.
     if (error) alertRef.current?.focus();
   }, [error]);
 
@@ -228,11 +224,7 @@ export default function TemplateEditForm({
 
   return (
     // The page's own inset and kiosk floor, as the Issue control wears them (page.tsx IssueToAthlete).
-    <section
-      data-surface="kiosk"
-      aria-labelledby={id('heading')}
-      className="space-y-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
-    >
+    <section data-surface="kiosk" aria-labelledby={id('heading')} className="space-y-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
       <h3 id={id('heading')} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-md)]">Edit {template.name}</h3>
 
       <fieldset disabled={saving || busy} className="min-w-0 space-y-[var(--s4)]">
@@ -312,10 +304,10 @@ export default function TemplateEditForm({
       )}
 
       <div className="flex flex-wrap gap-[var(--s3)]">
-        <button type="button" onClick={() => void save()} disabled={saving || busy} className="btn btn--kiosk disabled:cursor-not-allowed disabled:opacity-60">
+        <button type="button" onClick={() => void save()} disabled={saving || busy} className="btn disabled:cursor-not-allowed disabled:opacity-60">
           {saving ? 'Saving…' : 'Save'}
         </button>
-        <button type="button" onClick={onCancel} disabled={saving || busy} className="btn btn--ghost btn--kiosk">Cancel</button>
+        <button type="button" onClick={onCancel} disabled={saving || busy} className="btn btn--ghost">Cancel</button>
       </div>
     </section>
   );
