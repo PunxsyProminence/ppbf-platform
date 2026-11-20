@@ -34,6 +34,12 @@ jest.mock('@/src/server/pilot/pilotOpsReadiness', () => ({
     throw new Error('the gym view read platform configuration');
   },
 }));
+// Nor the Stripe platform config (lane BT, BOA-13): a call here fails the test.
+jest.mock('@/src/server/pilot/paymentConnect', () => ({
+  readPaymentPlatformConfig: () => {
+    throw new Error('the gym view read the payment platform configuration');
+  },
+}));
 jest.mock('@/src/server/pilot/localFindings', () => ({
   listLocalFindings: (...args: unknown[]) => answer('findings', args),
 }));
@@ -227,4 +233,13 @@ test('each filter form keeps the other form\'s active filters, and its button sa
   expect(hidden(citationsForm)).toEqual([['domain', 'safety'], ['local_tier', 'local_pattern'], ['status', 'active']]);
   expect(within(findingsForm).getByRole('button', { name: 'Show findings' })).toBeTruthy();
   expect(within(citationsForm).getByRole('button', { name: 'Show citation checks' })).toBeTruthy();
+});
+
+// Lane BT, BOA-13: the Stripe platform registration steps are the platform owner's. A gym's
+// organization admin opening System gets none of them, and the view never reads the config
+// (the paymentConnect mock above throws if it is asked).
+test('a gym admin gets no platform registration steps and no secret name', async () => {
+  await renderGym();
+  expect(screen.queryByText(/Platform account registration/)).toBeNull();
+  expect(document.body.textContent).not.toMatch(/PAYMENT_|sk_test_|sk_live_|whsec_/);
 });

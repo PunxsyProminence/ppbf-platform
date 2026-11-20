@@ -169,9 +169,11 @@ test('a suppressed figure is a withheld stamp, never a small number and never a 
 
   const active = tile('Active Volunteers');
   expect(active.textContent).toContain('Suppressed');
-  expect(active.textContent).toContain('Fewer than 5 volunteers');
+  expect(active.textContent).toContain('Fewer than 5 volunteers are behind this figure, so it is suppressed rather than reduced.');
   expect(within(active).queryByText('0')).toBeNull();
   expect(active.querySelector('.stamp')).not.toBeNull();
+  // Lane BT, BOA-19: one word for the state on screen, "suppressed", never "withheld".
+  expect(document.body.textContent).not.toMatch(/withheld/i);
 });
 
 test('a measured zero is a real zero, and says which kind of zero it is', async () => {

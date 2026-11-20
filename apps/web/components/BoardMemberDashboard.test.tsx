@@ -9,7 +9,7 @@
 // than for /login, which they have already satisfied.
 
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 
 import BoardMemberDashboard from './BoardMemberDashboard';
 import {
@@ -120,7 +120,22 @@ test('the workspace shows no placeholder standing in for a figure', () => {
   // failed to load. No reserve is stored anywhere in the platform.
   expect(screen.queryAllByText('Unavailable')).toHaveLength(0);
   expect(screen.getByText('Not stored by this platform')).toBeDefined();
-  expect(screen.getByText(/Financial reserves, grants, and budgets/)).toBeDefined();
+  expect(screen.getByText('- Financial reserves and budgets')).toBeDefined();
+});
+
+// Lane BT, BOA-16: grant obligations ARE stored (/admin/grants), so they are not on the
+// "not stored" list; the seat is told who keeps them, by that page's title, with no link
+// (the page admits the gym admin only).
+test('grants are said to be kept by the gym admin, not listed as not stored', () => {
+  renderSeat('treasurer', { role: 'board', seats: ['treasurer'] });
+
+  const notHeld = screen.getByRole('heading', { name: 'Not stored by this platform' }).closest('section') as HTMLElement;
+  const listed = Array.from(notHeld.querySelectorAll('li')).map((item) => item.textContent ?? '');
+  expect(listed.some((item) => /grant/i.test(item))).toBe(false);
+  expect(within(notHeld).getByText('Grant obligations are kept by the gym admin, on Grant Obligations.')).toBeDefined();
+  expect(notHeld.querySelector('a[href="/admin/grants"]')).toBeNull();
+  // Lane BT, BOA-19: "none is being suppressed", the board's one word for it.
+  expect(document.body.textContent).not.toMatch(/withheld/i);
 });
 
 test('a 501(c)(3) is not described as owned', () => {

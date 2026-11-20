@@ -89,10 +89,12 @@ test('a suppressed cohort is a withheld stamp, never a small real number', async
 
   const critical = tile('Critical');
   expect(critical.textContent).toContain('Suppressed');
-  expect(critical.textContent).toContain('Fewer than 5 athletes');
+  expect(critical.textContent).toContain('Fewer than 5 athletes are behind this figure, so it is suppressed rather than reduced.');
   // A suppressed bucket is not "nothing open" -- the reassuring note must
   // not render alongside a withheld count.
   expect(screen.queryByText('Read this zero correctly')).toBeNull();
+  // Lane BT, BOA-19: one word for the state on screen, "suppressed", never "withheld".
+  expect(document.body.textContent).not.toMatch(/withheld/i);
 });
 
 test('a live critical count wears the severity band with its count', async () => {

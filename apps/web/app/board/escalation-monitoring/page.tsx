@@ -41,7 +41,7 @@ function escalationDisplay(
   if (metric.status === 'insufficient_data') {
     return {
       value: 'Suppressed',
-      note: `Fewer than ${minimumCohortSize} athletes are involved, so the count is withheld.`,
+      note: `Fewer than ${minimumCohortSize} athletes are behind this figure, so it is suppressed rather than reduced.`,
     };
   }
 
@@ -124,7 +124,7 @@ function BoardEscalationMonitoringContent() {
             <div className="mt-[var(--s3)]"><BackHome /></div>
             <p className="t-body max-w-[80ch]">
               How many safety escalations are open right now, by severity, across the whole organization. The board
-              sees counts only: fewer than {minimumCohortSize} athletes in a bucket and the number is withheld, and
+              sees counts only: fewer than {minimumCohortSize} athletes in a bucket and the number is suppressed, and
               no name, case, or detail ever reaches this page. Working the ladder itself is the organization
               admin&rsquo;s job.
             </p>

@@ -10,7 +10,7 @@ import BackHome from '@/components/BackHome';
 /**
  * The gym's equipment catalogue: what it paid, what it charges, what is on sale.
  *
- * This is the Treasurer-facing side of the store. It is the only place the
+ * This is the gym admin's side of the store. It is the only place the
  * wholesale cost appears, and it is organization-admin only -- the cost is the
  * gym's negotiated position with a supplier, not the platform owner's to read
  * across gyms and not a coach's either.
@@ -189,8 +189,9 @@ function GearCatalogueConsole() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
       <div className="mx-auto max-w-4xl">
-        <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Treasurer</p>
-        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Equipment and margin</h1>
+        {/* No "Treasurer" eyebrow (lane BT, BOA-16): this page admits the gym
+            admin only (RoleSessionGate ['admin'] below), not a board seat. */}
+        <h1 className="font-display text-3xl font-black tracking-tight">Equipment and margin</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
           What the gym paid, what it charges, and what is on public sale. The cost is visible only
           here &mdash; the public store never receives it.

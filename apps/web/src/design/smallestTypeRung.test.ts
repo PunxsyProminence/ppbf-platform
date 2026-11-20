@@ -117,8 +117,8 @@ const CSS_FILES = [
  * when you fix one; never raise one, and never add a file.
  */
 const FROZEN: Readonly<Record<string, number>> = {
-  'apps/web/app/admin/gear/page.tsx': 14,
-  'apps/web/app/admin/gear/vendors/page.tsx': 5,
+  'apps/web/app/admin/gear/page.tsx': 13,
+  'apps/web/app/admin/gear/vendors/page.tsx': 4,
   'apps/web/app/admin/import/page.tsx': 4,
   'apps/web/app/retro-lab/page.tsx': 3,
   'apps/web/app/store/[organizationId]/page.tsx': 4,
