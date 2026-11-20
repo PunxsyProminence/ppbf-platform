@@ -129,8 +129,11 @@ export default function DrillEditForm({
   onSaved,
   onSaving,
   onFailed,
+  busy,
 }: {
   drill: DrillWithDetail;
+  /** The page is still busy with this save's re-reads: nothing here may start or leave until they end. */
+  busy: boolean;
   onCancel: () => void;
   /** Called once the server has answered a save, or when nothing changed. */
   onSaved: (outcome: DrillEditOutcome) => void;
@@ -153,7 +156,7 @@ export default function DrillEditForm({
   }, []);
 
   async function save() {
-    if (savingRef.current) return;
+    if (savingRef.current || busy) return;
     const parts = changedParts(drill, values);
     if (!parts) {
       onSaved({ changed: false });
@@ -216,7 +219,7 @@ export default function DrillEditForm({
       <h2 id={id('heading')} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">Edit {drill.name}</h2>
 
       {/* Nothing can be typed while a save runs: it would not be in the save. */}
-      <fieldset disabled={saving} className="min-w-0 space-y-[var(--s4)]">
+      <fieldset disabled={saving || busy} className="min-w-0 space-y-[var(--s4)]">
       <div className="grid gap-[var(--s4)] md:grid-cols-2">
         <div className="field">
           <label htmlFor={id('name')} className="t-label">Name</label>
@@ -281,10 +284,10 @@ export default function DrillEditForm({
       )}
 
       <div className="flex flex-wrap gap-[var(--s3)]">
-        <button type="button" onClick={() => void save()} disabled={saving} className="btn disabled:cursor-not-allowed disabled:opacity-60">
+        <button type="button" onClick={() => void save()} disabled={saving || busy} className="btn disabled:cursor-not-allowed disabled:opacity-60">
           {saving ? 'Saving…' : 'Save'}
         </button>
-        <button type="button" onClick={onCancel} disabled={saving} className="btn btn--ghost">Cancel</button>
+        <button type="button" onClick={onCancel} disabled={saving || busy} className="btn btn--ghost">Cancel</button>
       </div>
     </section>
   );

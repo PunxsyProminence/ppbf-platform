@@ -2756,6 +2756,28 @@ describe('Edit (lane ED-UI)', () => {
     expect(editButton()).not.toBeInTheDocument();
   });
 
+  it('keeps Save and Cancel off until the re-read after a refusal has ended', async () => {
+    let release: (response: Response) => void = () => {};
+    global.fetch = routes({
+      editLibrary: () => jsonResponse({ error: 'Taken.', code: 'DRILL_NAME_TAKEN' }, false, 409),
+      detailRead: (read) => (read === 2 ? (new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response) : undefined),
+    }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Taken.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await act(async () => {
+      release(jsonResponse({ drill: referenceDetail, lifecycle: NOT_ADOPTED, floor_tested: null }));
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+
   it('after an answer that never came, reads the library and the drill again', async () => {
     const fetchMock = routes({ editLibrary: async () => { throw new TypeError('Failed to fetch'); } });
     global.fetch = fetchMock as unknown as typeof fetch;

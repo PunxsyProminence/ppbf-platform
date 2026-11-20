@@ -70,14 +70,14 @@ function jsonResponse(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
 }
 
-function renderForm(options: { drill?: DrillWithDetail; answer?: () => Promise<Response> } = {}) {
+function renderForm(options: { drill?: DrillWithDetail; answer?: () => Promise<Response>; busy?: boolean } = {}) {
   const fetchMock = jest.fn(options.answer ?? (async () => jsonResponse({ ok: true, changed: true, drill_id: 'drl-1-v2', version: 2 })));
   global.fetch = fetchMock as unknown as typeof fetch;
   const onSaved = jest.fn<void, [DrillEditOutcome]>();
   const onCancel = jest.fn();
   const onSaving = jest.fn();
   const onFailed = jest.fn<void, [number | null]>();
-  render(<DrillEditForm drill={options.drill ?? drill} onSaved={onSaved} onCancel={onCancel} onSaving={onSaving} onFailed={onFailed} />);
+  render(<DrillEditForm drill={options.drill ?? drill} onSaved={onSaved} onCancel={onCancel} onSaving={onSaving} onFailed={onFailed} busy={options.busy ?? false} />);
   return { fetchMock, onSaved, onCancel, onSaving, onFailed };
 }
 
@@ -269,4 +269,12 @@ it('locks the fields while a save runs', async () => {
   answer(jsonResponse({ error: 'Refused.' }, 400));
   await screen.findByRole('alert');
   expect(screen.getByLabelText('What it is for')).toBeEnabled();
+});
+
+it('starts nothing and offers no way out while the page is still busy with the last save', () => {
+  const { fetchMock } = renderForm({ busy: true });
+  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  expect(screen.getByLabelText('What it is for')).toBeDisabled();
+  expect(fetchMock).not.toHaveBeenCalled();
 });

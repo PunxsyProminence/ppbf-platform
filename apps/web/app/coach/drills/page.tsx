@@ -1210,6 +1210,7 @@ function CoachDrillLibrary() {
                   onSaved={(outcome) => void afterEditSaved(outcome)}
                   onSaving={() => setEditBusy(true)}
                   onFailed={(status) => void afterEditFailed(status)}
+                  busy={editBusy}
                 />
               )}
               {!openReferenceLoading && openReference && (editingId !== openReference.id || !openReferenceDetail) && (
