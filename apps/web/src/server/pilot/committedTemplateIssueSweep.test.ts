@@ -304,11 +304,13 @@ const COACH_RUN: Record<string, number[]> = {
 /**
  * Typed steps beside library drills. The typed steps refuse the whole issue,
  * and OD-2026-11-15-001's reach says such a template "is not covered and still
- * reads 'Not ready'". Some typed lines are typed on purpose (Backbone D-OQ44:
- * DOC-151's warm-up, applied-rounds, conditioning and character lines "become
- * verbatim free-text items"). Turning a typed step into a drill, or issuing a
- * template's drill steps without its typed ones, is an owner decision, not a
- * data fix. Template id -> its typed steps (ordinals).
+ * reads 'Not ready'". Jason's card OW26-05 ("Mixed templates"): "B: Turn typed
+ * lines into library drills". The typed steps are to become library drills
+ * (in PPBF words, AI-draft labelled) after the pilot, in a separate lane; until
+ * then they are refused at issue. The app diverges from the frozen Backbone
+ * here (D-OQ44 keeps DOC-151's lines as free text). An entry leaves this list
+ * when its template's typed steps are drills. Template id -> its typed steps
+ * (ordinals).
  */
 const TYPED_IN_MIXED: Record<string, number[]> = {
   wtp_01de3f48606d4c: [1, 3, 4, 5, 6], // Conditioning session A — SIT, 45 min

@@ -4,8 +4,8 @@ Lane RS, pilot dry-run blocker B3. Sections 1 to 5 are the step 1 report,
 measured on `main` at `0752bb485908d259880925521f1a8672a75abe4f` (2026-11-20),
 before any data change. Section 6 records step 2, applied in the same PR
 (#2008) after Overwatch's GO on the PR (Q1 A: tiers A and B; Q2 A: keep the
-draft marker; Q3 A: the 11 mixed templates stay allowlisted as an owner
-decision).
+draft marker; Q3 A: the 11 mixed templates stay allowlisted; Overwatch later
+updated Q3 to cite Jason's card OW26-05 B, see section 3b).
 
 Labels: OBSERVED (read in code or data, with file:line), INFERRED (reasoning
 past what was read), UNVERIFIED (not checked).
@@ -96,6 +96,14 @@ D-OQ44 makes DOC-151's warm-up, applied-rounds, conditioning and character lines
 No cue or drill text fixes these. Template ids and typed steps are in the
 test's `TYPED_IN_MIXED` list.
 
+Since step 1, Jason ruled on card OW26-05 ("Mixed templates"): "B: Turn typed
+lines into library drills". The ruling went against the recommendation. It was
+relayed on this PR by Overwatch (comment of 2026-11-20) and by Backbone
+Overwatch 26 note 10, and is not yet an entry in `OWNER_DECISIONS.md`. The typed
+steps become library drills, in PPBF words and AI-draft labelled, after the
+pilot, in a separate lane. Until then they are refused at issue. This PR
+converts none of them; section 10 sizes the work.
+
 ### 3c. Every step typed: 82 templates
 
 Refused at the issue endpoint for every step; Class plans reads them "Coach-run
@@ -118,7 +126,17 @@ Searches behind "no other source": `git log -S <drill_id> --all -- '*cue*'`
 name on `main`; the grounding claims recorded on each drill, read in
 `apps/web/seed-data/research-evidence/2026-08-07/evidence_registry_boxing_learning.csv`
 (none carries cue words). The OneDrive Backbone and `C:\Dev` were not
-searchable from this container (UNVERIFIED there).
+searchable from this container. For these four drills, Backbone Overwatch 26
+note 10 since checked the frozen Backbone (REPORTED; not re-checked here):
+- the Wrap Under Supervision cue is the frozen Long Road track's coach note,
+  word for word (`data/content/tracks/trk_9529aeb3af7743.json`, groups[2],
+  "Learn to wrap properly");
+- Seated Combination Work and Technique-Only Fitness Session are in no frozen
+  file;
+- Technique Hold Under Volume is named in 3 frozen files with no cue field, so
+  "needs coach text" stands.
+
+`C:\Dev` remains UNVERIFIED.
 
 | Drill | Proposed cue_text | Source (file:line) | Source tier |
 |---|---|---|---|
@@ -161,7 +179,7 @@ Notes on the three proposals:
 | Drills involved | 4 (in 5 templates) |
 | Drills fixable from repo sources | 3 (1 tier A, 2 tier B) -> 4 templates issuable on a fresh load |
 | Drills needing coach text | 1 (Technique Hold Under Volume) -> 1 template |
-| Templates refused for typed steps only | 93 (no drill text can fix them; 82 coach-run by ruling, 11 OWNER DECISION) |
+| Templates refused for typed steps only | 93 (no cue or drill text can fix them; 82 coach-run, OD-2026-11-15-001; 11 to become library drills after the pilot, OW26-05 B) |
 
 ## 6. Step 2, as applied in this PR
 
@@ -205,7 +223,7 @@ The allowlist lives in the test, in three groups, each with its reason:
 | Group | Step 1 | Step 2 (this PR) |
 |---|---|---|
 | `COACH_RUN` (every step typed; OD-2026-11-15-001) | 82 templates | 82 |
-| `TYPED_IN_MIXED` (typed steps beside drills; OWNER DECISION) | 11 templates | 11 |
+| `TYPED_IN_MIXED` (typed steps beside drills; OW26-05 B: to become library drills after the pilot, refused at issue until then) | 11 templates | 11 |
 | `DRILL_REFUSALS` (drills awaiting a cue) | 5 templates | 1 |
 
 Each entry pins the template id and its exact refused steps or drill ids, so a
@@ -262,3 +280,34 @@ After review (below), deleting every step of `wtp_98af8ee68020d0` reds the new
   - `checked` counts the templates actually planned;
   - `parseBoolean` and `isConditioningLabel` are imported, not restated.
   Left as is: the lineage check is redundant with the loader's lineage keys, but harmless.
+
+## 10. Size of the OW26-05 B follow-up (measured; nothing built)
+
+Measured on this branch from `apps/web/seed-data/workout-templates/seed_workout_template_items.csv`.
+Steps were compared by exact text after whitespace normalisation, so
+near-duplicate wording would count as separate lines.
+
+- The 11 `TYPED_IN_MIXED` templates hold **85 typed steps** beside 44 drill
+  steps.
+- They come to **71 unique items**:
+  - **61** distinct typed lines;
+  - **10** steps with no typed text, all in "Scripted 60-Minute Class (test
+    run 4-5)" (`wtp_900c0a3fd4422a`). Each carries its content only in
+    `details` (block title and coach script) and is counted once per block
+    title.
+- None of the 71 equals an existing library drill name.
+
+| Family | Templates | Typed steps | Unique items |
+|---|---|---|---|
+| Youth manual weeks 1-4, 5-8, 9-12 (Y1/Y2): `wtp_43c793b8f90e77`, `wtp_ed57bea28de0f7`, `wtp_d861f584584788` | 3 | 30 | 16 (7 lines in all three; each template has 10) |
+| Y3-Y5 coach sheets: `wtp_1ad3c846b03ecc`, `wtp_3557c34e022c31`, `wtp_900c0a3fd4422a`, `wtp_9fbf7f8edf5016` | 4 | 28 | 28 |
+| Adult and amateur: `wtp_01de3f48606d4c`, `wtp_456e418b1741b8`, `wtp_bc964fe230d8f3`, `wtp_c2c4bec001a56b` | 4 | 27 | 27 |
+
+No line is shared between families.
+
+For each template to issue, every new drill has to pass the adoption
+readiness check, as the three cues here had to: purpose, category,
+difficulty, setup, steps, what good looks like, A/B/C scaling starting at B,
+its own stop rules, and a cue unless it is conditioning. Each step's contact
+level also has to stay at or below its drill's. As each template's typed steps
+become drills, its entry leaves `TYPED_IN_MIXED`.
