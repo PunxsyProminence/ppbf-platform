@@ -129,6 +129,10 @@ describe('a board member\'s bar', () => {
     expect(hrefsOf(bar?.sections.flatMap((section) => section.items) ?? [])).not.toContain('/board/treasurer');
   });
 
+  it('reads a seat list of null as none held: Home is Board Hub, whatever the landing seat', () => {
+    expect(jobBarFor('board', { boardSeat: 'treasurer', boardSeats: null })?.sections[0].items).toEqual([{ href: '/board' }]);
+  });
+
   it('does not guess a landing seat from the seat list alone: Home is Board Hub', () => {
     expect(jobBarFor('board', { boardSeats: ['treasurer'] })?.sections[0].items).toEqual([{ href: '/board' }]);
   });

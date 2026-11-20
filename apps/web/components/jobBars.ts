@@ -54,8 +54,9 @@ export interface JobSection {
  * For a board member: boardSeat is the session's landing seat (RoleSession.boardSeat) and picks their
  * Home; boardSeats are every seat they hold (BoardRoleGate's useBoardSession().seats). Pass both where
  * both are known. The held seats, when passed, are the truth: a landing seat they no longer list (a
- * stale cached session) gives Board Hub as Home, never the lost seat. With only the landing seat, it
- * counts as held (the session derives it from the seats held). With only the seats, Home is Board Hub:
+ * stale cached session) gives Board Hub as Home, never the lost seat; null means none held. With only
+ * the landing seat (boardSeats left out), it counts as held (the session derives it from the seats
+ * held). With only the seats, Home is Board Hub:
  * which seat a member lands on is decided on the server, and is not guessed here. Unlike visibleDoors,
  * the bar always applies the seat rule, so a call with no viewer shows a board member no seat.
  */
@@ -244,7 +245,10 @@ export function jobBarFor(role: ClubRole | null, viewer: JobBarViewer = {}): Job
   if (!role) return null;
   const bar = JOB_BARS[role];
   if (!bar) return null;
-  const boardSeats = viewer.boardSeats ?? (viewer.boardSeat ? [viewer.boardSeat] : []);
+  // Passed (even null, "holds none") the held seats are the truth and fail closed; left out, the landing
+  // seat counts as held.
+  const boardSeats =
+    viewer.boardSeats !== undefined ? (viewer.boardSeats ?? []) : viewer.boardSeat ? [viewer.boardSeat] : [];
   const landing = viewer.boardSeat && boardSeats.includes(viewer.boardSeat) ? viewer.boardSeat : null;
   const open = new Set(visibleDoors(role, { ...viewer, boardSeats }).map((door) => door.href));
   const resolve = (item: JobItem): JobItem =>
