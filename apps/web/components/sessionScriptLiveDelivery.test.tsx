@@ -284,6 +284,9 @@ describe("the coach's console in look B", () => {
     expect(screen.getByRole('region', { name: 'Need attention · your athletes' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'SHADOW queue' })).toBeInTheDocument();
     expect(await screen.findAllByText('Could not read')).toHaveLength(3);
+    // The pain tile's unread feed says so in its own tile (lane U2-6b), never as a number.
+    const pain = within(screen.getByRole('region', { name: 'Athlete pain reports' }));
+    expect(pain.getByText('Pain reports: not checked').previousSibling).toHaveTextContent(/^\?$/);
   });
 
   it('sits in the frame with the kit scope on an ancestor, where the kit rules reach it', async () => {

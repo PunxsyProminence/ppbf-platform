@@ -3,8 +3,8 @@
  */
 
 // The coach's top row (lane L39 PR 3; Jason 2026-10-17 "A: Coach screen only", OD-2026-10-17-008):
-// attendance, need attention and the SHADOW queue as counts, from three reads the coach already
-// makes. What these pin is the honesty: no mark is never an absence, and a read that fails is never
+// attendance, need attention, athlete pain reports and the SHADOW queue as counts, from four reads
+// the coach already makes. What these pin is the honesty: no mark is never an absence, and a read that fails is never
 // a zero. Lane U2-6b: the pain tile reads the pain list's own feed over the feed's own window
 // (Overwatch's 6b ruling, Q2 = A, Q3 = A), says "?" and "not checked" when it cannot, and is never
 // drawn as a medical stop.
@@ -54,8 +54,21 @@ const ESCALATIONS = {
 };
 const QUEUE = { ok: true, queue: [], total: 7 };
 const PAIN_FEED = '/api/pilot/coach/pain-reports?limit=50';
+// The route's row (CoachPainReport, painReportAlert.ts): named and identifiable, so none of it may
+// reach the tile.
 function painRow(id: string) {
-  return { nearMissId: id, athleteId: `ath-${id}`, athleteName: 'Jordan Fixture', painScore: 6, bodyArea: 'left wrist' };
+  return {
+    nearMissId: id,
+    athleteId: `ath-${id}`,
+    athleteName: 'Jordan Fixture',
+    severity: 'high',
+    painScore: 6,
+    location: 'left wrist',
+    painType: 'sharp',
+    observedAt: '2026-11-18T17:00:00.000Z',
+    recordedAt: '2026-11-18T17:05:00.000Z',
+    reporter: 'athlete',
+  };
 }
 const PAIN = { ok: true, windowDays: 7, truncated: false, painReports: [painRow('n1'), painRow('n2'), painRow('n3')] };
 
@@ -221,7 +234,9 @@ describe('the tiles', () => {
     const text = screen.getByRole('group', { name: 'The gym at a glance' }).textContent ?? '';
     expect(text).toContain('Present');
     expect(text).toContain('Pain reports, last 7 days');
-    for (const leak of ['a1', 'a2', 'a3', 'zz', 'Jordan', 'fall', 'ath-', 'n1', 'wrist']) expect(text).not.toContain(leak);
+    for (const leak of ['a1', 'a2', 'a3', 'zz', 'Jordan', 'fall', 'ath-', 'n1', 'wrist', 'sharp', '2026-11-18']) {
+      expect(text).not.toContain(leak);
+    }
   });
 });
 
@@ -318,5 +333,81 @@ describe('the pain tile (lane U2-6b)', () => {
     const section = screen.getByRole('region', { name: 'Athlete pain reports' });
     expect(section.querySelector('.badge')).toBeNull();
     expect(section.innerHTML).not.toMatch(/locked|restricted/);
+    // Only the row's own plain classes, and no inline colour: no red of any spelling can be added
+    // without this list changing.
+    const plain = new Set([
+      'coach-tiles__group',
+      'coach-tiles__cap',
+      'ge-enamel',
+      'ge-enamel--sign',
+      'coach-tiles__row',
+      'ge-tile',
+      'ge-tile__value',
+      'ge-tile__label',
+    ]);
+    for (const element of [section, ...Array.from(section.querySelectorAll('*'))]) {
+      expect(element.getAttribute('style')).toBeNull();
+      for (const name of Array.from(element.classList)) expect(plain).toContain(name);
+    }
+  });
+
+  test('while the feed has not answered, the group says "Reading..." and no "?" or number', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    routes[PAIN_FEED] = () => new Promise<Response>((resolve) => {
+      answer = resolve;
+    }) as unknown as Response;
+    render(<CoachLiveTiles />);
+    await settle();
+    const pain = group('Athlete pain reports');
+    expect(pain.getByText('Reading...')).toBeInTheDocument();
+    expect(pain.queryByRole('listitem')).toBeNull();
+    expect(pain.queryByText(/not checked/)).toBeNull();
+    // The other reads answered and show; they are not held back by the pain read.
+    expect(group('SHADOW queue').getByText('In the queue').previousSibling).toHaveTextContent(/^7$/);
+    await act(async () => {
+      answer(json(PAIN));
+    });
+    await settle();
+    expect(pain.getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^3$/);
+  });
+
+  test('a failed pain read shows "?" even while another read in the same refresh never answers', async () => {
+    render(<CoachLiveTiles />);
+    await settle();
+    expect(group('Athlete pain reports').getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^3$/);
+    // The SHADOW queue read hangs from now on; the pain feed refuses.
+    routes['/api/pilot/shadow/review-projection'] = () => new Promise<Response>(() => undefined) as unknown as Response;
+    routes[PAIN_FEED] = () => json({ ok: false, error: 'Forbidden' }, 403);
+    await act(async () => {
+      jest.advanceTimersByTime(120_000);
+    });
+    await settle();
+    const pain = group('Athlete pain reports');
+    expect(pain.getByText('Pain reports: not checked').previousSibling).toHaveTextContent(/^\?$/);
+    expect(pain.queryByText('3')).toBeNull();
+  });
+
+  test('a slow earlier answer never replaces a newer one: a later failure stays "?"', async () => {
+    let late: (response: Response) => void = () => undefined;
+    routes[PAIN_FEED] = () => new Promise<Response>((resolve) => {
+      late = resolve;
+    }) as unknown as Response;
+    render(<CoachLiveTiles />);
+    await settle();
+    // The next refresh's pain read fails at once, while the first is still out.
+    routes[PAIN_FEED] = () => json({ error: 'boom' }, 500);
+    await act(async () => {
+      jest.advanceTimersByTime(120_000);
+    });
+    await settle();
+    const pain = group('Athlete pain reports');
+    expect(pain.getByText('Pain reports: not checked').previousSibling).toHaveTextContent(/^\?$/);
+    // The first read now answers with a count; it is older than the failure shown, so it is dropped.
+    await act(async () => {
+      late(json(PAIN));
+    });
+    await settle();
+    expect(pain.getByText('Pain reports: not checked').previousSibling).toHaveTextContent(/^\?$/);
+    expect(pain.queryByText('3')).toBeNull();
   });
 });

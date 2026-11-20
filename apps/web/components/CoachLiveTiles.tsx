@@ -36,7 +36,10 @@ import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
  *               workspace calls "in the queue"), not only those awaiting review.
  *
  * Read every two minutes, the header badge's pace: the escalations read also
- * closes hold notices whose hold has ended, so a faster poll is only load.
+ * closes hold notices whose hold has ended, so a faster poll is only load. Each
+ * read sets its own tiles when it answers, so a read that hangs never holds
+ * another's answer back -- above all a failed pain read's "?" (the review of
+ * lane U2-6b) -- and an older answer never replaces a newer one.
  *
  * A read that fails says so in words. It never shows 0: "nothing here" and "we
  * could not look" are different claims (the #991 class). The pain tile says it
@@ -196,8 +199,10 @@ export default function CoachLiveTiles() {
   const [pain, setPain] = useState<Read<PainReportCount>>({ state: 'loading' });
   const [queue, setQueue] = useState<Read<number>>({ state: 'loading' });
 
-  // A read slower than the next one must not overwrite it, and nothing is set after unmount.
+  // Each read is numbered; a tile takes an answer only if it is from a newer read than the one it
+  // shows, so a read slower than the next one never overwrites it. Nothing is set after unmount.
   const sequence = useRef(0);
+  const shown = useRef({ attendance: 0, attention: 0, queue: 0, pain: 0 });
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -206,34 +211,44 @@ export default function CoachLiveTiles() {
     };
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     const mine = ++sequence.current;
     const base = apiBase();
-    const [a, b, c, d] = await Promise.allSettled([
-      readJson(`${base}/api/pilot/coach/attendance-today`),
-      readJson(`${base}/api/pilot/escalations?status=open`),
+    function settle<T>(
+      tile: keyof typeof shown.current,
+      read: Promise<unknown>,
+      parse: (payload: unknown) => T | null,
+      set: (value: Read<T>) => void,
+    ) {
+      void read
+        .then((payload) => parse(payload))
+        // A failed read, or a payload the parser cannot take, is unread: never a number.
+        .catch(() => null)
+        .then((value) => {
+          if (!mounted.current || mine <= shown.current[tile]) return;
+          shown.current[tile] = mine;
+          set(value === null ? { state: 'failed' } : { state: 'ok', value });
+        });
+    }
+    settle('attendance', readJson(`${base}/api/pilot/coach/attendance-today`), attendanceCounts, setAttendance);
+    settle('attention', readJson(`${base}/api/pilot/escalations?status=open`), attentionCounts, setAttention);
+    settle(
+      'queue',
       readJson(`${base}/api/pilot/shadow/review-projection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 1 }),
       }),
-      readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}`),
-    ]);
-    if (!mounted.current || mine !== sequence.current) return;
-    const counted = a.status === 'fulfilled' ? attendanceCounts(a.value) : null;
-    setAttendance(counted ? { state: 'ok', value: counted } : { state: 'failed' });
-    const levels = b.status === 'fulfilled' ? attentionCounts(b.value) : null;
-    setAttention(levels ? { state: 'ok', value: levels } : { state: 'failed' });
-    const total = c.status === 'fulfilled' ? queueTotal(c.value) : null;
-    setQueue(total === null ? { state: 'failed' } : { state: 'ok', value: total });
-    const reports = d.status === 'fulfilled' ? painReportCount(d.value) : null;
-    setPain(reports ? { state: 'ok', value: reports } : { state: 'failed' });
+      queueTotal,
+      setQueue,
+    );
+    settle('pain', readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}`), painReportCount, setPain);
   }, []);
 
   useEffect(() => {
-    // No state is set before load's first await (the convention SessionScriptLiveDelivery follows).
-    void load();
-    const id = setInterval(() => void load(), COACH_TILES_REFRESH_MS);
+    // No state is set until a read answers (the convention SessionScriptLiveDelivery follows).
+    load();
+    const id = setInterval(load, COACH_TILES_REFRESH_MS);
     return () => clearInterval(id);
   }, [load]);
 
