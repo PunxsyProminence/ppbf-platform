@@ -486,15 +486,19 @@ export function labelIsDraft(label: unknown): boolean | null {
   return hasOwnLabel(label) ? false : null;
 }
 
-/** A field's own group-level label (status, sources: the content's; or an in-app edit), beside any part labels. */
+/**
+ * A field's own group-level label (status, sources: the content's; an in-app edit; or a coach's
+ * "Looks right", which counts as an edit counts: Q-PR4-1 = A), beside any part labels.
+ */
 function hasOwnLabel(label: Record<string, unknown>): boolean {
-  return 'status' in label || isPlainObject(label.edited);
+  return 'status' in label || isPlainObject(label.edited) || isPlainObject(label.looks_right);
 }
 
 /**
  * One part of a group field: a scale level. Its own label wins over the group
- * when it says something about the part's text -- its own `draft`, or an in-app
- * edit (contentLabels.ts writeEditedVersionLabels). Otherwise "the group-level
+ * when it says something about the part's text -- its own `draft`, an in-app
+ * edit (contentLabels.ts writeEditedVersionLabels), or a coach's "Looks right"
+ * (confirmLooksRight; Q-PR4-1 = A). Otherwise "the group-level
  * label still speaks for every part nobody edited" (the same writer): the seed
  * gives each level a sourcing label with no draft key under a drafted group, and
  * that level is still the group's AI draft.
@@ -504,7 +508,7 @@ function partIsDraft(group: unknown, part: string): boolean | null {
   const own = group[part];
   if (own !== undefined && !isPlainObject(own)) return null;
   if (isPlainObject(own) && 'draft' in own) return true;
-  if (isPlainObject(own) && isPlainObject(own.edited)) return false;
+  if (isPlainObject(own) && (isPlainObject(own.edited) || isPlainObject(own.looks_right))) return false;
   if ('draft' in group) return true;
   return hasOwnLabel(group) ? false : null;
 }

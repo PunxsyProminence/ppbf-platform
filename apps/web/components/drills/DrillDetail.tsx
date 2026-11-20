@@ -59,8 +59,11 @@ export interface DrillDetailProps {
   audience: 'athlete' | 'coach';
   /** Rendered in the header: e.g. the coach's lifecycle state and Promote action. */
   actions?: ReactNode;
-  /** "Looks right" (OW25-55; lane ED-UI PR4): the page's press for a drafted field ('purpose', 'scale_levels.B'), placed here. */
-  looksRight?: (target: string, label: string) => ReactNode;
+  /**
+   * "Looks right" (OW25-55; lane ED-UI PR4): the page's press for a drafted field ('purpose',
+   * 'scale_levels.B'), placed here. `describedBy` is the id of the line that says what the press covers.
+   */
+  looksRight?: (target: string, label: string, describedBy?: string) => ReactNode;
   /**
    * Move focus to the drill's heading when it appears. The list that opened it
    * is hidden at that moment, taking the focused button with it; without this,
@@ -116,9 +119,13 @@ export default function DrillDetail({ view, audience, actions, looksRight, focus
   const mark = (state: boolean | null | undefined, onDark = false) => (labelled ? <DraftMark state={state} onDark={onDark} /> : null);
   // "Looks right": a drafted field the form can change (Q3 = A), per scale level, the stop rules as one
   // (Q2 = A); in an expander it sits inside, never in the summary.
-  const press = (state: boolean | null | undefined, target: string, label: string | null) => (
-    labelled && state === true && looksRight && label !== null ? looksRight(target, label) : null
-  );
+  const press = (state: boolean | null | undefined, target: string, label: string | null) => {
+    if (!(labelled && state === true && looksRight && label !== null)) return null;
+    if (target !== 'stop_rules') return looksRight(target, label);
+    // One press for the whole list (Q2 = A), so it says what it covers (Q-PR4-4 = A, Overwatch's approved words).
+    const noteId = `${headingId}-stop-rules-press`;
+    return <>{looksRight(target, label, noteId)}<span id={noteId} className={`block font-normal ${BODY}`}>{STOP_RULES_PRESS_COVERS}</span></>;
+  };
   const pressFor = (key: DrillMarkedField, label = FIELD_LABEL[key]) => press(drafts?.fields[key], key, label);
   const both = (marked: ReactNode, pressed: ReactNode) => (marked || pressed ? <>{marked}{pressed}</> : null);
   const field = (key: DrillMarkedField, label = FIELD_LABEL[key]) => both(mark(drafts?.fields[key]), pressFor(key, label));
@@ -344,6 +351,9 @@ function Heading({ children, mark }: { children: ReactNode; mark: ReactNode }) {
     </div>
   );
 }
+
+/** What the stop-rule list's one press confirms (Q-PR4-4 = A; Overwatch on #2027, 2026-11-20). */
+const STOP_RULES_PRESS_COVERS = "Confirms all of this drill's own stop rules and their kinds, including those under Before contact or maximal effort.";
 
 /** How the screen names each marked field, for "Looks right: <field>"; null where the edit form cannot change it (Q3 = A). */
 const FIELD_LABEL: Record<DrillMarkedField, string | null> = {

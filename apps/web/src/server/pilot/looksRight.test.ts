@@ -104,16 +104,18 @@ describe('an import afterwards holds the item (Q1 = A)', () => {
 describe('editLibraryDrill with looks_right', () => {
   const HEAD = { drill_id: 'd1', lineage_id: 'lin-1', version: 1, superseded_at: null, name: 'Jab', category: 'footwork', purpose: 'Old.' };
   let fieldLabels: Record<string, unknown> | null;
+  let scaleRows: { scale_level: string; drill_id: string }[];
   let statements: { text: string; values: unknown[] }[];
 
   beforeEach(() => {
     fieldLabels = { purpose: DRAFT, cues: SOURCED, scale_levels: { ...DRAFT, A: SOURCED } };
+    scaleRows = [{ scale_level: 'A', drill_id: 'd1' }];
     statements = [];
     (withTransaction as jest.Mock).mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
       query: async (text: string, values: unknown[] = []) => {
         statements.push({ text, values });
         if (/from pilot\.drill_library d\s+where/.test(text) && text.includes('for update')) return { rows: [{ row: HEAD }] };
-        if (text.includes('pilot.drill_scale_levels t')) return { rows: [{ row: { scale_level: 'A', drill_id: 'd1' } }] };
+        if (text.includes('pilot.drill_scale_levels t')) return { rows: scaleRows.map((row) => ({ row })) };
         if (text.includes("to_regclass('pilot.content_record_labels')")) return { rows: [{ ready: true }] };
         if (text.includes('select field_labels, evidence, backbone_version')) {
           return { rows: fieldLabels ? [{ field_labels: fieldLabels, evidence: { e: 1 }, backbone_version: 'bb-1' }] : [] };
@@ -155,6 +157,23 @@ describe('editLibraryDrill with looks_right', () => {
     await press('scale_levels.A');
     const written = JSON.parse(labelInsert()?.values[4] as string);
     expect(written.scale_levels).toEqual({ ...DRAFT, A: { ...SOURCED, looks_right: expect.objectContaining({ by_role: 'coach' }) } });
+  });
+
+  // Q-PR4-1 = A, the edit writer's rule: a confirmed level counts as an edited level counts.
+  test.each([
+    ['confirmed by a coach', { ...SOURCED, looks_right: RECORD }, false],
+    ['neither edited nor confirmed', SOURCED, true],
+  ])('an edit of level A while level B is %s: the group keeps its draft only if B is still unreviewed', async (_case, levelB, groupStaysDraft) => {
+    scaleRows = [{ scale_level: 'A', drill_id: 'd1' }, { scale_level: 'B', drill_id: 'd1' }];
+    fieldLabels = { scale_levels: { ...DRAFT, A: SOURCED, B: levelB } };
+    await editLibraryDrill({
+      organizationId: 'org-1', actorAccountId: 'acct-coach', actorRole: 'coach',
+      request: parseDrillLibraryEdit({ drill_id: 'd1', scale_levels: { A: { demand_description: 'Coach A.' } } }),
+    });
+    const written = JSON.parse(labelInsert()?.values[4] as string);
+    expect('draft' in written.scale_levels).toBe(groupStaysDraft);
+    expect(written.scale_levels.A).toMatchObject({ status: 'REPORTED', sources: ['In-app edit'] });
+    expect(written.scale_levels.B).toEqual(levelB);
   });
 
   test('the stop-rule list is one press: its rules and their kinds are confirmed together (Q2 = A)', async () => {

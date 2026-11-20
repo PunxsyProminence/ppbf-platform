@@ -269,8 +269,8 @@ describe('"Looks right" beside a drafted field', () => {
   const presses = () => screen.queryAllByRole('button', { name: /^Looks right: / });
   function renderWith(fieldDrafts: DrillFieldDrafts, onPress = jest.fn(), overrides: Record<string, unknown> = {}, disabled = false) {
     const drill = { ...DRILL, ...overrides, field_drafts: fieldDrafts } as unknown as DrillWithDetail;
-    const looksRight = (target: string, label: string) => (
-      <button type="button" aria-label={`Looks right: ${label}`} onClick={() => onPress(target)} disabled={disabled}>Looks right</button>
+    const looksRight = (target: string, label: string, describedBy?: string) => (
+      <button type="button" aria-label={`Looks right: ${label}`} aria-describedby={describedBy} onClick={() => onPress(target)} disabled={disabled}>Looks right</button>
     );
     render(<DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" looksRight={looksRight} />);
     return onPress;
@@ -313,11 +313,31 @@ describe('"Looks right" beside a drafted field', () => {
     }
   });
 
+  // Q-PR4-4 = A (Overwatch on #2027, 2026-11-20, the approved words): the list's one press says what it covers.
+  const COVERS = "Confirms all of this drill's own stop rules and their kinds, including those under Before contact or maximal effort.";
+
+  test('the stop-rule press says what it covers: once, right after it, and as its description', () => {
+    renderWith(every(true));
+    expect(screen.getAllByText(COVERS)).toHaveLength(1);
+    expect(press('Stop rules')!.nextElementSibling).toHaveTextContent(COVERS);
+    expect(press('Stop rules')).toHaveAccessibleDescription(COVERS);
+    expect(press('What it is for')).not.toHaveAttribute('aria-describedby');
+  });
+
+  test('no such line without that press: the list not drafted, or a page that offers no press', () => {
+    renderWith({ ...every(true), stop_rules: false });
+    expect(screen.queryByText(COVERS)).toBeNull();
+    cleanup();
+    render(<DrillDetail view={fromCoachDrillDetail({ ...DRILL, field_drafts: every(true) } as unknown as DrillWithDetail)} audience="coach" />);
+    expect(screen.queryByText(COVERS)).toBeNull();
+  });
+
   test('with no "Stop rules" group, the list\'s one press sits with its first readiness rule', () => {
     renderWith(every(true), jest.fn(), {
       stop_rules: [{ ordinal: 1, condition_text: 'Re-warm after a long rest.', rule_kind: 'warmup_decay', origin: 'drill' }],
     });
     expect(press('Stop rules')!.closest('li')).toHaveTextContent('Re-warm after a long rest.');
+    expect(press('Stop rules')!.closest('li')).toHaveTextContent(COVERS);
     expect(presses().filter((button) => button.getAttribute('aria-label') === 'Looks right: Stop rules')).toHaveLength(1);
   });
 

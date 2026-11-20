@@ -649,6 +649,10 @@ describe('"Looks right": a coach confirms one drafted field as it stands', () =>
     // The group still speaks for the level nobody confirmed.
     expect(afterLevel.scale_levels.draft).toBe(DRAFT);
     expect(afterLevel.scale_levels.A).toEqual({ status: 'INFERRED', sources: ['DOC-1'] });
+    // The confirmed level no longer reads as a draft (Q-PR4-1 = A): a second press is refused, and writes nothing.
+    expect(await rejection(edit(org, { drill_id: level.drill_id, looks_right: 'scale_levels.B' })))
+      .toMatchObject({ status: 409, code: 'FIELD_NOT_DRAFT' });
+    expect(await versionsOf(org, 'drl_lr_parts')).toHaveLength(2);
 
     const list = await edit(org, { drill_id: level.drill_id, looks_right: 'stop_rules' });
     const afterList = (await labelsOf(org, 'drl_lr_parts', list.version)).field_labels;

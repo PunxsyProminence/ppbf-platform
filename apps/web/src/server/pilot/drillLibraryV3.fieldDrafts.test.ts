@@ -181,6 +181,23 @@ describe('drillFieldDrafts: every shown field and each scale level (lane ED-UI P
     expect(drillFieldDrafts({ purpose: { status: 'INFERRED' } }).purpose).toBe(false);
   });
 
+  // Q-PR4-1 = A (Overwatch on #2027, 2026-11-20): "`looks_right` counts as `edited` counts in all three rules."
+  test('a coach\'s "Looks right" counts as an edit counts: on a level, and as a field\'s own label', () => {
+    const SOURCED = { status: 'INFERRED', sources: ['DOC-027'] };
+    const LOOKS_RIGHT = { by_account_id: 'acct-9', by_role: 'coach', at: '2026-11-20T00:00:00Z' };
+    // A confirmed level under a drafted group is not a draft; the level nobody confirmed still is.
+    expect(drillFieldDrafts({ scale_levels: { ...AI_DRAFT, A: { ...SOURCED, looks_right: LOOKS_RIGHT }, B: SOURCED } }, ['A', 'B']).scale_levels)
+      .toEqual({ A: false, B: true });
+    // Drafted again on its own label, it is a draft again; a record that is not a record does not count.
+    expect(drillFieldDrafts({ scale_levels: { ...AI_DRAFT, A: { ...AI_DRAFT, looks_right: LOOKS_RIGHT } } }, ['A']).scale_levels).toEqual({ A: true });
+    expect(drillFieldDrafts({ scale_levels: { ...AI_DRAFT, A: { ...SOURCED, looks_right: 'yes' } } }, ['A']).scale_levels).toEqual({ A: true });
+    // A field whose own label is the confirmation alone is labelled and not a draft, never "not checked".
+    expect(drillFieldDrafts({ purpose: { looks_right: LOOKS_RIGHT } }).purpose).toBe(false);
+    expect(drillFieldDrafts({ purpose: { looks_right: 'yes' } }).purpose).toBeNull();
+    // A group holding only a confirmed level, with no label of its own: the other levels are not checked.
+    expect(drillFieldDrafts({ scale_levels: { A: { looks_right: LOOKS_RIGHT } } }, ['A', 'B']).scale_levels).toEqual({ A: false, B: null });
+  });
+
   test('a scale level whose own label is not a label (a string, a list) is not checked, whatever its group says', () => {
     const labels = { scale_levels: { ...AI_DRAFT, A: 'edited', B: ['draft'] } };
     expect(drillFieldDrafts(labels, ['A', 'B']).scale_levels).toEqual({ A: null, B: null });

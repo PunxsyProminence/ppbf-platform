@@ -1274,10 +1274,10 @@ function CoachDrillLibrary() {
                   audience="coach"
                   focusOnMount
                   looksRight={canEdit && openReferenceDetail && openReferenceDetail.superseded_at === null
-                    ? (target, label) => (
+                    ? (target, label, describedBy) => (
                       // "Looks right" (OW25-55; Q7 = A), named for its field; the page owns the action, the detail places it.
                       <button type="button" className="btn btn--secondary ml-[var(--s2)]" aria-label={`Looks right: ${label}`}
-                        onClick={() => void pressLooksRight(target)} disabled={actionInFlight}>
+                        aria-describedby={describedBy} onClick={() => void pressLooksRight(target)} disabled={actionInFlight}>
                         Looks right
                       </button>
                     )

@@ -2815,6 +2815,15 @@ describe('Looks right (lane ED-UI PR4)', () => {
     expect(screen.queryAllByRole('button', { name: /^Looks right: / })).toHaveLength(1);
   });
 
+  it('says beside the stop-rule press what that one press covers (Q-PR4-4 = A)', async () => {
+    global.fetch = routes({ details: { [reference.drill_id]: { ...referenceDetail, field_drafts: { stop_rules: true, labelled: true } } } }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    expect(pressFor('Stop rules')).toHaveAccessibleDescription(
+      "Confirms all of this drill's own stop rules and their kinds, including those under Before contact or maximal effort.",
+    );
+  });
+
   it.each(['volunteer', 'staff', 'platform_owner'] as const)('is not offered to %s, whom the edit route refuses', async (role) => {
     mockSessionRole = role;
     global.fetch = routes({ details: { [reference.drill_id]: drafted } }) as unknown as typeof fetch;

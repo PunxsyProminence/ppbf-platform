@@ -256,8 +256,9 @@ export function inAppEditLabel(editor: LabelEditor): Record<string, unknown> {
  * label (status, sources, draft) and is the label of that part; the group-level
  * label still speaks for every part nobody edited. A reader of field_labels
  * must look for the part's own label first. When every part the new version
- * has (groupParts) carries an in-app edit, the group-level label is replaced by
- * the edit's too, so the group as a whole no longer reads as a draft.
+ * has (groupParts) carries an in-app edit or a coach's "Looks right", the
+ * group-level label is replaced by the edit's too, so the group as a whole no
+ * longer reads as a draft.
  *
  * Unlike carryLabelsToNewVersion this always writes a row when anything was
  * edited -- a version with no labels gets one holding only the edited parts:
@@ -301,7 +302,8 @@ export async function writeEditedVersionLabels(
       labels[field] = group;
     }
   }
-  const isInAppEdit = (value: unknown) => isObject(value) && isObject(value.edited) && !('draft' in value);
+  // A part a coach confirmed ("Looks right") counts as an edited part counts (Q-PR4-1 = A).
+  const isInAppEdit = (value: unknown) => isObject(value) && (isObject(value.edited) || isObject(value.looks_right)) && !('draft' in value);
   for (const field of new Set(input.edited.filter((part) => part.part !== undefined).map((part) => part.field))) {
     const parts = input.groupParts?.[field] ?? [];
     const group = labels[field] as Record<string, unknown>;
