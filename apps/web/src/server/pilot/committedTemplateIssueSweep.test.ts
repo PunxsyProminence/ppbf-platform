@@ -305,7 +305,7 @@ const COACH_RUN: Record<string, number[]> = {
  * Typed steps beside library drills. The typed steps refuse the whole issue,
  * and OD-2026-11-15-001's reach says such a template "is not covered and still
  * reads 'Not ready'". Jason's card OW26-05 ("Mixed templates"): "B: Turn typed
- * lines into library drills". The typed steps are to become library drills
+ * lines into library drills" (OD-2026-11-19-030). The typed steps are to become library drills
  * (in PPBF words, AI-draft labelled) after the pilot, in a separate lane; until
  * then they are refused at issue. The app diverges from the frozen Backbone
  * here (D-OQ44 keeps DOC-151's lines as free text). An entry leaves this list

@@ -99,7 +99,7 @@ test's `TYPED_IN_MIXED` list.
 Since step 1, Jason ruled on card OW26-05 ("Mixed templates"): "B: Turn typed
 lines into library drills". The ruling went against the recommendation. It was
 relayed on this PR by Overwatch (comment of 2026-11-20) and by Backbone
-Overwatch 26 note 10, and is not yet an entry in `OWNER_DECISIONS.md`. The typed
+Overwatch 26 note 10, and is recorded as OD-2026-11-19-030 (#2011). The typed
 steps become library drills, in PPBF words and AI-draft labelled, after the
 pilot, in a separate lane. Until then they are refused at issue. This PR
 converts none of them; section 10 sizes the work.
