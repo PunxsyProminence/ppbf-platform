@@ -2793,3 +2793,88 @@ describe('Edit (lane ED-UI)', () => {
     expect(readsOf(fetchMock, '/api/pilot/drill-library')).toBe(libraryReadsBefore + 1);
   });
 });
+
+// "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): beside each drafted field of the opened
+// current reference drill, for the roles that may edit it. A press is PATCH /api/pilot/drill-library
+// with looks_right alone; the page then opens the version the server answered with, as after a save.
+describe('Looks right (lane ED-UI PR4)', () => {
+  afterEach(() => {
+    mockSessionRole = 'coach';
+  });
+
+  const DRAFTED = { purpose: true, discipline: true, execution: false, labelled: true };
+  const drafted = { ...referenceDetail, field_drafts: DRAFTED };
+  const nextVersion = { ...referenceDetail, drill_id: 'reference-1-v2', version: 2, supersedes_drill_id: 'reference-1', field_drafts: { ...DRAFTED, purpose: false } };
+  const pressFor = (name: string) => screen.queryByRole('button', { name: `Looks right: ${name}` });
+
+  it('is offered beside a drafted field to a coach, never for a field the form cannot change', async () => {
+    global.fetch = routes({ details: { [reference.drill_id]: drafted } }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    expect(pressFor('What it is for')).toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: /^Looks right: / })).toHaveLength(1);
+  });
+
+  it.each(['volunteer', 'staff', 'platform_owner'] as const)('is not offered to %s, whom the edit route refuses', async (role) => {
+    mockSessionRole = role;
+    global.fetch = routes({ details: { [reference.drill_id]: drafted } }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    expect(pressFor('What it is for')).not.toBeInTheDocument();
+  });
+
+  it('is not offered on a superseded version', async () => {
+    global.fetch = routes({ details: { [reference.drill_id]: { ...drafted, superseded_at: '2026-11-01T00:00:00.000Z' } } }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    expect(pressFor('What it is for')).not.toBeInTheDocument();
+  });
+
+  it('sends looks_right alone, opens the version the server answered with, and says so', async () => {
+    const fetchMock = routes({
+      details: { [reference.drill_id]: drafted, 'reference-1-v2': nextVersion },
+      editLibrary: () => jsonResponse({ ok: true, changed: true, drill_id: 'reference-1-v2', lineage_id: 'reference-1', version: 2, edited: [], looks_right: 'purpose' }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(pressFor('What it is for')!);
+
+    expect(await screen.findByText('Recorded as looks right. Saved as version 2.')).toHaveAttribute('role', 'status');
+    expect(writes(fetchMock)).toEqual([
+      { method: 'PATCH', url: '/api/pilot/drill-library', body: { drill_id: 'reference-1', looks_right: 'purpose' } },
+    ]);
+    expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1-v2')).toBe(1);
+    // The new version's field is no longer a draft: no mark, no press.
+    await waitFor(() => expect(pressFor('What it is for')).not.toBeInTheDocument());
+  });
+
+  it("shows a refusal in the server's words, and reads the drill again after a 409", async () => {
+    const fetchMock = routes({
+      details: { [reference.drill_id]: drafted },
+      editLibrary: () => jsonResponse({ error: 'This field is not marked as an AI draft on the current version. Reload the drill.', code: 'FIELD_NOT_DRAFT' }, false, 409),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    const before = readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1');
+    fireEvent.click(pressFor('What it is for')!);
+    expect(await screen.findByText('This field is not marked as an AI draft on the current version. Reload the drill.')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('This field is not marked as an AI draft');
+    await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1')).toBeGreaterThan(before));
+    expect(screen.queryByText(/Recorded as looks right/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['a server fault', () => jsonResponse({ error: 'boom' }, false, 500)],
+    ['a lost answer', () => Promise.reject(new Error('network'))],
+    ['a 2xx that does not say what it wrote', () => jsonResponse({ ok: true })],
+  ])('after %s says only that it is not known whether the change was saved', async (_case, answer) => {
+    global.fetch = routes({ details: { [reference.drill_id]: drafted }, editLibrary: answer as () => Response }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(pressFor('What it is for')!);
+    expect(await screen.findByText('It is not known whether this change was saved.')).toBeInTheDocument();
+    expect(screen.queryByText(/Recorded as looks right/)).not.toBeInTheDocument();
+  });
+});

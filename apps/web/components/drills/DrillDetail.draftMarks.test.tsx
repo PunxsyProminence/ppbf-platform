@@ -3,7 +3,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import DrillDetail from './DrillDetail';
 import { fromAthleteDrillDetail, fromCoachDrillDetail } from './drillDetailView';
@@ -259,4 +259,76 @@ test('the view carries every shown field, each scale level and whether the versi
   expect(view.coach?.fieldDrafts.scaleLevels).toEqual({ A: false, B: true });
   const none = fromCoachDrillDetail({ ...DRILL } as unknown as DrillWithDetail);
   expect(none.coach?.fieldDrafts).toEqual({ cues: null, good: null, bad: null, corrections: null, fields: {}, scaleLevels: {}, labelled: null });
+});
+
+// "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4, Q2 = A, Q3 = A, Q7 = A): beside each drafted
+// field the edit form can change, when the page offers it; one press per scale level, one for the
+// drill's own stop rules; inside an expander, never in its summary.
+describe('"Looks right" beside a drafted field', () => {
+  const press = (name: string) => screen.queryByRole('button', { name: `Looks right: ${name}` });
+  const presses = () => screen.queryAllByRole('button', { name: /^Looks right: / });
+  function renderWith(fieldDrafts: DrillFieldDrafts, onPress = jest.fn(), overrides: Record<string, unknown> = {}, disabled = false) {
+    const drill = { ...DRILL, ...overrides, field_drafts: fieldDrafts } as unknown as DrillWithDetail;
+    render(<DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" looksRight={{ onPress, disabled }} />);
+    return onPress;
+  }
+
+  test('every drafted field the form can change has one press, named for the field; discipline has none (Q3 = A)', () => {
+    renderWith(every(true));
+    for (const name of [
+      'Name', 'Difficulty', 'Category', 'Contact', 'Coach authorization', 'Stop rules', 'What it is for', 'Setup', 'Equipment',
+      'How it runs', 'Coaching cues', 'What good looks like', 'What to avoid', 'Corrections', 'Common errors', 'Exit condition',
+      'Correction path', 'Target behaviour', 'Transfer', 'Easier (A)', 'Standard (B)',
+    ]) expect(press(name)).toHaveTextContent(/^Looks right$/);
+    expect(press('Discipline')).toBeNull();
+    // 19 fields (all 20 shown but discipline) and two scale levels; the stop rules once, not per group.
+    expect(presses()).toHaveLength(21);
+  });
+
+  test('each press names its field, and a scale level by its key', () => {
+    const onPress = renderWith(every(true));
+    fireEvent.click(press('What it is for')!);
+    fireEvent.click(press('Standard (B)')!);
+    fireEvent.click(press('Stop rules')!);
+    fireEvent.click(press('Equipment')!);
+    expect(onPress.mock.calls.map(([target]) => target)).toEqual(['purpose', 'scale_levels.B', 'stop_rules', 'equipment_needed']);
+  });
+
+  test('no press beside a field that is not a draft, or not checked, or on a version with no label row', () => {
+    renderWith({ ...every(false), purpose: null, execution: true, scale_levels: { A: false, B: null }, labelled: true });
+    expect(presses().map((button) => button.getAttribute('aria-label'))).toEqual(['Looks right: How it runs']);
+    cleanup();
+    renderWith({ ...every(true), labelled: false });
+    expect(presses()).toHaveLength(0);
+  });
+
+  test('never in an expander\'s summary: the press for Corrections and for a level sits inside', () => {
+    renderWith(every(true));
+    for (const name of ['Corrections', 'Easier (A)', 'Standard (B)']) {
+      expect(press(name)!.closest('summary')).toBeNull();
+      expect(press(name)!.closest('details')).not.toBeNull();
+    }
+  });
+
+  test('with no "Stop rules" group, the list\'s one press sits with its first readiness rule', () => {
+    renderWith(every(true), jest.fn(), {
+      stop_rules: [{ ordinal: 1, condition_text: 'Re-warm after a long rest.', rule_kind: 'warmup_decay', origin: 'drill' }],
+    });
+    expect(press('Stop rules')!.closest('li')).toHaveTextContent('Re-warm after a long rest.');
+    expect(presses().filter((button) => button.getAttribute('aria-label') === 'Looks right: Stop rules')).toHaveLength(1);
+  });
+
+  test('a page that does not offer it (the live console) shows the marks and no press; nor does an athlete view', () => {
+    render(<DrillDetail view={fromCoachDrillDetail({ ...DRILL, field_drafts: every(true) } as unknown as DrillWithDetail)} audience="coach" />);
+    expect(marks().length).toBeGreaterThan(0);
+    expect(presses()).toHaveLength(0);
+    cleanup();
+    render(<DrillDetail view={fromCoachDrillDetail({ ...DRILL, field_drafts: every(true) } as unknown as DrillWithDetail)} audience="athlete" looksRight={{ onPress: jest.fn() }} />);
+    expect(presses()).toHaveLength(0);
+  });
+
+  test('a busy page disables every press', () => {
+    renderWith(every(true), jest.fn(), {}, true);
+    for (const button of presses()) expect(button).toBeDisabled();
+  });
 });

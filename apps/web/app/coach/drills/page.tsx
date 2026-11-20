@@ -118,6 +118,10 @@ const FILTERS: FilterSpec[] = [
 // including whether the re-read itself worked.
 type ActionOutcome = 'refused' | 'reread' | 'reread_failed' | 'unknown' | 'unknown_unread';
 
+// A "Looks right" press (lane ED-UI PR4) uses the Edit form's words for a save (DrillEditForm.tsx).
+const LOOKS_RIGHT_FAILED = 'The drill could not be saved.';
+const LOOKS_RIGHT_UNKNOWN = 'It is not known whether this change was saved.';
+
 const OUTCOME_EXPLANATIONS: Record<ActionOutcome, string> = {
   refused: 'Nothing was changed. This drill is as it was.',
   reread: 'Nothing was changed. This drill\'s status in this gym was read again.',
@@ -502,6 +506,8 @@ function CoachDrillLibrary() {
   // and whether its save -- the request and the re-reads after it -- is running.
   const [editingId, setEditingId] = useState('');
   const [editBusy, setEditBusy] = useState(false);
+  // A "Looks right" press that did not land: the server's words, or that its outcome is not known.
+  const [looksRightError, setLooksRightError] = useState('');
   const [focusRequest, setFocusRequest] = useState<{ referenceDrillId: string } | null>(null);
 
   // Versions and proposals (#1471): the drill whose history is open, and the
@@ -895,6 +901,44 @@ function CoachDrillLibrary() {
     }
   }
 
+  // "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): a coach confirms one drafted
+  // field as it stands. The server writes the next version (Q1 = A); as after an edit's save,
+  // the library is read again and the new version opens, read from the server.
+  async function pressLooksRight(target: string) {
+    const detail = openReferenceDetail;
+    if (!detail || actionInFlight) return;
+    setEditBusy(true);
+    setPromoteNotice('');
+    setPromoteError('');
+    setLooksRightError('');
+    let status: number | null = null;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/drill-library`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drill_id: detail.drill_id, looks_right: target }),
+      });
+      status = response.status;
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; changed?: boolean; drill_id?: unknown; version?: unknown };
+      if (!response.ok) throw new Error(payload.error || LOOKS_RIGHT_FAILED);
+      if (payload.changed !== true || typeof payload.drill_id !== 'string' || typeof payload.version !== 'number') {
+        // A 2xx that does not say what it wrote: what happened is not known.
+        status = null;
+        throw new Error(LOOKS_RIGHT_UNKNOWN);
+      }
+      await loadReferenceLibrary();
+      await openReferenceDrill(payload.drill_id, openerRef.current);
+      setPromoteNotice(`Recorded as looks right. Saved as version ${payload.version}.`);
+      setEditBusy(false);
+    } catch (failure) {
+      const unknown = status === null || status >= 500;
+      setLooksRightError(unknown ? LOOKS_RIGHT_UNKNOWN : (failure instanceof Error && failure.message) || LOOKS_RIGHT_FAILED);
+      // A 409 or an unknown outcome reads the drill again, as after a failed edit.
+      await afterEditFailed(status);
+    }
+  }
+
   // Mark a draft reference drill floor-tested for this gym (OD-2026-10-06-026
   // ruling 3). The server records who and when; the library and the open
   // detail are then read again so the mark shown is the server's answer.
@@ -1174,6 +1218,12 @@ function CoachDrillLibrary() {
             </div>
           )}
 
+          {looksRightError && (
+            <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
+              <span aria-hidden="true">▲</span> <span>{looksRightError}</span>
+            </p>
+          )}
+
           {referenceLoading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading reference drills...</p>}
 
           {!referenceLoading && referenceLoadError && (
@@ -1218,6 +1268,9 @@ function CoachDrillLibrary() {
                   view={openReference}
                   audience="coach"
                   focusOnMount
+                  looksRight={canEdit && openReferenceDetail && openReferenceDetail.superseded_at === null
+                    ? { onPress: (target) => void pressLooksRight(target), disabled: actionInFlight }
+                    : undefined}
                   actions={(
                     <>
                       {/* Only the current version: the route refuses any other
@@ -1230,6 +1283,7 @@ function CoachDrillLibrary() {
                           onClick={() => {
                             setPromoteNotice('');
                             setPromoteError('');
+                            setLooksRightError('');
                             setEditingId(openReference.id);
                           }}
                           disabled={actionInFlight}

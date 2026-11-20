@@ -2518,3 +2518,73 @@ describe('the AI-draft mark (lane ED-UI PR3)', () => {
     expect(screen.queryByText(NOT_CHECKED)).not.toBeInTheDocument();
   });
 });
+
+// "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): beside each drafted field of the opened current
+// template. A press is PATCH /api/pilot/workout-templates with looks_right alone; the version the server
+// answered with then opens, as after a save.
+describe('Looks right on the opened template (lane ED-UI PR4)', () => {
+  const DRAFTS = {
+    name: false, session_type: false, difficulty: false, age_band: false, duration_minutes: false, intent: true,
+    requires_coach_authorization: false, coach_notes: false, items: true, labelled: true,
+  };
+  const V2 = { ...BOXING_FUNDAMENTALS, template_id: 'wt-v2', version: 2 };
+  const pressFor = (name: string) => screen.queryByRole('button', { name: `Looks right: ${name}` });
+
+  function stub(answer: (body: Record<string, unknown>) => Response | Promise<Response>, template: Record<string, unknown> = BOXING_FUNDAMENTALS) {
+    const sent: Record<string, unknown>[] = [];
+    const fetchMock = mockFetch((url, init) => {
+      if (init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        sent.push(body);
+        return answer(body) as Response;
+      }
+      if (url.includes('template_id=wt-v2')) return jsonResponse({ template: V2, items: [item()], field_drafts: { ...DRAFTS, intent: false } });
+      if (url.includes('template_id')) return jsonResponse({ template, items: [item()], field_drafts: DRAFTS });
+      return jsonResponse({ templates: [template] });
+    });
+    render(<CoachWorkoutTemplatesPage />);
+    return { sent, fetchMock };
+  }
+  const open = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+    return screen.findByText('Rope intervals');
+  };
+
+  it('is offered beside each drafted field, named for it, and nowhere else', async () => {
+    stub(() => jsonResponse({}));
+    await open();
+    expect(pressFor('Intent')).toHaveTextContent(/^Looks right$/);
+    expect(pressFor('The blocks')).toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { name: /^Looks right: / })).toHaveLength(2);
+  });
+
+  it('is not offered on a superseded version', async () => {
+    stub(() => jsonResponse({}), { ...BOXING_FUNDAMENTALS, superseded_at: '2026-11-01T00:00:00.000Z' });
+    await open();
+    expect(screen.queryAllByRole('button', { name: /^Looks right: / })).toHaveLength(0);
+  });
+
+  it('sends looks_right alone, opens the version the server answered with, and says so', async () => {
+    const { sent } = stub(() => jsonResponse({ ok: true, changed: true, template_id: 'wt-v2', version: 2, edited: [], looks_right: 'intent' }));
+    await open();
+    fireEvent.click(pressFor('Intent')!);
+    expect(await screen.findByText('Recorded as looks right. Saved as version 2.')).toHaveAttribute('role', 'status');
+    expect(sent).toEqual([{ template_id: BOXING_FUNDAMENTALS.template_id, looks_right: 'intent' }]);
+    await waitFor(() => expect(pressFor('Intent')).not.toBeInTheDocument());
+  });
+
+  it("shows a refusal in the server's words", async () => {
+    stub(() => ({ ok: false, status: 409, json: async () => ({ error: 'This field is not marked as an AI draft on the current version. Reload the template.' }) }) as unknown as Response);
+    await open();
+    fireEvent.click(pressFor('Intent')!);
+    expect(await screen.findByText(/This field is not marked as an AI draft on the current version/)).toBeInTheDocument();
+    expect(screen.queryByText(/Recorded as looks right/)).not.toBeInTheDocument();
+  });
+
+  it('after a lost answer says only that it is not known whether the change was saved', async () => {
+    stub(() => Promise.reject(new Error('network')) as unknown as Response);
+    await open();
+    fireEvent.click(pressFor('Intent')!);
+    expect(await screen.findByText(/It is not known whether this change was saved\./)).toBeInTheDocument();
+  });
+});
