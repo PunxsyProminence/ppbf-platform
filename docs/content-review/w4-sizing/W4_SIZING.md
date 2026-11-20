@@ -220,7 +220,8 @@ so. Two texts bear on that:
   - **B:** also with a link in the email. This adds a link and words beyond
     the recorded "open the app", so it needs Jason's word. It also needs an
     opt-out route that works without signing in, with its own token: one more
-    PR, about 200 lines (judgement, Opus).
+    PR, about 200 lines (judgement, Opus). INFERRED: that token needs either a
+    signing secret (one more secret) or a token table (one more migration).
 - **Q1.5 Which mailbox sends it?**
   - **A (recommended):** the gym mailbox that sends sign-in links today. This
     needs no Azure or Microsoft 365 change.
@@ -935,7 +936,7 @@ per PR):
   (every unique line a new drill); Q8.1 A, recommended, would lower it.
 - **Larger case:** adding the four sized alternatives (web push without the
   package, Q1.4 B's opt-out route, the "reached out" mark, offline queue B)
-  gives 37 PRs and about 10,150. Q4.4 B and Q5.1 B and C are not sized.
+  gives 37 PRs and about 10,150. Q1.1 C and D, Q4.4 B, and Q5.1 B and C are not sized.
 - **If the judgement rows run like the measured PRs:** about 12,900 (see "How
   the sizes were made").
 - **Migrations:** 4 or 5 with the recommended answers; 2 to 6 across all
