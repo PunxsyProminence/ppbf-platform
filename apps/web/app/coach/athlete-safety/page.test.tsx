@@ -660,6 +660,8 @@ describe('Athlete Safety (lane AS-5)', () => {
     render(<CoachInjuriesPage />);
     const find = (await screen.findByLabelText('Find an athlete')) as HTMLInputElement;
     expect(find.classList.contains('input--kiosk')).toBe(true);
+    // `.select` alone is floored at 46px unlayered, under the kiosk 55px.
+    expect(screen.getByLabelText('Athlete').classList.contains('input--kiosk')).toBe(true);
     expect(screen.getByText('2 athletes.')).toBeTruthy();
 
     fireEvent.change(find, { target: { value: 'jord' } });
@@ -763,6 +765,69 @@ describe('Athlete Safety (lane AS-5)', () => {
     });
     await waitFor(() => expect(scrolled).toHaveLength(1));
     expect(scrolled[0].id).toBe('medical-restrictions');
+  });
+
+  test('the Injury Record\'s old address opens the page at the pick: the page is not scrolled to it', async () => {
+    window.history.replaceState(null, '', '/coach/athlete-safety#injury-record');
+    await openAthlete();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(scrolled).toEqual([]);
+  });
+
+  test('each section names the athlete under its heading, so the athlete is named wherever the page opens', async () => {
+    await openAthlete();
+    for (const id of ['injury-record', 'medical-restrictions', 'post-to-family']) {
+      const heading = document.getElementById(id)?.querySelector('h2');
+      expect(heading?.nextElementSibling?.textContent).toBe('Jordan Doe');
+    }
+  });
+
+  // Tablet review: text straight on the clinic wall photo does not read.
+  test('the pick and each section\'s heading and intro sit on a mat, not on the wall', async () => {
+    await openAthlete();
+    const onMat = (element: Element) => element.closest('.mat-leather') !== null;
+    expect(onMat(screen.getByLabelText('Find an athlete'))).toBe(true);
+    expect(onMat(screen.getByText('1 athlete.'))).toBe(true);
+    expect(onMat(screen.getByLabelText('Athlete'))).toBe(true);
+    for (const name of ['Injury Record', 'Medical Restrictions', "Post to the Family's Page"]) {
+      expect(onMat(screen.getByRole('heading', { level: 2, name }))).toBe(true);
+    }
+    expect(onMat(screen.getByText(/^Record what the athlete, a parent/))).toBe(true);
+    expect(onMat(screen.getByText(/^USA Boxing medical restrictions:/))).toBe(true);
+    // The form's heading sits under the Injury Record's.
+    expect(screen.getByRole('heading', { level: 3, name: 'Record an injury' })).toBeTruthy();
+  });
+
+  // The Medical Restrictions page's roster failure, kept (its page test on main).
+  test('a roster that will not load says "Not loaded" at the gym-floor size, and offers no pick', async () => {
+    const base = global.fetch;
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/athletes/list')) return { ok: false, status: 500, json: async () => ({}) };
+      return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+    }) as unknown as typeof fetch;
+    render(<CoachInjuriesPage />);
+    const message = await screen.findByText('Your roster could not be loaded. Reload to try again.');
+    // Gym-floor size (OD-2026-11-17-009 ruling 4): .alert-* are fixed sizes the kiosk floor does not reach.
+    expect(message.getAttribute('style')).toContain('font-size: var(--t-md)');
+    expect(screen.getByText('Not loaded').getAttribute('style')).toContain('font-size: var(--t-md)');
+    expect(screen.queryByLabelText('Athlete')).toBeNull();
+    expect(screen.queryByLabelText('Find an athlete')).toBeNull();
+    expect(screen.queryByText('Loading roster...')).toBeNull();
+  });
+
+  test('a failed injury read is said at the gym-floor size too, as "Not done"', async () => {
+    injuriesFail = true;
+    render(<CoachInjuriesPage />);
+    const select = (await screen.findByLabelText('Athlete')) as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    await act(async () => {
+      fireEvent.change(select, { target: { value: 'ath-1' } });
+    });
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('Not done').getAttribute('style')).toContain('font-size: var(--t-md)');
+    expect(within(alert).getByText('Injuries could not be loaded.').getAttribute('style')).toContain('font-size: var(--t-md)');
   });
 
   test('while the Medical Restrictions panel has a write out, the athlete pick is locked', async () => {

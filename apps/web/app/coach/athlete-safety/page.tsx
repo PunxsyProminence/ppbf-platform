@@ -145,11 +145,18 @@ async function errorOf(response: Response, fallback: string): Promise<string> {
   return typeof body?.error === 'string' && body.error ? body.error : fallback;
 }
 
-/** The sections an old address or a link may open. */
-const SECTIONS = ['injury-record', 'medical-restrictions', POST_TO_FAMILY_SECTION];
+/**
+ * The sections an old address or a link scrolls to. The Injury Record is not
+ * one: it sits right under the pick, and scrolling to it would only push the
+ * pick off the screen.
+ */
+const SECTIONS = ['medical-restrictions', POST_TO_FAMILY_SECTION];
 
 export default function AthleteSafetyPage() {
   const [roster, setRoster] = useState<RosterAthlete[] | null>(null);
+  // The roster could not be read: the page says so and offers no pick (as the
+  // Medical Restrictions page did), rather than "Loading roster..." for ever.
+  const [rosterFailed, setRosterFailed] = useState(false);
   const [athleteId, setAthleteId] = useState('');
   // "Find an athlete" narrows the pick, as on the Clearance Board (AS-5 Q8 = A).
   const [findText, setFindText] = useState('');
@@ -270,7 +277,8 @@ export default function AthleteSafetyPage() {
         arrivalRef.current = null;
         if (arriving && offered.some((a) => a.athlete_id === arriving)) choose(arriving);
       } catch {
-        fail('Your roster could not be loaded. Reload to try again.');
+        setRosterFailed(true);
+        setMessage({ text: 'Your roster could not be loaded. Reload to try again.', error: true, title: 'Not loaded' });
       }
     })();
   }, [choose]);
@@ -334,6 +342,9 @@ export default function AthleteSafetyPage() {
   // Shown where a new plan would be started, so a second one is not started blind.
   const loosePlans = loosePlansOf(injuries ?? [], candidates);
   const locked = busy || rereading || blockBusy || panelBusy;
+  // Said under each section's heading, so the athlete is named wherever the page opens.
+  const chosen = (roster ?? []).find((a) => a.athlete_id === athleteId);
+  const chosenName = chosen ? chosen.full_name || chosen.athlete_id : '';
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/athlete-safety" allowedRoles={['coach', 'admin']} room="clinic" showShellHeader={false}>
@@ -350,15 +361,18 @@ export default function AthleteSafetyPage() {
           <div className="alert alert--warning mb-[var(--s4)]" role="alert">
             <span className="alert-icon" aria-hidden="true">▲</span>
             <div className="alert-body">
-              <p className="alert-title">{message.title ?? 'Not done'}</p>
-              <p className="alert-msg">{message.text}</p>
+              {/* Inline size: .alert-title/.alert-msg are unlayered fixed sizes the kiosk type floor (layout.tsx) does not reach. */}
+              <p className="alert-title" style={{ fontSize: 'var(--t-md)', lineHeight: 1.25 }}>{message.title ?? 'Not done'}</p>
+              <p className="alert-msg" style={{ fontSize: 'var(--t-md)' }}>{message.text}</p>
             </div>
           </div>
         )}
         {message && !message.error && <p className="t-body mb-[var(--s4)]" role="status">{message.text}</p>}
 
+        {!rosterFailed && (
+        <div className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
         {roster && roster.length > 0 && (
-          <div className="field mb-[var(--s3)]">
+          <div className="field mb-[var(--s4)]">
             {/* The Clearance Board's Find box and count, in the same words. */}
             <label className="t-label" htmlFor="athlete-safety-find">Find an athlete</label>
             <input id="athlete-safety-find" type="search" className="input input--kiosk" value={findText}
@@ -370,23 +384,28 @@ export default function AthleteSafetyPage() {
             </p>
           </div>
         )}
-        <div className="field mb-[var(--s4)]">
+        <div className="field">
           <label className="t-label" htmlFor="injury-athlete">Athlete</label>
-          <select id="injury-athlete" className="select" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster || locked}>
+          <select id="injury-athlete" className="select input--kiosk" value={athleteId} onChange={(e) => choose(e.target.value)} disabled={!roster || locked}>
             <option value="">{!roster ? 'Loading roster...' : roster.length ? 'Choose an athlete' : 'No athletes in your gym'}</option>
             {offered.map((a) => (
               <option key={a.athlete_id} value={a.athlete_id}>{a.full_name || a.athlete_id}</option>
             ))}
           </select>
         </div>
+        </div>
+        )}
 
         {athleteId && (
         <section id="injury-record" className="mb-[var(--s5)]">
-        <h2 className="t-command mb-[var(--s3)] text-[length:var(--t-lg)]">Injury Record</h2>
-        <p className="t-body mb-[var(--s3)] text-[color:var(--bone-300)]">
-          Record what the athlete, a parent, a coach or a clinician reported, and say which. This is a record, not a
-          diagnosis, and it does not stop training: place a Training Hold for that, then link it here.
-        </p>
+        <div className="mat-leather mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s4)]">
+          <h2 className="t-command text-[length:var(--t-lg)]">Injury Record</h2>
+          <p className="t-label mt-[var(--s1)]">{chosenName}</p>
+          <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+            Record what the athlete, a parent, a coach or a clinician reported, and say which. This is a record, not a
+            diagnosis, and it does not stop training: place a Training Hold for that, then link it here.
+          </p>
+        </div>
         {injuries === null && !message && <p className="working">Loading injuries...</p>}
 
         {injuries && (
@@ -438,7 +457,7 @@ export default function AthleteSafetyPage() {
         {injuries && (
           <form aria-label={editing ? 'Edit injury' : 'Record an injury'} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]"
             onSubmit={(e) => { e.preventDefault(); save(); }}>
-            <h2 className="t-label mb-[var(--s3)]">{editing ? 'Edit injury' : 'Record an injury'}</h2>
+            <h3 className="t-label mb-[var(--s3)]">{editing ? 'Edit injury' : 'Record an injury'}</h3>
             <div className="grid gap-[var(--s3)] sm:grid-cols-2">
               <div className="field"><label className="t-label" htmlFor="injury-injury_date">Date of injury</label>
                 <input type="date" className="input" required {...field('injury_date')} /></div>
@@ -508,18 +527,22 @@ export default function AthleteSafetyPage() {
 
         {athleteId && (
           <section id="medical-restrictions" className="mb-[var(--s5)]">
-            <h2 className="t-command mb-[var(--s3)] text-[length:var(--t-lg)]">Medical Restrictions</h2>
-            <p className="t-body mb-[var(--s3)] text-[color:var(--bone-300)]">
-              USA Boxing medical restrictions: from a ringside Restriction Affidavit, a training knockout or
-              concussion, or another source. The app stores the dates, not the documents.
-            </p>
+            <div className="mat-leather mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s4)]">
+              <h2 className="t-command text-[length:var(--t-lg)]">Medical Restrictions</h2>
+              <p className="t-label mt-[var(--s1)]">{chosenName}</p>
+              <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+                USA Boxing medical restrictions: from a ringside Restriction Affidavit, a training knockout or
+                concussion, or another source. The app stores the dates, not the documents.
+              </p>
+            </div>
             <MedicalRestrictionsPanel key={athleteId} athleteId={athleteId} onBusy={setPanelBusy} />
           </section>
         )}
 
         {athleteId && (
           <section id={POST_TO_FAMILY_SECTION} className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
-            <h2 className="t-command mb-[var(--s3)] text-[length:var(--t-lg)]">Post to the Family&apos;s Page</h2>
+            <h2 className="t-command text-[length:var(--t-lg)]">Post to the Family&apos;s Page</h2>
+            <p className="t-label mt-[var(--s1)] mb-[var(--s3)]">{chosenName}</p>
             <FamilyNotesPosted athleteId={athleteId} refreshKey={0} />
             {/* The post itself is written on the Decision Loop (AS-5 Q7b = A). */}
             <Link href={`${DECISION_LOOP_PAGE}#${POST_TO_FAMILY_SECTION}`} className="btn btn--ghost mt-[var(--s3)]"
