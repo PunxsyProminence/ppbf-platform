@@ -46,6 +46,9 @@ export default function PublicInterestForm() {
   const [website, setWebsite] = useState('');
   // A sent form and a failed one are told apart (app scrub FAM-25): the
   // thanks is a status line, a failure is an alert the visitor cannot miss.
+  // The alert's title is "Failed", the word the app's other failure alerts
+  // use: after a dropped connection nobody knows whether the gym got it, so
+  // the title claims nothing about that.
   const [sent, setSent] = useState('');
   const [failure, setFailure] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -170,7 +173,7 @@ export default function PublicInterestForm() {
         <div className="alert alert--warning" role="alert">
           <span className="alert-icon" aria-hidden="true">▲</span>
           <div className="alert-body">
-            <p className="alert-title">Not sent</p>
+            <p className="alert-title">Failed</p>
             <p className="alert-msg">{failure}</p>
           </div>
         </div>

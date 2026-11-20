@@ -7,7 +7,7 @@
    control that does nothing when tapped. It is a plain line of text now. */
 
 import { Suspense, act } from 'react';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 
 import GymStorePage from './page';
 
@@ -75,10 +75,10 @@ test('an item with a checkout that is unavailable just now does not say it is no
    Q12 = A, no server change). */
 describe('the gym is named, and the page is not blank while loading', () => {
   function installFetch(list: { ok: boolean; stores?: unknown[] }, products: unknown[] = []) {
-    const calls: string[] = [];
-    global.fetch = jest.fn(async (input: unknown) => {
+    const calls: Array<{ url: string; credentials: unknown }> = [];
+    global.fetch = jest.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
-      calls.push(url);
+      calls.push({ url, credentials: init?.credentials });
       if (url.includes('organization_id=')) return { ok: true, json: async () => ({ products }) };
       return { ok: list.ok, json: async () => ({ stores: list.stores ?? [] }) };
     }) as unknown as typeof fetch;
@@ -96,23 +96,30 @@ describe('the gym is named, and the page is not blank while loading', () => {
   }
 
   test('the heading names the gym from the list of shops', async () => {
-    installFetch({ ok: true, stores: [
+    const calls = installFetch({ ok: true, stores: [
       { organization_id: 'gym-2', organization_name: 'Other Gym', listed_product_count: 1 },
       { organization_id: 'gym-1', organization_name: 'Test Gym', listed_product_count: 1 },
     ] });
     await renderGym();
 
     expect((await screen.findByRole('heading', { level: 1 })).textContent?.trim()).toBe('Test Gym Equipment');
+    // The list read is the public one: no gym id in it, and no cookie sent.
+    const listReads = calls.filter((call) => !call.url.includes('organization_id='));
+    expect(listReads.map((call) => call.url)).toEqual(['/api/public/store']);
+    expect(calls.every((call) => call.credentials === 'omit')).toBe(true);
   });
 
-  test('with no answer for this gym, the heading names no gym', async () => {
-    installFetch({ ok: false });
+  test('a list read that failed names no gym, even if its body lists this one', async () => {
+    installFetch({ ok: false, stores: [{ organization_id: 'gym-1', organization_name: 'Test Gym' }] });
     await renderGym();
     expect(screen.getByRole('heading', { level: 1 }).textContent?.trim()).toBe('Equipment');
+  });
 
+  test('a list without this gym names no gym, and never another gym', async () => {
     installFetch({ ok: true, stores: [{ organization_id: 'gym-2', organization_name: 'Other Gym' }] });
     await renderGym();
-    expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent?.trim())).not.toContain('Other Gym Equipment');
+    expect(screen.getByRole('heading', { level: 1 }).textContent?.trim()).toBe('Equipment');
+    cleanup();
   });
 
   test('a loading line shows until the products answer, and then goes', async () => {

@@ -55,36 +55,46 @@ test('each control is named by its own label only, not by option text', () => {
 /* A sent form and a failed one are told apart (app scrub FAM-25): the thanks
    is a status line, a failure is an alert with the warning mark. */
 describe('sent and not sent are not the same line', () => {
-  async function send() {
+  function send() {
     render(<PublicInterestForm />);
     fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Pat Example' } });
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'pat@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send this to a coach' }));
   }
 
-  test('a refused send is an alert, not a status, and says it was not sent', async () => {
+  /** The send has settled: the button is back from "Sending...". */
+  async function settled() {
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Send this to a coach' }) as HTMLButtonElement).disabled).toBe(false));
+  }
+
+  test('a refused send is an alert, not a status, with the same words as before', async () => {
     fetchMock.mockResolvedValue({ ok: false, json: async () => ({ ok: false }) });
-    await send();
+    send();
 
     const alert = await screen.findByRole('alert');
+    await settled();
     expect(alert.className).toContain('alert--warning');
-    expect(alert.textContent).toContain('Not sent');
-    expect(alert.textContent).toContain('did not go through');
+    expect(alert.textContent).toContain('▲');
+    expect(alert.textContent).toContain('Failed');
+    expect(alert.textContent).toContain('Something went wrong sending this and it did not go through.');
     expect(screen.queryByRole('status')).toBeNull();
   });
 
   test('a dropped connection is an alert too', async () => {
     fetchMock.mockRejectedValue(new Error('offline'));
-    await send();
+    send();
 
     const alert = await screen.findByRole('alert');
+    await settled();
     expect(alert.textContent).toContain('The connection dropped and this was not sent.');
+    // The title makes no claim about whether the gym received it.
+    expect(alert.querySelector('.alert-title')?.textContent).toBe('Failed');
     expect(screen.queryByRole('status')).toBeNull();
   });
 
   test('a sent form is a status line and no alert; a later failure clears the thanks', async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) });
-    await send();
+    send();
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/Got it/));
     expect(screen.queryByRole('alert')).toBeNull();
 
@@ -93,6 +103,7 @@ describe('sent and not sent are not the same line', () => {
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'pat@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send this to a coach' }));
     await screen.findByRole('alert');
+    await settled();
     expect(screen.queryByRole('status')).toBeNull();
   });
 });
