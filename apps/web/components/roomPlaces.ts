@@ -115,8 +115,8 @@ export const ROOM_PLACE_DOORS: Readonly<Record<RoomPlace, readonly string[]>> = 
   ],
   clinic: [
     '/admin/feedback', '/admin/safety-flags', '/admin/escalations', '/admin/athlete-consent', '/admin/waiver-status',
-    '/admin/safety-review', '/admin/video-compliance', '/coach/sports-medicine', '/coach/injuries',
-    '/coach/sparring-caps', '/coach/medical-restrictions', '/coach/athlete-limits', '/admin/compliance-center',
+    '/admin/safety-review', '/admin/video-compliance', '/coach/sports-medicine', '/coach/athlete-safety',
+    '/coach/sparring-caps', '/coach/athlete-limits', '/admin/compliance-center',
   ],
   'file-room': [
     '/simulator', '/research', '/research/chat', '/research/review', '/evidence', '/knowledge-graph', '/audit',

@@ -85,6 +85,14 @@ describe('the job bars', () => {
     ]);
   });
 
+  it("opens the coach's Safety on Clearance Board, then the Athlete Safety page (AS5-2)", () => {
+    const safety = hrefsOf(JOB_BARS.coach?.sections.find((section) => section.label === 'Safety')?.items ?? []);
+    expect(safety.slice(0, 2)).toEqual(['/coach/sports-medicine', '/coach/athlete-safety']);
+    // Injury Record and Medical Restrictions are sections of that page now, not pages of their own.
+    expect(safety).not.toContain('/coach/injuries');
+    expect(safety).not.toContain('/coach/medical-restrictions');
+  });
+
   it("keeps the admin's Lab pages out of the bar: Capabilities, System and Door Register are in Search", () => {
     const admin = hrefsOf(items('admin'));
     for (const href of ['/admin', '/admin/system', '/admin/door-register']) expect(admin).not.toContain(href);

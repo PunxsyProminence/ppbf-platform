@@ -119,13 +119,14 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
           '/coach/cue-library', '/coach/library', '/admin/program-phases',
         ),
       },
-      // "roster with clearance and holds > Athlete safety page" (today: Clearance Board, Injury Record,
-      // Medical Restrictions); "Sparring and limits page" (today: Sparring Record, Sparring Caps, Athlete
-      // Limits); "Safety queue (escalations and flags)"; "Media consent audit"; "Waivers"
+      // "roster with clearance and holds > Athlete safety page": Clearance Board, then Athlete Safety (the
+      // page AS5-2 built, #2030; Injury Record and Medical Restrictions are sections of it); "Sparring and
+      // limits page" (today: Sparring Record, Sparring Caps, Athlete Limits); "Safety queue (escalations and
+      // flags)"; "Media consent audit"; "Waivers"
       {
         label: 'Safety',
         items: pages(
-          '/coach/sports-medicine', '/coach/injuries', '/coach/medical-restrictions',
+          '/coach/sports-medicine', '/coach/athlete-safety',
           '/coach/sparring-exposure', '/coach/sparring-caps', '/coach/athlete-limits',
           '/admin/escalations', '/admin/safety-flags', '/admin/athlete-consent', '/admin/consent',
         ),
