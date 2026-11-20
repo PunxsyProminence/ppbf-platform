@@ -3503,7 +3503,15 @@ describe('arriving from "Post to the Family\'s Page"', () => {
     await waitFor(() => expect(athletePicker().value).toBe('ath-1'));
 
     fireEvent.change(athletePicker(), { target: { value: 'ath-2' } });
-    await screen.findByText('Behavior & Habit Note');
+    // Wait for ath-2's records to be read: the line below shows only once
+    // they are, which is when a scroll left pending would fire.
+    await screen.findByText('No medical administrative status recorded yet.');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(athletePicker().value).toBe('ath-2');
+    expect(scrolled).toEqual([]);
+
     await act(async () => {
       release();
       await held;
@@ -3511,7 +3519,6 @@ describe('arriving from "Post to the Family\'s Page"', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(athletePicker().value).toBe('ath-2');
     expect(scrolled).toEqual([]);
   });
 
