@@ -329,6 +329,9 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
      the draft is what the admin is typing, checked by the same rule the server
      applies before it is sent. */
   const [nameEditId, setNameEditId] = useState<string | null>(null);
+  // The roster's box and role filter (lane AS-10, AS10-2a; see "FIND A PERSON ON THE ROSTER" below).
+  const [rosterFind, setRosterFind] = useState('');
+  const [rosterRole, setRosterRole] = useState('all');
   const [nameDraft, setNameDraft] = useState('');
   // Said next to the box, not in the banner at the top of a long list.
   const [nameError, setNameError] = useState('');
@@ -425,6 +428,9 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
       setCodeArmedId((id) => (rowStillOffers(byId(id), 'code') ? id : null));
       setRevokeArmedId((id) => (rowStillOffers(byId(id), 'signOut') ? id : null));
       setDeactivateArmedId((id) => (rowStillOffers(byId(id), 'deactivate') ? id : null));
+      // A role filter nobody holds any more is dropped for good: left in place,
+      // it would switch itself back on when someone with that role is added later.
+      setRosterRole((role) => (role === 'all' || nextMembers.some((m) => roleLabel(m.role) === role) ? role : 'all'));
       setMembersAvailable(true);
       setOrganizationName(membersPayload.organization_name?.trim() || '');
 
@@ -551,8 +557,6 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
    * ID, which is what the athlete types at the tablet. It does not search an
    * id or address the row does not show.
    */
-  const [rosterFind, setRosterFind] = useState('');
-  const [rosterRole, setRosterRole] = useState('all');
   // The roles present, by the Role column's own words ("Gym Admin" covers both
   // admin names), in the roster's order.
   const rosterRoleOptions = Array.from(new Set(members.map((member) => roleLabel(member.role))));
@@ -569,33 +573,26 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
     if (member.auth_provider === 'ppbf_local' && member.role === 'athlete') shown.push(member.account_id);
     return shown.some((text) => typeof text === 'string' && text.toLowerCase().includes(needle));
   };
-  const shownMembers = members.filter((member) => rosterMatches(member, rosterFind, activeRosterRole));
-  const rosterNarrowed = shownMembers.length !== members.length;
-
-  /**
-   * Narrow the roster. Anything armed or open on a row the new filter hides is
-   * closed with it: an armed control must not come back armed, one tap from
-   * acting, when its row is shown again (the rule rowStillOffers keeps for a
-   * re-read), and a name being edited must not take the typing meant for the box.
+  /*
+   * A row with something armed or open on it stays in view whatever the box
+   * and the role say, until that is confirmed or cancelled. So nothing armed is
+   * ever out of sight, and nothing can come back armed, one tap from acting,
+   * when the list changes -- by typing, by choosing a role, or by a re-read
+   * that changes a name or a role (the rule rowStillOffers keeps for what a row
+   * offers). A name being edited stays put too, so its field is never
+   * re-opened under the admin's typing.
    */
-  function narrowRoster(find: string, role: string) {
-    setRosterFind(find);
-    setRosterRole(role);
-    const visible = new Set(members.filter((member) => rosterMatches(member, find, role)).map((member) => member.account_id));
-    if (revokeArmedId && !visible.has(revokeArmedId)) setRevokeArmedId(null);
-    if (codeArmedId && !visible.has(codeArmedId)) setCodeArmedId(null);
-    if (deactivateArmedId && !visible.has(deactivateArmedId)) setDeactivateArmedId(null);
-    if (nameEditId && !visible.has(nameEditId)) {
-      setNameEditId(null);
-      setNameDraft('');
-      setNameError('');
-    }
-    if (pendingUnlink && !visible.has(pendingUnlink.accountId)) setPendingUnlink(null);
-    if (pendingMove && !visible.has(pendingMove.accountId)) {
-      setPendingMove(null);
-      setMoveEmail('');
-    }
-  }
+  const rowHeld = (accountId: string): boolean =>
+    accountId === revokeArmedId
+    || accountId === codeArmedId
+    || accountId === deactivateArmedId
+    || accountId === nameEditId
+    || accountId === pendingUnlink?.accountId
+    || accountId === pendingMove?.accountId;
+  const shownMembers = members.filter(
+    (member) => rowHeld(member.account_id) || rosterMatches(member, rosterFind, activeRosterRole),
+  );
+  const rosterNarrowed = shownMembers.length !== members.length;
 
   /**
    * The next unused ath-NNN for this gym.
@@ -1471,7 +1468,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                       id="roster-find"
                       type="search"
                       value={rosterFind}
-                      onChange={(event) => narrowRoster(event.target.value, activeRosterRole)}
+                      onChange={(event) => setRosterFind(event.target.value)}
                       placeholder="Name, email or sign-in ID"
                       className="input"
                     />
@@ -1483,7 +1480,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     <select
                       id="roster-role"
                       value={activeRosterRole}
-                      onChange={(event) => narrowRoster(rosterFind, event.target.value)}
+                      onChange={(event) => setRosterRole(event.target.value)}
                       className="select"
                     >
                       <option value="all">All roles</option>

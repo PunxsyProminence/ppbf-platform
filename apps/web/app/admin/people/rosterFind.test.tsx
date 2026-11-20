@@ -51,16 +51,17 @@ const MEMBERS = [
   member({ account_id: 'southpaw12', auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-1', has_pin: true }),
 ];
 
-/** `later` is what the roster read returns from its second answer on (a re-read after an action). */
-function installFetch(first: unknown[] = MEMBERS, later: unknown[] = first) {
+/** One roster per read, in order; the last repeats (a re-read after an action returns the next). */
+function installFetch(...rosters: unknown[][]) {
+  const answers = rosters.length > 0 ? rosters : [MEMBERS];
   let reads = 0;
   global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
     if (url.includes('/api/pilot/admin/athlete-pin-directory')) {
       return { ok: true, status: 200, json: async () => ({ ok: true, items: [...ROSTER] }) } as Response;
     }
     if (url.includes('/api/pilot/admin/staff') && (init?.method ?? 'GET') === 'GET') {
+      const members = answers[Math.min(reads, answers.length - 1)];
       reads += 1;
-      const members = reads === 1 ? first : later;
       return { ok: true, status: 200, json: async () => ({ ok: true, organization_id: 'org-1', members, guardian_links: [] }) } as Response;
     }
     return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
@@ -163,6 +164,7 @@ test.each([
 test('a chosen role that leaves the roster falls back to All roles, in the select and in the list', async () => {
   const volunteerNowCoach = MEMBERS.map((item) => (item.role === 'volunteer' ? { ...item, role: 'coach' } : item));
   installFetch(MEMBERS, volunteerNowCoach);
+  // (the next test covers that role coming back later)
   const table = await roster();
   role('Volunteer');
   expect(rows(table)).toHaveLength(1);
@@ -175,59 +177,95 @@ test('a chosen role that leaves the roster falls back to All roles, in the selec
   expect(Array.from((screen.getByLabelText('Role') as HTMLSelectElement).options).map((option) => option.textContent)).not.toContain('Volunteer');
 });
 
-// AS10-2a review: narrowing must not leave something armed, or a name being
-// edited, waiting on a hidden row to come back one tap from acting.
-describe('narrowing closes what is armed or open on a row it hides', () => {
-  test('an armed code re-issue on a hidden row is disarmed; it does not come back armed', async () => {
+// AS10-2a review: nothing armed may go out of sight and come back armed, one
+// tap from acting. A row with something armed or open on it stays in view
+// whatever the box and the role say, until it is confirmed or cancelled.
+describe('a row with something armed or open on it stays in view', () => {
+  const coachRow = (table: HTMLElement) => within(table).getByText('coach@example.test').closest('tr') as HTMLElement;
+
+  test('an armed code re-issue stays in view while the list is narrowed, and leaves when it is cancelled', async () => {
     installFetch();
     const table = await roster();
     fireEvent.click(within(table).getByRole('button', { name: 'Issue New Activation Code' }));
-    expect(within(table).getByRole('button', { name: 'Issue The New Code' })).toBeTruthy();
     find('coach@');
-    expect(within(table).queryByRole('button', { name: 'Issue The New Code' })).toBeNull();
+    // The coach matches; the athlete's row is held by its armed control.
+    expect(rows(table)).toHaveLength(2);
+    expect(within(table).getByRole('button', { name: 'Issue The New Code' })).toBeTruthy();
+    expect(within(table).getByText(`Showing 2 of ${MEMBERS.length}`)).toBeTruthy();
+    fireEvent.click(within(table).getByRole('button', { name: /^Keep/ }));
+    expect(rows(table)).toHaveLength(1);
     find('');
     expect(within(table).queryByRole('button', { name: 'Issue The New Code' })).toBeNull();
-    expect(within(table).getByRole('button', { name: 'Issue New Activation Code' })).toBeTruthy();
   });
 
-  test('an armed sign-out and an armed deactivate on a hidden row are disarmed too', async () => {
+  test('an armed sign-out and an armed deactivate hold their row under another role', async () => {
     installFetch();
     const table = await roster();
-    const coachRow = () => within(table).getByText('coach@example.test').closest('tr') as HTMLElement;
-    const signOut = 'Sign coach@example.test out on every device';
-    fireEvent.click(within(coachRow()).getByRole('button', { name: signOut }));
-    fireEvent.click(within(coachRow()).getByRole('button', { name: 'Deactivate coach@example.test' }));
-    // Both are armed: neither opening button is offered while its confirm is up.
-    expect(within(coachRow()).getByRole('button', { name: 'Confirm Deactivate' })).toBeTruthy();
-    expect(within(coachRow()).queryByRole('button', { name: signOut })).toBeNull();
+    fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Sign coach@example.test out on every device' }));
+    fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Deactivate coach@example.test' }));
     role('Athlete');
-    role('all');
-    expect(within(coachRow()).queryByRole('button', { name: 'Confirm Deactivate' })).toBeNull();
-    expect(within(coachRow()).getByRole('button', { name: 'Deactivate coach@example.test' })).toBeTruthy();
-    expect(within(coachRow()).getByRole('button', { name: signOut })).toBeTruthy();
+    expect(rows(table)).toHaveLength(2);
+    expect(within(coachRow(table)).getByRole('button', { name: 'Confirm Deactivate' })).toBeTruthy();
+    // Cancelling one leaves the other holding the row; cancelling both lets it go.
+    fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Keep Active' }));
+    expect(rows(table)).toHaveLength(2);
+    fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Cancel' }));
+    expect(rows(table)).toHaveLength(1);
   });
 
-  test('something armed on a row that stays in view stays armed', async () => {
-    installFetch();
-    const table = await roster();
-    fireEvent.click(within(table).getByRole('button', { name: 'Issue New Activation Code' }));
-    find('southpaw');
-    expect(within(table).getByRole('button', { name: 'Issue The New Code' })).toBeTruthy();
-  });
-
-  test('a name being edited on a hidden row is closed, and the box keeps the typing', async () => {
+  test('a name being edited stays open and in view, and the box keeps the typing', async () => {
     installFetch();
     const table = await roster();
     fireEvent.click(within(table).getByRole('button', { name: /Edit Name/ }));
-    expect(screen.getByLabelText(/^Name for /)).toBeTruthy();
+    const nameField = screen.getByLabelText(/^Name for /) as HTMLInputElement;
+    const draft = nameField.value;
     const box = screen.getByLabelText('Find a person') as HTMLInputElement;
     box.focus();
     find('helper');
-    expect(screen.queryByLabelText(/^Name for /)).toBeNull();
     find('');
-    expect(screen.queryByLabelText(/^Name for /)).toBeNull();
+    // The same field, never re-opened: it did not take the focus or the typing.
+    expect(screen.getByLabelText(/^Name for /)).toBe(nameField);
+    expect(nameField.value).toBe(draft);
     expect(document.activeElement).toBe(box);
-    // Other rows' name buttons work again: nothing is left open out of sight.
-    expect((within(table).getByRole('button', { name: /Edit Name/ }) as HTMLButtonElement).disabled).toBe(false);
+    expect(rows(table)).toHaveLength(MEMBERS.length);
   });
+
+  test('a re-read that changes what a row matches does not hide it while something is armed on it', async () => {
+    // The coach is found by the staff name; the re-read brings a new name that no longer matches.
+    const renamed = MEMBERS.map((item) => (item.role === 'coach' ? { ...item, staff_display_name: 'Someone Else' } : item));
+    installFetch(MEMBERS, renamed);
+    const table = await roster();
+    find('robin');
+    expect(rows(table)).toHaveLength(1);
+    fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Sign coach@example.test out on every device' }));
+    // Any action that re-reads: the volunteer is switched off from a second armed row.
+    find('');
+    fireEvent.click(within(table).getByRole('button', { name: 'Deactivate helper@example.test' }));
+    fireEvent.click(within(table).getByRole('button', { name: 'Confirm Deactivate' }));
+    await waitFor(() => expect(within(table).getByText('Someone Else')).toBeTruthy());
+    find('robin');
+    // No longer a match, still in view, still armed in plain sight.
+    expect(rows(table)).toHaveLength(1);
+    expect(within(coachRow(table)).queryByRole('button', { name: 'Sign coach@example.test out on every device' })).toBeNull();
+    expect(within(coachRow(table)).getByRole('button', { name: 'Sign Them Out' })).toBeTruthy();
+  });
+});
+
+// AS10-2a review: a role dropped because nobody held it must not switch itself
+// back on when someone with that role is added later.
+test('a role dropped on a re-read stays dropped when that role comes back', async () => {
+  const noVolunteer = MEMBERS.map((item) => (item.role === 'volunteer' ? { ...item, role: 'coach' } : item));
+  const volunteerAgain = [...noVolunteer, member({ account_id: 'new-helper@example.test', login_email: 'new-helper@example.test', role: 'volunteer' })];
+  installFetch(MEMBERS, noVolunteer, volunteerAgain);
+  const table = await roster();
+  role('Volunteer');
+  fireEvent.click(within(rows(table)[0]).getByRole('button', { name: 'Deactivate helper@example.test' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Deactivate' }));
+  await waitFor(() => expect(rows(table)).toHaveLength(MEMBERS.length));
+  // A second re-read brings a volunteer back; the admin did not choose Volunteer again.
+  fireEvent.click(within(table).getByRole('button', { name: 'Deactivate coach@example.test' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Deactivate' }));
+  await waitFor(() => expect(rows(table)).toHaveLength(volunteerAgain.length));
+  expect((screen.getByLabelText('Role') as HTMLSelectElement).value).toBe('all');
+  expect(within(table).getByText('Everyone in this gym')).toBeTruthy();
 });
