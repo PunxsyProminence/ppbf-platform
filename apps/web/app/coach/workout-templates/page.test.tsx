@@ -2189,6 +2189,8 @@ describe('finding a template, and the open one drawn under its own card', () => 
 // server answers it.
 describe('Edit (lane ED-UI PR2)', () => {
   const V2 = { ...BOXING_FUNDAMENTALS, template_id: 'wt-1-v2', version: 2, supersedes_template_id: 'wt-1', intent: 'Stance and guard.' };
+  // Another lineage with the same name, listed first: the current version is found by lineage, not by place or name.
+  const TWIN = { ...CONDITIONING_ADV, template_id: 'wt-9', lineage_id: 'lin-9', name: BOXING_FUNDAMENTALS.name };
 
   /** The routes the edit touches, answering as the server does: a save makes v2, which replaces v1 in the list. */
   function editRoutes(patch?: () => Response, options: { savedAnyway?: boolean } = {}) {
@@ -2204,6 +2206,7 @@ describe('Edit (lane ED-UI PR2)', () => {
       }
       if (url.includes('template_id=wt-1-v2')) return jsonResponse({ template: V2, items: [item({ template_id: 'wt-1-v2' })] });
       if (url.includes('template_id=wt-1')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+      if (saved && options.savedAnyway) return jsonResponse({ templates: [TWIN, CONDITIONING_ADV, V2] });
       return jsonResponse({ templates: [saved ? V2 : BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
     });
   }
@@ -2324,6 +2327,9 @@ describe('Edit (lane ED-UI PR2)', () => {
     await waitFor(() => expect(v2Reads()).toBe(1));
     expect(writesOf(fetchMock)).toHaveLength(2);
     expect(screen.queryByText('Nothing changed. No new version was written.')).not.toBeInTheDocument();
+    // Not left locked: the current version can be edited, and another template opened.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).toBeEnabled());
+    expect(screen.getAllByRole('button', { name: /open template/i }).some((open) => !(open as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it('after a 409, keeps the form locked until the list read again has landed', async () => {
