@@ -18,9 +18,10 @@ import type { BoardSeatSlug } from './boardWorkspaceConfig';
        route behind them), so only a board session is shown them. The platform
        owner reads the hub and the seat pages as an observer and is refused by
        all three (BoardOnlyNotice, F-003);
-     - Board Seats serves the gym admin and 'board'. It is offered on the hub
-       and on the President workspace, because seat assignment is the
-       President's one administrative control.
+     - Board Seats serves the gym admin and 'board': every board session may
+       read the roster there, and only the holder of the President seat (or a
+       gym admin) may change it. It is linked from the hub for every board
+       session, and from the President workspace.
    A page with no board session above it (a unit test without BoardRoleGate) is
    shown none of the role-bound links. */
 
