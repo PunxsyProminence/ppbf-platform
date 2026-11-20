@@ -97,8 +97,9 @@ Where an option would add a restriction, the question says so.
 - **The one-mailbox rule.** `graphMailer.ts:15-23` says Mail.Send is
   tenant-wide, and that an Exchange Application Access Policy restricts it to
   one sender, which the module cannot enforce. `assertSenderIsExpected`
-  (`:114`, called at `:125`) refuses any sender other than the configured one.
-  UNVERIFIED whether that policy is applied in Azure.
+  (`:114-118`) compares a sender with the configured one, but its one call
+  (`:125`) passes `config.sender` as both, so in practice it refuses only an
+  empty sender. UNVERIFIED whether that policy is applied in Azure.
 - **Where addresses are.** `pilot.accounts.login_email`
   (`infra/azure/pilot_slice_postgres.sql:27`) and `pilot.parents.email` (`:293`).
 - **The in-app alert.** `pilot.safety_escalations` is pull-only. The migration
@@ -181,7 +182,7 @@ Where an option would add a restriction, the question says so.
     needs no Azure or Microsoft 365 change.
   - **B:** a separate gym mailbox. Jason would first set it up in Microsoft
     365, widen the mailbox access policy (`graphMailer.ts:15-23`) and change
-    the configured sender.
+    the sender constant (`magicLinkStore.ts:29`).
 - **Q1.6 What may the send log keep?** The recorded "Page counts" answer, "B:
   totals only, no user, device or IP", sits against the same "Notifications
   file", and the record does not say whether it reaches an email send log.
@@ -215,8 +216,9 @@ here". Sized only.
   from iOS and iPadOS 16.4, and permission may be asked only on a user's tap.
 - This comes from a web search summary of the WebKit blog post "Web Push for
   Web Apps on iOS and iPadOS"; the primary page was not opened.
-- The gym's tablets are planned as iPad and Android (OD-2026-11-19-009, facts
-  table). Android behaviour was not checked.
+- OD-2026-11-19-009's facts table records the tablet answer "most likley two
+  but will eventually need a mix", affecting "Design for iPad and Android
+  together". Android behaviour was not checked.
 
 **What is missing:** a web app manifest, a service worker (push only, no
 caching), a subscription per account per device, a VAPID key pair (a secret),
@@ -478,7 +480,7 @@ thread the parent started.
 | PR | What | Est. lines | Basis |
 |---|---|---|---|
 | SP-1 | Server and edit route: add a drill block, remove a block, move a block; the versioning as today | about 350 | judgement (`sessionScriptAuthoring.ts` is 724 lines) |
-| SP-2 | The editor: a drill picker, remove, move up and down | about 300 | judgement (`SessionScriptEditor.tsx` is 259 lines) |
+| SP-2 | The editor: a drill picker, remove, move up and down | about 300 | judgement (`apps/web/app/coach/session-scripts/SessionScriptEditor.tsx` is 259 lines) |
 | SP-3 | Migration: a plan link on a scheduled class; the scheduler accepts it | about 250 | judgement |
 | SP-4 | "Schedule a class" from Session Plans; the class screen starts the class's plan | about 250 | judgement |
 
@@ -596,10 +598,14 @@ condition.
   `serviceWorker`, `indexedDB`, `navigator.onLine`, `Idempotency-Key`,
   `workbox`, `dexie` and `localforage` found no match.
 - **Browser storage.** `localStorage` holds UI preferences, the gym-tablet
-  device mark (`apps/web/src/lib/gymTabletMark.ts`) and the chosen child
-  (`apps/web/src/lib/chosenChild.ts`); no save payload. `sessionStorage` holds
-  only a pending request key, never the payload
-  (`apps/web/app/schedule/page.tsx:262`, `apps/web/app/coach/test-day/page.tsx:77-78`).
+  device mark (`apps/web/src/lib/gymTabletMark.ts`), the chosen child
+  (`apps/web/src/lib/chosenChild.ts:31`), a notice-catalog counter
+  (`apps/web/components/gymNotices.ts:173`) and per-athlete "ceremony shown"
+  records keyed by athlete id (`apps/web/components/milestoneCeremony.ts:55`,
+  `apps/web/components/achievementCeremony.ts:52`). `sessionStorage` holds a
+  pending request key (`apps/web/app/schedule/page.tsx:262`,
+  `apps/web/app/coach/test-day/page.tsx:77-78`) and the chosen child. Neither
+  holds a save payload.
 - **Writes that are safe to repeat:**
   - class create, by request key (`apps/web/app/api/pilot/scheduler/route.ts:163-176`);
   - the intervention log, by request key
@@ -719,8 +725,10 @@ citation reviewer):**
   days).
 - **Per converted step.** It rewrites one template-item row, which is 2 changed
   lines.
-- **Per PR.** The sheet has about 70 lines before its first day and 13 for its
-  reviews.
+- **Per PR.** The sheet has 71 lines before its first day and 13 for its
+  reviews. 32 of the 71 (lines 40-71) are a section the six home templates
+  share, which a TL sheet would not have; the other 39 plus the reviews make
+  about 50. If a TL sheet needs the full 84, the TL total rises by about 200.
 
 **Estimate formula (INFERRED):** 20 lines per new drill, 2 per position, 18 per
 template, and 50 per PR for the opening and the reviews.
@@ -729,7 +737,7 @@ template, and 50 per PR for the opening and the reviews.
 
 | PR | Templates | Positions | New drills (if all unique lines) | Est. lines |
 |---|---|---|---|---|
-| TL-1 | the three 48-Session Youth Coaching Manuals | 30 | 16 | about 480 (over 400; the shared lines tie the three together. It can split into the 16 drills, about 370, then the 30 step rewrites, about 110) |
+| TL-1 | the three 48-Session Youth Coaching Manuals | 30 | 16 | about 480 (over 400; the shared lines tie the three together. It can split into the 16 drills, about 370, then the 30 step rewrites with their three template sections, about 160: about 530 in all) |
 | TL-2 | Scripted 60-Minute Class (test run 4-5) | 10 | 10 | about 290 |
 | TL-3a | Friday Sparring Coach Sheet; Wednesday Coach Sheet Defense Day | 11 | 11 | about 330 (1 sparring line) |
 | TL-3b | Wednesday – Gold Standard Coach Script | 7 | 7 | about 220 (2 sparring lines) |
