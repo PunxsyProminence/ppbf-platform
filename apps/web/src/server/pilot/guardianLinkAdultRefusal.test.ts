@@ -245,10 +245,12 @@ describe('guardian_links inserts: the age refusal comes first', () => {
     expect(unrefusedLinkInserts("async function f(c) { refuseGuardianLinkToAdult(dob); await c.query(`insert into pilot.guardian_links (a) values ($1)`); }")).toHaveLength(0);
   });
 
-  test('the scanner reads a .ts file past a generic arrow, which a TSX parse cannot', () => {
-    const text = "const wrap = <T>(fn: () => Promise<T>): Promise<T> => fn();\n"
-      + "async function f(c) { await c.query('insert into pilot.guardian_links (a) values ($1)'); }";
-    expect(scanLinkInserts(text, 'writer.ts')).toEqual({ visited: 1, offenders: [expect.stringContaining('insert into pilot.guardian_links')] });
+  test('the scanner picks its parser from the file extension, and counts the inserts it reached', () => {
+    expect(scriptKindFor('src/server/pilot/staffProvisioning.ts')).toBe(ts.ScriptKind.TS);
+    expect(scriptKindFor('app/admin/people/page.tsx')).toBe(ts.ScriptKind.TSX);
+    expect(scriptKindFor('scripts/x.mjs')).toBe(ts.ScriptKind.JS);
+    expect(scanLinkInserts("async function f(c) { await c.query('insert into pilot.guardian_links (a) values ($1)'); }", 'writer.ts'))
+      .toEqual({ visited: 1, offenders: [expect.stringContaining('insert into pilot.guardian_links')] });
   });
 
   test('every one in src/ and app/ is preceded by refuseGuardianLinkToAdult', () => {
