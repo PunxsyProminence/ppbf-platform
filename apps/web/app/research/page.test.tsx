@@ -1709,14 +1709,16 @@ describe('Needs Evidence shows the record of each requirement (#345 section 1)',
 // rendered nothing when empty. An answered empty list says so; a failed read
 // says that instead, never "none".
 describe('the requirements list when it holds nothing', () => {
-  test('an answered empty list says no requirements are filed yet', async () => {
+  test('an answered empty list says there are none to show, never that none are filed', async () => {
     global.fetch = mockFetch({ curator: false, requirements: [] });
 
     await act(async () => {
       render(<ResearchIntakePage />);
     });
 
-    expect(await screen.findByText('No research requirements filed yet.')).toBeTruthy();
+    // The route scopes the list to the reader, so an empty list is not a claim about the gym.
+    expect(await screen.findByText('No research requirements to show.')).toBeTruthy();
+    expect(screen.queryByText(/filed yet/)).toBeNull();
     expect(screen.queryByText('The research requirements could not be read.')).toBeNull();
   });
 
@@ -1728,7 +1730,7 @@ describe('the requirements list when it holds nothing', () => {
     });
 
     await screen.findByText('Is RPE reliable at age 12?');
-    expect(screen.queryByText('No research requirements filed yet.')).toBeNull();
+    expect(screen.queryByText('No research requirements to show.')).toBeNull();
   });
 
   test.each([
@@ -1746,6 +1748,6 @@ describe('the requirements list when it holds nothing', () => {
     });
 
     expect(await screen.findByText('The research requirements could not be read.')).toBeTruthy();
-    expect(screen.queryByText('No research requirements filed yet.')).toBeNull();
+    expect(screen.queryByText('No research requirements to show.')).toBeNull();
   });
 });

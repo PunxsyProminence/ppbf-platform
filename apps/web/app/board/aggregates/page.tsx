@@ -228,7 +228,7 @@ function countedDisplay(
   };
 }
 
-/* Law 7: a withheld figure is static ink -- a stamp driven into the page --
+/* Law 7: a suppressed figure is static ink -- a stamp driven into the page --
    and never a numeral, a blank, or a dash that a reader could take for a
    measurement. Same idiom as BoardSummaryPanel and the compliance register,
    so the board surfaces say "Suppressed" the same way (lane BT, BOA-19:

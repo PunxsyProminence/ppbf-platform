@@ -10,7 +10,7 @@ import BackHome from '@/components/BackHome';
 /**
  * The gym's equipment catalogue: what it paid, what it charges, what is on sale.
  *
- * This is the Treasurer-facing side of the store. It is the only place the
+ * This is the gym admin's side of the store. It is the only place the
  * wholesale cost appears, and it is organization-admin only -- the cost is the
  * gym's negotiated position with a supplier, not the platform owner's to read
  * across gyms and not a coach's either.

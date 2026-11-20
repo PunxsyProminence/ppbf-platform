@@ -1243,9 +1243,12 @@ export default function ResearchIntakePage() {
           <div className="space-y-[var(--s3)]">
             {/* Lane BT, BOA-17: the list said nothing when empty. Worded like this
                 page's submitted-sources lines ("No sources submitted yet." / "The
-                submitted sources could not be read."); a failed read is not "none". */}
+                submitted sources could not be read."); a failed read is not "none".
+                The route scopes the list to the reader (rows they filed, rows about
+                athletes they reach), so an empty list says nothing about the gym:
+                "to show", never "none filed". */}
             {requirementsRead === 'ok' && requirements.length === 0 ? (
-              <p className="t-muted">No research requirements filed yet.</p>
+              <p className="t-muted">No research requirements to show.</p>
             ) : null}
             {requirementsRead === 'unread' ? (
               <p className="t-muted" role="status">The research requirements could not be read.</p>

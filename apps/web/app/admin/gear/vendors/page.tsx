@@ -23,7 +23,7 @@ import BackHome from '@/components/BackHome';
  *
  * NO PASSWORD FIELD, AND THERE MUST NEVER BE ONE. A supplier portal login held
  * in this application would be a credential nobody rotates, readable by anyone
- * with an admin session, in a system built for youth records. What a Treasurer
+ * with an admin session, in a system built for youth records. What the gym admin
  * needs on a screen to place an order is which account, where the portal is
  * and who to call -- so those are the fields, and the note below the form says
  * why the obvious missing one is missing. The route refuses a credential
@@ -127,8 +127,8 @@ function VendorConsole() {
           account_number: accountNumber.trim(),
           discount_tier: discountTier.trim(),
           // Empty stays null: "we have not recorded the terms" and "due on
-          // receipt" are different facts, and sending 0 for both would tell a
-          // Treasurer the second when the first is true.
+          // receipt" are different facts, and sending 0 for both would tell the
+          // gym admin the second when the first is true.
           net_terms_days: netTerms.trim() === '' ? null : Number.parseInt(netTerms, 10),
           portal_url: portalUrl.trim(),
           rep_name: repName.trim(),
