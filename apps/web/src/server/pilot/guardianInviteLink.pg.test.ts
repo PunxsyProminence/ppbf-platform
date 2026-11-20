@@ -820,3 +820,112 @@ describe('an unlink that meets a held lock waits for it', () => {
     expect(consent.perGuardian.some((g) => g.status === 'withdrawn')).toBe(true);
   });
 });
+
+/* ── Lane GA: a parent invite for an athlete who is 18 or over ──────────────
+   The guardian link goes dormant at 18 (OD-2026-10-07-008), so no NEW link is
+   written to an adult: the invite is refused 403 GUARDIAN_LINK_ENDED (Overwatch
+   Q1 A) and, being one transaction, leaves no account, membership, guardian
+   record or link behind. A re-invite of an existing parent login naming an
+   adult child is refused as a whole and leaves that login's links as they were
+   (Q2 A). An athlete who turns 18 tomorrow is still linked. Dates are on the
+   gym's calendar day, as guardianAccess.test.ts pins them; an unknown date of
+   birth cannot be seeded (pilot.athletes.dob is NOT NULL) and is unit-tested. */
+describe('lane GA: no new guardian link to an athlete 18 or over', () => {
+  const gymYmd = (date: Date) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  const nextDay = (ymd: string) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  };
+  const minus18 = (ymd: string, leapDay: '02-28' | '03-01') => {
+    const year = Number(ymd.slice(0, 4)) - 18;
+    const monthDay = ymd.slice(5);
+    return `${year}-${monthDay === '02-29' ? leapDay : monthDay}`;
+  };
+  const GYM_TODAY = gymYmd(new Date());
+  const ADULT = 'ath-ga-adult';
+  const TOMORROW = 'ath-ga-tomorrow';
+  const MINOR_SIBLING = 'ath-ga-minor';
+
+  beforeAll(async () => {
+    await client.query(
+      `insert into pilot.athletes (organization_id, athlete_id, full_name, dob, weight_class, gym_status, emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values
+         ($1, $2, 'Turned Eighteen', $5::date, 'open', 'active', 'contact', true, $7, now(), now()),
+         ($1, $3, 'Eighteen Tomorrow', $6::date, 'fly', 'active', 'contact', true, $7, now(), now()),
+         ($1, $4, 'Younger Sibling', '2014-03-09', 'fly', 'active', 'contact', true, $7, now(), now())`,
+      [ORG_A, ADULT, TOMORROW, MINOR_SIBLING, minus18(GYM_TODAY, '02-28'), minus18(nextDay(GYM_TODAY), '03-01'), COACH_A],
+    );
+  });
+
+  async function rowCount(sql: string, params: unknown[]): Promise<number> {
+    return (await client.query(sql, params)).rowCount ?? 0;
+  }
+
+  test('a new parent invite for an athlete who turned 18 today is refused, and nothing is committed', async () => {
+    const email = 'ga-adult-parent@example.com';
+
+    await expect(
+      staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+        loginEmail: email,
+        organizationId: ORG_A,
+        role: 'parent',
+        guardian: { athleteId: ADULT, fullName: 'Adult Parent', relationshipToAthlete: 'mother' },
+      }),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: 'GUARDIAN_LINK_ENDED',
+      message: 'Forbidden: this athlete is 18 or older; guardian access has ended',
+    });
+
+    await expect(accountExists(email)).resolves.toBe(false);
+    expect(await rowCount('select 1 from pilot.organization_memberships where account_id = $1', [email])).toBe(0);
+    expect(await rowCount('select 1 from pilot.parents where organization_id = $1 and (account_id = $2 or email = $2)', [ORG_A, email])).toBe(0);
+    expect(await rowCount('select 1 from pilot.guardian_links where organization_id = $1 and athlete_id = $2', [ORG_A, ADULT])).toBe(0);
+  });
+
+  test('re-inviting an existing parent login naming the adult child is refused as a whole; its links stay as they were', async () => {
+    const email = 'ga-sibling-parent@example.com';
+    const first = await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+      loginEmail: email,
+      organizationId: ORG_A,
+      role: 'parent',
+      guardian: { athleteId: MINOR_SIBLING, fullName: 'Sibling Parent', relationshipToAthlete: 'father' },
+    });
+    const linksBefore = await client.query(
+      `select athlete_id, relationship_to_athlete, updated_at::text as updated_at
+         from pilot.guardian_links where organization_id = $1 and parent_id = $2 order by athlete_id`,
+      [ORG_A, first.guardianLink?.parentId],
+    );
+    expect(linksBefore.rows.map((row) => row.athlete_id)).toEqual([MINOR_SIBLING]);
+
+    await expect(
+      staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+        loginEmail: email,
+        organizationId: ORG_A,
+        role: 'parent',
+        guardian: { athleteId: ADULT, fullName: 'Sibling Parent', relationshipToAthlete: 'father' },
+      }),
+    ).rejects.toMatchObject({ status: 403, code: 'GUARDIAN_LINK_ENDED' });
+
+    const linksAfter = await client.query(
+      `select athlete_id, relationship_to_athlete, updated_at::text as updated_at
+         from pilot.guardian_links where organization_id = $1 and parent_id = $2 order by athlete_id`,
+      [ORG_A, first.guardianLink?.parentId],
+    );
+    expect(linksAfter.rows).toEqual(linksBefore.rows);
+    await expect(resolvedChildren(ORG_A, first.accountId)).resolves.toEqual([MINOR_SIBLING]);
+  });
+
+  test('an athlete who turns 18 tomorrow is still a minor today, and the invite links them', async () => {
+    const result = await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'ga-tomorrow-parent@example.com',
+      organizationId: ORG_A,
+      role: 'parent',
+      guardian: { athleteId: TOMORROW, fullName: 'Tomorrow Parent', relationshipToAthlete: 'mother' },
+    });
+
+    expect(result.guardianLink?.athleteId).toBe(TOMORROW);
+    await expect(resolvedChildren(ORG_A, result.accountId)).resolves.toEqual([TOMORROW]);
+  });
+});

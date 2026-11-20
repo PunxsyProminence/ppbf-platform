@@ -1,4 +1,5 @@
 import { query, queryOne } from './db';
+import { ForbiddenError } from './errors';
 import { isMinor } from './wallDisplay';
 
 /**
@@ -61,6 +62,35 @@ function calendarDay(value: Date): string | null {
 
 /** The refusal a guardian's consent write meets once the link has ended. */
 export const GUARDIAN_LINK_ENDED_MESSAGE = 'Forbidden: this athlete is 18 or older; guardian access has ended';
+
+/**
+ * The guardian write refused because the link has gone dormant (or, for a new
+ * link, would start dormant). Its own class so the two consent routes can
+ * audit the refusal by name and still answer 403 through jsonError. It lives
+ * here, beside its message, so intake.ts can throw it without importing
+ * guardianConsent.ts (which imports intake.ts); guardianConsent.ts re-exports it.
+ */
+export class GuardianLinkEndedError extends ForbiddenError {
+  constructor() {
+    super(GUARDIAN_LINK_ENDED_MESSAGE, 'GUARDIAN_LINK_ENDED');
+  }
+}
+
+/**
+ * NO NEW GUARDIAN LINK TO AN ADULT (lane GA). The link goes dormant at 18
+ * (OD-2026-10-07-008), so a link written to an athlete who is already 18 is a
+ * guardian record that answers nothing from the moment it exists. Both link
+ * writers (intake.ts linkGuardianAthlete and staffProvisioning.ts's parent
+ * invite) call this with the date of birth they read at the moment of the
+ * write, before the insert. The age is guardianLinkEnded's, not a second rule:
+ * the gym's day, and an unknown date of birth reads as a minor
+ * (OD-2026-10-04-010), so that link is still written. A re-save of a link that
+ * already exists is refused too; the refused statement changes no row, so an
+ * existing link on an adult is left exactly as it is (Overwatch, Q2 A).
+ */
+export function refuseGuardianLinkToAdult(dob: string | Date | null | undefined, now: Date = new Date()): void {
+  if (guardianLinkEnded(dob, now)) throw new GuardianLinkEndedError();
+}
 
 /**
  * True when the account holds a guardian link to the athlete inside this
