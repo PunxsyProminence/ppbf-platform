@@ -738,7 +738,9 @@ describe('the family picker (FAM-11), the record name and the back link (FAM-18)
 
 /* Between the pick and the read starting there is one render with the child
    chosen and nothing loaded. It must say Loading, never "No progression gaps
-   on record": nobody has read that child's record. */
+   on record": nobody has read that child's record. React replaces that block
+   before a test can look, so this watches what was taken OFF the page: a
+   removed node keeps its text. */
 test('picking a child never draws "No progression gaps" before that child\'s record is read', async () => {
   let answerGaps: (value: Response) => void = () => {};
   const fetchMock = mockFetch({
@@ -750,22 +752,24 @@ test('picking a child never draws "No progression gaps" before that child\'s rec
   render(<ParentProgressionVisibilityPage />);
   await screen.findByText('Choose a child');
 
-  const drawn: string[] = [];
+  const takenOff: string[] = [];
   const observer = new MutationObserver((records) => {
     for (const record of records) {
-      for (const node of Array.from(record.addedNodes)) drawn.push(node.textContent ?? '');
-      if (record.type === 'characterData') drawn.push(record.target.textContent ?? '');
+      for (const node of Array.from(record.removedNodes)) takenOff.push(node.textContent ?? '');
+      if (record.oldValue) takenOff.push(record.oldValue);
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true, characterDataOldValue: true });
 
   fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
   await screen.findByText(/Loading progression data/);
   await act(async () => { answerGaps(jsonOk({ items: [] })); });
   await screen.findByText('No progression gaps on record');
+  await act(async () => {});
   observer.disconnect();
 
-  const early = drawn.slice(0, drawn.findIndex((text) => text.includes('Loading progression data')) + 1);
-  expect(early.some((text) => text.includes('No progression gaps on record'))).toBe(false);
-  expect(early.some((text) => text.includes('Loading progression data'))).toBe(true);
+  // The observer works: it saw the Loading line leave when the answer came.
+  expect(takenOff.some((text) => text.includes('Loading progression data'))).toBe(true);
+  // "No progression gaps" was drawn once, after the answer, and never taken back.
+  expect(takenOff.some((text) => text.includes('No progression gaps on record'))).toBe(false);
 });

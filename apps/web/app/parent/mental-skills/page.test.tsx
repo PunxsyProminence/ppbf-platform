@@ -51,6 +51,8 @@ const blocksFor = (id: string) => [{
 interface Stubs {
   rosterOk?: boolean;
   entriesOk?: boolean;
+  /** No mental goal is set, so the view's "No mental goals in ..." line shows. */
+  noGoals?: boolean;
   hold?: Record<string, Promise<void>>;
 }
 
@@ -68,7 +70,7 @@ function installFetch(stubs: Stubs = {}): jest.Mock {
       return { ok, status: ok ? 200 : 503, json: async () => entriesFor(id) } as Response;
     }
     if (url.includes('/api/pilot/athlete/development-blocks')) {
-      return { ok: true, status: 200, json: async () => ({ blocks: blocksFor(id) }) } as Response;
+      return { ok: true, status: 200, json: async () => ({ blocks: stubs.noGoals ? [] : blocksFor(id) }) } as Response;
     }
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -213,13 +215,15 @@ describe('the family picker (FAM-11) and the one back link (FAM-18)', () => {
     const saved = KIDS;
     KIDS = [{ athlete_id: 'ath-a', full_name: 'Avery' }, { athlete_id: 'ath-b' } as (typeof KIDS)[number]];
     try {
-      await renderPage();
+      await renderPage({ noGoals: true });
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: 'Your child' }));
       });
       expect(screen.getByRole('region', { name: 'Mental skills for Your child' })).toBeTruthy();
+      // The one sentence that puts the subject mid-line.
+      expect(screen.getByText('No mental goals in their development plan yet.')).toBeTruthy();
       expect(document.body.textContent).not.toContain("Your child's");
-      const shown = (document.body.textContent ?? '').replace('cue of ath-b', '').replace('mental goal of ath-b', '');
+      const shown = (document.body.textContent ?? '').replace('cue of ath-b', '');
       expect(shown).not.toContain('ath-b');
     } finally {
       KIDS = saved;

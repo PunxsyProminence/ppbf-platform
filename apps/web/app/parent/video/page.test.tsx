@@ -234,8 +234,9 @@ describe('the family picker (FAM-11) and the one back link (FAM-18)', () => {
 
 /* Between the pick and the read starting there is one render with the child
    chosen and nothing loaded. It must say Loading, never "No film yet": nobody
-   has read that child's film. The observer sees every text the page ever
-   drew, including a line React replaced before the test could look. */
+   has read that child's film. React replaces that line before a test can look
+   at the page, so this watches what was taken OFF the page: a removed node
+   keeps its text, and so does a text node's old value. */
 test('picking a child never draws "No film yet" before that child\'s film is read', async () => {
   let answerList: (value: Response) => void = () => {};
   const fetchMock = mockFetch({
@@ -246,23 +247,24 @@ test('picking a child never draws "No film yet" before that child\'s film is rea
   render(<ParentVideoPage />);
   await screen.findByText('Choose a child');
 
-  const drawn: string[] = [];
+  const takenOff: string[] = [];
   const observer = new MutationObserver((records) => {
     for (const record of records) {
-      for (const node of Array.from(record.addedNodes)) drawn.push(node.textContent ?? '');
-      if (record.type === 'characterData') drawn.push(record.target.textContent ?? '');
+      for (const node of Array.from(record.removedNodes)) takenOff.push(node.textContent ?? '');
+      if (record.oldValue) takenOff.push(record.oldValue);
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true, characterDataOldValue: true });
 
   fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
   await screen.findByText('Loading film...');
   await act(async () => { answerList(jsonOk({ items: [] })); });
   await screen.findByText('No film yet. It shows up here when a coach puts some up.');
+  await act(async () => {});
   observer.disconnect();
 
-  // Drawn once, after the answer; never while the read was still out.
-  const early = drawn.slice(0, drawn.findIndex((text) => text.includes('Loading film...')) + 1);
-  expect(early.some((text) => text.includes('No film yet'))).toBe(false);
-  expect(early.some((text) => text.includes('Loading film...'))).toBe(true);
+  // The observer works: it saw the Loading line leave when the answer came.
+  expect(takenOff.some((text) => text.includes('Loading film...'))).toBe(true);
+  // "No film yet" was drawn once, after the answer, and never taken back.
+  expect(takenOff.some((text) => text.includes('No film yet'))).toBe(false);
 });
