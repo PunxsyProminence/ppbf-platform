@@ -1004,6 +1004,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
     await enterWorkspaceOrSkip(page);
 
+    await page.getByRole('button', { name: 'End training' }).click();
     await page.getByLabel('How hard was the session you just finished? 7').click();
     await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
@@ -1020,6 +1021,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
     await enterWorkspaceOrSkip(page);
 
+    await page.getByRole('button', { name: 'End training' }).click();
     await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
 
@@ -1042,6 +1044,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     await expect(page.getByText('Your coach can read this.')).toBeVisible();
 
     await box.fill(unsent);
+    await page.getByRole('button', { name: 'End training' }).click();
     await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
 

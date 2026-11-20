@@ -26,6 +26,7 @@ import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { emitShadowEvent } from '@/src/server/pilot/shadowEvents';
 import { writeShadowTelemetryEvent } from '@/src/server/pilot/shadowTelemetry';
 import { ConflictError } from '@/src/server/pilot/errors';
+import { GuardianLinkEndedError } from '@/src/server/pilot/guardianAccess';
 import { queryOne, withTransaction } from '@/src/server/pilot/db';
 import { createShadowResearchRequirement } from '@/src/server/pilot/shadowResearch';
 
@@ -1044,6 +1045,31 @@ describe('every promotion write runs on the one transaction', () => {
     }, { account_id: 'athlete-1' }));
 
     expect(response.status).toBe(500);
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
+    expect(writePilotAuditEvent).not.toHaveBeenCalled();
+    expect(emitShadowEvent).not.toHaveBeenCalled();
+    expect(mockCreateResearchRequirement).not.toHaveBeenCalled();
+  });
+
+  // Lane GA, Overwatch Q3 A: a promotion that names a guardian for an athlete
+  // who is 18 or over is refused as a whole. linkGuardianAthlete refuses on the
+  // transaction (its own tests and intakeLoginRefusals.pg.test.ts prove the
+  // read and the rollback of the athlete and logins written before it); this
+  // pins that the route answers the refusal and runs nothing after it.
+  test('a guardian for an athlete 18 or over refuses the whole promotion 403 GUARDIAN_LINK_ENDED, and nothing after it runs', async () => {
+    mockLinkGuardianAthlete.mockRejectedValueOnce(new GuardianLinkEndedError());
+
+    const response = await POST(promoteRequest({
+      parent_id: 'parent-1',
+      full_name: 'Gate Guardian',
+    }, { dob: '1990-01-01' }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Forbidden: this athlete is 18 or older; guardian access has ended',
+      code: 'GUARDIAN_LINK_ENDED',
+    });
+    expect(mockLinkGuardianAthlete).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ath-1' }), txClient);
     expect(mockUpdateStatus).not.toHaveBeenCalled();
     expect(writePilotAuditEvent).not.toHaveBeenCalled();
     expect(emitShadowEvent).not.toHaveBeenCalled();

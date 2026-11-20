@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { breaksCueRule, cueRequiredMessage, isConditioningLabel } from '@/src/lib/drillCueRule';
-import { humanizeContactLevel } from '@/src/lib/drillPresentation';
+import { humanizeContactLevel, scaleLevelName } from '@/src/lib/drillPresentation';
 import { VOCABULARIES } from '@/src/server/pilot/contentImport/vocabularies';
 import type { DRILL_TEXT_FIELDS } from '@/src/server/pilot/drillLibraryEdit';
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
@@ -13,8 +13,11 @@ import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 // library drill through PATCH /api/pilot/drill-library, which writes its next
 // version (drillLibraryEdit.ts). Roles, bounds, vocabularies and the cue rule
 // are the server's; a refusal is shown in its words. Only what changed is sent,
-// so untouched text keeps its AI-draft label (OD-2026-11-15-011 ruling 2).
-// Scale levels and stop rules are PR1b. The one check before save is the cue
+// so untouched text keeps its AI-draft label (OD-2026-11-15-011 ruling 2); a
+// scale level or stop rule is edited, never added or removed, as the route
+// allows. The drill's OWN stop rules sit in Safety (lane ED-UI PR1b), grouped
+// as the drill page groups them; the gym's stored-once rules are not shown or
+// sent (this route does not edit them). The one check before save is the cue
 // rule (OD-2026-10-06-026 ruling 2), judged as the server judges it. Labels are
 // the drill page's own words; the dark `mat-leather` panel is the Add a drill
 // form's, so its ink is the one proven readable there.
@@ -41,10 +44,19 @@ const COACHING_NOTES: readonly TextKey[] = ['target_behavior', 'transfer'];
 /** Every key this form can send beside drill_id; the test holds it to the route's editable keys. */
 export const DRILL_EDIT_FORM_KEYS = [
   'name', 'category', 'difficulty', 'contact_level', 'requires_coach_authorization',
-  ...TEXT_FIELDS.map((field) => field.key), 'cues',
+  ...TEXT_FIELDS.map((field) => field.key), 'cues', 'scale_levels', 'stop_rules',
 ] as const;
 
 const SHORT_KEYS = ['name', 'category', 'difficulty', 'contact_level'] as const;
+/** A scale level's editable parts, labelled as DrillDetail shows them ("Constraint:", "Watch for:", "Contact:"). */
+const SCALE_FIELDS = [
+  { key: 'demand_description', label: 'What it demands' },
+  { key: 'constraint_applied', label: 'Constraint' },
+  { key: 'coach_watch_point', label: 'Watch for' },
+  { key: 'contact_level', label: 'Contact' },
+] as const;
+type ScaleKey = (typeof SCALE_FIELDS)[number]['key'];
+type StopValues = { condition_text: string; rule_kind: string };
 
 interface Values {
   name: string;
@@ -57,6 +69,10 @@ interface Values {
   cues: string;
   /** The cue box was typed in. Untouched, the cues are never sent, so their label is never at risk. */
   cuesEdited: boolean;
+  /** By scale level ('A', 'B', 'C'). */
+  scales: Record<string, Record<ScaleKey, string>>;
+  /** The drill's own stop rules, by ordinal. */
+  stops: Record<number, StopValues>;
 }
 
 function initialValues(drill: DrillWithDetail): Values {
@@ -73,6 +89,13 @@ function initialValues(drill: DrillWithDetail): Values {
       .map((cue) => cue.cue_text)
       .join('\n'),
     cuesEdited: false,
+    scales: Object.fromEntries((drill.scale_levels ?? []).map((level) => [
+      level.scale_level,
+      Object.fromEntries(SCALE_FIELDS.map(({ key }) => [key, level[key] ?? ''])) as Record<ScaleKey, string>,
+    ])),
+    stops: Object.fromEntries((drill.stop_rules ?? []).map((rule) => [
+      rule.ordinal, { condition_text: rule.condition_text ?? '', rule_kind: rule.rule_kind ?? '' },
+    ])),
   };
 }
 
@@ -102,10 +125,90 @@ function changedParts(drill: DrillWithDetail, values: Values): { body: Record<st
     cues = lines;
     body.cues = lines;
   }
+  // A level or rule is sent with only its changed parts, so the server
+  // relabels only those (drillLibraryEdit.ts compares part by part too).
+  const scales: Record<string, Partial<Record<ScaleKey, string>>> = {};
+  for (const level of drill.scale_levels ?? []) {
+    const now = values.scales[level.scale_level];
+    const changes = Object.fromEntries(SCALE_FIELDS.filter(({ key }) => now[key] !== (level[key] ?? '')).map(({ key }) => [key, now[key]]));
+    if (Object.keys(changes).length > 0) scales[level.scale_level] = changes;
+  }
+  if (Object.keys(scales).length > 0) body.scale_levels = scales;
+  const stops = (drill.stop_rules ?? []).flatMap((rule) => {
+    const now = values.stops[rule.ordinal];
+    const changes = Object.fromEntries((['condition_text', 'rule_kind'] as const)
+      .filter((key) => now[key] !== (rule[key] ?? '')).map((key) => [key, now[key]]));
+    return Object.keys(changes).length > 0 ? [{ ordinal: rule.ordinal, ...changes }] : [];
+  });
+  if (stops.length > 0) body.stop_rules = stops;
   return Object.keys(body).length > 0 ? { body, cues } : null;
 }
 
 export type DrillEditOutcome = { changed: false } | { changed: true; drillId: string; version: number };
+
+/**
+ * The drill's OWN stop rules (never universal_stop_rules: both number from 1,
+ * and the state is keyed by ordinal), grouped as DrillDetail groups them, by
+ * the STORED kind so a rule does not jump while its kind is changed: a
+ * readiness rule (warmup_decay) is "Before contact or maximal effort", not a
+ * stop rule. Each group is numbered by position, as the page lists it.
+ */
+function stopRuleGroups(drill: DrillWithDetail) {
+  const own = [...(drill.stop_rules ?? [])].sort((a, b) => a.ordinal - b.ordinal);
+  return [
+    { heading: 'Stop rules', item: 'Stop rule', rules: own.filter((rule) => rule.rule_kind !== READINESS_KIND) },
+    { heading: 'Before contact or maximal effort', item: 'Before contact or maximal effort', rules: own.filter((rule) => rule.rule_kind === READINESS_KIND) },
+  ].filter((group) => group.rules.length > 0).map((group) => ({
+    heading: group.heading,
+    rules: group.rules.map((rule, index) => ({
+      rule,
+      name: `${group.item}${group.rules.length > 1 || group.item === 'Stop rule' ? ` ${index + 1}` : ''}`,
+    })),
+  }));
+}
+
+/** Every field's on-screen label, by the key the route names it with. */
+const FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  category: 'Category',
+  difficulty: 'Difficulty',
+  contact_level: 'Contact',
+  requires_coach_authorization: 'Coach authorization',
+  cues: 'Coaching cues, one per line',
+  ...Object.fromEntries(TEXT_FIELDS.map(({ key, label }) => [key, label])),
+};
+
+/**
+ * The label a refusal's field key stands for (Overwatch Q-PR1-1 on #2016: a
+ * refusal shows the label the form already shows, never a code key). A stop
+ * rule's key carries no ordinal (drillLibraryEdit.ts parses the list in the
+ * order sent and refuses the first bad entry), so the rule is the first one
+ * this save sent that fails the same test. null when nothing on the form
+ * matches: the server's own text is shown.
+ */
+function fieldLabel(key: string, drill: DrillWithDetail, sent: Record<string, unknown>): string | null {
+  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
+  const scale = /^scale_levels\.([ABC])\.([a-z_]+)$/.exec(key);
+  if (scale) {
+    const field = SCALE_FIELDS.find((entry) => entry.key === scale[2]);
+    return field ? `${scaleLevelName(scale[1])} ${field.label}` : null;
+  }
+  if (key !== 'stop_rules.condition_text' && key !== 'stop_rules.rule_kind') return null;
+  const names = new Map(stopRuleGroups(drill).flatMap((group) => group.rules.map(({ rule, name }) => [rule.ordinal, name] as const)));
+  const failing = (Array.isArray(sent.stop_rules) ? sent.stop_rules as Record<string, unknown>[] : []).find((entry) => (key === 'stop_rules.condition_text'
+    ? typeof entry.condition_text === 'string' && (!entry.condition_text.trim() || entry.condition_text.trim().length > MAX_STOP_RULE)
+    : typeof entry.rule_kind === 'string' && !(VOCABULARIES.stop_rule_kind.values as readonly string[]).includes(entry.rule_kind)));
+  const name = failing ? names.get(failing.ordinal as number) : undefined;
+  if (!name) return null;
+  return key === 'stop_rules.rule_kind' ? `${name}: kind` : name;
+}
+
+/** A refusal in the form's words: "Missing <label>: ..." for "Missing <key>: ...", the rest of the server's sentence kept. */
+function inFormWords(message: string, drill: DrillWithDetail, sent: Record<string, unknown>): string {
+  const match = /^(Missing|Unsupported) ([a-z_]+(?:\.[A-Za-z_]+)*): /.exec(message);
+  const label = match ? fieldLabel(match[2], drill, sent) : null;
+  return match && label ? `${match[1]} ${label}: ${message.slice(match[0].length)}` : message;
+}
 
 const SAVE_FAILED = 'The drill could not be saved.';
 // A fault or a dropped connection may have landed after the write committed,
@@ -117,6 +220,11 @@ const NOTHING_CHANGED = 'Nothing was changed. This drill is as it was.';
 // test holds them equal), so a field cannot be typed past what it refuses.
 const MAX_SHORT = 200;
 const MAX_LONG = 4000;
+const MAX_STOP_RULE = 1000;
+/** The stop-rule kind DrillDetail lists under "Before contact or maximal effort" rather than as a stop. */
+const READINESS_KIND = 'warmup_decay';
+/** A sub-group's name inside Safety or Scaling: bold bone ink, so it reads apart from the labels under it. */
+const SUBGROUP = 'mb-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
 
 /** The vocabulary, with the drill's current value first when the list does not hold it, so an untouched select changes nothing. */
 function optionsFor(list: readonly string[], current: string): string[] {
@@ -184,7 +292,7 @@ export default function DrillEditForm({
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string; changed?: unknown; drill_id?: unknown; version?: unknown;
       };
-      if (!response.ok) throw new Error(payload.error || SAVE_FAILED);
+      if (!response.ok) throw new Error(payload.error ? inFormWords(payload.error, drill, parts.body) : SAVE_FAILED);
       if (payload.changed === false) {
         onSaved({ changed: false });
       } else if (payload.changed === true && typeof payload.drill_id === 'string' && typeof payload.version === 'number') {
@@ -207,6 +315,12 @@ export default function DrillEditForm({
 
   const set = <K extends keyof Values>(key: K, value: Values[K]) => setValues((prev) => ({ ...prev, [key]: value }));
   const setText = (key: TextKey, value: string) => setValues((prev) => ({ ...prev, text: { ...prev.text, [key]: value } }));
+  const setScale = (level: string, key: ScaleKey, value: string) =>
+    setValues((prev) => ({ ...prev, scales: { ...prev.scales, [level]: { ...prev.scales[level], [key]: value } } }));
+  const setStop = (ordinal: number, key: keyof StopValues, value: string) =>
+    setValues((prev) => ({ ...prev, stops: { ...prev.stops, [ordinal]: { ...prev.stops[ordinal], [key]: value } } }));
+  const stopGroups = stopRuleGroups(drill);
+  const levels = [...(drill.scale_levels ?? [])].sort((a, b) => a.scale_level.localeCompare(b.scale_level));
   const textArea = ({ key, label, rows }: (typeof TEXT_FIELDS)[number]) => (
     <div key={key} className="field">
       <label htmlFor={id(key)} className="t-label">{label}</label>
@@ -261,6 +375,29 @@ export default function DrillEditForm({
             </select>
           </div>
         </div>
+        {stopGroups.map((group) => (
+          <fieldset key={group.heading} className="mt-[var(--s4)] min-w-0">
+            <legend className={SUBGROUP}>{group.heading}</legend>
+            {group.rules.map(({ rule, name }) => {
+              return (
+                <div key={rule.ordinal} className="mt-[var(--s3)] grid gap-[var(--s4)] md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                  <div className="field">
+                    <label htmlFor={id(`stop-${rule.ordinal}`)} className="t-label">{name}</label>
+                    <textarea id={id(`stop-${rule.ordinal}`)} value={values.stops[rule.ordinal].condition_text} onChange={(event) => setStop(rule.ordinal, 'condition_text', event.target.value)} rows={2} maxLength={MAX_STOP_RULE} className="textarea input--kiosk" />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={id(`stop-${rule.ordinal}-kind`)} className="t-label">{name}: kind</label>
+                    <select id={id(`stop-${rule.ordinal}-kind`)} value={values.stops[rule.ordinal].rule_kind} onChange={(event) => setStop(rule.ordinal, 'rule_kind', event.target.value)} className="select input--kiosk">
+                      {optionsFor(VOCABULARIES.stop_rule_kind.values, values.stops[rule.ordinal].rule_kind).map((kind) => (
+                        <option key={kind} value={kind}>{kind.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+          </fieldset>
+        ))}
       </fieldset>
 
       {TEXT_FIELDS.filter(({ key }) => !COACHING_NOTES.includes(key)).map(textArea)}
@@ -269,6 +406,39 @@ export default function DrillEditForm({
         <label htmlFor={id('cues')} className="t-label">Coaching cues, one per line</label>
         <textarea id={id('cues')} value={values.cues} onChange={(event) => setValues((prev) => ({ ...prev, cues: event.target.value, cuesEdited: true }))} rows={4} className="textarea input--kiosk" />
       </div>
+
+      {levels.length > 0 && (
+        <fieldset className="min-w-0 space-y-[var(--s4)]">
+          <legend className="t-command mb-[var(--s3)] text-[length:var(--t-md)]">Scaling</legend>
+          {levels.map(({ scale_level: level, is_starting_point: start }) => (
+            <fieldset key={level} className="min-w-0 pt-[var(--s4)]">
+              {/* "where to start" is DrillDetail's own marker; outside the id, so field names stay "Standard (B) Constraint". */}
+              <legend className={SUBGROUP}><span id={id(`scale-${level}`)}>{scaleLevelName(level)}</span>{start ? ' · where to start' : ''}</legend>
+              <div className="grid gap-[var(--s4)] md:grid-cols-2">
+                {SCALE_FIELDS.map(({ key, label }) => {
+                  const fieldId = id(`scale-${level}-${key}`);
+                  // Named with its level ("Standard (B) Constraint"): four such fields per level.
+                  const named = { id: fieldId, 'aria-labelledby': `${id(`scale-${level}`)} ${fieldId}-label` };
+                  return (
+                    <div key={key} className={key === 'demand_description' ? 'field md:col-span-2' : 'field'}>
+                      <label id={`${fieldId}-label`} htmlFor={fieldId} className="t-label">{label}</label>
+                      {key === 'contact_level' ? (
+                        <select {...named} value={values.scales[level][key]} onChange={(event) => setScale(level, key, event.target.value)} className="select input--kiosk">
+                          {optionsFor(VOCABULARIES.contact_level.values, values.scales[level][key]).map((contact) => (
+                            <option key={contact} value={contact}>{humanizeContactLevel(contact)}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <textarea {...named} value={values.scales[level][key]} onChange={(event) => setScale(level, key, event.target.value)} rows={key === 'demand_description' ? 4 : 2} maxLength={MAX_LONG} className="textarea input--kiosk" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </fieldset>
+          ))}
+        </fieldset>
+      )}
 
       <fieldset className="min-w-0 space-y-[var(--s3)]">
         <legend className="t-command mb-[var(--s3)] text-[length:var(--t-md)]">Coaching notes</legend>

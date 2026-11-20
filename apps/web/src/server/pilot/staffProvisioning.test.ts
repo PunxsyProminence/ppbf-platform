@@ -44,6 +44,7 @@ import {
 } from './staffProvisioning';
 import { query, queryOne, withTransaction } from './db';
 import { ConflictError } from './errors';
+import { GuardianLinkEndedError } from './guardianAccess';
 
 const mockQuery = query as jest.Mock;
 const mockQueryOne = queryOne as jest.Mock;
@@ -102,7 +103,7 @@ const GUARDIAN = { athleteId: 'ath-1', fullName: 'Dana Johnson', relationshipToA
 // the healthy case: the athlete exists, and the account holds no guardian
 // record yet.
 function guardianClient(options: {
-  athleteRows?: Array<{ athlete_id: string }>;
+  athleteRows?: Array<{ athlete_id: string; dob?: string | null }>;
   parentRows?: Array<{ parent_id: string; account_id: string | null; email_matches?: boolean }>;
 } = {}) {
   return fakeClient((sql) => {
@@ -849,6 +850,91 @@ describe('guardian link provisioning', () => {
     expect(result.guardianLink).toBeNull();
     expect(parentUpsertCalls()).toHaveLength(0);
     expect(guardianLinkInsertCalls()).toHaveLength(0);
+  });
+
+  /*
+   * Lane GA: no NEW guardian link to an athlete who is 18 or over
+   * (OD-2026-10-07-008, the link goes dormant at 18; Overwatch Q1 A: the
+   * existing GUARDIAN_LINK_ENDED refusal). Dates on the gym's calendar day, as
+   * guardianAccess.test.ts pins them; an unknown date of birth reads as a minor
+   * (OD-2026-10-04-010).
+   */
+  describe('lane GA: an athlete who is 18 or over', () => {
+    const gymYmd = (date: Date) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+    const nextDay = (ymd: string) => {
+      const [y, m, d] = ymd.split('-').map(Number);
+      return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+    };
+    const minus18 = (ymd: string, leapDay: '02-28' | '03-01') => {
+      const year = Number(ymd.slice(0, 4)) - 18;
+      const monthDay = ymd.slice(5);
+      return `${year}-${monthDay === '02-29' ? leapDay : monthDay}`;
+    };
+    const GYM_TODAY = gymYmd(new Date());
+    const EIGHTEEN_TODAY = minus18(GYM_TODAY, '02-28');
+    const EIGHTEEN_TOMORROW = minus18(nextDay(GYM_TODAY), '03-01');
+
+    const invite = () => createOrUpdateMicrosoftStaffAccount({
+      loginEmail: 'dana@example.com',
+      organizationId: 'org-1',
+      role: 'parent',
+      guardian: GUARDIAN,
+    });
+
+    test('is refused with GUARDIAN_LINK_ENDED before the guardian record or the link is written', async () => {
+      currentClient = guardianClient({ athleteRows: [{ athlete_id: 'ath-1', dob: EIGHTEEN_TODAY }] });
+      stubLookups({});
+
+      const error = await invite().catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(GuardianLinkEndedError);
+      expect((error as GuardianLinkEndedError).status).toBe(403);
+      expect((error as GuardianLinkEndedError).code).toBe('GUARDIAN_LINK_ENDED');
+      expect((error as Error).message).toBe('Forbidden: this athlete is 18 or older; guardian access has ended');
+      // Nothing for the guardian is written; the account write before it is
+      // on the same transaction client, so the refusal rolls it back with it.
+      expect(parentUpsertCalls()).toHaveLength(0);
+      expect(guardianLinkInsertCalls()).toHaveLength(0);
+      expect(currentClient.query.mock.calls.some(([sql]) => String(sql).includes('from pilot.parents'))).toBe(false);
+    });
+
+    test('reads the date of birth on the locked athlete read', async () => {
+      currentClient = guardianClient({ athleteRows: [{ athlete_id: 'ath-1', dob: EIGHTEEN_TOMORROW }] });
+      stubLookups({});
+
+      await invite();
+
+      const read = currentClient.query.mock.calls.find(([sql]) => String(sql).includes('from pilot.athletes'));
+      expect(String(read?.[0])).toMatch(/to_char\(dob, 'YYYY-MM-DD'\) as dob/);
+      expect(String(read?.[0])).toMatch(/for share/);
+      expect(read?.[1]).toEqual(['org-1', 'ath-1']);
+    });
+
+    test.each([
+      ['turns 18 tomorrow (a minor today)', () => EIGHTEEN_TOMORROW],
+      ['has no date of birth on file (reads as a minor)', () => null],
+    ])('an athlete who %s is linked, unchanged', async (_label, dob) => {
+      currentClient = guardianClient({ athleteRows: [{ athlete_id: 'ath-1', dob: dob() }] });
+      stubLookups({});
+
+      const result = await invite();
+
+      expect(guardianLinkInsertCalls()).toHaveLength(1);
+      expect(result.guardianLink).toEqual({ parentId: 'par-dana@example.com', athleteId: 'ath-1' });
+    });
+
+    test('re-inviting the parent login of an existing link to an adult child is refused as a whole (Overwatch Q2 A)', async () => {
+      currentClient = guardianClient({
+        athleteRows: [{ athlete_id: 'ath-1', dob: EIGHTEEN_TODAY }],
+        parentRows: [{ parent_id: 'par-7', account_id: 'acct-dana' }],
+      });
+      stubLookups({ existingByEmail: { account_id: 'acct-dana', role: 'parent', organization_id: 'org-1' } });
+
+      await expect(invite()).rejects.toThrow(GuardianLinkEndedError);
+      expect(parentUpsertCalls()).toHaveLength(0);
+      expect(guardianLinkInsertCalls()).toHaveLength(0);
+    });
   });
 });
 
