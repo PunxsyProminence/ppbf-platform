@@ -242,3 +242,69 @@ test('with a training hold, the hold notice comes right after Report pain, insid
   // And it is shown once, not again above the corner.
   expect(screen.getAllByText('Training is paused for you right now')).toHaveLength(1);
 });
+
+/* Lane AS-8 review (AS8-1). Report pain sits right above the How I feel today
+   form and opens the Dashboard, which unmounts the form. The athlete's unsaved
+   answers are held by the workspace and come back with the form. */
+test('unsaved How I feel today answers survive Report pain and the way back, and nothing is written', async () => {
+  await renderWorkspace();
+  const sore4 = /^How sore are you\? 4:/;
+  fireEvent.click(await screen.findByRole('button', { name: sore4 }));
+  fireEvent.change(screen.getByLabelText('How many hours did you sleep?'), { target: { value: '7.5' } });
+
+  fireEvent.click(corner().getByRole('button', { name: 'Report pain or soreness' }));
+  expect(screen.getByRole('button', { name: 'Dashboard' }).getAttribute('aria-current')).toBe('page');
+  expect(screen.queryByRole('button', { name: sore4 })).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'How I feel today' }));
+  expect((await screen.findByRole('button', { name: sore4 })).getAttribute('aria-pressed')).toBe('true');
+  expect((screen.getByLabelText('How many hours did you sleep?') as HTMLInputElement).value).toBe('7.5');
+  // Kept, not sent: no check-in, pain report or session write.
+  const writes = ['/api/pilot/athlete/check-in', '/api/pilot/shadow/formulas/observations', '/api/pilot/sessions'];
+  expect(fetchCalls.filter((call) => call.method !== 'GET' && writes.some((path) => call.url.includes(path)))).toHaveLength(0);
+});
+
+test('Report pain from How I feel today honours reduced motion after the tab change (ATH-23)', async () => {
+  const originalMatch = window.matchMedia;
+  window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), media: query })) as unknown as typeof window.matchMedia;
+  try {
+    await renderWorkspace();
+    fireEvent.click(corner().getByRole('button', { name: 'Report pain or soreness' }));
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'center' });
+    expect(document.activeElement?.id).toBe('pain-location-select');
+  } finally {
+    window.matchMedia = originalMatch;
+  }
+});
+
+describe('where the hold notice stands (lane AS-8)', () => {
+  const HOLD = 'Training is paused for you right now';
+  beforeEach(() => {
+    activeHold = {
+      scope: 'all_training',
+      athlete_explanation: 'Rest the shoulder this week.',
+      placed_by_name: 'Coach J.',
+      lift_condition_text: null,
+    };
+  });
+
+  test('on the Dashboard it is inside My Corner, after Report pain, once', async () => {
+    await renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+    const headline = await corner().findByText(HOLD);
+    const pain = corner().getByRole('button', { name: 'Report pain or soreness' });
+    expect(pain.compareDocumentPosition(headline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText(HOLD)).toHaveLength(1);
+  });
+
+  test('on a tab without My Corner it stands above the nav, once', async () => {
+    await renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
+    expect(screen.queryByRole('region', { name: 'My corner' })).toBeNull();
+    const headline = await screen.findByText(HOLD);
+    const nav = screen.getByRole('button', { name: 'Today' });
+    expect(headline.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText(HOLD)).toHaveLength(1);
+  });
+});

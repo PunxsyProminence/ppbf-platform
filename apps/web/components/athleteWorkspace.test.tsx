@@ -526,7 +526,7 @@ async function expectEndRefusedSaid(): Promise<void> {
  * Leaves the box untouched when `note` is undefined -- the athlete who writes
  * nothing, which is the case the placeholder exists for.
  */
-async function checkInFromSessionLog(note?: string): Promise<Record<string, unknown>> {
+async function startTrainingFromCorner(note?: string): Promise<Record<string, unknown>> {
   const box = await screen.findByLabelText(PRE_CHECK_IN_NOTE);
   if (note !== undefined) {
     fireEvent.change(box, { target: { value: note } });
@@ -1540,7 +1540,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     storedSessions = [staleRow()];
     await renderWorkspace();
 
-    const checkIn = await checkInFromSessionLog('Right hand is sore today.');
+    const checkIn = await startTrainingFromCorner('Right hand is sore today.');
     expect(checkIn.session_id).not.toBe(STALE_SESSION_ID);
     openTab('Dashboard');
     await openEndTraining();
@@ -1666,7 +1666,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     storedSessions = [staleRow()];
     await renderWorkspace();
 
-    const checkIn = await checkInFromSessionLog();
+    const checkIn = await startTrainingFromCorner();
     openTab('Dashboard');
     await openEndTraining();
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));
@@ -3673,7 +3673,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await renderWorkspace();
     expect(screen.queryByRole('slider')).toBeNull();
 
-    const checkIn = await checkInFromSessionLog('9');
+    const checkIn = await startTrainingFromCorner('9');
     expect(checkIn.rpe).toBeNull();
     expect(checkIn.rpe_method).toBe('UNKNOWN');
     // ARRIVING IS NOT SENDING (A-FIN-08): the number is carried into the open
@@ -3697,7 +3697,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     fetchCalls.length = 0;
 
     await renderWorkspace();
-    await checkInFromSessionLog('2');
+    await startTrainingFromCorner('2');
     openTab('Dashboard');
     await openEndTraining();
     fireEvent.click(effortButton(7));
@@ -4364,14 +4364,14 @@ describe('check-in records no session RPE at all', () => {
     // with a bare number written in the pre-check-in note, too.
     await renderWorkspace();
 
-    const blank = await checkInFromSessionLog();
+    const blank = await startTrainingFromCorner();
     expect(typeof blank.rpe).not.toBe('number');
     expect(blank.notes).toBe(NO_NOTE_PLACEHOLDER);
     cleanup();
     fetchCalls.length = 0;
 
     await renderWorkspace();
-    const numeric = await checkInFromSessionLog('8');
+    const numeric = await startTrainingFromCorner('8');
     expect(typeof numeric.rpe).not.toBe('number');
     expect(numeric.rpe_method).toBe('UNKNOWN');
     // ARRIVING IS NOT SENDING (A-FIN-08): the session is created holding the
@@ -4429,7 +4429,7 @@ describe('nothing said before the session can change the work', () => {
   async function checkInWith(wellness: Record<string, unknown>, note?: string) {
     storedCheckIn = wellness;
     await renderWorkspace();
-    const session = await checkInFromSessionLog(note);
+    const session = await startTrainingFromCorner(note);
     await waitFor(() => expect(openSurface()).toBe('Floor'));
     return { session };
   }
@@ -4876,7 +4876,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
   test('a note written before check-in is a draft, and sharing it stores the words exactly, trimmed', async () => {
     await renderWorkspace();
 
-    const body = await checkInFromSessionLog('   Left wrist still sore from Tuesday.  \n');
+    const body = await startTrainingFromCorner('   Left wrist still sore from Tuesday.  \n');
     expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
     expect(body.rpe).toBeNull();
     expect(body.rpe_method).toBe('UNKNOWN');
@@ -4907,7 +4907,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
   test('check-in without a note stores the fixed placeholder and invents no readiness', async () => {
     await renderWorkspace();
 
-    const body = await checkInFromSessionLog();
+    const body = await startTrainingFromCorner();
     // Non-empty, as the session contract requires -- and the one sentence
     // that satisfies it, built from nothing the athlete did or did not say.
     expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
@@ -4931,14 +4931,14 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
   test('a note of only spaces is no note: the placeholder, not an empty string', async () => {
     await renderWorkspace();
 
-    const body = await checkInFromSessionLog('   \n  ');
+    const body = await startTrainingFromCorner('   \n  ');
     expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
   });
 
   test('an untouched session keeps the placeholder through check-out, and it never becomes an RPE', async () => {
     await renderWorkspace();
 
-    await checkInFromSessionLog();
+    await startTrainingFromCorner();
     openTab('Dashboard');
     await openEndTraining();
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));
@@ -4983,7 +4983,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
   test('a session check-in writes the session and nothing else: no wellness record, no readiness row', async () => {
     await renderWorkspace();
 
-    await checkInFromSessionLog('Ready when you are.');
+    await startTrainingFromCorner('Ready when you are.');
     expect(postedTo('/api/pilot/athlete/check-in')).toHaveLength(0);
     expect(fetchCalls.filter((call) => /readiness/i.test(call.url))).toEqual([]);
   });
@@ -4995,7 +4995,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
     storedCheckIn = null;
     await renderWorkspace();
 
-    await checkInFromSessionLog('Shoulder feels fine today.');
+    await startTrainingFromCorner('Shoulder feels fine today.');
     await waitFor(() => expect(openSurface()).toBe('How I feel today'));
     openTab('Floor');
     expect(await screen.findByRole('button', { name: 'Go to How I feel today' })).toBeTruthy();

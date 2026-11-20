@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
-import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
+import AthleteCheckInPanel, { type AthleteCheckInDraft, type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import AthleteCyclePanel from './AthleteCyclePanel';
 import AthleteMediaConsentPanel from './AthleteMediaConsentPanel';
 import { ENJOYMENT_LEVELS, ENJOYMENT_QUESTION, type EnjoymentLevel, enjoymentLabel } from '@/src/shared/enjoyment';
@@ -112,7 +112,8 @@ type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
  * athletes and "shown on the athlete's Tracks tab" (OD-2026-10-07-010 ruling
  * 3). Something stores it now: the gym's admin sets a track per athlete on
  * /admin, and AthleteTracksPanel reads the athlete's own from
- * /api/pilot/athlete/tracks. It sits in Development.
+ * /api/pilot/athlete/tracks. It sits in Progress (the group read "Development"
+ * until lane AS-8, OD-2026-11-19-017).
  *
  * Assessments stays unlisted. Nothing has changed for it.
  */
@@ -1162,6 +1163,16 @@ export default function AthleteWorkspace() {
   // state would leave the gate guessing until it mounted.
   const [todayCheckIn, setTodayCheckIn] = useState<AthleteCheckInRecord | null>(null);
   const [recentCheckIns, setRecentCheckIns] = useState<AthleteCheckInRecord[]>([]);
+  // The How I feel today form's unsaved answers (lane AS-8). My Corner's Report
+  // pain sits right above the form and opens the Dashboard, which unmounts it;
+  // without this the athlete came back to an empty form. Held here, so it goes
+  // with the workspace when the athlete signs out. A ref: nothing on screen
+  // reads it, and a keystroke must not redraw the workspace.
+  const checkInDraftRef = useRef<AthleteCheckInDraft | null>(null);
+  const rememberCheckInDraft = useCallback((draft: AthleteCheckInDraft) => {
+    checkInDraftRef.current = draft;
+  }, []);
+  const readCheckInDraft = useCallback(() => checkInDraftRef.current, []);
   const [checkInLoading, setCheckInLoading] = useState(true);
   const [checkInLoadError, setCheckInLoadError] = useState<string | null>(null);
   /* Set by the pain report below, never by the athlete directly. It is a
@@ -1327,7 +1338,8 @@ export default function AthleteWorkspace() {
   const [afterSparringCheck, setAfterSparringCheck] = useState(false);
   // After a successful end, bring the "Training ended ..." line into view
   // (lane U3 B4, Overwatch Q-CONFIRM A): the questions just closed under the
-  // athlete's thumb. My Corner's line on the Dashboard, the rail's elsewhere.
+  // athlete's thumb. My Corner's line on How I feel today and the Dashboard,
+  // the rail's elsewhere.
   const [endedAt, setEndedAt] = useState(0);
   const cornerLineRef = useRef<HTMLParagraphElement>(null);
   const railLineRef = useRef<HTMLParagraphElement>(null);
@@ -2906,7 +2918,8 @@ export default function AthleteWorkspace() {
   /* END TRAINING WHERE THE ATHLETE IS (lane U3 B4, #2006). The Session Log's
      own check-out questions and End training, moved, not copied: same answers,
      same handleCheckOut, same request. They sit where "Training started" is
-     said (My Corner on the Dashboard, the top of the Floor); one tab is drawn
+     said (My Corner on How I feel today and the Dashboard, the top of the
+     Floor); one tab is drawn
      at a time, so a screen holds one End training. Built under the Session
      Log's conditions: athlete sign-in, an answered session read, an open
      session. */
@@ -4054,7 +4067,11 @@ export default function AthleteWorkspace() {
               loading={checkInLoading}
               loadError={checkInLoadError}
               onRetry={backendAthleteId ? () => void loadCheckIn() : undefined}
+              readDraft={readCheckInDraft}
+              onDraftChange={rememberCheckInDraft}
               onSaved={(row) => {
+                // Saved: nothing is left unsaved.
+                checkInDraftRef.current = null;
                 // The server has answered with today's check-in: the failed read is no longer the news.
                 setCheckInLoadError(null);
                 setTodayCheckIn(row);
