@@ -133,18 +133,27 @@ export default function MentalSkillsSubjectPanel({
     ? `${activeName}'s`
     : 'their';
 
-  // A one-child family has nothing to choose: the panel is left out for them.
-  const showPicker = !family || rosterState !== 'loaded' || people.length !== 1;
+  // Family: the picker stands on its own paper panel, as on the film and
+  // progress pages (a ghost button on this leather is ink on dark and cannot
+  // be read), and the leather panel under it carries only the loading, failed
+  // and nobody-linked lines. The coach page keeps the one panel with its select.
+  const showStatusPanel = !family || rosterState !== 'loaded' || people.length === 0;
 
   return (
     <div className="space-y-[var(--s5)]">
-      {showPicker && (
+      {family && (
+        <FamilyChildPicker
+          linked={people}
+          activeId={activeId || null}
+          onChoose={select}
+          label={pickerLabel}
+          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+        />
+      )}
+      {showStatusPanel && (
       <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
         {family ? (
-          <>
-            {rosterState === 'loading' && <p className="t-muted">Loading...</p>}
-            <FamilyChildPicker linked={people} activeId={activeId || null} onChoose={select} label={pickerLabel} />
-          </>
+          rosterState === 'loading' && <p className="t-muted">Loading...</p>
         ) : (
         <div className="field">
           <label htmlFor="mentalSkillsSubject" className="t-label">{pickerLabel}</label>

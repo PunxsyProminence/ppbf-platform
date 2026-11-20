@@ -49,8 +49,6 @@ export default function ParentMentalSkillsPage() {
           <p className="t-eyebrow">Parent Hub</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Mental Skills</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{VISIBILITY_LINES.guardian}</p>
-          {/* The one back link (FAM-18). */}
-          <BackHome className="btn btn--ghost mt-[var(--s4)]" />
         </header>
         <MentalSkillsSubjectPanel
           loaders={LOADERS}
@@ -62,6 +60,12 @@ export default function ParentMentalSkillsPage() {
           // family page. The route checks the link on every read.
           family
         />
+        {/* The one back link (FAM-18), at the foot on the family ground as on
+            the film and progress pages. In the leather header above it was ink
+            on dark. */}
+        <div className="flex flex-wrap gap-[var(--s3)]">
+          <BackHome />
+        </div>
       </div>
     </RoleStandaloneView>
   );

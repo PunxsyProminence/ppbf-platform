@@ -274,5 +274,12 @@ describe('the family picker (FAM-11) and the one back link (FAM-18)', () => {
     expect(screen.queryByText('Back to the Parent Hub')).toBeNull();
     // No session is cached in this test, so BackHome names no role's home.
     expect(screen.getByRole('link', { name: 'Back to your home page' }).getAttribute('href')).toBe('/dashboard');
+    // Rendered look, checked 2026-11-20: a ghost button on this page's leather
+    // is ink on dark. The back link stands on the family ground, outside the
+    // leather header, and the picker on its own paper panel.
+    expect(screen.getByRole('link', { name: 'Back to your home page' }).closest('header, .mat-leather')).toBeNull();
+    const picker = screen.getByRole('group', { name: 'Which child' });
+    expect(picker.className).toContain('mat-paper');
+    expect(picker.closest('.mat-leather')).toBeNull();
   });
 });

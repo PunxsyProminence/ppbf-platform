@@ -133,17 +133,24 @@ export default function ParentDevelopmentBlocksPage() {
             a ranking, and nothing on this page can be changed from it — if something reads wrong,
             that is a conversation with the coach.
           </p>
-          {/* The one back link (FAM-18). */}
-          <BackHome className="btn btn--ghost mt-[var(--s4)]" />
         </header>
 
-        {/* The family pages' one picker (FAM-11). A one-child family has
-            nothing to choose, so this panel is left out for them. */}
-        {childrenState === 'loaded' && children.length === 1 ? null : (
+        {/* The family pages' one picker (FAM-11), on its own paper panel as on
+            the film and progress pages: a ghost button on this page's leather
+            is ink on dark and cannot be read. It shows for two or more
+            children only. */}
+        <FamilyChildPicker
+          linked={children}
+          activeId={activeChildId || null}
+          onChoose={selectChild}
+          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+        />
+
+        {/* Loading, failed, or nobody linked: the lines this panel always
+            carried. With children loaded there is nothing to say here. */}
+        {childrenState === 'loaded' && children.length > 0 ? null : (
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
           {childrenState === 'loading' && <p className="t-muted">Loading...</p>}
-
-          <FamilyChildPicker linked={children} activeId={activeChildId || null} onChoose={selectChild} />
 
           {childrenState === 'unavailable' && (
             <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
@@ -173,6 +180,13 @@ export default function ParentDevelopmentBlocksPage() {
             />
           </section>
         )}
+
+        {/* The one back link (FAM-18), at the foot on the family ground as on
+            the film and progress pages. In the leather header above it was ink
+            on dark. */}
+        <div className="flex flex-wrap gap-[var(--s3)]">
+          <BackHome />
+        </div>
       </div>
     </RoleStandaloneView>
   );
