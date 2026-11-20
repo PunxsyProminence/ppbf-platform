@@ -632,7 +632,7 @@ function BoardSeatsConsole() {
         {session.role === 'board' && (
           <div>
             <Link href="/board" className="btn btn--ghost">
-              Board Workspace
+              Board Hub
             </Link>
           </div>
         )}
