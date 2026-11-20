@@ -51,6 +51,18 @@ interface GymTvPanelProps {
   /** Called when the server says the run the dashboard holds is no longer live, so it re-reads it. */
   readonly onRunStale?: () => void | Promise<void>;
   /**
+   * Called after each send, take-off or disconnect, whatever its answer, so a TV status shown
+   * elsewhere on the same screen reads the TVs again (lane U2-6a, the class screen; Overwatch
+   * Q10 = A: no timer).
+   */
+  readonly onTvsChanged?: () => void;
+  /**
+   * Where this screen's own TV switch is, so the panel names a control the coach can see (lane
+   * U2-6a). The coach home's is "Show on TV" under Today's Session (the default); the class
+   * screen's is "Allow on a TV", above the panel.
+   */
+  readonly tvSwitch?: { readonly name: string; readonly place: string };
+  /**
    * False where nobody has a live session to send: the office's Gym Setup
    * page (lane SH, OFF-02). Pairing, the list, the code and disconnect are
    * unchanged; the send and take-off controls and the live-session lines are
@@ -67,7 +79,6 @@ const REFUSALS: Record<string, string> = {
   TV_IN_USE: 'This TV is in use by another coach. Ask them, or pick another TV.',
   TV_NOT_PAIRED: 'This TV is not paired yet. Type its code on the TV first.',
   TV_NOT_FOUND: 'This TV is no longer listed. Refresh the list.',
-  SESSION_RUN_NOT_ON_TV: 'Switch "Show on TV" on for your session first, then send it.',
   SESSION_RUN_NOT_LIVE: 'Your session is no longer live, so it cannot go on a TV.',
   SESSION_RUN_NOT_FOUND: 'Your session could not be found. Reload the dashboard.',
   TV_NAME_REQUIRED: 'Give the TV a name first.',
@@ -78,7 +89,16 @@ const REFUSALS: Record<string, string> = {
 /** The codes a refused send/take-off answers when the run the dashboard holds has gone. */
 const RUN_STALE_CODES = new Set(['SESSION_RUN_NOT_LIVE', 'SESSION_RUN_NOT_FOUND']);
 
-export function describeRefusal(code: string | undefined, status: number): string {
+/** The coach home's TV switch, which this panel named before the class screen existed. */
+const COACH_HOME_TV_SWITCH = { name: 'Show on TV', place: "under Today's Session" } as const;
+
+export function describeRefusal(
+  code: string | undefined,
+  status: number,
+  tvSwitch: { readonly name: string } = COACH_HOME_TV_SWITCH,
+): string {
+  // The not-on-TV refusal names the switch on the screen the coach is looking at (lane U2-6a).
+  if (code === 'SESSION_RUN_NOT_ON_TV') return `Switch "${tvSwitch.name}" on for your session first, then send it.`;
   if (code && REFUSALS[code]) return REFUSALS[code];
   // Sign-in and role refusals come from the shared http layer as 'Unauthorized...' / 'Forbidden',
   // not as a GymTvError code; the status is the reliable key.
@@ -115,7 +135,9 @@ export default function GymTvPanel({
   liveRunKnown,
   coachAccountId,
   onRunStale,
+  onTvsChanged,
   sendsSessions = true,
+  tvSwitch = COACH_HOME_TV_SWITCH,
 }: GymTvPanelProps) {
   const [listState, setListState] = useState<ListState>('closed');
   const [refreshing, setRefreshing] = useState(false);
@@ -241,7 +263,7 @@ export default function GymTvPanel({
         const payload = await readJson(response);
         if (!response.ok) {
           const code = typeof payload.error === 'string' ? payload.error : undefined;
-          setActionError({ tvId: tv.tv_id, tvName: tv.tv_name, text: describeRefusal(code, response.status) });
+          setActionError({ tvId: tv.tv_id, tvName: tv.tv_name, text: describeRefusal(code, response.status, tvSwitch) });
           if (code && RUN_STALE_CODES.has(code) && onRunStale) await onRunStale();
           await loadTvs();
           return;
@@ -256,9 +278,10 @@ export default function GymTvPanel({
         actionLock.current = false;
         setBusyTvId(null);
         setConfirmDisconnectId((current) => (current === tv.tv_id ? null : current));
+        onTvsChanged?.();
       }
     },
-    [loadTvs, onRunStale],
+    [loadTvs, onRunStale, onTvsChanged, tvSwitch],
   );
 
   const sendToTv = (tv: GymTvListItem) => {
@@ -517,7 +540,7 @@ export default function GymTvPanel({
           )}
           {sendsSessions && listState === 'loaded' && liveRun && !liveRun.show_on_wall && (
             <p className="t-muted">
-              Your session&apos;s &quot;Show on TV&quot; switch is off. Switch it on under Today&apos;s Session before sending.
+              Your session&apos;s &quot;{tvSwitch.name}&quot; switch is off. Switch it on {tvSwitch.place} before sending.
             </p>
           )}
         </>

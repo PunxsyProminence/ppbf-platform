@@ -517,6 +517,12 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/session-scripts', label: 'Session Plans', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'session script lesson plan block minute run sheet class plan cheat sheet reset protocol',
     hint: 'The plan for a session, block by block. Minutes from the start, not clock times.' },
+  // Lane U2-6a: the class screen (Overwatch Q6 = A, room floor; roles copied from the page's own
+  // gate, Q8 = A). The label is the page's title, "Class screen" (one name per thing,
+  // OD-2026-10-17-001; doorLabelsMatchTitles.test.ts), not the title-case form Q6 proposed.
+  { href: '/coach/class', label: 'Class screen', room: 'floor', roles: ['coach', 'admin'],
+    keywords: 'class screen run class tonight start session live console gym tv clock today',
+    hint: "Today's classes and Start; while a class runs, its live console and the gym TVs." },
   { href: '/coach/development-blocks', label: 'Development Plans', room: 'floor', roles: ['coach', 'admin'],
     keywords: 'development block multi week plan periodization athlete plan training emphasis window macrocycle',
     hint: 'What you intend for one athlete over the next several weeks, in your own words.' },

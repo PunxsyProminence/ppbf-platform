@@ -221,10 +221,12 @@ describe('Start a session', () => {
   }
   const posts = () => fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
 
-  test('with no plans in the gym, one tap starts a plain session and goes to it', async () => {
+  // Lane U2-6a (Overwatch Q5 = A): a live session is on the class screen.
+  test('with no plans in the gym, one tap starts a plain session and goes to the class screen', async () => {
     respond([]);
     const onGoToSessions = jest.fn();
-    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+    const onGoToClass = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToSessions, onGoToClass })} />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
@@ -233,7 +235,9 @@ describe('Start a session', () => {
     expect(posts()).toHaveLength(1);
     expect(String(posts()[0][0])).toContain('/api/pilot/session-scripts/runs');
     expect(JSON.parse(String((posts()[0][1] as RequestInit).body))).toEqual({});
-    expect(onGoToSessions).toHaveBeenCalledTimes(1);
+    expect(onGoToClass).toHaveBeenCalledTimes(1);
+    expect(onGoToClass).toHaveBeenCalledWith(false);
+    expect(onGoToSessions).not.toHaveBeenCalled();
   });
 
   test('with plans in the gym, the tap goes to the session page and starts nothing', async () => {
@@ -249,16 +253,19 @@ describe('Start a session', () => {
     expect(onGoToSessions).toHaveBeenCalledTimes(1);
   });
 
-  test('a session already live elsewhere is gone to, not refused', async () => {
+  test('a session already live elsewhere is gone to on the class screen, not refused', async () => {
     respond([], { status: 409, body: { error: 'SESSION_RUN_ALREADY_LIVE' } });
-    const onGoToSessions = jest.fn();
-    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+    const onGoToClass = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToClass })} />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
 
-    expect(onGoToSessions).toHaveBeenCalledTimes(1);
+    // true: the class screen says the session was restored, not restarted.
+    expect(onGoToClass).toHaveBeenCalledWith(true);
+    expect(onGoToClass).toHaveBeenCalledTimes(1);
+    expect(posts()).toHaveLength(1);
   });
 
   test.each([
@@ -267,13 +274,15 @@ describe('Start a session', () => {
   ])('when %s, it says no session was started and offers the page', async (_label, scripts, start) => {
     respond(scripts, start);
     const onGoToSessions = jest.fn();
-    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+    const onGoToClass = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToSessions, onGoToClass })} />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
 
     expect(onGoToSessions).not.toHaveBeenCalled();
+    expect(onGoToClass).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toContain('No session was started.');
     expect(screen.getByRole('link', { name: 'Open the session page' }).getAttribute('href')).toBe('/coach/session-scripts');
   });
@@ -282,7 +291,8 @@ describe('Start a session', () => {
     const { rerender } = render(<CoachFloorFocus {...props()} />);
     expect(fetchSpy).not.toHaveBeenCalled();
     rerender(<CoachFloorFocus {...props({ sessionLive: true })} />);
-    expect(screen.getByRole('link', { name: 'Return to live delivery' }).getAttribute('href')).toBe('/coach/session-scripts');
+    // Lane U2-6a: the live session runs on the class screen.
+    expect(screen.getByRole('link', { name: 'Return to live delivery' }).getAttribute('href')).toBe('/coach/class');
     rerender(<CoachFloorFocus {...props({ sessionState: 'error' })} />);
     expect(screen.getByRole('link', { name: 'Open Session Plans' }).getAttribute('href')).toBe('/coach/session-scripts');
   });
@@ -503,8 +513,8 @@ test('Start a session sends one start however fast it is tapped, and stays busy 
     }
     return { ok: true, status: 200, json: async () => ({ scripts: [] }) } as Response;
   });
-  const onGoToSessions = jest.fn();
-  render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+  const onGoToClass = jest.fn();
+  render(<CoachFloorFocus {...props({ onGoToClass })} />);
 
   const button = screen.getByRole('button', { name: 'Start or pick a session' });
   await act(async () => {
@@ -519,7 +529,7 @@ test('Start a session sends one start however fast it is tapped, and stays busy 
 
   const posts = fetchSpy.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
   expect(posts).toHaveLength(1);
-  expect(onGoToSessions).toHaveBeenCalledTimes(1);
+  expect(onGoToClass).toHaveBeenCalledTimes(1);
   expect((screen.getByRole('button', { name: 'Starting...' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
@@ -647,13 +657,13 @@ describe('Start a session, and the class', () => {
 
   test('exactly one class under way: the start is tied to it', async () => {
     respond([klass('class-youth')]);
-    const onGoToSessions = jest.fn();
-    render(<CoachFloorFocus {...props({ onGoToSessions })} />);
+    const onGoToClass = jest.fn();
+    render(<CoachFloorFocus {...props({ onGoToClass })} />);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Start or pick a session' }));
     });
     expect(JSON.parse(String((posts()[0][1] as RequestInit).body))).toEqual({ class_id: 'class-youth' });
-    expect(onGoToSessions).toHaveBeenCalledTimes(1);
+    expect(onGoToClass).toHaveBeenCalledTimes(1);
   });
 
   test.each([

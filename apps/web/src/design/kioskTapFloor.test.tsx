@@ -137,6 +137,7 @@ const FLOOR_ROUTES = [
   'coach/one-percent-club', // app scrub CF-24 (lane U1, SC2-2)
   'coach/mental-skills', // app scrub CF-24 (lane U1, SC2-2)
   'coach/development-blocks', // app scrub CF-24 (lane U1, SC2-2)
+  'coach/class', // the class screen (lane U2-6a)
   'shadow',
   'parent/safety',
 ] as const;

@@ -68,7 +68,9 @@ interface PanelProps {
   liveRunKnown?: boolean;
   coachAccountId?: string;
   onRunStale?: () => void;
+  onTvsChanged?: () => void;
   sendsSessions?: boolean;
+  tvSwitch?: { name: string; place: string };
 }
 
 function panel(props: PanelProps = {}) {
@@ -78,7 +80,9 @@ function panel(props: PanelProps = {}) {
       liveRunKnown={props.liveRunKnown ?? true}
       coachAccountId={props.coachAccountId ?? ME}
       onRunStale={props.onRunStale}
+      onTvsChanged={props.onTvsChanged}
       sendsSessions={props.sendsSessions}
+      tvSwitch={props.tvSwitch}
     />
   );
 }
@@ -660,4 +664,53 @@ describe('on the office Gym Setup page (sendsSessions false)', () => {
 test('coach home is unchanged: the closed panel still offers to put your live session on a TV', () => {
   render(panel());
   expect(screen.getByText("Pair the gym's TVs, see which are connected, and put your live session on one.")).toBeTruthy();
+});
+
+// Lane U2-6a (Overwatch Q10 = A): on the class screen the console's TV status reads the TVs again
+// after each action here, whatever the answer -- a refused or unanswered one may have changed them.
+test('onTvsChanged is called once after a send, once after a refused take-off, and never by reading the list', async () => {
+  let refuse = false;
+  serve((call) => {
+    if (call.method !== 'GET') {
+      return refuse
+        ? respond({ error: 'TV_IN_USE' }, 409)
+        : respond({ tv: tv({ current_run_id: 'run_mine', current_run_set_by_account_id: ME }) });
+    }
+    return respond({ tvs: [tv()] });
+  });
+  const onTvsChanged = jest.fn();
+  openPanel({ liveRun: LIVE, onTvsChanged });
+  await screen.findByText('PAIRED');
+  expect(onTvsChanged).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Send to TV Ring wall' }));
+  await screen.findByText('Showing your session');
+  expect(onTvsChanged).toHaveBeenCalledTimes(1);
+
+  refuse = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Take off TV Ring wall' }));
+  await screen.findByText(/This TV is in use by another coach/);
+  expect(onTvsChanged).toHaveBeenCalledTimes(2);
+});
+
+// Lane U2-6a: on the class screen the switch is "Allow on a TV", above the panel; the panel names
+// that one, never the coach home's "Show on TV" under Today's Session.
+test('the switch-off line and the not-on-TV refusal name the switch on the screen the panel is on', async () => {
+  serve((call) => (call.method === 'POST' ? respond({ error: 'SESSION_RUN_NOT_ON_TV' }, 409) : respond({ tvs: [tv()] })));
+  openPanel({ liveRun: { run_id: 'run_mine', show_on_wall: false }, tvSwitch: { name: 'Allow on a TV', place: 'above' } });
+  await screen.findByText('PAIRED');
+  expect(screen.getByText('Your session\'s "Allow on a TV" switch is off. Switch it on above before sending.')).toBeTruthy();
+  expect(screen.queryByText(/Show on TV|Today's Session/)).toBeNull();
+});
+
+test('on the coach home (the default) the panel still names "Show on TV" under Today\'s Session', async () => {
+  serve(listOf([tv()]));
+  openPanel({ liveRun: { run_id: 'run_mine', show_on_wall: false } });
+  await screen.findByText('PAIRED');
+  expect(screen.getByText('Your session\'s "Show on TV" switch is off. Switch it on under Today\'s Session before sending.')).toBeTruthy();
+});
+
+test('describeRefusal words the not-on-TV refusal with the switch it is given', () => {
+  expect(describeRefusal('SESSION_RUN_NOT_ON_TV', 409, { name: 'Allow on a TV' })).toBe('Switch "Allow on a TV" on for your session first, then send it.');
+  expect(describeRefusal('SESSION_RUN_NOT_ON_TV', 409)).toBe('Switch "Show on TV" on for your session first, then send it.');
 });

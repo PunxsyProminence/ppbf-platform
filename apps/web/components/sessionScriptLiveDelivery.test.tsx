@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 
+import type { ReactElement } from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
@@ -102,6 +103,8 @@ interface Handlers {
   presence?: () => Response | Promise<Response>;
   /** GET /api/pilot/drill-library?drill_id=: the drill a block links (audit 2026-10-17 item 1). */
   drill?: (url: string) => Response | Promise<Response>;
+  /** GET /api/pilot/gym-tvs: the TVs the status line reads (lane U2-6a). */
+  tvs?: () => Response | Promise<Response>;
 }
 
 const DEFAULT_LOG_ATHLETES = [{ athlete_id: 'ath-1', full_name: 'Jordan P.' }];
@@ -155,6 +158,10 @@ function mockFetch(handlers: Handlers = {}) {
     }
     if (url.includes('/api/pilot/drill-library')) {
       return handlers.drill ? handlers.drill(url) : jsonResponse({ error: 'DRILL_NOT_FOUND' }, false, 404);
+    }
+    // The TV status line (lane U2-6a) reads the gym's TVs; by default the gym has none paired.
+    if (url.includes('/api/pilot/gym-tvs')) {
+      return handlers.tvs ? handlers.tvs() : jsonResponse({ tvs: [] });
     }
     if (url.includes('script_id=')) {
       return handlers.detail ? handlers.detail() : jsonResponse({ script: scriptDetail() });
@@ -376,47 +383,51 @@ describe('pause and resume', () => {
   });
 });
 
-describe('the Show on TV switch', () => {
-  it('a new run is off the TV, and Show on TV sends show: true and adopts the server answer', async () => {
+// Lane U2-6a (Overwatch's 6a ruling; Q2 = A, Q3 = A, Q10 = A; Q1 corrected the "admin" premise).
+describe('the Allow on a TV switch', () => {
+  const allow = () => screen.getByRole('switch', { name: 'Allow on a TV' });
+
+  it('a new run is not allowed on a TV; the switch sends show: true and adopts the server answer, in words', async () => {
     const { fetchMock } = await renderLive(liveRun(), {
       patch: () => jsonResponse({ run: liveRun({ show_on_wall: true }) }),
     });
-    expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
+    expect(allow()).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText('Off')).toBeInTheDocument();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+      fireEvent.click(allow());
     });
 
     expect(patchCalls(fetchMock)).toEqual([{ action: 'show_on_wall', show: true }]);
-    expect(screen.getByText('ON THE TV')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Take off the TV' })).toBeInTheDocument();
+    expect(allow()).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('On')).toBeInTheDocument();
   });
 
-  it('Take off the TV sends show: false -- an explicit value, never a toggle', async () => {
+  it('switching it off sends show: false -- an explicit value, never a toggle', async () => {
     const { fetchMock } = await renderLive(liveRun({ show_on_wall: true }), {
       patch: () => jsonResponse({ run: liveRun({ show_on_wall: false }) }),
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Take off the TV' }));
+      fireEvent.click(allow());
     });
 
     expect(patchCalls(fetchMock)).toEqual([{ action: 'show_on_wall', show: false }]);
-    expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
+    expect(allow()).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('the badge is the server answer even on success: asked for true, told false, stays NOT ON THE TV', async () => {
+  it('the switch shows the server answer even on success: asked for true, told false, stays Off', async () => {
     const { fetchMock } = await renderLive(liveRun(), {
       patch: () => jsonResponse({ run: liveRun({ show_on_wall: false }) }),
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+      fireEvent.click(allow());
     });
 
     expect(patchCalls(fetchMock)).toEqual([{ action: 'show_on_wall', show: true }]);
-    expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
-    expect(screen.queryByText('ON THE TV')).toBeNull();
+    expect(allow()).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByText('Off')).toBeInTheDocument();
   });
 
   it('a refused switch leaves the shown state as it was and says why', async () => {
@@ -425,21 +436,91 @@ describe('the Show on TV switch', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+      fireEvent.click(allow());
     });
 
-    expect(screen.getByText('NOT ON THE TV')).toBeInTheDocument();
+    expect(allow()).toHaveAttribute('aria-checked', 'false');
     // Words, never the stored code (UXB-09).
     expect(screen.getByRole('alert')).toHaveTextContent('That did not go through. Nothing was changed. Try again.');
     expect(screen.getByRole('alert')).not.toHaveTextContent('SOMETHING_ELSE');
   });
 
-  // F-060: the TV has shown sessions since Release 21. The switch alone puts
-  // nothing on it; the coach sends the run from Gym TVs on coach home.
+  // F-060: the TV has shown sessions since Release 21. The switch alone puts nothing on it; the
+  // coach sends the run from Gym TVs, below the console on the class screen (Q3 = A).
   it('says how the session reaches a TV, not that TVs cannot show it', async () => {
     await renderLive(liveRun());
-    expect(screen.getByText('Switching this on lets you send the session to a gym TV from Gym TVs on your coach home.')).toBeInTheDocument();
+    expect(screen.getByText('With this on, send the session to a gym TV from Gym TVs below.')).toBeInTheDocument();
     expect(screen.queryByText(/does not show sessions yet/)).toBeNull();
+  });
+});
+
+describe('the TV status line', () => {
+  const tv = (overrides: Record<string, unknown> = {}) => ({
+    tv_id: 'tv-1', tv_name: 'Ring TV', status: 'paired', current_run_id: null, ...overrides,
+  });
+  const tvReads = (fetchMock: jest.Mock) => fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/pilot/gym-tvs'));
+
+  it.each([
+    ['no TV is paired', [], 'No TV paired'],
+    ['only an expired or disconnected TV, even one still naming this run', [tv({ status: 'expired', current_run_id: 'ssrun_1' }), tv({ tv_id: 'tv-2', status: 'disconnected' })], 'No TV paired'],
+    ['a paired TV shows nothing', [tv()], 'Not on a TV'],
+    ["a paired TV shows another session", [tv({ current_run_id: 'ssrun_other' })], 'Not on a TV'],
+    ['a paired TV shows this session', [tv({ current_run_id: 'ssrun_1' })], 'ON Ring TV'],
+    ['two paired TVs show it', [tv({ current_run_id: 'ssrun_1' }), tv({ tv_id: 'tv-2', tv_name: 'Lobby TV', current_run_id: 'ssrun_1' })], 'ON Ring TV, Lobby TV'],
+  ])('when %s, it reads "%s"', async (_label, tvs, words) => {
+    await renderLive(liveRun({ run_id: 'ssrun_1', show_on_wall: true }), { tvs: () => jsonResponse({ tvs }) });
+    const badge = await screen.findByText(words);
+    expect(badge.className).toBe(words.startsWith('ON ') ? 'badge badge--cleared' : 'badge badge--filed');
+    expect(badge.textContent).toBe(`${words.startsWith('ON ') ? '✓' : '—'}${words}`);
+    // When it was read is said, since nothing re-reads it on a timer.
+    expect(screen.getByText(/^as of /)).toBeInTheDocument();
+  });
+
+  it('"ON" comes only from the TVs, never from the switch: allowed but not sent reads "Not on a TV"', async () => {
+    await renderLive(liveRun({ show_on_wall: true }), { tvs: () => jsonResponse({ tvs: [tv()] }) });
+    expect(await screen.findByText('Not on a TV')).toBeInTheDocument();
+    expect(screen.queryByText(/^ON /)).toBeNull();
+  });
+
+  it.each([
+    ['refused (403), for any role', () => jsonResponse({ error: 'Forbidden' }, false, 403)],
+    ['a server fault', () => jsonResponse({}, false, 500)],
+    ['an answer with no TV list', () => jsonResponse({})],
+  ])('when the read is %s, it says "TV status not checked" and gives no read time', async (_label, answer) => {
+    await renderLive(liveRun(), { tvs: answer });
+    expect(await screen.findByText('TV status not checked')).toBeInTheDocument();
+    // Unknown is not drawn like a known "not on a TV": its own glyph.
+    expect(screen.getByText('TV status not checked').textContent).toBe('?TV status not checked');
+    expect(screen.queryByText(/^as of /)).toBeNull();
+    expect(screen.queryByText('No TV paired')).toBeNull();
+  });
+
+  it('reads the TVs when it opens and again after the switch changes, with no timer', async () => {
+    const { fetchMock } = await renderLive(liveRun(), {
+      tvs: () => jsonResponse({ tvs: [] }),
+      patch: () => jsonResponse({ run: liveRun({ show_on_wall: true }) }),
+    });
+    expect(tvReads(fetchMock)).toHaveLength(1);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
+    });
+    expect(tvReads(fetchMock)).toHaveLength(2);
+    expect(tvReads(fetchMock).every(([, init]) => ((init as RequestInit | undefined)?.method ?? 'GET') === 'GET')).toBe(true);
+  });
+
+  it('reads the TVs again when the screen says Gym TVs acted', async () => {
+    const fetchMock = mockFetch({ tvs: () => jsonResponse({ tvs: [tv()] }) });
+    let rerender: (ui: ReactElement) => void = () => {};
+    await act(async () => {
+      ({ rerender } = render(<SessionScriptLiveDelivery initialRun={liveRun()} onSettled={jest.fn()} onRunGone={jest.fn()} tvStatusRefresh={0} />));
+    });
+    expect(tvReads(fetchMock)).toHaveLength(1);
+    fetchMock.mockClear();
+    mockFetch({ tvs: () => jsonResponse({ tvs: [tv({ current_run_id: 'ssrun_1' })] }) });
+    await act(async () => {
+      rerender(<SessionScriptLiveDelivery initialRun={liveRun()} onSettled={jest.fn()} onRunGone={jest.fn()} tvStatusRefresh={1} />);
+    });
+    expect(await screen.findByText('ON Ring TV')).toBeInTheDocument();
   });
 });
 
@@ -934,7 +1015,7 @@ describe('a plain session', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Pause session' }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
     });
 
     expect(patchCalls(fetchMock)).toEqual([
@@ -967,12 +1048,14 @@ describe('a write whose answer proves nothing is checked against the server (aud
     { action: 'pause', start: liveRun(), button: 'Pause session', saved: liveRun({ is_paused: true, paused_at: 'x' }), words: 'the session is paused', badge: 'PAUSED' },
     { action: 'resume', start: liveRun({ is_paused: true, paused_at: 'x' }), button: 'Resume session', saved: liveRun(), words: 'the session is running', badge: 'RUNNING' },
     { action: 'advance', start: liveRun(), button: 'Next block', saved: liveRun({ current_block_id: 'blk-3' }), words: 'the session is on Conditioning finish', badge: null },
-    { action: 'show_on_wall', start: liveRun(), button: 'Show on TV', saved: liveRun({ show_on_wall: true }), words: 'the session is on the TV', badge: 'ON THE TV' },
+    // Lane U2-6a: the switch allows a TV; the words say that, not that the session is on one.
+    { action: 'show_on_wall', start: liveRun(), button: 'Allow on a TV', saved: liveRun({ show_on_wall: true }), words: 'the session is allowed on a TV', badge: 'On' },
   ] as const;
 
   async function press(name: string) {
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name }));
+      // The TV control is a switch (lane U2-6a); the others are buttons.
+      fireEvent.click(screen.queryByRole('button', { name }) ?? screen.getByRole('switch', { name }));
     });
   }
 
@@ -1261,7 +1344,7 @@ describe('the check after a lost answer keeps the once-only locks and covers eve
   it('a run action whose session is no longer live hands control back', async () => {
     const { onRunGone } = await renderLive(liveRun(), { patch: dropped, runsGet: () => jsonResponse({ run: null }) });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Show on TV' }));
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
     });
     expect(onRunGone).toHaveBeenCalledWith(expect.stringContaining('no longer live'));
   });
@@ -1696,5 +1779,52 @@ describe("the current block's drill instructions", () => {
     });
 
     expect(await screen.findByText(/This is a failure to load, not a missing drill/)).toBeInTheDocument();
+  });
+});
+
+// Both reviewers of 4da00ae (lane U2-6a): a panel beside the console must never work from an older
+// copy of the run, and an old "ON" must not stand while the TVs are being read again.
+describe('the console tells the screen the run it holds', () => {
+  it('reports each run the server answers with, and the one it adopts when another is live', async () => {
+    const onRunChange = jest.fn();
+    mockFetch({
+      patch: () => jsonResponse({ run: liveRun({ show_on_wall: true }) }),
+    });
+    await act(async () => {
+      render(<SessionScriptLiveDelivery initialRun={liveRun()} onSettled={jest.fn()} onRunGone={jest.fn()} onRunChange={onRunChange} />);
+    });
+    expect(onRunChange).toHaveBeenLastCalledWith(expect.objectContaining({ run_id: 'ssrun_1', show_on_wall: false }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
+    });
+    expect(onRunChange).toHaveBeenLastCalledWith(expect.objectContaining({ run_id: 'ssrun_1', show_on_wall: true }));
+  });
+
+  it('while the TVs are read again after the switch changes, the old status is not shown as current', async () => {
+    let answer: (response: Response) => void = () => {};
+    let reads = 0;
+    mockFetch({
+      tvs: () => {
+        reads += 1;
+        if (reads === 1) return jsonResponse({ tvs: [{ tv_id: 'tv-1', tv_name: 'Ring TV', status: 'paired', current_run_id: 'ssrun_1' }] });
+        return new Promise<Response>((resolve) => { answer = resolve; });
+      },
+      patch: () => jsonResponse({ run: liveRun({ show_on_wall: false }) }),
+    });
+    await act(async () => {
+      render(<SessionScriptLiveDelivery initialRun={liveRun({ show_on_wall: true })} onSettled={jest.fn()} onRunGone={jest.fn()} />);
+    });
+    expect(await screen.findByText('ON Ring TV')).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('switch', { name: 'Allow on a TV' }));
+    });
+    expect(screen.queryByText('ON Ring TV')).toBeNull();
+    expect(screen.getByText('TV status not checked')).toBeInTheDocument();
+
+    await act(async () => {
+      answer(jsonResponse({ tvs: [{ tv_id: 'tv-1', tv_name: 'Ring TV', status: 'paired', current_run_id: null }] }));
+    });
+    expect(await screen.findByText('Not on a TV')).toBeInTheDocument();
   });
 });
