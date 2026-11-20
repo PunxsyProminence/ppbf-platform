@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTime } from '@/src/lib/gymTime';
+import { isMinor } from '@/src/lib/minorAge';
 // A plain constant with no server dependencies, so a client component can
 // import it and the admin copy can never drift from what the server sets.
 // Same reasoning: credentialPolicy is the single source of truth for which
@@ -99,6 +100,74 @@ interface GuardianLink {
 }
 
 type Tab = 'people' | 'invite-staff' | 'add-athlete';
+
+/**
+ * The tab a link to this page names (`?tab=invite-staff`, `?tab=add-athlete`),
+ * so Gym Setup's steps open their own form rather than the roster (lane AS-10,
+ * OFF-09). Anything else, or no value, opens Everyone, as before.
+ */
+function tabFromAddress(): Tab {
+  if (typeof window === 'undefined') return 'people';
+  const value = new URLSearchParams(window.location.search).get('tab');
+  return value === 'invite-staff' || value === 'add-athlete' ? value : 'people';
+}
+
+/** The date of birth on file for the athlete a code was just issued to, as /api/pilot/athletes/list reads it. */
+type DobOnFile = { state: 'reading' } | { state: 'read'; dob: string | null } | { state: 'unread' };
+
+/**
+ * What comes after a sign-in code (lane AS-10, OFF-07; Overwatch Q7 A): the
+ * guardian, the waivers and the media consent, one tap each, under the code.
+ *
+ * "Next: add a guardian" is left off only when the date of birth ON FILE makes
+ * the athlete 18 or over: a guardian link to an adult starts dormant
+ * (OD-2026-10-07-008) and the server refuses it (lane GA). An unknown date of
+ * birth is a minor's (OD-2026-10-04-010), and so is one this page could not
+ * read. The rule is isMinor, the same one guardianLinkEnded asks. Nothing is
+ * shown about the athlete's age; the step is there or it is not.
+ */
+function CodeNextSteps({ athleteId, onAddGuardian }: { readonly athleteId: string; readonly onAddGuardian: () => void }) {
+  const [onFile, setOnFile] = useState<DobOnFile>({ state: 'reading' });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as { items?: Array<{ athlete_id?: unknown; dob?: unknown }> } | null;
+        if (!response.ok || !payload || !Array.isArray(payload.items)) throw new Error('unread');
+        const row = payload.items.find((item) => item?.athlete_id === athleteId);
+        // Not in the gym's list: nothing on file to go by, so the minor's default.
+        setOnFile({ state: 'read', dob: row && typeof row.dob === 'string' ? row.dob : null });
+      } catch {
+        if (!controller.signal.aborted) setOnFile({ state: 'unread' });
+      }
+    })();
+    return () => controller.abort();
+  }, [athleteId]);
+
+  // Offered once the read has answered, so the step never shows and then goes.
+  const offerGuardian = onFile.state === 'unread' || (onFile.state === 'read' && isMinor(onFile.dob, new Date()));
+
+  return (
+    <nav aria-label="Next steps" className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+      {offerGuardian && (
+        <button type="button" onClick={onAddGuardian} className="btn">
+          Next: add a guardian
+        </button>
+      )}
+      <Link href="/admin/consent" className="btn btn--ghost">
+        Waivers &amp; Consent
+      </Link>
+      <Link href="/admin/athlete-consent" className="btn btn--ghost">
+        Media Consent Audit
+      </Link>
+    </nav>
+  );
+}
 
 /**
  * The two genuinely different jobs behind "add an athlete". They were
@@ -262,7 +331,9 @@ function WrongRoleNotice() {
 }
 
 function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession: boolean }) {
-  const [tab, setTab] = useState<Tab>('people');
+  // Read once from the address. Nothing behind RoleSessionGate renders on the
+  // server, so this first render is already the browser's.
+  const [tab, setTab] = useState<Tab>(tabFromAddress);
   const [members, setMembers] = useState<Member[]>([]);
   // False until the staff read answers: an unread list is not an empty gym.
   const [membersAvailable, setMembersAvailable] = useState(false);
@@ -370,7 +441,13 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
 
   // The plaintext activation code exists only in this response and is shown
   // once; only its hash is persisted server-side.
-  const [createdAthlete, setCreatedAthlete] = useState<{ accountId: string; activationCode: string; expiresAt: string } | null>(null);
+  const [createdAthlete, setCreatedAthlete] = useState<{
+    accountId: string;
+    activationCode: string;
+    expiresAt: string;
+    /** The roster record the code's login is for, so the next steps can name it; null when this page cannot tell. */
+    athleteId: string | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -1003,7 +1080,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
 
       // The account remains inactive until this one-time code is redeemed.
       if (!createPayload.activation_code || !createPayload.expires_at) throw new Error('Account was created but no activation code was returned');
-      setCreatedAthlete({ accountId: createdAccountId, activationCode: createPayload.activation_code, expiresAt: createPayload.expires_at });
+      setCreatedAthlete({
+        accountId: createdAccountId,
+        activationCode: createPayload.activation_code,
+        expiresAt: createPayload.expires_at,
+        athleteId: recordId,
+      });
 
       await load();
       setTab('people');
@@ -1182,7 +1264,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
         throw new Error(payload.error || 'Could not reset that PIN');
       }
       if (!payload.activation_code || !payload.expires_at) throw new Error('Reset succeeded but no activation code was returned');
-      setCreatedAthlete({ accountId, activationCode: payload.activation_code, expiresAt: payload.expires_at });
+      setCreatedAthlete({
+        accountId,
+        activationCode: payload.activation_code,
+        expiresAt: payload.expires_at,
+        athleteId: members.find((member) => member.account_id === accountId)?.athlete_id ?? null,
+      });
       setNotice(`${personLabel(accountId)} is inactive until the new one-time activation code is redeemed.`);
       await load();
     } catch (resetError) {
@@ -1230,6 +1317,10 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
               <Link href="/admin" className="btn btn--ghost">
                 Capabilities
               </Link>
+              {/* What is left before the gym's first class (lane AS-10, OFF-09). */}
+              <Link href="/admin/setup" className="btn btn--ghost">
+                Gym Setup
+              </Link>
             </div>
           </div>
         </header>
@@ -1272,6 +1363,20 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
               <p className="t-muted mt-[var(--s3)]">
                 This code is shown only once and expires {formatGymDateTime(createdAthlete.expiresAt) ?? 'at the stated expiry time'}. The athlete stays inactive until they redeem it and choose their own PIN.
               </p>
+
+              {createdAthlete.athleteId && (
+                <CodeNextSteps
+                  key={createdAthlete.athleteId}
+                  athleteId={createdAthlete.athleteId}
+                  onAddGuardian={() => {
+                    // The guardian invite, with this athlete already chosen. The
+                    // code stays on screen above until Done.
+                    setInviteRole('parent');
+                    setGuardianAthleteId(createdAthlete.athleteId ?? '');
+                    setTab('invite-staff');
+                  }}
+                />
+              )}
             </div>
           </section>
         )}

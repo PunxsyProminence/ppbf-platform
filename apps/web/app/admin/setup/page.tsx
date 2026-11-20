@@ -67,8 +67,12 @@ export default async function GymSetupPage() {
                 <span className={STATE_STAMP[line.state]}>{STATE_LABEL[line.state]}</span>
               </div>
               {line.href && line.linkLabel ? (
-                <div className="mt-[var(--s3)]">
+                <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
                   <Link href={line.href} className="btn btn--ghost">{line.linkLabel}</Link>
+                  {/* The step's second screen, when its work is split over two (the guardian step). */}
+                  {line.alsoHref && line.alsoLinkLabel ? (
+                    <Link href={line.alsoHref} className="btn btn--ghost">{line.alsoLinkLabel}</Link>
+                  ) : null}
                 </div>
               ) : null}
               {line.key === 'tv' ? (

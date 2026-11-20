@@ -273,3 +273,15 @@ describe.each([
     expect(screen.queryByText(/no outstanding activation codes for this organization/i)).toBeNull();
   });
 });
+
+// Lane AS-10, PR AS10-1 (app scrub OFF-08; Overwatch Q5 A): Gym Office is the
+// one place a code is issued; this page keeps working and says so.
+describe('the page points at Gym Office', () => {
+  it('links Gym Office for issuing codes', async () => {
+    mockGetRoleSessionSnapshot.mockReturnValue({ role: 'admin', expiresAt: Date.now() + 10000 });
+    global.fetch = jest.fn(async () => jsonResponse({ ok: true, codes: [] })) as unknown as typeof fetch;
+    render(<ActivationCodesManagementPage />);
+    expect(await screen.findByRole('link', { name: 'Gym Office' })).toHaveAttribute('href', '/admin/people');
+    expect(screen.getByText(/Add Athlete for a/)).toBeInTheDocument();
+  });
+});

@@ -163,7 +163,7 @@ function PinManagementPageContent() {
       return;
     }
     if (selectedItem?.account_id) {
-      setCreateError('This athlete already has a linked account. Use Activate or Reset PIN instead.');
+      setCreateError('This athlete already has a linked account. Use Issue Activation Code instead.');
       return;
     }
 
@@ -189,7 +189,7 @@ function PinManagementPageContent() {
       }
 
       setCreateAccountId('');
-      setCreateSuccess('Athlete account created. Next step: activate PIN.');
+      setCreateSuccess('Athlete account created. Next step: Issue Activation Code.');
       setLoading(true);
       await loadDirectory();
     } catch (createAccountError) {
@@ -208,6 +208,12 @@ function PinManagementPageContent() {
           <p className="t-body mt-[var(--s3)]">
             Select an athlete and issue a one-time code. They redeem it and choose a PIN only they
             know -- no administrator sets or sees an athlete&apos;s PIN.
+          </p>
+          {/* Gym Office is the one place a code is issued (lane AS-10, OFF-08;
+              Overwatch Q5 A); this page keeps working. */}
+          <p className="t-body mt-[var(--s3)]">
+            Codes are issued on <Link href="/admin/people" className="underline">Gym Office</Link>: Add Athlete for a
+            new sign-in, or Issue New Activation Code on the athlete&apos;s row.
           </p>
         </header>
 
@@ -281,7 +287,7 @@ function PinManagementPageContent() {
             <h2 className="t-eyebrow">PIN Action</h2>
             <form className="mt-[var(--s3)] space-y-[var(--s3)] border-b border-[color:var(--hide-600)] pb-[var(--s4)]" onSubmit={submitCreateAccount}>
               <h3 className="t-command" style={{ fontSize: 'var(--t-sm)' }}>Create Athlete Account</h3>
-              <p className="t-muted">Creates a pending account for the selected athlete. Then run Activate PIN.</p>
+              <p className="t-muted">Creates a pending account for the selected athlete. Then press Issue Activation Code below.</p>
               <div className="field">
                 <label htmlFor="create-account-id" className="t-label">
                   New Account ID
