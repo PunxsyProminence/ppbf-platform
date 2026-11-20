@@ -7,7 +7,6 @@ import { MINT } from './contentImport/ids';
 import { versionId } from './contentImport/datasets/templateScriptVersions';
 import {
   confirmLooksRight,
-  looksRightRecord,
   readVersionLabels,
   writeEditedVersionLabels,
   writeLooksRightVersionLabels,
@@ -145,8 +144,7 @@ export function parseWorkoutTemplateEdit(body: Row): WorkoutTemplateEditRequest 
   }
   if (typeof body.template_id !== 'string' || !body.template_id.trim()) throw new ValidationError('Missing template_id');
   const request: WorkoutTemplateEditRequest = { templateId: body.template_id.trim(), fields: {} };
-  // "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): alone, naming one field the edit
-  // form can change (Q3 = A), the item list as one (Q2 = A). See drillLibraryEdit.ts.
+  // "LOOKS RIGHT" (lane ED-UI PR4): alone, one field the form can change, the items as one. See drillLibraryEdit.ts.
   if (body.looks_right !== undefined) {
     if (Object.keys(body).some((key) => key !== 'template_id' && key !== 'looks_right')) {
       throw new ValidationError('Unsupported looks_right: send it on its own, without any change', 'LOOKS_RIGHT_WITH_CHANGES');
@@ -276,8 +274,7 @@ export async function editWorkoutTemplate(input: {
     const headVersion = head.version as number;
     const oldItems = await rowsOf(tx, organizationId, headId);
 
-    // A "Looks right" press: the field must still be labelled an AI draft on this
-    // version, read by the same rule the template screen reads it with.
+    // A press needs the field still a draft on this version, by the screen's own rule.
     const looksRight = request.looksRight;
     const labels = looksRight ? await readVersionLabels(tx, organizationId, 'workout-templates', lineageId, headVersion) : null;
     if (looksRight) {
@@ -455,7 +452,7 @@ export async function editWorkoutTemplate(input: {
         toVersion: newVersion,
         editId,
         editor,
-        fieldLabels: confirmLooksRight(labels.fieldLabels, { field: looksRight }, looksRightRecord(editor)),
+        fieldLabels: confirmLooksRight(labels.fieldLabels, { field: looksRight }, editor),
         evidence: labels.evidence,
         backboneVersion: labels.backboneVersion,
       });

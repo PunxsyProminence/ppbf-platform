@@ -328,16 +328,7 @@ export async function writeEditedVersionLabels(
   return true;
 }
 
-/** The record a coach's "Looks right" press adds to a label (Q1 = A): who and when. */
-export function looksRightRecord(editor: LabelEditor): Record<string, unknown> {
-  return { by_account_id: editor.accountId, by_role: editor.role, at: editor.at };
-}
-
-/**
- * A VERSION'S STORED LABELS, for a "Looks right" press to check and confirm
- * (lane ED-UI PR4). null when the version has no label row, or before the
- * content_labels migration: nothing there is labelled a draft.
- */
+/** A version's stored labels, for a "Looks right" press (lane ED-UI PR4); null when it has none. */
 export async function readVersionLabels(
   client: DbClient,
   organizationId: string,
@@ -357,22 +348,19 @@ export async function readVersionLabels(
 }
 
 /**
- * A COACH CONFIRMS AN AI-DRAFTED FIELD: "Looks right" (OD-2026-11-19-007,
- * OW25-55; lane ED-UI PR4, Q1 = A, Q2 = A). The text is unchanged, so its label
- * stays true about where it came from: the field keeps its label (status,
- * sources), loses its `draft` key, and gains `looks_right` (who, when). A whole
- * field confirms every part inside it too (a template's item list; the drill's
- * own stop-rule list, whose kinds the caller names in `alsoFields`). A part (a
- * scale level) is confirmed on its own label, which is created if the level has
- * none; the group's label still speaks for the levels nobody confirmed.
- * Returns a new object; `labels` is not changed.
+ * A COACH CONFIRMS AN AI-DRAFTED FIELD: "Looks right" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4,
+ * Q1 = A, Q2 = A). The text is unchanged, so the label keeps its status and sources, loses `draft`
+ * and gains `looks_right` (who, when). A whole field confirms its parts too (`alsoFields`: the stop
+ * rules' kinds); a part (a scale level) is confirmed on its own label, and its group still speaks
+ * for the others. Returns a new object.
  */
 export function confirmLooksRight(
   labels: Record<string, unknown>,
   target: { field: string; part?: string },
-  record: Record<string, unknown>,
+  editor: LabelEditor,
   alsoFields: readonly string[] = [],
 ): Record<string, unknown> {
+  const record = { by_account_id: editor.accountId, by_role: editor.role, at: editor.at };
   const isObject = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
   // Labels are JSON: a JSON copy also parts any object two keys happen to share.
@@ -399,11 +387,7 @@ export function confirmLooksRight(
   return out;
 }
 
-/**
- * Writes the labels of the version a "Looks right" press made: the confirmed
- * labels, with the old version's evidence and backbone version, in the caller's
- * transaction. import_id names the press, recorded_by the coach.
- */
+/** The labels of the version a press made, with the old version's evidence; import_id names the press. */
 export async function writeLooksRightVersionLabels(
   client: DbClient,
   input: {

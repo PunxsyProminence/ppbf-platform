@@ -729,8 +729,7 @@ function DraftMark({ state }: { state: boolean | null | undefined }) {
   return <span className="ml-[var(--s2)] normal-case tracking-normal" style={LIFT}>({DRAFT_NOT_CHECKED})</span>;
 }
 
-// "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): beside each drafted field of the current
-// version; every field marked here is one the edit form can change (Q3 = A), the blocks as one (Q2 = A).
+// "LOOKS RIGHT" (OW25-55; lane ED-UI PR4): every field marked here is one the form can change (Q3 = A).
 interface LooksRightPress { onPress: (field: TemplateMarkedField) => void; disabled: boolean }
 // The Edit form's words for a save (TemplateEditForm.tsx).
 const LOOKS_RIGHT_FAILED = 'The template could not be saved.';
@@ -758,7 +757,7 @@ function draftMark(detail: TemplateDetail, field: TemplateMarkedField, press?: L
   );
 }
 
-/** draftMark as a component, so the press callback reaches it as a prop, not during the page's render. */
+// draftMark as a component: the press reaches it as a prop, not during the page's render.
 function FieldMark({ detail, field, press }: { detail: TemplateDetail; field: TemplateMarkedField; press?: LooksRightPress }) {
   return draftMark(detail, field, press);
 }
@@ -946,9 +945,8 @@ function CoachWorkoutTemplates() {
     }
   }
 
-  // "LOOKS RIGHT" (lane ED-UI PR4): the server writes the next version (Q1 = A); as after a save, the list
-  // is read again and the new version opens from the server. After a 409 or an unknown outcome the list
-  // and this version are read again, so what shows is the server's answer.
+  // "LOOKS RIGHT" (lane ED-UI PR4): as after a save, the new version opens from the server; a 409 or an
+  // unknown outcome reads the list and this version again.
   async function pressLooksRight(field: TemplateMarkedField) {
     const opened = detail?.template;
     if (!opened || editBusy) return;
@@ -985,7 +983,7 @@ function CoachWorkoutTemplates() {
     }
   }
 
-  // Offered on the current version only (the route refuses any other, TEMPLATE_VERSION_STALE), as Edit is.
+  // On the current version only, as Edit is (TEMPLATE_VERSION_STALE).
   const looksRightPress: LooksRightPress | undefined = detail && detail.template.superseded_at === null
     ? { onPress: (field) => void pressLooksRight(field), disabled: issuing || making || editBusy }
     : undefined;

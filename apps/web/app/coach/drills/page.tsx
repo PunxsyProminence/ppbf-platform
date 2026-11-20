@@ -901,9 +901,7 @@ function CoachDrillLibrary() {
     }
   }
 
-  // "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): a coach confirms one drafted
-  // field as it stands. The server writes the next version (Q1 = A); as after an edit's save,
-  // the library is read again and the new version opens, read from the server.
+  // "LOOKS RIGHT" (OW25-55; lane ED-UI PR4): the server writes the next version; as after a save, it opens from the server.
   async function pressLooksRight(target: string) {
     const detail = openReferenceDetail;
     if (!detail || actionInFlight) return;
@@ -934,7 +932,6 @@ function CoachDrillLibrary() {
     } catch (failure) {
       const unknown = status === null || status >= 500;
       setLooksRightError(unknown ? LOOKS_RIGHT_UNKNOWN : (failure instanceof Error && failure.message) || LOOKS_RIGHT_FAILED);
-      // A 409 or an unknown outcome reads the drill again, as after a failed edit.
       await afterEditFailed(status);
     }
   }

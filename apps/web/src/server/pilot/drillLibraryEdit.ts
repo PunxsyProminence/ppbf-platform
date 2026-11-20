@@ -8,7 +8,6 @@ import { normalizeCell } from './contentImport/values';
 import { VOCABULARIES, type VocabularyName } from './contentImport/vocabularies';
 import {
   confirmLooksRight,
-  looksRightRecord,
   readVersionLabels,
   writeEditedVersionLabels,
   writeLooksRightVersionLabels,
@@ -69,13 +68,8 @@ export const EDITABLE_DRILL_LIBRARY_KEYS = [
 ] as const;
 
 /**
- * "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4). A coach confirms one
- * AI-drafted field as it stands: `looks_right` names it, alone in the request. Only
- * a field the edit form can change (Q3 = A): the scalar fields and cues, the drill's
- * own stop-rule list as one (its kinds included, Q2 = A), or one scale level
- * ('scale_levels.B'). It writes v(n+1) like an edit, with no content change; the
- * field's label keeps its sources, loses `draft` and records the coach
- * (contentLabels.ts#confirmLooksRight, Q1 = A).
+ * "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): `looks_right`, alone, confirms one drafted
+ * field the form can change (Q3 = A), the stop-rule list as one or one scale level (Q2 = A), as v(n+1).
  */
 export const LOOKS_RIGHT_DRILL_FIELDS = [
   ...SHORT_FIELDS, ...VOCABULARY_FIELDS, ...DRILL_TEXT_FIELDS, 'requires_coach_authorization', 'cues', 'stop_rules',
@@ -328,8 +322,7 @@ export async function editLibraryDrill(input: {
     const stops = await rowsOf(tx, 'drill_stop_rules', organizationId, headId);
     const cues = await rowsOf(tx, 'drill_cues', organizationId, headId);
 
-    // A "Looks right" press: the field must still be labelled an AI draft on this
-    // version, read by the same rule the drill screen reads it with (drillFieldDrafts).
+    // A press needs the field still a draft on this version, by the screen's own rule (drillFieldDrafts).
     const looksRight = request.looksRight;
     const labels = looksRight
       ? await readVersionLabels(tx, organizationId, 'drill-library', head.lineage_id as string, head.version as number)
@@ -531,9 +524,7 @@ export async function editLibraryDrill(input: {
         toVersion: newVersion,
         editId,
         editor,
-        // The drill's own stop-rule list is one press: its kinds are confirmed with it (Q2 = A).
-        fieldLabels: confirmLooksRight(labels.fieldLabels, looksRight, looksRightRecord(editor),
-          looksRight.field === 'stop_rules' ? ['stop_rules.rule_kind'] : []),
+        fieldLabels: confirmLooksRight(labels.fieldLabels, looksRight, editor, looksRight.field === 'stop_rules' ? ['stop_rules.rule_kind'] : []),
         evidence: labels.evidence,
         backboneVersion: labels.backboneVersion,
       });

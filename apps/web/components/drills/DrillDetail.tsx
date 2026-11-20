@@ -59,13 +59,7 @@ export interface DrillDetailProps {
   audience: 'athlete' | 'coach';
   /** Rendered in the header: e.g. the coach's lifecycle state and Promote action. */
   actions?: ReactNode;
-  /**
-   * "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4). When given (the
-   * opened current reference drill on /coach/drills), each drafted field the edit
-   * form can change offers "Looks right" beside its mark; `onPress` gets the field
-   * ('purpose', 'stop_rules', 'scale_levels.B'). Never on an athlete view, and not
-   * on the live console's "View instructions", which does not pass it.
-   */
+  /** "Looks right" (OW25-55; lane ED-UI PR4) beside each drafted field; `onPress` gets 'purpose', 'scale_levels.B'. */
   looksRight?: { onPress: (target: string) => void; disabled?: boolean };
   /**
    * Move focus to the drill's heading when it appears. The list that opened it
@@ -120,16 +114,14 @@ export default function DrillDetail({ view, audience, actions, looksRight, focus
   const drafts = audience === 'coach' ? view.coach?.fieldDrafts ?? null : null;
   const labelled = drafts?.labelled === true;
   const mark = (state: boolean | null | undefined, onDark = false) => (labelled ? <DraftMark state={state} onDark={onDark} /> : null);
-  // "Looks right" (lane ED-UI PR4): beside a drafted field the edit form can change (Q3 = A: no
-  // press for discipline); one press per scale level and one for the drill's own stop rules (Q2 = A).
-  // In an expander it sits inside, never in the summary that opens it.
+  // "Looks right": a drafted field the form can change (Q3 = A), per scale level, the stop rules as one
+  // (Q2 = A); in an expander it sits inside, never in the summary.
   const press = (state: boolean | null | undefined, target: string, label: string | null) => (
     labelled && state === true && looksRight && label !== null
       ? <LooksRight label={label} onPress={() => looksRight.onPress(target)} disabled={looksRight.disabled} />
       : null
   );
   const pressFor = (key: DrillMarkedField, label = FIELD_LABEL[key]) => press(drafts?.fields[key], key, label);
-  // Nothing at all when there is neither (a heading with nothing beside it stays a bare heading).
   const both = (marked: ReactNode, pressed: ReactNode) => (marked || pressed ? <>{marked}{pressed}</> : null);
   const field = (key: DrillMarkedField, label = FIELD_LABEL[key]) => both(mark(drafts?.fields[key]), pressFor(key, label));
   const markOnly = (key: DrillMarkedField) => mark(drafts?.fields[key]);
@@ -189,8 +181,7 @@ export default function DrillDetail({ view, audience, actions, looksRight, focus
           <StopRuleList heading="Stop rules for every drill" rules={everyDrillStops} />
         )}
         {readiness.length > 0 && (
-          // The drill's own rules here carry the list's mark, each; the gym's stored-once rules are not the drill's.
-          // The list's one press sits with "Stop rules"; with no such group, on the first of these that is the drill's.
+          // Each of the drill's own rules carries the mark; the list's one press goes here only without "Stop rules".
           <StopRuleList
             heading="Before contact or maximal effort"
             rules={readiness}

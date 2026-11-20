@@ -21,6 +21,7 @@ import { parseWorkoutTemplateEdit } from './workoutTemplateEdit';
 const DRAFT = { status: 'INFERRED', sources: ['DOC-1'], draft: 'AI draft' };
 const SOURCED = { status: 'INFERRED', sources: ['DOC-1'] };
 const RECORD = { by_account_id: 'acct-coach', by_role: 'coach', at: '2026-11-20T12:00:00.000Z' };
+const EDITOR = { accountId: 'acct-coach', role: 'coach', at: '2026-11-20T12:00:00.000Z' };
 
 describe('the request: looks_right alone, naming one field the edit form can change', () => {
   test('drills: a field, a scale level, the stop-rule list', () => {
@@ -60,7 +61,7 @@ describe('the request: looks_right alone, naming one field the edit form can cha
 describe('the label a press writes (Q1 = A)', () => {
   test('a field keeps its sources, loses draft and records the coach; nothing else changes', () => {
     const labels = { purpose: DRAFT, execution: DRAFT };
-    const out = confirmLooksRight(labels, { field: 'purpose' }, RECORD);
+    const out = confirmLooksRight(labels, { field: 'purpose' }, EDITOR);
     expect(out.purpose).toEqual({ ...SOURCED, looks_right: RECORD });
     expect(out.execution).toEqual(DRAFT);
     // The input is not changed.
@@ -70,17 +71,17 @@ describe('the label a press writes (Q1 = A)', () => {
   test('a whole field confirms its parts too; the stop-rule list confirms its kinds (Q2 = A)', () => {
     const out = confirmLooksRight(
       { stop_rules: { ...DRAFT, 1: DRAFT, 2: SOURCED }, 'stop_rules.rule_kind': { ...SOURCED, 1: DRAFT } },
-      { field: 'stop_rules' }, RECORD, ['stop_rules.rule_kind'],
+      { field: 'stop_rules' }, EDITOR, ['stop_rules.rule_kind'],
     );
     expect(out.stop_rules).toEqual({ ...SOURCED, 1: SOURCED, 2: SOURCED, looks_right: RECORD });
     expect(out['stop_rules.rule_kind']).toEqual({ ...SOURCED, 1: SOURCED, looks_right: RECORD });
   });
 
   test('a scale level is confirmed on its own label; the group still speaks for the others', () => {
-    const out = confirmLooksRight({ scale_levels: { ...DRAFT, A: SOURCED, B: SOURCED } }, { field: 'scale_levels', part: 'B' }, RECORD);
+    const out = confirmLooksRight({ scale_levels: { ...DRAFT, A: SOURCED, B: SOURCED } }, { field: 'scale_levels', part: 'B' }, EDITOR);
     expect(out.scale_levels).toEqual({ ...DRAFT, A: SOURCED, B: { ...SOURCED, looks_right: RECORD } });
     // A level with no label of its own gets one holding the record.
-    const bare = confirmLooksRight({ scale_levels: DRAFT }, { field: 'scale_levels', part: 'C' }, RECORD);
+    const bare = confirmLooksRight({ scale_levels: DRAFT }, { field: 'scale_levels', part: 'C' }, EDITOR);
     expect((bare.scale_levels as Record<string, unknown>).C).toEqual({ looks_right: RECORD });
   });
 });
