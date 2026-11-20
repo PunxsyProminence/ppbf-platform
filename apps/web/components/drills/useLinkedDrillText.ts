@@ -68,7 +68,9 @@ export function useLinkedDrillText(drillIds: readonly string[]): ReadonlyMap<str
 /**
  * Whether the drill's own record says it is a draft: its field_provenance text contains "DRAFT"
  * (the library's drafts read "LITERATURE-GROUNDED DRAFT ..." or "COACHING-CRAFT DRAFT ..."). The
- * drill's own record, so tied to a source, not guessed (Overwatch QA = B on #1991).
+ * drill's own record, so tied to a source, not guessed (Overwatch QA = B on #1991). "Contains", as
+ * the ruling says; for every value the column allows it answers as requiresFloorValidation
+ * (src/lib/drillFloorValidation.ts) does, which the tests pin.
  */
 export function provenanceSaysDraft(fieldProvenance: string | null | undefined): boolean {
   return typeof fieldProvenance === 'string' && fieldProvenance.includes('DRAFT');

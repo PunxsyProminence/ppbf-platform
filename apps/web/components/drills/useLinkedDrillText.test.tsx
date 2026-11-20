@@ -9,7 +9,9 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { useLinkedDrillText } from './useLinkedDrillText';
+import { provenanceSaysDraft, useLinkedDrillText } from './useLinkedDrillText';
+import { REQUIRES_FLOOR_VALIDATION_PROVENANCE, requiresFloorValidation } from '@/src/lib/drillFloorValidation';
+import { vocabularyValues } from '@/src/server/pilot/contentImport/vocabularies';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
@@ -76,12 +78,28 @@ test('a response without field_drafts reads as "not checked" for every field, ne
 
 // Lane U2-6e follow-up (Overwatch QA = B on #1991, Q9 = A on #2001): a drill whose own
 // field_provenance says DRAFT fills the "not checked" gap with the draft mark; an explicit label wins.
-test.each([
-  ['LITERATURE-GROUNDED DRAFT — generated from cited registry claims', true],
-  ['COACHING-CRAFT DRAFT — no directly relevant research retrieved', true],
-  ['PPBF source manual v3', null],
+// Every value the column allows (pilot_drill_library_field_provenance_check), plus an empty one.
+const PROVENANCES: Array<[string, true | null]> = [
+  ...vocabularyValues('field_provenance').map((value): [string, true | null] => [value, requiresFloorValidation(value) ? true : null]),
   ['', null],
-])('provenance %j fills only the fields no label settles', async (provenance, filled) => {
+];
+
+test('the two draft provenances are among the allowed values, and only they say DRAFT', () => {
+  expect(PROVENANCES.filter(([, filled]) => filled).map(([value]) => value).sort()).toEqual([...REQUIRES_FLOOR_VALIDATION_PROVENANCE].sort());
+  for (const [value] of PROVENANCES) expect(provenanceSaysDraft(value)).toBe(requiresFloorValidation(value));
+});
+
+test.each([
+  [['DRAFT']],
+  [{ text: 'DRAFT' }],
+  [42],
+  [null],
+  [undefined],
+])('a provenance that is not text (%j) is not a draft', (value) => {
+  expect(provenanceSaysDraft(value as never)).toBe(false);
+});
+
+test.each(PROVENANCES)('provenance %j fills only the fields no label settles', async (provenance, filled) => {
   mockFetch((id) => ({
     status: 200,
     body: {
@@ -99,7 +117,10 @@ test.each([
 });
 
 test('a drafted drill with no label read at all shows the mark on every field from its provenance', async () => {
-  mockFetch((id) => ({ status: 200, body: { drill: drill(id, { field_drafts: undefined, field_provenance: 'COACHING-CRAFT DRAFT — x' }) } }));
+  mockFetch((id) => ({
+    status: 200,
+    body: { drill: drill(id, { field_drafts: undefined, field_provenance: REQUIRES_FLOOR_VALIDATION_PROVENANCE[1] }) },
+  }));
   const { result } = renderHook(() => useLinkedDrillText(['drl-1']));
   await waitFor(() => expect(result.current.get('drl-1')?.state).toBe('loaded'));
   const text = result.current.get('drl-1');

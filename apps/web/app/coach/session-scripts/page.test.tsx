@@ -7,6 +7,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachSessionScriptsPage from './page';
+import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from '@/src/lib/drillFloorValidation';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -383,7 +384,7 @@ describe('coach session plans page', () => {
     });
 
     it('a drill whose own provenance says DRAFT shows the mark where no label settles it; a non-draft label keeps none (6e follow-up)', async () => {
-      const drafted = { ...SLIP_DRILL, field_provenance: 'LITERATURE-GROUNDED DRAFT — generated from cited registry claims' };
+      const drafted = { ...SLIP_DRILL, field_provenance: REQUIRES_FLOOR_VALIDATION_PROVENANCE[0] };
       const { blocks } = await openWith(() => jsonResponse({ drill: drafted }));
       const second = within(blocks).getAllByRole('listitem')[1];
       expect(await within(second).findByText('Eyes on the chest · Small slip')).toBeInTheDocument();
