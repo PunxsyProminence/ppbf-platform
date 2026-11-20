@@ -59,8 +59,8 @@ export interface DrillDetailProps {
   audience: 'athlete' | 'coach';
   /** Rendered in the header: e.g. the coach's lifecycle state and Promote action. */
   actions?: ReactNode;
-  /** "Looks right" (OW25-55; lane ED-UI PR4) beside each drafted field; `onPress` gets 'purpose', 'scale_levels.B'. */
-  looksRight?: { onPress: (target: string) => void; disabled?: boolean };
+  /** "Looks right" (OW25-55; lane ED-UI PR4): the page's press for a drafted field ('purpose', 'scale_levels.B'), placed here. */
+  looksRight?: (target: string, label: string) => ReactNode;
   /**
    * Move focus to the drill's heading when it appears. The list that opened it
    * is hidden at that moment, taking the focused button with it; without this,
@@ -117,9 +117,7 @@ export default function DrillDetail({ view, audience, actions, looksRight, focus
   // "Looks right": a drafted field the form can change (Q3 = A), per scale level, the stop rules as one
   // (Q2 = A); in an expander it sits inside, never in the summary.
   const press = (state: boolean | null | undefined, target: string, label: string | null) => (
-    labelled && state === true && looksRight && label !== null
-      ? <LooksRight label={label} onPress={() => looksRight.onPress(target)} disabled={looksRight.disabled} />
-      : null
+    labelled && state === true && looksRight && label !== null ? looksRight(target, label) : null
   );
   const pressFor = (key: DrillMarkedField, label = FIELD_LABEL[key]) => press(drafts?.fields[key], key, label);
   const both = (marked: ReactNode, pressed: ReactNode) => (marked || pressed ? <>{marked}{pressed}</> : null);
@@ -357,15 +355,6 @@ const FIELD_LABEL: Record<DrillMarkedField, string | null> = {
   common_errors: 'Common errors', exit_condition: 'Exit condition', correction_path: 'Correction path',
   target_behavior: 'Target behaviour', transfer: 'Transfer',
 };
-
-/** "Looks right" (OW25-55; Q7 = A): the press, named for its field. */
-function LooksRight({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
-  return (
-    <button type="button" className="btn btn--secondary ml-[var(--s2)]" aria-label={`Looks right: ${label}`} onClick={onPress} disabled={disabled}>
-      Looks right
-    </button>
-  );
-}
 
 /** The 6e mark and words (sessionScriptWords.ts), beside one field: a draft, or not checked; nothing when not a draft. */
 function DraftMark({ state, onDark = false }: { state: boolean | null | undefined; onDark?: boolean }) {

@@ -174,6 +174,13 @@ describe('editLibraryDrill with looks_right', () => {
     expect(read?.values).toEqual(['org-1', 'drill', 'lin-1', 1]);
   });
 
+  test('a level whose own label is drafted again after a confirmation can be confirmed again', async () => {
+    fieldLabels = { scale_levels: { ...SOURCED, A: { ...DRAFT, looks_right: RECORD } } };
+    await press('scale_levels.A');
+    const written = JSON.parse(labelInsert()?.values[4] as string);
+    expect(written.scale_levels.A).toEqual({ ...SOURCED, looks_right: expect.objectContaining({ by_role: 'coach' }) });
+  });
+
   test('a level drafted on its own label is confirmed there: its own draft goes', async () => {
     fieldLabels = { scale_levels: { ...SOURCED, A: DRAFT } };
     await press('scale_levels.A');

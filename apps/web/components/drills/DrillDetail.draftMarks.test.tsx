@@ -269,7 +269,10 @@ describe('"Looks right" beside a drafted field', () => {
   const presses = () => screen.queryAllByRole('button', { name: /^Looks right: / });
   function renderWith(fieldDrafts: DrillFieldDrafts, onPress = jest.fn(), overrides: Record<string, unknown> = {}, disabled = false) {
     const drill = { ...DRILL, ...overrides, field_drafts: fieldDrafts } as unknown as DrillWithDetail;
-    render(<DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" looksRight={{ onPress, disabled }} />);
+    const looksRight = (target: string, label: string) => (
+      <button type="button" aria-label={`Looks right: ${label}`} onClick={() => onPress(target)} disabled={disabled}>Looks right</button>
+    );
+    render(<DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" looksRight={looksRight} />);
     return onPress;
   }
 
@@ -323,7 +326,7 @@ describe('"Looks right" beside a drafted field', () => {
     expect(marks().length).toBeGreaterThan(0);
     expect(presses()).toHaveLength(0);
     cleanup();
-    render(<DrillDetail view={fromCoachDrillDetail({ ...DRILL, field_drafts: every(true) } as unknown as DrillWithDetail)} audience="athlete" looksRight={{ onPress: jest.fn() }} />);
+    render(<DrillDetail view={fromCoachDrillDetail({ ...DRILL, field_drafts: every(true) } as unknown as DrillWithDetail)} audience="athlete" looksRight={() => <button type="button">Looks right</button>} />);
     expect(presses()).toHaveLength(0);
   });
 
