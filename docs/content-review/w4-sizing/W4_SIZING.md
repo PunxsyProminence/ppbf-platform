@@ -190,8 +190,9 @@ so. Two texts bear on that:
   - **B:** safety escalations for staff only.
   - **C:** A plus gym announcements.
   - **D:** A, plus a coach's message to an athlete
-    (`apps/web/src/server/pilot/athleteCoachMessages.ts:1-8`). Under A to C, no
-    event reaches an athlete.
+    (`apps/web/src/server/pilot/athleteCoachMessages.ts:1-8`). Under A and B, no
+    event reaches an athlete. Under C, only gym announcements do: athletes read
+    them in the app (`apps/web/app/api/pilot/announcements/get/route.ts:58`).
 - **Q1.2 Who may opt in?**
   - **A (recommended):** anyone with a sign-in email. This adds no new
     restriction (the L1 rule, above), and the email holds nothing but "open the
@@ -287,8 +288,9 @@ tablets are shared, and they sign out after idle time
 - **Dependencies:** item 1 (EM-1 and EM-3) first. WP-3 touches the tablet
   sign-out work of lane U1's AS2 PRs (merged).
 - **File overlap:** WP-1 shares the registration files (above). WP-2 adds a
-  package to `apps/web/package.json` and `package-lock.json`, which the nine
-  open dependabot PRs also change.
+  package to `apps/web/package.json` and `package-lock.json`. All nine open
+  dependabot PRs change the lockfile; seven also change `apps/web/package.json`
+  (#1994 and #1997 change only `apps/research-bridge/package.json`).
 
 **Owner questions (for when web push is started):**
 
@@ -366,8 +368,8 @@ none by this entry". The brief says the privacy review comes first.
   - FN-1 uses the guardian checks in `guardianAccess.ts`, which #2012 (lane
     GA) changes (+30 lines at `5efdc9b6`). FN-1 goes after #2012 merges.
   - FN-1 shares the registration files with #2013 (above).
-  - FN-2 changes `AthleteWorkspace.tsx`, which #2006 (lane U3) plans to change,
-    and U2 item 4e later.
+  - FN-2 changes `AthleteWorkspace.tsx`, which #2006 (lane U3) changes (+257
+    lines at `c5c39034`), and U2 item 4e later.
   - FN-3 changes `CoachWorkspace.tsx`, lane U2's file (AS-7, coach home). #2010
     (lane AS-5) would also edit it if Overwatch picks its Q11 B.
 
@@ -473,7 +475,7 @@ reply.
     `5efdc9b6`). PM-1 goes after #2012 merges. It also shares the registration
     files with #2013.
   - PM-2 changes `apps/web/app/coach/decision-loop/page.tsx`, which #2010 (lane
-    AS-5) plans to change in AS5-1.
+    AS-5, AS5-1) changes (+20 lines at `0d342ee3`).
   - A coach-home inbox (Q4.4 B) changes `CoachWorkspace.tsx`, which is U2's file
     and #2010's Q11 B.
 
