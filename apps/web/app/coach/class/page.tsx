@@ -23,7 +23,7 @@ import { painTileRead, usePainReports, type PainReportsRead } from '@/components
 //   - a live session: the live console (SessionScriptLiveDelivery, moved here from Session Plans)
 //     and Gym TVs (GymTvPanel), so the coach sends the session to a TV from the same screen.
 // While a session is live the pain list shows under the console (lane U2-6b-2): one read of the
-// pain feed, every two minutes (Q4 = A), draws the list and the console's pain tile, so the two
+// pain feed, every two minutes (6b Q4 = A, on #2005), draws the list and the console's pain tile, so the two
 // count the same rows over the same window (Overwatch's 6b ruling).
 //
 // THE SERVER DECIDES. The first question is the same one Session Plans asks: does this coach

@@ -19,6 +19,11 @@ import { PAIN_FEED_LIMIT, painReportCount, type PainReportCount } from '@/compon
  *
  * The newest answer wins: an answer is kept only if it is from a newer read than the one shown,
  * so a slow older answer never replaces a newer one. Nothing is set after unmount.
+ *
+ * A timed refresh (refreshMs, the class screen's two minutes) keeps the last answer on screen
+ * until the new one arrives, as the 6b-1 tile does, so the list neither blanks nor re-announces
+ * every two minutes and the list and the tile show the same answer. Only a refresh the coach asks
+ * for (reload: the panel's Refresh, a retry) says it is checking, as the coach home always did.
  */
 
 /**
@@ -130,7 +135,7 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
     );
   }, []);
 
-  // A refresh or a retry: says a read is out, then reads.
+  // A refresh or a retry the coach asked for: says a read is out, then reads.
   const reload = useCallback(() => {
     setState((current) => (current.loading ? current : { ...current, loading: true }));
     read();
@@ -139,9 +144,10 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
   useEffect(() => {
     read();
     if (!refreshMs) return undefined;
-    const id = setInterval(reload, refreshMs);
+    // The timed refresh reads quietly: the last answer stays until the new one arrives.
+    const id = setInterval(read, refreshMs);
     return () => clearInterval(id);
-  }, [read, reload, refreshMs]);
+  }, [read, refreshMs]);
 
   return { ...state, reload };
 }

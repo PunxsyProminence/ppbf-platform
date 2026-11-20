@@ -97,6 +97,41 @@ describe('the read', () => {
     expect(reads).toEqual([FEED, FEED]);
   });
 
+  test('a timed refresh keeps the last answer on screen until the new one arrives', async () => {
+    jest.useFakeTimers();
+    let held: (response: Response) => void = () => undefined;
+    answers = [
+      () => json({ ...EMPTY, painReports: [report('n1'), report('n2')] }),
+      () => new Promise<Response>((resolve) => {
+        held = resolve;
+      }),
+    ];
+    await show({ refreshMs: 120_000 });
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    await act(async () => {
+      jest.advanceTimersByTime(120_000);
+    });
+    await settle();
+    expect(reads).toHaveLength(2);
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    expect(screen.queryByText('Checking for athlete pain reports...')).toBeNull();
+    await act(async () => {
+      held(json(EMPTY));
+    });
+    await settle();
+    expect(screen.queryAllByRole('article')).toHaveLength(0);
+    expect(screen.getByText(/No athlete on your roster has reported pain in the last 7 days/)).toBeInTheDocument();
+  });
+
+  test('Refresh, which the coach asks for, says it is checking while the read is out', async () => {
+    answers = [() => json({ ...EMPTY, painReports: [report('n1')] }), () => new Promise<Response>(() => undefined)];
+    await show();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh athlete pain reports' }));
+    await settle();
+    expect(screen.getByText('Checking for athlete pain reports...')).toBeInTheDocument();
+  });
+
   test('with a refresh pace, reads again at that pace', async () => {
     jest.useFakeTimers();
     answers = [() => json(EMPTY)];
@@ -185,10 +220,10 @@ describe('the read', () => {
     expect(screen.getByText(/No athlete on your roster has reported pain in the last 7 days/)).toBeInTheDocument();
   });
 
-  test('a failure keeps the window last read, and the tile read says failed, not a count', async () => {
-    answers = [() => json({ ...EMPTY, windowDays: 7 }), () => json({ error: 'boom' }, 500)];
+  test('a failure clears the reports, keeps the window last read, and the tile read says failed', async () => {
+    answers = [() => json({ ...EMPTY, windowDays: 7, painReports: [report('n1')] }), () => json({ error: 'boom' }, 500)];
     await show();
-    expect(painTileRead(seen.read!)).toEqual({ state: 'ok', value: { count: 0, truncated: false, windowDays: 7 } });
+    expect(painTileRead(seen.read!)).toEqual({ state: 'ok', value: { count: 1, truncated: false, windowDays: 7 } });
     fireEvent.click(screen.getByRole('button', { name: 'Refresh athlete pain reports' }));
     await settle();
     expect(seen.read?.windowDays).toBe(7);

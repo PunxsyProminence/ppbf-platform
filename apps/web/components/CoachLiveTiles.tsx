@@ -290,7 +290,7 @@ export default function CoachLiveTiles({ painFeed }: { painFeed?: PainTileRead }
           )
         }
       </Group>
-      {/* The coach home list's own heading (CoachWorkspace, "Athlete Pain Reports"): the feed is
+      {/* The pain list's own heading (PainReportsPanel, "Athlete Pain Reports"): the feed is
           every athlete the caller may see, so it is not under "your athletes" (lane U2-6b). */}
       <Group title="Athlete pain reports" read={pain} failedInTiles>
         {() => {

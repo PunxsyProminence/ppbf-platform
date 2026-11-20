@@ -8,7 +8,9 @@ import { painScoreLabel } from '@/src/shared/painScoreLabel';
 
 /**
  * ATHLETE PAIN REPORTS (lane U2-6b-2): the coach home's pain list, moved out of CoachWorkspace
- * unchanged in what it shows and in its failed-read words, so the class screen can show it too.
+ * with its markup and words unchanged, so the class screen can show it too. Its read now asks for
+ * up to 50 reports (QF = A), and a body that cannot state its window, completeness or list shows
+ * the failed-read words, never the "no athlete has reported pain" line.
  * It draws one shared read (usePainReports): the coach home's, or on the class screen the same
  * read the pain tile counts, so the tile and the list never disagree (Overwatch's 6b ruling).
  *

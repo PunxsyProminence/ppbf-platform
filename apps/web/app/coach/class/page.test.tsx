@@ -425,8 +425,11 @@ describe('the pain list on the class screen (lane U2-6b-2)', () => {
     expect(screen.getByRole('link', { name: 'Record What You Did' })).toHaveAttribute('href', '/coach/decision-loop');
   });
 
-  test('a failed read: the tile says "?" and the list says it could not load, never "no athlete reported pain"', async () => {
-    serve({ live, pain: () => jsonResponse({ error: 'boom' }, false, 500) });
+  test.each([
+    ['a server error', 500],
+    ['a refusal', 403],
+  ])('%s: the tile says "?" and the list says it could not load, never "no athlete reported pain"', async (_label, status) => {
+    serve({ live, pain: () => jsonResponse({ error: 'no' }, false, status) });
     await open();
 
     expect(await screen.findByText(/Pain reports may exist that are not shown here\./)).toBeInTheDocument();
@@ -441,7 +444,7 @@ describe('the pain list on the class screen (lane U2-6b-2)', () => {
     expect(await screen.findAllByRole('article')).toHaveLength(1);
     expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^1$/);
 
-    rows = [painRow('n1', 'Casey R.'), painRow('n2', 'Jordan P.'), painRow('n3', 'Riley S.')];
+    rows = [painRow('n1', 'Casey R.'), painRow('n2', 'Jordan P.'), painRow('n3', 'Fixture Athlete')];
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Refresh athlete pain reports' }));
     });
@@ -450,22 +453,41 @@ describe('the pain list on the class screen (lane U2-6b-2)', () => {
     expect(painReads(fetchMock)).toHaveLength(2);
   });
 
-  test('the one read refreshes every two minutes (Q4 = A); the tile makes no read of its own', async () => {
+  test('the one read refreshes every two minutes, keeping the list on screen; the tile makes no read of its own', async () => {
     jest.useFakeTimers();
     try {
-      const { fetchMock } = serve({ live });
+      const answers: Array<() => Response | Promise<Response>> = [
+        () => jsonResponse({ ...PAIN_EMPTY, painReports: [painRow('n1', 'Casey R.'), painRow('n2', 'Jordan P.')] }),
+      ];
+      let held: (response: Response) => void = () => undefined;
+      const { fetchMock } = serve({ live, pain: () => (answers.shift() ?? (() => new Promise<Response>((resolve) => {
+        held = resolve;
+      })))() });
+      const flush = async () => {
+        await act(async () => {
+          for (let i = 0; i < 5; i += 1) await Promise.resolve();
+        });
+      };
       await open();
-      await act(async () => {
-        for (let i = 0; i < 5; i += 1) await Promise.resolve();
-      });
+      await flush();
       expect(painReads(fetchMock)).toHaveLength(1);
+      expect(screen.getAllByRole('article')).toHaveLength(2);
       await act(async () => {
         jest.advanceTimersByTime(120_000);
       });
-      await act(async () => {
-        for (let i = 0; i < 5; i += 1) await Promise.resolve();
-      });
+      await flush();
       expect(painReads(fetchMock)).toHaveLength(2);
+      // While the timed read is out, the list stays as last read and does not say it is checking;
+      // the tile shows the same answer.
+      expect(screen.getAllByRole('article')).toHaveLength(2);
+      expect(screen.queryByText('Checking for athlete pain reports...')).toBeNull();
+      expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^2$/);
+      await act(async () => {
+        held(jsonResponse({ ...PAIN_EMPTY, painReports: [painRow('n1', 'Casey R.')] }));
+      });
+      await flush();
+      expect(screen.getAllByRole('article')).toHaveLength(1);
+      expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^1$/);
     } finally {
       jest.useRealTimers();
     }
