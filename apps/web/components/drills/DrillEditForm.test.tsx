@@ -104,7 +104,7 @@ it('opens on the drill as it is, under "Edit <name>", with focus on its heading'
   expect(screen.getByLabelText('Coach authorization')).toHaveValue('not_required');
   expect(screen.getByLabelText('Exit condition')).toHaveValue('');
   // Never on the form: the floor-test gate and the drill's identity.
-  expect(screen.queryByLabelText(/provenance|discipline|content class|source/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/provenance|discipline|content class|source|authoring|starting point|scope/i)).not.toBeInTheDocument();
   // PR1b: each scale level, named with its level, and the drill's own stop rules.
   expect(screen.getByLabelText('Standard (B) What it demands')).toHaveValue('As designed.');
   expect(screen.getByLabelText('Easier (A) Contact')).toHaveValue('light_technical');
@@ -317,5 +317,60 @@ describe('scale levels and stop rules (PR1b)', () => {
     renderForm();
     expect(screen.queryByRole('button', { name: /add|remove|delete/i })).not.toBeInTheDocument();
     expect(screen.getAllByLabelText(/^Stop rule \d+$/)).toHaveLength(2);
+  });
+});
+
+describe('stop rules as the drill page groups them, and only the drill\'s own (PR1b review)', () => {
+  const rule = (ordinal: number, kind: string, text: string) => ({
+    organization_id: 'org-1', stop_rule_id: `st-${ordinal}`, drill_id: 'drl-1', ordinal, condition_text: text, scope: 'drill_specific', rule_kind: kind, origin: 'drill',
+  });
+  const withReadiness = {
+    ...drill,
+    stop_rules: [rule(1, 'fatigue', 'Stop on fatigue.'), rule(2, 'warmup_decay', 'Re-warm before contact after 20 minutes idle.'), rule(3, 'safety', 'Stop on any dizziness.')],
+  } as unknown as DrillWithDetail;
+
+  it('lists a re-warm rule under "Before contact or maximal effort", and numbers each group by position', async () => {
+    const { fetchMock } = renderForm({ drill: withReadiness });
+    const stops = screen.getByRole('group', { name: 'Stop rules' });
+    expect(within(stops).getByLabelText('Stop rule 1')).toHaveValue('Stop on fatigue.');
+    expect(within(stops).getByLabelText('Stop rule 2')).toHaveValue('Stop on any dizziness.');
+    const readiness = screen.getByRole('group', { name: 'Before contact or maximal effort' });
+    expect(within(readiness).getByLabelText('Before contact or maximal effort')).toHaveValue('Re-warm before contact after 20 minutes idle.');
+    // "Stop rule 2" on screen is the rule stored at ordinal 3, and is sent as that.
+    change('Stop rule 2', 'Stop on any dizziness or headache.');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(sentBody(fetchMock)).toEqual({ drill_id: 'drl-1', stop_rules: [{ ordinal: 3, condition_text: 'Stop on any dizziness or headache.' }] });
+  });
+
+  it('never shows or sends the gym\'s stored-once rules, which also number from 1', () => {
+    const withUniversal = {
+      ...drill,
+      universal_stop_rules: [{ organization_id: 'org-1', universal_rule_id: 'u-1', lineage_id: 'u-1', version: 1, ordinal: 1, condition_text: 'Stop on any head injury.', rule_kind: 'safety', applies_to_contact_levels: null, origin: 'universal' }],
+    } as unknown as DrillWithDetail;
+    const { fetchMock, onSaved } = renderForm({ drill: withUniversal });
+    expect(screen.queryByDisplayValue('Stop on any head injury.')).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^Stop rule \d+$/)).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalledWith({ changed: false });
+  });
+});
+
+describe('scale levels as the drill page names them (PR1b review)', () => {
+  it('marks the starting level with the page\'s own words, without changing the field names', () => {
+    renderForm();
+    expect(screen.getByRole('group', { name: 'Standard (B) · where to start' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Standard (B) What it demands')).toHaveValue('As designed.');
+  });
+
+  it('keeps a level\'s stored contact selectable when the list does not hold it, and never sends it untouched', async () => {
+    const odd = { ...drill, scale_levels: [{ ...drill.scale_levels[0], contact_level: 'legacy_contact' }, drill.scale_levels[1]] } as unknown as DrillWithDetail;
+    const { fetchMock } = renderForm({ drill: odd });
+    expect(screen.getByLabelText('Easier (A) Contact')).toHaveValue('legacy_contact');
+    change('Easier (A) Watch for', 'Eyes up?');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(sentBody(fetchMock)).toEqual({ drill_id: 'drl-1', scale_levels: { A: { coach_watch_point: 'Eyes up?' } } });
   });
 });

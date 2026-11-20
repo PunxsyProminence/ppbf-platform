@@ -15,8 +15,9 @@ import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 // are the server's; a refusal is shown in its words. Only what changed is sent,
 // so untouched text keeps its AI-draft label (OD-2026-11-15-011 ruling 2); a
 // scale level or stop rule is edited, never added or removed, as the route
-// allows. The drill's own stop rules sit in Safety (lane ED-UI PR1b), so they
-// are in view while Contact changes. The one check before save is the cue
+// allows. The drill's OWN stop rules sit in Safety (lane ED-UI PR1b), grouped
+// as the drill page groups them; the gym's stored-once rules are not shown or
+// sent (this route does not edit them). The one check before save is the cue
 // rule (OD-2026-10-06-026 ruling 2), judged as the server judges it. Labels are
 // the drill page's own words; the dark `mat-leather` panel is the Add a drill
 // form's, so its ink is the one proven readable there.
@@ -156,6 +157,10 @@ const NOTHING_CHANGED = 'Nothing was changed. This drill is as it was.';
 const MAX_SHORT = 200;
 const MAX_LONG = 4000;
 const MAX_STOP_RULE = 1000;
+/** The stop-rule kind DrillDetail lists under "Before contact or maximal effort" rather than as a stop. */
+const READINESS_KIND = 'warmup_decay';
+/** A sub-group's name inside Safety or Scaling: bold bone ink, so it reads apart from the labels under it. */
+const SUBGROUP = 'mb-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]';
 
 /** The vocabulary, with the drill's current value first when the list does not hold it, so an untouched select changes nothing. */
 function optionsFor(list: readonly string[], current: string): string[] {
@@ -250,7 +255,16 @@ export default function DrillEditForm({
     setValues((prev) => ({ ...prev, scales: { ...prev.scales, [level]: { ...prev.scales[level], [key]: value } } }));
   const setStop = (ordinal: number, key: keyof StopValues, value: string) =>
     setValues((prev) => ({ ...prev, stops: { ...prev.stops, [ordinal]: { ...prev.stops[ordinal], [key]: value } } }));
+  // The drill's own rules only (never universal_stop_rules: both number from
+  // 1, and the state is keyed by ordinal). Grouped as DrillDetail groups them,
+  // by the STORED kind so a rule does not jump while its kind is changed: a
+  // readiness rule (warmup_decay) is "Before contact or maximal effort", not a
+  // stop rule, and each group is numbered by position, as the page lists it.
   const ownStops = [...(drill.stop_rules ?? [])].sort((a, b) => a.ordinal - b.ordinal);
+  const stopGroups = [
+    { heading: 'Stop rules', item: 'Stop rule', rules: ownStops.filter((rule) => rule.rule_kind !== READINESS_KIND) },
+    { heading: 'Before contact or maximal effort', item: 'Before contact or maximal effort', rules: ownStops.filter((rule) => rule.rule_kind === READINESS_KIND) },
+  ].filter((group) => group.rules.length > 0);
   const levels = [...(drill.scale_levels ?? [])].sort((a, b) => a.scale_level.localeCompare(b.scale_level));
   const textArea = ({ key, label, rows }: (typeof TEXT_FIELDS)[number]) => (
     <div key={key} className="field">
@@ -306,21 +320,29 @@ export default function DrillEditForm({
             </select>
           </div>
         </div>
-        {ownStops.map((rule) => (
-          <div key={rule.ordinal} className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <div className="field">
-              <label htmlFor={id(`stop-${rule.ordinal}`)} className="t-label">Stop rule {rule.ordinal}</label>
-              <textarea id={id(`stop-${rule.ordinal}`)} value={values.stops[rule.ordinal].condition_text} onChange={(event) => setStop(rule.ordinal, 'condition_text', event.target.value)} rows={2} maxLength={MAX_STOP_RULE} className="textarea input--kiosk" />
-            </div>
-            <div className="field">
-              <label htmlFor={id(`stop-${rule.ordinal}-kind`)} className="t-label">Stop rule {rule.ordinal}: kind</label>
-              <select id={id(`stop-${rule.ordinal}-kind`)} value={values.stops[rule.ordinal].rule_kind} onChange={(event) => setStop(rule.ordinal, 'rule_kind', event.target.value)} className="select input--kiosk">
-                {optionsFor(VOCABULARIES.stop_rule_kind.values, values.stops[rule.ordinal].rule_kind).map((kind) => (
-                  <option key={kind} value={kind}>{kind.replace(/_/g, ' ')}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+        {stopGroups.map((group) => (
+          <fieldset key={group.heading} className="mt-[var(--s4)] min-w-0">
+            <legend className={SUBGROUP}>{group.heading}</legend>
+            {group.rules.map((rule, index) => {
+              const name = `${group.item}${group.rules.length > 1 || group.item === 'Stop rule' ? ` ${index + 1}` : ''}`;
+              return (
+                <div key={rule.ordinal} className="mt-[var(--s3)] grid gap-[var(--s4)] md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                  <div className="field">
+                    <label htmlFor={id(`stop-${rule.ordinal}`)} className="t-label">{name}</label>
+                    <textarea id={id(`stop-${rule.ordinal}`)} value={values.stops[rule.ordinal].condition_text} onChange={(event) => setStop(rule.ordinal, 'condition_text', event.target.value)} rows={2} maxLength={MAX_STOP_RULE} className="textarea input--kiosk" />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={id(`stop-${rule.ordinal}-kind`)} className="t-label">{name}: kind</label>
+                    <select id={id(`stop-${rule.ordinal}-kind`)} value={values.stops[rule.ordinal].rule_kind} onChange={(event) => setStop(rule.ordinal, 'rule_kind', event.target.value)} className="select input--kiosk">
+                      {optionsFor(VOCABULARIES.stop_rule_kind.values, values.stops[rule.ordinal].rule_kind).map((kind) => (
+                        <option key={kind} value={kind}>{kind.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+          </fieldset>
         ))}
       </fieldset>
 
@@ -334,16 +356,17 @@ export default function DrillEditForm({
       {levels.length > 0 && (
         <fieldset className="min-w-0 space-y-[var(--s4)]">
           <legend className="t-command mb-[var(--s3)] text-[length:var(--t-md)]">Scaling</legend>
-          {levels.map(({ scale_level: level }) => (
-            <fieldset key={level} className="min-w-0 border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s3)]">
-              <legend id={id(`scale-${level}`)} className="t-label mb-[var(--s2)]">{scaleLevelName(level)}</legend>
+          {levels.map(({ scale_level: level, is_starting_point: start }) => (
+            <fieldset key={level} className="min-w-0 pt-[var(--s4)]">
+              {/* "where to start" is DrillDetail's own marker; outside the id, so field names stay "Standard (B) Constraint". */}
+              <legend className={SUBGROUP}><span id={id(`scale-${level}`)}>{scaleLevelName(level)}</span>{start ? ' · where to start' : ''}</legend>
               <div className="grid gap-[var(--s4)] md:grid-cols-2">
                 {SCALE_FIELDS.map(({ key, label }) => {
                   const fieldId = id(`scale-${level}-${key}`);
                   // Named with its level ("Standard (B) Constraint"): four such fields per level.
                   const named = { id: fieldId, 'aria-labelledby': `${id(`scale-${level}`)} ${fieldId}-label` };
                   return (
-                    <div key={key} className="field">
+                    <div key={key} className={key === 'demand_description' ? 'field md:col-span-2' : 'field'}>
                       <label id={`${fieldId}-label`} htmlFor={fieldId} className="t-label">{label}</label>
                       {key === 'contact_level' ? (
                         <select {...named} value={values.scales[level][key]} onChange={(event) => setScale(level, key, event.target.value)} className="select input--kiosk">
@@ -352,7 +375,7 @@ export default function DrillEditForm({
                           ))}
                         </select>
                       ) : (
-                        <textarea {...named} value={values.scales[level][key]} onChange={(event) => setScale(level, key, event.target.value)} rows={2} maxLength={MAX_LONG} className="textarea input--kiosk" />
+                        <textarea {...named} value={values.scales[level][key]} onChange={(event) => setScale(level, key, event.target.value)} rows={key === 'demand_description' ? 4 : 2} maxLength={MAX_LONG} className="textarea input--kiosk" />
                       )}
                     </div>
                   );
