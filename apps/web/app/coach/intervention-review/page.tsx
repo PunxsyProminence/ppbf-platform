@@ -330,8 +330,11 @@ export default function InterventionReviewPage() {
                         {execution.protocol_title ?? execution.protocol_id} (v{execution.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {/* The name opens this athlete's Passbook (AS-11 Q4 = A). */}
-                        <AthleteNameLink athleteId={execution.athlete_id} name={execution.athlete_name ?? execution.athlete_id} />
+                        {/* The name opens this athlete's Passbook (AS-11 Q4 = A).
+                            A record with no name keeps its plain id, as before. */}
+                        {execution.athlete_name
+                          ? <AthleteNameLink athleteId={execution.athlete_id} name={execution.athlete_name} />
+                          : execution.athlete_id}
                         {' '}· {execution.status.replaceAll('_', ' ')} · {formatGymDateShort(execution.created_at) ?? execution.created_at}
                       </span>
                     </div>

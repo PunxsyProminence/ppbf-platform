@@ -132,6 +132,17 @@ describe('the athlete\'s name opens their Passbook (lane AS-11)', () => {
     fireEvent.click(link);
     expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBe('ath-1');
   });
+
+  test('a record with no name keeps its plain id and is not a link', async () => {
+    const nameless = { ...CHAIN_ITEM, execution: { ...CHAIN_ITEM.execution, athlete_name: null } };
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ items: [nameless] }) })) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+    expect(await screen.findByText(/ath-1/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'ath-1' })).toBeNull();
+    expect(screen.getAllByRole('link').every((link) => link.getAttribute('href') !== '/coach/passbook')).toBe(true);
+  });
 });
 
 test('recording a review posts three separate answers -- no score field exists to post', async () => {

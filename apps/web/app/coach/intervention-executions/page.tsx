@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import BackHome from '@/components/BackHome';
 import { formatGymDateShort } from '@/src/lib/gymTime';
 import ClusterNav from '@/components/ClusterNav';
+import KioskSurface from '@/components/KioskSurface';
 import { AthleteNameLink } from '@/components/AthleteRecordLinks';
 import { THE_WORK_PAGE } from '@/components/athleteRecordPages';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
@@ -119,8 +120,9 @@ export default function InterventionExecutionsPage() {
   // one athlete a link opened the page on (AS-11 Q2b = A; the filter is the
   // route's own, and the route checks the reader may read that athlete). A
   // read sets the rows and whose they are together, and only the newest read
-  // may, so a list is never shown under the wrong scope. A read after a write
-  // asks for the scope already on screen.
+  // may, so a list is never shown under the wrong scope. A read a newer one
+  // has replaced says nothing at all, not even that it failed, and answers
+  // false. A read after a write asks for the scope already on screen.
   const listAthleteRef = useRef('');
   const listRequestRef = useRef(0);
   const [listAthlete, setListAthlete] = useState('');
@@ -132,17 +134,21 @@ export default function InterventionExecutionsPage() {
       credentials: 'include',
       signal,
     });
+    if (listRequestRef.current !== request) return false;
     if (!response.ok) throw new Error('Unable to load executions.');
     const payload = (await response.json()) as { items?: ExecutionRow[] };
-    if (listRequestRef.current !== request) return;
+    if (listRequestRef.current !== request) return false;
     setExecutions(payload.items ?? []);
     listAthleteRef.current = forAthlete;
     setListAthlete(forAthlete);
+    return true;
   }, []);
 
   const showEveryAthlete = () => {
     void reload(undefined, '')
-      .then(() => setErrorMessage(null))
+      .then((applied) => {
+        if (applied) setErrorMessage(null);
+      })
       .catch(() => setErrorMessage('Unable to load executions.'));
   };
 
@@ -210,7 +216,10 @@ export default function InterventionExecutionsPage() {
         const err = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error || `Start failed (${response.status})`);
       }
-      await reload();
+      // Work started for someone other than the athlete the list is narrowed
+      // to would not be in that list: the coach would see nothing new and
+      // might start it twice. So that start reads every athlete's list.
+      await reload(undefined, listAthleteRef.current === athleteId ? athleteId : '');
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to start the execution.');
@@ -438,20 +447,21 @@ export default function InterventionExecutionsPage() {
 
           {/* The list holds one athlete's executions when a link opened the
               page on them (AS-11 Q2b = A). Their name says whose list it is,
-              which an empty list could not; the button widens it again. */}
+              which an empty list could not; the button widens it again.
+              This page has no kiosk layout, and `.btn` (unlayered) beats a
+              size utility, so the row carries the kiosk marker itself: that
+              is what gives the button the 55px floor and the 19.1px type. */}
           {loaded && listAthlete && (
-            <div className="mb-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
-              <span data-testid="list-athlete" className="t-body font-semibold text-[length:var(--t-md)] text-[color:var(--bone-100)]">
-                {athletes.find((athlete) => athlete.athlete_id === listAthlete)?.full_name}
-              </span>
-              <button
-                type="button"
-                className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]"
-                onClick={showEveryAthlete}
-              >
-                Show every athlete
-              </button>
-            </div>
+            <KioskSurface>
+              <div className="mb-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
+                <span data-testid="list-athlete" className="t-body font-semibold text-[length:var(--t-md)] text-[color:var(--bone-100)]">
+                  {athletes.find((athlete) => athlete.athlete_id === listAthlete)?.full_name}
+                </span>
+                <button type="button" className="btn btn--ghost" onClick={showEveryAthlete}>
+                  Show every athlete
+                </button>
+              </div>
+            </KioskSurface>
           )}
 
           {loaded && (
@@ -479,8 +489,11 @@ export default function InterventionExecutionsPage() {
                         {row.protocol_title ?? row.protocol_id} (v{row.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {/* The name opens this athlete's Passbook (AS-11 Q4 = A). */}
-                        <AthleteNameLink athleteId={row.athlete_id} name={row.athlete_name ?? row.athlete_id} />
+                        {/* The name opens this athlete's Passbook (AS-11 Q4 = A).
+                            A row with no name keeps its plain id, as before. */}
+                        {row.athlete_name
+                          ? <AthleteNameLink athleteId={row.athlete_id} name={row.athlete_name} />
+                          : row.athlete_id}
                         {' '}· {formatGymDateShort(row.created_at) ?? row.created_at}
                         {row.version > 1 ? ` · corrected (v${row.version})` : ''}
                       </span>

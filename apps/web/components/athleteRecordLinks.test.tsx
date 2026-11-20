@@ -151,11 +151,15 @@ describe('Passbook\'s line (lane AS-11)', () => {
     expect(takeArrivalAthlete('/coach/development-blocks')).toBeNull();
   });
 
-  test('each link carries the gym-floor height and the kiosk type size', async () => {
+  // `.btn` is unlayered and outranks a size utility, so a `.btn` link gets the
+  // 55px floor and the 19.1px type only from a kiosk surface around it
+  // (`[data-surface="kiosk"] .btn` in the design system). The line brings its
+  // own, so it does not depend on the page it is shown on.
+  test('each link on the line is a .btn inside a kiosk surface', async () => {
     await renderLine('coach');
     for (const link of screen.getAllByRole('link')) {
-      expect(link.className).toContain('min-h-[var(--tap)]');
-      expect(link.className).toContain('text-[length:var(--t-md)]');
+      expect(link.classList.contains('btn')).toBe(true);
+      expect(link.closest('[data-surface="kiosk"]')).not.toBeNull();
     }
   });
 });

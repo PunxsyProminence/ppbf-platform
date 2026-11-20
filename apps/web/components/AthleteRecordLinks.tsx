@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react';
 import { visibleDoors, type Door } from './buildingMap';
 import { ATHLETE_RECORD_PAGES, PASSBOOK_PAGE } from './athleteRecordPages';
 import { handOffArrivalAthlete, isPlainClick } from './decisionLoopArrival';
+import KioskSurface from './KioskSurface';
 import { getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 
 /**
@@ -39,25 +40,29 @@ export default function AthleteRecordLinks({
   );
   if (pages.length === 0) return null;
   return (
-    <nav aria-labelledby={labelledBy} className="mt-[var(--s4)]">
-      <ul className="flex flex-wrap gap-[var(--s3)]">
-        {pages.map((door) => (
-          <li key={door.href}>
-            {/* Links skip the app's tap floor (globals.css), so each one
-                carries the gym-floor height and the kiosk type size itself. */}
-            <Link
-              href={door.href}
-              className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]"
-              onClick={(event) => {
-                if (isPlainClick(event)) handOffArrivalAthlete(athleteId, door.href);
-              }}
-            >
-              {door.label}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    // `.btn` is unlayered and beats a size utility, so the 55px floor and the
+    // 19.1px type on these links come from the kiosk marker, not from the
+    // classes. Passbook's layout carries one; the line carries its own too,
+    // so it is right wherever it is shown.
+    <KioskSurface>
+      <nav aria-labelledby={labelledBy} className="mt-[var(--s4)]">
+        <ul className="flex flex-wrap gap-[var(--s3)]">
+          {pages.map((door) => (
+            <li key={door.href}>
+              <Link
+                href={door.href}
+                className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]"
+                onClick={(event) => {
+                  if (isPlainClick(event)) handOffArrivalAthlete(athleteId, door.href);
+                }}
+              >
+                {door.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </KioskSurface>
   );
 }
 
@@ -66,7 +71,8 @@ export default function AthleteRecordLinks({
  * Q4 = A: the Morning Read's reads, What We Learned and The Work). The same
  * hand-off as the line above: page memory, a plain click, never the address.
  * A link skips the app's tap floor, so this one carries the gym-floor height
- * and the kiosk type size itself.
+ * and the kiosk type size itself. It is a plain link, not a `.btn`, so no
+ * unlayered rule outranks those two classes.
  */
 export function AthleteNameLink({ athleteId, name }: { readonly athleteId: string; readonly name: string }) {
   return (
