@@ -77,7 +77,8 @@ export const ROOM_PLACE_LABEL: Record<RoomPlace, string> = {
   workshop: 'The Workshop',
 };
 
-const PLACES: Record<RoomPlace, readonly string[]> = {
+/** Each room's doors, by href. A door belongs to one room (roomPlaces.test.ts checks). */
+export const ROOM_PLACE_DOORS: Readonly<Record<RoomPlace, readonly string[]>> = {
   'front-desk': [
     '/admin/people', '/admin/door-register', '/admin/pin', '/admin/activation-codes', '/admin/attendance',
     '/admin/volunteer-management', '/admin/coach-coverage', '/admin/credentials', '/staff-credentials', '/profile',
@@ -144,7 +145,7 @@ const PLACES: Record<RoomPlace, readonly string[]> = {
 
 /** Each door's Room Map room, by href. Home (/dashboard) has none. */
 export const ROOM_PLACE: Readonly<Record<string, RoomPlace>> = Object.fromEntries(
-  ROOM_PLACE_ORDER.flatMap((place) => PLACES[place].map((href) => [href, place] as const)),
+  ROOM_PLACE_ORDER.flatMap((place) => ROOM_PLACE_DOORS[place].map((href) => [href, place] as const)),
 );
 
 /** The door that stands for Home: in no room, listed first in Search. */

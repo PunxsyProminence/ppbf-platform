@@ -3,6 +3,7 @@ import {
   HOME_HREF,
   LAB_HREFS,
   ROOM_PLACE,
+  ROOM_PLACE_DOORS,
   ROOM_PLACE_LABEL,
   ROOM_PLACE_ORDER,
   roomPlaceOf,
@@ -33,9 +34,11 @@ describe('the Room Map rooms', () => {
       if (href === HOME_HREF) expect(roomPlaceOf(href)).toBeNull();
       else expect(roomPlaceOf(href)).not.toBeNull();
     }
-    // One room per door: a door listed in two rooms would collapse to one key and
-    // leave this count short.
     expect(placed).toHaveLength(HREFS.length - 1);
+    // One room per door. ROOM_PLACE keeps the last room a door is listed in, so a
+    // door in two rooms would pass the count above; the lists themselves are checked.
+    const listed = ROOM_PLACE_ORDER.flatMap((place) => ROOM_PLACE_DOORS[place]);
+    expect(listed).toHaveLength(new Set(listed).size);
   });
 
   it('leave no room empty', () => {
