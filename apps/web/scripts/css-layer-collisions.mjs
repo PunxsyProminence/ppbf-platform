@@ -25,6 +25,9 @@
      1. Parses ppbf.css + globals.css into (selector, property, value) triples,
         keeping layer / media / pseudo context and expanding shorthands.
         Rules inside `@layer` are excluded: they cannot cause this defect.
+        A rule with no class in its subject (`h1`, `*`, `body > *`) is kept
+        too and meets elements by tag, or as a child of <body>; one that
+        needs any other ancestor, or is print-only, is counted, not modelled.
      2. Parses every app .tsx with the TypeScript compiler API and statically
         resolves each `className` to the SET of class strings it can produce —
         module constants, `+` concatenation, template literals, ternaries,
@@ -46,8 +49,9 @@
    It reads and reports. It never edits CSS or application code.
    ─────────────────────────────────────────────────────────────────────────── */
 
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -394,6 +398,7 @@ function analyzeSelector(selector) {
   const pseudoClasses = [];
   const attrs = [];
   let pseudoElement = null;
+  let subjectTag = null;
   let ids = 0;
   let tags = 0;
   let allClasses = 0;
@@ -438,7 +443,7 @@ function analyzeSelector(selector) {
         /* zero specificity */
       } else {
         allTags += 1;
-        if (isSubject) tags += 1;
+        if (isSubject) { tags += 1; subjectTag = tok.toLowerCase(); }
       }
     }
   }
@@ -449,6 +454,7 @@ function analyzeSelector(selector) {
     pseudoClasses,
     attrs,
     pseudoElement,
+    subjectTag,
     tagInSubject: tags > 0,
     hasAncestor: compounds.length > 1,
     hasIds: ids > 0 || allIds > 0,
@@ -461,6 +467,24 @@ function specLess(a, b) {
     if (a[i] !== b[i]) return a[i] < b[i];
   }
   return false;
+}
+
+/* Which elements an unlayered rule with NO class in its subject reaches. It
+   beats a layered utility as surely as a class rule does -- layer order is
+   decided before specificity -- so `body > *` defeated `fixed` on the idle
+   sign-out banner (#2003) while this scan, skipping every class-less rule,
+   could not see it. Two shapes are decidable from the JSX alone:
+     - no ancestor (`h1`, `body`, `*`, `:focus-visible`): the subject's tag,
+       or every element when it names none;
+     - `body > *`: an element the JSX puts directly under <body> (see
+       bodyChildElements).
+   Any other ancestor (`.room > *`, `.ge-locker .mat-leather button`) needs a
+   parent the scan cannot see; it returns null and is counted as unmodelled,
+   as a class rule that needs an ancestor is skipped. */
+function elementTarget(selector, info) {
+  if (/^body\s*>\s*\*$/.test(selector)) return 'body > *';
+  if (info.hasAncestor) return null;
+  return info.subjectTag ?? '*';
 }
 
 /* ═══════════════════════════════════════════════════ 3. CUSTOM PROPERTIES ══ */
@@ -1296,13 +1320,45 @@ function tokensOf(classString) {
   return classString.split(/\s+/).filter(Boolean);
 }
 
-function main() {
-  const argv = process.argv.slice(2);
-  const has = (f) => argv.includes(`--${f}`);
-  const arg = (f) => { const i = argv.indexOf(`--${f}`); return i === -1 ? null : argv[i + 1]; };
+/* The JSX elements that land directly under <body>: the root element of
+   `createPortal(<el/>, document.body)`, and an element written directly
+   inside a JSX <body>. Intrinsic elements only -- what a component renders at
+   its root, and `document.body.appendChild`, are out of reach. */
+function bodyChildElements(sf) {
+  const found = new Set();
+  const addRoots = (node) => {
+    if (!node) return;
+    if (ts.isParenthesizedExpression(node) || ts.isJsxExpression(node)) addRoots(node.expression);
+    else if (ts.isConditionalExpression(node)) { addRoots(node.whenTrue); addRoots(node.whenFalse); }
+    else if (ts.isBinaryExpression(node)) addRoots(node.right);
+    else if (ts.isJsxFragment(node)) node.children.forEach(addRoots);
+    else {
+      const el = ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : null;
+      if (el && /^[a-z][\w-]*$/.test(el.tagName.getText(sf))) found.add(el);
+    }
+  };
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && node.arguments.length >= 2
+        && /(^|\.)createPortal$/.test(node.expression.getText(sf))
+        && node.arguments[1].getText(sf).replace(/\s+/g, '') === 'document.body') {
+      addRoots(node.arguments[0]);
+    }
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(sf) === 'body') {
+      node.children.forEach(addRoots);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return found;
+}
 
-  if (has('self-test')) return selfTest();
-
+/* The whole scan, from the two sheets and the source roots to the report.
+   Parameterised so --self-test can run it on fixture files. */
+function scan({
+  ppbfCss = PPBF_CSS,
+  globalsCss = GLOBALS_CSS,
+  roots = ['app', 'components', 'src'].map((dir) => path.join(WEB_ROOT, dir)),
+} = {}) {
   /* --- CSS side ---------------------------------------------------------- */
   /* ppbf.css stopped being one file on 2026-08-23: the visual reset split it
      into a foundation, a swappable theme and the archived Leather & Brass
@@ -1316,8 +1372,8 @@ function main() {
 
      Parsing only the entry point is what this guards against: it reported 73
      collisions instead of 639, an 88% under-report that looked like good news. */
-  const ppbfRules = resolveImportChain(PPBF_CSS).flatMap(parseCss);
-  const globalRules = parseCss(GLOBALS_CSS);
+  const ppbfRules = resolveImportChain(ppbfCss).flatMap(parseCss);
+  const globalRules = parseCss(globalsCss);
   const vars = collectVars([...ppbfRules, ...globalRules]);
 
   /* The unlayered cascade: ppbf.css entirely (it declares no @layer at all),
@@ -1327,18 +1383,33 @@ function main() {
      collision report that only looked at ppbf.css would attribute a globals.css
      override to the wrong file. */
   const unlayered = [];
+  let elementRulesUnmodelled = 0;
   for (const [order, rule] of [...ppbfRules, ...globalRules].entries()) {
     if (rule.layer) continue;
     if (rule.atRule) continue;
     const info = analyzeSelector(rule.selector);
     if (info.pseudoElement) continue;   /* ::before cannot defeat a utility on the element */
-    if (!info.classes.length) continue; /* bare element/`*` rules lose to any class utility */
-    unlayered.push({ ...rule, info, order });
+    /* No class in the subject: it reaches elements by tag, by `*` or as a
+       child of <body> (elementTarget), or it is counted as unmodelled. So is a
+       print-only one: it never touches the screen this report is about, and
+       modelled it filed `@media print { button, nav { display: none } }` as
+       BROKEN on screen. (Class rules under print are compared, as before.) */
+    const printOnly = rule.media.some((m) => /^print\b/i.test(m.trim()));
+    const target = info.classes.length || printOnly ? null : elementTarget(rule.selector, info);
+    if (!info.classes.length && !target) {
+      if (rule.decls.some((d) => !d.prop.startsWith('--'))) elementRulesUnmodelled += 1;
+      continue;
+    }
+    unlayered.push({ ...rule, info, order, target });
   }
 
-  /* class -> property -> winning declaration (highest specificity, then last). */
+  /* class -> property -> winning declaration (highest specificity, then last).
+     byElement is the same, keyed by elementTarget: a tag, `*` or `body > *`. */
   const byClass = new Map();
+  const byElement = new Map();
   for (const rule of unlayered) {
+    const owners = rule.target ? [rule.target] : rule.info.classes;
+    const table = rule.target ? byElement : byClass;
     const conditional =
       rule.info.hasAncestor ||
       rule.info.pseudoClasses.length > 0 ||
@@ -1348,15 +1419,15 @@ function main() {
     for (const d of rule.decls) {
       if (d.prop.startsWith('--')) continue;
       for (const [prop, value] of expandDeclaration(d.prop, d.value)) {
-        for (const cls of rule.info.classes) {
-          if (!byClass.has(cls)) byClass.set(cls, new Map());
-          const slot = byClass.get(cls);
+        for (const cls of owners) {
+          if (!table.has(cls)) table.set(cls, new Map());
+          const slot = table.get(cls);
           const key = `${prop}|${conditional ? rule.info.pseudoClasses.join('') + rule.info.attrs.join('') + rule.media.join('') : ''}`;
           const candidate = {
             cls, prop, value, important: d.important, line: d.line, file: rule.file,
-            selector: rule.selector, media: rule.media, conditional,
+            selector: rule.selector, media: rule.media, conditional, target: rule.target,
             pseudoClasses: rule.info.pseudoClasses, attrs: rule.info.attrs,
-            requiresAncestor: rule.info.hasAncestor,
+            requiresAncestor: rule.info.hasAncestor && !rule.target,
             requiresSiblingClass: rule.info.classes.length > 1 ? rule.info.classes.filter((c) => c !== cls) : [],
             specificity: rule.info.specificity, order: rule.order, shorthandOf: d.prop,
           };
@@ -1372,9 +1443,9 @@ function main() {
   }
 
   /* --- JSX side ---------------------------------------------------------- */
-  const roots = [path.join(WEB_ROOT, 'app'), path.join(WEB_ROOT, 'components'), path.join(WEB_ROOT, 'src')]
-    .filter((p) => { try { return statSync(p).isDirectory(); } catch { return false; } });
-  const files = roots.flatMap((r) => walkFiles(r)).sort();
+  const files = roots
+    .filter((p) => { try { return statSync(p).isDirectory(); } catch { return false; } })
+    .flatMap((r) => walkFiles(r)).sort();
   const { exportsOf, sources } = collectModuleExports(files);
 
   const stats = {
@@ -1406,6 +1477,7 @@ function main() {
       return null;
     };
     const resolver = createResolver(sf, null, resolveImport);
+    const bodyChildren = bodyChildElements(sf);
 
     const visit = (node) => {
       if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name) && (node.name.text === 'className' || node.name.text === 'class')) {
@@ -1413,6 +1485,7 @@ function main() {
         const tag = parent && (ts.isJsxSelfClosingElement(parent) || ts.isJsxOpeningElement(parent))
           ? parent.tagName.getText(sf) : '?';
         const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+        const bodyChild = bodyChildren.has(parent);
         stats.classNameSites += 1;
 
         /* Inline `style={{...}}` on the same element wins over every sheet, so
@@ -1449,7 +1522,7 @@ function main() {
           stats.resolvedSites += 1;
           stats.variantStrings += values.length;
           for (const variant of values) {
-            examine({ variant, file, line, tag, inlineProps });
+            examine({ variant, file, line, tag, inlineProps, bodyChild });
           }
         }
       }
@@ -1458,10 +1531,18 @@ function main() {
     visit(sf);
   }
 
-  function examine({ variant, file, line, tag, inlineProps }) {
+  function examine({ variant, file, line, tag, inlineProps, bodyChild }) {
     const tokens = tokensOf(variant);
     const ppbfClasses = tokens.filter((t) => byClass.has(t) && !t.includes(':') && !t.includes('['));
-    if (!ppbfClasses.length) return;
+    /* Class-less rules that reach this element: `*` always, its tag when it is
+       an intrinsic element, `body > *` when it sits directly under <body>. */
+    const elementTargets = ['*', /^[a-z][\w-]*$/.test(tag) ? tag : null, bodyChild ? 'body > *' : null]
+      .filter((t) => t && byElement.has(t));
+    if (!ppbfClasses.length && !elementTargets.length) return;
+    const owners = [
+      ...ppbfClasses.map((cls) => [cls, byClass.get(cls)]),
+      ...elementTargets.map((t) => [t, byElement.get(t)]),
+    ];
 
     for (const token of tokens) {
       if (ppbfClasses.includes(token)) continue;
@@ -1471,14 +1552,16 @@ function main() {
       if (mapped.unmapped) {
         /* Only count a token as unmapped if it could plausibly be a utility —
            a bare word with no dash that is not in the static table is much more
-           likely to be a project class than a Tailwind utility. */
-        if (base.includes('-') || base.includes('[')) {
+           likely to be a project class than a Tailwind utility. Counted on
+           elements carrying a ppbf class, as before element rules were seen,
+           so the count stays comparable. */
+        if (ppbfClasses.length && (base.includes('-') || base.includes('['))) {
           stats.unmappedTokens.set(base, (stats.unmappedTokens.get(base) ?? 0) + 1);
         }
         continue;
       }
       if (mapped.ambiguous) {
-        stats.ambiguousArbitrary.push({ file: path.relative(REPO_ROOT, file), line, tag, token });
+        if (ppbfClasses.length) stats.ambiguousArbitrary.push({ file: path.relative(REPO_ROOT, file), line, tag, token });
         continue;
       }
 
@@ -1490,8 +1573,7 @@ function main() {
         if (inlineProps.has(prop) || inlineProps.has(prop.replace(/^(padding|margin)-(top|right|bottom|left)$/, '$1'))) continue;
         const utilValue = mapped.valueMap ? mapped.valueMap[prop] : mapped.value;
 
-        for (const cls of ppbfClasses) {
-          const slot = byClass.get(cls);
+        for (const [cls, slot] of owners) {
           for (const [key, decl] of slot) {
             if (!key.startsWith(`${prop}|`)) continue;
             /* A ppbf rule that needs an ancestor, or a sibling class this
@@ -1520,7 +1602,8 @@ function main() {
               line,
               tag,
               variant: variant.length > 160 ? `${variant.slice(0, 160)}…` : variant,
-              ppbfClass: cls,
+              ppbfClass: decl.target ? null : cls,
+              ppbfMatch: decl.target ? decl.selector : `.${cls}`,
               ppbfSelector: decl.selector,
               ppbfFile: path.relative(REPO_ROOT, decl.file),
               ppbfLine: decl.line,
@@ -1550,7 +1633,7 @@ function main() {
   for (const c of collisions) buckets[c.bucket].push(c);
 
   const report = {
-    generatedFrom: { ppbf: path.relative(REPO_ROOT, PPBF_CSS), globals: path.relative(REPO_ROOT, GLOBALS_CSS) },
+    generatedFrom: { ppbf: path.relative(REPO_ROOT, ppbfCss), globals: path.relative(REPO_ROOT, globalsCss) },
     stats: {
       filesScanned: stats.files,
       classNameSites: stats.classNameSites,
@@ -1558,6 +1641,8 @@ function main() {
       unresolvedSites: stats.unresolvedSites,
       classStringVariants: stats.variantStrings,
       ppbfClassesWithDeclarations: byClass.size,
+      elementRuleTargets: byElement.size,
+      elementRulesUnmodelled,
       collisions: collisions.length,
       HARMLESS: buckets.HARMLESS.length,
       DEAD: buckets.DEAD.length,
@@ -1571,7 +1656,17 @@ function main() {
     unmapped: [...stats.unmappedTokens.entries()].sort((a, b) => b[1] - a[1]),
     ambiguous: stats.ambiguousArbitrary,
   };
+  return report;
+}
 
+function main() {
+  const argv = process.argv.slice(2);
+  const has = (f) => argv.includes(`--${f}`);
+  const arg = (f) => { const i = argv.indexOf(`--${f}`); return i === -1 ? null : argv[i + 1]; };
+
+  if (has('self-test')) return selfTest();
+
+  const report = scan();
   if (has('json')) { process.stdout.write(`${JSON.stringify(report, null, 2)}\n`); return; }
   const md = renderMarkdown(report);
   const target = arg('markdown');
@@ -1633,6 +1728,8 @@ function renderMarkdown(report) {
   L.push(`| …**unresolved** (counted, not skipped) | ${s.unresolvedSites} |`);
   L.push(`| Distinct class strings after ternary expansion | ${s.classStringVariants} |`);
   L.push(`| ppbf/globals classes carrying declarations | ${s.ppbfClassesWithDeclarations} |`);
+  L.push(`| Class-less targets carrying declarations (tag, \`*\`, \`body > *\`) | ${s.elementRuleTargets} |`);
+  L.push(`| …class-less rules NOT modelled (an ancestor the scan cannot see, or print-only) | ${s.elementRulesUnmodelled} |`);
   L.push(`| **Collisions** | **${s.collisions}** |`);
   L.push(`| — HARMLESS | ${s.HARMLESS} |`);
   L.push(`| — DEAD | ${s.DEAD} |`);
@@ -1662,10 +1759,10 @@ function renderMarkdown(report) {
       }
       return;
     }
-    L.push('| file:line | element | ppbf class → value | utility → value | property |');
+    L.push('| file:line | element | ppbf rule → value | utility → value | property |');
     L.push('|---|---|---|---|---|');
     for (const c of items) {
-      L.push(`| \`${c.file}\`:${c.line} | \`${c.tag}\` | \`.${c.ppbfClass}\` → \`${c.ppbfValue ?? '?'}\` | \`${c.utility}\` → \`${c.utilityValue ?? '?'}\` | \`${c.property}\` |`);
+      L.push(`| \`${c.file}\`:${c.line} | \`${c.tag}\` | \`${c.ppbfMatch}\` → \`${c.ppbfValue ?? '?'}\` | \`${c.utility}\` → \`${c.utilityValue ?? '?'}\` | \`${c.property}\` |`);
     }
     L.push('');
   };
@@ -1743,15 +1840,61 @@ function selfTest() {
     ['undecomposable shorthand is dead', { property: 'background-color', ppbfValue: null, utilityValue: '#14100d' }, 'DEAD'],
     ['default-ish utility is dead', { property: 'position', ppbfValue: 'relative', utilityValue: 'static' }, 'DEAD'],
   ];
+  const results = [
+    ...cases.map(([name, input, expected]) => [name, classify(input), expected]),
+    ...elementRuleCases(),
+  ];
   let failed = 0;
-  for (const [name, input, expected] of cases) {
-    const got = classify(input);
+  for (const [name, got, expected] of results) {
     const ok = got === expected;
     if (!ok) failed += 1;
     process.stdout.write(`${ok ? 'ok  ' : 'FAIL'}  ${name} — expected ${expected}, got ${got}\n`);
   }
-  process.stdout.write(`\n${cases.length - failed}/${cases.length} passed\n`);
+  process.stdout.write(`\n${results.length - failed}/${results.length} passed\n`);
   process.exitCode = failed ? 1 : 0;
+}
+
+/* Class-less rules, end to end: scan() on a fixture sheet and a fixture .tsx
+   in a temporary directory. Each fixture line from 2 on is one case. */
+const FIXTURE_CSS = [
+  'body > * { position: relative; z-index: 2; }',
+  'h1 { letter-spacing: 0.1em; }',
+  '.room > * { position: relative; }',
+  '@media print { p { display: none; } }',
+  '@layer base { h2 { letter-spacing: 0.2em; } }',
+].join('\n');
+const FIXTURE_TSX = [
+  "import { createPortal } from 'react-dom';",
+  'export const A = () => createPortal(<div className="fixed z-[1000]">a</div>, document.body);',
+  'export const B = ({ host }) => createPortal(<div className="fixed z-[1000]">b</div>, host);',
+  "export const C = () => createPortal(<div style={{ position: 'fixed', zIndex: 1000 }} className=\"fixed z-[1000]\">c</div>, document.body);",
+  'export const D = () => <h1 className="tracking-[0.5em]">d</h1>;',
+  'export const E = () => <p className="tracking-[0.5em] block">e</p>;',
+  'export const F = () => <h2 className="tracking-[0.5em]">f</h2>;',
+  'export const G = () => <div className="room"><div className="absolute">g</div></div>;',
+].join('\n');
+
+function elementRuleCases() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'css-layer-self-test-'));
+  try {
+    writeFileSync(path.join(dir, 'ppbf.css'), '');
+    writeFileSync(path.join(dir, 'globals.css'), FIXTURE_CSS);
+    writeFileSync(path.join(dir, 'fixture.tsx'), FIXTURE_TSX);
+    const report = scan({ ppbfCss: path.join(dir, 'ppbf.css'), globalsCss: path.join(dir, 'globals.css'), roots: [dir] });
+    const at = (line) => Object.values(report.buckets).flat().filter((c) => c.line === line)
+      .map((c) => `${c.ppbfMatch} ${c.property} ${c.bucket}`).sort().join('; ') || 'none';
+    return [
+      ['a portal to document.body meets body > *', at(2), 'body > * position BROKEN; body > * z-index BROKEN'],
+      ['a portal to another host does not', at(3), 'none'],
+      ['an inline style still wins over body > *', at(4), 'none'],
+      ['an <h1> meets the unlayered h1 rule', at(5), 'h1 letter-spacing DEAD'],
+      ['a <p> meets neither the h1 rule nor a print-only rule', at(6), 'none'],
+      ['a layered h2 rule is not a collision', at(7), 'none'],
+      ['a rule that needs an ancestor (.room > *) is not modelled', at(8), 'none'],
+    ];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 main();
