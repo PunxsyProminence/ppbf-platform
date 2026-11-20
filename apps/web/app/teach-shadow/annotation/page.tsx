@@ -355,6 +355,11 @@ export default function CoachCalibrationPage() {
   const [projectId, setProjectId] = useState('');
   const [clips, setClips] = useState<CalibrationClip[]>([]);
   const [clipId, setClipId] = useState('');
+  // What the two pickers' reads came back with, so an empty picker can say
+  // what to do first (lane AS-11, app scrub CS-19) without reading a read
+  // that failed or never finished as "none".
+  const [projectsRead, setProjectsRead] = useState<'loading' | 'loaded' | 'refused' | 'unread'>('loading');
+  const [clipsRead, setClipsRead] = useState<'idle' | 'loading' | 'loaded' | 'refused'>('idle');
 
   const [clip, setClip] = useState<CalibrationClip | null>(null);
   const [project, setProject] = useState<CalibrationProject | null>(null);
@@ -440,13 +445,17 @@ export default function CoachCalibrationPage() {
         if (controller.signal.aborted) return;
         if (!response.ok) {
           setRefusal(await readError(response));
+          setProjectsRead('refused');
           return;
         }
         const payload = (await response.json()) as { projects?: CalibrationProject[] };
         setProjects(payload.projects ?? []);
+        setProjectsRead('loaded');
       } catch {
         // Aborted or offline. The picker degrades to empty rather than
-        // asserting that this gym runs no calibration studies.
+        // asserting that this gym runs no calibration studies; offline, the
+        // page says the studies could not be read.
+        if (!controller.signal.aborted) setProjectsRead('unread');
       }
     })();
     return () => controller.abort();
@@ -455,6 +464,7 @@ export default function CoachCalibrationPage() {
   const loadClips = useCallback(async (nextProjectId: string) => {
     setClips([]);
     setClipId('');
+    setClipsRead(nextProjectId ? 'loading' : 'idle');
     if (!nextProjectId) return;
     const response = await fetch(
       `${apiBase()}/api/pilot/calibration/clips?calibration_project_id=${encodeURIComponent(nextProjectId)}`,
@@ -462,10 +472,12 @@ export default function CoachCalibrationPage() {
     );
     if (!response.ok) {
       setRefusal(await readError(response));
+      setClipsRead('refused');
       return;
     }
     const payload = (await response.json()) as { clips?: CalibrationClip[] };
     setClips(payload.clips ?? []);
+    setClipsRead('loaded');
   }, []);
 
   /**
@@ -1369,6 +1381,27 @@ export default function CoachCalibrationPage() {
                 </select>
               </div>
             </div>
+
+            {/* What to do first when a picker is empty (lane AS-11, app
+                scrub CS-19; the words approved as written, Q9 = A). A read
+                that was refused is already the alert above; one that failed
+                or never finished is not read as "no study". */}
+            {projectsRead === 'loaded' && projects.length === 0 ? (
+              <p className="t-muted mt-[var(--s3)]">
+                No study yet. Studies are made on{' '}
+                <Link href="/teach-shadow/cut" className="underline">Cut Study Clips</Link>.
+              </p>
+            ) : null}
+            {projectsRead === 'unread' ? (
+              <p role="alert" className="t-body mt-[var(--s3)] text-[color:var(--restricted-ink)]">
+                The studies could not be read. Reload and try again.
+              </p>
+            ) : null}
+            {projectId && clipsRead === 'loaded' && clips.length === 0 ? (
+              <p className="t-muted mt-[var(--s3)]">
+                This study has no clips yet. Clips are cut on Cut Study Clips.
+              </p>
+            ) : null}
 
             {selectedClipRow?.playable === false ? (
               <p className="t-muted mt-[var(--s3)]">

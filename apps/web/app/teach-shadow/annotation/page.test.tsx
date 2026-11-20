@@ -11,7 +11,7 @@
 // only guard -- but the page is where a coach actually meets the rules, and a
 // page that quietly lets them past one produces work that gets refused on save.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import { BODY_POINTS_0_4 } from '@/src/server/pilot/calibration/ontology';
@@ -1535,4 +1535,89 @@ test.each([
   // word.
   expect(text).not.toMatch(/frames?\s*#?\d/i);
   expect(text).not.toMatch(/\d\s*fps\b/i);
+});
+
+// Lane AS-11 (app scrub CS-19; Q9 = A): an empty picker says what to do first,
+// in the words approved as written. A read that failed or never finished is
+// not read as "no study".
+describe('an empty picker says what to do first (lane AS-11)', () => {
+  const NO_STUDY = /No study yet\. Studies are made on/;
+  const UNREAD = 'The studies could not be read. Reload and try again.';
+  const NO_CLIPS = 'This study has no clips yet. Clips are cut on Cut Study Clips.';
+
+  function respond(body: unknown, status = 200) {
+    return { ok: status < 400, status, json: async () => body, headers: new Headers() } as unknown as Response;
+  }
+
+  function studiesFetch(projects: () => Promise<Response> | Response, clips: unknown[] = [CLIP]) {
+    const base = mockFetch();
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/calibration/projects')) return projects();
+      if (url.includes('/api/pilot/calibration/clips')) return respond({ ok: true, clips });
+      return base(input, init);
+    }) as unknown as typeof fetch;
+  }
+
+  async function renderPage() {
+    await act(async () => {
+      render(<CoachCalibrationPage />);
+    });
+  }
+
+  it('with no study read back, it says none exists yet and links Cut Study Clips', async () => {
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [] }));
+    await renderPage();
+
+    const line = screen.getByText(NO_STUDY);
+    const link = line.querySelector('a');
+    expect(link?.textContent).toBe('Cut Study Clips');
+    expect(link?.getAttribute('href')).toBe('/teach-shadow/cut');
+    expect(line.textContent).toBe('No study yet. Studies are made on Cut Study Clips.');
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  it('a read that failed says the studies could not be read, never that there are none', async () => {
+    global.fetch = studiesFetch(() => { throw new TypeError('Failed to fetch'); });
+    await renderPage();
+
+    expect(screen.getByRole('alert').textContent).toContain(UNREAD);
+    expect(screen.queryByText(NO_STUDY)).toBeNull();
+  });
+
+  it('a refused read shows its refusal, and neither line', async () => {
+    global.fetch = studiesFetch(() => respond({ error: 'Forbidden' }, 403));
+    await renderPage();
+
+    expect(screen.getByText('Refused')).toBeTruthy();
+    expect(screen.queryByText(NO_STUDY)).toBeNull();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  it('while the read is out, neither line shows', async () => {
+    global.fetch = studiesFetch(() => new Promise<Response>(() => {}));
+    await renderPage();
+
+    expect(screen.queryByText(NO_STUDY)).toBeNull();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  it('a study with no clips says so; one with clips says nothing', async () => {
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), []);
+    await renderPage();
+    expect(screen.queryByText(NO_CLIPS)).toBeNull();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
+    });
+    expect(screen.getByText(NO_CLIPS)).toBeTruthy();
+    expect(screen.queryByText(NO_STUDY)).toBeNull();
+
+    cleanup();
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), [CLIP]);
+    await renderPage();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
+    });
+    expect(screen.queryByText(NO_CLIPS)).toBeNull();
+  });
 });

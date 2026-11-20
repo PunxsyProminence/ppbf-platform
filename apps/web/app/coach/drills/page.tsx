@@ -743,6 +743,27 @@ function CoachDrillLibrary() {
     }
   }
 
+  // A LINK THAT NAMES ONE DRILL OPENS IT (lane AS-11, app scrub CF-23; Q6 = A).
+  // The Cue Library's drill names link here with ?drill_id=<reference drill
+  // id>. A drill id names gym content, not a person, so it may sit in the
+  // address, and the address can be bookmarked. Read once, on the first mount;
+  // the drill opens through openReferenceDrill, whose read answers a drill this
+  // gym's library does not hold with REFERENCE_NOT_FOUND. Back returns to the
+  // drill's card in the library, or to the search box when the card is not
+  // shown.
+  const arrivalDrillReadRef = useRef(false);
+  useEffect(() => {
+    if (arrivalDrillReadRef.current) return;
+    arrivalDrillReadRef.current = true;
+    const drillId = new URLSearchParams(window.location.search).get('drill_id')?.trim() ?? '';
+    if (!drillId) return;
+    // Deferred behind an await so no state is set while the effect body runs.
+    void (async () => {
+      await Promise.resolve();
+      await openReferenceDrill(drillId, `view-reference-${drillId}`);
+    })();
+  }, []);
+
   // After an action, succeeded or failed: focus goes to the drill's lifecycle
   // control, re-rendered under the same id with its new label -- or, when the
   // new state offers no action, to the drill's heading, so it never falls to

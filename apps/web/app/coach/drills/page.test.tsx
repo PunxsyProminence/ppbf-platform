@@ -2793,3 +2793,50 @@ describe('Edit (lane ED-UI)', () => {
     expect(readsOf(fetchMock, '/api/pilot/drill-library')).toBe(libraryReadsBefore + 1);
   });
 });
+
+// Lane AS-11 (app scrub CF-23; Q6 = A): a link that names one drill opens it.
+// The Cue Library links here with ?drill_id=<reference drill id>; a drill id
+// is gym content, not a person, so it may sit in the address.
+describe('arriving with a drill named in the address (lane AS-11)', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  const detailReads = (fetchMock: FetchMock) =>
+    fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/pilot/drill-library?drill_id=')).length;
+
+  it('opens the reference drill ?drill_id= names', async () => {
+    window.history.replaceState(null, '', '/coach/drills?drill_id=reference-1');
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+
+    const detail = await screen.findByRole('article', { name: 'Seeded jab return' });
+    expect(within(detail).getByRole('region', { name: 'Safety' })).toBeInTheDocument();
+    expect(readsOf(fetchMock, DETAIL_URL)).toBe(1);
+  });
+
+  it("says a drill this gym's library does not hold is not there, not that it failed to load", async () => {
+    window.history.replaceState(null, '', '/coach/drills?drill_id=no-such-drill');
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+
+    expect(await screen.findByText("This reference drill is not in this gym's library.")).toBeInTheDocument();
+    expect(screen.queryByText(/This is a failure to load, not a missing drill/)).not.toBeInTheDocument();
+    expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=no-such-drill')).toBe(1);
+  });
+
+  it('with no drill named, no drill is opened', async () => {
+    window.history.replaceState(null, '', '/coach/drills');
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+
+    await screen.findAllByRole('button', { name: 'View drill: Seeded jab return' });
+    expect(detailReads(fetchMock)).toBe(0);
+  });
+});
