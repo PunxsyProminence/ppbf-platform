@@ -2831,24 +2831,27 @@ describe('arriving with a drill named in the address (lane AS-11)', () => {
 
   it('opens the drill only after the library\'s own read has answered, so a failed list read cannot clear its status', async () => {
     window.history.replaceState(null, '', '/coach/drills?drill_id=reference-1');
-    const order: string[] = [];
-    const fetchMock = routes({
-      libraryRead: () => {
-        order.push('library');
-        return jsonResponse({ error: 'unavailable' }, false, 500);
-      },
+    let releaseLibrary: () => void = () => {};
+    const libraryAnswer = new Promise<Response>((resolve) => {
+      releaseLibrary = () => resolve(jsonResponse({ error: 'unavailable' }, false, 500));
     });
-    const route = fetchMock.getMockImplementation()!;
-    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).startsWith('/api/pilot/drill-library?drill_id=')) order.push('detail');
-      return route(input, init);
-    });
+    // Held open: the route answers with whatever this returns, and a promise
+    // is awaited like a response.
+    const fetchMock = routes({ libraryRead: () => libraryAnswer as unknown as Response });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     render(<CoachDrillLibraryPage />);
+    await act(async () => {});
+
+    // While the library's read is out, the named drill is not read yet.
+    expect(readsOf(fetchMock, DETAIL_URL)).toBe(0);
+
+    await act(async () => {
+      releaseLibrary();
+    });
 
     await screen.findByRole('article', { name: 'Seeded jab return' });
-    expect(order).toEqual(['library', 'detail']);
+    expect(readsOf(fetchMock, DETAIL_URL)).toBe(1);
     // The drill's status is the one its own read returned, not wiped by the
     // list read that failed before it.
     expect(screen.queryByText("This drill's status in this gym could not be read.")).not.toBeInTheDocument();
