@@ -676,3 +676,68 @@ describe('the USA Boxing medical restriction (P22c)', () => {
     expect(screen.queryByTestId('restricted-mark')).toBeNull();
   });
 });
+
+/* THE KIOSK TYPE FLOOR (app scrub FAM-14). This page is a kiosk surface
+   (layout.tsx), and the floor lifts the design system's text voices, not a
+   raw size: a row set in `text-[length:var(--t-sm)]` stays small. The check
+   rows, the waiver rows and the what-to-do line are `.t-body`. */
+describe('the rows take the kiosk type floor (FAM-14)', () => {
+  test('safety check rows, waiver rows and the missing-waiver line are .t-body, with no raw small size', async () => {
+    const article = await renderCard(
+      athleteWith({ general: 'signed', medical_release: 'missing', photo_media: 'photo_only', travel: 'withdrawn' }),
+    );
+
+    const checkRow = within(article).getByText('Active Training Hold').closest('div') as HTMLElement;
+    expect(checkRow).toHaveClass('t-body');
+
+    for (const type of ['general', 'medical_release', 'photo_media', 'travel']) {
+      expect(waiverRow(article, type)).toHaveClass('t-body');
+    }
+    const action = within(waiverRow(article, 'medical_release')).getByText(/gym office/);
+    expect(action.tagName).toBe('P');
+    expect(action).toHaveClass('t-body');
+
+    expect(article.innerHTML).not.toContain('var(--t-sm)');
+  });
+});
+
+/* THE FAMILY GROUND (app scrub FAM-28; AS-9 Q9 = A). The page stands on the
+   canvas with paper panels, as the hub, film and progress pages do, and sets
+   no colour tuned for the dark ground. Looked at on a local render,
+   2026-11-20. */
+describe('the family ground (FAM-28)', () => {
+  test('the page is on the canvas with paper panels, not the dark ground with leather', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: HELD_ATHLETE })) as unknown as typeof fetch;
+    const { container } = render(<GuardianSafetyPage />);
+    await screen.findByText('Safety checks');
+
+    const main = container.querySelector('main') as HTMLElement;
+    expect(main.className).toContain('on-canvas');
+    expect(main.className).not.toContain('hide-950');
+    expect(container.querySelector('header')).toHaveClass('mat-paper');
+    expect(container.querySelector('article')).toHaveClass('mat-paper');
+    expect(container.querySelector('header.mat-leather, article.mat-leather')).toBeNull();
+    expect(main.outerHTML.split('<article')[0]).not.toMatch(/--bone-|--hide-9/);
+  });
+
+  test('the no-hold line is the muted voice, not a raw bone colour', async () => {
+    const article = await renderCard(athleteWith({ general: 'signed' }));
+    const line = within(article).getByText('No training hold on file right now.');
+    expect(line).toHaveClass('t-muted');
+    expect(line.className).not.toContain('bone');
+  });
+
+  test('loading, failed and nobody-linked each stand on a paper panel', async () => {
+    for (const [response, title] of [
+      [new Promise<Response>(() => {}), 'Loading safety status…'],
+      [Promise.resolve(jsonResponse({ error: 'down' }, false)), 'Safety status could not be loaded'],
+      [Promise.resolve(jsonResponse({ ok: true, items: [] })), 'No linked children found'],
+    ] as const) {
+      global.fetch = jest.fn().mockReturnValue(response) as unknown as typeof fetch;
+      const view = render(<GuardianSafetyPage />);
+      const heading = await screen.findByText(title);
+      expect(heading.closest('.mat-paper')).not.toBeNull();
+      view.unmount();
+    }
+  });
+});

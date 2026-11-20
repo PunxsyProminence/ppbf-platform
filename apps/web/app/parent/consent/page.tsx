@@ -96,7 +96,32 @@ export default function GuardianMediaConsentPage() {
     void load();
   }, [load]);
 
-  async function decide(athleteId: string, decision: 'grant' | 'withdraw', childName: string) {
+  /* "Change to photos only" (app scrub FAM-19; Jason's ruling on card
+     OW27-14, "B: Build it, with a confirm", OD-2026-11-20-001). Before it, a
+     guardian who wanted video out had to withdraw everything and grant again.
+     It is the grant the route already takes, with covers_video false: the
+     route records a new signed row and takes published video down in the same
+     transaction (OD-2026-10-05-021). The confirm is worded like the withdraw
+     one and says what follows from a photos-only consent: published video is
+     retracted, and video is not played back or published
+     (videoPlaybackConsent.ts refuses playback while it stands). A grant from
+     this page never carries public use (A-Q14), so when the consent on file
+     allows it, the confirm says that it ends. Wording PROPOSED. */
+  function confirmPhotosOnly(childName: string, publicUseOnFile: boolean): boolean {
+    return window.confirm(
+      `Change consent for ${childName} to photos only? Any video of ${childName} already published will be retracted from distribution immediately, and video of ${childName} will not be played back or published until you grant consent that includes video again.${
+        publicUseOnFile ? ' Public use, which is allowed now, will end too.' : ''
+      }`,
+    );
+  }
+
+  async function decide(
+    athleteId: string,
+    decision: 'grant' | 'withdraw' | 'photos_only',
+    childName: string,
+    publicUseOnFile = false,
+  ) {
+    if (decision === 'photos_only' && !confirmPhotosOnly(childName, publicUseOnFile)) return;
     if (decision === 'withdraw') {
       // Named, not generic: the confirmation is the last moment to catch a
       // wrong-child mistake, and withdrawal now immediately retracts this
@@ -115,20 +140,24 @@ export default function GuardianMediaConsentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           athlete_id: athleteId,
-          decision,
-          covers_video: decision === 'grant' ? (videoByAthlete[athleteId] ?? true) : undefined,
+          // Photos only is a grant that leaves video out.
+          decision: decision === 'withdraw' ? 'withdraw' : 'grant',
+          covers_video: decision === 'grant' ? (videoByAthlete[athleteId] ?? true) : decision === 'photos_only' ? false : undefined,
           /* A-Q14 (OD-2026-10-08-005, "Hide until used"): the "Allow public
              use" box is not shown. The API field stays and a grant always
              sends false. Public use is recorded only from a guardian's own
              signed paper form (admin/athlete-consent), never from here. */
-          public_use_allowed: decision === 'grant' ? false : undefined,
+          public_use_allowed: decision === 'withdraw' ? undefined : false,
         }),
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(payload.error || 'Unable to record your decision.');
       }
-      setActionMessage({ text: decision === 'grant' ? 'Consent granted.' : 'Consent withdrawn.', tone: 'done' });
+      setActionMessage({
+        text: decision === 'grant' ? 'Consent granted.' : decision === 'withdraw' ? 'Consent withdrawn.' : 'Consent changed to photos only.',
+        tone: 'done',
+      });
       await load();
     } catch (error) {
       setActionMessage({
@@ -149,11 +178,14 @@ export default function GuardianMediaConsentPage() {
   return (
     <RoleSessionGate allowedRoles={['parent']}>
       {/* T7 (Plate Set v1): family surfaces take the warm ground or none.
-          Gated to `parent`; see the note on parent/safety for why the room is
-          dropped rather than swapped to .on-canvas. */}
-      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+          This page stands on the family ground, as the hub, film and progress
+          pages do (app scrub FAM-28; AS-9 Q9 = A): the canvas, with paper
+          panels on it. Its type goes through the design system's voices
+          (.t-body, .t-eyebrow, .badge, .alert, .empty), which the sheet
+          restates in ink for this ground, so nothing here sets a colour. */}
+      <main className="on-canvas min-h-screen">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+          <header className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Photo &amp; Video Consent</h1>
             <p className="t-body mt-[var(--s3)] max-w-3xl">
@@ -175,31 +207,37 @@ export default function GuardianMediaConsentPage() {
                 <span className="alert-msg">{actionMessage.text}</span>
               </p>
             ) : actionMessage ? (
-              <p role="status" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--brass-300)]">{actionMessage.text}</p>
+              <p role="status" className="t-body mt-[var(--s3)] font-semibold">{actionMessage.text}</p>
             ) : null}
           </header>
 
           {isLoading ? (
             /* Names what is loading and says it can take a few seconds (parent
                walk 2026-10-19 item 13). A status region. Wording PROPOSED. */
-            <div className="empty mt-[var(--s5)]" role="status">
-              <div className="empty-glyph" aria-hidden="true">◌</div>
-              <div className="empty-title">Loading consent status…</div>
-              <div className="empty-msg">This can take a few seconds.</div>
+            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty" role="status">
+                <div className="empty-glyph" aria-hidden="true">◌</div>
+                <div className="empty-title">Loading consent status…</div>
+                <div className="empty-msg">This can take a few seconds.</div>
+              </div>
             </div>
           ) : errorMessage ? (
-            <div className="empty mt-[var(--s5)]">
-              <div className="empty-glyph" aria-hidden="true">✕</div>
-              <div className="empty-title">Consent status could not be loaded</div>
-              <button type="button" onClick={checkAgain} className="btn btn--ghost mt-[var(--s3)]">
-                Check again
-              </button>
+            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-glyph" aria-hidden="true">✕</div>
+                <div className="empty-title">Consent status could not be loaded</div>
+                <button type="button" onClick={checkAgain} className="btn btn--ghost mt-[var(--s3)]">
+                  Check again
+                </button>
+              </div>
             </div>
           ) : items.length === 0 ? (
-            <div className="empty mt-[var(--s5)]">
-              <div className="empty-glyph" aria-hidden="true">◌</div>
-              <div className="empty-title">No linked children found</div>
-              <div className="empty-msg">Contact the gym if this doesn&rsquo;t look right.</div>
+            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-glyph" aria-hidden="true">◌</div>
+                <div className="empty-title">No linked children found</div>
+                <div className="empty-msg">Contact the gym if this doesn&rsquo;t look right.</div>
+              </div>
             </div>
           ) : (
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
@@ -214,7 +252,7 @@ export default function GuardianMediaConsentPage() {
                 return (
                   <article
                     key={item.athlete_id}
-                    className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]"
+                    className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]"
                   >
                     <div className="flex items-center justify-between gap-[var(--s3)]">
                       <p className="t-eyebrow">{childLabel(item)}</p>
@@ -318,14 +356,31 @@ export default function GuardianMediaConsentPage() {
                           Grant Consent
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          disabled={pendingIds.has(item.athlete_id)}
-                          onClick={() => void decide(item.athlete_id, 'withdraw', childInSentence(item))}
-                          className="btn btn--kiosk disabled:opacity-50"
-                        >
-                          Withdraw Consent
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            disabled={pendingIds.has(item.athlete_id)}
+                            onClick={() => void decide(item.athlete_id, 'withdraw', childInSentence(item))}
+                            className="btn btn--kiosk disabled:opacity-50"
+                          >
+                            Withdraw Consent
+                          </button>
+                          {/* Only on the guardian's own signed row that
+                              includes video: a photos-only row has nothing to
+                              change, and a row whose scope did not arrive
+                              (null) is not guessed at. Second, and ghost, so
+                              Withdraw keeps its place and weight. */}
+                          {myRow?.covers_video === true ? (
+                            <button
+                              type="button"
+                              disabled={pendingIds.has(item.athlete_id)}
+                              onClick={() => void decide(item.athlete_id, 'photos_only', childInSentence(item), myRow.public_use_allowed === true)}
+                              className="btn btn--ghost btn--kiosk disabled:opacity-50"
+                            >
+                              Change to photos only
+                            </button>
+                          ) : null}
+                        </>
                       )}
                     </div>
                   </article>
