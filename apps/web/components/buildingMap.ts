@@ -115,6 +115,13 @@ export interface Door {
    * resolveBoardSeatAccess. Advisory, like `roles`: the page still decides.
    */
   seat?: BoardSeatSlug;
+  /**
+   * Roles whose MENUS leave this door out, display only. `roles` is read
+   * elsewhere as who may open the page (parentMayOpenPath decides which pages a
+   * family resource may send a parent to), so a menu-only change must not touch
+   * it: the page and every rule that reads `roles` stay as they are.
+   */
+  menuHiddenFor?: readonly ClubRole[];
 }
 
 const BOARD_GATE: readonly ClubRole[] = ['board', 'platform_owner'];
@@ -404,11 +411,10 @@ export const BUILDING: readonly Door[] = [
     roles: ['athlete', 'coach', 'parent', 'admin'],
     keywords: 'classes sessions registration attendance calendar today',
     hint: "The day's sessions — registration and attendance." },
-  /* AS-4 (U2-4a, QW): "/wall leaves the athlete and parent menus". The page is
-     still ungated, so a TV and a direct link open it as before; only the menus
-     change. */
-  { href: '/wall', label: 'The Wall', room: 'floor',
-    roles: ['coach', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'],
+  /* AS-4 (U2-4a, QW): "/wall leaves the athlete and parent menus". Menus only:
+     the door stays OPEN, so the page, a TV, a direct link and a family resource
+     that points here are as before. */
+  { href: '/wall', label: 'The Wall', room: 'floor', roles: OPEN, menuHiddenFor: ['athlete', 'parent'],
     keywords: 'display floor screen tv broadcast', hint: 'Gym floor display — TV at the front desk.' },
   { href: '/athlete/dashboard', label: 'Athlete Workspace', room: 'floor', roles: ['athlete'],
     keywords: 'my training check-in rpe session athlete' },
@@ -803,6 +809,7 @@ export interface DoorViewer {
  */
 export function visibleDoors(role: ClubRole | null, viewer?: DoorViewer): Door[] {
   return BUILDING.filter((d) => {
+    if (role && d.menuHiddenFor?.includes(role)) return false;
     if (d.roles === OPEN) return true;
     if (!role) return false;
     // platform_owner is broader in breadth but NARROWER in depth (see

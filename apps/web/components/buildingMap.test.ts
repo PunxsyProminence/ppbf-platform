@@ -19,6 +19,7 @@ import {
   visibleDoors,
 } from './buildingMap';
 import type { ClubRole } from './roleRoutes';
+import { parentMayOpenPath } from '../src/server/pilot/parentResources';
 
 describe('the building map itself', () => {
   it('has no duplicate hrefs', () => {
@@ -667,6 +668,13 @@ describe('menus show only pages a person can open (AS-4 4a)', () => {
     for (const role of ['coach', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'] as const) {
       expect(hrefs(role)).toContain('/wall');
     }
+    // A signed-out visitor's menu is as before.
+    expect(hrefs(null)).toContain('/wall');
+  });
+
+  it("changes only the menus: The Wall stays OPEN, and a family resource may still send a parent there", () => {
+    expect(BUILDING.find((d) => d.href === '/wall')?.roles).toBe(OPEN);
+    expect(parentMayOpenPath('/wall')).toBe(true);
   });
 
   it('marks each seat workspace door with its seat', () => {
