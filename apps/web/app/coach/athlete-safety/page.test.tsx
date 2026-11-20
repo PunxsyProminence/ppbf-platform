@@ -676,11 +676,19 @@ describe('Athlete Safety (lane AS-5)', () => {
     expect((screen.getByLabelText('Athlete') as HTMLSelectElement).value).toBe('ath-1');
     cleanup();
 
+    // ath-x is in the gym roster but not in the list this person may open.
     handOffArrivalAthlete('ath-x', ATHLETE_SAFETY_PAGE);
     render(<CoachInjuriesPage />);
     const select = (await screen.findByLabelText('Athlete')) as HTMLSelectElement;
     await waitFor(() => expect(select.disabled).toBe(false));
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(select.value).toBe('');
+    // Nothing is read or shown for an athlete the list does not hold.
+    expect(screen.queryByRole('heading', { name: 'Injury Record' })).toBeNull();
+    const urls = (global.fetch as unknown as jest.Mock).mock.calls.map(([u]) => String(u));
+    expect(urls.some((u) => u.includes('ath-x') && !u.includes('/athletes/list'))).toBe(false);
     cleanup();
 
     handOffArrivalAthlete('ath-1');
