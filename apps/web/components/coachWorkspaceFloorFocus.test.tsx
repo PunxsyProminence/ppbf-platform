@@ -163,6 +163,14 @@ test('with every read healthy and empty, the floor says nothing has been reporte
   expect(floor().getByText(/not that everyone is fine/)).toBeTruthy();
 });
 
+test('the coach home\'s pain list, read on load and Refresh, says to press Refresh for new reports (QJ = B, #2023)', async () => {
+  await renderWorkspace();
+  expect(
+    await screen.findByText('No athlete on your roster has reported pain in the last 14 days. Press Refresh to check for new reports.'),
+  ).toBeTruthy();
+  expect(screen.queryByText(/within two minutes/)).toBeNull();
+});
+
 test('an unvalidated GREEN reading shows as "Not validated" on the floor, never as a band', async () => {
   await renderWorkspace({
     athletesList: roster,
