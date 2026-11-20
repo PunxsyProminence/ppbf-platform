@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-20-001 | 2026-11-20 | OW27-01 to OW27-16: W4 email alerts, typed lines, athlete and parent words, recognizer start | RECONSTRUCTED |  |  |
+| OD-2026-11-19-031 | 2026-11-19 | OW26-06 and OW26-07: scrub research files go under docs/research | RECONSTRUCTED |  |  |
 | OD-2026-11-19-030 | 2026-11-19 | OW26-05: mixed templates become library drills | RECONSTRUCTED |  |  |
 | OD-2026-11-19-029 | 2026-11-19 | Staging deploys run without asking; production does not | PRIMARY |  | yes |
 | OD-2026-11-19-028 | 2026-11-19 | OW26-04: start all five W1 lanes now | RECONSTRUCTED |  |  |
@@ -630,6 +632,355 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-20-001 -- OW27-01 to OW27-16: W4 email alerts, typed lines, athlete and parent words, recognizer start
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone thread, not in this transcript. Copied by script from `CARDS_OW27.md` (OneDrive, PPBF-AI-Lanes, Research/Backbone/working/overwatch; sha256[:16] `763ac7f7f0ae017c` when read 2026-11-20; the earlier hash c3ae819d6d77ee90, cited in note 18 and the brief, covered the file before it gained batch 2, OW27-10 to -16), the sections headed "## OW27-01" to "## OW27-16" (batch 1 and batch 2), each card's text and his recorded answer, and the closing section headed "## Already-answered audit of OW27-01 to -16". The OW27-06 delegation note is copied from `TO_BACKBONE.md` (Documents, PPBF-overwatch, backbone-crossover; sha256[:16] `bf893a5b530c5f75` when read), the note headed "2026-11-20T12:46Z (date -u) -- reply to note 18". What is uncertain: the card file is Backbone's record of his answers, written by someone else. New; edits no earlier entry's text.
+
+Each card below is copied under its own sub-heading: the official text, the options in the order shown, and the answer exactly as recorded (typos included in the free-text answers, OW27-01, OW27-04, OW27-06, OW27-11 and OW27-16).
+
+### OW27-01 (header 'Email events'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-01, W4 Q1.1): Which events send the opt-in, content-free email? Already ruled, not asked again: OD-2026-11-19-019, "1 and 2 now we will do 3 later" (an opt-in email from the gym's Microsoft 365 mailbox that says only "open the app"). No event list is ruled. Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: What should make the app send someone a 'go open the app' email?
+
+Options, in the order shown:
+1. "A: Events already shown in the app (Recommended)": A safety escalation a staff member can read, including SHADOW safety alerts, and a new family note or parent reply. OD-2026-10-01-008 section 3 kept SHADOW alerts in-app only; OD-2026-11-19-019 changes that for outside alerts. Pros: No new event types; mirrors what the app already raises for that person. Cons: No event reaches an athlete.
+2. "B: Safety escalations for staff only": Only safety escalations, only to staff. Pros: Smallest scope. Cons: Parents get no email for family notes or replies; no event reaches an athlete.
+3. "C: A plus gym announcements": A, plus gym announcements. Pros: Announcements reach everyone, athletes included (they read them in the app). Cons: Gym announcements are the only thing that reaches athletes; not sized in W4S.
+4. "D: A plus a coach's message to an athlete": A, plus a coach's message to an athlete (athleteCoachMessages.ts lines 1-8). Pros: Athletes hear when their coach writes to them. Cons: Reaches athletes, minors included; not sized in W4S.
+
+Jason's answer (free text): "it should be settings for the gym"
+Overwatch reading (INFERRED): which events send the email is a setting the gym chooses, not fixed in code; who sets it and the starting set are not stated. Clarified on OW27-10.
+```
+
+### OW27-02 (header 'Who opts in'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-02, W4 Q1.2): Who may opt in to the email? Nothing ruled. Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: Who is allowed to turn the email on for themselves?
+
+Options, in the order shown:
+1. "A: Anyone with a sign-in email (Recommended)": Every account with a sign-in email may opt in. Pros: Adds no new restriction (the W4S brief's L1 rule); the email holds nothing but 'open the app'. Cons: Minors can opt in too.
+2. "B: Staff and parents only": Coach, admin, organization admin and parents. Pros: Fewer emails sent. Cons: A new restriction, so it needs your direction.
+3. "C: B plus athletes 18 or over": B, plus adult athletes. An athlete with no date of birth counts as a minor (OD-2026-10-04-010). Pros: Adults choose for themselves. Cons: A new restriction that falls on minors.
+
+Jason's answer: "C: B plus athletes 18 or over"
+Against the recommendation (A). A new restriction that falls on minors, made at Jason's direction (the W4S L1 rule and RULES section 1 allow it when the owner directs). An athlete with no date of birth counts as a minor (OD-2026-10-04-010).
+```
+
+### OW27-03 (header 'How often'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-03, W4 Q1.3): How often may one person get the email? Nothing ruled. Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: If several things happen, how many emails does a person get?
+
+Options, in the order shown:
+1. "A: At most one per person per hour (Recommended)": One email per person per hour, whatever the number of events. Pros: Caps inbox noise. Cons: Needs a per-person send record (see OW27-06).
+2. "B: One email per event": An email for every event. Pros: Nothing is batched. Cons: More emails on busy days.
+3. "C: One a day": At most one email per person per day. Pros: Quietest. Cons: A safety escalation can wait up to a day for its email.
+
+Jason's answer: "B: One email per event"
+Against the recommendation (A).
+```
+
+### OW27-04 (header 'Opt out'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-04, W4 Q1.4): How does a person opt out of the email? Recorded, not asked again: OD-2026-11-19-009 'Alert wording', "Only 'open the app'" (that entry says it rules nothing). No opt-out method is ruled. Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: How does someone turn the email off?
+
+Options, in the order shown:
+1. "A: The same switch in the app (Recommended)": Turn it off where it was turned on. The email holds only 'open the app'. Pros: Keeps the recorded 'open the app' wording; no extra route. Cons: The person must sign in to stop it.
+2. "B: Also a link in the email": An unsubscribe link in the email as well. Pros: One click to stop it. Cons: Adds a link and words beyond 'open the app'; needs a no-sign-in route with its own token: one more PR, about 200 lines, plus a signing secret or a token table (INFERRED in W4S).
+
+Jason's answer (free text): "it shsould have a switch and we should have a setting page for each user type to adjust those"
+Overwatch reading (INFERRED): opt-out by an in-app switch (option A), plus a settings page for each user type where those settings are adjusted. New scope, not sized in W4S. Clarified on OW27-10.
+```
+
+### OW27-05 (header 'Mailbox'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-05, W4 Q1.5): Which mailbox sends the email? Already ruled, not asked again: OD-2026-11-19-019, "the gym's Microsoft 365 mailbox". Which mailbox is not ruled. Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: Which gym email address should these come from?
+
+Options, in the order shown:
+1. "A: The mailbox that sends sign-in links today (Recommended)": Reuse the gym mailbox the app already sends sign-in links from. Pros: Needs no Azure or Microsoft 365 change. Cons: Alerts and sign-in links share one sender.
+2. "B: A separate gym mailbox": A new sender for alerts only. Pros: Alerts and sign-in links are kept apart. Cons: You set the mailbox up in Microsoft 365 first and widen the mailbox access policy (graphMailer.ts lines 15-23).
+
+Jason's answer: "A: The mailbox that sends sign-in links today (Recommended)"
+As recommended.
+```
+
+### OW27-06 (header 'Send log'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-06, W4 Q1.6): What may the email send log keep? Recorded, not asked again: OD-2026-11-19-009 'Page counts', "B: totals only, no user, device or IP", against the Notifications file; the record does not say it covers an email send log. Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: What should the app remember about the emails it sent?
+
+Options, in the order shown:
+1. "A: Who was emailed and when, nothing else (Recommended)": Person and time only. Pros: What the once-an-hour limit (OW27-03 A) needs. Cons: Keeps a per-person record, unlike the 'totals only' page counts.
+2. "B: Totals only": Counts, no person. Pros: Matches the recorded page-count answer. Cons: A per-person limit cannot be kept across a restart.
+
+Jason's answer (free text): "Use your best judgment for this question"
+Delegated to Overwatch. Overwatch's pick (INFERRED, Jason may change it): A, who was emailed and when, nothing else. With OW27-03 B (one email per event) the app still has to know whom it has already emailed, so that a restart neither sends twice nor skips; A keeps no content, device or IP. If the build needs the event reference as well, the lane asks Jason; it is not assumed.
+```
+
+### OW27-07 (header 'Subject line'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-07, W4 Q1.7): What does the email's subject line say? Already ruled: OD-2026-11-19-019, an email that "says only "open the app""; whether that covers the subject is INFERRED, not stated. Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: What should the email's subject say?
+
+Options, in the order shown:
+1. "A: "open the app" only (Recommended)": The literal reading of the recorded wording. Pros: Says nothing about the event, as ruled. Cons: Does not say which gym it is from.
+2. "B: The gym's name and "open the app"": Adds the gym's name. Pros: Recipients see who sent it. Cons: Adds words beyond the recorded wording, so it needs your word.
+
+Jason's answer: "B: The gym's name and "open the app""
+Against the recommendation (A). Adds the gym's name to the subject, beyond OD-2026-11-19-019's "says only "open the app"", by Jason's word.
+```
+
+### OW27-08 (header 'Switched off'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-08, W4 Q1.8): Does an account whose sign-in is switched off still get the email? OD-2026-11-19-025 adds an athlete sign-in off switch (being built in #2013); Gym Office can already deactivate staff logins (OD-2026-10-07-009). Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: If someone can't sign in right now, should they still get 'open the app' emails?
+
+Options, in the order shown:
+1. "A: No (Recommended)": No email while sign-in is off. Pros: The email says 'open the app', which that person cannot do. Cons: Narrows who gets it; covers staff logins too; under OW27-01 C or D it also falls on athletes, minors included.
+2. "B: Yes, until they opt out": Email continues while sign-in is off. Pros: No new rule. Cons: They are told to open an app they cannot sign in to.
+
+Jason's answer: "A: No (Recommended)"
+As recommended. Covers staff logins too.
+```
+
+### OW27-09 (header 'Covered lines'), 2026-11-20 ~00:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-09, W4 Q8.1, clarifies OW26-05): In the typed-lines work, what happens to a typed line that a library drill already covers (W4S names four that look covered, e.g. 'Punch Burst' drl_85a93f6757497a, 'Pogo Jumps' drl_6370c51875c49f; INFERRED there)? Your answer on OW26-05 (OD-2026-11-19-030): "B: Turn typed lines into library drills"; its option text read "Each typed step becomes a drill in PPBF words, AI-draft labelled (like the home week)". Option A here would narrow that text. Source: W4_SIZING.md on main a940ea4a (lane W4S); already-ruled check W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed), quotes re-checked here on main.
+Plain: If a drill for that line already exists, link it or write a new one?
+
+Options, in the order shown:
+1. "A: Link the existing drill (Recommended)": Link the library drill; draft new drills only for the rest. Pros: Fewer drafts to write and check. Cons: Narrows OW26-05 B's option text: a linked drill is neither new nor AI-drafted.
+2. "B: A new drill for every line": As OW26-05 B's option text says. Pros: Every typed line gets its own PPBF-worded drill. Cons: Most work: up to 71 new drills, about 2,530 lines in 8 PRs (W4S, INFERRED).
+
+Jason's answer: "B: A new drill for every line"
+Against the recommendation (A); matches OW26-05 B's option text. The typed-lines work writes a new drill for every typed line: up to 71 new drills, about 2,530 lines in 8 PRs (W4S, INFERRED).
+```
+
+### OW27-10 (header 'Email settings'), 2026-11-20 ~07:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-10, clarifies OW27-01 and OW27-04, W4 item 1): Your answers were "it should be settings for the gym" (which events send the email) and "it shsould have a switch and we should have a setting page for each user type to adjust those" (opting out). Already set: staff, parents and athletes 18 or over may opt in (OW27-02 C); one email per event (OW27-03 B); OD-2026-11-19-019 records an opt-in email. Which reading is right? Source: CARDS_OW27.md; W4_SIZING.md on main 1769758b.
+Plain: Who decides which events send an email, and what can each person change for themselves?
+
+Options, in the order shown:
+1. "A: Gym picks the events; each person has one switch (Recommended)": The gym's organization admin chooses, for each user type (staff, parents, athletes 18 or over), which events can send the email, on a gym settings page. Each person turns their own email on or off with one switch on their own settings page. Pros: Fits both answers; one switch per person; the fewest settings to build. Cons: A person cannot turn off one event and keep another.
+2. "B: Gym picks the events; each person can also pick": Same gym setting; each person's settings page also lets them turn single events off. Pros: The most control for each person. Cons: More to build and test; not sized.
+3. "C: Gym sets it all; no personal switch": The organization admin turns the email on or off for each user type; people have no switch of their own. Pros: Simplest for people. Cons: Not opt-in by each person, which OD-2026-11-19-019 records.
+
+Jason's answer: "A: Gym picks the events; each person has one switch (Recommended)"
+As recommended. Settles OW27-01 and OW27-04: the gym's organization admin chooses, per user type, which events can send the email, on a gym settings page; each person has one on/off switch on their own settings page.
+```
+
+### OW27-11 (header 'Corner words'), 2026-11-20 ~07:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-11, AS-8 Q11, scrub ATH-06): "Corner" labels several things on the athlete's pages; the plan proposes renaming three of them. Every option needs new words. Under A, "Corner" stays for My Corner and for the red or blue corner choice ("Your corner", ProfileSettings.tsx line 315). Source: plan PR #2020 (lane AS-8) body at 3384c1be; strings re-checked on main 1769758b; asked for by App Overwatch (TO_BACKBONE.md 2026-11-20T05:47Z, A-123).
+Plain: Should three of the 'Corner' labels get clearer names now?
+
+Options, in the order shown:
+1. "A: Rename three now (Recommended)": /profile's title "Your Corner" becomes "Your Profile" (it is every role's page, and its door label must match); the mentors heading "Your corner" becomes "Who you train with" (the family view already says "Who they train with", AthleteAchievements.tsx line 467); the Sparring Log eyebrow "Your Corner" becomes "Your entry", beside "Coach Entry". Pros: Each label says what it is; matches the family wording. Cons: Changes the /profile title for every role.
+2. "B: Leave it for the AS-13 words sweep": No change in AS-8; the AS-13 words sweep handles ATH-06. Pros: No new words now. Cons: The 'Corner' labels stay as they are until AS-13.
+
+Jason's answer (free text): "these room should be able to be changed in the app by the organization to relat e to it"
+Overwatch reading (INFERRED): an organization admin can rename the app's rooms from Gym Office; the Customize page has no such setting today, so this is new, unsized work. Clarified on OW27-15.
+```
+
+### OW27-12 (header 'Check-in words'), 2026-11-20 ~07:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-12, AS-8 Q12, scrub ATH-08): New check-in words in three places, using the names already ruled (I'm here, How I feel today, Start training). Source: plan PR #2020 (lane AS-8) body at 3384c1be; strings re-checked on main 1769758b; asked for by App Overwatch (TO_BACKBONE.md 2026-11-20T05:47Z, A-123).
+Plain: Are these the right words for the TV, the Training Card and the help page?
+
+Options, in the order shown:
+1. "A: These words (Recommended)": TV: "Nobody is marked here yet today." (it counts I'm here and the coach's register). Training Card: "Start training on the floor kiosk and the first stamp lands here." /help: "I'm here, How I feel today, Start training, session notes and goals." Pros: Uses the ruled names. Cons: New wording in parts.
+2. "B: Other words, from you": You give the words (type them in the free-text box). Pros: Your own wording. Cons: The lane waits for your words.
+
+Jason's answer: "A: These words (Recommended)"
+As recommended.
+```
+
+### OW27-13 (header 'Coach labels'), 2026-11-20 ~07:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-13, AS-8 Q13, scrub ATH-20): Two new labels on the athlete's pages. "Open Schedule" (the page title) is already approved, and the messages block keeps "From your coach". Source: plan PR #2020 (lane AS-8) body at 3384c1be; strings re-checked on main 1769758b; asked for by App Overwatch (TO_BACKBONE.md 2026-11-20T05:47Z, A-123).
+Plain: Are these two new labels right?
+
+Options, in the order shown:
+1. "A: These two labels (Recommended)": The Corner's work-count label "From your coach" becomes "Your coach's work" (it counts assigned work and opens the Floor). The notes heading "From your coaches" becomes "What your coaches have said" (the family view already says "What the coaches have said", AthleteAchievements.tsx line 410). Pros: Tells work apart from messages; matches the family wording. Cons: New words.
+2. "B: Other words": You give the words (type them in the free-text box). Pros: Your own wording. Cons: The lane waits for your words.
+
+Jason's answer: "A: These two labels (Recommended)"
+As recommended.
+```
+
+### OW27-14 (header 'Photos only'), 2026-11-20 ~07:45 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-14, AS-9 Q8, scrub FAM-19): Should the parent consent page get a "Change to photos only" control? Today a guardian who has signed sees only "Withdraw Consent". The server already supports the change: the grant route takes covers_video false and takes published video down in the same transaction (route.ts lines 281-330; OD-2026-10-05-021, "A guardian grant that downgrades an athlete from video to photo-only retracts that athlete's already-published video publications"). A confirm before it could count as a new warning (RULES section 1). Source: plan PR #2021 (lane AS-9) body at e75bfd6c; re-checked on main 1769758b; asked for by App Overwatch (TO_BACKBONE.md 2026-11-20T05:47Z, A-123).
+Plain: Should parents get a button to switch from photos-and-video to photos only, and should it ask them to confirm?
+
+Options, in the order shown:
+1. "A: Words only now; the control waits (Recommended)": AS-9 does the consent words only (one consent vocabulary); no new control until you decide. Pros: No new consent control or warning yet. Cons: Parents still cannot switch to photos only from the page.
+2. "B: Build it, with a confirm": Build the control with a confirm worded like the existing Withdraw confirm (consent/page.tsx lines 104-106). Pros: Parents can switch, and the confirm says published video comes down. Cons: A confirm is a new warning, which needs your direction (RULES section 1).
+3. "C: Build it, no confirm": Build the control with no confirm. Pros: No new warning. Cons: Published video comes down with no confirm.
+
+Jason's answer: "B: Build it, with a confirm"
+Against the recommendation (A). Jason directs the new control and its confirm (RULES section 1: a new warning only when the owner directs it). The confirm is worded like the existing Withdraw confirm (consent/page.tsx lines 104-106).
+```
+
+### OW27-15 (header 'Room names'), 2026-11-20 ~08:16 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-15, clarifies OW27-11): You answered "these room should be able to be changed in the app by the organization to relat e to it". Reading (INFERRED): an organization admin can rename the app's rooms (for example My Corner and Your Profile) from Gym Office. Today the Customize page has no such setting (admin/customize/page.tsx on main 1769758b: profile, photos, boards, tablet and record sections only), so this is new work, not sized; it would join W4 under OW26-02 C. What does AS-8 do with the 'Corner' labels until then? Source: CARDS_OW27.md; plan PR #2020 Q11.
+Plain: Until gyms can rename rooms themselves, should AS-8 use the new names, keep today's, or wait?
+
+Options, in the order shown:
+1. "A: New names as defaults now; renaming later (Recommended)": AS-8 uses "Your Profile", "Who you train with" and "Your entry" as the starting names; a separate, sized lane later lets the organization rename rooms. Pros: AS-8 is not held; the labels are clearer now. Cons: New words now that a gym may change later.
+2. "B: Keep today's names; renaming later": AS-8 makes no 'Corner' change; the renaming lane comes later. Pros: No interim words. Cons: Today's 'Corner' labels stay until the renaming lane.
+3. "C: Hold the 'Corner' part until renaming exists": AS-8 leaves ATH-06 until gyms can rename rooms. Pros: Names are set once, by the gym. Cons: ATH-06 waits for unsized work.
+
+Jason's answer: "A: New names as defaults now; renaming later (Recommended)"
+As recommended. AS-8 uses "Your Profile", "Who you train with" and "Your entry" as starting names; room renaming by the organization becomes a separate lane, to be sized (W4, OW26-02 C).
+```
+
+### OW27-16 (header 'Recognizer start'), 2026-11-20 ~08:40 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW27-16, clarifies SH-04 from the SHADOW lane): On SH-04 (the Teach Shadow punch recognizer) you picked "B: Start now, alongside patterns". That option's text said the recognizer begins at the start of the SHADOW wave, beside pattern learning, and on SH-01 you put the SHADOW wave after W4 ("A: Own wave after W4 (Recommended)"). If "now" means today, it changes OD-2026-10-07-007 ("th ai piece will be when I have the best time to focus"). Either way no spending is approved (OD-2026-10-02-011). Source: findings 2026-11-20-shadow-jason-answers.md (a8f41daa76a509a6) and 2026-11-20-shadow-wave.md (bc3ed48562c208d6) section 3.4; OWNER_DECISIONS.md on main 1769758b.
+Plain: Does the punch-recognizer work start when the SHADOW wave starts (after W4), or today?
+
+Options, in the order shown:
+1. "A: When the SHADOW wave starts (Recommended)": The recognizer and pattern learning both start together when the SHADOW wave starts, after W4. Pros: Matches the option text and SH-01; keeps OD-2026-10-07-007; nothing competes with the pilot and W2-W4. Cons: The coach-marking work (gate 3 needs about 500 marked events, 42-75 coach-hours, REPORTED in TEACH-BIOMECH-TRAIN-00) starts later.
+2. "B: Today, beside the current waves": Start the recognizer's first block (block T: labelling-tool fixes) now as its own lane. Pros: The long coach-marking work starts sooner. Cons: Changes OD-2026-10-07-007; one more lane while the pilot and W2 run; coaches' time is shared with pattern logging.
+
+Jason's answer (free text): "ok again validate that these question have not already been answered some of the drift and wasted resources have been answering questions slightly different or you asking them slightly different"
+No option picked. Overwatch's own mistake: the question was already answered. SH-04's picked option text says the recognizer begins at the start of the SHADOW wave; OD-2026-10-07-007 and lane-inbox\BUILD-PLAN-2026-10-08.md line 54 ("Teach-AI when Jason says") agree. Standing, unchanged: the recognizer starts with the SHADOW wave, after W4. Nothing is re-asked.
+```
+
+### OW27-16 standing instruction and the closing audit section
+
+**OW27-16 was already answered:** per the card file, Jason picked no option and instead told Overwatch to check for questions already answered; the file records that the recognizer starts with the SHADOW wave, after W4, OD-2026-10-07-007 stands, and nothing is re-asked (the card text above says so word for word). Jason's instruction on OW27-16 is quoted in the card above; the rule that follows from it is in the closing section of the card file, copied by script (the audit method and results are Overwatch's, INFERRED, not his words):
+```text
+## Already-answered audit of OW27-01 to -16 (2026-11-20 08:40, Jason's instruction on OW27-16)
+Method: regular-expression search per card topic across docs/current/OWNER_DECISIONS.md on main 1769758b, CARDS_OW24.md, CARDS_OW25.md, CARDS_OW26.md, findings 2026-11-19-jason-answers-app-scrub.md, 2026-11-19-decision-options-validated.md, 2026-11-19-app-scrub-stage-3.md, 2026-11-19-notifications-and-usage-counts.md, 2026-11-20-shadow-jason-answers.md, and lane-inbox\BUILD-PLAN-2026-10-08.md; every hit read in context. A search, not a full read.
+- OW27-01 to -09: no earlier answer to the same question found. Each card quoted the parts already ruled (OD-2026-11-19-019, -009, -030). Related, not the same question: OD-2026-10-08-006 A-Q17, Jason: "1 id like it to eventually forward to thier text message if possible" (family messages by text, later).
+- OW27-10 and OW27-15: clarifications of his own free-text answers (OW27-01, -04, -11); no earlier answer.
+- OW27-11 to -14: no earlier answer. OD-2026-10-19-010 'Corner' is the fight card's corner line, not these labels; OD-2026-10-05-016/-021/-022 rule what a photo-only grant does, not a parent control.
+- OW27-16: already answered (above). Re-ask; withdrawn.
+Rule for every later card (Jason, OW27-16 and SH-05): before asking, search the same sources plus STATUS.md lines naming Jason and the open PR bodies; put "Checked, not answered in: ..." on the card; validate options from outside sources with pros, cons and effect; never guess, fill gaps or work from memory; never re-ask a question that the picked option's own text answers.
+```
+
+**OW27-06 delegated: Jason's words.** Jason, in the card above: *"Use your best judgment for this question"*.
+
+**Applied (Overwatch's choice under that delegation, not Jason's words):** A, the send log keeps only who was emailed and when. If the build needs the event reference too, the lane asks first. Copied by script from `TO_BACKBONE.md`:
+```text
+- OW27-06, delegated ("Use your best judgment for this question"): Overwatch picks A. The send log keeps only who was emailed and when, so a restart neither resends nor skips. If the build needs the event reference too, the lane asks first.
+```
+
+**Effects (INFERRED by Backbone Overwatch, note 18; copied by script from `TO_APP_OVERWATCH.md`, sha256[:16] `d10a99bc4776ca8c` when read; note 18's own file hash was d42951b114b1122c and the file has since grown):**
+```text
+Effects (INFERRED): (1) W4 item 1 gains scope that W4S did not size: a gym setting for which events send the email, and a settings page for each user type. My readings of OW27-01 and OW27-04 go to Jason as clarification card OW27-10 next; please hold item 1's re-sizing until it is answered. (2) Typed lines (TL): a new drill for every line, up to 71 new drills, about 2,530 lines in 8 PRs (W4S); with Q8.2 ruled, nothing else is left to ask before it can run after the pilot.
+```
+In short, INFERRED: OW27-01 and OW27-04 add scope to W4 item 1 (a gym setting for which events send email, and a settings page for each user type); OW27-09 means up to 71 new drills for the typed lines, after the pilot. Note 18 called clarification card OW27-10 pending; the card file now holds it answered, and it is recorded above with the rest of batch 2.
+
+**Applied:** none yet. W4 item 1 is not built.
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
+## OD-2026-11-19-031 -- OW26-06 and OW26-07: scrub research files go under docs/research
+
+**Provenance: RECONSTRUCTED.** Jason answered these two cards in the Backbone thread. Copied by script from `CARDS_OW26.md` (OneDrive, PPBF-AI-Lanes, Research/Backbone/working/overwatch; sha256[:16] `4ad85d7482dbb6cb` when read 2026-11-20), the sections headed "## OW26-06" and "## OW26-07", each card's text and his recorded answer. Redaction, the only change to the copied bytes: in the OW26-06 correction line two first names in the file are replaced by "[two first names]" (public repo). What is uncertain: the file is Backbone's record of his answers, written by someone else. New; edits no earlier entry's text.
+
+### OW26-06 (header 'Scrub files'), 2026-11-19 22:10 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW26-06): App Overwatch proposes adding the App Scrub stage 1 (sha256[:16] 1bac7c253891d063) and stage 3 (7214ca0b5b672d2c) files to the public repo under docs/research, so the cloud lanes for AS-8 to AS-11 (athlete, parent, office, athletes pages) can read their finding tables; cloud lanes cannot read OneDrive. A pattern scan found no emails, account or record IDs, phone numbers or known personal names in either file. Approve?
+Plain: Can the two scrub research files go into the public GitHub repo so the cloud lanes can read them?
+
+Options, in the order shown:
+1. "A: Yes, both files under docs/research (Recommended)": Added by a research or records PR; the W2 lanes plan from the source files. Pros: AS-8 to AS-11 plans can start now; no hand-pasted rows; easier to follow the no-guessing rule. Cons: Public; stage 1 was rewritten after Overwatch 25's check and its current text has not been re-checked (A-105).
+2. "B: Yes, after an Overwatch re-check of stage 1": Same, once an Overwatch has re-read stage 1 as it stands (A-105). Pros: A second look before anything goes public. Cons: The W2 plans wait for that check.
+3. "C: No; App Overwatch pastes the rows into each brief": Files stay in OneDrive; each brief carries the rows it needs. Pros: Nothing new goes public. Cons: Dozens of rows per brief; more chance of a missed row.
+
+Jason's answer: "A: Yes, both files under docs/research (Recommended)".
+Context: App Overwatch's proposal, TO_BACKBONE.md 2026-11-20T02:50Z (cffedb806b01c84a). Pattern scan (this thread, 2026-11-19 22:10): 0 emails, 0 GUIDs, 0 phone numbers, 0 session ids, 0 hits for known personal first names in either file; stage 1 labels its examples INVENTED. A pattern scan, not a full read.
+
+Correction to OW26-06 (2026-11-19 22:24, reviewer finding 24ca44c6): the scan behind 'no known personal names' searched two first names only ([two first names], with capitals). The card text above stays as shown; the correction was put to Jason as OW26-07.
+```
+
+### OW26-07 (header 'Re-confirm'), 2026-11-19 22:24 US Eastern
+
+**Card, as recorded:**
+```text
+Question, as shown:
+Official (OW26-07): Correction to OW26-06. That card said a scan found "no known personal names" in the two scrub files; it had checked only two first names. Re-scan now: about 290 common first names and nicknames, plus "Coach/athlete/parent + Name" patterns. Only hits: "Jason" (the owner, already public in OWNER_DECISIONS.md on main) and "Mark" (the verb). Still a pattern scan, not a full read; App Overwatch's public-repo check on the PR stays. Does your approval to add both files to docs/research stand?
+Plain: My name check was narrower than I said; a wider one is clean. Still OK to publish the two files?
+
+Options, in the order shown:
+1. "A: Yes, it stands (Recommended)": App Overwatch adds both files by PR, with its public-repo check. Pros: W2 lane plans can start from the source files. Cons: A pattern scan is not a full read.
+2. "B: Hold until a full read for names": An Overwatch reads both files for names before the PR (about 240 KB of text). Pros: Strongest check before anything goes public. Cons: The W2 plans wait for the read.
+
+Jason's answer: "A: Yes, it stands (Recommended)".
+Scan detail: 240 distinct common US first names and nicknames as whole words, plus role + capitalised-word patterns (Coach, athlete, parent, guardian, member); hits only 'Jason' (stage 1: 6, stage 3: 19) and 'Mark' (the verb; 4 and 2).
+Count correction (2026-11-19 22:24): the card as shown said "about 290" names; the list held 240 distinct names (its raw token list had duplicates). Jason was told in the reply.
+```
+
+**Went against the recommendation:** no; both answers are the recommended option (A).
+
+**Effect (INFERRED from the cards):** the two App Scrub research files may be added to the public repo under docs/research, with App Overwatch's public-repo check; the wider name scan did not change that.
+
+**Applied (OBSERVED by Overwatch, 2026-11-20, per its brief):** merged as #2015 (c27c581c), `docs/research/app-scrub-2026-11-19/`.
+**Status:** recorded 2026-11-20 by PR.
 
 ---
 
