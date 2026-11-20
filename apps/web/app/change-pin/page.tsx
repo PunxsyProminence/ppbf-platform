@@ -13,8 +13,8 @@ const PIN_PATTERN = /^\d{6}$/;
 
 /**
  * Where a signed-in account still flagged must_change_pin lands: the page
- * guard, RoleSessionGate, BoardRoleGate, /login and /athlete/sign-in all send
- * it here. The server refuses every other route until this is done (see
+ * guard, the two client role gates, /login and /athlete/sign-in all send it
+ * here. The server refuses every other route until this is done (see
  * requirePrincipal), so there is deliberately no way to skip it and no
  * navigation off this page other than completing it or signing out.
  *
