@@ -422,7 +422,9 @@ describe('every direct reader of a consent status is registered', () => {
       for (const file of sourceFilesUnder(root)) {
         const lines = fs.readFileSync(file, 'utf8').split('\n');
         if (lines.some((line) => COMPARES_TO_A_CONSENT_LITERAL.test(line) && MENTIONS_STATUS.test(line))) {
-          hits.add(path.relative(APP_WEB, file));
+          // '/' on every OS: REGISTERED is written with '/', and on Windows
+          // path.relative returns '\', which matched no entry.
+          hits.add(path.relative(APP_WEB, file).split(path.sep).join('/'));
         }
       }
     }
