@@ -479,11 +479,12 @@ function specLess(a, b) {
      - `body > *`: an element the JSX puts directly under <body> (see
        bodyChildElements).
    Any other ancestor (`.room > *`, `.ge-locker .mat-leather button`) needs a
-   parent the scan cannot see; it returns null and is counted as unmodelled,
-   as a class rule that needs an ancestor is skipped. */
+   parent the scan cannot see, and an id (`#root`) names one element the scan
+   cannot identify; both return null and are counted as unmodelled, as a class
+   rule that needs an ancestor is skipped. */
 function elementTarget(selector, info) {
-  if (/^body\s*>\s*\*$/.test(selector)) return 'body > *';
-  if (info.hasAncestor) return null;
+  if (/^body\s*>\s*\*$/i.test(selector)) return 'body > *';
+  if (info.hasAncestor || info.hasIds) return null;
   return info.subjectTag ?? '*';
 }
 
@@ -1862,6 +1863,7 @@ const FIXTURE_CSS = [
   '.room > * { position: relative; }',
   '@media print { p { display: none; } }',
   '@layer base { h2 { letter-spacing: 0.2em; } }',
+  '#root { position: relative; }',
 ].join('\n');
 const FIXTURE_TSX = [
   "import { createPortal } from 'react-dom';",
@@ -1872,6 +1874,7 @@ const FIXTURE_TSX = [
   'export const E = () => <p className="tracking-[0.5em] block">e</p>;',
   'export const F = () => <h2 className="tracking-[0.5em]">f</h2>;',
   'export const G = () => <div className="room"><div className="absolute">g</div></div>;',
+  'export const H = () => <div className="fixed">h</div>;',
 ].join('\n');
 
 function elementRuleCases() {
@@ -1891,6 +1894,7 @@ function elementRuleCases() {
       ['a <p> meets neither the h1 rule nor a print-only rule', at(6), 'none'],
       ['a layered h2 rule is not a collision', at(7), 'none'],
       ['a rule that needs an ancestor (.room > *) is not modelled', at(8), 'none'],
+      ['an id rule (#root) is not modelled as `*`', at(9), 'none'],
     ];
   } finally {
     rmSync(dir, { recursive: true, force: true });
