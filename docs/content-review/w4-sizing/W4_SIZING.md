@@ -1,6 +1,7 @@
 # W4 sizing (lane W4S)
 
-Read-only sizing of the eight W4 items in Backbone's wave plan of 2026-11-19,
+Read-only sizing of the eight W4 items in Backbone's wave plan of 2026-11-19
+(lane W4R adds item 9, room renaming),
 so Overwatch can plan the last wave. Jason's card OW26-02, "C: Everything,
 FUTURE items too" (OD-2026-11-19-016), says no completion date can be given
 until each W4 item is sized. This file sizes them. It builds nothing and
@@ -35,6 +36,13 @@ recommended option first.
   "findings and proposals, not rulings". Items 4, 5 and 6 quote their FAM-09,
   CF-11 and CF-14 rows. The stage 3 file lists all three as FUTURE (section
   3.6).
+- **Lane W4R update, 2026-11-20:** item 1 re-sized under OD-2026-11-20-001;
+  item 9, room renaming, added. Both read at `main` `244c13d` and re-checked at
+  `600b4f7361f3c557b295aaa58a8f4c8efb141cc1`, where item 1's earlier citations
+  still hold. Of the files cited, only `buildingMap.ts` changed between the two
+  (#2030); its lines are cited at `600b4f7`. Open PR heads #2017 to #2021,
+  #2025, #2027, #2029 and #2031 to #2046 were read the same day. Items 2 to 8 were not re-read: #2005, #2006, #2008, #2009,
+  #2010, #2012, #2013 and #2016, cited there as open, have since merged.
 
 ## How the sizes were made
 
@@ -49,6 +57,8 @@ INFERRED estimate, made one of two ways.
   PRs use the home week's rates and a by-script count of the step rewrites.
 - **Judgement (the other 19):** each is my estimate from the code it would
   change. Its table row says "judgement".
+- **After lane W4R:** 17 of 39 matched (adding EM-5, EM-6, RN-1 and RN-4) and
+  22 judgement (EM-3, EM-4a, EM-4b, RN-2, RN-3 and W4S's 17 others).
 
 The merged PRs, measured that way on `main`:
 
@@ -69,6 +79,8 @@ judgement row came in at the median of the eight measured PRs (about 480), the
 total would be about 12,900 lines rather than about 9,050, with more PRs where
 a row goes over 400. Each table marks a PR that may go over. Tests are not
 counted; in the PRs above they were 0.6 to 3.5 times the non-test lines.
+After lane W4R the same check gives about 15,700 rather than about 11,080.
+The 22 judgement rows sum to about 5,970; at 480 each they would be 10,560.
 
 **Risk route** (from the brief): Opus for sign-in, permissions, minors' data
 and safety; Sonnet otherwise. **G3** is Jason's signed-in staging check for
@@ -106,6 +118,21 @@ so. Two texts bear on that:
   "Notifications file", the "Alert wording" answer "Only 'open the app'" and
   the "Page counts" answer "B: totals only, no user, device or IP". That entry
   says "Ruling: none by this entry".
+
+**Answered since (OD-2026-11-20-001, lane W4R).** W4S's questions Q1.1 to Q1.8
+are answered. Each answer is quoted from that entry's section for the card
+named:
+
+| Q | Answer (OD-2026-11-20-001) | Effect on the build |
+|---|---|---|
+| Q1.1 events | OW27-01: *"it should be settings for the gym"*. Settled by OW27-10, *"A: Gym picks the events; each person has one switch (Recommended)"*, whose option text has the organization admin choose "for each user type (staff, parents, athletes 18 or over), which events can send the email" (the entry's recorded reading: "the gym's organization admin chooses, per user type, which events can send the email, on a gym settings page") | A gym setting: events by user type (EM-5, EM-6) |
+| Q1.2 who | OW27-02: *"C: B plus athletes 18 or over"*. B's text: "Coach, admin, organization admin and parents". No date of birth counts as a minor (OD-2026-10-04-010) | The switch is offered to those people only. INFERRED: the `staff` and `volunteer` roles, which the card does not name, get none |
+| Q1.3 how often | OW27-03: *"B: One email per event"* | No per-person limit |
+| Q1.4 opt out | OW27-04: *"it shsould have a switch and we should have a setting page for each user type to adjust those"*. Settled by OW27-10 A (the entry's recorded reading: "each person has one on/off switch on their own settings page") | No link in the email; no route that works without signing in |
+| Q1.5 mailbox | OW27-05: *"A: The mailbox that sends sign-in links today (Recommended)"* | No Azure or Microsoft 365 change; the sign-in sender constant |
+| Q1.6 send log | OW27-06, delegated (*"Use your best judgment for this question"*). Overwatch picked A, "who was emailed and when, nothing else", and added: "If the build needs the event reference too, the lane asks first" | See Q1.10 |
+| Q1.7 subject | OW27-07: *"B: The gym's name and "open the app""* | The subject reads the gym's name |
+| Q1.8 sign-in off | OW27-08: *"A: No (Recommended)"* ("Covers staff logins too") | Only accounts whose sign-in is on get the email |
 
 **What exists (OBSERVED):**
 
@@ -147,6 +174,53 @@ so. Two texts bear on that:
   `.github/workflows/deploy-production.yml:787`): that is OBSERVED intent. What
   is deployed now is UNVERIFIED; this session read no environment.
 
+**Also on `main` `600b4f7` (OBSERVED, lane W4R), for the answers above:**
+
+- **A settings page for every user type.** `/profile` admits athlete, coach,
+  parent, admin, staff and volunteer (`apps/web/app/profile/page.tsx:26`);
+  `mapPilotRoleToClubRole` reads `organization_admin` as `admin`
+  (`apps/web/components/roleSession.ts:231`, `:245-246`). Its panels are
+  portrait, ring name, corner, program and sign-in
+  (`apps/web/components/ProfileSettings.tsx:226`, `:263`, `:315`, `:345`,
+  `:368`). Its route reads and writes only the caller's own account
+  (`apps/web/app/api/pilot/profile/me/route.ts:28-36`).
+- **A gym setting to copy.** AS2-a (#1984) and AS2-c (#1986), the tablet idle
+  time: a table keyed by organization
+  (`infra/azure/pilot_slice_postgres_organization_tablet_idle_policy_migration.sql:35-39`);
+  GET for members and PUT for the organization admin
+  (`apps/web/app/api/pilot/gym-tablet/idle/route.ts:29`, `:42-46`); a drawer on
+  Customize the Gym (`apps/web/app/admin/customize/page.tsx:35-36`, `:370`,
+  `:385`).
+- **Sign-in off.** `setAccountActiveStatus` sets `pilot.accounts.active_flag`
+  and the membership's flag (`apps/web/src/server/pilot/auth.ts:1513`,
+  `:1527-1529`, `:1552-1555`), for staff and, since #2013 (`cdb69cf`), athletes.
+  An athlete who has not activated also has it off (`auth.ts:1199-1201`).
+- **Age and the gym's name.** `isMinor` counts an unknown date of birth as a
+  minor (`apps/web/src/server/pilot/wallDisplay.ts:220-223`; 18 at `:128`).
+  The name is `pilot.organizations.organization_name`
+  (`infra/azure/pilot_slice_postgres.sql:8`).
+- **No address for an athlete.** Athlete logins are created with no
+  `login_email` (`auth.ts:1199-1201`, `:1251-1253`;
+  `apps/web/src/server/pilot/activation.ts:90-93`) and sign in with a PIN
+  (`apps/web/src/server/pilot/credentialPolicy.ts:123-124`). A search of
+  `infra/azure/*.sql` for email columns found none held for an athlete: the
+  account's `login_email` (`pilot_slice_postgres.sql:27`), `pilot.parents.email`
+  (`:293`), `pilot.emergency_contacts.email` (`:406`, the contact's own), and
+  others for sign-in links, gear vendors, the gym profile and the public
+  interest form. So an athlete 18 or over has no address to send to (Q1.11).
+- **Where each event is written.** Escalations, SHADOW alerts included:
+  `fileEscalation` and `fileIncidentReport`
+  (`apps/web/src/server/pilot/escalationLadder.ts:126`, `:281`). Family notes
+  and a coach's message to an athlete: one coach-note insert
+  (`apps/web/src/server/pilot/intake.ts:956`), `note_type` `parent_message` or
+  `athlete_message` (`apps/web/src/server/pilot/athleteCoachMessages.ts:4-7`).
+  Parent replies: `familyMessageReplies.ts:81`. Announcements:
+  `apps/web/src/server/pilot/announcements.ts:213`.
+- **Who reads an escalation.** Coaches, for their own and covered athletes,
+  without `athlete_voice` rows; admins and organization admins, every row
+  (`apps/web/app/api/pilot/escalations/route.ts:33-56`). The parents' safety
+  read leaves escalations out (`apps/web/app/api/pilot/parent/safety/route.ts:39-44`).
+
 **What is missing:**
 
 - **Preferences.** A case-insensitive search of `infra/azure/*.sql` for
@@ -156,101 +230,107 @@ so. Two texts bear on that:
   (`infra/azure/pilot_slice_postgres_athlete_self_report_measures_migration.sql:28`),
   not email.
 - **A queue.** A search of `apps/web` for `outbox` found no match.
-- **So missing are:** who opted in; which events send; who receives each; a
-  send log; retries and a rate limit; the opt-in screen.
+- **So missing are:** who opted in; the gym's choice of events by user type
+  and its drawer; who receives each; a send log; retries; the switch on each
+  person's own settings page; an address for an athlete 18 or over (Q1.11).
 - **Comments to correct.** The "sends no email" comments in
   `apps/web/app/api/pilot/escalations/route.ts:16-17`, `shadowDisclosure.ts:20`,
   `familyMessageReplies.ts:20` and `graphMailer.ts:25-29`. Migration files are
   left as written.
 
-**PR split (INFERRED):**
+**PR split (INFERRED; lane W4R, under OD-2026-11-20-001).** This replaces
+W4S's split (EM-1 to EM-4, about 1,200 lines). The gym setting and the
+athlete's address are new scope. The hourly limit and the opt-out link are
+gone.
 
 | PR | What | Est. lines | Basis |
 |---|---|---|---|
-| EM-1 | Migration: an opt-in table (per account, opted-in and opted-out times, audited) and a send log (what Q1.6 allows; no message content). Runner, own-account read and write route. | about 420 (may go over) | matched, AS2-a 414 |
-| EM-2 | The opt-in switch on the account's own settings page | about 180 | matched, AS2-c 174 |
-| EM-3 | The sender: a send-log sweep on a server tick, a per-person rate limit, retry, through `sendPlainTextMail`. The sender check made to compare with the one expected mailbox. The comments above corrected. | about 320 | judgement |
-| EM-4 | Trigger points and recipients: the events Q1.1 names, each resolved to the people who can already read it in the app, who opted in and whose sign-in is on (Q1.8) | about 280 | judgement |
+| EM-1 | Migration: each person's switch (per account; on and off times; audited). With Q1.11 A or B, the adult athlete's own address on the same row. Runner. An own-account read and write route that refuses anyone OW27-02 C leaves out: under-18 athletes, athletes with no date of birth, and other roles. | about 420 (may go over) | matched, AS2-a 414 |
+| EM-2 | The switch on `/profile`, shown only to the people OW27-02 C names. With Q1.11 A or B, the address field. | about 200 | matched, AS2-c 174, plus the field |
+| EM-3 | Migration: the send log (Q1.10). The sender: a sweep on a server tick, with retry, through `sendPlainTextMail` and the sign-in sender constant (`magicLinkStore.ts:29`). The subject is the gym's name and "open the app"; the body is "open the app". The "sends no email" comments are corrected. | about 380 (may go over) | judgement |
+| EM-4a | Staff events: escalations (SHADOW alerts included) and parent replies. One email is queued per staff member who can read the event in the app, whose user type the gym turned it on for, whose switch is on and whose sign-in is on. | about 260 | judgement |
+| EM-4b | Family and athlete events: family notes, gym announcements and a coach's message to an athlete, with the same checks. An athlete only when 18 or over (`isMinor`). | about 280 | judgement |
+| EM-5 | Migration: the gym's choice, one row per gym, user type and event. Runner. Read and write for the organization admin, audited. | about 400 | matched, AS2-a 414 |
+| EM-6 | An "Email alerts" drawer on Customize the Gym: the events, by user type. | about 200 | matched, AS2-c 174 |
 
-- **Total:** about 1,200 lines in 4 PRs. Q1.4 B adds one PR, about 200 lines.
-- **Migrations:** 1, in EM-1.
-- **Route:** Opus for all four (sign-in addresses, minors' contacts, safety alerts).
-- **G3:** applies. EM-2 is a sign-in-account screen; EM-4 routes safety alerts.
-- **Dependencies:**
-  - EM-3 needs a tick that runs. The deploy workflows set
-    `PPBF_SHADOW_WORKER_ENABLED`; Overwatch confirms the deployed value, or the
-    sweep runs from a scheduled workflow, as `session-autoclose.yml` does.
-  - EM-4 reads the athlete sign-in switch that #2013 (lane SW) is building.
-  - Item 2 reuses EM-1 and EM-3.
-  - Item 4 may add a trigger (Q4.3).
-- **File overlap:** no open PR changes a mail, alert or worker file (heads
-  above). EM-1 shares the registration files with #2013.
+- **Total:** about 2,140 lines in 7 PRs. Q1.11 B adds a confirm step: one more
+  PR, about 150 (judgement), and maybe a migration. Q1.11 D drops the athlete parts: about 2,000.
+  Q1.10 B drops the queue and its retry: about 2,040 (both judgement).
+- **Order:** EM-1 and EM-5, then EM-3, then EM-4a and EM-4b; EM-2 and EM-6
+  after their routes.
+- **Migrations:** 3, in EM-1, EM-3 and EM-5 (INFERRED: Overwatch may fold them
+  into fewer files); 4 if Q1.11 B keeps its code in a table of its own.
+- **Route:** Opus for all seven: sign-in addresses, minors' ages, safety
+  alerts, a new organization-admin write.
+- **G3:** applies. EM-2 is on `/profile`, shown only to the people OW27-02 C
+  names; EM-6 is on Gym Office; EM-4a
+  and EM-4b route safety alerts and messages to and about minors.
+- **Dependencies:** EM-3 needs a tick that runs: the deploy workflows set
+  `PPBF_SHADOW_WORKER_ENABLED`, and Overwatch confirms the deployed value, or
+  the sweep runs from a scheduled workflow, as `session-autoclose.yml` does.
+  The athlete sign-in switch is on `main` (#2013). Item 2 reuses EM-1 and EM-3.
+  Item 4's parent message, once built, joins the gym's list (Q1.9).
+- **File overlap (open PR heads read 2026-11-20):** no open lane PR changes
+  `ProfileSettings.tsx`, the Customize page, `escalationLadder.ts`, `intake.ts`,
+  `familyMessageReplies.ts`, `announcements.ts`, `graphMailer.ts`,
+  `magicLinkStore.ts`, `instrumentation.ts` or `shadowJobWorker.ts`. EM-2 and
+  AS-8's AS8-4 (in #2020's body, not built; UNVERIFIED in the repo) both list
+  `ProfileSettings.tsx`; EM-6
+  and item 9's RN-4 both add a Customize drawer: one after the other in each
+  case. EM-1, EM-3 and EM-5 share the registration files; seven open
+  dependabot PRs change `apps/web/package.json`.
 
-**Owner questions:**
+**Owner questions.** Q1.1 to Q1.8 are answered (the table above); their options,
+as asked, are in OD-2026-11-20-001. Three remain:
 
-- **Q1.1 Which events send the email?**
-  - **A (recommended):** the events that already raise something in the app
-    for that person: a safety escalation a staff member can read, including
-    SHADOW safety alerts, and a new family note or parent reply.
-    (OD-2026-10-01-008 section 3 kept SHADOW alerts in-app only;
-    OD-2026-11-19-019 changes it "for outside alerts".)
-  - **B:** safety escalations for staff only.
-  - **C:** A plus gym announcements.
-  - **D:** A, plus a coach's message to an athlete
-    (`apps/web/src/server/pilot/athleteCoachMessages.ts:1-8`). Under A and B, no
-    event reaches an athlete. Under C, only gym announcements do: athletes read
-    them in the app (`apps/web/app/api/pilot/announcements/get/route.ts:58`).
-- **Q1.2 Who may opt in?**
-  - **A (recommended):** anyone with a sign-in email. This adds no new
-    restriction (the L1 rule, above), and the email holds nothing but "open the
-    app".
-  - **B:** staff (coach, admin, organization admin) and parents only. This is a
-    new restriction, so it needs Jason's direction.
-  - **C:** B, plus athletes 18 or over. An athlete with no date of birth counts
-    as a minor (OD-2026-10-04-010). This is also a new restriction, and it falls
-    on minors.
-- **Q1.3 How often?**
-  - **A (recommended):** at most one email per person per hour, whatever the
-    number of events.
-  - **B:** one email per event.
-  - **C:** one a day.
-- **Q1.4 How does a person opt out?**
-  - **A (recommended):** with the same switch in the app. The email holds only
-    "open the app" (the recorded "Alert wording" answer).
-  - **B:** also with a link in the email. This adds a link and words beyond
-    the recorded "open the app", so it needs Jason's word. It also needs an
-    opt-out route that works without signing in, with its own token: one more
-    PR, about 200 lines (judgement, Opus). INFERRED: that token needs either a
-    signing secret (one more secret) or a token table (one more migration).
-- **Q1.5 Which mailbox sends it?**
-  - **A (recommended):** the gym mailbox that sends sign-in links today. This
-    needs no Azure or Microsoft 365 change.
-  - **B:** a separate gym mailbox. Jason would first set it up in Microsoft
-    365 and widen the mailbox access policy (`graphMailer.ts:15-23`). The email
-    lane would then add its own sender constant beside the sign-in one
-    (`magicLinkStore.ts:29`).
-- **Q1.6 What may the send log keep?** The recorded "Page counts" answer, "B:
-  totals only, no user, device or IP", sits against the same "Notifications
-  file", and the record does not say whether it reaches an email send log.
-  - **A (recommended):** who was sent an email and when, nothing else. That is
-    what the per-person limit (Q1.3 A) needs.
-  - **B:** totals only. Then a per-person limit cannot be kept across a
-    restart.
-- **Q1.7 What does the subject line say?** OD-2026-11-19-019 records an email
-  that "says only "open the app"". INFERRED: that may cover the subject as
-  well as the body.
-  - **A (recommended):** "open the app" only, the literal reading of the
-    recorded wording.
-  - **B:** the gym's name and "open the app". This adds words beyond the
-    recorded wording, so it needs Jason's word.
-- **Q1.8 Does an account whose sign-in is switched off still get the email?**
-  OD-2026-11-19-025 adds an athlete sign-in off switch, which #2013 is building.
-  - **A (recommended):** no. The email says "open the app", which that person
-    cannot do. This narrows who gets it, so by the standard above it needs
-    Jason's direction. It covers staff logins too, which Gym Office can already
-    deactivate (OD-2026-10-07-009). Under Q1.1 C or D it also falls on
-    athletes, minors included.
-  - **B:** yes, until they opt out.
+- **Q1.9 Which events are on the gym's list?** A reading for Overwatch to
+  confirm: OW27-10 A has the gym pick "which events can send the email".
+  Checked, not answered in: `docs/current/OWNER_DECISIONS.md`
+  (OD-2026-11-20-001 OW27-01, -02, -10; OD-2026-11-19-019; OD-2026-11-19-009),
+  `docs/research/app-scrub-2026-11-19/` (stages 1 and 3), this lane's brief.
+  - **A (recommended):** every event named in the OW27-01 card's options, each
+    offered only to the user types who read it in the app, each on or off as
+    the gym sets it (sized above). Staff: safety escalations (SHADOW safety
+    alerts included) and parent replies. Parents: new family notes. Athletes 18
+    or over: a coach's message to an athlete. All three: gym announcements
+    (athletes read them: `apps/web/app/api/pilot/announcements/get/route.ts:58`).
+    Once item 4 is built, staff also get a parent's new message (was Q4.3).
+    Why: OW27-02 C lets athletes 18 or over opt in, and of the card's events
+    only option C's announcements and option D's coach messages reach an
+    athlete (the card's own pros and cons).
+  - **B:** only OW27-01 option A's events (escalations, family notes, parent
+    replies). No event reaches an athlete, so their switch sends nothing. About
+    1,950 (judgement).
+- **Q1.10 Does the send log keep the event's reference?** Overwatch reserved
+  this with OW27-06 A ("If the build needs the event reference too, the lane
+  asks first"). Checked, not answered in: OD-2026-11-20-001 (OW27-03, -06),
+  OD-2026-11-19-009 ("Page counts"), this brief.
+  - **A (recommended):** yes: each queued and sent email keeps the event's kind
+    and row id, and no content, device or IP. The sweep then sends each once,
+    so a restart neither resends nor skips, the aim of Overwatch's pick.
+    INFERRED: with one email per event (OW27-03 B), who and when alone cannot
+    tell which of two close events was sent.
+  - **B:** no: the email is sent in the same request, right after the event is
+    saved, and only who and when are logged. A restart or mail failure between
+    the save and the send loses that email; nothing retries it.
+- **Q1.11 Where does an athlete 18 or over get an email address?** None exists
+  today (above). Checked, not answered in: OD-2026-11-20-001 (OW27-02, -10),
+  OD-2026-11-19-025, OD-2026-10-04-010, OD-2026-11-19-019,
+  `docs/research/app-scrub-2026-11-19/`, this brief.
+  - **A (recommended):** typed by the athlete beside their switch, no confirm
+    step. Pros: smallest; every email stays the gym's name and "open the app".
+    Cons: a mistyped address gets those emails until the athlete corrects it or
+    turns the switch off.
+  - **B:** typed by the athlete beside their switch, used only after they
+    confirm a code the app emails to it. Pros: the address is known to be
+    theirs, as sign-in proves a parent's or staff member's. Cons: the code email
+    says more than "open the app" (OD-2026-11-19-019), so it needs Jason's word;
+    one more PR, about 150 lines, and somewhere to keep the code (on EM-1's
+    table or one more migration; INFERRED).
+  - **C:** entered by the gym office on Gym Office; the athlete keeps the
+    switch. About the size of A.
+  - **D:** none for now. The athlete parts are not built, and OW27-02 C's
+    athletes 18 or over get nothing until a source exists. About 2,000.
 
 ## 2. Web push (later, per Jason)
 
@@ -481,8 +561,8 @@ reply.
 - **Migrations:** 1 (none under C).
 - **Route:** Opus (minors' data, permissions, guardian access).
 - **G3:** applies.
-- **Dependencies:** #2012 before PM-1. A Q4.3 A answer makes item 1 (EM-4)
-  send for it.
+- **Dependencies:** #2012 before PM-1. Under item 1's gym setting, a parent's
+  new message is one more event the gym can turn on for staff (Q1.9).
 - **File overlap:**
   - PM-1 uses `guardianAccess.ts`, which #2012 (lane GA) changes (+30 lines at
     `5efdc9b6`). PM-1 goes after #2012 merges. It also shares the registration
@@ -509,9 +589,9 @@ reply.
     Observations note and the barrier report draw for split households
     (LQ-PH04-1).
   - **B:** both guardians see it.
-- **Q4.3 Does a parent's new message send the email alert (item 1)?**
-  - **A (recommended):** yes, to staff who opted in.
-  - **B:** in the app only.
+- **Q4.3 (folded into Q1.9, lane W4R).** Under OD-2026-11-20-001 (OW27-10 A)
+  the gym picks which events send the email. A parent's new message is one more
+  event on that list for staff, so this is no longer asked here (INFERRED).
 - **Q4.4 Where do coaches answer?**
   - **A (recommended):** on the Decision Loop's "From the family", where
     parents' notes are read today.
@@ -907,6 +987,8 @@ per PR):
     option text ("Each typed step becomes a drill in PPBF words, AI-draft
     labelled"), because a linked drill is neither new nor AI-drafted.
   - **B:** a new drill for every line, as the card's option text says.
+  - **Answered:** OD-2026-11-20-001 (OW27-09): *"B: A new drill for every
+    line"*.
 - **Q8.2 A line that is a heading or an instruction, not an exercise?**
   - **A (recommended):** it still becomes a drill, as the card says (e.g. a
     12-minute warm-up drill). This matches OW26-05 B.
@@ -914,44 +996,188 @@ per PR):
     step. This departs from OW26-05 B's "Each typed step becomes a drill" and
     changes those templates' step lists.
 
+## 9. Room renaming by the gym (A-124; lane W4R)
+
+**Rulings (OD-2026-11-20-001):** OW27-11, Jason: *"these room should be able to
+be changed in the app by the organization to relat e to it"*; the entry's
+reading (INFERRED, Overwatch's): "an organization admin can rename the app's
+rooms from Gym Office". OW27-15, Jason: *"A: New names as defaults now; renaming
+later (Recommended)"*, whose option text reads "AS-8 uses "Your Profile", "Who
+you train with" and "Your entry" as the starting names; a separate, sized lane
+later lets the organization rename rooms". AS-8 builds the starting names
+(#2020's PR body, read 2026-11-20: plan approved, not built; not in the repo,
+so UNVERIFIED here). This sizes only the later renaming.
+
+**What "room" names in code** (OBSERVED; `main` `600b4f7`, #2029 at `56252496`):
+
+- **Seven rooms.** `Room` (`apps/web/components/buildingMap.ts:60-78`), named in
+  `ROOM_LABEL` (`:733-741`, e.g. "Front Office", "Gym Floor").
+- **Doors.** 144 in `BUILDING` (`:150-728`; the `{ href:` entries, counted by
+  script). A door's key is its `href`; its `label` is the page's name in the
+  menus (`Door`, `:83-110`). "Your Corner" is the `/profile` door (`:346`).
+- **The 17 Room Map rooms.** Not on `main` (a search of `apps/web` for
+  `room map`, `roomMap`, `ROOM_MAP` matched only a test). #2029 (lane U2, AS-4,
+  open) adds them for Search as `ROOM_PLACE_LABEL`
+  (`apps/web/components/roomPlaces.ts:62-80` at its head).
+- **Job bars.** None on `main` (a search for `jobBar`, `job bar`, `job-bar`).
+  #2029's `apps/web/components/jobBars.ts` has sections with their own names
+  (`:48-51`) and items by `href` only (`:42-45`); "4b draws it" (`:6`).
+- **Names inside pages.** "My Corner" is a heading, not a door
+  (`apps/web/components/AthleteCorner.tsx:127-128`). The mentors heading
+  (`apps/web/components/AthleteAchievements.tsx:467`) and the Sparring Log
+  eyebrow (`apps/web/app/athlete/dashboard/sparring/page.tsx:771`) are typed
+  into their files.
+
+**Where the names show (OBSERVED):**
+
+- **Corridor and Jump.** `Corridor.tsx` (`ROOM_LABEL` at `:88`) and
+  `CardCatalog.tsx` (`:292-293`, `:495`), on every route through
+  `GlobalRoleHeader.tsx:244`, `:266`; client components that wait for the
+  session (`Corridor.tsx:31`, `CardCatalog.tsx:128`). OD-2026-11-19-008
+  replaces both with "a job bar and Search; the Rooms list becomes "All pages"
+  inside Search", which U2's AS-4 builds. So RN-2 changes whatever shows room
+  names once AS-4 is done (INFERRED); whether the 7 rooms' names still show then
+  is UNKNOWN.
+- **Search.** `searchDoors` scores the label, then label, keywords and href
+  together (`buildingMap.ts:782-805`). The door register
+  (`apps/web/app/admin/door-register/page.tsx`) prints room and door names too.
+- **Page titles.** Each page types its own; none comes from `buildingMap.ts`
+  (e.g. `apps/web/app/schedule/page.tsx:943-944`). `/profile`'s is the shell's
+  `roleLabel` (`apps/web/app/profile/page.tsx:24`, printed at
+  `apps/web/components/RoleStandaloneView.tsx:249`).
+- **The rule that ties them.** `apps/web/components/doorLabelsMatchTitles.test.ts`
+  checks each door label against its page's literal `<h1>`. Doors whose title
+  is not a literal are listed in `TITLE_NOT_LITERAL` (`:29-47`), `/profile`
+  among them (`:34`). The rule is OD-2026-10-17-001 item 1
+  ("Each menu label matches its page title."), which OD-2026-11-19-008 keeps.
+
+**Gym settings today (OBSERVED):** a search of `infra/azure/*.sql` for
+`door_label`, `room_label`, `room_name`, `label_override`, `nav_label`,
+`display_label`, `organization_settings`, `org_settings` and `gym_profile` found
+no match. `pilot.organization_profiles` has no column for names
+(`infra/azure/pilot_slice_postgres_organization_profiles_migration.sql:42-87`),
+and the root layout reads only the operating gym's profile, not the signed-in
+person's (`apps/web/src/server/pilot/organizationProfileStore.ts:40`,
+`:252-254`; `apps/web/app/layout.tsx:86`). So a gym's names cannot ride that
+read (INFERRED). The pattern to copy is the tablet idle time (item 1).
+
+**What is missing:** a name per gym for each name that can change, with the
+default in code; a read for the gym's members and a write for the organization
+admin; every place that shows such a name reading it; a drawer on Customize the
+Gym. Under Q9.1 B, every page title also reads its door's name.
+
+**PR split (INFERRED), for Q9.1 A:**
+
+| PR | What | Est. lines | Basis |
+|---|---|---|---|
+| RN-1 | Migration: one row per gym per name, from a closed list of keys in code, each with its default. Runner. A read for the gym's signed-in members and a write for the organization admin, audited. INFERRED: a blank name means the default; a name another key uses is refused. | about 420 (may go over) | matched, AS2-a 414 |
+| RN-2 | One read after sign-in and a lookup that falls back to the default. Whatever shows room names after AS-4 reads them through it: Search's Room Map groups, the job bars, the door register, and Corridor and Jump if they remain. Search matches the name shown (Q9.2). | about 300 | judgement |
+| RN-3 | The three names in OW27-15's option text read through the lookup: "Your Profile" (the `/profile` door and title), "Who you train with", "Your entry"; plus "My Corner", which the entry's reading of OW27-15 gives as an example (INFERRED). | about 120 | judgement |
+| RN-4 | A "Room names" drawer on Customize the Gym: each name, its default, a field, "Use the default". | about 250 | matched, AS2-c 174, plus a list |
+
+- **Total:** about 1,090 lines in 4 PRs. Q9.1 B adds about 700 to 1,000 in 3
+  more PRs (judgement): page titles read their door's name, and
+  `doorLabelsMatchTitles.test.ts` checks that instead of a literal. Q9.1 C:
+  about 970 in 3 PRs (no RN-3).
+- **Migrations:** 1 (RN-1).
+- **Route:** Opus for RN-1 (a new write route and its gate); Sonnet for RN-2 to
+  RN-4 (words; no permission, sign-in or minors' data change).
+- **G3:** INFERRED not to apply: only what a place is called changes.
+- **Dependencies:** #2029 merges first; RN-2's job bar part waits for U2's 4b;
+  RN-3 goes after AS-8's AS8-4 sets the starting names; RN-4 and EM-6 both add
+  a Customize drawer, one after the other.
+- **File overlap (heads read 2026-11-20):** `buildingMap.ts` (RN-2's search):
+  #2029 changes it (#2030 changed it and has merged), and it is lane U2's
+  file. It is in
+  `PG_SUITE_DEPENDENCIES` (`scripts/ci-classify-paths.mjs:89-90`), so RN-2 runs
+  the pg suites, and a new name file it imports is added there (INFERRED). RN-3
+  changes AS8-4's planned files, per #2020's body (UNVERIFIED in the repo):
+  `app/profile/page.tsx`, `AthleteCorner.tsx`, `AthleteAchievements.tsx` and
+  the sparring page. RN-1 shares the registration
+  files.
+
+**Owner questions:**
+
+- **Q9.1 What can a gym rename?** Checked, not answered in:
+  `docs/current/OWNER_DECISIONS.md` (OD-2026-11-20-001 OW27-11 and -15;
+  OD-2026-10-17-001; OD-2026-11-19-008; a search for "rename" and "room
+  names"), `docs/research/app-scrub-2026-11-19/` (stages 1 and 3), this
+  lane's brief.
+  - **A (recommended):** the rooms and the card names. The rooms are
+    #2029's 17 Room Map rooms, and the 7 rooms while their names still show,
+    wherever they show. The card names are the three in OW27-15's option text,
+    "Your Profile" (the `/profile` door and title), "Who you train with" and
+    "Your entry", plus "My Corner", the entry's own example (INFERRED); other
+    pages keep theirs. Pros: covers the names on the cards and the rooms; a
+    door and its title read one name, so each menu label still matches its
+    page title. Cons: other pages cannot be renamed.
+  - **B:** A, plus every door's page name (144 on `main`). Pros: every name a
+    person moves between can change. Cons: about 700 to 1,000 more lines; the
+    title test is rebuilt.
+  - **C:** the rooms only. Pros: smallest. Cons: the card names ("Your
+    Profile", "My Corner") stay fixed.
+- **Q9.2 Does Search find a renamed page or room by its old name?** Checked, not
+  answered in: the same sources.
+  - **A (recommended):** no. Search matches the name shown and the door's
+    existing keywords, unchanged. This avoids the problem the title test was
+    written for: "the catalog search found a page by a name the page never
+    showed" (`doorLabelsMatchTitles.test.ts:7-9`).
+  - **B:** yes, the default stays a search word. Pros: a member who learned the
+    old name still finds it. Cons: Search shows a page for a name it does not
+    show.
+
 ---
 
 ## Summary
 
 | # | Item | PRs | Est. lines outside tests | Migrations | Route | G3 | Waits on |
 |---|---|---|---|---|---|---|---|
-| 1 | Email alerts | 4 (5 if Q1.4 B) | about 1,200 (1,400 if Q1.4 B) | 1 | Opus | yes | Q1.1 to Q1.8; a running tick; #2013 for Q1.8 |
+| 1 | Email alerts (re-sized, W4R) | 7 (8 if Q1.11 B) | about 2,140 (2,290 if Q1.11 B) | 3 (4 if Q1.11 B) | Opus | yes | Q1.9 to Q1.11; a running tick |
 | 2 | Web push (later) | 3 (4 without the package) | about 890 (1,090 without the package) | 1 | Opus | yes | item 1; Q2.1, Q2.2; a key in Azure; a dependency call |
 | 3 | On the floor now | 4 | about 640 | 0 | Opus | yes | privacy review (FN-0, Q3.5); Q3.1 to Q3.4; #2012; U2 for the coach home |
 | 4 | Parent starts a message | 3 (0 if Q4.1 C) | about 970 (880 if B; 0 if C) | 1 (0 if C) | Opus | yes | Q4.1 to Q4.5; #2012 |
 | 5 | Plan blocks; class from a plan | 4 | about 1,150 | 0 or 1 | Opus (SP-1, SP-3, SP-4), Sonnet (SP-2) | no (INFERRED) | Q5.1, Q5.2; U2 for the class screen |
 | 6 | Stopped coming | 2 (3 if Q6.4 B) | about 550 | 0 (1 if Q6.4 B) | Opus | yes | Q6.1 to Q6.4; U2 for the door |
 | 7 | Offline save queue | 4 (6 if B) | about 1,120 (1,620 if B) | 0 or 1 | Opus | yes | BLOCKED: Q7.1, Q7.2 |
-| 8 | Typed lines to drills | 8 | about 2,530 (less if Q8.1 A) | 0 | Opus | no (INFERRED) | #2008 merged; Q8.1, Q8.2 |
+| 8 | Typed lines to drills | 8 | about 2,530 (Q8.1 answered B) | 0 | Opus | no (INFERRED) | Q8.2 (#2008 has merged) |
+| 9 | Room renaming (W4R) | 4 (7 if Q9.1 B; 3 if C) | about 1,090 (1,790 to 2,090 if B; 970 if C) | 1 | Opus (RN-1), Sonnet (RN-2 to RN-4) | no (INFERRED) | Q9.1, Q9.2; #2029; U2's 4b; AS8-4 |
 
 **Total (INFERRED):**
 
-- **Size:** 32 PRs, about 9,050 changed lines outside tests, with the
-  recommended answers, except item 8. Item 8 is sized at its upper bound
-  (every unique line a new drill); Q8.1 A, recommended, would lower it.
-- **Larger case:** adding the four sized alternatives (web push without the
-  package, Q1.4 B's opt-out route, the "reached out" mark, offline queue B)
-  gives 37 PRs and about 10,150. Q1.1 C and D, Q4.4 B, and Q5.1 B and C are not sized.
-- **If the judgement rows run like the measured PRs:** about 12,900 (see "How
+Updated by lane W4R: item 1 re-sized, item 9 added. W4S's figures were 32
+PRs, about 9,050 lines and 30 questions.
+
+- **Size:** 39 PRs, about 11,080 changed lines outside tests, with the recorded
+  answers and the recommended answers to the open questions. Item 8 is sized
+  with every unique line a new drill, the recorded Q8.1 answer.
+- **Larger case:** adding the sized alternatives gives 47 PRs and about 12,830
+  to 13,130. Those are: web push without the package, the "reached out" mark,
+  offline queue B, Q1.11 B's confirm step, and Q9.1 B's page names. Q4.4 B,
+  and Q5.1 B and C, are not sized.
+- **If the judgement rows run like the measured PRs:** about 15,700 (see "How
   the sizes were made").
-- **Migrations:** 4 or 5 with the recommended answers; 2 to 6 across all
+- **Migrations:** 7 or 8 with the recommended answers; 5 to 10 across all
   answers.
-- **Questions:** 30 owner questions (Q1.1 to Q8.2).
-- **Route:** 31 of the 32 PRs route to Opus; SP-2 is Sonnet unless SP-1 finds
-  a contact gate.
+- **Questions:** 25 open.
+  - The open ones are Q1.9 to Q1.11, Q2.1 to Q2.2, Q3.1 to Q3.5, Q4.1, Q4.2,
+    Q4.4, Q4.5, Q5.1 to Q5.2, Q6.1 to Q6.4, Q7.1 to Q7.2, Q8.2, and Q9.1 to
+    Q9.2.
+  - Answered in OD-2026-11-20-001: Q1.1 to Q1.8 and Q8.1. Q4.3 is folded into
+    Q1.9.
+  - Q8.2: Backbone's note 18, quoted in OD-2026-11-20-001, says "with Q8.2
+    ruled". A search of `OWNER_DECISIONS.md` for "Q8.2" found no other line.
+    It is not re-asked: it stays listed only until Overwatch confirms where it
+    was ruled.
+- **Route:** 35 of the 39 PRs route to Opus. SP-2 is Sonnet unless SP-1 finds a
+  contact gate; RN-2 to RN-4 are Sonnet.
 - **Not given here:** a completion date. This lane did not measure lane
   throughput.
 
 **Order that the dependencies allow (INFERRED):**
 
-- Item 8 can start once #2008 merges; it needs only Q8.1 and Q8.2.
+- Item 8: #2008 has merged and Q8.1 is answered; it needs only Q8.2.
 - Items 1, 4 and 6 need only their questions, apart from these:
-  - Item 1's EM-3 needs a tick confirmed, and EM-4 waits for #2013.
+  - Item 1's EM-3 needs a tick confirmed (#2013 has merged).
   - Item 4's PM-1 waits for #2012, and its staff side for #2010's Decision
     Loop PR.
 - Item 3 needs its privacy review signed off first.
@@ -959,6 +1185,8 @@ per PR):
   files.
 - Item 2 waits on item 1.
 - Item 7 is BLOCKED until Q7.1 selects a design.
+- Item 9 waits for #2029 (U2's AS-4) and AS-8's AS8-4, and its job bar part for
+  U2's 4b.
 
 ## Adjacent finding (reported, not part of any W4 item)
 
@@ -970,5 +1198,6 @@ per PR):
   itself, so it refuses only an empty sender.
 - **Effect today (INFERRED).** None, while the one caller passes its own
   constant (`magicLinkStore.ts:29`, `:99`).
-- **When it matters.** It becomes real once a second sender path exists. EM-3
-  includes the fix; it is listed here so it is not lost if item 1 waits.
+- **When it matters.** It becomes real once a second sender path exists. With
+  one mailbox (OD-2026-11-20-001, OW27-05 A), item 1 adds no second sender, so
+  EM-3 does not need the fix. It is listed here so it is not lost.
