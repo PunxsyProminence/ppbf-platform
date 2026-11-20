@@ -74,7 +74,8 @@ it('sends only keys the route\'s own parser accepts, every item field included',
 it('opens on the template as it is, under "Edit <name>", with each item named by its place and name', () => {
   renderForm();
   expect(screen.getByRole('heading', { name: 'Edit Boxing Fundamentals 60' })).toHaveFocus();
-  expect(screen.getByLabelText('Session type')).toHaveValue('group_class');
+  // Session type and Block as the page shows them (Overwatch on #2022): underscores as spaces.
+  expect(screen.getByLabelText('Session type')).toHaveValue('group class');
   expect(screen.getByLabelText('Age group')).toHaveValue('11-14');
   expect(screen.getByLabelText('Intent')).toHaveValue('Stance, guard, and the first two punches.');
   expect(screen.getByLabelText('1. Rope intervals Words')).toHaveValue('Rope intervals');
@@ -109,7 +110,7 @@ it('sends only what changed; a changed item goes in the whole ordered list, the 
 // The template's own Minutes, apart from each item's (named "<n>. <name> Minutes").
 const templateMinutes = () => screen.getByLabelText('Minutes', { selector: '#edit-template-wt-1-duration' });
 
-it('keeps the stored block when its box is untouched, and sends a changed block as typed', async () => {
+it('keeps the stored block and session type when their boxes are untouched, and sends a changed one as typed', async () => {
   const { fetchMock } = renderForm();
   change('1. Rope intervals Note', 'Feet quiet, hands up.');
   change('2. Jab return Block', 'technical work');
@@ -119,6 +120,14 @@ it('keeps the stored block when its box is untouched, and sends a changed block 
     template_id: 'wt-1',
     items: [{ item_id: 'wti-1', coach_note: 'Feet quiet, hands up.' }, { item_id: 'wti-2', block: 'technical work' }],
   });
+});
+
+it('sends a changed session type as typed', async () => {
+  const { fetchMock } = renderForm();
+  change('Session type', 'group class plus');
+  save();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  expect(sentBody(fetchMock)).toEqual({ template_id: 'wt-1', session_type: 'group class plus' });
 });
 
 it('leaves the item list out when no item changed', async () => {

@@ -51,12 +51,14 @@ interface Values {
 }
 
 const asText = (value: string | number | null | undefined) => (value === null || value === undefined ? '' : String(value));
-/** An item field as shown; Block as the page shows it (Overwatch, #2022). An untouched box equals this, so is never sent. */
-const shown = (item: Item, key: ItemKey) => (key === 'block' ? item.block.replace(/_/g, ' ') : asText(item[key]));
+/** A field as shown: Block and Session type as the page shows them (Overwatch, #2022). An untouched box equals this, so is never sent. */
+const spaced = (value: string | null) => (value ?? '').replace(/_/g, ' ');
+const shown = (item: Item, key: ItemKey) => (key === 'block' ? spaced(item.block) : asText(item[key]));
+const shownText = (template: Template, key: TextKey) => (key === 'session_type' ? spaced(template.session_type) : template[key] ?? '');
 
 function initialValues(template: Template, items: readonly Item[]): Values {
   return {
-    text: { name: template.name ?? '', session_type: template.session_type ?? '', age_band: template.age_band ?? '' },
+    text: { name: shownText(template, 'name'), session_type: shownText(template, 'session_type'), age_band: shownText(template, 'age_band') },
     difficulty: template.difficulty ?? '',
     duration: asText(template.duration_minutes),
     intent: template.intent ?? '',
@@ -76,7 +78,7 @@ function numberOrNull(typed: string): number | null | string {
 /** The PATCH body's changed parts, or null when nothing changed. */
 function changedParts(template: Template, items: readonly Item[], values: Values): Record<string, unknown> | null {
   const body: Record<string, unknown> = {};
-  for (const { key } of TEXT) if (values.text[key] !== (template[key] ?? '')) body[key] = values.text[key];
+  for (const { key } of TEXT) if (values.text[key] !== shownText(template, key)) body[key] = values.text[key];
   if (values.difficulty !== (template.difficulty ?? '')) body.difficulty = values.difficulty;
   if (values.duration !== asText(template.duration_minutes)) body.duration_minutes = numberOrNull(values.duration);
   if (values.intent !== (template.intent ?? '')) body.intent = values.intent;
