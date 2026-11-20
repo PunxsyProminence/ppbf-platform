@@ -144,14 +144,16 @@ test('every control on the page carries a minimum height that applies to it', as
 // Lane AS-11 (app scrub CF-23; Q6 = A): a cue's drill name opens that drill in
 // the Drill Library, which reads ?drill_id= on arrival. The page's own "Open
 // the Drill Library" link still opens the library itself.
-test("a cue's drill name links to that drill, and the library link to the library", async () => {
-  global.fetch = mockFetch({ items: [CUE, { ...CUE, cue_id: 'cue-2', drill_id: 'drill/2 &x', drill_name: 'Slip Line' }] });
+describe('a link that names a drill opens it (lane AS-11)', () => {
+  test("a cue's drill name links to that drill, and the library link to the library", async () => {
+    global.fetch = mockFetch({ items: [CUE, { ...CUE, cue_id: 'cue-2', drill_id: 'drill/2 &x', drill_name: 'Slip Line' }] });
 
-  await act(async () => {
-    render(<CueLibraryPage />);
+    await act(async () => {
+      render(<CueLibraryPage />);
+    });
+
+    expect(screen.getByRole('link', { name: 'Heavy Bag Drive' }).getAttribute('href')).toBe('/coach/drills?drill_id=drill-1');
+    expect(screen.getByRole('link', { name: 'Slip Line' }).getAttribute('href')).toBe('/coach/drills?drill_id=drill%2F2%20%26x');
+    expect(screen.getByRole('link', { name: 'Open the Drill Library' }).getAttribute('href')).toBe('/coach/drills');
   });
-
-  expect(screen.getByRole('link', { name: 'Heavy Bag Drive' }).getAttribute('href')).toBe('/coach/drills?drill_id=drill-1');
-  expect(screen.getByRole('link', { name: 'Slip Line' }).getAttribute('href')).toBe('/coach/drills?drill_id=drill%2F2%20%26x');
-  expect(screen.getByRole('link', { name: 'Open the Drill Library' }).getAttribute('href')).toBe('/coach/drills');
 });

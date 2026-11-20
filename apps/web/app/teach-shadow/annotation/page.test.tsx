@@ -1549,12 +1549,17 @@ describe('an empty picker says what to do first (lane AS-11)', () => {
     return { ok: status < 400, status, json: async () => body, headers: new Headers() } as unknown as Response;
   }
 
-  function studiesFetch(projects: () => Promise<Response> | Response, clips: unknown[] = [CLIP]) {
+  function studiesFetch(
+    projects: () => Promise<Response> | Response,
+    clips: unknown[] | (() => Promise<Response> | Response) = [CLIP],
+  ) {
     const base = mockFetch();
     return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/pilot/calibration/projects')) return projects();
-      if (url.includes('/api/pilot/calibration/clips')) return respond({ ok: true, clips });
+      if (url.includes('/api/pilot/calibration/clips')) {
+        return typeof clips === 'function' ? clips() : respond({ ok: true, clips });
+      }
       return base(input, init);
     }) as unknown as typeof fetch;
   }
@@ -1614,6 +1619,18 @@ describe('an empty picker says what to do first (lane AS-11)', () => {
 
     cleanup();
     global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), [CLIP]);
+    await renderPage();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
+    });
+    expect(screen.queryByText(NO_CLIPS)).toBeNull();
+  });
+
+  it.each([
+    ['still out', () => new Promise<Response>(() => {})],
+    ['refused', () => respond({ error: 'Forbidden' }, 403)],
+  ])('a clips read that is %s is not read as "no clips"', async (_name, clips) => {
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), clips);
     await renderPage();
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
