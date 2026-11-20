@@ -1556,7 +1556,11 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
       [accountId, organizationId, activeFlag],
     );
 
-    if (!activeFlag && rows.rows[0].role === 'athlete') {
+    // A PIN login is an athlete's (credentialPolicy.ts): the only logins
+    // activation codes are issued for, and the only ones a PIN sign-in mints.
+    const pinLogin = usesPin({ role: rows.rows[0].role });
+
+    if (!activeFlag && pinLogin) {
       // An activation code issued before the switch and not yet redeemed would
       // otherwise turn the login back on: redemption sets active_flag true
       // (activation.ts redeemActivationCode). Superseded here, after the
@@ -1564,9 +1568,9 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
       // either committed first (and is then switched off and signed out
       // below) or waits on that lock and finds its code superseded.
       //
-      // Athlete logins only: they are the only logins codes are issued for
-      // (activation.ts requires role 'athlete'), and a coach, staff, volunteer
-      // or guardian switch keeps exactly the statements it always ran.
+      // PIN logins only: codes are issued for no other (activation.ts
+      // requires an athlete login), and a coach, staff, volunteer or guardian
+      // switch keeps exactly the statements it always ran.
       await client.query(
         `update pilot.account_activation_tokens
          set superseded_at = now()
@@ -1575,7 +1579,7 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
       );
     }
 
-    // Switching off ends every session. Switching an ATHLETE back on ends any
+    // Switching off ends every session. Switching a PIN login back on ends any
     // session row still open too: none is minted while the login is off
     // (every sign-in refuses active_flag false), but a PIN sign-in or an
     // activation that read the account just before the switch committed
@@ -1583,7 +1587,7 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
     // refuses that session while the login is off; without this, Reactivate
     // would sign that device back in with no PIN. A staff reactivation keeps
     // the statements it always ran.
-    if (!activeFlag || rows.rows[0].role === 'athlete') {
+    if (!activeFlag || pinLogin) {
       await revokeAllSessionsForAccountTx(client, accountId);
     }
   });
