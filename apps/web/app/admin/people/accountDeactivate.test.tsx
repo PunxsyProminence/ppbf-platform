@@ -387,12 +387,15 @@ describe('an athlete login', () => {
     fireEvent.click(within(rowOf('athlete-on')).getByRole('button', { name: 'Issue The New Code' }));
     await waitFor(() => expect(within(rowOf('athlete-on')).getByText('Awaiting activation')).not.toBeNull());
 
-    // The athlete redeems it; any later re-read (here, Reactivate on another row) shows them with a PIN again.
+    // The athlete redeems it; a later re-read shows them with a PIN again. The
+    // re-read here is a code issued to another athlete: unlike a switch, that
+    // path clears no armed Deactivate of its own, so only the re-read can.
     serverChange((rows) => rows.map((m) => (m.account_id === 'athlete-on'
       ? { ...m, has_pin: true, active_flag: true, membership_active: true }
       : m)));
-    fireEvent.click(screen.getByRole('button', { name: 'Reactivate athlete-off' }));
-    await screen.findByText('athlete-off is active again and can sign in.');
+    fireEvent.click(within(rowOf('athlete-waiting')).getByRole('button', { name: 'Issue New Activation Code' }));
+    fireEvent.click(within(rowOf('athlete-waiting')).getByRole('button', { name: 'Issue The New Code' }));
+    await screen.findByText('athlete-waiting is inactive until the new one-time activation code is redeemed.');
 
     await waitFor(() => {
       const row = rowOf('athlete-on');
