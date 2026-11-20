@@ -178,7 +178,9 @@ function ActivatePageContent() {
     <main className="on-canvas min-h-screen px-[var(--s5)] py-[var(--s7)]">
       <div className="mx-auto flex w-full max-w-[540px] flex-col gap-[var(--s6)]">
         <header className="flex flex-col gap-[var(--s4)] text-center">
-          <p className={EYEBROW}>Set up your account</p>
+          {/* The name both links to this page carry (lane AS-8, Q-EYEBROW A on #2051;
+              OD-2026-10-17-001 ruling 1: a label matches the page it opens). */}
+          <p className={EYEBROW}>Set up your sign-in</p>
           <h1 className="t-command text-[length:var(--t-xl)]">Activate your PPBF account</h1>
           {stage !== 'done' && (
             <p className={LEDE}>
@@ -363,10 +365,13 @@ function ActivatePageContent() {
 
         {stage !== 'done' && (
           <p className="text-center text-[length:var(--t-sm)] leading-[1.6] text-[color:var(--hide-800)]">
-            {/* "the gym office": OW25-46 A (OD-2026-11-19-003), Q14b A on #2020. */}
+            {/* "the gym office": OW25-46 A (OD-2026-11-19-003), Q14b A on #2020.
+                This link stays on /login (Q-BACK A on #2051): it is the one way
+                back to every sign-in door for someone here by mistake, and
+                /athlete/sign-in links only back to this page. */}
             Lost your code or it stopped working? Ask the gym office for a new one.{' '}
             <Link
-              href="/athlete/sign-in"
+              href="/login"
               className="font-semibold text-[color:var(--brass-800)] underline underline-offset-2 hover:text-[color:var(--brass-700)]"
             >
               Already activated? Sign in

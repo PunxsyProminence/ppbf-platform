@@ -137,6 +137,7 @@ describe('/change-pin does not call itself a first sign-in', () => {
     const { container } = render(<ChangePinPage />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Choose your PIN' })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(container.textContent ?? '').not.toContain('First sign-in');
   });
 });

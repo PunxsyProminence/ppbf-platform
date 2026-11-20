@@ -128,8 +128,8 @@ export default function ChangePinPage() {
           <span className="rivet rivet--tr" />
           <span className="rivet rivet--bl" />
           <span className="rivet rivet--br" />
-          {/* Leather rather than paper inside the frame: the ink-tuned .t-label,
-              .t-eyebrow and .input read correctly against it, while .mat-paper
+          {/* Leather rather than paper inside the frame: the ink-tuned .t-label
+              and .input read correctly against it, while .mat-paper
               only gets its type restated under .on-canvas — a ground this
               staff-side page must not take (Law 6). */}
           <div className="frame-in mat-leather" style={{ padding: 'var(--s6)' }}>

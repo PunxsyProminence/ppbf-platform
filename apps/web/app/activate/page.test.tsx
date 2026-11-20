@@ -87,18 +87,28 @@ test('sends the athlete back to the code step when the code is the problem', asy
   expect(screen.queryByLabelText(/^Choose your PIN$/i)).toBeNull();
 });
 
-/* Lane AS-8, scrub ATH-15 (Q14 A and Q14b A on #2020). Activation codes are
-   athlete-only, so both ways on from this page go to the athlete PIN page,
-   /athlete/sign-in, not /login. A lost code is the gym office's to replace
-   (OW25-46 A, OD-2026-11-19-003): issuing one is organization admin only. */
-describe('/activate sends the athlete to the athlete PIN page', () => {
-  test('before activating: the gym office replaces a lost code, and "Already activated? Sign in" opens /athlete/sign-in', () => {
+/* Lane AS-8, scrub ATH-15 (Q14 A and Q14b A on #2020; Q-BACK A and Q-EYEBROW A
+   on #2051). Activation codes are athlete-only, so once a code is redeemed the
+   way on is the athlete PIN page, /athlete/sign-in. Before that, "Already
+   activated? Sign in" stays on /login: it is the one way back to every sign-in
+   door for someone here by mistake (/athlete/sign-in links only back here). A
+   lost code is the gym office's to replace (OW25-46 A, OD-2026-11-19-003). */
+describe('/activate and the ways on from it', () => {
+  test('before activating: the gym office replaces a lost code, and "Already activated? Sign in" keeps the way back to /login', () => {
     const { container } = render(<ActivatePage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
     expect(text).toContain('Lost your code or it stopped working? Ask the gym office for a new one.');
     expect(text).not.toContain('gym admin');
-    expect(screen.getByRole('link', { name: 'Already activated? Sign in' }).getAttribute('href')).toBe('/athlete/sign-in');
+    expect(screen.getByRole('link', { name: 'Already activated? Sign in' }).getAttribute('href')).toBe('/login');
+  });
+
+  // Both links to this page are named "Set up your sign-in"; the page says the same.
+  test('the page carries the name its links have: "Set up your sign-in"', () => {
+    const { container } = render(<ActivatePage />);
+
+    expect(screen.getByText('Set up your sign-in')).toBeTruthy();
+    expect(container.textContent ?? '').not.toContain('Set up your account');
   });
 
   test('activated but not signed in: "Go to sign in" opens /athlete/sign-in', async () => {
