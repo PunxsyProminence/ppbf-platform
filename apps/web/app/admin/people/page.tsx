@@ -329,12 +329,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
      the draft is what the admin is typing, checked by the same rule the server
      applies before it is sent. */
   const [nameEditId, setNameEditId] = useState<string | null>(null);
-  // The roster's box and role filter (lane AS-10, AS10-2a; see "FIND A PERSON ON THE ROSTER" below).
-  const [rosterFind, setRosterFind] = useState('');
-  const [rosterRole, setRosterRole] = useState('all');
   const [nameDraft, setNameDraft] = useState('');
   // Said next to the box, not in the banner at the top of a long list.
   const [nameError, setNameError] = useState('');
+  // The roster's box and role filter (lane AS-10, AS10-2a; see "FIND A PERSON ON THE ROSTER" below).
+  const [rosterFind, setRosterFind] = useState('');
+  const [rosterRole, setRosterRole] = useState('all');
   /* RE-INVITING IS HOW A ROLE CHANGES (staffProvisioning.ts), and the form
      said nothing when the address already belonged to someone in the gym: a
      coach re-invited as a guardian silently became a guardian. Now a role
@@ -431,6 +431,16 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
       // A role filter nobody holds any more is dropped for good: left in place,
       // it would switch itself back on when someone with that role is added later.
       setRosterRole((role) => (role === 'all' || nextMembers.some((m) => roleLabel(m.role) === role) ? role : 'all'));
+      // The other things that hold a row in view (rowHeld) end with what they
+      // were about: a name editor on a row that can no longer carry a name, a
+      // guardian remove or move whose link is no longer there. Otherwise a row
+      // would stay held with nothing open on it.
+      const nextLinks = Array.isArray(membersPayload.guardian_links) ? membersPayload.guardian_links : [];
+      setNameEditId((id) => (id && nextMembers.some((m) => m.account_id === id && canCarryStaffDisplayName(m.role)) ? id : null));
+      setPendingUnlink((pending) =>
+        pending && nextLinks.some((link) => link.account_id === pending.accountId && link.athlete_id === pending.athleteId) ? pending : null);
+      setPendingMove((pending) =>
+        pending && nextLinks.some((link) => link.account_id === pending.accountId && link.parent_id === pending.parentId) ? pending : null);
       setMembersAvailable(true);
       setOrganizationName(membersPayload.organization_name?.trim() || '');
 
@@ -588,10 +598,14 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
     || accountId === nameEditId
     || accountId === pendingUnlink?.accountId
     || accountId === pendingMove?.accountId;
-  const shownMembers = members.filter(
-    (member) => rowHeld(member.account_id) || rosterMatches(member, rosterFind, rosterRole),
+  const matchingIds = new Set(
+    members.filter((member) => rosterMatches(member, rosterFind, rosterRole)).map((member) => member.account_id),
   );
-  const rosterNarrowed = shownMembers.length !== members.length;
+  const shownMembers = members.filter((member) => matchingIds.has(member.account_id) || rowHeld(member.account_id));
+  // Rows in view only because something is open on them: said in the caption,
+  // so a held row never reads as a match for what was typed.
+  const keptOpenCount = shownMembers.length - matchingIds.size;
+  const rosterNarrowed = matchingIds.size !== members.length;
 
   /**
    * The next unused ath-NNN for this gym.
@@ -1503,7 +1517,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   <caption className="text-left">
                     {/* A narrowed list says so: it is not everyone in the gym. */}
                     <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">
-                      {rosterNarrowed ? `Showing ${shownMembers.length} of ${members.length}` : 'Everyone in this gym'}
+                      {!rosterNarrowed
+                        ? 'Everyone in this gym'
+                        : `Showing ${matchingIds.size} of ${members.length}${
+                          keptOpenCount > 0
+                            ? `, and ${keptOpenCount} kept in view until what is open on ${keptOpenCount === 1 ? 'it' : 'them'} is confirmed or cancelled`
+                            : ''}`}
                     </span>
                   </caption>
                   <thead>
@@ -1516,7 +1535,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     </tr>
                   </thead>
                   <tbody>
-                  {shownMembers.length === 0 && (
+                  {matchingIds.size === 0 && (
                     <tr>
                       <td colSpan={5}>
                         {rosterRole === 'all'

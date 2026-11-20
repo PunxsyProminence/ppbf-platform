@@ -193,7 +193,8 @@ describe('a row with something armed or open on it stays in view', () => {
     // The coach matches; the athlete's row is held by its armed control.
     expect(rows(table)).toHaveLength(2);
     expect(within(table).getByRole('button', { name: 'Issue The New Code' })).toBeTruthy();
-    expect(within(table).getByText(`Showing 2 of ${MEMBERS.length}`)).toBeTruthy();
+    // The caption counts the match, and says the other row is only kept in view.
+    expect(within(table).getByText(`Showing 1 of ${MEMBERS.length}, and 1 kept in view until what is open on it is confirmed or cancelled`)).toBeTruthy();
     fireEvent.click(within(table).getByRole('button', { name: /^Keep/ }));
     expect(rows(table)).toHaveLength(1);
     find('');
@@ -241,6 +242,50 @@ describe('a row with something armed or open on it stays in view', () => {
     expect(within(guardianRow()).getByRole('button', { name: confirm })).toBeTruthy();
   });
 
+  test('two held rows are counted as two', async () => {
+    installFetch();
+    const table = await roster();
+    fireEvent.click(within(table).getByRole('button', { name: 'Issue New Activation Code' }));
+    fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Deactivate coach@example.test' }));
+    find('helper');
+    expect(within(table).getByText(`Showing 1 of ${MEMBERS.length}, and 2 kept in view until what is open on them is confirmed or cancelled`)).toBeTruthy();
+  });
+
+  // What holds a row ends with what it was about: a re-read that no longer has
+  // the guardian link drops the pending remove or move, and the row with it.
+  test.each([
+    ['a pending guardian remove', 'Remove'],
+    ['a pending guardian move', 'Move Alex Fixture To New Email'],
+  ])('%s whose link is gone after a re-read no longer holds the row', async (_label, open) => {
+    const guardian = member({ account_id: 'family@example.test', login_email: 'family@example.test', role: 'parent' });
+    guardianLinks = [{ account_id: 'family@example.test', parent_id: 'par-1', athlete_id: 'ath-1', athlete_full_name: 'Alex Fixture', relationship_to_athlete: 'mother' }];
+    installFetch([...MEMBERS, guardian]);
+    const table = await roster();
+    fireEvent.click(within(within(table).getByText('family@example.test').closest('tr') as HTMLElement).getByRole('button', { name: open }));
+    role('Volunteer');
+    expect(rows(table)).toHaveLength(2);
+    // The next read has no link for this guardian any more.
+    guardianLinks = [];
+    fireEvent.click(within(table).getByRole('button', { name: 'Deactivate helper@example.test' }));
+    fireEvent.click(within(table).getByRole('button', { name: 'Confirm Deactivate' }));
+    await waitFor(() => expect(within(table).queryByText('family@example.test')).toBeNull());
+    expect(rows(table)).toHaveLength(1);
+  });
+
+  test('a name editor on a row that can no longer carry a name is closed by the re-read', async () => {
+    // The coach becomes a guardian: a guardian row carries no staff name.
+    const coachNowParent = MEMBERS.map((item) => (item.role === 'coach' ? { ...item, role: 'parent', staff_display_name: null } : item));
+    installFetch(MEMBERS, coachNowParent);
+    const table = await roster();
+    fireEvent.click(within(table).getByRole('button', { name: /Edit Name/ }));
+    role('Volunteer');
+    expect(rows(table)).toHaveLength(2);
+    fireEvent.click(within(table).getByRole('button', { name: 'Deactivate helper@example.test' }));
+    fireEvent.click(within(table).getByRole('button', { name: 'Confirm Deactivate' }));
+    await waitFor(() => expect(screen.queryByLabelText(/^Name for /)).toBeNull());
+    expect(rows(table)).toHaveLength(1);
+  });
+
   test('a name being edited stays open and in view, and the box keeps the typing', async () => {
     installFetch();
     const table = await roster();
@@ -272,8 +317,10 @@ describe('a row with something armed or open on it stays in view', () => {
     fireEvent.click(within(table).getByRole('button', { name: 'Confirm Deactivate' }));
     await waitFor(() => expect(within(table).getByText('Someone Else')).toBeTruthy());
     find('robin');
-    // No longer a match, still in view, still armed in plain sight.
-    expect(rows(table)).toHaveLength(1);
+    // No longer a match, still in view, still armed in plain sight; the page
+    // says nobody matches and that this row is only kept in view.
+    expect(within(table).getByText('No one on the roster matches. Clear the box to see everyone.')).toBeTruthy();
+    expect(within(table).getByText(`Showing 0 of ${MEMBERS.length}, and 1 kept in view until what is open on it is confirmed or cancelled`)).toBeTruthy();
     expect(within(coachRow(table)).queryByRole('button', { name: 'Sign coach@example.test out on every device' })).toBeNull();
     expect(within(coachRow(table)).getByRole('button', { name: 'Sign Them Out' })).toBeTruthy();
   });
