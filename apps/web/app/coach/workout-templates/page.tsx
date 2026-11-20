@@ -8,6 +8,7 @@ import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
 import { orNotWritten } from '@/src/lib/drillPresentation';
 import MakeSessionScript from './MakeSessionScript';
+import TemplateEditForm, { type TemplateEditOutcome } from './TemplateEditForm';
 import type {
   WorkoutTemplateItemWithDrillHead,
   WorkoutTemplateRow,
@@ -732,6 +733,16 @@ function CoachWorkoutTemplates() {
   const [issuing, setIssuing] = useState(false);
   // The same, while a session script is being made from the open template.
   const [making, setMaking] = useState(false);
+  // Edit (OD-2026-11-19-005, OW25-51; lane ED-UI PR2): the template whose form
+  // is open, whether its save and the reads after it are running, and what the
+  // last save did. The page's gate admits coach and organization admin, the
+  // roles PATCH /api/pilot/workout-templates admits; the route decides.
+  const [editingId, setEditingId] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editNotice, setEditNotice] = useState('');
+  // A save refused as stale, or with no known outcome: Cancel opens the
+  // template again from the server, so what shows is current.
+  const rereadOnCancel = useRef(false);
   // The request key of every issue that has no settled answer yet, by template
   // and athlete. Held here, above the issue control, which comes and goes.
   const requestKeys = useRef<RequestKeys>(new Map());
@@ -777,6 +788,8 @@ function CoachWorkoutTemplates() {
     // template's items -- or its failure -- never render under another
     // template's name while the new read is in flight.
     setOpenTemplateId(templateId);
+    setEditNotice('');
+    setEditingId('');
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
@@ -813,6 +826,39 @@ function CoachWorkoutTemplates() {
       if (latest()) setDetailLoading(false);
     }
   }, []);
+
+  // After a save: the list is read again and the new version opens, read from
+  // the server, not from the form; nothing else starts until both reads end.
+  async function afterEditSaved(outcome: TemplateEditOutcome) {
+    rereadOnCancel.current = false;
+    setEditingId('');
+    if (!outcome.changed) {
+      setEditBusy(false);
+      setEditNotice('Nothing changed. No new version was written.');
+      return;
+    }
+    try {
+      await load();
+      await openTemplate(outcome.templateId);
+      setEditNotice(`Saved as version ${outcome.version}.`);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  // After a 409 or an unknown outcome the page may be out of date: the list is
+  // read again now, and Cancel reopens the template; the form keeps what was
+  // typed. A plain refusal changed nothing and reads nothing.
+  async function afterEditFailed(status: number | null) {
+    try {
+      if (status === null || status >= 500 || status === 409) {
+        rereadOnCancel.current = true;
+        await load();
+      }
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   // A day on Class plans opens its template here: /coach/workout-templates?template=<id>.
   // Read once on arrival, from the address (client only); without the
@@ -888,8 +934,45 @@ function CoachWorkoutTemplates() {
               </p>
             )}
 
-            {!detailLoading && !detailError && detail && (
+            {editNotice && <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p>}
+
+            {!detailLoading && !detailError && detail && editingId === detail.template.template_id && (
+              <div className="mt-[var(--s4)]">
+                <TemplateEditForm
+                  key={detail.template.template_id}
+                  template={detail.template}
+                  items={detail.items}
+                  itemNames={detail.items.map((item, index) => `${index + 1}. ${itemName(item)}`)}
+                  onCancel={() => {
+                    setEditingId('');
+                    if (rereadOnCancel.current) void openTemplate(detail.template.template_id);
+                    rereadOnCancel.current = false;
+                  }}
+                  onSaved={(outcome) => void afterEditSaved(outcome)}
+                  onSaving={() => setEditBusy(true)}
+                  onFailed={(status) => void afterEditFailed(status)}
+                  busy={editBusy}
+                />
+              </div>
+            )}
+
+            {!detailLoading && !detailError && detail && editingId !== detail.template.template_id && (
               <>
+                {/* Only the current version: the route refuses any other (TEMPLATE_VERSION_STALE). */}
+                {detail.template.superseded_at === null && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditNotice('');
+                      setEditingId(detail.template.template_id);
+                    }}
+                    disabled={issuing || making || editBusy}
+                    className="btn btn--ghost mt-[var(--s3)]"
+                    aria-label={`Edit: ${detail.template.name}`}
+                  >
+                    Edit
+                  </button>
+                )}
                 {(detail.template.coach_notes ?? '').trim() !== '' && (
                   <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
                     <p className="t-label">Coach notes</p>
@@ -1108,7 +1191,7 @@ function CoachWorkoutTemplates() {
                     // for the template already showing with its issue control (a
                     // stray tap would wipe the result the coach is reading). A
                     // template with no steps has no control, and can be re-read.
-                    disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
+                    disabled={issuing || making || editingId !== '' || editBusy || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
                   >
                     {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
                   </button>
