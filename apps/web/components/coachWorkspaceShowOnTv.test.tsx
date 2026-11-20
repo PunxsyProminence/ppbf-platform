@@ -70,6 +70,11 @@ function installFetch(routes: Routes): jest.Mock {
     if (url.includes('/api/pilot/athletes/list')) return jsonResponse({ items: [] });
     if (url.includes('/api/pilot/announcements')) return jsonResponse({ items: [] });
     if (url.includes('/api/pilot/escalations')) return jsonResponse({ items: [] });
+    // The pain feed's real shape, empty (lane U2-6b-2): a body with no window or list is a failed
+    // read now, never "no athlete reported pain", so the catch-all below no longer stands in for it.
+    if (url.includes('/api/pilot/coach/pain-reports')) {
+      return jsonResponse({ ok: true, painReports: [], windowDays: 7, truncated: false });
+    }
     return jsonResponse({ items: [], reports: [] });
   });
   global.fetch = fetchMock as unknown as typeof fetch;
