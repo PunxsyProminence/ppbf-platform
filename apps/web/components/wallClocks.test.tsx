@@ -7,7 +7,7 @@ import path from 'node:path';
 
 import { act, render, screen } from '@testing-library/react';
 
-import WallDisplay from './WallDisplay';
+import WallDisplay, { WALL_ABANDON_MS, WALL_STALE_MS } from './WallDisplay';
 import type { RoundTimerView } from '@/src/server/pilot/roundTimers';
 import type { WallBoard } from '@/src/server/pilot/wallDisplay';
 import { DESIGN_SYSTEM_ENTRY, readDesignSystemCss } from '@/src/design/readDesignSystemCss';
@@ -110,6 +110,8 @@ async function settle() {
   });
 }
 
+const realFetch = global.fetch;
+
 beforeEach(() => {
   jest.useFakeTimers();
   jest.setSystemTime(new Date('2026-08-03T18:30:00.000Z'));
@@ -119,6 +121,7 @@ afterEach(() => {
   jest.clearAllTimers();
   jest.useRealTimers();
   jest.restoreAllMocks();
+  global.fetch = realFetch;
 });
 
 /* ---------------------------------------------------------- the sizes --- */
@@ -189,6 +192,12 @@ describe('the TV clocks while the round clock shows a time', () => {
     const round = screen.getByRole('region', { name: 'Round clock' });
     expect(round.querySelector('.wall-round__label')?.textContent).toBe(timer.label);
     expect(roundTime(container)?.textContent).toBe(timer.time);
+    // The words sit BESIDE the time, in reading order. Stacked over a time this size, words that
+    // wrapped made the bezel taller than the masthead's row and cost the floor list half its names
+    // (measured at 1920x1080 in a browser; jsdom has no layout, so the class is what is pinned).
+    expect(round.classList.contains('flex-row')).toBe(true);
+    expect(round.classList.contains('flex-col')).toBe(false);
+    expect([...round.children].map((child) => child.classList[0])).toEqual(['wall-round__label', 'wall-round__time']);
 
     // Round clock biggest: above the time of day, NOW's countdown size, and every other sized
     // line in the masthead (the day, the date, the round's own label).
@@ -272,6 +281,58 @@ describe('the TV clocks with no time on the round clock: the wall as it was', ()
 
     // The public board is up (not the standing screen a failed read would leave).
     expect(screen.getByRole('region', { name: 'On the floor' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
+    expect(clockPlate(container)?.classList.contains('text-8xl')).toBe(true);
+  });
+});
+
+describe('the TV clocks on the edges', () => {
+  it('a board miss that kept a timer: the standing screen, the round clock leading, the time of day small', async () => {
+    global.fetch = paired({ session: session(TIMERS.round.view), board: null, quotes: [] }) as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+
+    expect(roundTime(container)?.textContent).toBe('2:05');
+    expect(clockPlate(container)?.classList.contains('text-4xl')).toBe(true);
+    // No board, so no NOW and nothing to hide.
+    expect(screen.queryByRole('region', { name: 'Now' })).toBeNull();
+  });
+
+  it('a timer reading as old as an abandoned board leaves the wall, and the time of day grows back', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ session: session(TIMERS.paused.view), board: board(), quotes: [] }) })
+      .mockRejectedValue(new Error('network'));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(clockPlate(container)?.classList.contains('text-4xl')).toBe(true);
+
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_ABANDON_MS + 1_000);
+    });
+    await settle();
+
+    expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
+    expect(clockPlate(container)?.classList.contains('text-8xl')).toBe(true);
+  });
+
+  it('a waiting board that is no longer fresh says no READY, so the time of day grows back', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ session: null, board: board(), quotes: [] }) })
+      .mockRejectedValue(new Error('network'));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { container } = render(<WallDisplay />);
+    await settle();
+    expect(roundTime(container)?.textContent).toBe('Ready');
+    expect(clockPlate(container)?.classList.contains('text-4xl')).toBe(true);
+
+    await act(async () => {
+      jest.advanceTimersByTime(WALL_STALE_MS);
+    });
+    await settle();
+
     expect(screen.queryByRole('region', { name: 'Round clock' })).toBeNull();
     expect(clockPlate(container)?.classList.contains('text-8xl')).toBe(true);
   });

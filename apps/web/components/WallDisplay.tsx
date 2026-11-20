@@ -613,9 +613,11 @@ export default function WallDisplay() {
   const face = roundTimer && roundReading ? roundPanelText(roundReading, roundTimer.view.round_seconds) : ready ? WALL_READY_FACE : null;
   // THE TV CLOCKS (U2-6d; Jason, OD-2026-11-19-009: "A: round clock biggest; time of day small;
   // block countdown hidden in the round"). While the round clock shows a time -- a set at Ready, a
-  // round, rest, paused, or the waiting board's READY -- its time is the biggest readout on the
-  // wall, the time of day drops to the date's size, and NOW's scheduled countdown is not drawn.
-  // "Rounds done", "Rounds stopped" (no time) and no round clock leave the wall as it was.
+  // round, rest, paused, or the waiting board's READY -- the time of day drops to the date's size
+  // and NOW's scheduled countdown is not drawn (the waiting board has no NOW, and a board miss
+  // that kept a timer shows the standing screen, also without one). The round time is always
+  // text-8xl (RoundPanel). "Rounds done", "Rounds stopped" (no time) and no round clock leave the
+  // wall as it was.
   const roundLeads = face !== null && face.time !== '';
 
   return (
@@ -641,19 +643,24 @@ export default function WallDisplay() {
  * The round clock, big enough for the back of the room. Words, not colours, carry the state. It
  * sits in the masthead, between the date and the wall clock, which the masthead is already tall
  * enough to hold: the board below keeps every row it had (floorDensity is sized for that height).
- * Its time is the wall's biggest readout (text-8xl, the step the time of day had before the TV
- * clocks ruling); measured at 1920x1080 the masthead stays as tall as it was with the round clock.
+ *
+ * Its time is the wall's biggest readout (the TV clocks ruling, U2-6d): text-8xl, the step the time
+ * of day had before, with the words BESIDE it. Under words that wrap to two lines -- and the bezel's
+ * share of the masthead's squeeze wraps them -- a time that size made the bezel taller than the
+ * masthead's row (measured at 1920x1080 in rest: 325px against 281, and the floor list showed 7 of
+ * 24 names where it had shown 14). Beside it, words of up to three lines stay inside the time's
+ * own height.
  */
 function RoundPanel({ label, time }: { label: string; time: string }) {
   return (
-    <section aria-label="Round clock" className="wall-round flex min-w-0 flex-col items-center">
-      <p className="wall-round__label text-[length:var(--t-3xl)] font-black text-[color:var(--bone-100)]">{label}</p>
-      {time && <p className="wall-round__time font-mono tabular-nums uppercase text-8xl font-black text-[color:var(--bone-100)]">{time}</p>}
+    <section aria-label="Round clock" className="wall-round flex min-w-0 flex-row items-center gap-[var(--s4)]">
+      <p className="wall-round__label min-w-0 text-[length:var(--t-3xl)] font-black text-[color:var(--bone-100)]">{label}</p>
+      {time && <p className="wall-round__time shrink-0 font-mono tabular-nums uppercase text-8xl font-black text-[color:var(--bone-100)]">{time}</p>}
     </section>
   );
 }
 
-/** The round clock on a paired TV with nothing sent: Jason's words in the ruling, READY under them. */
+/** The round clock on a paired TV with nothing sent: Jason's words in the ruling, READY beside them. */
 export const WALL_READY_FACE = { label: 'Waiting for coach', time: 'Ready' } as const;
 
 /* ------------------------------------------------------------- pair box --- */
