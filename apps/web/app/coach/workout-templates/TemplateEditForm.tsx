@@ -53,6 +53,9 @@ interface Values {
 }
 
 const asText = (value: string | number | null | undefined) => (value === null || value === undefined ? '' : String(value));
+/** An item field as the box shows it. Block reads as the page shows it, underscores as spaces (Overwatch on #2022);
+ * an untouched box is compared with this, so it is never sent and the stored value stays. */
+const shown = (item: Item, key: ItemKey) => (key === 'block' ? item.block.replace(/_/g, ' ') : asText(item[key]));
 
 function initialValues(template: Template, items: readonly Item[]): Values {
   return {
@@ -62,7 +65,7 @@ function initialValues(template: Template, items: readonly Item[]): Values {
     intent: template.intent ?? '',
     coachNotes: template.coach_notes ?? '',
     requiresAuthorization: Boolean(template.requires_coach_authorization),
-    items: items.map((item) => Object.fromEntries(ITEM_FIELDS.map(({ key }) => [key, asText(item[key])])) as ItemValues),
+    items: items.map((item) => Object.fromEntries(ITEM_FIELDS.map(({ key }) => [key, shown(item, key)])) as ItemValues),
   };
 }
 
@@ -88,7 +91,7 @@ function changedParts(template: Template, items: readonly Item[], values: Values
   // item by its id, in its order, carrying only the fields that changed.
   const entries = items.map((item, index) => {
     const now = values.items[index];
-    const changes = Object.fromEntries(ITEM_FIELDS.filter(({ key }) => now[key] !== asText(item[key])).map(({ key }) => {
+    const changes = Object.fromEntries(ITEM_FIELDS.filter(({ key }) => now[key] !== shown(item, key)).map(({ key }) => {
       if (NUMBER_ITEM_KEYS.includes(key)) return [key, numberOrNull(now[key])];
       return [key, now[key] === '' && key !== 'block' && key !== 'contact_level' ? null : now[key]];
     }));

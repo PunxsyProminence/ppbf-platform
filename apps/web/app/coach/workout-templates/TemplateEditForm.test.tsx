@@ -22,7 +22,7 @@ const template = {
 } as WorkoutTemplateRow;
 
 const item = (overrides: Record<string, unknown>) => ({
-  organization_id: 'org-1', item_id: 'wti-1', template_id: 'wt-1', ordinal: 1, block: 'warmup', drill_id: null, free_text_drill: 'Rope intervals',
+  organization_id: 'org-1', item_id: 'wti-1', template_id: 'wt-1', ordinal: 1, block: 'warm_up', drill_id: null, free_text_drill: 'Rope intervals',
   scale_level: 'B', duration_minutes: 10, rep_count: null, contact_level: 'none', coach_note: 'Feet quiet.', details: {},
   created_at: '2026-08-01T00:00:00.000Z', head_drill_id: null, head_drill_name: null, drill_name: null, uses_older_drill_version: false,
   ...overrides,
@@ -78,6 +78,8 @@ it('opens on the template as it is, under "Edit <name>", with each item named by
   expect(screen.getByLabelText('Age group')).toHaveValue('11-14');
   expect(screen.getByLabelText('Intent')).toHaveValue('Stance, guard, and the first two punches.');
   expect(screen.getByLabelText('1. Rope intervals Words')).toHaveValue('Rope intervals');
+  // Block as the page shows it (Overwatch on #2022): underscores as spaces, never the stored key.
+  expect(screen.getByLabelText('1. Rope intervals Block')).toHaveValue('warm up');
   expect(screen.getByLabelText('2. Jab return Minutes')).toHaveValue('8');
   expect(screen.getByLabelText('2. Jab return Scale')).toHaveValue('');
   // On the kiosk floor, as the page's Issue control is (55px controls on a tablet).
@@ -104,6 +106,18 @@ it('sends only what changed; a changed item goes in the whole ordered list, the 
 
 // The template's own Minutes, apart from each item's (named "<n>. <name> Minutes").
 const templateMinutes = () => screen.getByLabelText('Minutes', { selector: '#edit-template-wt-1-duration' });
+
+it('keeps the stored block when its box is untouched, and sends a changed block as typed', async () => {
+  const { fetchMock } = renderForm();
+  change('1. Rope intervals Note', 'Feet quiet, hands up.');
+  change('2. Jab return Block', 'technical work');
+  save();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  expect(sentBody(fetchMock)).toEqual({
+    template_id: 'wt-1',
+    items: [{ item_id: 'wti-1', coach_note: 'Feet quiet, hands up.' }, { item_id: 'wti-2', block: 'technical work' }],
+  });
+});
 
 it('leaves the item list out when no item changed', async () => {
   const { fetchMock } = renderForm();
