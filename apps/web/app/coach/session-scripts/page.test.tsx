@@ -382,6 +382,24 @@ describe('coach session plans page', () => {
       expect(within(within(blocks).getAllByRole('listitem')[0]).getAllByText('Not written yet')).toHaveLength(4);
     });
 
+    it('a drill whose own provenance says DRAFT shows the mark where no label settles it; a non-draft label keeps none (6e follow-up)', async () => {
+      const drafted = { ...SLIP_DRILL, field_provenance: 'LITERATURE-GROUNDED DRAFT — generated from cited registry claims' };
+      const { blocks } = await openWith(() => jsonResponse({ drill: drafted }));
+      const second = within(blocks).getAllByRole('listitem')[1];
+      expect(await within(second).findByText('Eyes on the chest · Small slip')).toBeInTheDocument();
+      const lines = Array.from(second.querySelectorAll('p')).map((line) => line.textContent);
+      expect(lines).toEqual([
+        'Say (From the drill): Eyes on the chest · Small slip ◉DRAFT, FOR COACH REVIEW',
+        'Explain: Slipping is a decision, not a flinch.',
+        // An explicit non-draft label keeps no mark (Q9 = A on #2001).
+        'Watch (From the drill): Head moves off the line.',
+        // No label settled it: the drill's own provenance does (QA = B on #1991).
+        'What to avoid (From the drill): Dropping the hands. ◉DRAFT, FOR COACH REVIEW',
+        'Fix (From the drill): Bend the knees, not the waist. ◉DRAFT, FOR COACH REVIEW',
+      ]);
+      expect(within(second).queryByText(/draft status not checked/)).toBeNull();
+    });
+
     it('the AI-draft mark is the filed badge, never the medical-stop mark (OW25-57; --locked is a medical stop only)', async () => {
       const { blocks } = await openWith(() => jsonResponse({ drill: SLIP_DRILL }));
       const marks = await within(blocks).findAllByText('DRAFT, FOR COACH REVIEW');

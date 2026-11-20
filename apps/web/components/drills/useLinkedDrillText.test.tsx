@@ -74,6 +74,46 @@ test('a response without field_drafts reads as "not checked" for every field, ne
   expect(text?.state === 'loaded' && text.drafts).toEqual({ cues: null, good: null, bad: null, corrections: null });
 });
 
+// Lane U2-6e follow-up (Overwatch QA = B on #1991, Q9 = A on #2001): a drill whose own
+// field_provenance says DRAFT fills the "not checked" gap with the draft mark; an explicit label wins.
+test.each([
+  ['LITERATURE-GROUNDED DRAFT — generated from cited registry claims', true],
+  ['COACHING-CRAFT DRAFT — no directly relevant research retrieved', true],
+  ['PPBF source manual v3', null],
+  ['', null],
+])('provenance %j fills only the fields no label settles', async (provenance, filled) => {
+  mockFetch((id) => ({
+    status: 200,
+    body: {
+      drill: drill(id, {
+        field_provenance: provenance,
+        // cues: a draft label; good: an explicit non-draft label (e.g. a coach's edit); bad, corrections: no label.
+        field_drafts: { cues: true, what_good_looks_like: false, what_bad_looks_like: null, corrections: null },
+      }),
+    },
+  }));
+  const { result } = renderHook(() => useLinkedDrillText(['drl-1']));
+  await waitFor(() => expect(result.current.get('drl-1')?.state).toBe('loaded'));
+  const text = result.current.get('drl-1');
+  expect(text?.state === 'loaded' && text.drafts).toEqual({ cues: true, good: false, bad: filled, corrections: filled });
+});
+
+test('a drafted drill with no label read at all shows the mark on every field from its provenance', async () => {
+  mockFetch((id) => ({ status: 200, body: { drill: drill(id, { field_drafts: undefined, field_provenance: 'COACHING-CRAFT DRAFT — x' }) } }));
+  const { result } = renderHook(() => useLinkedDrillText(['drl-1']));
+  await waitFor(() => expect(result.current.get('drl-1')?.state).toBe('loaded'));
+  const text = result.current.get('drl-1');
+  expect(text?.state === 'loaded' && text.drafts).toEqual({ cues: true, good: true, bad: true, corrections: true });
+});
+
+test('"draft" in lower case is not the DRAFT the ruling names', async () => {
+  mockFetch((id) => ({ status: 200, body: { drill: drill(id, { field_drafts: undefined, field_provenance: 'reviewed draft notes' }) } }));
+  const { result } = renderHook(() => useLinkedDrillText(['drl-1']));
+  await waitFor(() => expect(result.current.get('drl-1')?.state).toBe('loaded'));
+  const text = result.current.get('drl-1');
+  expect(text?.state === 'loaded' && text.drafts).toEqual({ cues: null, good: null, bad: null, corrections: null });
+});
+
 test('a drill read once is kept: moving to another drill and back reads nothing again', async () => {
   const fetchMock = mockFetch((id) => ({ status: 200, body: { drill: drill(id) } }));
   const { result, rerender } = renderHook(({ ids }) => useLinkedDrillText(ids), { initialProps: { ids: ['drl-1'] } });

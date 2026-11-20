@@ -66,14 +66,30 @@ export function useLinkedDrillText(drillIds: readonly string[]): ReadonlyMap<str
 }
 
 /**
+ * Whether the drill's own record says it is a draft: its field_provenance text contains "DRAFT"
+ * (the library's drafts read "LITERATURE-GROUNDED DRAFT ..." or "COACHING-CRAFT DRAFT ..."). The
+ * drill's own record, so tied to a source, not guessed (Overwatch QA = B on #1991).
+ */
+export function provenanceSaysDraft(fieldProvenance: string | null | undefined): boolean {
+  return typeof fieldProvenance === 'string' && fieldProvenance.includes('DRAFT');
+}
+
+/**
  * What a plan line can use from one drill read. Anything but an available
  * drill -- a drill this gym cannot read (404), or a read that answered with no
  * drill view -- is "could not be loaded": the line never shows blank.
+ *
+ * A field's draft state is its label's (true or false). Where no label settles it (null, "draft
+ * status not checked"), a drill whose own provenance says DRAFT is a draft: the mark shows. An
+ * explicit non-draft label, such as a coach's in-app edit, keeps no mark; provenance only fills
+ * the "not checked" gap (Overwatch Q9 = A on #2001). The coach view only: athletes and parents see
+ * no draft line (OW25-57).
  */
 export function linkedText(opened: OpenedInstruction): LinkedDrillText {
   const view = opened.view;
   if (opened.state !== 'available' || view === null) return { state: 'failed' };
   const drafts = view.coach?.fieldDrafts;
+  const byProvenance = provenanceSaysDraft(view.coach?.fieldProvenance) ? true : null;
   return {
     state: 'loaded',
     cues: view.cues,
@@ -81,10 +97,10 @@ export function linkedText(opened: OpenedInstruction): LinkedDrillText {
     bad: view.bad,
     corrections: view.corrections,
     drafts: {
-      cues: drafts?.cues ?? null,
-      good: drafts?.good ?? null,
-      bad: drafts?.bad ?? null,
-      corrections: drafts?.corrections ?? null,
+      cues: drafts?.cues ?? byProvenance,
+      good: drafts?.good ?? byProvenance,
+      bad: drafts?.bad ?? byProvenance,
+      corrections: drafts?.corrections ?? byProvenance,
     },
   };
 }
