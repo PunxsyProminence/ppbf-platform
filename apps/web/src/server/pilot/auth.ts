@@ -1523,14 +1523,14 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
     // LOCK ORDER: THE ACCOUNT ROW FIRST. This UPDATE is the first lock taken,
     // the same first lock activation-code issuance, redemption, PIN reset and
     // deletion take before they touch the account's codes (activation.ts).
-    const rows = await client.query<{ account_id: string }>(
+    const rows = await client.query<{ account_id: string; role: PilotRole }>(
       `update pilot.accounts a
        set active_flag = $3,
            updated_at = now()
        where account_id = $1 and organization_id = $2
          and not ${accountDeletedSql('a')}
          and (a.role <> 'athlete' or a.pin_hash is not null)
-       returning account_id`,
+       returning account_id, role`,
       [accountId, organizationId, activeFlag],
     );
 
@@ -1556,20 +1556,26 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
       [accountId, organizationId, activeFlag],
     );
 
-    if (!activeFlag) {
+    if (!activeFlag && rows.rows[0].role === 'athlete') {
       // An activation code issued before the switch and not yet redeemed would
       // otherwise turn the login back on: redemption sets active_flag true
       // (activation.ts redeemActivationCode). Superseded here, after the
       // account-row lock above and in the same transaction, so a redemption
       // either committed first (and is then switched off and signed out
-      // below) or waits on that lock and finds its code superseded. Only
-      // athlete logins carry codes; for any other role this matches nothing.
+      // below) or waits on that lock and finds its code superseded.
+      //
+      // Athlete logins only: they are the only logins codes are issued for
+      // (activation.ts requires role 'athlete'), and a coach, staff, volunteer
+      // or guardian switch keeps exactly the statements it always ran.
       await client.query(
         `update pilot.account_activation_tokens
          set superseded_at = now()
          where account_id = $1 and consumed_at is null and superseded_at is null`,
         [accountId],
       );
+    }
+
+    if (!activeFlag) {
       await revokeAllSessionsForAccountTx(client, accountId);
     }
   });
