@@ -2474,6 +2474,32 @@ describe('the AI-draft mark (lane ED-UI PR3)', () => {
     expect(screen.getAllByText(NOT_CHECKED)).toHaveLength(1);
   });
 
+  // One field drafted, every other field not: its mark is the only one, at its own place.
+  const PLACE: Record<string, () => HTMLElement> = {
+    name: () => screen.getByRole('heading', { level: 2, name: 'Boxing Fundamentals 60' }).parentElement as HTMLElement,
+    session_type: () => fact('Session type'),
+    difficulty: () => fact('Difficulty'),
+    age_band: () => fact('Age group'),
+    duration_minutes: () => fact('Minutes'),
+    intent: () => fact('Intent'),
+    requires_coach_authorization: () => fact('Coach authorization'),
+    coach_notes: () => screen.getByText(/^Coach notes/),
+    items: () => screen.getByRole('heading', { name: 'The blocks' }).parentElement as HTMLElement,
+  };
+  const NONE = Object.fromEntries(Object.keys(PLACE).map((field) => [field, false]));
+
+  it.each(Object.keys(PLACE))('only %s drafted: its mark alone, at its own place', async (field) => {
+    openWith({ ...NONE, [field]: true, labelled: true });
+    await open();
+    const marks = screen.getAllByText(MARK);
+    expect(marks).toHaveLength(1);
+    expect(PLACE[field]().contains(marks[0])).toBe(true);
+    // No other field's place holds it.
+    for (const other of Object.keys(PLACE).filter((key) => key !== field)) {
+      expect(PLACE[other]()).not.toHaveTextContent(MARK);
+    }
+  });
+
   it.each([
     ['no label row', false],
     ['a read that failed', null],

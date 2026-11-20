@@ -42,7 +42,9 @@ test('reads the labels of this version (kind workout_template, its lineage and v
   const drafts = await readWorkoutTemplateFieldDrafts('org-1', TEMPLATE);
   expect(drafts).toMatchObject({ duration_minutes: true, name: null, labelled: true });
   const [text, params] = mockQueryOne.mock.calls[0] as [string, unknown[]];
-  expect(text).toContain("target_kind = 'workout_template'");
+  expect(text.replace(/\s+/g, ' ')).toContain(
+    "where organization_id = $1 and target_kind = 'workout_template' and target_lineage_id = $2 and target_version = $3",
+  );
   expect(params).toEqual(['org-1', 'lin-wtp-1', 2]);
 });
 

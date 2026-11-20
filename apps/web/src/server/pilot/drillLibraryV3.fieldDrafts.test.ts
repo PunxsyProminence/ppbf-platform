@@ -174,6 +174,13 @@ describe('drillFieldDrafts: every shown field and each scale level (lane ED-UI P
     expect(drillFieldDrafts({ stop_rules: { ...IN_APP_EDIT, 1: IN_APP_EDIT, 2: IN_APP_EDIT } }).stop_rules).toBe(false);
   });
 
+  test('a label of its own means a status, or an in-app edit record: an edit field that is not a record is unknown', () => {
+    expect(drillFieldDrafts({ purpose: { edited: 'yes' } }).purpose).toBeNull();
+    expect(drillFieldDrafts({ purpose: { sources: ['DOC-1'] } }).purpose).toBeNull();
+    expect(drillFieldDrafts({ purpose: { edited: IN_APP_EDIT.edited } }).purpose).toBe(false);
+    expect(drillFieldDrafts({ purpose: { status: 'INFERRED' } }).purpose).toBe(false);
+  });
+
   test('a scale level whose own label is not a label (a string, a list) is not checked, whatever its group says', () => {
     const labels = { scale_levels: { ...AI_DRAFT, A: 'edited', B: ['draft'] } };
     expect(drillFieldDrafts(labels, ['A', 'B']).scale_levels).toEqual({ A: null, B: null });
@@ -202,7 +209,9 @@ describe('getDrillWithDetail carries field_drafts for the version it read', () =
       labelled: true,
     });
     const labelsCall = mockQueryOne.mock.calls.find(([text]) => String(text).includes('pilot.content_record_labels'));
-    expect(String(labelsCall?.[0])).toContain("target_kind = 'drill'");
+    expect(String(labelsCall?.[0]).replace(/\s+/g, ' ')).toContain(
+      "where organization_id = $1 and target_kind = 'drill' and target_lineage_id = $2 and target_version = $3",
+    );
     expect(labelsCall?.[1]).toEqual(['org-1', 'lin-1', 3]);
   });
 
