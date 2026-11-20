@@ -83,7 +83,7 @@ it('opens on the template as it is, under "Edit <name>", with each item named by
   expect(screen.getByLabelText('2. Jab return Minutes')).toHaveValue('8');
   expect(screen.getByLabelText('2. Jab return Scale')).toHaveValue('');
   // Labels lifted to --bone-200, the design system's rung for .t-label on lit leather (OD-2026-10-02-010).
-  for (const label of document.querySelectorAll('label')) expect(label).toHaveClass('text-[color:var(--bone-200)]');
+  for (const label of document.querySelectorAll('label')) expect(label.style.color).toBe('var(--bone-200)');
   // On the kiosk floor, as the page's Issue control is (55px controls on a tablet).
   expect(screen.getByRole('region', { name: 'Edit Boxing Fundamentals 60' })).toHaveAttribute('data-surface', 'kiosk');
   // Items are edited in place (Q6 = A): no add, remove, reorder or drill swap.

@@ -126,7 +126,8 @@ function inFormWords(message: string, itemNames: readonly string[]): string {
 export type TemplateEditOutcome = { changed: false } | { changed: true; templateId: string; version: number };
 
 // --bone-200: the lift the design system gives .t-label on lit leather (OD-2026-10-02-010; .ge-scripts .mat-leather).
-const LABEL = 't-label text-[color:var(--bone-200)]';
+// Inline, because .t-label is unlayered and outranks any utility class.
+const LABEL = { className: 't-label', style: { color: 'var(--bone-200)' } } as const;
 const SAVE_FAILED = 'The template could not be saved.';
 // The drill form's words for the same two outcomes (DrillEditForm.tsx).
 const SAVE_UNKNOWN = 'It is not known whether this change was saved.';
@@ -241,20 +242,20 @@ export default function TemplateEditForm({
         <div className="grid gap-[var(--s4)] md:grid-cols-2">
           {TEXT.map(({ key, label, max }) => (
             <div key={key} className="field">
-              <label htmlFor={id(key)} className={LABEL}>{label}</label>
+              <label htmlFor={id(key)} {...LABEL}>{label}</label>
               <input id={id(key)} value={values.text[key]} onChange={(event) => setValues((prev) => ({ ...prev, text: { ...prev.text, [key]: event.target.value } }))} maxLength={max} className="input input--kiosk" />
             </div>
           ))}
           <div className="field">
-            <label htmlFor={id('difficulty')} className={LABEL}>Difficulty</label>
+            <label htmlFor={id('difficulty')} {...LABEL}>Difficulty</label>
             {select(id('difficulty'), values.difficulty, VOCABULARIES.difficulty.values, (value) => setValues((prev) => ({ ...prev, difficulty: value })), (value) => value)}
           </div>
           <div className="field">
-            <label htmlFor={id('duration')} className={LABEL}>Minutes</label>
+            <label htmlFor={id('duration')} {...LABEL}>Minutes</label>
             <input id={id('duration')} type="text" inputMode="numeric" value={values.duration} onChange={(event) => setValues((prev) => ({ ...prev, duration: event.target.value }))} className="input input--kiosk" />
           </div>
           <div className="field">
-            <label htmlFor={id('authorization')} className={LABEL}>Coach authorization</label>
+            <label htmlFor={id('authorization')} {...LABEL}>Coach authorization</label>
             <select id={id('authorization')} value={values.requiresAuthorization ? 'required' : 'not_required'} onChange={(event) => setValues((prev) => ({ ...prev, requiresAuthorization: event.target.value === 'required' }))} className="select input--kiosk">
               <option value="required">Required</option>
               <option value="not_required">Not required</option>
@@ -262,11 +263,11 @@ export default function TemplateEditForm({
           </div>
         </div>
         <div className="field">
-          <label htmlFor={id('intent')} className={LABEL}>Intent</label>
+          <label htmlFor={id('intent')} {...LABEL}>Intent</label>
           <textarea id={id('intent')} value={values.intent} onChange={(event) => setValues((prev) => ({ ...prev, intent: event.target.value }))} rows={3} maxLength={4000} className="textarea input--kiosk" />
         </div>
         <div className="field">
-          <label htmlFor={id('notes')} className={LABEL}>Coach notes</label>
+          <label htmlFor={id('notes')} {...LABEL}>Coach notes</label>
           <textarea id={id('notes')} value={values.coachNotes} onChange={(event) => setValues((prev) => ({ ...prev, coachNotes: event.target.value }))} rows={3} maxLength={4000} className="textarea input--kiosk" />
         </div>
 
@@ -295,7 +296,7 @@ export default function TemplateEditForm({
                   }
                   return (
                     <div key={key} className={key === 'free_text_drill' || key === 'coach_note' ? 'field md:col-span-2' : 'field'}>
-                      <label id={`${fieldId}-label`} htmlFor={fieldId} className={LABEL}>{label}</label>
+                      <label id={`${fieldId}-label`} htmlFor={fieldId} {...LABEL}>{label}</label>
                       {control}
                     </div>
                   );

@@ -937,7 +937,8 @@ function CoachWorkoutTemplates() {
               </p>
             )}
 
-            {editNotice && <p role="status" className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">{editNotice}</p>}
+            {/* On the kiosk floor (19.1px), as the Issue control is; a utility cannot beat the unlayered .t-body size. */}
+            {editNotice && <div data-surface="kiosk"><p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p></div>}
 
             {!detailLoading && !detailError && detail && editingId === detail.template.template_id && (
               <div className="mt-[var(--s4)]">
@@ -964,11 +965,13 @@ function CoachWorkoutTemplates() {
               <>
                 {/* Only the current version: the route refuses any other (TEMPLATE_VERSION_STALE). */}
                 {detail.template.superseded_at === null && (
-                  <button ref={editButtonRef} type="button" disabled={issuing || making || editBusy}
-                    onClick={() => { setEditNotice(''); setEditingId(detail.template.template_id); }}
-                    className="btn btn--ghost btn--tap mt-[var(--s3)] text-[length:var(--t-md)]" aria-label={`Edit: ${detail.template.name}`}>
-                    Edit
-                  </button>
+                  <div data-surface="kiosk" className="mt-[var(--s3)]">
+                    <button ref={editButtonRef} type="button" disabled={issuing || making || editBusy}
+                      onClick={() => { setEditNotice(''); setEditingId(detail.template.template_id); }}
+                      className="btn btn--ghost" aria-label={`Edit: ${detail.template.name}`}>
+                      Edit
+                    </button>
+                  </div>
                 )}
                 {(detail.template.coach_notes ?? '').trim() !== '' && (
                   <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">

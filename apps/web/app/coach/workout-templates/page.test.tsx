@@ -2237,9 +2237,9 @@ describe('Edit (lane ED-UI PR2)', () => {
 
     const notice = await screen.findByText('Saved as version 2.');
     expect(notice).toHaveAttribute('role', 'status');
-    // At the floor's type size, as the Edit button is (19.1px, --t-md).
-    expect(notice).toHaveClass('text-[length:var(--t-md)]');
-    expect(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).toHaveClass('text-[length:var(--t-md)]');
+    // On the kiosk floor (55px, 19.1px), as the Issue control is.
+    expect(notice.closest('[data-surface="kiosk"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' }).closest('[data-surface="kiosk"]')).not.toBeNull();
     expect(writesOf(fetchMock)).toEqual([{ url: '/api/pilot/workout-templates', body: { template_id: 'wt-1', intent: 'Stance and guard.' } }]);
     expect(fetchMock.mock.calls.map((call) => String(call[0]))).toContain('/api/pilot/workout-templates?template_id=wt-1-v2');
     expect(await screen.findByText('Stance and guard.', { selector: 'p' })).toBeInTheDocument();
