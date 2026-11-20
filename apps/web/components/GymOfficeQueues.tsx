@@ -61,10 +61,11 @@ function field(row: unknown, key: string): unknown {
   return row && typeof row === 'object' ? (row as Record<string, unknown>)[key] : undefined;
 }
 
-/** The read limits the routes apply to the pages' requests (each route, file:line in the PR). */
+/** The read limits the routes apply to these requests; gymOfficeQueues.test.tsx pins each to its route's source. */
 export const VIDEO_COMPLIANCE_LIMIT = 50;
 export const VIDEO_LIST_LIMIT = 50;
-export const FEEDBACK_PAGE_LIMIT = 100;
+/** How many rows still 'new' the Feedback Triage count asks for (the route allows up to 200). */
+export const FEEDBACK_NEW_LIMIT = 100;
 export const SHADOW_REVIEWS_LIMIT = 200;
 
 /** Staff Credentials' "Needs attention" bands (app/admin/credentials/page.tsx). */
@@ -139,7 +140,9 @@ export const QUEUES: readonly QueueSpec[] = [
     // The page's own filter over its own read (app/admin/video-review/page.tsx).
     count: (payload) => {
       const items = listAt(payload, 'items');
-      if (!items) return null;
+      // Every row carries both strings; a row without them is a shape this
+      // count does not know, and "0 quarantined" would look like an all-clear.
+      if (!items || items.some((row) => typeof field(row, 'status') !== 'string' || typeof field(row, 'scan_state') !== 'string')) return null;
       const held = items.filter(
         (row) =>
           field(row, 'status') === 'quarantined'
@@ -166,13 +169,19 @@ export const QUEUES: readonly QueueSpec[] = [
     title: 'Feedback Triage',
     href: '/admin/feedback',
     url: '/api/pilot/feedback/list',
-    init: { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: FEEDBACK_PAGE_LIMIT }) },
+    // NOT the page's own read: the page lists every status, safeguarding first,
+    // then newest. Counting from that read would ship up to 100 submissions of
+    // any status (closed safeguarding disclosures included) to count one, and
+    // its 100 are not "the newest 100". The route's own triage_status filter
+    // sends only rows still new, and the count is exact (AS10-3 review).
+    init: { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ triage_status: 'new', limit: FEEDBACK_NEW_LIMIT }) },
     what: 'new',
-    cutWords: { kind: 'window', within: `in the newest ${FEEDBACK_PAGE_LIMIT}` },
+    cutWords: { kind: 'plus' },
     count: (payload) => {
       const items = listAt(payload, 'items');
-      if (!items) return null;
-      return { n: items.filter((row) => field(row, 'triage_status') === 'new').length, cut: items.length >= FEEDBACK_PAGE_LIMIT };
+      // A row that is not new means the filter was not applied: not a count of new.
+      if (!items || items.some((row) => field(row, 'triage_status') !== 'new')) return null;
+      return { n: items.length, cut: items.length >= FEEDBACK_NEW_LIMIT };
     },
   },
   {

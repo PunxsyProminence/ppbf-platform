@@ -11,7 +11,18 @@
 import type { ReactNode } from 'react';
 import { render, screen, within } from '@testing-library/react';
 
-import GymOfficeQueues, { QUEUES, queueWords, type QueueSpec } from './GymOfficeQueues';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import GymOfficeQueues, {
+  FEEDBACK_NEW_LIMIT,
+  QUEUES,
+  SHADOW_REVIEWS_LIMIT,
+  VIDEO_COMPLIANCE_LIMIT,
+  VIDEO_LIST_LIMIT,
+  queueWords,
+  type QueueSpec,
+} from './GymOfficeQueues';
 import GymOfficeSafetyStrip from './GymOfficeSafetyStrip';
 import { BUILDING } from './buildingMap';
 
@@ -63,11 +74,11 @@ const PAYLOADS: Record<string, unknown> = {
     ],
   },
   '/api/pilot/admin/portrait-review': { portraits: [{ account_id: 'x', display_name: NAME }] },
+  // Asked for triage_status 'new' only, so only new rows come back.
   '/api/pilot/feedback/list': {
     items: [
       { triage_status: 'new', message: NAME },
       { triage_status: 'new', message: NAME },
-      { triage_status: 'done', message: NAME },
     ],
   },
   '/api/pilot/shadow/reviews?status=open': { reviews: [{ review_id: 'r1', summary: NAME }, { review_id: 'r2', summary: NAME }, { review_id: 'r3', summary: NAME }] },
@@ -149,7 +160,7 @@ test('reads each page\'s own request, and never the console read that signs foot
     ['/api/pilot/publications/create?status=pending_review', 'GET', null],
     ['/api/pilot/video/list?scope=all', 'GET', null],
     ['/api/pilot/admin/portrait-review', 'GET', null],
-    ['/api/pilot/feedback/list', 'POST', JSON.stringify({ limit: 100 })],
+    ['/api/pilot/feedback/list', 'POST', JSON.stringify({ triage_status: 'new', limit: 100 })],
     ['/api/pilot/shadow/reviews?status=open', 'GET', null],
     ['/api/pilot/admin/credentials', 'GET', null],
   ]));
@@ -169,6 +180,7 @@ test.each([
   ['a failed read', { status: 500, body: { error: 'boom' } } as Answer],
   ['a network failure', 'network-error' as Answer],
   ['a payload in another shape', { status: 200, body: { ok: true } } as Answer],
+  ['a refusal that still carries an empty list', { status: 403, body: { items: [] } } as Answer],
 ])('%s says "Could not be read", never 0, and the other rows still count', async (_label, answer) => {
   routes({ '/api/pilot/admin/credentials': answer, '/api/pilot/admin/waiver-status': answer });
   render(<GymOfficeQueues />);
@@ -200,13 +212,13 @@ test('a read cut at its limit says so: "50+" for a whole queue, "in the newest .
       status: 200,
       body: { items: many(50, (i) => ({ video_id: `v${i}`, status: i < 4 ? 'quarantined' : 'ready', scan_state: 'clear' })) },
     },
-    '/api/pilot/feedback/list': { status: 200, body: { items: many(100, (i) => ({ triage_status: i < 7 ? 'new' : 'done' })) } },
+    '/api/pilot/feedback/list': { status: 200, body: { items: many(100, () => ({ triage_status: 'new' })) } },
     '/api/pilot/shadow/reviews?status=open': { status: 200, body: { reviews: many(200, (i) => ({ review_id: `r${i}` })) } },
   });
   render(<GymOfficeQueues />);
   await screen.findByText('50+ pending review');
   expect(within(rowOf('Video Scan Review')).getByText('4 quarantined or flagged in the newest 50 uploads')).toBeTruthy();
-  expect(within(rowOf('Feedback Triage')).getByText('7 new in the newest 100')).toBeTruthy();
+  expect(within(rowOf('Feedback Triage')).getByText('100+ new')).toBeTruthy();
   expect(within(rowOf('SHADOW Human Review')).getByText('200+ open')).toBeTruthy();
 });
 
@@ -244,4 +256,58 @@ test('the Gym Office strip is one morning check: the five safety counts first, t
   const headings = within(section).getAllByRole('heading').map((heading) => heading.textContent);
   expect(headings).toEqual(['Morning check', 'Safety', 'Needs review']);
   expect(within(section).getByText('Training holds')).toBeTruthy();
+});
+
+test('one row short of a limit is a whole count, said without "+" or a window', async () => {
+  const many = (n: number, row: (i: number) => unknown) => Array.from({ length: n }, (_, i) => row(i));
+  routes({
+    '/api/pilot/publications/create?status=pending_review': { status: 200, body: { items: many(VIDEO_COMPLIANCE_LIMIT - 1, (i) => ({ publication_id: `p${i}` })) } },
+    '/api/pilot/video/list?scope=all': {
+      status: 200,
+      body: { items: many(VIDEO_LIST_LIMIT - 1, (i) => ({ video_id: `v${i}`, status: i < 2 ? 'quarantined' : 'ready', scan_state: 'clear' })) },
+    },
+    '/api/pilot/feedback/list': { status: 200, body: { items: many(FEEDBACK_NEW_LIMIT - 1, () => ({ triage_status: 'new' })) } },
+    '/api/pilot/shadow/reviews?status=open': { status: 200, body: { reviews: many(SHADOW_REVIEWS_LIMIT - 1, (i) => ({ review_id: `r${i}` })) } },
+  });
+  render(<GymOfficeQueues />);
+  await screen.findByText(`${VIDEO_COMPLIANCE_LIMIT - 1} pending review`);
+  expect(within(rowOf('Video Scan Review')).getByText('2 quarantined or flagged')).toBeTruthy();
+  expect(within(rowOf('Feedback Triage')).getByText(`${FEEDBACK_NEW_LIMIT - 1} new`)).toBeTruthy();
+  expect(within(rowOf('SHADOW Human Review')).getByText(`${SHADOW_REVIEWS_LIMIT - 1} open`)).toBeTruthy();
+});
+
+test.each([
+  ['Video Scan Review', '/api/pilot/video/list?scope=all', { items: [{ video_id: 'v1', status: 'quarantined' }] }],
+  ['Feedback Triage', '/api/pilot/feedback/list', { items: [{ triage_status: 'new' }, { triage_status: 'done' }] }],
+  ['Staff Credentials', '/api/pilot/admin/credentials', { items: [{ band: 'expired' }, { name: 'no band' }] }],
+  ['Waiver Compliance', '/api/pilot/admin/waiver-status', { items: [{ athlete_id: 'x', active_flag: true, waivers: {} }] }],
+])('%s: a row in a shape the count does not know makes the read unread, never a smaller number', async (title, url, body) => {
+  routes({ [url]: { status: 200, body } });
+  render(<GymOfficeQueues />);
+  await settled();
+  expect(within(rowOf(title)).getByText('Could not be read')).toBeTruthy();
+});
+
+// The words "50+", "in the newest 50 uploads" and "200+" are only true while
+// these numbers are the routes' own limits. Read them from the routes.
+describe('the limits are the routes\' own', () => {
+  const read = (rel: string) => readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
+
+  test('video list and publications default to 50 rows', () => {
+    expect(read('app/api/pilot/video/list/route.ts')).toContain(`const limit = parseSafeLimit(searchParams.get('limit'), ${VIDEO_LIST_LIMIT}, 100);`);
+    expect(read('app/api/pilot/publications/create/route.ts')).toContain(
+      `const limit = parseSafeLimit(request.nextUrl.searchParams.get('limit'), ${VIDEO_COMPLIANCE_LIMIT}, 100);`,
+    );
+  });
+
+  test('the SHADOW review queue reads at most 200', () => {
+    const source = read('src/server/pilot/shadowConversations.ts');
+    const query = source.slice(source.indexOf('from pilot.shadow_human_review_queue\n     where organization_id = $1 and status = $2'));
+    expect(query).toMatch(new RegExp(`^[\\s\\S]*?limit ${SHADOW_REVIEWS_LIMIT}\``));
+  });
+
+  test('the feedback route returns at least the 100 asked for', () => {
+    const max = Number(/const FEEDBACK_LIST_MAX_LIMIT = (\d+);/.exec(read('src/server/pilot/feedback.ts'))?.[1]);
+    expect(max).toBeGreaterThanOrEqual(FEEDBACK_NEW_LIMIT);
+  });
 });
