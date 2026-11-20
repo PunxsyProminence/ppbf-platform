@@ -2884,9 +2884,10 @@ export default function AthleteWorkspace() {
      session. */
   /* The after-sparring symptom check (OD-2026-10-17-023 item 1, -029) moves
      with End training (Overwatch Q-SPAR A on #2006): where the athlete ends,
-     once no session is open, under the Session Log's old conditions. It draws
-     nothing unless a sparring end is unanswered. One mount per tab, so its
-     read moves rather than doubles. */
+     once no session is open, under the Session Log's old conditions. By its
+     own rule it draws nothing unless a sparring end is due or was answered
+     today (the answer, and "Something else now?", stay for the gym day). One
+     mount per tab, so its read moves rather than doubles. */
   const afterSparring = athleteIdentityState === 'resolved' && storedSessionLoad === 'loaded' && !activeSessionRecord
     ? <SparringSymptomCheck context="after_sparring" justCheckedOut={afterSparringCheck} />
     : null;

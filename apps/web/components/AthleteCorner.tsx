@@ -74,7 +74,7 @@ export interface AthleteCornerProps {
    * training panel, full width, only while that panel says "Training started".
    */
   readonly endTraining?: React.ReactNode;
-  /** In the same place once no session is open: the after-sparring check (it draws nothing unless one is due). */
+  /** In the same place once no session is open: the after-sparring check (by its own rule, nothing unless one is due or was answered today). */
   readonly afterEnd?: React.ReactNode;
   /** The "Training started / ended" line, for the workspace to bring into view after an end. */
   readonly checkInLineRef?: React.Ref<HTMLParagraphElement>;
