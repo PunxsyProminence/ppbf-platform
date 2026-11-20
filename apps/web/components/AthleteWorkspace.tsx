@@ -3146,11 +3146,41 @@ export default function AthleteWorkspace() {
             otherwise. */}
         {!cornerShownOn(activeTab) && <MedicalRestrictionNotice />}
 
-        {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels. Right
-            under the header (and the hold and restriction notices where they
-            stand), with I'm here after it, so the way on is not below the
-            fight card, notices and chalkboard (lane AS-8, scrub ATH-02,
-            Overwatch Q2 A on #2020).
+        {/* MY CORNER: the day's actions -- report pain, start and end
+            training, coach work, goals -- on How I feel today and the
+            Dashboard (lane AS-8, Overwatch Q1 A on #2020). First under the
+            header, above the tab rail, so Report pain stays on a phone's
+            opening screen (Overwatch Q-PHONE A on #2036; measured there). The
+            same handlers, the same reads. See AthleteCorner.tsx. */}
+        {cornerShownOn(activeTab) && (
+          <AthleteCorner
+            sessionState={storedSessionLoad}
+            identityState={athleteIdentityState}
+            checkedInAt={checkInTime}
+            checkingIn={isCheckingIn}
+            onCheckIn={() => void handleCheckIn()}
+            onRetrySession={() => void loadStoredSessions()}
+            coachWork={openCoachWorkRead}
+            onOpenFloor={() => setActiveTab('athlete-floor')}
+            goals={goalsRead}
+            onOpenGoals={() => setActiveTab('smart-goals')}
+            onReportPain={goToPainReport}
+            onAskShadow={() => setActiveTab('shadow')}
+            checkedOutToday={checkedOutToday}
+            checkInFailed={checkInFailed}
+            afterPain={<><TrainingHoldBanner /><MedicalRestrictionNotice /></>}
+            endTraining={endTraining}
+            afterEnd={afterSparring}
+            checkInLineRef={cornerLineRef}
+          />
+        )}
+
+        {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels. Under
+            My Corner where it is drawn, else under the header and the hold and
+            restriction notices; I'm here comes after it. Both sit above the
+            fight card, notices and chalkboard, so the way on is not below them
+            (lane AS-8, scrub ATH-02; Overwatch Q2 A on #2020, as Q-PHONE A on
+            #2036 replaced it: My Corner first).
             Five groups an athlete can hold in their head, each opening onto the
             surfaces it owns. A group with one surface has no second row: there
             is nothing to choose between, so nothing is drawn. */}
@@ -3210,34 +3240,6 @@ export default function AthleteWorkspace() {
             for today's class on every Today tab. */}
         {activeGroup === 'today' && (
           <AthleteImHere athleteId={backendAthleteId} schedule={todaySchedule.read} onReload={reloadTodaySchedule} />
-        )}
-
-        {/* MY CORNER: the day's actions -- report pain, start and end
-            training, coach work, goals -- on How I feel today and the
-            Dashboard, directly under the tab rail and I'm here (lane AS-8,
-            Overwatch Q1 A and Q2 A on #2020). The same handlers, the same
-            reads. See AthleteCorner.tsx. */}
-        {cornerShownOn(activeTab) && (
-          <AthleteCorner
-            sessionState={storedSessionLoad}
-            identityState={athleteIdentityState}
-            checkedInAt={checkInTime}
-            checkingIn={isCheckingIn}
-            onCheckIn={() => void handleCheckIn()}
-            onRetrySession={() => void loadStoredSessions()}
-            coachWork={openCoachWorkRead}
-            onOpenFloor={() => setActiveTab('athlete-floor')}
-            goals={goalsRead}
-            onOpenGoals={() => setActiveTab('smart-goals')}
-            onReportPain={goToPainReport}
-            onAskShadow={() => setActiveTab('shadow')}
-            checkedOutToday={checkedOutToday}
-            checkInFailed={checkInFailed}
-            afterPain={<><TrainingHoldBanner /><MedicalRestrictionNotice /></>}
-            endTraining={endTraining}
-            afterEnd={afterSparring}
-            checkInLineRef={cornerLineRef}
-          />
         )}
 
         {/* The athlete's own fight card. Self-contained: it fetches its own

@@ -568,8 +568,11 @@ describe('the opening screen (lane AS-8)', () => {
     expect(await myCorner.findByRole('button', { name: 'Start training' })).toBeTruthy();
   });
 
+  /* Overwatch Q-PHONE A on #2036: My Corner first, so Report pain stays on a
+     phone's opening screen; then the group nav and I'm here; then the fight
+     card, Gym Notices and chalkboard (ATH-02: the nav is above those). */
   test.each([['How I feel today'], ['Dashboard']])(
-    'on %s: header, then the group nav and I\'m here, then My Corner, then the chalkboard (ATH-02)',
+    'on %s: header, then My Corner, then the group nav and I\'m here, then the chalkboard (ATH-02, Q-PHONE A)',
     async (tab) => {
       const { container } = render(<AthleteWorkspace />);
       await act(async () => {
@@ -580,12 +583,14 @@ describe('the opening screen (lane AS-8)', () => {
       const nav = screen.getByRole('button', { name: 'Today' });
       const imHere = screen.getByRole('region', { name: "Today's class" });
       const myCorner = screen.getByRole('region', { name: 'My corner' });
+      const reportPain = within(myCorner).getByRole('button', { name: 'Report pain or soreness' });
       const chalkboard = container.querySelector('.chalkboard') as Element;
       expect(chalkboard).not.toBeNull();
-      expect(precedes(heading, nav)).toBe(true);
+      expect(precedes(heading, myCorner)).toBe(true);
+      expect(precedes(reportPain, nav)).toBe(true);
+      expect(precedes(myCorner, nav)).toBe(true);
       expect(precedes(nav, imHere)).toBe(true);
-      expect(precedes(imHere, myCorner)).toBe(true);
-      expect(precedes(myCorner, chalkboard)).toBe(true);
+      expect(precedes(imHere, chalkboard)).toBe(true);
     },
   );
 
