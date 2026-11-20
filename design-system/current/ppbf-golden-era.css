@@ -3691,6 +3691,10 @@
    pain patch. Empty when there is no hold (the banner renders nothing). */
 .athlete-corner__wide { grid-column: 1 / -1; min-width: 0; }
 .athlete-corner__wide:empty { display: none; }
+/* End training (lane U3 B4) came from the Session Log's dark ground; its
+   --bone-400 captions read 3.6:1 at this leather's light edge. One rung up,
+   as .ge-floorboard does: 5.5:1 or better on the panel. */
+.athlete-corner__end { --bone-400: var(--bone-300); }
 .athlete-corner__panel {
   position: relative;
   display: flex;

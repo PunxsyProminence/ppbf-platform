@@ -165,7 +165,7 @@ export default function AthleteCorner({
         {/* End training (lane U3 B4): full width, so its questions keep
             their grid on a tablet, where the panel above is half the corner. */}
         {sessionKnown && checkedInAt && endTraining ? (
-          <div className="athlete-corner__panel athlete-corner__wide" data-section="end-training">
+          <div className="athlete-corner__panel athlete-corner__wide athlete-corner__end" data-section="end-training">
             {endTraining}
           </div>
         ) : null}

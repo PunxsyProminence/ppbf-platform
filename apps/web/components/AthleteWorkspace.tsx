@@ -1088,7 +1088,7 @@ function EndTrainingControl({ children, failure }: { children: ReactNode; failur
   const [open, setOpen] = useState(false);
   const questionsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (open) questionsRef.current?.focus();
+    if (open) questionsRef.current?.focus({ preventScroll: true });
   }, [open]);
   return (
     <div className="space-y-[var(--s4)]">
@@ -2877,7 +2877,7 @@ export default function AthleteWorkspace() {
           never carries it. */}
       <fieldset className="space-y-[var(--s2)]">
         <legend className="t-label mb-[var(--s2)]">{POST_SESSION_EFFORT_QUESTION}</legend>
-        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+        <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
           0 means not hard at all. 10 means as hard as you could go. It goes on the session when you check out.
         </p>
         <div className="grid grid-cols-4 sm:grid-cols-6 gap-[var(--s2)]">
@@ -2893,13 +2893,13 @@ export default function AthleteWorkspace() {
                 onClick={() => setPostSessionEffort({ sessionId: activeSessionRecord.sessionId, value })}
                 className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
               >
-                <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
+                <span className="t-data" style={{ fontSize: 'var(--t-md)' }}>{value}</span>
               </button>
             );
           })}
         </div>
         {answeredEffort === null ? (
-          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+          <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
             Not answered — you can skip this. Ending training without it records no effort.
           </p>
         ) : (
@@ -2938,7 +2938,7 @@ export default function AthleteWorkspace() {
           })}
         </div>
         {answeredEnjoyment === null ? (
-          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+          <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
             Not tapped — you can skip this. It goes on the session when you check out, and your coach sees it.
           </p>
         ) : (
@@ -2976,7 +2976,7 @@ export default function AthleteWorkspace() {
           })}
         </div>
         {answeredSessionType === null ? (
-          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+          <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
             Not picked — you can skip this. It goes on the session when you check out.
           </p>
         ) : (
@@ -2997,7 +2997,7 @@ export default function AthleteWorkspace() {
           nobody gave. */}
       <div className="space-y-[var(--s2)]">
         <label htmlFor="athlete-post-session-minutes" className="t-label block">{POST_SESSION_MINUTES_QUESTION}</label>
-        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+        <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
           Whole minutes, {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. You can skip this. It goes on the session when you check out.
         </p>
         <input
@@ -3013,7 +3013,7 @@ export default function AthleteWorkspace() {
           className="input input--kiosk w-[8rem]"
         />
         {showMinutesError ? (
-          <p id="athlete-post-session-minutes-error" role="alert" style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-100)' }}>
+          <p id="athlete-post-session-minutes-error" role="alert" style={{ fontSize: 'var(--t-md)', color: 'var(--bone-100)' }}>
             Minutes must be a whole number from {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. Fix it or clear the box to check out.
           </p>
         ) : null}
