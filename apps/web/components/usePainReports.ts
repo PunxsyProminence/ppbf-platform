@@ -23,7 +23,9 @@ import { PAIN_FEED_LIMIT, painReportCount, type PainReportCount } from '@/compon
  * A timed refresh (refreshMs, the class screen's two minutes) keeps the last answer on screen
  * until the new one arrives, as the 6b-1 tile does, so the list neither blanks nor re-announces
  * every two minutes and the list and the tile show the same answer. Only a refresh the coach asks
- * for (reload: the panel's Refresh, a retry) says it is checking, as the coach home always did.
+ * for (reload: the panel's Refresh, a retry) says it is checking, as the coach home always did;
+ * the list says so until every read then out has answered (a timed one included), while the tile
+ * shows the newest answer.
  */
 
 /**

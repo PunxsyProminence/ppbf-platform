@@ -193,6 +193,26 @@ describe('the read', () => {
     expect(screen.queryByText('Casey R.')).toBeNull();
   });
 
+  test('a slow earlier failure never replaces a newer answer: the list stays', async () => {
+    let late: (response: Response) => void = () => undefined;
+    answers = [
+      () => new Promise<Response>((resolve) => {
+        late = resolve;
+      }),
+      () => json({ ...EMPTY, painReports: [report('n1')] }),
+    ];
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh athlete pain reports' }));
+    await settle();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    await act(async () => {
+      late(json({ error: 'boom' }, 500));
+    });
+    await settle();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.queryByText(new RegExp(FAILED_WORDS))).toBeNull();
+  });
+
   test('a read slower than the next still shows when nothing newer has answered', async () => {
     const pending: Array<(response: Response) => void> = [];
     answers = [

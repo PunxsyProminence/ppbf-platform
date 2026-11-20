@@ -22,9 +22,9 @@ import { painTileRead, usePainReports, type PainReportsRead } from '@/components
 //     when it is one of today's free classes. Plans are still started from Session Plans;
 //   - a live session: the live console (SessionScriptLiveDelivery, moved here from Session Plans)
 //     and Gym TVs (GymTvPanel), so the coach sends the session to a TV from the same screen.
-// While a session is live the pain list shows under the console (lane U2-6b-2): one read of the
-// pain feed, every two minutes (6b Q4 = A, on #2005), draws the list and the console's pain tile, so the two
-// count the same rows over the same window (Overwatch's 6b ruling).
+// While a session is live the pain list shows under the console (lane U2-6b-2): one read of
+// the pain feed, every two minutes (6b Q4 = A, on #2005), draws the list and the console's
+// pain tile, so the two count the same rows over the same window (Overwatch's 6b ruling).
 //
 // THE SERVER DECIDES. The first question is the same one Session Plans asks: does this coach
 // already have a session in progress? A failed read is its own state -- "a session may exist that
