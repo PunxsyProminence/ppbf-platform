@@ -42,11 +42,57 @@ test("says who the form is for and what the information is used for, in Jason's 
   render(<PublicInterestForm />);
   expect(screen.getByText('This form is for people 13 or older; a parent or guardian can send it for a younger child.')).toBeTruthy();
   expect(screen.getByText(/We use what you send only to answer you\. We do not sell or share it\./)).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Privacy' }).getAttribute('href')).toBe('/privacy');
+  // The link names what the privacy page covers (FAM-26; AS-9 Q11 = A).
+  expect(screen.getByRole('link', { name: 'Privacy: interest form' }).getAttribute('href')).toBe('/privacy');
 });
 
 test('each control is named by its own label only, not by option text', () => {
   render(<PublicInterestForm />);
   expect(screen.getByRole('combobox', { name: 'How to reach you' })).toBeTruthy();
   expect(screen.getAllByLabelText(/Email/)).toHaveLength(1);
+});
+
+/* A sent form and a failed one are told apart (app scrub FAM-25): the thanks
+   is a status line, a failure is an alert with the warning mark. */
+describe('sent and not sent are not the same line', () => {
+  async function send() {
+    render(<PublicInterestForm />);
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Pat Example' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'pat@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send this to a coach' }));
+  }
+
+  test('a refused send is an alert, not a status, and says it was not sent', async () => {
+    fetchMock.mockResolvedValue({ ok: false, json: async () => ({ ok: false }) });
+    await send();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.className).toContain('alert--warning');
+    expect(alert.textContent).toContain('Not sent');
+    expect(alert.textContent).toContain('did not go through');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('a dropped connection is an alert too', async () => {
+    fetchMock.mockRejectedValue(new Error('offline'));
+    await send();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('The connection dropped and this was not sent.');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('a sent form is a status line and no alert; a later failure clears the thanks', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) });
+    await send();
+    await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/Got it/));
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({ ok: false }) });
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Pat Example' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'pat@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send this to a coach' }));
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('status')).toBeNull();
+  });
 });
