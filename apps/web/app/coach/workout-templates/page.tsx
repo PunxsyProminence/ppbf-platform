@@ -741,8 +741,7 @@ function CoachWorkoutTemplates() {
   const [issuing, setIssuing] = useState(false);
   // The same, while a session script is being made from the open template.
   const [making, setMaking] = useState(false);
-  // Edit (OD-2026-11-19-005, OW25-51; lane ED-UI PR2). The page's gate admits coach and
-  // organization admin, the roles PATCH /api/pilot/workout-templates admits; the route decides.
+  // Edit (OD-2026-11-19-005; ED-UI PR2): the gate admits the roles the PATCH admits; the route decides.
   const [editingId, setEditingId] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   const [editNotice, setEditNotice] = useState('');
@@ -937,7 +936,7 @@ function CoachWorkoutTemplates() {
               </p>
             )}
 
-            {/* On the kiosk floor (19.1px), as the Issue control is; a utility cannot beat the unlayered .t-body size. */}
+            {/* On the kiosk floor, as the Issue control is (a utility cannot beat .t-body's size). */}
             {editNotice && <div data-surface="kiosk"><p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p></div>}
 
             {!detailLoading && !detailError && detail && editingId === detail.template.template_id && (

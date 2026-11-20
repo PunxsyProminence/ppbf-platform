@@ -7,11 +7,9 @@ import { humanizeContactLevel, scaleLevelName } from '@/src/lib/drillPresentatio
 import { VOCABULARIES } from '@/src/server/pilot/contentImport/vocabularies';
 import type { WorkoutTemplateItemWithDrillHead, WorkoutTemplateRow } from '@/src/server/pilot/workoutTemplates';
 
-// THE TEMPLATE EDIT FORM (OD-2026-11-19-005, OW25-51; lane ED-UI PR2): PATCH
-// /api/pilot/workout-templates writes the next version (workoutTemplateEdit.ts).
-// Only changed fields are sent (OD-2026-11-15-011 ruling 2); items are edited in
-// place, no add, remove, reorder or drill swap (Q6 = A); a refusal names the
-// field as labelled here (Q-PR1-1). Labels: the plan's words (Q5, Q6 = A).
+// THE TEMPLATE EDIT FORM (OD-2026-11-19-005, OW25-51; lane ED-UI PR2): PATCH /api/pilot/workout-templates writes
+// the next version. Only changed fields are sent (OD-2026-11-15-011 ruling 2); items are edited in place (Q6 = A);
+// a refusal names the field as labelled here (Q-PR1-1). Labels: the plan's words (Q5, Q6 = A).
 
 type Template = WorkoutTemplateRow;
 type Item = WorkoutTemplateItemWithDrillHead;
@@ -53,8 +51,7 @@ interface Values {
 }
 
 const asText = (value: string | number | null | undefined) => (value === null || value === undefined ? '' : String(value));
-/** An item field as the box shows it. Block reads as the page shows it, underscores as spaces (Overwatch on #2022);
- * an untouched box is compared with this, so it is never sent and the stored value stays. */
+/** An item field as shown; Block as the page shows it (Overwatch, #2022). An untouched box equals this, so is never sent. */
 const shown = (item: Item, key: ItemKey) => (key === 'block' ? item.block.replace(/_/g, ' ') : asText(item[key]));
 
 function initialValues(template: Template, items: readonly Item[]): Values {
@@ -87,8 +84,7 @@ function changedParts(template: Template, items: readonly Item[], values: Values
   if (values.requiresAuthorization !== Boolean(template.requires_coach_authorization)) {
     body.requires_coach_authorization = values.requiresAuthorization;
   }
-  // The route takes the whole ordered list (workoutTemplateEdit.ts): every
-  // item by its id, in its order, carrying only the fields that changed.
+  // The route takes the whole ordered list: every item by its id, in order, with only its changed fields.
   const entries = items.map((item, index) => {
     const now = values.items[index];
     const changes = Object.fromEntries(ITEM_FIELDS.filter(({ key }) => now[key] !== shown(item, key)).map(({ key }) => {
@@ -125,8 +121,7 @@ function inFormWords(message: string, itemNames: readonly string[]): string {
 
 export type TemplateEditOutcome = { changed: false } | { changed: true; templateId: string; version: number };
 
-// --bone-200: the lift the design system gives .t-label on lit leather (OD-2026-10-02-010; .ge-scripts .mat-leather).
-// Inline, because .t-label is unlayered and outranks any utility class.
+// --bone-200, the design system's lift for .t-label on lit leather (OD-2026-10-02-010); inline, as .t-label is unlayered.
 const LABEL = { className: 't-label', style: { color: 'var(--bone-200)' } } as const;
 const SAVE_FAILED = 'The template could not be saved.';
 // The drill form's words for the same two outcomes (DrillEditForm.tsx).
