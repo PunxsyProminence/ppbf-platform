@@ -40,9 +40,13 @@ recommended option first.
   item 9, room renaming, added. Both read at `main` `244c13d` and re-checked at
   `600b4f7361f3c557b295aaa58a8f4c8efb141cc1`, where item 1's earlier citations
   still hold. Of the files cited, only `buildingMap.ts` changed between the two
-  (#2030); its lines are cited at `600b4f7`. Open PR heads #2017 to #2021,
-  #2025, #2027, #2029 and #2031 to #2046 were read the same day. Items 2 to 8 were not re-read: #2005, #2006, #2008, #2009,
-  #2010, #2012, #2013 and #2016, cited there as open, have since merged.
+  (#2030); its lines are cited at `600b4f7`. `main` then moved to `58974af`
+  (#2025, #2031), which changes no file cited in items 1 and 9. Open PR heads
+  #2017 to #2021, #2027, #2029, #2032 to #2049 and #2051 to #2053 were read the
+  same day.
+  Overwatch's answers on #2050 (2026-11-20) are applied: Q1.9, Q1.10 and Q8.2.
+  Items 2 to 8 were not re-read: #2005, #2006, #2008, #2009, #2010, #2012,
+  #2013 and #2016, cited there as open, have since merged.
 
 ## How the sizes were made
 
@@ -247,15 +251,16 @@ gone.
 |---|---|---|---|
 | EM-1 | Migration: each person's switch (per account; on and off times; audited). With Q1.11 A or B, the adult athlete's own address on the same row. Runner. An own-account read and write route that refuses anyone OW27-02 C leaves out: under-18 athletes, athletes with no date of birth, and other roles. | about 420 (may go over) | matched, AS2-a 414 |
 | EM-2 | The switch on `/profile`, shown only to the people OW27-02 C names. With Q1.11 A or B, the address field. | about 200 | matched, AS2-c 174, plus the field |
-| EM-3 | Migration: the send log (Q1.10). The sender: a sweep on a server tick, with retry, through `sendPlainTextMail` and the sign-in sender constant (`magicLinkStore.ts:29`). The subject is the gym's name and "open the app"; the body is "open the app". The "sends no email" comments are corrected. | about 380 (may go over) | judgement |
+| EM-3 | Migration: the send log: who, when, and the event's kind and row id (Q1.10). The sender: a sweep on a server tick, with retry, through `sendPlainTextMail` and the sign-in sender constant (`magicLinkStore.ts:29`). The subject is the gym's name and "open the app"; the body is "open the app". The "sends no email" comments are corrected. | about 380 (may go over) | judgement |
 | EM-4a | Staff events: escalations (SHADOW alerts included) and parent replies. One email is queued per staff member who can read the event in the app, whose user type the gym turned it on for, whose switch is on and whose sign-in is on. | about 260 | judgement |
 | EM-4b | Family and athlete events: family notes, gym announcements and a coach's message to an athlete, with the same checks. An athlete only when 18 or over (`isMinor`). | about 280 | judgement |
-| EM-5 | Migration: the gym's choice, one row per gym, user type and event. Runner. Read and write for the organization admin, audited. | about 400 | matched, AS2-a 414 |
+| EM-5 | Migration: the gym's choice, one row per gym, user type and event; every event starts off (Q1.12 A, the basis Overwatch set for the size). Runner. Read and write for the organization admin, audited. | about 400 | matched, AS2-a 414 |
 | EM-6 | An "Email alerts" drawer on Customize the Gym: the events, by user type. | about 200 | matched, AS2-c 174 |
 
-- **Total:** about 2,140 lines in 7 PRs. Q1.11 B adds a confirm step: one more
-  PR, about 150 (judgement), and maybe a migration. Q1.11 D drops the athlete parts: about 2,000.
-  Q1.10 B drops the queue and its retry: about 2,040 (both judgement).
+- **Total:** about 2,140 lines in 7 PRs, sized under Q1.11 A and Q1.12 A.
+  Q1.11 B adds a confirm step: one more PR, about 150, and maybe a migration.
+  Q1.11 C is about the size of A. Q1.11 D drops the athlete parts: about 2,000.
+  Q1.12 changes no size. All judgement.
 - **Order:** EM-1 and EM-5, then EM-3, then EM-4a and EM-4b; EM-2 and EM-6
   after their routes.
 - **Migrations:** 3, in EM-1, EM-3 and EM-5 (INFERRED: Overwatch may fold them
@@ -278,47 +283,38 @@ gone.
   `ProfileSettings.tsx`; EM-6
   and item 9's RN-4 both add a Customize drawer: one after the other in each
   case. EM-1, EM-3 and EM-5 share the registration files; seven open
-  dependabot PRs change `apps/web/package.json`.
+  dependabot PRs and #2035 (lane DEP) change `apps/web/package.json`.
 
 **Owner questions.** Q1.1 to Q1.8 are answered (the table above); their options,
-as asked, are in OD-2026-11-20-001. Three remain:
+as asked, are in OD-2026-11-20-001. Overwatch answered Q1.9 and Q1.10 on #2050
+(2026-11-20). Two are open, Q1.11 and Q1.12.
 
-- **Q1.9 Which events are on the gym's list?** A reading for Overwatch to
-  confirm: OW27-10 A has the gym pick "which events can send the email".
-  Checked, not answered in: `docs/current/OWNER_DECISIONS.md`
-  (OD-2026-11-20-001 OW27-01, -02, -10; OD-2026-11-19-019; OD-2026-11-19-009),
-  `docs/research/app-scrub-2026-11-19/` (stages 1 and 3), this lane's brief.
-  - **A (recommended):** every event named in the OW27-01 card's options, each
-    offered only to the user types who read it in the app, each on or off as
-    the gym sets it (sized above). Staff: safety escalations (SHADOW safety
-    alerts included) and parent replies. Parents: new family notes. Athletes 18
-    or over: a coach's message to an athlete. All three: gym announcements
-    (athletes read them: `apps/web/app/api/pilot/announcements/get/route.ts:58`).
-    Once item 4 is built, staff also get a parent's new message (was Q4.3).
-    Why: OW27-02 C lets athletes 18 or over opt in, and of the card's events
-    only option C's announcements and option D's coach messages reach an
-    athlete (the card's own pros and cons).
-  - **B:** only OW27-01 option A's events (escalations, family notes, parent
-    replies). No event reaches an athlete, so their switch sends nothing. About
-    1,950 (judgement).
-- **Q1.10 Does the send log keep the event's reference?** Overwatch reserved
-  this with OW27-06 A ("If the build needs the event reference too, the lane
-  asks first"). Checked, not answered in: OD-2026-11-20-001 (OW27-03, -06),
-  OD-2026-11-19-009 ("Page counts"), this brief.
-  - **A (recommended):** yes: each queued and sent email keeps the event's kind
-    and row id, and no content, device or IP. The sweep then sends each once,
-    so a restart neither resends nor skips, the aim of Overwatch's pick.
-    INFERRED: with one email per event (OW27-03 B), who and when alone cannot
-    tell which of two close events was sent.
-  - **B:** no: the email is sent in the same request, right after the event is
-    saved, and only who and when are logged. A restart or mail failure between
-    the save and the send loses that email; nothing retries it.
-- **Q1.11 Where does an athlete 18 or over get an email address?** None exists
-  today (above). Checked, not answered in: OD-2026-11-20-001 (OW27-02, -10),
+- **Q1.9 Which events are on the gym's list? Answered, as a reading
+  (INFERRED).** Overwatch on #2050: "Q1.9 = A, as a reading". These are not
+  Jason's words. The gym's list offers every event named in the OW27-01 card
+  (OD-2026-11-20-001), each only to the user types who read it in the app. The
+  organization admin turns each on or off per user type (OW27-10 A):
+  - staff: safety escalations (SHADOW safety alerts included) and parent
+    replies;
+  - parents: new family notes;
+  - athletes 18 or over: a coach's message to an athlete;
+  - all three: gym announcements (athletes read them:
+    `apps/web/app/api/pilot/announcements/get/route.ts:58`);
+  - once item 4 is built, staff: a parent's new message (was Q4.3).
+- **Q1.10 Does the send log keep the event's reference? Answered: yes.**
+  Overwatch on #2050: "Q1.10 = A". This is Overwatch's pick under Jason's
+  OW27-06 delegation (*"Use your best judgment for this question"*), not
+  Jason's words. The send log keeps who, when, and the event's kind and row
+  id; no content, device or IP. The sweep then sends each queued email once, so
+  a restart neither resends nor skips.
+- **Q1.11 Where does an athlete 18 or over get an email address?** Jason's; it
+  goes to him as a card. None exists today (above). Checked, not answered in:
+  OD-2026-11-20-001 (OW27-02, -10),
   OD-2026-11-19-025, OD-2026-10-04-010, OD-2026-11-19-019,
   `docs/research/app-scrub-2026-11-19/`, this brief.
   - **A (recommended):** typed by the athlete beside their switch, no confirm
-    step. Pros: smallest; every email stays the gym's name and "open the app".
+    step. Sized this way. Pros: smallest; every email stays the gym's name and
+    "open the app".
     Cons: a mistyped address gets those emails until the athlete corrects it or
     turns the switch off.
   - **B:** typed by the athlete beside their switch, used only after they
@@ -331,6 +327,24 @@ as asked, are in OD-2026-11-20-001. Three remain:
     switch. About the size of A.
   - **D:** none for now. The athlete parts are not built, and OW27-02 C's
     athletes 18 or over get nothing until a source exists. About 2,000.
+- **Q1.12 Which events start turned on for a gym?** Overwatch on #2050: "Which
+  boxes start ticked is not ruled: list it as open, sized with none ticked."
+  Checked, not answered in: OD-2026-11-20-001 (OW27-10; OW27-01, whose recorded
+  reading says "who sets it and the starting set are not stated"),
+  OD-2026-11-19-019, `docs/research/app-scrub-2026-11-19/`, this brief, #2050's
+  comments.
+  - **A (recommended):** none. No email goes out until the organization admin
+    turns an event on. Sized this way. Pros: the gym sends only what it chose
+    (OW27-01: *"it should be settings for the gym"*). Cons: a gym that never
+    opens the drawer sends nothing, even to people whose switch is on.
+  - **B:** every event on, for the user types who read it. Pros: the email
+    works as soon as a person turns their switch on. Cons: emails go out for
+    events the gym has not looked at.
+  - **C:** safety escalations on for staff; the rest off. Pros: staff who opted
+    in get safety alerts with no gym step. Cons: one event is chosen for the
+    gym.
+  - Size: none of the three changes it; the start is a value in EM-5
+    (INFERRED).
 
 ## 2. Web push (later, per Jason)
 
@@ -995,6 +1009,11 @@ per PR):
   - **B:** fold it into the coach note of the next drill step, and remove the
     step. This departs from OW26-05 B's "Each typed step becomes a drill" and
     changes those templates' step lists.
+  - **Answered.** Overwatch on #2050 (2026-11-20): ruled "by plain principle
+    from OD-2026-11-19-030" (*"B: Turn typed lines into library drills"*): "a
+    heading is a typed line". This is Overwatch's application of that ruling,
+    not new words from Jason. INFERRED: that is option A, so the line becomes a
+    drill.
 
 ## 9. Room renaming by the gym (A-124; lane W4R)
 
@@ -1008,7 +1027,7 @@ later lets the organization rename rooms". AS-8 builds the starting names
 (#2020's PR body, read 2026-11-20: plan approved, not built; not in the repo,
 so UNVERIFIED here). This sizes only the later renaming.
 
-**What "room" names in code** (OBSERVED; `main` `600b4f7`, #2029 at `56252496`):
+**What "room" names in code** (OBSERVED; `main` `600b4f7`, #2029 at `1f803f4d`):
 
 - **Seven rooms.** `Room` (`apps/web/components/buildingMap.ts:60-78`), named in
   `ROOM_LABEL` (`:733-741`, e.g. "Front Office", "Gym Floor").
@@ -1098,7 +1117,8 @@ Gym. Under Q9.1 B, every page title also reads its door's name.
 
 **Owner questions:**
 
-- **Q9.1 What can a gym rename?** Checked, not answered in:
+- **Q9.1 What can a gym rename?** Jason's; it goes to him as a card. Checked,
+  not answered in:
   `docs/current/OWNER_DECISIONS.md` (OD-2026-11-20-001 OW27-11 and -15;
   OD-2026-10-17-001; OD-2026-11-19-008; a search for "rename" and "room
   names"), `docs/research/app-scrub-2026-11-19/` (stages 1 and 3), this
@@ -1110,21 +1130,21 @@ Gym. Under Q9.1 B, every page title also reads its door's name.
     "Your entry", plus "My Corner", the entry's own example (INFERRED); other
     pages keep theirs. Pros: covers the names on the cards and the rooms; a
     door and its title read one name, so each menu label still matches its
-    page title. Cons: other pages cannot be renamed.
+    page title. Cons: other pages cannot be renamed. Sized this way.
   - **B:** A, plus every door's page name (144 on `main`). Pros: every name a
-    person moves between can change. Cons: about 700 to 1,000 more lines; the
-    title test is rebuilt.
-  - **C:** the rooms only. Pros: smallest. Cons: the card names ("Your
-    Profile", "My Corner") stay fixed.
-- **Q9.2 Does Search find a renamed page or room by its old name?** Checked, not
-  answered in: the same sources.
+    person moves between can change. Cons: about 700 to 1,000 more lines in 3
+    more PRs; the title test is rebuilt.
+  - **C:** the rooms only. Pros: smallest: about 970 in 3 PRs, about 120 less.
+    Cons: the card names ("Your Profile", "My Corner") stay fixed.
+- **Q9.2 Does Search find a renamed page or room by its old name?** Jason's; it
+  goes to him as a card. Checked, not answered in: the same sources.
   - **A (recommended):** no. Search matches the name shown and the door's
-    existing keywords, unchanged. This avoids the problem the title test was
+    existing keywords, unchanged. Sized this way. This avoids the problem the title test was
     written for: "the catalog search found a page by a name the page never
     showed" (`doorLabelsMatchTitles.test.ts:7-9`).
   - **B:** yes, the default stays a search word. Pros: a member who learned the
     old name still finds it. Cons: Search shows a page for a name it does not
-    show.
+    show; about 20 more lines in RN-2 (judgement).
 
 ---
 
@@ -1132,14 +1152,14 @@ Gym. Under Q9.1 B, every page title also reads its door's name.
 
 | # | Item | PRs | Est. lines outside tests | Migrations | Route | G3 | Waits on |
 |---|---|---|---|---|---|---|---|
-| 1 | Email alerts (re-sized, W4R) | 7 (8 if Q1.11 B) | about 2,140 (2,290 if Q1.11 B) | 3 (4 if Q1.11 B) | Opus | yes | Q1.9 to Q1.11; a running tick |
+| 1 | Email alerts (re-sized, W4R) | 7 (8 if Q1.11 B) | about 2,140 (2,290 if Q1.11 B) | 3 (4 if Q1.11 B) | Opus | yes | Q1.11, Q1.12; a running tick |
 | 2 | Web push (later) | 3 (4 without the package) | about 890 (1,090 without the package) | 1 | Opus | yes | item 1; Q2.1, Q2.2; a key in Azure; a dependency call |
 | 3 | On the floor now | 4 | about 640 | 0 | Opus | yes | privacy review (FN-0, Q3.5); Q3.1 to Q3.4; #2012; U2 for the coach home |
 | 4 | Parent starts a message | 3 (0 if Q4.1 C) | about 970 (880 if B; 0 if C) | 1 (0 if C) | Opus | yes | Q4.1 to Q4.5; #2012 |
 | 5 | Plan blocks; class from a plan | 4 | about 1,150 | 0 or 1 | Opus (SP-1, SP-3, SP-4), Sonnet (SP-2) | no (INFERRED) | Q5.1, Q5.2; U2 for the class screen |
 | 6 | Stopped coming | 2 (3 if Q6.4 B) | about 550 | 0 (1 if Q6.4 B) | Opus | yes | Q6.1 to Q6.4; U2 for the door |
 | 7 | Offline save queue | 4 (6 if B) | about 1,120 (1,620 if B) | 0 or 1 | Opus | yes | BLOCKED: Q7.1, Q7.2 |
-| 8 | Typed lines to drills | 8 | about 2,530 (Q8.1 answered B) | 0 | Opus | no (INFERRED) | Q8.2 (#2008 has merged) |
+| 8 | Typed lines to drills | 8 | about 2,530 (Q8.1 answered B) | 0 | Opus | no (INFERRED) | no open question (#2008 has merged) |
 | 9 | Room renaming (W4R) | 4 (7 if Q9.1 B; 3 if C) | about 1,090 (1,790 to 2,090 if B; 970 if C) | 1 | Opus (RN-1), Sonnet (RN-2 to RN-4) | no (INFERRED) | Q9.1, Q9.2; #2029; U2's 4b; AS8-4 |
 
 **Total (INFERRED):**
@@ -1158,16 +1178,14 @@ PRs, about 9,050 lines and 30 questions.
   the sizes were made").
 - **Migrations:** 7 or 8 with the recommended answers; 5 to 10 across all
   answers.
-- **Questions:** 25 open.
-  - The open ones are Q1.9 to Q1.11, Q2.1 to Q2.2, Q3.1 to Q3.5, Q4.1, Q4.2,
-    Q4.4, Q4.5, Q5.1 to Q5.2, Q6.1 to Q6.4, Q7.1 to Q7.2, Q8.2, and Q9.1 to
-    Q9.2.
-  - Answered in OD-2026-11-20-001: Q1.1 to Q1.8 and Q8.1. Q4.3 is folded into
-    Q1.9.
-  - Q8.2: Backbone's note 18, quoted in OD-2026-11-20-001, says "with Q8.2
-    ruled". A search of `OWNER_DECISIONS.md` for "Q8.2" found no other line.
-    It is not re-asked: it stays listed only until Overwatch confirms where it
-    was ruled.
+- **Questions:** 23 open. Each is written out once, in its item.
+  - Open: Q1.11, Q1.12, Q2.1 to Q2.2, Q3.1 to Q3.5, Q4.1, Q4.2, Q4.4, Q4.5,
+    Q5.1 to Q5.2, Q6.1 to Q6.4, Q7.1 to Q7.2, and Q9.1 to Q9.2.
+  - Jason's, going to him as cards (Overwatch on #2050): Q1.11, Q9.1 and Q9.2.
+  - Answered in OD-2026-11-20-001: Q1.1 to Q1.8 and Q8.1.
+  - Answered by Overwatch on #2050: Q1.9 (as a reading, INFERRED), Q1.10 (its
+    pick under Jason's OW27-06 delegation) and Q8.2 (from OD-2026-11-19-030).
+    Q4.3 is folded into Q1.9.
 - **Route:** 35 of the 39 PRs route to Opus. SP-2 is Sonnet unless SP-1 finds a
   contact gate; RN-2 to RN-4 are Sonnet.
 - **Not given here:** a completion date. This lane did not measure lane
@@ -1175,7 +1193,8 @@ PRs, about 9,050 lines and 30 questions.
 
 **Order that the dependencies allow (INFERRED):**
 
-- Item 8: #2008 has merged and Q8.1 is answered; it needs only Q8.2.
+- Item 8: #2008 has merged, and Q8.1 and Q8.2 are answered; no question is
+  open.
 - Items 1, 4 and 6 need only their questions, apart from these:
   - Item 1's EM-3 needs a tick confirmed (#2013 has merged).
   - Item 4's PM-1 waits for #2012, and its staff side for #2010's Decision
