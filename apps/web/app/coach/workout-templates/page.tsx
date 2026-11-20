@@ -7,9 +7,12 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
 import { orNotWritten } from '@/src/lib/drillPresentation';
+import { AI_DRAFT_MARK, DRAFT_NOT_CHECKED } from '@/src/lib/sessionScriptWords';
 import MakeSessionScript from './MakeSessionScript';
 import TemplateEditForm, { type TemplateEditOutcome } from './TemplateEditForm';
 import type {
+  TemplateFieldDrafts,
+  TemplateMarkedField,
   WorkoutTemplateItemWithDrillHead,
   WorkoutTemplateRow,
 } from '@/src/server/pilot/workoutTemplates';
@@ -48,6 +51,8 @@ interface TemplateDetail {
    * reader. null: the check could not run.
    */
   refusedDrills?: RefusedDrill[] | null;
+  /** Which shown fields are still AI drafts (lane ED-UI PR3): sent to coaches and admins only; undefined when not sent. */
+  fieldDrafts?: TemplateFieldDrafts;
 }
 
 // ---------------------------------------------------------------------------
@@ -711,6 +716,50 @@ function templateMatches(template: Template, query: string): boolean {
   return words.every((word) => hay.includes(word));
 }
 
+// THE STAFF AI-DRAFT MARK (OW25-57, OD-2026-11-19-012: coaches and admins only; lane ED-UI PR3, Q5 = A).
+// The route sends field_drafts to a coach or organization admin alone. Beside each drafted field; a
+// labelled version's unchecked field says so; a version with no label row says so once (Q4 = A).
+// The 6e mark and words (sessionScriptWords.ts). The words take --bone-200, the design system's
+// lift for a small voice on lit leather (OD-2026-10-02-010), inline: .t-label is unlayered.
+const LIFT = { color: 'var(--bone-200)' } as const;
+
+function DraftMark({ state }: { state: boolean | null | undefined }) {
+  if (state === false) return null;
+  if (state === true) return <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>;
+  return <span className="ml-[var(--s2)] normal-case tracking-normal" style={LIFT}>({DRAFT_NOT_CHECKED})</span>;
+}
+
+function draftMark(detail: TemplateDetail, field: TemplateMarkedField) {
+  return detail.fieldDrafts?.labelled === true ? <DraftMark state={detail.fieldDrafts[field]} /> : null;
+}
+
+/** The opened template's fields as a short list (Q5 = A), each with its mark. The name is the heading. */
+function TemplateFacts({ detail }: { detail: TemplateDetail }) {
+  const { template, fieldDrafts } = detail;
+  const facts: Array<[TemplateMarkedField, string, string]> = [
+    ['session_type', 'Session type', template.session_type.replace(/_/g, ' ')],
+    ['difficulty', 'Difficulty', orNotWritten(template.difficulty)],
+    ['age_band', 'Age group', orNotWritten(template.age_band.replace(/_/g, ' '))],
+    ['duration_minutes', 'Minutes', template.duration_minutes === null ? orNotWritten(null) : String(template.duration_minutes)],
+    ['intent', 'Intent', orNotWritten(template.intent)],
+    ['requires_coach_authorization', 'Coach authorization', template.requires_coach_authorization ? 'Required' : 'Not required'],
+  ];
+  return (
+    <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+      {fieldDrafts && fieldDrafts.labelled !== true && <p className="t-body mb-[var(--s2)]" style={LIFT}>({DRAFT_NOT_CHECKED})</p>}
+      {/* On a phone each label sits over its value, so a value keeps the width to read in. */}
+      <dl className="grid grid-cols-1 items-baseline gap-x-[var(--s3)] gap-y-[var(--s1)] sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-y-[var(--s2)]">
+        {facts.map(([field, label, value]) => (
+          <div key={field} className="contents">
+            <dt className="t-label" style={LIFT}>{label}</dt>
+            <dd className="t-body text-[color:var(--bone-300)]">{value}{draftMark(detail, field)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function CoachWorkoutTemplates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -804,9 +853,10 @@ function CoachWorkoutTemplates() {
         { method: 'GET', credentials: 'include' },
       );
       if (!response.ok) throw new Error('That workout template could not be opened.');
-      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills' | 'refusedDrills'>> & {
+      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills' | 'refusedDrills' | 'fieldDrafts'>> & {
         untested_drills?: unknown;
         refused_drills?: unknown;
+        field_drafts?: unknown;
       };
       if (!payload.template) throw new Error('That workout template could not be opened.');
       if (latest()) {
@@ -819,6 +869,9 @@ function CoachWorkoutTemplates() {
           refusedDrills: payload.refused_drills === undefined
             ? undefined
             : Array.isArray(payload.refused_drills) ? refusedDrillsFrom(payload.refused_drills) : null,
+          fieldDrafts: typeof payload.field_drafts === 'object' && payload.field_drafts !== null
+            ? (payload.field_drafts as TemplateFieldDrafts)
+            : undefined,
         });
       }
     } catch (error) {
@@ -928,14 +981,17 @@ function CoachWorkoutTemplates() {
             aria-labelledby="open-template-heading"
             className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] md:col-span-2"
           >
-            <h2
-              id="open-template-heading"
-              ref={detailHeadingRef}
-              tabIndex={-1}
-              className="t-command text-[length:var(--t-lg)]"
-            >
-              {detail ? detail.template.name : 'Workout template'}
-            </h2>
+            <div className="flex flex-wrap items-baseline">
+              <h2
+                id="open-template-heading"
+                ref={detailHeadingRef}
+                tabIndex={-1}
+                className="t-command text-[length:var(--t-lg)]"
+              >
+                {detail ? detail.template.name : 'Workout template'}
+              </h2>
+              {detail && editingId !== detail.template.template_id && draftMark(detail, 'name')}
+            </div>
 
             {detailLoading && (
               <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading the template...</p>
@@ -983,14 +1039,18 @@ function CoachWorkoutTemplates() {
                     </button>
                   </div>
                 )}
+                <TemplateFacts detail={detail} />
                 {(detail.template.coach_notes ?? '').trim() !== '' && (
                   <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-                    <p className="t-label">Coach notes</p>
+                    <p className="t-label">Coach notes{draftMark(detail, 'coach_notes')}</p>
                     <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{detail.template.coach_notes}</p>
                   </div>
                 )}
 
-                <h3 className="t-command mt-[var(--s5)] text-[length:var(--t-md)]">The blocks</h3>
+                <div className="mt-[var(--s5)] flex flex-wrap items-baseline">
+                  <h3 className="t-command text-[length:var(--t-md)]">The blocks</h3>
+                  {draftMark(detail, 'items')}
+                </div>
 
                 {detail.items.length === 0 && (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
