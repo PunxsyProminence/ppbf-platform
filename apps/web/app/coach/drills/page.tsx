@@ -628,6 +628,9 @@ function CoachDrillLibrary() {
   // focus move all describe THAT action on THAT drill, so none of them may
   // land on another drill or be mixed up with a second action.
   const actionInFlight = promotingReferenceId !== '' || changingLifecycle || markingFloorTestedId !== '' || editBusy;
+  // While the Edit form is open, Cancel is its one way out: Back and every
+  // control that opens a drill would close it and drop what the coach typed.
+  const leavingLocked = actionInFlight || editingId !== '';
 
   // Name search and the durable filters, applied to the list the server sent.
   const searchTerm = search.trim().toLowerCase();
@@ -875,6 +878,18 @@ function CoachDrillLibrary() {
       await loadReferenceLibrary();
       await openReferenceDrill(outcome.drillId, openerRef.current);
       setPromoteNotice(`Saved as version ${outcome.version}.`);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  // After a failed save: the same re-reads every other action here makes
+  // (afterFailedAction). A 409 or an unknown outcome may mean this page is out
+  // of date -- another version, or this save, may have landed -- so the lists
+  // and the open drill are read again; a plain refusal reads nothing.
+  async function afterEditFailed(status: number | null) {
+    try {
+      await afterFailedAction(status, openReferenceId, openRequestRef.current);
     } finally {
       setEditBusy(false);
     }
@@ -1177,7 +1192,7 @@ function CoachDrillLibrary() {
           {/* LEVEL 2: the opened reference drill, with Promote on it. */}
           {openReferenceId && (
             <div className="mt-[var(--s4)] space-y-[var(--s4)]">
-              <button type="button" onClick={closeReferenceDrill} disabled={actionInFlight} className="btn btn--ghost">
+              <button type="button" onClick={closeReferenceDrill} disabled={leavingLocked} className="btn btn--ghost">
                 Back to the reference library
               </button>
               {openReferenceLoading && <p className="t-body text-[color:var(--bone-300)]">Loading the drill...</p>}
@@ -1189,10 +1204,12 @@ function CoachDrillLibrary() {
               )}
               {!openReferenceLoading && openReference && openReferenceDetail && editingId === openReference.id && (
                 <DrillEditForm
+                  key={openReferenceDetail.drill_id}
                   drill={openReferenceDetail}
                   onCancel={() => setEditingId('')}
                   onSaved={(outcome) => void afterEditSaved(outcome)}
-                  onBusyChange={setEditBusy}
+                  onSaving={() => setEditBusy(true)}
+                  onFailed={(status) => void afterEditFailed(status)}
                 />
               )}
               {!openReferenceLoading && openReference && (editingId !== openReference.id || !openReferenceDetail) && (
@@ -1335,7 +1352,7 @@ function CoachDrillLibrary() {
                     type="button"
                     id={`view-reference-${drill.drill_id}`}
                     onClick={() => void openReferenceDrill(drill.drill_id, `view-reference-${drill.drill_id}`)}
-                    disabled={actionInFlight}
+                    disabled={leavingLocked}
                     className="btn btn--ghost"
                     aria-label={`View drill: ${drill.name}`}
                   >
@@ -1439,7 +1456,7 @@ function CoachDrillLibrary() {
                     type="button"
                     id={`view-instructions-${drill.drill_id}`}
                     onClick={() => void openReferenceDrill(drill.reference_drill_id as string, `view-instructions-${drill.drill_id}`)}
-                    disabled={actionInFlight}
+                    disabled={leavingLocked}
                     className="btn btn--ghost mt-[var(--s3)]"
                     aria-label={`View instructions: ${drill.name}`}
                   >

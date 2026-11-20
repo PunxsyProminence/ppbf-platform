@@ -7,7 +7,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import DrillEditForm, { DRILL_EDIT_FORM_KEYS, type DrillEditOutcome } from './DrillEditForm';
 import { cueRequiredMessage } from '@/src/lib/drillCueRule';
-import { EDITABLE_DRILL_LIBRARY_KEYS } from '@/src/server/pilot/drillLibraryEdit';
+import { EDITABLE_DRILL_LIBRARY_KEYS, MAX_LONG_TEXT, MAX_SHORT_TEXT } from '@/src/server/pilot/drillLibraryEdit';
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
@@ -75,9 +75,10 @@ function renderForm(options: { drill?: DrillWithDetail; answer?: () => Promise<R
   global.fetch = fetchMock as unknown as typeof fetch;
   const onSaved = jest.fn<void, [DrillEditOutcome]>();
   const onCancel = jest.fn();
-  const onBusyChange = jest.fn<void, [boolean]>();
-  render(<DrillEditForm drill={options.drill ?? drill} onSaved={onSaved} onCancel={onCancel} onBusyChange={onBusyChange} />);
-  return { fetchMock, onSaved, onCancel, onBusyChange };
+  const onSaving = jest.fn();
+  const onFailed = jest.fn<void, [number | null]>();
+  render(<DrillEditForm drill={options.drill ?? drill} onSaved={onSaved} onCancel={onCancel} onSaving={onSaving} onFailed={onFailed} />);
+  return { fetchMock, onSaved, onCancel, onSaving, onFailed };
 }
 
 function sentBody(fetchMock: jest.Mock) {
@@ -110,7 +111,7 @@ it('opens on the drill as it is, under "Edit <name>", with focus on its heading'
 });
 
 it('sends only what changed, part by part, and hands the new version up', async () => {
-  const { fetchMock, onSaved, onBusyChange } = renderForm();
+  const { fetchMock, onSaved, onSaving, onFailed } = renderForm();
   change('What it is for', 'Protect the chin.');
   change('Corrections', 'Coach calls home on every return');
   change('Contact', 'none');
@@ -125,8 +126,9 @@ it('sends only what changed, part by part, and hands the new version up', async 
     contact_level: 'none',
     requires_coach_authorization: true,
   });
-  // Busy goes on with the request and is left on for the page's re-reads.
-  expect(onBusyChange.mock.calls).toEqual([[true]]);
+  // The page is told a save went out, and then how it ended.
+  expect(onSaving).toHaveBeenCalledTimes(1);
+  expect(onFailed).not.toHaveBeenCalled();
 });
 
 it('writes nothing when nothing changed, and says so through the page', () => {
@@ -161,6 +163,14 @@ describe('the cue rule, checked before save as the server checks it (OD-2026-10-
     expect(onSaved).not.toHaveBeenCalled();
   });
 
+  it('takes the exemption from the discipline, not a category that says conditioning', () => {
+    const { fetchMock } = renderForm({ drill: { ...drill, category: 'conditioning' } as DrillWithDetail });
+    change('Coaching cues, one per line', '');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(cueRequiredMessage('Jab return'));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('lets a conditioning drill go without a cue', async () => {
     const { fetchMock } = renderForm({ drill: { ...drill, discipline: 'conditioning' } as DrillWithDetail });
     change('Coaching cues, one per line', '');
@@ -180,34 +190,49 @@ describe('the cue rule, checked before save as the server checks it (OD-2026-10-
 });
 
 describe('a refusal is shown as the server words it', () => {
-  it('a 409 is the server\'s sentence, and nothing more is claimed', async () => {
+  it('a 409 is the server\'s sentence and that nothing changed, and the page is told the status', async () => {
     const stale = 'This is not the current version of the drill. Reload it and edit the current version.';
-    const { onSaved, onBusyChange } = renderForm({ answer: async () => jsonResponse({ error: stale, code: 'DRILL_VERSION_STALE' }, 409) });
+    const { onSaved, onFailed } = renderForm({ answer: async () => jsonResponse({ error: stale, code: 'DRILL_VERSION_STALE' }, 409) });
     change('What it is for', 'Protect the chin.');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(stale);
+    expect(alert).toHaveTextContent('Nothing was changed. This drill is as it was.');
     expect(alert).not.toHaveTextContent('It is not known');
     expect(onSaved).not.toHaveBeenCalled();
-    expect(onBusyChange.mock.calls).toEqual([[true], [false]]);
+    expect(onFailed).toHaveBeenCalledWith(409);
     // The coach's text is still there to fix and save again.
     expect(screen.getByLabelText('What it is for')).toHaveValue('Protect the chin.');
   });
 
-  it('a fault or a lost answer says it is not known whether the change was saved', async () => {
-    renderForm({ answer: async () => { throw new TypeError('Failed to fetch'); } });
+  // Only what is known: never "could not be saved", nothing changed, or the browser's own words.
+  const expectOnlyUnknown = (alert: HTMLElement) => {
+    expect(alert).toHaveTextContent(/^▲ It is not known whether this change was saved\.$/);
+  };
+
+  it('a lost answer says only that it is not known whether the change was saved', async () => {
+    const { onFailed } = renderForm({ answer: async () => { throw new TypeError('Failed to fetch'); } });
     change('What it is for', 'Protect the chin.');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('It is not known whether this change was saved.');
+    expectOnlyUnknown(await screen.findByRole('alert'));
+    expect(onFailed).toHaveBeenCalledWith(null);
   });
 
   it('a 500 says the same', async () => {
-    renderForm({ answer: async () => jsonResponse({ error: 'Unknown server error' }, 500) });
+    const { onFailed } = renderForm({ answer: async () => jsonResponse({ error: 'Unknown server error' }, 500) });
     change('What it is for', 'Protect the chin.');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Unknown server error');
-    expect(alert).toHaveTextContent('It is not known whether this change was saved.');
+    expectOnlyUnknown(await screen.findByRole('alert'));
+    expect(onFailed).toHaveBeenCalledWith(500);
+  });
+
+  it('a success that does not say what it wrote says the same, and is not a save', async () => {
+    const { onFailed, onSaved } = renderForm({ answer: async () => jsonResponse({ ok: true }) });
+    change('What it is for', 'Protect the chin.');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expectOnlyUnknown(await screen.findByRole('alert'));
+    expect(onFailed).toHaveBeenCalledWith(null);
+    expect(onSaved).not.toHaveBeenCalled();
   });
 });
 
@@ -217,4 +242,31 @@ it('keeps a value outside the vocabulary selectable, so an untouched select send
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(fetchMock).not.toHaveBeenCalled();
   expect(onSaved).toHaveBeenCalledWith({ changed: false });
+});
+
+it('never sends cues nobody typed in, even when the stored text would read as changed', async () => {
+  const untrimmed = { ...drill, cues: [{ ...(drill.cues[0]), cue_text: ' Hand home first ' }] } as unknown as DrillWithDetail;
+  const { fetchMock } = renderForm({ drill: untrimmed });
+  change('What it is for', 'Protect the chin.');
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  expect(sentBody(fetchMock)).toEqual({ drill_id: 'drl-1', purpose: 'Protect the chin.' });
+});
+
+it('cannot be typed past the route\'s bounds', () => {
+  renderForm();
+  expect(screen.getByLabelText('Name')).toHaveAttribute('maxLength', String(MAX_SHORT_TEXT));
+  expect(screen.getByLabelText('Category')).toHaveAttribute('maxLength', String(MAX_SHORT_TEXT));
+  expect(screen.getByLabelText('How it runs')).toHaveAttribute('maxLength', String(MAX_LONG_TEXT));
+});
+
+it('locks the fields while a save runs', async () => {
+  let answer: (response: Response) => void = () => {};
+  renderForm({ answer: () => new Promise<Response>((resolve) => { answer = resolve; }) });
+  change('What it is for', 'Protect the chin.');
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByLabelText('What it is for')).toBeDisabled();
+  answer(jsonResponse({ error: 'Refused.' }, 400));
+  await screen.findByRole('alert');
+  expect(screen.getByLabelText('What it is for')).toBeEnabled();
 });

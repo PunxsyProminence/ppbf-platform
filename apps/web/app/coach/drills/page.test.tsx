@@ -29,7 +29,7 @@ jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
 // The session's raw pilot role, for who is offered Adopt and Decline (#1471).
 // Mocked so the session read is not one more POST in every test's writes().
-let mockSessionRole: PilotSessionRole = 'coach';
+let mockSessionRole: PilotSessionRole | null = 'coach';
 jest.mock('@/components/usePilotSession', () => ({
   ...jest.requireActual('@/components/usePilotSession'),
   usePilotSession: () => ({ loading: false, role: mockSessionRole, organizationId: 'org-1', authProvider: null, accountId: 'acct-hidden', mustChangePin: false }),
@@ -2625,6 +2625,14 @@ describe('Edit (lane ED-UI)', () => {
     },
   );
 
+  it('is not offered while the session role is still unread', async () => {
+    mockSessionRole = null;
+    global.fetch = routes() as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    expect(editButton()).not.toBeInTheDocument();
+  });
+
   it('is not offered on a superseded version, which the route refuses to edit', async () => {
     global.fetch = routes({ details: { [reference.drill_id]: { ...referenceDetail, superseded_at: '2026-11-01T00:00:00.000Z' } } }) as unknown as typeof fetch;
     render(<CoachDrillLibraryPage />);
@@ -2683,23 +2691,61 @@ describe('Edit (lane ED-UI)', () => {
     expect(writes(fetchMock)).toEqual([]);
   });
 
-  it('holds Back while the save runs, and shows the server\'s refusal in the form', async () => {
+  it('while the form is open, Cancel is the one way out: nothing else can close it and drop what was typed', async () => {
+    global.fetch = routes({ operational: [authored, promoted], lifecycle: { [reference.drill_id]: { state: 'operational', operational_drill_id: promoted.drill_id } } }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'View instructions: Seeded jab return' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeEnabled();
+  });
+
+  it('after a 409, reads the drill again, so Cancel shows it as it now is', async () => {
     let answer: (response: Response) => void = () => {};
     const stale = 'This is not the current version of the drill. Reload it and edit the current version.';
-    global.fetch = routes({ editLibrary: () => new Promise<Response>((resolve) => { answer = resolve; }) }) as unknown as typeof fetch;
+    const fetchMock = routes({
+      editLibrary: () => new Promise<Response>((resolve) => { answer = resolve; }),
+      // Another coach's edit landed first: the re-read finds this version superseded.
+      detailRead: (read) => (read >= 2
+        ? jsonResponse({ drill: { ...referenceDetail, superseded_at: '2026-11-20T00:00:00.000Z' }, lifecycle: NOT_ADOPTED, floor_tested: null })
+        : undefined),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
     render(<CoachDrillLibraryPage />);
     await openReference();
     fireEvent.click(editButton()!);
     fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
     await act(async () => {
       answer(jsonResponse({ error: stale, code: 'DRILL_VERSION_STALE' }, false, 409));
     });
 
     expect(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByRole('alert')).toHaveTextContent(stale);
-    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeEnabled();
+    await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1')).toBe(2));
+    // What was typed is still there to copy; Cancel then shows the drill as the server now has it.
+    expect(screen.getByLabelText('What it is for', { selector: 'textarea[id^="edit-drill-"]' })).toHaveValue('Bring the hand home.');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const drill = await screen.findByRole('article', { name: 'Seeded jab return' });
+    expect(within(drill).getByText(/Superseded by a newer version\./)).toBeInTheDocument();
+    expect(editButton()).not.toBeInTheDocument();
+  });
+
+  it('after an answer that never came, reads the library and the drill again', async () => {
+    const fetchMock = routes({ editLibrary: async () => { throw new TypeError('Failed to fetch'); } });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    const libraryReadsBefore = readsOf(fetchMock, '/api/pilot/drill-library');
+    fireEvent.click(editButton()!);
+    fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('It is not known whether this change was saved.')).toBeInTheDocument();
+    await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1')).toBe(2));
+    expect(readsOf(fetchMock, '/api/pilot/drill-library')).toBe(libraryReadsBefore + 1);
   });
 });

@@ -9,27 +9,15 @@ import { VOCABULARIES } from '@/src/server/pilot/contentImport/vocabularies';
 import type { DRILL_TEXT_FIELDS } from '@/src/server/pilot/drillLibraryEdit';
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 
-// THE EDIT BUTTON'S FORM (OD-2026-11-19-005, OW25-51: "we will make sure we
-// have an EDit button"; lane ED-UI PR1). It edits one library drill through
-// PATCH /api/pilot/drill-library, which writes the drill's next version and
-// never edits in place (drillLibraryEdit.ts). This form adds no rule of its
-// own: who may edit, the bounds, the vocabularies and the cue rule are the
-// server's, and a refusal is shown as the server words it.
-//
-// WHAT IT SENDS is only what the coach changed, so text nobody touched keeps
-// its AI-draft label (OD-2026-11-15-011 ruling 2; the server compares too).
-// The fields are the route's editable keys (EDITABLE_DRILL_LIBRARY_KEYS) but
-// the scale levels and stop rules, which lane ED-UI PR1b adds. The
-// never-editable keys (field_provenance, discipline, ...) are not on it.
-//
-// ONE CHECK BEFORE SAVE, the cue rule (OD-2026-10-06-026 ruling 2), judged as
-// the server judges it: only when the cues change, with the conditioning
-// exemption read from the drill's discipline (drillCueRule.ts), in the
-// server's own words (cueRequiredMessage). Everything else is the server's.
-//
-// Labels are the drill page's own words (DrillDetail.tsx headings, the Add a
-// drill form, the page's filters). It sits on the dark shelf panel the Add a
-// drill form uses (`mat-leather`), so its ink is the one proven readable there.
+// THE EDIT BUTTON'S FORM (OD-2026-11-19-005, OW25-51; lane ED-UI PR1): one
+// library drill through PATCH /api/pilot/drill-library, which writes its next
+// version (drillLibraryEdit.ts). Roles, bounds, vocabularies and the cue rule
+// are the server's; a refusal is shown in its words. Only what changed is sent,
+// so untouched text keeps its AI-draft label (OD-2026-11-15-011 ruling 2).
+// Scale levels and stop rules are PR1b. The one check before save is the cue
+// rule (OD-2026-10-06-026 ruling 2), judged as the server judges it. Labels are
+// the drill page's own words; the dark `mat-leather` panel is the Add a drill
+// form's, so its ink is the one proven readable there.
 
 type TextKey = (typeof DRILL_TEXT_FIELDS)[number];
 
@@ -67,6 +55,8 @@ interface Values {
   text: Record<TextKey, string>;
   /** One cue per line. */
   cues: string;
+  /** The cue box was typed in. Untouched, the cues are never sent, so their label is never at risk. */
+  cuesEdited: boolean;
 }
 
 function initialValues(drill: DrillWithDetail): Values {
@@ -82,6 +72,7 @@ function initialValues(drill: DrillWithDetail): Values {
       .sort((a, b) => a.cue_family.localeCompare(b.cue_family) || a.cue_text.localeCompare(b.cue_text))
       .map((cue) => cue.cue_text)
       .join('\n'),
+    cuesEdited: false,
   };
 }
 
@@ -107,7 +98,7 @@ function changedParts(drill: DrillWithDetail, values: Values): { body: Record<st
   }
   let cues: string[] | undefined;
   const lines = cueLines(values.cues);
-  if (!sameSet(lines, (drill.cues ?? []).map((cue) => cue.cue_text))) {
+  if (values.cuesEdited && !sameSet(lines, (drill.cues ?? []).map((cue) => cue.cue_text))) {
     cues = lines;
     body.cues = lines;
   }
@@ -117,9 +108,15 @@ function changedParts(drill: DrillWithDetail, values: Values): { body: Record<st
 export type DrillEditOutcome = { changed: false } | { changed: true; drillId: string; version: number };
 
 const SAVE_FAILED = 'The drill could not be saved.';
-// A fault or a dropped connection may have landed after the write committed
-// (the page's OUTCOME_EXPLANATIONS 'unknown' says the same of its actions).
+// A fault or a dropped connection may have landed after the write committed,
+// so it is said as unknown and nothing else (the page's OUTCOME_EXPLANATIONS
+// 'unknown'); a refusal changed nothing ('refused'). Both are the page's words.
 const SAVE_UNKNOWN = 'It is not known whether this change was saved.';
+const NOTHING_CHANGED = 'Nothing was changed. This drill is as it was.';
+// The route's bounds (drillLibraryEdit.ts MAX_SHORT_TEXT, MAX_LONG_TEXT; the
+// test holds them equal), so a field cannot be typed past what it refuses.
+const MAX_SHORT = 200;
+const MAX_LONG = 4000;
 
 /** The vocabulary, with the drill's current value first when the list does not hold it, so an untouched select changes nothing. */
 function optionsFor(list: readonly string[], current: string): string[] {
@@ -130,14 +127,17 @@ export default function DrillEditForm({
   drill,
   onCancel,
   onSaved,
-  onBusyChange,
+  onSaving,
+  onFailed,
 }: {
   drill: DrillWithDetail;
   onCancel: () => void;
-  /** Called once the server has answered a save, or when nothing changed. Busy stays on until the page clears it. */
+  /** Called once the server has answered a save, or when nothing changed. */
   onSaved: (outcome: DrillEditOutcome) => void;
-  /** True from the moment a save is sent; set back to false here only when it fails. */
-  onBusyChange: (busy: boolean) => void;
+  /** A save was sent: the page is busy until onSaved or onFailed has run its re-reads. */
+  onSaving: () => void;
+  /** A sent save failed: the response status, or null when the outcome is not known (no answer, or an answer that says nothing). */
+  onFailed: (status: number | null) => void;
 }) {
   const [values, setValues] = useState<Values>(() => initialValues(drill));
   const [saving, setSaving] = useState(false);
@@ -168,7 +168,7 @@ export default function DrillEditForm({
     setSaving(true);
     setError('');
     setUnknown(false);
-    onBusyChange(true);
+    onSaving();
     let status: number | null = null;
     try {
       const response = await fetch(`${apiBase()}/api/pilot/drill-library`, {
@@ -192,9 +192,10 @@ export default function DrillEditForm({
         throw new Error(SAVE_FAILED);
       }
     } catch (failure) {
-      setError(failure instanceof Error && failure.message ? failure.message : SAVE_FAILED);
-      setUnknown(status === null || status >= 500);
-      onBusyChange(false);
+      const outcomeUnknown = status === null || status >= 500;
+      setError(outcomeUnknown ? SAVE_UNKNOWN : (failure instanceof Error && failure.message) || SAVE_FAILED);
+      setUnknown(outcomeUnknown);
+      onFailed(status);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -206,7 +207,7 @@ export default function DrillEditForm({
   const textArea = ({ key, label, rows }: (typeof TEXT_FIELDS)[number]) => (
     <div key={key} className="field">
       <label htmlFor={id(key)} className="t-label">{label}</label>
-      <textarea id={id(key)} value={values.text[key]} onChange={(event) => setText(key, event.target.value)} rows={rows} className="textarea input--kiosk" />
+      <textarea id={id(key)} value={values.text[key]} onChange={(event) => setText(key, event.target.value)} rows={rows} maxLength={MAX_LONG} className="textarea input--kiosk" />
     </div>
   );
 
@@ -214,14 +215,16 @@ export default function DrillEditForm({
     <section aria-labelledby={id('heading')} className="mat-leather space-y-[var(--s4)] rounded-[var(--r-lg)] p-[var(--s5)]">
       <h2 id={id('heading')} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">Edit {drill.name}</h2>
 
-      <div className="grid gap-[var(--s4)] md:grid-cols-3">
+      {/* Nothing can be typed while a save runs: it would not be in the save. */}
+      <fieldset disabled={saving} className="min-w-0 space-y-[var(--s4)]">
+      <div className="grid gap-[var(--s4)] md:grid-cols-2">
         <div className="field">
           <label htmlFor={id('name')} className="t-label">Name</label>
-          <input id={id('name')} value={values.name} onChange={(event) => set('name', event.target.value)} className="input input--kiosk" />
+          <input id={id('name')} value={values.name} onChange={(event) => set('name', event.target.value)} maxLength={MAX_SHORT} className="input input--kiosk" />
         </div>
         <div className="field">
           <label htmlFor={id('category')} className="t-label">Category</label>
-          <input id={id('category')} value={values.category} onChange={(event) => set('category', event.target.value)} className="input input--kiosk" />
+          <input id={id('category')} value={values.category} onChange={(event) => set('category', event.target.value)} maxLength={MAX_SHORT} className="input input--kiosk" />
         </div>
         <div className="field">
           <label htmlFor={id('difficulty')} className="t-label">Difficulty</label>
@@ -231,7 +234,7 @@ export default function DrillEditForm({
         </div>
       </div>
 
-      <fieldset>
+      <fieldset className="min-w-0">
         <legend className="t-command mb-[var(--s3)] text-[length:var(--t-md)]">Safety</legend>
         <div className="grid gap-[var(--s4)] md:grid-cols-2">
           <div className="field">
@@ -261,18 +264,19 @@ export default function DrillEditForm({
 
       <div className="field">
         <label htmlFor={id('cues')} className="t-label">Coaching cues, one per line</label>
-        <textarea id={id('cues')} value={values.cues} onChange={(event) => set('cues', event.target.value)} rows={4} className="textarea input--kiosk" />
+        <textarea id={id('cues')} value={values.cues} onChange={(event) => setValues((prev) => ({ ...prev, cues: event.target.value, cuesEdited: true }))} rows={4} className="textarea input--kiosk" />
       </div>
 
-      <fieldset className="space-y-[var(--s3)]">
+      <fieldset className="min-w-0 space-y-[var(--s3)]">
         <legend className="t-command mb-[var(--s3)] text-[length:var(--t-md)]">Coaching notes</legend>
         {TEXT_FIELDS.filter(({ key }) => COACHING_NOTES.includes(key)).map(textArea)}
+      </fieldset>
       </fieldset>
 
       {error && (
         <div role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
           <p><span aria-hidden="true">▲</span> <span>{error}</span></p>
-          {unknown && <p className="mt-[var(--s2)]">{SAVE_UNKNOWN}</p>}
+          {!unknown && <p className="mt-[var(--s2)]">{NOTHING_CHANGED}</p>}
         </div>
       )}
 
