@@ -10,6 +10,8 @@ import { formatGymDateShort } from '@/src/lib/gymTime';
 import { PAIN_ESCALATION_LABEL } from '@/src/shared/painScoreLabel';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
+import { PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopArrival';
 
 /** Some of this digest's instants arrive as Postgres text ("2026-08-20
  *  00:00:00+00"), which not every browser parses. Written as ISO first. */
@@ -263,7 +265,18 @@ export default function CoachIntelligencePage() {
                     {digest.stalled_gaps.map((item) => (
                       <li key={`${item.athlete_id}:${item.gap_type}:${item.days_open}`} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                         <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
-                        {' '}— {item.gap_type}: {item.gap_description} ({item.days_open} days). <Link className="underline" href="/coach/progression-intelligence">Assign a drill</Link>
+                        {' '}— {item.gap_type}: {item.gap_description} ({item.days_open} days).{' '}
+                        {/* Opens Progression Intelligence on this athlete, in
+                            page memory, never the address (lane AS-11 Q5 = A). */}
+                        <Link
+                          className="underline"
+                          href={PROGRESSION_INTELLIGENCE_PAGE}
+                          onClick={(event) => {
+                            if (isPlainClick(event)) handOffArrivalAthlete(item.athlete_id, PROGRESSION_INTELLIGENCE_PAGE);
+                          }}
+                        >
+                          Assign a drill
+                        </Link>
                       </li>
                     ))}
                   </ul>

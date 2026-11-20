@@ -18,6 +18,8 @@ import type { CoachRosterAthlete, PilotAthlete } from '@/src/server/pilot/contra
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 import type { PilotDrill } from '@/src/server/pilot/drills';
 import type { AssignmentCompletion, DrillAssignment } from '@/src/server/pilot/progression';
+import { PASSBOOK_PAGE, PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import CoachProgressionIntelligencePage from './page';
 
 /* The role list the page hands its shell, captured on every render. The shell
@@ -539,6 +541,92 @@ describe('the roster picker', () => {
     await waitFor(() => {
       expect(screen.queryByRole('option', { name: 'ath-0f3c9a21' })).toBeNull();
     });
+  });
+});
+
+// Lane AS-11 (app scrub CF-23; Q5 = A): "Assign a drill" on Passbook Gaps and
+// the Morning Read opens this page on the gap's athlete. The athlete travels
+// in page memory, never in the address (#1474 Q2 = C), and is chosen only if
+// the roster, the server's answer to whom this coach may reach, lists them.
+describe('arriving from a link (lane AS-11)', () => {
+  const ROSTER: Pick<CoachRosterAthlete, 'athlete_id' | 'full_name'>[] = [
+    { athlete_id: 'ath-0f3c9a21', full_name: 'Rosa Delgado' },
+    { athlete_id: 'ath-7b21', full_name: 'Sam Reyes' },
+  ];
+
+  afterEach(() => {
+    takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE);
+    takeArrivalAthlete(PASSBOOK_PAGE);
+  });
+
+  function rosterFetch(roster: Promise<Response> | null = null) {
+    const mock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/athletes/list')) {
+        return roster ?? ({ ok: true, json: async () => ({ items: ROSTER }) } as Response);
+      }
+      return { ok: true, json: async () => ({ items: [] }) } as Response;
+    });
+    global.fetch = mock as unknown as typeof fetch;
+    return mock;
+  }
+
+  const gapReads = (mock: jest.Mock) =>
+    mock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/progression/gaps?'));
+
+  test('a hand-off opens the rostered athlete it names', async () => {
+    const mock = rosterFetch();
+    handOffArrivalAthlete('ath-7b21', PROGRESSION_INTELLIGENCE_PAGE);
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    await waitFor(() => {
+      expect((screen.getByLabelText('Select Athlete') as HTMLSelectElement).value).toBe('ath-7b21');
+    });
+    await waitFor(() => {
+      expect(gapReads(mock)).toEqual([expect.stringMatching(/athlete_id=ath-7b21$/)]);
+    });
+  });
+
+  test('a hand-off for an athlete not on the roster chooses nobody and reads nothing', async () => {
+    const mock = rosterFetch();
+    handOffArrivalAthlete('ath-not-mine', PROGRESSION_INTELLIGENCE_PAGE);
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    expect(await screen.findByRole('option', { name: 'Rosa Delgado' })).toBeTruthy();
+    expect((screen.getByLabelText('Select Athlete') as HTMLSelectElement).value).toBe('');
+    expect(gapReads(mock)).toEqual([]);
+  });
+
+  test('a hand-off meant for another page is not taken here', async () => {
+    const mock = rosterFetch();
+    handOffArrivalAthlete('ath-7b21', PASSBOOK_PAGE);
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    expect(await screen.findByRole('option', { name: 'Sam Reyes' })).toBeTruthy();
+    expect((screen.getByLabelText('Select Athlete') as HTMLSelectElement).value).toBe('');
+    expect(gapReads(mock)).toEqual([]);
+  });
+
+  test('a coach who chose someone before the roster answered keeps their own choice', async () => {
+    let answerRoster: (response: Response) => void = () => {};
+    const mock = rosterFetch(new Promise<Response>((resolve) => { answerRoster = resolve; }));
+    handOffArrivalAthlete('ath-7b21', PROGRESSION_INTELLIGENCE_PAGE);
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText(/Enter athlete ID/), { target: { value: 'ath-0f3c9a21' } });
+    });
+    await act(async () => {
+      answerRoster({ ok: true, json: async () => ({ items: ROSTER }) } as Response);
+    });
+    await waitFor(() => {
+      expect((screen.getByLabelText('Select Athlete') as HTMLSelectElement).value).toBe('ath-0f3c9a21');
+    });
+    expect(gapReads(mock).some((url) => url.endsWith('athlete_id=ath-7b21'))).toBe(false);
   });
 });
 

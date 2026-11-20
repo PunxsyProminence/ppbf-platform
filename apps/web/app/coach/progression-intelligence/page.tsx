@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import { PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
 import { readAssignmentInstruction, readReferenceInstruction } from '@/components/drills/drillInstructionRead';
 import { useDrillOpener } from '@/components/drills/useDrillOpener';
@@ -380,9 +382,29 @@ export default function CoachProgressionIntelligencePage() {
   // REQUEST ORDERING below). Written only in chooseAthlete, the one place the
   // selection changes.
   const selectedAthleteRef = useRef('');
+  // The athlete a link handed to this page ("Assign a drill" on Passbook Gaps
+  // and the Morning Read; lane AS-11, app scrub CF-23). It travels in page
+  // memory, never the address (#1474 Q2 = C). Undefined until taken, once, on
+  // the first mount; then the id or null until the roster answers.
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+
+  // A drill opened for one athlete's work is closed when the coach moves to
+  // another athlete, so it cannot reappear, expanded and unasked, on the way
+  // back -- and its read, if still in flight, is cancelled with it.
+  const chooseAthlete = (athleteId: string) => {
+    if (instruction.openKey) instruction.close({ returnFocus: false });
+    // A cancel question, failure or result belongs to the athlete it was
+    // asked about, and does not follow the coach to the next one.
+    setConfirmingCancel(null);
+    setCancelFailure(null);
+    setCancelNotice('');
+    selectedAthleteRef.current = athleteId;
+    setSelectedAthlete(athleteId);
+  };
 
   // Load roster + drill library once.
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE);
     void (async () => {
       try {
         const [rosterRes, drillsRes] = await Promise.all([
@@ -391,7 +413,18 @@ export default function CoachProgressionIntelligencePage() {
         ]);
         if (rosterRes.ok) {
           const data = (await rosterRes.json()) as { items?: RosterAthlete[] };
-          setRoster(data.items ?? []);
+          const items = data.items ?? [];
+          setRoster(items);
+          // The arriving athlete is chosen only if the roster, the server's
+          // answer to whom this coach may reach, lists them. Not listed, and
+          // the page opens as it always has, with nobody chosen. A coach who
+          // already chose someone (the free-text box shows before the roster
+          // answers) keeps their own choice.
+          const arriving = arrivalAthleteRef.current;
+          arrivalAthleteRef.current = null;
+          if (arriving && !selectedAthleteRef.current && items.some((athlete) => athlete.athlete_id === arriving)) {
+            chooseAthlete(arriving);
+          }
         }
         if (drillsRes.ok) {
           const data = (await drillsRes.json()) as { items?: DrillLibraryItem[] };
@@ -406,6 +439,11 @@ export default function CoachProgressionIntelligencePage() {
         setDrillsLoadFailed(true);
       }
     })();
+    // Loads once per visit. chooseAthlete is a new function on every render and
+    // is called only after the roster answers, for the athlete a link handed
+    // over; listing it would reload the roster and the drill library on every
+    // render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load deterministic suggestions once per visit. Best-effort: a coach with
@@ -871,20 +909,6 @@ export default function CoachProgressionIntelligencePage() {
   // After assigning: the instruction the assignment links to, resolved on the
   // server from the assignment itself -- so a drill the gym has since retired
   // still opens, at the version the work was assigned against.
-  // A drill opened for one athlete's work is closed when the coach moves to
-  // another athlete, so it cannot reappear, expanded and unasked, on the way
-  // back -- and its read, if still in flight, is cancelled with it.
-  const chooseAthlete = (athleteId: string) => {
-    if (instruction.openKey) instruction.close({ returnFocus: false });
-    // A cancel question, failure or result belongs to the athlete it was
-    // asked about, and does not follow the coach to the next one.
-    setConfirmingCancel(null);
-    setCancelFailure(null);
-    setCancelNotice('');
-    selectedAthleteRef.current = athleteId;
-    setSelectedAthlete(athleteId);
-  };
-
   const toggleAssignmentInstructions = (assignmentId: string) => {
     const key = `assignment:${assignmentId}`;
     if (instruction.openKey === key) {

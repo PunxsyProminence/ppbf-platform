@@ -8,13 +8,29 @@
 // admits items may exist; and the page carries the no-scores/no-predictions
 // framing the owner's approval was conditioned on.
 
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
+import { PASSBOOK_PAGE, PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import CoachIntelligencePage from './page';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+// A plain anchor that runs the link's own onClick, as next/link does, without
+// navigating (the pattern of the Escalations test, lane AS-5).
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href, className, onClick }: {
+    readonly children: React.ReactNode;
+    readonly href: string;
+    readonly className?: string;
+    readonly onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  }) => (
+    <a href={href} className={className} onClick={(event) => { event.preventDefault(); onClick?.(event); }}>{children}</a>
+  ),
 }));
 
 const DIGEST = {
@@ -175,4 +191,41 @@ test('a Postgres-text instant is read as the gym day too', async () => {
   });
 
   expect(screen.getByText(/hold expires Aug 19, 2026/)).toBeTruthy();
+});
+
+// Lane AS-11 (Q5 = A): "Assign a drill" opens Progression Intelligence on the
+// gap's athlete, who travels in page memory, never in the address.
+describe('"Assign a drill" carries the gap\'s athlete (lane AS-11)', () => {
+  afterEach(() => {
+    takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE);
+    takeArrivalAthlete(PASSBOOK_PAGE);
+  });
+
+  async function link() {
+    global.fetch = mockFetch({});
+    await act(async () => {
+      render(<CoachIntelligencePage />);
+    });
+    return screen.getByRole('link', { name: 'Assign a drill' });
+  }
+
+  test('a plain click hands the athlete to Progression Intelligence only, with no id in the address', async () => {
+    const assign = await link();
+    expect(assign.getAttribute('href')).toBe('/coach/progression-intelligence');
+    fireEvent.click(assign);
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBeNull();
+    fireEvent.click(assign);
+    expect(takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE)).toBe('ath-1');
+  });
+
+  test.each([
+    ['ctrl', { ctrlKey: true }],
+    ['cmd', { metaKey: true }],
+    ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
+    ['middle button', { button: 1 }],
+  ])('a %s click, which opens another tab, hands nothing over', async (_name, init) => {
+    fireEvent.click(await link(), init);
+    expect(takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE)).toBeNull();
+  });
 });
