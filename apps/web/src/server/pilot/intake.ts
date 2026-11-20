@@ -20,6 +20,7 @@ import {
   readsStaffGuardianRows,
   resolveFamilyReader,
 } from './familyGuardianView';
+import { refuseGuardianLinkToAdult } from './guardianAccess';
 import type { ReadinessMethod } from './readinessProvenance';
 import { getShadowEventTimeline, getShadowReviewProjection } from './shadowReadModels';
 
@@ -2106,8 +2107,24 @@ export async function linkGuardianAthlete(params: {
   // set, and any that starts later waits and reads this guardian. It needs a
   // transaction to hold the lock until commit, hence the wrap when the caller
   // passes no client.
+  //
+  // NO NEW LINK TO AN ADULT (lane GA; guardianAccess.refuseGuardianLinkToAdult).
+  // The date of birth is read on this transaction, after the lock and before
+  // the insert, so a refusal rolls back the caller's whole write (the guardian
+  // record domain-upsert wrote, or the athlete a promotion wrote). No row lock,
+  // as in guardianConsent.ts's assertGuardianLinkNotEnded: a correction that
+  // commits after this read can still let one link through, and that link is
+  // dormant at read time like any existing adult link. A missing athlete row
+  // is left to the foreign key, as before. to_char, not ::text, whose shape
+  // follows the session DateStyle.
   const link = async (tx: PoolClient) => {
     await lockConsentSet(tx, params.organizationId, params.athleteId, 'exclusive');
+    const athlete = await tx.query<{ dob: string | null }>(
+      `select to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
+       where organization_id = $1 and athlete_id = $2`,
+      [params.organizationId, params.athleteId],
+    );
+    if (athlete.rows[0]) refuseGuardianLinkToAdult(athlete.rows[0].dob);
     await tx.query(
       `insert into pilot.guardian_links
        (organization_id, parent_id, athlete_id, relationship_to_athlete)

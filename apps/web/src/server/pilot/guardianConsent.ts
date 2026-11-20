@@ -3,9 +3,9 @@ import type { QueryResultRow } from 'pg';
 import { lockConsentSet, lockConsentSets } from './consentSetLock';
 import { query, queryOne, withTransaction } from './db';
 import { accountDeletedSql } from './deletedAccountSignIn';
-import { ConflictError, ForbiddenError } from './errors';
+import { ConflictError } from './errors';
 import {
-  GUARDIAN_LINK_ENDED_MESSAGE,
+  GuardianLinkEndedError,
   guardianAthleteIds,
   guardianLinkEnded,
   guardianParentIdForAthlete,
@@ -777,14 +777,11 @@ async function writeMediaConsentUnderLock(
 
 /**
  * The guardian's consent change refused because the link has gone dormant
- * (guardianAccess.guardianLinkEnded). Its own class so the two consent routes
- * can audit the refusal by name and still answer 403 through jsonError.
+ * (guardianAccess.guardianLinkEnded). The class lives in guardianAccess.ts
+ * now, so the link writer in intake.ts can throw the same refusal; it is
+ * re-exported here so the consent routes' imports are unchanged.
  */
-export class GuardianLinkEndedError extends ForbiddenError {
-  constructor() {
-    super(GUARDIAN_LINK_ENDED_MESSAGE, 'GUARDIAN_LINK_ENDED');
-  }
-}
+export { GuardianLinkEndedError };
 
 /*
  * THE 18 RULE ON THE WRITE SIDE. OD-2026-10-07-008: the guardian link stops

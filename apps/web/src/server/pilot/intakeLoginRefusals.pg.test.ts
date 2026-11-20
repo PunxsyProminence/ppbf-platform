@@ -575,3 +575,89 @@ describe('item 4: a second login for an athlete who already has one', () => {
     expect(await accountRow(FIRST_LOGIN)).toMatchObject({ athlete_id: ATHLETE, pin_hash: null, active_flag: false });
   });
 });
+
+/* ── Lane GA: a promotion naming a guardian for an athlete 18 or over ───────
+   Overwatch Q3 A: the whole promotion is refused, with nothing written. The
+   route runs its writes on one transaction in this order (review-action
+   route.ts, the athlete record, the guardian's login, the guardian record,
+   then the link); linkGuardianAthlete reads the date of birth on that same
+   transaction, so it sees the athlete the promotion has just written, and its
+   GUARDIAN_LINK_ENDED refusal (OD-2026-10-07-008; Q1 A) rolls every one of
+   those writes back. The same sequence, unrefused, is the positive control.
+   The route's own answer to the refusal (403, nothing after it runs) is pinned
+   in review-action/route.test.ts. */
+describe('lane GA: a promotion with a guardian for an athlete 18 or over', () => {
+  const gymYmd = (date: Date) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  const nextDay = (ymd: string) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  };
+  const minus18 = (ymd: string, leapDay: '02-28' | '03-01') => {
+    const year = Number(ymd.slice(0, 4)) - 18;
+    const monthDay = ymd.slice(5);
+    return `${year}-${monthDay === '02-29' ? leapDay : monthDay}`;
+  };
+  const GYM_TODAY = gymYmd(new Date());
+
+  /** The promotion's in-transaction writes, in the route's order. */
+  function promote(athleteId: string, dob: string, guardianAccountId: string) {
+    return db.withTransaction(async (tx) => {
+      await tx.query(
+        `insert into pilot.athletes (
+           organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+           emergency_contact, active_flag, coach_id, created_at, updated_at
+         ) values ($1, $2, $2, $3::date, 'open-70kg', 'active', 'n/a', true, $4, now(), now())`,
+        [ORG, athleteId, dob, COACH_ID],
+      );
+      const provisioned = await staffProvisioning.createOrUpdateMicrosoftStaffAccount({
+        loginEmail: `${guardianAccountId}@example.org`,
+        organizationId: ORG,
+        role: 'parent',
+        accountIdHint: guardianAccountId,
+        refuseRoleChange: true,
+        refuseDeactivatedLogin: true,
+      }, tx);
+      await intake.upsertGuardian({
+        organizationId: ORG,
+        parentId: `par-${athleteId}`,
+        accountId: provisioned.accountId,
+        fullName: 'Promoted Guardian',
+      }, tx);
+      await intake.linkGuardianAthlete({
+        organizationId: ORG,
+        parentId: `par-${athleteId}`,
+        athleteId,
+        relationshipToAthlete: 'guardian',
+      }, tx);
+    });
+  }
+
+  async function exists(sql: string, params: unknown[]): Promise<boolean> {
+    return (await db.query(sql, params)).length > 0;
+  }
+
+  test('an athlete who turned 18 today: refused GUARDIAN_LINK_ENDED, and the athlete, the login, the guardian and the link are all rolled back', async () => {
+    await expect(promote('ath-ga-adult', minus18(GYM_TODAY, '02-28'), 'acct-ga-adult-guardian')).rejects.toMatchObject({
+      status: 403,
+      code: 'GUARDIAN_LINK_ENDED',
+      message: 'Forbidden: this athlete is 18 or older; guardian access has ended',
+    });
+
+    expect(await exists('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, 'ath-ga-adult'])).toBe(false);
+    expect(await accountRow('acct-ga-adult-guardian')).toBeNull();
+    expect(await exists('select 1 from pilot.parents where organization_id = $1 and parent_id = $2', [ORG, 'par-ath-ga-adult'])).toBe(false);
+    expect(await exists('select 1 from pilot.guardian_links where organization_id = $1 and athlete_id = $2', [ORG, 'ath-ga-adult'])).toBe(false);
+  });
+
+  test('the same promotion for an athlete who turns 18 tomorrow commits all four', async () => {
+    await promote('ath-ga-tomorrow', minus18(nextDay(GYM_TODAY), '03-01'), 'acct-ga-tomorrow-guardian');
+
+    expect(await exists('select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, 'ath-ga-tomorrow'])).toBe(true);
+    expect((await accountRow('acct-ga-tomorrow-guardian'))?.active_flag).toBe(true);
+    expect(await exists(
+      'select 1 from pilot.guardian_links where organization_id = $1 and parent_id = $2 and athlete_id = $3',
+      [ORG, 'par-ath-ga-tomorrow', 'ath-ga-tomorrow'],
+    )).toBe(true);
+  });
+});

@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
 import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
+import { GuardianLinkEndedError } from '@/src/server/pilot/guardianAccess';
 import {
   createOrUpdateMicrosoftStaffAccount,
   listOrganizationMembers,
@@ -119,6 +120,27 @@ describe('POST platform staff provisioning still works for the platform owner', 
       entity_type: 'account',
       details: expect.objectContaining({ action: 'platform_owner_provision_staff' }),
     }));
+  });
+
+  // Lane GA: the platform owner's parent invite for an athlete who is 18 or
+  // over. Provisioning refuses it (staffProvisioning.test.ts,
+  // guardianInviteLink.pg.test.ts); the route answers 403 with the code.
+  test('a parent invite for an athlete 18 or over answers 403 GUARDIAN_LINK_ENDED, and audits nothing', async () => {
+    mockProvision.mockRejectedValue(new GuardianLinkEndedError());
+
+    const response = await POST(post({
+      organization_id: 'gym-a',
+      login_email: 'parent@example.org',
+      role: 'parent',
+      guardian: { athlete_id: 'ath-adult', full_name: 'Dana Johnson', relationship_to_athlete: 'mother' },
+    }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Forbidden: this athlete is 18 or older; guardian access has ended',
+      code: 'GUARDIAN_LINK_ENDED',
+    });
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   test('an organization admin cannot use the platform route', async () => {
