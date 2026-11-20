@@ -1,7 +1,11 @@
 # Readiness sweep: every committed workout template against the issue plan
 
-Lane RS, pilot dry-run blocker B3. Step 1 report: read only, no data changed.
-Measured on `main` at `0752bb485908d259880925521f1a8672a75abe4f` (2026-11-20).
+Lane RS, pilot dry-run blocker B3. Sections 1 to 5 are the step 1 report,
+measured on `main` at `0752bb485908d259880925521f1a8672a75abe4f` (2026-11-20),
+before any data change. Section 6 records step 2, applied in the same PR
+(#2008) after Overwatch's GO on the PR (Q1 A: tiers A and B; Q2 A: keep the
+draft marker; Q3 A: the 11 mixed templates stay allowlisted as an owner
+decision).
 
 Labels: OBSERVED (read in code or data, with file:line), INFERRED (reasoning
 past what was read), UNVERIFIED (not checked).
@@ -98,7 +102,7 @@ Refused at the issue endpoint for every step; Class plans reads them "Coach-run
 day: nothing to issue" (OD-2026-11-15-001). No action. Listed in the test's
 `COACH_RUN`.
 
-## 4. Proposed fix per refusing drill
+## 4. Fix per refusing drill (proposed in step 1; applied in step 2)
 
 A fix is a new committed cue row for the drill (`seed_drill_cues.csv`; key
 drill_id + cue_text, `specs/drills.ts:160-175`) plus a `cues` label on the
@@ -133,15 +137,15 @@ Notes on the three proposals:
   new drill". Using one of its sentences as the drill's cue moves Long Road text
   into the drill. INFERRED as consistent with the Backbone source order ("the
   Long Road fills gaps": OD-2026-10-27-001, `OWNER_DECISIONS.md:4269`, kept by its ruling 3 at `:4299`); Overwatch decides.
-- Proposed label on each drill's `field_labels` (mirrors #1980):
+- Label on each drill's `field_labels` (mirrors #1980; as applied, each `basis` quotes its own source):
   `{"cues":{"basis":"<source> word for word; added so the drill meets the cue rule (OD-2026-10-06-026 ruling 2; OD-2026-11-15-011 ruling 3: a miss fixed by a new version)","draft":"AI selection, lane RS, 2026-11-20 (OD-2026-11-15-011)","sources":["<file:line>"],"status":"INFERRED"}}`.
   The `draft` marker makes the app show the cue as a draft for coach review.
 - Minted ids (`MINT.cue`, `contentImport/ids.ts:166`): `cue_56bb3639abc991`,
   `cue_92e700e6afcebf`, `cue_4367231e5308f9` (in table order). `focus_type`
-  blank (loads as `unspecified`), `cue_family` and `evidence_note` blank,
-  `source_ref` the cited file and passage.
+  `unspecified` (as #1980 wrote it), `cue_family` and `evidence_note` blank,
+  `source_ref` the cited passage with "(AI selection, lane RS)".
 
-## 5. Counts
+## 5. Counts (step 1, before the fix)
 
 | | |
 |---|---|
@@ -152,26 +156,41 @@ Notes on the three proposals:
 | Drills needing coach text | 1 (Technique Hold Under Volume) -> 1 template |
 | Templates refused for typed steps only | 93 (no drill text can fix them; 82 coach-run by ruling, 11 OWNER DECISION) |
 
-## 6. The proposed PR (after GO)
+## 6. Step 2, as applied in this PR
 
-1. `seed_drill_cues.csv`: +3 rows (above). `seed_drill_library.csv`: a `cues`
-   label on the 3 drill rows. Nothing else in the data. The loader makes v2 of
-   each of the 3 drills at load; v1 is kept.
-2. The guard, already in this PR: `committedTemplateIssueSweep.test.ts` fails
-   on any refusal not allowlisted, and on any allowlisted refusal that no
-   longer happens. After the data change, `DRILL_REFUSALS` drops from 5
-   templates to 1 (Technique Hold Under Volume, needs coach text).
-3. Expected knock-on: tests that pin committed drill rows (the Backbone
-   exporter tests, as in #1980) may need their pinned rows updated. Measured in
-   that PR, not here.
-4. `docs/current/ACTIVE_WORK.md`: the Lane RS row, updated in place.
+1. `apps/web/seed-data/drill-library/seed_drill_cues.csv`: +3 rows (above).
+   `seed_drill_library.csv`: the `cues` label in `field_labels` on the same 3
+   drill rows. A parse of the file before and after (512 drills, 682 -> 685
+   cues) shows no other cell changed. At load the engine makes v2 of each of
+   the 3 drills and keeps v1 (INFERRED from `contentImport/datasets/drills.ts:19-50`;
+   proven against PostgreSQL by `contentImportDrills.pg.test.ts` "a revised
+   drill becomes a new version", which runs in CI, not here).
+2. The guard `apps/web/src/server/pilot/committedTemplateIssueSweep.test.ts`:
+   `DRILL_REFUSALS` is down from 5 templates to 1 (Technique Hold Under Volume,
+   needs coach text). On a fresh load, Intro to Boxing — Session 1,
+   Conditioned Sparring Session, Adaptive Session — Seated Base and Non-Contact
+   Fitness Boxing now issue: 50 of 144 templates, 94 refused.
+3. Row-pinning tests: `scripts/backbone-export-ft1-track.test.ts` pins every
+   pre-Backbone drill row to blank label cells, with one exception for lane
+   HW's cue. The same exception now covers the three lane RS drills, by id and
+   by the lane RS draft marker, and a new check fails if any other row carries
+   that marker. The other exporter and drill-draft suites passed unchanged.
+4. `npm run content:validate -- --dataset drill-library`: PASS, 0 blocking,
+   64 warnings, the same count as on the base; no warning names the three
+   drills. `--dataset all`: PASS, 0 blocking.
 5. Not touched: any refusal rule, any template, any typed step, any load.
+
+Staging (INFERRED from `workoutTemplates.ts:244-260, 298-346`, not run against a
+database): v1 of each drill is already loaded there and not adopted (the
+staging refusal was the readiness line), so a step naming v1 is judged as its
+head v2, which carries the cue. Whether a coach's in-app edit holds any of the
+three drills at load is UNKNOWN here; Overwatch's dry run shows it.
 
 ## 7. Allowlist and size
 
 The allowlist lives in the test, in three groups, each with its reason:
 
-| Group | Today | After the data change |
+| Group | Step 1 | Step 2 (this PR) |
 |---|---|---|
 | `COACH_RUN` (every step typed; OD-2026-11-15-001) | 82 templates | 82 |
 | `TYPED_IN_MIXED` (typed steps beside drills; OWNER DECISION) | 11 templates | 11 |
@@ -179,10 +198,13 @@ The allowlist lives in the test, in three groups, each with its reason:
 
 Each entry pins the template id and its exact refused steps or drill ids, so a
 new typed step or a new drill refusal in an already-listed template also fails.
-Step-2 diff size (INFERRED): 3 added CSV lines, 3 changed CSV lines, about 6
-changed lines in the test, the ACTIVE_WORK row.
+Step-2 diff: 3 added CSV lines, 3 changed CSV lines, the allowlist group in
+the guard, the exception in the FT1 exporter test, this report and the
+ACTIVE_WORK row.
 
 ## 8. Guard sensitivity (OBSERVED, local runs on this branch)
+
+Step 1:
 
 | Mutant | Result |
 |---|---|
@@ -195,3 +217,12 @@ Each mutant was reverted with `git checkout`; `git status` showed only the new
 test afterwards. The suite also carries two in-test negative controls (a
 technique drill stripped of cues, a step turned to typed text, both in a
 template that issues today).
+
+Step 2:
+
+| Mutant | Result |
+|---|---|
+| Delete the new Wrap Under Supervision cue row (`cue_56bb3639abc991`) | "refuses exactly the allowlisted ..." failed |
+| Give a fourth pre-Backbone drill (`drl_b755caac79e37e`) a cue-only label with the lane RS marker | the FT1 exporter test failed |
+
+Each restored from a copy; `git diff --stat` matched before and after.

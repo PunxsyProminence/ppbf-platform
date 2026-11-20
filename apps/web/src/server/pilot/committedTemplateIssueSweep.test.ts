@@ -318,17 +318,18 @@ const TYPED_IN_MIXED: Record<string, number[]> = {
 };
 
 /**
- * Library drills that refuse the issue. All four have no coaching cue
- * (OD-2026-10-06-026 ruling 2, kept by OD-2026-11-19-005). Template id -> the
- * refusing drills' lineage keys. Lane RS proposes sourced cues for three of
- * them; an entry leaves this list when its drill can be adopted.
+ * Library drills that refuse the issue, each waiting on coach text: no
+ * committed source holds a cue for it, so none is filled in. The cue rule is
+ * OD-2026-10-06-026 ruling 2, kept by OD-2026-11-19-005. Template id -> the
+ * refusing drills' lineage keys. An entry leaves this list when its drill can
+ * be adopted. Lane RS (#2008) gave sourced cues to Wrap Under Supervision,
+ * Seated Combination Work and Technique-Only Fitness Session, which took four
+ * templates off this list.
  */
 const DRILL_REFUSALS: Record<string, string[]> = {
-  wtp_1123d6411a2e60: ["drl_39ed71de8c14cd"], // Conditioned Sparring Session: Wrap Under Supervision (step 2)
-  wtp_216dfa4227233d: ["drl_39ed71de8c14cd"], // Intro to Boxing — Session 1: Wrap Under Supervision (step 6)
-  wtp_cfb86f25abfa16: ["drl_146f4afdc88839"], // Non-Contact Fitness Boxing: Technique-Only Fitness Session (step 3)
-  wtp_e3c1f50475379b: ["drl_b755caac79e37e"], // Intermediate Combinations — Random Practice: Technique Hold Under Volume (step 6)
-  wtp_f4f4d54c39a219: ["drl_af8541eacc70e5"], // Adaptive Session — Seated Base: Seated Combination Work (step 5)
+  // Technique Hold Under Volume: needs coach text (OD-2026-10-11-009 item 3:
+  // its cue is drafted for a coach to approve, not put in the app).
+  wtp_e3c1f50475379b: ["drl_b755caac79e37e"], // Intermediate Combinations — Random Practice (step 6)
 };
 
 function bySignature(refusals: readonly Refusal[]) {

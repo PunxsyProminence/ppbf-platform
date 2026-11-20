@@ -362,19 +362,28 @@ describe('the committed FT1 rows', () => {
     // The lane-2 drills (backbone-export-drill-library.mjs, lane L2b) are Backbone rows too, with their own labels and stage keys.
     // Lane HW's six home sessions and the drills written for them (OD-2026-11-19-005) are AI drafts off the stage map
     // (Overwatch Q1 A and Q4 A): blank stage_keys, AI-draft labels; so is the cue lane HW added to one drill (Q6).
-    // hwContentPackage.test.ts checks them.
+    // hwContentPackage.test.ts checks them. Lane RS (#2008) gave three existing drills a cue taken word for word from a
+    // committed source (OD-2026-11-15-011 ruling 3, a new version), labelled the same way; committedTemplateIssueSweep.test.ts
+    // checks what that changes.
     const HW = '"draft":"AI draft, lane HW, 2026-11-19';
+    const RS = '"draft":"AI selection, lane RS, 2026-11-20';
+    const LANE_RS_CUE_DRILLS = ['drl_146f4afdc88839', 'drl_39ed71de8c14cd', 'drl_af8541eacc70e5'];
     const laneHw = (row: Record<string, string>) => (row.name ?? '').startsWith('PPBF Home Day ') || (row.content_class ?? '').startsWith('AI DRAFT - lane HW');
     for (const [name, key] of [[DRILLS, 'drill_id'], [TEMPLATES, 'template_id']] as const) {
       const rows = rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, name), 'utf8'));
       const others = rows.filter((row) => row.stage_keys === '' && !laneHw(row));
       expect(others.length).toBeGreaterThan(0);
       for (const row of others) {
-        // The one existing drill lane HW gave a cue keeps blank evidence and stage keys; its labels hold only that cue's label.
-        const labels = row.field_labels.includes(HW) && Object.keys(JSON.parse(row.field_labels)).join() === 'cues' ? '' : row.field_labels;
+        // The one existing drill lane HW gave a cue, and the three lane RS did, keep blank evidence and stage keys; their
+        // labels hold only that cue's label.
+        const laneCue = row.field_labels.includes(HW) || (row.field_labels.includes(RS) && LANE_RS_CUE_DRILLS.includes(row.drill_id));
+        const labels = laneCue && Object.keys(JSON.parse(row.field_labels)).join() === 'cues' ? '' : row.field_labels;
         expect([key, labels, row.evidence, row.stage_keys]).toEqual([key, '', '', '']);
       }
     }
+    // The lane RS exception covers exactly its three drills.
+    const rsRows = rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, DRILLS), 'utf8')).filter((row) => row.field_labels.includes(RS));
+    expect(rsRows.map((row) => row.drill_id).sort()).toEqual(LANE_RS_CUE_DRILLS);
   });
   it('are 131 drills, 131 cues, 235 stop rules, 33 templates, 131 items, 1 track, 8 blocks and 40 block sessions', () => {
     expect(count(DRILLS, (row) => row.stage_keys === 'FT1')).toBe(131);
