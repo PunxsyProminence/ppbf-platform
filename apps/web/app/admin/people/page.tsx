@@ -641,7 +641,11 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
    * roster the server returned or not at all — never from an id typed blind
    * against a roster this page could not read.
    */
-  const parentInviteBlockedReason = !rosterAvailable
+  // Still loading is not "could not be read": Gym Setup's guardian link lands
+  // here with Parent chosen before the first read answers (AS10-1 review).
+  const parentInviteBlockedReason = loading && !rosterAvailable
+    ? 'Your gym roster is still being read.'
+    : !rosterAvailable
     ? 'Your gym roster could not be read, so there is no verified list of athletes to link a guardian to. Reload this page and try again.'
     : roster.length === 0
       ? 'There are no athlete records in your gym yet. Add the athlete first, then invite their guardian.'

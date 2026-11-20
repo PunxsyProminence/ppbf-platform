@@ -205,6 +205,16 @@ describe('next steps under a new sign-in code', () => {
     expect(within(nav).getByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
   });
 
+  test('a reply that names another athlete is not this athlete\'s record: treated as a minor', async () => {
+    const inner = fetchMock({ rows: [] });
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) =>
+      String(url).includes(DOB_READ)
+        ? ({ ok: true, status: 200, json: async () => ({ found: true, athlete: { athlete_id: 'ath-2', dob: dobYearsAgo(30) } }) } as Response)
+        : inner(url, init)) as never;
+    await issueCodeForAlex();
+    expect(within(await nextSteps()).getByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
+  });
+
   test('the step opens a fresh guardian invite with this athlete chosen; nothing is sent; the code stays', async () => {
     global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(12) }] }) as never;
     await issueCodeForAlex();
@@ -224,12 +234,18 @@ describe('next steps under a new sign-in code', () => {
     const staffer = { account_id: 'staffer@example.com', login_email: 'staffer@example.com', auth_provider: 'microsoft', role: 'staff', athlete_id: null, active_flag: true, has_pin: false, membership_active: true };
     global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(12) }] }, [staffer]) as never;
     render(<PeopleConsolePage />);
-    // Arm a role change on the invite tab, and leave it unanswered.
+    // Start a guardian invite for ANOTHER child, arm its role change, and leave it unanswered.
     fireEvent.click(await screen.findByRole('button', { name: /Add Coach, Staff Or Guardian/i }));
     fireEvent.change(screen.getByLabelText(/Email address/i), { target: { value: 'staffer@example.com' } });
-    fireEvent.click(screen.getByRole('radio', { name: /^Coach/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /Parent/i }));
+    fireEvent.change(await screen.findByLabelText(/Guardian's full name/i), { target: { value: 'Someone Else' } });
+    fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-2' } });
+    const relationship = screen.getByLabelText(/Relationship to the athlete/i) as HTMLSelectElement;
+    const firstRelationship = relationship.value;
+    const otherRelationship = Array.from(relationship.options).map((option) => option.value).find((value) => value !== firstRelationship) as string;
+    fireEvent.change(relationship, { target: { value: otherRelationship } });
     fireEvent.click(screen.getByRole('button', { name: 'Add To My Gym' }));
-    expect(await screen.findByRole('button', { name: /^Change staffer@example\.com To Coach$/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^Change staffer@example\.com To / })).toBeTruthy();
 
     // Now give ath-1 a code and take the guardian step.
     fireEvent.click(screen.getByRole('button', { name: /^Add Athlete$/i }));
@@ -243,6 +259,7 @@ describe('next steps under a new sign-in code', () => {
     expect(screen.queryByRole('button', { name: /^Change .* To / })).toBeNull();
     expect((screen.getByLabelText(/Email address/i) as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText(/Guardian's full name/i) as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText(/Relationship to the athlete/i) as HTMLSelectElement).value).toBe(firstRelationship);
     expect((screen.getByRole('radio', { name: /Parent/i }) as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText('Athlete') as HTMLSelectElement).value).toBe('ath-1');
   });
@@ -293,6 +310,26 @@ describe('Gym Office opens on the tab a link names', () => {
     render(<PeopleConsolePage />);
     await screen.findByLabelText(/Email address/i);
     expect((screen.getByRole('radio', { name: /Parent/i }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  test('landing with Parent chosen while the roster is still loading says so, not that it could not be read', async () => {
+    window.history.replaceState({}, '', '/admin/people?tab=invite-staff&role=parent');
+    let answer: () => void = () => undefined;
+    const inner = fetchMock({ rows: [] });
+    global.fetch = jest.fn((url: string, init?: RequestInit) =>
+      String(url).includes('/api/pilot/admin/athlete-pin-directory')
+        ? new Promise<Response>((resolve) => {
+          answer = () => resolve(inner(url, init) as unknown as Response);
+        })
+        : inner(url, init)) as never;
+    render(<PeopleConsolePage />);
+    expect(await screen.findByText(/Your gym roster is still being read\./)).toBeTruthy();
+    expect(screen.queryByText(/roster could not be read/)).toBeNull();
+    await act(async () => {
+      answer();
+    });
+    await waitFor(() => expect(screen.queryByText(/still being read/)).toBeNull());
+    expect(screen.queryByText(/roster could not be read/)).toBeNull();
   });
 
   test.each([
