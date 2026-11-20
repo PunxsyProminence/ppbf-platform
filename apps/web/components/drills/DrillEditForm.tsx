@@ -146,6 +146,70 @@ function changedParts(drill: DrillWithDetail, values: Values): { body: Record<st
 
 export type DrillEditOutcome = { changed: false } | { changed: true; drillId: string; version: number };
 
+/**
+ * The drill's OWN stop rules (never universal_stop_rules: both number from 1,
+ * and the state is keyed by ordinal), grouped as DrillDetail groups them, by
+ * the STORED kind so a rule does not jump while its kind is changed: a
+ * readiness rule (warmup_decay) is "Before contact or maximal effort", not a
+ * stop rule. Each group is numbered by position, as the page lists it.
+ */
+function stopRuleGroups(drill: DrillWithDetail) {
+  const own = [...(drill.stop_rules ?? [])].sort((a, b) => a.ordinal - b.ordinal);
+  return [
+    { heading: 'Stop rules', item: 'Stop rule', rules: own.filter((rule) => rule.rule_kind !== READINESS_KIND) },
+    { heading: 'Before contact or maximal effort', item: 'Before contact or maximal effort', rules: own.filter((rule) => rule.rule_kind === READINESS_KIND) },
+  ].filter((group) => group.rules.length > 0).map((group) => ({
+    heading: group.heading,
+    rules: group.rules.map((rule, index) => ({
+      rule,
+      name: `${group.item}${group.rules.length > 1 || group.item === 'Stop rule' ? ` ${index + 1}` : ''}`,
+    })),
+  }));
+}
+
+/** Every field's on-screen label, by the key the route names it with. */
+const FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  category: 'Category',
+  difficulty: 'Difficulty',
+  contact_level: 'Contact',
+  requires_coach_authorization: 'Coach authorization',
+  cues: 'Coaching cues, one per line',
+  ...Object.fromEntries(TEXT_FIELDS.map(({ key, label }) => [key, label])),
+};
+
+/**
+ * The label a refusal's field key stands for (Overwatch Q-PR1-1 on #2016: a
+ * refusal shows the label the form already shows, never a code key). A stop
+ * rule's key carries no ordinal (drillLibraryEdit.ts parses the list in the
+ * order sent and refuses the first bad entry), so the rule is the first one
+ * this save sent that fails the same test. null when nothing on the form
+ * matches: the server's own text is shown.
+ */
+function fieldLabel(key: string, drill: DrillWithDetail, sent: Record<string, unknown>): string | null {
+  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
+  const scale = /^scale_levels\.([ABC])\.([a-z_]+)$/.exec(key);
+  if (scale) {
+    const field = SCALE_FIELDS.find((entry) => entry.key === scale[2]);
+    return field ? `${scaleLevelName(scale[1])} ${field.label}` : null;
+  }
+  if (key !== 'stop_rules.condition_text' && key !== 'stop_rules.rule_kind') return null;
+  const names = new Map(stopRuleGroups(drill).flatMap((group) => group.rules.map(({ rule, name }) => [rule.ordinal, name] as const)));
+  const failing = (Array.isArray(sent.stop_rules) ? sent.stop_rules as Record<string, unknown>[] : []).find((entry) => (key === 'stop_rules.condition_text'
+    ? typeof entry.condition_text === 'string' && (!entry.condition_text.trim() || entry.condition_text.trim().length > MAX_STOP_RULE)
+    : typeof entry.rule_kind === 'string' && !(VOCABULARIES.stop_rule_kind.values as readonly string[]).includes(entry.rule_kind)));
+  const name = failing ? names.get(failing.ordinal as number) : undefined;
+  if (!name) return null;
+  return key === 'stop_rules.rule_kind' ? `${name}: kind` : name;
+}
+
+/** A refusal in the form's words: "Missing <label>: ..." for "Missing <key>: ...", the rest of the server's sentence kept. */
+function inFormWords(message: string, drill: DrillWithDetail, sent: Record<string, unknown>): string {
+  const match = /^(Missing|Unsupported) ([a-z_]+(?:\.[A-Za-z_]+)*): /.exec(message);
+  const label = match ? fieldLabel(match[2], drill, sent) : null;
+  return match && label ? `${match[1]} ${label}: ${message.slice(match[0].length)}` : message;
+}
+
 const SAVE_FAILED = 'The drill could not be saved.';
 // A fault or a dropped connection may have landed after the write committed,
 // so it is said as unknown and nothing else (the page's OUTCOME_EXPLANATIONS
@@ -228,7 +292,7 @@ export default function DrillEditForm({
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string; changed?: unknown; drill_id?: unknown; version?: unknown;
       };
-      if (!response.ok) throw new Error(payload.error || SAVE_FAILED);
+      if (!response.ok) throw new Error(payload.error ? inFormWords(payload.error, drill, parts.body) : SAVE_FAILED);
       if (payload.changed === false) {
         onSaved({ changed: false });
       } else if (payload.changed === true && typeof payload.drill_id === 'string' && typeof payload.version === 'number') {
@@ -255,16 +319,7 @@ export default function DrillEditForm({
     setValues((prev) => ({ ...prev, scales: { ...prev.scales, [level]: { ...prev.scales[level], [key]: value } } }));
   const setStop = (ordinal: number, key: keyof StopValues, value: string) =>
     setValues((prev) => ({ ...prev, stops: { ...prev.stops, [ordinal]: { ...prev.stops[ordinal], [key]: value } } }));
-  // The drill's own rules only (never universal_stop_rules: both number from
-  // 1, and the state is keyed by ordinal). Grouped as DrillDetail groups them,
-  // by the STORED kind so a rule does not jump while its kind is changed: a
-  // readiness rule (warmup_decay) is "Before contact or maximal effort", not a
-  // stop rule, and each group is numbered by position, as the page lists it.
-  const ownStops = [...(drill.stop_rules ?? [])].sort((a, b) => a.ordinal - b.ordinal);
-  const stopGroups = [
-    { heading: 'Stop rules', item: 'Stop rule', rules: ownStops.filter((rule) => rule.rule_kind !== READINESS_KIND) },
-    { heading: 'Before contact or maximal effort', item: 'Before contact or maximal effort', rules: ownStops.filter((rule) => rule.rule_kind === READINESS_KIND) },
-  ].filter((group) => group.rules.length > 0);
+  const stopGroups = stopRuleGroups(drill);
   const levels = [...(drill.scale_levels ?? [])].sort((a, b) => a.scale_level.localeCompare(b.scale_level));
   const textArea = ({ key, label, rows }: (typeof TEXT_FIELDS)[number]) => (
     <div key={key} className="field">
@@ -323,8 +378,7 @@ export default function DrillEditForm({
         {stopGroups.map((group) => (
           <fieldset key={group.heading} className="mt-[var(--s4)] min-w-0">
             <legend className={SUBGROUP}>{group.heading}</legend>
-            {group.rules.map((rule, index) => {
-              const name = `${group.item}${group.rules.length > 1 || group.item === 'Stop rule' ? ` ${index + 1}` : ''}`;
+            {group.rules.map(({ rule, name }) => {
               return (
                 <div key={rule.ordinal} className="mt-[var(--s3)] grid gap-[var(--s4)] md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
                   <div className="field">

@@ -374,3 +374,46 @@ describe('scale levels as the drill page names them (PR1b review)', () => {
     expect(sentBody(fetchMock)).toEqual({ drill_id: 'drl-1', scale_levels: { A: { coach_watch_point: 'Eyes up?' } } });
   });
 });
+
+describe('a refusal names the field as the form labels it, never by its code key (Overwatch Q-PR1-1)', () => {
+  const refuse = (error: string) => async () => jsonResponse({ error, code: 'VALIDATION' }, 400);
+  const alertAfterSave = async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    return screen.findByRole('alert');
+  };
+
+  it.each([
+    ['Missing name: it cannot be blank', 'Missing Name: it cannot be blank'],
+    ['Unsupported what_bad_looks_like: at most 4000 characters', 'Unsupported What to avoid: at most 4000 characters'],
+    ['Unsupported cues: at most 12', 'Unsupported Coaching cues, one per line: at most 12'],
+    ['Missing scale_levels.B.demand_description: it cannot be blank', 'Missing Standard (B) What it demands: it cannot be blank'],
+  ])('%s -> %s', async (server, shown) => {
+    renderForm({ answer: refuse(server) });
+    change('What it is for', 'Protect the chin.');
+    const alert = await alertAfterSave();
+    expect(alert).toHaveTextContent(shown);
+    expect(alert.textContent).not.toMatch(/_|scale_levels|\bcues:/);
+  });
+
+  it('names the stop rule this save sent blank, by its place on screen', async () => {
+    const rule = (ordinal: number, kind: string, text: string) => ({
+      organization_id: 'org-1', stop_rule_id: `st-${ordinal}`, drill_id: 'drl-1', ordinal, condition_text: text, scope: 'drill_specific', rule_kind: kind, origin: 'drill',
+    });
+    const withReadiness = {
+      ...drill,
+      stop_rules: [rule(1, 'fatigue', 'Stop on fatigue.'), rule(2, 'warmup_decay', 'Re-warm first.'), rule(3, 'safety', 'Stop on dizziness.')],
+    } as unknown as DrillWithDetail;
+    renderForm({ drill: withReadiness, answer: refuse('Missing stop_rules.condition_text: it cannot be blank') });
+    change('Stop rule 2', '   ');
+    const alert = await alertAfterSave();
+    expect(alert).toHaveTextContent('Missing Stop rule 2: it cannot be blank');
+    expect(alert.textContent).not.toContain('stop_rules');
+  });
+
+  it('keeps the server\'s own sentence when it names no field on the form', async () => {
+    const below = 'Contact level none is below 1 step that run this drill: template wtp_1 step 2 (light_technical). Lower those steps first, or keep the drill\'s contact level.';
+    renderForm({ answer: refuse(below) });
+    change('What it is for', 'Protect the chin.');
+    expect(await alertAfterSave()).toHaveTextContent(below);
+  });
+});
