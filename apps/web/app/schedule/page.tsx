@@ -15,6 +15,7 @@ import {
   parseInstantAsGymTime,
 } from '@/src/lib/gymTime';
 import { defaultStaffAttendanceClassId } from '@/src/shared/attendanceDefaultClass';
+import { ATTENDANCE_METHOD_WORDS } from '@/src/shared/attendanceMethodWords';
 import {
   REPEAT_WEEKS_DEFAULT,
   REPEAT_WEEKS_MAX,
@@ -135,15 +136,10 @@ type SchedulerAttendance = {
   checked_in_at: string;
 };
 
-// How a mark was made, in the words a coach reads on the floor -- the list
-// used to print the stored value ("coach_override") verbatim.
-const ATTENDANCE_METHOD_LABEL: Record<SchedulerAttendance['method'], string> = {
-  self: 'self check-in',
-  parent: 'parent',
-  coach_override: 'coach',
-  admin_override: 'admin',
-  walk_in: 'walk-in',
-};
+/** The class screen (/coach/class), opened on one class (lane 6C7, U2-6c; app scrub CF-07). */
+function classScreenHref(classId: string): string {
+  return `/coach/class?class=${encodeURIComponent(classId)}`;
+}
 
 type SchedulerResponse = {
   ok: boolean;
@@ -770,6 +766,17 @@ export default function SchedulerPage() {
      class, past or to come. restore_class refuses anyone else. */
   const showRestore = (item: SchedulerClass) =>
     item.status === 'cancelled' && (role === 'admin' || role === 'organization_admin');
+  /* OPEN CLASS SCREEN (lane 6C7, U2-6c; app scrub CF-07 and CF-09). Staff reach
+     the class screen from each of today's classes that is not cancelled: it
+     holds the live session's "Who is here", which marks this class's register.
+     The class screen decides what it does with the class (it says so when the
+     class is not one of today's free classes). Never offered to a family: the
+     class screen admits coaches and admins only. */
+  const opensClassScreen = (item: SchedulerClass) =>
+    roleCanManageClasses(role)
+    && item.status !== 'cancelled'
+    && Boolean(today)
+    && gymDayIso(item.start_at) === today;
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
@@ -820,6 +827,12 @@ export default function SchedulerPage() {
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
+        {opensClassScreen(item) ? (
+          <Link href={classScreenHref(item.class_id)} className="btn">
+            Open class screen
+            <span className="sr-only">: {item.title}</span>
+          </Link>
+        ) : null}
         {canRegisterFor(item) ? (
           <button
             type="button"
@@ -1299,7 +1312,12 @@ export default function SchedulerPage() {
 
               <section className="grid gap-4 lg:grid-cols-2">
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
-                  <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Attendance Check-In</h3>
+                  {/* ONE REGISTER WORD FOR COACHES (CF-09; Overwatch Q1 = A on #2043):
+                      "Who is here", the class screen's word for the same register.
+                      A family's heading and "I'm here" are unchanged here. */}
+                  <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                    {isFamily ? 'Attendance Check-In' : 'Who is here'}
+                  </h3>
                   {noClassToday ? (
                     <p className="t-body">There is no class today to check in to.</p>
                   ) : null}
@@ -1325,6 +1343,14 @@ export default function SchedulerPage() {
                     ))}
                   </select>
                   )}
+                  {/* The other register (CF-09): the class screen marks this same class.
+                      Beside the class picker, for a class of today's only (staff only). */}
+                  {selectedClass && opensClassScreen(selectedClass) ? (
+                    <Link href={classScreenHref(selectedClass.class_id)} className="btn btn--ghost">
+                      Open class screen
+                      <span className="sr-only">: {selectedClass.title}</span>
+                    </Link>
+                  ) : null}
 
                   {/* The class register (OD-2026-10-07-008 ruling 4): the coach,
                       cover or scheduler marks everyone registered to the
@@ -1425,7 +1451,7 @@ export default function SchedulerPage() {
                       disabled={actionInFlight}
                       className="btn disabled:opacity-60 disabled:grayscale"
                     >
-                      {isFamily ? "I'm here" : 'Update Attendance'}
+                      {isFamily ? "I'm here" : 'Save'}
                     </button>
                   ) : null}
 
@@ -1463,7 +1489,11 @@ export default function SchedulerPage() {
                 </article>
 
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-                  <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Parent Review and Records</h3>
+                  {/* Titled by what it lists for staff (CF-26; Overwatch Q2 = A on #2043):
+                      a coach has nothing to review here. The family title is unchanged. */}
+                  <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                    {isFamily ? 'Parent Review and Records' : 'Registrations and attendance'}
+                  </h3>
                   <div className="mt-3 space-y-2 max-h-[340px] overflow-y-auto">
                     {schedulerFailed ? (
                       <p className="t-muted">Records could not be loaded just now.</p>
@@ -1504,7 +1534,7 @@ export default function SchedulerPage() {
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
                           {`${athleteMap.get(item.athlete_id) || item.athlete_id} at ${classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}`}
                         </p>
-                        <p className="text-[color:var(--bone-300)]">{ATTENDANCE_STATUS_WORDS[item.status] ?? item.status}, via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
+                        <p className="text-[color:var(--bone-300)]">{ATTENDANCE_STATUS_WORDS[item.status] ?? item.status}, via {ATTENDANCE_METHOD_WORDS[item.method] ?? item.method}</p>
                         <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
                       </div>
                     ))}

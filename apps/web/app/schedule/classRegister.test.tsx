@@ -133,7 +133,7 @@ describe('the class register on /schedule', () => {
     const picker = await renderPage();
 
     fireEvent.change(picker, { target: { value: 'athlete-2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Update Attendance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByText('Marked present as a walk-in (not registered for this class).')).toBeInTheDocument();
   });
@@ -174,7 +174,7 @@ describe('the class register on /schedule', () => {
     const picker = await renderPage();
 
     fireEvent.change(picker, { target: { value: 'athlete-2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Update Attendance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     const notice = (await screen.findAllByRole('status')).find((el) => el.textContent?.includes('Active Training Hold'));
     expect(notice).toBeDefined();
