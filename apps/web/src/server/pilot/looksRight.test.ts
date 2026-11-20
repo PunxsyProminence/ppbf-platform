@@ -157,6 +157,14 @@ describe('editLibraryDrill with looks_right', () => {
     expect(written.scale_levels).toEqual({ ...DRAFT, A: { ...SOURCED, looks_right: expect.objectContaining({ by_role: 'coach' }) } });
   });
 
+  test('the stop-rule list is one press: its rules and their kinds are confirmed together (Q2 = A)', async () => {
+    fieldLabels = { stop_rules: { ...DRAFT, 1: SOURCED }, 'stop_rules.rule_kind': { ...SOURCED, 1: DRAFT } };
+    await press('stop_rules');
+    const written = JSON.parse(labelInsert()?.values[4] as string);
+    expect(written.stop_rules).toEqual({ ...SOURCED, 1: SOURCED, looks_right: expect.objectContaining({ by_role: 'coach' }) });
+    expect(written['stop_rules.rule_kind']).toEqual({ ...SOURCED, 1: SOURCED, looks_right: expect.objectContaining({ by_role: 'coach' }) });
+  });
+
   test.each([
     ['labelled and not a draft', 'cues'],
     ['with no label of its own', 'transfer'],
