@@ -194,15 +194,28 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-function unrefusedLinkInserts(text: string): string[] {
-  if (!/guardian_links/i.test(text)) return [];
-  const source = ts.createSourceFile('scan.tsx', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+/* The parser follows the file's extension. Parsed as TSX, a .ts file's generic
+   arrow (`<T>(fn) => ...`, staffProvisioning.ts's inTransaction) reads as a
+   JSX tag, the tree goes wrong from there, and the insert after it is never
+   visited (both lane GA reviewers, #2012). `visited` counts the inserts the
+   walk reached, so a file it cannot read is a failure, not an empty pass. */
+function scriptKindFor(fileName: string): ts.ScriptKind {
+  if (fileName.endsWith('.tsx')) return ts.ScriptKind.TSX;
+  if (fileName.endsWith('.mjs') || fileName.endsWith('.js')) return ts.ScriptKind.JS;
+  return ts.ScriptKind.TS;
+}
+
+function scanLinkInserts(text: string, fileName = 'scan.ts'): { visited: number; offenders: string[] } {
+  if (!/guardian_links/i.test(text)) return { visited: 0, offenders: [] };
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
   const offenders: string[] = [];
+  let visited = 0;
   const visit = (node: ts.Node) => {
     const literal = ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
       ? node.text
       : ts.isTemplateExpression(node) ? node.head.text : null;
     if (literal !== null && INSERT_INTO_LINKS.test(literal)) {
+      visited += 1;
       const scopes: ts.Node[] = [];
       for (let up: ts.Node | undefined = node.parent; up; up = up.parent) {
         if (ts.isFunctionLike(up)) scopes.push(up);
@@ -219,8 +232,10 @@ function unrefusedLinkInserts(text: string): string[] {
     ts.forEachChild(node, visit);
   };
   visit(source);
-  return offenders;
+  return { visited, offenders };
 }
+
+const unrefusedLinkInserts = (text: string, fileName?: string) => scanLinkInserts(text, fileName).offenders;
 
 describe('guardian_links inserts: the age refusal comes first', () => {
   test('the scanner flags an insert with no refusal before it, and passes one with', () => {
@@ -230,9 +245,15 @@ describe('guardian_links inserts: the age refusal comes first', () => {
     expect(unrefusedLinkInserts("async function f(c) { refuseGuardianLinkToAdult(dob); await c.query(`insert into pilot.guardian_links (a) values ($1)`); }")).toHaveLength(0);
   });
 
+  test('the scanner reads a .ts file past a generic arrow, which a TSX parse cannot', () => {
+    const text = "const wrap = <T>(fn: () => Promise<T>): Promise<T> => fn();\n"
+      + "async function f(c) { await c.query('insert into pilot.guardian_links (a) values ($1)'); }";
+    expect(scanLinkInserts(text, 'writer.ts')).toEqual({ visited: 1, offenders: [expect.stringContaining('insert into pilot.guardian_links')] });
+  });
+
   test('every one in src/ and app/ is preceded by refuseGuardianLinkToAdult', () => {
     const files = ['src', 'app'].map((dir) => path.join(WEB_ROOT, dir)).flatMap(sourceFiles);
-    const offenders = files.flatMap((file) => unrefusedLinkInserts(fs.readFileSync(file, 'utf8')).map(
+    const offenders = files.flatMap((file) => unrefusedLinkInserts(fs.readFileSync(file, 'utf8'), file).map(
       (literal) => `${path.relative(WEB_ROOT, file)}: ${literal}`,
     ));
     expect(offenders).toEqual([]);
@@ -242,5 +263,11 @@ describe('guardian_links inserts: the age refusal comes first', () => {
       'src/server/pilot/intake.ts',
       'src/server/pilot/staffProvisioning.ts',
     ]));
+    // And the walk reached an insert in every file whose text names one, so a
+    // file the parser misreads cannot pass by being invisible.
+    const unread = found
+      .filter((file) => scanLinkInserts(fs.readFileSync(file, 'utf8'), file).visited === 0)
+      .map((file) => path.relative(WEB_ROOT, file));
+    expect(unread).toEqual([]);
   });
 });
