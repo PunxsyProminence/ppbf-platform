@@ -507,7 +507,14 @@ function CoachDrillLibrary() {
   const [editingId, setEditingId] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   // A "Looks right" press that did not land: the server's words, or that its outcome is not known.
+  // Shown beside the opened drill, and focused, so a coach sees it where they pressed.
   const [looksRightError, setLooksRightError] = useState('');
+  const looksRightAlertRef = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    if (!looksRightError) return;
+    looksRightAlertRef.current?.focus({ preventScroll: true });
+    looksRightAlertRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [looksRightError]);
   const [focusRequest, setFocusRequest] = useState<{ referenceDrillId: string } | null>(null);
 
   // Versions and proposals (#1471): the drill whose history is open, and the
@@ -664,6 +671,7 @@ function CoachDrillLibrary() {
     openRequestRef.current = request;
     openerRef.current = openerId;
     setPromoteNotice('');
+    setLooksRightError('');
     setRestoreCueNeededFor('');
     setRestoreCues('');
     setEditingId('');
@@ -723,6 +731,7 @@ function CoachDrillLibrary() {
     // A notice ("Retired. It can no longer...") speaks of the drill being
     // left; above the library it would name no drill at all.
     setPromoteNotice('');
+    setLooksRightError('');
     setRestoreCueNeededFor('');
     setRestoreCues('');
     setEditingId('');
@@ -1215,12 +1224,6 @@ function CoachDrillLibrary() {
             </div>
           )}
 
-          {looksRightError && (
-            <p role="alert" className="mt-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
-              <span aria-hidden="true">▲</span> <span>{looksRightError}</span>
-            </p>
-          )}
-
           {referenceLoading && <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading reference drills...</p>}
 
           {!referenceLoading && referenceLoadError && (
@@ -1242,6 +1245,11 @@ function CoachDrillLibrary() {
               <button type="button" onClick={closeReferenceDrill} disabled={leavingLocked} className="btn btn--ghost">
                 Back to the reference library
               </button>
+              {looksRightError && (
+                <p ref={looksRightAlertRef} tabIndex={-1} role="alert" className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
+                  <span aria-hidden="true">▲</span> <span>{looksRightError}</span>
+                </p>
+              )}
               {openReferenceLoading && <p className="t-body text-[color:var(--bone-300)]">Loading the drill...</p>}
               {!openReferenceLoading && openReferenceError && (
                 <p className="t-body text-[color:var(--bone-300)]">

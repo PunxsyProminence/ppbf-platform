@@ -327,6 +327,14 @@ describe('"Looks right" beside a drafted field', () => {
     expect(presses()).toHaveLength(0);
   });
 
+  test('discipline and category each keep their own mark and press together, so a wrapped press stays with its field', () => {
+    renderWith(every(true));
+    const categoryGroup = press('Category')!.parentElement!;
+    expect(categoryGroup.textContent?.startsWith('technical')).toBe(true);
+    expect(categoryGroup.textContent).not.toContain('boxing');
+    expect(screen.getByText('boxing').closest('span')).not.toContainElement(press('Category'));
+  });
+
   test('a busy page disables every press', () => {
     renderWith(every(true), jest.fn(), {}, true);
     for (const button of presses()) expect(button).toBeDisabled();

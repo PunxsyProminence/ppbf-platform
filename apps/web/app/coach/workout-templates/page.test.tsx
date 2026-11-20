@@ -2577,8 +2577,28 @@ describe('Looks right on the opened template (lane ED-UI PR4)', () => {
     stub(() => ({ ok: false, status: 409, json: async () => ({ error: 'This field is not marked as an AI draft on the current version. Reload the template.' }) }) as unknown as Response);
     await open();
     fireEvent.click(pressFor('Intent')!);
-    expect(await screen.findByText(/This field is not marked as an AI draft on the current version/)).toBeInTheDocument();
+    const alert = (await screen.findByText(/This field is not marked as an AI draft on the current version/)).closest('p');
     expect(screen.queryByText(/Recorded as looks right/)).not.toBeInTheDocument();
+    await waitFor(() => expect(alert).toHaveFocus());
+  });
+
+  it('leaves no alert on the next template opened', async () => {
+    const other = { ...BOXING_FUNDAMENTALS, template_id: 'wt-other', lineage_id: 'lin-other', name: 'Bag Rounds 45' };
+    mockFetch((url, init) => {
+      if (init?.method === 'PATCH') return { ok: false, status: 400, json: async () => ({ error: 'Refused.' }) } as unknown as Response;
+      if (url.includes('template_id=wt-other')) return jsonResponse({ template: other, items: [item()], field_drafts: DRAFTS });
+      if (url.includes('template_id')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()], field_drafts: DRAFTS });
+      return jsonResponse({ templates: [BOXING_FUNDAMENTALS, other] });
+    });
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Open template' }))[0]);
+    await screen.findByText('Rope intervals');
+    fireEvent.click(pressFor('Intent')!);
+    expect(await screen.findByText(/Refused\./)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Open template' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Open template' }));
+    await screen.findByRole('heading', { name: 'Bag Rounds 45', level: 2 });
+    expect(screen.queryByText(/Refused\./)).not.toBeInTheDocument();
   });
 
   it('after a lost answer says only that it is not known whether the change was saved', async () => {

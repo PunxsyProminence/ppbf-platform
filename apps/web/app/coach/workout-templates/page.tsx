@@ -746,7 +746,7 @@ function draftMark(detail: TemplateDetail, field: TemplateMarkedField, press?: L
     <>
       <DraftMark state={state} />
       {state === true && press && (
-        <span data-surface="kiosk">
+        <span data-surface="kiosk" className="inline-block mb-[var(--s2)]">
           <button type="button" className="btn btn--secondary ml-[var(--s2)]" aria-label={`Looks right: ${TEMPLATE_FIELD_LABEL[field]}`}
             onClick={() => press.onPress(field)} disabled={press.disabled}>
             Looks right
@@ -823,8 +823,9 @@ function CoachWorkoutTemplates() {
   const [editingId, setEditingId] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   const [editNotice, setEditNotice] = useState('');
-  // A "Looks right" press that did not land: the server's words, or that its outcome is not known.
+  // A "Looks right" press that did not land: the server's words, or that its outcome is not known. Focused when set.
   const [looksRightError, setLooksRightError] = useState('');
+  const looksRightAlertRef = useRef<HTMLParagraphElement | null>(null);
   // After a stale or unknown save, Cancel opens the template again from the server.
   const rereadOnCancel = useRef(false);
   // The request key of every issue that has no settled answer yet, by template
@@ -873,6 +874,7 @@ function CoachWorkoutTemplates() {
     // template's name while the new read is in flight.
     setOpenTemplateId(templateId);
     setEditNotice('');
+    setLooksRightError('');
     setEditingId('');
     setDetail(null);
     setDetailError('');
@@ -1023,6 +1025,12 @@ function CoachWorkoutTemplates() {
     heading?.focus({ preventScroll: true });
     heading?.scrollIntoView?.({ block: 'start' });
   }, [focusDetail]);
+  // After the heading's: a press's alert, when there is one, is where focus ends.
+  useEffect(() => {
+    if (!looksRightError) return;
+    looksRightAlertRef.current?.focus({ preventScroll: true });
+    looksRightAlertRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [looksRightError]);
 
   const openIsListed = openTemplateId !== null && templates.some((template) => template.template_id === openTemplateId);
 
@@ -1081,7 +1089,7 @@ function CoachWorkoutTemplates() {
             {editNotice && <div data-surface="kiosk"><p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p></div>}
             {looksRightError && (
               <div data-surface="kiosk">
-                <p role="alert" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> {looksRightError}</p>
+                <p ref={looksRightAlertRef} tabIndex={-1} role="alert" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> {looksRightError}</p>
               </div>
             )}
 

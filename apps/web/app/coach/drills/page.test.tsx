@@ -2860,7 +2860,11 @@ describe('Looks right (lane ED-UI PR4)', () => {
     const before = readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1');
     fireEvent.click(pressFor('What it is for')!);
     expect(await screen.findByText('This field is not marked as an AI draft on the current version. Reload the drill.')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('This field is not marked as an AI draft');
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('This field is not marked as an AI draft');
+    // Beside the opened drill, and focused: a coach sees it where they pressed.
+    expect(alert.previousElementSibling).toHaveTextContent('Back to the reference library');
+    await waitFor(() => expect(alert).toHaveFocus());
     await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1')).toBeGreaterThan(before));
     expect(screen.queryByText(/Recorded as looks right/)).not.toBeInTheDocument();
   });
@@ -2876,5 +2880,15 @@ describe('Looks right (lane ED-UI PR4)', () => {
     fireEvent.click(pressFor('What it is for')!);
     expect(await screen.findByText('It is not known whether this change was saved.')).toBeInTheDocument();
     expect(screen.queryByText(/Recorded as looks right/)).not.toBeInTheDocument();
+  });
+
+  it('leaves no alert behind when the coach goes back to the library', async () => {
+    global.fetch = routes({ details: { [reference.drill_id]: drafted }, editLibrary: () => jsonResponse({ error: 'Refused.' }, false, 400) }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(pressFor('What it is for')!);
+    expect(await screen.findByText('Refused.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the reference library' }));
+    expect(screen.queryByText('Refused.')).not.toBeInTheDocument();
   });
 });

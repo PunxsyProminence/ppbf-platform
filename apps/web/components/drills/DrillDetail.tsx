@@ -147,7 +147,12 @@ export default function DrillDetail({ view, audience, actions, looksRight, focus
           )}
         </div>
         {view.coach && (
-          <p className="t-label">{view.coach.discipline}{headerField('discipline')} · {view.coach.category}{headerField('category')}</p>
+          // Each field with its own mark and press, wrapping as one, so a press never reads as the other field's.
+          <p className="t-label">
+            <span className="inline-flex flex-wrap items-baseline">{view.coach.discipline}{headerField('discipline')}</span>
+            {' · '}
+            <span className="inline-flex flex-wrap items-baseline">{view.coach.category}{headerField('category')}</span>
+          </p>
         )}
         {/* Where the content came from, and whether it is current, sits beside
             the action it informs -- not behind an expander below it. */}
