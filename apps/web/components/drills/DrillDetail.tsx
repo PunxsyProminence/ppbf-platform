@@ -113,7 +113,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   const labelled = drafts?.labelled === true;
   const mark = (state: boolean | null | undefined, onDark = false) => (labelled ? <DraftMark state={state} onDark={onDark} /> : null);
   const field = (key: DrillMarkedField) => mark(drafts?.fields[key]);
-  // The header (a near-black ground on /coach/drills, Q-PR1-3) keeps the light ink.
+  // The header (a near-black ground on /coach/drills, Q-PR1-3) keeps a light ink.
   const headerField = (key: DrillMarkedField) => mark(drafts?.fields[key], true);
   // Equipment shows the setup column's word only when equipment is blank and that word is not shown as Setup
   // (setupAndEquipment); otherwise its words are the equipment column's, a blank one's included.
@@ -328,12 +328,13 @@ function Heading({ children, mark }: { children: ReactNode; mark: ReactNode }) {
 function DraftMark({ state, onDark = false }: { state: boolean | null | undefined; onDark?: boolean }) {
   if (state === false) return null;
   if (state === true) return <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>;
-  // Sentence case and body weight, as 6e shows it; not .t-muted, which no card rule darkens on the parchment card.
-  // On the card it takes the card's body ink (CARD_BODY_INK), also inside a label.
+  // As 6e shows it: sentence case, the body face, weight and size (with the kiosk rise), also inside a label or
+  // beside a heading. Off the parchment, the design system's lift (--bone-200): the console's lit card is
+  // mid-brown. On the parchment card the card's body ink (CARD_BODY_INK); in its dark header the lift again.
   return (
     <span
-      className={`ml-[var(--s2)] font-normal normal-case tracking-normal text-[color:var(--bone-300)] ${CARD_BODY_INK}`}
-      style={onDark ? { color: 'var(--bone-300)' } : undefined}
+      className={`ml-[var(--s2)] font-[family-name:var(--font-body)] font-normal normal-case tracking-normal text-[length:var(--t-sm)] ${KIOSK_TEXT} text-[color:var(--bone-200)] ${CARD_BODY_INK}`}
+      style={onDark ? { color: 'var(--bone-200)' } : undefined}
     >
       ({DRAFT_NOT_CHECKED})
     </span>

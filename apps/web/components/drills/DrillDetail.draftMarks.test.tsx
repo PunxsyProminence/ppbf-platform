@@ -174,15 +174,28 @@ test.each([
   expect(hasMark(besideHeading('Equipment'))).toBe(false);
 });
 
-test('"not checked" in the header keeps the light ink; elsewhere it takes the card\'s', () => {
+test('"not checked" in the header keeps a light ink; elsewhere it takes the card\'s', () => {
   renderCoach({ ...every(false), name: null, purpose: null });
   const inHeader = besideHeading('Jab return')?.querySelector('span');
   expect(inHeader).toHaveTextContent(NOT_CHECKED);
-  expect(inHeader).toHaveStyle({ color: 'var(--bone-300)' });
+  expect(inHeader).toHaveStyle({ color: 'var(--bone-200)' });
   const inBody = besideHeading('What it is for')?.querySelector('span');
   expect(inBody).toHaveTextContent(NOT_CHECKED);
   expect(inBody?.getAttribute('style')).toBeNull();
   expect(inBody?.className).toContain('in-[.ge-drillcase]:text-[color:#3A2E1D]');
+  // Off the parchment (the console's lit card), the lift.
+  expect(inBody?.className).toContain('text-[color:var(--bone-200)]');
+});
+
+// The live console's "View instructions" (a kiosk surface): beside a heading the words take the body's size, not
+// the article's; in a label line, the body face, not the label's.
+test('"not checked" has the body text\'s size, kiosk rise and face wherever it sits', () => {
+  renderCoach({ ...every(false), name: null, purpose: null, transfer: null });
+  for (const span of screen.getAllByText(NOT_CHECKED)) {
+    expect(span.className).toContain('text-[length:var(--t-sm)]');
+    expect(span.className).toContain('in-data-[surface=kiosk]:text-[length:var(--t-md)]');
+    expect(span.className).toContain('font-[family-name:var(--font-body)]');
+  }
 });
 
 test('the headings keep their names: the mark sits beside them, not inside', () => {

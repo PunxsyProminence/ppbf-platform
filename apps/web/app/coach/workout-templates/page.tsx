@@ -748,7 +748,7 @@ function TemplateFacts({ detail }: { detail: TemplateDetail }) {
     <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
       {fieldDrafts && fieldDrafts.labelled !== true && <p className="t-body mb-[var(--s2)]" style={LIFT}>({DRAFT_NOT_CHECKED})</p>}
       {/* On a phone each label sits over its value, so a value keeps the width to read in. */}
-      <dl className="grid grid-cols-1 gap-x-[var(--s3)] gap-y-[var(--s1)] sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-y-[var(--s2)]">
+      <dl className="grid grid-cols-1 items-baseline gap-x-[var(--s3)] gap-y-[var(--s1)] sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-y-[var(--s2)]">
         {facts.map(([field, label, value]) => (
           <div key={field} className="contents">
             <dt className="t-label" style={LIFT}>{label}</dt>
