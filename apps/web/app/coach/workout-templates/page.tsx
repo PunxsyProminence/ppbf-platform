@@ -831,12 +831,23 @@ function CoachWorkoutTemplates() {
     }
   }, []);
 
+  // The current version of a template: the listed row of its lineage ("Reload it and edit the current version", the
+  // route's 409). After a 409 or an unknown outcome the list was just read again, and a replaced version is not in it.
+  const currentVersionId = (template: Template) =>
+    templates.find((row) => row.lineage_id === template.lineage_id)?.template_id ?? template.template_id;
+
   // After a save the list is read again and the new version opens from the server.
   async function afterEditSaved(outcome: TemplateEditOutcome) {
+    const reread = rereadOnCancel.current;
     rereadOnCancel.current = false;
     if (!outcome.changed) {
       setEditingId('');
       setEditBusy(false);
+      // After a 409 or an unknown outcome nothing is known to be unwritten: no notice; the current version opens.
+      if (reread && detail) {
+        void openTemplate(currentVersionId(detail.template));
+        return;
+      }
       setEditNotice('Nothing changed. No new version was written.');
       setFocusEdit((count) => count + 1);
       return;
@@ -948,10 +959,7 @@ function CoachWorkoutTemplates() {
                   itemNames={detail.items.map((item, index) => `${index + 1}. ${itemName(item)}`)}
                   onCancel={() => {
                     setEditingId('');
-                    // The current version of this template ("Reload it and edit the current version", the route's 409): the
-                    // list was just read again, and a version replaced meanwhile is no longer in it.
-                    const current = templates.find((row) => row.lineage_id === detail.template.lineage_id)?.template_id;
-                    if (rereadOnCancel.current) void openTemplate(current ?? detail.template.template_id);
+                    if (rereadOnCancel.current) void openTemplate(currentVersionId(detail.template));
                     else setFocusEdit((count) => count + 1);
                     rereadOnCancel.current = false;
                   }}

@@ -261,8 +261,8 @@ describe('a refusal in the form\'s words (Overwatch Q-PR1-1)', () => {
     }
   });
 
-  it.each([[500], [409]])('after a %s, a save with nothing left to send closes as Cancel does, never saying nothing changed', async (status) => {
-    const { fetchMock, onSaved, onCancel } = renderForm({ answer: async () => jsonResponse({ error: 'x' }, status) });
+  it.each([[500], [409]])('after a %s, a save with nothing left to send sends nothing (the page then reads the current version)', async (status) => {
+    const { fetchMock, onSaved } = renderForm({ answer: async () => jsonResponse({ error: 'x' }, status) });
     change('Intent', 'x');
     save();
     await screen.findByRole('alert');
@@ -270,8 +270,7 @@ describe('a refusal in the form\'s words (Overwatch Q-PR1-1)', () => {
     change('Intent', 'Stance, guard, and the first two punches.');
     save();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(onSaved).not.toHaveBeenCalled();
-    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith({ changed: false });
   });
 
   it('says only that the outcome is not known after a fault or a lost answer', async () => {

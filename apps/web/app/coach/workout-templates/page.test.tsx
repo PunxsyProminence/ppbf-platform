@@ -2306,6 +2306,49 @@ describe('Edit (lane ED-UI PR2)', () => {
     expect(writesOf(fetchMock)).toHaveLength(1);
   });
 
+  it('after an unknown outcome, a server answer of no change still reads the current version and says nothing certain', async () => {
+    const answers = [
+      () => ({ ok: false, status: 500, json: async () => ({ error: 'Something failed.' }) }) as Response,
+      () => jsonResponse({ ok: true, changed: false, template_id: 'wt-1' }),
+    ];
+    const fetchMock = editRoutes(() => (answers.shift() as () => Response)(), { savedAnyway: true });
+    render(<CoachWorkoutTemplatesPage />);
+    const form = await openAndEdit();
+    const v2Reads = () => fetchMock.mock.calls
+      .filter((call) => String(call[0]) === '/api/pilot/workout-templates?template_id=wt-1-v2' && ((call[1] as RequestInit | undefined)?.method ?? 'GET') === 'GET').length;
+    fireEvent.change(within(form).getByLabelText('Intent'), { target: { value: 'Stance and guard.' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await within(form).findByRole('alert');
+    await waitFor(() => expect(within(form).getByRole('button', { name: 'Save' })).toBeEnabled());
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(v2Reads()).toBe(1));
+    expect(writesOf(fetchMock)).toHaveLength(2);
+    expect(screen.queryByText('Nothing changed. No new version was written.')).not.toBeInTheDocument();
+  });
+
+  it('after a 409, keeps the form locked until the list read again has landed', async () => {
+    let releaseList: () => void = () => {};
+    let failed = false;
+    mockFetch((url, init) => {
+      if ((init?.method ?? 'GET') === 'PATCH') {
+        failed = true;
+        return { ok: false, status: 409, json: async () => ({ error: 'This template changed while it was being edited. Reload it and try again.' }) } as Response;
+      }
+      if (url.includes('template_id=wt-1')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+      const list = jsonResponse({ templates: [BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+      return (failed ? new Promise<Response>((resolve) => { releaseList = () => resolve(list); }) : list) as unknown as Response;
+    });
+    render(<CoachWorkoutTemplatesPage />);
+    const form = await openAndEdit();
+    fireEvent.change(within(form).getByLabelText('Intent'), { target: { value: 'Stance and guard.' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await within(form).findByRole('alert');
+    expect(within(form).getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(within(form).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await act(async () => { releaseList(); });
+    await waitFor(() => expect(within(form).getByRole('button', { name: 'Cancel' })).toBeEnabled());
+  });
+
   it('writes nothing when nothing changed, and says so; Cancel writes nothing either; focus goes back to Edit', async () => {
     const fetchMock = editRoutes();
     render(<CoachWorkoutTemplatesPage />);
