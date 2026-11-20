@@ -157,8 +157,9 @@ function VendorConsole() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
       <div className="mx-auto max-w-4xl">
-        <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">Treasurer</p>
-        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Suppliers and accounts</h1>
+        {/* No "Treasurer" eyebrow (lane BT, BOA-16): this page admits the gym
+            admin only, not a board seat. */}
+        <h1 className="font-display text-3xl font-black tracking-tight">Suppliers and accounts</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
           Who the gym buys from, on what account and on what terms. Everything on this page is
           confidential and stays inside the gym &mdash; the public shop shows the brand on a

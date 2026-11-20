@@ -102,8 +102,10 @@ test('renders a suppressed figure as suppressed, never as blank or zero', async 
 
   const suppressed = tile('Training Sessions (30 Days)');
   expect(within(suppressed).getByText('Suppressed')).toBeTruthy();
-  expect(within(suppressed).getByText(/Fewer than 5 athletes contributed/)).toBeTruthy();
+  expect(within(suppressed).getByText('Fewer than 5 athletes are behind this figure, so it is suppressed rather than reduced.')).toBeTruthy();
   expect(suppressed.textContent).not.toMatch(/\b0\b/);
+  // Lane BT, BOA-19: one word for the state on screen, "suppressed", never "withheld".
+  expect(document.body.textContent).not.toMatch(/withheld/i);
 });
 
 test('distinguishes an empty period from a suppressed cohort', async () => {
@@ -208,7 +210,7 @@ describe('the board report section (RP-04)', () => {
       expect.stringMatching(/^Training sessions: sessions dated in the month, for every athlete on record \(not deleted\), including athletes no longer active\./),
       expect.stringMatching(/^Coach reviews: reviews written on a gym day in the month/),
       expect.stringMatching(/^Goals: the current goals of active athletes, as of when this report was made/),
-      expect.stringMatching(/^Suppressed: fewer than 5 athletes contributed/),
+      expect.stringMatching(/^Suppressed: fewer than 5 athletes are behind the figure, so it is suppressed rather\s+than reduced\./),
       'Active athletes and goals have no stored history, so they are not figures for the window.',
       expect.stringMatching(/^The organization figures above this report cover a rolling 30 days/),
       expect.stringMatching(/^A report covers one completed calendar month, so no two reports overlap\. Figures are read from the records as they stand/),

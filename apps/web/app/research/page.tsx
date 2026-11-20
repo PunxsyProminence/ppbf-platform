@@ -240,6 +240,9 @@ export default function ResearchIntakePage() {
   // F-025: the list arrives a page at a time; null once the server has no more.
   const [requirementsCursor, setRequirementsCursor] = useState<string | null>(null);
   const [requirementsLoadingMore, setRequirementsLoadingMore] = useState(false);
+  // Lane BT, BOA-17: whether the first page of requirements came back, so an
+  // empty list can say so and a failed read is never shown as "none".
+  const [requirementsRead, setRequirementsRead] = useState<'loading' | 'ok' | 'unread'>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [requirementDraft, setRequirementDraft] = useState({
     sourceEventName: 'MANUAL_RESEARCH_NOTE',
@@ -435,10 +438,12 @@ export default function ResearchIntakePage() {
         const first = await loadRequirementsPage(null);
         setRequirements(first.items);
         setRequirementsCursor(first.nextCursor);
+        setRequirementsRead('ok');
         await refreshAnswerStates(first.items.map((item) => item.research_requirement_id));
       } catch {
         setRequirements([]);
         setRequirementsCursor(null);
+        setRequirementsRead('unread');
       }
     })();
   }, []);
@@ -1236,6 +1241,15 @@ export default function ResearchIntakePage() {
             </form>
           )}
           <div className="space-y-[var(--s3)]">
+            {/* Lane BT, BOA-17: the list said nothing when empty. Worded like this
+                page's submitted-sources lines ("No sources submitted yet." / "The
+                submitted sources could not be read."); a failed read is not "none". */}
+            {requirementsRead === 'ok' && requirements.length === 0 ? (
+              <p className="t-muted">No research requirements filed yet.</p>
+            ) : null}
+            {requirementsRead === 'unread' ? (
+              <p className="t-muted" role="status">The research requirements could not be read.</p>
+            ) : null}
             {requirements.map((requirement) => (
               <article key={requirement.research_requirement_id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                 <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">

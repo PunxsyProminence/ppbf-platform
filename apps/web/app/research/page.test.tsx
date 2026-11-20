@@ -1704,3 +1704,48 @@ describe('Needs Evidence shows the record of each requirement (#345 section 1)',
     },
   );
 });
+
+// Lane BT, BOA-17: /research opens on Needs Evidence, whose requirements list
+// rendered nothing when empty. An answered empty list says so; a failed read
+// says that instead, never "none".
+describe('the requirements list when it holds nothing', () => {
+  test('an answered empty list says no requirements are filed yet', async () => {
+    global.fetch = mockFetch({ curator: false, requirements: [] });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    expect(await screen.findByText('No research requirements filed yet.')).toBeTruthy();
+    expect(screen.queryByText('The research requirements could not be read.')).toBeNull();
+  });
+
+  test('a list with rows shows no empty line', async () => {
+    global.fetch = mockFetch({ curator: false });
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    await screen.findByText('Is RPE reliable at age 12?');
+    expect(screen.queryByText('No research requirements filed yet.')).toBeNull();
+  });
+
+  test.each([
+    ['a refused read', async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response],
+    ['a network failure', async (): Promise<Response> => { throw new TypeError('Failed to fetch'); }],
+  ])('%s says the list could not be read, not that it is empty', async (_name, requirementsAnswer) => {
+    const base = mockFetch({ curator: false });
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/research-requirements')) return requirementsAnswer();
+      return (base as unknown as (i: RequestInfo | URL, n?: RequestInit) => Promise<Response>)(input, init);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<ResearchIntakePage />);
+    });
+
+    expect(await screen.findByText('The research requirements could not be read.')).toBeTruthy();
+    expect(screen.queryByText('No research requirements filed yet.')).toBeNull();
+  });
+});

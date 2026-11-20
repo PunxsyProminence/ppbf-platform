@@ -1092,3 +1092,61 @@ test('an empty roster reads the same on the Support picker as on the Enroll pick
   const supportField = screen.getByLabelText('Support for').closest('.field') as HTMLElement;
   expect(within(supportField).getByText("No athletes on this gym's roster yet.")).toBeTruthy();
 });
+
+// Lane BT, BOA-20: on a first run there is no program to enroll into, and the
+// Programs block (its empty state and Create program) sat at the foot of the
+// page. With an answered, empty catalog it comes first; otherwise it stays last.
+describe('where the Programs block sits', () => {
+  /** True when `a` comes before `b` in the document. */
+  const before = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  test('an answered, empty catalog puts the Programs block before Enroll athlete', async () => {
+    const base = mockFetch({});
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/admin/programs') && (init?.method ?? 'GET') === 'GET') {
+        return { ok: true, json: async () => ({ items: [] }) } as Response;
+      }
+      return (base as unknown as (i: RequestInfo | URL, n?: RequestInit) => Promise<Response>)(input, init);
+    }) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<MembershipsPage />);
+    });
+
+    const empty = await screen.findByText('No programs on record');
+    const create = screen.getByRole('button', { name: 'Create program' });
+    const enroll = screen.getByRole('button', { name: 'Enroll athlete' });
+    expect(before(empty, enroll)).toBe(true);
+    expect(before(create, enroll)).toBe(true);
+    expect(screen.getAllByRole('button', { name: 'Create program' })).toHaveLength(1);
+  });
+
+  test('a catalog with programs keeps the Programs block at the foot, after Support provided', async () => {
+    global.fetch = mockFetch({});
+
+    await act(async () => {
+      render(<MembershipsPage />);
+    });
+
+    const table = (await screen.findByText('Programs', { selector: 'caption' })).closest('section') as HTMLElement;
+    const enroll = screen.getByRole('button', { name: 'Enroll athlete' });
+    const support = screen.getByRole('heading', { name: 'Support provided' });
+    expect(before(enroll, table)).toBe(true);
+    expect(before(support, table)).toBe(true);
+  });
+
+  test('an unread catalog stays at the foot: it is not known to be empty', async () => {
+    global.fetch = jest.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('/admin/programs')
+        ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+        : ({ ok: true, json: async () => ({ items: [MEMBERSHIP] }) } as Response),
+    ) as unknown as typeof fetch;
+
+    await act(async () => {
+      render(<MembershipsPage />);
+    });
+
+    const unread = await screen.findByText('Programs could not be read');
+    expect(before(screen.getByRole('button', { name: 'Enroll athlete' }), unread)).toBe(true);
+  });
+});
