@@ -64,6 +64,14 @@ describe('the job bars', () => {
     expect(given).toHaveLength(items(role).length);
   });
 
+  it("lists the athlete page's parts under Athletes, after Passbook, until the athlete page holds them", () => {
+    const athletes = hrefsOf(JOB_BARS.coach?.sections.find((section) => section.label === 'Athletes')?.items ?? []);
+    expect(athletes.slice(0, 8)).toEqual([
+      '/coach/passbook', '/coach/development-blocks', '/coach/assessments', '/coach/mental-skills',
+      '/coach/progression-intelligence', '/coach/attempt-log', '/coach/transfer-check', '/coach/cards',
+    ]);
+  });
+
   it("keeps the admin's Lab pages out of the bar: Capabilities, System and Door Register are in Search", () => {
     const admin = hrefsOf(items('admin'));
     for (const href of ['/admin', '/admin/system', '/admin/door-register']) expect(admin).not.toContain(href);
@@ -91,6 +99,19 @@ describe('a board member\'s bar', () => {
 
   it('opens Home on Board Hub for a board session with no seat', () => {
     expect(jobBarFor('board')?.sections[0]).toEqual({ label: 'Home', items: [{ href: '/board' }] });
+  });
+
+  it('counts the landing seat as held when no seat list is passed', () => {
+    expect(jobBarFor('board', { boardSeat: 'secretary' })?.sections[0].items).toEqual([{ href: '/board/secretary' }]);
+  });
+
+  it('lands a member who holds two seats on their landing seat', () => {
+    expect(jobBarFor('board', { boardSeat: 'secretary', boardSeats: ['at-large', 'secretary'] })?.sections[0].items)
+      .toEqual([{ href: '/board/secretary' }]);
+  });
+
+  it('does not guess a landing seat from the seat list alone: Home is Board Hub', () => {
+    expect(jobBarFor('board', { boardSeats: ['treasurer'] })?.sections[0].items).toEqual([{ href: '/board' }]);
   });
 
   it('gives the chair their own seat as Home', () => {

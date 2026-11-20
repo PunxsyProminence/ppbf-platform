@@ -13,8 +13,12 @@ import type { ClubRole } from './roleRoutes';
  * source). Each item below is an existing door, named by its href, or a Parent
  * Hub tab whose heading carries the stage 2 words. Items with no page yet are
  * left out, never invented (Overwatch named the first four):
- *   coach    Who needs you (one list); Groups and pathways (Today's Floor and
- *            Adult Pathway exist but are not that page); Lessons.
+ *   coach    Who needs you (one list); Groups and pathways (Today's Floor,
+ *            Adult Pathway and Cohorts exist, but none is that page); Lessons.
+ *            The athlete page's "reviews" and "what the athlete logged" have no
+ *            page of their own; its "film" is Film, in More.
+ * Until the athlete page (AS-11) holds them, the athlete page's parts are
+ * today's coach pages, listed under Athletes after Passbook.
  *   admin    New member flow; Morning check (AS-10 builds it on Gym Office, #2018;
  *            Safety Review, today's nearest, is in Safety); Gym TVs (pairing) has
  *            no page of its own: it is on Gym Setup, in Classes & floor.
@@ -41,7 +45,13 @@ export interface JobSection {
   readonly items: readonly JobItem[];
 }
 
-/** The board member's landing seat (the session's boardSeat) picks their Home; their held seats, their doors. */
+/**
+ * For a board member: boardSeat is the session's landing seat (RoleSession.boardSeat) and picks their
+ * Home; boardSeats are every seat they hold (BoardRoleGate's useBoardSession().seats). Pass both where
+ * both are known. With only the seats, Home is Board Hub: which seat a member lands on is decided on
+ * the server, and is not guessed here. Unlike visibleDoors, the bar always applies the seat rule, so
+ * a call with no viewer shows a board member no seat.
+ */
 export interface JobBarViewer extends DoorViewer {
   boardSeat?: BoardSeatSlug | null;
 }
@@ -78,12 +88,15 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
       { label: 'Home', items: pages('/coach/environment/intake-router') },
       // "today's classes > Class screen; Schedule; Test day; Guided visualization"
       { label: 'Class', items: pages('/coach/class', '/schedule', '/coach/test-day', '/coach/visualization') },
-      // "roster > athlete page" (Passbook, the athlete page: AS-11); "Interventions"; "Team (Standards,
-      // 1% Club)"; "Competitions"
+      // "roster > athlete page (record from Passbook, plan, tests, mental skills, progression, attempts,
+      // transfer, cards ...)": Passbook (the athlete page, AS-11), then today's pages for its parts;
+      // "Interventions"; "Team (Standards, 1% Club)"; "Competitions"
       {
         label: 'Athletes',
         items: pages(
           '/coach/passbook',
+          '/coach/development-blocks', '/coach/assessments', '/coach/mental-skills',
+          '/coach/progression-intelligence', '/coach/attempt-log', '/coach/transfer-check', '/coach/cards',
           '/coach/intervention-protocols', '/coach/intervention-executions', '/coach/intervention-review',
           '/coach/behavior-standards', '/coach/one-percent-club',
           '/operations/external-competition', '/operations/wrestling-league',
@@ -155,7 +168,8 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
           '/admin/coach-coverage', '/admin/credentials', '/admin/volunteer-management',
         ),
       },
-      // "Morning check and each queue"
+      // "Morning check and each queue". The waiver queue is Waiver Compliance; Waivers & Consent (the
+      // records) stays in Search, in Back Office.
       {
         label: 'Safety',
         items: pages(
@@ -172,7 +186,8 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
         ),
       },
       // "customize, quotes, notices, chalkboard, gym content; grants, memberships, payment accounts,
-      // equipment, suppliers; export; community service; floor hours; audit trace; board seats"
+      // equipment, suppliers; export; community service; floor hours; audit trace; board seats".
+      // Audit Trace is here and also in Search's Lab: the bar and Search are grouped apart.
       {
         label: 'Office',
         items: pages(
@@ -219,7 +234,10 @@ export function jobBarFor(role: ClubRole | null, viewer: JobBarViewer = {}): Job
   if (!role) return null;
   const bar = JOB_BARS[role];
   if (!bar) return null;
-  const open = new Set(visibleDoors(role, viewer).map((door) => door.href));
+  // The landing seat is a held seat (the session derives it from the seats held), so the doors open
+  // it even when only the landing seat is passed; held seats passed too are added to it.
+  const boardSeats = [...new Set([...(viewer.boardSeat ? [viewer.boardSeat] : []), ...(viewer.boardSeats ?? [])])];
+  const open = new Set(visibleDoors(role, { boardSeats }).map((door) => door.href));
   const resolve = (item: JobItem): JobItem =>
     item.href === BOARD_HOME ? { href: viewer.boardSeat ? `/board/${viewer.boardSeat}` : '/board' } : item;
   const keep = (items: readonly JobItem[]): JobItem[] => items.map(resolve).filter((item) => open.has(item.href));
