@@ -6,9 +6,17 @@ import { writePilotAuditEvent } from './audit';
 import { MINT } from './contentImport/ids';
 import { normalizeCell } from './contentImport/values';
 import { VOCABULARIES, type VocabularyName } from './contentImport/vocabularies';
-import { writeEditedVersionLabels, type EditedPart } from './contentImport/datasets/contentLabels';
+import {
+  confirmLooksRight,
+  looksRightRecord,
+  readVersionLabels,
+  writeEditedVersionLabels,
+  writeLooksRightVersionLabels,
+  type EditedPart,
+} from './contentImport/datasets/contentLabels';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
+import { drillFieldDrafts } from './drillLibraryV3';
 import { assertDrillMeetsCueRule } from './drills';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 
@@ -60,6 +68,19 @@ export const EDITABLE_DRILL_LIBRARY_KEYS = [
   'cues', 'scale_levels', 'stop_rules',
 ] as const;
 
+/**
+ * "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4). A coach confirms one
+ * AI-drafted field as it stands: `looks_right` names it, alone in the request. Only
+ * a field the edit form can change (Q3 = A): the scalar fields and cues, the drill's
+ * own stop-rule list as one (its kinds included, Q2 = A), or one scale level
+ * ('scale_levels.B'). It writes v(n+1) like an edit, with no content change; the
+ * field's label keeps its sources, loses `draft` and records the coach
+ * (contentLabels.ts#confirmLooksRight, Q1 = A).
+ */
+export const LOOKS_RIGHT_DRILL_FIELDS = [
+  ...SHORT_FIELDS, ...VOCABULARY_FIELDS, ...DRILL_TEXT_FIELDS, 'requires_coach_authorization', 'cues', 'stop_rules',
+] as const;
+
 /** Named so a request that sends one is told why, rather than "unknown". */
 export const NOT_EDITABLE_DRILL_LIBRARY_KEYS = [
   'discipline', 'skill_id', 'content_class', 'source_ref', 'grounding_claim_ids', 'field_provenance', 'active',
@@ -83,6 +104,8 @@ export interface DrillLibraryEditRequest {
   cues?: string[];
   scaleLevels?: Record<string, Partial<Record<(typeof SCALE_FIELDS)[number], string>>>;
   stopRules?: { ordinal: number; condition_text?: string; rule_kind?: string }[];
+  /** A "Looks right" press: the one field (or scale level) confirmed. Never with any change. */
+  looksRight?: { field: string; part?: string };
 }
 
 export interface DrillLibraryEditResult {
@@ -92,6 +115,8 @@ export interface DrillLibraryEditResult {
   version: number;
   previous_drill_id: string | null;
   edited: string[];
+  /** The field a "Looks right" press confirmed. */
+  looks_right?: string;
 }
 
 function isPlainObject(value: unknown): value is Row {
@@ -125,7 +150,7 @@ function inVocabulary(value: string, key: string, name: VocabularyName): string 
  */
 export function parseDrillLibraryEdit(body: Row): DrillLibraryEditRequest {
   for (const key of Object.keys(body)) {
-    if (key === 'drill_id') continue;
+    if (key === 'drill_id' || key === 'looks_right') continue;
     if ((NOT_EDITABLE_DRILL_LIBRARY_KEYS as readonly string[]).includes(key)) {
       throw new ValidationError(`Unsupported field: ${key} is not editable`, 'FIELD_NOT_EDITABLE');
     }
@@ -136,6 +161,10 @@ export function parseDrillLibraryEdit(body: Row): DrillLibraryEditRequest {
   if (typeof body.drill_id !== 'string' || !body.drill_id.trim()) throw new ValidationError('Missing drill_id');
 
   const request: DrillLibraryEditRequest = { drillId: body.drill_id.trim(), fields: {} };
+  if (body.looks_right !== undefined) {
+    request.looksRight = parseLooksRight(body);
+    return request;
+  }
   for (const key of SHORT_FIELDS) {
     if (body[key] !== undefined) request.fields[key] = text(body[key], key, MAX_SHORT_TEXT, true);
   }
@@ -210,6 +239,23 @@ export function parseDrillLibraryEdit(body: Row): DrillLibraryEditRequest {
   return request;
 }
 
+/** `looks_right`: alone, and naming one field the edit form can change, or one scale level. */
+function parseLooksRight(body: Row): { field: string; part?: string } {
+  if (Object.keys(body).some((key) => key !== 'drill_id' && key !== 'looks_right')) {
+    throw new ValidationError('Unsupported looks_right: send it on its own, without any change', 'LOOKS_RIGHT_WITH_CHANGES');
+  }
+  const named = body.looks_right;
+  if (typeof named !== 'string' || !named.trim()) throw new ValidationError('Missing looks_right: the field it confirms');
+  const target = named.trim();
+  const level = /^scale_levels\.([ABC])$/.exec(target);
+  if (level) return { field: 'scale_levels', part: level[1] };
+  if ((LOOKS_RIGHT_DRILL_FIELDS as readonly string[]).includes(target)) return { field: target };
+  if ((NOT_EDITABLE_DRILL_LIBRARY_KEYS as readonly string[]).includes(target)) {
+    throw new ValidationError(`Unsupported looks_right: ${target} is not editable`, 'FIELD_NOT_EDITABLE');
+  }
+  throw new ValidationError(`Unsupported looks_right: ${target}`, 'UNKNOWN_FIELD');
+}
+
 async function rowsOf(tx: PoolClient, table: string, organizationId: string, drillId: string): Promise<Row[]> {
   const { rows } = await tx.query<{ row: Row }>(
     `select to_jsonb(t) as row from pilot.${table} t where t.organization_id = $1 and t.drill_id = $2`,
@@ -282,6 +328,25 @@ export async function editLibraryDrill(input: {
     const stops = await rowsOf(tx, 'drill_stop_rules', organizationId, headId);
     const cues = await rowsOf(tx, 'drill_cues', organizationId, headId);
 
+    // A "Looks right" press: the field must still be labelled an AI draft on this
+    // version, read by the same rule the drill screen reads it with (drillFieldDrafts).
+    const looksRight = request.looksRight;
+    const labels = looksRight
+      ? await readVersionLabels(tx, organizationId, 'drill-library', head.lineage_id as string, head.version as number)
+      : null;
+    if (looksRight) {
+      if (looksRight.part !== undefined && !scales.some((scale) => scale.scale_level === looksRight.part)) {
+        throw new ValidationError(`Unsupported looks_right: this drill has no level ${looksRight.part}`);
+      }
+      const drafts = drillFieldDrafts(labels?.fieldLabels ?? null, scales.map((scale) => scale.scale_level as string));
+      const state = looksRight.part !== undefined
+        ? drafts.scale_levels?.[looksRight.part]
+        : (drafts as Record<string, boolean | null | undefined>)[looksRight.field];
+      if (state !== true) {
+        throw new ConflictError('This field is not marked as an AI draft on the current version. Reload the drill.', 'FIELD_NOT_DRAFT');
+      }
+    }
+
     // What really changes.
     const edited: EditedPart[] = [];
     const patch: Row = {};
@@ -325,7 +390,7 @@ export async function editLibraryDrill(input: {
 
     const describe = (part: EditedPart) => (part.part === undefined ? part.field : `${part.field}.${part.part}`);
     const reported = edited.filter((part) => part.field !== 'stop_rules.rule_kind').map(describe);
-    if (edited.length === 0) {
+    if (edited.length === 0 && !looksRight) {
       return { changed: false, drill_id: headId, lineage_id: lineageId, version: headVersion, previous_drill_id: null, edited: [] };
     }
 
@@ -456,7 +521,23 @@ export async function editLibraryDrill(input: {
     }
 
     const editId = randomUUID();
-    await writeEditedVersionLabels(tx, {
+    const confirmed = looksRight ? describe(looksRight) : undefined;
+    if (looksRight && labels) {
+      const editor = { accountId: input.actorAccountId, role: input.actorRole, at };
+      await writeLooksRightVersionLabels(tx, {
+        organizationId,
+        dataset: 'drill-library',
+        lineageId,
+        toVersion: newVersion,
+        editId,
+        editor,
+        // The drill's own stop-rule list is one press: its kinds are confirmed with it (Q2 = A).
+        fieldLabels: confirmLooksRight(labels.fieldLabels, looksRight, looksRightRecord(editor),
+          looksRight.field === 'stop_rules' ? ['stop_rules.rule_kind'] : []),
+        evidence: labels.evidence,
+        backboneVersion: labels.backboneVersion,
+      });
+    } else await writeEditedVersionLabels(tx, {
       organizationId,
       dataset: 'drill-library',
       lineageId,
@@ -488,6 +569,7 @@ export async function editLibraryDrill(input: {
         version: newVersion,
         from_drill_id: headId,
         edited: reported,
+        ...(confirmed ? { looks_right: confirmed } : {}),
       },
     }, tx);
 
@@ -498,6 +580,7 @@ export async function editLibraryDrill(input: {
       version: newVersion,
       previous_drill_id: headId,
       edited: reported,
+      ...(confirmed ? { looks_right: confirmed } : {}),
     };
   });
 }

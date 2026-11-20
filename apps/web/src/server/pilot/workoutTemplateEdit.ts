@@ -5,12 +5,20 @@ import type { PoolClient } from 'pg';
 import { writePilotAuditEvent } from './audit';
 import { MINT } from './contentImport/ids';
 import { versionId } from './contentImport/datasets/templateScriptVersions';
-import { writeEditedVersionLabels, type EditedPart } from './contentImport/datasets/contentLabels';
+import {
+  confirmLooksRight,
+  looksRightRecord,
+  readVersionLabels,
+  writeEditedVersionLabels,
+  writeLooksRightVersionLabels,
+  type EditedPart,
+} from './contentImport/datasets/contentLabels';
 import { normalizeCell } from './contentImport/values';
 import { VOCABULARIES, type VocabularyName } from './contentImport/vocabularies';
 import type { PilotRole } from './contracts';
 import { withTransaction } from './db';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
+import { templateFieldDrafts } from './workoutTemplates';
 
 // A COACH EDITS A WORKOUT TEMPLATE AND ITS ITEMS IN THE APP (OD-2026-11-19-005,
 // OW25-51; Overwatch ruling 2026-11-19).
@@ -75,6 +83,8 @@ export interface WorkoutTemplateEditRequest {
   templateId: string;
   fields: Row;
   items?: { itemId?: string; content: ItemContent }[];
+  /** A "Looks right" press (lane ED-UI PR4): the one field confirmed, never with any change. */
+  looksRight?: string;
 }
 
 export interface WorkoutTemplateEditResult {
@@ -84,6 +94,8 @@ export interface WorkoutTemplateEditResult {
   version: number;
   previous_template_id: string | null;
   edited: string[];
+  /** The field a "Looks right" press confirmed. */
+  looks_right?: string;
 }
 
 function isPlainObject(value: unknown): value is Row {
@@ -129,10 +141,22 @@ function refuseKey(key: string, allowed: readonly string[], notEditable: readonl
 /** Parses and bounds a PATCH body: unknown and never-editable keys, vocabularies and the importer's numeric bounds. */
 export function parseWorkoutTemplateEdit(body: Row): WorkoutTemplateEditRequest {
   for (const key of Object.keys(body)) {
-    if (key !== 'template_id') refuseKey(key, TEMPLATE_KEYS, NOT_EDITABLE_TEMPLATE_KEYS);
+    if (key !== 'template_id' && key !== 'looks_right') refuseKey(key, TEMPLATE_KEYS, NOT_EDITABLE_TEMPLATE_KEYS);
   }
   if (typeof body.template_id !== 'string' || !body.template_id.trim()) throw new ValidationError('Missing template_id');
   const request: WorkoutTemplateEditRequest = { templateId: body.template_id.trim(), fields: {} };
+  // "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): alone, naming one field the edit
+  // form can change (Q3 = A), the item list as one (Q2 = A). See drillLibraryEdit.ts.
+  if (body.looks_right !== undefined) {
+    if (Object.keys(body).some((key) => key !== 'template_id' && key !== 'looks_right')) {
+      throw new ValidationError('Unsupported looks_right: send it on its own, without any change', 'LOOKS_RIGHT_WITH_CHANGES');
+    }
+    if (typeof body.looks_right !== 'string' || !body.looks_right.trim()) throw new ValidationError('Missing looks_right: the field it confirms');
+    const target = body.looks_right.trim();
+    refuseKey(target, TEMPLATE_KEYS, NOT_EDITABLE_TEMPLATE_KEYS, 'looks_right ');
+    request.looksRight = target;
+    return request;
+  }
 
   for (const key of TEMPLATE_TEXT_FIELDS) {
     if (body[key] !== undefined) request.fields[key] = text(body[key], key, key === 'intent' ? MAX_LONG_TEXT : MAX_SHORT_TEXT, true);
@@ -252,6 +276,17 @@ export async function editWorkoutTemplate(input: {
     const headVersion = head.version as number;
     const oldItems = await rowsOf(tx, organizationId, headId);
 
+    // A "Looks right" press: the field must still be labelled an AI draft on this
+    // version, read by the same rule the template screen reads it with.
+    const looksRight = request.looksRight;
+    const labels = looksRight ? await readVersionLabels(tx, organizationId, 'workout-templates', lineageId, headVersion) : null;
+    if (looksRight) {
+      const drafts = templateFieldDrafts(labels?.fieldLabels ?? null, labels ? true : false) as Record<string, boolean | null>;
+      if (drafts[looksRight] !== true) {
+        throw new ConflictError('This field is not marked as an AI draft on the current version. Reload the template.', 'FIELD_NOT_DRAFT');
+      }
+    }
+
     // What really changes. Stored text is read the way the sent text was
     // (normalizeCell, blank = none), so text resent unchanged keeps its label.
     const edited: EditedPart[] = [];
@@ -339,7 +374,7 @@ export async function editWorkoutTemplate(input: {
       else newItems = null;
     }
 
-    if (edited.length === 0) {
+    if (edited.length === 0 && !looksRight) {
       return { changed: false, template_id: headId, lineage_id: lineageId, version: headVersion, previous_template_id: null, edited: [] };
     }
 
@@ -411,7 +446,20 @@ export async function editWorkoutTemplate(input: {
     }
 
     const editId = randomUUID();
-    await writeEditedVersionLabels(tx, {
+    if (looksRight && labels) {
+      const editor = { accountId: input.actorAccountId, role: input.actorRole, at };
+      await writeLooksRightVersionLabels(tx, {
+        organizationId,
+        dataset: 'workout-templates',
+        lineageId,
+        toVersion: newVersion,
+        editId,
+        editor,
+        fieldLabels: confirmLooksRight(labels.fieldLabels, { field: looksRight }, looksRightRecord(editor)),
+        evidence: labels.evidence,
+        backboneVersion: labels.backboneVersion,
+      });
+    } else await writeEditedVersionLabels(tx, {
       organizationId,
       dataset: 'workout-templates',
       lineageId,
@@ -430,7 +478,10 @@ export async function editWorkoutTemplate(input: {
       organization_id: organizationId,
       entity_type: 'workout_template',
       entity_id: newId,
-      details: { action: 'in_app_edit', edit_id: editId, lineage_id: lineageId, version: newVersion, from_template_id: headId, edited: editedNames },
+      details: {
+        action: 'in_app_edit', edit_id: editId, lineage_id: lineageId, version: newVersion, from_template_id: headId, edited: editedNames,
+        ...(looksRight ? { looks_right: looksRight } : {}),
+      },
     }, tx);
 
     return {
@@ -440,6 +491,7 @@ export async function editWorkoutTemplate(input: {
       version: newVersion,
       previous_template_id: headId,
       edited: editedNames,
+      ...(looksRight ? { looks_right: looksRight } : {}),
     };
   });
 }

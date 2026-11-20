@@ -328,6 +328,113 @@ export async function writeEditedVersionLabels(
   return true;
 }
 
+/** The record a coach's "Looks right" press adds to a label (Q1 = A): who and when. */
+export function looksRightRecord(editor: LabelEditor): Record<string, unknown> {
+  return { by_account_id: editor.accountId, by_role: editor.role, at: editor.at };
+}
+
+/**
+ * A VERSION'S STORED LABELS, for a "Looks right" press to check and confirm
+ * (lane ED-UI PR4). null when the version has no label row, or before the
+ * content_labels migration: nothing there is labelled a draft.
+ */
+export async function readVersionLabels(
+  client: DbClient,
+  organizationId: string,
+  dataset: DatasetName,
+  lineageId: string,
+  version: number,
+): Promise<{ fieldLabels: Record<string, unknown>; evidence: unknown; backboneVersion: string | null } | null> {
+  if (!(await labelTablesExist(client))) return null;
+  const { rows } = await client.query<{ field_labels: unknown; evidence: unknown; backbone_version: string | null }>(
+    `select field_labels, evidence, backbone_version from pilot.content_record_labels
+      where organization_id = $1 and target_kind = $2 and target_lineage_id = $3 and target_version = $4`,
+    [organizationId, labelTargetKind(dataset), lineageId, version],
+  );
+  const row = rows[0];
+  if (!row || typeof row.field_labels !== 'object' || row.field_labels === null || Array.isArray(row.field_labels)) return null;
+  return { fieldLabels: row.field_labels as Record<string, unknown>, evidence: row.evidence, backboneVersion: row.backbone_version };
+}
+
+/**
+ * A COACH CONFIRMS AN AI-DRAFTED FIELD: "Looks right" (OD-2026-11-19-007,
+ * OW25-55; lane ED-UI PR4, Q1 = A, Q2 = A). The text is unchanged, so its label
+ * stays true about where it came from: the field keeps its label (status,
+ * sources), loses its `draft` key, and gains `looks_right` (who, when). A whole
+ * field confirms every part inside it too (a template's item list; the drill's
+ * own stop-rule list, whose kinds the caller names in `alsoFields`). A part (a
+ * scale level) is confirmed on its own label, which is created if the level has
+ * none; the group's label still speaks for the levels nobody confirmed.
+ * Returns a new object; `labels` is not changed.
+ */
+export function confirmLooksRight(
+  labels: Record<string, unknown>,
+  target: { field: string; part?: string },
+  record: Record<string, unknown>,
+  alsoFields: readonly string[] = [],
+): Record<string, unknown> {
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+  // Labels are JSON: a JSON copy also parts any object two keys happen to share.
+  const out = JSON.parse(JSON.stringify(labels)) as Record<string, unknown>;
+  if (target.part !== undefined) {
+    const group = isObject(out[target.field]) ? (out[target.field] as Record<string, unknown>) : {};
+    const own = isObject(group[target.part]) ? (group[target.part] as Record<string, unknown>) : {};
+    delete own.draft;
+    own.looks_right = structuredClone(record);
+    group[target.part] = own;
+    out[target.field] = group;
+    return out;
+  }
+  for (const field of [target.field, ...alsoFields]) {
+    const label = out[field];
+    if (!isObject(label)) continue;
+    delete label.draft;
+    // A record is not a part: edited and looks_right are records about the field.
+    for (const [key, part] of Object.entries(label)) {
+      if (key !== 'edited' && key !== 'looks_right' && isObject(part)) delete part.draft;
+    }
+    label.looks_right = structuredClone(record);
+  }
+  return out;
+}
+
+/**
+ * Writes the labels of the version a "Looks right" press made: the confirmed
+ * labels, with the old version's evidence and backbone version, in the caller's
+ * transaction. import_id names the press, recorded_by the coach.
+ */
+export async function writeLooksRightVersionLabels(
+  client: DbClient,
+  input: {
+    organizationId: string;
+    dataset: DatasetName;
+    lineageId: string;
+    toVersion: number;
+    editId: string;
+    editor: LabelEditor;
+    fieldLabels: Record<string, unknown>;
+    evidence: unknown;
+    backboneVersion: string | null;
+  },
+): Promise<void> {
+  await client.query(
+    `insert into pilot.content_record_labels
+       (organization_id, target_kind, target_lineage_id, target_version, field_labels, evidence, backbone_version,
+        import_id, recorded_by_account_id, recorded_by_role)
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10)`,
+    [
+      input.organizationId, labelTargetKind(input.dataset), input.lineageId, input.toVersion,
+      JSON.stringify(input.fieldLabels),
+      input.evidence === null || input.evidence === undefined ? null : JSON.stringify(input.evidence),
+      input.backboneVersion,
+      `looks-right:${input.editId}`,
+      input.editor.accountId,
+      input.editor.role,
+    ],
+  );
+}
+
 /**
  * An in-app edit that writes a new version of a labelled item (an edited script
  * that has a run) carries the CURRENT version's field_labels and evidence to the
