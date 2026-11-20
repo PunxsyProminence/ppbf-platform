@@ -752,3 +752,39 @@ describe('a refused sign-in wears the right kind of "no"', () => {
     expect(screen.queryByText(/sign-in refused/i)).toBeNull();
   });
 });
+
+/**
+ * A PARENT CAN TELL WHICH WAY IN IS THEIRS (app scrub FAM-15; AS-9 Q10 = B).
+ *
+ * The order of the three ways and the two button names are the owner's
+ * (OD-2026-10-01-002 section 3), so only the lead sentences changed: the
+ * header and the Microsoft block point a parent at Email Link, and Email Link
+ * names parents first.
+ */
+describe('the lead sentences point a parent at Email Link', () => {
+  test('the header names Email Link as the parents\' way, and the order is unchanged', async () => {
+    await renderPanel();
+
+    expect(screen.getByText(/^Parents: Email Link, the second way below, is yours\./)).toBeTruthy();
+    expect(screen.queryByText(/Any of the three ways below will do/)).toBeNull();
+    const methods = ['Microsoft Sign In', 'Email Link', 'Account ID & PIN'];
+    expect(
+      screen.getAllByRole('heading', { level: 2 })
+        .map((heading) => heading.textContent)
+        .filter((text): text is string => methods.includes(text ?? '')),
+    ).toEqual(methods);
+  });
+
+  test('the Microsoft block sends a parent on, and Email Link names parents first', async () => {
+    await renderPanel();
+
+    const microsoft = screen.getByRole('region', { name: 'Microsoft Sign In' });
+    expect(microsoft.textContent).toContain('For coaches, staff and admins.');
+    expect(microsoft.textContent).toContain('Parents: Email Link is below.');
+    const emailLink = screen.getByRole('form', { name: 'Email Link' });
+    expect(emailLink.textContent).toContain('For parents, and for coaches, staff and volunteers.');
+    // The ruled words stay (section 7 of the AS-9 plan).
+    expect(screen.getByLabelText('Password (Parents)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^email me a link instead$/i })).toBeTruthy();
+  });
+});
