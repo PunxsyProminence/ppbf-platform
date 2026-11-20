@@ -780,6 +780,8 @@ describe('arriving from a link (lane AS-11)', () => {
     laterWholeStatus?: number;
     /** Held open: the next read that names an athlete waits on this. */
     holdNarrowed?: Promise<void> | null;
+    /** Held open: the next read that names nobody waits on this. */
+    holdWhole?: Promise<void> | null;
     rosterStatus?: number;
     honourAbort?: boolean;
     /** The rows the route holds, when not the default two. */
@@ -813,6 +815,11 @@ describe('arriving from a link (lane AS-11)', () => {
           return respond(200, { items: (options.rows ?? [EXECUTION, OTHER]).filter((row) => row.athlete_id === id) });
         }
         wholeReads += 1;
+        if (options.holdWhole) {
+          const wait = options.holdWhole;
+          options.holdWhole = null;
+          await wait;
+        }
         if (wholeReads > 1 && options.laterWholeStatus) return respond(options.laterWholeStatus, {});
         return respond(200, { items: options.rows ?? [EXECUTION, OTHER] });
       }
@@ -945,6 +952,34 @@ describe('arriving from a link (lane AS-11)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
     expect(widen()).toBeNull();
+  });
+
+  test('a widen that a newer read has replaced does not clear that newer read\'s alert', async () => {
+    arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    // The coach widens, and that whole-list read is held open...
+    let release = () => {};
+    arrivalFetch({ holdWhole: new Promise<void>((resolve) => { release = resolve; }), narrowedStatus: 500 });
+    await act(async () => {
+      fireEvent.click(widen()!);
+    });
+    // ...then starts work for the listed athlete; that newer read fails, and says so...
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'p-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start execution' }));
+    });
+    expect(screen.getByRole('alert').textContent).toContain('Unable to load executions.');
+    // ...then the held widen lands. It was replaced: no rows from it, and the alert stays.
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(screen.getByRole('alert').textContent).toContain('Unable to load executions.');
+    expect(rowNames()).toEqual(['Sam K.']);
+    expect(widen()).not.toBeNull();
   });
 
   test('a row with no name keeps its plain id and is not a link', async () => {
