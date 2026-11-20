@@ -270,7 +270,7 @@ export default function CoachIntelligencePage() {
                             page memory, never the address (lane AS-11 Q5 = A). */}
                         <Link
                           className="underline"
-                          href={PROGRESSION_INTELLIGENCE_PAGE}
+                          href="/coach/progression-intelligence"
                           onClick={(event) => {
                             if (isPlainClick(event)) handOffArrivalAthlete(item.athlete_id, PROGRESSION_INTELLIGENCE_PAGE);
                           }}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import Link from 'next/link';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -402,6 +402,20 @@ export default function CoachProgressionIntelligencePage() {
     setSelectedAthlete(athleteId);
   };
 
+  // Chooses the athlete a link handed over, once the roster answers. The
+  // roster is the server's answer to whom this coach may reach: an athlete it
+  // does not list is not chosen, and the page opens as it always has. A coach
+  // who already chose someone (the free-text box shows before the roster
+  // answers) keeps their own choice. An effect event, so the roster load below
+  // calls the current chooseAthlete and still loads only once.
+  const openArrivingAthlete = useEffectEvent((items: RosterAthlete[]) => {
+    const arriving = arrivalAthleteRef.current;
+    arrivalAthleteRef.current = null;
+    if (arriving && !selectedAthleteRef.current && items.some((athlete) => athlete.athlete_id === arriving)) {
+      chooseAthlete(arriving);
+    }
+  });
+
   // Load roster + drill library once.
   useEffect(() => {
     if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE);
@@ -415,16 +429,7 @@ export default function CoachProgressionIntelligencePage() {
           const data = (await rosterRes.json()) as { items?: RosterAthlete[] };
           const items = data.items ?? [];
           setRoster(items);
-          // The arriving athlete is chosen only if the roster, the server's
-          // answer to whom this coach may reach, lists them. Not listed, and
-          // the page opens as it always has, with nobody chosen. A coach who
-          // already chose someone (the free-text box shows before the roster
-          // answers) keeps their own choice.
-          const arriving = arrivalAthleteRef.current;
-          arrivalAthleteRef.current = null;
-          if (arriving && !selectedAthleteRef.current && items.some((athlete) => athlete.athlete_id === arriving)) {
-            chooseAthlete(arriving);
-          }
+          openArrivingAthlete(items);
         }
         if (drillsRes.ok) {
           const data = (await drillsRes.json()) as { items?: DrillLibraryItem[] };
@@ -439,11 +444,6 @@ export default function CoachProgressionIntelligencePage() {
         setDrillsLoadFailed(true);
       }
     })();
-    // Loads once per visit. chooseAthlete is a new function on every render and
-    // is called only after the roster answers, for the athlete a link handed
-    // over; listing it would reload the roster and the drill library on every
-    // render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load deterministic suggestions once per visit. Best-effort: a coach with

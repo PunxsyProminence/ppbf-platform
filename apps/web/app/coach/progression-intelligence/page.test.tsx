@@ -9,7 +9,7 @@
 // written about adds nothing to the surface at all.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 
 import type { RabbitHoleLessonItem } from '@/components/RabbitHole';
 import type { AssignmentInstructionResponse } from '@/components/drills/drillInstructionRead';
@@ -607,6 +607,53 @@ describe('arriving from a link (lane AS-11)', () => {
     });
     expect(await screen.findByRole('option', { name: 'Sam Reyes' })).toBeTruthy();
     expect((screen.getByLabelText('Select Athlete') as HTMLSelectElement).value).toBe('');
+    expect(gapReads(mock)).toEqual([]);
+  });
+
+  test('under StrictMode the hand-off survives the double effect and reads that athlete only', async () => {
+    const mock = rosterFetch();
+    handOffArrivalAthlete('ath-7b21', PROGRESSION_INTELLIGENCE_PAGE);
+    await act(async () => {
+      render(<StrictMode><CoachProgressionIntelligencePage /></StrictMode>);
+    });
+    await waitFor(() => {
+      expect((screen.getByLabelText('Select Athlete') as HTMLSelectElement).value).toBe('ath-7b21');
+    });
+    await waitFor(() => {
+      expect(gapReads(mock).length).toBeGreaterThan(0);
+    });
+    expect(gapReads(mock).every((url) => url.endsWith('athlete_id=ath-7b21'))).toBe(true);
+  });
+
+  test('a hand-off is taken once: the next visit opens with nobody chosen', async () => {
+    rosterFetch();
+    handOffArrivalAthlete('ath-7b21', PROGRESSION_INTELLIGENCE_PAGE);
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(<CoachProgressionIntelligencePage />);
+    });
+    await waitFor(() => {
+      expect((screen.getByLabelText('Select Athlete') as HTMLSelectElement).value).toBe('ath-7b21');
+    });
+    view!.unmount();
+
+    const mock = rosterFetch();
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    expect(await screen.findByRole('option', { name: 'Sam Reyes' })).toBeTruthy();
+    expect((screen.getByLabelText('Select Athlete') as HTMLSelectElement).value).toBe('');
+    expect(gapReads(mock)).toEqual([]);
+  });
+
+  test('a hand-off with a roster that fails to load chooses nobody and reads nothing', async () => {
+    const mock = rosterFetch(Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response));
+    handOffArrivalAthlete('ath-7b21', PROGRESSION_INTELLIGENCE_PAGE);
+    await act(async () => {
+      render(<CoachProgressionIntelligencePage />);
+    });
+    await act(async () => {});
+    expect((screen.getByPlaceholderText(/Enter athlete ID/) as HTMLInputElement).value).toBe('');
     expect(gapReads(mock)).toEqual([]);
   });
 

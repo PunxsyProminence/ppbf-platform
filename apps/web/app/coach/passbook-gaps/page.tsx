@@ -235,9 +235,11 @@ export default function CoachPassbookGapsPage() {
                         travels in page memory, never in the address (lane
                         AS-11, app scrub CF-23; #1474 Q2 = C). Only a plain
                         click hands off: another tab arrives with nobody
-                        chosen. */}
+                        chosen. The hrefs stay literal so the dead-link check
+                        (internalLinksResolve.test.ts) reads them; the
+                        hand-off keys are the shared constants. */}
                     <Link
-                      href={PROGRESSION_INTELLIGENCE_PAGE}
+                      href="/coach/progression-intelligence"
                       className="btn btn--ghost mt-[var(--s4)] min-h-[var(--tap)] text-[length:var(--t-md)]"
                       onClick={(event) => {
                         if (isPlainClick(event)) handOffArrivalAthlete(item.athlete_id, PROGRESSION_INTELLIGENCE_PAGE);
@@ -246,7 +248,7 @@ export default function CoachPassbookGapsPage() {
                       Assign a drill
                     </Link>
                     <Link
-                      href={PASSBOOK_PAGE}
+                      href="/coach/passbook"
                       className="btn btn--ghost mt-[var(--s4)] ml-[var(--s3)] min-h-[var(--tap)] text-[length:var(--t-md)]"
                       onClick={(event) => {
                         if (isPlainClick(event)) handOffArrivalAthlete(item.athlete_id, PASSBOOK_PAGE);

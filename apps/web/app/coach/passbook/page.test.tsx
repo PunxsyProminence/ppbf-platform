@@ -14,7 +14,7 @@
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 
 import { PASSBOOK_PAGE, PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
 import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
@@ -251,6 +251,32 @@ describe('arriving from a link (lane AS-11)', () => {
     await act(async () => {});
     expect(passbookCalls()).toEqual([]);
     expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('');
+  });
+
+  test('under StrictMode, with fetch honouring the abort, the hand-off opens the athlete once', async () => {
+    const answer = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await answer(input, init);
+      // As a browser does: a request whose controller was aborted rejects.
+      if (init?.signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      return response;
+    });
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    render(<StrictMode><CoachPassbookPage /></StrictMode>);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([expect.stringMatching(/athlete_id=ath-2$/)]);
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('ath-2');
+  });
+
+  test('a hand-off with a roster that fails to load chooses nobody and reads no book', async () => {
+    fetchMock.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response);
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([]);
+    expect(screen.getByRole('alert').textContent).toContain('This is not a statement that you have none');
   });
 
   test('a hand-off is taken once: the next visit opens with nobody chosen', async () => {
