@@ -184,4 +184,4 @@ Q1 to Q4 are listed in the PR body with the sources checked for each.
   a discipline and name with a lane-2 drill (`:239-245`). TL's new drills could trigger that (INFERRED). It is a
   stop, not an overwrite.
 - **The same per-chunk decode in other suites.** 347 files under `src` and `scripts` use
-  `+= chunk.toString()` (grep), mostly on the embedded server's stderr. Only the one in item 4 is fixed.
+  `+= chunk.toString()` (grep), all of them `.pg.test.ts` suites. Only the one in item 4 is fixed.
