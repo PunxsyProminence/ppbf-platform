@@ -50,6 +50,8 @@ const EXCLUDED: Record<string, string> = {
   '/coach': 'redirect to the coach home (getPilotRoleDestination) -- the door is the home itself, "Coach Workspace"',
   '/coach/dashboard': 'redirect to the coach home, as /coach -- every other role home is a /<role>/dashboard',
   '/admin/safety-escalations': 'redirect to /admin/escalations, whose door is the queue itself -- one queue, one door (lane U2, A-13)',
+  '/coach/injuries': 'redirect to /coach/athlete-safety#injury-record, whose door is Athlete Safety -- one page, one door (lane AS-5)',
+  '/coach/medical-restrictions': 'redirect to /coach/athlete-safety#medical-restrictions, whose door is Athlete Safety -- one page, one door (lane AS-5)',
   '/coach/calibration': 'compatibility redirect to /teach-shadow/annotation, where Clip Annotation now lives -- not a second annotation surface',
   '/guardian': 'permanent redirect to /parent/dashboard (UX audit A-10: one parent front door) -- the door is the Parent Hub itself',
   '/guardian/dashboard': 'permanent redirect to /parent/dashboard, as /guardian',
