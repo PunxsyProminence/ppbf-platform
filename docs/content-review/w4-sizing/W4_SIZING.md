@@ -9,10 +9,20 @@ recommended option first.
 
 - **Code read at:** `main` `7a1736d9fc9028a21d9a7f906c712244a6ad6bbb`, and line
   numbers are from that commit. `main` has since moved to `c27c581` (#2007 and
-  #2015). Neither changes a file cited here, apart from ACTIVE_WORK, where rows
-  are cited by name.
-- **Lane RS's list:** from its branch head
-  `1e78a04d735340e2b0ca7b76fb3cbba6416db62e` (#2008, open).
+  #2015). #2007 changes no code file cited here. #2015 adds the scrub files
+  cited below. ACTIVE_WORK lines are cited at `c27c581`.
+- **Lane RS's list:** read at its branch head
+  `1e78a04d735340e2b0ca7b76fb3cbba6416db62e` (#2008, open). Its head is now
+  `37d9108`, where only one comment line of the sweep test changed, so the
+  list and its line, 315, are the same.
+- **Open PRs:** their files were read on 2026-11-20 at these heads: #2005
+  `79f45ea6`, #2006 `c5c39034`, #2008 `37d9108d`, #2009 `21102636`, #2010
+  `0d342ee3`, #2012 `5efdc9b6`, #2013 `de25bb6f`, #2016 `b42e3c66`, and nine
+  dependabot PRs (#1992 to #2000). A head that moves later can add overlaps.
+- **Shared registration files.** A PR here that adds a route or a migration
+  also edits `apps/web/src/server/pilot/apiRouteInventory.json` or
+  `apps/web/package.json`, as AS2-a did. #2013 changes both today. INFERRED:
+  such edits usually merge line by line.
 - **Labels:** OBSERVED (read in the code, with file:line), INFERRED,
   UNVERIFIED. Paths under `apps/web/` are written in full. Migrations are under
   `infra/azure/`.
@@ -25,7 +35,9 @@ recommended option first.
 ## How the sizes were made
 
 A size is the changed lines outside tests: insertions plus deletions from
-`git show --numstat`, leaving out `*.test.*` files. Every size here is an
+`git show --numstat`, leaving out `*.test.*` files. For the seven code PRs
+below, docs lines (their ACTIVE_WORK row) are also left out; for HW they are
+counted, because its review sheet is part of the work. Every size here is an
 INFERRED estimate, made one of two ways.
 
 - **Matched (13 of the 32 PRs):** EM-1, EM-2, FN-2, FN-3, PM-1 and the eight TL
@@ -126,8 +138,10 @@ so. Two texts bear on that:
 - **A tick to send on.** The SHADOW job worker starts in
   `apps/web/instrumentation.ts:38`, with sweep and housekeeping hooks
   (`:47`, `:63`). It runs only when `PPBF_SHADOW_WORKER_ENABLED` is set
-  (`apps/web/src/server/pilot/shadowJobWorker.ts:28`). UNVERIFIED whether it is
-  set on staging or in production; this session read no environment.
+  (`apps/web/src/server/pilot/shadowJobWorker.ts:28`). The deploy workflows set
+  it to `true` (`.github/workflows/deploy-staging.yml:383`,
+  `.github/workflows/deploy-production.yml:787`): that is OBSERVED intent. What
+  is deployed now is UNVERIFIED; this session read no environment.
 
 **What is missing:**
 
@@ -156,14 +170,14 @@ so. Two texts bear on that:
 - **Route:** Opus for all four (sign-in addresses, minors' contacts, safety alerts).
 - **G3:** applies. EM-2 is a sign-in-account screen; EM-4 routes safety alerts.
 - **Dependencies:**
-  - EM-3 needs a tick that runs. Either `PPBF_SHADOW_WORKER_ENABLED` is
-    confirmed set, by Overwatch reading the Container App, or the sweep runs
-    from a scheduled workflow, as `session-autoclose.yml` does.
+  - EM-3 needs a tick that runs. The deploy workflows set
+    `PPBF_SHADOW_WORKER_ENABLED`; Overwatch confirms the deployed value, or the
+    sweep runs from a scheduled workflow, as `session-autoclose.yml` does.
   - EM-4 reads the athlete sign-in switch that #2013 (lane SW) is building.
   - Item 2 reuses EM-1 and EM-3.
   - Item 4 may add a trigger (Q4.3).
-- **File overlap:** none with the open PRs' changed files, read 2026-11-20
-  (#2005, #2006, #2008, #2009, #2010, #2012, #2013, #2016).
+- **File overlap:** no open PR changes a mail, alert or worker file (heads
+  above). EM-1 shares the registration files with #2013.
 
 **Owner questions:**
 
@@ -175,6 +189,9 @@ so. Two texts bear on that:
     OD-2026-11-19-019 changes it "for outside alerts".)
   - **B:** safety escalations for staff only.
   - **C:** A plus gym announcements.
+  - **D:** A, plus a coach's message to an athlete
+    (`apps/web/src/server/pilot/athleteCoachMessages.ts:1-8`). Under A to C, no
+    event reaches an athlete.
 - **Q1.2 Who may opt in?**
   - **A (recommended):** anyone with a sign-in email. This adds no new
     restriction (the L1 rule, above), and the email holds nothing but "open the
@@ -206,14 +223,19 @@ so. Two texts bear on that:
     what the per-person limit (Q1.3 A) needs.
   - **B:** totals only. Then a per-person limit cannot be kept across a
     restart.
-- **Q1.7 What does the subject line say?** The recorded answer covers only the
-  body.
-  - **A (recommended):** the gym's name and "open the app", nothing else.
-  - **B:** "open the app" only.
+- **Q1.7 What does the subject line say?** OD-2026-11-19-019 records an email
+  that "says only "open the app"". INFERRED: that may cover the subject as
+  well as the body.
+  - **A (recommended):** "open the app" only, the literal reading of the
+    recorded wording.
+  - **B:** the gym's name and "open the app". This adds words beyond the
+    recorded wording, so it needs Jason's word.
 - **Q1.8 Does an account whose sign-in is switched off still get the email?**
   OD-2026-11-19-025 adds an athlete sign-in off switch, which #2013 is building.
   - **A (recommended):** no. The email says "open the app", which that person
-    cannot do.
+    cannot do. This narrows who gets it, so by the standard above it needs
+    Jason's direction. It covers staff logins too, which Gym Office can already
+    deactivate (OD-2026-10-07-009).
   - **B:** yes, until they opt out.
 
 ## 2. Web push (later, per Jason)
@@ -226,7 +248,7 @@ here". Sized only.
 - **No push code.** A case-sensitive search of the repository for
   `serviceWorker`, `PushManager`, `VAPID`, `web-push`, `webmanifest`, `sw.js`,
   `pushSubscription` and `Notification.requestPermission` found no match
-  outside prose saying there is no service worker.
+  (apart from this report).
 - **No web app manifest.** The one `manifest.json` is
   `design-system/manifest.json`, which is not a web app manifest.
 - **No package.** `web-push` is not in `apps/web/package.json`.
@@ -264,7 +286,9 @@ tablets are shared, and they sign out after idle time
 - **G3:** applies.
 - **Dependencies:** item 1 (EM-1 and EM-3) first. WP-3 touches the tablet
   sign-out work of lane U1's AS2 PRs (merged).
-- **File overlap:** none with the open PRs.
+- **File overlap:** WP-1 shares the registration files (above). WP-2 adds a
+  package to `apps/web/package.json` and `package-lock.json`, which the nine
+  open dependabot PRs also change.
 
 **Owner questions (for when web push is started):**
 
@@ -336,11 +360,12 @@ none by this entry". The brief says the privacy review comes first.
 - **Migrations:** none (INFERRED: built on the tables above).
 - **Route:** Opus for FN-0 to FN-3 (minors' data).
 - **G3:** applies.
-- **Dependencies:** FN-0 before FN-1, signed off as Q3.5 says.
+- **Dependencies:** FN-0 before FN-1, signed off as Q3.5 says; #2012 before
+  FN-1.
 - **File overlap:**
-  - FN-1 uses the guardian checks in `guardianAccess.ts`. #2012 (lane GA) is
-    building a server refusal of new guardian links to adults; its files are
-    not listed yet, so check them at build time.
+  - FN-1 uses the guardian checks in `guardianAccess.ts`, which #2012 (lane
+    GA) changes (+30 lines at `5efdc9b6`). FN-1 goes after #2012 merges.
+  - FN-1 shares the registration files with #2013 (above).
   - FN-2 changes `AthleteWorkspace.tsx`, which #2006 (lane U3) plans to change,
     and U2 item 4e later.
   - FN-3 changes `CoachWorkspace.tsx`, lane U2's file (AS-7, coach home). #2010
@@ -375,7 +400,7 @@ none by this entry". The brief says the privacy review comes first.
 
 **The scrub (stage 1, FAM-09 row):** "A parent cannot start a message to the
 coach; they can only reply under one. With "No messages yet." the tab offers
-nothing." Its proposal: "Point the empty Messages state to Report a Barrier,
+nothing. Barrier types are Home and Transportation only." Its proposal: "Point the empty Messages state to Report a Barrier,
 Observations and the coach (a compose box would be FUTURE)." Stage 3 section
 3.6 lists the compose box as FUTURE.
 
@@ -395,7 +420,8 @@ reply.
   - Staff read it under "From the family" on `/coach/decision-loop`, through
     `GET /api/pilot/coach/family-observations` (`route.ts:31-34`).
 - **Parent to coach: barrier reports.** A parent can also send one
-  (`apps/web/app/api/pilot/parent/barrier-report/route.ts:43`).
+  (`apps/web/app/api/pilot/parent/barrier-report/route.ts:43`), of two types
+  only, home and transportation (`:24`).
 - **Coach to family.** A coach posts a note to the family as a
   `coach_observations` row with `note_type 'parent_message'`
   (`apps/web/app/coach/decision-loop/page.tsx:1102`). The parent reads it on
@@ -433,15 +459,19 @@ reply.
 | PM-3 | Parent side: the compose box and the thread on the Messages tab | about 250 | judgement |
 
 - **Total:** about 970 lines in 3 PRs.
-  - Q4.1 B: about 880 in 3 PRs.
+  - Q4.1 B: about 880 in 3 PRs (judgement): a staff reply under a parent's
+    Observations note, with its migration (about 380); the staff side (about
+    300); the parent seeing the reply (about 200).
   - Q4.1 C: none.
 - **Migrations:** 1 (none under C).
 - **Route:** Opus (minors' data, permissions, guardian access).
 - **G3:** applies.
-- **Dependencies:** a Q4.3 A answer makes item 1 (EM-4) send for it.
+- **Dependencies:** #2012 before PM-1. A Q4.3 A answer makes item 1 (EM-4)
+  send for it.
 - **File overlap:**
-  - PM-1 uses `guardianAccess.ts`; #2012 (lane GA) may change it (its files are
-    not listed yet).
+  - PM-1 uses `guardianAccess.ts`, which #2012 (lane GA) changes (+30 lines at
+    `5efdc9b6`). PM-1 goes after #2012 merges. It also shares the registration
+    files with #2013.
   - PM-2 changes `apps/web/app/coach/decision-loop/page.tsx`, which #2010 (lane
     AS-5) plans to change in AS5-1.
   - A coach-home inbox (Q4.4 B) changes `CoachWorkspace.tsx`, which is U2's file
@@ -455,9 +485,10 @@ reply.
     coach's notes, and the coach answers under it.
   - **B:** no new box. Staff can answer under a parent's existing Observations
     note, and the parent sees the answer there.
-  - **C:** nothing to build. Observations and Report a Barrier already let a
-    parent write to the coach, and the scrub's AS-9 batch points the empty
-    Messages state to them.
+  - **C:** nothing to build. Observations already lets a parent write to the
+    coach, and Report a Barrier covers home and transportation only. The
+    scrub's AS-9 batch would point the empty Messages state to them; a search
+    of ACTIVE_WORK on `main` found no AS-9 lane.
 - **Q4.2 Does the other guardian see the thread?**
   - **A (recommended):** no. Each guardian sees their own, the same line the
     Observations note and the barrier report draw for split households
@@ -538,8 +569,14 @@ FUTURE list names "a class that carries its session plan ahead of time
 - **Migrations:** 1 (SP-3), only if Q5.2 is A.
 - **Route:**
   - **Opus for SP-1**, because a sparring-contact drill could be added to a
-    plan. UNVERIFIED whether any gate reads a block's contact level at run
-    time; a search was not conclusive.
+    plan.
+    - The plan's contact label is computed from its steps (`contactStructure`,
+      `sessionScriptAuthoring.ts:113-121`) and shown on Session Plans
+      (`page.tsx:607`).
+    - Block minutes are checked (`pilot_ssb_window`, migration `:97`).
+    - SP-1 must keep both right when blocks are added, removed or moved.
+    - UNVERIFIED whether any gate reads a block's contact level when a session
+      runs.
   - **Sonnet for SP-2.** The picker sends only what SP-1's route accepts, so
     any contact rule lives and is reviewed in SP-1. If SP-1 finds a contact
     gate, SP-2 moves to Opus.
@@ -549,7 +586,8 @@ FUTURE list names "a class that carries its session plan ahead of time
 - **Dependencies:** OD-2026-10-21-002 D4 ("A: Tie them") already ties a session
   to its class at start. SP-4 changes the class screen, which lane U2 owns
   (6b to 6d not started).
-- **File overlap:** U2's later class-screen PRs (`apps/web/app/coach/class/page.tsx`).
+- **File overlap:** U2's later class-screen PRs (`apps/web/app/coach/class/page.tsx`);
+  SP-3 shares the registration files with #2013.
 
 **Owner questions:**
 
@@ -612,6 +650,7 @@ door, and the guard test turned to require that door.
     its Q11 B.
   - `apps/web/components/buildingMapCoverage.test.ts`: #2009 (lane BT) changes
     it, and a new door will likely touch it.
+  - SC-1 shares the registration files with #2013.
 
 **Owner questions:**
 
@@ -624,10 +663,20 @@ door, and the guard test turned to require that door.
   - **A (recommended):** athletes with an active membership who were present
     at least once before.
   - **B:** everyone on the roster.
-- **Q6.3 Does open gym count as coming?**
-  - **A (recommended):** yes. Open-gym "here" marks count too; SC-1 reads them
-    from the session marks (in its estimate).
-  - **B:** register marks only.
+- **Q6.3 Does open gym count as coming?** This is an open owner decision.
+  - The session-marks migration says the table is "SESSION DETAIL, NOT
+    ATTENDANCE", and that whether a mark "should ever count toward a
+    participation figure is an owner decision that has not been made".
+  - It quotes Overwatch, 2026-10-13: a mark "feeds NO attendance report,
+    reconciled view, board or grant figure"
+    (`infra/azure/pilot_slice_postgres_session_run_athletes_migration.sql:26-32`).
+  - OD-2026-09-28-008 keeps one system of record for attendance.
+  - **A (recommended):** yes, for this page only. Open-gym "here" marks count
+    as coming, so an athlete seen only at open gym is not listed. SC-1 reads
+    them (in its estimate). No attendance figure changes. This departs from
+    Overwatch's 2026-10-13 note, so it needs Jason's ruling.
+  - **B:** register marks only, as attendance is counted today. The list may
+    then name athletes who come only to open gym. SC-1 is about 250.
 - **Q6.4 What can a coach do on the page?**
   - **A (recommended):** read the list and open the athlete.
   - **B:** A, plus mark "reached out". That needs a migration and a third PR
@@ -794,8 +843,9 @@ the citation reviewers):**
   - Simulating that rewrite on the committed CSV and diffing each row gives 247
     changed lines for the 85 steps.
   - 27 of the rows span several CSV lines: TL-3a has 8, TL-3b 7 and TL-4 12.
-  - The script re-writes rows with Python's CSV writer, whose quoting may
-    differ slightly from the file's.
+  - The script re-writes rows with Python's CSV writer. Passing the unchanged
+    file through the same writer gives it back byte for byte (checked by the
+    citation reviewer), so the count is not a quoting effect.
 
 **PR split** (20 per new drill, the measured step lines, 18 per template, 84
 per PR):
@@ -854,8 +904,8 @@ per PR):
 |---|---|---|---|---|---|---|---|
 | 1 | Email alerts | 4 | about 1,200 | 1 | Opus | yes | Q1.1 to Q1.8; a running tick; #2013 for Q1.8 |
 | 2 | Web push (later) | 3 (4 without the package) | about 890 (1,090 without the package) | 1 | Opus | yes | item 1; Q2.1, Q2.2; a key in Azure; a dependency call |
-| 3 | On the floor now | 4 | about 640 | 0 | Opus | yes | privacy review (FN-0, Q3.5); Q3.1 to Q3.4; U2 for the coach home |
-| 4 | Parent starts a message | 3 (0 if Q4.1 C) | about 970 (880 if B; 0 if C) | 1 (0 if C) | Opus | yes | Q4.1 to Q4.5 |
+| 3 | On the floor now | 4 | about 640 | 0 | Opus | yes | privacy review (FN-0, Q3.5); Q3.1 to Q3.4; #2012; U2 for the coach home |
+| 4 | Parent starts a message | 3 (0 if Q4.1 C) | about 970 (880 if B; 0 if C) | 1 (0 if C) | Opus | yes | Q4.1 to Q4.5; #2012 |
 | 5 | Plan blocks; class from a plan | 4 | about 1,150 | 0 or 1 | Opus (SP-1, SP-3, SP-4), Sonnet (SP-2) | no (INFERRED) | Q5.1, Q5.2; U2 for the class screen |
 | 6 | Stopped coming | 2 (3 if Q6.4 B) | about 550 | 0 (1 if Q6.4 B) | Opus | yes | Q6.1 to Q6.4; U2 for the door |
 | 7 | Offline save queue | 4 (6 if B) | about 1,120 (1,620 if B) | 0 or 1 | Opus | yes | BLOCKED: Q7.1, Q7.2 |
@@ -864,7 +914,8 @@ per PR):
 **Total (INFERRED):**
 
 - **Size:** 32 PRs, about 9,050 changed lines outside tests, with the
-  recommended answers.
+  recommended answers, except item 8. Item 8 is sized at its upper bound
+  (every unique line a new drill); Q8.1 A, recommended, would lower it.
 - **Larger case:** taking each item's larger case (web push without the
   package, the "reached out" mark, offline queue B) gives 36 PRs and about
   9,950.
@@ -883,7 +934,8 @@ per PR):
 - Item 8 can start once #2008 merges; it needs only Q8.1 and Q8.2.
 - Items 1, 4 and 6 need only their questions.
   - Item 1's EM-3 also needs a tick confirmed.
-  - Item 4's staff side waits for #2010's Decision Loop PR.
+  - Item 4's PM-1 waits for #2012, and its staff side for #2010's Decision
+    Loop PR.
 - Item 3 needs its privacy review signed off first.
 - Item 5's class part and items 3 and 6's coach-side pieces wait on lane U2's
   files.
