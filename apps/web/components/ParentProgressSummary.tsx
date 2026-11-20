@@ -222,8 +222,10 @@ export default function ParentProgressSummary({
           </dd>
         </div>
       </dl>
+      {/* Named for the door to the page, "Progress Visibility" (FAM-18;
+          AS-9 Q13 = A). */}
       <Link href="/parent/progression-visibility" className="btn btn--ghost">
-        Open the full progression record
+        Open Progress Visibility
       </Link>
     </section>
   );

@@ -215,6 +215,9 @@ describe('request ordering when the guardian switches child', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
+    // Arriving from the hub on the first child: with two children and
+    // none remembered, the page asks instead (FAM-11).
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
     render(<ParentProgressionVisibilityPage />);
 
     // Wait until the first child's read is genuinely in flight before switching.
@@ -268,6 +271,9 @@ describe('request ordering when the guardian switches child', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
+    // Arriving from the hub on the first child: with two children and
+    // none remembered, the page asks instead (FAM-11).
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
     render(<ParentProgressionVisibilityPage />);
     await waitFor(() =>
       expect(
@@ -304,6 +310,9 @@ test('switching children refetches progression for the selected athlete only', a
   });
   global.fetch = fetchMock as unknown as typeof fetch;
 
+  // Arriving from the hub on the first child: with two children and
+  // none remembered, the page asks instead (FAM-11).
+  window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
   render(<ParentProgressionVisibilityPage />);
 
   await screen.findByText('Rear foot stays flat through the cross.');
@@ -547,6 +556,9 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
       return jsonOk({ items: [] });
     });
     global.fetch = fetchMock as unknown as typeof fetch;
+    // Arriving from the hub on the first child: with two children and
+    // none remembered, the page asks instead (FAM-11).
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
     render(<ParentProgressionVisibilityPage />);
     await screen.findByTestId('issued-workout');
 
@@ -637,6 +649,9 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
       return jsonOk({ items: [] });
     });
     global.fetch = fetchMock as unknown as typeof fetch;
+    // Arriving from the hub on the first child: with two children and
+    // none remembered, the page asks instead (FAM-11).
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
     render(<ParentProgressionVisibilityPage />);
     await waitFor(() =>
       expect(
@@ -680,5 +695,43 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
     open(WORK, [WORKOUT]);
     await screen.findByTestId('issued-workout');
     expect(screen.getByRole('heading', { name: 'Identified Gaps' })).toBeTruthy();
+  });
+});
+
+describe('the family picker (FAM-11), the record name and the back link (FAM-18)', () => {
+  test('two children and none remembered: it asks, reads nothing, and never says "No progression gaps"', async () => {
+    const fetchMock = mockFetch({ '/athletes/list': async () => jsonOk({ items: [CHILD, SECOND_CHILD] }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<ParentProgressionVisibilityPage />);
+
+    await screen.findByText('Choose a child');
+    const progressionReads = () =>
+      fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/progression/'));
+    expect(progressionReads()).toEqual([]);
+    expect(screen.queryByText('No progression gaps on record')).toBeNull();
+    expect(screen.queryByText(/Loading progression data/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jordan Doe' }));
+    await screen.findByText('Rear foot stays flat through the cross.');
+    const childReads = progressionReads().filter((url) => url.includes('athlete_id='));
+    expect(childReads.length).toBeGreaterThan(0);
+    expect(childReads.every((url) => url.includes('athlete_id=athlete-001'))).toBe(true);
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('athlete-001');
+  });
+
+  test('the eyebrow is the door\'s name, and the back link is the shared one', async () => {
+    global.fetch = mockFetch() as unknown as typeof fetch;
+
+    render(<ParentProgressionVisibilityPage />);
+
+    await screen.findByText('Rear foot stays flat through the cross.');
+    expect(screen.getByText('Progress Visibility')).toBeTruthy();
+    expect(screen.queryByText('Closed-Loop Progression Intelligence')).toBeNull();
+    expect(screen.queryByText('Back to Parent Hub')).toBeNull();
+    // No session is cached in this test, so BackHome names no role's home.
+    expect(screen.getByRole('link', { name: 'Back to your home page' }).getAttribute('href')).toBe('/dashboard');
+    // One child: nothing to choose.
+    expect(screen.queryByRole('group', { name: 'Which child' })).toBeNull();
   });
 });

@@ -11,7 +11,7 @@
  *   4. a failed roster or read is never shown as "nothing".
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import ParentMentalSkillsPage from './page';
@@ -85,12 +85,20 @@ async function renderPage(stubs: Stubs = {}) {
 }
 
 async function choose(id: string) {
+  // The family pages' one picker (FAM-11): a button per child, by name.
+  const name = KIDS.find((kid) => kid.athlete_id === id)?.full_name ?? id;
   await act(async () => {
-    fireEvent.change(screen.getByLabelText('Which child'), { target: { value: id } });
+    fireEvent.click(screen.getByRole('button', { name }));
   });
 }
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  // A pick is remembered (src/lib/chosenChild.ts); one test's pick must not
+  // choose the next test's opening child.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
+});
 
 test('only the parent role is admitted, and the approved guardian line shows', async () => {
   await renderPage();
@@ -134,8 +142,14 @@ test('read only: no write is ever sent and there is no form', async () => {
   for (const [, init] of fetchMock.mock.calls) {
     expect((init as RequestInit | undefined)?.method ?? 'GET').toBe('GET');
   }
-  expect(screen.queryByRole('button')).toBeNull();
+  // The only buttons are the child picker's, and they only choose whose
+  // record to read (the GET-only check above covers what they send).
+  const picker = screen.getByRole('group', { name: 'Which child' });
+  const buttons = screen.getAllByRole('button');
+  expect(buttons.length).toBe(KIDS.length);
+  for (const button of buttons) expect(picker.contains(button)).toBe(true);
   expect(screen.queryByRole('textbox')).toBeNull();
+  expect(document.querySelector('form')).toBeNull();
 });
 
 test('two children with the same name are told apart', async () => {
@@ -143,8 +157,9 @@ test('two children with the same name are told apart', async () => {
   KIDS = [{ athlete_id: 'ath-twin-1111', full_name: 'Sam' }, { athlete_id: 'ath-twin-2222', full_name: 'Sam' }];
   try {
     await renderPage();
-    const labels = Array.from((screen.getByLabelText('Which child') as HTMLSelectElement).options).map((o) => o.textContent);
-    expect(labels).toEqual(expect.arrayContaining(['Sam (1111)', 'Sam (2222)']));
+    const picker = screen.getByRole('group', { name: 'Which child' });
+    const labels = within(picker).getAllByRole('button').map((button) => button.textContent);
+    expect(labels).toEqual(['Sam (1111)', 'Sam (2222)']);
   } finally {
     KIDS = saved;
   }
@@ -161,4 +176,43 @@ test('a failed read is not shown as nothing logged', async () => {
   await choose('ath-a');
   expect(screen.getByRole('alert').textContent).toMatch(/could not be read/);
   expect(screen.queryByText('No imagery sessions logged yet.')).toBeNull();
+});
+
+describe('the family picker (FAM-11) and the one back link (FAM-18)', () => {
+  test('two children and none remembered: it asks, and reads nothing', async () => {
+    const fetchMock = await renderPage();
+    expect(screen.getByText('Choose a child')).toBeTruthy();
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((u) => u.includes('athlete_id='))).toEqual([]);
+  });
+
+  test('a one-child family is shown no picker and their record opens at once', async () => {
+    const saved = KIDS;
+    KIDS = [{ athlete_id: 'ath-a', full_name: 'Avery' }];
+    try {
+      const fetchMock = await renderPage();
+      expect(screen.queryByRole('group', { name: 'Which child' })).toBeNull();
+      expect(screen.queryByText('Choose a child')).toBeNull();
+      const reads = fetchMock.mock.calls.map(([input]) => String(input)).filter((u) => u.includes('athlete_id='));
+      expect(reads.length).toBe(2);
+      for (const url of reads) expect(url).toMatch(/athlete_id=ath-a$/);
+      expect(screen.getByText('cue of ath-a')).toBeTruthy();
+    } finally {
+      KIDS = saved;
+    }
+  });
+
+  test('the remembered child opens, among two, and a pick is remembered', async () => {
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'ath-b');
+    await renderPage();
+    expect(screen.getByText('cue of ath-b')).toBeTruthy();
+    await choose('ath-a');
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath-a');
+  });
+
+  test('the back link is the shared one', async () => {
+    await renderPage();
+    expect(screen.queryByText('Back to the Parent Hub')).toBeNull();
+    // No session is cached in this test, so BackHome names no role's home.
+    expect(screen.getByRole('link', { name: 'Back to your home page' }).getAttribute('href')).toBe('/dashboard');
+  });
 });

@@ -407,6 +407,7 @@ describe('no child selected', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
     });
     await screen.findByText('Unavailable - no child selected.');
+    // This link is the hub's own (ParentHub.tsx), renamed with the hub's step.
     expect(screen.getByRole('link', { name: 'Open the full progression record' })).toHaveAttribute('href', '/parent/progression-visibility');
   });
 
@@ -433,6 +434,6 @@ describe('what the tab no longer says', () => {
     expect(text).not.toContain('Parent-Support Visibility Placeholder');
     expect(text).not.toContain('FRONT-END PLACEHOLDER');
     expect(text).not.toContain('there is no backend feed for progress milestones');
-    expect(screen.getByRole('link', { name: 'Open the full progression record' })).toHaveAttribute('href', '/parent/progression-visibility');
+    expect(screen.getByRole('link', { name: 'Open Progress Visibility' })).toHaveAttribute('href', '/parent/progression-visibility');
   });
 });

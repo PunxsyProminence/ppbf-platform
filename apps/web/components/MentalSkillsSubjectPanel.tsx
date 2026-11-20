@@ -7,6 +7,7 @@ import MentalSkillsView, {
   type MentalGoal,
   type MentalSkillsData,
 } from '@/components/MentalSkillsView';
+import FamilyChildPicker, { familyChildLabel, openingChild } from '@/components/FamilyChildPicker';
 import { apiBase } from '@/lib/apiBase';
 
 /*
@@ -50,19 +51,16 @@ export default function MentalSkillsSubjectPanel({
   pickerLabel,
   noneText,
   rosterErrorText,
-  initialSubject,
-  onSelect,
+  family = false,
 }: {
   readonly loaders: SubjectLoaders;
   readonly pickerLabel: string;
   readonly noneText: string;
   readonly rosterErrorText: string;
-  /** Asked once the list arrives; opens on that athlete only when they are in
-   *  it. Without it, or for anyone else, nothing is picked. */
-  readonly initialSubject?: () => string | null;
-  /** Told when the person picks someone in the picker (not on the initial
-   *  open). Without it, nothing happens beyond the read. */
-  readonly onSelect?: (athleteId: string) => void;
+  /** The guardian page: the family pages' one picker (FamilyChildPicker,
+   *  scrub FAM-11), opening on the remembered child or the only child. Off,
+   *  as on the coach page, it is the select and nothing is picked. */
+  readonly family?: boolean;
 }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [rosterState, setRosterState] = useState<LoadState>('loading');
@@ -74,8 +72,8 @@ export default function MentalSkillsSubjectPanel({
   const subjectRef = useRef('');
 
   const openInitial = useEffectEvent((items: Person[]) => {
-    const wanted = initialSubject?.();
-    if (wanted && items.some((person) => person.athlete_id === wanted)) select(wanted);
+    const wanted = family ? openingChild(items) : null;
+    if (wanted) select(wanted);
   });
 
   useEffect(() => {
@@ -125,20 +123,29 @@ export default function MentalSkillsSubjectPanel({
       : person.full_name;
   };
   const activePerson = people.find((person) => person.athlete_id === activeId);
-  const activeName = activePerson ? labelFor(activePerson) : undefined;
+  const activeName = activePerson
+    ? family ? familyChildLabel(activePerson, people) : labelFor(activePerson)
+    : undefined;
+
+  // A one-child family has nothing to choose: the panel is left out for them.
+  const showPicker = !family || rosterState !== 'loaded' || people.length !== 1;
 
   return (
     <div className="space-y-[var(--s5)]">
+      {showPicker && (
       <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+        {family ? (
+          <>
+            {rosterState === 'loading' && <p className="t-muted">Loading...</p>}
+            <FamilyChildPicker linked={people} activeId={activeId || null} onChoose={select} label={pickerLabel} />
+          </>
+        ) : (
         <div className="field">
           <label htmlFor="mentalSkillsSubject" className="t-label">{pickerLabel}</label>
           <select
             id="mentalSkillsSubject"
             value={activeId}
-            onChange={(event) => {
-              select(event.target.value);
-              onSelect?.(event.target.value);
-            }}
+            onChange={(event) => select(event.target.value)}
             disabled={rosterState !== 'loaded' || people.length === 0}
             className="select"
           >
@@ -150,9 +157,11 @@ export default function MentalSkillsSubjectPanel({
             ))}
           </select>
         </div>
+        )}
         {rosterState === 'unavailable' && <p className="t-body" role="alert">{rosterErrorText}</p>}
         {rosterState === 'loaded' && people.length === 0 && <p className="t-body">{noneText}</p>}
       </section>
+      )}
 
       {activeId && (
         <section

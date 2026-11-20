@@ -1,12 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
-import Link from 'next/link';
 
+import BackHome from '@/components/BackHome';
 import DevelopmentBlockPlanView, { type PlanBlock } from '@/components/DevelopmentBlockPlanView';
+import FamilyChildPicker, { openingChild } from '@/components/FamilyChildPicker';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
-import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 
 /*
  * A guardian reading the plan their child's coach wrote.
@@ -45,12 +45,12 @@ export default function ParentDevelopmentBlocksPage() {
      reason as the coach page's blocksAthleteRef. */
   const subjectRef = useRef('');
 
-  // Opens on the child chosen in the hub when it is one of these
-  // (src/lib/chosenChild.ts); otherwise nothing is picked, as before. The
-  // route checks the guardian link on the read either way.
+  // Opens on the remembered child when it is one of these, else on the only
+  // child (FAM-11); with two or more and none remembered, nothing is picked
+  // and the picker asks. The route checks the guardian link on the read.
   const openChosenChild = useEffectEvent((items: LinkedChild[]) => {
-    const chosen = readChosenChild();
-    if (chosen && items.some((child) => child.athlete_id === chosen)) selectChild(chosen);
+    const opening = openingChild(items);
+    if (opening) selectChild(opening);
   });
 
   useEffect(() => {
@@ -110,8 +110,7 @@ export default function ParentDevelopmentBlocksPage() {
     // arrives afterwards can recognise itself as stale.
     subjectRef.current = nextId;
     setActiveChildId(nextId);
-    // The child the next family page opens on (src/lib/chosenChild.ts).
-    rememberChosenChild(nextId);
+    // A pick in the picker is remembered there, for the next family page.
     void loadBlocks(nextId);
   }
 
@@ -134,33 +133,17 @@ export default function ParentDevelopmentBlocksPage() {
             a ranking, and nothing on this page can be changed from it — if something reads wrong,
             that is a conversation with the coach.
           </p>
-          <Link href="/parent/dashboard" className="btn btn--ghost mt-[var(--s4)]">
-            Back to the Parent Hub
-          </Link>
+          {/* The one back link (FAM-18). */}
+          <BackHome className="btn btn--ghost mt-[var(--s4)]" />
         </header>
 
+        {/* The family pages' one picker (FAM-11). A one-child family has
+            nothing to choose, so this panel is left out for them. */}
+        {childrenState === 'loaded' && children.length === 1 ? null : (
         <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-          <h2 className="t-eyebrow">Child</h2>
+          {childrenState === 'loading' && <p className="t-muted">Loading...</p>}
 
-          <div className="field">
-            <label htmlFor="planChild" className="t-label">Which child</label>
-            <select
-              id="planChild"
-              value={activeChildId}
-              onChange={(event) => selectChild(event.target.value)}
-              disabled={childrenState !== 'loaded' || children.length === 0}
-              className="select"
-            >
-              <option value="">
-                {childrenState === 'loading' ? 'Loading...' : 'Choose a child'}
-              </option>
-              {children.map((child) => (
-                <option key={child.athlete_id} value={child.athlete_id}>
-                  {child.full_name ?? child.athlete_id}
-                </option>
-              ))}
-            </select>
-          </div>
+          <FamilyChildPicker linked={children} activeId={activeChildId || null} onChoose={selectChild} />
 
           {childrenState === 'unavailable' && (
             <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
@@ -177,6 +160,7 @@ export default function ParentDevelopmentBlocksPage() {
             </p>
           )}
         </section>
+        )}
 
         {activeChildId && (
           <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">

@@ -132,14 +132,15 @@ test.describe('Guardian journey', () => {
      /parent/progression-visibility already states, and the reason both pages
      render one shared component. This drives the guardian's half in a real
      browser: the child picker names which child, and the plan that comes back
-     is the coach's words unaltered. */
+     is the coach's words unaltered. Two children, so there is a choice to
+     make (a one-child family opens on their child; FAM-11). */
   test('reads the plan their child\'s coach wrote, choosing which child', async ({ page }) => {
     const asked: string[] = [];
 
     await installPilotApi(page, {
       session: { role: 'parent' },
       routes: {
-        '/api/pilot/athletes/list': { ok: true, items: [ROSA] },
+        '/api/pilot/athletes/list': { ok: true, items: [ROSA, { athlete_id: 'ath-marcus', full_name: 'Marcus Webb' }] },
         '/api/pilot/athlete/development-blocks': (url) => {
           // A guardian may hold several links, so the child is named --
           // and it is the one they chose.
@@ -173,7 +174,8 @@ test.describe('Guardian journey', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Their Development Plan' })).toBeVisible();
     expect(asked).toEqual([]);
 
-    await page.getByLabel('Which child').selectOption(ROSA.athlete_id);
+    await expect(page.getByText('Choose a child')).toBeVisible();
+    await page.getByRole('group', { name: 'Which child' }).getByRole('button', { name: ROSA.full_name }).click();
 
     await expect.poll(() => asked).toEqual([ROSA.athlete_id]);
     await expect(page.getByText('Winter technical block')).toBeVisible();

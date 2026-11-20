@@ -107,6 +107,8 @@ test('switching children re-reads the list for the other child and closes the op
 
   render(<ParentVideoPage />);
 
+  // Two children and none remembered: the guardian picks (FAM-11).
+  fireEvent.click(await screen.findByRole('button', { name: 'Jordan Doe' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
   await screen.findByText('Coach notes');
 
@@ -130,6 +132,7 @@ test("a round opened for one child never lands under the other child's name", as
 
   render(<ParentVideoPage />);
 
+  fireEvent.click(await screen.findByRole('button', { name: 'Jordan Doe' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
   await waitFor(() => expect(releasePlayback).not.toBeNull());
   fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
@@ -168,4 +171,63 @@ test('a failed linked-athlete read never says the account is not linked', async 
 
   await screen.findByText('Could not load your linked athletes');
   expect(screen.queryByText('No linked athletes')).toBeNull();
+});
+
+describe('the family picker (FAM-11) and the one back link (FAM-18)', () => {
+  const listReads = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/api/pilot/video/list'));
+
+  test('two children and none remembered: it asks, reads no film, and never says "No film yet"', async () => {
+    const fetchMock = mockFetch({ '/athletes/list': () => jsonOk({ items: [CHILD, SECOND_CHILD] }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<ParentVideoPage />);
+
+    await screen.findByText('Choose a child');
+    expect(screen.getByRole('group', { name: 'Which child' })).toBeTruthy();
+    expect(listReads(fetchMock)).toEqual([]);
+    expect(screen.queryByText('No film yet. It shows up here when a coach puts some up.')).toBeNull();
+    expect(screen.queryByText('Rounds')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
+    await screen.findByText("Riley Doe's Film");
+    expect(listReads(fetchMock)).toEqual([expect.stringContaining('athlete_id=athlete-002')]);
+    expect(screen.queryByText('Choose a child')).toBeNull();
+    // The pick is the child the next family page opens on.
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('athlete-002');
+  });
+
+  test('the remembered child opens, among two', async () => {
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-002');
+    const fetchMock = mockFetch({ '/athletes/list': () => jsonOk({ items: [CHILD, SECOND_CHILD] }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<ParentVideoPage />);
+
+    await screen.findByText("Riley Doe's Film");
+    expect(screen.getByRole('button', { name: 'Riley Doe' }).getAttribute('aria-pressed')).toBe('true');
+    expect(listReads(fetchMock)).toEqual([expect.stringContaining('athlete_id=athlete-002')]);
+  });
+
+  test('a one-child family is shown no picker and goes straight to the film', async () => {
+    const fetchMock = mockFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<ParentVideoPage />);
+
+    await screen.findByText("Jordan Doe's Film");
+    expect(screen.queryByRole('group', { name: 'Which child' })).toBeNull();
+    expect(screen.queryByText('Choose a child')).toBeNull();
+  });
+
+  test('the back link is the shared one, not "Back to your dashboard"', async () => {
+    global.fetch = mockFetch() as unknown as typeof fetch;
+
+    render(<ParentVideoPage />);
+
+    await screen.findByText("Jordan Doe's Film");
+    expect(screen.queryByText('Back to your dashboard')).toBeNull();
+    // No session is cached in this test, so BackHome names no role's home.
+    expect(screen.getByRole('link', { name: 'Back to your home page' }).getAttribute('href')).toBe('/dashboard');
+  });
 });
