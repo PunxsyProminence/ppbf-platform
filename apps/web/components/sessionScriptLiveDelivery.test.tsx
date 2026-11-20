@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import SessionScriptLiveDelivery from './SessionScriptLiveDelivery';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
+import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from '@/src/lib/drillFloorValidation';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
@@ -1695,6 +1696,29 @@ describe("the current block's drill instructions", () => {
     expect(patchCalls(fetchMock)).toEqual([]);
     // The drill's own panel is still closed until the coach opens it.
     expect(screen.queryByRole('article', { name: 'Jab drill' })).not.toBeInTheDocument();
+  });
+
+  // The 6e follow-up (Overwatch QA = B on #1991, Q9 = A on #2001): the console's lines follow the
+  // drill's own provenance where no label settles a field, as the plan page's do.
+  it('a drill whose own provenance says DRAFT shows the mark where no label settles it; a non-draft label keeps none', async () => {
+    await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: LINKED }),
+      drill: () => jsonResponse({
+        drill: {
+          ...referenceDrill(),
+          field_provenance: REQUIRES_FLOOR_VALIDATION_PROVENANCE[1],
+          field_drafts: { cues: true, what_good_looks_like: null, what_bad_looks_like: false, corrections: false },
+        },
+      }),
+    });
+    const card = (await screen.findByText('Current block')).parentElement as HTMLElement;
+    expect(await within(card).findByText('Snap it back')).toBeInTheDocument();
+    expect(Array.from(card.querySelectorAll('p.t-body')).map((line) => line.textContent)).toEqual([
+      'Say (From the drill): Snap it back ◉DRAFT, FOR COACH REVIEW',
+      'Explain: Not written yet',
+      'Watch (From the drill): The hand comes straight back to the chin. ◉DRAFT, FOR COACH REVIEW',
+      'Fix (From the drill): Elbow in before the next one.',
+    ]);
   });
 
   it('closes back to the block, and the running session is untouched', async () => {
