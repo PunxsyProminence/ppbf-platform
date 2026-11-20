@@ -19,8 +19,8 @@ recommended option first.
   `79f45ea6`, #2006 `c5c39034`, #2008 `37d9108d`, #2009 `21102636`, #2010
   `0d342ee3`, #2012 `5efdc9b6`, #2013 `de25bb6f`, #2016 `b42e3c66`, and nine
   dependabot PRs (#1992 `40232ce5` to #2000 `590a9b4d`). A head that moves
-  later can add overlaps. #2009, #2012 and #2013 have moved since; the citation
-  reviewer found the moves add none.
+  later can add overlaps. #2006, #2009, #2012, #2013 and #2016 have moved since;
+  the citation reviewer found the moves add none.
 - **Shared registration files.** A PR here that adds a route or a migration
   also edits `apps/web/src/server/pilot/apiRouteInventory.json`,
   `apps/web/package.json` or, for a migration,
@@ -172,7 +172,7 @@ so. Two texts bear on that:
 | EM-3 | The sender: a send-log sweep on a server tick, a per-person rate limit, retry, through `sendPlainTextMail`. The sender check made to compare with the one expected mailbox. The comments above corrected. | about 320 | judgement |
 | EM-4 | Trigger points and recipients: the events Q1.1 names, each resolved to the people who can already read it in the app, who opted in and whose sign-in is on (Q1.8) | about 280 | judgement |
 
-- **Total:** about 1,200 lines in 4 PRs.
+- **Total:** about 1,200 lines in 4 PRs. Q1.4 B adds one PR, about 200 lines.
 - **Migrations:** 1, in EM-1.
 - **Route:** Opus for all four (sign-in addresses, minors' contacts, safety alerts).
 - **G3:** applies. EM-2 is a sign-in-account screen; EM-4 routes safety alerts.
@@ -247,8 +247,8 @@ so. Two texts bear on that:
   - **A (recommended):** no. The email says "open the app", which that person
     cannot do. This narrows who gets it, so by the standard above it needs
     Jason's direction. It covers staff logins too, which Gym Office can already
-    deactivate (OD-2026-10-07-009). Under Q1.1 D it also falls on athletes,
-    minors included.
+    deactivate (OD-2026-10-07-009). Under Q1.1 C or D it also falls on
+    athletes, minors included.
   - **B:** yes, until they opt out.
 
 ## 2. Web push (later, per Jason)
@@ -380,7 +380,7 @@ none by this entry". The brief says the privacy review comes first.
   - FN-1 uses the guardian checks in `guardianAccess.ts`, which #2012 (lane
     GA) changes (+30 lines at `5efdc9b6`). FN-1 goes after #2012 merges.
   - FN-1 shares the registration files with #2013 (above).
-  - FN-2 changes `AthleteWorkspace.tsx`, which #2006 (lane U3) changes (+257
+  - FN-2 changes `AthleteWorkspace.tsx`, which #2006 (lane U3) changes (+256
     lines at `c5c39034`), and U2 item 4e later.
   - FN-3 changes `CoachWorkspace.tsx`, lane U2's file (AS-7, coach home). #2010
     (lane AS-5) would also edit it if Overwatch picks its Q11 B.
@@ -608,8 +608,8 @@ FUTURE list names "a class that carries its session plan ahead of time
 - **Q5.1 What can a coach add?**
   - **A (recommended):** a drill from the library, as a new block.
   - **B:** A, plus a block copied from another plan.
-  - **C:** A, plus a block with its own text and no drill: a talk, a reset or a
-    transition, from the existing block kinds
+  - **C:** A, plus a block with its own text and no drill: a teaching minute, a reset
+    minute or a transition, from the existing block kinds
     (`infra/azure/pilot_slice_postgres_session_scripts_migration.sql:84-86`).
 - **Q5.2 What does "schedules a class from it" keep?**
   - **A (recommended):** the class keeps the plan, and Start on the class
@@ -919,7 +919,7 @@ per PR):
 
 | # | Item | PRs | Est. lines outside tests | Migrations | Route | G3 | Waits on |
 |---|---|---|---|---|---|---|---|
-| 1 | Email alerts | 4 | about 1,200 | 1 | Opus | yes | Q1.1 to Q1.8; a running tick; #2013 for Q1.8 |
+| 1 | Email alerts | 4 (5 if Q1.4 B) | about 1,200 (1,400 if Q1.4 B) | 1 | Opus | yes | Q1.1 to Q1.8; a running tick; #2013 for Q1.8 |
 | 2 | Web push (later) | 3 (4 without the package) | about 890 (1,090 without the package) | 1 | Opus | yes | item 1; Q2.1, Q2.2; a key in Azure; a dependency call |
 | 3 | On the floor now | 4 | about 640 | 0 | Opus | yes | privacy review (FN-0, Q3.5); Q3.1 to Q3.4; #2012; U2 for the coach home |
 | 4 | Parent starts a message | 3 (0 if Q4.1 C) | about 970 (880 if B; 0 if C) | 1 (0 if C) | Opus | yes | Q4.1 to Q4.5; #2012 |
