@@ -13,8 +13,7 @@ import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
 import ParentDigest from './ParentDigest';
 import ProfilePortrait from './ProfilePortrait';
-import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
-import ShadowChatButton from './ShadowChatButton';
+import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow, type ChildCount } from './RoleSummaryPanels';
 import SentToYourAthlete from './SentToYourAthlete';
 import { cardPhotoUrl, type FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
@@ -125,6 +124,52 @@ function membershipLine(row: SupportStatus['memberships'][number]): string {
 /** A task is open until the family ticks it. */
 function isOpenTask(message: ParentMessage): boolean {
   return message.task !== null && message.task.completed_at === null;
+}
+
+/* ONE COUNT PER CHILD, NAMED (scrub FAM-12; AS-9 Q4 = A, Overwatch
+   2026-11-20: "each child's first name beside its own count. Only the
+   parent's own children are shown"). The Parent Floor tasks and New messages
+   tiles count every child's messages, while the other tiles are the selected
+   child's, so a bare total did not say whose it was. Every linked child is
+   listed, a zero included, so no child's count is hidden. A child whose name
+   is not on file reads "Your child"; two children with the same first name
+   keep their full names. A message for a child the roster did not return
+   (not expected: both reads are the guardian's own children) is still
+   counted, under the name the message carries. */
+
+function firstName(name: string | null | undefined): string | null {
+  const trimmed = (name ?? '').trim();
+  if (!trimmed || trimmed === 'Unknown') return null;
+  return trimmed.split(/\s+/)[0];
+}
+
+function countsByChild(
+  childList: ReadonlyArray<{ id: string; name: string }>,
+  matching: ReadonlyArray<ParentMessage>,
+): ChildCount[] {
+  const counts = new Map<string, number>();
+  for (const message of matching) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
+  const people: Array<{ id: string; full: string | null; first: string | null }> = childList.map((child) => ({
+    id: child.id,
+    full: child.name && child.name !== 'Unknown' ? child.name.trim() : null,
+    first: firstName(child.name),
+  }));
+  const known = new Set(childList.map((child) => child.id));
+  for (const message of matching) {
+    if (known.has(message.athlete_id)) continue;
+    known.add(message.athlete_id);
+    people.push({ id: message.athlete_id, full: message.athlete_name?.trim() || null, first: firstName(message.athlete_name) });
+  }
+  const firstUses = new Map<string, number>();
+  for (const person of people) {
+    if (person.first) firstUses.set(person.first, (firstUses.get(person.first) ?? 0) + 1);
+  }
+  return people.map((person) => ({
+    label: person.first
+      ? (firstUses.get(person.first) ?? 0) > 1 ? person.full ?? person.first : person.first
+      : 'Your child',
+    count: counts.get(person.id) ?? 0,
+  }));
 }
 
 /* PAST DUE (parent walk 2026-10-19 item 5; Jason 2026-10-19, Q2 "A: "Past
@@ -1365,10 +1410,13 @@ export default function ParentHub() {
         )}
 
         {childrenError && !childrenLoading && (
-          <div className="alert alert--critical" role="alert">
+          /* A read that failed is not a medical stop, so it wears the
+             restricted rung with its glyph, as the film and progress pages do
+             (SC2-4, #2002; scrub FAM-13), not --locked. Same words. */
+          <div className="alert alert--warning" role="alert">
             <div className="alert-body">
               <div className="mb-[var(--s3)] flex items-center justify-between gap-[var(--s4)]">
-                <span className="badge badge--locked"><i>✕</i>Failed</span>
+                <span className="badge badge--restricted"><i>▲</i>Failed</span>
                 <button
                   onClick={() => {
                     setChildrenError(null);
@@ -1388,6 +1436,9 @@ export default function ParentHub() {
         {!childrenLoading && children.length === 0 && !childrenError && (
           <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] text-center">
             <p className="t-muted">No children found</p>
+            {/* The next step, in the sentence the film and progress pages
+                already use (scrub FAM-27). */}
+            <p className="t-body mt-[var(--s2)]">Your account is not linked to an athlete yet. Ask the front desk to connect your family.</p>
           </div>
         )}
 
@@ -1455,14 +1506,10 @@ export default function ParentHub() {
         {/* PHONE ORDER (parent walk 2026-10-19 item 11: the tabs began about a
             screen and a half down, below the stat boxes). The child selector
             and the tab row come first, so any tab is one tap from the top of
-            the page. The family line and the summary tiles follow the row and
-            still show on every tab, so nothing was removed or hidden; only the
-            order changed. PROPOSED order. */}
-        <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
-          <p className="t-label">Family Commitment</p>
-          <p className="t-body mt-[var(--s2)]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
-        </div>
-
+            the page; the summary tiles follow the row and show on every tab.
+            The fixed "Family Commitment" card that sat here went with AS-9
+            (scrub FAM-20): the same words on every tab pushed each tab's own
+            content down. */}
         {/* ROLE SUMMARY PANEL. Progress, Upcoming and Attendance are the
             selected child's; Parent Floor tasks and New messages count across every
             child. Each tile is Unavailable until the read it counts from has
@@ -1470,10 +1517,10 @@ export default function ParentHub() {
             scheduled" or "nothing is due", which nobody verified. */}
         <ParentSummaryPanel
           childProgress={progressText}
-          tasksDue={messagesLoaded ? messages.filter(isOpenTask).length : null}
+          tasksDue={messagesLoaded ? countsByChild(children, messages.filter(isOpenTask)) : null}
           upcomingEvents={activeUpcomingPlaces}
           attendance={activeAttendanceTally}
-          unreadMessages={messagesLoaded && ownReadsLoaded ? messages.filter(isNewToMe).length : null}
+          unreadMessages={messagesLoaded && ownReadsLoaded ? countsByChild(children, messages.filter(isNewToMe)) : null}
         />
 
         {/* TAB CONTENT */}
@@ -1481,65 +1528,16 @@ export default function ParentHub() {
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6 panel-settle">
-              {/* The digest leads the overview: the roadmap's "blind spot" is
-                  the guardian who never sees the room, and the first thing
-                  they should meet is the coach's own words, not a button
-                  grid. */}
-              {/* The roster maps a missing name to 'Unknown' for the selector;
-                  the digest gets null instead, so its lines read "your child"
-                  rather than "Marked by a coach or by Unknown". */}
-              <ParentDigest
-                athleteId={activeChildId || null}
-                childName={activeChild && activeChild.name !== 'Unknown' ? activeChild.name : null}
-              />
-
-              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
-                <h3 className="t-label">Quick Actions</h3>
-                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  <ShadowChatButton
-                    context="Parent Overview"
-                    label="SHADOW Chat"
-                  />
-                  <Link href="/schedule" className="btn w-full">
-                    Open Scheduler
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('home-assignments')}
-                    className="btn w-full"
-                  >
-                    Open Assignments
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('attendance')}
-                    className="btn btn--ghost w-full"
-                  >
-                    Check Attendance
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('messages')}
-                    className="btn btn--ghost w-full"
-                  >
-                    View Messages from the Coaches
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('shadow')}
-                    className="btn btn--ghost w-full"
-                  >
-                    Open SHADOW Intel
-                  </button>
-                </div>
-              </section>
-
-              {/* Safety & Consent: pure aggregation of two guardian-facing
-                  surfaces this hub previously never linked to (#93/#167).
-                  Non-alarming by default -- the count line only appears once
-                  there is something for a guardian to actually look at, and
-                  it names a scope/outcome, never staff detail. */}
-              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
+              {/* SAFETY FIRST (scrub FAM-02; AS-9 Q5 = A). The Safety & Consent
+                  card is the first block of the Overview, above the coach's
+                  digest, so on a phone it follows the tab row and the tiles
+                  instead of sitting about tenth. Its count line is SH-3's
+                  (#1969): pure aggregation of two guardian-facing surfaces,
+                  non-alarming by default, naming a scope or outcome and never
+                  staff detail. The film link that sat in this card moved to
+                  the top of the Progress tab with the other record pages
+                  (FAM-07). */}
+              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]" data-testid="parent-safety-card">
                 <h3 className="t-label">Safety &amp; Consent</h3>
                 {safetySummary && safetySentences.length > 0 ? (
                   <p className="t-body mt-[var(--s2)]" data-testid="parent-safety-line">
@@ -1559,8 +1557,30 @@ export default function ParentHub() {
                   <Link href="/parent/consent" className="btn btn--ghost w-full">
                     Manage Consent
                   </Link>
-                  <Link href="/parent/video" className="btn btn--ghost w-full">
-                    Your athlete&apos;s film
+                </div>
+              </section>
+
+              {/* The coach's own words come next: the roadmap's "blind spot"
+                  is the guardian who never sees the room. */}
+              {/* The roster maps a missing name to 'Unknown' for the selector;
+                  the digest gets null instead, so its lines read "your child"
+                  rather than "Marked by a coach or by Unknown". */}
+              <ParentDigest
+                athleteId={activeChildId || null}
+                childName={activeChild && activeChild.name !== 'Unknown' ? activeChild.name : null}
+              />
+
+              {/* Quick Actions keeps the one action that leaves the hub. The
+                  four buttons that only switched to a tab already in the row
+                  above (Open Assignments, Check Attendance, View Messages from
+                  the Coaches, Open SHADOW Intel) went, and so did "SHADOW
+                  Chat", which repeated the page's own SHADOW button (scrub
+                  FAM-04, FAM-05; AS-9 Q3 = A). */}
+              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h3 className="t-label">Quick Actions</h3>
+                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
+                  <Link href="/schedule" className="btn w-full">
+                    Open Scheduler
                   </Link>
                 </div>
               </section>
@@ -1627,34 +1647,16 @@ export default function ParentHub() {
                 ]}
               />
 
+              {/* Current Status keeps what is shown nowhere else: membership,
+                  scholarship and community service support. The child's name,
+                  Progress and Class attendance rows went (scrub FAM-20): the
+                  child picker and the tiles above already show them. The fixed
+                  "How to Support" card went with them. */}
               {activeChild && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s5)]">
+                <div className="grid grid-cols-1 gap-[var(--s5)]">
                   <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                     <h3 className="t-label">Current Status</h3>
                     <div className="space-y-[var(--s4)]">
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Child Name</p>
-                        <p className="t-body font-semibold">{activeChild.name}</p>
-                      </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Progress</p>
-                        <p className="t-body font-semibold">{progressText}</p>
-                      </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Class attendance</p>
-                        {activeAttendanceTally ? (
-                          <>
-                            <p className="t-body font-semibold">
-                              {`Present ${activeAttendanceTally.present} · Excused ${activeAttendanceTally.excused} · Absent ${activeAttendanceTally.absent}`}
-                            </p>
-                            {activeAttendanceTally.latest ? (
-                              <p className="t-muted">{activeAttendanceTally.latest}</p>
-                            ) : null}
-                          </>
-                        ) : (
-                          <p className="t-body font-semibold">Unavailable</p>
-                        )}
-                      </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Membership Status</p>
                         {shownSupport === 'loading' ? (
@@ -1700,28 +1702,6 @@ export default function ParentHub() {
                         )}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                    <h3 className="t-label">How to Support</h3>
-                    <ul className="space-y-[var(--s3)] t-body">
-                      <li className="flex items-start gap-[var(--s3)]">
-                        <span aria-hidden="true">✓</span>
-                        <span>Attend training sessions consistently</span>
-                      </li>
-                      <li className="flex items-start gap-[var(--s3)]">
-                        <span aria-hidden="true">✓</span>
-                        <span>Support home assignments and drills</span>
-                      </li>
-                      <li className="flex items-start gap-[var(--s3)]">
-                        <span aria-hidden="true">✓</span>
-                        <span>Maintain nutrition and sleep</span>
-                      </li>
-                      <li className="flex items-start gap-[var(--s3)]">
-                        <span aria-hidden="true">✓</span>
-                        <span>Stay informed through coach messages</span>
-                      </li>
-                    </ul>
                   </div>
                 </div>
               )}
@@ -2137,6 +2117,36 @@ export default function ParentHub() {
               <h3 className="t-label">Progress & Achievements</h3>
               <p className="t-body">Track skill development and milestone achievements.</p>
 
+              {/* THE RECORD'S OTHER PAGES, FIRST (scrub FAM-07, FAM-08). The
+                  film link moved here from the Safety & Consent card, and the
+                  Development Plan and Mental Skills links moved up from the
+                  foot of this tab, below achievements, goals and the summary.
+                  Each page opens on the child chosen here
+                  (src/lib/chosenChild.ts), and its read re-checks the link. */}
+              <nav aria-label="Your child's progress pages" className="flex flex-wrap gap-[var(--s3)]">
+                <Link
+                  href="/parent/video"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Your athlete&apos;s film
+                </Link>
+                <Link
+                  href="/parent/development-blocks"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Their Development Plan
+                </Link>
+                <Link
+                  href="/parent/mental-skills"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Mental Skills
+                </Link>
+              </nav>
+
               {/* THE SAME ACHIEVEMENTS, SAID TO SOMEBODY WHO WAS NOT IN THE ROOM.
                   Not a simplified subset and not a different set of facts: the
                   identical rows the athlete sees, rendered with each entry's
@@ -2177,25 +2187,6 @@ export default function ParentHub() {
                 </>
               )}
 
-              {/* The coach's multi-week plan and the mental-skills log, for the
-                  child on screen: those pages open on the child chosen here
-                  (src/lib/chosenChild.ts), and their reads re-check the link. */}
-              <div className="flex flex-wrap gap-[var(--s3)]">
-                <Link
-                  href="/parent/development-blocks"
-                  onClick={() => rememberChosenChild(activeChildId)}
-                  className="btn btn--ghost"
-                >
-                  Their Development Plan
-                </Link>
-                <Link
-                  href="/parent/mental-skills"
-                  onClick={() => rememberChosenChild(activeChildId)}
-                  className="btn btn--ghost"
-                >
-                  Mental Skills
-                </Link>
-              </div>
             </div>
           )}
 

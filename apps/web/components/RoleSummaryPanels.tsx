@@ -111,7 +111,9 @@ interface ParentSummaryPanelProps {
   // distinction matters most at zero: "0 tasks due" tells a parent nothing is
   // expected of them, which must never be the rendering of a feed that does
   // not exist or did not load.
-  tasksDue: number | null;
+  /* Parent Floor tasks and New messages count every linked child, so each
+     carries one named count per child (AS-9 Q4 = A), never a bare total. */
+  tasksDue: ReadonlyArray<ChildCount> | null;
   upcomingEvents: number | null;
   /* The selected child's recorded attendance marks, counted, never divided:
      the marks record what happened, and nothing records what was expected,
@@ -120,7 +122,20 @@ interface ParentSummaryPanelProps {
      held>"), built by the hub: it knows whether the date is the class's own
      or only the time a mark was written. */
   attendance: { present: number; excused: number; absent: number; latest: string | null } | null;
-  unreadMessages: number | null;
+  unreadMessages: ReadonlyArray<ChildCount> | null;
+}
+
+/** One child's count on a parent tile: the child's first name and the figure. */
+export interface ChildCount {
+  label: string;
+  count: number;
+}
+
+/* "Ada 2 · Ben 0". A family with no linked child and nothing counted reads
+   "0": the read answered, and it held nothing. */
+function childCountsLine(counts: ReadonlyArray<ChildCount>): string {
+  if (counts.length === 0) return '0';
+  return counts.map((entry) => `${entry.label} ${entry.count}`).join(' · ');
 }
 
 interface AdminSummaryPanelProps {
@@ -365,9 +380,9 @@ export function ParentSummaryPanel({
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
-        <div className={STAT_TILE}>
-          <p className="stat-label">Parent Floor tasks</p>
-          <p className="stat-val">{tasksDue}</p>
+        <div className={KPI_TILE}>
+          <p className="t-label">Parent Floor tasks</p>
+          <p className="t-body mt-[var(--s3)]">{childCountsLine(tasksDue)}</p>
         </div>
       )}
 
@@ -412,9 +427,9 @@ export function ParentSummaryPanel({
           <p className="t-body mt-[var(--s3)]">Unavailable</p>
         </div>
       ) : (
-        <div className={STAT_TILE}>
-          <p className="stat-label">New messages</p>
-          <p className="stat-val">{unreadMessages}</p>
+        <div className={KPI_TILE}>
+          <p className="t-label">New messages</p>
+          <p className="t-body mt-[var(--s3)]">{childCountsLine(unreadMessages)}</p>
         </div>
       )}
     </div>

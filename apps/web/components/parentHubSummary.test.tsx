@@ -177,7 +177,7 @@ test('the page heading is the door name, Parent Hub', async () => {
 
 // #1593: "Current Track" had no source and read Unavailable for every child,
 // so the row is gone (Overwatch ruling B); the status panel keeps what is real.
-test('the status panel has no Current Track row, and still names the child', async () => {
+test('the status panel has no Current Track row, and no longer repeats the child\'s name', async () => {
   installFetch();
   await renderHub();
   expect(screen.queryByText('Current Track')).toBeNull();
@@ -187,21 +187,23 @@ test('the status panel has no Current Track row, and still names the child', asy
   });
   expect(screen.getByText('Review membership, scholarship and support status')).toBeInTheDocument();
   expect(document.body.textContent).not.toMatch(/current track/i);
-  expect(screen.getByText('Child Name')).toBeInTheDocument();
+  // The "Child Name" row went (scrub FAM-20): the child picker names the child.
+  expect(screen.queryByText('Child Name')).toBeNull();
 });
 
 describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
-  test('the tile and the status row show the selected child’s own record, and move with the selection', async () => {
+  test('the tile shows the selected child’s own record and moves with the selection; the status panel no longer repeats it', async () => {
     installFetch();
     await renderHub();
 
     await waitFor(() => expect(tileValue('Progress')).toBe(FIRST_PROGRESS));
-    expect(statusPanelText()).toContain(FIRST_PROGRESS);
+    // The status panel's Progress row repeated the tile, so it went (scrub FAM-20).
+    expect(statusPanelText()).not.toContain(FIRST_PROGRESS);
 
     await selectChild('Second Child');
     await waitFor(() => expect(tileValue('Progress')).toBe(SECOND_PROGRESS));
-    expect(statusPanelText()).toContain(SECOND_PROGRESS);
-    expect(statusPanelText()).not.toContain(FIRST_PROGRESS);
+    expect(tileValue('Progress')).not.toContain(FIRST_PROGRESS);
+    expect(statusPanelText()).not.toContain(SECOND_PROGRESS);
   });
 
   test('a real zero is a zero', async () => {
@@ -341,18 +343,17 @@ describe('Upcoming: places the selected child holds in sessions still to come', 
 });
 
 describe('Attendance: the recorded marks, counted and never divided', () => {
-  test('the tile and status row show this child’s marks, and move with the selection', async () => {
+  test('the tile shows this child’s marks and moves with the selection; the status panel no longer repeats them', async () => {
     installFetch();
     await renderHub();
-    await waitFor(() => expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0Latest class on the register: Jan 14, 2020, 6:00 PM/));
-    expect(statusPanelText()).toContain('Present 1 · Excused 1 · Absent 0');
     // Newest CLASS first: the excused one, for the class held on the 14th.
-    expect(statusPanelText()).toMatch(/Latest class on the register: Jan 14, 2020, 6:00 PM/);
+    await waitFor(() => expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0Latest class on the register: Jan 14, 2020, 6:00 PM/));
+    // The status panel's Class attendance row repeated the tile, so it went (scrub FAM-20).
+    expect(statusPanelText()).not.toContain('Present 1 · Excused 1 · Absent 0');
 
     await selectChild('Second Child');
     expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 0 · Absent 2Latest class on the register: Jan 21, 2020, 6:00 PM/);
-    expect(statusPanelText()).toContain('Present 1 · Excused 0 · Absent 2');
-    expect(statusPanelText()).toMatch(/Latest class on the register: Jan 21, 2020, 6:00 PM/);
+    expect(statusPanelText()).not.toContain('Present 1 · Excused 0 · Absent 2');
   });
 
   test('a child with no marks reads zeros and no last-marked line', async () => {
