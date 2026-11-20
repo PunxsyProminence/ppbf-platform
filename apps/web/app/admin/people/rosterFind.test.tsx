@@ -8,7 +8,7 @@
 // narrowed list says so, so it never reads as everyone in the gym.
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import PeopleConsolePage from './page';
 
@@ -33,7 +33,7 @@ const ROSTER = [
   { athlete_id: 'ath-1', full_name: 'Alex Fixture', account_id: 'southpaw12', account_active: true, has_pin: true, account_updated_at: null },
 ];
 
-const member = (overrides: Record<string, unknown>) => ({
+const member = (overrides: Record<string, unknown>): Record<string, unknown> => ({
   login_email: null,
   auth_provider: 'microsoft',
   athlete_id: null,
@@ -51,15 +51,19 @@ const MEMBERS = [
   member({ account_id: 'southpaw12', auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-1', has_pin: true }),
 ];
 
-function installFetch() {
+/** `later` is what the roster read returns from its second answer on (a re-read after an action). */
+function installFetch(first: unknown[] = MEMBERS, later: unknown[] = first) {
+  let reads = 0;
   global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
     if (url.includes('/api/pilot/admin/athlete-pin-directory')) {
       return { ok: true, status: 200, json: async () => ({ ok: true, items: [...ROSTER] }) } as Response;
     }
     if (url.includes('/api/pilot/admin/staff') && (init?.method ?? 'GET') === 'GET') {
-      return { ok: true, status: 200, json: async () => ({ ok: true, organization_id: 'org-1', members: MEMBERS, guardian_links: [] }) } as Response;
+      reads += 1;
+      const members = reads === 1 ? first : later;
+      return { ok: true, status: 200, json: async () => ({ ok: true, organization_id: 'org-1', members, guardian_links: [] }) } as Response;
     }
-    return { ok: true, status: 200, json: async () => ({}) } as Response;
+    return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
   }) as unknown as typeof fetch;
 }
 
@@ -122,6 +126,9 @@ test('the box and the role filter narrow together', async () => {
   expect(within(table).getByText(`Showing 0 of ${MEMBERS.length}`)).toBeTruthy();
   role('all');
   expect(rows(table)).toHaveLength(1);
+  // With All roles already chosen, the line does not send the admin to it.
+  find('nobody-by-this-name');
+  expect(within(table).getByText('No one on the roster matches. Clear the box to see everyone.')).toBeTruthy();
 });
 
 test('narrowing re-reads nothing, and a found row keeps its actions', async () => {
@@ -132,4 +139,95 @@ test('narrowing re-reads nothing, and a found row keeps its actions', async () =
   role('Athlete');
   expect((global.fetch as jest.Mock).mock.calls.length).toBe(reads);
   expect(within(rows(table)[0]).getByRole('button', { name: 'Issue New Activation Code' })).toBeTruthy();
+});
+
+// AS10-2a review: the box searches what a row shows (plus a PIN athlete's
+// sign-in ID), not ids or addresses the row never prints.
+test.each([
+  ['an adult\'s account id that is not their address', 'acct-7731'],
+  ['an athlete\'s own email address', 'kid-private@'],
+  ['the words of the "no sign-in address" stand-in', 'address'],
+])('does not find a row by %s', async (_label, text) => {
+  installFetch([
+    member({ account_id: 'acct-7731', login_email: 'desk@example.test', role: 'staff' }),
+    member({ account_id: 'southpaw12', auth_provider: 'ppbf_local', role: 'athlete', athlete_id: 'ath-1', has_pin: true, login_email: 'kid-private@example.test' }),
+    member({ account_id: 'acct-9', login_email: null, role: 'volunteer' }),
+  ]);
+  const table = await roster();
+  find(text);
+  expect(within(table).getByText('Showing 0 of 3')).toBeTruthy();
+});
+
+// AS10-2a review: a role nobody holds any more must not leave the list empty
+// under a select that reads "All roles".
+test('a chosen role that leaves the roster falls back to All roles, in the select and in the list', async () => {
+  const volunteerNowCoach = MEMBERS.map((item) => (item.role === 'volunteer' ? { ...item, role: 'coach' } : item));
+  installFetch(MEMBERS, volunteerNowCoach);
+  const table = await roster();
+  role('Volunteer');
+  expect(rows(table)).toHaveLength(1);
+  // Any action that re-reads the roster; here the volunteer is switched off.
+  fireEvent.click(within(rows(table)[0]).getByRole('button', { name: 'Deactivate helper@example.test' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Deactivate' }));
+  await waitFor(() => expect(rows(table)).toHaveLength(MEMBERS.length));
+  expect((screen.getByLabelText('Role') as HTMLSelectElement).value).toBe('all');
+  expect(within(table).getByText('Everyone in this gym')).toBeTruthy();
+  expect(Array.from((screen.getByLabelText('Role') as HTMLSelectElement).options).map((option) => option.textContent)).not.toContain('Volunteer');
+});
+
+// AS10-2a review: narrowing must not leave something armed, or a name being
+// edited, waiting on a hidden row to come back one tap from acting.
+describe('narrowing closes what is armed or open on a row it hides', () => {
+  test('an armed code re-issue on a hidden row is disarmed; it does not come back armed', async () => {
+    installFetch();
+    const table = await roster();
+    fireEvent.click(within(table).getByRole('button', { name: 'Issue New Activation Code' }));
+    expect(within(table).getByRole('button', { name: 'Issue The New Code' })).toBeTruthy();
+    find('coach@');
+    expect(within(table).queryByRole('button', { name: 'Issue The New Code' })).toBeNull();
+    find('');
+    expect(within(table).queryByRole('button', { name: 'Issue The New Code' })).toBeNull();
+    expect(within(table).getByRole('button', { name: 'Issue New Activation Code' })).toBeTruthy();
+  });
+
+  test('an armed sign-out and an armed deactivate on a hidden row are disarmed too', async () => {
+    installFetch();
+    const table = await roster();
+    const coachRow = () => within(table).getByText('coach@example.test').closest('tr') as HTMLElement;
+    const signOut = 'Sign coach@example.test out on every device';
+    fireEvent.click(within(coachRow()).getByRole('button', { name: signOut }));
+    fireEvent.click(within(coachRow()).getByRole('button', { name: 'Deactivate coach@example.test' }));
+    // Both are armed: neither opening button is offered while its confirm is up.
+    expect(within(coachRow()).getByRole('button', { name: 'Confirm Deactivate' })).toBeTruthy();
+    expect(within(coachRow()).queryByRole('button', { name: signOut })).toBeNull();
+    role('Athlete');
+    role('all');
+    expect(within(coachRow()).queryByRole('button', { name: 'Confirm Deactivate' })).toBeNull();
+    expect(within(coachRow()).getByRole('button', { name: 'Deactivate coach@example.test' })).toBeTruthy();
+    expect(within(coachRow()).getByRole('button', { name: signOut })).toBeTruthy();
+  });
+
+  test('something armed on a row that stays in view stays armed', async () => {
+    installFetch();
+    const table = await roster();
+    fireEvent.click(within(table).getByRole('button', { name: 'Issue New Activation Code' }));
+    find('southpaw');
+    expect(within(table).getByRole('button', { name: 'Issue The New Code' })).toBeTruthy();
+  });
+
+  test('a name being edited on a hidden row is closed, and the box keeps the typing', async () => {
+    installFetch();
+    const table = await roster();
+    fireEvent.click(within(table).getByRole('button', { name: /Edit Name/ }));
+    expect(screen.getByLabelText(/^Name for /)).toBeTruthy();
+    const box = screen.getByLabelText('Find a person') as HTMLInputElement;
+    box.focus();
+    find('helper');
+    expect(screen.queryByLabelText(/^Name for /)).toBeNull();
+    find('');
+    expect(screen.queryByLabelText(/^Name for /)).toBeNull();
+    expect(document.activeElement).toBe(box);
+    // Other rows' name buttons work again: nothing is left open out of sight.
+    expect((within(table).getByRole('button', { name: /Edit Name/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
 });

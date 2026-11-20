@@ -528,12 +528,6 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
       : null;
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
-
-  // Find a person on the roster (lane AS-10, AS10-2a; app scrub OFF-06): a
-  // name, address or sign-in ID box and a role filter, in Athlete Records'
-  // own pattern. They only narrow what is shown; nothing is re-read.
-  const [rosterFind, setRosterFind] = useState('');
-  const [rosterRole, setRosterRole] = useState('all');
   // The athlete's roster name for a login row, else the login id (F-110).
   /* A person by name in this page's lines and labels, never by account id
      (UXB-12). An athlete is named from the roster; an adult by the address
@@ -546,6 +540,62 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
     if (member?.athlete_id) return rosterById.get(member.athlete_id)?.full_name?.trim() || member.account_id;
     return member?.login_email || 'Account with no sign-in address';
   };
+
+  /*
+   * FIND A PERSON ON THE ROSTER (lane AS-10, PR AS10-2a; app scrub OFF-06): a
+   * box and a role filter, in Athlete Records' own pattern. They only narrow
+   * what is shown; nothing is re-read.
+   *
+   * The box searches what the row itself shows -- the person's name or sign-in
+   * address and the staff name the gym typed -- plus a PIN athlete's sign-in
+   * ID, which is what the athlete types at the tablet. It does not search an
+   * id or address the row does not show.
+   */
+  const [rosterFind, setRosterFind] = useState('');
+  const [rosterRole, setRosterRole] = useState('all');
+  // The roles present, by the Role column's own words ("Gym Admin" covers both
+  // admin names), in the roster's order.
+  const rosterRoleOptions = Array.from(new Set(members.map((member) => roleLabel(member.role))));
+  // A role nobody holds any more is All roles: the select can only show an
+  // option that exists, and the list must match what the select shows.
+  const activeRosterRole = rosterRoleOptions.includes(rosterRole) ? rosterRole : 'all';
+  const rosterMatches = (member: Member, find: string, role: string): boolean => {
+    if (role !== 'all' && roleLabel(member.role) !== role) return false;
+    const needle = find.trim().toLowerCase();
+    if (!needle) return true;
+    const shown: Array<string | null | undefined> = [member.staff_display_name];
+    // Not the "no sign-in address" stand-in: that is not something to find a person by.
+    if (member.athlete_id || member.login_email) shown.push(personLabel(member.account_id));
+    if (member.auth_provider === 'ppbf_local' && member.role === 'athlete') shown.push(member.account_id);
+    return shown.some((text) => typeof text === 'string' && text.toLowerCase().includes(needle));
+  };
+  const shownMembers = members.filter((member) => rosterMatches(member, rosterFind, activeRosterRole));
+  const rosterNarrowed = shownMembers.length !== members.length;
+
+  /**
+   * Narrow the roster. Anything armed or open on a row the new filter hides is
+   * closed with it: an armed control must not come back armed, one tap from
+   * acting, when its row is shown again (the rule rowStillOffers keeps for a
+   * re-read), and a name being edited must not take the typing meant for the box.
+   */
+  function narrowRoster(find: string, role: string) {
+    setRosterFind(find);
+    setRosterRole(role);
+    const visible = new Set(members.filter((member) => rosterMatches(member, find, role)).map((member) => member.account_id));
+    if (revokeArmedId && !visible.has(revokeArmedId)) setRevokeArmedId(null);
+    if (codeArmedId && !visible.has(codeArmedId)) setCodeArmedId(null);
+    if (deactivateArmedId && !visible.has(deactivateArmedId)) setDeactivateArmedId(null);
+    if (nameEditId && !visible.has(nameEditId)) {
+      setNameEditId(null);
+      setNameDraft('');
+      setNameError('');
+    }
+    if (pendingUnlink && !visible.has(pendingUnlink.accountId)) setPendingUnlink(null);
+    if (pendingMove && !visible.has(pendingMove.accountId)) {
+      setPendingMove(null);
+      setMoveEmail('');
+    }
+  }
 
   /**
    * The next unused ath-NNN for this gym.
@@ -1411,18 +1461,6 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   </div>
                 </div>
               ) : (
-                (() => {
-                  // The roles present, by the label the Role column shows ("Gym Admin"
-                  // covers both admin names), in the roster's own order.
-                  const roleOptions = Array.from(new Set(members.map((member) => roleLabel(member.role))));
-                  const needle = rosterFind.trim().toLowerCase();
-                  const shown = members.filter((member) =>
-                    (rosterRole === 'all' || roleLabel(member.role) === rosterRole)
-                    && (!needle
-                      || [personLabel(member.account_id), member.staff_display_name, member.login_email, member.account_id]
-                        .some((text) => typeof text === 'string' && text.toLowerCase().includes(needle))));
-                  const narrowed = shown.length !== members.length;
-                  return (
                 <>
                 <div className="flex flex-wrap items-end gap-[var(--s4)] p-[var(--s4)]">
                   <div className="field">
@@ -1433,7 +1471,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                       id="roster-find"
                       type="search"
                       value={rosterFind}
-                      onChange={(event) => setRosterFind(event.target.value)}
+                      onChange={(event) => narrowRoster(event.target.value, activeRosterRole)}
                       placeholder="Name, email or sign-in ID"
                       className="input"
                     />
@@ -1442,9 +1480,14 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     <label htmlFor="roster-role" className="t-label">
                       Role
                     </label>
-                    <select id="roster-role" value={rosterRole} onChange={(event) => setRosterRole(event.target.value)} className="select">
+                    <select
+                      id="roster-role"
+                      value={activeRosterRole}
+                      onChange={(event) => narrowRoster(rosterFind, event.target.value)}
+                      className="select"
+                    >
                       <option value="all">All roles</option>
-                      {roleOptions.map((label) => (
+                      {rosterRoleOptions.map((label) => (
                         <option key={label} value={label}>
                           {label}
                         </option>
@@ -1464,7 +1507,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   <caption className="text-left">
                     {/* A narrowed list says so: it is not everyone in the gym. */}
                     <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">
-                      {narrowed ? `Showing ${shown.length} of ${members.length}` : 'Everyone in this gym'}
+                      {rosterNarrowed ? `Showing ${shownMembers.length} of ${members.length}` : 'Everyone in this gym'}
                     </span>
                   </caption>
                   <thead>
@@ -1477,12 +1520,16 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     </tr>
                   </thead>
                   <tbody>
-                  {shown.length === 0 && (
+                  {shownMembers.length === 0 && (
                     <tr>
-                      <td colSpan={5}>No one on the roster matches. Clear the box or choose All roles.</td>
+                      <td colSpan={5}>
+                        {activeRosterRole === 'all'
+                          ? 'No one on the roster matches. Clear the box to see everyone.'
+                          : 'No one on the roster matches. Clear the box or choose All roles.'}
+                      </td>
                     </tr>
                   )}
-                  {shown.map((member) => {
+                  {shownMembers.map((member) => {
                     const isGuardian = member.role === 'parent';
                     const memberLinks = guardianLinksByAccount.get(member.account_id) || [];
                     const linkCount = !isGuardian ? null : guardianLinksAvailable ? memberLinks.length : null;
@@ -1883,8 +1930,6 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                 </table>
                 </div>
                 </>
-                  );
-                })()
               )}
               </div>
             </div>
