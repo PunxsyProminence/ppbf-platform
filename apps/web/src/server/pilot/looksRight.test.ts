@@ -16,7 +16,7 @@ import { confirmLooksRight } from './contentImport/datasets/contentLabels';
 import { findInAppEditLabels, isInAppEditLabel } from './contentImport/inAppEdits';
 import { withTransaction } from './db';
 import { editLibraryDrill, parseDrillLibraryEdit } from './drillLibraryEdit';
-import { parseWorkoutTemplateEdit } from './workoutTemplateEdit';
+import { editWorkoutTemplate, parseWorkoutTemplateEdit } from './workoutTemplateEdit';
 
 const DRAFT = { status: 'INFERRED', sources: ['DOC-1'], draft: 'AI draft' };
 const SOURCED = { status: 'INFERRED', sources: ['DOC-1'] };
@@ -165,6 +165,31 @@ describe('editLibraryDrill with looks_right', () => {
     expect(written['stop_rules.rule_kind']).toEqual({ ...SOURCED, 1: SOURCED, looks_right: expect.objectContaining({ by_role: 'coach' }) });
   });
 
+  test("reads this gym's labels of this version: organization, kind, lineage and version", async () => {
+    await press('purpose');
+    const read = statements.find((s) => s.text.includes('select field_labels, evidence, backbone_version'));
+    expect(read?.text.replace(/\s+/g, ' ')).toContain(
+      'where organization_id = $1 and target_kind = $2 and target_lineage_id = $3 and target_version = $4',
+    );
+    expect(read?.values).toEqual(['org-1', 'drill', 'lin-1', 1]);
+  });
+
+  test('a level drafted on its own label is confirmed there: its own draft goes', async () => {
+    fieldLabels = { scale_levels: { ...SOURCED, A: DRAFT } };
+    await press('scale_levels.A');
+    const written = JSON.parse(labelInsert()?.values[4] as string);
+    expect(written.scale_levels).toEqual({ ...SOURCED, A: { ...SOURCED, looks_right: expect.objectContaining({ by_role: 'coach' }) } });
+  });
+
+  test.each([
+    ['its own in-app edit', { by_account_id: 'acct-x', by_role: 'coach', at: '2026-11-19T00:00:00Z' }, 'edited'],
+    ['its own earlier "Looks right"', RECORD, 'looks_right'],
+  ])('a level with %s under a drafted group is refused (409), and nothing is written', async (_case, record, key) => {
+    fieldLabels = { scale_levels: { ...DRAFT, A: { ...SOURCED, [key]: record } } };
+    await expect(press('scale_levels.A')).rejects.toMatchObject({ status: 409, code: 'FIELD_NOT_DRAFT' });
+    expect(versionInsert()).toBeUndefined();
+  });
+
   test.each([
     ['labelled and not a draft', 'cues'],
     ['with no label of its own', 'transfer'],
@@ -183,5 +208,48 @@ describe('editLibraryDrill with looks_right', () => {
   test('a scale level the drill does not have is refused (400)', async () => {
     await expect(press('scale_levels.B')).rejects.toMatchObject({ status: 400 });
     expect(versionInsert()).toBeUndefined();
+  });
+});
+
+// editWorkoutTemplate against the same kind of stand-in: the labels read are the CURRENT version's.
+describe('editWorkoutTemplate with looks_right', () => {
+  const HEAD = { template_id: 't2', lineage_id: 'lin-t', version: 2, superseded_at: null, active: true, name: 'Monday', intent: 'Old.' };
+  let fieldLabels: Record<string, unknown>;
+  let statements: { text: string; values: unknown[] }[];
+
+  beforeEach(() => {
+    fieldLabels = { intent: DRAFT, name: SOURCED };
+    statements = [];
+    (withTransaction as jest.Mock).mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({
+      query: async (text: string, values: unknown[] = []) => {
+        statements.push({ text, values });
+        if (text.includes('from pilot.workout_templates t') && text.includes('for update')) return { rows: [{ row: HEAD }] };
+        if (text.includes('max(version)')) return { rows: [{ max_version: 2 }] };
+        if (text.includes("to_regclass('pilot.content_record_labels')")) return { rows: [{ ready: true }] };
+        if (text.includes('select field_labels, evidence, backbone_version')) return { rows: [{ field_labels: fieldLabels, evidence: null, backbone_version: null }] };
+        return { rows: [] };
+      },
+    }));
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  const press = (looks_right: string) => editWorkoutTemplate({
+    organizationId: 'org-1', request: parseWorkoutTemplateEdit({ template_id: 't2', looks_right }), actorAccountId: 'acct-coach', actorRole: 'coach',
+  });
+
+  test('a press on version 2 reads version 2\'s labels and writes version 3, its label confirmed', async () => {
+    const result = await press('intent');
+    expect(result).toMatchObject({ changed: true, version: 3, edited: [], looks_right: 'intent' });
+    const read = statements.find((s) => s.text.includes('select field_labels, evidence, backbone_version'));
+    expect(read?.values).toEqual(['org-1', 'workout_template', 'lin-t', 2]);
+    const insert = statements.find((s) => s.text.includes('insert into pilot.content_record_labels'));
+    expect(insert?.values.slice(0, 4)).toEqual(['org-1', 'workout_template', 'lin-t', 3]);
+    expect(JSON.parse(insert?.values[4] as string).intent).toEqual({ ...SOURCED, looks_right: expect.objectContaining({ by_role: 'coach' }) });
+  });
+
+  test('a field that is not a draft is refused (409) before anything is written', async () => {
+    await expect(press('name')).rejects.toMatchObject({ status: 409, code: 'FIELD_NOT_DRAFT' });
+    expect(statements.some((s) => s.text.includes('insert into pilot.workout_templates'))).toBe(false);
   });
 });

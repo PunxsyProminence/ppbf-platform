@@ -335,7 +335,10 @@ export async function editLibraryDrill(input: {
       const state = looksRight.part !== undefined
         ? drafts.scale_levels?.[looksRight.part]
         : (drafts as Record<string, boolean | null | undefined>)[looksRight.field];
-      if (state !== true) {
+      // A level already confirmed is not confirmed again, whatever its group still says (Q-PR4-1).
+      const group = labels?.fieldLabels.scale_levels;
+      const own = looksRight.part !== undefined && isPlainObject(group) ? group[looksRight.part] : undefined;
+      if (state !== true || (isPlainObject(own) && isPlainObject(own.looks_right))) {
         throw new ConflictError('This field is not marked as an AI draft on the current version. Reload the drill.', 'FIELD_NOT_DRAFT');
       }
     }
