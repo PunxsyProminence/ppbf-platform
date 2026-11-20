@@ -170,3 +170,35 @@ test('the photographs copy names where the frames really appear', async () => {
   expect(screen.getByText(/The front page\s+shows only the drawings \(entrance, floor, ring\); an upload does not reach it yet\./)).toBeTruthy();
   expect(screen.queryByText(/Each frame appears on member dashboards/)).toBeNull();
 });
+
+// Lane BT, BOA-12: a short in-page index at the top, each entry labelled with
+// the heading it jumps to, then Quotes, labelled with that page's title.
+test('the desk opens on an index of its own sections, then Quotes', async () => {
+  render(<CustomizePage />);
+
+  await screen.findByRole('heading', { name: /Customize the Gym/i });
+  const index = screen.getByRole('navigation', { name: 'On this page' });
+  const links = Array.from(index.querySelectorAll('a')).map((a) => [a.textContent, a.getAttribute('href')]);
+  expect(links).toEqual([
+    ["The gym's profile", '#customize-profile'],
+    ['Photographs on the wall', '#customize-photos'],
+    ['The boards', '#customize-boards'],
+    ['Gym tablet sign-out', '#customize-tablet'],
+    ['The record', '#customize-record'],
+    ['Quotes', '/admin/quotes'],
+  ]);
+  // Each in-page entry lands on the heading it is named after.
+  for (const [label, href] of links.slice(0, 5)) {
+    const target = document.getElementById(String(href).slice(1));
+    expect(target?.tagName).toBe('H2');
+    expect(target?.textContent?.trim()).toBe(label);
+  }
+});
+
+test('a platform owner, refused the desk, is not shown the index', async () => {
+  mockUsePilotSession.mockReturnValue(session('platform_owner'));
+  render(<CustomizePage />);
+
+  await screen.findByText(/ADMINS ONLY/);
+  expect(screen.queryByRole('navigation', { name: 'On this page' })).toBeNull();
+});

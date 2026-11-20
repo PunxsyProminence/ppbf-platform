@@ -13,6 +13,7 @@ import { roleEquals } from '@/src/server/pilot/roleAlias';
 import { getSourceCitationStatus, type SourceCitationReviewSignal } from '@/src/server/pilot/sourceCitationChecks';
 import { getSourceRetractionStatus } from '@/src/server/pilot/sourceRetractionChecks';
 import { buildPilotOpsReadinessReport } from '@/src/server/pilot/pilotOpsReadiness';
+import { readPaymentPlatformConfig } from '@/src/server/pilot/paymentConnect';
 import RoleLink from '@/components/RoleLink';
 
 export const dynamic = 'force-dynamic';
@@ -112,6 +113,13 @@ function yesNo(value: boolean): string {
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
+// Whether the platform's Stripe account is registered: all three Container App secrets the
+// registration steps set are present. A yes or no, read on the server; no value leaves here.
+function paymentPlatformRegistered(): boolean {
+  const config = readPaymentPlatformConfig();
+  return config.connectClientId !== null && config.platformSecretKey !== null && config.webhookSecret !== null;
+}
+
 export default async function AdminSystemPage({ searchParams }: { searchParams?: Promise<SearchParams> } = {}) {
   const principal = await requirePageRole(['platform_owner', 'organization_admin']);
   if (roleEquals(principal.role, 'platform_owner')) return <PlatformSystemView />;
@@ -122,6 +130,10 @@ function PlatformSystemView() {
   // Configuration only (the same report GET /api/pilot/ops/readiness gives the platform owner):
   // whether the worker is switched on, never whether a run worked.
   const workerOn = buildPilotOpsReadinessReport().shadowWorker.enabled;
+  // Lane BT, BOA-13 (Overwatch Q7 A): the Stripe platform registration steps name the secret
+  // keys and the Container App secrets, so they are the platform owner's, on this server-rendered
+  // view, and no longer on the gym admin's Payment Accounts page. Shown only until registered.
+  const paymentRegistered = paymentPlatformRegistered();
 
   return (
     <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
@@ -137,6 +149,55 @@ function PlatformSystemView() {
             <Link href="/admin/platform" className="btn btn--ghost">Platform Desk</Link>
           </div>
         </header>
+
+        {paymentRegistered ? null : (
+          <section className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="system-payment-registration">
+            <h2 id="system-payment-registration" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>
+              Platform account registration (done once by PPBF)
+            </h2>
+            <p className="t-body mt-[var(--s2)]">
+              This is the slot Stripe drops into. Everything below happens on Stripe&rsquo;s and
+              Azure&rsquo;s side — no code changes, and no key is ever pasted into this app.
+            </p>
+            <ol className="t-body mt-[var(--s3)] list-decimal space-y-[var(--s2)] pl-[var(--s5)]">
+              <li>
+                Create PPBF&rsquo;s own Stripe account at dashboard.stripe.com using the
+                foundation&rsquo;s legal details and the admin email. This is the <em>platform</em>
+                account — gyms&rsquo; accounts connect to it later from Payment Accounts.
+              </li>
+              <li>
+                In that dashboard, enable <strong>Connect</strong> (Settings → Connect settings),
+                choose Standard accounts with OAuth, and copy the <strong>Connect client ID</strong>{' '}
+                (starts <code>ca_</code>).
+              </li>
+              <li>
+                Copy the <strong>secret key</strong> from Developers → API keys (starts{' '}
+                <code>sk_test_</code> for the staging trial, <code>sk_live_</code> for production).
+              </li>
+              <li>
+                Add a webhook endpoint (Developers → Webhooks) pointing at this app&rsquo;s host at{' '}
+                <code>/api/pilot/payments/webhook</code>, subscribed to{' '}
+                <code>account.application.deauthorized</code>, and copy its{' '}
+                <strong>signing secret</strong> (starts <code>whsec_</code>).
+              </li>
+              <li>
+                Set the three values as Container App secrets —{' '}
+                <code>PAYMENT_CONNECT_CLIENT_ID</code>, <code>PAYMENT_PLATFORM_SECRET_KEY</code>,{' '}
+                <code>PAYMENT_PLATFORM_WEBHOOK_SECRET</code> — staging first, production after the
+                onboarding test passes.
+              </li>
+              <li>
+                The Connect buttons on Payment Accounts now work. Connect the <strong>Giving</strong>{' '}
+                lane first and start its 501(c)(3) verification — it is the slow step and unlocks
+                the nonprofit rate.
+              </li>
+            </ol>
+            <p className="t-body mt-[var(--s3)]">
+              Even fully configured, nothing charges through these accounts yet. Configuration only
+              opens onboarding.
+            </p>
+          </section>
+        )}
 
         <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]" aria-labelledby="system-jobs">
           <h2 id="system-jobs" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Jobs ({SYSTEM_JOBS.length + 1})</h2>

@@ -217,6 +217,18 @@ export default function AdminCustomizePage() {
           its members, changed from here. Every drawer below writes through the same doors the rest of
           the platform already guards.
         </p>
+        {/* Lane BT, BOA-12: a short index of this page, each entry the heading it
+            jumps to, then Quotes (that page's title). Quotes opens for the same
+            people this desk does: its gate is ['admin'] (organization admin and
+            admin), as the photo route that opens this desk is. */}
+        <nav aria-label="On this page" className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+          <a href="#customize-profile" className="btn btn--ghost">The gym&apos;s profile</a>
+          <a href="#customize-photos" className="btn btn--ghost">Photographs on the wall</a>
+          <a href="#customize-boards" className="btn btn--ghost">The boards</a>
+          <a href="#customize-tablet" className="btn btn--ghost">Gym tablet sign-out</a>
+          <a href="#customize-record" className="btn btn--ghost">The record</a>
+          <Link href="/admin/quotes" className="btn btn--ghost">Quotes</Link>
+        </nav>
       </header>
 
       {/* --------------------------------------------- 0. THE GYM PROFILE -- */}

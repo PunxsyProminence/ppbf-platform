@@ -36,3 +36,15 @@ test('a failed supplier read shows the error and no zero count', async () => {
   expect(await screen.findByText('The supplier list could not be loaded.')).toBeTruthy();
   expect(screen.queryByText(/Suppliers \(0, 0 current\)/)).toBeNull();
 });
+
+// Lane BT, BOA-16: the page admits the gym admin only, so it wears no board-seat eyebrow.
+test('the page title stands without a "Treasurer" eyebrow', async () => {
+  global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+
+  await act(async () => {
+    render(<VendorsPage />);
+  });
+
+  expect(screen.getByRole('heading', { level: 1, name: 'Suppliers and accounts' })).toBeTruthy();
+  expect(screen.queryByText('Treasurer')).toBeNull();
+});

@@ -2429,3 +2429,92 @@ describe('Edit (lane ED-UI PR2)', () => {
     if (savedAnyway) expect(await screen.findByText('Stance and guard.', { selector: 'p' })).toBeInTheDocument();
   });
 });
+
+// THE STAFF AI-DRAFT MARK ON THE OPENED TEMPLATE (lane ED-UI PR3; OW25-57,
+// OD-2026-11-19-012: coaches and admins only). Q5 = A: the opened template
+// shows its fields as a short list, each drafted one with the 6e mark; the name
+// is the heading; coach notes and the blocks carry theirs where they are shown.
+// Q4 = A: a labelled field nobody checked says so beside it; a version with no
+// label row says so once. The route sends field_drafts to coaches and
+// organization admins alone (route.test.ts); without it, nothing is marked.
+describe('the AI-draft mark (lane ED-UI PR3)', () => {
+  const MARK = 'DRAFT, FOR COACH REVIEW';
+  const NOT_CHECKED = '(draft status not checked)';
+  const DRAFTS = {
+    name: true, session_type: true, difficulty: false, age_band: null, duration_minutes: false, intent: false,
+    requires_coach_authorization: false, coach_notes: true, items: true, labelled: true,
+  };
+
+  function openWith(fieldDrafts: unknown) {
+    mockFetch((url) => (url.includes('template_id')
+      ? jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()], ...(fieldDrafts === undefined ? {} : { field_drafts: fieldDrafts }) })
+      : jsonResponse({ templates: [BOXING_FUNDAMENTALS] })));
+    render(<CoachWorkoutTemplatesPage />);
+  }
+  const open = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+    return screen.findByText('Rope intervals');
+  };
+  const fact = (label: string) => screen.getByText(label, { selector: 'dt' }).nextElementSibling as HTMLElement;
+
+  it('lists the template\'s fields, and marks each drafted one where it is shown', async () => {
+    openWith(DRAFTS);
+    await open();
+    expect(fact('Session type')).toHaveTextContent(`group class◉${MARK}`);
+    expect(fact('Difficulty')).toHaveTextContent(/^beginner$/);
+    expect(fact('Age group')).toHaveTextContent(`11-14${NOT_CHECKED}`);
+    expect(fact('Minutes')).toHaveTextContent(/^60$/);
+    expect(fact('Intent')).toHaveTextContent(/^Stance, guard, and the first two punches\.$/);
+    expect(fact('Coach authorization')).toHaveTextContent(/^Not required$/);
+    expect(screen.getByRole('heading', { level: 2, name: 'Boxing Fundamentals 60' }).parentElement).toHaveTextContent(MARK);
+    expect(screen.getByText(/^Coach notes/)).toHaveTextContent(`Coach notes◉${MARK}`);
+    expect(screen.getByRole('heading', { name: 'The blocks' }).parentElement).toHaveTextContent(MARK);
+    // Name, session type, coach notes and the blocks; nothing else.
+    expect(screen.getAllByText(MARK)).toHaveLength(4);
+    expect(screen.getAllByText(NOT_CHECKED)).toHaveLength(1);
+  });
+
+  // One field drafted, every other field not: its mark is the only one, at its own place.
+  const PLACE: Record<string, () => HTMLElement> = {
+    name: () => screen.getByRole('heading', { level: 2, name: 'Boxing Fundamentals 60' }).parentElement as HTMLElement,
+    session_type: () => fact('Session type'),
+    difficulty: () => fact('Difficulty'),
+    age_band: () => fact('Age group'),
+    duration_minutes: () => fact('Minutes'),
+    intent: () => fact('Intent'),
+    requires_coach_authorization: () => fact('Coach authorization'),
+    coach_notes: () => screen.getByText(/^Coach notes/),
+    items: () => screen.getByRole('heading', { name: 'The blocks' }).parentElement as HTMLElement,
+  };
+  const NONE = Object.fromEntries(Object.keys(PLACE).map((field) => [field, false]));
+
+  it.each(Object.keys(PLACE))('only %s drafted: its mark alone, at its own place', async (field) => {
+    openWith({ ...NONE, [field]: true, labelled: true });
+    await open();
+    const marks = screen.getAllByText(MARK);
+    expect(marks).toHaveLength(1);
+    expect(PLACE[field]().contains(marks[0])).toBe(true);
+    // No other field's place holds it.
+    for (const other of Object.keys(PLACE).filter((key) => key !== field)) {
+      expect(PLACE[other]()).not.toHaveTextContent(MARK);
+    }
+  });
+
+  it.each([
+    ['no label row', false],
+    ['a read that failed', null],
+  ])('a version with %s says so once, in the list, and marks nothing', async (_case, labelled) => {
+    openWith({ ...DRAFTS, labelled });
+    await open();
+    expect(screen.queryAllByText(MARK)).toHaveLength(0);
+    expect(screen.getAllByText(NOT_CHECKED)).toHaveLength(1);
+  });
+
+  it('without field_drafts (not sent to this reader) nothing is marked and nothing is said', async () => {
+    openWith(undefined);
+    await open();
+    expect(fact('Session type')).toHaveTextContent(/^group class$/);
+    expect(screen.queryAllByText(MARK)).toHaveLength(0);
+    expect(screen.queryByText(NOT_CHECKED)).not.toBeInTheDocument();
+  });
+});

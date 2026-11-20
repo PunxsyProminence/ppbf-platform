@@ -710,6 +710,79 @@ export default function MembershipsPage() {
     }
   };
 
+  /* The catalog itself: every persistent group this gym runs, with
+     its live headcount. Archiving retires the name from the enroll
+     select; it never touches membership rows -- enrollment history
+     is a record, not a casualty of tidying the list. */
+  // Lane BT, BOA-20: on a gym's first run there is no program to enroll
+  // into, and "Create program" sat at the foot of the page, after the
+  // memberships list and Support provided. When the catalog read has answered
+  // and holds none, the catalog comes first; loading, unread, or one program
+  // or more, it stays where it was. One element, placed in one spot or the other.
+  const programsFirst = programsLoad === 'loaded' && programs.length === 0;
+  const programsCatalog = (
+    <section className={`mat-paper ${programsFirst ? 'mb-[var(--s5)]' : 'mt-[var(--s5)]'} overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]`}>
+      {programsLoad === 'loading' ? (
+        <div className="flex justify-center py-[var(--s5)]">
+          <span className="working">Loading programs…</span>
+        </div>
+      ) : programsLoad === 'unavailable' ? (
+        <div className="empty">
+          <div className="empty-title">Programs could not be read</div>
+          <p className="empty-msg mx-auto">This is not a record of none, and a program may already exist. Reload the page before creating one.</p>
+        </div>
+      ) : programs.length === 0 ? (
+        <div className="empty">
+          <div className="empty-title">No programs on record</div>
+          <p className="empty-msg mx-auto">Create the first program to enroll athletes into it.</p>
+        </div>
+      ) : (
+        <table className="ledger">
+          <caption className="text-left">Programs</caption>
+          <thead>
+            <tr>
+              <th scope="col">Program</th>
+              <th scope="col">Status</th>
+              <th scope="col">Active members</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {programs.map((program) => {
+              const badge = PROGRAM_BADGE[program.status] ?? PROGRAM_BADGE.active;
+              return (
+                <tr key={program.program_id}>
+                  <td className="font-bold">{program.program_name}</td>
+                  <td><span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{program.status}</span></td>
+                  <td>{program.active_member_count}</td>
+                  <td>
+                    <button type="button" className="btn--lever"
+                      disabled={busyId === `program-${program.program_id}`}
+                      onClick={() => void patchProgram(program.program_id, program.status === 'active' ? 'archived' : 'active')}>
+                      {program.status === 'active' ? 'Archive' : 'Reactivate'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <div className="mt-[var(--s4)] flex items-center gap-[var(--s2)]">
+        <label className="t-label" htmlFor="program-create-name">Program name</label>
+        <input id="program-create-name" className="input" value={catalogProgramName}
+          onChange={(e) => setCatalogProgramName(e.target.value)} />
+        <button type="button" className="btn" disabled={busyId === 'program-new' || !catalogProgramName.trim()}
+          onClick={() => void (async () => {
+            const created = await postProgram(catalogProgramName);
+            if (created) setCatalogProgramName('');
+          })()}>
+          {busyId === 'program-new' ? 'Creating…' : 'Create program'}
+        </button>
+      </div>
+    </section>
+  );
+
   return (
     <RoleSessionGate allowedRoles={['admin']}>
       <main className="room room--office min-h-screen bg-[var(--hide-950)] p-[var(--s5)] text-[color:var(--bone-200)]">
@@ -733,6 +806,8 @@ export default function MembershipsPage() {
               </div>
             </div>
           )}
+
+          {programsFirst ? programsCatalog : null}
 
           <div className="mb-[var(--s4)]">
             <button type="button" className="btn" onClick={() => setShowForm((current) => !current)}>
@@ -910,70 +985,7 @@ export default function MembershipsPage() {
           <SupportSection athletes={supportAthletes} athletesLoad={athletesLoad} onRetryAthletes={retryAthletes}
             athleteId={supportAthleteId} onAthlete={setSupportAthleteId} />
 
-          {/* The catalog itself: every persistent group this gym runs, with
-              its live headcount. Archiving retires the name from the enroll
-              select; it never touches membership rows -- enrollment history
-              is a record, not a casualty of tidying the list. */}
-          <section className="mat-paper mt-[var(--s5)] overflow-x-auto rounded-[var(--r-lg)] p-[var(--s5)]">
-            {programsLoad === 'loading' ? (
-              <div className="flex justify-center py-[var(--s5)]">
-                <span className="working">Loading programs…</span>
-              </div>
-            ) : programsLoad === 'unavailable' ? (
-              <div className="empty">
-                <div className="empty-title">Programs could not be read</div>
-                <p className="empty-msg mx-auto">This is not a record of none, and a program may already exist. Reload the page before creating one.</p>
-              </div>
-            ) : programs.length === 0 ? (
-              <div className="empty">
-                <div className="empty-title">No programs on record</div>
-                <p className="empty-msg mx-auto">Create the first program to enroll athletes into it.</p>
-              </div>
-            ) : (
-              <table className="ledger">
-                <caption className="text-left">Programs</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Program</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Active members</th>
-                    <th scope="col">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {programs.map((program) => {
-                    const badge = PROGRAM_BADGE[program.status] ?? PROGRAM_BADGE.active;
-                    return (
-                      <tr key={program.program_id}>
-                        <td className="font-bold">{program.program_name}</td>
-                        <td><span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{program.status}</span></td>
-                        <td>{program.active_member_count}</td>
-                        <td>
-                          <button type="button" className="btn--lever"
-                            disabled={busyId === `program-${program.program_id}`}
-                            onClick={() => void patchProgram(program.program_id, program.status === 'active' ? 'archived' : 'active')}>
-                            {program.status === 'active' ? 'Archive' : 'Reactivate'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-            <div className="mt-[var(--s4)] flex items-center gap-[var(--s2)]">
-              <label className="t-label" htmlFor="program-create-name">Program name</label>
-              <input id="program-create-name" className="input" value={catalogProgramName}
-                onChange={(e) => setCatalogProgramName(e.target.value)} />
-              <button type="button" className="btn" disabled={busyId === 'program-new' || !catalogProgramName.trim()}
-                onClick={() => void (async () => {
-                  const created = await postProgram(catalogProgramName);
-                  if (created) setCatalogProgramName('');
-                })()}>
-                {busyId === 'program-new' ? 'Creating…' : 'Create program'}
-              </button>
-            </div>
-          </section>
+          {programsFirst ? null : programsCatalog}
 
           <div className="mt-[var(--s5)]">
             <BackHome />

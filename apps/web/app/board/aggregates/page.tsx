@@ -172,7 +172,7 @@ function gatedDisplay(
   if (metric.status === 'insufficient_data') {
     return {
       value: 'Suppressed',
-      note: `Fewer than ${minimumCohortSize} ${cohortNoun} are behind this figure, so it is withheld rather than reduced.`,
+      note: `Fewer than ${minimumCohortSize} ${cohortNoun} are behind this figure, so it is suppressed rather than reduced.`,
       withheld: true,
     };
   }
@@ -216,22 +216,23 @@ function countedDisplay(
   if (count === 0) {
     return {
       value: '0',
-      note: `A counted zero: the register holds no ${unitLabel}. Scheduling counts carry no cohort floor, so this is a measurement and never a withheld figure.`,
+      note: `A counted zero: the register holds no ${unitLabel}. Scheduling counts carry no cohort floor, so this is a measurement and never a suppressed figure.`,
       withheld: false,
     };
   }
 
   return {
     value: String(count),
-    note: 'Counted from the register. Scheduling counts carry no cohort floor and are never withheld.',
+    note: 'Counted from the register. Scheduling counts carry no cohort floor and are never suppressed.',
     withheld: false,
   };
 }
 
-/* Law 7: a withheld figure is static ink -- a stamp driven into the page --
+/* Law 7: a suppressed figure is static ink -- a stamp driven into the page --
    and never a numeral, a blank, or a dash that a reader could take for a
    measurement. Same idiom as BoardSummaryPanel and the compliance register,
-   so the three board surfaces say "withheld" the same way. */
+   so the board surfaces say "Suppressed" the same way (lane BT, BOA-19:
+   one wording for a suppressed figure, on the board and platform pages). */
 function AggregateTile({ label, display }: {
   readonly label: string;
   readonly display: TileDisplay;
@@ -366,7 +367,7 @@ function BoardAggregatesContent() {
                 none.
               </li>
               <li>
-                <strong>A Suppressed stamp.</strong> A figure that exists and is being withheld, because fewer people
+                <strong>A Suppressed stamp.</strong> A figure that exists and is being suppressed, because fewer people
                 stand behind it than the cohort floor the response reports. It is never shown reduced and never shown
                 as a zero.
               </li>
@@ -380,7 +381,7 @@ function BoardAggregatesContent() {
           <section className="mt-[var(--s6)] space-y-[var(--s4)]">
             <SectionHeader
               title="Volunteers"
-              blurb={`How many volunteers sit in each status, and how many joined in the last 30 days. Every bucket is gated: fewer than ${volunteerFloor} volunteers behind a figure and it is withheld. The board reads no volunteer record -- no name, no certification, no background-check status, no note.`}
+              blurb={`How many volunteers sit in each status, and how many joined in the last 30 days. Every bucket is gated: fewer than ${volunteerFloor} volunteers behind a figure and it is suppressed. The board reads no volunteer record -- no name, no certification, no background-check status, no note.`}
               read={volunteers}
               measuredAt={volunteers.summary ? formatMeasuredAt(volunteers.summary.generatedAt) : null}
             />

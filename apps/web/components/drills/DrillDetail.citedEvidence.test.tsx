@@ -79,20 +79,27 @@ describe('cited evidence on a surface that does not read the Library', () => {
     for (const line of bone) {
       // A .t-label takes the card's label ink from the card's own unlayered rule.
       if (line.includes('t-label')) continue;
-      expect(line.includes('in-[.ge-drillcase]:text-[color:inherit]') || line.includes('${CARD_INK}') ? 'covered' : line.trim()).toBe('covered');
+      // CARD_BODY_INK is the card's body ink itself, for body words inside a label (lane ED-UI PR3).
+      const covered = line.includes('in-[.ge-drillcase]:text-[color:inherit]') || line.includes('${CARD_INK}') || line.includes('${CARD_BODY_INK}');
+      expect(covered ? 'covered' : line.trim()).toBe('covered');
     }
     const links = lines.filter((line) => /className="underline/.test(line));
     expect(links.length).toBeGreaterThan(0);
     for (const line of links) expect(line).toContain('in-[.ge-drillcase]:text-[color:inherit]');
   });
 
-  it('no bone ink is left on the parchment card without the card-ink fallback', () => {
-    const { container } = render(<main className="ge-drillcase"><DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" /></main>);
+  // Also a labelled version whose fields nobody checked, so every "(draft status not checked)" renders (lane ED-UI PR3).
+  it.each([
+    ['no labels', undefined],
+    ['labelled, nothing checked', { labelled: true }],
+  ])('no bone ink is left on the parchment card without the card-ink fallback (%s)', (_case, fieldDrafts) => {
+    const view = fromCoachDrillDetail({ ...drill, field_drafts: fieldDrafts } as unknown as DrillWithDetail);
+    const { container } = render(<main className="ge-drillcase"><DrillDetail view={view} audience="coach" /></main>);
     const bone = [...container.querySelectorAll('[class*="--bone-"]')];
     expect(bone.length).toBeGreaterThan(0);
     for (const node of bone) {
       if (node.classList.contains('t-label') || node.tagName === 'LI') continue;
-      expect(node.className).toContain('in-[.ge-drillcase]:text-[color:inherit]');
+      expect(node.className).toMatch(/in-\[\.ge-drillcase\]:text-\[color:(inherit|#3A2E1D)\]/);
     }
   });
 
