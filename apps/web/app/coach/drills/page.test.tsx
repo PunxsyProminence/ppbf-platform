@@ -2829,6 +2829,31 @@ describe('arriving with a drill named in the address (lane AS-11)', () => {
     expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=no-such-drill')).toBe(1);
   });
 
+  it('opens the drill only after the library\'s own read has answered, so a failed list read cannot clear its status', async () => {
+    window.history.replaceState(null, '', '/coach/drills?drill_id=reference-1');
+    const order: string[] = [];
+    const fetchMock = routes({
+      libraryRead: () => {
+        order.push('library');
+        return jsonResponse({ error: 'unavailable' }, false, 500);
+      },
+    });
+    const route = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/pilot/drill-library?drill_id=')) order.push('detail');
+      return route(input, init);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+
+    await screen.findByRole('article', { name: 'Seeded jab return' });
+    expect(order).toEqual(['library', 'detail']);
+    // The drill's status is the one its own read returned, not wiped by the
+    // list read that failed before it.
+    expect(screen.queryByText("This drill's status in this gym could not be read.")).not.toBeInTheDocument();
+  });
+
   it('with no drill named, no drill is opened', async () => {
     window.history.replaceState(null, '', '/coach/drills');
     const fetchMock = routes();

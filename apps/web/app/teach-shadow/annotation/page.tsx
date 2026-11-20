@@ -359,7 +359,11 @@ export default function CoachCalibrationPage() {
   // what to do first (lane AS-11, app scrub CS-19) without reading a read
   // that failed or never finished as "none".
   const [projectsRead, setProjectsRead] = useState<'loading' | 'loaded' | 'refused' | 'unread'>('loading');
-  const [clipsRead, setClipsRead] = useState<'idle' | 'loading' | 'loaded' | 'refused'>('idle');
+  const [clipsRead, setClipsRead] = useState<'idle' | 'loading' | 'loaded' | 'refused' | 'unread'>('idle');
+  // The latest clips read. An answer for a study the coach has since left is
+  // dropped, so one study's clips (or its empty list, or its refusal) never
+  // land under another.
+  const clipsRequestRef = useRef(0);
 
   const [clip, setClip] = useState<CalibrationClip | null>(null);
   const [project, setProject] = useState<CalibrationProject | null>(null);
@@ -462,22 +466,33 @@ export default function CoachCalibrationPage() {
   }, []);
 
   const loadClips = useCallback(async (nextProjectId: string) => {
+    const request = ++clipsRequestRef.current;
+    const stale = () => clipsRequestRef.current !== request;
     setClips([]);
     setClipId('');
     setClipsRead(nextProjectId ? 'loading' : 'idle');
     if (!nextProjectId) return;
-    const response = await fetch(
-      `${apiBase()}/api/pilot/calibration/clips?calibration_project_id=${encodeURIComponent(nextProjectId)}`,
-      { credentials: 'include' },
-    );
-    if (!response.ok) {
-      setRefusal(await readError(response));
-      setClipsRead('refused');
-      return;
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/calibration/clips?calibration_project_id=${encodeURIComponent(nextProjectId)}`,
+        { credentials: 'include' },
+      );
+      if (stale()) return;
+      if (!response.ok) {
+        const message = await readError(response);
+        if (stale()) return;
+        setRefusal(message);
+        setClipsRead('refused');
+        return;
+      }
+      const payload = (await response.json()) as { clips?: CalibrationClip[] };
+      if (stale()) return;
+      setClips(payload.clips ?? []);
+      setClipsRead('loaded');
+    } catch {
+      // Offline: no line is shown, because no clips were read.
+      if (!stale()) setClipsRead('unread');
     }
-    const payload = (await response.json()) as { clips?: CalibrationClip[] };
-    setClips(payload.clips ?? []);
-    setClipsRead('loaded');
   }, []);
 
   /**

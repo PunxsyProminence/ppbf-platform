@@ -1637,4 +1637,84 @@ describe('an empty picker says what to do first (lane AS-11)', () => {
     });
     expect(screen.queryByText(NO_CLIPS)).toBeNull();
   });
+
+  it('a clips read that fails offline is not read as "no clips"', async () => {
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), () => { throw new TypeError('Failed to fetch'); });
+    await renderPage();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
+    });
+    expect(screen.queryByText(NO_CLIPS)).toBeNull();
+  });
+
+  // A late answer for a study the coach has left must not speak for the study
+  // they are on (review finding on #2034).
+  describe('when the coach changes study before the first clips read answers', () => {
+    const OTHER = { ...PROJECT, calibration_project_id: 'proj-2', name: 'Second study' };
+    const OTHER_CLIP = { ...CLIP, calibration_clip_id: 'clip-2', clip_code: 'C-2' };
+
+    function heldClips() {
+      const answers = new Map<string, (response: Response) => void>();
+      const fetchFn = studiesFetch(() => respond({ ok: true, projects: [PROJECT, OTHER] }));
+      const base = fetchFn as unknown as jest.Mock;
+      const route = base.getMockImplementation()!;
+      base.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/pilot/calibration/clips')) {
+          const id = new URL(url, 'http://localhost').searchParams.get('calibration_project_id') ?? '';
+          return new Promise<Response>((resolve) => { answers.set(id, resolve); });
+        }
+        return route(input, init);
+      });
+      global.fetch = fetchFn;
+      return answers;
+    }
+
+    async function choose(id: string) {
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: id } });
+      });
+    }
+
+    it("the first study's late empty answer does not say the second study has no clips", async () => {
+      const answers = heldClips();
+      await renderPage();
+      await choose('proj-1');
+      await choose('proj-2');
+      await act(async () => {
+        answers.get('proj-2')!(respond({ ok: true, clips: [OTHER_CLIP] }));
+      });
+      await act(async () => {
+        answers.get('proj-1')!(respond({ ok: true, clips: [] }));
+      });
+      expect(screen.queryByText(NO_CLIPS)).toBeNull();
+      expect(screen.getAllByRole('option').some((option) => option.getAttribute('value') === 'clip-2')).toBe(true);
+    });
+
+    it("the first study's late clips do not land in the second study's picker", async () => {
+      const answers = heldClips();
+      await renderPage();
+      await choose('proj-1');
+      await choose('proj-2');
+      await act(async () => {
+        answers.get('proj-2')!(respond({ ok: true, clips: [] }));
+      });
+      await act(async () => {
+        answers.get('proj-1')!(respond({ ok: true, clips: [CLIP] }));
+      });
+      expect(screen.getByText(NO_CLIPS)).toBeTruthy();
+      expect(screen.getAllByRole('option').some((option) => option.getAttribute('value') === 'clip-1')).toBe(false);
+    });
+
+    it("the first study's late refusal is not shown under the second", async () => {
+      const answers = heldClips();
+      await renderPage();
+      await choose('proj-1');
+      await choose('proj-2');
+      await act(async () => {
+        answers.get('proj-1')!(respond({ error: 'Forbidden' }, 403));
+      });
+      expect(screen.queryByText('Refused')).toBeNull();
+    });
+  });
 });
