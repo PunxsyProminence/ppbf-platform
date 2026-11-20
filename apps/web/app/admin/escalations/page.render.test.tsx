@@ -357,9 +357,11 @@ describe('a row reaches the athlete; the queue reaches Safety Flags (lane AS-5)'
     mockAdminFetch();
     render(<EscalationsPage />);
     const cells = within(await row());
+    // Read after each click: a second hand-off would replace the first, and
+    // a wrong-page read spends it, so reading both at the end hides a leak.
     fireEvent.click(cells.getByRole('link', { name: 'Clearance Board' }), init);
-    fireEvent.click(cells.getByRole('link', { name: 'SHADOW Decision Loop' }), init);
     expect(takeArrivalAthlete(CLEARANCE_BOARD_PAGE)).toBeNull();
+    fireEvent.click(cells.getByRole('link', { name: 'SHADOW Decision Loop' }), init);
     expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBeNull();
   });
 

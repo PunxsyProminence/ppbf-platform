@@ -459,7 +459,7 @@ export default function EscalationsPage() {
                               each page opens on them only if its roster lists them. */}
                           {/* One link per line: side by side, two underlined
                               uppercase labels read as one phrase. */}
-                          <span className="mt-[var(--s2)] flex flex-col items-start gap-[var(--s2)] t-label">
+                          <span className="mt-[var(--s2)] flex flex-col items-start gap-[var(--s4)] t-label">
                             <Link
                               href={CLEARANCE_BOARD_PAGE}
                               className="underline"
