@@ -1,0 +1,974 @@
+# W4 sizing (lane W4S)
+
+Read-only sizing of the eight W4 items in Backbone's wave plan of 2026-11-19,
+so Overwatch can plan the last wave. Jason's card OW26-02, "C: Everything,
+FUTURE items too" (OD-2026-11-19-016), says no completion date can be given
+until each W4 item is sized. This file sizes them. It builds nothing and
+decides nothing: every owner question is put as a question, with the
+recommended option first.
+
+- **Code read at:** `main` `7a1736d9fc9028a21d9a7f906c712244a6ad6bbb`, and line
+  numbers are from that commit. `main` has since moved to `c27c581` (#2007 and
+  #2015). #2007 changes no code file cited here. #2015 adds the scrub files
+  cited below. ACTIVE_WORK lines are cited at `c27c581`.
+- **Lane RS's list:** read at its branch head
+  `1e78a04d735340e2b0ca7b76fb3cbba6416db62e` (#2008, open). Its head is now
+  `37d9108`, where only one comment line of the sweep test changed, so the
+  list and its line, 315, are the same.
+- **Open PRs:** their files were read on 2026-11-20 at these heads: #2005
+  `79f45ea6`, #2006 `c5c39034`, #2008 `37d9108d`, #2009 `21102636`, #2010
+  `0d342ee3`, #2012 `5efdc9b6`, #2013 `de25bb6f`, #2016 `b42e3c66`, and nine
+  dependabot PRs (#1992 `40232ce5` to #2000 `590a9b4d`). A head that moves
+  later can add overlaps. #2006, #2009, #2012, #2013 and #2016 have moved since;
+  the citation reviewer found the moves add none.
+- **Shared registration files.** A PR here that adds a route or a migration
+  also edits `apps/web/src/server/pilot/apiRouteInventory.json`,
+  `apps/web/package.json` or, for a migration,
+  `.github/workflows/apply-migrations.yml`, as AS2-a and SH-2 did. #2013 changes
+  the first two today; no open PR changes the third. INFERRED:
+  such edits usually merge line by line.
+- **Labels:** OBSERVED (read in the code, with file:line), INFERRED,
+  UNVERIFIED. Paths under `apps/web/` are written in full. Migrations are under
+  `infra/azure/`.
+- **Scrub files:** the App Scrub's stage 1 and stage 3 files are in
+  `docs/research/app-scrub-2026-11-19/` since #2015. Its README says they are
+  "findings and proposals, not rulings". Items 4, 5 and 6 quote their FAM-09,
+  CF-11 and CF-14 rows. The stage 3 file lists all three as FUTURE (section
+  3.6).
+
+## How the sizes were made
+
+A size is the changed lines outside tests: insertions plus deletions from
+`git show --numstat`, leaving out `*.test.*` files. For the seven code PRs
+below, docs lines (their ACTIVE_WORK row) are also left out; for HW they are
+counted, because its review sheet is part of the work. Every size here is an
+INFERRED estimate, made one of two ways.
+
+- **Matched (13 of the 32 PRs):** EM-1, EM-2, FN-2, FN-3, PM-1 and the eight TL
+  PRs. Each is matched to a merged PR of the same shape, measured below. The TL
+  PRs use the home week's rates and a by-script count of the step rewrites.
+- **Judgement (the other 19):** each is my estimate from the code it would
+  change. Its table row says "judgement".
+
+The merged PRs, measured that way on `main`:
+
+| Merged PR (commit) | Shape | Non-test lines, measured (code and SQL; for HW, content and review sheet) |
+|---|---|---|
+| AS2-a #1984 (`f71e432`) | one new table, its runner, a read route and a write route, audited | 414 (366 code, 48 SQL) |
+| AS2-c #1986 (`054cf74`) | one settings control on an existing page | 174 |
+| SH-3 #1969 (`d37d96b`) | one line on the Parent Hub | 90 |
+| SH-2 #1968 (`2062213`) | a write path, its screen and a migration | 597 (551 code, 46 SQL) |
+| U2-6e #1991 (`d4df553`) | read-side change on two existing screens | 432 |
+| AS2-b #1985 (`0c5392b`) | device-side behaviour across every signed-in screen | 652 |
+| U2-6a #2001 (`0752bb4`) | a new page | 754 (750 without a 4-line e2e spec) |
+| HW #1980 (`f97f7c1`) | 6 AI-drafted drills, 6 templates, review sheet | 529 (drill CSVs 41, template CSVs 160, review sheet 325, track 2, ACTIVE_WORK 1) |
+
+**The judgement rows may read low.** Six of these eight merged PRs went over
+the brief's "about 400". The judgement rows mostly sit at 220 to 350. If every
+judgement row came in at the median of the eight measured PRs (about 480), the
+total would be about 12,900 lines rather than about 9,050, with more PRs where
+a row goes over 400. Each table marks a PR that may go over. Tests are not
+counted; in the PRs above they were 0.6 to 3.5 times the non-test lines.
+
+**Risk route** (from the brief): Opus for sign-in, permissions, minors' data
+and safety; Sonnet otherwise. **G3** is Jason's signed-in staging check for
+sign-in, minors' data and safety screens, run once per wave (OW26-01,
+OD-2026-11-19-015).
+
+**New restrictions.** Where an option would add a restriction, the question says
+so. Two texts bear on that:
+
+- **The brief's L1 rule:** no new warnings, gates or disclaimers for minors.
+  This binds this lane.
+- **RULES section 1:** "Do not add new restrictions, warnings or gates unless
+  the owner directs it."
+  - It is the Backbone's build rule, folded word for word into
+    OD-2026-11-10-001.
+  - That entry says the fold "rules nothing" and decides nothing new: "Where
+    the block and another entry of this file, or `AGENT_KERNEL.md`, disagree,
+    the fold does not settle it."
+  - So it is quoted here as the Backbone's rule, not as a ruling on these items.
+
+---
+
+## 1. Opt-in, content-free email alerts
+
+**Ruling:** OD-2026-11-19-019, Jason: *"1 and 2 now we will do 3 later"*.
+
+- **What it means.** The entry reads this as in-app alerts plus "an opt-in,
+  content-free email from the gym's Microsoft 365 mailbox that says only "open
+  the app"" now, and web push later.
+- **What it changes.** OD-2026-10-01-006 and -008 "for outside alerts" (-008
+  section 3 had said "No email, text or push").
+- **What it leaves open.** Its "Not ruled here" line says "the email lane's
+  build" is not ruled.
+- **Recorded scrub answers.** OD-2026-11-19-009's table records, against the
+  "Notifications file", the "Alert wording" answer "Only 'open the app'" and
+  the "Page counts" answer "B: totals only, no user, device or IP". That entry
+  says "Ruling: none by this entry".
+
+**What exists (OBSERVED):**
+
+- **The mailer.** `apps/web/src/server/pilot/graphMailer.ts:120`,
+  `sendPlainTextMail(`, takes any `to`, `subject` and `body`. Its header says
+  "NOT A GENERAL MAILER" (`:25`) and "Magic links are the only thing this
+  platform sends" (`:28-29`).
+- **Its one caller.** The only importer outside tests is
+  `apps/web/src/server/pilot/magicLinkStore.ts:7`. It passes its own sender
+  constant (`:29`, used at `:99`).
+- **How it signs in.** The app's managed identity
+  (`managedIdentityToken.ts:133-134`, `IDENTITY_ENDPOINT` and `IDENTITY_HEADER`).
+- **The one-mailbox rule.**
+  - `graphMailer.ts:15-23` says Mail.Send is tenant-wide, and that an Exchange
+    Application Access Policy restricts it to one sender, which the module
+    cannot enforce. UNVERIFIED whether that policy is applied in Azure.
+  - `assertSenderIsExpected` (`:114-118`) compares a sender with the configured
+    one. Its one call (`:125`) passes `config.sender` as both, so in practice it
+    refuses only an empty sender. See "Adjacent finding" at the end.
+- **Where addresses are.** `pilot.accounts.login_email`
+  (`infra/azure/pilot_slice_postgres.sql:27`) and `pilot.parents.email` (`:293`).
+- **The in-app alert.** `pilot.safety_escalations` is pull-only. The migration
+  says "There is no notification channel in this platform at all"
+  (`infra/azure/pilot_slice_postgres_safety_escalations_migration.sql:9-10`).
+  Coaches read their own athletes' rows
+  (`apps/web/app/api/pilot/escalations/route.ts:35`, `:45`). The header badge
+  polls every 2 minutes (`apps/web/components/SafetyAttentionBadge.tsx:81`).
+- **SHADOW disclosures.** The disclosure path files a row for the coach of
+  record, any covering coach and admins, and says "No email, text or push --
+  the escalation list is the only channel"
+  (`apps/web/src/server/pilot/shadowDisclosure.ts:19-20`, `:328`).
+- **Family notes.** Parents' replies send nothing: "Nothing is sent (no email,
+  no push)" (`apps/web/src/server/pilot/familyMessageReplies.ts:20`).
+- **A tick to send on.** The SHADOW job worker starts in
+  `apps/web/instrumentation.ts:38`, with sweep and housekeeping hooks
+  (`:47`, `:63`). It runs only when `PPBF_SHADOW_WORKER_ENABLED` is set
+  (`apps/web/src/server/pilot/shadowJobWorker.ts:28`). The deploy workflows set
+  it to `true` (`.github/workflows/deploy-staging.yml:383`,
+  `.github/workflows/deploy-production.yml:787`): that is OBSERVED intent. What
+  is deployed now is UNVERIFIED; this session read no environment.
+
+**What is missing:**
+
+- **Preferences.** A case-insensitive search of `infra/azure/*.sql` for
+  `opt-in`, `opt_in`, `opted_in`, `opted_out`, `notification_pref`,
+  `email_pref`, `unsubscribe` and `email_consent` matched one file. Its opt-in
+  is cycle tracking
+  (`infra/azure/pilot_slice_postgres_athlete_self_report_measures_migration.sql:28`),
+  not email.
+- **A queue.** A search of `apps/web` for `outbox` found no match.
+- **So missing are:** who opted in; which events send; who receives each; a
+  send log; retries and a rate limit; the opt-in screen.
+- **Comments to correct.** The "sends no email" comments in
+  `apps/web/app/api/pilot/escalations/route.ts:16-17`, `shadowDisclosure.ts:20`,
+  `familyMessageReplies.ts:20` and `graphMailer.ts:25-29`. Migration files are
+  left as written.
+
+**PR split (INFERRED):**
+
+| PR | What | Est. lines | Basis |
+|---|---|---|---|
+| EM-1 | Migration: an opt-in table (per account, opted-in and opted-out times, audited) and a send log (what Q1.6 allows; no message content). Runner, own-account read and write route. | about 420 (may go over) | matched, AS2-a 414 |
+| EM-2 | The opt-in switch on the account's own settings page | about 180 | matched, AS2-c 174 |
+| EM-3 | The sender: a send-log sweep on a server tick, a per-person rate limit, retry, through `sendPlainTextMail`. The sender check made to compare with the one expected mailbox. The comments above corrected. | about 320 | judgement |
+| EM-4 | Trigger points and recipients: the events Q1.1 names, each resolved to the people who can already read it in the app, who opted in and whose sign-in is on (Q1.8) | about 280 | judgement |
+
+- **Total:** about 1,200 lines in 4 PRs. Q1.4 B adds one PR, about 200 lines.
+- **Migrations:** 1, in EM-1.
+- **Route:** Opus for all four (sign-in addresses, minors' contacts, safety alerts).
+- **G3:** applies. EM-2 is a sign-in-account screen; EM-4 routes safety alerts.
+- **Dependencies:**
+  - EM-3 needs a tick that runs. The deploy workflows set
+    `PPBF_SHADOW_WORKER_ENABLED`; Overwatch confirms the deployed value, or the
+    sweep runs from a scheduled workflow, as `session-autoclose.yml` does.
+  - EM-4 reads the athlete sign-in switch that #2013 (lane SW) is building.
+  - Item 2 reuses EM-1 and EM-3.
+  - Item 4 may add a trigger (Q4.3).
+- **File overlap:** no open PR changes a mail, alert or worker file (heads
+  above). EM-1 shares the registration files with #2013.
+
+**Owner questions:**
+
+- **Q1.1 Which events send the email?**
+  - **A (recommended):** the events that already raise something in the app
+    for that person: a safety escalation a staff member can read, including
+    SHADOW safety alerts, and a new family note or parent reply.
+    (OD-2026-10-01-008 section 3 kept SHADOW alerts in-app only;
+    OD-2026-11-19-019 changes it "for outside alerts".)
+  - **B:** safety escalations for staff only.
+  - **C:** A plus gym announcements.
+  - **D:** A, plus a coach's message to an athlete
+    (`apps/web/src/server/pilot/athleteCoachMessages.ts:1-8`). Under A and B, no
+    event reaches an athlete. Under C, only gym announcements do: athletes read
+    them in the app (`apps/web/app/api/pilot/announcements/get/route.ts:58`).
+- **Q1.2 Who may opt in?**
+  - **A (recommended):** anyone with a sign-in email. This adds no new
+    restriction (the L1 rule, above), and the email holds nothing but "open the
+    app".
+  - **B:** staff (coach, admin, organization admin) and parents only. This is a
+    new restriction, so it needs Jason's direction.
+  - **C:** B, plus athletes 18 or over. An athlete with no date of birth counts
+    as a minor (OD-2026-10-04-010). This is also a new restriction, and it falls
+    on minors.
+- **Q1.3 How often?**
+  - **A (recommended):** at most one email per person per hour, whatever the
+    number of events.
+  - **B:** one email per event.
+  - **C:** one a day.
+- **Q1.4 How does a person opt out?**
+  - **A (recommended):** with the same switch in the app. The email holds only
+    "open the app" (the recorded "Alert wording" answer).
+  - **B:** also with a link in the email. This adds a link and words beyond
+    the recorded "open the app", so it needs Jason's word. It also needs an
+    opt-out route that works without signing in, with its own token: one more
+    PR, about 200 lines (judgement, Opus). INFERRED: that token needs either a
+    signing secret (one more secret) or a token table (one more migration).
+- **Q1.5 Which mailbox sends it?**
+  - **A (recommended):** the gym mailbox that sends sign-in links today. This
+    needs no Azure or Microsoft 365 change.
+  - **B:** a separate gym mailbox. Jason would first set it up in Microsoft
+    365 and widen the mailbox access policy (`graphMailer.ts:15-23`). The email
+    lane would then add its own sender constant beside the sign-in one
+    (`magicLinkStore.ts:29`).
+- **Q1.6 What may the send log keep?** The recorded "Page counts" answer, "B:
+  totals only, no user, device or IP", sits against the same "Notifications
+  file", and the record does not say whether it reaches an email send log.
+  - **A (recommended):** who was sent an email and when, nothing else. That is
+    what the per-person limit (Q1.3 A) needs.
+  - **B:** totals only. Then a per-person limit cannot be kept across a
+    restart.
+- **Q1.7 What does the subject line say?** OD-2026-11-19-019 records an email
+  that "says only "open the app"". INFERRED: that may cover the subject as
+  well as the body.
+  - **A (recommended):** "open the app" only, the literal reading of the
+    recorded wording.
+  - **B:** the gym's name and "open the app". This adds words beyond the
+    recorded wording, so it needs Jason's word.
+- **Q1.8 Does an account whose sign-in is switched off still get the email?**
+  OD-2026-11-19-025 adds an athlete sign-in off switch, which #2013 is building.
+  - **A (recommended):** no. The email says "open the app", which that person
+    cannot do. This narrows who gets it, so by the standard above it needs
+    Jason's direction. It covers staff logins too, which Gym Office can already
+    deactivate (OD-2026-10-07-009). Under Q1.1 C or D it also falls on
+    athletes, minors included.
+  - **B:** yes, until they opt out.
+
+## 2. Web push (later, per Jason)
+
+**Ruling:** OD-2026-11-19-019: web push "is later"; its build is "Not ruled
+here". Sized only.
+
+**What exists (OBSERVED, searches):**
+
+- **No push code.** A case-sensitive search of the repository for
+  `serviceWorker`, `PushManager`, `VAPID`, `web-push`, `webmanifest`, `sw.js`,
+  `pushSubscription` and `Notification.requestPermission` found no match
+  (apart from this report).
+- **No web app manifest.** The one `manifest.json` is
+  `design-system/manifest.json`, which is not a web app manifest.
+- **No package.** `web-push` is not in `apps/web/package.json`.
+
+**External fact (UNVERIFIED against the primary page):**
+
+- On iPhone and iPad, web push works only for a site added to the Home Screen,
+  from iOS and iPadOS 16.4, and permission may be asked only on a user's tap.
+- This comes from a web search summary of the WebKit blog post "Web Push for
+  Web Apps on iOS and iPadOS"; the primary page was not opened.
+- OD-2026-11-19-009's facts table records the tablet answer "most likley two
+  but will eventually need a mix", affecting "Design for iPad and Android
+  together". Android behaviour was not checked.
+
+**What is missing:** a web app manifest, a service worker (push only, no
+caching), a subscription per account per device, a VAPID key pair (a secret),
+a sender, an opt-in on a tap, and removing the subscription at sign-out. Gym
+tablets are shared, and they sign out after idle time
+(`apps/web/components/TabletIdleSignOut.tsx`).
+
+**PR split (INFERRED):**
+
+| PR | What | Est. lines | Basis |
+|---|---|---|---|
+| WP-1 | Manifest, service worker, migration for subscriptions, subscribe and unsubscribe routes | about 420 (may go over) | judgement |
+| WP-2 | The sender, on EM-3's send log: VAPID signing and payload encryption | about 250 with the `web-push` package. About 450 without it, which splits into signing and encryption. | judgement |
+| WP-3 | The opt-in on a tap; unsubscribe at sign-out | about 220 | judgement |
+
+- **Total:** about 890 lines in 3 PRs with the package; about 1,090 in 4
+  without.
+- **Migrations:** 1.
+- **Also needs:** one new dependency if `web-push` is used (Overwatch's call),
+  and one secret that Overwatch or Jason puts in Azure. No AI enters a secret.
+- **Route:** Opus (sign-in and sign-out, shared tablets, minors).
+- **G3:** applies.
+- **Dependencies:** item 1 (EM-1 and EM-3) first. WP-3 touches the tablet
+  sign-out work of lane U1's AS2 PRs (merged).
+- **File overlap:** WP-1 shares the registration files (above). WP-2 adds a
+  package to `apps/web/package.json` and `package-lock.json`. All nine open
+  dependabot PRs change the lockfile; seven also change `apps/web/package.json`
+  (#1994 and #1997 change only `apps/research-bridge/package.json`).
+
+**Owner questions (for when web push is started):**
+
+- **Q2.1 Push on a shared gym tablet?**
+  - **A (recommended):** allowed like any device; the subscription ends at
+    sign-out. This adds no new restriction.
+  - **B:** no push on a device marked as a gym tablet. This is a new
+    restriction, so it needs Jason's direction.
+- **Q2.2 Same events and limits as the email?**
+  - **A (recommended):** yes, the Q1.1, Q1.3 and Q1.8 answers.
+  - **B:** its own list.
+
+## 3. A live "on the floor now" line on every home
+
+**Source:** OD-2026-11-19-009 records the App Scrub answer to "Q12 live floor
+line" as "A: on every home; parents see only their own child", affecting
+"Navigation map; FUTURE lane with a privacy review". That entry says "Ruling:
+none by this entry". The brief says the privacy review comes first.
+
+**What exists (OBSERVED):**
+
+- **What is live now.** A session run has `run_state`, `started_at` and
+  `ended_at`
+  (`infra/azure/pilot_slice_postgres_session_run_state_migration.sql:38-40`),
+  in progress or not (`:61`), one live run per coach (`:128-130`), and it may
+  be tied to a class (`pilot_slice_postgres_session_run_class_migration.sql:105`).
+  A run idle 3 hours is closed (`apps/web/src/server/pilot/sessionScriptRuns.ts:152`).
+- **Who is marked here.** `pilot.session_run_athletes`
+  (`infra/azure/pilot_slice_postgres_session_run_athletes_migration.sql:80`).
+  The migration calls it "SESSION DETAIL, NOT ATTENDANCE" (`:26`). Only the
+  delivering coach marks, and only while the run is live
+  (`apps/web/src/server/pilot/sessionRunAthletes.ts:98`, `:101`). Staff read it
+  (`apps/web/app/api/pilot/session-scripts/runs/[runId]/athletes/route.ts:46`, `:62`).
+- **The register.** A mark is copied to the class register only for a session
+  tied to a class (`sessionRunAthletes.ts:171`).
+- **Today's attendance.** `apps/web/app/api/pilot/coach/attendance-today/route.ts:13`
+  says "Who is marked on the floor today". The public wall counts today's
+  present marks without a sign-in (`apps/web/src/server/pilot/wallDisplayDb.ts:106`,
+  `apps/web/app/api/pilot/wall/route.ts:22`).
+- **The homes.** The coach home shows only the coach's own run: "Session in
+  progress" and "Athletes Present" (`apps/web/components/CoachWorkspace.tsx:1391`,
+  `:3482`). A search of `apps/web/components/ParentHub.tsx` and
+  `apps/web/components/AthleteWorkspace.tsx` for live-presence words found no
+  match. The parent home loads only linked children whose guardian link has not
+  ended (`apps/web/app/api/pilot/athletes/list/route.ts:53`, `:64`).
+- **Minors.** Unknown age is a minor (`apps/web/src/server/pilot/wallDisplay.ts:216-223`).
+  A guardian's access ends at 18 (`apps/web/src/server/pilot/guardianAccess.ts:46`,
+  `:70`, `:111`).
+
+**What is missing:**
+
+- **A gym-wide read.** The live-run read returns only the caller's own run
+  (`sessionScriptRuns.ts:315`). Needed is a "who is here now" read, cut by role:
+  staff see the gym, a parent sees only their own children, an athlete sees only
+  themselves.
+- **The line** on four homes.
+- **The privacy review.**
+
+**PR split (INFERRED):**
+
+| PR | What | Est. lines | Basis |
+|---|---|---|---|
+| FN-0 | Privacy review, docs only: what each role sees, what the public wall already shows, the minors rules | about 120 | judgement |
+| FN-1 | One read and route, cut by role (staff; parent via `guardianAthleteIds`; athlete self) | about 250 | judgement |
+| FN-2 | The line on the Parent Hub and the athlete home | about 150 | matched, SH-3 90, two homes |
+| FN-3 | The line on the coach home and the admin home | about 120 | matched, SH-3 90 |
+
+- **Total:** about 640 lines in 4 PRs.
+- **Migrations:** none (INFERRED: built on the tables above).
+- **Route:** Opus for FN-0 to FN-3 (minors' data).
+- **G3:** applies.
+- **Dependencies:** FN-0 before FN-1, signed off as Q3.5 says; #2012 before
+  FN-1.
+- **File overlap:**
+  - FN-1 uses the guardian checks in `guardianAccess.ts`, which #2012 (lane
+    GA) changes (+30 lines at `5efdc9b6`). FN-1 goes after #2012 merges.
+  - FN-1 shares the registration files with #2013 (above).
+  - FN-2 changes `AthleteWorkspace.tsx`, which #2006 (lane U3) changes (+256
+    lines at `c5c39034`), and U2 item 4e later.
+  - FN-3 changes `CoachWorkspace.tsx`, lane U2's file (AS-7, coach home). #2010
+    (lane AS-5) would also edit it if Overwatch picks its Q11 B.
+
+**Owner questions:**
+
+- **Q3.1 What counts as "on the floor now"?**
+  - **A (recommended):** marked here in a session that is running now. That
+    record is the only one that is live.
+  - **B:** marked present on today's class register.
+  - **C:** either one.
+- **Q3.2 What does a parent see?**
+  - **A (recommended):** a line for each of their own children who is on the
+    floor now, and nothing about anyone else.
+  - **B:** A, plus the class and the time it started.
+- **Q3.3 What do coaches and admins see?**
+  - **A (recommended):** the names of everyone on the floor now. Coaches can
+    already read every athlete in their gym
+    (`apps/web/src/server/pilot/access.ts:398-401`).
+  - **B:** a count only.
+- **Q3.4 What does an athlete see?**
+  - **A (recommended):** a line about themselves only.
+  - **B:** A, plus the number of people on the floor (the public wall already
+    shows today's head count).
+- **Q3.5 Who signs off the privacy review (FN-0) before FN-1 starts?**
+  - **A (recommended):** Jason. It decides what minors' data each home shows.
+  - **B:** Overwatch, after two adversarial reviewers pass it, the way content
+    drafts are handled (OD-2026-11-15-011).
+
+## 4. A parent starts a message to the coach (scrub FAM-09)
+
+**The scrub (stage 1, FAM-09 row):** "A parent cannot start a message to the
+coach; they can only reply under one. With "No messages yet." the tab offers
+nothing. Barrier types are Home and Transportation only." Its proposal: "Point the empty Messages state to Report a Barrier,
+Observations and the coach (a compose box would be FUTURE)." Stage 3 section
+3.6 lists the compose box as FUTURE.
+
+**What exists (OBSERVED):** a parent can write to the coach outside Messages,
+and a coach can write to the family. On the Messages tab, a parent can only
+reply.
+
+- **Parent to coach: the Observations note (WO-PH-04).** A guardian writes a
+  free-text note for the coach about their own child
+  (`apps/web/app/api/pilot/parent/observations/route.ts:17-35`), from
+  `apps/web/components/ParentObservations.tsx:98` on the Parent Hub
+  (`ParentHub.tsx:1870`).
+  - It is a `pilot.coach_observations` row: "No new table, no migration"
+    (`route.ts:22-26`).
+  - A guardian reads only the notes they wrote, not the other guardian's (the
+    split-household line LQ-PH04-1, `route.ts:28-30`).
+  - Staff read it under "From the family" on `/coach/decision-loop`, through
+    `GET /api/pilot/coach/family-observations` (`route.ts:31-34`).
+- **Parent to coach: barrier reports.** A parent can also send one
+  (`apps/web/app/api/pilot/parent/barrier-report/route.ts:43`), of two types
+  only, home and transportation (`:24`).
+- **Coach to family.** A coach posts a note to the family as a
+  `coach_observations` row with `note_type 'parent_message'`
+  (`apps/web/app/coach/decision-loop/page.tsx:1102`). The parent reads it on
+  Messages (`apps/web/app/api/pilot/parent/messages/route.ts:36`, `:38`).
+- **Parent replies.** The parent replies under a coach note in
+  `pilot.family_message_replies`
+  (`infra/azure/pilot_slice_postgres_family_message_replies_migration.sql:62`),
+  whose author must be a parent (`:83`).
+- **Unread state.** Both sides keep it:
+  `pilot_slice_postgres_family_message_reads_migration.sql:59` and
+  `pilot_slice_postgres_family_reply_reads_migration.sql:54`. The parent's
+  count is at `apps/web/components/ParentHub.tsx:1476`. The coach's "New" mark
+  is per reply, for each staff member, on one athlete's panel
+  (`apps/web/components/FamilyNotesPosted.tsx:15-16`, `:42-44`).
+- **Who coaches whom.** The assigned coach plus active cover is
+  `athleteIdsForCoach` (`apps/web/src/server/pilot/access.ts:508`, `:511-516`).
+  The guardian check is `isGuardianLinkedToAthlete`
+  (`apps/web/src/server/pilot/guardianAccess.ts:70`).
+
+**What is missing (for Q4.1 A):**
+
+- a message a parent starts on Messages;
+- the coach's reply under it;
+- the parent seeing that reply;
+- an unread count across the roster for staff;
+- the storage for all of it. INFERRED: the reply table allows only a parent
+  author (`:83`), so a coach reply under a parent's message needs a migration.
+
+**PR split (INFERRED), for Q4.1 A:**
+
+| PR | What | Est. lines | Basis |
+|---|---|---|---|
+| PM-1 | Migration, store and routes: a parent starts a message about their own child; a coach replies under it; read state | about 420 (may go over) | matched, AS2-a 414 |
+| PM-2 | Staff side: the messages on "From the family" with reply, and the unread count across the roster | about 300 | judgement |
+| PM-3 | Parent side: the compose box and the thread on the Messages tab | about 250 | judgement |
+
+- **Total:** about 970 lines in 3 PRs.
+  - Q4.1 B: about 880 in 3 PRs (judgement): a staff reply under a parent's
+    Observations note, with its migration (about 380); the staff side (about
+    300); the parent seeing the reply (about 200).
+  - Q4.1 C: none.
+- **Migrations:** 1 (none under C).
+- **Route:** Opus (minors' data, permissions, guardian access).
+- **G3:** applies.
+- **Dependencies:** #2012 before PM-1. A Q4.3 A answer makes item 1 (EM-4)
+  send for it.
+- **File overlap:**
+  - PM-1 uses `guardianAccess.ts`, which #2012 (lane GA) changes (+30 lines at
+    `5efdc9b6`). PM-1 goes after #2012 merges. It also shares the registration
+    files with #2013.
+  - PM-2 changes `apps/web/app/coach/decision-loop/page.tsx`, which #2010 (lane
+    AS-5, AS5-1) changes (+20 lines at `0d342ee3`).
+  - A coach-home inbox (Q4.4 B) changes `CoachWorkspace.tsx`, which is U2's file
+    and #2010's Q11 B.
+
+**Owner questions:**
+
+- **Q4.1 What does FAM-09 build?**
+  - **A (recommended):** the scrub's FUTURE item: a compose box on the Parent
+    Hub's Messages tab. The parent's message sits in the same list as the
+    coach's notes, and the coach answers under it.
+  - **B:** no new box. Staff can answer under a parent's existing Observations
+    note, and the parent sees the answer there.
+  - **C:** nothing to build. Observations already lets a parent write to the
+    coach, and Report a Barrier covers home and transportation only. The
+    scrub's AS-9 batch would point the empty Messages state to them; a search
+    of ACTIVE_WORK on `main` found no AS-9 lane.
+- **Q4.2 Does the other guardian see the thread?**
+  - **A (recommended):** no. Each guardian sees their own, the same line the
+    Observations note and the barrier report draw for split households
+    (LQ-PH04-1).
+  - **B:** both guardians see it.
+- **Q4.3 Does a parent's new message send the email alert (item 1)?**
+  - **A (recommended):** yes, to staff who opted in.
+  - **B:** in the app only.
+- **Q4.4 Where do coaches answer?**
+  - **A (recommended):** on the Decision Loop's "From the family", where
+    parents' notes are read today.
+  - **B:** on the coach home, beside the alerts.
+- **Q4.5 Whose unread count does a new message raise?** Today any staff member
+  can read every note type (`route.ts:31-32`).
+  - **A (recommended):** the child's assigned coach, any coach covering them,
+    and admins: the people a SHADOW safety alert reaches (OD-2026-10-01-008
+    section 3).
+  - **B:** every coach in the gym.
+
+## 5. A coach adds drills or blocks to a session plan, and schedules a class from it (scrub CF-11)
+
+**The scrub (stage 1, CF-11 row):** "Planning stops short: a session plan can
+only be made from a template and only renamed or retimed (no drills, no blocks
+added); a scheduled class cannot carry its plan, they meet only at start." Its
+FUTURE list names "a class that carries its session plan ahead of time
+(CF-11)".
+
+**What exists (OBSERVED):**
+
+- **The screen.** "Session Plans" is the screen name for session scripts
+  (`apps/web/app/coach/session-scripts/page.tsx:477`).
+- **Making a plan.** A plan is made only from a workout template
+  (`apps/web/app/api/pilot/session-scripts/route.ts:125-132`;
+  `apps/web/app/coach/workout-templates/MakeSessionScript.tsx:78-82`), or by an
+  admin content import.
+- **Editing a plan.** The edit route also retires a plan and marks it reviewed
+  (`route.ts:174`). Its edit changes the plan's name and each block's title and
+  minutes only.
+  - The server says "blocks are never added, removed or reordered here"
+    (`apps/web/src/server/pilot/sessionScriptAuthoring.ts:409-411`) and refuses
+    an unknown block (`:436-437`).
+  - A plan that has been run gets a new version (`:31-38`, `:500-551`).
+- **Blocks.** A block can name a library drill
+  (`infra/azure/pilot_slice_postgres_session_scripts_migration.sql:87`).
+  - Its order is unique within the plan (`:96`).
+  - It must hold some text (`:99-100`). The template path meets that by writing
+    the step's facts into `what_to_explain` (`sessionScriptAuthoring.ts:140-142`).
+- **Scheduling.** A coach schedules their own classes
+  (`apps/web/app/api/pilot/scheduler/route.ts:804-806`, `:831-832`) from
+  `/schedule` (`apps/web/app/schedule/page.tsx:1044`). A class row has no plan
+  column (`infra/azure/pilot_slice_postgres_scheduler_tables_migration.sql:11-26`).
+- **Class and plan.** They meet only when a session starts
+  (`apps/web/src/client/startClassSession.ts:45-52`). The class screen starts
+  with no plan (`apps/web/app/coach/class/page.tsx:147`); its comment at `:19`
+  says "Plans are still started from Session Plans".
+
+**What is missing:**
+
+- **The block edits.** Adding a block (a drill from the library), and removing
+  and reordering blocks.
+  - INFERRED: these need no migration. Order can be renumbered in one
+    transaction.
+  - A new drill block can carry "From the drill" facts in `what_to_explain`,
+    the way template steps do.
+- **The class link.** A class that carries a plan, which needs a migration, and
+  the class screen starting that plan.
+
+**PR split (INFERRED):**
+
+| PR | What | Est. lines | Basis |
+|---|---|---|---|
+| SP-1 | Server and edit route: add a drill block, remove a block, move a block; the versioning as today | about 350 | judgement (`sessionScriptAuthoring.ts` is 724 lines) |
+| SP-2 | The editor: a drill picker, remove, move up and down | about 300 | judgement (`apps/web/app/coach/session-scripts/SessionScriptEditor.tsx` is 259 lines) |
+| SP-3 | Migration: a plan link on a scheduled class; the scheduler accepts it | about 250 | judgement |
+| SP-4 | "Schedule a class" from Session Plans; the class screen starts the class's plan | about 250 | judgement |
+
+- **Total:** about 1,150 lines in 4 PRs.
+- **Migrations:** 1 (SP-3), only if Q5.2 is A.
+- **Route:**
+  - **Opus for SP-1**, because a sparring-contact drill could be added to a
+    plan.
+    - The plan's contact label is computed from its steps (`contactStructure`,
+      `sessionScriptAuthoring.ts:113-121`) and shown on Session Plans
+      (`page.tsx:607`).
+    - Block minutes are checked (`pilot_ssb_window`, migration `:97`).
+    - SP-1 must keep both right when blocks are added, removed or moved.
+    - UNVERIFIED whether any gate reads a block's contact level when a session
+      runs.
+  - **Sonnet for SP-2.** The picker sends only what SP-1's route accepts, so
+    any contact rule lives and is reviewed in SP-1. If SP-1 finds a contact
+    gate, SP-2 moves to Opus.
+  - **Opus for SP-3 and SP-4** (the scheduler's role gate).
+- **G3:** INFERRED not to apply (no sign-in, minors' data or safety screen),
+  unless SP-1 finds a contact gate.
+- **Dependencies:** OD-2026-10-21-002 D4 ("A: Tie them") already ties a session
+  to its class at start. SP-4 changes the class screen, which lane U2 owns
+  (6b to 6d not started).
+- **File overlap:** U2's later class-screen PRs (`apps/web/app/coach/class/page.tsx`);
+  SP-3 shares the registration files with #2013.
+
+**Owner questions:**
+
+- **Q5.1 What can a coach add?**
+  - **A (recommended):** a drill from the library, as a new block.
+  - **B:** A, plus a block copied from another plan.
+  - **C:** A, plus a block with its own text and no drill: a teaching minute, a reset
+    minute or a transition, from the existing block kinds
+    (`infra/azure/pilot_slice_postgres_session_scripts_migration.sql:84-86`).
+- **Q5.2 What does "schedules a class from it" keep?**
+  - **A (recommended):** the class keeps the plan, and Start on the class
+    screen starts that plan. This is the scrub's FUTURE wording, "a class that
+    carries its session plan ahead of time".
+  - **B:** the plan only fills in the schedule form (title, length), and
+    nothing is kept.
+
+## 6. A "who has stopped coming" page (scrub CF-14)
+
+**The scrub (stage 1, CF-14 row):** "No page answers "who has stopped coming";
+the Passbook Gaps door keywords say "stopped coming" while the page says it is
+not that check." Its FUTURE list names "a "who has stopped coming" list
+(CF-14)".
+
+**What exists (OBSERVED):**
+
+- **Passbook Gaps is not this check.** The page says it is "not a check on who
+  has stopped coming" (`apps/web/app/coach/passbook-gaps/page.tsx:184`; also
+  `:22`, `:155`).
+- **The guard.** A test keeps any door from claiming the words "until a page
+  answers it" (`apps/web/components/buildingMap.test.ts:498-501`). SC2-1
+  (#1981) took the words off the door
+  (`apps/web/components/buildingMap.ts:461-463`).
+- **Per-athlete data.** Last present date and days since, over 28 days, from
+  `getAttendanceLast28Days`
+  (`apps/web/src/server/pilot/attendancePrecedence.ts:241`, `:262`, `:286`).
+- **Membership status.** It is active, lapsed or ended, set by hand
+  (`infra/azure/pilot_slice_postgres_program_memberships_migration.sql:28`).
+  A search of `apps/web` for `lapsed`, `stopped coming`, `days_since` and
+  `last_seen` found no query that marks a lapse by itself.
+- **Data gap (INFERRED from `sessionRunAthletes.ts:171`).** A session not tied
+  to a class writes no register mark. An athlete seen only at untied open gym
+  may have no attendance record, and would look as if they had stopped coming.
+
+**What is missing:** a gym-wide list of athletes with no present mark for a set
+number of days, looking further back than 28 days. It also needs its page, a
+door, and the guard test turned to require that door.
+
+**PR split (INFERRED):**
+
+| PR | What | Est. lines | Basis |
+|---|---|---|---|
+| SC-1 | Query and route (coach, admin), reading register marks and, with Q6.3 A, session marks | about 300 | judgement |
+| SC-2 | Page, door, guard test turned | about 250 | judgement |
+
+- **Total:** about 550 lines in 2 PRs.
+- **Migrations:** none (INFERRED), unless Q6.4 is B.
+- **Route:** Opus (minors' data).
+- **G3:** applies.
+- **Dependencies:** the door is in `buildingMap.ts`; sequence with lane U2's
+  AS-4.
+- **File overlap:**
+  - `buildingMap.ts`: U2's AS-4 (not open yet), and #2010 if Overwatch picks
+    its Q11 B.
+  - `apps/web/components/buildingMapCoverage.test.ts`: #2009 (lane BT) changes
+    it, and a new door will likely touch it.
+  - SC-1 shares the registration files with #2013.
+
+**Owner questions:**
+
+- **Q6.1 How long without coming counts?**
+  - **A (recommended):** 3 weeks with no present mark. INFERRED reason: it
+    catches a member who misses three weekly classes in a row.
+  - **B:** 2 weeks.
+  - **C:** 30 days.
+- **Q6.2 Who is listed?**
+  - **A (recommended):** athletes with an active membership who were present
+    at least once before.
+  - **B:** everyone on the roster.
+- **Q6.3 Does open gym count as coming?** This is an open owner decision.
+  - The session-marks migration says the table is "SESSION DETAIL, NOT
+    ATTENDANCE", and that whether a mark "should ever count toward a
+    participation figure is an owner decision that has not been made".
+  - It quotes Overwatch, 2026-10-13: a mark "feeds NO attendance report,
+    reconciled view, board or grant figure"
+    (`infra/azure/pilot_slice_postgres_session_run_athletes_migration.sql:26-32`).
+  - OD-2026-09-28-008 keeps one system of record for attendance.
+  - **A (recommended):** yes, for this page only. Open-gym "here" marks count
+    as coming, so an athlete seen only at open gym is not listed. SC-1 reads
+    them (in its estimate). No attendance figure changes. This departs from
+    Overwatch's 2026-10-13 note, so it needs Jason's ruling.
+  - **B:** register marks only, as attendance is counted today. The list may
+    then name athletes who come only to open gym. SC-1 is about 250.
+- **Q6.4 What can a coach do on the page?**
+  - **A (recommended):** read the list and open the athlete.
+  - **B:** A, plus mark "reached out". That needs a migration and a third PR
+    (about 200 lines more).
+
+## 7. An offline save queue: failed saves are kept and retried
+
+**Rulings and records (OBSERVED):**
+
+- OD-2026-09-28-008: "offline storage stays parked".
+- The PARKED row `BACKLOG-offline-write-queue` in `docs/current/ACTIVE_WORK.md`
+  (`:270` on `main` `c27c581`): re-open when "A concrete identity-scoped
+  encrypted/offline storage design is selected".
+- `docs/current/ACTIVE_WORK.md:55`: "online-only writes until the
+  offline-storage decision is made".
+- OD-2026-11-19-009 records the "Failed saves" answer "A: small honesty fixes
+  now, offline queue later". That entry says "Ruling: none by this entry".
+
+**State: BLOCKED until Q7.1 is answered.** Building a queue that stores data on
+the device before a design is selected would go past the PARKED row's re-open
+condition.
+
+**What exists (OBSERVED):**
+
+- **No device storage.** A search of `apps/web` outside tests for
+  `serviceWorker`, `indexedDB`, `navigator.onLine`, `Idempotency-Key`,
+  `workbox`, `dexie` and `localforage` found no match.
+- **Browser storage. Neither store holds a save payload.**
+  - `localStorage` holds UI preferences, the gym-tablet device mark
+    (`apps/web/src/lib/gymTabletMark.ts`) and the chosen child
+    (`apps/web/src/lib/chosenChild.ts:31`).
+  - It also holds a notice-catalog counter
+    (`apps/web/components/gymNotices.ts:173`) and per-athlete "ceremony shown"
+    records keyed by athlete id (`apps/web/components/milestoneCeremony.ts:55`,
+    `apps/web/components/achievementCeremony.ts:52`).
+  - `sessionStorage` holds a pending request key
+    (`apps/web/app/schedule/page.tsx:262`,
+    `apps/web/app/coach/test-day/page.tsx:77-78`) and the chosen child.
+- **Writes that are safe to repeat:**
+  - class create, by request key (`apps/web/app/api/pilot/scheduler/route.ts:163-176`);
+  - the intervention log, by request key
+    (`apps/web/app/api/pilot/coach/intervention-executions/route.ts:119`);
+  - the live "here" tap, by its natural key
+    (`apps/web/src/server/pilot/sessionRunAthletes.ts:120`).
+- **Writes with no request key:** staff notes
+  (`apps/web/components/SessionStaffNotesPanel.tsx:199`) and the run actions
+  (`apps/web/app/api/pilot/session-scripts/runs/[runId]/route.ts:38`).
+- **Failure messages.** Each failure shows a message and none retries, e.g.
+  `apps/web/components/SessionRunPresence.tsx:195` and
+  `apps/web/components/SessionScriptLiveDelivery.tsx:126-127`.
+- **A retry pattern to copy.** The tablet sign-out retries every 15 seconds and
+  on `online` (`apps/web/components/TabletIdleSignOut.tsx:69`, `:145`, `:148`).
+- **Sign-out does not reload the page.** The header's sign-out is a soft
+  navigation except on camera pages
+  (`apps/web/components/GlobalRoleHeader.tsx:199-200`). So page memory, and an
+  in-memory queue, can outlive a sign-out on a shared tablet.
+
+**What is missing:**
+
+- a client queue, with each queued save bound to the account that made it and
+  dropped at sign-out or when the signed-in account changes;
+- request keys on the writes that lack them;
+- the retry;
+- what the screen says while a save waits.
+
+If Q7.1 is B, also missing is encrypted device storage tied to the signed-in
+person and wiped at sign-out.
+
+**PR split (INFERRED), for Q7.1 A:**
+
+| PR | What | Est. lines | Basis |
+|---|---|---|---|
+| OQ-1 | Request keys on staff notes and run actions (server, and a migration for their unique keys if the natural keys do not cover them) | about 300 | judgement |
+| OQ-2 | One client retry queue, in memory, bound to the account; dropped at sign-out or an account change; the waiting and failed words | about 320 | judgement |
+| OQ-3 | Wire the live floor writes (here taps, run actions, staff notes, intervention log) | about 250 | judgement |
+| OQ-4 | Wire the other writes Q7.2 names | about 250 | judgement |
+
+- **Total:** about 1,120 lines in 4 PRs, with 0 or 1 migration.
+- **If Q7.1 is B:** add about 500 lines in 2 more PRs (an encrypted store with
+  its wipe at sign-out; a privacy review), about 1,620 in 6 PRs (judgement).
+- **Route:** Opus (data integrity, minors' data on shared tablets, sign-out).
+- **G3:** applies.
+- **Dependencies:** OQ-3 touches the live console
+  (`SessionScriptLiveDelivery.tsx`), which #2005 (lane U2) also changes.
+- **File overlap:** #2005 (`SessionScriptLiveDelivery.tsx`).
+
+**Owner questions:**
+
+- **Q7.1 Where is a failed save kept?**
+  - **A (recommended):** in the open page only, retried until it goes through
+    or the page closes. Each save is tied to the account that made it and
+    dropped at sign-out (above).
+    - INFERRED: nothing is left on the device after the page closes, so the
+      data-at-rest problem does not arise.
+    - The attribution problem rests on that tie and drop, which OQ-2 must
+      prove with a test.
+  - **B:** on the device, encrypted, tied to the signed-in person, wiped at
+    sign-out. This is the design the PARKED row asks to be selected.
+  - **C:** B for staff writes only, never for an athlete's own entries on a
+    shared tablet. This is a new restriction, and it falls on minors.
+- **Q7.2 Which saves?**
+  - **A (recommended):** the live floor writes first (here taps, run actions,
+    staff notes, intervention log).
+  - **B:** every save in the app.
+
+## 8. OW26-05: the typed steps in the 11 mixed templates
+
+**Ruling:** OD-2026-11-19-030, Jason: *"B: Turn typed lines into library
+drills"* (against the recommendation).
+
+- **Effect, as recorded** (INFERRED from the card): each typed step becomes a
+  library drill in PPBF words, AI-draft labelled like the home week, after the
+  pilot.
+- **The card's own cost line:** "New content to write and check, not sized".
+
+**The list (OBSERVED):** `TYPED_IN_MIXED` in
+`apps/web/src/server/pilot/committedTemplateIssueSweep.test.ts:315`, on #2008's
+head, lists 11 templates. The step numbers match the committed
+`apps/web/seed-data/workout-templates/seed_workout_template_items.csv`, where a
+typed step is a row with no `drill_id` (checked by script, no mismatch).
+
+**The count (measured by script on the committed CSV, and recounted twice by
+the citation reviewers):**
+
+- **85 typed step positions.**
+- **71 unique typed lines.**
+  - 61 of them are distinct `free_text_drill` texts. Exact text and
+    whitespace-and-case-folded text give the same count.
+  - The other 10 are steps of "Scripted 60-Minute Class (test run 4-5)"
+    (`wtp_900c0a3fd4422a`) whose `free_text_drill` is empty. Their text is only
+    in `details` (`block_title`, and the coach scripts in `parts`). The 10 are
+    distinct, and none repeats a typed text.
+- **The three youth manuals.** They share 7 lines at the same positions (steps
+  1, 2, 7, 8, 9, 13 and 14); steps 10 to 12 differ. That is 16 unique lines for
+  30 positions.
+- **Sparring contact.** Four typed lines carry contact above none:
+  - Friday Sparring step 9 (open sparring);
+  - Gold Standard steps 6 and 7, and Phase 2 archetype step 6 (controlled
+    sparring).
+- **Headings and instructions (INFERRED, not counted).** Some lines are block
+  headings or coach instructions rather than exercises, e.g. "Warm-up — 12 min",
+  "Briefing (3 min)", "Athletes rotate partners.", "Evaluate → Reset". See Q8.2.
+- **Library overlap (INFERRED, not counted).** Some lines look covered by
+  library drills: "Punch Burst" (`drl_85a93f6757497a`), "Pogo Jumps"
+  (`drl_6370c51875c49f`), "Skipping — Continuous" (`drl_40acc6820f5df6`),
+  "Post-Session Mobility" (`drl_786d761c9321c0`). Matching is a content call.
+  See Q8.1.
+
+**Rates:**
+
+- **Per drill (measured on HW #1980).** 6 drafted drills took 41 drill-CSV
+  lines (library row, three scale levels, own stop rules, cue), about 7 each.
+  Each drill's section in `docs/content-review/home-week/HOME_WEEK_REVIEW.md`
+  is 13 or 14 lines. That gives 20 per drill.
+- **Per template (measured on HW).** A day's section is about 18 lines (lines
+  72-182 for six days).
+- **Per PR (measured on HW).** 71 lines before the first day and 13 for the
+  reviews: 84.
+- **Per converted step (measured by script, INFERRED method).** A converted
+  step gets its `drill_id`, and its `free_text_drill` is cleared. That follows
+  the import's own rule for a linked step, "leave free_text_drill blank"
+  (`apps/web/src/server/pilot/contentImport/aiPrompt.ts:134-145`); the
+  database allows both (`infra/azure/pilot_slice_postgres_workout_template_details_migration.sql:95`).
+  - Simulating that rewrite on the committed CSV and diffing each row gives 247
+    changed lines for the 85 steps.
+  - 27 of the rows span several CSV lines: TL-3a has 8, TL-3b 7 and TL-4 12.
+  - The script re-writes rows with Python's CSV writer. Passing the unchanged
+    file through the same writer gives it back byte for byte (checked by the
+    citation reviewer), so the count is not a quoting effect.
+
+**PR split** (20 per new drill, the measured step lines, 18 per template, 84
+per PR):
+
+| PR | Templates | Steps rewritten | New drills (if all unique lines) | Est. lines |
+|---|---|---|---|---|
+| TL-1a | the three 48-Session Youth Coaching Manuals: the drills | 0 | 16 | about 400 (at the limit) |
+| TL-1b | the same three: the step rewrites and template sections | 30 | 0 | about 200 |
+| TL-2 | Scripted 60-Minute Class (test run 4-5) | 10 | 10 | about 320 |
+| TL-3a | Friday Sparring Coach Sheet; Wednesday Coach Sheet Defense Day | 11 | 11 | about 400 (at the limit; 1 sparring line) |
+| TL-3b | Wednesday – Gold Standard Coach Script | 7 | 7 | about 270 (2 sparring lines) |
+| TL-4 | Iso + Plyo 60-Minute Boxing Session | 13 | 13 | about 410 (may go over) |
+| TL-5a | Conditioning session A — SIT; Phase 1 boxing skill session | 10 | 10 | about 340 |
+| TL-5b | Phase 2 archetype vs. pressure fighter | 4 | 4 | about 190 (1 sparring line) |
+
+- **Total:** about 2,530 lines in 8 PRs, if every unique line becomes a new
+  drill. Fewer if Q8.1 is A.
+- **TL-1a** loads the 16 drills only. The three manuals stay on
+  `TYPED_IN_MIXED` until TL-1b rewrites their steps.
+- **Migrations:** none. HW loaded the same way, by content import.
+- **Route:** Opus for all eight. Every new drill carries its own stop rules
+  (safety text), TL-1 is the youth manual, and four lines carry sparring
+  contact.
+- **G3:** no screen changes; INFERRED not to apply. The load's dry run on
+  staging is the check, as for HW.
+- **Dependencies:** #2008 merges first. It adds `TYPED_IN_MIXED`, and each PR
+  that rewrites steps removes its templates' entries.
+- **Load:** after each merge, staging then production, by Overwatch.
+- **File overlap with #2008, which changes all of these:**
+  - `seed_drill_library.csv` and `seed_drill_cues.csv`;
+  - test files that the TL PRs will also edit:
+    `apps/web/src/server/pilot/committedTemplateIssueSweep.test.ts`,
+    `apps/web/src/server/pilot/ft1ContentPackage.pg.test.ts`,
+    `apps/web/scripts/backbone-export-ft1-track.test.ts`.
+
+**Owner questions:**
+
+- **Q8.1 A typed line that a library drill already covers?**
+  - **A (recommended):** link the existing drill, and draft new drills only for
+    the rest. That leaves fewer drafts to check. This narrows OW26-05 B's
+    option text ("Each typed step becomes a drill in PPBF words, AI-draft
+    labelled"), because a linked drill is neither new nor AI-drafted.
+  - **B:** a new drill for every line, as the card's option text says.
+- **Q8.2 A line that is a heading or an instruction, not an exercise?**
+  - **A (recommended):** it still becomes a drill, as the card says (e.g. a
+    12-minute warm-up drill). This matches OW26-05 B.
+  - **B:** fold it into the coach note of the next drill step, and remove the
+    step. This departs from OW26-05 B's "Each typed step becomes a drill" and
+    changes those templates' step lists.
+
+---
+
+## Summary
+
+| # | Item | PRs | Est. lines outside tests | Migrations | Route | G3 | Waits on |
+|---|---|---|---|---|---|---|---|
+| 1 | Email alerts | 4 (5 if Q1.4 B) | about 1,200 (1,400 if Q1.4 B) | 1 | Opus | yes | Q1.1 to Q1.8; a running tick; #2013 for Q1.8 |
+| 2 | Web push (later) | 3 (4 without the package) | about 890 (1,090 without the package) | 1 | Opus | yes | item 1; Q2.1, Q2.2; a key in Azure; a dependency call |
+| 3 | On the floor now | 4 | about 640 | 0 | Opus | yes | privacy review (FN-0, Q3.5); Q3.1 to Q3.4; #2012; U2 for the coach home |
+| 4 | Parent starts a message | 3 (0 if Q4.1 C) | about 970 (880 if B; 0 if C) | 1 (0 if C) | Opus | yes | Q4.1 to Q4.5; #2012 |
+| 5 | Plan blocks; class from a plan | 4 | about 1,150 | 0 or 1 | Opus (SP-1, SP-3, SP-4), Sonnet (SP-2) | no (INFERRED) | Q5.1, Q5.2; U2 for the class screen |
+| 6 | Stopped coming | 2 (3 if Q6.4 B) | about 550 | 0 (1 if Q6.4 B) | Opus | yes | Q6.1 to Q6.4; U2 for the door |
+| 7 | Offline save queue | 4 (6 if B) | about 1,120 (1,620 if B) | 0 or 1 | Opus | yes | BLOCKED: Q7.1, Q7.2 |
+| 8 | Typed lines to drills | 8 | about 2,530 (less if Q8.1 A) | 0 | Opus | no (INFERRED) | #2008 merged; Q8.1, Q8.2 |
+
+**Total (INFERRED):**
+
+- **Size:** 32 PRs, about 9,050 changed lines outside tests, with the
+  recommended answers, except item 8. Item 8 is sized at its upper bound
+  (every unique line a new drill); Q8.1 A, recommended, would lower it.
+- **Larger case:** adding the four sized alternatives (web push without the
+  package, Q1.4 B's opt-out route, the "reached out" mark, offline queue B)
+  gives 37 PRs and about 10,150. Q1.1 C and D, Q4.4 B, and Q5.1 B and C are not sized.
+- **If the judgement rows run like the measured PRs:** about 12,900 (see "How
+  the sizes were made").
+- **Migrations:** 4 or 5 with the recommended answers; 2 to 6 across all
+  answers.
+- **Questions:** 30 owner questions (Q1.1 to Q8.2).
+- **Route:** 31 of the 32 PRs route to Opus; SP-2 is Sonnet unless SP-1 finds
+  a contact gate.
+- **Not given here:** a completion date. This lane did not measure lane
+  throughput.
+
+**Order that the dependencies allow (INFERRED):**
+
+- Item 8 can start once #2008 merges; it needs only Q8.1 and Q8.2.
+- Items 1, 4 and 6 need only their questions, apart from these:
+  - Item 1's EM-3 needs a tick confirmed, and EM-4 waits for #2013.
+  - Item 4's PM-1 waits for #2012, and its staff side for #2010's Decision
+    Loop PR.
+- Item 3 needs its privacy review signed off first.
+- Item 5's class part and items 3 and 6's coach-side pieces wait on lane U2's
+  files.
+- Item 2 waits on item 1.
+- Item 7 is BLOCKED until Q7.1 selects a design.
+
+## Adjacent finding (reported, not part of any W4 item)
+
+- **What the comment says.** `apps/web/src/server/pilot/graphMailer.ts:19-23`
+  says `assertSenderIsExpected()` "refuses to send from anything other than the
+  configured address", so a misconfiguration "cannot quietly widen the blast
+  radius from this side".
+- **What the call does.** Its only call (`:125`) compares `config.sender` with
+  itself, so it refuses only an empty sender.
+- **Effect today (INFERRED).** None, while the one caller passes its own
+  constant (`magicLinkStore.ts:29`, `:99`).
+- **When it matters.** It becomes real once a second sender path exists. EM-3
+  includes the fix; it is listed here so it is not lost if item 1 waits.

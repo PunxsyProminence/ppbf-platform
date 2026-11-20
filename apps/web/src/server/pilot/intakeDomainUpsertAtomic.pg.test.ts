@@ -624,3 +624,109 @@ describe('each accounting writer', () => {
     }
   });
 });
+
+/* ── Lane GA: no NEW guardian link to an athlete who is 18 or over ───────────
+   The paper-only guardian add (entity guardian_link) on an athlete who turned
+   18 today at the gym is refused 403 GUARDIAN_LINK_ENDED (OD-2026-10-07-008;
+   Overwatch Q1 A), inside the route's one transaction, so the guardian record
+   written just before the link goes too. An existing link on an adult is left
+   exactly as it is (Q2 A). A minor and an athlete who turns 18 tomorrow are
+   still linked. An unknown date of birth cannot be seeded here
+   (pilot.athletes.dob is NOT NULL); linkGuardianAthlete's unit test covers it. */
+describe('lane GA: a guardian link to an athlete 18 or over', () => {
+  const gymYmd = (date: Date) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  const nextDay = (ymd: string) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  };
+  const minus18 = (ymd: string, leapDay: '02-28' | '03-01') => {
+    const year = Number(ymd.slice(0, 4)) - 18;
+    const monthDay = ymd.slice(5);
+    return `${year}-${monthDay === '02-29' ? leapDay : monthDay}`;
+  };
+  const GYM_TODAY = gymYmd(new Date());
+  const ADULT_ATHLETE = 'ath-atomic-ga-adult';
+  const TOMORROW_ATHLETE = 'ath-atomic-ga-tomorrow';
+  const EXISTING_PARENT = 'par-atomic-ga-existing';
+
+  beforeAll(async () => {
+    await db.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at)
+       values
+         ($1, $2, 'Turned Eighteen', $4::date, 'open-70', 'active', 'Self', true, $6, now(), now()),
+         ($1, $3, 'Eighteen Tomorrow', $5::date, 'youth-65', 'active', 'Guardian', true, $6, now(), now())`,
+      [ORG, ADULT_ATHLETE, TOMORROW_ATHLETE, minus18(GYM_TODAY, '02-28'), minus18(nextDay(GYM_TODAY), '03-01'), COACH],
+    );
+    // A link written before the athlete turned 18: it stays, untouched.
+    await db.query(
+      `insert into pilot.parents (organization_id, parent_id, full_name) values ($1, $2, 'Existing Guardian')`,
+      [ORG, EXISTING_PARENT],
+    );
+    await db.query(
+      `insert into pilot.guardian_links (organization_id, parent_id, athlete_id, relationship_to_athlete, updated_at)
+       values ($1, $2, $3, 'mother', '2025-01-01T00:00:00Z')`,
+      [ORG, EXISTING_PARENT, ADULT_ATHLETE],
+    );
+  });
+
+  async function existingLink() {
+    const result = await db.query<{ relationship_to_athlete: string; updated_at: string }>(
+      `select relationship_to_athlete, updated_at::text as updated_at from pilot.guardian_links
+        where organization_id = $1 and parent_id = $2 and athlete_id = $3`,
+      [ORG, EXISTING_PARENT, ADULT_ATHLETE],
+    );
+    return result.rows;
+  }
+
+  test('a new paper-only guardian for an athlete who turned 18 today is refused 403, and nothing is written', async () => {
+    const before = await countRows(WRITTEN_TABLES);
+    const checksBefore = await authorityChecks();
+
+    const { status, body } = await post('guardian_link', {
+      parent_id: 'par-atomic-ga-new', full_name: 'New Guardian', relationship_to_athlete: 'father',
+    }, ADULT_ATHLETE);
+
+    expect({ status, body }).toEqual({
+      status: 403,
+      body: { error: 'Forbidden: this athlete is 18 or older; guardian access has ended', code: 'GUARDIAN_LINK_ENDED' },
+    });
+    // The guardian record upsertGuardian wrote before the link is rolled back
+    // with it, and no accounting row is written.
+    expect(await countRows(WRITTEN_TABLES)).toEqual(before);
+    const parent = await db.query('select 1 from pilot.parents where organization_id = $1 and parent_id = $2', [ORG, 'par-atomic-ga-new']);
+    expect(parent.rowCount).toBe(0);
+    // Written before the transaction, as for every refusal.
+    expect(await authorityChecks()).toBe(checksBefore + 1);
+  });
+
+  test('re-saving the existing link on that adult is refused too, and the link is left exactly as it was', async () => {
+    const linkBefore = await existingLink();
+    expect(linkBefore).toEqual([{ relationship_to_athlete: 'mother', updated_at: expect.any(String) }]);
+    const before = await countRows(WRITTEN_TABLES);
+
+    const { status, body } = await post('guardian_link', {
+      parent_id: EXISTING_PARENT, relationship_to_athlete: 'guardian',
+    }, ADULT_ATHLETE);
+
+    expect(status).toBe(403);
+    expect(body.code).toBe('GUARDIAN_LINK_ENDED');
+    expect(await existingLink()).toEqual(linkBefore);
+    expect(await countRows(WRITTEN_TABLES)).toEqual(before);
+  });
+
+  test('an athlete who turns 18 tomorrow is still a minor today, and is linked', async () => {
+    const before = await countRows(['parents', 'guardian_links']);
+
+    const { status, body } = await post('guardian_link', {
+      parent_id: 'par-atomic-ga-tomorrow', full_name: 'Tomorrow Guardian', relationship_to_athlete: 'father',
+    }, TOMORROW_ATHLETE);
+
+    expect(body).toMatchObject({ ok: true, entity_type: 'guardian_link' });
+    expect(status).toBe(200);
+    const after = await countRows(['parents', 'guardian_links']);
+    expect(after).toEqual({ parents: before.parents + 1, guardian_links: before.guardian_links + 1 });
+  });
+});

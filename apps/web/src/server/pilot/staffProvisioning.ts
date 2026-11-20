@@ -8,6 +8,7 @@ import { clearMicrosoftIdentityOnLoginEmailChangeTx } from './auth';
 import { accountDeletedSql, deletedLoginConflict, isDeletedAccount } from './deletedAccountSignIn';
 import { athleteNotDeletedSql } from './deletedAthletes';
 import { ConflictError } from './errors';
+import { refuseGuardianLinkToAdult } from './guardianAccess';
 // The waiver_type string only, not the readers. Imported rather than
 // re-typed because a second copy of 'photo_media' is exactly how one of the
 // two later stops matching the other.
@@ -636,8 +637,15 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       // `for share` holds the row against deleteAthleteRecord's `for update`
       // until this transaction ends, so the mark cannot land between this read
       // and the link.
-      const athlete = await client.query<{ athlete_id: string; deleted: boolean }>(
-        `select athlete_id, deleted_at is not null as deleted
+      //
+      // An athlete who is 18 or over is refused too (lane GA,
+      // guardianAccess.refuseGuardianLinkToAdult): the date of birth rides on
+      // the same locked read, so it cannot change before the link is written,
+      // and the refusal comes before the guardian record and the link. The
+      // whole invite rolls back with it, the account and membership included.
+      // to_char, not ::text, whose shape follows the session DateStyle.
+      const athlete = await client.query<{ athlete_id: string; deleted: boolean; dob: string | null }>(
+        `select athlete_id, deleted_at is not null as deleted, to_char(dob, 'YYYY-MM-DD') as dob
            from pilot.athletes where organization_id = $1 and athlete_id = $2
            for share`,
         [organizationId, guardian.athleteId],
@@ -649,6 +657,7 @@ export async function createOrUpdateMicrosoftStaffAccount(params: {
       if (athlete.rows[0]?.deleted) {
         throw new Error(`Forbidden: athlete record "${guardian.athleteId}" is deleted; a guardian cannot be linked to it`);
       }
+      refuseGuardianLinkToAdult(athlete.rows[0]?.dob);
 
       // One pilot.parents record per account, reused across invites so a
       // guardian of two athletes ends up with two links rather than two
