@@ -3039,3 +3039,14 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
     expect(screen.getByText('Jordan Doe')).toBeTruthy();
   });
 });
+
+// Lane AS-5, AS5-2b (Overwatch Q-3 = A on #2030): the clearance reading moved
+// to components/clearanceReading.ts so Athlete Safety reads it by the same
+// rules. Moved, not copied: the board keeps no reading of its own.
+test('the board reads a clearance through components/clearanceReading.ts, with no copy of its own', () => {
+  const source = readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+  expect(source).toContain("from '@/components/clearanceReading'");
+  expect(source).not.toMatch(/function (readClearance|isClearanceRow|isoInstant)\(/);
+  expect(source).not.toContain('CLEARANCE_VALUES');
+  expect(source).not.toContain('/api/pilot/shadow/medical-status?athleteId=');
+});
