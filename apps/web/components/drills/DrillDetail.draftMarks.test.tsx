@@ -335,7 +335,7 @@ describe('"Looks right" beside a drafted field', () => {
     const categoryGroup = press('Category')!.parentElement!;
     expect(categoryGroup.textContent?.startsWith('technical')).toBe(true);
     expect(categoryGroup.textContent).not.toContain('boxing');
-    expect(screen.getByText('boxing').closest('span')).not.toContainElement(press('Category'));
+    expect(screen.getByText(/^boxing/).closest('span')).not.toContainElement(press('Category'));
   });
 
   test('a busy page disables every press', () => {

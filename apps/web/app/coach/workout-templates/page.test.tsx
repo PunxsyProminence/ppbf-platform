@@ -2577,7 +2577,7 @@ describe('Looks right on the opened template (lane ED-UI PR4)', () => {
     stub(() => ({ ok: false, status: 409, json: async () => ({ error: 'This field is not marked as an AI draft on the current version. Reload the template.' }) }) as unknown as Response);
     await open();
     fireEvent.click(pressFor('Intent')!);
-    const alert = (await screen.findByText(/This field is not marked as an AI draft on the current version/)).closest('p');
+    const alert = (await screen.findByText(/This field is not marked as an AI draft on the current version/)).closest('[role="alert"]');
     expect(screen.queryByText(/Recorded as looks right/)).not.toBeInTheDocument();
     await waitFor(() => expect(alert).toHaveFocus());
   });

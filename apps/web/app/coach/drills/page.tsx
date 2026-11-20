@@ -509,7 +509,7 @@ function CoachDrillLibrary() {
   // A "Looks right" press that did not land: the server's words, or that its outcome is not known.
   // Shown beside the opened drill, and focused, so a coach sees it where they pressed.
   const [looksRightError, setLooksRightError] = useState('');
-  const looksRightAlertRef = useRef<HTMLParagraphElement | null>(null);
+  const looksRightAlertRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!looksRightError) return;
     looksRightAlertRef.current?.focus({ preventScroll: true });
@@ -1246,9 +1246,10 @@ function CoachDrillLibrary() {
                 Back to the reference library
               </button>
               {looksRightError && (
-                <p ref={looksRightAlertRef} tabIndex={-1} role="alert" className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
-                  <span aria-hidden="true">▲</span> <span>{looksRightError}</span>
-                </p>
+                // In the box Promote's error uses: its own ground, wherever on the page it lands.
+                <div ref={looksRightAlertRef} tabIndex={-1} role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+                  <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> <span>{looksRightError}</span></p>
+                </div>
               )}
               {openReferenceLoading && <p className="t-body text-[color:var(--bone-300)]">Loading the drill...</p>}
               {!openReferenceLoading && openReferenceError && (

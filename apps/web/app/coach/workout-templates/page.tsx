@@ -825,7 +825,7 @@ function CoachWorkoutTemplates() {
   const [editNotice, setEditNotice] = useState('');
   // A "Looks right" press that did not land: the server's words, or that its outcome is not known. Focused when set.
   const [looksRightError, setLooksRightError] = useState('');
-  const looksRightAlertRef = useRef<HTMLParagraphElement | null>(null);
+  const looksRightAlertRef = useRef<HTMLDivElement | null>(null);
   // After a stale or unknown save, Cancel opens the template again from the server.
   const rereadOnCancel = useRef(false);
   // The request key of every issue that has no settled answer yet, by template
@@ -1089,7 +1089,9 @@ function CoachWorkoutTemplates() {
             {editNotice && <div data-surface="kiosk"><p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p></div>}
             {looksRightError && (
               <div data-surface="kiosk">
-                <p ref={looksRightAlertRef} tabIndex={-1} role="alert" className="t-body mt-[var(--s3)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> {looksRightError}</p>
+                <div ref={looksRightAlertRef} tabIndex={-1} role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+                  <p className="t-body font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> {looksRightError}</p>
+                </div>
               </div>
             )}
 
