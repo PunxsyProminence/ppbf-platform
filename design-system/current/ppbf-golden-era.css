@@ -5801,8 +5801,9 @@
 }
 
 /* A count tile (the coach's top row, lane L39 PR 3): a big figure on the dark
-   field, its word under it. A tile that could not be read is never drawn; the
-   group says so in words instead (CoachLiveTiles.tsx). */
+   field, its word under it. A tile that could not be read never shows a
+   number: the group says so in words instead, and the pain tile shows "?" with
+   "Pain reports: not checked" (CoachLiveTiles.tsx, lane U2-6b). */
 .ge-wallboard .ge-tile {
   display: grid;
   justify-items: center;

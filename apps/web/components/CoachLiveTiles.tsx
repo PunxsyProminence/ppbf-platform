@@ -11,7 +11,7 @@ import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
  * references go on the coach's own live-session screen, never on the gym TV.
  * Counts only, no names (OD-2026-10-17-018).
  *
- * Three reads the coach's screens already make, nothing new on the server:
+ * Four reads the coach's screens already make, nothing new on the server:
  *   attendance  GET  /api/pilot/coach/attendance-today -- today's reconciled
  *               marks for the gym (`covered`). A row is a mark; no row is NOT an
  *               absence, so the athletes without one are counted as "Not
@@ -19,18 +19,31 @@ import { isPainReportEscalation } from '@/src/shared/painScoreLabel';
  *               and the tiles say "today".
  *   attention   GET  /api/pilot/escalations?status=open -- open escalations on
  *               the coach's OWN athletes (the route scopes a coach to them), by
- *               their own severity. A pain report is counted on its own, as a
- *               number with no severity word (OD-2026-10-12-005, "Show the
- *               number only"), as the header badge does.
+ *               their own severity. A pain-report escalation is skipped here, so
+ *               a 7/10 report stored as critical is never counted as "Critical".
+ *   pain        GET  /api/pilot/coach/pain-reports -- the feed the coach home's
+ *               pain list reads (lane U2-6b, Overwatch's 6b ruling: "the tile and
+ *               the panel read one feed ... over one stated window"). The tile
+ *               counts exactly the feed's rows and names the feed's own window
+ *               (Q2 = A, Q3 = A). It is a number with no severity word
+ *               (OD-2026-10-12-005, "Show the number only") and wears no badge:
+ *               a pain report is never a medical stop (OD-2026-10-03-017). The
+ *               feed covers every athlete the route lets the caller see, which
+ *               for a coach is the whole gym, so the tile sits under the list's
+ *               own heading, not under "your athletes".
  *   queue       POST /api/pilot/shadow/review-projection -- how many SHADOW
  *               cases are in the queue, every status (the number the coach
  *               workspace calls "in the queue"), not only those awaiting review.
  *
  * Read every two minutes, the header badge's pace: the escalations read also
- * closes hold notices whose hold has ended, so a faster poll is only load.
+ * closes hold notices whose hold has ended, so a faster poll is only load. Each
+ * read sets its own tiles when it answers, so a read that hangs never holds
+ * another's answer back -- above all a failed pain read's "?" (the review of
+ * lane U2-6b) -- and an older answer never replaces a newer one.
  *
  * A read that fails says so in words. It never shows 0: "nothing here" and "we
- * could not look" are different claims (the #991 class).
+ * could not look" are different claims (the #991 class). The pain tile says it
+ * as "?" and "Pain reports: not checked" (Overwatch's 6b ruling).
  */
 
 export const COACH_TILES_REFRESH_MS = 120_000;
@@ -47,9 +60,22 @@ export interface AttentionCounts {
   high: number;
   moderate: number;
   low: number;
-  /** Pain reports, counted apart: a number, never a severity word (OD-2026-10-12-005). */
-  painReports: number;
 }
+
+/** The pain feed's rows over its own window (lane U2-6b). */
+export interface PainReportCount {
+  /** How many reports the feed returned: the tile counts exactly these (Q3 = A). */
+  count: number;
+  /** The feed matched more reports than it returned. */
+  truncated: boolean;
+  /** The feed's own window, in days; the tile names it and never assumes one. */
+  windowDays: number;
+}
+
+/** The most rows the pain feed returns (route.ts: parseSafeLimit(..., 25, 50)). */
+export const PAIN_FEED_LIMIT = 50;
+/** The pain tile's label when its read failed or was refused (Overwatch's 6b ruling, Q2 = A). */
+export const PAIN_REPORTS_NOT_CHECKED = 'Pain reports: not checked';
 
 type Read<T> = { state: 'loading' } | { state: 'failed' } | { state: 'ok'; value: T };
 
@@ -73,22 +99,43 @@ export function attendanceCounts(payload: unknown): AttendanceCounts | null {
   };
 }
 
-/** Open escalations by severity; null when the payload is not a list. */
+/** Open escalations by severity, pain reports skipped; null when the payload is not a list. */
 export function attentionCounts(payload: unknown): AttentionCounts | null {
   const body = payload as { ok?: unknown; escalations?: unknown } | null;
   if (!body || body.ok !== true || !Array.isArray(body.escalations)) return null;
-  const counts: AttentionCounts = { critical: 0, high: 0, moderate: 0, low: 0, painReports: 0 };
+  const counts: AttentionCounts = { critical: 0, high: 0, moderate: 0, low: 0 };
   for (const row of body.escalations as Array<{ severity?: unknown; metadata?: unknown }>) {
-    if (isPainReportEscalation(row?.metadata)) {
-      counts.painReports += 1;
-      continue;
-    }
+    // A pain report is the pain tile's, from its own feed (lane U2-6b): never a severity here.
+    if (isPainReportEscalation(row?.metadata)) continue;
     const severity = row?.severity;
     if (severity === 'critical' || severity === 'high' || severity === 'moderate' || severity === 'low') {
       counts[severity] += 1;
     }
   }
   return counts;
+}
+
+/**
+ * The pain feed's rows and window; null when the payload is not what the route sends, so a
+ * read whose window or completeness cannot be stated is "not checked", never a count.
+ */
+export function painReportCount(payload: unknown): PainReportCount | null {
+  const body = payload as { ok?: unknown; windowDays?: unknown; truncated?: unknown; painReports?: unknown } | null;
+  if (!body || body.ok !== true || !Array.isArray(body.painReports) || typeof body.truncated !== 'boolean') return null;
+  const days = body.windowDays;
+  if (typeof days !== 'number' || !Number.isInteger(days) || days <= 0) return null;
+  return { count: body.painReports.length, truncated: body.truncated, windowDays: days };
+}
+
+/**
+ * The pain tile's value and label (Q2 = A): the count and "Pain reports, last N days" with N from
+ * the feed; "50+" when the feed has more than it returned; "?" and "Pain reports: not checked"
+ * when the read failed or was refused. Never 0 for a failed read.
+ */
+export function painTileWords(read: { state: 'failed' } | { state: 'ok'; value: PainReportCount }): { value: string; label: string } {
+  if (read.state === 'failed') return { value: '?', label: PAIN_REPORTS_NOT_CHECKED };
+  const { count, truncated, windowDays } = read.value;
+  return { value: truncated ? `${count}+` : String(count), label: `Pain reports, last ${windowDays} days` };
 }
 
 /** The SHADOW review queue's total; null when the payload has none. */
@@ -104,7 +151,7 @@ async function readJson(url: string, init?: RequestInit): Promise<unknown> {
   return response.json();
 }
 
-function Tile({ value, label, badge }: { value: number; label: string; badge?: { tone: string; glyph: string } }) {
+function Tile({ value, label, badge }: { value: number | string; label: string; badge?: { tone: string; glyph: string } }) {
   return (
     <li className="ge-tile">
       <span className="ge-tile__value">{value}</span>
@@ -120,13 +167,28 @@ function Tile({ value, label, badge }: { value: number; label: string; badge?: {
   );
 }
 
-function Group({ title, read, children }: { title: string; read: Read<unknown>; children: () => ReactNode }) {
+/**
+ * A titled row of tiles. A failed read says "Could not read" in place of its tiles, unless the
+ * tiles say it themselves (failedInTiles: the pain tile's "?" and "not checked").
+ */
+function Group({
+  title,
+  read,
+  failedInTiles = false,
+  children,
+}: {
+  title: string;
+  read: Read<unknown>;
+  failedInTiles?: boolean;
+  children: () => ReactNode;
+}) {
+  const tiles = read.state === 'ok' || (read.state === 'failed' && failedInTiles);
   return (
     <section className="coach-tiles__group" aria-label={title}>
       <h3 className="coach-tiles__cap ge-enamel ge-enamel--sign">{title}</h3>
       {read.state === 'loading' && <p className="coach-tiles__note">Reading...</p>}
-      {read.state === 'failed' && <p className="coach-tiles__note">Could not read</p>}
-      {read.state === 'ok' && <ul className="coach-tiles__row">{children()}</ul>}
+      {read.state === 'failed' && !failedInTiles && <p className="coach-tiles__note">Could not read</p>}
+      {tiles && <ul className="coach-tiles__row">{children()}</ul>}
     </section>
   );
 }
@@ -134,10 +196,13 @@ function Group({ title, read, children }: { title: string; read: Read<unknown>; 
 export default function CoachLiveTiles() {
   const [attendance, setAttendance] = useState<Read<AttendanceCounts>>({ state: 'loading' });
   const [attention, setAttention] = useState<Read<AttentionCounts>>({ state: 'loading' });
+  const [pain, setPain] = useState<Read<PainReportCount>>({ state: 'loading' });
   const [queue, setQueue] = useState<Read<number>>({ state: 'loading' });
 
-  // A read slower than the next one must not overwrite it, and nothing is set after unmount.
+  // Each read is numbered; a tile takes an answer only if it is from a newer read than the one it
+  // shows, so a read slower than the next one never overwrites it. Nothing is set after unmount.
   const sequence = useRef(0);
+  const shown = useRef({ attendance: 0, attention: 0, queue: 0, pain: 0 });
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -146,31 +211,44 @@ export default function CoachLiveTiles() {
     };
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     const mine = ++sequence.current;
     const base = apiBase();
-    const [a, b, c] = await Promise.allSettled([
-      readJson(`${base}/api/pilot/coach/attendance-today`),
-      readJson(`${base}/api/pilot/escalations?status=open`),
+    function settle<T>(
+      tile: keyof typeof shown.current,
+      read: Promise<unknown>,
+      parse: (payload: unknown) => T | null,
+      set: (value: Read<T>) => void,
+    ) {
+      void read
+        .then((payload) => parse(payload))
+        // A failed read, or a payload the parser cannot take, is unread: never a number.
+        .catch(() => null)
+        .then((value) => {
+          if (!mounted.current || mine <= shown.current[tile]) return;
+          shown.current[tile] = mine;
+          set(value === null ? { state: 'failed' } : { state: 'ok', value });
+        });
+    }
+    settle('attendance', readJson(`${base}/api/pilot/coach/attendance-today`), attendanceCounts, setAttendance);
+    settle('attention', readJson(`${base}/api/pilot/escalations?status=open`), attentionCounts, setAttention);
+    settle(
+      'queue',
       readJson(`${base}/api/pilot/shadow/review-projection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 1 }),
       }),
-    ]);
-    if (!mounted.current || mine !== sequence.current) return;
-    const counted = a.status === 'fulfilled' ? attendanceCounts(a.value) : null;
-    setAttendance(counted ? { state: 'ok', value: counted } : { state: 'failed' });
-    const levels = b.status === 'fulfilled' ? attentionCounts(b.value) : null;
-    setAttention(levels ? { state: 'ok', value: levels } : { state: 'failed' });
-    const total = c.status === 'fulfilled' ? queueTotal(c.value) : null;
-    setQueue(total === null ? { state: 'failed' } : { state: 'ok', value: total });
+      queueTotal,
+      setQueue,
+    );
+    settle('pain', readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}`), painReportCount, setPain);
   }, []);
 
   useEffect(() => {
-    // No state is set before load's first await (the convention SessionScriptLiveDelivery follows).
-    void load();
-    const id = setInterval(() => void load(), COACH_TILES_REFRESH_MS);
+    // No state is set until a read answers (the convention SessionScriptLiveDelivery follows).
+    load();
+    const id = setInterval(load, COACH_TILES_REFRESH_MS);
     return () => clearInterval(id);
   }, [load]);
 
@@ -196,10 +274,18 @@ export default function CoachLiveTiles() {
               <Tile value={attention.value.high} label="High" badge={{ tone: 'restricted', glyph: '▲' }} />
               <Tile value={attention.value.moderate} label="Moderate" badge={{ tone: 'monitor', glyph: '◉' }} />
               <Tile value={attention.value.low} label="Low" />
-              <Tile value={attention.value.painReports} label="Pain reports" />
             </>
           )
         }
+      </Group>
+      {/* The coach home list's own heading (CoachWorkspace, "Athlete Pain Reports"): the feed is
+          every athlete the caller may see, so it is not under "your athletes" (lane U2-6b). */}
+      <Group title="Athlete pain reports" read={pain} failedInTiles>
+        {() => {
+          if (pain.state === 'loading') return null;
+          const words = painTileWords(pain);
+          return <Tile value={words.value} label={words.label} />;
+        }}
       </Group>
       <Group title="SHADOW queue" read={queue}>
         {() => queue.state === 'ok' && <Tile value={queue.value} label="In the queue" />}
