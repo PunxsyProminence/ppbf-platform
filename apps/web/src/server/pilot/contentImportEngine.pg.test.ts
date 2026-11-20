@@ -852,9 +852,10 @@ function runCli(args: string[], env: Record<string, string>): Promise<CliRun> {
     });
     let stdout = '';
     let stderr = '';
-    // Decoded by the stream, not per chunk: a multi-byte character (the dash in a template's
-    // name) split across two chunks would otherwise decode as two replacement characters, and
-    // the plan block printed by `plan` would differ from the one printed by `apply --dry-run`.
+    // Decoded by the stream, not per chunk. The plan's WARNINGS lines quote seed text that holds
+    // dashes and arrows; one of those split across two chunks would otherwise decode as
+    // replacement characters, and the plan block printed by `plan` would differ from the one
+    // printed by `apply --dry-run`.
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => { stdout += chunk; });
