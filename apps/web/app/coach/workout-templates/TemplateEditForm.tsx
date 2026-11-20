@@ -125,6 +125,8 @@ function inFormWords(message: string, itemNames: readonly string[]): string {
 
 export type TemplateEditOutcome = { changed: false } | { changed: true; templateId: string; version: number };
 
+// --bone-200: the lift the design system gives .t-label on lit leather (OD-2026-10-02-010; .ge-scripts .mat-leather).
+const LABEL = 't-label text-[color:var(--bone-200)]';
 const SAVE_FAILED = 'The template could not be saved.';
 // The drill form's words for the same two outcomes (DrillEditForm.tsx).
 const SAVE_UNKNOWN = 'It is not known whether this change was saved.';
@@ -160,6 +162,9 @@ export default function TemplateEditForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [unknown, setUnknown] = useState(false);
+  // A save with no known outcome may have written: no later refusal may then say nothing changed.
+  const [earlierUnknown, setEarlierUnknown] = useState(false);
+  const [stale, setStale] = useState(false);
   const savingRef = useRef(false);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const alertRef = useRef<HTMLDivElement | null>(null);
@@ -210,6 +215,8 @@ export default function TemplateEditForm({
       const outcomeUnknown = status === null || status >= 500;
       setError(outcomeUnknown ? SAVE_UNKNOWN : (failure instanceof Error && failure.message) || SAVE_FAILED);
       setUnknown(outcomeUnknown);
+      if (outcomeUnknown) setEarlierUnknown(true);
+      setStale(status === 409);
       onFailed(status);
     } finally {
       savingRef.current = false;
@@ -234,20 +241,20 @@ export default function TemplateEditForm({
         <div className="grid gap-[var(--s4)] md:grid-cols-2">
           {TEXT.map(({ key, label, max }) => (
             <div key={key} className="field">
-              <label htmlFor={id(key)} className="t-label">{label}</label>
+              <label htmlFor={id(key)} className={LABEL}>{label}</label>
               <input id={id(key)} value={values.text[key]} onChange={(event) => setValues((prev) => ({ ...prev, text: { ...prev.text, [key]: event.target.value } }))} maxLength={max} className="input input--kiosk" />
             </div>
           ))}
           <div className="field">
-            <label htmlFor={id('difficulty')} className="t-label">Difficulty</label>
+            <label htmlFor={id('difficulty')} className={LABEL}>Difficulty</label>
             {select(id('difficulty'), values.difficulty, VOCABULARIES.difficulty.values, (value) => setValues((prev) => ({ ...prev, difficulty: value })), (value) => value)}
           </div>
           <div className="field">
-            <label htmlFor={id('duration')} className="t-label">Minutes</label>
+            <label htmlFor={id('duration')} className={LABEL}>Minutes</label>
             <input id={id('duration')} type="text" inputMode="numeric" value={values.duration} onChange={(event) => setValues((prev) => ({ ...prev, duration: event.target.value }))} className="input input--kiosk" />
           </div>
           <div className="field">
-            <label htmlFor={id('authorization')} className="t-label">Coach authorization</label>
+            <label htmlFor={id('authorization')} className={LABEL}>Coach authorization</label>
             <select id={id('authorization')} value={values.requiresAuthorization ? 'required' : 'not_required'} onChange={(event) => setValues((prev) => ({ ...prev, requiresAuthorization: event.target.value === 'required' }))} className="select input--kiosk">
               <option value="required">Required</option>
               <option value="not_required">Not required</option>
@@ -255,11 +262,11 @@ export default function TemplateEditForm({
           </div>
         </div>
         <div className="field">
-          <label htmlFor={id('intent')} className="t-label">Intent</label>
+          <label htmlFor={id('intent')} className={LABEL}>Intent</label>
           <textarea id={id('intent')} value={values.intent} onChange={(event) => setValues((prev) => ({ ...prev, intent: event.target.value }))} rows={3} maxLength={4000} className="textarea input--kiosk" />
         </div>
         <div className="field">
-          <label htmlFor={id('notes')} className="t-label">Coach notes</label>
+          <label htmlFor={id('notes')} className={LABEL}>Coach notes</label>
           <textarea id={id('notes')} value={values.coachNotes} onChange={(event) => setValues((prev) => ({ ...prev, coachNotes: event.target.value }))} rows={3} maxLength={4000} className="textarea input--kiosk" />
         </div>
 
@@ -288,7 +295,7 @@ export default function TemplateEditForm({
                   }
                   return (
                     <div key={key} className={key === 'free_text_drill' || key === 'coach_note' ? 'field md:col-span-2' : 'field'}>
-                      <label id={`${fieldId}-label`} htmlFor={fieldId} className="t-label">{label}</label>
+                      <label id={`${fieldId}-label`} htmlFor={fieldId} className={LABEL}>{label}</label>
                       {control}
                     </div>
                   );
@@ -302,7 +309,8 @@ export default function TemplateEditForm({
       {error && (
         <div role="alert" ref={alertRef} tabIndex={-1} className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
           <p><span aria-hidden="true">▲</span> <span>{error}</span></p>
-          {!unknown && <p className="mt-[var(--s2)]">{NOTHING_CHANGED}</p>}
+          {/* A 409 means the template changed meanwhile, so "as it was" would not be true. */}
+          {!unknown && (earlierUnknown || !stale) && <p className="mt-[var(--s2)]">{earlierUnknown ? SAVE_UNKNOWN : NOTHING_CHANGED}</p>}
         </div>
       )}
 

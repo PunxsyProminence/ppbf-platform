@@ -793,6 +793,8 @@ describe('issue to athlete', () => {
 
       await issueTo();
       await screen.findByRole('button', { name: 'Issuing...' });
+      // Edit too: the form would take the place of the issue and its answer (ED-UI PR2).
+      expect(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).toBeDisabled();
 
       const openButtons = () => [
         screen.getByRole('button', { name: 'Showing template' }),
@@ -1888,6 +1890,7 @@ describe('make a session plan from an open template', () => {
     for (const open of screen.getAllByRole('button', { name: /open template|showing template/i })) {
       expect(open).toBeDisabled();
     }
+    expect(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).toBeDisabled();
     await act(async () => {
       finish?.({ ok: true, status: 201, json: async () => ({ script: { script_id: 'scr-9', name: 'X', blocks: [] } }) } as Response);
     });
@@ -2232,11 +2235,48 @@ describe('Edit (lane ED-UI PR2)', () => {
     fireEvent.change(within(form).getByLabelText('Intent'), { target: { value: 'Stance and guard.' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByText('Saved as version 2.')).toHaveAttribute('role', 'status');
+    const notice = await screen.findByText('Saved as version 2.');
+    expect(notice).toHaveAttribute('role', 'status');
+    // At the floor's type size, as the Edit button is (19.1px, --t-md).
+    expect(notice).toHaveClass('text-[length:var(--t-md)]');
+    expect(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).toHaveClass('text-[length:var(--t-md)]');
     expect(writesOf(fetchMock)).toEqual([{ url: '/api/pilot/workout-templates', body: { template_id: 'wt-1', intent: 'Stance and guard.' } }]);
     expect(fetchMock.mock.calls.map((call) => String(call[0]))).toContain('/api/pilot/workout-templates?template_id=wt-1-v2');
     expect(await screen.findByText('Stance and guard.', { selector: 'p' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Edit Boxing Fundamentals 60' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the form, locked, until the new version opens: the old version and its Issue and plan never come back meanwhile', async () => {
+    let releaseList: () => void = () => {};
+    let saved = false;
+    mockFetch((url, init) => {
+      if ((init?.method ?? 'GET') === 'PATCH') {
+        saved = true;
+        return jsonResponse({ ok: true, changed: true, template_id: 'wt-1-v2', version: 2 });
+      }
+      if (url.includes('template_id=wt-1-v2')) return jsonResponse({ template: V2, items: [item({ template_id: 'wt-1-v2' })] });
+      if (url.includes('template_id=wt-1')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
+      const list = jsonResponse({ templates: [saved ? V2 : BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
+      return (saved ? new Promise<Response>((resolve) => { releaseList = () => resolve(list); }) : list) as unknown as Response;
+    });
+    render(<CoachWorkoutTemplatesPage />);
+    const form = await openAndEdit();
+    fireEvent.change(within(form).getByLabelText('Intent'), { target: { value: 'Stance and guard.' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(within(form).getByRole('button', { name: 'Saving…' })).toBeDisabled());
+    await waitFor(() => expect(within(form).getByRole('button', { name: 'Save' })).toBeDisabled());
+    expect(within(form).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('region', { name: 'Edit Boxing Fundamentals 60' })).toBe(form);
+    expect(screen.queryByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Make a session plan' })).not.toBeInTheDocument();
+    for (const open of screen.getAllByRole('button', { name: /open template|showing template/i })) expect(open).toBeDisabled();
+
+    await act(async () => { releaseList(); });
+    expect(await screen.findByText('Saved as version 2.')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Edit Boxing Fundamentals 60' })).not.toBeInTheDocument();
+    // The form closed with the new version, so the other template can be opened again.
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /open template/i }).some((open) => !(open as HTMLButtonElement).disabled)).toBe(true));
   });
 
   it('writes nothing when nothing changed, and says so; Cancel writes nothing either; focus goes back to Edit', async () => {
@@ -2283,8 +2323,12 @@ describe('Edit (lane ED-UI PR2)', () => {
     ['a 409', 409, { error: stale, code: 'TEMPLATE_VERSION_STALE' }, stale, false],
     // A fault after the write: the list read again holds v2, not the open v1, so the open block moves to the top.
     ['a fault whose outcome is not known', 500, { error: 'Something failed.' }, 'It is not known whether this change was saved.', true],
+    ['a lost answer', 0, {}, 'It is not known whether this change was saved.', false],
   ])('after %s, reads the list again, keeps what was typed, and Cancel opens the template again from the server', async (_case, status, answer, shown, savedAnyway) => {
-    const fetchMock = editRoutes(() => ({ ok: false, status, json: async () => answer }) as Response, { savedAnyway });
+    const fetchMock = editRoutes(() => {
+      if (status === 0) throw new TypeError('Failed to fetch');
+      return { ok: false, status, json: async () => answer } as Response;
+    }, { savedAnyway });
     render(<CoachWorkoutTemplatesPage />);
     const form = await openAndEdit();
     const reads = (match: string) => fetchMock.mock.calls

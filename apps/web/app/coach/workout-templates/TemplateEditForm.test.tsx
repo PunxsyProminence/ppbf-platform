@@ -3,7 +3,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import TemplateEditForm, { TEMPLATE_EDIT_FORM_KEYS, type TemplateEditOutcome } from './TemplateEditForm';
 import { MAX_LONG_TEXT, MAX_NOTE_TEXT, MAX_SHORT_TEXT, parseWorkoutTemplateEdit } from '@/src/server/pilot/workoutTemplateEdit';
@@ -82,6 +82,8 @@ it('opens on the template as it is, under "Edit <name>", with each item named by
   expect(screen.getByLabelText('1. Rope intervals Block')).toHaveValue('warm up');
   expect(screen.getByLabelText('2. Jab return Minutes')).toHaveValue('8');
   expect(screen.getByLabelText('2. Jab return Scale')).toHaveValue('');
+  // Labels lifted to --bone-200, the design system's rung for .t-label on lit leather (OD-2026-10-02-010).
+  for (const label of document.querySelectorAll('label')) expect(label).toHaveClass('text-[color:var(--bone-200)]');
   // On the kiosk floor, as the page's Issue control is (55px controls on a tablet).
   expect(screen.getByRole('region', { name: 'Edit Boxing Fundamentals 60' })).toHaveAttribute('data-surface', 'kiosk');
   // Items are edited in place (Q6 = A): no add, remove, reorder or drill swap.
@@ -194,6 +196,8 @@ describe('a refusal in the form\'s words (Overwatch Q-PR1-1)', () => {
   it.each([
     ['a server fault', async () => jsonResponse({ error: 'Something failed.' }, 500), 500],
     ['an answer that is not a save', async () => jsonResponse({ ok: true }), null],
+    ['a save answer with no version', async () => jsonResponse({ ok: true, changed: true, template_id: 'wt-1-v2' }), null],
+    ['a version with no word that it changed', async () => jsonResponse({ ok: true, template_id: 'wt-1-v2', version: 2 }), null],
   ])('says only that the outcome is not known after %s', async (_case, answer, status) => {
     const { onFailed, onSaved } = renderForm({ answer });
     change('Intent', 'x');
@@ -203,6 +207,35 @@ describe('a refusal in the form\'s words (Overwatch Q-PR1-1)', () => {
     expect(onSaved).not.toHaveBeenCalled();
   });
 
+  it('after a 409, does not say the template is as it was: it changed meanwhile', async () => {
+    renderForm({ answer: refuse('This template changed while it was being edited. Reload it and try again.', 409) });
+    change('Intent', 'x');
+    save();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('This template changed while it was being edited.');
+    expect(alert).not.toHaveTextContent('Nothing was changed');
+  });
+
+  it('once an outcome was not known, a later refusal never says nothing changed', async () => {
+    const answers = [
+      async () => jsonResponse({ error: 'Something failed.' }, 500),
+      async () => jsonResponse({ error: 'This is not the current version of the template. Reload it and edit the current version.' }, 409),
+      async () => jsonResponse({ error: 'Missing intent: it cannot be blank' }, 400),
+    ];
+    renderForm({ answer: () => (answers.shift() as () => Promise<Response>)() });
+    change('Intent', 'x');
+    save();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^▲ It is not known whether this change was saved\.$/);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    for (const shown of ['This is not the current version', 'Missing Intent']) {
+      save();
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(shown));
+      expect(screen.getByRole('alert')).toHaveTextContent('It is not known whether this change was saved.');
+      expect(screen.getByRole('alert')).not.toHaveTextContent('Nothing was changed');
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    }
+  });
+
   it('says only that the outcome is not known after a fault or a lost answer', async () => {
     const { onFailed } = renderForm({ answer: async () => { throw new TypeError('Failed to fetch'); } });
     change('Intent', 'x');
@@ -210,6 +243,18 @@ describe('a refusal in the form\'s words (Overwatch Q-PR1-1)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/^▲ It is not known whether this change was saved\.$/);
     expect(onFailed).toHaveBeenCalledWith(null);
   });
+});
+
+it('sends one save for two presses, and locks every field while it runs', async () => {
+  let answer: (response: Response) => void = () => {};
+  const { fetchMock } = renderForm({ answer: () => new Promise<Response>((resolve) => { answer = resolve; }) });
+  change('Intent', 'x');
+  const button = screen.getByRole('button', { name: 'Save' });
+  act(() => { button.click(); button.click(); });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('Intent')).toBeDisabled();
+  expect(screen.getByLabelText('1. Rope intervals Note')).toBeDisabled();
+  await act(async () => { answer(jsonResponse({ ok: true, changed: true, template_id: 'wt-1-v2', version: 2 })); });
 });
 
 it('starts nothing and offers no way out while the page is still busy with the last save', () => {

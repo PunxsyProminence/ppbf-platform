@@ -835,14 +835,14 @@ function CoachWorkoutTemplates() {
   // After a save the list is read again and the new version opens from the server.
   async function afterEditSaved(outcome: TemplateEditOutcome) {
     rereadOnCancel.current = false;
-    setEditingId('');
     if (!outcome.changed) {
+      setEditingId('');
       setEditBusy(false);
       setEditNotice('Nothing changed. No new version was written.');
       setFocusEdit((count) => count + 1);
       return;
     }
-    try {
+    try { // The form stays, locked, until openTemplate closes it: the old version never shows meanwhile.
       await load();
       await openTemplate(outcome.templateId);
       setEditNotice(`Saved as version ${outcome.version}.`);
@@ -937,7 +937,7 @@ function CoachWorkoutTemplates() {
               </p>
             )}
 
-            {editNotice && <p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p>}
+            {editNotice && <p role="status" className="t-body mt-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-200)]">{editNotice}</p>}
 
             {!detailLoading && !detailError && detail && editingId === detail.template.template_id && (
               <div className="mt-[var(--s4)]">
@@ -966,7 +966,7 @@ function CoachWorkoutTemplates() {
                 {detail.template.superseded_at === null && (
                   <button ref={editButtonRef} type="button" disabled={issuing || making || editBusy}
                     onClick={() => { setEditNotice(''); setEditingId(detail.template.template_id); }}
-                    className="btn btn--ghost btn--tap mt-[var(--s3)]" aria-label={`Edit: ${detail.template.name}`}>
+                    className="btn btn--ghost btn--tap mt-[var(--s3)] text-[length:var(--t-md)]" aria-label={`Edit: ${detail.template.name}`}>
                     Edit
                   </button>
                 )}
