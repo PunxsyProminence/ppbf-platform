@@ -206,13 +206,16 @@ describe('the TV clocks while the round clock shows a time', () => {
     expect(clockPlate(container)?.classList.contains('ge-enamel')).toBe(true);
     expect(clockPlate(container)?.getAttribute('aria-hidden')).toBe('true');
 
-    // Block countdown hidden; the rest of NOW stays.
+    // Block countdown hidden; the rest of NOW stays. (By element: the strip below also carries the
+    // block's name, so a text search of the panel would not see the name line go.)
     expect(now().querySelector('.wall-now-left')).toBeNull();
     expect(now().textContent).not.toContain('scheduled');
     expect(now().textContent).not.toContain('8:00');
-    expect(now().textContent).toContain('Jab on the bag');
-    expect(now().textContent).toContain('Jab - double jab');
-    expect(now().textContent).toContain('Block 4 of 5');
+    expect(now().querySelector('.wall-kind-word')?.textContent).toBe('Drill');
+    expect(now().querySelector('.wall-now-label')?.textContent).toBe('Jab on the bag');
+    expect(now().querySelector('.wall-now-drill')?.textContent).toBe('Jab - double jab');
+    expect(now().querySelector('.wall-session-place')?.textContent).toBe('Block 4 of 5');
+    expect(now().querySelectorAll('ol[aria-label="Today\'s session"] > li')).toHaveLength(BLOCKS.length);
   });
 
   it('the waiting board: READY is the biggest readout and the time of day is small (no session, so no countdown)', async () => {
