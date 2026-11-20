@@ -5,8 +5,10 @@
 /**
  * My Corner mounted in the athlete workspace, fed by the workspace's own reads.
  * athleteCorner.test.tsx pins the corner alone; this pins the wiring:
- *  - Start check-in in the corner sends the same request the Session Log's
- *    Check In sends, because it is the same handler;
+ *  - the corner's Start training is the one Start training (lane AS-8,
+ *    ATH-24, Overwatch Q3 A on #2020); the Session Log keeps its note box;
+ *  - the workspace opens on How I feel today with the corner on it (Q1 A), and
+ *    Report pain from there opens the Dashboard at the location picker;
  *  - "checked in" follows the session read, and a read in flight or a failed
  *    read is said as that;
  *  - Report pain takes the athlete to the existing Pain/Soreness Report's
@@ -98,8 +100,9 @@ function stable(body: Record<string, unknown>): Record<string, unknown> {
   return rest;
 }
 
-test('the corner\'s Start check-in sends exactly what the Session Log\'s Check In sends', async () => {
+test('the corner\'s Start training is the one Start training, and sends the session request', async () => {
   await renderWorkspace();
+  // The opening tab, How I feel today, carries the corner (Q1 A).
   fireEvent.click(await corner().findByRole('button', { name: 'Start training' }));
   await waitFor(() => expect(checkInPosts()).toHaveLength(1));
   const fromCorner = checkInPosts()[0].body;
@@ -107,14 +110,17 @@ test('the corner\'s Start check-in sends exactly what the Session Log\'s Check I
   expect(Object.keys(fromCorner).sort()).toEqual(
     ['athlete_id', 'completed_flag', 'created_at', 'date', 'notes', 'rpe', 'rpe_method', 'session_id', 'updated_at'],
   );
+  expect(stable(fromCorner)).toEqual(expect.objectContaining({ athlete_id: 'ath_test', completed_flag: false }));
+});
 
-  // The Session Log's own button, on a fresh workspace.
-  document.body.innerHTML = '';
-  fetchCalls.length = 0;
+test('on the Dashboard the Session Log keeps its note box and offers no second Start training (ATH-24)', async () => {
   await renderWorkspace();
-  fireEvent.click(await within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Start training' }));
-  await waitFor(() => expect(checkInPosts()).toHaveLength(1));
-  expect(stable(checkInPosts()[0].body)).toEqual(stable(fromCorner));
+  fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+  const log = within(await screen.findByRole('region', { name: 'Session log' }));
+  expect(await log.findByLabelText('Anything your coach should know before you start?')).toBeTruthy();
+  expect(log.queryByRole('button', { name: 'Start training' })).toBeNull();
+  expect(screen.getAllByRole('button', { name: 'Start training' })).toHaveLength(1);
+  expect(corner().getByRole('button', { name: 'Start training' })).toBeTruthy();
 });
 
 test('with a session open today, the corner says checked in and offers no second check-in', async () => {
@@ -156,6 +162,10 @@ test('a failed session read is said as a failure, and Try again asks the same re
 test('Report pain takes the athlete to the existing report\'s location picker, which still files the pain', async () => {
   sessionListMode = 'pending';
   await renderWorkspace();
+  fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+  await act(async () => {
+    await Promise.resolve();
+  });
   const before = fetchCalls.length;
 
   fireEvent.click(corner().getByRole('button', { name: 'Report pain or soreness' }));
@@ -173,11 +183,28 @@ test('Report pain takes the athlete to the existing report\'s location picker, w
   expect(await screen.findByRole('heading', { name: 'Soreness Details: Shoulders' })).toBeTruthy();
 });
 
+test('Report pain from the opening tab opens the Dashboard at the location picker and writes nothing', async () => {
+  sessionListMode = 'pending';
+  await renderWorkspace();
+  // The workspace opens on How I feel today; the pain card is on the Dashboard.
+  expect(screen.getByRole('button', { name: 'How I feel today' }).getAttribute('aria-current')).toBe('page');
+  expect(document.getElementById('pain-location-select')).toBeNull();
+  const writesBefore = fetchCalls.filter((call) => call.method !== 'GET').length;
+
+  fireEvent.click(corner().getByRole('button', { name: 'Report pain or soreness' }));
+
+  await waitFor(() => expect(document.activeElement?.id).toBe('pain-location-select'));
+  expect(screen.getByRole('button', { name: 'Dashboard' }).getAttribute('aria-current')).toBe('page');
+  expect(document.getElementById('athlete-pain-report')?.contains(document.activeElement)).toBe(true);
+  // Getting there wrote nothing (the Dashboard's own reads may run).
+  expect(fetchCalls.filter((call) => call.method !== 'GET').length).toBe(writesBefore);
+});
+
 test('the old Today section no longer repeats the corner\'s controls below it', async () => {
   await renderWorkspace();
-  // One in the corner and one in the Session Log, both the same action and the
-  // same word (UXB-19); the old Today section adds no third.
-  expect(screen.getAllByRole('button', { name: 'Start training' })).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+  // One Start training, the corner's (ATH-24); the old Today section adds none.
+  expect(screen.getAllByRole('button', { name: 'Start training' })).toHaveLength(1);
   expect(corner().getAllByRole('button', { name: 'Start training' })).toHaveLength(1);
   expect(screen.getAllByRole('button', { name: 'Open the floor' })).toHaveLength(1);
 });

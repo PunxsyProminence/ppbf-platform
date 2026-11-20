@@ -80,7 +80,7 @@ describe('the athlete home counts and draws goals the way the Goals tab does (UX
 
   test('an own-words goal is not also drawn as a SMART card', async () => {
     await renderHome();
-    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
     const goals = screen.queryByRole('button', { name: 'Goals' });
     if (goals) fireEvent.click(goals);
 
@@ -100,7 +100,7 @@ describe('the athlete home counts and draws goals the way the Goals tab does (UX
     await act(async () => {
       await Promise.resolve();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
     const goals = screen.queryByRole('button', { name: 'Goals' });
     if (goals) fireEvent.click(goals);
 
