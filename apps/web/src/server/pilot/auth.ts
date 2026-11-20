@@ -1575,7 +1575,15 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
       );
     }
 
-    if (!activeFlag) {
+    // Switching off ends every session. Switching an ATHLETE back on ends any
+    // session row still open too: none is minted while the login is off
+    // (every sign-in refuses active_flag false), but a PIN sign-in or an
+    // activation that read the account just before the switch committed
+    // inserts its session just after that switch-off's revoke. resolvePrincipal
+    // refuses that session while the login is off; without this, Reactivate
+    // would sign that device back in with no PIN. A staff reactivation keeps
+    // the statements it always ran.
+    if (!activeFlag || rows.rows[0].role === 'athlete') {
       await revokeAllSessionsForAccountTx(client, accountId);
     }
   });

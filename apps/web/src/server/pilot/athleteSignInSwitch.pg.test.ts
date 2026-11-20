@@ -25,6 +25,7 @@
 // Spins up the same disposable, local-only embedded Postgres the other
 // migration suites use. It NEVER connects to production or staging.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -48,12 +49,17 @@ const nativeDynamicImport = new Function('specifier', 'return import(specifier)'
 // Routes every db helper into whichever embedded database the current test
 // opened. withTransaction runs on the SAME client, so the switch, the code
 // supersede and the session revocation are one unit of work here exactly as
-// they are in production.
+// they are in production. The race tests run two callers on two real
+// connections: each runs inside mockConnection.run(connection, ...), and its
+// statements go to that connection.
 let activeClient: Client | null = null;
+const mockConnection = new AsyncLocalStorage<Pick<Client, 'query'>>();
 
 jest.mock('./db', () => {
   const actual = jest.requireActual('./db');
   const client = (): Client => {
+    const routed = mockConnection.getStore();
+    if (routed) return routed as Client;
     if (!activeClient) throw new Error('test bug: no active embedded client');
     return activeClient;
   };
@@ -82,8 +88,14 @@ import { GET as pinDirectoryGET } from '@/app/api/pilot/admin/athlete-pin-direct
 import { POST as activatePOST } from '@/app/api/pilot/auth/activate/route';
 import { POST as loginPOST } from '@/app/api/pilot/auth/login/route';
 
-import { issueActivationCode } from './activation';
-import { ATHLETE_NOT_ACTIVATED_REFUSAL, changeOwnPin, resolvePrincipal } from './auth';
+import { issueActivationCode, provisionAthleteActivation, redeemActivationCode } from './activation';
+import {
+  ATHLETE_NOT_ACTIVATED_REFUSAL,
+  changeOwnPin,
+  loginWithAccountIdAndPin,
+  resolvePrincipal,
+  setAccountActiveStatus,
+} from './auth';
 import { PILOT_SESSION_COOKIE } from './env';
 import { clearRateLimit } from './rateLimit';
 import { hashPin, hashToken } from './security';
@@ -118,6 +130,7 @@ let databaseCounter = 0;
  */
 interface Gym {
   client: Client;
+  database: string;
   admin: string;
   adminToken: string;
   coach: string;
@@ -134,6 +147,8 @@ interface Gym {
   waitingAthleteId: string;
   /** The other gym's admin, for the tenancy case. */
   otherAdminToken: string;
+  /** A staff member signed in with Microsoft: past the session gate, stopped by the role gate. */
+  staffToken: string;
 }
 
 function connectionStringFor(database: string): string {
@@ -158,7 +173,7 @@ async function findFreePort(): Promise<number> {
 }
 
 async function addSession(client: Client, accountId: string, organizationId: string, method: string): Promise<string> {
-  const token = `token-${accountId}-${method}`;
+  const token = `token-${accountId}-${organizationId}-${method}`;
   await client.query(
     `insert into pilot.session_tokens (token_hash, account_id, organization_id, expires_at, sign_in_method)
      values ($1, $2, $3, now() + interval '1 hour', $4)`,
@@ -234,6 +249,7 @@ async function freshGym(): Promise<Gym> {
 
   const gym: Gym = {
     client,
+    database: name,
     admin: `acct-admin-${n}`,
     adminToken: '',
     coach: `acct-coach-${n}`,
@@ -246,11 +262,13 @@ async function freshGym(): Promise<Gym> {
     waiting: `acct-waiting-${n}`,
     waitingAthleteId: `ATH-SW-WAIT-${n}`,
     otherAdminToken: '',
+    staffToken: '',
   };
 
   gym.adminToken = await addStaff(client, ORG, gym.admin, 'organization_admin', 'microsoft');
   gym.coachToken = await addStaff(client, ORG, gym.coach, 'coach', 'magic_link');
   gym.otherAdminToken = await addStaff(client, OTHER_ORG, `acct-other-admin-${n}`, 'organization_admin', 'microsoft');
+  gym.staffToken = await addStaff(client, ORG, `acct-staff-${n}`, 'staff', 'microsoft');
 
   const pinHash = await hashPin(PIN);
   await addAthlete(client, gym.athlete, gym.athleteId, pinHash, gym.coach);
@@ -317,6 +335,7 @@ afterAll(async () => {
 });
 
 let openClient: Client | null = null;
+const extraClients: Client[] = [];
 
 afterEach(async () => {
   activeClient = null;
@@ -324,6 +343,7 @@ afterEach(async () => {
     await openClient.end().catch(() => {});
     openClient = null;
   }
+  for (const extra of extraClients.splice(0)) await extra.end().catch(() => {});
 });
 
 async function gym(): Promise<Gym> {
@@ -437,6 +457,8 @@ async function athleteRecords(client: Client, athleteId: string): Promise<Record
 describe('the gym admin switches an activated athlete off', () => {
   test('PIN sign-in, the open session and Change PIN are all refused; the control signs in first', async () => {
     const { client, adminToken, athlete, athleteToken } = await gym();
+    // A session row scoped to another gym as well: the switch ends every one.
+    await addSession(client, athlete, OTHER_ORG, 'pin');
     const before = await loginState(client, athlete);
 
     // Controls: before the switch, the PIN signs in and the open session resolves.
@@ -583,8 +605,14 @@ describe("the athlete's records", () => {
 
 describe('who may switch an athlete', () => {
   test('a coach, an athlete and another gym\'s admin are refused, and nothing is written; the gym admin is the control', async () => {
-    const { client, adminToken, coachToken, bystanderToken, otherAdminToken, athlete } = await gym();
+    const { client, adminToken, coachToken, bystanderToken, otherAdminToken, staffToken, athlete } = await gym();
     const rowsBefore = await loginRows(client, athlete);
+
+    // A staff member's Microsoft session passes the session gate and is
+    // stopped by the role gate.
+    const staffRefused = await flip(staffToken, athlete, false);
+    expect(staffRefused.status).toBe(403);
+    await expect(staffRefused.json()).resolves.toEqual({ error: 'Forbidden: role not allowed' });
 
     // A coach's emailed-link session: not a Microsoft session.
     expect((await flip(coachToken, athlete, false)).status).toBe(403);
@@ -605,14 +633,154 @@ describe('who may switch an athlete', () => {
 
 describe('a coach login', () => {
   test('is switched off and back on as before; switching off touches no activation code', async () => {
-    const { client, adminToken, coach, coachToken } = await gym();
+    const { client, admin, adminToken, coach, coachToken } = await gym();
+    // No screen issues a code for a coach (activation.ts requires an athlete);
+    // a row is written directly so that a supersede run for every role would show.
+    await client.query(
+      `insert into pilot.account_activation_tokens
+         (token_hash, account_id, organization_id, issued_by_account_id, issued_by_role, expires_at)
+       values ('code-hash-coach', $1, $2, $3, 'organization_admin', now() + interval '1 day')`,
+      [coach, ORG, admin],
+    );
 
     expect((await flip(adminToken, coach, false)).status).toBe(200);
     expect(await sessionFor(coachToken)).toBeNull();
     expect(await loginState(client, coach)).toMatchObject({ active_flag: false, membership_active: false, live_sessions: 0 });
-    expect(await codeRows(client, coach)).toEqual([]);
+    expect(await codeRows(client, coach)).toEqual([{ consumed: false, superseded: false }]);
 
     expect((await flip(adminToken, coach, true)).status).toBe(200);
     expect(await loginState(client, coach)).toMatchObject({ active_flag: true, membership_active: true });
+  });
+});
+
+/* ---- Races, on two real connections ----
+   Each case pauses one caller just after a named statement, runs the other,
+   then lets the first go. The account-row lock decides the order; what is
+   asserted is the outcome either order must give. */
+
+/** A connection that, once armed, holds its caller just after the next statement matching `after`. */
+function gated(connection: Client) {
+  let hook: { pattern: RegExp; reached: () => void; wait: Promise<void> } | null = null;
+  return {
+    async query(text: string, params: unknown[] = []) {
+      const result = await connection.query(text, params);
+      if (hook && hook.pattern.test(text)) {
+        const held = hook;
+        hook = null;
+        held.reached();
+        await held.wait;
+      }
+      return result;
+    },
+    pauseAfter(pattern: RegExp) {
+      let reached!: () => void;
+      let release!: () => void;
+      const reachedPromise = new Promise<void>((resolve) => { reached = resolve; });
+      const wait = new Promise<void>((resolve) => { release = resolve; });
+      hook = { pattern, reached, wait };
+      return { reached: reachedPromise, release };
+    },
+  } as unknown as Client & { pauseAfter: (pattern: RegExp) => { reached: Promise<void>; release: () => void } };
+}
+
+async function twoCallers(g: Gym) {
+  const second = new Client({ connectionString: connectionStringFor(g.database) });
+  second.on('error', () => {});
+  await second.connect();
+  extraClients.push(second);
+  return { first: gated(g.client), second: gated(second) };
+}
+
+/** Long enough for the released caller to reach the lock it waits on. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+describe('races between the switch and the athlete or the office', () => {
+  test('the switch locks first: a pre-switch code redeemed meanwhile waits, then is refused, and the athlete stays off', async () => {
+    const g = await gym();
+    const { first, second } = await twoCallers(g);
+    const code = await issueActivationCode({
+      accountId: g.athlete, organizationId: ORG, issuedByAccountId: g.admin, issuedByRole: 'organization_admin',
+    });
+
+    const held = first.pauseAfter(/update pilot\.accounts a\s+set active_flag/);
+    const switching = mockConnection.run(first, () => setAccountActiveStatus(g.athlete, ORG, false));
+    await held.reached;
+    const redeeming = mockConnection.run(second, () => redeemActivationCode(code.code, CHOSEN_PIN))
+      .then(() => 'redeemed', (error: Error) => error.message);
+    await settle();
+    held.release();
+    await switching;
+
+    expect(await redeeming).toBe('Unauthorized: activation code is invalid, already used, or expired');
+    expect(await loginState(g.client, g.athlete)).toMatchObject({ active_flag: false, membership_active: false, live_sessions: 0 });
+    expect(await codeRows(g.client, g.athlete)).toEqual([{ consumed: false, superseded: true }]);
+  });
+
+  test('a redemption locks first: the switch waits, then switches the athlete off and ends the new session', async () => {
+    const g = await gym();
+    const { first, second } = await twoCallers(g);
+    const code = await issueActivationCode({
+      accountId: g.athlete, organizationId: ORG, issuedByAccountId: g.admin, issuedByRole: 'organization_admin',
+    });
+
+    const held = second.pauseAfter(/from pilot\.accounts where account_id = \$1 for no key update/);
+    const redeeming = mockConnection.run(second, () => redeemActivationCode(code.code, CHOSEN_PIN))
+      .then(() => 'redeemed', (error: Error) => error.message);
+    await held.reached;
+    const switching = mockConnection.run(first, () => setAccountActiveStatus(g.athlete, ORG, false))
+      .then(() => 'switched', (error: Error) => error.message);
+    await settle();
+    held.release();
+
+    // No deadlock: both finish, in lock order.
+    expect(await redeeming).toBe('redeemed');
+    expect(await switching).toBe('switched');
+    expect(await loginState(g.client, g.athlete)).toMatchObject({ active_flag: false, membership_active: false, live_sessions: 0 });
+    expect(await codeRows(g.client, g.athlete)).toEqual([{ consumed: true, superseded: false }]);
+  });
+
+  test('a PIN reset locks first: a switch sent meanwhile is refused by name and writes nothing', async () => {
+    const g = await gym();
+    const { first, second } = await twoCallers(g);
+
+    const held = second.pauseAfter(/update pilot\.accounts a set pin_hash = null/);
+    const resetting = mockConnection.run(second, () => provisionAthleteActivation({
+      accountId: g.athlete, organizationId: ORG, issuedByAccountId: g.admin, issuedByRole: 'organization_admin', mode: 'reset',
+    }));
+    await held.reached;
+    const switching = mockConnection.run(first, () => setAccountActiveStatus(g.athlete, ORG, false))
+      .then(() => 'switched', (error: Error) => error.message);
+    await settle();
+    held.release();
+    await resetting;
+
+    expect(await switching).toBe(ATHLETE_NOT_ACTIVATED_REFUSAL);
+    // The reset's code stands: the refused switch superseded nothing.
+    expect(await codeRows(g.client, g.athlete)).toEqual([{ consumed: false, superseded: false }]);
+    expect(await loginState(g.client, g.athlete)).toMatchObject({ active_flag: false, pin_hash: null });
+  });
+
+  test('a PIN sign-in that read the account before the switch: its session never works, before or after Reactivate', async () => {
+    const g = await gym();
+    const { first, second } = await twoCallers(g);
+
+    const held = second.pauseAfter(/from pilot\.accounts a\s+left join pilot\.organizations o on o\.organization_id = a\.organization_id\s+where a\.account_id = \$1\s+and a\.auth_provider = 'ppbf_local'/);
+    const signingIn = mockConnection.run(second, () => loginWithAccountIdAndPin(g.athlete, PIN));
+    await held.reached;
+    await mockConnection.run(first, () => setAccountActiveStatus(g.athlete, ORG, false));
+    held.release();
+    const minted = await signingIn;
+
+    // The sign-in read the account while it was on, so it minted a session
+    // after the switch's revoke: the race this guards.
+    expect(minted?.token).toBeTruthy();
+    const token = minted?.token ?? '';
+    expect(await sessionFor(token)).toBeNull();
+
+    expect((await flip(g.adminToken, g.athlete, true)).status).toBe(200);
+    expect(await sessionFor(token)).toBeNull();
+    expect(await loginState(g.client, g.athlete)).toMatchObject({ active_flag: true, live_sessions: 0 });
+    // Control: the PIN itself works again.
+    expect((await signIn(g.athlete, PIN)).status).toBe(200);
   });
 });
