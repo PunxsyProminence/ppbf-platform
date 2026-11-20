@@ -69,18 +69,46 @@ const MEMBERS = [
   member('athlete-off', 'athlete', {
     login_email: null, auth_provider: 'ppbf_local', athlete_id: 'ath-off', has_pin: true, active_flag: false, membership_active: false,
   }),
+  // One flag off without the other: still switched off, and read that way.
+  member('athlete-off-account', 'athlete', {
+    login_email: null, auth_provider: 'ppbf_local', athlete_id: 'ath-off-a', has_pin: true, active_flag: false, membership_active: true,
+  }),
+  member('athlete-off-membership', 'athlete', {
+    login_email: null, auth_provider: 'ppbf_local', athlete_id: 'ath-off-m', has_pin: true, active_flag: true, membership_active: false,
+  }),
 ];
+
+type MemberRow = ReturnType<typeof member>;
 
 interface Options {
   onStatus?: (body: Record<string, unknown>) => { ok: boolean; status?: number; error?: string };
+  /** What the server holds after a refused switch (e.g. a PIN reset in another tab). */
+  onRefused?: (rows: MemberRow[]) => MemberRow[];
 }
 
+/** Changes the server's rows from outside the page (another tab, the athlete redeeming a code). */
+let serverChange: (change: (rows: MemberRow[]) => MemberRow[]) => void = () => {};
+
 function installFetch(options: Options = {}): jest.Mock {
-  let members = MEMBERS;
+  let members: MemberRow[] = MEMBERS;
+  serverChange = (change) => { members = change(members); };
   const mock = jest.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes('/api/pilot/admin/accounts/pin-reset')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { account_id: string };
+      // The reset nulls the PIN and switches the login off until the code is redeemed.
+      members = members.map((m) => (m.account_id === body.account_id
+        ? { ...m, has_pin: false, active_flag: false, membership_active: false }
+        : m));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, activation_code: 'ABCD-EFGH-JKMN', expires_at: '2026-12-04T00:00:00.000Z' }),
+      } as Response;
+    }
     if (url.includes('/api/pilot/admin/accounts/deactivate')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as { account_id: string; active_flag: boolean };
       const outcome = options.onStatus?.(body) ?? { ok: true };
+      if (!outcome.ok && options.onRefused) members = options.onRefused(members);
       if (outcome.ok) {
         // What the server now holds, for the re-read.
         members = members.map((m) => (m.account_id === body.account_id
@@ -252,17 +280,17 @@ describe('an athlete login', () => {
     )).not.toBeNull();
   });
 
-  it('while switched off, the row reads Deactivated and offers Reactivate, not Issue New Activation Code', async () => {
+  it.each(['athlete-off', 'athlete-off-account', 'athlete-off-membership'])('while switched off (%s), the row reads Deactivated and offers Reactivate, not Issue New Activation Code', async (accountId) => {
     await renderConsole();
 
-    const off = rowOf('athlete-off');
+    const off = rowOf(accountId);
     expect(within(off).getByText('Deactivated')).not.toBeNull();
-    expect(within(off).getByRole('button', { name: 'Reactivate athlete-off' })).not.toBeNull();
+    expect(within(off).getByRole('button', { name: `Reactivate ${accountId}` })).not.toBeNull();
     expect(within(off).queryByRole('button', { name: 'Issue New Activation Code' })).toBeNull();
     expect(within(off).queryByRole('button', { name: /^Deactivate/ })).toBeNull();
     // The switch already ended every session; the sign-out route refuses a
     // switched-off membership, and its "Their sign-in still works" would be false.
-    expect(within(off).queryByRole('button', { name: 'Sign athlete-off out on every device' })).toBeNull();
+    expect(within(off).queryByRole('button', { name: `Sign ${accountId} out on every device` })).toBeNull();
     // A switched-off coach row is as it was (not this change's to alter).
     expect(within(rowOf('gone@example.com')).getByRole('button', { name: 'Sign gone@example.com out on every device' })).not.toBeNull();
   });
@@ -324,13 +352,17 @@ describe('an athlete login', () => {
     expect(mock.mock.calls.some(([url]) => String(url).includes('/accounts/pin-reset'))).toBe(false);
   });
 
-  it("a refusal of an athlete with no PIN yet (a PIN reset since the page loaded) is shown in the server's words", async () => {
+  it("a refusal of an athlete with no PIN yet (a PIN reset since the page loaded) is shown in the server's words, and the row is re-read", async () => {
     await renderConsole({
       onStatus: () => ({
         ok: false,
         status: 409,
         error: 'This athlete has not activated their sign-in yet, so there is nothing to switch off.',
       }),
+      // The reset that happened in another tab: no PIN, switched off until redeemed.
+      onRefused: (rows) => rows.map((m) => (m.account_id === 'athlete-on'
+        ? { ...m, has_pin: false, active_flag: false, membership_active: false }
+        : m)),
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate athlete-on' }));
@@ -338,7 +370,65 @@ describe('an athlete login', () => {
 
     expect(await screen.findByText(/This athlete has not activated their sign-in yet, so there is nothing to switch off\./)).not.toBeNull();
     expect(screen.queryByText(/is deactivated: signed out/)).toBeNull();
+    // The row now shows what the server holds, and no longer offers (or arms) a switch it refuses.
+    await waitFor(() => expect(within(rowOf('athlete-on')).getByText('Awaiting activation')).not.toBeNull());
     expect(within(rowOf('athlete-on')).queryByText('Deactivated')).toBeNull();
+    expect(within(rowOf('athlete-on')).queryByRole('button', { name: /Deactivate|Confirm Deactivate|Reactivate/ })).toBeNull();
+  });
+
+  it('a Deactivate armed before a new activation code is not armed again once the code is redeemed', async () => {
+    await renderConsole();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate athlete-on' }));
+    expect(within(rowOf('athlete-on')).getByRole('button', { name: 'Confirm Deactivate' })).not.toBeNull();
+
+    // Without backing out, the office issues the athlete a new code on the same row.
+    fireEvent.click(within(rowOf('athlete-on')).getByRole('button', { name: 'Issue New Activation Code' }));
+    fireEvent.click(within(rowOf('athlete-on')).getByRole('button', { name: 'Issue The New Code' }));
+    await waitFor(() => expect(within(rowOf('athlete-on')).getByText('Awaiting activation')).not.toBeNull());
+
+    // The athlete redeems it; any later re-read (here, Reactivate on another row) shows them with a PIN again.
+    serverChange((rows) => rows.map((m) => (m.account_id === 'athlete-on'
+      ? { ...m, has_pin: true, active_flag: true, membership_active: true }
+      : m)));
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivate athlete-off' }));
+    await screen.findByText('athlete-off is active again and can sign in.');
+
+    await waitFor(() => {
+      const row = rowOf('athlete-on');
+      expect(within(row).getByRole('button', { name: 'Deactivate athlete-on' })).not.toBeNull();
+      expect(within(row).queryByRole('button', { name: 'Confirm Deactivate' })).toBeNull();
+    });
+  });
+
+  it('a Sign Out Everywhere armed before the switch is not armed again after Reactivate', async () => {
+    await renderConsole();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign athlete-on out on every device' }));
+    expect(within(rowOf('athlete-on')).getByRole('button', { name: 'Sign Them Out' })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate athlete-on' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Deactivate' }));
+    await screen.findByRole('button', { name: 'Reactivate athlete-on' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivate athlete-on' }));
+
+    await waitFor(() => {
+      const row = rowOf('athlete-on');
+      expect(within(row).getByRole('button', { name: 'Sign athlete-on out on every device' })).not.toBeNull();
+      expect(within(row).queryByRole('button', { name: 'Sign Them Out' })).toBeNull();
+    });
+  });
+
+  it('an armed Sign Out Everywhere on a coach row stays armed while another row is switched', async () => {
+    await renderConsole();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign coach@example.com out on every device' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate athlete-on' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Deactivate' }));
+    await screen.findByRole('button', { name: 'Reactivate athlete-on' });
+
+    // The coach row is as it was on main: still armed.
+    expect(within(rowOf('coach@example.com')).getByRole('button', { name: 'Sign Them Out' })).not.toBeNull();
   });
 
   it('Sign Out Everywhere on an activated athlete names the switch as the next step', async () => {

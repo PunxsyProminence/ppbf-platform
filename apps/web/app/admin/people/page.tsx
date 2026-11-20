@@ -50,6 +50,31 @@ function canSwitchSignIn(member: Member): boolean {
   return member.role === 'athlete' && member.has_pin;
 }
 
+/** Either flag off: the row reads Deactivated and its switch offers Reactivate. */
+function isSwitchedOffRow(member: Member): boolean {
+  return !member.active_flag || !member.membership_active;
+}
+
+/** An athlete switched off on this page (OD-2026-11-19-025): Reactivate is the row's way back. */
+function isSwitchedOffAthlete(member: Member): boolean {
+  return member.role === 'athlete' && canSwitchSignIn(member) && isSwitchedOffRow(member);
+}
+
+/**
+ * The armed controls a row still shows after a re-read. An armed control is
+ * kept only while its row still offers it: one armed before the row changed
+ * (switched off, reset to a new code, redeemed elsewhere) must not come back
+ * armed, one tap from acting, when the row offers it again.
+ */
+function rowStillOffers(member: Member | undefined, control: 'code' | 'signOut' | 'deactivate'): boolean {
+  if (!member) return false;
+  if (control === 'code') {
+    return member.auth_provider === 'ppbf_local' && member.role === 'athlete' && !isSwitchedOffAthlete(member);
+  }
+  if (control === 'signOut') return !isSwitchedOffAthlete(member);
+  return canSwitchSignIn(member) && !isSwitchedOffRow(member);
+}
+
 /** A row of pilot.athletes, with the login account joined on if it has one. */
 interface RosterAthlete {
   athlete_id: string;
@@ -394,7 +419,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
         throw new Error(membersPayload.error || 'Unable to load your gym roster');
       }
 
-      setMembers(membersPayload.members || []);
+      const nextMembers = membersPayload.members || [];
+      setMembers(nextMembers);
+      const byId = (id: string | null) => (id ? nextMembers.find((m) => m.account_id === id) : undefined);
+      setCodeArmedId((id) => (rowStillOffers(byId(id), 'code') ? id : null));
+      setRevokeArmedId((id) => (rowStillOffers(byId(id), 'signOut') ? id : null));
+      setDeactivateArmedId((id) => (rowStillOffers(byId(id), 'deactivate') ? id : null));
       setMembersAvailable(true);
       setOrganizationName(membersPayload.organization_name?.trim() || '');
 
@@ -1069,19 +1099,25 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
         throw new Error(payload.error || (activeFlag ? 'Could not reactivate that account' : 'Could not deactivate that account'));
       }
       setDeactivateArmedId(null);
-      // Nothing armed on this row survives the switch: an Issue New
-      // Activation Code armed before it would otherwise come back armed after
-      // Reactivate, one tap from nulling the athlete's PIN.
-      setCodeArmedId(null);
-      setRevokeArmedId(null);
       setNotice(
         activeFlag
           ? `${personLabel(accountId)} is active again and can sign in.`
           : `${personLabel(accountId)} is deactivated: signed out on every device, and sign-in is refused until you reactivate them.`,
       );
+      // The re-read also drops anything armed on a row that no longer offers
+      // it (rowStillOffers), e.g. an Issue New Activation Code armed before
+      // this athlete was switched off.
       await load();
     } catch (statusError) {
-      setError(statusError instanceof Error ? statusError.message : 'Could not change that account');
+      const message = statusError instanceof Error ? statusError.message : 'Could not change that account';
+      // An athlete's switch is refused when their PIN was reset after this
+      // page loaded (409, OD-2026-11-19-025): re-read so the row stops
+      // offering a switch the server refuses, then say why. load() clears
+      // the banner, so the refusal is set after it. A staff refusal is as before.
+      if (members.find((item) => item.account_id === accountId)?.role === 'athlete') {
+        await load();
+      }
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -1396,9 +1432,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     const memberLinks = guardianLinksByAccount.get(member.account_id) || [];
                     const linkCount = !isGuardian ? null : guardianLinksAvailable ? memberLinks.length : null;
                     const status = signInStatus(member, linkCount);
-                    const isPinAthlete = member.auth_provider === 'ppbf_local' && member.role === 'athlete';
                     const isDeactivatable = canSwitchSignIn(member);
-                    const isSwitchedOff = !member.active_flag || !member.membership_active;
+                    const isSwitchedOff = isSwitchedOffRow(member);
 
                     return (
                       <tr key={member.account_id}>
@@ -1637,7 +1672,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                                 Reactivate (OD-2026-11-19-025, Overwatch Q2 A):
                                 Reactivate is the way back on. The server still
                                 lets the gym admin issue a code. */}
-                            {isPinAthlete && !(isDeactivatable && isSwitchedOff) && (codeArmedId === member.account_id ? (
+                            {rowStillOffers(member, 'code') && (codeArmedId === member.account_id ? (
                               <>
                                 <p className="max-w-[34ch]">
                                   {/* Named as the office knows them: the roster's name for
@@ -1692,7 +1727,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                                 every session and took the membership off, so
                                 the route refuses it, and its "Their sign-in
                                 still works" would be false. */}
-                            {member.role === 'athlete' && isDeactivatable && isSwitchedOff ? null : revokeArmedId === member.account_id ? (
+                            {!rowStillOffers(member, 'signOut') ? null : revokeArmedId === member.account_id ? (
                               <>
                                 <p className="max-w-[34ch]">
                                   Signs {personLabel(member.account_id)} out on every device now. Their sign-in
