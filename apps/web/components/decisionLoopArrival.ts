@@ -28,6 +28,8 @@ export const ARRIVAL_WINDOW_MS = 10_000;
 export const DECISION_LOOP_PAGE = '/coach/decision-loop';
 /** The Clearance Board, which Escalations hands an athlete to. */
 export const CLEARANCE_BOARD_PAGE = '/coach/sports-medicine';
+/** Athlete Safety, which the Clearance Board hands an athlete to. */
+export const ATHLETE_SAFETY_PAGE = '/coach/athlete-safety';
 /** The id of the Decision Loop's "Post to the Family's Page" section, which a
     link may open at (lane AS-5): a section name in the address, never an id. */
 export const POST_TO_FAMILY_SECTION = 'post-to-family';

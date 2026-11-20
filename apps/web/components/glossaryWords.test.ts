@@ -62,7 +62,7 @@ describe('the ruled words', () => {
 
   test('staff screens name the Training Hold, not a pause', () => {
     expect(withoutComments(read('app/coach/sports-medicine/page.tsx'))).not.toMatch(/pause or narrow training/);
-    expect(withoutComments(read('app/coach/injuries/page.tsx'))).not.toMatch(/does not pause training/);
+    expect(withoutComments(read('app/coach/athlete-safety/page.tsx'))).not.toMatch(/does not pause training/);
     const STAFF = ['components/CoachWorkspace.tsx', 'app/schedule/page.tsx', 'app/coach/progression-intelligence/page.tsx'];
     for (const file of STAFF) {
       const source = withoutComments(read(file));
