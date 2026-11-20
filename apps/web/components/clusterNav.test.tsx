@@ -78,6 +78,37 @@ describe('the cluster lines', () => {
     expect(container!.innerHTML).toBe('');
   });
 
+  // Lane AS-5 (app scrub CS-02): the clinic's records of one athlete.
+  test('a coach on the Clearance Board sees the Clinic line, the board marked', async () => {
+    createPersistentRoleSession('coach');
+    mockPath = '/coach/sports-medicine';
+    await act(async () => {
+      render(<ClusterNav cluster="clinic" />);
+    });
+    expect(screen.getByRole('navigation', { name: 'Clinic' })).toBeTruthy();
+    expect(screen.getByText('Clearance Board').getAttribute('aria-current')).toBe('page');
+    expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
+      '/coach/injuries',
+      '/coach/medical-restrictions',
+      '/coach/sparring-exposure',
+    ]);
+  });
+
+  // Lane AS-5 (app scrub CS-06, Q9 = A): the athlete's own log is not on the
+  // coach's line.
+  test('a coach\'s Sparring line names the coach pages, not the athlete\'s Sparring Log', async () => {
+    expect(COACH_CLUSTERS.sparring).not.toContain('/athlete/dashboard/sparring');
+    createPersistentRoleSession('coach');
+    mockPath = '/coach/sparring-caps';
+    await act(async () => {
+      render(<ClusterNav cluster="sparring" />);
+    });
+    expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
+      '/coach/sparring-exposure',
+      '/coach/athlete-limits',
+    ]);
+  });
+
   test('an admin is not shown a coach-only page', async () => {
     createPersistentRoleSession('admin');
     mockPath = '/coach/workout-templates';

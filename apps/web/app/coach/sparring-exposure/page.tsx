@@ -322,6 +322,7 @@ export default function CoachSparringExposurePage() {
           <p className="t-eyebrow">Sparring</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Sparring Record</h1>
           <ClusterNav cluster="sparring" />
+          <ClusterNav cluster="clinic" />
           <div className="mt-[var(--s3)]"><BackHome /></div>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
             Record what you saw in one sparring segment. The app counts and shows it. It does not score it, set a
