@@ -486,10 +486,7 @@ export function labelIsDraft(label: unknown): boolean | null {
   return hasOwnLabel(label) ? false : null;
 }
 
-/**
- * A field's own group-level label (status, sources: the content's; an in-app edit; or a coach's
- * "Looks right", which counts as an edit counts: Q-PR4-1 = A), beside any part labels.
- */
+/** A field's own group-level label, beside any part labels: a status, an in-app edit, or a coach's "Looks right" (Q-PR4-1 = A). */
 function hasOwnLabel(label: Record<string, unknown>): boolean {
   return 'status' in label || isPlainObject(label.edited) || isPlainObject(label.looks_right);
 }

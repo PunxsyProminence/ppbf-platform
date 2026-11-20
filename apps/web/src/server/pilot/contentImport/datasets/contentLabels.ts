@@ -302,7 +302,7 @@ export async function writeEditedVersionLabels(
       labels[field] = group;
     }
   }
-  // A part a coach confirmed ("Looks right") counts as an edited part counts (Q-PR4-1 = A).
+  // A part a coach confirmed counts as an edited part counts (Q-PR4-1 = A).
   const isInAppEdit = (value: unknown) => isObject(value) && (isObject(value.edited) || isObject(value.looks_right)) && !('draft' in value);
   for (const field of new Set(input.edited.filter((part) => part.part !== undefined).map((part) => part.field))) {
     const parts = input.groupParts?.[field] ?? [];

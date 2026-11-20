@@ -59,10 +59,7 @@ export interface DrillDetailProps {
   audience: 'athlete' | 'coach';
   /** Rendered in the header: e.g. the coach's lifecycle state and Promote action. */
   actions?: ReactNode;
-  /**
-   * "Looks right" (OW25-55; lane ED-UI PR4): the page's press for a drafted field ('purpose',
-   * 'scale_levels.B'), placed here. `describedBy` is the id of the line that says what the press covers.
-   */
+  /** "Looks right" (OW25-55; lane ED-UI PR4): the page's press for a drafted field, placed here; `describedBy` names the line saying what it covers. */
   looksRight?: (target: string, label: string, describedBy?: string) => ReactNode;
   /**
    * Move focus to the drill's heading when it appears. The list that opened it
