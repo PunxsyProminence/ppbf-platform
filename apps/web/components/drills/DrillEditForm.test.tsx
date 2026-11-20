@@ -3,11 +3,11 @@
  */
 
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import DrillEditForm, { DRILL_EDIT_FORM_KEYS, type DrillEditOutcome } from './DrillEditForm';
 import { cueRequiredMessage } from '@/src/lib/drillCueRule';
-import { EDITABLE_DRILL_LIBRARY_KEYS, MAX_LONG_TEXT, MAX_SHORT_TEXT } from '@/src/server/pilot/drillLibraryEdit';
+import { EDITABLE_DRILL_LIBRARY_KEYS, MAX_LONG_TEXT, MAX_SHORT_TEXT, MAX_STOP_RULE_TEXT } from '@/src/server/pilot/drillLibraryEdit';
 import type { DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
@@ -90,9 +90,8 @@ function sentBody(fetchMock: jest.Mock) {
 
 const change = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
-it('offers the keys the edit route accepts, and none it refuses; scale levels and stop rules are PR1b', () => {
-  const later = ['scale_levels', 'stop_rules'];
-  expect([...DRILL_EDIT_FORM_KEYS].sort()).toEqual(EDITABLE_DRILL_LIBRARY_KEYS.filter((key) => !later.includes(key)).sort());
+it('offers exactly the keys the edit route accepts, and none it refuses', () => {
+  expect([...DRILL_EDIT_FORM_KEYS].sort()).toEqual([...EDITABLE_DRILL_LIBRARY_KEYS].sort());
 });
 
 it('opens on the drill as it is, under "Edit <name>", with focus on its heading', () => {
@@ -101,20 +100,23 @@ it('opens on the drill as it is, under "Edit <name>", with focus on its heading'
   expect(heading).toHaveFocus();
   expect(screen.getByLabelText('What it is for')).toHaveValue('Protect the chin after the jab.');
   expect(screen.getByLabelText('Coaching cues, one per line')).toHaveValue('Hand home first');
-  expect(screen.getByLabelText('Contact')).toHaveValue('light_technical');
+  expect(within(screen.getByRole('group', { name: 'Safety' })).getByLabelText('Contact')).toHaveValue('light_technical');
   expect(screen.getByLabelText('Coach authorization')).toHaveValue('not_required');
   expect(screen.getByLabelText('Exit condition')).toHaveValue('');
   // Never on the form: the floor-test gate and the drill's identity.
   expect(screen.queryByLabelText(/provenance|discipline|content class|source/i)).not.toBeInTheDocument();
-  // Not in PR1: the scale levels and stop rules (PR1b).
-  expect(screen.queryByLabelText(/Standard \(B\)|Stop rule/)).not.toBeInTheDocument();
+  // PR1b: each scale level, named with its level, and the drill's own stop rules.
+  expect(screen.getByLabelText('Standard (B) What it demands')).toHaveValue('As designed.');
+  expect(screen.getByLabelText('Easier (A) Contact')).toHaveValue('light_technical');
+  expect(screen.getByLabelText('Stop rule 1')).toHaveValue('Stop on fatigue.');
+  expect(screen.getByLabelText('Stop rule 2: kind')).toHaveValue('technique_degradation');
 });
 
 it('sends only what changed, part by part, and hands the new version up', async () => {
   const { fetchMock, onSaved, onSaving, onFailed } = renderForm();
   change('What it is for', 'Protect the chin.');
   change('Corrections', 'Coach calls home on every return');
-  change('Contact', 'none');
+  fireEvent.change(within(screen.getByRole('group', { name: 'Safety' })).getByLabelText('Contact'), { target: { value: 'none' } });
   change('Coach authorization', 'required');
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -277,4 +279,43 @@ it('starts nothing and offers no way out while the page is still busy with the l
   expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
   expect(screen.getByLabelText('What it is for')).toBeDisabled();
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+describe('scale levels and stop rules (PR1b)', () => {
+  it('puts the drill\'s own stop rules in Safety, beside Contact', () => {
+    renderForm();
+    const safety = screen.getByRole('group', { name: 'Safety' });
+    expect(within(safety).getByLabelText('Contact')).toBeInTheDocument();
+    expect(within(safety).getByLabelText('Stop rule 1')).toBeInTheDocument();
+    expect(within(safety).getByLabelText('Stop rule 2: kind')).toBeInTheDocument();
+  });
+
+  it('sends only the changed part of a level or a rule, by its level or ordinal', async () => {
+    const { fetchMock } = renderForm();
+    change('Standard (B) Constraint', 'Mitt held high.');
+    change('Stop rule 2: kind', 'safety');
+    change('Stop rule 1', 'Stop when fatigue breaks the guard.');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(sentBody(fetchMock)).toEqual({
+      drill_id: 'drl-1',
+      scale_levels: { B: { constraint_applied: 'Mitt held high.' } },
+      stop_rules: [
+        { ordinal: 1, condition_text: 'Stop when fatigue breaks the guard.' },
+        { ordinal: 2, rule_kind: 'safety' },
+      ],
+    });
+  });
+
+  it('carries the route\'s bounds for a stop rule and a level\'s text', () => {
+    renderForm();
+    expect(screen.getByLabelText('Stop rule 1')).toHaveAttribute('maxLength', String(MAX_STOP_RULE_TEXT));
+    expect(screen.getByLabelText('Standard (B) Watch for')).toHaveAttribute('maxLength', String(MAX_LONG_TEXT));
+  });
+
+  it('offers no way to add or remove a level or a rule, as the route offers none', () => {
+    renderForm();
+    expect(screen.queryByRole('button', { name: /add|remove|delete/i })).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^Stop rule \d+$/)).toHaveLength(2);
+  });
 });
