@@ -528,6 +528,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
       : null;
 
   const rosterById = useMemo(() => new Map(roster.map((athlete) => [athlete.athlete_id, athlete])), [roster]);
+
+  // Find a person on the roster (lane AS-10, AS10-2a; app scrub OFF-06): a
+  // name, address or sign-in ID box and a role filter, in Athlete Records'
+  // own pattern. They only narrow what is shown; nothing is re-read.
+  const [rosterFind, setRosterFind] = useState('');
+  const [rosterRole, setRosterRole] = useState('all');
   // The athlete's roster name for a login row, else the login id (F-110).
   /* A person by name in this page's lines and labels, never by account id
      (UXB-12). An athlete is named from the roster; an adult by the address
@@ -1405,9 +1411,50 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   </div>
                 </div>
               ) : (
-                /* The scroller is a child of .frame-in, which sets
+                (() => {
+                  // The roles present, by the label the Role column shows ("Gym Admin"
+                  // covers both admin names), in the roster's own order.
+                  const roleOptions = Array.from(new Set(members.map((member) => roleLabel(member.role))));
+                  const needle = rosterFind.trim().toLowerCase();
+                  const shown = members.filter((member) =>
+                    (rosterRole === 'all' || roleLabel(member.role) === rosterRole)
+                    && (!needle
+                      || [personLabel(member.account_id), member.staff_display_name, member.login_email, member.account_id]
+                        .some((text) => typeof text === 'string' && text.toLowerCase().includes(needle))));
+                  const narrowed = shown.length !== members.length;
+                  return (
+                <>
+                <div className="flex flex-wrap items-end gap-[var(--s4)] p-[var(--s4)]">
+                  <div className="field">
+                    <label htmlFor="roster-find" className="t-label">
+                      Find a person
+                    </label>
+                    <input
+                      id="roster-find"
+                      type="search"
+                      value={rosterFind}
+                      onChange={(event) => setRosterFind(event.target.value)}
+                      placeholder="Name, email or sign-in ID"
+                      className="input"
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="roster-role" className="t-label">
+                      Role
+                    </label>
+                    <select id="roster-role" value={rosterRole} onChange={(event) => setRosterRole(event.target.value)} className="select">
+                      <option value="all">All roles</option>
+                      {roleOptions.map((label) => (
+                        <option key={label} value={label}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {/* The scroller is a child of .frame-in, which sets
                    overflow:hidden unlayered -- a layered overflow-x utility on
-                   the same element would never win. */
+                   the same element would never win. */}
                 <div className="overflow-x-auto">
                 <table className="ledger">
                   {/* The caption is as wide as the table, and the table scrolls
@@ -1415,7 +1462,10 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                      at the screen edge (#1482 item 5). The text stays put while
                      the table scrolls under it, and wraps to the visible width. */}
                   <caption className="text-left">
-                    <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">Everyone in this gym</span>
+                    {/* A narrowed list says so: it is not everyone in the gym. */}
+                    <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">
+                      {narrowed ? `Showing ${shown.length} of ${members.length}` : 'Everyone in this gym'}
+                    </span>
                   </caption>
                   <thead>
                     <tr>
@@ -1427,7 +1477,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     </tr>
                   </thead>
                   <tbody>
-                  {members.map((member) => {
+                  {shown.length === 0 && (
+                    <tr>
+                      <td colSpan={5}>No one on the roster matches. Clear the box or choose All roles.</td>
+                    </tr>
+                  )}
+                  {shown.map((member) => {
                     const isGuardian = member.role === 'parent';
                     const memberLinks = guardianLinksByAccount.get(member.account_id) || [];
                     const linkCount = !isGuardian ? null : guardianLinksAvailable ? memberLinks.length : null;
@@ -1827,6 +1882,9 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   </tbody>
                 </table>
                 </div>
+                </>
+                  );
+                })()
               )}
               </div>
             </div>
