@@ -202,6 +202,9 @@ describe('the TV clocks while the round clock shows a time', () => {
     // Round clock biggest: above the time of day, NOW's countdown size, and every other sized
     // line in the masthead (the day, the date, the round's own label).
     const biggest = sizeOf(roundTime(container));
+    // The step the time of day has with no round clock (text-8xl), not merely anything above the
+    // day's 80.9px: the plan, the comments and the lane row all name this size.
+    expect(biggest).toBe(px('var(--text-8xl)'));
     expect(biggest).toBeGreaterThan(sizeOf(clockPlate(container)));
     expect(biggest).toBeGreaterThan(countdownSize());
     for (const el of container.querySelectorAll('header [class*="text-"]')) {
