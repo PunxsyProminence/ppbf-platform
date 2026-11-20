@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import DrillDetail from '@/components/drills/DrillDetail';
+import DrillEditForm, { type DrillEditOutcome } from '@/components/drills/DrillEditForm';
 import DrillLineageReview from '@/components/drills/DrillLineageReview';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { fromCoachDrillDetail, type DrillDetailView } from '@/components/drills/drillDetailView';
@@ -497,6 +498,10 @@ function CoachDrillLibrary() {
   const changingLifecycleRef = useRef(false);
   // What the alert says a failed action did (ActionOutcome, above).
   const [actionOutcome, setActionOutcome] = useState<ActionOutcome>('refused');
+  // Edit (OD-2026-11-19-005, OW25-51): the reference drill whose form is open,
+  // and whether its save -- the request and the re-reads after it -- is running.
+  const [editingId, setEditingId] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
   const [focusRequest, setFocusRequest] = useState<{ referenceDrillId: string } | null>(null);
 
   // Versions and proposals (#1471): the drill whose history is open, and the
@@ -506,6 +511,10 @@ function CoachDrillLibrary() {
   const canReview = isOrganizationAdminSessionRole(pilotSession.role);
   // Reinstate is a drill edit, and the drills route's PATCH admits coaches too.
   const canReinstate = canReview || pilotSession.role === 'coach';
+  // Edit is offered to the roles PATCH /api/pilot/drill-library admits: coach
+  // and organization admin ('admin' is its legacy name). The route decides; a
+  // role still loading (null) is offered nothing.
+  const canEdit = canReview || pilotSession.role === 'coach';
   const [lineageDrillId, setLineageDrillId] = useState('');
   const [waiting, setWaiting] = useState<DrillChangeProposalListResponse['items']>([]);
   const [waitingError, setWaitingError] = useState('');
@@ -618,7 +627,7 @@ function CoachDrillLibrary() {
   // actions are disabled. Its notice, its alert, its re-read detail and its
   // focus move all describe THAT action on THAT drill, so none of them may
   // land on another drill or be mixed up with a second action.
-  const actionInFlight = promotingReferenceId !== '' || changingLifecycle || markingFloorTestedId !== '';
+  const actionInFlight = promotingReferenceId !== '' || changingLifecycle || markingFloorTestedId !== '' || editBusy;
 
   // Name search and the durable filters, applied to the list the server sent.
   const searchTerm = search.trim().toLowerCase();
@@ -648,6 +657,7 @@ function CoachDrillLibrary() {
     setPromoteNotice('');
     setRestoreCueNeededFor('');
     setRestoreCues('');
+    setEditingId('');
     setOpenReferenceId(referenceDrillId);
     setOpenReference(null);
     setOpenReferenceDetail(null);
@@ -706,6 +716,7 @@ function CoachDrillLibrary() {
     setPromoteNotice('');
     setRestoreCueNeededFor('');
     setRestoreCues('');
+    setEditingId('');
     setOpenReferenceId('');
     setOpenReference(null);
     setOpenReferenceDetail(null);
@@ -846,6 +857,26 @@ function CoachDrillLibrary() {
       promotingRef.current = false;
       setPromotingReferenceId('');
       focusLifecycleControl(referenceDrillId);
+    }
+  }
+
+  // After the Edit form's save. The server wrote the next version (or nothing):
+  // the library is read again -- a drill this gym runs now shows its newer
+  // version -- and the new version opens, read from the server, not from the
+  // form. Busy stays on through both reads, as for every other action here.
+  async function afterEditSaved(outcome: DrillEditOutcome) {
+    setEditingId('');
+    if (!outcome.changed) {
+      setEditBusy(false);
+      setPromoteNotice('Nothing changed. No new version was written.');
+      return;
+    }
+    try {
+      await loadReferenceLibrary();
+      await openReferenceDrill(outcome.drillId, openerRef.current);
+      setPromoteNotice(`Saved as version ${outcome.version}.`);
+    } finally {
+      setEditBusy(false);
     }
   }
 
@@ -1109,7 +1140,7 @@ function CoachDrillLibrary() {
         <section ref={referenceSectionRef} className="mt-[var(--s6)]">
           <h2 id="reference-library-heading" tabIndex={-1} className="t-command text-[length:var(--t-lg)]">Reference library</h2>
           <p className="t-body mt-[var(--s2)] max-w-3xl text-[color:var(--bone-300)]">
-            Seeded coaching material for planning and review. The reference source stays read-only. Open a
+            Seeded coaching material for planning and review. Open a
             drill to read all of it; promoting it from there adopts that exact version into this gym&apos;s
             operational drills below, where assignments point. Once promoted, athletes in this gym can read
             it in Learn. Promoting does not assign the drill to any athlete.
@@ -1156,30 +1187,59 @@ function CoachDrillLibrary() {
                   {openReferenceError !== REFERENCE_NOT_FOUND ? ' This is a failure to load, not a missing drill.' : ''}
                 </p>
               )}
-              {!openReferenceLoading && openReference && (
+              {!openReferenceLoading && openReference && openReferenceDetail && editingId === openReference.id && (
+                <DrillEditForm
+                  drill={openReferenceDetail}
+                  onCancel={() => setEditingId('')}
+                  onSaved={(outcome) => void afterEditSaved(outcome)}
+                  onBusyChange={setEditBusy}
+                />
+              )}
+              {!openReferenceLoading && openReference && (editingId !== openReference.id || !openReferenceDetail) && (
                 <DrillDetail
                   view={openReference}
                   audience="coach"
                   focusOnMount
                   actions={(
-                    <ReferenceActions
-                      referenceDrillId={openReference.id}
-                      name={openReference.name}
-                      state={lifecycle[openReference.id]}
-                      detail={openReferenceDetail}
-                      gymRunsDrill={drills.some((d) => d.drill_id === lifecycle[openReference.id]?.operational_drill_id && d.active !== false)}
-                      floorTested={floorTested[openReference.id]}
-                      promotingReferenceId={promotingReferenceId}
-                      changingLifecycle={changingLifecycle}
-                      markingFloorTested={markingFloorTestedId === openReference.id}
-                      busy={actionInFlight}
-                      onPromote={(id) => void promoteReference(id)}
-                      onChangeLifecycle={(id, operationalId, restoring) => void changeLifecycle(id, operationalId, restoring)}
-                      onMarkFloorTested={(id) => void markFloorTested(id)}
-                      restoreCueNeeded={restoreCueNeededFor === openReference.id}
-                      restoreCues={restoreCues}
-                      onRestoreCuesChange={setRestoreCues}
-                    />
+                    <>
+                      {/* Only the current version: the route refuses any other
+                          (DRILL_VERSION_STALE), and an older one already says it
+                          is superseded. */}
+                      {canEdit && openReferenceDetail && openReferenceDetail.superseded_at === null && (
+                        <button
+                          type="button"
+                          id={`edit-drill-${openReference.id}`}
+                          onClick={() => {
+                            setPromoteNotice('');
+                            setPromoteError('');
+                            setEditingId(openReference.id);
+                          }}
+                          disabled={actionInFlight}
+                          className="btn btn--ghost"
+                          aria-label={`Edit: ${openReference.name}`}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      <ReferenceActions
+                        referenceDrillId={openReference.id}
+                        name={openReference.name}
+                        state={lifecycle[openReference.id]}
+                        detail={openReferenceDetail}
+                        gymRunsDrill={drills.some((d) => d.drill_id === lifecycle[openReference.id]?.operational_drill_id && d.active !== false)}
+                        floorTested={floorTested[openReference.id]}
+                        promotingReferenceId={promotingReferenceId}
+                        changingLifecycle={changingLifecycle}
+                        markingFloorTested={markingFloorTestedId === openReference.id}
+                        busy={actionInFlight}
+                        onPromote={(id) => void promoteReference(id)}
+                        onChangeLifecycle={(id, operationalId, restoring) => void changeLifecycle(id, operationalId, restoring)}
+                        onMarkFloorTested={(id) => void markFloorTested(id)}
+                        restoreCueNeeded={restoreCueNeededFor === openReference.id}
+                        restoreCues={restoreCues}
+                        onRestoreCuesChange={setRestoreCues}
+                      />
+                    </>
                   )}
                 />
               )}
