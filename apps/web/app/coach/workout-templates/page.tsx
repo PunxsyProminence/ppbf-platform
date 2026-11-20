@@ -8,6 +8,7 @@ import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
 import { orNotWritten } from '@/src/lib/drillPresentation';
 import MakeSessionScript from './MakeSessionScript';
+import TemplateEditForm, { type TemplateEditOutcome } from './TemplateEditForm';
 import type {
   WorkoutTemplateItemWithDrillHead,
   WorkoutTemplateRow,
@@ -721,6 +722,14 @@ function CoachWorkoutTemplates() {
   // including a second open of the same one after an error.
   const [focusDetail, setFocusDetail] = useState(0);
   const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  // Back to Edit when the form closes with no new version; centred, clear of the sticky bar.
+  const [focusEdit, setFocusEdit] = useState(0);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (focusEdit === 0) return;
+    editButtonRef.current?.focus({ preventScroll: true });
+    editButtonRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [focusEdit]);
 
   const [openTemplateId, setOpenTemplateId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TemplateDetail | null>(null);
@@ -732,6 +741,12 @@ function CoachWorkoutTemplates() {
   const [issuing, setIssuing] = useState(false);
   // The same, while a session script is being made from the open template.
   const [making, setMaking] = useState(false);
+  // Edit (OD-2026-11-19-005; ED-UI PR2): the gate admits the roles the PATCH admits; the route decides.
+  const [editingId, setEditingId] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editNotice, setEditNotice] = useState('');
+  // After a stale or unknown save, Cancel opens the template again from the server.
+  const rereadOnCancel = useRef(false);
   // The request key of every issue that has no settled answer yet, by template
   // and athlete. Held here, above the issue control, which comes and goes.
   const requestKeys = useRef<RequestKeys>(new Map());
@@ -777,6 +792,8 @@ function CoachWorkoutTemplates() {
     // template's items -- or its failure -- never render under another
     // template's name while the new read is in flight.
     setOpenTemplateId(templateId);
+    setEditNotice('');
+    setEditingId('');
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
@@ -813,6 +830,48 @@ function CoachWorkoutTemplates() {
       if (latest()) setDetailLoading(false);
     }
   }, []);
+
+  // The current version of a template: the listed row of its lineage ("Reload it and edit the current version", the
+  // route's 409). After a 409 or an unknown outcome the list was just read again, and a replaced version is not in it.
+  const currentVersionId = (template: Template) =>
+    templates.find((row) => row.lineage_id === template.lineage_id)?.template_id ?? template.template_id;
+
+  // After a save the list is read again and the new version opens from the server.
+  async function afterEditSaved(outcome: TemplateEditOutcome) {
+    const reread = rereadOnCancel.current;
+    rereadOnCancel.current = false;
+    if (!outcome.changed) {
+      setEditingId('');
+      setEditBusy(false);
+      // After a 409 or an unknown outcome nothing is known to be unwritten: no notice; the current version opens.
+      if (reread && detail) {
+        void openTemplate(currentVersionId(detail.template));
+        return;
+      }
+      setEditNotice('Nothing changed. No new version was written.');
+      setFocusEdit((count) => count + 1);
+      return;
+    }
+    try { // The form stays, locked, until openTemplate closes it: the old version never shows meanwhile.
+      await load();
+      await openTemplate(outcome.templateId);
+      setEditNotice(`Saved as version ${outcome.version}.`);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  // After a 409 or an unknown outcome the list is read again; the form keeps what was typed.
+  async function afterEditFailed(status: number | null) {
+    try {
+      if (status === null || status >= 500 || status === 409) {
+        rereadOnCancel.current = true;
+        await load();
+      }
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   // A day on Class plans opens its template here: /coach/workout-templates?template=<id>.
   // Read once on arrival, from the address (client only); without the
@@ -888,8 +947,42 @@ function CoachWorkoutTemplates() {
               </p>
             )}
 
-            {!detailLoading && !detailError && detail && (
+            {/* On the kiosk floor, as the Issue control is (a utility cannot beat .t-body's size). */}
+            {editNotice && <div data-surface="kiosk"><p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p></div>}
+
+            {!detailLoading && !detailError && detail && editingId === detail.template.template_id && (
+              <div className="mt-[var(--s4)]">
+                <TemplateEditForm
+                  key={detail.template.template_id}
+                  template={detail.template}
+                  items={detail.items}
+                  itemNames={detail.items.map((item, index) => `${index + 1}. ${itemName(item)}`)}
+                  onCancel={() => {
+                    setEditingId('');
+                    if (rereadOnCancel.current) void openTemplate(currentVersionId(detail.template));
+                    else setFocusEdit((count) => count + 1);
+                    rereadOnCancel.current = false;
+                  }}
+                  onSaved={(outcome) => void afterEditSaved(outcome)}
+                  onSaving={() => setEditBusy(true)}
+                  onFailed={(status) => void afterEditFailed(status)}
+                  busy={editBusy}
+                />
+              </div>
+            )}
+
+            {!detailLoading && !detailError && detail && editingId !== detail.template.template_id && (
               <>
+                {/* Only the current version: the route refuses any other (TEMPLATE_VERSION_STALE). */}
+                {detail.template.superseded_at === null && (
+                  <div data-surface="kiosk" className="mt-[var(--s3)]">
+                    <button ref={editButtonRef} type="button" disabled={issuing || making || editBusy}
+                      onClick={() => { setEditNotice(''); setEditingId(detail.template.template_id); }}
+                      className="btn btn--ghost" aria-label={`Edit: ${detail.template.name}`}>
+                      Edit
+                    </button>
+                  </div>
+                )}
                 {(detail.template.coach_notes ?? '').trim() !== '' && (
                   <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
                     <p className="t-label">Coach notes</p>
@@ -968,7 +1061,12 @@ function CoachWorkoutTemplates() {
                     </li>
                   ))}
                 </ol>
+              </>
+            )}
 
+            {/* Hidden, not unmounted, while editing: an issue or plan answer survives Cancel. */}
+            {!detailLoading && !detailError && detail && (
+              <div hidden={editingId === detail.template.template_id}>
                 {/* Opening another template unmounts this whole block while
                     the new one loads (openTemplate clears `detail`), so the
                     control always starts clean: no athlete, no confirm step,
@@ -1000,7 +1098,7 @@ function CoachWorkoutTemplates() {
                     onBusyChange={setMaking}
                   />
                 )}
-              </>
+              </div>
             )}
           </section>
   );
@@ -1108,7 +1206,7 @@ function CoachWorkoutTemplates() {
                     // for the template already showing with its issue control (a
                     // stray tap would wipe the result the coach is reading). A
                     // template with no steps has no control, and can be re-read.
-                    disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
+                    disabled={issuing || making || editingId !== '' || editBusy || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
                   >
                     {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
                   </button>

@@ -611,13 +611,21 @@ export default function WallDisplay() {
   // wall keeps its approved look.
   const ready = paired === true && live === null && health === 'fresh';
   const face = roundTimer && roundReading ? roundPanelText(roundReading, roundTimer.view.round_seconds) : ready ? WALL_READY_FACE : null;
+  // THE TV CLOCKS (U2-6d; Jason, OD-2026-11-19-009: "A: round clock biggest; time of day small;
+  // block countdown hidden in the round"). While the round clock shows a time -- a set at Ready, a
+  // round, rest, paused, or the waiting board's READY -- the time of day drops to the date's size
+  // and NOW's scheduled countdown is not drawn (the waiting board has no NOW, and a board miss
+  // that kept a timer shows the standing screen, also without one). The round time is always
+  // text-8xl (RoundPanel). "Rounds done", "Rounds stopped" (no time) and no round clock leave the
+  // wall as it was.
+  const roundLeads = face !== null && face.time !== '';
 
   return (
     <div className="wall-board ge-wallboard ge-screenframe flex h-screen w-screen flex-col overflow-hidden" style={fitStyle}>
-      <Masthead now={now} zone={zone} round={face ? <RoundPanel label={face.label} time={face.time} /> : null} />
+      <Masthead now={now} zone={zone} round={face ? <RoundPanel label={face.label} time={face.time} /> : null} roundLeads={roundLeads} />
 
       {showLive ? (
-        <LiveBoard board={board} zone={zone} daily={daily} live={liveShown} now={now} />
+        <LiveBoard board={board} zone={zone} daily={daily} live={liveShown} now={now} roundLeads={roundLeads} />
       ) : (
         <StandingBoard health={health} />
       )}
@@ -635,17 +643,24 @@ export default function WallDisplay() {
  * The round clock, big enough for the back of the room. Words, not colours, carry the state. It
  * sits in the masthead, between the date and the wall clock, which the masthead is already tall
  * enough to hold: the board below keeps every row it had (floorDensity is sized for that height).
+ *
+ * Its time is the wall's biggest readout (the TV clocks ruling, U2-6d): text-8xl, the step the time
+ * of day had before, with the words BESIDE it. Under words that wrap to two lines -- and the bezel's
+ * share of the masthead's squeeze wraps them -- a time that size made the bezel taller than the
+ * masthead's row (measured at 1920x1080 in rest: 325px against 281, and the floor list showed 7 of
+ * 24 names where it had shown 14). Beside it, words of up to three lines stay inside the time's
+ * own height.
  */
 function RoundPanel({ label, time }: { label: string; time: string }) {
   return (
-    <section aria-label="Round clock" className="wall-round flex min-w-0 flex-col items-center">
-      <p className="wall-round__label text-[length:var(--t-3xl)] font-black text-[color:var(--bone-100)]">{label}</p>
-      {time && <p className="wall-round__time font-mono tabular-nums uppercase text-[length:var(--t-5xl)] font-black text-[color:var(--bone-100)]">{time}</p>}
+    <section aria-label="Round clock" className="wall-round flex min-w-0 flex-row items-center gap-[var(--s4)]">
+      <p className="wall-round__label min-w-0 text-[length:var(--t-3xl)] font-black text-[color:var(--bone-100)]">{label}</p>
+      {time && <p className="wall-round__time shrink-0 font-mono tabular-nums uppercase text-8xl font-black text-[color:var(--bone-100)]">{time}</p>}
     </section>
   );
 }
 
-/** The round clock on a paired TV with nothing sent: Jason's words in the ruling, READY under them. */
+/** The round clock on a paired TV with nothing sent: Jason's words in the ruling, READY beside them. */
 export const WALL_READY_FACE = { label: 'Waiting for coach', time: 'Ready' } as const;
 
 /* ------------------------------------------------------------- pair box --- */
@@ -870,7 +885,7 @@ function MottoPlate() {
   );
 }
 
-function Masthead({ now, zone, round }: { now: number | null; zone?: string; round?: ReactNode }) {
+function Masthead({ now, zone, round, roundLeads }: { now: number | null; zone?: string; round?: ReactNode; roundLeads: boolean }) {
   const gym = useOrganizationProfile();
   const stamp = now === null ? null : new Date(now);
   return (
@@ -887,8 +902,9 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
         {round}
         {/* aria-hidden: a clock that announces itself every minute is hostile to
             anyone running a reader near this screen, and the time is not the
-            reason a person would be listening to a wall. */}
-        <p className="wall-clock ge-enamel ge-enamel--plate text-8xl" aria-hidden="true">
+            reason a person would be listening to a wall. Small, the date's size, while the round
+            clock shows a time (the TV clocks ruling). */}
+        <p className={`wall-clock ge-enamel ge-enamel--plate ${roundLeads ? 'text-4xl' : 'text-8xl'}`} aria-hidden="true">
           {stamp ? formatIn(stamp, zone, { hour: 'numeric', minute: '2-digit' }) : HELD}
         </p>
       </div>
@@ -900,8 +916,8 @@ function Masthead({ now, zone, round }: { now: number | null; zone?: string; rou
 
 type ShownSession = WallLiveSession & { readAt: number };
 
-function LiveBoard(props: { board: WallBoard; zone?: string; daily: DailySaying | null; live: ShownSession | null; now: number | null }) {
-  const { board, zone, daily, live, now } = props;
+function LiveBoard(props: { board: WallBoard; zone?: string; daily: DailySaying | null; live: ShownSession | null; now: number | null; roundLeads: boolean }) {
+  const { board, zone, daily, live, now, roundLeads } = props;
   return (
     <>
       {/* The golden section, not a half: 1.618 to 1. As fractions rather than
@@ -914,7 +930,7 @@ function LiveBoard(props: { board: WallBoard; zone?: string; daily: DailySaying 
       <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.618fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-[var(--s6)] px-[var(--s7)] py-[var(--s4)]">
         {live ? (
           <>
-            <SessionNow live={live} now={now} />
+            <SessionNow live={live} now={now} roundLeads={roundLeads} />
             <div className="flex min-h-0 flex-col gap-[var(--s5)]">
               <SessionNext live={live} />
               <OnTheFloor board={board} compact />
@@ -1116,8 +1132,11 @@ function KindMark({ kind }: { kind: string }) {
   );
 }
 
-/** NOW: the block the coach is on, its drill, plan time left, PAUSED; and the strip of blocks. */
-function SessionNow({ live, now }: { live: ShownSession; now: number | null }) {
+/**
+ * NOW: the block the coach is on, its drill, plan time left, PAUSED; and the strip of blocks. The
+ * plan time left is not drawn while the round clock shows a time (the TV clocks ruling).
+ */
+function SessionNow({ live, now, roundLeads }: { live: ShownSession; now: number | null; roundLeads: boolean }) {
   const current = live.blocks.find((block) => block.block_id === live.current_block_id) ?? null;
   const elapsed = now === null || live.is_paused ? 0 : Math.max(0, Math.floor((now - live.readAt) / 1000));
   const left = live.scheduled_seconds_left === null ? null : Math.max(0, live.scheduled_seconds_left - elapsed);
@@ -1135,7 +1154,7 @@ function SessionNow({ live, now }: { live: ShownSession; now: number | null }) {
         <div className="wall-now min-h-0">
           <div className="wall-now-row">
             <KindMark kind={current.block_kind} />
-            {left !== null && (
+            {left !== null && !roundLeads && (
               <p className="wall-now-left">
                 <span className="wall-now-time">{minutesClock(left)}</span>
                 <span className="wall-now-unit">scheduled</span>
