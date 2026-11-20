@@ -161,6 +161,8 @@ test('a pain report the coach home cannot draw marks the pain feed failed, never
   expect(floor().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
   expect(floor().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
   expect(floor().getByText('Pain reports')).toBeTruthy();
+  // The floor says it in the panel's own failed-read words.
+  expect(floor().getByText(/Unable to load athlete pain reports/)).toBeTruthy();
   expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
 });
 
