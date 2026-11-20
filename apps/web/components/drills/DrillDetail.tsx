@@ -11,6 +11,8 @@ import {
 } from '@/src/lib/drillPresentation';
 
 import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
+import type { DrillMarkedField } from '@/src/server/pilot/drillLibraryV3';
+import { AI_DRAFT_MARK, DRAFT_NOT_CHECKED } from '@/src/lib/sessionScriptWords';
 
 import type { DrillDetailView, DrillStopRuleView } from './drillDetailView';
 
@@ -101,52 +103,68 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   // Lane NW-b (PK-197 A): the frozen Backbone's two fields, shown as written or as not written.
   const exitCondition = listItemsOrNotWritten(view.exitCondition);
   const correctionPath = listItemsOrNotWritten(view.correctionPath);
+  // THE STAFF AI-DRAFT MARK (OW25-57, OD-2026-11-19-012: coaches and admins only; lane ED-UI PR3).
+  // Beside each drafted field; a labelled version's unchecked field says so; a version with no
+  // label row says so once, under the header (Q4 = A). Never on an athlete view (coach is null there).
+  const drafts = audience === 'coach' ? view.coach?.fieldDrafts ?? null : null;
+  const labelled = drafts?.labelled === true;
+  const mark = (state: boolean | null | undefined) => (labelled ? <DraftMark state={state} /> : null);
+  const field = (key: DrillMarkedField) => mark(drafts?.fields[key]);
+  const equipmentKey: DrillMarkedField = view.equipment.trim() ? 'equipment_needed' : 'standard_setup';
 
   return (
     <article aria-labelledby={headingId} className="mat-leather--raised space-y-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
       <header className="space-y-[var(--s2)]">
         <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
-          <h2 id={headingId} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">{view.name}</h2>
+          <div className="flex flex-wrap items-baseline gap-[var(--s2)]">
+            <h2 id={headingId} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">{view.name}</h2>
+            {field('name')}
+          </div>
           {view.coach && <span className="plaque"><span className={KIOSK_TEXT}>{view.coach.difficulty}</span></span>}
+          {field('difficulty')}
         </div>
         {view.coach && (
-          <p className="t-label">{view.coach.discipline} · {view.coach.category}</p>
+          <p className="t-label">{view.coach.discipline}{field('discipline')} · {view.coach.category}{field('category')}</p>
         )}
         {/* Where the content came from, and whether it is current, sits beside
             the action it informs -- not behind an expander below it. */}
         {coachStatus && <p className={BODY}>{coachStatus}</p>}
         {actions && <div className="flex flex-wrap items-center gap-[var(--s3)]">{actions}</div>}
       </header>
+      {/* Under the header (Q4 = A), on the card's own ground. */}
+      {drafts && !labelled && <p className={BODY}>({DRAFT_NOT_CHECKED})</p>}
 
       {/* SAFETY -- first and always open. */}
       <section aria-label="Safety" className={`${SECTION} rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]`}>
         <h3 className="t-label">Safety</h3>
         <p className={BODY}>
           <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Contact:</span> {humanizeContactLevel(view.contactLevel)}
+          {field('contact_level')}
         </p>
         <p className={BODY}>
           <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Coach authorization:</span>{' '}
           {view.requiresCoachAuthorization
             ? 'Required. Only run this drill with a coach who has approved it.'
             : 'Not required.'}
+          {field('requires_coach_authorization')}
         </p>
         {ownStops.length === 0 && everyDrillStops.length === 0 && (
           <p className={BODY}>No stop rules are recorded for this drill.</p>
         )}
         {ownStops.length > 0 && (
-          <StopRuleList heading="Stop rules" rules={ownStops} />
+          <StopRuleList heading="Stop rules" rules={ownStops} mark={field('stop_rules')} />
         )}
         {everyDrillStops.length > 0 && (
           <StopRuleList heading="Stop rules for every drill" rules={everyDrillStops} />
         )}
         {readiness.length > 0 && (
-          <StopRuleList heading="Before contact or maximal effort" rules={readiness} />
+          <StopRuleList heading="Before contact or maximal effort" rules={readiness} mark={readiness.some((rule) => rule.origin === 'drill') ? field('stop_rules') : null} />
         )}
       </section>
 
       {view.purpose && (
         <section className={SECTION}>
-          <h3 className="t-label">What it is for</h3>
+          <Heading mark={field('purpose')}>What it is for</Heading>
           <p className={BODY}>{view.purpose}</p>
         </section>
       )}
@@ -155,20 +173,20 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
           of the corpus the "setup" column holds only the equipment word. */}
       {setup && (
         <section className={SECTION}>
-          <h3 className="t-label">Setup</h3>
+          <Heading mark={field('standard_setup')}>Setup</Heading>
           <p className={BODY}>{setup}</p>
         </section>
       )}
       {equipment && (
         <section className={SECTION}>
-          <h3 className="t-label">Equipment</h3>
+          <Heading mark={field(equipmentKey)}>Equipment</Heading>
           <p className={BODY}>{equipment}</p>
         </section>
       )}
 
       {steps.length > 0 && (
         <section className={SECTION}>
-          <h3 className="t-label">How it runs</h3>
+          <Heading mark={field('execution')}>How it runs</Heading>
           {steps.length > 1 ? (
             <ol className={`${BODY} list-decimal space-y-[var(--s2)] pl-[var(--s5)]`}>
               {steps.map((step, index) => (
@@ -182,25 +200,25 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
       )}
 
       <section className={SECTION}>
-        <h3 className="t-label">What good looks like</h3>
+        <Heading mark={field('what_good_looks_like')}>What good looks like</Heading>
         <ul className={LIST}>
           {good.map((item, index) => <li key={`${view.id}-good-${index}`}>{item}</li>)}
         </ul>
       </section>
 
       <section className={SECTION}>
-        <h3 className="t-label">What to avoid</h3>
+        <Heading mark={field('what_bad_looks_like')}>What to avoid</Heading>
         <ul className={LIST}>
           {bad.map((item, index) => <li key={`${view.id}-bad-${index}`}>{item}</li>)}
         </ul>
-        <p className="t-label text-[color:var(--bone-300)]">Common errors</p>
+        <p className="t-label text-[color:var(--bone-300)]">Common errors{field('common_errors')}</p>
         <ul className={LIST}>
           {errors.map((item, index) => <li key={`${view.id}-error-${index}`}>{item}</li>)}
         </ul>
       </section>
 
       <section className={SECTION}>
-        <h3 className="t-label">Exit condition</h3>
+        <Heading mark={field('exit_condition')}>Exit condition</Heading>
         <ul className={LIST}>
           {exitCondition.map((item, index) => <li key={`${view.id}-exit-${index}`}>{item}</li>)}
         </ul>
@@ -208,7 +226,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
 
       {view.cues.length > 0 && (
         <section className={SECTION}>
-          <h3 className="t-label">Coaching cues</h3>
+          <Heading mark={field('cues')}>Coaching cues</Heading>
           <ul className="flex flex-wrap gap-[var(--s2)]">
             {view.cues.map((cue) => (
               <li
@@ -224,11 +242,11 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
 
       {/* LEVEL 3: corrections, one expander deep; an unwritten field says so. */}
       <details className={EXPANDER}>
-        <summary className={EXPANDER_SUMMARY}>Corrections</summary>
+        <summary className={EXPANDER_SUMMARY}>Corrections{field('corrections')}</summary>
         <ul className={`${LIST} mt-[var(--s2)]`}>
           {corrections.map((item, index) => <li key={`${view.id}-correction-${index}`}>{item}</li>)}
         </ul>
-        <p className="t-label mt-[var(--s2)] text-[color:var(--bone-300)]">Correction path</p>
+        <p className="t-label mt-[var(--s2)] text-[color:var(--bone-300)]">Correction path{field('correction_path')}</p>
         <ul className={LIST}>
           {correctionPath.map((item, index) => <li key={`${view.id}-correction-path-${index}`}>{item}</li>)}
         </ul>
@@ -257,6 +275,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
                   {audience === 'coach' && level.authoringState && level.authoringState !== 'authored'
                     ? ' · draft, not floor-validated'
                     : ''}
+                  {mark(drafts?.scaleLevels[level.level])}
                 </summary>
                 <div className="mt-[var(--s2)] space-y-[var(--s2)]">
                   {level.demand && <p className={BODY}>{level.demand}</p>}
@@ -277,15 +296,34 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
         </section>
       )}
 
-      {view.coach && <CoachContext view={view} />}
+      {view.coach && <CoachContext view={view} field={field} />}
     </article>
   );
 }
 
-function StopRuleList({ heading, rules }: { heading: string; rules: DrillStopRuleView[] }) {
+/** A section heading, with the staff AI-draft mark beside it (not inside: the heading keeps its name). */
+function Heading({ children, mark }: { children: ReactNode; mark: ReactNode }) {
+  if (!mark) return <h3 className="t-label">{children}</h3>;
+  return (
+    <div className="flex flex-wrap items-baseline">
+      <h3 className="t-label">{children}</h3>
+      {mark}
+    </div>
+  );
+}
+
+/** The 6e mark and words (sessionScriptWords.ts), beside one field: a draft, or not checked; nothing when not a draft. */
+function DraftMark({ state }: { state: boolean | null | undefined }) {
+  if (state === false) return null;
+  if (state === true) return <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>;
+  // Sentence case and body weight, as 6e shows it; not .t-muted, which no card rule darkens on the parchment card.
+  return <span className="ml-[var(--s2)] font-normal normal-case tracking-normal text-[color:var(--bone-300)] in-[.ge-drillcase]:text-[color:inherit]">({DRAFT_NOT_CHECKED})</span>;
+}
+
+function StopRuleList({ heading, rules, mark = null }: { heading: string; rules: DrillStopRuleView[]; mark?: ReactNode }) {
   return (
     <div className="space-y-[var(--s1)]">
-      <p className={`text-[length:var(--t-sm)] ${KIOSK_TEXT} font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]`}>{heading}</p>
+      <p className={`text-[length:var(--t-sm)] ${KIOSK_TEXT} font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]`}>{heading}{mark}</p>
       <ol className={`${BODY} list-decimal space-y-[var(--s1)] pl-[var(--s5)]`}>
         {/* Keyed by origin as well: the readiness list can hold a drill rule
             and a stored-once rule at the same ordinal. */}
@@ -312,7 +350,7 @@ function referenceStatus(coach: NonNullable<DrillDetailView['coach']>): string {
 }
 
 /** Coach-only: planning context, lifecycle, version and provenance. Never rendered for an athlete. */
-function CoachContext({ view }: { view: DrillDetailView }) {
+function CoachContext({ view, field }: { view: DrillDetailView; field: (key: DrillMarkedField) => ReactNode }) {
   const coach = view.coach;
   if (!coach) return null;
   const transfer = listItemsOrNotWritten(coach.transfer);
@@ -326,9 +364,10 @@ function CoachContext({ view }: { view: DrillDetailView }) {
           {showTarget && (
             <p className={BODY}>
               <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Target behaviour:</span> {coach.targetBehavior}
+              {field('target_behavior')}
             </p>
           )}
-          <p className="t-label text-[color:var(--bone-300)]">Transfer</p>
+          <p className="t-label text-[color:var(--bone-300)]">Transfer{field('transfer')}</p>
           <ul className={LIST}>
             {transfer.map((item, index) => <li key={`${view.id}-transfer-${index}`}>{item}</li>)}
           </ul>

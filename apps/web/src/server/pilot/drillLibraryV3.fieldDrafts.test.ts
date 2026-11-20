@@ -81,6 +81,7 @@ const DRILL_ROW = {
 };
 
 let labelsRow: { field_labels: unknown } | null;
+let scaleRows: Array<{ scale_level: string }> = [];
 let labelsError: (Error & { code?: string }) | null;
 const sqlSeen: string[] = [];
 
@@ -90,6 +91,7 @@ function answer(text: string): unknown[] {
     if (labelsError) throw labelsError;
     return labelsRow ? [labelsRow] : [];
   }
+  if (text.includes('from pilot.drill_scale_levels')) return scaleRows;
   if (text.includes('from pilot.drill_library')) return [DRILL_ROW];
   if (/from pilot\.drills\s/.test(text)) {
     return [{ organization_id: 'org-1', drill_id: 'op-1', reference_drill_id: 'ref-1', active: true }];
@@ -107,6 +109,7 @@ beforeEach(() => {
     },
   };
   labelsError = null;
+  scaleRows = [];
   sqlSeen.length = 0;
   mockQuery.mockImplementation(async (text: string) => answer(text));
   mockQueryOne.mockImplementation(async (text: string) => answer(text)[0] ?? null);
@@ -118,7 +121,7 @@ afterEach(() => {
 
 describe('drillFieldDrafts: which of the four fields still carry an AI-draft label', () => {
   test('a label with a draft key is a draft; an in-app edit is not; a field with no label is not checked', () => {
-    expect(drillFieldDrafts({ cues: AI_DRAFT, what_good_looks_like: IN_APP_EDIT })).toEqual({
+    expect(drillFieldDrafts({ cues: AI_DRAFT, what_good_looks_like: IN_APP_EDIT })).toMatchObject({
       cues: true,
       what_good_looks_like: false,
       what_bad_looks_like: null,
@@ -134,42 +137,76 @@ describe('drillFieldDrafts: which of the four fields still carry an AI-draft lab
   // "A version written without labels has no row here" (content_labels migration): most seeded
   // drills, drafts among them, have no row. Nothing recorded is unknown, never "not a draft".
   test('no labels recorded for the version: every field is "not checked" (null), never false', () => {
-    expect(drillFieldDrafts(null)).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
-    expect(drillFieldDrafts(undefined)).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
+    expect(drillFieldDrafts(null)).toMatchObject({ ...{ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null }, labelled: false });
+    expect(drillFieldDrafts(undefined)).toMatchObject({ ...{ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null }, labelled: false });
   });
 
   test('a shape the reader does not know answers "not checked" (null), never false', () => {
-    expect(drillFieldDrafts('cues')).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
+    expect(drillFieldDrafts('cues')).toMatchObject({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
     expect(drillFieldDrafts({ cues: 'draft' }).cues).toBeNull();
     expect(drillFieldDrafts({ cues: ['draft'] }).cues).toBeNull();
+  });
+});
+
+// Lane ED-UI PR3 (plan item 4; Q2 = A, Q4 = A): every field the drill screen shows, and each scale level.
+describe('drillFieldDrafts: every shown field and each scale level (lane ED-UI PR3)', () => {
+  test('reads every field the drill screen shows, by its label key, with the 6e rule', () => {
+    const drafts = drillFieldDrafts({ name: AI_DRAFT, difficulty: IN_APP_EDIT, purpose: AI_DRAFT, transfer: IN_APP_EDIT });
+    expect(drafts).toMatchObject({ name: true, difficulty: false, purpose: true, transfer: false, category: null, labelled: true });
+  });
+
+  test('the drill\'s own stop-rule list is one unit: a drafted kind makes the list a draft', () => {
+    expect(drillFieldDrafts({ stop_rules: IN_APP_EDIT }).stop_rules).toBe(false);
+    expect(drillFieldDrafts({ stop_rules: IN_APP_EDIT, 'stop_rules.rule_kind': AI_DRAFT }).stop_rules).toBe(true);
+    expect(drillFieldDrafts({ 'stop_rules.rule_kind': AI_DRAFT }).stop_rules).toBe(true);
+  });
+
+  test('a scale level: its own draft or edit wins; a sourcing-only label speaks with its drafted group', () => {
+    const SOURCED = { status: 'INFERRED', sources: ['DOC-027'] };
+    const labels = { scale_levels: { ...AI_DRAFT, A: SOURCED, B: IN_APP_EDIT, C: { ...SOURCED, draft: 'AI draft' } } };
+    expect(drillFieldDrafts(labels, ['A', 'B', 'C', 'D']).scale_levels).toEqual({ A: true, B: false, C: true, D: true });
+    // A group with only an edited part and no group label: the untouched levels are not checked.
+    expect(drillFieldDrafts({ scale_levels: { A: IN_APP_EDIT } }, ['A', 'B']).scale_levels).toEqual({ A: false, B: null });
+    // A group labelled and not a draft: an untouched level is not one either.
+    expect(drillFieldDrafts({ scale_levels: { ...IN_APP_EDIT, A: SOURCED } }, ['A']).scale_levels).toEqual({ A: false });
+    expect(drillFieldDrafts(null, ['A']).scale_levels).toEqual({ A: null });
   });
 });
 
 describe('getDrillWithDetail carries field_drafts for the version it read', () => {
   test('reads the labels of this version (kind drill, its lineage and version) and answers per field', async () => {
     const detail = await getDrillWithDetail('org-1', 'ref-1');
-    expect(detail?.field_drafts).toEqual({
+    expect(detail?.field_drafts).toMatchObject({
       cues: true,
       what_good_looks_like: true,
       what_bad_looks_like: false,
       corrections: null,
+      labelled: true,
     });
     const labelsCall = mockQueryOne.mock.calls.find(([text]) => String(text).includes('pilot.content_record_labels'));
     expect(String(labelsCall?.[0])).toContain("target_kind = 'drill'");
     expect(labelsCall?.[1]).toEqual(['org-1', 'lin-1', 3]);
   });
 
+  test('each of this version\'s own scale levels gets its own state (lane ED-UI PR3)', async () => {
+    scaleRows = [{ scale_level: 'A' }, { scale_level: 'B' }];
+    labelsRow = { field_labels: { scale_levels: { ...AI_DRAFT, A: IN_APP_EDIT } } };
+    const detail = await getDrillWithDetail('org-1', 'ref-1');
+    expect(detail?.field_drafts?.scale_levels).toEqual({ A: false, B: true });
+  });
+
   test('a version with no label row: every field "not checked", not "not a draft"', async () => {
     labelsRow = null;
     const detail = await getDrillWithDetail('org-1', 'ref-1');
-    expect(detail?.field_drafts).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
+    expect(detail?.field_drafts).toMatchObject({ ...{ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null }, labelled: false });
   });
 
   test('before the labels table exists (42P01): every field is "not checked", and nothing is logged', async () => {
     labelsError = Object.assign(new Error('relation "pilot.content_record_labels" does not exist'), { code: '42P01' });
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     const detail = await getDrillWithDetail('org-1', 'ref-1');
-    expect(detail?.field_drafts).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
+    // No table: no version has a row (Q4 = A: one "not checked" line under the header).
+    expect(detail?.field_drafts).toMatchObject({ ...{ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null }, labelled: false });
     expect(detail?.name).toBe('Catch and return');
     expect(log).not.toHaveBeenCalled();
     log.mockRestore();
@@ -179,7 +216,7 @@ describe('getDrillWithDetail carries field_drafts for the version it read', () =
     labelsError = Object.assign(new Error('connection reset'), { code: '08006' });
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     const detail = await getDrillWithDetail('org-1', 'ref-1');
-    expect(detail?.field_drafts).toEqual({ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null });
+    expect(detail?.field_drafts).toMatchObject({ ...{ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null }, labelled: null });
     expect(detail?.what_good_looks_like).toBe('Glove meets the punch.');
     expect(log).toHaveBeenCalledWith({ event: 'drill-field-drafts-read-failed', drill_id: 'ref-1', code: '08006' });
     log.mockRestore();
@@ -219,16 +256,18 @@ describe('athletes and parents never receive field_drafts', () => {
     for (const role of ['coach', 'organization_admin'] as const) {
       const { status, body } = await readDetail(role);
       expect(status).toBe(200);
-      expect(body.drill?.field_drafts).toEqual({
+      expect(body.drill?.field_drafts).toMatchObject({
         cues: true,
         what_good_looks_like: true,
         what_bad_looks_like: false,
         corrections: null,
+        labelled: true,
       });
     }
   });
 
-  test.each(['athlete', 'parent'] as const)('a %s reading the same drill gets no field_drafts anywhere in the response', async (role) => {
+  // Lane ED-UI PR3: every other reader the route admits, not only athletes and parents.
+  test.each(['athlete', 'parent', 'volunteer', 'staff', 'platform_owner'] as const)('a %s reading the same drill gets no field_drafts anywhere in the response', async (role) => {
     const { status, text, body } = await readDetail(role);
     expect(status).toBe(200);
     expect(body.drill).toBeDefined();
