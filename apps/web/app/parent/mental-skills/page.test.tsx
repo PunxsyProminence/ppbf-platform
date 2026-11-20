@@ -209,6 +209,23 @@ describe('the family picker (FAM-11) and the one back link (FAM-18)', () => {
     expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath-a');
   });
 
+  test('a child with no name on file is "their" mid-sentence and "Your child" on the button, never an id', async () => {
+    const saved = KIDS;
+    KIDS = [{ athlete_id: 'ath-a', full_name: 'Avery' }, { athlete_id: 'ath-b' } as (typeof KIDS)[number]];
+    try {
+      await renderPage();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Your child' }));
+      });
+      expect(screen.getByRole('region', { name: 'Mental skills for Your child' })).toBeTruthy();
+      expect(document.body.textContent).not.toContain("Your child's");
+      const shown = (document.body.textContent ?? '').replace('cue of ath-b', '').replace('mental goal of ath-b', '');
+      expect(shown).not.toContain('ath-b');
+    } finally {
+      KIDS = saved;
+    }
+  });
+
   test('the back link is the shared one', async () => {
     await renderPage();
     expect(screen.queryByText('Back to the Parent Hub')).toBeNull();

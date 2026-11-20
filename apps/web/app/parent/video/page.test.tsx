@@ -231,3 +231,38 @@ describe('the family picker (FAM-11) and the one back link (FAM-18)', () => {
     expect(screen.getByRole('link', { name: 'Back to your home page' }).getAttribute('href')).toBe('/dashboard');
   });
 });
+
+/* Between the pick and the read starting there is one render with the child
+   chosen and nothing loaded. It must say Loading, never "No film yet": nobody
+   has read that child's film. The observer sees every text the page ever
+   drew, including a line React replaced before the test could look. */
+test('picking a child never draws "No film yet" before that child\'s film is read', async () => {
+  let answerList: (value: Response) => void = () => {};
+  const fetchMock = mockFetch({
+    '/athletes/list': () => jsonOk({ items: [CHILD, SECOND_CHILD] }),
+    '/api/pilot/video/list': () => new Promise<Response>((resolve) => { answerList = resolve; }),
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+  render(<ParentVideoPage />);
+  await screen.findByText('Choose a child');
+
+  const drawn: string[] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of Array.from(record.addedNodes)) drawn.push(node.textContent ?? '');
+      if (record.type === 'characterData') drawn.push(record.target.textContent ?? '');
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
+  await screen.findByText('Loading film...');
+  await act(async () => { answerList(jsonOk({ items: [] })); });
+  await screen.findByText('No film yet. It shows up here when a coach puts some up.');
+  observer.disconnect();
+
+  // Drawn once, after the answer; never while the read was still out.
+  const early = drawn.slice(0, drawn.findIndex((text) => text.includes('Loading film...')) + 1);
+  expect(early.some((text) => text.includes('No film yet'))).toBe(false);
+  expect(early.some((text) => text.includes('Loading film...'))).toBe(true);
+});

@@ -7,7 +7,7 @@ import MentalSkillsView, {
   type MentalGoal,
   type MentalSkillsData,
 } from '@/components/MentalSkillsView';
-import FamilyChildPicker, { familyChildLabel, openingChild } from '@/components/FamilyChildPicker';
+import FamilyChildPicker, { familyChildHasName, familyChildLabel, openingChild } from '@/components/FamilyChildPicker';
 import { apiBase } from '@/lib/apiBase';
 
 /*
@@ -127,6 +127,12 @@ export default function MentalSkillsSubjectPanel({
     ? family ? familyChildLabel(activePerson, people) : labelFor(activePerson)
     : undefined;
 
+  // Mid-sentence ("No mental goals in ... development plan yet"), a child with
+  // no name on file reads "their", as an unnamed subject always has here.
+  const subjectLabel = activeName && !(family && activePerson && !familyChildHasName(activePerson))
+    ? `${activeName}'s`
+    : 'their';
+
   // A one-child family has nothing to choose: the panel is left out for them.
   const showPicker = !family || rosterState !== 'loaded' || people.length !== 1;
 
@@ -173,7 +179,7 @@ export default function MentalSkillsSubjectPanel({
             data={data}
             goals={goals}
             goalsState={goalsState}
-            subjectLabel={activeName ? `${activeName}'s` : 'their'}
+            subjectLabel={subjectLabel}
           />
         </section>
       )}

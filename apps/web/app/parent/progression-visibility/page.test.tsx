@@ -735,3 +735,37 @@ describe('the family picker (FAM-11), the record name and the back link (FAM-18)
     expect(screen.queryByRole('group', { name: 'Which child' })).toBeNull();
   });
 });
+
+/* Between the pick and the read starting there is one render with the child
+   chosen and nothing loaded. It must say Loading, never "No progression gaps
+   on record": nobody has read that child's record. */
+test('picking a child never draws "No progression gaps" before that child\'s record is read', async () => {
+  let answerGaps: (value: Response) => void = () => {};
+  const fetchMock = mockFetch({
+    '/athletes/list': async () => jsonOk({ items: [CHILD, SECOND_CHILD] }),
+    '/progression/gaps': () => new Promise<Response>((resolve) => { answerGaps = resolve; }),
+    '/progression/assignments': async () => jsonOk({ items: [] }),
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+  render(<ParentProgressionVisibilityPage />);
+  await screen.findByText('Choose a child');
+
+  const drawn: string[] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of Array.from(record.addedNodes)) drawn.push(node.textContent ?? '');
+      if (record.type === 'characterData') drawn.push(record.target.textContent ?? '');
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
+  await screen.findByText(/Loading progression data/);
+  await act(async () => { answerGaps(jsonOk({ items: [] })); });
+  await screen.findByText('No progression gaps on record');
+  observer.disconnect();
+
+  const early = drawn.slice(0, drawn.findIndex((text) => text.includes('Loading progression data')) + 1);
+  expect(early.some((text) => text.includes('No progression gaps on record'))).toBe(false);
+  expect(early.some((text) => text.includes('Loading progression data'))).toBe(true);
+});

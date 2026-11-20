@@ -229,6 +229,9 @@ export default function ParentProgressionVisibilityPage() {
   // read must not render "No linked athletes" or "No progression gaps".
   const [childrenFailed, setChildrenFailed] = useState(false);
   const [progressionFailed, setProgressionFailed] = useState(false);
+  // The child the record on screen was read for. Until it is the chosen child,
+  // the page says Loading, never "No progression gaps" for a child nobody read.
+  const [progressionFor, setProgressionFor] = useState<string | null>(null);
 
   // One card per child, from the route that runs the guardian visibility
   // gate: /api/pilot/athletes/list returns only the athletes this guardian
@@ -372,7 +375,10 @@ export default function ParentProgressionVisibilityPage() {
         setProgressionFailed(true);
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load progression data.');
       } finally {
-        if (!signal.aborted) setProgressionLoading(false);
+        if (!signal.aborted) {
+          setProgressionFor(activeChildId);
+          setProgressionLoading(false);
+        }
       }
     })();
 
@@ -380,7 +386,7 @@ export default function ParentProgressionVisibilityPage() {
   }, [activeChildId]);
 
   const activeChild = children.find((child) => child.athlete_id === activeChildId);
-  const loading = childrenLoading || progressionLoading;
+  const loading = childrenLoading || progressionLoading || (activeChildId !== null && progressionFor !== activeChildId);
 
   const completionsForAssignment = (assignmentId: string) =>
     completions.filter((completion) => completion.assignment_id === assignmentId);

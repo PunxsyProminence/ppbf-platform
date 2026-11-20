@@ -79,6 +79,9 @@ export default function ParentVideoPage() {
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
   const [videos, setVideos] = useState<VideoSession[]>([]);
   const [videosLoading, setVideosLoading] = useState(false);
+  // The child the list on screen was read for. Until it is the chosen child,
+  // the section says Loading, never "No film yet" for a child nobody read.
+  const [videosFor, setVideosFor] = useState<string | null>(null);
   const [videoError, setVideoError] = useState('');
   const [activeVideo, setActiveVideo] = useState<ActiveVideo | null>(null);
   const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
@@ -142,7 +145,10 @@ export default function ParentVideoPage() {
         setVideos([]);
         setVideoError(error instanceof Error ? error.message : 'The film did not load. Try again in a minute.');
       } finally {
-        if (!controller.signal.aborted) setVideosLoading(false);
+        if (!controller.signal.aborted) {
+          setVideosFor(activeChildId);
+          setVideosLoading(false);
+        }
       }
     })();
     return () => controller.abort();
@@ -264,7 +270,7 @@ export default function ParentVideoPage() {
                     </div>
                   </div>
                 ) : null}
-                {videosLoading ? (
+                {videosLoading || videosFor !== activeChildId ? (
                   <p className="t-muted mt-[var(--s4)]">Loading film...</p>
                 ) : !videoError && videos.length === 0 ? (
                   <p className="t-body mt-[var(--s4)]">No film yet. It shows up here when a coach puts some up.</p>

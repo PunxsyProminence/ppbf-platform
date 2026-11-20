@@ -15,9 +15,9 @@ import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
  *   is one of this guardian's, else on the only child. With two or more and
  *   none remembered, nothing is chosen and it asks "Choose a child": picking
  *   one for the family would be inventing an answer.
- * - With one child there is nothing to choose, so it shows nothing; each page
- *   names the child in its own heading.
+ * - With one child there is nothing to choose, so it shows nothing.
  * - A pick is remembered, so the next family page opens on the same child.
+ *   Tapping the child already chosen does nothing: no second read.
  *
  * It only says which of the guardian's own children they meant. The list comes
  * from /api/pilot/athletes/list, which returns only linked children, and every
@@ -37,9 +37,15 @@ export function openingChild(linked: ReadonlyArray<FamilyChild>): string | null 
   return linked.length === 1 ? linked[0].athlete_id : null;
 }
 
-function baseName(child: FamilyChild): string {
+/** Whether a name is on file for this child ("Unknown" is the hub's word for
+ *  none). */
+export function familyChildHasName(child: FamilyChild): boolean {
   const name = (child.full_name ?? '').trim();
-  return name && name !== 'Unknown' ? name : 'Your child';
+  return name !== '' && name !== 'Unknown';
+}
+
+function baseName(child: FamilyChild): string {
+  return familyChildHasName(child) ? (child.full_name ?? '').trim() : 'Your child';
 }
 
 /** The name a family page shows for a child: the name on file, or "Your
@@ -66,12 +72,13 @@ export default function FamilyChildPicker({
   readonly className?: string;
 }) {
   const labelId = useId();
+  const askId = useId();
   if (linked.length < 2) return null;
   const chosen = linked.some((child) => child.athlete_id === activeId);
   return (
-    <div role="group" aria-labelledby={labelId} className={className}>
+    <div role="group" aria-labelledby={labelId} aria-describedby={chosen ? undefined : askId} className={className}>
       <p id={labelId} className="t-label">{label}</p>
-      {chosen ? null : <p className="t-body mt-[var(--s2)]">Choose a child</p>}
+      {chosen ? null : <p id={askId} className="t-body mt-[var(--s2)]">Choose a child</p>}
       <div className="mt-[var(--s3)] flex flex-wrap gap-[var(--s3)]">
         {linked.map((child) => (
           <button
@@ -80,6 +87,7 @@ export default function FamilyChildPicker({
             className={child.athlete_id === activeId ? 'btn' : 'btn btn--ghost'}
             aria-pressed={child.athlete_id === activeId}
             onClick={() => {
+              if (child.athlete_id === activeId) return;
               rememberChosenChild(child.athlete_id);
               onChoose(child.athlete_id);
             }}

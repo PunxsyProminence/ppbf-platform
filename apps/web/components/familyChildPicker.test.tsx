@@ -96,6 +96,25 @@ describe('the picker', () => {
     expect(window.sessionStorage.getItem(KEY)).toBe(MARCUS.athlete_id);
   });
 
+  test('tapping the child already chosen does nothing: no second read, nothing rewritten', () => {
+    const onChoose = jest.fn();
+    render(<FamilyChildPicker linked={[ROSA, MARCUS]} activeId={ROSA.athlete_id} onChoose={onChoose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Rosa Delgado' }));
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(KEY)).toBeNull();
+  });
+
+  test('"Choose a child" describes the group only while nobody is chosen', () => {
+    const { rerender } = render(<FamilyChildPicker linked={[ROSA, MARCUS]} activeId={null} onChoose={() => {}} />);
+    const group = screen.getByRole('group', { name: 'Which child' });
+    const describedBy = group.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy as string)?.textContent).toBe('Choose a child');
+
+    rerender(<FamilyChildPicker linked={[ROSA, MARCUS]} activeId={ROSA.athlete_id} onChoose={() => {}} />);
+    expect(screen.getByRole('group', { name: 'Which child' }).getAttribute('aria-describedby')).toBeNull();
+  });
+
   test('the label can be named by the page', () => {
     render(<FamilyChildPicker linked={[ROSA, MARCUS]} activeId={null} onChoose={() => {}} label="Which child's record" />);
     expect(screen.getByRole('group', { name: "Which child's record" })).toBeTruthy();

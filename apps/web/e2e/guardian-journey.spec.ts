@@ -172,9 +172,9 @@ test.describe('Guardian journey', () => {
     // Nothing is read until a child is chosen: a guardian of two children has
     // no default, and picking one for them would invent an answer.
     await expect(page.getByRole('heading', { level: 1, name: 'Their Development Plan' })).toBeVisible();
+    await expect(page.getByText('Choose a child')).toBeVisible();
     expect(asked).toEqual([]);
 
-    await expect(page.getByText('Choose a child')).toBeVisible();
     await page.getByRole('group', { name: 'Which child' }).getByRole('button', { name: ROSA.full_name }).click();
 
     await expect.poll(() => asked).toEqual([ROSA.athlete_id]);
