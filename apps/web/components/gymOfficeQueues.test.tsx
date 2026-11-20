@@ -86,8 +86,11 @@ const PAYLOADS: Record<string, unknown> = {
     items: [
       { band: 'expired', name: NAME },
       { band: 'submitted', name: NAME },
-      { band: 'verified', name: NAME },
+      { band: 'expiring_soon', name: NAME },
+      { band: 'revoked', name: NAME },
+      { band: 'current', name: NAME },
       { band: 'missing', name: NAME },
+      { band: 'not_required', name: NAME },
     ],
   },
 };
@@ -110,6 +113,15 @@ function rowOf(title: string) {
 async function settled() {
   await screen.findByText('2 pending review');
 }
+
+test('every title is the queue page\'s own h1', () => {
+  for (const spec of QUEUES) {
+    const page = readFileSync(path.resolve(__dirname, '..', `app${spec.href}/page.tsx`), 'utf8');
+    // The h1 element's text, however the JSX wraps it.
+    const h1 = /<h1[^>]*>\s*([^<{]+?)\s*<\/h1>/.exec(page)?.[1];
+    expect(h1).toBe(spec.title);
+  }
+});
 
 test('every queue is a page the gym admin may open, named by the page\'s own title', () => {
   expect(QUEUES.map((spec) => spec.title)).toEqual([
@@ -141,7 +153,7 @@ test('each row counts what its page shows as waiting, and links the page', async
     ['Portrait Review', '/admin/portrait-review', '1 pending'],
     ['Feedback Triage', '/admin/feedback', '2 new'],
     ['SHADOW Human Review', '/admin/shadow-reviews', '3 open'],
-    ['Staff Credentials', '/admin/credentials', '2 need attention'],
+    ['Staff Credentials', '/admin/credentials', '4 needing attention'],
   ];
   for (const [title, href, words] of expected) {
     expect(screen.getByRole('link', { name: title }).getAttribute('href')).toBe(href);
@@ -230,7 +242,7 @@ test('one slow read never holds the others back', async () => {
   render(<GymOfficeQueues />);
   await settled();
   expect(within(rowOf('Media Consent Audit')).getByText('Reading…')).toBeTruthy();
-  expect(within(rowOf('Staff Credentials')).getByText('2 need attention')).toBeTruthy();
+  expect(within(rowOf('Staff Credentials')).getByText('4 needing attention')).toBeTruthy();
 });
 
 test('queueWords: reading, unread, whole, plus-cut and window-cut', () => {
@@ -310,4 +322,32 @@ describe('the limits are the routes\' own', () => {
     const max = Number(/const FEEDBACK_LIST_MAX_LIMIT = (\d+);/.exec(read('src/server/pilot/feedback.ts'))?.[1]);
     expect(max).toBeGreaterThanOrEqual(FEEDBACK_NEW_LIMIT);
   });
+});
+
+test('every read goes with the session cookie', async () => {
+  routes();
+  render(<GymOfficeQueues />);
+  await settled();
+  for (const [, init] of (global.fetch as jest.Mock).mock.calls) {
+    expect((init as RequestInit).credentials).toBe('include');
+  }
+});
+
+test('leaving the page stops the reads and sets nothing afterwards', async () => {
+  const answers: Array<() => void> = [];
+  const signals: AbortSignal[] = [];
+  global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    signals.push((init as RequestInit).signal as AbortSignal);
+    return new Promise<Response>((resolve) => {
+      answers.push(() => resolve({ ok: true, status: 200, json: async () => PAYLOADS[String(input)] ?? {} } as Response));
+    });
+  }) as unknown as typeof fetch;
+  const errors = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  const { unmount } = render(<GymOfficeQueues />);
+  unmount();
+  expect(signals.every((signal) => signal.aborted)).toBe(true);
+  for (const answer of answers) answer();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
 });

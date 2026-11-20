@@ -201,7 +201,8 @@ export const QUEUES: readonly QueueSpec[] = [
     title: 'Staff Credentials',
     href: '/admin/credentials',
     url: '/api/pilot/admin/credentials',
-    what: 'need attention',
+    // "Needs attention" is the page's heading; this reads right for 1 and for many.
+    what: 'needing attention',
     cutWords: { kind: 'plus' },
     count: (payload) => {
       const items = listAt(payload, 'items');
