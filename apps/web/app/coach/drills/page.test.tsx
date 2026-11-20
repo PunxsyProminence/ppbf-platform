@@ -2882,6 +2882,24 @@ describe('Looks right (lane ED-UI PR4)', () => {
     expect(screen.queryByText(/Recorded as looks right/)).not.toBeInTheDocument();
   });
 
+  it('holds every press, Edit and Back while a press is in flight, and sends one PATCH', async () => {
+    let answer: (response: Response) => void = () => {};
+    const held = new Promise<Response>((resolve) => { answer = resolve; });
+    const fetchMock = routes({ details: { [reference.drill_id]: { ...referenceDetail, field_drafts: { ...DRAFTED, execution: true } } }, editLibrary: () => held });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(pressFor('What it is for')!);
+    await waitFor(() => expect(pressFor('How it runs')).toBeDisabled());
+    expect(pressFor('What it is for')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit: Seeded jab return' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeDisabled();
+    fireEvent.click(pressFor('How it runs')!);
+    expect(writes(fetchMock)).toHaveLength(1);
+    answer(jsonResponse({ error: 'Refused.' }, false, 400));
+    expect(await screen.findByText('Refused.')).toBeInTheDocument();
+  });
+
   it('leaves no alert behind when the coach goes back to the library', async () => {
     global.fetch = routes({ details: { [reference.drill_id]: drafted }, editLibrary: () => jsonResponse({ error: 'Refused.' }, false, 400) }) as unknown as typeof fetch;
     render(<CoachDrillLibraryPage />);
@@ -2889,6 +2907,9 @@ describe('Looks right (lane ED-UI PR4)', () => {
     fireEvent.click(pressFor('What it is for')!);
     expect(await screen.findByText('Refused.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Back to the reference library' }));
+    expect(screen.queryByText('Refused.')).not.toBeInTheDocument();
+    // Opened again, the drill starts clean.
+    await openReference();
     expect(screen.queryByText('Refused.')).not.toBeInTheDocument();
   });
 });
