@@ -52,6 +52,7 @@ const MEMBERS = [
 ];
 
 /** One roster per read, in order; the last repeats (a re-read after an action returns the next). */
+let guardianLinks: unknown[] = [];
 function installFetch(...rosters: unknown[][]) {
   const answers = rosters.length > 0 ? rosters : [MEMBERS];
   let reads = 0;
@@ -62,7 +63,7 @@ function installFetch(...rosters: unknown[][]) {
     if (url.includes('/api/pilot/admin/staff') && (init?.method ?? 'GET') === 'GET') {
       const members = answers[Math.min(reads, answers.length - 1)];
       reads += 1;
-      return { ok: true, status: 200, json: async () => ({ ok: true, organization_id: 'org-1', members, guardian_links: [] }) } as Response;
+      return { ok: true, status: 200, json: async () => ({ ok: true, organization_id: 'org-1', members, guardian_links: guardianLinks }) } as Response;
     }
     return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
   }) as unknown as typeof fetch;
@@ -70,6 +71,7 @@ function installFetch(...rosters: unknown[][]) {
 
 afterEach(() => {
   global.fetch = originalFetch;
+  guardianLinks = [];
 });
 
 async function roster() {
@@ -211,6 +213,32 @@ describe('a row with something armed or open on it stays in view', () => {
     expect(rows(table)).toHaveLength(2);
     fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Cancel' }));
     expect(rows(table)).toHaveLength(1);
+  });
+
+  test('an armed deactivate alone holds its row', async () => {
+    installFetch();
+    const table = await roster();
+    fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Deactivate coach@example.test' }));
+    role('Athlete');
+    expect(rows(table)).toHaveLength(2);
+    expect(within(coachRow(table)).getByRole('button', { name: 'Confirm Deactivate' })).toBeTruthy();
+    fireEvent.click(within(coachRow(table)).getByRole('button', { name: 'Keep Active' }));
+    expect(rows(table)).toHaveLength(1);
+  });
+
+  test.each([
+    ['a guardian link being removed', 'Remove', 'Confirm Remove'],
+    ['a guardian being moved to a new email', 'Move Alex Fixture To New Email', 'Confirm Move'],
+  ])('%s holds the guardian\'s row', async (_label, open, confirm) => {
+    const guardian = member({ account_id: 'family@example.test', login_email: 'family@example.test', role: 'parent' });
+    guardianLinks = [{ account_id: 'family@example.test', parent_id: 'par-1', athlete_id: 'ath-1', athlete_full_name: 'Alex Fixture', relationship_to_athlete: 'mother' }];
+    installFetch([...MEMBERS, guardian]);
+    const table = await roster();
+    const guardianRow = () => within(table).getByText('family@example.test').closest('tr') as HTMLElement;
+    fireEvent.click(within(guardianRow()).getByRole('button', { name: open }));
+    role('Coach');
+    expect(rows(table)).toHaveLength(2);
+    expect(within(guardianRow()).getByRole('button', { name: confirm })).toBeTruthy();
   });
 
   test('a name being edited stays open and in view, and the box keeps the typing', async () => {

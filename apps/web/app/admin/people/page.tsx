@@ -560,9 +560,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
   // The roles present, by the Role column's own words ("Gym Admin" covers both
   // admin names), in the roster's order.
   const rosterRoleOptions = Array.from(new Set(members.map((member) => roleLabel(member.role))));
-  // A role nobody holds any more is All roles: the select can only show an
-  // option that exists, and the list must match what the select shows.
-  const activeRosterRole = rosterRoleOptions.includes(rosterRole) ? rosterRole : 'all';
+  // rosterRole always names a role present: load(), the only place the roster
+  // changes, resets it to All roles in the same step when nobody holds it.
   const rosterMatches = (member: Member, find: string, role: string): boolean => {
     if (role !== 'all' && roleLabel(member.role) !== role) return false;
     const needle = find.trim().toLowerCase();
@@ -590,7 +589,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
     || accountId === pendingUnlink?.accountId
     || accountId === pendingMove?.accountId;
   const shownMembers = members.filter(
-    (member) => rowHeld(member.account_id) || rosterMatches(member, rosterFind, activeRosterRole),
+    (member) => rowHeld(member.account_id) || rosterMatches(member, rosterFind, rosterRole),
   );
   const rosterNarrowed = shownMembers.length !== members.length;
 
@@ -1479,7 +1478,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     </label>
                     <select
                       id="roster-role"
-                      value={activeRosterRole}
+                      value={rosterRole}
                       onChange={(event) => setRosterRole(event.target.value)}
                       className="select"
                     >
@@ -1520,7 +1519,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   {shownMembers.length === 0 && (
                     <tr>
                       <td colSpan={5}>
-                        {activeRosterRole === 'all'
+                        {rosterRole === 'all'
                           ? 'No one on the roster matches. Clear the box to see everyone.'
                           : 'No one on the roster matches. Clear the box or choose All roles.'}
                       </td>
