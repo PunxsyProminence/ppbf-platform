@@ -58,10 +58,12 @@ function buildRemainingSteps(
 
   if (!platformRegistered) {
     // Step zero, once for the whole platform: without the Connect OAuth
-    // client the connect button has nowhere to send anyone.
+    // client the connect button has nowhere to send anyone. PPBF does it, on
+    // System's platform view, so the gym admin who reads this step is not
+    // handed the secret's name (lane BT, BOA-13).
     steps.push(
-      "Register the platform's Stripe account and Connect OAuth client"
-      + ' (PAYMENT_CONNECT_CLIENT_ID) — done once, for every organization.',
+      "PPBF registers the platform's Stripe account and Connect OAuth client"
+      + ' — done once, for every organization.',
     );
   }
 

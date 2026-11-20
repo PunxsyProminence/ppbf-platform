@@ -55,6 +55,9 @@ describe('payment setup status', () => {
     const status = await resolvePaymentSetupStatus('org-1');
 
     expect(status.remainingSteps[0]).toContain('Connect OAuth client');
+    // Lane BT, BOA-13: organization admins read these steps, so none names a secret.
+    expect(status.remainingSteps[0]).toBe("PPBF registers the platform's Stripe account and Connect OAuth client — done once, for every organization.");
+    expect(status.remainingSteps.join(' ')).not.toMatch(/PAYMENT_|sk_|whsec_/);
   });
 
   test('one lane connected still leaves the other one named', async () => {
