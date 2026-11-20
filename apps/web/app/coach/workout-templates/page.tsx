@@ -747,7 +747,7 @@ function draftMark(detail: TemplateDetail, field: TemplateMarkedField, press?: L
       <DraftMark state={state} />
       {state === true && press && (
         <span data-surface="kiosk">
-          <button type="button" className="btn ml-[var(--s2)] normal-case tracking-normal" aria-label={`Looks right: ${TEMPLATE_FIELD_LABEL[field]}`}
+          <button type="button" className="btn btn--secondary ml-[var(--s2)]" aria-label={`Looks right: ${TEMPLATE_FIELD_LABEL[field]}`}
             onClick={() => press.onPress(field)} disabled={press.disabled}>
             Looks right
           </button>

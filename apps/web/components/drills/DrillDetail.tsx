@@ -356,7 +356,7 @@ const FIELD_LABEL: Record<DrillMarkedField, string | null> = {
 /** "Looks right" (OW25-55; Q7 = A): the press, named for its field. */
 function LooksRight({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
   return (
-    <button type="button" className="btn ml-[var(--s2)] normal-case tracking-normal" aria-label={`Looks right: ${label}`} onClick={onPress} disabled={disabled}>
+    <button type="button" className="btn btn--secondary ml-[var(--s2)]" aria-label={`Looks right: ${label}`} onClick={onPress} disabled={disabled}>
       Looks right
     </button>
   );
