@@ -572,8 +572,10 @@ function AthleteRecordsConsoleContent() {
               <Link href="/admin/attendance" className="btn btn--ghost">
                 Attendance
               </Link>
+              {/* The page's own title and menu name (OD-2026-11-19-025 build:
+                  the left-the-gym note names it, one name per thing). */}
               <Link href="/admin/people" className="btn btn--ghost">
-                People
+                Gym Office
               </Link>
               <BackHome />
             </div>
@@ -943,9 +945,8 @@ function AthleteRecordsConsoleContent() {
                 </p>
                 <p className="t-body mt-[var(--s3)]">
                   Two things it does not do: it does not switch off their sign-in, and it does not take them off their
-                  coach&apos;s lists. There is no switch that turns an athlete&apos;s sign-in off for good. On Gym Office, Sign
-                  Out Everywhere ends their open sessions; for a PIN athlete, Issue New Activation Code stops their PIN
-                  working until the new code is redeemed.
+                  coach&apos;s lists. To switch their sign-in off, use Deactivate on Gym Office; Reactivate there turns it
+                  back on.
                 </p>
               </div>
 
@@ -986,7 +987,7 @@ function AthleteRecordsConsoleContent() {
                   onClick={() => setConfirmingStatusChange(true)}
                   className="btn btn--ghost w-full"
                 >
-                  {/* Not "Deactivate": on People that word switches a sign-in off,
+                  {/* Not "Deactivate": on Gym Office that word switches a sign-in off,
                       and this does not (UXB-26). */}
                   {selected.active_flag ? 'Mark as left the gym' : 'Mark as back'}
                 </button>

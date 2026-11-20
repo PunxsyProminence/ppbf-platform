@@ -10,28 +10,32 @@ export const runtime = 'nodejs';
 
 /**
  * The roles an organization admin may deactivate or reactivate in their own
- * gym. Owner ruling (Jason 2026-10-07, OD-2026-10-07-009, question card 2,
- * "Yes, org admin can"): a departed coach, staff member or volunteer.
+ * gym. Owner rulings: a departed coach, staff member or volunteer (Jason
+ * 2026-10-07, OD-2026-10-07-009, question card 2, "Yes, org admin can"); and
+ * an athlete, "same as staff, reversible by the gym admin. Their records
+ * stay." (Jason 2026-11-19, OD-2026-11-19-025, "A: Add a switch").
+ *
+ * An athlete is switched the staff way, with two additions held in
+ * setAccountActiveStatus: switching off also supersedes any unredeemed
+ * activation code (redeeming one would turn the login back on), and an
+ * athlete who has not activated yet (no PIN) is refused by name in both
+ * directions, because their active_flag already means "not activated".
  *
  * Everything else is refused by name below, each for its own reason:
  *   organization_admin / admin  -- a peer; an admin who could switch off the
  *                                  other admins would hold the gym alone.
  *   platform_owner              -- outside the gym's authority altogether.
- *   athlete                     -- a child's login is administered through the
- *                                  roster and the PIN controls, not switched
- *                                  off here; setAccountActiveStatus would also
- *                                  end their sessions.
  *   parent                      -- a guardian's standing over a child is a
  *                                  guardian link, not a staff account; removing
  *                                  it is the people console's link controls.
  *   board                       -- a seat, not staff (boardSeats.ts).
  *   self                        -- refused before the role is even read.
  */
-export const DEACTIVATABLE_ROLES: readonly PilotRole[] = ['coach', 'staff', 'volunteer'];
+export const DEACTIVATABLE_ROLES: readonly PilotRole[] = ['coach', 'staff', 'volunteer', 'athlete'];
 
 /**
- * Switch a coach, staff or volunteer account in the caller's organization off
- * or back on.
+ * Switch a coach, staff, volunteer or athlete account in the caller's
+ * organization off or back on.
  *
  * ONE ROUTE FOR BOTH DIRECTIONS, like the platform tier's users/status: the
  * body carries `active_flag`, required and a real boolean, so a missing or
@@ -41,9 +45,10 @@ export const DEACTIVATABLE_ROLES: readonly PilotRole[] = ['coach', 'staff', 'vol
  * on pilot.accounts and the organization membership in one transaction and
  * revokes every session the account holds, so a departed coach is signed out
  * now and cannot sign back in. The credential is not destroyed; reactivation
- * restores sign-in with nothing else changed. A deleted login is changed in
- * neither direction (OD-2026-09-30-004 e2) and surfaces as the helper's own
- * refusal.
+ * restores sign-in with nothing else changed (an athlete's own PIN works
+ * again; no new activation code). A deleted login is changed in neither
+ * direction (OD-2026-09-30-004 e2), nor an athlete with no PIN, and each
+ * surfaces as the helper's own refusal.
  *
  * TENANCY. The organization is the session's, never the body's. The target's
  * role is read in THAT organization (getAccountRoleInOrganization), so an
@@ -82,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
     if (!DEACTIVATABLE_ROLES.includes(targetRole)) {
       throw new Error(
-        `Forbidden: an organization admin can deactivate coach, staff or volunteer accounts only; this account is ${targetRole}`,
+        `Forbidden: an organization admin can deactivate coach, staff, volunteer or athlete accounts only; this account is ${targetRole}`,
       );
     }
 
