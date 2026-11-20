@@ -39,6 +39,11 @@
 // OVERWRITE GUARD (as FT1-G). Before anything is written, every committed row of the set is
 // compared with its new row: a committed non-blank cell that would change, or a committed row that
 // would disappear, stops the export and names each; --allow-overwrite writes anyway.
+//
+// TWO STOPS NO FLAG PASSES (lane GD; lib/backbone-export-guards.mjs). A row this run would write
+// that names a held DOC-136 record (a frozen track's session_refs and groups do), or a committed
+// template step that links a drill written back as a typed line, stops the export and nothing is
+// written, with or without --allow-overwrite.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,6 +68,7 @@ import {
   textCell,
   writeCsv,
 } from './backbone-export-ft1-track.mjs';
+import { heldTextFindings, stopMessage, typedLineFindings } from './lib/backbone-export-guards.mjs';
 
 export const STAGES = ['Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'RC1'];
 export const SCRIPT_ID = 'scr_e2ed38b1a19670';
@@ -78,7 +84,9 @@ export const EXPECTED_COUNTS = {
 // home-program days are printed from USA Boxing High-Performance Coach Education: outside
 // copyrighted material, neither PPBF-owned nor open-licence, and there is no private load path for
 // templates. They stay out of this public repository: not exported, listed here by id, counted.
-// A reference to one elsewhere (a track's session_refs) stays as text. Jason may reverse this.
+// A reference to one elsewhere (a track's session_refs) is not written either: a row that names a
+// held record stops the export (lane GD, Overwatch C1 on #2042; lane HW took that text out of the
+// committed track row). Jason may reverse this.
 export const HELD_TEMPLATES = {
   wtp_40b6956ea37245: 'DOC-136 home day 1 (USA Boxing High-Performance Coach Education)',
   wtp_0f42c41a78dea4: 'DOC-136 home day 2 (USA Boxing High-Performance Coach Education)',
@@ -581,12 +589,15 @@ export function exportYouthRecreational(backboneDir, existing = () => undefined,
   const ordinal = (column, order = 'ordinal') => (a, b) => compare(a[column], b[column]) || Number(a[order]) - Number(b[order]);
   const files = {};
   const overwrites = [];
+  const stops = [];
   const put = (name, rows, replaces) => {
     const committed = committedRows(existing(name), HEADERS[name]);
     const replaced = committed.filter(replaces);
     const kept = committed.filter((row) => !replaces(row));
     checkUniqueIds(name, kept, rows);
     overwrites.push(...findOverwrites(name, replaced, rows));
+    stops.push(...heldTextFindings(name, HEADERS[name], rows));
+    if (name === FILES.items) stops.push(...typedLineFindings(name, replaced, rows));
     // A replaced row keeps its place; new rows follow the kept ones.
     const byId = new Map(rows.map((row) => [guardId(name, row), row]));
     const inPlace = committed.map((row) => (replaces(row) ? byId.get(guardId(name, row)) : row)).filter(Boolean);
@@ -606,13 +617,17 @@ export function exportYouthRecreational(backboneDir, existing = () => undefined,
   put(FILES.scripts, [scriptSet.root], ofScript);
   put(FILES.scriptBlocks, scriptSet.blocks, ofScript);
   const overwriteLines = describeOverwrites(overwrites);
+  const stopText = stopMessage(stops);
   if (overwrites.length && !allowOverwrite) {
     throw new ExportError([
       `refused: this run would change or remove ${overwrites.length} committed row(s): edits made in the repo since the export. Nothing was written.`,
       ...overwriteLines,
-      'To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.',
+      ...(stopText
+        ? ['--allow-overwrite would not write this run either.', stopText]
+        : ['To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.']),
     ].join('\n'));
   }
+  if (stopText) throw new ExportError(stopText);
 
   const notCarried = Object.entries(tally).sort(([a], [b]) => compare(a, b)).map(([key, n]) => `${key} x${n}`);
   return {

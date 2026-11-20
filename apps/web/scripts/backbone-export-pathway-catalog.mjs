@@ -61,6 +61,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { heldTextFindings, stopMessage } from './lib/backbone-export-guards.mjs';
+
 export const SPINE_FILE = 'data/spine/spine.json';
 export const CATALOGS_FILE = 'working/design-2026-10-25/design_catalogs.json';
 export const ORG_PLACEHOLDER = '{{PPBF_ORG_ID}}';
@@ -388,6 +390,15 @@ export function exportPathwayCatalog(backboneDir) {
   const held = fixedRules.filter(isHeld).map((rule) => String(rule.default_id)).sort(compare);
   const defaultRows = fixedRules.filter((rule) => !isHeld(rule)).map((rule) => defaultRow(rule, backboneVersion, notShaped, dropped))
     .sort((a, b) => compare(a.default_id, b.default_id));
+
+  // A STOP NO FLAG PASSES (lane GD; lib/backbone-export-guards.mjs): a row that names a held
+  // DOC-136 record stops the export before any file is produced.
+  const stopText = stopMessage([
+    ...heldTextFindings('seed_pathway_stages.csv', HEADERS['seed_pathway_stages.csv'], stageRows),
+    ...heldTextFindings('seed_pathway_stage_links.csv', HEADERS['seed_pathway_stage_links.csv'], linkRows),
+    ...heldTextFindings('seed_pathway_stage_defaults.csv', HEADERS['seed_pathway_stage_defaults.csv'], defaultRows),
+  ]);
+  if (stopText) throw new ExportError(stopText);
 
   const table = (name, rows) => writeCsv(HEADERS[name], rows.map((row) => HEADERS[name].map((column) => row[column] ?? '')));
   return {
