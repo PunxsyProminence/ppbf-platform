@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import * as buildingMap from './buildingMap';
 import { BUILDING } from './buildingMap';
 import { BOARD_HOME, JOB_BARS, jobBarFor, type JobItem } from './jobBars';
 import type { ClubRole } from './roleRoutes';
@@ -93,5 +94,24 @@ describe("the platform owner's bar", () => {
     expect(jobBarFor('platform_owner')?.sections.find((section) => section.label === 'Gyms')?.items).toEqual([
       { href: '/admin/platform/overview' },
     ]);
+  });
+});
+
+describe('what a person cannot open, their bar does not show', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('drops a page whose door the person is not given, and a section left with none', () => {
+    const hidden = new Set(['/coach/class', '/coach/environment/intake-router']);
+    jest.spyOn(buildingMap, 'visibleDoors').mockReturnValue(BUILDING.filter((door) => !hidden.has(door.href)));
+    const bar = jobBarFor('coach');
+    expect(bar?.sections.map((section) => section.label)).toEqual(['Class', 'Athletes', 'Plan', 'Safety']);
+    expect(hrefsOf(bar?.sections.find((section) => section.label === 'Class')?.items ?? [])).toEqual([
+      '/schedule', '/coach/test-day', '/coach/visualization',
+    ]);
+  });
+
+  it('drops a More page the same way', () => {
+    jest.spyOn(buildingMap, 'visibleDoors').mockReturnValue(BUILDING.filter((door) => door.href !== '/names'));
+    expect(hrefsOf(jobBarFor('coach')?.more ?? [])).not.toContain('/names');
   });
 });
