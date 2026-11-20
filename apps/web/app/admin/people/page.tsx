@@ -1069,6 +1069,11 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
         throw new Error(payload.error || (activeFlag ? 'Could not reactivate that account' : 'Could not deactivate that account'));
       }
       setDeactivateArmedId(null);
+      // Nothing armed on this row survives the switch: an Issue New
+      // Activation Code armed before it would otherwise come back armed after
+      // Reactivate, one tap from nulling the athlete's PIN.
+      setCodeArmedId(null);
+      setRevokeArmedId(null);
       setNotice(
         activeFlag
           ? `${personLabel(accountId)} is active again and can sign in.`
@@ -1680,8 +1685,14 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                                 something this console could not do at any
                                 weight. The route admits any active member of
                                 this organization who is not a platform owner,
-                                and that is the set of rows here. */}
-                            {revokeArmedId === member.account_id ? (
+                                and that is the set of rows here.
+
+                                Not on a switched-off athlete's row
+                                (OD-2026-11-19-025): the switch already ended
+                                every session and took the membership off, so
+                                the route refuses it, and its "Their sign-in
+                                still works" would be false. */}
+                            {member.role === 'athlete' && isDeactivatable && isSwitchedOff ? null : revokeArmedId === member.account_id ? (
                               <>
                                 <p className="max-w-[34ch]">
                                   Signs {personLabel(member.account_id)} out on every device now. Their sign-in

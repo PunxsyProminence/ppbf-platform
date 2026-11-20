@@ -201,7 +201,7 @@ describe('deactivating', () => {
 
   it("a refusal is shown in the server's words and claims nothing", async () => {
     await renderConsole({
-      onStatus: () => ({ ok: false, status: 403, error: 'Forbidden: an organization admin can deactivate coach, staff or volunteer accounts only; this account is organization_admin' }),
+      onStatus: () => ({ ok: false, status: 403, error: 'Forbidden: an organization admin can deactivate coach, staff, volunteer or athlete accounts only; this account is organization_admin' }),
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate coach@example.com' }));
@@ -260,6 +260,11 @@ describe('an athlete login', () => {
     expect(within(off).getByRole('button', { name: 'Reactivate athlete-off' })).not.toBeNull();
     expect(within(off).queryByRole('button', { name: 'Issue New Activation Code' })).toBeNull();
     expect(within(off).queryByRole('button', { name: /^Deactivate/ })).toBeNull();
+    // The switch already ended every session; the sign-out route refuses a
+    // switched-off membership, and its "Their sign-in still works" would be false.
+    expect(within(off).queryByRole('button', { name: 'Sign athlete-off out on every device' })).toBeNull();
+    // A switched-off coach row is as it was (not this change's to alter).
+    expect(within(rowOf('gone@example.com')).getByRole('button', { name: 'Sign gone@example.com out on every device' })).not.toBeNull();
   });
 
   it('deactivating posts the staff request; the re-read row reads Deactivated, with Reactivate in place of the code control', async () => {
@@ -278,6 +283,7 @@ describe('an athlete login', () => {
       expect(within(row).getByText('Deactivated')).not.toBeNull();
       expect(within(row).getByRole('button', { name: 'Reactivate athlete-on' })).not.toBeNull();
       expect(within(row).queryByRole('button', { name: 'Issue New Activation Code' })).toBeNull();
+      expect(within(row).queryByRole('button', { name: 'Sign athlete-on out on every device' })).toBeNull();
     });
     // Never the activation-code reset as a side effect.
     expect(mock.mock.calls.some(([url]) => String(url).includes('/accounts/pin-reset'))).toBe(false);
@@ -296,6 +302,43 @@ describe('an athlete login', () => {
       expect(within(row).getByRole('button', { name: 'Deactivate athlete-off' })).not.toBeNull();
       expect(within(row).getByRole('button', { name: 'Issue New Activation Code' })).not.toBeNull();
     });
+  });
+
+  it('an Issue New Activation Code armed before the switch is not armed again after Reactivate', async () => {
+    const mock = await renderConsole();
+
+    fireEvent.click(within(rowOf('athlete-on')).getByRole('button', { name: 'Issue New Activation Code' }));
+    expect(within(rowOf('athlete-on')).getByRole('button', { name: 'Issue The New Code' })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate athlete-on' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Deactivate' }));
+    await screen.findByRole('button', { name: 'Reactivate athlete-on' });
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivate athlete-on' }));
+
+    await waitFor(() => expect(statusCalls(mock)).toHaveLength(2));
+    await waitFor(() => {
+      const row = rowOf('athlete-on');
+      expect(within(row).getByRole('button', { name: 'Issue New Activation Code' })).not.toBeNull();
+      expect(within(row).queryByRole('button', { name: 'Issue The New Code' })).toBeNull();
+    });
+    expect(mock.mock.calls.some(([url]) => String(url).includes('/accounts/pin-reset'))).toBe(false);
+  });
+
+  it("a refusal of an athlete with no PIN yet (a PIN reset since the page loaded) is shown in the server's words", async () => {
+    await renderConsole({
+      onStatus: () => ({
+        ok: false,
+        status: 409,
+        error: 'This athlete has not activated their sign-in yet, so there is nothing to switch off.',
+      }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate athlete-on' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Deactivate' }));
+
+    expect(await screen.findByText(/This athlete has not activated their sign-in yet, so there is nothing to switch off\./)).not.toBeNull();
+    expect(screen.queryByText(/is deactivated: signed out/)).toBeNull();
+    expect(within(rowOf('athlete-on')).queryByText('Deactivated')).toBeNull();
   });
 
   it('Sign Out Everywhere on an activated athlete names the switch as the next step', async () => {
