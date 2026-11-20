@@ -655,8 +655,9 @@ describe('a coach login', () => {
 
 /* ---- Races, on two real connections ----
    Each case pauses one caller just after a named statement, runs the other,
-   then lets the first go. The account-row lock decides the order; what is
-   asserted is the outcome either order must give. */
+   waits until Postgres reports the other caller blocked on the account-row
+   lock (pg_stat_activity), then lets the first go, so each test proves the
+   interleaving it names. What is asserted is the outcome that order must give. */
 
 /** A connection that, once armed, holds its caller just after the next statement matching `after`. */
 function gated(connection: Client) {
@@ -688,16 +689,42 @@ async function twoCallers(g: Gym) {
   second.on('error', () => {});
   await second.connect();
   extraClients.push(second);
-  return { first: gated(g.client), second: gated(second) };
+  // A third connection only watches pg_stat_activity.
+  const observer = new Client({ connectionString: connectionStringFor(g.database) });
+  observer.on('error', () => {});
+  await observer.connect();
+  extraClients.push(observer);
+  const pidOf = async (c: Client) => (await c.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0].pid;
+  return {
+    first: gated(g.client),
+    second: gated(second),
+    firstPid: await pidOf(g.client),
+    secondPid: await pidOf(second),
+    observer,
+  };
 }
 
-/** Long enough for the released caller to reach the lock it waits on. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+/**
+ * Waits until the backend behind `connection` is blocked on a lock, so a race
+ * test proves the interleaving it names rather than a run that happened in
+ * order. Fails the test if it never blocks.
+ */
+async function waitUntilBlocked(observer: Client, pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const row = await observer.query<{ wait_event_type: string | null }>(
+      'select wait_event_type from pg_stat_activity where pid = $1',
+      [pid],
+    );
+    if (row.rows[0]?.wait_event_type === 'Lock') return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`backend ${pid} never waited on a lock: the race did not happen`);
+}
 
 describe('races between the switch and the athlete or the office', () => {
   test('the switch locks first: a pre-switch code redeemed meanwhile waits, then is refused, and the athlete stays off', async () => {
     const g = await gym();
-    const { first, second } = await twoCallers(g);
+    const { first, second, secondPid, observer } = await twoCallers(g);
     const code = await issueActivationCode({
       accountId: g.athlete, organizationId: ORG, issuedByAccountId: g.admin, issuedByRole: 'organization_admin',
     });
@@ -707,7 +734,7 @@ describe('races between the switch and the athlete or the office', () => {
     await held.reached;
     const redeeming = mockConnection.run(second, () => redeemActivationCode(code.code, CHOSEN_PIN))
       .then(() => 'redeemed', (error: Error) => error.message);
-    await settle();
+    await waitUntilBlocked(observer, secondPid);
     held.release();
     await switching;
 
@@ -716,9 +743,9 @@ describe('races between the switch and the athlete or the office', () => {
     expect(await codeRows(g.client, g.athlete)).toEqual([{ consumed: false, superseded: true }]);
   });
 
-  test('a redemption locks first: the switch waits, then switches the athlete off and ends the new session', async () => {
+  test('a redemption locks first: the switch waits, then switches the athlete off, with no deadlock', async () => {
     const g = await gym();
-    const { first, second } = await twoCallers(g);
+    const { first, second, firstPid, observer } = await twoCallers(g);
     const code = await issueActivationCode({
       accountId: g.athlete, organizationId: ORG, issuedByAccountId: g.admin, issuedByRole: 'organization_admin',
     });
@@ -729,7 +756,7 @@ describe('races between the switch and the athlete or the office', () => {
     await held.reached;
     const switching = mockConnection.run(first, () => setAccountActiveStatus(g.athlete, ORG, false))
       .then(() => 'switched', (error: Error) => error.message);
-    await settle();
+    await waitUntilBlocked(observer, firstPid);
     held.release();
 
     // No deadlock: both finish, in lock order.
@@ -741,7 +768,7 @@ describe('races between the switch and the athlete or the office', () => {
 
   test('a PIN reset locks first: a switch sent meanwhile is refused by name and writes nothing', async () => {
     const g = await gym();
-    const { first, second } = await twoCallers(g);
+    const { first, second, firstPid, observer } = await twoCallers(g);
 
     const held = second.pauseAfter(/update pilot\.accounts a set pin_hash = null/);
     const resetting = mockConnection.run(second, () => provisionAthleteActivation({
@@ -750,7 +777,7 @@ describe('races between the switch and the athlete or the office', () => {
     await held.reached;
     const switching = mockConnection.run(first, () => setAccountActiveStatus(g.athlete, ORG, false))
       .then(() => 'switched', (error: Error) => error.message);
-    await settle();
+    await waitUntilBlocked(observer, firstPid);
     held.release();
     await resetting;
 
@@ -758,6 +785,31 @@ describe('races between the switch and the athlete or the office', () => {
     // The reset's code stands: the refused switch superseded nothing.
     expect(await codeRows(g.client, g.athlete)).toEqual([{ consumed: false, superseded: false }]);
     expect(await loginState(g.client, g.athlete)).toMatchObject({ active_flag: false, pin_hash: null });
+  });
+
+  test('the code is superseded in the switch\'s own transaction: at its COMMIT, no live code is left', async () => {
+    const g = await gym();
+    const { first, observer } = await twoCallers(g);
+    await issueActivationCode({
+      accountId: g.athlete, organizationId: ORG, issuedByAccountId: g.admin, issuedByRole: 'organization_admin',
+    });
+
+    // Held just after COMMIT: whatever the switch writes outside its
+    // transaction has not run yet, so a redemption reading now would see it.
+    const held = first.pauseAfter(/^COMMIT$/);
+    const switching = mockConnection.run(first, () => setAccountActiveStatus(g.athlete, ORG, false));
+    await held.reached;
+    const seen = await observer.query<{ active_flag: boolean; live_codes: number }>(
+      `select a.active_flag,
+         (select count(*)::int from pilot.account_activation_tokens t
+           where t.account_id = a.account_id and t.consumed_at is null and t.superseded_at is null) as live_codes
+       from pilot.accounts a where a.account_id = $1`,
+      [g.athlete],
+    );
+    held.release();
+    await switching;
+
+    expect(seen.rows[0]).toEqual({ active_flag: false, live_codes: 0 });
   });
 
   test('a PIN sign-in that read the account before the switch: its session never works, before or after Reactivate', async () => {
