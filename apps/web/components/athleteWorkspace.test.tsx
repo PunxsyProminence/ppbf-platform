@@ -37,6 +37,8 @@ let rabbitHolesByAnchor: Record<string, RabbitHoleLessonItem[]> = {};
 let rabbitHolesFail = false;
 let storedSessions: Array<Record<string, unknown>> = [];
 let sessionListFails = false;
+/* Whether the server says an after-sparring answer is due (lane U3 B4 tests). */
+let sparringAfterDue = false;
 /* The athlete's own bookings the scheduler answers with (UXB-17's Next Session tile). */
 let schedulerRegistrations: Array<Record<string, unknown>> = [];
 /* Today's class and the attendance rows, when a test needs the I'm here card live (F-127). */
@@ -234,6 +236,7 @@ beforeEach(() => {
   rabbitHolesFail = false;
   storedSessions = [];
   sessionListFails = false;
+  sparringAfterDue = false;
   schedulerRegistrations = [];
   schedulerToday = null;
   sessionListHangs = false;
@@ -272,7 +275,7 @@ beforeEach(() => {
     }
     // The sparring symptom check (L58 PR-3): nothing saved, not due, unless a test says otherwise.
     if (url.includes('/api/pilot/athlete/sparring-symptoms')) {
-      return jsonResponse({ after_sparring: null, next_day: null, after_sparring_due: false, next_day_due: false, protocol_text: '', recipient_role: 'coach' });
+      return jsonResponse({ after_sparring: null, next_day: null, after_sparring_due: sparringAfterDue, next_day_due: false, protocol_text: '', recipient_role: 'coach' });
     }
     // "From your coach" on the Dashboard (#1542, FC-06): none unless a test gives some.
     if (url.includes('/api/pilot/athlete/coach-messages')) {
@@ -5817,5 +5820,59 @@ describe('End training is where the athlete sees training has started', () => {
       if (original) proto.scrollIntoView = original;
       else delete proto.scrollIntoView;
     }
+  });
+
+  test('a refused end scrolls nothing: the alert under the button stays where the athlete is', async () => {
+    const proto = Element.prototype as unknown as { scrollIntoView?: (arg?: unknown) => void };
+    const original = proto.scrollIntoView;
+    const scrolled: Element[] = [];
+    proto.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this); };
+    try {
+      sessionUpdateFails = true;
+      storedSessions = [openSessionRow()];
+      await renderWorkspace();
+      await openEndTraining();
+      fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+      await expectEndRefusedSaid();
+      await act(async () => { await Promise.resolve(); });
+      expect(scrolled).toHaveLength(0);
+    } finally {
+      if (original) proto.scrollIntoView = original;
+      else delete proto.scrollIntoView;
+    }
+  });
+
+  // The after-sparring check keeps the Session Log's old conditions on the
+  // Floor too, which has no gate of its own: never during an open session,
+  // never over a session read that did not answer -- even when one is due.
+  test('the Floor shows no after-sparring check while a session is open, even with one due', async () => {
+    sparringAfterDue = true;
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'End training' });
+    expect(cornerAfter()).toBeNull();
+    openTab('Floor');
+    expect(floorEnd()).not.toBeNull();
+    await act(async () => { await Promise.resolve(); });
+    expect(floorAfter()).toBeNull();
+    expect(screen.queryByText(AFTER_Q)).toBeNull();
+  });
+
+  test('the Floor shows no after-sparring check when the sessions could not be read, even with one due', async () => {
+    sparringAfterDue = true;
+    sessionListFails = true;
+    await renderWorkspace();
+    await screen.findByText(/Your sessions could not be read/);
+    openTab('Floor');
+    await act(async () => { await Promise.resolve(); });
+    expect(floorAfter()).toBeNull();
+    expect(screen.queryByText(AFTER_Q)).toBeNull();
+  });
+
+  test('with one due and no session open, the check is there without a fresh end (its own rule)', async () => {
+    sparringAfterDue = true;
+    await renderWorkspace();
+    expect(await screen.findByText(AFTER_Q)).toBeTruthy();
+    expect(cornerAfter()?.contains(screen.getByText(AFTER_Q))).toBe(true);
   });
 });

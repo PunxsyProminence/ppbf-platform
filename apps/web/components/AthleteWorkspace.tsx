@@ -2526,7 +2526,7 @@ export default function AthleteWorkspace() {
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
-      setEndedAt(Date.now());
+      setEndedAt((count) => count + 1);
       // And the card, which is where a completed session actually lands. This
       // was missing, so the count only moved on the next page load — which is
       // also why crossing a milestone could never produce a moment: the card
