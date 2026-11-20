@@ -31,9 +31,9 @@ const NO_STORE = { headers: { 'cache-control': 'private, no-store' } };
  * advance the current step.
  *
  * Who: SHADOW_PHI_ROLES -- coach, organization_admin, admin -- the same gate
- * as coach/injuries, because a plan names one child's injury. A coach, like an
- * organization admin, reaches any live athlete in their own organization
- * (2026-10-12, issue #1480). Every
+ * as /api/pilot/coach/injuries, because a plan names one child's injury.
+ * A coach, like an organization admin, reaches any live athlete in their own
+ * organization (2026-10-12, issue #1480). Every
  * action names the athlete, standing is checked on that athlete first, and a
  * plan or step is then accepted only if it is in THAT athlete's list -- so a
  * plan id from another athlete, or another organization, is the same 404 as

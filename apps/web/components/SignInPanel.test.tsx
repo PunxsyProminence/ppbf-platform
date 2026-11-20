@@ -752,3 +752,41 @@ describe('a refused sign-in wears the right kind of "no"', () => {
     expect(screen.queryByText(/sign-in refused/i)).toBeNull();
   });
 });
+
+/**
+ * A PARENT CAN TELL WHICH WAY IN IS THEIRS (app scrub FAM-15; AS-9 Q10 = B).
+ *
+ * Only the lead sentences changed. The order of the three ways stays (AS-9
+ * Q10 = B), and the header now leans on it ("the second way below"), so the
+ * order is held here too. The password box under the email box and the two
+ * button names are the owner's (OD-2026-10-01-002 section 3 item 4).
+ */
+describe('the lead sentences point a parent at Email Link', () => {
+  test('the header names Email Link as the parents\' way, and the order is unchanged', async () => {
+    await renderPanel();
+
+    expect(screen.getByText(/Sign in to continue\. Parents: Email Link, the second way below, is yours\./)).toBeTruthy();
+    expect(screen.getByText(/^Once you are signed in, you will land on the right dashboard for your role\./)).toBeTruthy();
+    expect(screen.queryByText(/Any of the three ways below will do/)).toBeNull();
+    const methods = ['Microsoft Sign In', 'Email Link', 'Account ID & PIN'];
+    expect(
+      screen.getAllByRole('heading', { level: 2 })
+        .map((heading) => heading.textContent)
+        .filter((text): text is string => methods.includes(text ?? '')),
+    ).toEqual(methods);
+  });
+
+  test('the Microsoft block sends a parent on, and Email Link names parents first', async () => {
+    await renderPanel();
+
+    const microsoft = screen.getByRole('region', { name: 'Microsoft Sign In' });
+    expect(microsoft.textContent).toContain('Parents: Email Link is below.');
+    const emailLink = screen.getByRole('form', { name: 'Email Link' });
+    expect(emailLink.textContent).toContain('For parents, and for coaches, staff and volunteers.');
+    // The owner's two buttons stay (OD-2026-10-01-002 section 3 item 4), and
+    // the box's label is unchanged.
+    expect(screen.getByRole('button', { name: /^email me a link instead$/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sign In With Password' }).textContent).toBe('Sign In');
+    expect(screen.getByLabelText('Password (Parents)')).toBeTruthy();
+  });
+});

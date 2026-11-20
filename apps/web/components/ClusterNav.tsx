@@ -36,7 +36,7 @@ export const COACH_CLUSTERS = {
   // (app scrub CS-06; lane AS-5 Q9 = A). The Log keeps its own door.
   sparring: ['/coach/sparring-caps', '/coach/sparring-exposure', '/coach/athlete-limits'],
   // The clinic's records of one athlete (app scrub CS-02, lane AS-5).
-  clinic: ['/coach/sports-medicine', '/coach/injuries', '/coach/medical-restrictions', '/coach/sparring-exposure'],
+  clinic: ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/sparring-exposure'],
   interventions: ['/coach/intervention-protocols', '/coach/intervention-executions', '/coach/intervention-review'],
   film: [
     '/coach/video-analysis',

@@ -79,6 +79,13 @@ export const PAIN_REPORTS_NOT_CHECKED = 'Pain reports: not checked';
 
 type Read<T> = { state: 'loading' } | { state: 'failed' } | { state: 'ok'; value: T };
 
+/**
+ * A pain read the screen already makes and hands the tile (lane U2-6b-2): on the class screen,
+ * the one read its pain list draws, so the tile and the list read the same rows over the same
+ * window (usePainReports, painTileRead). Without one, the tile reads the feed itself.
+ */
+export type PainTileRead = Read<PainReportCount>;
+
 /** Today's marks over the athletes the read covered; null when the payload is not one. */
 export function attendanceCounts(payload: unknown): AttendanceCounts | null {
   const body = payload as { ok?: unknown; covered?: unknown; marks?: unknown } | null;
@@ -193,10 +200,13 @@ function Group({
   );
 }
 
-export default function CoachLiveTiles() {
+export default function CoachLiveTiles({ painFeed }: { painFeed?: PainTileRead } = {}) {
   const [attendance, setAttendance] = useState<Read<AttendanceCounts>>({ state: 'loading' });
   const [attention, setAttention] = useState<Read<AttentionCounts>>({ state: 'loading' });
-  const [pain, setPain] = useState<Read<PainReportCount>>({ state: 'loading' });
+  const [ownPain, setPain] = useState<Read<PainReportCount>>({ state: 'loading' });
+  // The screen's own pain read when it hands one over; else the tile's (6b-1).
+  const readsOwnPain = painFeed === undefined;
+  const pain = painFeed ?? ownPain;
   const [queue, setQueue] = useState<Read<number>>({ state: 'loading' });
 
   // Each read is numbered; a tile takes an answer only if it is from a newer read than the one it
@@ -242,8 +252,10 @@ export default function CoachLiveTiles() {
       queueTotal,
       setQueue,
     );
-    settle('pain', readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}`), painReportCount, setPain);
-  }, []);
+    if (readsOwnPain) {
+      settle('pain', readJson(`${base}/api/pilot/coach/pain-reports?limit=${PAIN_FEED_LIMIT}`), painReportCount, setPain);
+    }
+  }, [readsOwnPain]);
 
   useEffect(() => {
     // No state is set until a read answers (the convention SessionScriptLiveDelivery follows).
@@ -278,7 +290,7 @@ export default function CoachLiveTiles() {
           )
         }
       </Group>
-      {/* The coach home list's own heading (CoachWorkspace, "Athlete Pain Reports"): the feed is
+      {/* The pain list's own heading (PainReportsPanel, "Athlete Pain Reports"): the feed is
           every athlete the caller may see, so it is not under "your athletes" (lane U2-6b). */}
       <Group title="Athlete pain reports" read={pain} failedInTiles>
         {() => {

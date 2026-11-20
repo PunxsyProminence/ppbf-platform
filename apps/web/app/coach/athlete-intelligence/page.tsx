@@ -314,6 +314,16 @@ export default function AthleteIntelligencePage() {
             </select>
           </div>
 
+          {/* What to do first (lane AS-11, app scrub CS-19; the words approved
+              as written, Q9 = A). Shown only when the picker has athletes to
+              choose from: the roster read degrades to an empty picker, and a
+              prompt to choose from nothing would point nowhere. */}
+          {!athleteId && athletes.length > 0 && (
+            <p className="t-body mb-[var(--s5)] text-[color:var(--bone-300)]">
+              Choose an athlete to see what has been computed for them.
+            </p>
+          )}
+
           {athleteId && loading && (
             <div className="flex justify-center py-[var(--s6)]">
               <span className="working">Reading computed values...</span>
