@@ -127,3 +127,16 @@ describe('/change-pin offers the session bar\'s sign-out', () => {
     expect(page).toContain(`<p className="alert-msg" style={{ fontSize: 'var(--t-md)' }}>{error}</p>`);
   });
 });
+
+/* Lane AS-8, scrub ATH-17 (Q15 A on #2020). Nothing sets must_change_pin true
+   any more: a new athlete account and the admin's reset both leave it false
+   (activation.ts), so this page is no athlete's "First sign-in". The eyebrow
+   went; the title stays. */
+describe('/change-pin does not call itself a first sign-in', () => {
+  test('the title is "Choose your PIN", with no "First sign-in" eyebrow', () => {
+    const { container } = render(<ChangePinPage />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Choose your PIN' })).toBeTruthy();
+    expect(container.textContent ?? '').not.toContain('First sign-in');
+  });
+});

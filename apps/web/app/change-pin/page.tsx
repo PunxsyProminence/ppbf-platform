@@ -12,10 +12,17 @@ import { DEFAULT_PIN_LENGTH, PIN_RULE_SUMMARY } from '@/src/server/pilot/pinPoli
 const PIN_PATTERN = /^\d{6}$/;
 
 /**
- * Where an athlete lands on their first sign-in, still holding the starting
- * PIN the gym gave them. The server refuses every other route until this is
- * done (see requirePrincipal), so there is deliberately no way to skip it and
- * no navigation off this page other than completing it or signing out.
+ * Where a signed-in account still flagged must_change_pin lands: the page
+ * guard, RoleSessionGate, BoardRoleGate, /login and /athlete/sign-in all send
+ * it here. The server refuses every other route until this is done (see
+ * requirePrincipal), so there is deliberately no way to skip it and no
+ * navigation off this page other than completing it or signing out.
+ *
+ * It is no longer every athlete's first sign-in. A new athlete account and the
+ * admin's reset both leave must_change_pin false (activation.ts): the athlete
+ * chooses the PIN at /activate, so nobody else knows it. Only an account row
+ * that already carries the flag reaches this page. So its eyebrow, "First
+ * sign-in", is gone (lane AS-8, scrub ATH-17, Q15 A on #2020).
  *
  * SIGNING OUT HAS TO BE ON THIS PAGE. The session bar (GlobalRoleHeader)
  * carries the app's Logout everywhere else, but it draws its signed-in
@@ -127,8 +134,7 @@ export default function ChangePinPage() {
               staff-side page must not take (Law 6). */}
           <div className="frame-in mat-leather" style={{ padding: 'var(--s6)' }}>
             <header>
-              <p className="t-eyebrow tracking-[0.2em]">First sign-in</p>
-              <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
+              <h1 className="t-command" style={{ fontSize: 'var(--t-xl)' }}>
                 Choose your PIN
               </h1>
               <p className="t-body mt-[var(--s3)]">
