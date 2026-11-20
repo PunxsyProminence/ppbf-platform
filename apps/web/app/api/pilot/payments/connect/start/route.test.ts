@@ -59,6 +59,9 @@ test('an unregistered platform answers honestly instead of redirecting nowhere',
 
   expect(response.status).toBe(503);
   expect(payload.error).toMatch(/not registered yet/i);
+  // Lane BT, BOA-13: a gym admin reads this body (the Connect button is a plain link), so it names no secret.
+  expect(payload.error).toBe('The platform Stripe account is not registered yet.');
+  expect(JSON.stringify(payload)).not.toMatch(/PAYMENT_|sk_|whsec_/);
 });
 
 test('a configured platform redirects to Stripe with the org-bound state', async () => {

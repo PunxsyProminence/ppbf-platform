@@ -91,7 +91,7 @@ export function boardMetricDisplay(
   if (metric.status === 'insufficient_data') {
     return {
       value: 'Suppressed',
-      note: `Fewer than ${minimumCohortSize} athletes contributed, so the figure is withheld.`,
+      note: `Fewer than ${minimumCohortSize} athletes are behind this figure, so it is suppressed rather than reduced.`,
     };
   }
 
@@ -320,7 +320,7 @@ function BoardReportSection() {
                 active, open or in progress; completed is completed, complete or achieved; another status is anything else.
               </li>
               <li>
-                Suppressed: fewer than {report.minimumCohortSize} athletes contributed, so the figure is withheld rather
+                Suppressed: fewer than {report.minimumCohortSize} athletes are behind the figure, so it is suppressed rather
                 than reduced. No records: nothing was recorded, which is not a measured zero.
               </li>
               <li>Active athletes and goals have no stored history, so they are not figures for the window.</li>
