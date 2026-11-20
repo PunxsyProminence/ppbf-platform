@@ -692,9 +692,6 @@ export const BUILDING: readonly Door[] = [
   { href: '/coach/sports-medicine', label: 'Clearance Board', room: 'clinic', roles: ['coach', 'admin'],
     keywords: 'medical injury concussion clearance return-to-training physio holds cleared restricted board clinic',
     hint: 'Clearance status and active holds for your roster — what the athlete reads, nothing more.' },
-  /* Lane AS-5 (S2-3 A): Injury Record and Medical Restrictions are sections of
-     Athlete Safety; their old addresses redirect there, so they have no door.
-     The hint is their two hints, as they were. */
   { href: '/coach/athlete-safety', label: 'Athlete Safety', room: 'clinic', roles: ['coach', 'admin'],
     keywords: 'injury injuries sprain strain fracture cut head time lost return reported clinician usa boxing medical restriction affidavit knockout release physician lbc sparring family',
     hint: "Record what an athlete, parent, coach or clinician reported about an injury, and link its hold or return plan. Record a USA Boxing medical restriction, the date the physician's release was signed, and the LBC date." },

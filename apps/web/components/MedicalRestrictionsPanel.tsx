@@ -137,13 +137,22 @@ function isStaffRestriction(value: unknown): value is StaffRestriction {
 export default function MedicalRestrictionsPanel({
   athletes = [],
   athleteId: chosenAthlete,
-}: { athletes?: readonly RosterAthlete[]; athleteId?: string }) {
+  onBusy,
+}: {
+  athletes?: readonly RosterAthlete[];
+  athleteId?: string;
+  /** Told when a save, date or void starts and ends, so the page can lock its own athlete pick. */
+  onBusy?: (busy: boolean) => void;
+}) {
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   // The client session names a gym admin 'admin' (ClubRole); the route admits
   // organization_admin and admin to void and refuses everyone else.
   const viewerCanVoid = session?.role === 'admin';
 
-  const [athleteId, setAthleteId] = useState(chosenAthlete ?? '');
+  // Given by the page, the athlete is the page's: read and written for the
+  // same one, whatever the panel's own state. Otherwise its picker chooses.
+  const [pickedAthlete, setPickedAthlete] = useState('');
+  const athleteId = chosenAthlete ?? pickedAthlete;
   const [rows, setRows] = useState<StaffRestriction[] | null>(null);
   // Rows the server sent that failed the shape check. Counted, so the screen
   // never reads "No medical restriction on file" while one exists (P2).
@@ -183,15 +192,28 @@ export default function MedicalRestrictionsPanel({
     }
   }, []);
 
-  // The athlete the page chose: read once, on mount. The read is the outside
-  // system this effect keeps in step with; its first set only clears the list.
+  // The athlete the page chose: read, and start with nothing half-written. The
+  // read is the outside system this effect keeps in step with.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (chosenAthlete === undefined) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setRefusal(null);
+    setRecordOpen(false);
+    setRecord(EMPTY_RECORD);
+    setDates({});
     if (chosenAthlete) void read(chosenAthlete);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [chosenAthlete, read]);
 
+  // The page's own athlete pick is locked while a write is out, as this
+  // panel's picker is; and let go if the panel leaves mid-write.
+  useEffect(() => {
+    onBusy?.(busy);
+  }, [busy, onBusy]);
+  useEffect(() => () => onBusy?.(false), [onBusy]);
+
   const chooseAthlete = (next: string) => {
-    setAthleteId(next);
+    setPickedAthlete(next);
     setRefusal(null);
     setRecordOpen(false);
     setRecord(EMPTY_RECORD);

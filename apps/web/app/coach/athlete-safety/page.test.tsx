@@ -53,7 +53,12 @@ jest.mock('next/link', () => ({
 
 jest.mock('@/components/MedicalRestrictionsPanel', () => ({
   __esModule: true,
-  default: ({ athleteId }: { readonly athleteId?: string }) => <div data-testid="restrictions-panel" data-athlete={athleteId} />,
+  default: ({ athleteId, onBusy }: { readonly athleteId?: string; readonly onBusy?: (busy: boolean) => void }) => (
+    <div data-testid="restrictions-panel" data-athlete={athleteId}>
+      <button type="button" onClick={() => onBusy?.(true)}>panel write out</button>
+      <button type="button" onClick={() => onBusy?.(false)}>panel write back</button>
+    </div>
+  ),
 }));
 
 jest.mock('@/components/FamilyNotesPosted', () => ({
@@ -758,6 +763,23 @@ describe('Athlete Safety (lane AS-5)', () => {
     });
     await waitFor(() => expect(scrolled).toHaveLength(1));
     expect(scrolled[0].id).toBe('medical-restrictions');
+  });
+
+  test('while the Medical Restrictions panel has a write out, the athlete pick is locked', async () => {
+    await openAthlete();
+    const select = screen.getByLabelText('Athlete') as HTMLSelectElement;
+    expect(select.disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'panel write out' }));
+    expect(select.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'panel write back' }));
+    expect(select.disabled).toBe(false);
+  });
+
+  // The page's gate is exactly the gate of the two pages it took in.
+  test('the page admits exactly coach and admin', () => {
+    const source = readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+    const gates = [...source.matchAll(/allowedRoles=\{\[([^\]]*)\]\}/g)].map((m) => m[1]);
+    expect(gates).toEqual(["'coach', 'admin'"]);
   });
 
   // components/glossaryWords.test.ts reads app/coach/injuries/page.tsx, which is

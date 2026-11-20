@@ -168,6 +168,9 @@ export default function AthleteSafetyPage() {
   // `rereading` it locks the athlete picker and every save on the page, so a
   // block's answer always comes back to the athlete and the list it was sent from.
   const [blockBusy, setBlockBusy] = useState(false);
+  // True while the Medical Restrictions panel has a write out: the pick is
+  // locked then too, so its answer is never lost by moving to another athlete.
+  const [panelBusy, setPanelBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   // The athlete on screen now. A reply that arrives for an athlete no longer
   // selected is dropped, so one child's injuries never show under another's name.
@@ -330,7 +333,7 @@ export default function AthleteSafetyPage() {
   const planLinked = form.linked_rtt_plan_id !== '';
   // Shown where a new plan would be started, so a second one is not started blind.
   const loosePlans = loosePlansOf(injuries ?? [], candidates);
-  const locked = busy || rereading || blockBusy;
+  const locked = busy || rereading || blockBusy || panelBusy;
 
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/athlete-safety" allowedRoles={['coach', 'admin']} room="clinic" showShellHeader={false}>
@@ -510,7 +513,7 @@ export default function AthleteSafetyPage() {
               USA Boxing medical restrictions: from a ringside Restriction Affidavit, a training knockout or
               concussion, or another source. The app stores the dates, not the documents.
             </p>
-            <MedicalRestrictionsPanel key={athleteId} athleteId={athleteId} />
+            <MedicalRestrictionsPanel key={athleteId} athleteId={athleteId} onBusy={setPanelBusy} />
           </section>
         )}
 

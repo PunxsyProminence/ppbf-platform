@@ -366,3 +366,47 @@ describe('given the athlete the page chose', () => {
     expect(screen.queryByText('No medical restriction on file for this member.')).toBeNull();
   });
 });
+
+// Review follow-up (lane AS-5): the athlete read and the athlete written for
+// are always the one the page gives, and the page is told while a write is out.
+describe('given the athlete by the page, as it changes', () => {
+  test('a new athlete closes a half-written form, is read, and is the one a save is for', async () => {
+    createPersistentRoleSession('coach');
+    respondWith([]);
+    const { rerender } = render(<MedicalRestrictionsPanel athleteId="ath-1" />);
+    await screen.findByText('No medical restriction on file for this member.');
+    fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+    expect(screen.getByRole('button', { name: 'Save restriction' })).toBeTruthy();
+
+    rerender(<MedicalRestrictionsPanel athleteId="ath-2" />);
+    expect(screen.queryByRole('button', { name: 'Save restriction' })).toBeNull();
+    await waitFor(() => expect(calls.at(-1)?.url).toContain('athlete_id=ath-2'));
+
+    await screen.findByText('No medical restriction on file for this member.');
+    fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
+    fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-11-10' } });
+    fireEvent.change(screen.getByLabelText('Minimum end date'), { target: { value: '2026-12-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save restriction' }));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'POST')).toBe(true));
+    const posted = JSON.parse(String(calls.find((c) => c.init?.method === 'POST')!.init!.body));
+    expect(posted.athlete_id).toBe('ath-2');
+  });
+
+  test('the page is told a write is out, and told again when it ends', async () => {
+    createPersistentRoleSession('coach');
+    respondWith([]);
+    const onBusy = jest.fn();
+    render(<MedicalRestrictionsPanel athleteId="ath-1" onBusy={onBusy} />);
+    await screen.findByText('No medical restriction on file for this member.');
+    fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
+    fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-11-10' } });
+    fireEvent.change(screen.getByLabelText('Minimum end date'), { target: { value: '2026-12-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save restriction' }));
+    await waitFor(() => expect(onBusy).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(onBusy.mock.calls.at(-1)).toEqual([false]));
+  });
+});
