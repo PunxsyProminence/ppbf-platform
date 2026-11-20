@@ -232,7 +232,7 @@ export default function DrillEditForm({
       </div>
 
       <fieldset>
-        <legend className="t-label">Safety</legend>
+        <legend className="t-command mb-[var(--s3)] text-[length:var(--t-md)]">Safety</legend>
         <div className="grid gap-[var(--s4)] md:grid-cols-2">
           <div className="field">
             <label htmlFor={id('contact_level')} className="t-label">Contact</label>
@@ -265,7 +265,7 @@ export default function DrillEditForm({
       </div>
 
       <fieldset className="space-y-[var(--s3)]">
-        <legend className="t-label">Coaching notes</legend>
+        <legend className="t-command mb-[var(--s3)] text-[length:var(--t-md)]">Coaching notes</legend>
         {TEXT_FIELDS.filter(({ key }) => COACHING_NOTES.includes(key)).map(textArea)}
       </fieldset>
 
