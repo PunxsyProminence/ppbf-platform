@@ -112,8 +112,24 @@ function tabFromAddress(): Tab {
   return value === 'invite-staff' || value === 'add-athlete' ? value : 'people';
 }
 
-/** The date of birth on file for the athlete a code was just issued to, as /api/pilot/athletes/list reads it. */
+/**
+ * The invite role a link names (`?tab=invite-staff&role=parent`), so Gym
+ * Setup's guardian step opens the invite with Parent / Guardian chosen, not
+ * Coach (lane AS-10, AS10-1 review). Only a role the invite form itself
+ * offers, and only on the invite tab; anything else keeps Coach, as before.
+ */
+function inviteRoleFromAddress(): string {
+  if (typeof window === 'undefined') return 'coach';
+  const search = new URLSearchParams(window.location.search);
+  const value = search.get('role');
+  return search.get('tab') === 'invite-staff' && STAFF_ROLES.some((option) => option.value === value) ? (value as string) : 'coach';
+}
+
+/** The date of birth on file for the athlete a code was just issued to, as POST /api/pilot/athletes/get reads it. */
 type DobOnFile = { state: 'reading' } | { state: 'read'; dob: string | null } | { state: 'unread' };
+
+/** How long the date-of-birth read may take before the step is offered anyway (the minor's default). */
+const DOB_READ_TIMEOUT_MS = 8000;
 
 /**
  * What comes after a sign-in code (lane AS-10, OFF-07; Overwatch Q7 A): the
@@ -123,37 +139,64 @@ type DobOnFile = { state: 'reading' } | { state: 'read'; dob: string | null } | 
  * the athlete 18 or over: a guardian link to an adult starts dormant
  * (OD-2026-10-07-008) and the server refuses it (lane GA). An unknown date of
  * birth is a minor's (OD-2026-10-04-010), and so is one this page could not
- * read. The rule is isMinor, the same one guardianLinkEnded asks. Nothing is
- * shown about the athlete's age; the step is there or it is not.
+ * read, or not read within DOB_READ_TIMEOUT_MS. The rule is isMinor, the same
+ * one guardianLinkEnded asks. Nothing is shown about the athlete's age; the
+ * step is there or it is not.
  */
 function CodeNextSteps({ athleteId, onAddGuardian }: { readonly athleteId: string; readonly onAddGuardian: () => void }) {
   const [onFile, setOnFile] = useState<DobOnFile>({ state: 'reading' });
 
   useEffect(() => {
     const controller = new AbortController();
+    let unmounted = false;
+    // The first answer settles it: the read's, or the clock's. A read that has
+    // not answered in time is a read that did not answer: the minor's default,
+    // and a late answer is not taken.
+    let settled = false;
+    const settle = (next: DobOnFile) => {
+      if (unmounted || settled) return;
+      settled = true;
+      setOnFile(next);
+    };
+    const timer = setTimeout(() => {
+      settle({ state: 'unread' });
+      controller.abort();
+    }, DOB_READ_TIMEOUT_MS);
     void (async () => {
       try {
-        const response = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
+        // This one athlete's row only (the route admits the gym admin).
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/get`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
+          body: JSON.stringify({ athlete_id: athleteId }),
           signal: controller.signal,
         });
-        const payload = (await response.json().catch(() => null)) as { items?: Array<{ athlete_id?: unknown; dob?: unknown }> } | null;
-        if (!response.ok || !payload || !Array.isArray(payload.items)) throw new Error('unread');
-        const row = payload.items.find((item) => item?.athlete_id === athleteId);
-        // Not in the gym's list: nothing on file to go by, so the minor's default.
-        setOnFile({ state: 'read', dob: row && typeof row.dob === 'string' ? row.dob : null });
+        const payload = (await response.json().catch(() => null)) as { found?: unknown; athlete?: { athlete_id?: unknown; dob?: unknown } } | null;
+        if (!response.ok || !payload || typeof payload.found !== 'boolean') throw new Error('unread');
+        const row = payload.found && payload.athlete?.athlete_id === athleteId ? payload.athlete : null;
+        // Not found: nothing on file to go by, so the minor's default.
+        settle({ state: 'read', dob: row && typeof row.dob === 'string' ? row.dob : null });
       } catch {
-        if (!controller.signal.aborted) setOnFile({ state: 'unread' });
+        settle({ state: 'unread' });
+      } finally {
+        clearTimeout(timer);
       }
     })();
-    return () => controller.abort();
+    return () => {
+      unmounted = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [athleteId]);
 
   // Offered once the read has answered, so the step never shows and then goes.
   const offerGuardian = onFile.state === 'unread' || (onFile.state === 'read' && isMinor(onFile.dob, new Date()));
 
   return (
-    <nav aria-label="Next steps" className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+    <nav aria-label="Next steps" className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
+      {/* While the record is read, say so: the steps below are not yet all of them. */}
+      {onFile.state === 'reading' && <p className="t-muted">Checking the athlete&apos;s record…</p>}
       {offerGuardian && (
         <button type="button" onClick={onAddGuardian} className="btn">
           Next: add a guardian
@@ -353,7 +396,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
 
   // Invite staff form
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState('coach');
+  const [inviteRole, setInviteRole] = useState(inviteRoleFromAddress);
 
   // Guardian half of a parent invite. The server refuses the parent role
   // without all three, because the account is only useful attached to a child.
@@ -1369,8 +1412,14 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   key={createdAthlete.athleteId}
                   athleteId={createdAthlete.athleteId}
                   onAddGuardian={() => {
-                    // The guardian invite, with this athlete already chosen. The
-                    // code stays on screen above until Done.
+                    // A fresh guardian invite for this athlete. Nothing armed or
+                    // typed earlier for someone else carries over: a role change
+                    // left armed would send under its old words (AS10-1 review).
+                    // The code stays on screen above until Done.
+                    setPendingRoleChange(null);
+                    setInviteEmail('');
+                    setGuardianFullName('');
+                    setGuardianRelationship(GUARDIAN_RELATIONSHIPS[0].value);
                     setInviteRole('parent');
                     setGuardianAthleteId(createdAthlete.athleteId ?? '');
                     setTab('invite-staff');

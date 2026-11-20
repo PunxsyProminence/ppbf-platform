@@ -183,7 +183,7 @@ export interface WallConsentDecision {
 }
 
 /**
- * Age in whole years on the GYMete's name may go up.
+ * Resolve how much of one athlete's name may go up.
  *
  * The rule is "the latest statement wins, and silence is a refusal":
  *

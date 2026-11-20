@@ -79,11 +79,13 @@ test('each step links to the Gym Office tab that does it, and the guardian step 
   expect(lines.athletes).toMatchObject({ href: '/admin/people?tab=add-athlete', linkLabel: 'Add an athlete' });
   expect(lines['athlete-sign-in']).toMatchObject({ href: '/admin/people?tab=add-athlete', linkLabel: 'Add Athlete' });
   expect(lines.guardians).toMatchObject({
-    href: '/admin/people?tab=invite-staff',
+    href: '/admin/people?tab=invite-staff&role=parent',
     linkLabel: 'Add a guardian',
     alsoHref: '/admin/athlete-consent',
     alsoLinkLabel: 'Media Consent Audit',
   });
+  // Nobody is waiting on a code here, so the re-issue sentence is not said.
+  expect(lines['athlete-sign-in'].detail).not.toMatch(/Issue New Activation Code/);
   // No step links to the typed-account-ID page any more.
   expect(Object.values(lines).some((line) => line.href === '/admin/activation-codes')).toBe(false);
   // Only the guardian step has a second screen.
@@ -116,7 +118,7 @@ test('what is still open is counted', async () => {
   // From the roster: the athlete never issued a code is counted too.
   expect(lines['athlete-sign-in']).toMatchObject({
     state: 'to_do',
-    detail: '1 athlete has set a PIN; 2 are waiting to redeem an activation code; 1 has not been issued a code yet.',
+    detail: '1 athlete has set a PIN; 2 are waiting to redeem an activation code; 1 has not been issued a code yet. An unredeemed code is replaced from the athlete\'s row on Gym Office: Issue New Activation Code.',
   });
   expect(lines.guardians).toMatchObject({ state: 'to_do', detail: '1 athlete under 18 has no guardian on file.' });
   // Only active athletes are counted.

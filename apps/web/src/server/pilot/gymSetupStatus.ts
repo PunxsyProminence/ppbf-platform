@@ -122,7 +122,11 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
           ...(waiting > 0 ? [`${plural(waiting, 'is', 'are')} waiting to redeem an activation code`] : []),
           ...(noCode > 0 ? [`${plural(noCode, 'has', 'have')} not been issued a code yet`] : []),
         ];
-        return { state: 'to_do', detail: `${parts.join('; ')}.` };
+        // The link opens Add Athlete, which gives a roster athlete with no sign-in a
+        // code. A code not redeemed is replaced on the athlete's own row, so the line
+        // names that control too (lane AS-10, AS10-1 review).
+        const reissue = waiting > 0 ? ' An unredeemed code is replaced from the athlete\'s row on Gym Office: Issue New Activation Code.' : '';
+        return { state: 'to_do', detail: `${parts.join('; ')}.${reissue}` };
       },
     ),
     line(
@@ -132,7 +136,8 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
       {
         key: 'guardians',
         title: 'A guardian for every athlete under 18',
-        href: '/admin/people?tab=invite-staff',
+        // role=parent: the invite opens with Parent / Guardian chosen, not Coach.
+        href: '/admin/people?tab=invite-staff&role=parent',
         linkLabel: 'Add a guardian',
         alsoHref: '/admin/athlete-consent',
         alsoLinkLabel: 'Media Consent Audit',

@@ -9,11 +9,11 @@
 // guardian step is left off only when the date of birth ON FILE makes the
 // athlete 18 or over (OD-2026-10-07-008; lane GA refuses that link). An
 // unknown date of birth is a minor's (OD-2026-10-04-010), and so is a date the
-// page could not read. Gym Office also opens on the tab a link names, so Gym
-// Setup's steps land on their own form, and it links Gym Setup.
+// page could not read or did not read in time. Gym Office also opens on the
+// tab (and, for the guardian step, the role) a link names, and links Gym Setup.
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import PeopleConsolePage from './page';
 import { gymDayIso } from '@/src/lib/gymTime';
@@ -37,20 +37,33 @@ jest.mock('next/link', () => ({
 
 const originalFetch = global.fetch;
 
+// A fixed gym day, not the run day: an 18th-birthday test must not depend on
+// when it runs (a Feb 29 run day would move "18 years ago" to Mar 1). Only Date
+// is faked here; real timers keep the page's reads and RTL's waits working.
+const NOW = new Date('2026-11-20T15:00:00Z');
+const ONLY_DATE = ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+  'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval',
+  'setTimeout', 'clearTimeout'] as const;
+
 const ROSTER = [
   { athlete_id: 'ath-1', full_name: 'Alex Johnson', account_id: null, account_active: null, has_pin: false, account_updated_at: null },
   { athlete_id: 'ath-2', full_name: 'Sam Rivera', account_id: 'sriv', account_active: true, has_pin: true, account_updated_at: null },
 ];
 
-/** How the date-of-birth read answers: rows, a refusal, or a thrown network error. */
-type DobRead = { rows: Array<{ athlete_id: string; dob: string | null }> } | { status: number } | 'network-error';
+/** How the one-athlete read answers: rows on file, a refusal, a thrown network error, or no answer at all. */
+type DobRead = { rows: Array<{ athlete_id: string; dob: string | null }> } | { status: number } | 'network-error' | 'hang';
+
+const DOB_READ = '/api/pilot/athletes/get';
 
 function fetchMock(dobRead: DobRead, members: unknown[] = []) {
   return jest.fn(async (url: string, init?: RequestInit) => {
-    if (url.includes('/api/pilot/athletes/list')) {
+    if (url.includes(DOB_READ)) {
+      if (dobRead === 'hang') return new Promise<Response>(() => undefined);
       if (dobRead === 'network-error') throw new TypeError('Failed to fetch');
       if ('status' in dobRead) return { ok: false, status: dobRead.status, json: async () => ({ error: 'no' }) } as Response;
-      return { ok: true, status: 200, json: async () => ({ items: dobRead.rows }) } as Response;
+      const { athlete_id: wanted } = JSON.parse(String(init?.body ?? '{}')) as { athlete_id?: string };
+      const row = dobRead.rows.find((item) => item.athlete_id === wanted);
+      return { ok: true, status: 200, json: async () => (row ? { found: true, athlete: row } : { found: false }) } as Response;
     }
     if (url.includes('/api/pilot/admin/athlete-accounts')) {
       return { ok: true, status: 200, json: async () => ({ ok: true, activation_code: 'CDEF-3456-GHJK', expires_at: '2026-08-26T00:00:00Z' }) } as Response;
@@ -68,35 +81,36 @@ function fetchMock(dobRead: DobRead, members: unknown[] = []) {
   });
 }
 
-/** A date of birth `years` before the gym's today, shifted by `days`. */
+/** A date of birth `years` before the fixed gym day, shifted by `days`. */
 function dobYearsAgo(years: number, days = 0): string {
-  const [y, m, d] = (gymDayIso(new Date()) as string).split('-').map(Number);
-  const at = new Date(Date.UTC(y - years, m - 1, d + days));
-  return at.toISOString().slice(0, 10);
+  const [y, m, d] = (gymDayIso(NOW) as string).split('-').map(Number);
+  return new Date(Date.UTC(y - years, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
 /** Gives ath-1 (on the roster, no sign-in yet) a sign-in through Add Athlete, as the office does. */
 async function issueCodeForAlex() {
   render(<PeopleConsolePage />);
   fireEvent.click(await screen.findByRole('button', { name: /^Add Athlete$/i }));
-  fireEvent.click(screen.getByRole('radio', { name: /Already on the roster/i }));
-  fireEvent.change(screen.getByLabelText(/Which athlete/i), { target: { value: 'ath-1' } });
+  fireEvent.click(await screen.findByRole('radio', { name: /Already on the roster/i }));
+  fireEvent.change(await screen.findByLabelText(/Which athlete/i), { target: { value: 'ath-1' } });
   fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'alex-login' } });
   fireEvent.click(screen.getByRole('button', { name: 'Create Sign-In & Get Code' }));
   expect(await screen.findByText('CDEF-3456-GHJK')).toBeTruthy();
 }
 
-/** The next steps under the code, once the date-of-birth read has answered. */
+/** The next steps under the code, once the one-athlete read has answered. */
 async function nextSteps() {
   const nav = await screen.findByRole('navigation', { name: 'Next steps' });
-  await waitFor(() => {
-    const calls = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url));
-    expect(calls.some((url) => url.includes('/api/pilot/athletes/list'))).toBe(true);
-  });
+  await waitFor(() => expect(within(nav).queryByText(/Checking the athlete/)).toBeNull());
   return nav;
 }
 
+beforeEach(() => {
+  jest.useFakeTimers({ now: NOW, doNotFake: [...ONLY_DATE] });
+});
+
 afterEach(() => {
+  jest.useRealTimers();
   global.fetch = originalFetch;
   window.history.replaceState({}, '', '/');
 });
@@ -106,10 +120,20 @@ describe('next steps under a new sign-in code', () => {
     global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(12) }] }) as never;
     await issueCodeForAlex();
     const nav = await nextSteps();
-    expect(await within(nav).findByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
     expect(within(nav).getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
       ['Waivers & Consent', '/admin/consent'],
       ['Media Consent Audit', '/admin/athlete-consent'],
+    ]);
+  });
+
+  test('reads only this athlete\'s row', async () => {
+    global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(12) }] }) as never;
+    await issueCodeForAlex();
+    await nextSteps();
+    const reads = (global.fetch as jest.Mock).mock.calls.filter(([url]) => String(url).includes('/api/pilot/athletes'));
+    expect(reads.map(([url, init]) => [String(url), (init as RequestInit).method, (init as RequestInit).body])).toEqual([
+      [DOB_READ, 'POST', JSON.stringify({ athlete_id: 'ath-1' })],
     ]);
   });
 
@@ -117,49 +141,110 @@ describe('next steps under a new sign-in code', () => {
     global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(25) }] }) as never;
     await issueCodeForAlex();
     const nav = await nextSteps();
-    await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(2));
+    expect(within(nav).getAllByRole('link')).toHaveLength(2);
     expect(within(nav).queryByRole('button', { name: 'Next: add a guardian' })).toBeNull();
   });
 
-  test('the 18th birthday is the gym\'s day: 18 today has no guardian step, 18 tomorrow has one', async () => {
+  test('18 today on the gym\'s day: an adult, so no guardian step', async () => {
     global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(18) }] }) as never;
     await issueCodeForAlex();
-    const adultNav = await nextSteps();
-    await waitFor(() => expect(within(adultNav).getAllByRole('link')).toHaveLength(2));
-    expect(within(adultNav).queryByRole('button', { name: 'Next: add a guardian' })).toBeNull();
+    const nav = await nextSteps();
+    expect(within(nav).getAllByRole('link')).toHaveLength(2);
+    expect(within(nav).queryByRole('button', { name: 'Next: add a guardian' })).toBeNull();
   });
 
-  test('turns 18 tomorrow: still a minor, so the guardian step shows', async () => {
+  test('18 tomorrow: still a minor, so the guardian step shows', async () => {
     global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(18, 1) }] }) as never;
     await issueCodeForAlex();
-    expect(await within(await nextSteps()).findByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
+    expect(within(await nextSteps()).getByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
   });
 
   test.each([
     ['no date of birth on file', { rows: [{ athlete_id: 'ath-1', dob: null }] } as DobRead],
-    ['the athlete is not in the list read', { rows: [{ athlete_id: 'ath-9', dob: dobYearsAgo(30) }] } as DobRead],
+    ['the athlete is not found', { rows: [{ athlete_id: 'ath-9', dob: dobYearsAgo(30) }] } as DobRead],
     ['the read is refused', { status: 403 } as DobRead],
     ['the read fails', { status: 500 } as DobRead],
     ['the network fails', 'network-error' as DobRead],
   ])('%s: treated as a minor, so the guardian step shows', async (_label, dobRead) => {
     global.fetch = fetchMock(dobRead) as never;
     await issueCodeForAlex();
-    expect(await within(await nextSteps()).findByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
+    expect(within(await nextSteps()).getByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
   });
 
-  test('the step opens the guardian invite with this athlete chosen, and the code stays on screen', async () => {
+  test('while the record is read the row says so; a read that never answers ends in the minor\'s default', async () => {
+    jest.useFakeTimers({ now: NOW });
+    global.fetch = fetchMock('hang') as never;
+    await issueCodeForAlex();
+    const nav = screen.getByRole('navigation', { name: 'Next steps' });
+    expect(within(nav).getByText("Checking the athlete's record…")).toBeTruthy();
+    expect(within(nav).queryByRole('button', { name: 'Next: add a guardian' })).toBeNull();
+    await act(async () => {
+      jest.advanceTimersByTime(8000);
+    });
+    expect(within(nav).getByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
+    expect(within(nav).queryByText(/Checking the athlete/)).toBeNull();
+  });
+
+  test('an answer that comes after the clock ran out is not taken: the step stays', async () => {
+    jest.useFakeTimers({ now: NOW });
+    const slow = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(30) }] });
+    global.fetch = jest.fn((url: string, init?: RequestInit) =>
+      String(url).includes(DOB_READ)
+        ? new Promise<Response>((resolve) => setTimeout(() => resolve(slow(url, init)), 9000))
+        : slow(url, init)) as never;
+    await issueCodeForAlex();
+    const nav = screen.getByRole('navigation', { name: 'Next steps' });
+    await act(async () => {
+      jest.advanceTimersByTime(8000);
+    });
+    expect(within(nav).getByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
+    // The adult's date of birth arrives late; it does not take the step away.
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(within(nav).getByRole('button', { name: 'Next: add a guardian' })).toBeTruthy();
+  });
+
+  test('the step opens a fresh guardian invite with this athlete chosen; nothing is sent; the code stays', async () => {
     global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(12) }] }) as never;
     await issueCodeForAlex();
-    fireEvent.click(await within(await nextSteps()).findByRole('button', { name: 'Next: add a guardian' }));
+    fireEvent.click(within(await nextSteps()).getByRole('button', { name: 'Next: add a guardian' }));
 
-    const athleteSelect = (await screen.findByLabelText('Athlete')) as HTMLSelectElement;
-    expect(athleteSelect.value).toBe('ath-1');
+    expect(((await screen.findByLabelText('Athlete')) as HTMLSelectElement).value).toBe('ath-1');
     expect((screen.getByRole('radio', { name: /Parent/i }) as HTMLInputElement).checked).toBe(true);
-    // Nothing was sent: the admin still types the guardian's email and name.
     const posts = (global.fetch as jest.Mock).mock.calls.filter(([url, init]) =>
       String(url).includes('/api/pilot/admin/staff') && (init as RequestInit | undefined)?.method === 'POST');
     expect(posts).toEqual([]);
     expect(screen.getByText('CDEF-3456-GHJK')).toBeTruthy();
+  });
+
+  // AS10-1 review: an armed role change, or an email and name typed for
+  // someone else, must not carry over to a new guardian for this child.
+  test('an armed role change and earlier typing are cleared, so nothing sends under old words', async () => {
+    const staffer = { account_id: 'staffer@example.com', login_email: 'staffer@example.com', auth_provider: 'microsoft', role: 'staff', athlete_id: null, active_flag: true, has_pin: false, membership_active: true };
+    global.fetch = fetchMock({ rows: [{ athlete_id: 'ath-1', dob: dobYearsAgo(12) }] }, [staffer]) as never;
+    render(<PeopleConsolePage />);
+    // Arm a role change on the invite tab, and leave it unanswered.
+    fireEvent.click(await screen.findByRole('button', { name: /Add Coach, Staff Or Guardian/i }));
+    fireEvent.change(screen.getByLabelText(/Email address/i), { target: { value: 'staffer@example.com' } });
+    fireEvent.click(screen.getByRole('radio', { name: /^Coach/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add To My Gym' }));
+    expect(await screen.findByRole('button', { name: /^Change staffer@example\.com To Coach$/ })).toBeTruthy();
+
+    // Now give ath-1 a code and take the guardian step.
+    fireEvent.click(screen.getByRole('button', { name: /^Add Athlete$/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /Already on the roster/i }));
+    fireEvent.change(screen.getByLabelText(/Which athlete/i), { target: { value: 'ath-1' } });
+    fireEvent.change(screen.getByLabelText('Sign-in ID'), { target: { value: 'alex-login' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Sign-In & Get Code' }));
+    expect(await screen.findByText('CDEF-3456-GHJK')).toBeTruthy();
+    fireEvent.click(within(await nextSteps()).getByRole('button', { name: 'Next: add a guardian' }));
+
+    expect(screen.queryByRole('button', { name: /^Change .* To / })).toBeNull();
+    expect((screen.getByLabelText(/Email address/i) as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText(/Guardian's full name/i) as HTMLInputElement).value).toBe('');
+    expect((screen.getByRole('radio', { name: /Parent/i }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText('Athlete') as HTMLSelectElement).value).toBe('ath-1');
   });
 
   test('a code re-issued from an athlete\'s row offers the steps for that athlete', async () => {
@@ -173,8 +258,10 @@ describe('next steps under a new sign-in code', () => {
     expect(await screen.findByText('WXYZ-7890-MNPQ')).toBeTruthy();
     const nav = await nextSteps();
     // ath-2 is an adult on file, so the steps are for ath-2, not for anyone else.
-    await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(2));
+    expect(within(nav).getAllByRole('link')).toHaveLength(2);
     expect(within(nav).queryByRole('button', { name: 'Next: add a guardian' })).toBeNull();
+    expect((global.fetch as jest.Mock).mock.calls.some(([url, init]) =>
+      String(url).includes(DOB_READ) && (init as RequestInit).body === JSON.stringify({ athlete_id: 'ath-2' }))).toBe(true);
   });
 });
 
@@ -198,6 +285,27 @@ describe('Gym Office opens on the tab a link names', () => {
     expect(await screen.findByRole('table')).toBeTruthy();
     expect(screen.queryByLabelText('Sign-in ID')).toBeNull();
     expect(screen.queryByLabelText(/Email address/i)).toBeNull();
+  });
+
+  test('Gym Setup\'s guardian step opens the invite with Parent / Guardian chosen', async () => {
+    window.history.replaceState({}, '', '/admin/people?tab=invite-staff&role=parent');
+    global.fetch = fetchMock({ rows: [] }) as never;
+    render(<PeopleConsolePage />);
+    await screen.findByLabelText(/Email address/i);
+    expect((screen.getByRole('radio', { name: /Parent/i }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  test.each([
+    ['no role named', '/admin/people?tab=invite-staff'],
+    ['a role the form does not offer', '/admin/people?tab=invite-staff&role=admin'],
+    ['a role off the invite tab', '/admin/people?tab=add-athlete&role=parent'],
+  ])('%s keeps Coach, as before', async (_label, address) => {
+    window.history.replaceState({}, '', address);
+    global.fetch = fetchMock({ rows: [] }) as never;
+    render(<PeopleConsolePage />);
+    await screen.findByRole('button', { name: /^Add Athlete$/i });
+    fireEvent.click(screen.getByRole('button', { name: /Add Coach, Staff Or Guardian/i }));
+    expect((screen.getByRole('radio', { name: /^Coach/i }) as HTMLInputElement).checked).toBe(true);
   });
 });
 
