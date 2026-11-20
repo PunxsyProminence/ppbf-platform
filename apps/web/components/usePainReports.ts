@@ -4,13 +4,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { PAIN_FEED_LIMIT, painReportCount, type PainReportCount } from '@/components/CoachLiveTiles';
+import type { PainReporter } from '@/src/server/pilot/formulas/painReportAlert';
+import type { ShadowNearMissSeverity } from '@/src/server/pilot/shadowNearMisses';
 
 /**
  * THE ONE READ OF THE PAIN FEED (lane U2-6b-2; Overwatch's 6b ruling: "the tile and the panel read
  * one feed (GET /api/pilot/coach/pain-reports) over one stated window"; QF = A, limit=50).
  *
  * The coach home's pain list, the floor board's pain items and, on the class screen, the pain
- * tile all read this one read, so they count the same rows over the same stated window.
+ * tile all read this one read, over the same stated window. The tile counts the feed's rows; the
+ * list draws the rows it can and says so when it could not draw them all.
  *
  * The server filters to the athletes the caller may see. Anything returned here is a child who
  * told the platform they were hurting and was told a coach would see it, so a read that fails,
@@ -59,14 +62,21 @@ export interface CoachPainReport {
  */
 export const PAIN_READ_FAILED = 'Unable to load athlete pain reports';
 
-const SEVERITIES: ReadonlySet<unknown> = new Set(['low', 'moderate', 'high', 'critical']);
-const REPORTERS: ReadonlySet<unknown> = new Set(['athlete', 'coach', 'staff_admin', 'unknown']);
+// Keyed by the server's own types, so a value the server adds fails the typecheck here until the
+// panel can draw it, rather than every report carrying it going quietly undrawn.
+const SEVERITY_KEYS: Record<ShadowNearMissSeverity, true> = { low: true, moderate: true, high: true, critical: true };
+const REPORTER_KEYS: Record<PainReporter, true> = { athlete: true, coach: true, staff_admin: true, unknown: true };
+const SEVERITIES: ReadonlySet<unknown> = new Set(Object.keys(SEVERITY_KEYS));
+const REPORTERS: ReadonlySet<unknown> = new Set(Object.keys(REPORTER_KEYS));
 const textOrNull = (value: unknown) => value === null || typeof value === 'string';
 
 /**
  * A row the panel can draw: the route's shape (CoachPainReport, painReportAlert.ts). A row that
- * is not is skipped from the list, so one bad row cannot throw and take the class screen's console
- * down with it (Overwatch on #2023); the tile still counts the feed's rows (Q3 = A).
+ * is not is skipped from the cards, so one bad row cannot throw and take the class screen's
+ * console down with it (Overwatch on #2023). It is never skipped silently: the list then shows
+ * its failed-read words beside the cards it could draw and never the "no athlete has reported
+ * pain" line, the coach home's floor board marks the pain feed failed, and the tile still counts
+ * the feed's rows (Q3 = A).
  */
 export function isPainReportRow(row: unknown): row is CoachPainReport {
   if (!row || typeof row !== 'object') return false;
@@ -96,6 +106,8 @@ export interface PainReportsRead {
   reports: CoachPainReport[];
   /** How many rows the feed returned, drawable or not: the tile's count (Q3 = A). */
   rowCount: number;
+  /** Rows the feed returned that the list could not draw (rowCount minus reports). */
+  unreadRows: number;
   /** The feed's own window; null until a read answers with one. */
   windowDays: number | null;
   truncated: boolean;
@@ -123,6 +135,7 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
     error: '',
     reports: [],
     rowCount: 0,
+    unreadRows: 0,
     windowDays: null,
     truncated: false,
   });
@@ -150,6 +163,7 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
           error: '',
           reports,
           rowCount: count.count,
+          unreadRows: count.count - reports.length,
           windowDays: count.windowDays,
           truncated: count.truncated,
         });
@@ -166,6 +180,7 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
           error: PAIN_READ_FAILED,
           reports: [],
           rowCount: 0,
+          unreadRows: 0,
           windowDays: current.windowDays,
           truncated: false,
         }));

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 
-import type { PainReportsRead, CoachPainReport } from '@/components/usePainReports';
+import { PAIN_READ_FAILED, type CoachPainReport, type PainReportsRead } from '@/components/usePainReports';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { painScoreLabel } from '@/src/shared/painScoreLabel';
 
@@ -11,11 +11,11 @@ import { painScoreLabel } from '@/src/shared/painScoreLabel';
  * the class screen can show it too. Overwatch on #2023: its prose and heading are at the gym-floor
  * type minimum, --t-md, on both pages (QI = B); the line under an empty list says how this screen
  * reads the feed (QJ = B); a failed read always shows the panel's own words; a row the panel cannot
- * draw is skipped. Its read asks for up to 50 reports (QF = A), and a body that cannot state its
- * window, completeness or list shows the failed-read words, never the "No athlete on your roster
- * has reported pain" line.
+ * draw is skipped from the cards and the failed-read words say reports may not be shown. Its read
+ * asks for up to 50 reports (QF = A), and a body that cannot state its window, completeness or
+ * list shows the failed-read words, never the "No athlete on your roster has reported pain" line.
  * It draws one shared read (usePainReports): the coach home's, or on the class screen the same
- * read the pain tile counts, so the two show the same answer (Overwatch's 6b ruling).
+ * read the pain tile counts (Overwatch's 6b ruling).
  *
  * Drawn --restricted, not --locked: "A pain report is not a medical stop at any severity"
  * (OD-2026-10-03-017), and --locked is the medical stop (UXB-10).
@@ -84,11 +84,14 @@ export default function PainReportsPanel({
   readonly boardShown: boolean;
   /**
    * The screen reads the feed every two minutes (the class screen, COACH_TILES_REFRESH_MS), so a
-   * new report shows within two minutes; else only on Refresh (the coach home). Overwatch's words
+   * new report shows within two minutes; else on load, Refresh or a retry (the coach home). Overwatch's words
    * on #2023 (QJ = B).
    */
   readonly readsEveryTwoMinutes?: boolean;
 }) {
+  // A read that failed, or one whose rows could not all be drawn, says so in the failed-read words
+  // and never shows the "no athlete has reported pain" line; the rows it could draw still show.
+  const failedWords = read.error || (read.unreadRows > 0 ? PAIN_READ_FAILED : '');
   return (
     <section id="coach-dashboard-details" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
       <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
@@ -109,9 +112,9 @@ export default function PainReportsPanel({
         <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">Checking for athlete pain reports...</p>
       )}
 
-      {!read.loading && read.error && (
+      {!read.loading && failedWords && (
         <div className="border-2 border-[var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 p-3">
-          <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--restricted-ink)]">{read.error}</p>
+          <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--restricted-ink)]">{failedWords}</p>
           <p className="mt-1 text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">
             Pain reports may exist that are not shown here. Do not read this as &quot;no athlete
             reported pain&quot; -- ask the floor.
@@ -119,7 +122,7 @@ export default function PainReportsPanel({
         </div>
       )}
 
-      {!read.loading && !read.error && read.reports.length === 0 && (
+      {!read.loading && !failedWords && read.reports.length === 0 && (
         <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">
           No athlete on your roster has reported pain
           {read.windowDays === null ? '' : ` in the last ${read.windowDays} days`}.{' '}
@@ -129,7 +132,7 @@ export default function PainReportsPanel({
         </p>
       )}
 
-      {!read.loading && !read.error && read.reports.length > 0 && (
+      {!read.loading && read.reports.length > 0 && (
         <div className="space-y-3">
           {read.truncated && (
             <p className="text-[length:var(--t-md)] text-[var(--restricted-ink)]">

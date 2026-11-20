@@ -512,6 +512,15 @@ describe('the pain list on the class screen (lane U2-6b-2)', () => {
     expect(await screen.findAllByRole('article')).toHaveLength(1);
     expect(screen.getByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
     expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^2$/);
+    expect(screen.getByText(/Pain reports may exist that are not shown here\./)).toBeInTheDocument();
+  });
+
+  test('when no row can be drawn, the tile counts it and the list says reports may not be shown, never "none"', async () => {
+    serve({ live, pain: () => jsonResponse({ ...PAIN_EMPTY, painReports: [null] }) });
+    await open();
+    expect(await screen.findByText(/Pain reports may exist that are not shown here\./)).toBeInTheDocument();
+    expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
+    expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^1$/);
   });
 
   test('with no live session the pain feed is not read and no list shows', async () => {

@@ -12,7 +12,7 @@ import PainReportsPanel, {
   painReportTime,
   painSeverityTone,
 } from './PainReportsPanel';
-import { usePainReports } from './usePainReports';
+import { PAIN_READ_FAILED, usePainReports } from './usePainReports';
 import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import CapacityNotesPanel from './CapacityNotesPanel';
 import GymTvPanel from './GymTvPanel';
@@ -2642,8 +2642,9 @@ export default function CoachWorkspace() {
     },
     {
       name: 'Pain reports',
-      state: painRead.loading ? 'loading' : painRead.error ? 'error' : 'loaded',
-      error: painRead.error,
+      // A read whose rows could not all be drawn is failed here too, never "loaded" (lane U2-6b-2).
+      state: painRead.loading ? 'loading' : painRead.error || painRead.unreadRows > 0 ? 'error' : 'loaded',
+      error: painRead.error || (painRead.unreadRows > 0 ? PAIN_READ_FAILED : ''),
       failureMeaning: 'Pain reports may exist that are not shown here. Do not read this as "no athlete reported pain" -- ask the floor.',
       onRetry: painRead.reload,
       truncatedNote: painRead.truncated

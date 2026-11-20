@@ -81,7 +81,7 @@ type Read<T> = { state: 'loading' } | { state: 'failed' } | { state: 'ok'; value
 
 /**
  * A pain read the screen already makes and hands the tile (lane U2-6b-2): on the class screen,
- * the one read its pain list draws, so the tile and the list count the same rows over the same
+ * the one read its pain list draws, so the tile and the list read the same rows over the same
  * window (usePainReports, painTileRead). Without one, the tile reads the feed itself.
  */
 export type PainTileRead = Read<PainReportCount>;

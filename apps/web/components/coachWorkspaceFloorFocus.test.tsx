@@ -147,6 +147,23 @@ test('a failed pain-report read is shown on the floor first, never as "nothing n
   expect(floor().getByText('Pain reports')).toBeTruthy();
 });
 
+test('a pain report the coach home cannot draw marks the pain feed failed, never "nothing needs you" (lane U2-6b-2)', async () => {
+  await renderWorkspace({
+    painReports: () => jsonResponse({
+      ok: true, windowDays: 14, truncated: false,
+      painReports: [{
+        nearMissId: 'nm_9', athleteId: 'ath_9', athleteName: 'Casey R.', severity: 'moderate', painScore: 4,
+        location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'parent',
+      }],
+    }),
+  });
+
+  expect(floor().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
+  expect(floor().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
+  expect(floor().getByText('Pain reports')).toBeTruthy();
+  expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
+});
+
 test('a failed escalation read is shown on the floor first, ahead of any report', async () => {
   await renderWorkspace({
     escalationsGet: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }),

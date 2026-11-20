@@ -180,7 +180,7 @@ describe('the read', () => {
     expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
   });
 
-  test('a row the panel cannot draw is skipped, not thrown; the tile still counts the feed\'s rows', async () => {
+  test('a row the panel cannot draw is skipped, not thrown, and never silently: the list says reports may not be shown', async () => {
     answers = [() => json({
       ...EMPTY,
       painReports: [
@@ -199,7 +199,22 @@ describe('the read', () => {
     expect(cards).toHaveLength(2);
     expect(cards[0]).toHaveTextContent('Athlete ID ath_n1');
     expect(cards[1]).toHaveTextContent('Jordan P.');
+    // The six it could not draw are said, in the failed-read words, beside the two it could.
+    expect(screen.getByText('Unable to load athlete pain reports')).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(FAILED_WORDS))).toBeInTheDocument();
+    expect(seen.read?.unreadRows).toBe(6);
+    // The tile counts the feed's rows (Q3 = A).
     expect(painTileRead(seen.read!)).toEqual({ state: 'ok', value: { count: 8, truncated: false, windowDays: 7 } });
+  });
+
+  test('when no row can be drawn, the list never says no athlete has reported pain', async () => {
+    answers = [() => json({ ...EMPTY, painReports: [report('n1', { reporter: 'parent' })] })];
+    await show({ timed: true });
+    expect(screen.queryByRole('article')).toBeNull();
+    expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
+    expect(screen.getByText('Unable to load athlete pain reports')).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(FAILED_WORDS))).toBeInTheDocument();
+    expect(painTileRead(seen.read!)).toEqual({ state: 'ok', value: { count: 1, truncated: false, windowDays: 7 } });
   });
 
   test('a slow earlier answer never replaces a newer one: a later failure stays', async () => {
