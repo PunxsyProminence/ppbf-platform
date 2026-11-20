@@ -91,6 +91,12 @@ Research releases have their own contract (not in this file yet).
   package's text enters it in the app. Session scripts get no in-app-edit guard (a script can still be held when it
   depends on a held drill). A package may not carry an "In-app edit" field label: only the app writes that label
   (blocking: in_app_edit_label).
+- A drill file made before a column existed keeps the stored value (lane GD). exit_condition and correction_path
+  were added after the first drill files. When seed_drill_library.csv's header has no such column, a drill the
+  file names keeps what the database holds in that field: the drill is UNCHANGED if nothing else differs, and a
+  revision carries the stored value into the new version. A file that has the column says what its cell says, so
+  an empty cell there blanks the field. A new drill has nothing stored and loads blank. A label column the file
+  leaves out is kept the same way.
 - The seed workflow and `npm run seed:<dataset>` load through this rule (the content-import core). A dataset
   with no loader yet says so under "Loaded today", and a load that names it is refused, not skipped.
 
