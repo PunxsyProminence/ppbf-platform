@@ -1246,8 +1246,8 @@ function CoachDrillLibrary() {
                 Back to the reference library
               </button>
               {looksRightError && (
-                // In the box Promote's error uses: its own ground, wherever on the page it lands.
-                <div ref={looksRightAlertRef} tabIndex={-1} role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+                // Promote's error box, on solid leather: its own ground wherever the page scrolls it (a phone's backdrop poster).
+                <div ref={looksRightAlertRef} tabIndex={-1} role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[color:var(--hide-900)] p-[var(--s4)]">
                   <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> <span>{looksRightError}</span></p>
                 </div>
               )}
