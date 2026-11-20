@@ -440,3 +440,42 @@ describe('the pain tile (lane U2-6b)', () => {
     expect(pain.queryByText('3')).toBeNull();
   });
 });
+
+describe('the pain tile from the screen\'s own read (lane U2-6b-2)', () => {
+  // The class screen hands the tile the one read its pain list draws, so the two never disagree.
+  test('draws the read it is handed and does not read the feed itself', async () => {
+    render(<CoachLiveTiles painFeed={{ state: 'ok', value: { count: 2, truncated: false, windowDays: 7 } }} />);
+    await settle();
+    expect(group('Athlete pain reports').getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^2$/);
+    const calls = (global.fetch as jest.Mock).mock.calls.map((call) => String(call[0]));
+    expect(calls).not.toContain(PAIN_FEED);
+    expect(calls).toHaveLength(3);
+    await act(async () => {
+      jest.advanceTimersByTime(120_000);
+    });
+    await settle();
+    expect((global.fetch as jest.Mock).mock.calls.map((call) => String(call[0]))).not.toContain(PAIN_FEED);
+  });
+
+  test.each([
+    ['failed', { state: 'failed' as const }],
+  ])('a %s read is "?" and "not checked"', async (_label, painFeed) => {
+    render(<CoachLiveTiles painFeed={painFeed} />);
+    await settle();
+    expect(group('Athlete pain reports').getByText('Pain reports: not checked').previousSibling).toHaveTextContent(/^\?$/);
+  });
+
+  test('a read not yet answered says "Reading..." and no "?" or number', async () => {
+    render(<CoachLiveTiles painFeed={{ state: 'loading' }} />);
+    await settle();
+    const pain = group('Athlete pain reports');
+    expect(pain.getByText('Reading...')).toBeInTheDocument();
+    expect(pain.queryByRole('listitem')).toBeNull();
+  });
+
+  test('a truncated handed-over read shows "50+"', async () => {
+    render(<CoachLiveTiles painFeed={{ state: 'ok', value: { count: 50, truncated: true, windowDays: 7 } }} />);
+    await settle();
+    expect(group('Athlete pain reports').getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^50\+$/);
+  });
+});

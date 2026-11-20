@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
 import { AI_DRAFT_MARK, DRAFT_NOT_CHECKED, blockCoachingLines, blockNeedsDrillText } from '@/src/lib/sessionScriptWords';
-import CoachLiveTiles from '@/components/CoachLiveTiles';
+import CoachLiveTiles, { type PainTileRead } from '@/components/CoachLiveTiles';
 import RoundTimerControls from '@/components/RoundTimerControls';
 import CoachInstructionPanel from '@/components/drills/CoachInstructionPanel';
 import { readReferenceInstruction } from '@/components/drills/drillInstructionRead';
@@ -182,6 +182,11 @@ interface SessionScriptLiveDeliveryProps {
    * copy of the switch or of which run is live.
    */
   readonly onRunChange?: (run: LiveSessionScriptRun) => void;
+  /**
+   * The screen's pain read, for the top row's pain tile (lane U2-6b-2): the class screen's one
+   * read, which its pain list also draws. Without it the tile reads the feed itself.
+   */
+  readonly painFeed?: PainTileRead;
 }
 
 /** One read of the gym's TVs, as the TV status line holds it (lane U2-6a). */
@@ -214,6 +219,7 @@ export default function SessionScriptLiveDelivery({
   onRunGone,
   tvStatusRefresh = 0,
   onRunChange,
+  painFeed,
 }: SessionScriptLiveDeliveryProps) {
   const [run, setRun] = useState<LiveSessionScriptRun>(initialRun);
   // A plain session (issue #1523) has no plan: no blocks to show or move between. Everything
@@ -766,7 +772,7 @@ export default function SessionScriptLiveDelivery({
       </div>
 
       {/* The top row: attendance, need attention, athlete pain reports and the SHADOW queue, counts only. */}
-      <CoachLiveTiles />
+      <CoachLiveTiles painFeed={painFeed} />
 
       {/* The floor controls: big, few, and above the fold. */}
       <div className="coach-live-controls mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">

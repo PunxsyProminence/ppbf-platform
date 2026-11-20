@@ -5,7 +5,8 @@ import { apiBase } from '@/lib/apiBase';
 import { humanizeContactLevel } from '@/src/lib/drillPresentation';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
-// The "Return plan" block under one injury on /coach/injuries (lane P8 PR 2):
+// The "Return plan" block under one injury in the Injury Record section of
+// /coach/athlete-safety (lane P8 PR 2):
 // the plan's steps in week order with the current step marked, Advance (with
 // the coach's note) and Add step; and, on an injury with no plan, Start a
 // return plan (PR 3).
