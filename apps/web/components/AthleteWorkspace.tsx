@@ -1313,6 +1313,12 @@ export default function AthleteWorkspace() {
   // symptom check asks even if its status read fails. After a refresh the
   // server's after_sparring_due brings it back until it is answered.
   const [afterSparringCheck, setAfterSparringCheck] = useState(false);
+  // After a successful end, bring the "Training ended ..." line into view
+  // (lane U3 B4, Overwatch Q-CONFIRM A): the questions just closed under the
+  // athlete's thumb. My Corner's line on the Dashboard, the rail's elsewhere.
+  const [endedAt, setEndedAt] = useState(0);
+  const cornerLineRef = useRef<HTMLParagraphElement>(null);
+  const railLineRef = useRef<HTMLParagraphElement>(null);
 
   /* ONE SESSION WRITE AT A TIME. A note publication and check-out both send
      the WHOLE session row to /api/pilot/sessions/update, and the server applies
@@ -2520,6 +2526,7 @@ export default function AthleteWorkspace() {
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
+      setEndedAt(Date.now());
       // And the card, which is where a completed session actually lands. This
       // was missing, so the count only moved on the next page load — which is
       // also why crossing a milestone could never produce a moment: the card
@@ -2851,6 +2858,15 @@ export default function AthleteWorkspace() {
             ? "How you feel today is saved. Training not started yet."
             : 'Training not started yet';
 
+  // The scroll itself, once per successful end, after the re-read has written
+  // the line. Read through refs, so a later tab change does not scroll again.
+  useEffect(() => {
+    if (endedAt === 0) return;
+    const line = currentTabRef.current === 'my-dashboard' ? cornerLineRef.current : railLineRef.current;
+    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    line?.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'center' });
+  }, [endedAt]);
+
   const goToPainReport = () => {
     const picker = document.getElementById('pain-location-select');
     if (picker) {
@@ -2866,6 +2882,14 @@ export default function AthleteWorkspace() {
      at a time, so a screen holds one End training. Built under the Session
      Log's conditions: athlete sign-in, an answered session read, an open
      session. */
+  /* The after-sparring symptom check (OD-2026-10-17-023 item 1, -029) moves
+     with End training (Overwatch Q-SPAR A on #2006): where the athlete ends,
+     once no session is open, under the Session Log's old conditions. It draws
+     nothing unless a sparring end is unanswered. One mount per tab, so its
+     read moves rather than doubles. */
+  const afterSparring = athleteIdentityState === 'resolved' && storedSessionLoad === 'loaded' && !activeSessionRecord
+    ? <SparringSymptomCheck context="after_sparring" justCheckedOut={afterSparringCheck} />
+    : null;
   const endTraining = athleteIdentityState === 'resolved' && storedSessionLoad === 'loaded' && activeSessionRecord ? (
     <EndTrainingControl failure={shownCheckOutFailure}>
       {/* POST-SESSION EFFORT (A-FIN-05). Eleven choices, 0 to 10,
@@ -3102,6 +3126,8 @@ export default function AthleteWorkspace() {
             checkInFailed={checkInFailed}
             afterPain={<><TrainingHoldBanner /><MedicalRestrictionNotice /></>}
             endTraining={endTraining}
+            afterEnd={afterSparring}
+            checkInLineRef={cornerLineRef}
           />
         )}
 
@@ -3181,7 +3207,7 @@ export default function AthleteWorkspace() {
                   check-in until it is done, and says so plainly -- nothing
                   more. */}
               {activeGroup === 'today' && railCheckInLine && (
-                <p className="t-label ml-[var(--s2)] text-[color:var(--bone-400)]">
+                <p ref={railLineRef} className="t-label ml-[var(--s2)] text-[color:var(--bone-400)]">
                   {railCheckInLine}
                 </p>
               )}
@@ -3478,10 +3504,6 @@ export default function AthleteWorkspace() {
                 ) : (
                   <div className="space-y-[var(--s4)]">
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Your training has not started.</p>
-                    {/* The after-sparring symptom check (OD-2026-10-17-023,
-                        -029), where the check-out block was. Renders nothing
-                        unless a sparring check-out today is unanswered. */}
-                    <SparringSymptomCheck context="after_sparring" justCheckedOut={afterSparringCheck} />
                     {/* THE PRE-CHECK-IN NOTE (A-FIN-01), where the defaulted
                         readiness slider used to be the only pre-session input.
                         Optional and empty until the athlete writes in it.
@@ -3549,11 +3571,17 @@ export default function AthleteWorkspace() {
           )}
 
           {/* End training at the top of the Floor, in both of its states, under
-              the rail's "Training started" (lane U3 B4, Overwatch Q3 A). The
-              same element My Corner draws; see endTraining. */}
+              the rail's "Training started" (lane U3 B4, Overwatch Q3 A); once
+              ended, the after-sparring check in its place. The same elements
+              My Corner draws; see endTraining and afterSparring. */}
           {activeTab === 'athlete-floor' && endTraining ? (
             <div className={`${PANEL_RAISED} panel-settle`} data-section="end-training">
               {endTraining}
+            </div>
+          ) : null}
+          {activeTab === 'athlete-floor' && afterSparring ? (
+            <div className={`${PANEL_RAISED} panel-settle empty:hidden`} data-section="after-sparring">
+              {afterSparring}
             </div>
           ) : null}
 

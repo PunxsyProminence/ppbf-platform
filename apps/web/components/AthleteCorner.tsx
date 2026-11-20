@@ -74,6 +74,10 @@ export interface AthleteCornerProps {
    * training panel, full width, only while that panel says "Training started".
    */
   readonly endTraining?: React.ReactNode;
+  /** In the same place once no session is open: the after-sparring check (it draws nothing unless one is due). */
+  readonly afterEnd?: React.ReactNode;
+  /** The "Training started / ended" line, for the workspace to bring into view after an end. */
+  readonly checkInLineRef?: React.Ref<HTMLParagraphElement>;
 }
 
 function countLine(read: CornerCountRead, none: string, some: (count: number) => string): string {
@@ -99,6 +103,8 @@ export default function AthleteCorner({
   checkInFailed = false,
   afterPain,
   endTraining,
+  afterEnd,
+  checkInLineRef,
 }: AthleteCornerProps) {
   const sessionKnown = identityState === 'resolved' && sessionState === 'loaded';
 
@@ -135,6 +141,7 @@ export default function AthleteCorner({
         <div className="athlete-corner__panel" data-section="check-in">
           <p className="athlete-corner__label">Start training</p>
           <p
+            ref={checkInLineRef}
             className={sessionState === 'unavailable' && identityState === 'resolved' ? 'athlete-corner__alert' : undefined}
             role={sessionState === 'unavailable' && identityState === 'resolved' ? 'alert' : undefined}
           >
@@ -167,6 +174,11 @@ export default function AthleteCorner({
         {sessionKnown && checkedInAt && endTraining ? (
           <div className="athlete-corner__panel athlete-corner__wide athlete-corner__end" data-section="end-training">
             {endTraining}
+          </div>
+        ) : null}
+        {sessionKnown && !checkedInAt && afterEnd ? (
+          <div className="athlete-corner__panel athlete-corner__wide athlete-corner__end" data-section="after-sparring">
+            {afterEnd}
           </div>
         ) : null}
 

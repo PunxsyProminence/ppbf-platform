@@ -4112,7 +4112,7 @@ describe("the session-type tag is the athlete's pick at check-out, or nothing", 
 
   test('checking out of a Sparring session opens the after-sparring symptom check; another tag does not', async () => {
     const AFTER_Q = 'After sparring: do you have any of these right now?';
-    // The check sits where the check-out block was, so the session has to actually close.
+    // The check sits where End training was (lane U3 B4), so the session has to actually close.
     persistSessionUpdates = true;
     await openSession();
     fireEvent.click(screen.getByRole('button', { name: `${TYPE_Q} Technique` }));
@@ -5751,6 +5751,71 @@ describe('End training is where the athlete sees training has started', () => {
       expect(within(end).queryByRole('alert')).toBeNull();
     } finally {
       jest.useRealTimers();
+    }
+  });
+
+  // Q-SPAR A: the after-sparring symptom check moves with End training.
+  const AFTER_Q = 'After sparring: do you have any of these right now?';
+  const cornerAfter = () => document.querySelector('.athlete-corner [data-section="after-sparring"]') as HTMLElement | null;
+  const floorAfter = () => document.querySelector('.room > div > .space-y-6 > [data-section="after-sparring"]') as HTMLElement | null;
+
+  test.each([
+    ['My Corner', 'Dashboard'],
+    ['the Floor', 'Floor'],
+  ])('after a sparring end from %s, the after-sparring check is right where End training was', async (_where, tab) => {
+    persistSessionUpdates = true;
+    storedSessions = [openSessionRow()];
+    await renderWorkspace();
+    await screen.findByRole('button', { name: 'End training' });
+    if (tab === 'Floor') openTab('Floor');
+    const section = (tab === 'Floor' ? floorEnd() : cornerEnd()) as HTMLElement;
+    fireEvent.click(within(section).getByRole('button', { name: 'End training' }));
+    fireEvent.click(within(section).getByRole('button', { name: 'What kind of session was it? Sparring' }));
+    fireEvent.click(within(section).getByRole('button', { name: 'End training' }));
+
+    const question = await screen.findByText(AFTER_Q);
+    expect(screen.getAllByText(AFTER_Q)).toHaveLength(1);
+    const where = (tab === 'Floor' ? floorAfter() : cornerAfter()) as HTMLElement;
+    expect(where.contains(question)).toBe(true);
+    if (tab === 'Floor') {
+      expect(where.parentElement?.firstElementChild).toBe(where);
+    } else {
+      expect(document.querySelector('.athlete-corner [data-section="check-in"]')?.nextElementSibling).toBe(where);
+      expect(sessionLog().queryByText(AFTER_Q)).toBeNull();
+    }
+  });
+
+  test('on the Dashboard the after-sparring check reads its status once: moved, not doubled', async () => {
+    await renderWorkspace();
+    await screen.findByText(/Your training has not started/);
+    const reads = () => fetchCalls.filter((call) => call.url.includes('/api/pilot/athlete/sparring-symptoms') && call.method === 'GET').length;
+    await waitFor(() => expect(reads()).toBe(1));
+    await act(async () => { await Promise.resolve(); });
+    expect(reads()).toBe(1);
+  });
+
+  // Q-CONFIRM A: after a successful end, the "Training ended ..." line is brought into view.
+  test.each([['Dashboard'], ['Floor']])('after a successful end on the %s, the "Training ended" line is scrolled into view', async (tab) => {
+    const proto = Element.prototype as unknown as { scrollIntoView?: (arg?: unknown) => void };
+    const original = proto.scrollIntoView;
+    const scrolled: Element[] = [];
+    proto.scrollIntoView = function scrollIntoView(this: Element) { scrolled.push(this); };
+    try {
+      persistSessionUpdates = true;
+      storedSessions = [openSessionRow()];
+      await renderWorkspace();
+      await screen.findByRole('button', { name: 'End training' });
+      if (tab === 'Floor') openTab('Floor');
+      await openEndTraining();
+      expect(scrolled).toHaveLength(0);
+      fireEvent.click(screen.getByRole('button', { name: 'End training' }));
+      await waitFor(() => expect(scrolled).toHaveLength(1));
+      const line = scrolled[0];
+      expect(line.textContent).toMatch(/^Training ended /);
+      expect(line.closest('.athlete-corner') !== null).toBe(tab === 'Dashboard');
+    } finally {
+      if (original) proto.scrollIntoView = original;
+      else delete proto.scrollIntoView;
     }
   });
 });
