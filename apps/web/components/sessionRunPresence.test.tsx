@@ -560,6 +560,37 @@ describe('a tied session also shows the class register', () => {
     expect(screen.getAllByText('Ada Reyes was already Present on the class register.')).toHaveLength(2);
   });
 
+  test("a session moved to another class shows nothing of the first class's register while the second is read", async () => {
+    let releaseSecond: (response: Response) => void = () => {};
+    registerReads = 0;
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input) !== SCHEDULER) return read([]);
+      registerReads += 1;
+      if (registerReads === 1) return register([onRegister('ath-1', 'self')]);
+      return new Promise<Response>((resolve) => { releaseSecond = resolve; });
+    }) as unknown as typeof fetch;
+
+    let view: ReturnType<typeof render> | undefined;
+    await act(async () => {
+      view = render(<SessionRunPresence runId="ssrun 1" tied classId="class-1" />);
+    });
+    expect(rowOf('Ada Reyes').textContent).toContain('Present on the class register, via self check-in.');
+
+    await act(async () => {
+      view!.rerender(<SessionRunPresence runId="ssrun 1" tied classId="class-2" />);
+    });
+    // Ada is on the first class's register, which says nothing about the second's.
+    expect(screen.getByText('Reading the class register…')).toBeTruthy();
+    expect(rowOf('Ada Reyes').textContent).not.toContain('Present on the class register');
+    expect(screen.queryByText(/marked Present on the class register/)).toBeNull();
+
+    await act(async () => {
+      releaseSecond(register([onRegister('ath-2', 'parent', { class_id: 'class-2' })]));
+    });
+    expect(rowOf('Ben Ortiz').textContent).toContain('Present on the class register, via parent.');
+    expect(rowOf('Ada Reyes').textContent).not.toContain('Present on the class register');
+  });
+
   test('a late answer for another class is dropped', async () => {
     let releaseOld: (response: Response) => void = () => {};
     registerReads = 0;
