@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
@@ -8,11 +8,16 @@ import { RestrictedMark } from '@/components/MedicalRestrictionNotice';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 
 // USA Boxing medical restrictions, the staff record (Backbone P22, lane P22a).
-// Rendered on its own page, /coach/medical-restrictions, never on the Sports
+// Rendered on Athlete Safety (/coach/athlete-safety; the old page
+// /coach/medical-restrictions opens that section), never on the Sports
 // Medicine clearance board: that board's 2026-08-15 rule is "clearance and holds
 // only, never diagnoses or clinical detail", and Jason has twice put records of
 // this kind on their own page linked from it (OD-2026-10-04-001, the injury
 // log; OD-2026-10-04-017, the sparring cap editor).
+//
+// ONE ATHLETE (lane AS-5). Given `athleteId`, the panel shows that athlete and
+// offers no member picker of its own: the page has already chosen. The page
+// remounts it (a key) for another athlete, so nothing of one shows under another.
 //
 // WHO SEES WHAT. This is the staff view: the roles that may write a restriction
 // (a coach of this gym, organization_admin, admin; Overwatch's approved design,
@@ -129,13 +134,16 @@ function isStaffRestriction(value: unknown): value is StaffRestriction {
     && row.state in STATE_WORDS;
 }
 
-export default function MedicalRestrictionsPanel({ athletes }: { athletes: readonly RosterAthlete[] }) {
+export default function MedicalRestrictionsPanel({
+  athletes = [],
+  athleteId: chosenAthlete,
+}: { athletes?: readonly RosterAthlete[]; athleteId?: string }) {
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   // The client session names a gym admin 'admin' (ClubRole); the route admits
   // organization_admin and admin to void and refuses everyone else.
   const viewerCanVoid = session?.role === 'admin';
 
-  const [athleteId, setAthleteId] = useState('');
+  const [athleteId, setAthleteId] = useState(chosenAthlete ?? '');
   const [rows, setRows] = useState<StaffRestriction[] | null>(null);
   // Rows the server sent that failed the shape check. Counted, so the screen
   // never reads "No medical restriction on file" while one exists (P2).
@@ -174,6 +182,13 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
       if (shownFor.current === forAthlete) setReadError('The medical restrictions could not be read. Nothing is shown as clear because of it.');
     }
   }, []);
+
+  // The athlete the page chose: read once, on mount. The read is the outside
+  // system this effect keeps in step with; its first set only clears the list.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (chosenAthlete) void read(chosenAthlete);
+  }, [chosenAthlete, read]);
 
   const chooseAthlete = (next: string) => {
     setAthleteId(next);
@@ -268,26 +283,28 @@ export default function MedicalRestrictionsPanel({ athletes }: { athletes: reado
         and kept.
       </p>
 
-      <div className="field mt-[var(--s3)]">
-        <label className="t-label" htmlFor="medical-restrictions-athlete">Member</label>
-        <select
-          id="medical-restrictions-athlete"
-          className="select input--kiosk"
-          value={athleteId}
-          // Locked while a save, date or void is in flight, so its answer and
-          // re-read can only ever belong to the member on screen.
-          disabled={busy}
-          aria-busy={busy}
-          onChange={(event) => chooseAthlete(event.target.value)}
-        >
-          <option value="">Choose a member</option>
-          {athletes.map((athlete) => (
-            <option key={athlete.athlete_id} value={athlete.athlete_id}>
-              {athlete.full_name || athlete.athlete_id}
-            </option>
-          ))}
-        </select>
-      </div>
+      {chosenAthlete === undefined ? (
+        <div className="field mt-[var(--s3)]">
+          <label className="t-label" htmlFor="medical-restrictions-athlete">Member</label>
+          <select
+            id="medical-restrictions-athlete"
+            className="select input--kiosk"
+            value={athleteId}
+            // Locked while a save, date or void is in flight, so its answer and
+            // re-read can only ever belong to the member on screen.
+            disabled={busy}
+            aria-busy={busy}
+            onChange={(event) => chooseAthlete(event.target.value)}
+          >
+            <option value="">Choose a member</option>
+            {athletes.map((athlete) => (
+              <option key={athlete.athlete_id} value={athlete.athlete_id}>
+                {athlete.full_name || athlete.athlete_id}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       {athleteId ? (
         <div className="mt-[var(--s3)]">

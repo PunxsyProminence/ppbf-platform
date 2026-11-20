@@ -345,3 +345,24 @@ test('"none on file" still shows when the server sent none', async () => {
   await openFor('No medical restriction on file for this member.');
   expect(screen.queryByTestId('medical-restrictions-hidden')).toBeNull();
 });
+
+// Lane AS-5: on Athlete Safety the page has already chosen the athlete, so the
+// panel shows that one and offers no member picker of its own.
+describe('given the athlete the page chose', () => {
+  test('it reads that athlete once and offers no Member picker', async () => {
+    respondWith([ROW]);
+    render(<MedicalRestrictionsPanel athleteId="ath-1" />);
+    await screen.findByText('In force — release needed');
+    expect(screen.queryByLabelText('Member')).toBeNull();
+    const reads = calls.filter((c) => !c.init?.method || c.init.method === 'GET');
+    expect(reads.map((c) => c.url)).toEqual([expect.stringContaining('/api/pilot/coach/medical-restrictions?athlete_id=ath-1')]);
+  });
+
+  test('a read that fails says so, never "No medical restriction on file"', async () => {
+    calls = [];
+    global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+    render(<MedicalRestrictionsPanel athleteId="ath-1" />);
+    await screen.findByRole('alert');
+    expect(screen.queryByText('No medical restriction on file for this member.')).toBeNull();
+  });
+});

@@ -13,6 +13,7 @@ import ArmedButton from '@/components/ArmedButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import ClusterNav from '@/components/ClusterNav';
 import {
+  ATHLETE_SAFETY_PAGE,
   CLEARANCE_BOARD_PAGE,
   DECISION_LOOP_PAGE,
   POST_TO_FAMILY_SECTION,
@@ -924,7 +925,9 @@ export default function SportsMedicinePage() {
           {/* The board's links, above the roster rather than under it (app
               scrub CS-05): on a long roster the foot of the page is far. */}
           <div className="mb-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/coach/injuries" className="btn btn--ghost">
+            {/* Injury Record and Medical Restrictions are sections of Athlete
+                Safety now (S2-3 A); each link opens its own section. */}
+            <Link href={`${ATHLETE_SAFETY_PAGE}#injury-record`} className="btn btn--ghost">
               Injury Record
             </Link>
             <Link href="/coach/sparring-caps" className="btn btn--ghost">
@@ -933,7 +936,7 @@ export default function SportsMedicinePage() {
             {/* USA Boxing medical restrictions (Backbone P22) live on their own
                 page: this board's 2026-08-15 rule is clearance and holds only,
                 never clinical detail (OD-2026-10-04-001, -017). A link only. */}
-            <Link href="/coach/medical-restrictions" className="btn btn--ghost">
+            <Link href={`${ATHLETE_SAFETY_PAGE}#medical-restrictions`} className="btn btn--ghost">
               Medical Restrictions
             </Link>
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">
@@ -1156,6 +1159,18 @@ export default function SportsMedicinePage() {
                           }}
                         >
                           Post to the Family&apos;s Page
+                        </Link>
+                        {/* This athlete's injuries, restrictions and family notes
+                            (S2-3 A), opened on them; the athlete goes in page
+                            memory, never the address. */}
+                        <Link
+                          href={ATHLETE_SAFETY_PAGE}
+                          className="btn btn--ghost"
+                          onClick={(event) => {
+                            if (isPlainClick(event)) handOffArrivalAthlete(row.athlete_id, ATHLETE_SAFETY_PAGE);
+                          }}
+                        >
+                          Athlete Safety
                         </Link>
                         {statusSetFor.has(row.athlete_id) ? (
                           <p role="status" className="t-body" style={{ fontSize: 'var(--t-sm)' }}>Status set.</p>

@@ -71,7 +71,7 @@ import { BodyMassEntryList, parseBodyMassEntries, postBodyMassCorrection, type B
 import { BUILDING } from './buildingMap';
 
 /** The clinic doors the coach home links (lane U2, audit UX-A A-3), in the map's own words. */
-const CLINIC_DOORS = ['/coach/sports-medicine', '/coach/injuries', '/coach/athlete-limits', '/coach/sparring-caps']
+const CLINIC_DOORS = ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']
   .map((href) => BUILDING.find((door) => door.href === href))
   .filter((door): door is NonNullable<typeof door> => door !== undefined);
 
