@@ -19,7 +19,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 import type { ReactNode } from 'react';
 
@@ -39,8 +39,8 @@ jest.mock('@/components/RoleStandaloneView', () => ({
 
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href, onClick }: { readonly children: ReactNode; readonly href: string; readonly onClick?: () => void }) => (
-    <a href={href} onClick={(event) => { event.preventDefault(); onClick?.(); }}>{children}</a>
+  default: ({ children, href, onClick }: { readonly children: ReactNode; readonly href: string; readonly onClick?: (event: MouseEvent) => void }) => (
+    <a href={href} onClick={(event) => { event.preventDefault(); onClick?.(event.nativeEvent); }}>{children}</a>
   ),
 }));
 
@@ -455,7 +455,12 @@ test('a hold with no athlete sentence is refused before the request is sent', as
 });
 
 describe('a hold an admin placed (OD-2026-10-05-024 ruling 1)', () => {
-  afterEach(() => clearRoleSession());
+  // Unmount first: clearing the session while the page is mounted re-renders
+  // its Clinic line outside act().
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
 
   test('a coach is not offered Lift, and is told only an organization admin can lift it', async () => {
     createPersistentRoleSession('coach');
@@ -2490,6 +2495,9 @@ describe('past holds are read back on the board, athlete-safe fields only (F-071
       expect(within(list).getByText(HOLD.athlete_explanation)).toBeTruthy();
       expect(within(list).getByText(/Lifted 10\/5\/2026/)).toBeTruthy();
     } finally {
+      // Unmount first, as the afterEach hooks do: the Clinic line re-renders
+      // on a session change.
+      cleanup();
       clearRoleSession();
     }
   });
@@ -2504,7 +2512,12 @@ describe('past holds are read back on the board, athlete-safe fields only (F-071
    test; here: what the board sends, what it shows after, and that it shows
    nothing it did not read back. */
 describe('setting clearance on the board (OW25-45 B)', () => {
-  afterEach(() => clearRoleSession());
+  // Unmount first: clearing the session while the page is mounted re-renders
+  // its Clinic line outside act().
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
 
   const NOT_CLEARED_STATUS = {
     ...CLEARED_STATUS,
@@ -2940,6 +2953,21 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
     expect(takeArrivalAthlete(CLEARANCE_BOARD_PAGE)).toBeNull();
     fireEvent.click(within(samRow).getByRole('link', { name: "Post to the Family's Page" }));
     expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBe('ath-2');
+  });
+
+  test.each([
+    ['ctrl', { ctrlKey: true }],
+    ['cmd', { metaKey: true }],
+    ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
+    ['middle button', { button: 1 }],
+  ])('a %s click on the family link, which opens another tab, hands nothing over', async (_name, init) => {
+    global.fetch = twoAthletes();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+    const samRow = screen.getByText('Sam Roe').closest('li') as HTMLElement;
+    fireEvent.click(within(samRow).getByRole('link', { name: "Post to the Family's Page" }), init);
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBeNull();
   });
 
   test('an athlete handed over from Escalations is found by name when the roster lists them', async () => {

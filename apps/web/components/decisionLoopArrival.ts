@@ -34,6 +34,20 @@ export const POST_TO_FAMILY_SECTION = 'post-to-family';
 
 let pending: { athleteId: string; page: string; at: number } | null = null;
 
+/** A plain left click, the only click a link should hand off on: a modified
+    or middle click opens another tab, which arrives with nothing and would
+    leave the hand-off waiting here for whatever this tab opens next (the same
+    rule as the coach home's "Record what you did" link). */
+export function isPlainClick(event: {
+  readonly button: number;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+}): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
 /** Called by the link, in the click that navigates. */
 export function handOffArrivalAthlete(athleteId: string, page: string = DECISION_LOOP_PAGE): void {
   const id = athleteId.trim();

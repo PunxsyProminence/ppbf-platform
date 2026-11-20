@@ -19,7 +19,7 @@ import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/pain
 import BackHome from '@/components/BackHome';
 import RoleLink from '@/components/RoleLink';
 import Link from 'next/link';
-import { CLEARANCE_BOARD_PAGE, DECISION_LOOP_PAGE, handOffArrivalAthlete } from '@/components/decisionLoopArrival';
+import { CLEARANCE_BOARD_PAGE, DECISION_LOOP_PAGE, handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopArrival';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
@@ -461,14 +461,18 @@ export default function EscalationsPage() {
                             <Link
                               href={CLEARANCE_BOARD_PAGE}
                               className="underline"
-                              onClick={() => handOffArrivalAthlete(item.athlete_id, CLEARANCE_BOARD_PAGE)}
+                              onClick={(event) => {
+                                if (isPlainClick(event)) handOffArrivalAthlete(item.athlete_id, CLEARANCE_BOARD_PAGE);
+                              }}
                             >
                               Clearance Board
                             </Link>
                             <Link
                               href={DECISION_LOOP_PAGE}
                               className="underline"
-                              onClick={() => handOffArrivalAthlete(item.athlete_id, DECISION_LOOP_PAGE)}
+                              onClick={(event) => {
+                                if (isPlainClick(event)) handOffArrivalAthlete(item.athlete_id, DECISION_LOOP_PAGE);
+                              }}
                             >
                               SHADOW Decision Loop
                             </Link>

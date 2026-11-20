@@ -17,6 +17,7 @@ import {
   DECISION_LOOP_PAGE,
   POST_TO_FAMILY_SECTION,
   handOffArrivalAthlete,
+  isPlainClick,
   takeArrivalAthlete,
 } from '@/components/decisionLoopArrival';
 
@@ -1141,7 +1142,9 @@ export default function SportsMedicinePage() {
                         <Link
                           href={`${DECISION_LOOP_PAGE}#${POST_TO_FAMILY_SECTION}`}
                           className="btn btn--ghost"
-                          onClick={() => handOffArrivalAthlete(row.athlete_id, DECISION_LOOP_PAGE)}
+                          onClick={(event) => {
+                            if (isPlainClick(event)) handOffArrivalAthlete(row.athlete_id, DECISION_LOOP_PAGE);
+                          }}
                         >
                           Post to the Family&apos;s Page
                         </Link>

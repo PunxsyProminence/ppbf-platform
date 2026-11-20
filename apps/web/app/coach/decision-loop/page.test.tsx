@@ -3459,6 +3459,26 @@ describe('arriving from "Post to the Family\'s Page"', () => {
     expect(within(scrolled[0] as HTMLElement).getByRole('heading', { name: "Post to the Family's Page" })).toBeInTheDocument();
   });
 
+  test('a later pick of another athlete does not scroll again', async () => {
+    installFetch();
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+    await screen.findByText('Behavior & Habit Note');
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+
+    const other = Array.from(athletePicker().options).find((option) => option.value && option.value !== 'ath-1');
+    expect(other).toBeDefined();
+    fireEvent.change(athletePicker(), { target: { value: other!.value } });
+    await waitFor(() => expect(athletePicker().value).toBe(other!.value));
+    fireEvent.change(athletePicker(), { target: { value: 'ath-1' } });
+    await waitFor(() => expect(athletePicker().value).toBe('ath-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(scrolled).toHaveLength(1);
+  });
+
   test('an arrival without the section in the address does not scroll', async () => {
     installFetch();
     handOffArrivalAthlete('ath-1');
