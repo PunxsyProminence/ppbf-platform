@@ -64,7 +64,9 @@ export function explainLine(explain: string): { label: string; value: string } {
 
 /**
  * The linked drill's text, as a coach screen holds it while a plan line falls back to it (lane
- * U2-6e). `drafts` is per field: true = still an AI draft, null = draft status not checked.
+ * U2-6e). `drafts` is per field: true = still an AI draft (its label says so, or no label settles it
+ * and the drill's own provenance says DRAFT: the 6e follow-up), false = a label says it is not,
+ * null = draft status not checked.
  */
 export type LinkedDrillText =
   | { readonly state: 'loading' }
