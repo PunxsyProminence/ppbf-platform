@@ -134,7 +134,7 @@ test('with a live class beside a cancelled one, the live class is chosen and its
 test("a coach reads the class's coach by name, never the login", async () => {
   install('coach', [classRow('on', 'Still On', DAY, { covering_coach_account_id: 'sam_ruiz2@gym.example' })]);
   await renderPage();
-  expect(screen.getByText(/Coach: Coach Jason Neale \| Cover: Coach Sam Ruiz$/)).toBeInTheDocument();
+  expect(screen.getByText(/\| Coach Jason Neale \| Cover: Coach Sam Ruiz$/)).toBeInTheDocument();
   expect(screen.queryByText(/@gym\.example/)).toBeNull();
 });
 

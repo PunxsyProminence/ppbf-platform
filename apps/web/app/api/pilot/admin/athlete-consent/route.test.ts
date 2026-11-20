@@ -7,8 +7,10 @@ import {
   GuardianLinkEndedError,
   guardianDisplayName,
   listOrganizationConsentStatus,
+  readOwnMediaConsent,
   withdrawMediaConsent,
 } from '@/src/server/pilot/guardianConsent';
+import { query } from '@/src/server/pilot/db';
 import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { recordMediaConsentAndSuppress } from '@/src/server/pilot/publication';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
@@ -26,7 +28,16 @@ jest.mock('@/src/server/pilot/guardianConsent', () => {
     checkGuardianMediaConsent: jest.fn(),
     grantMediaConsent: jest.fn(),
     withdrawMediaConsent: jest.fn(),
+    readOwnMediaConsent: jest.fn(),
   };
+});
+
+/* The dates of birth the GET reads for the adult rule (lane U1, SC2-5). An
+   empty answer -- the default -- makes every athlete read as a minor, so the
+   tests written before the rule see exactly the rows they always did. */
+jest.mock('@/src/server/pilot/db', () => {
+  const actual = jest.requireActual('@/src/server/pilot/db');
+  return { ...actual, query: jest.fn().mockResolvedValue([]) };
 });
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -49,6 +60,8 @@ const mockGrant = jest.mocked(grantMediaConsent);
 const mockWithdraw = jest.mocked(withdrawMediaConsent);
 const mockAccess = jest.mocked(assertAthleteBelongsToOrganization);
 const mockRecord = jest.mocked(recordMediaConsentAndSuppress);
+const mockQuery = jest.mocked(query);
+const mockOwn = jest.mocked(readOwnMediaConsent);
 
 /* recordMediaConsentAndSuppress stands in for the one transaction: the consent
    writer runs with TX, then the takedown (mockSweep, the step that can fail).
@@ -662,5 +675,143 @@ describe('POST /api/pilot/admin/athlete-consent -- photo-only grant', () => {
         details: expect.objectContaining({ action: 'consent_photo_only_suppression_failed' }),
       }),
     );
+  });
+});
+
+/* Lane U1, SC2-5. Owner ruling OD-2026-10-08-015 (Jason, "A: adult consents
+   for themselves (Recommended)"): from 18 the adult's own consent counts, a
+   guardian's does not. A minor's row is exactly what it was. */
+describe('GET /api/pilot/admin/athlete-consent -- whose consent counts, by age', () => {
+  const ADULT_DOB = '1990-01-01';
+  const MINOR_DOB = `${new Date().getFullYear() - 10}-01-01`;
+  const own = (overrides: Record<string, unknown> = {}) => ({
+    status: 'signed',
+    coversVideo: true,
+    publicUseAllowed: false,
+    signedAt: '2026-09-01T00:00:00Z',
+    recordedByOwnLogin: true,
+    ...overrides,
+  });
+  const guardianYes = {
+    ok: true,
+    guardianIds: ['p1'],
+    missingParentIds: [],
+    perGuardian: [{ parentId: 'p1', status: 'signed', coversVideo: true, publicUseAllowed: false, signedAt: '2026-08-01T00:00:00Z' }],
+    retained: [],
+  };
+  const noGuardians = { ok: false, guardianIds: [], missingParentIds: [], perGuardian: [], retained: [] };
+  type ConsentRow = Awaited<ReturnType<typeof listOrganizationConsentStatus>>[number];
+  const row = (athleteId: string, consent: ConsentRow['consent']): ConsentRow => ({
+    athleteId,
+    athleteName: 'Sample Athlete',
+    consent,
+    guardians: [{ parentId: 'p1', fullName: 'Sample Guardian', hasLogin: true }],
+  });
+
+  async function items(): Promise<Array<Record<string, unknown>>> {
+    const response = await GET(request());
+    expect(response.status).toBe(200);
+    return ((await response.json()) as { items: Array<Record<string, unknown>> }).items;
+  }
+
+  beforeEach(() => {
+    mockRequirePrincipal.mockResolvedValue(principal('organization_admin'));
+  });
+
+  test('the dates of birth are read for this organization only', async () => {
+    mockList.mockResolvedValueOnce([]);
+    mockQuery.mockResolvedValueOnce([]);
+    await items();
+    expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('from pilot.athletes'), ['org-a']);
+    expect(String(mockQuery.mock.calls[0][0])).toContain('organization_id = $1');
+  });
+
+  test("a minor's row is byte-for-byte what it was, and their own consent is never read", async () => {
+    mockList.mockResolvedValue([row('ath-m', guardianYes)]);
+    mockQuery.mockResolvedValueOnce([]);
+    const before = JSON.stringify(await items());
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-m', dob: MINOR_DOB }]);
+    const after = JSON.stringify(await items());
+    expect(after).toBe(before);
+    expect(after).not.toContain('consent_basis');
+    expect(mockOwn).not.toHaveBeenCalled();
+  });
+
+  test("a minor's row is exactly the guardian row, key for key", async () => {
+    mockList.mockResolvedValueOnce([row('ath-m', guardianYes)]);
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-m', dob: MINOR_DOB }]);
+    const [item] = await items();
+    expect(item).toEqual({
+      athlete_id: 'ath-m',
+      athlete_name: 'Sample Athlete',
+      consent_ok: true,
+      guardian_count: 1,
+      missing_guardian_count: 0,
+      per_guardian: [
+        {
+          parent_id: 'p1',
+          parent_name: 'Sample Guardian',
+          has_login: true,
+          status: 'signed',
+          consented: true,
+          covers_video: true,
+          public_use_allowed: false,
+          signed_at: '2026-08-01T00:00:00Z',
+        },
+      ],
+    });
+  });
+
+  test('an unknown date of birth reads as a minor', async () => {
+    mockList.mockResolvedValueOnce([row('ath-u', noGuardians)]);
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-u', dob: null }]);
+    const [item] = await items();
+    expect(item).not.toHaveProperty('consent_basis');
+    expect(item.consent_ok).toBe(false);
+    expect(mockOwn).not.toHaveBeenCalled();
+  });
+
+  test('an adult with their own signed consent, by their own login, covering video, is on file', async () => {
+    mockList.mockResolvedValueOnce([row('ath-a', noGuardians)]);
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-a', dob: ADULT_DOB }]);
+    mockOwn.mockResolvedValueOnce(own());
+    const [item] = await items();
+    expect(item).toMatchObject({ consent_ok: true, consent_basis: 'own' });
+    expect(item).not.toHaveProperty('own_state');
+    expect(mockOwn).toHaveBeenCalledWith('org-a', 'ath-a');
+  });
+
+  test("an adult whose only yes is a guardian's is not on file", async () => {
+    mockList.mockResolvedValueOnce([row('ath-a', guardianYes)]);
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-a', dob: ADULT_DOB }]);
+    mockOwn.mockResolvedValueOnce(null);
+    const [item] = await items();
+    expect(item).toMatchObject({ consent_ok: false, consent_basis: 'own', own_state: 'none' });
+  });
+
+  test.each([' Signed ', 'SIGNED'])('an adult own row stored as %p is on file, as the publish gate reads it', async (status) => {
+    mockList.mockResolvedValueOnce([row('ath-a', noGuardians)]);
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-a', dob: ADULT_DOB }]);
+    mockOwn.mockResolvedValueOnce(own({ status }));
+    const [item] = await items();
+    expect(item).toMatchObject({ consent_ok: true, consent_basis: 'own' });
+  });
+
+  /* Why, in the athlete panel's order (Overwatch): withdrawn, then photos only,
+     then not by their own login (only then), then anything else. */
+  test.each([
+    ['withdrawn', { status: 'withdrawn' }, 'said_no'],
+    ['withdrawn, also recorded by someone else', { status: ' Withdrawn ', recordedByOwnLogin: false }, 'said_no'],
+    ['signed, photos only', { coversVideo: false }, 'photos_only'],
+    ['photos only, also recorded by someone else', { coversVideo: false, recordedByOwnLogin: false }, 'photos_only'],
+    ['signed with video, recorded by someone else', { recordedByOwnLogin: false }, 'not_by_them'],
+    ['an unknown status', { status: 'pending' }, 'other'],
+    ['an empty status', { status: '' }, 'other'],
+  ])('an adult whose own row is %s is not on file, as %p', async (_label, overrides, state) => {
+    mockList.mockResolvedValueOnce([row('ath-a', noGuardians)]);
+    mockQuery.mockResolvedValueOnce([{ athlete_id: 'ath-a', dob: ADULT_DOB }]);
+    mockOwn.mockResolvedValueOnce(own(overrides));
+    const [item] = await items();
+    expect(item).toMatchObject({ consent_ok: false, consent_basis: 'own', own_state: state });
   });
 });

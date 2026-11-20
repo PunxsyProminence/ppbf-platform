@@ -1268,3 +1268,36 @@ describe('the name the gym types for a coach or staff member (Q1 part B)', () =>
     expect(screen.getByRole('button', { name: 'Save Name' })).toBeTruthy();
   });
 });
+
+/* Lane U1, SC2-5 (dry-run line 23): the Add Athlete coach picker showed a bare
+   login email. It names each coach as the gym typed it, or as their login
+   reads when no name is typed; two coaches who read the same keep their login
+   after the name, so the admin can tell them apart. */
+describe('the Add Athlete coach picker names coaches', () => {
+  const coach = (account_id: string, login_email: string, staff_display_name: string | null) => ({
+    account_id, login_email, staff_display_name, auth_provider: 'microsoft', role: 'coach',
+    athlete_id: null, active_flag: true, has_pin: false, membership_active: true,
+  });
+
+  test('by the typed name, never the bare login; a shared name keeps the login', async () => {
+    global.fetch = fetchMock({
+      roster: ROSTER,
+      members: [
+        coach('c-1', 'jrivera@example.com', 'Jordan Rivera'),
+        coach('c-2', 'sam.ruiz@example.com', null),
+        coach('c-3', 'alex.one@example.com', 'Alex Kim'),
+        coach('c-4', 'alex.two@example.com', 'Alex Kim'),
+      ],
+    }) as never;
+    render(<PeopleConsolePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Athlete' }));
+
+    const picker = await screen.findByLabelText(/^Coach$/);
+    const labels = Array.from((picker as HTMLSelectElement).options).map((option) => option.textContent);
+    expect(labels).toContain('Jordan Rivera');
+    expect(labels).toContain('Sam Ruiz');
+    expect(labels).toContain('Alex Kim (alex.one@example.com)');
+    expect(labels).toContain('Alex Kim (alex.two@example.com)');
+    expect(labels).not.toContain('jrivera@example.com');
+  });
+});

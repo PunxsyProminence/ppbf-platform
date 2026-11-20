@@ -390,6 +390,15 @@ describe('every direct reader of a consent status is registered', () => {
         + 'and may not match on every branch -- registered ahead of it, which '
         + 'is safe precisely because there is no stale-entry check here.',
     ],
+    [
+      'app/api/pilot/admin/athlete-consent/route.ts',
+      "The consent audit's reason an adult is not on file (lane U1, SC2-5; "
+        + 'OD-2026-10-08-015). Reports only: consent_ok is true only when '
+        + "ownConsentCoversNewPublication, the publication gate's own test, "
+        + "passes; the `=== 'withdrawn'` / `=== 'signed'` lines run on a "
+        + "normalised value and only choose the words, and an unrecognised "
+        + "status reads 'other' (or 'not_by_them'), never on file. Fails closed.",
+    ],
   ];
 
   function sourceFilesUnder(root: string): string[] {

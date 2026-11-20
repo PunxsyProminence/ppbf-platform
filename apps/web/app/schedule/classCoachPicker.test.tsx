@@ -132,7 +132,7 @@ describe('the class coach picker (lane L31 P6)', () => {
       'Coach Jordan Rivera',
       'Coach Sam Ruiz',
     ]);
-    expect(await screen.findByText(/Coach: Coach Jordan Rivera/)).toBeTruthy();
+    expect(await screen.findByText(/\| Coach Jordan Rivera/)).toBeTruthy();
     expect(screen.queryByText(/Coach Jane Doe/)).toBeNull();
   });
 

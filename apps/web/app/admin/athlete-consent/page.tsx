@@ -30,12 +30,31 @@ interface OrganizationConsentRow {
   athlete_id: string;
   athlete_name: string;
   consent_ok: boolean;
+  /* 'own' on an athlete 18 or over on the gym's day: their own consent is the
+     one that counts, and consent_ok is that (OD-2026-10-08-015; lane U1,
+     SC2-5). Absent for a minor, whose guardians' consent counts as before. */
+  consent_basis?: 'own';
+  /* Why an adult's own consent does not count, when it does not: the same
+     states, in the same order, as the athlete's own panel. Never "nothing on
+     file" for a row that is on file. */
+  own_state?: 'none' | 'said_no' | 'photos_only' | 'not_by_them' | 'other';
   guardian_count: number;
   missing_guardian_count: number;
   per_guardian: GuardianConsentRow[];
 }
 
 type Filter = 'all' | 'missing' | 'ok';
+
+/* An adult's badge when their own consent does not count, by state (lane U1,
+   SC2-5, Overwatch's ruling). An unknown or missing state reads as 'other',
+   the one wording true of every row that does not count. */
+const ADULT_NOT_COUNTED: Record<NonNullable<OrganizationConsentRow['own_state']>, string> = {
+  none: '18 or over: no own consent on file',
+  said_no: '18 or over: said no',
+  photos_only: '18 or over: photos only, not video',
+  not_by_them: '18 or over: not recorded on their own account',
+  other: "18 or over: answer on file doesn't count",
+};
 
 /**
  * pilot.guardian_links.relationship_to_athlete is plain text; this is the
@@ -274,7 +293,7 @@ export default function AthleteConsentAuditPage() {
       }
       setOpenAthleteId(null);
       // Re-read rather than patching local state: whether this athlete is now
-      // cleared depends on EVERY guardian, which only the server knows.
+      // cleared depends on EVERY guardian (under 18), which only the server knows.
       await load();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'That could not be recorded.');
@@ -316,15 +335,21 @@ export default function AthleteConsentAuditPage() {
               Media Consent Audit
             </h1>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
-              Every athlete in the organization and whether every one of their guardians has a current photo/video
-              consent on file. An athlete with no guardians on file cannot have consent verified at all -- that
-              shows as missing, not as cleared.
+              Every athlete in the organization and whether their photo/video consent is on file. Under 18, that
+              means every one of their guardians has a current consent on file; an athlete under 18 with no
+              guardians on file cannot have consent verified at all -- that shows as missing, not as cleared.
+            </p>
+            {/* OD-2026-10-08-015: from 18 only the athlete's own consent counts,
+                and only they can record it, signed in (lane U1, SC2-5). */}
+            <p className="t-body mt-[var(--s2)] max-w-4xl">
+              From 18, an athlete&rsquo;s own consent is the one that counts, and a guardian&rsquo;s does not. They record
+              it themselves, signed in on their own account; it cannot be recorded for them here.
             </p>
             {/* The register at /admin/consent no longer files photo and media
                 consent (OD-2026-10-07-009); the people arriving from its
                 pointer need to know they are in the right place. */}
             <p className="t-body mt-[var(--s2)] max-w-4xl">
-              This is the only place photo and video consent is recorded. A guardian who has no login is shown as
+              For athletes under 18, this is the only place photo and video consent is recorded. A guardian who has no login is shown as
               &ldquo;paper only&rdquo;; their consent is recorded here from the signed form, the same as anyone else&rsquo;s.
             </p>
             {addNotice ? (
@@ -398,9 +423,11 @@ export default function AthleteConsentAuditPage() {
                       <tr className="border-b border-[color:var(--hide-800)] last:border-b-0">
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{item.athlete_name}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">
-                          {item.guardian_count === 0
-                            ? 'No guardians on file'
-                            : `${item.guardian_count - item.missing_guardian_count}/${item.guardian_count} consented`}
+                          {item.consent_basis === 'own'
+                            ? 'Not needed (18 or over)'
+                            : item.guardian_count === 0
+                              ? 'No guardians on file'
+                              : `${item.guardian_count - item.missing_guardian_count}/${item.guardian_count} consented`}
                           {/* Who they are, with the paper-only ones marked:
                               a count alone cannot say which guardian is the
                               one nobody can email. */}
@@ -469,7 +496,13 @@ export default function AthleteConsentAuditPage() {
                         <td className="px-[var(--s4)] py-[var(--s3)]">
                           <span className={`badge ${item.consent_ok ? 'badge--cleared' : 'badge--restricted'}`}>
                             <i>{item.consent_ok ? '✓' : '▲'}</i>
-                            {item.consent_ok ? 'Consent on file' : 'Missing'}
+                            {item.consent_basis === 'own'
+                              ? item.consent_ok
+                                ? '18 or over: own consent on file'
+                                : ADULT_NOT_COUNTED[item.own_state ?? 'other'] ?? ADULT_NOT_COUNTED.other
+                              : item.consent_ok
+                                ? 'Consent on file'
+                                : 'Missing'}
                           </span>
                         </td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">
@@ -483,16 +516,24 @@ export default function AthleteConsentAuditPage() {
                             <button
                               type="button"
                               className="btn btn--ghost"
-                              disabled={item.guardian_count === 0}
+                              disabled={item.guardian_count === 0 || item.consent_basis === 'own'}
                               onClick={() => (openAthleteId === item.athlete_id ? setOpenAthleteId(null) : openRecorder(item))}
                             >
-                              {item.guardian_count === 0
+                              {/* The server refuses a guardian's consent for an adult
+                                  (guardian access has ended), so the button says
+                                  who records it instead of offering a 403. */}
+                              {item.consent_basis === 'own'
+                                ? 'They record it, signed in'
+                                : item.guardian_count === 0
                                 ? 'No guardian to record against'
                                 : openAthleteId === item.athlete_id
                                   ? 'Close'
                                   : 'Record'}
                             </button>
-                            {canAddGuardian ? (
+                            {/* Not on an adult's row: a guardian's consent cannot be
+                                recorded for them (the server refuses it), so adding a
+                                guardian here would open a recorder that can only fail. */}
+                            {canAddGuardian && item.consent_basis !== 'own' ? (
                               <button
                                 type="button"
                                 className="btn btn--ghost"

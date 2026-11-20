@@ -6,9 +6,14 @@ import {
   GuardianLinkEndedError,
   guardianDisplayName,
   listOrganizationConsentStatus,
+  ownConsentCoversNewPublication,
+  readOwnMediaConsent,
   withdrawMediaConsent,
+  type OwnMediaConsent,
   type QueryExecutor,
 } from '@/src/server/pilot/guardianConsent';
+import { guardianLinkEnded } from '@/src/server/pilot/guardianAccess';
+import { normalizeWaiverStatusText } from '@/src/server/pilot/waiverCompliance';
 import { assertAthleteBelongsToOrganization } from '@/src/server/pilot/access';
 import { recordMediaConsentAndSuppress } from '@/src/server/pilot/publication';
 import {
@@ -19,7 +24,7 @@ import {
   requireRole,
 } from '@/src/server/pilot/http';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
-import { sanitizedSqlState } from '@/src/server/pilot/db';
+import { query, sanitizedSqlState } from '@/src/server/pilot/db';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 
 export const runtime = 'nodejs';
@@ -157,7 +162,8 @@ const DECISIONS = new Set<ConsentDecision>(['grant', 'withdraw']);
  * T-008: THE ORG-WIDE CONSENT AUDIT, AND THE STAFF-SIDE CONSENT WRITER.
  *
  * GET is the audit: every athlete in the organization with their current
- * guardian media-consent status -- including athletes with zero linked
+ * media-consent status -- their guardians' under 18, their own from 18 (see
+ * adultOwnConsent below) -- including athletes with zero linked
  * guardians, which is itself the finding someone auditing this needs to see
  * (checkGuardianMediaConsent treats that as "unverifiable", not vacuously
  * satisfied). See guardianConsent.ts for the full reasoning.
@@ -197,12 +203,71 @@ const DECISIONS = new Set<ConsentDecision>(['grant', 'withdraw']);
  * refused 404 by check 2. Check 1 already establishes tenancy, so check 2's
  * 404 cannot be used to probe for athletes in another organization.
  */
+/*
+ * WHOSE CONSENT COUNTS, BY AGE (lane U1, SC2-5; dry-run line 93). Owner ruling
+ * OD-2026-10-08-015 (Jason, "A: adult consents for themselves (Recommended)"):
+ * at 18, guardian-era consent stops counting for a new publication, and only
+ * the adult's own consent does (guardianConsent.ts assertNewPublicationConsentPath).
+ * This audit used to grade every athlete on guardian consent, so an adult with
+ * no guardians read "Missing" whatever they had signed themselves.
+ *
+ * An adult row (18 or over on the gym's day, guardianLinkEnded) carries
+ * consent_basis 'own', and consent_ok is the publish gate's own test of the
+ * adult's own latest row (ownConsentCoversNewPublication): signed, covering
+ * video, recorded by their own login. A guardian's yes does not count for them.
+ * A minor's row is exactly what it was, with no new field. An unknown date of
+ * birth reads as a minor (OD-2026-10-04-010), as everywhere.
+ *
+ * One read of the gym's dates of birth, scoped to this organization; then one
+ * read of the adult's own consent per adult. At a gym's size that is a handful
+ * of small reads, alongside the per-athlete guardian reads the list already does.
+ *
+ * WHY AN ADULT IS NOT ON FILE, so the desk is never told "nothing on file"
+ * about a row that is on file (Overwatch, applying the hard floor). The order
+ * is the athlete's own panel's (AthleteMediaConsentPanel currentWords): no
+ * row; said no (withdrawn); photos only (signed, not video); not recorded on
+ * their own account (only then); and anything else that does not count
+ * (for example an unknown status) as 'other'. Present only when consent_ok is
+ * false, alongside consent_basis 'own'.
+ */
+export type AdultOwnState = 'none' | 'said_no' | 'photos_only' | 'not_by_them' | 'other';
+
+function adultOwnState(own: OwnMediaConsent | null): AdultOwnState | null {
+  if (ownConsentCoversNewPublication(own)) return null;
+  if (own === null) return 'none';
+  const status = normalizeWaiverStatusText(own.status);
+  if (status === 'withdrawn') return 'said_no';
+  if (status === 'signed' && !own.coversVideo) return 'photos_only';
+  if (!own.recordedByOwnLogin) return 'not_by_them';
+  return 'other';
+}
+
+async function adultOwnConsent(organizationId: string): Promise<Map<string, AdultOwnState | null>> {
+  const athletes = await query<{ athlete_id: string; dob: string | null }>(
+    `select athlete_id, to_char(dob, 'YYYY-MM-DD') as dob from pilot.athletes
+      where organization_id = $1 and deleted_at is null`,
+    [organizationId],
+  );
+  const adults = athletes.filter((athlete) => guardianLinkEnded(athlete.dob)).map((athlete) => athlete.athlete_id);
+  return new Map(
+    await Promise.all(
+      adults.map(async (athleteId) => [
+        athleteId,
+        adultOwnState(await readOwnMediaConsent(organizationId, athleteId)),
+      ] as const),
+    ),
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const principal = await requirePrincipal(request);
     requireRole(principal, ['admin', 'organization_admin', 'coach']);
 
-    const rows = await listOrganizationConsentStatus(principal.organizationId);
+    const [rows, adults] = await Promise.all([
+      listOrganizationConsentStatus(principal.organizationId),
+      adultOwnConsent(principal.organizationId),
+    ]);
     const guardianNames = new Map(
       rows.flatMap((row) => row.guardians.map((g) => [g.parentId, g] as const)),
     );
@@ -211,10 +276,15 @@ export async function GET(request: NextRequest) {
       ok: true,
       items: rows.map((row) => {
         const missing = new Set(row.consent.missingParentIds);
+        const adult = adults.has(row.athleteId);
+        const ownState = adults.get(row.athleteId) ?? null;
         return {
           athlete_id: row.athleteId,
           athlete_name: row.athleteName,
-          consent_ok: row.consent.ok,
+          consent_ok: adult ? ownState === null : row.consent.ok,
+          // Present on an adult's row only, so a minor's row is unchanged.
+          ...(adult ? { consent_basis: 'own' as const } : {}),
+          ...(ownState === null ? {} : { own_state: ownState }),
           guardian_count: row.consent.guardianIds.length,
           missing_guardian_count: row.consent.missingParentIds.length,
           per_guardian: row.consent.perGuardian.map((g) => ({
