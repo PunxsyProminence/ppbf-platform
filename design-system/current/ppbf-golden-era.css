@@ -3691,10 +3691,13 @@
    pain patch. Empty when there is no hold (the banner renders nothing). */
 .athlete-corner__wide { grid-column: 1 / -1; min-width: 0; }
 .athlete-corner__wide:empty { display: none; }
-/* End training (lane U3 B4) came from the Session Log's dark ground; its
-   --bone-400 captions read 3.6:1 at this leather's light edge. One rung up,
-   as .ge-floorboard does: 5.5:1 or better on the panel. */
+/* End training (lane U3 B4) came from the Session Log's dark ground. On this
+   leather its --bone-400 captions read 3.6:1, its focus ring under 2:1 and its
+   unselected answers' edges 1.2:1: captions one rung up (.ge-floorboard), and
+   the corner's own ring and ghost edge (below). */
 .athlete-corner__end { --bone-400: var(--bone-300); }
+.athlete-corner__end :is(.btn, .input):focus-visible { outline: 3px solid var(--bone-100); outline-offset: 2px; }
+.athlete-corner__end .btn--ghost { border: 2px solid rgba(231,200,138,.55); background-color: rgba(30,16,6,.55); }
 .athlete-corner__panel {
   position: relative;
   display: flex;

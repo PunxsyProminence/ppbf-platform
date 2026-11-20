@@ -485,12 +485,6 @@ const NO_NOTE_PLACEHOLDER = 'No athlete note provided at check-in.';
 /** The removed defaulted slider's label. Only ever asserted ABSENT, so a control that returns under it fails. */
 const REMOVED_SLIDER_LABEL = 'How ready do you feel today? (1-10)';
 
-/**
- * Check in from the Session Log, writing `note` into the pre-check-in box
- * first when one is given, and return the session body check-in POSTed.
- * Leaves the box untouched when `note` is undefined -- the athlete who writes
- * nothing, which is the case the placeholder exists for.
- */
 /* End training is collapsed wherever "Training started" is said (lane U3 B4,
    Overwatch Q1 B on #2006): the first End training opens the check-out
    questions in place, and theirs ends the session. A test that answers them,
@@ -508,6 +502,12 @@ async function expectEndRefusedSaid(): Promise<void> {
   expect(lines.filter((line) => line.getAttribute('role') === 'alert')).toHaveLength(1);
 }
 
+/**
+ * Check in from the Session Log, writing `note` into the pre-check-in box
+ * first when one is given, and return the session body check-in POSTed.
+ * Leaves the box untouched when `note` is undefined -- the athlete who writes
+ * nothing, which is the case the placeholder exists for.
+ */
 async function checkInFromSessionLog(note?: string): Promise<Record<string, unknown>> {
   const box = await screen.findByLabelText(PRE_CHECK_IN_NOTE);
   if (note !== undefined) {
@@ -5700,5 +5700,57 @@ describe('End training is where the athlete sees training has started', () => {
     fireEvent.click(within(floorEnd() as HTMLElement).getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
     await waitFor(() => expect(screen.queryByText(/still going/i)).toBeNull());
+  });
+
+  // The Session Log's own condition, kept: End is offered only over a session
+  // read that answered. The gym-day re-read holds the earlier session while it
+  // asks again, and the Floor has no other gate.
+  test('the Floor offers no End training while the sessions are being read again', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-26T03:50:00Z'), advanceTimers: true });
+    try {
+      storedSessions = [openSessionRow({ created_at: '2026-09-26T03:40:00Z', updated_at: '2026-09-26T03:40:00Z' })];
+      await renderWorkspace();
+      await screen.findByRole('button', { name: 'End training' });
+      openTab('Floor');
+      expect(floorEnd()).not.toBeNull();
+
+      // Gym midnight passes; the re-read never answers.
+      sessionListHangs = true;
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(11 * 60_000);
+      });
+      await waitFor(() => expect(floorEnd()).toBeNull());
+      expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a refused end is said only under its own session\'s End training', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-26T03:50:00Z'), advanceTimers: true });
+    try {
+      sessionUpdateFails = true;
+      storedSessions = [openSessionRow({ created_at: '2026-09-26T03:40:00Z', updated_at: '2026-09-26T03:40:00Z' })];
+      await renderWorkspace();
+      await openEndTraining();
+      fireEvent.click(within(cornerEnd() as HTMLElement).getByRole('button', { name: 'End training' }));
+      expect(await within(cornerEnd() as HTMLElement).findByRole('alert')).toBeTruthy();
+
+      // Past gym midnight the re-read finds another open session.
+      storedSessions = [openSessionRow({
+        session_id: 'session_next_day',
+        created_at: '2026-09-26T04:05:00Z',
+        updated_at: '2026-09-26T04:05:00Z',
+      })];
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(16 * 60_000);
+      });
+      await waitFor(() => expect(corner().getByText(/Training started .*12:05/)).toBeTruthy());
+      const end = cornerEnd() as HTMLElement;
+      expect(within(end).getByRole('button', { name: 'End training' })).toBeTruthy();
+      expect(within(end).queryByRole('alert')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

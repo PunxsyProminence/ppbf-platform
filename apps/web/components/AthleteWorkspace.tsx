@@ -1093,7 +1093,7 @@ function EndTrainingControl({ children, failure }: { children: ReactNode; failur
   return (
     <div className="space-y-[var(--s4)]">
       {open ? (
-        <div ref={questionsRef} tabIndex={-1} className="space-y-[var(--s4)]">
+        <div ref={questionsRef} tabIndex={-1} role="group" aria-label="End training" className="space-y-[var(--s4)]">
           {children}
         </div>
       ) : (

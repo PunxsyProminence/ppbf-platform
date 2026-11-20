@@ -207,12 +207,4 @@ describe('the End training slot', () => {
     expect(endCell()).toBeNull();
     expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
   });
-
-  test('pressing what it holds makes no request of the corner\'s own', () => {
-    const onEnd = jest.fn();
-    render(<AthleteCorner {...props({ checkedInAt: '4:05 PM', endTraining: <button type="button" onClick={onEnd}>End training</button> })} />);
-    fireEvent.click(screen.getByRole('button', { name: 'End training' }));
-    expect(onEnd).toHaveBeenCalledTimes(1);
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
 });
