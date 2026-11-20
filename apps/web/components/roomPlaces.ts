@@ -14,7 +14,8 @@ import type { ClubRole } from './roleRoutes';
  * Where each door goes: the Room Map's own lists where it names the page; for
  * its five count-only rooms (Clinic, File Room, Board Room, Teach Shadow, After
  * Hours) the doors whose `room` is that room; and for every door the Room Map
- * does not name, Overwatch's QT = A on #2029. Home (/dashboard, "The Bell", the
+ * does not name, Overwatch's QT = A on #2029 (which also put Rabbit Holes, a
+ * floor-painted door, in the File Room). Home (/dashboard, "The Bell", the
  * way in) is in no room; Search lists it first.
  */
 export type RoomPlace =

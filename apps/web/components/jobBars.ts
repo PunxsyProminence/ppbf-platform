@@ -11,7 +11,11 @@ import type { ClubRole } from './roleRoutes';
  * (OD-2026-11-19-008). The file is not in this repo; Overwatch quoted its job
  * bars and section contents on #2029 (2026-11-20, QS = A corrected to the
  * source). Each item below is an existing door, named by its href, or a Parent
- * Hub tab whose heading carries the stage 2 words. Items with no page yet are
+ * Hub tab whose heading carries the stage 2 words. Where a quoted word is a
+ * door's own label (Duplicate Guardians, Payment Accounts, Media Consent Audit,
+ * Load Gym Content, Waivers & Consent), the mapping is by that label; other
+ * readings are marked as inferences where they are made. Each role's Home is the
+ * page that role lands on today (getPilotRoleDestination). Items with no page yet are
  * left out, never invented (Overwatch named the first four):
  *   coach    Who needs you (one list); Groups and pathways (Today's Floor,
  *            Adult Pathway and Cohorts exist, but none is that page); Lessons (no

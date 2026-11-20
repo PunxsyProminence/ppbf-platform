@@ -4,6 +4,7 @@ import path from 'node:path';
 import * as buildingMap from './buildingMap';
 import { BUILDING } from './buildingMap';
 import { BOARD_HOME, JOB_BARS, jobBarFor, type JobItem } from './jobBars';
+import { getPilotRoleDestination } from '../src/shared/pilotRoleRouting';
 import type { ClubRole } from './roleRoutes';
 
 /**
@@ -29,6 +30,18 @@ describe('the job bars', () => {
     expect(labels('staff')).toEqual(['Home', 'Growth', 'More']);
     expect(labels('volunteer')).toEqual(['Home', 'Growth', 'More']);
     expect(labels('platform_owner')).toEqual(['Home', 'Gyms', 'Onboard', 'System']);
+  });
+
+  it.each(['coach', 'parent', 'admin', 'staff', 'volunteer', 'platform_owner'] as ClubRole[])(
+    "%s: Home is the page the role lands on today",
+    (role) => {
+      expect(jobBarFor(role)?.sections[0]).toEqual({ label: 'Home', items: [{ href: getPilotRoleDestination(role) }] });
+    },
+  );
+
+  it('board: Home is where the session lands, its seat or Board Hub', () => {
+    expect(jobBarFor('board', { boardSeat: 'treasurer' })?.sections[0].items[0].href).toBe(getPilotRoleDestination('board', 'treasurer'));
+    expect(jobBarFor('board')?.sections[0].items[0].href).toBe(getPilotRoleDestination('board', null));
   });
 
   it('give the athlete no bar (Q14 A, OD-2026-11-19-017), and nobody without a session', () => {
