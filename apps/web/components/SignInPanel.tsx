@@ -517,13 +517,16 @@ export default function SignInPanel({
           <h1 className="t-painted mt-[var(--s4)]" style={{ fontSize: 'var(--t-2xl)' }}>
             The Bell
           </h1>
-          <p className="t-body mt-[var(--s3)]">Sign in to continue.</p>
-          {/* LEAD SENTENCES (app scrub FAM-15; AS-9 Q10 = B). The order of the
-              three ways stays as ruled (OD-2026-10-01-002 section 3), so the
-              lead lines tell a parent which block is theirs. PROPOSED words. */}
+          {/* LEAD SENTENCES (app scrub FAM-15). The order of the three ways
+              stays (AS-9 Q10 = B), so the lead lines tell a parent which block
+              is theirs, in body type rather than the small muted line. */}
+          <p className="t-body mt-[var(--s3)]">
+            Sign in to continue. Parents: Email Link, the second way below, is
+            yours.
+          </p>
           <p className="t-muted mx-auto mt-[var(--s3)] max-w-[52ch]" style={{ fontSize: 'var(--t-sm)' }}>
-            Parents: Email Link, the second way below, is yours. Whichever way
-            you use, you will land on the right dashboard for your role.
+            Once you are signed in, you will land on the right dashboard for
+            your role.
           </p>
         </header>
 
