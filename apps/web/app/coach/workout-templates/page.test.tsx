@@ -2291,8 +2291,9 @@ describe('Edit (lane ED-UI PR2)', () => {
     const fetchMock = editRoutes(() => ({ ok: false, status: 500, json: async () => ({ error: 'Something failed.' }) }) as Response, { savedAnyway: true });
     render(<CoachWorkoutTemplatesPage />);
     const form = await openAndEdit();
+    // The unknown save did write: the list read again holds v2, and v2 is what opens.
     const detailReads = () => fetchMock.mock.calls
-      .filter((call) => String(call[0]) === '/api/pilot/workout-templates?template_id=wt-1' && ((call[1] as RequestInit | undefined)?.method ?? 'GET') === 'GET').length;
+      .filter((call) => String(call[0]) === '/api/pilot/workout-templates?template_id=wt-1-v2' && ((call[1] as RequestInit | undefined)?.method ?? 'GET') === 'GET').length;
     fireEvent.change(within(form).getByLabelText('Intent'), { target: { value: 'Stance and guard.' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     await within(form).findByRole('alert');
@@ -2371,8 +2372,11 @@ describe('Edit (lane ED-UI PR2)', () => {
     expect(screen.getByRole('region', { name: 'Edit Boxing Fundamentals 60' })).toBe(form);
     expect(within(form).getByLabelText('Intent')).toHaveValue('Stance and guard.');
     await waitFor(() => expect(within(form).getByRole('button', { name: 'Cancel' })).toBeEnabled());
-    const detailReadsBefore = reads('/api/pilot/workout-templates?template_id=wt-1');
+    // The current version of this template opens: v2 when the unknown save did write, else v1 (the route's "edit the current version").
+    const current = `/api/pilot/workout-templates?template_id=${savedAnyway ? 'wt-1-v2' : 'wt-1'}`;
+    const detailReadsBefore = reads(current);
     fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(reads('/api/pilot/workout-templates?template_id=wt-1')).toBe(detailReadsBefore + 1));
+    await waitFor(() => expect(reads(current)).toBe(detailReadsBefore + 1));
+    if (savedAnyway) expect(await screen.findByText('Stance and guard.', { selector: 'p' })).toBeInTheDocument();
   });
 });

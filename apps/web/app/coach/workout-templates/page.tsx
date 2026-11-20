@@ -948,7 +948,10 @@ function CoachWorkoutTemplates() {
                   itemNames={detail.items.map((item, index) => `${index + 1}. ${itemName(item)}`)}
                   onCancel={() => {
                     setEditingId('');
-                    if (rereadOnCancel.current) void openTemplate(detail.template.template_id);
+                    // The current version of this template ("Reload it and edit the current version", the route's 409): the
+                    // list was just read again, and a version replaced meanwhile is no longer in it.
+                    const current = templates.find((row) => row.lineage_id === detail.template.lineage_id)?.template_id;
+                    if (rereadOnCancel.current) void openTemplate(current ?? detail.template.template_id);
                     else setFocusEdit((count) => count + 1);
                     rereadOnCancel.current = false;
                   }}
