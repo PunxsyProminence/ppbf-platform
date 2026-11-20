@@ -145,17 +145,28 @@ function firstName(name: string | null | undefined): string | null {
 
 function countsByChild(
   childList: ReadonlyArray<{ id: string; name: string }>,
-  matching: ReadonlyArray<ParentMessage>,
+  allMessages: ReadonlyArray<ParentMessage>,
+  counted: (message: ParentMessage) => boolean,
 ): ChildCount[] {
   const counts = new Map<string, number>();
-  for (const message of matching) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
-  const people: Array<{ id: string; full: string | null; first: string | null }> = childList.map((child) => ({
-    id: child.id,
-    full: child.name && child.name !== 'Unknown' ? child.name.trim() : null,
-    first: firstName(child.name),
-  }));
-  const known = new Set(childList.map((child) => child.id));
-  for (const message of matching) {
+  for (const message of allMessages) {
+    if (counted(message)) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
+  }
+  // One list of people for both tiles: the roster's children, each once, then
+  // any child only a message names (every message, counted or not, so the two
+  // tiles never list different children).
+  const people: Array<{ id: string; full: string | null; first: string | null }> = [];
+  const known = new Set<string>();
+  for (const child of childList) {
+    if (known.has(child.id)) continue;
+    known.add(child.id);
+    people.push({
+      id: child.id,
+      full: child.name && child.name !== 'Unknown' ? child.name.trim() : null,
+      first: firstName(child.name),
+    });
+  }
+  for (const message of allMessages) {
     if (known.has(message.athlete_id)) continue;
     known.add(message.athlete_id);
     people.push({ id: message.athlete_id, full: message.athlete_name?.trim() || null, first: firstName(message.athlete_name) });
@@ -1158,6 +1169,9 @@ export default function ParentHub() {
      week, is on Messages. */
   /* No child selected (the roster failed or is still loading) is an unknown,
      not an empty week: the card says it cannot show the list. */
+  // The children read has answered (not loading, not failed). The two tiles
+  // that name every child wait for it (countsByChild).
+  const rosterAnswered = !childrenLoading && !childrenError;
   const weekBounds = messagesLoaded && activeChildId ? gymWeekBounds(floorClockMs) : null;
   const activeChildTasks = messages.filter((message) => message.athlete_id === activeChildId && message.task !== null);
   const byDueDate = (a: ParentMessage, b: ParentMessage) =>
@@ -1302,17 +1316,18 @@ export default function ParentHub() {
     : messagesFailed ? { state: 'failed' } : { state: 'loading' };
 
   /* Attendance outcomes on canvas take the -deep rungs (the text weights the
-     sheet ships for the warm ground) and always carry their glyph. */
+     sheet ships for the warm ground) and always carry their glyph. An absence
+     is not a medical stop, so it takes the restricted rung and its triangle,
+     as Excused does; the word says which it is. It used to wear the
+     medical-stop rung and its X (OW25-48 A: that mark is only for a medical
+     stop; Overwatch on #2033, 2026-11-20). */
   function attendanceStatusTone(status: AttendanceEntry['status']): string {
     if (status === 'Present') return 'text-[color:var(--cleared-deep)]';
-    if (status === 'Excused') return 'text-[color:var(--restricted-deep)]';
-    return 'text-[color:var(--locked-deep)]';
+    return 'text-[color:var(--restricted-deep)]';
   }
 
   function attendanceGlyph(status: AttendanceEntry['status']): string {
-    if (status === 'Present') return '✓';
-    if (status === 'Excused') return '▲';
-    return '✕';
+    return status === 'Present' ? '✓' : '▲';
   }
 
   /* One parent-support task on the Parent Floor: the coach's words, when it is
@@ -1514,13 +1529,16 @@ export default function ParentHub() {
             selected child's; Parent Floor tasks and New messages count across every
             child. Each tile is Unavailable until the read it counts from has
             answered, never 0: a derived 0 would tell a parent "nothing is
-            scheduled" or "nothing is due", which nobody verified. */}
+            scheduled" or "nothing is due", which nobody verified. The two
+            all-children tiles name each child, so they also wait for the
+            children read: without it a child with nothing counted would be
+            missing from the line, or the line would be a bare 0. */}
         <ParentSummaryPanel
           childProgress={progressText}
-          tasksDue={messagesLoaded ? countsByChild(children, messages.filter(isOpenTask)) : null}
+          tasksDue={messagesLoaded && rosterAnswered ? countsByChild(children, messages, isOpenTask) : null}
           upcomingEvents={activeUpcomingPlaces}
           attendance={activeAttendanceTally}
-          unreadMessages={messagesLoaded && ownReadsLoaded ? countsByChild(children, messages.filter(isNewToMe)) : null}
+          unreadMessages={messagesLoaded && ownReadsLoaded && rosterAnswered ? countsByChild(children, messages, isNewToMe) : null}
         />
 
         {/* TAB CONTENT */}
@@ -2117,13 +2135,23 @@ export default function ParentHub() {
               <h3 className="t-label">Progress & Achievements</h3>
               <p className="t-body">Track skill development and milestone achievements.</p>
 
-              {/* THE RECORD'S OTHER PAGES, FIRST (scrub FAM-07, FAM-08). The
-                  film link moved here from the Safety & Consent card, and the
+              {/* THE RECORD'S OTHER PAGES, FIRST (scrub FAM-07, FAM-08): the
+                  full record, the film, the plan and mental skills. The film
+                  link moved here from the Safety & Consent card, and the
                   Development Plan and Mental Skills links moved up from the
                   foot of this tab, below achievements, goals and the summary.
                   Each page opens on the child chosen here
                   (src/lib/chosenChild.ts), and its read re-checks the link. */}
               <nav aria-label="Your child's progress pages" className="flex flex-wrap gap-[var(--s3)]">
+                {/* The full record, by its door's name (AS-9 Q13 = A). The
+                    summary below keeps its own link to the same page. */}
+                <Link
+                  href="/parent/progression-visibility"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Progress Visibility
+                </Link>
                 <Link
                   href="/parent/video"
                   onClick={() => rememberChosenChild(activeChildId)}
@@ -2218,7 +2246,7 @@ export default function ParentHub() {
         </div>
 
         {/* The gym wall, at the foot of the page. See the note where it used to
-            hang, above the family commitment card. */}
+            hang, above the child selector. */}
         <GymWallModule className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" />
       </div>
     </div>

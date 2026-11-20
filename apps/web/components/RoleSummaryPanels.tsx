@@ -112,7 +112,9 @@ interface ParentSummaryPanelProps {
   // expected of them, which must never be the rendering of a feed that does
   // not exist or did not load.
   /* Parent Floor tasks and New messages count every linked child, so each
-     carries one named count per child (AS-9 Q4 = A), never a bare total. */
+     carries one named count per child (AS-9 Q4 = A), never one total across
+     children. null until the messages read AND the children read have both
+     answered. An empty list is a family with no linked child: it reads 0. */
   tasksDue: ReadonlyArray<ChildCount> | null;
   upcomingEvents: number | null;
   /* The selected child's recorded attendance marks, counted, never divided:
@@ -125,7 +127,9 @@ interface ParentSummaryPanelProps {
   unreadMessages: ReadonlyArray<ChildCount> | null;
 }
 
-/** One child's count on a parent tile: the child's first name and the figure. */
+/** One child's count on a parent tile: the child's label (first name; full
+ *  name when two share a first name; "Your child" with no name on file) and
+ *  the figure. */
 export interface ChildCount {
   label: string;
   count: number;

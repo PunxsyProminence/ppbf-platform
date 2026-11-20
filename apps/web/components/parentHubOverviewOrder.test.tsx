@@ -116,7 +116,7 @@ describe('the record pages (FAM-07, FAM-08)', () => {
     expect(within(safety).queryByRole('link', { name: /film/i })).toBeNull();
   });
 
-  test('film, plan and mental skills sit at the top of Progress, before the achievements, and carry the child', async () => {
+  test('the full record, film, plan and mental skills sit at the top of Progress, before the achievements, and carry the child', async () => {
     installFetch();
     await renderHub();
     await act(async () => {
@@ -129,6 +129,7 @@ describe('the record pages (FAM-07, FAM-08)', () => {
     const pages = screen.getByRole('navigation', { name: "Your child's progress pages" });
     const links = within(pages).getAllByRole('link');
     expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+      ['Progress Visibility', '/parent/progression-visibility'],
       ["Your athlete's film", '/parent/video'],
       ['Their Development Plan', '/parent/development-blocks'],
       ['Mental Skills', '/parent/mental-skills'],
@@ -137,14 +138,21 @@ describe('the record pages (FAM-07, FAM-08)', () => {
     expect(screen.getAllByRole('link', { name: 'Their Development Plan' })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: 'Mental Skills' })).toHaveLength(1);
 
-    // First thing after the tab's heading and intro line.
+    // Above everything else the tab holds: every other link on the tab comes
+    // after the row in the document.
     const panel = pages.parentElement as HTMLElement;
-    const children = Array.from(panel.children);
-    expect(children.indexOf(pages)).toBe(2);
+    const otherLinks = within(panel).getAllByRole('link').filter((link) => !pages.contains(link));
+    expect(otherLinks.length).toBeGreaterThan(0);
+    for (const link of otherLinks) {
+      expect(pages.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
 
-    window.sessionStorage.clear();
-    fireEvent.click(links[0]);
-    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_2');
+    // Every link in the row carries the child on screen.
+    for (const link of links) {
+      window.sessionStorage.clear();
+      fireEvent.click(link);
+      expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('ath_2');
+    }
   });
 });
 
@@ -159,6 +167,90 @@ describe('each count names its child (FAM-12)', () => {
     await renderHub();
 
     expect(tileValue('Parent Floor tasks')).toBe('First 0 · Second 2');
+    // Neither note has been opened by this guardian (the reads read answers
+    // with none), so both are new.
+    expect(tileValue('New messages')).toBe('First 0 · Second 2');
+  });
+
+  test('both tiles list the same children, in the same order, whatever each one counts', async () => {
+    installFetch({
+      roster: [{ athlete_id: 'ath_1', full_name: 'First Child' }],
+      messages: [
+        // A plain note for a child the roster did not return: new, not a task.
+        message({ note_id: 'a', athlete_id: 'ath_7', athlete_name: 'Other Kid' }),
+        message({ note_id: 'b', athlete_id: 'ath_1', task: { due_date: '2026-10-20', completed_at: null } }),
+      ],
+    });
+    await renderHub();
+
+    expect(tileValue('Parent Floor tasks')).toBe('First 1 · Other 0');
+    expect(tileValue('New messages')).toBe('First 1 · Other 1');
+  });
+
+  test('a roster row sent twice is one child, counted once', async () => {
+    installFetch({
+      roster: [
+        { athlete_id: 'ath_1', full_name: 'Ada Lovelace' },
+        { athlete_id: 'ath_1', full_name: 'Ada Lovelace' },
+      ],
+      messages: [message({ athlete_name: 'Ada Lovelace', task: { due_date: '2026-10-20', completed_at: null } })],
+    });
+    await renderHub();
+
+    expect(tileValue('Parent Floor tasks')).toBe('Ada 1');
+  });
+
+  test('a family with no linked child reads 0 on both tiles: the reads answered and held nothing', async () => {
+    installFetch({ roster: [] });
+    await renderHub();
+
+    expect(tileValue('Parent Floor tasks')).toBe('0');
+    expect(tileValue('New messages')).toBe('0');
+  });
+});
+
+/* The two tiles name every child, so they need the children read as well as
+   the messages read. Until the children read has answered they are
+   Unavailable: never a bare 0, and never a line that leaves a child out. */
+describe('the named tiles wait for the children read', () => {
+  test('a failed children read: Unavailable, with no messages and with one', async () => {
+    installFetch({ roster: 'fail' });
+    await renderHub();
+    await waitFor(() => expect(screen.getAllByRole('alert').some((el) => el.textContent?.includes('Error loading children'))).toBe(true));
+    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
+    expect(tileValue('New messages')).toBe('Unavailable');
+  });
+
+  test('a failed children read with a task on file still says Unavailable, not a partial line', async () => {
+    installFetch({
+      roster: 'fail',
+      messages: [message({ task: { due_date: '2026-10-20', completed_at: null } })],
+    });
+    await renderHub();
+    await waitFor(() => expect(screen.getAllByRole('alert').some((el) => el.textContent?.includes('Error loading children'))).toBe(true));
+    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
+    expect(tileValue('New messages')).toBe('Unavailable');
+    expect(tileValue('Parent Floor tasks')).not.toContain('First');
+  });
+
+  test('a children read still out: Unavailable, then the named line when it answers', async () => {
+    let answerRoster: (value: Response) => void = () => {};
+    installFetch({ messages: [message({ task: { due_date: '2026-10-20', completed_at: null } })] });
+    const base = (global.fetch as jest.Mock).getMockImplementation() as (input: unknown) => Promise<Response>;
+    (global.fetch as jest.Mock).mockImplementation((input: unknown) =>
+      String(input).includes('/api/pilot/athletes/list')
+        ? new Promise<Response>((resolve) => { answerRoster = resolve; })
+        : base(input));
+    await renderHub();
+
+    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
+    expect(tileValue('New messages')).toBe('Unavailable');
+
+    await act(async () => {
+      answerRoster(jsonResponse({ items: TWO_CHILDREN }));
+    });
+    await waitFor(() => expect(tileValue('Parent Floor tasks')).toBe('First 1 · Second 0'));
+    expect(tileValue('New messages')).toBe('First 1 · Second 0');
   });
 
   test('a one-child family sees the name with the figure', async () => {

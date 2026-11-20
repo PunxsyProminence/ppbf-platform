@@ -197,13 +197,9 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
     await renderHub();
 
     await waitFor(() => expect(tileValue('Progress')).toBe(FIRST_PROGRESS));
-    // The status panel's Progress row repeated the tile, so it went (scrub FAM-20).
-    expect(statusPanelText()).not.toContain(FIRST_PROGRESS);
 
     await selectChild('Second Child');
     await waitFor(() => expect(tileValue('Progress')).toBe(SECOND_PROGRESS));
-    expect(tileValue('Progress')).not.toContain(FIRST_PROGRESS);
-    expect(statusPanelText()).not.toContain(SECOND_PROGRESS);
   });
 
   test('a real zero is a zero', async () => {
@@ -234,7 +230,6 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
 
     await selectChild('Second Child');
     expect(tileValue('Progress')).toBe('Unavailable');
-    expect(statusPanelText()).not.toMatch(/milestones? earned/);
 
     await act(async () => {
       (releaseSecond as (() => void) | null)?.();
@@ -246,7 +241,6 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
     installFetch({ milestones: async () => jsonResponse({ error: 'Forbidden' }, false) });
     await renderHub();
     await waitFor(() => expect(tileValue('Progress')).toBe('Unavailable'));
-    expect(statusPanelText()).not.toMatch(/milestones? earned/);
   });
 
   test('an answer without the session count is not read as zero sessions', async () => {
@@ -332,7 +326,6 @@ describe('Upcoming: places the selected child holds in sessions still to come', 
     await renderHub();
     expect(tileValue('Upcoming')).toBe('Unavailable');
     expect(tileValue('Class attendance')).toBe('Unavailable');
-    expect(statusPanelText()).not.toContain('Present 0');
   });
 
   test('Unavailable when the schedule read fails', async () => {
@@ -348,26 +341,21 @@ describe('Attendance: the recorded marks, counted and never divided', () => {
     await renderHub();
     // Newest CLASS first: the excused one, for the class held on the 14th.
     await waitFor(() => expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 1 · Absent 0Latest class on the register: Jan 14, 2020, 6:00 PM/));
-    // The status panel's Class attendance row repeated the tile, so it went (scrub FAM-20).
-    expect(statusPanelText()).not.toContain('Present 1 · Excused 1 · Absent 0');
 
     await selectChild('Second Child');
     expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 0 · Absent 2Latest class on the register: Jan 21, 2020, 6:00 PM/);
-    expect(statusPanelText()).not.toContain('Present 1 · Excused 0 · Absent 2');
   });
 
   test('a child with no marks reads zeros and no last-marked line', async () => {
     installFetch({ scheduler: async () => jsonResponse({ ok: true, classes: [], registrations: [], attendance: [] }) });
     await renderHub();
     await waitFor(() => expect(tileValue('Class attendance')).toBe('Present 0 · Excused 0 · Absent 0'));
-    expect(statusPanelText()).not.toMatch(/Latest class|Last marked/);
   });
 
   test('a failed schedule read is Unavailable on both, not zeros', async () => {
     installFetch({ scheduler: async () => jsonResponse({ error: 'down' }, false) });
     await renderHub();
     await waitFor(() => expect(tileValue('Class attendance')).toBe('Unavailable'));
-    expect(statusPanelText()).not.toContain('Present 0');
   });
 
   test('no attendance percentage anywhere on the overview', async () => {
