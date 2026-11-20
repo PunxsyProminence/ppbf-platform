@@ -5,8 +5,9 @@ import type { ClubRole } from './roleRoutes';
  * THE ROOM MAP'S ROOMS, FOR SEARCH (AS-4, U2-4a).
  *
  * Search's empty query shows "All pages" grouped by the 17 rooms of the Room Map
- * (docs/ROOM-MAP.md, approved 2026-09-26; scrub Q11 B: "All 17 rooms from the
- * Room Map"). This is a NEW field, kept apart from a door's `room` in
+ * (docs/ROOM-MAP.md, shape agreed 2026-09-26; scrub Q11 B: "All 17 rooms from the
+ * Room Map"). Rooms hold existing doors only: a page the Room Map names that has
+ * no door is not here. This is a NEW field, kept apart from a door's `room` in
  * buildingMap.ts: that one is a copy of the page's paint and drives the easter
  * eggs, and it is not changed here.
  *
@@ -157,9 +158,12 @@ export function roomPlaceOf(href: string): RoomPlace | null {
 }
 
 /**
- * THE LAB (Overwatch QU = A on #2029; stage-1 BOA-08, and stage 2's admin Lab:
- * "Capabilities, System, Door Register, SHADOW admin console, research and
- * evidence pages, simulator, retro lab"). Admin and platform owner find these in
+ * THE LAB (Overwatch QU = A on #2029): stage-1 BOA-08's 13 doors (the File
+ * Room's 7, SHADOW Admin Console, Retro Lab, Door Register, System and the two
+ * Calibration doors), plus Capabilities, which Overwatch's correction moved here.
+ * Stage 2's admin Lab ("Capabilities, System, Door Register, SHADOW admin
+ * console, research and evidence pages, simulator, retro lab") names most of
+ * them; the Calibration doors come from BOA-08. Admin and platform owner find these in
  * Search under "Lab", last. Any other role that can open one keeps it in its
  * Room Map room, so nobody loses a page from Search.
  */

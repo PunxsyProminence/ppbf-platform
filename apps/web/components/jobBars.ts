@@ -14,7 +14,8 @@ import type { ClubRole } from './roleRoutes';
  * Hub tab whose heading carries the stage 2 words. Items with no page yet are
  * left out, never invented (Overwatch named the first four):
  *   coach    Who needs you (one list); Groups and pathways (Today's Floor,
- *            Adult Pathway and Cohorts exist, but none is that page); Lessons.
+ *            Adult Pathway and Cohorts exist, but none is that page); Lessons (no
+ *            page is titled so).
  *            The athlete page's "reviews" and "what the athlete logged" have no
  *            page of their own; its "film" is Film, in More.
  * Until the athlete page (AS-11) holds them, the athlete page's parts are
@@ -138,8 +139,9 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
       { label: 'Safety', items: pages('/parent/safety', '/parent/consent') },
       // "schedule and register, attendance, parent support tasks" (the Parent Floor tab)
       { label: 'This week', items: [...pages('/schedule'), hubTab('attendance'), hubTab('parent-floor')] },
-      // "digest (Home's Overview), assignments, achievements (the Progress tab), goals, their plan, mental
-      // skills, full record, film, your notes (Observations), family goals"
+      // "digest (Home's Overview), assignments, achievements (the Progress tab), goals and family goals
+      // (the Family Goals tab), their plan, mental skills, full record (read as Progress Visibility, an
+      // inference), film, your notes (Observations)"
       {
         label: 'Progress',
         items: [
@@ -159,7 +161,8 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
       { label: 'Home', items: pages('/admin/people') },
       // "roster with search, athlete records, Sign-in codes, Load a roster, Duplicate guardians, Data
       // deletion, Enquiries; Staff (coverage, credentials, volunteers)". The roster with search is Home;
-      // Enquiries is read as Public Interest (the public page's interest form), an inference.
+      // Enquiries is read as Public Interest (the public page's interest form), and Sign-in codes as
+      // Activation Codes and Reset Athlete Sign-In: inferences.
       {
         label: 'Members & staff',
         items: pages(
@@ -168,8 +171,9 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
           '/admin/coach-coverage', '/admin/credentials', '/admin/volunteer-management',
         ),
       },
-      // "Morning check and each queue". The waiver queue is Waiver Compliance; Waivers & Consent (the
-      // records) stays in Search, in Back Office.
+      // "Morning check and each queue", read as the admin's review and compliance queues (an inference).
+      // The waiver queue is Waiver Compliance; Waivers & Consent (the records) stays in Search, in Back
+      // Office.
       {
         label: 'Safety',
         items: pages(
@@ -217,7 +221,7 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
       { label: 'Home', items: pages('/admin/platform') },
       // "All gyms overview", today's /admin/platform/overview
       { label: 'Gyms', items: pages('/admin/platform/overview') },
-      // "the onboarding wizard"
+      // "the onboarding wizard", read as Get Your Gym Online (an inference)
       { label: 'Onboard', items: pages('/admin/organizations') },
       { label: 'System', items: pages('/admin/system') },
     ],
