@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
-import { formatGymDateNumeric, gymDayIso } from '@/src/lib/gymTime';
+import { formatGymDateNumeric, formatGymTimeOfDay, gymDayIso } from '@/src/lib/gymTime';
 import { refusalWords } from '@/src/lib/serverRefusalWords';
 
 // THE QUARTERLY TEST DAY (OD-2026-10-17-026: "A: 20-m shuttle (Rec.)", and
@@ -31,8 +31,53 @@ import { refusalWords } from '@/src/lib/serverRefusalWords';
 // record; jumps and the shuttle go to each athlete's own testing history.
 // The 55px tap floor comes from this route's layout (KioskSurface). All
 // wording here is PROPOSED.
+//
+// WHOSE NUMBERS (lane 6C7, U2-6c; app scrub CF-13; Overwatch Q3 = A on #2043).
+// The list was every athlete the coach can record for, with no way to see only
+// tonight's class. One choice now narrows it: "Everyone you can record for"
+// (the default, the list as it was) or one class held on the test date. A class
+// shows its registered athletes and anyone marked Present on it, and only those
+// the route will record for. It is read from GET /api/pilot/scheduler, the read
+// /schedule already makes for the same reader, so no new route and nothing new
+// is shown. A class is offered only when that read gives it at least one such
+// athlete: a coach is not sent the register of a class they do not run, and a
+// choice that could only show nobody is not offered. A failed class read says
+// so and leaves everyone listed. An athlete with a number typed stays listed
+// whatever is chosen, so nothing typed is ever hidden or sent unseen.
 
 interface RosterAthlete { athlete_id: string; full_name?: string }
+
+interface TestDayClass { class_id: string; title: string; start_at: string; end_at: string; status: string }
+/** The scheduler read, as Test Day uses it: the classes, and who each has registered or Present. */
+interface ClassRead { classes: TestDayClass[]; members: Map<string, Set<string>> }
+
+/** null when the answer cannot be read as a schedule: the page then says the classes could not be loaded. */
+function classRead(payload: unknown): ClassRead | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const { classes, registrations, attendance } = payload as Record<string, unknown>;
+  if (!Array.isArray(classes) || !Array.isArray(registrations) || !Array.isArray(attendance)) return null;
+  const members = new Map<string, Set<string>>();
+  const add = (classId: unknown, athleteId: unknown) => {
+    if (typeof classId !== 'string' || typeof athleteId !== 'string') return;
+    const set = members.get(classId) ?? new Set<string>();
+    set.add(athleteId);
+    members.set(classId, set);
+  };
+  for (const row of registrations as Array<Record<string, unknown> | null>) {
+    if (row && row.status === 'registered') add(row.class_id, row.athlete_id);
+  }
+  for (const row of attendance as Array<Record<string, unknown> | null>) {
+    if (row && row.status === 'present') add(row.class_id, row.athlete_id);
+  }
+  const rows = (classes as Array<Record<string, unknown> | null>).filter((item): item is Record<string, unknown> & TestDayClass =>
+    Boolean(item)
+    && typeof item?.class_id === 'string'
+    && typeof item.title === 'string'
+    && typeof item.start_at === 'string'
+    && typeof item.end_at === 'string'
+    && typeof item.status === 'string');
+  return { classes: rows, members };
+}
 
 const FIELDS = [
   { key: 'height_cm', label: 'Height (cm)', inputMode: 'decimal' },
@@ -126,6 +171,10 @@ function TestDayForm() {
     pending.current = value;
     writePending(value);
   };
+  // Whose numbers: the classes read (null while loading, 'failed' when it could not be read), and
+  // the class chosen ('' is everyone).
+  const [classData, setClassData] = useState<ClassRead | 'failed' | null>(null);
+  const [classId, setClassId] = useState('');
 
   useEffect(() => {
     void (async () => {
@@ -154,8 +203,47 @@ function TestDayForm() {
     })();
   }, []);
 
+  // The classes for "Whose numbers", read after the roster: the roster is the page; this narrows it.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
+        const read = res.ok ? classRead(await res.json().catch(() => null)) : null;
+        setClassData(read ?? 'failed');
+      } catch {
+        // The class choice is a convenience: without it, everyone is listed, and the page says why.
+        setClassData('failed');
+      }
+    })();
+  }, []);
+
   const names = displayNames(roster ?? []);
   const nameOf = (id: string) => names.get(id) ?? id;
+
+  // The classes held on the test date that the read gives at least one recordable athlete for.
+  const classOptions = useMemo(() => {
+    if (!roster || !classData || classData === 'failed') return [];
+    const recordable = new Set(roster.map((athlete) => athlete.athlete_id));
+    return classData.classes
+      .filter((item) => item.status !== 'cancelled' && gymDayIso(item.start_at) === date)
+      .map((item) => ({
+        ...item,
+        athletes: new Set([...(classData.members.get(item.class_id) ?? [])].filter((id) => recordable.has(id))),
+      }))
+      .filter((item) => item.athletes.size > 0)
+      .sort((left, right) => new Date(left.start_at).getTime() - new Date(right.start_at).getTime());
+  }, [classData, date, roster]);
+  // A class that is not among the date's options (the date changed) is not a choice: everyone.
+  const chosenClass = classOptions.find((item) => item.class_id === classId) ?? null;
+  const hasTyped = (athleteId: string) => FIELDS.some((field) => (cells[athleteId]?.[field.key] ?? '').trim() !== '');
+  const shownRoster = roster && chosenClass
+    ? roster.filter((athlete) => chosenClass.athletes.has(athlete.athlete_id) || hasTyped(athlete.athlete_id))
+    : roster;
+  const classLabel = (item: TestDayClass) => {
+    const start = formatGymTimeOfDay(item.start_at);
+    const end = formatGymTimeOfDay(item.end_at);
+    return start && end ? `${item.title}, ${start}-${end}` : item.title;
+  };
 
   const save = async () => {
     if (busy || !roster) return;
@@ -277,6 +365,36 @@ function TestDayForm() {
         />
       </label>
 
+      {roster && roster.length > 0 && classOptions.length > 0 ? (
+        <label className="block space-y-[var(--s1)]">
+          <span className="t-label block">Whose numbers</span>
+          <select
+            value={chosenClass ? chosenClass.class_id : ''}
+            disabled={busy}
+            onChange={(event) => setClassId(event.target.value)}
+            className="select input--kiosk"
+          >
+            <option value="">Everyone you can record for</option>
+            {classOptions.map((item) => (
+              <option key={item.class_id} value={item.class_id}>{classLabel(item)}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {roster && roster.length > 0 && classData === 'failed' ? (
+        <p className="t-body">The classes could not be loaded, so everyone you can record for is listed.</p>
+      ) : null}
+      {roster && roster.length > 0 && classData && classData !== 'failed' && classOptions.length === 0 ? (
+        <p className="t-body">
+          No class on this date has a register you can pick from here, so everyone you can record for is listed.
+        </p>
+      ) : null}
+      {chosenClass ? (
+        <p className="t-body">
+          {`Registered for, or marked Present on, ${chosenClass.title}: ${chosenClass.athletes.size}. An athlete with a number typed stays listed.`}
+        </p>
+      ) : null}
+
       {failed ? (
         <div className="alert alert--warning" role="alert">
           <span className="alert-icon" aria-hidden="true">▲</span>
@@ -291,7 +409,7 @@ function TestDayForm() {
         <p className="t-body">No athletes you can record a test day for.</p>
       ) : (
         <ul className="space-y-[var(--s3)]">
-          {roster.map((athlete) => {
+          {(shownRoster ?? roster).map((athlete) => {
             const name = nameOf(athlete.athlete_id);
             return (
               <li key={athlete.athlete_id} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
