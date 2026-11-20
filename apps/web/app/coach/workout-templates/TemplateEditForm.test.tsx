@@ -122,6 +122,20 @@ it('keeps the stored block and session type when their boxes are untouched, and 
   });
 });
 
+it('spaces only Block and Session type, every underscore; other text shows and stays as stored', async () => {
+  global.fetch = jest.fn() as unknown as typeof fetch;
+  const onSaved = jest.fn();
+  render(
+    <TemplateEditForm template={{ ...template, name: 'Bag_Work 45' } as WorkoutTemplateRow} items={[item({ block: 'main_set_a' })]} itemNames={['1. Rope intervals']}
+      onSaved={onSaved} onCancel={jest.fn()} onSaving={jest.fn()} onFailed={jest.fn()} busy={false} />,
+  );
+  expect(screen.getByLabelText('Name')).toHaveValue('Bag_Work 45');
+  expect(screen.getByLabelText('1. Rope intervals Block')).toHaveValue('main set a');
+  save();
+  expect(global.fetch).not.toHaveBeenCalled();
+  expect(onSaved).toHaveBeenCalledWith({ changed: false });
+});
+
 it('sends a changed session type as typed', async () => {
   const { fetchMock } = renderForm();
   change('Session type', 'group class plus');
@@ -243,6 +257,19 @@ describe('a refusal in the form\'s words (Overwatch Q-PR1-1)', () => {
       expect(screen.getByRole('alert')).not.toHaveTextContent('Nothing was changed');
       await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
     }
+  });
+
+  it.each([[500], [409]])('after a %s, a save with nothing left to send closes as Cancel does, never saying nothing changed', async (status) => {
+    const { fetchMock, onSaved, onCancel } = renderForm({ answer: async () => jsonResponse({ error: 'x' }, status) });
+    change('Intent', 'x');
+    save();
+    await screen.findByRole('alert');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    change('Intent', 'Stance, guard, and the first two punches.');
+    save();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it('says only that the outcome is not known after a fault or a lost answer', async () => {

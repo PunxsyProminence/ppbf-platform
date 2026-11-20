@@ -163,6 +163,8 @@ export default function TemplateEditForm({
   // A save with no known outcome may have written: no later refusal may then say nothing changed.
   const [earlierUnknown, setEarlierUnknown] = useState(false);
   const [stale, setStale] = useState(false);
+  // After an unknown outcome or a 409 the template on screen may be out of date (review, round 3).
+  const [outOfDate, setOutOfDate] = useState(false);
   const savingRef = useRef(false);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const alertRef = useRef<HTMLDivElement | null>(null);
@@ -180,7 +182,9 @@ export default function TemplateEditForm({
     if (savingRef.current || busy) return;
     const body = changedParts(template, items, values);
     if (!body) {
-      onSaved({ changed: false });
+      // Nothing to send, but nothing is known to be unwritten: close as Cancel does, which reads the template again.
+      if (outOfDate) onCancel();
+      else onSaved({ changed: false });
       return;
     }
     savingRef.current = true;
@@ -215,6 +219,7 @@ export default function TemplateEditForm({
       setUnknown(outcomeUnknown);
       if (outcomeUnknown) setEarlierUnknown(true);
       setStale(status === 409);
+      if (outcomeUnknown || status === 409) setOutOfDate(true);
       onFailed(status);
     } finally {
       savingRef.current = false;

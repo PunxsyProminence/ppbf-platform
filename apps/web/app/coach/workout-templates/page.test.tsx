@@ -2248,13 +2248,17 @@ describe('Edit (lane ED-UI PR2)', () => {
 
   it('keeps the form, locked, until the new version opens: the old version and its Issue and plan never come back meanwhile', async () => {
     let releaseList: () => void = () => {};
+    let releaseDetail: () => void = () => {};
     let saved = false;
     mockFetch((url, init) => {
       if ((init?.method ?? 'GET') === 'PATCH') {
         saved = true;
         return jsonResponse({ ok: true, changed: true, template_id: 'wt-1-v2', version: 2 });
       }
-      if (url.includes('template_id=wt-1-v2')) return jsonResponse({ template: V2, items: [item({ template_id: 'wt-1-v2' })] });
+      if (url.includes('template_id=wt-1-v2')) {
+        const read = jsonResponse({ template: V2, items: [item({ template_id: 'wt-1-v2' })] });
+        return new Promise<Response>((resolve) => { releaseDetail = () => resolve(read); }) as unknown as Response;
+      }
       if (url.includes('template_id=wt-1')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
       const list = jsonResponse({ templates: [saved ? V2 : BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
       return (saved ? new Promise<Response>((resolve) => { releaseList = () => resolve(list); }) : list) as unknown as Response;
@@ -2273,10 +2277,32 @@ describe('Edit (lane ED-UI PR2)', () => {
     for (const open of screen.getAllByRole('button', { name: /open template|showing template/i })) expect(open).toBeDisabled();
 
     await act(async () => { releaseList(); });
+    // The new version is being read: no form and no detail yet, and still nothing else may open (its answer would land under it).
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Edit Boxing Fundamentals 60' })).not.toBeInTheDocument());
+    for (const open of screen.getAllByRole('button', { name: /open template|showing template/i })) expect(open).toBeDisabled();
+    await act(async () => { releaseDetail(); });
     expect(await screen.findByText('Saved as version 2.')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Edit Boxing Fundamentals 60' })).not.toBeInTheDocument();
     // The form closed with the new version, so the other template can be opened again.
     await waitFor(() => expect(screen.getAllByRole('button', { name: /open template/i }).some((open) => !(open as HTMLButtonElement).disabled)).toBe(true));
+  });
+
+  it('after an unknown outcome, a save with nothing left to send reads the template again and never says nothing changed', async () => {
+    const fetchMock = editRoutes(() => ({ ok: false, status: 500, json: async () => ({ error: 'Something failed.' }) }) as Response, { savedAnyway: true });
+    render(<CoachWorkoutTemplatesPage />);
+    const form = await openAndEdit();
+    const detailReads = () => fetchMock.mock.calls
+      .filter((call) => String(call[0]) === '/api/pilot/workout-templates?template_id=wt-1' && ((call[1] as RequestInit | undefined)?.method ?? 'GET') === 'GET').length;
+    fireEvent.change(within(form).getByLabelText('Intent'), { target: { value: 'Stance and guard.' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await within(form).findByRole('alert');
+    await waitFor(() => expect(within(form).getByRole('button', { name: 'Save' })).toBeEnabled());
+    const before = detailReads();
+    fireEvent.change(within(form).getByLabelText('Intent'), { target: { value: 'Stance, guard, and the first two punches.' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(detailReads()).toBe(before + 1));
+    expect(screen.queryByText('Nothing changed. No new version was written.')).not.toBeInTheDocument();
+    expect(writesOf(fetchMock)).toHaveLength(1);
   });
 
   it('writes nothing when nothing changed, and says so; Cancel writes nothing either; focus goes back to Edit', async () => {
