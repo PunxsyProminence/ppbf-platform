@@ -438,3 +438,30 @@ describe('the older 8-12 entry baseline is not given check-in wording', () => {
     expect(screen.queryByTestId('baseline-provisional')).toBeNull();
   });
 });
+
+// Lane AS-11 (app scrub CS-19; Q9 = A): before a pick the page says what to do
+// first, in the words approved as written.
+describe('before an athlete is chosen (lane AS-11)', () => {
+  const FIRST_STEP = 'Choose an athlete to see what has been computed for them.';
+
+  it('says what to do first, and stops saying it once an athlete is chosen', async () => {
+    installFetch(model());
+    await act(async () => {
+      render(<AthleteIntelligencePage />);
+    });
+    expect(screen.getByText(FIRST_STEP)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+    });
+    expect(screen.queryByText(FIRST_STEP)).toBeNull();
+  });
+
+  it('with no athletes to choose from, it does not point at an empty picker', async () => {
+    global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })) as unknown as typeof fetch;
+    await act(async () => {
+      render(<AthleteIntelligencePage />);
+    });
+    expect(screen.queryByText(FIRST_STEP)).toBeNull();
+  });
+});
