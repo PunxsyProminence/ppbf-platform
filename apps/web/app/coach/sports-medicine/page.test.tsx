@@ -2941,7 +2941,7 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
     global.fetch = mockFetch();
     render(<SportsMedicinePage />);
     const name = await screen.findByText('Jordan Doe');
-    for (const label of ['Injury Record', 'Sparring Caps', 'Medical Restrictions', 'Progression Intelligence', 'Who to See First']) {
+    for (const label of ['Injury Record', 'Sparring Caps', 'Medical Restrictions', 'Progression Intelligence', 'Performance Analytics']) {
       const link = screen.getByRole('link', { name: label });
       expect(link.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }

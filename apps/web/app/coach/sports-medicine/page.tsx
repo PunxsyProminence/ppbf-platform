@@ -939,10 +939,8 @@ export default function SportsMedicinePage() {
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">
               Progression Intelligence
             </Link>
-            {/* Named for the page it opens: its title and door say "Who to See
-                First" (one name per thing). */}
             <Link href="/coach/performance-analytics" className="btn btn--ghost">
-              Who to See First
+              Performance Analytics
             </Link>
           </div>
 
