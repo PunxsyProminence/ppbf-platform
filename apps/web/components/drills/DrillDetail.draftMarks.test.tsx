@@ -69,7 +69,7 @@ const SHOWN = [
 ] as const;
 
 function every(state: boolean | null): DrillFieldDrafts {
-  return { ...Object.fromEntries(SHOWN.map((field) => [field, state])), scale_levels: { A: state, B: state }, labelled: true } as DrillFieldDrafts;
+  return { ...Object.fromEntries(SHOWN.map((field) => [field, state])), scale_levels: { A: state, B: state }, labelled: true } as unknown as DrillFieldDrafts;
 }
 
 function renderCoach(fieldDrafts: DrillFieldDrafts | undefined) {
