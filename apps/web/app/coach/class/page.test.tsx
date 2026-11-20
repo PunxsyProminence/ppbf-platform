@@ -11,6 +11,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachClassPage from './page';
+import { COACH_TILES_REFRESH_MS } from '@/components/CoachLiveTiles';
 
 const gate: { roles: readonly string[] | null } = { roles: null };
 jest.mock('@/components/RoleSessionGate', () => ({
@@ -491,6 +492,26 @@ describe('the pain list on the class screen (lane U2-6b-2)', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  test('the order is the console, Gym TVs, then the pain list (QH = B); its line says two minutes (QJ = B)', async () => {
+    serve({ live });
+    await open();
+    const list = await screen.findByRole('heading', { name: 'Athlete Pain Reports' });
+    const tvs = screen.getByLabelText('Gym TVs (marker)');
+    // Gym TVs comes before the list in the page.
+    expect(tvs.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await screen.findByText(/A report appears here within two minutes of an athlete sending it\./)).toBeInTheDocument();
+    // The two minutes are the read's real pace.
+    expect(COACH_TILES_REFRESH_MS).toBe(120_000);
+  });
+
+  test('a row the list cannot draw is skipped: the console stays, and the tile counts the feed\'s rows', async () => {
+    serve({ live, pain: () => jsonResponse({ ...PAIN_EMPTY, painReports: [painRow('n1', 'Casey R.'), null] }) });
+    await open();
+    expect(await screen.findAllByRole('article')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Plain session' })).toBeInTheDocument();
+    expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^2$/);
   });
 
   test('with no live session the pain feed is not read and no list shows', async () => {

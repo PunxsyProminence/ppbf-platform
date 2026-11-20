@@ -64,12 +64,12 @@ afterEach(() => {
 // The read as the harness last rendered it, recorded after each render.
 const seen: { read: PainReportsRead | null } = { read: null };
 
-function Harness({ refreshMs, boardShown = false }: { refreshMs?: number; boardShown?: boolean }) {
+function Harness({ refreshMs, boardShown = false, timed = false }: { refreshMs?: number; boardShown?: boolean; timed?: boolean }) {
   const read = usePainReports({ refreshMs });
   useEffect(() => {
     seen.read = read;
   });
-  return <PainReportsPanel read={read} boardShown={boardShown} />;
+  return <PainReportsPanel read={read} boardShown={boardShown} readsEveryTwoMinutes={timed} />;
 }
 
 async function settle() {
@@ -78,7 +78,7 @@ async function settle() {
   });
 }
 
-async function show(props: { refreshMs?: number; boardShown?: boolean } = {}) {
+async function show(props: { refreshMs?: number; boardShown?: boolean; timed?: boolean } = {}) {
   await act(async () => {
     render(<Harness {...props} />);
   });
@@ -164,13 +164,42 @@ describe('the read', () => {
     expect(painTileRead(seen.read!)).toEqual({ state: 'failed' });
   });
 
-  test('a network failure is a failed read too', async () => {
-    answers = [() => {
-      throw new Error('network down');
-    }];
+  test.each([
+    ['a network failure', () => {
+      throw new TypeError('Failed to fetch');
+    }],
+    ['a body that is not JSON', () => ({ ok: true, status: 200, json: async () => {
+      throw new SyntaxError('Unexpected token < in JSON at position 0');
+    } }) as unknown as Response],
+  ])('%s shows the panel\'s own words, never the browser\'s error text', async (_label, answer) => {
+    answers = [answer];
     await show();
+    expect(screen.getByText('Unable to load athlete pain reports')).toBeInTheDocument();
     expect(screen.getByText(new RegExp(FAILED_WORDS))).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to fetch|Unexpected token/)).toBeNull();
     expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
+  });
+
+  test('a row the panel cannot draw is skipped, not thrown; the tile still counts the feed\'s rows', async () => {
+    answers = [() => json({
+      ...EMPTY,
+      painReports: [
+        report('n1'),
+        null,
+        'a string',
+        { nearMissId: 7 },
+        report('n2', { observedAt: { when: 'yesterday' } }),
+        report('n3', { severity: 'severe' }),
+        report('n4', { reporter: 'someone' }),
+        report('n5', { athleteName: 'Jordan P.', painScore: null }),
+      ],
+    })];
+    await show();
+    const cards = screen.getAllByRole('article');
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toHaveTextContent('Athlete ID ath_n1');
+    expect(cards[1]).toHaveTextContent('Jordan P.');
+    expect(painTileRead(seen.read!)).toEqual({ state: 'ok', value: { count: 8, truncated: false, windowDays: 7 } });
   });
 
   test('a slow earlier answer never replaces a newer one: a later failure stays', async () => {
@@ -253,12 +282,12 @@ describe('the read', () => {
 });
 
 describe('the tile read', () => {
-  const base = { answered: true, error: '', reports: [], windowDays: 7, truncated: false };
-  test('nothing yet before any answer; failed on a failure or no window; else the rows and the window', () => {
+  const base = { answered: true, error: '', rowCount: 0, windowDays: 7, truncated: false };
+  test('nothing yet before any answer; failed on a failure or no window; else the feed\'s rows and the window', () => {
     expect(painTileRead({ ...base, answered: false })).toEqual({ state: 'loading' });
     expect(painTileRead({ ...base, error: 'Unable to load athlete pain reports' })).toEqual({ state: 'failed' });
     expect(painTileRead({ ...base, windowDays: null })).toEqual({ state: 'failed' });
-    expect(painTileRead({ ...base, reports: [report('a'), report('b')] as never, truncated: true, windowDays: 14 })).toEqual({
+    expect(painTileRead({ ...base, rowCount: 2, truncated: true, windowDays: 14 })).toEqual({
       state: 'ok',
       value: { count: 2, truncated: true, windowDays: 14 },
     });
@@ -274,10 +303,35 @@ describe('the list, as the coach home drew it', () => {
     expect(screen.queryByText(new RegExp(FAILED_WORDS))).toBeNull();
   });
 
-  test('an empty feed names its window', async () => {
+  test('an empty feed names its window, and on the coach home says to press Refresh (QJ = B)', async () => {
     answers = [() => json({ ...EMPTY, windowDays: 14 })];
     await show();
-    expect(screen.getByText(/No athlete on your roster has reported pain in the last 14 days\./)).toBeInTheDocument();
+    const line = screen.getByText(/No athlete on your roster has reported pain in the last 14 days\./);
+    expect(line).toHaveTextContent('No athlete on your roster has reported pain in the last 14 days. Press Refresh to check for new reports.');
+    expect(screen.queryByText(/as soon as an athlete submits one/)).toBeNull();
+  });
+
+  test('on a screen that reads every two minutes, it says a report appears within two minutes (QJ = B)', async () => {
+    answers = [() => json(EMPTY)];
+    await show({ timed: true });
+    expect(screen.getByText(/No athlete on your roster/)).toHaveTextContent(
+      'No athlete on your roster has reported pain in the last 7 days. A report appears here within two minutes of an athlete sending it.',
+    );
+    expect(screen.queryByText(/Press Refresh to check/)).toBeNull();
+  });
+
+  test.each([
+    ['a list', () => json({ ...EMPTY, truncated: true, painReports: [report('n1')] })],
+    ['an empty feed', () => json(EMPTY)],
+    ['a failed read', () => json({ error: 'boom' }, 500)],
+    ['a read still out', () => new Promise<Response>(() => undefined)],
+  ])('%s: no text below the gym-floor minimum, --t-md (QI = B)', async (_label, answer) => {
+    answers = [answer];
+    await show();
+    const panel = document.getElementById('coach-dashboard-details');
+    expect(panel).not.toBeNull();
+    expect(panel!.outerHTML).not.toMatch(/text-xs|text-sm|--t-xs|--t-sm/);
+    expect(screen.getByRole('heading', { name: 'Athlete Pain Reports' }).className).toContain('text-[length:var(--t-md)]');
   });
 
   test('a card: the name, the id, the number, what the athlete did not state, and who reported it', async () => {

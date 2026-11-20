@@ -22,9 +22,10 @@ import { painTileRead, usePainReports, type PainReportsRead } from '@/components
 //     when it is one of today's free classes. Plans are still started from Session Plans;
 //   - a live session: the live console (SessionScriptLiveDelivery, moved here from Session Plans)
 //     and Gym TVs (GymTvPanel), so the coach sends the session to a TV from the same screen.
-// While a session is live the pain list shows under the console (lane U2-6b-2): one read of
-// the pain feed, every two minutes (6b Q4 = A, on #2005), draws the list and the console's
-// pain tile, so the two count the same rows over the same window (Overwatch's 6b ruling).
+// While a session is live the pain list shows under the console and Gym TVs (lane U2-6b-2;
+// QH = B on #2023): one read of the pain feed, every two minutes (6b Q4 = A, on #2005), draws
+// the list and the console's pain tile, so the two count the same rows over the same window
+// (Overwatch's 6b ruling).
 //
 // THE SERVER DECIDES. The first question is the same one Session Plans asks: does this coach
 // already have a session in progress? A failed read is its own state -- "a session may exist that
@@ -225,10 +226,6 @@ function ClassScreen() {
                     }}
                   />
                 </div>
-                {/* No floor board on this screen: "Record What You Did" is the panel's link. */}
-                <div className="mt-[var(--s6)]">
-                  <PainReportsPanel read={painRead} boardShown={false} />
-                </div>
                 <div className="mt-[var(--s6)]">
                   <GymTvPanel
                     liveRun={{ run_id: (shownRun ?? liveRun).run_id, show_on_wall: (shownRun ?? liveRun).show_on_wall }}
@@ -240,6 +237,13 @@ function ClassScreen() {
                     onTvsChanged={() => setTvChanges((count) => count + 1)}
                     tvSwitch={CLASS_SCREEN_TV_SWITCH}
                   />
+                </div>
+                {/* Under Gym TVs (QH = B on #2023): the top row's tile already shows the count, so up
+                    to 50 cards never push the TV controls off screen. No floor board on this screen:
+                    "Record What You Did" is the panel's link. The read is every two minutes
+                    (COACH_TILES_REFRESH_MS), which the panel's line under an empty list says. */}
+                <div className="mt-[var(--s6)]">
+                  <PainReportsPanel read={painRead} boardShown={false} readsEveryTwoMinutes />
                 </div>
               </>
             )}

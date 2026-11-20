@@ -53,8 +53,37 @@ export interface CoachPainReport {
   reporter: 'athlete' | 'coach' | 'staff_admin' | 'unknown';
 }
 
-/** The coach home's words for a read that did not answer with a list (unchanged). */
+/**
+ * The panel's words for any read that did not answer with a list: refused, failed, malformed or
+ * a network error. Never the browser's own error text (Overwatch on #2023).
+ */
 export const PAIN_READ_FAILED = 'Unable to load athlete pain reports';
+
+const SEVERITIES: ReadonlySet<unknown> = new Set(['low', 'moderate', 'high', 'critical']);
+const REPORTERS: ReadonlySet<unknown> = new Set(['athlete', 'coach', 'staff_admin', 'unknown']);
+const textOrNull = (value: unknown) => value === null || typeof value === 'string';
+
+/**
+ * A row the panel can draw: the route's shape (CoachPainReport, painReportAlert.ts). A row that
+ * is not is skipped from the list, so one bad row cannot throw and take the class screen's console
+ * down with it (Overwatch on #2023); the tile still counts the feed's rows (Q3 = A).
+ */
+export function isPainReportRow(row: unknown): row is CoachPainReport {
+  if (!row || typeof row !== 'object') return false;
+  const r = row as Record<string, unknown>;
+  return (
+    typeof r.nearMissId === 'string' && r.nearMissId !== ''
+    && typeof r.athleteId === 'string'
+    && textOrNull(r.athleteName)
+    && SEVERITIES.has(r.severity)
+    && (r.painScore === null || typeof r.painScore === 'number')
+    && textOrNull(r.location)
+    && textOrNull(r.painType)
+    && textOrNull(r.observedAt)
+    && textOrNull(r.recordedAt)
+    && REPORTERS.has(r.reporter)
+  );
+}
 
 export interface PainReportsRead {
   /** A read is out (the first, a refresh, or a retry). */
@@ -63,7 +92,10 @@ export interface PainReportsRead {
   answered: boolean;
   /** The last answer's failure, in words; '' when it answered with a list. */
   error: string;
+  /** The rows the list can draw (isPainReportRow). */
   reports: CoachPainReport[];
+  /** How many rows the feed returned, drawable or not: the tile's count (Q3 = A). */
+  rowCount: number;
   /** The feed's own window; null until a read answers with one. */
   windowDays: number | null;
   truncated: boolean;
@@ -80,7 +112,7 @@ async function readPainFeed(): Promise<{ reports: CoachPainReport[]; count: Pain
   const payload: unknown = await response.json();
   const count = painReportCount(payload);
   if (!count) throw new Error(PAIN_READ_FAILED);
-  return { reports: (payload as { painReports: CoachPainReport[] }).painReports, count };
+  return { reports: (payload as { painReports: unknown[] }).painReports.filter(isPainReportRow), count };
 }
 
 export function usePainReports(options: { refreshMs?: number } = {}): PainReportsRead {
@@ -90,6 +122,7 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
     answered: false,
     error: '',
     reports: [],
+    rowCount: 0,
     windowDays: null,
     truncated: false,
   });
@@ -116,20 +149,23 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
           answered: true,
           error: '',
           reports,
+          rowCount: count.count,
           windowDays: count.windowDays,
           truncated: count.truncated,
         });
       },
-      (error: unknown) => {
+      () => {
         if (!mounted.current || mine <= shown.current) return;
         shown.current = mine;
         // Never fall through to the "no reports" line: a coach reading that after a failed read
-        // would believe no child had reported pain. The window last read stays named.
+        // would believe no child had reported pain. The window last read stays named. The words
+        // are the panel's own, whatever the browser said.
         setState((current) => ({
           loading: mine !== sequence.current,
           answered: true,
-          error: error instanceof Error && error.message ? error.message : PAIN_READ_FAILED,
+          error: PAIN_READ_FAILED,
           reports: [],
+          rowCount: 0,
           windowDays: current.windowDays,
           truncated: false,
         }));
@@ -160,9 +196,9 @@ export function usePainReports(options: { refreshMs?: number } = {}): PainReport
  * is out the tile keeps the last answer, as it does on its own read (6b-1).
  */
 export function painTileRead(
-  read: Pick<PainReportsRead, 'answered' | 'error' | 'reports' | 'windowDays' | 'truncated'>,
+  read: Pick<PainReportsRead, 'answered' | 'error' | 'rowCount' | 'windowDays' | 'truncated'>,
 ): { state: 'loading' } | { state: 'failed' } | { state: 'ok'; value: PainReportCount } {
   if (!read.answered) return { state: 'loading' };
   if (read.error || read.windowDays === null) return { state: 'failed' };
-  return { state: 'ok', value: { count: read.reports.length, truncated: read.truncated, windowDays: read.windowDays } };
+  return { state: 'ok', value: { count: read.rowCount, truncated: read.truncated, windowDays: read.windowDays } };
 }

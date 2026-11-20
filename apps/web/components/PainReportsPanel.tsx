@@ -7,10 +7,13 @@ import { formatGymStamp } from '@/src/lib/gymTime';
 import { painScoreLabel } from '@/src/shared/painScoreLabel';
 
 /**
- * ATHLETE PAIN REPORTS (lane U2-6b-2): the coach home's pain list, moved out of CoachWorkspace
- * with its markup and words unchanged, so the class screen can show it too. Its read now asks for
- * up to 50 reports (QF = A), and a body that cannot state its window, completeness or list shows
- * the failed-read words, never the "No athlete on your roster has reported pain" line.
+ * ATHLETE PAIN REPORTS (lane U2-6b-2): the coach home's pain list, moved out of CoachWorkspace so
+ * the class screen can show it too. Overwatch on #2023: its prose and heading are at the gym-floor
+ * type minimum, --t-md, on both pages (QI = B); the line under an empty list says how this screen
+ * reads the feed (QJ = B); a failed read always shows the panel's own words; a row the panel cannot
+ * draw is skipped. Its read asks for up to 50 reports (QF = A), and a body that cannot state its
+ * window, completeness or list shows the failed-read words, never the "No athlete on your roster
+ * has reported pain" line.
  * It draws one shared read (usePainReports): the coach home's, or on the class screen the same
  * read the pain tile counts, so the two show the same answer (Overwatch's 6b ruling).
  *
@@ -74,15 +77,22 @@ function PainBadge({ tone, label }: { readonly tone: 'restricted' | 'monitor'; r
 export default function PainReportsPanel({
   read,
   boardShown,
+  readsEveryTwoMinutes = false,
 }: {
   readonly read: PainReportsRead;
   /** The coach home's floor board is on screen: "Record what you did" is there, not a link here. */
   readonly boardShown: boolean;
+  /**
+   * The screen reads the feed every two minutes (the class screen, COACH_TILES_REFRESH_MS), so a
+   * new report shows within two minutes; else only on Refresh (the coach home). Overwatch's words
+   * on #2023 (QJ = B).
+   */
+  readonly readsEveryTwoMinutes?: boolean;
 }) {
   return (
     <section id="coach-dashboard-details" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
       <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-        <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--restricted-ink)]">
+        <h2 className="font-mono text-[length:var(--t-md)] font-bold uppercase tracking-[0.12em] text-[var(--restricted-ink)]">
           Athlete Pain Reports
         </h2>
         <button
@@ -96,13 +106,13 @@ export default function PainReportsPanel({
       </div>
 
       {read.loading && (
-        <p className="text-xs text-[color:var(--bone-300)]">Checking for athlete pain reports...</p>
+        <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">Checking for athlete pain reports...</p>
       )}
 
       {!read.loading && read.error && (
         <div className="border-2 border-[var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 p-3">
-          <p className="text-sm font-semibold text-[color:var(--restricted-ink)]">{read.error}</p>
-          <p className="mt-1 text-xs text-[color:var(--restricted-ink)]">
+          <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--restricted-ink)]">{read.error}</p>
+          <p className="mt-1 text-[length:var(--t-md)] text-[color:var(--restricted-ink)]">
             Pain reports may exist that are not shown here. Do not read this as &quot;no athlete
             reported pain&quot; -- ask the floor.
           </p>
@@ -110,17 +120,19 @@ export default function PainReportsPanel({
       )}
 
       {!read.loading && !read.error && read.reports.length === 0 && (
-        <p className="text-xs text-[color:var(--bone-400)]">
+        <p className="text-[length:var(--t-md)] text-[color:var(--bone-400)]">
           No athlete on your roster has reported pain
-          {read.windowDays === null ? '' : ` in the last ${read.windowDays} days`}. A report
-          appears here as soon as an athlete submits one.
+          {read.windowDays === null ? '' : ` in the last ${read.windowDays} days`}.{' '}
+          {readsEveryTwoMinutes
+            ? 'A report appears here within two minutes of an athlete sending it.'
+            : 'Press Refresh to check for new reports.'}
         </p>
       )}
 
       {!read.loading && !read.error && read.reports.length > 0 && (
         <div className="space-y-3">
           {read.truncated && (
-            <p className="text-xs text-[var(--restricted-ink)]">
+            <p className="text-[length:var(--t-md)] text-[var(--restricted-ink)]">
               More reports matched than are listed here. The highest-severity ones are shown first;
               the rest are in each athlete&apos;s near-miss history on the decision loop.
             </p>
@@ -141,7 +153,7 @@ export default function PainReportsPanel({
                 />
               </div>
 
-              <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <dl className="grid gap-3 text-[length:var(--t-md)] sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Body location</dt>
                   <dd className={report.location ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
@@ -168,7 +180,7 @@ export default function PainReportsPanel({
                 </div>
               </dl>
 
-              <p className="text-xs text-[color:var(--bone-300)]">
+              <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                 {PAIN_PROVENANCE[report.reporter]}
               </p>
             </article>
