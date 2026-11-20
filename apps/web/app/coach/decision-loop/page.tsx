@@ -1292,7 +1292,12 @@ export default function DecisionLoopReviewPage() {
               <span className="t-label">Athlete</span>
               <select
                 value={athleteId}
-                onChange={(event) => selectAthlete(event.target.value)}
+                onChange={(event) => {
+                  // A coach's own pick is not the arrival: a scroll still
+                  // waiting for the arriving athlete's records is dropped.
+                  scrollToFamilyRef.current = false;
+                  selectAthlete(event.target.value);
+                }}
                 disabled={rosterState === 'loading'}
                 className="select max-w-md"
               >
