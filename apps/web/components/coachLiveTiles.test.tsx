@@ -387,6 +387,35 @@ describe('the pain tile (lane U2-6b)', () => {
     expect(pain.queryByText('3')).toBeNull();
   });
 
+  test('a read slower than the refresh still shows when nothing newer has answered', async () => {
+    const answers: Array<(response: Response) => void> = [];
+    routes[PAIN_FEED] = () => new Promise<Response>((resolve) => {
+      answers.push(resolve);
+    }) as unknown as Response;
+    render(<CoachLiveTiles />);
+    await settle();
+    // The next refresh starts; both pain reads are out.
+    await act(async () => {
+      jest.advanceTimersByTime(120_000);
+    });
+    await settle();
+    expect(answers).toHaveLength(2);
+    const pain = group('Athlete pain reports');
+    expect(pain.getByText('Reading...')).toBeInTheDocument();
+    // The first, slower than the refresh, answers before the second: it is the newest answer, so it shows.
+    await act(async () => {
+      answers[0](json(PAIN));
+    });
+    await settle();
+    expect(pain.getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^3$/);
+    // Then the second answers with a failure, and the tile says so.
+    await act(async () => {
+      answers[1](json({ error: 'boom' }, 500));
+    });
+    await settle();
+    expect(pain.getByText('Pain reports: not checked').previousSibling).toHaveTextContent(/^\?$/);
+  });
+
   test('a slow earlier answer never replaces a newer one: a later failure stays "?"', async () => {
     let late: (response: Response) => void = () => undefined;
     routes[PAIN_FEED] = () => new Promise<Response>((resolve) => {
