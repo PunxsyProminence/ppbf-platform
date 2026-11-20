@@ -78,8 +78,10 @@ it('opens on the template as it is, under "Edit <name>", with each item named by
   expect(screen.getByLabelText('Age group')).toHaveValue('11-14');
   expect(screen.getByLabelText('Intent')).toHaveValue('Stance, guard, and the first two punches.');
   expect(screen.getByLabelText('1. Rope intervals Words')).toHaveValue('Rope intervals');
-  expect(screen.getByLabelText('2. Jab return Minutes')).toHaveValue(8);
+  expect(screen.getByLabelText('2. Jab return Minutes')).toHaveValue('8');
   expect(screen.getByLabelText('2. Jab return Scale')).toHaveValue('');
+  // On the kiosk floor, as the page's Issue control is (55px controls on a tablet).
+  expect(screen.getByRole('region', { name: 'Edit Boxing Fundamentals 60' })).toHaveAttribute('data-surface', 'kiosk');
   // Items are edited in place (Q6 = A): no add, remove, reorder or drill swap.
   expect(screen.queryByRole('button', { name: /add|remove|delete|move|up|down/i })).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/drill/i)).not.toBeInTheDocument();
@@ -124,6 +126,24 @@ it('sends cleared coach notes and a cleared scale as none', async () => {
   });
 });
 
+it('sends a mistyped number as typed, for the route to refuse, and never as a cleared box', async () => {
+  const { fetchMock } = renderForm({ answer: async () => jsonResponse({ error: 'Unsupported items[0].rep_count: a whole number of at least 1' }, 400) });
+  fireEvent.change(templateMinutes(), { target: { value: 'ten' } });
+  change('1. Rope intervals Reps', '1.5');
+  change('2. Jab return Minutes', '10,');
+  save();
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  const body = sentBody(fetchMock);
+  expect(body).toEqual({
+    template_id: 'wt-1',
+    duration_minutes: 'ten',
+    items: [{ item_id: 'wti-1', rep_count: '1.5' }, { item_id: 'wti-2', duration_minutes: '10,' }],
+  });
+  expect(() => parseWorkoutTemplateEdit(body)).toThrow(/^Unsupported duration_minutes: /);
+  expect(() => parseWorkoutTemplateEdit({ ...body, duration_minutes: 45 })).toThrow(/^Unsupported items\[0\]\.rep_count: /);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Unsupported 1. Rope intervals Reps: a whole number of at least 1');
+});
+
 it('writes nothing when nothing changed', () => {
   const { fetchMock, onSaved } = renderForm();
   save();
@@ -149,10 +169,24 @@ describe('a refusal in the form\'s words (Overwatch Q-PR1-1)', () => {
     change('Intent', 'x');
     save();
     const alert = await screen.findByRole('alert');
+    // Save disabled itself while it ran; focus goes to what went wrong, not to the page.
+    await waitFor(() => expect(alert).toHaveFocus());
     expect(alert).toHaveTextContent(shown);
     expect(alert).toHaveTextContent('Nothing was changed. This template is as it was.');
     expect(alert.textContent).not.toMatch(/items\[|duration_minutes/);
     expect(onFailed).toHaveBeenCalledWith(400);
+  });
+
+  it.each([
+    ['a server fault', async () => jsonResponse({ error: 'Something failed.' }, 500), 500],
+    ['an answer that is not a save', async () => jsonResponse({ ok: true }), null],
+  ])('says only that the outcome is not known after %s', async (_case, answer, status) => {
+    const { onFailed, onSaved } = renderForm({ answer });
+    change('Intent', 'x');
+    save();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^▲ It is not known whether this change was saved\.$/);
+    expect(onFailed).toHaveBeenCalledWith(status);
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it('says only that the outcome is not known after a fault or a lost answer', async () => {

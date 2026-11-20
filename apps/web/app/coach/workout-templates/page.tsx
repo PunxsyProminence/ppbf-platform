@@ -835,6 +835,7 @@ function CoachWorkoutTemplates() {
     if (!outcome.changed) {
       setEditBusy(false);
       setEditNotice('Nothing changed. No new version was written.');
+      setFocusDetail((count) => count + 1);
       return;
     }
     try {
@@ -946,6 +947,7 @@ function CoachWorkoutTemplates() {
                   onCancel={() => {
                     setEditingId('');
                     if (rereadOnCancel.current) void openTemplate(detail.template.template_id);
+                    else setFocusDetail((count) => count + 1);
                     rereadOnCancel.current = false;
                   }}
                   onSaved={(outcome) => void afterEditSaved(outcome)}
@@ -967,7 +969,7 @@ function CoachWorkoutTemplates() {
                       setEditingId(detail.template.template_id);
                     }}
                     disabled={issuing || making || editBusy}
-                    className="btn btn--ghost mt-[var(--s3)]"
+                    className="btn btn--ghost btn--kiosk mt-[var(--s3)]"
                     aria-label={`Edit: ${detail.template.name}`}
                   >
                     Edit
@@ -1051,7 +1053,13 @@ function CoachWorkoutTemplates() {
                     </li>
                   ))}
                 </ol>
+              </>
+            )}
 
+            {/* Hidden, not unmounted, while the form is open: an issue or a
+                plan answered before Edit is still there after Cancel (review). */}
+            {!detailLoading && !detailError && detail && (
+              <div hidden={editingId === detail.template.template_id}>
                 {/* Opening another template unmounts this whole block while
                     the new one loads (openTemplate clears `detail`), so the
                     control always starts clean: no athlete, no confirm step,
@@ -1083,7 +1091,7 @@ function CoachWorkoutTemplates() {
                     onBusyChange={setMaking}
                   />
                 )}
-              </>
+              </div>
             )}
           </section>
   );

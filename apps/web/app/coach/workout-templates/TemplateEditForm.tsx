@@ -66,7 +66,11 @@ function initialValues(template: Template, items: readonly Item[]): Values {
   };
 }
 
-/** A typed number as the route takes it: a whole number, or null when the box is empty. Anything else is sent as typed, for the route to refuse. */
+/**
+ * A typed number as the route takes it: a whole number, or null when the box is
+ * empty. Anything else is sent as typed, for the route to refuse. The boxes are
+ * text, not type="number", which reads mistyped text as empty and would clear it.
+ */
 function numberOrNull(typed: string): number | null | string {
   const trimmed = typed.trim();
   if (trimmed === '') return null;
@@ -159,11 +163,16 @@ export default function TemplateEditForm({
   const [unknown, setUnknown] = useState(false);
   const savingRef = useRef(false);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const alertRef = useRef<HTMLDivElement | null>(null);
   const id = (key: string) => `edit-template-${template.template_id}-${key}`;
 
   useEffect(() => {
     headingRef.current?.focus();
   }, []);
+  // Save disables itself while it runs, so focus would fall to the page; it goes to what went wrong.
+  useEffect(() => {
+    if (error) alertRef.current?.focus();
+  }, [error]);
 
   async function save() {
     if (savingRef.current || busy) return;
@@ -218,7 +227,12 @@ export default function TemplateEditForm({
   );
 
   return (
-    <section aria-labelledby={id('heading')} className="space-y-[var(--s4)]">
+    // The page's own inset and kiosk floor, as the Issue control wears them (page.tsx IssueToAthlete).
+    <section
+      data-surface="kiosk"
+      aria-labelledby={id('heading')}
+      className="space-y-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
+    >
       <h3 id={id('heading')} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-md)]">Edit {template.name}</h3>
 
       <fieldset disabled={saving || busy} className="min-w-0 space-y-[var(--s4)]">
@@ -235,7 +249,7 @@ export default function TemplateEditForm({
           </div>
           <div className="field">
             <label htmlFor={id('duration')} className="t-label">Minutes</label>
-            <input id={id('duration')} type="number" inputMode="numeric" min={1} max={180} value={values.duration} onChange={(event) => setValues((prev) => ({ ...prev, duration: event.target.value }))} className="input input--kiosk" />
+            <input id={id('duration')} type="text" inputMode="numeric" value={values.duration} onChange={(event) => setValues((prev) => ({ ...prev, duration: event.target.value }))} className="input input--kiosk" />
           </div>
           <div className="field">
             <label htmlFor={id('authorization')} className="t-label">Coach authorization</label>
@@ -257,7 +271,7 @@ export default function TemplateEditForm({
         <fieldset className="min-w-0 space-y-[var(--s4)]">
           <legend className="t-command mb-[var(--s3)] text-[length:var(--t-md)]">The blocks</legend>
           {items.map((item, index) => (
-            <fieldset key={item.item_id} className="min-w-0 pt-[var(--s2)]">
+            <fieldset key={item.item_id} className="min-w-0 rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s4)]">
               <legend id={id(`item-${index}`)} className="mb-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{itemNames[index]}</legend>
               <div className="grid gap-[var(--s4)] md:grid-cols-2">
                 {ITEM_FIELDS.map(({ key, label }) => {
@@ -271,7 +285,7 @@ export default function TemplateEditForm({
                   } else if (key === 'scale_level') {
                     control = select(fieldId, value, ['', ...VOCABULARIES.scale_level.values], onChange, (level) => (level === '' ? 'None' : scaleLevelName(level)), named);
                   } else if (NUMBER_ITEM_KEYS.includes(key)) {
-                    control = <input id={fieldId} {...named} type="number" inputMode="numeric" min={1} max={key === 'duration_minutes' ? 90 : undefined} value={value} onChange={(event) => onChange(event.target.value)} className="input input--kiosk" />;
+                    control = <input id={fieldId} {...named} type="text" inputMode="numeric" value={value} onChange={(event) => onChange(event.target.value)} className="input input--kiosk" />;
                   } else if (key === 'block') {
                     control = <input id={fieldId} {...named} value={value} onChange={(event) => onChange(event.target.value)} maxLength={200} className="input input--kiosk" />;
                   } else {
@@ -291,17 +305,17 @@ export default function TemplateEditForm({
       </fieldset>
 
       {error && (
-        <div role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
+        <div role="alert" ref={alertRef} tabIndex={-1} className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
           <p><span aria-hidden="true">▲</span> <span>{error}</span></p>
           {!unknown && <p className="mt-[var(--s2)]">{NOTHING_CHANGED}</p>}
         </div>
       )}
 
       <div className="flex flex-wrap gap-[var(--s3)]">
-        <button type="button" onClick={() => void save()} disabled={saving || busy} className="btn disabled:cursor-not-allowed disabled:opacity-60">
+        <button type="button" onClick={() => void save()} disabled={saving || busy} className="btn btn--kiosk disabled:cursor-not-allowed disabled:opacity-60">
           {saving ? 'Saving…' : 'Save'}
         </button>
-        <button type="button" onClick={onCancel} disabled={saving || busy} className="btn btn--ghost">Cancel</button>
+        <button type="button" onClick={onCancel} disabled={saving || busy} className="btn btn--ghost btn--kiosk">Cancel</button>
       </div>
     </section>
   );

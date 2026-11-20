@@ -2188,11 +2188,14 @@ describe('Edit (lane ED-UI PR2)', () => {
   const V2 = { ...BOXING_FUNDAMENTALS, template_id: 'wt-1-v2', version: 2, supersedes_template_id: 'wt-1', intent: 'Stance and guard.' };
 
   /** The routes the edit touches, answering as the server does: a save makes v2, which replaces v1 in the list. */
-  function editRoutes(patch?: () => Response) {
+  function editRoutes(patch?: () => Response, options: { savedAnyway?: boolean } = {}) {
     let saved = false;
     return mockFetch((url, init) => {
       if ((init?.method ?? 'GET') === 'PATCH') {
-        if (patch) return patch();
+        if (patch) {
+          saved = options.savedAnyway ?? false;
+          return patch();
+        }
         saved = true;
         return jsonResponse({ ok: true, changed: true, template_id: 'wt-1-v2', version: 2, previous_template_id: 'wt-1', edited: ['intent'] });
       }
@@ -2236,16 +2239,34 @@ describe('Edit (lane ED-UI PR2)', () => {
     expect(screen.queryByRole('region', { name: 'Edit Boxing Fundamentals 60' })).not.toBeInTheDocument();
   });
 
-  it('writes nothing when nothing changed, and says so; Cancel writes nothing either', async () => {
+  it('writes nothing when nothing changed, and says so; Cancel writes nothing either; focus goes back to the template', async () => {
     const fetchMock = editRoutes();
     render(<CoachWorkoutTemplatesPage />);
     const form = await openAndEdit();
+    const templateHeading = screen.getByRole('heading', { level: 2, name: 'Boxing Fundamentals 60' });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('Nothing changed. No new version was written.')).toBeInTheDocument();
+    await waitFor(() => expect(templateHeading).toHaveFocus());
     fireEvent.click(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' }));
+    expect(screen.getByRole('heading', { name: 'Edit Boxing Fundamentals 60' })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(await screen.findByText('Rope intervals')).toBeInTheDocument();
+    await waitFor(() => expect(templateHeading).toHaveFocus());
     expect(writesOf(fetchMock)).toEqual([]);
+  });
+
+  it('keeps the Issue and plan controls, and what they answered, through Edit and Cancel', async () => {
+    editRoutes();
+    render(<CoachWorkoutTemplatesPage />);
+    fireEvent.click((await screen.findAllByRole('button', { name: /open template/i }))[0]);
+    const issue = await screen.findByRole('heading', { name: 'Issue to athlete' });
+    const plan = screen.getByRole('region', { name: 'Make a session plan' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit: Boxing Fundamentals 60' }));
+    expect(issue).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    // The same nodes, not rebuilt: a component rebuilt starts again with no answer.
+    expect(screen.getByRole('heading', { name: 'Issue to athlete' })).toBe(issue);
+    expect(screen.getByRole('region', { name: 'Make a session plan' })).toBe(plan);
   });
 
   it('offers no Edit on a superseded version, which the route refuses to edit', async () => {
@@ -2258,9 +2279,13 @@ describe('Edit (lane ED-UI PR2)', () => {
     expect(screen.queryByRole('button', { name: 'Edit: Boxing Fundamentals 60' })).not.toBeInTheDocument();
   });
 
-  it('after a 409, reads the list again, and Cancel opens the template again from the server', async () => {
-    const stale = 'This is not the current version of the template. Reload it and edit the current version.';
-    const fetchMock = editRoutes(() => ({ ok: false, status: 409, json: async () => ({ error: stale, code: 'TEMPLATE_VERSION_STALE' }) }) as Response);
+  const stale = 'This is not the current version of the template. Reload it and edit the current version.';
+  it.each([
+    ['a 409', 409, { error: stale, code: 'TEMPLATE_VERSION_STALE' }, stale, false],
+    // A fault after the write: the list read again holds v2, not the open v1, so the open block moves to the top.
+    ['a fault whose outcome is not known', 500, { error: 'Something failed.' }, 'It is not known whether this change was saved.', true],
+  ])('after %s, reads the list again, keeps what was typed, and Cancel opens the template again from the server', async (_case, status, answer, shown, savedAnyway) => {
+    const fetchMock = editRoutes(() => ({ ok: false, status, json: async () => answer }) as Response, { savedAnyway });
     render(<CoachWorkoutTemplatesPage />);
     const form = await openAndEdit();
     const reads = (match: string) => fetchMock.mock.calls
@@ -2269,8 +2294,12 @@ describe('Edit (lane ED-UI PR2)', () => {
     fireEvent.change(within(form).getByLabelText('Intent'), { target: { value: 'Stance and guard.' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
 
-    expect(await within(form).findByRole('alert')).toHaveTextContent(stale);
+    expect(await within(form).findByRole('alert')).toHaveTextContent(shown);
     await waitFor(() => expect(reads('/api/pilot/workout-templates')).toBe(listReadsBefore + 1));
+    // v1 no longer has a card of its own ("Showing template"); the form is the same one, not rebuilt.
+    if (savedAnyway) await waitFor(() => expect(screen.queryByRole('button', { name: /showing template/i })).not.toBeInTheDocument());
+    else expect(screen.getByRole('button', { name: /showing template/i })).toBeDisabled();
+    expect(screen.getByRole('region', { name: 'Edit Boxing Fundamentals 60' })).toBe(form);
     expect(within(form).getByLabelText('Intent')).toHaveValue('Stance and guard.');
     await waitFor(() => expect(within(form).getByRole('button', { name: 'Cancel' })).toBeEnabled());
     const detailReadsBefore = reads('/api/pilot/workout-templates?template_id=wt-1');
