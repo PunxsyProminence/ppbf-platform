@@ -457,7 +457,9 @@ export default function EscalationsPage() {
                               roles this one does (coach, admin). The athlete
                               goes in page memory, never the address (#1474 Q2 = C);
                               each page opens on them only if its roster lists them. */}
-                          <span className="mt-[var(--s2)] flex flex-wrap gap-x-[var(--s3)] gap-y-[var(--s2)] t-label">
+                          {/* One link per line: side by side, two underlined
+                              uppercase labels read as one phrase. */}
+                          <span className="mt-[var(--s2)] flex flex-col items-start gap-[var(--s2)] t-label">
                             <Link
                               href={CLEARANCE_BOARD_PAGE}
                               className="underline"

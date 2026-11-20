@@ -2900,23 +2900,34 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
     takeArrivalAthlete(DECISION_LOOP_PAGE);
   });
 
-  test('a name in the box narrows the roster; a miss says so; an empty box shows everyone', async () => {
+  test('a name in the box narrows the roster and says how many match; a miss says so; an empty box shows everyone', async () => {
     global.fetch = twoAthletes();
     render(<SportsMedicinePage />);
     await screen.findByText('Sam Roe');
+    expect(screen.getByText('2 athletes.')).toBeTruthy();
 
     fireEvent.change(findBox(), { target: { value: 'sam' } });
     expect(screen.getByText('Sam Roe')).toBeTruthy();
     expect(screen.queryByText('Jordan Doe')).toBeNull();
+    expect(screen.getByText('1 of 2 athletes match.').getAttribute('aria-live')).toBe('polite');
 
     fireEvent.change(findBox(), { target: { value: 'nobody here' } });
-    expect(screen.getByRole('status').textContent).toBe('No athlete matches "nobody here". Clear the box to see them all.');
+    expect(screen.getByText('0 of 2 athletes match.')).toBeTruthy();
+    expect(screen.getByText('No athlete matches "nobody here". Clear the box to see them all.')).toBeTruthy();
     // A miss is not an empty roster.
     expect(screen.queryByText('No athletes on your roster')).toBeNull();
 
     fireEvent.change(findBox(), { target: { value: '' } });
     expect(screen.getByText('Jordan Doe')).toBeTruthy();
     expect(screen.getByText('Sam Roe')).toBeTruthy();
+  });
+
+  // Law 5: `.input` alone is 46px; the kiosk 55px comes from input--kiosk.
+  test('the box is a gym-floor control', async () => {
+    global.fetch = mockFetch();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    expect(findBox().classList.contains('input--kiosk')).toBe(true);
   });
 
   test('the box is not offered while the board could not be read, so a failed read never reads as a miss', async () => {
@@ -2930,7 +2941,7 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
     global.fetch = mockFetch();
     render(<SportsMedicinePage />);
     const name = await screen.findByText('Jordan Doe');
-    for (const label of ['Injury Record', 'Sparring Caps', 'Medical Restrictions', 'Progression Intelligence', 'Performance Analytics']) {
+    for (const label of ['Injury Record', 'Sparring Caps', 'Medical Restrictions', 'Progression Intelligence', 'Who to See First']) {
       const link = screen.getByRole('link', { name: label });
       expect(link.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
@@ -2978,6 +2989,7 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
     await screen.findByText('Sam Roe');
     expect(findBox().value).toBe('Sam Roe');
     expect(screen.queryByText('Jordan Doe')).toBeNull();
+    expect(screen.getByText('1 of 2 athletes match.')).toBeTruthy();
   });
 
   test('an athlete the roster does not list: the board opens as it always has', async () => {

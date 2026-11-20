@@ -939,8 +939,10 @@ export default function SportsMedicinePage() {
             <Link href="/coach/progression-intelligence" className="btn btn--ghost">
               Progression Intelligence
             </Link>
+            {/* Named for the page it opens: its title and door say "Who to See
+                First" (one name per thing). */}
             <Link href="/coach/performance-analytics" className="btn btn--ghost">
-              Performance Analytics
+              Who to See First
             </Link>
           </div>
 
@@ -995,17 +997,26 @@ export default function SportsMedicinePage() {
             <>
             <div className="field mb-[var(--s4)]">
               <label className="t-label" htmlFor="clearance-find">Find an athlete</label>
+              {/* input--kiosk: `.input` alone is floored at 46px unlayered,
+                  under the kiosk 55px (as the drill and template Find boxes). */}
               <input
                 id="clearance-find"
                 type="search"
-                className="input"
+                className="input input--kiosk"
                 value={findText}
                 onChange={(event) => setFindText(event.target.value)}
                 autoComplete="off"
               />
+              {/* The count, always on screen, in Workout Templates' words for its
+                  Find box: a narrowed board says how much it is hiding. */}
+              <p aria-live="polite" className="t-label text-[color:var(--bone-400)]">
+                {findQuery
+                  ? `${shownRows.length} of ${rows.length} ${rows.length === 1 ? 'athlete matches' : 'athletes match'}.`
+                  : `${rows.length} ${rows.length === 1 ? 'athlete' : 'athletes'}.`}
+              </p>
             </div>
             {shownRows.length === 0 ? (
-              <p className="t-body" role="status">
+              <p className="t-body">
                 {`No athlete matches "${findText.trim()}". Clear the box to see them all.`}
               </p>
             ) : null}

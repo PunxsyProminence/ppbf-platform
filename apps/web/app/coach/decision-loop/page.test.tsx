@@ -3459,6 +3459,34 @@ describe('arriving from "Post to the Family\'s Page"', () => {
     expect(within(scrolled[0] as HTMLElement).getByRole('heading', { name: "Post to the Family's Page" })).toBeInTheDocument();
   });
 
+  test('the scroll waits until the athlete\'s records are read, so the lists above it are in place', async () => {
+    const base = installFetch();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/shadow/recommendations?')) await held;
+      return base(url, init);
+    }) as unknown as typeof fetch;
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await waitFor(() => expect(athletePicker().value).toBe('ath-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(scrolled).toEqual([]);
+
+    await act(async () => {
+      release();
+      await held;
+    });
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+    expect(scrolled[0].id).toBe('post-to-family');
+  });
+
   test('a later pick of another athlete does not scroll again', async () => {
     installFetch();
     window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');

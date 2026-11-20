@@ -682,11 +682,13 @@ export default function DecisionLoopReviewPage() {
     }
     // selectAthlete moves refs and state setters only.
   }, []);
+  // After the athlete's records are read, so the lists above the section have
+  // their final height and do not push it off screen once scrolled.
   useEffect(() => {
-    if (!athleteId || !scrollToFamilyRef.current) return;
+    if (!athleteId || loadState === 'loading' || !scrollToFamilyRef.current) return;
     scrollToFamilyRef.current = false;
     document.getElementById(POST_TO_FAMILY_SECTION)?.scrollIntoView?.({ block: 'start' });
-  }, [athleteId]);
+  }, [athleteId, loadState]);
   useEffect(() => {
     if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete();
     // The roster's answer sets state when it arrives, never in this effect's body.
