@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-20-002 | 2026-11-20 | SHADOW lane answers: SH-01 to SH-05, SH-07, MSG-1 and MSG-2 | RECONSTRUCTED |  |  |
 | OD-2026-11-20-001 | 2026-11-20 | OW27-01 to OW27-16: W4 email alerts, typed lines, athlete and parent words, recognizer start | RECONSTRUCTED |  |  |
 | OD-2026-11-19-031 | 2026-11-19 | OW26-06 and OW26-07: scrub research files go under docs/research | RECONSTRUCTED |  |  |
 | OD-2026-11-19-030 | 2026-11-19 | OW26-05: mixed templates become library drills | RECONSTRUCTED |  |  |
@@ -635,9 +636,44 @@ and should not try to.
 
 ---
 
+## OD-2026-11-20-002 -- SHADOW lane answers: SH-01 to SH-05, SH-07, MSG-1 and MSG-2
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards, and typed MSG-1 and MSG-2, in the SHADOW research lane (a Claude Science session), not in this transcript. Copied by script from two findings files, each present in both the OneDrive PPBF-AI-Lanes Research folder and the Documents PPBF-overwatch research findings folder: `2026-11-20-shadow-jason-answers.md` (sha256[:16] `cbd831e49e6b46a2` when read) and `2026-11-20-shadow-what-was-not-checked.md` (sha256[:16] `7a2e4f95f1966101` when read). What is uncertain: both files are the lane's record of his words, written by someone else; Redaction, the only change to the copied bytes: in the SH-02 row a short account name is replaced by "[the organization admin account]" (public repo). Card times in the first file are when answers were logged, not click times. New; edits no earlier entry's text.
+
+**Table rows, as recorded** (each row holds the card's question, the options in the order shown, and Jason's answer; the header lines are included; SH-06 was not carded):
+```text
+| Card | Question (official, short) | Options as shown | Answer (as given) | Affects |
+|---|---|---|---|---|
+| SH-01 Scope (05:24:41Z) | Your OW26-02 pick "C: Everything, FUTURE items too" (OD-2026-11-19-016) makes completion W0-W3, the finish, email alerts and a W4 of FUTURE items. W4's eight sized items include no SHADOW engine. Where do SHADOW's four unbuilt parts sit (event spine, pattern learning wired to real data, the Teach Shadow recognizer, sensors)? | A: Own wave after W4 (Recommended); B: Add them to W4 now; C: Not part of completion | "A: Own wave after W4 (Recommended)" | A SHADOW wave after W4; W4's sizing is unchanged. Agrees with BUILD-PLAN-2026-10-08.md line 54 ("Teach-AI when Jason says", last) |
+| SH-02 Patterns (05:26:31Z) | Pattern learning: bars ruled (OD-2026-10-17-027), ratifier ruled (OD-2026-10-18-003); approved numbers held in code, not in force; save route with no screen; tier engine with no caller. Where does it go in the SHADOW wave? | A: First in the wave (Recommended); B: Bar in force now, wire later; C: Park it; another part first | "A: First in the wave (Recommended)" | Coach logging, then storage, then labels; [the organization admin account] puts the approved bar in force when logging ships |
+| SH-03 Event spine (12:15:08Z, logged) | Event model "doctrine, not built as written"; a flat log and the decision loop exist; the backbone is the design source (OD-2026-10-27-001); the backbone's "spine" is a different thing. What happens to the event spine? | A: Park; add pieces as needed (Recommended); B: Build the full web first; C: Retire it | "A: Park; add pieces as needed (Recommended)" | Typed events are added only when the SHADOW wave's builds need them; the full web is revisited after the backbone hand-off |
+| SH-04 Recognizer (12:17:32Z) | The Teach Shadow recognizer: no recognizer yet; scoring parked (OD-2026-09-28-006); Film Study's AI observations already built. What is its place in the SHADOW wave? | A: After patterns; punch type first (Recommended); B: Start now, alongside patterns; C: Collect only; recognizer later; D: Drop the recognizer | "B: Start now, alongside patterns" (against the recommendation, A) | The Teach-AI work (block T, then gates 1 to 5) starts with pattern learning. Cost, stated once in the same exchange: two learning builds at once, and the corpus size for training is not checked. Readings in 2026-11-20-shadow-wave.md, 3.4 |
+| SH-05 First target (12:33:27Z) | What does the first recognizer learn? | A: Punch type, solo work (Recommended); B: Punch type, sparring too; C: Punches and defence | "look at the build plan that has been answered already, verify that that the answer is not already available to you from our sorces before asking a question then as the question validating answer options from outside sources with pros cons and the effect it will have, never gess fill in the gap or go of memory" | No option picked; no ruling. The answer was already in OD-2026-10-02-011, -008, -006, OD-2026-10-03-006 and -019: body points on every punch and defence, each person on their own event, adults first. No card follows. Instruction for lanes: check the build plan and sources before asking; validate options from outside sources, with pros, cons and effect; never guess, fill gaps or work from memory |
+| MSG-1, typed (13:20:03Z) | (no card; typed after the files were delivered) | none | "look at houside spurces see if there is a better design, we can start it today once we dooble check and validate that this is the best build for shadow recommend model and effort and give me a goldie lock prompt to do this and explain to me in laymans terms what the prompt will do" | Start today once validated. This changes SH-01 ("Own wave after W4") to a start now, beside W1-W4, and answers the SH-04 reading: "now" means today. Cost, stated once in the reply: the SHADOW lanes compete with the pilot lanes for Overwatch's attention, the shared account's usage and coaches' time. Asks for a model and effort recommendation and a prompt for Claude Code (App Overwatch; OD-2026-11-19-027) |
+| SH-07 Gate 3 (13:40:00Z) | Outside evidence points to a better design in one place: the recognizer's starting point at gate 3 (today's start is the same under every option). Ruled: own pose model from nothing (OD-2026-10-02-011 section 2). How should gate 3 start? | A: Gate-3 bake-off (Recommended); B: Switch to fine-tuning; C: Keep from nothing | "C: Keep from nothing" (against the recommendation, A) | OD-2026-10-02-011 section 2 stands unchanged; no outside model at any step, not even as a yardstick. Cost, stated once in the same exchange: estimated 280-500 coach-hours before a from-scratch model is worth judging (TRAIN-00, an estimate); outside evidence says training from scratch needs large data |
+```
+
+**Jason's words, where they are free text:** SH-05 (an instruction, no option picked) and MSG-1 (typed at 13:20:03Z) are the quoted answers in the SH-05 and MSG-1 rows above, with their typos. MSG-2 is quoted from the header of `2026-11-20-shadow-what-was-not-checked.md`:
+```text
+ASKED BY: Jason ("ok that was too easy, is this lane too long? because basically you are telling me a design the shadow AI and ML and LLM perfect", 2026-11-20)
+- MSG-2 (Jason's words above) is recorded here, not in the answers file, so the answers file keeps the hash the prompt cites (cbd831e49e6b46a2). Overwatch adds MSG-2 to the record.
+```
+
+**The SH-04 option text and the start-timing reading:** SH-04's picked option is "B: Start now, alongside patterns" (the row above). The OW27-16 card in `OD-2026-11-20-001` quotes how that option's text was worded (it began at the start of the SHADOW wave). Whether "Start now" means the start of the SHADOW wave or today is a reading by the SHADOW lane and Backbone Overwatch, not Jason's words. The lane's own note on it, copied by script:
+```text
+- Whether "Start now" (SH-04) means the start of the SHADOW wave (the option text) or today is a reading, not his words.
+```
+
+**Effect (INFERRED, Backbone Overwatch note 22 and the SHADOW lane):** SHADOW work may start today once validated (MSG-1). Starting it is Jason's call, through the SHADOW lane's prompt to Overwatch. SH-07 C keeps the pose model's start from nothing, so OD-2026-10-02-011 section 2 stands unchanged. The SH-05 instruction is a working rule for lanes, recorded next to `OD-2026-11-19-022`.
+
+**Applied:** nothing started yet.
+**Status:** recorded 2026-11-20 by PR.
+
+---
+
 ## OD-2026-11-20-001 -- OW27-01 to OW27-16: W4 email alerts, typed lines, athlete and parent words, recognizer start
 
-**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone thread, not in this transcript. Copied by script from `CARDS_OW27.md` (OneDrive, PPBF-AI-Lanes, Research/Backbone/working/overwatch; sha256[:16] `763ac7f7f0ae017c` when read 2026-11-20; the earlier hash c3ae819d6d77ee90, cited in note 18 and the brief, covered the file before it gained batch 2, OW27-10 to -16), the sections headed "## OW27-01" to "## OW27-16" (batch 1 and batch 2), each card's text and his recorded answer, and the closing section headed "## Already-answered audit of OW27-01 to -16". The OW27-06 delegation note is copied from `TO_BACKBONE.md` (Documents, PPBF-overwatch, backbone-crossover; sha256[:16] `bf893a5b530c5f75` when read), the note headed "2026-11-20T12:46Z (date -u) -- reply to note 18". What is uncertain: the card file is Backbone's record of his answers, written by someone else. New; edits no earlier entry's text.
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone thread, not in this transcript. Copied by script from `CARDS_OW27.md` (OneDrive, PPBF-AI-Lanes, Research/Backbone/working/overwatch; sha256[:16] `763ac7f7f0ae017c` when first read 2026-11-20; the earlier hash c3ae819d6d77ee90, cited in note 18 and the brief, covered the file before it gained batch 2, OW27-10 to -16), the sections headed "## OW27-01" to "## OW27-16" (batch 1 and batch 2; the file then hashed to `efccf2be2d62f98e` and also holds a correction section, quoted below), each card's text and his recorded answer, and the closing section headed "## Already-answered audit of OW27-01 to -16". The OW27-06 delegation note is copied from `TO_BACKBONE.md` (Documents, PPBF-overwatch, backbone-crossover; sha256[:16] `bf893a5b530c5f75` when read), the note headed "2026-11-20T12:46Z (date -u) -- reply to note 18". What is uncertain: the card file is Backbone's record of his answers, written by someone else. New; edits no earlier entry's text.
 
 Each card below is copied under its own sub-heading: the official text, the options in the order shown, and the answer exactly as recorded (typos included in the free-text answers, OW27-01, OW27-04, OW27-06, OW27-11 and OW27-16).
 
@@ -901,12 +937,12 @@ Options, in the order shown:
 2. "B: Today, beside the current waves": Start the recognizer's first block (block T: labelling-tool fixes) now as its own lane. Pros: The long coach-marking work starts sooner. Cons: Changes OD-2026-10-07-007; one more lane while the pilot and W2 run; coaches' time is shared with pattern logging.
 
 Jason's answer (free text): "ok again validate that these question have not already been answered some of the drift and wasted resources have been answering questions slightly different or you asking them slightly different"
-No option picked. Overwatch's own mistake: the question was already answered. SH-04's picked option text says the recognizer begins at the start of the SHADOW wave; OD-2026-10-07-007 and lane-inbox\BUILD-PLAN-2026-10-08.md line 54 ("Teach-AI when Jason says") agree. Standing, unchanged: the recognizer starts with the SHADOW wave, after W4. Nothing is re-asked.
+No option picked. Overwatch's own mistake: the question was already answered. SH-04's picked option text says the recognizer begins at the start of the SHADOW wave; OD-2026-10-07-007 and lane-inbox\BUILD-PLAN-2026-10-08.md line 54 ("Teach-AI when Jason says") agree. Overwatch's reading at the time; superseded by Jason's MSG-1 in the SHADOW lane (13:20:03Z). Nothing is re-asked.
 ```
 
 ### OW27-16 standing instruction and the closing audit section
 
-**OW27-16 was already answered:** per the card file, Jason picked no option and instead told Overwatch to check for questions already answered; the file records that the recognizer starts with the SHADOW wave, after W4, OD-2026-10-07-007 stands, and nothing is re-asked (the card text above says so word for word). Jason's instruction on OW27-16 is quoted in the card above; the rule that follows from it is in the closing section of the card file, copied by script (the audit method and results are Overwatch's, INFERRED, not his words):
+**OW27-16, as recorded:** Jason picked no option; he typed the instruction quoted in the card above. Two changes to the copied bytes in the OW27-16 block, both made on Backbone Overwatch's instruction (note 22): the card file's sentence "Standing, unchanged: the recognizer starts with the SHADOW wave, after W4." is replaced by the text now shown in the block; the card and Jason's answer are otherwise word for word. The audit rule that follows from his instruction is in the closing section of the card file, copied by script (the audit method and results are Overwatch's, INFERRED, not his words):
 ```text
 ## Already-answered audit of OW27-01 to -16 (2026-11-20 08:40, Jason's instruction on OW27-16)
 Method: regular-expression search per card topic across docs/current/OWNER_DECISIONS.md on main 1769758b, CARDS_OW24.md, CARDS_OW25.md, CARDS_OW26.md, findings 2026-11-19-jason-answers-app-scrub.md, 2026-11-19-decision-options-validated.md, 2026-11-19-app-scrub-stage-3.md, 2026-11-19-notifications-and-usage-counts.md, 2026-11-20-shadow-jason-answers.md, and lane-inbox\BUILD-PLAN-2026-10-08.md; every hit read in context. A search, not a full read.
@@ -915,6 +951,14 @@ Method: regular-expression search per card topic across docs/current/OWNER_DECIS
 - OW27-11 to -14: no earlier answer. OD-2026-10-19-010 'Corner' is the fight card's corner line, not these labels; OD-2026-10-05-016/-021/-022 rule what a photo-only grant does, not a parent control.
 - OW27-16: already answered (above). Re-ask; withdrawn.
 Rule for every later card (Jason, OW27-16 and SH-05): before asking, search the same sources plus STATUS.md lines naming Jason and the open PR bodies; put "Checked, not answered in: ..." on the card; validate options from outside sources with pros, cons and effect; never guess, fill gaps or work from memory; never re-ask a question that the picked option's own text answers.
+```
+
+**Correction section of the card file (Backbone Overwatch's reading, INFERRED, not Jason's words):**
+```text
+## Correction to OW27-16 (2026-11-20 09:06)
+The OW27-16 reading above ("the question was already answered ... Standing, unchanged: the recognizer starts with the SHADOW wave, after W4") was wrong. In the SHADOW lane at 13:20:03Z, before OW27-16 was asked, Jason typed (MSG-1, word for word in findings 2026-11-20-shadow-jason-answers.md cbd831e49e6b46a2):
+"look at houside spurces see if there is a better design, we can start it today once we dooble check and validate that this is the best build for shadow recommend model and effort and give me a goldie lock prompt to do this and explain to me in laymans terms what the prompt will do"
+Overwatch had read that file at 08:22 US Eastern, before MSG-1 was added to it. His later words govern: start today once validated (the SHADOW lane reads this as moving SH-01's timing to now). The OW27-16 card and Jason's answer above stay as asked and answered. The "already answered" part of the audit for OW27-16 stands, but the answer was MSG-1, not the SH-04 option text. Note 22.
 ```
 
 **OW27-06 delegated: Jason's words.** Jason, in the card above: *"Use your best judgment for this question"*.
