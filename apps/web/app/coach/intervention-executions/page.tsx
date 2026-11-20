@@ -1,12 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import BackHome from '@/components/BackHome';
 import { formatGymDateShort } from '@/src/lib/gymTime';
 import ClusterNav from '@/components/ClusterNav';
+import { AthleteNameLink } from '@/components/AthleteRecordLinks';
+import { THE_WORK_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 
 // Intervention executions (module 026 slice 2): what was ACTUALLY
 // delivered against a protocol. The planned column is a snapshot from the
@@ -108,17 +111,43 @@ export default function InterventionExecutionsPage() {
   const [correcting, setCorrecting] = useState<string | null>(null);
   const [correctionReason, setCorrectionReason] = useState('');
 
-  const reload = useCallback(async (signal?: AbortSignal) => {
-    const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions`, {
+  // The athlete a link handed to this page (lane AS-11, CF-15; Passbook's
+  // line): undefined until it is taken, once, on the first mount; then the id
+  // until the roster answers, then null.
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+  // Whose executions the list on screen holds: '' for every athlete, or the
+  // one athlete a link opened the page on (AS-11 Q2b = A; the filter is the
+  // route's own, and the route checks the reader may read that athlete). A
+  // read sets the rows and whose they are together, and only the newest read
+  // may, so a list is never shown under the wrong scope. A read after a write
+  // asks for the scope already on screen.
+  const listAthleteRef = useRef('');
+  const listRequestRef = useRef(0);
+  const [listAthlete, setListAthlete] = useState('');
+
+  const reload = useCallback(async (signal?: AbortSignal, forAthlete: string = listAthleteRef.current) => {
+    const request = ++listRequestRef.current;
+    const filter = forAthlete ? `?athlete_id=${encodeURIComponent(forAthlete)}` : '';
+    const response = await fetch(`${apiBase()}/api/pilot/coach/intervention-executions${filter}`, {
       credentials: 'include',
       signal,
     });
     if (!response.ok) throw new Error('Unable to load executions.');
     const payload = (await response.json()) as { items?: ExecutionRow[] };
+    if (listRequestRef.current !== request) return;
     setExecutions(payload.items ?? []);
+    listAthleteRef.current = forAthlete;
+    setListAthlete(forAthlete);
   }, []);
 
+  const showEveryAthlete = () => {
+    void reload(undefined, '')
+      .then(() => setErrorMessage(null))
+      .catch(() => setErrorMessage('Unable to load executions.'));
+  };
+
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete(THE_WORK_PAGE);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -128,9 +157,22 @@ export default function InterventionExecutionsPage() {
           fetch(`${apiBase()}/api/pilot/coach/intervention-protocols`, { credentials: 'include', signal: controller.signal }),
         ]);
         if (controller.signal.aborted) return;
+        let narrowTo = '';
         if (athleteResponse.ok) {
           const payload = (await athleteResponse.json()) as { items?: AthleteOption[] };
-          if (!controller.signal.aborted) setAthletes(payload.items ?? []);
+          if (!controller.signal.aborted) {
+            const items = payload.items ?? [];
+            setAthletes(items);
+            // Only an athlete this roster, which the server answers, lists:
+            // the start form opens on them, and the list is read again for
+            // them alone.
+            const arriving = arrivalAthleteRef.current;
+            arrivalAthleteRef.current = null;
+            if (arriving && items.some((athlete) => athlete.athlete_id === arriving)) {
+              setAthleteId(arriving);
+              narrowTo = arriving;
+            }
+          }
         }
         if (protocolResponse.ok) {
           const payload = (await protocolResponse.json()) as { items?: ProtocolOption[] };
@@ -138,6 +180,9 @@ export default function InterventionExecutionsPage() {
             setProtocols((payload.items ?? []).filter((p) => p.status === 'active'));
           }
         }
+        // After the protocols, so a failed read leaves the start form whole.
+        // If this read fails, the list stays every athlete's, with the error.
+        if (narrowTo) await reload(controller.signal, narrowTo);
         setLoaded(true);
       } catch {
         if (controller.signal.aborted) return;
@@ -391,6 +436,24 @@ export default function InterventionExecutionsPage() {
             </div>
           </section>
 
+          {/* The list holds one athlete's executions when a link opened the
+              page on them (AS-11 Q2b = A). Their name says whose list it is,
+              which an empty list could not; the button widens it again. */}
+          {loaded && listAthlete && (
+            <div className="mb-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
+              <span data-testid="list-athlete" className="t-body font-semibold text-[length:var(--t-md)] text-[color:var(--bone-100)]">
+                {athletes.find((athlete) => athlete.athlete_id === listAthlete)?.full_name}
+              </span>
+              <button
+                type="button"
+                className="btn btn--ghost min-h-[var(--tap)] text-[length:var(--t-md)]"
+                onClick={showEveryAthlete}
+              >
+                Show every athlete
+              </button>
+            </div>
+          )}
+
           {loaded && (
             executions.length === 0 && !errorMessage ? (
               <div className="mat-leather rounded-[var(--r-lg)]">
@@ -416,7 +479,9 @@ export default function InterventionExecutionsPage() {
                         {row.protocol_title ?? row.protocol_id} (v{row.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {row.athlete_name ?? row.athlete_id} · {formatGymDateShort(row.created_at) ?? row.created_at}
+                        {/* The name opens this athlete's Passbook (AS-11 Q4 = A). */}
+                        <AthleteNameLink athleteId={row.athlete_id} name={row.athlete_name ?? row.athlete_id} />
+                        {' '}· {formatGymDateShort(row.created_at) ?? row.created_at}
                         {row.version > 1 ? ` · corrected (v${row.version})` : ''}
                       </span>
                       {row.session_run_id && (

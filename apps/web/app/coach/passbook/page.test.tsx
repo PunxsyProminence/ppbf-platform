@@ -13,12 +13,33 @@
  * shown as the server sent it.
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { StrictMode, type ReactNode } from 'react';
 
-import { PASSBOOK_PAGE, PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
+import {
+  ATHLETE_RECORD_PAGES,
+  DEVELOPMENT_PLANS_PAGE,
+  PASSBOOK_PAGE,
+  PROGRESSION_INTELLIGENCE_PAGE,
+  THE_WORK_PAGE,
+} from '@/components/athleteRecordPages';
 import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import CoachPassbookPage from './page';
+
+// A plain anchor that runs the link's own onClick, as next/link does, without
+// navigating (the pattern of the Escalations test, lane AS-5).
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href, className, onClick }: {
+    readonly children: ReactNode;
+    readonly href: string;
+    readonly className?: string;
+    readonly onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  }) => (
+    <a href={href} className={className} onClick={(event) => { event.preventDefault(); onClick?.(event); }}>{children}</a>
+  ),
+}));
 
 const standaloneProps: Array<{ allowedRoles: string[] }> = [];
 jest.mock('@/components/RoleStandaloneView', () => ({
@@ -290,6 +311,70 @@ describe('arriving from a link (lane AS-11)', () => {
     await act(async () => {});
     await act(async () => {});
     expect(passbookCalls()).toEqual([]);
+  });
+});
+
+// Lane AS-11 (app scrub CF-15; Q1 = A, Q2 = A): Passbook is the athlete page.
+// Under the athlete's name, one line names the other pages that hold part of
+// their record, and each link opens its page on the athlete whose book this
+// is. The line itself is pinned in components/athleteRecordLinks.test.tsx.
+describe('the rest of the athlete\'s record (lane AS-11)', () => {
+  beforeEach(() => {
+    createPersistentRoleSession('coach');
+  });
+  afterEach(() => {
+    clearRoleSession();
+    for (const page of ATHLETE_RECORD_PAGES) takeArrivalAthlete(page);
+  });
+
+  test('a loaded book carries the line, named by the athlete, and a link hands over that athlete', async () => {
+    await open('ath-1');
+    const line = screen.getByRole('navigation', { name: 'Ana Boxer' });
+    expect(within(line).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([...ATHLETE_RECORD_PAGES]);
+    fireEvent.click(within(line).getByRole('link', { name: 'Development Plans' }));
+    expect(takeArrivalAthlete(DEVELOPMENT_PLANS_PAGE)).toBe('ath-1');
+  });
+
+  test('the line follows the book: after another pick it hands over the new athlete', async () => {
+    await open('ath-1');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+    });
+    expect(screen.queryByRole('navigation', { name: 'Ana Boxer' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Ben Boxer' })).getByRole('link', { name: 'The Work' }));
+    expect(takeArrivalAthlete(THE_WORK_PAGE)).toBe('ath-2');
+  });
+
+  test('there is no line before a pick, while a book loads, or when it is refused, missing or unread', async () => {
+    const noLine = () => expect(screen.queryByRole('link', { name: 'Development Plans' })).toBeNull();
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    noLine();
+
+    let release = () => {};
+    holdAna = new Promise<void>((resolve) => { release = resolve; });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+    });
+    noLine();
+    await act(async () => { release(); });
+    expect(screen.getByRole('link', { name: 'Development Plans' })).toBeTruthy();
+
+    for (const status of [403, 404, 500]) {
+      passbookResponses['ath-2'] = { status, body: {} };
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: '' } });
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+      });
+      noLine();
+    }
+  });
+
+  test('the line adds no athlete id to any address on the page', async () => {
+    await open('ath-1');
+    for (const link of screen.getAllByRole('link')) expect(link.getAttribute('href')).not.toContain('ath-1');
   });
 });
 

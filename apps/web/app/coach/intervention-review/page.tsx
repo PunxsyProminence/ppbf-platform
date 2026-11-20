@@ -7,6 +7,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDate, formatGymDateShort } from '@/src/lib/gymTime';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
+import { AthleteNameLink } from '@/components/AthleteRecordLinks';
 
 // Intervention review (module 026 slice 3): the whole loop on one page --
 // DECISION -> PLANNED -> ACTUAL -> WHAT HAPPENED -> WHAT WE LEARNED.
@@ -329,7 +330,9 @@ export default function InterventionReviewPage() {
                         {execution.protocol_title ?? execution.protocol_id} (v{execution.protocol_version})
                       </span>
                       <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
-                        {execution.athlete_name ?? execution.athlete_id} · {execution.status.replaceAll('_', ' ')} · {formatGymDateShort(execution.created_at) ?? execution.created_at}
+                        {/* The name opens this athlete's Passbook (AS-11 Q4 = A). */}
+                        <AthleteNameLink athleteId={execution.athlete_id} name={execution.athlete_name ?? execution.athlete_id} />
+                        {' '}· {execution.status.replaceAll('_', ' ')} · {formatGymDateShort(execution.created_at) ?? execution.created_at}
                       </span>
                     </div>
 
