@@ -68,7 +68,7 @@ the not-adopted path, which is what this sweep models.
 The cue rule applied is OD-2026-10-06-026 ruling 2 ("technique drills need at
 least one coaching cue ... conditioning drills do not"). OD-2026-10-27-001
 ruling 1 replaced that entry's ruling 1 (chokes), not ruling 2
-(rulings at `OWNER_DECISIONS.md:7322-7323`, status line `:7327`), and OD-2026-11-19-005 keeps "the cue rule
+(rulings at `OWNER_DECISIONS.md:7322-7323`, status line `:7327`), and the Overwatch note recorded in OD-2026-11-19-005 keeps "the cue rule
 (OD-2026-10-06-026)" (`OWNER_DECISIONS.md:1170`). The code applies it at
 `apps/web/src/lib/drillAdoptionReadiness.ts:110`.
 
@@ -92,7 +92,7 @@ The typed steps refuse the whole issue (TYPED_STEP_REASON,
 mixing typed steps with drills is not covered and still reads 'Not ready'"
 (`OWNER_DECISIONS.md:2725`). Some typed lines are typed on purpose: Backbone
 D-OQ44 makes DOC-151's warm-up, applied-rounds, conditioning and character lines
-"verbatim free-text items of the phase template" (`docs/backbone/DECISION_REGISTER.json:1464`).
+"verbatim free-text items of the phase template" (`docs/backbone/DECISION_REGISTER.json:1466`).
 No cue or drill text fixes these. Template ids and typed steps are in the
 test's `TYPED_IN_MIXED` list.
 
@@ -122,7 +122,7 @@ searchable from this container (UNVERIFIED there).
 
 | Drill | Proposed cue_text | Source (file:line) | Source tier |
 |---|---|---|---|
-| Wrap Under Supervision `drl_39ed71de8c14cd` | `Protect the metacarpals, support the wrist, cushion the knuckles.` (one sentence, verbatim) | The Long Road LR-169 "4.3 Hands and wrists", row "Learn to wrap properly", stored verbatim on track `trk_9529aeb3af7743` "Injury Risk Management and Medical Care" (`apps/web/seed-data/training-tracks/seed_training_tracks.csv:30`, `details`), and in the same record's `drill_refs` as the coach note on the link to this drill. Jason linked that row to this drill: D-OQ111 "the four pairs are the same drill (... 169-01 = drl_39ed71de8c14cd 'Wrap Under Supervision')" (`docs/backbone/DECISION_REGISTER.json:3458`) | A: a committed source document tied to this drill by an owner ruling |
+| Wrap Under Supervision `drl_39ed71de8c14cd` | `Protect the metacarpals, support the wrist, cushion the knuckles.` (one sentence, verbatim) | The Long Road LR-169 "4.3 Hands and wrists", row "Learn to wrap properly", stored verbatim on track `trk_9529aeb3af7743` "Injury Risk Management and Medical Care" (`apps/web/seed-data/training-tracks/seed_training_tracks.csv:30`, `details`), and in the same record's `drill_refs` as the coach note on the link to this drill. Jason linked that row to this drill: D-OQ111 "the four pairs are the same drill (... 169-01 = drl_39ed71de8c14cd 'Wrap Under Supervision')" (`docs/backbone/DECISION_REGISTER.json:3460`) | A: a committed source document tied to this drill by an owner ruling |
 | Seated Combination Work `drl_af8541eacc70e5` | `Seat down` | The drill's own committed corrections: `Coach places a hand on the shoulder or calls "seat down" to cue immediate re-seating.` (`apps/web/seed-data/drill-library/seed_drill_library.csv:1284`) | B: the drill's own text, a verbatim coach call it names as a cue |
 | Technique-Only Fitness Session `drl_146f4afdc88839` | `Hands` | The drill's own committed corrections: `Call "hands" the moment the guard drops, wait for it to reset before restarting the drill.` (`apps/web/seed-data/drill-library/seed_drill_library.csv:1339`) | B: the drill's own text, a verbatim coach call |
 | Technique Hold Under Volume `drl_b755caac79e37e` | **needs coach text** | None found. Its corrections quote fault names ("hands down," "chin up", `seed_drill_library.csv:789`); used as cues they would tell the athlete to do the fault. OD-2026-10-11-009 item 3 ("3 B") covers this drill: "Overwatch drafts the cues for a coach to approve; they are not put in the app" (`OWNER_DECISIONS.md:6304`); that draft is `C:\Dev\DRAFT-CUES-SIX-DRILLS-2026-10-12.md`, outside the repo | — |
@@ -133,10 +133,17 @@ Notes on the three proposals:
   `field_provenance` "LITERATURE-GROUNDED DRAFT ... REQUIRES FLOOR VALIDATION",
   and the corrections lines cited carry no claim citation. Capitalising the
   first letter is the only change to the source words.
-- Tier A: D-OQ111 records the Long Road line as "a coach note on the link, no
-  new drill". Using one of its sentences as the drill's cue moves Long Road text
-  into the drill. INFERRED as consistent with the Backbone source order ("the
-  Long Road fills gaps": OD-2026-10-27-001, `OWNER_DECISIONS.md:4269`, kept by its ruling 3 at `:4299`); Overwatch decides.
+- Tier A: the track record's own link to this drill (`drill_refs[0].decided` in
+  the same cell, `seed_training_tracks.csv:30`) reads "same drill (Jason
+  2026-11-02 (D-OQ111); D-PK20 via D-PK55): the Long Road line is a coach note on
+  the link, no new drill". Using one of its sentences as the drill's cue moves
+  Long Road text into the drill as a new version of that same drill, not a new
+  drill. INFERRED as consistent with the Backbone source order ("the Long Road
+  fills gaps": OD-2026-10-27-001, `OWNER_DECISIONS.md:4269`, kept by its ruling 3
+  at `:4299`); Overwatch accepted it (GO, Q1 A).
+- Reading notes from the data reviewer, left to coach review by the draft
+  marker: "Hands" is terse, and the Long Road sentence says "metacarpals" on a
+  template run for youth and adults.
 - Label on each drill's `field_labels` (mirrors #1980; as applied, each `basis` quotes its own source):
   `{"cues":{"basis":"<source> word for word; added so the drill meets the cue rule (OD-2026-10-06-026 ruling 2; OD-2026-11-15-011 ruling 3: a miss fixed by a new version)","draft":"AI selection, lane RS, 2026-11-20 (OD-2026-11-15-011)","sources":["<file:line>"],"status":"INFERRED"}}`.
   The `draft` marker makes the app show the cue as a draft for coach review.
@@ -170,7 +177,12 @@ Notes on the three proposals:
    needs coach text). On a fresh load, Intro to Boxing — Session 1,
    Conditioned Sparring Session, Adaptive Session — Seated Base and Non-Contact
    Fitness Boxing now issue: 50 of 144 templates, 94 refused.
-3. Row-pinning tests: `scripts/backbone-export-ft1-track.test.ts` pins every
+3. Row-pinning tests. `src/server/pilot/ft1ContentPackage.pg.test.ts` (CI
+   shard pg (2) failed on `094ec3ee`: drill-library planned `new_version: 3,
+   unchanged: 116` where the FT1 lane expects `0, 119`) now leaves lane RS's
+   rows out of the FT1 lane's set, as it already leaves lane HW's, and plans
+   them on top: exactly the three lane RS drills plan as new versions of drills
+   already loaded, against PostgreSQL. `scripts/backbone-export-ft1-track.test.ts` pins every
    pre-Backbone drill row to blank label cells, with one exception for lane
    HW's cue. The same exception now covers the three lane RS drills, by id and
    by the lane RS draft marker, and a new check fails if any other row carries
@@ -226,3 +238,27 @@ Step 2:
 | Give a fourth pre-Backbone drill (`drl_b755caac79e37e`) a cue-only label with the lane RS marker | the FT1 exporter test failed |
 
 Each restored from a copy; `git diff --stat` matched before and after.
+
+After review (below), deleting every step of `wtp_98af8ee68020d0` reds the new
+"holds no template without steps" case.
+
+## 9. Independent review (two fresh-context subagents, on `094ec3ee`)
+
+- **Data integrity and sources: clean, four nits.** It re-parsed both CSVs at
+  base and head: only the three `field_labels` cells changed, and three cue
+  rows were appended. Each cue is word for word from its source. The three
+  cue ids equal `MINT.cue`. The validator count is unchanged. No public-repo
+  data appears in the diff. Nits applied:
+  - "coach note on the link" is now credited to the track record, not to D-OQ111;
+  - the register pointers now name the `decided` lines (`:3460`, `:1466`);
+  - the cue rule is attributed to the Overwatch note recorded in OD-2026-11-19-005;
+  - the reading notes in section 4 were added.
+- **Test honesty: clean, one should-fix and three nits.** Every mutation it
+  ran went red except one, an empty template. The issue writer refuses an empty
+  template before the plan (`workoutTemplates.ts:895-897`), so the plan-only
+  sweep counted one as issuable. Fixed: a case holds the committed data to no
+  empty template, and the header now names the plan's rules and the writer's two
+  pre-plan refusals. Nits applied:
+  - `checked` counts the templates actually planned;
+  - `parseBoolean` and `isConditioningLabel` are imported, not restated.
+  Left as is: the lineage check is redundant with the loader's lineage keys, but harmless.

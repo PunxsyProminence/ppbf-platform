@@ -1,11 +1,15 @@
 // Readiness sweep (lane RS, pilot dry-run blocker B3): every workout template
 // in the COMMITTED seed data, run through the issue's own read-only plan.
 //
-// WHAT IS REAL HERE. planTemplateIssue (workoutTemplates.ts) runs unchanged,
-// and with it every rule that refuses an issue: typed steps
+// WHAT IS REAL HERE. planTemplateIssue (workoutTemplates.ts) runs unchanged:
+// the issue's own plan, the one the issue writer and the pre-issue list
+// (U1-ISSUE) both call. With it run the plan's refusal rules: typed steps
 // (TYPED_STEP_REASON), adoptionReadiness with the floor test taken as met
 // (Jason 2026-10-11 "B", #1473), the difficulty vocabulary, and two drills of
 // one template sharing a name. Nothing of that logic is restated in this file.
+// The writer (issueWorkoutTemplate) also refuses two things before the plan:
+// a template that is not current, which a fresh load never leaves, and a
+// template with no steps, which a case below rules out in the committed data.
 //
 // WHAT IS FAKED, AND WHY IT IS THE STATE OF A FRESH LOAD. The plan reads the
 // gym's library through drillLibraryV3 and ./db. Those reads are answered from
@@ -65,11 +69,12 @@ jest.mock('./progression', () => {
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { NO_CUE_READINESS_MESSAGE } from '../../lib/drillCueRule';
+import { isConditioningLabel, NO_CUE_READINESS_MESSAGE } from '../../lib/drillCueRule';
 
 import { committedPath, datasetSpec } from './contentImport/specs';
 import type { ParsedFile } from './contentImport/types';
 import { parseFile } from './contentImport/validate';
+import { parseBoolean } from './contentImport/values';
 import { query, queryOne } from './db';
 import { getDrillWithDetail, getOtherVersionAdoption, listReferenceLifecycles } from './drillLibraryV3';
 import { planTemplateIssue, type WorkoutTemplateItemWithDrillHead } from './workoutTemplates';
@@ -127,7 +132,7 @@ const library = new Map<string, LibraryDrill>(
       active: true,
       scale_levels: (scaleByDrill.get(values.drill_id) ?? []).map((level) => ({
         ...level,
-        is_starting_point: level.is_starting_point.toLowerCase() === 'true',
+        is_starting_point: parseBoolean(level.is_starting_point) === true,
       })),
       stop_rules: stopByDrill.get(values.drill_id) ?? [],
       universal_stop_rules: [],
@@ -164,6 +169,7 @@ async function sweep(
   editItems: (templateId: string, items: CommittedItem[]) => CommittedItem[] = (_id, items) => items,
 ): Promise<{ checked: number; refusals: Refusal[] }> {
   const refusals: Refusal[] = [];
+  let planned = 0;
   // Every template a fresh load leaves current: the loader writes active = true
   // for a new template (specs/templates.ts systemColumn('active', 'true')).
   for (const { values: template } of templateRows.rows) {
@@ -181,6 +187,7 @@ async function sweep(
     })) as unknown as WorkoutTemplateItemWithDrillHead[];
     const allTyped = items.length > 0 && items.every((item) => item.drill_id === null);
     const plan = await planTemplateIssue(ORG, items);
+    planned += 1;
     for (const refused of plan.refused) {
       refusals.push({
         template_id: template.template_id,
@@ -193,7 +200,7 @@ async function sweep(
       });
     }
   }
-  return { checked: templateRows.rows.length, refusals };
+  return { checked: planned, refusals };
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +327,7 @@ const TYPED_IN_MIXED: Record<string, number[]> = {
 /**
  * Library drills that refuse the issue, each waiting on coach text: no
  * committed source holds a cue for it, so none is filled in. The cue rule is
- * OD-2026-10-06-026 ruling 2, kept by OD-2026-11-19-005. Template id -> the
+ * OD-2026-10-06-026 ruling 2 (the Overwatch note recorded in OD-2026-11-19-005 keeps it). Template id -> the
  * refusing drills' lineage keys. An entry leaves this list when its drill can
  * be adopted. Lane RS (#2008) gave sourced cues to Wrap Under Supervision,
  * Seated Combination Work and Technique-Only Fitness Session, which took four
@@ -359,6 +366,13 @@ function expectedSignature() {
 }
 
 describe('committed workout templates against the issue plan (fresh load)', () => {
+  it('holds no template without steps, which the issue refuses before its plan (WORKOUT_TEMPLATE_EMPTY)', () => {
+    // workoutTemplates.ts issueWorkoutTemplate: "This workout template has no steps to issue." The plan this
+    // suite runs never sees that refusal, so the committed data is held to having none instead.
+    const empty = templateRows.rows.filter(({ values }) => (itemsByTemplate.get(values.template_id) ?? []).length === 0);
+    expect(empty.map(({ values }) => values.template_id)).toEqual([]);
+  });
+
   it('reads committed drills that are each the first version of their own lineage', () => {
     // The head rule (a step names its lineage's newest version) needs no
     // resolving while this holds; a committed second version would need it.
@@ -398,7 +412,7 @@ describe('committed workout templates against the issue plan (fresh load)', () =
       const template = templateRows.rows.find(({ values }) => !refused.has(values.template_id)
         && (itemsByTemplate.get(values.template_id) ?? []).some((item) => {
           const drill = item.drill_id ? library.get(item.drill_id) : undefined;
-          return drill !== undefined && drill.discipline !== 'conditioning';
+          return drill !== undefined && !isConditioningLabel(drill.discipline);
         }));
       if (!template) throw new Error('no issuable template with a technique drill to break');
       return template.values.template_id;
@@ -407,7 +421,7 @@ describe('committed workout templates against the issue plan (fresh load)', () =
     it('a technique drill that loses its cues', async () => {
       const templateId = issuable();
       const item = (itemsByTemplate.get(templateId) ?? []).find((candidate) =>
-        candidate.drill_id && library.get(candidate.drill_id)?.discipline !== 'conditioning');
+        candidate.drill_id && !isConditioningLabel(library.get(candidate.drill_id)?.discipline));
       const drill = library.get(item?.drill_id ?? '');
       if (!drill) throw new Error('unreachable: issuable() picked a template with a technique drill');
       const cues = drill.cues;
