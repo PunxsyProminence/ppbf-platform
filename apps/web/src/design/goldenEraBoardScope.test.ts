@@ -27,7 +27,7 @@ import { readDesignSystemCss, DESIGN_SYSTEM_ENTRY } from './readDesignSystemCss'
  *        and prints bone display type onto the parchment masthead — the light
  *        ground `on-plaster` exists to answer;
  *      - no rule names `.stamp`. Both card families on this route carry one
- *        (the seat directory's "Seat held" governance refusal and the aggregate
+ *        (the seat directory's "Not your seat" governance refusal and the aggregate
  *        panel's "Suppressed" k-anonymity withholding), and on a dark material
  *        the sheet resolves that mark to `--locked-ink`. Restyling
  *        it — or re-grounding the card under it — is a safety-semantics change
@@ -342,9 +342,12 @@ describe('the 008 mockup did not delete or invent board controls', () => {
     expect(SUMMARY).toContain('Measured; at least');
   });
 
-  test('the seat-held refusal is still ink on the page', () => {
+  // Lane BT, BOA-06: the refusal is worded by the viewer's access ("Not your seat"), not by
+  // occupancy; it is still the same static ink stamp.
+  test('the seat refusal is still ink on the page', () => {
     expect(DIRECTORY).toContain('stamp stamp--flat');
-    expect(DIRECTORY).toContain('Seat held');
+    expect(DIRECTORY).toContain('Not your seat');
+    expect(DIRECTORY).not.toContain('Seat held');
   });
 
   test('the aggregate boundary statement is still the shared constant', () => {

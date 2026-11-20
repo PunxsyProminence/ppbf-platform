@@ -41,7 +41,7 @@ function metricLabel(metric: CountMetric | undefined): string {
     return String(metric.count);
   }
   if (metric.status === 'insufficient_data') {
-    return 'n/a';
+    return 'Suppressed';
   }
   return '—';
 }

@@ -421,18 +421,18 @@
     "id": "app/api/pilot/admin/accounts/deactivate/route.ts#POST",
     "method": "POST",
     "path": "/api/pilot/admin/accounts/deactivate",
-    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin]) + target role in coach/staff/volunteer + not self + same organization",
+    "gate": "requireMicrosoftAuthenticatedPrincipal + requireRole([organization_admin]) + target role in coach/staff/volunteer/athlete + not self + same organization",
     "rolesAdmitted": [
       "organization_admin",
       "admin"
     ],
-    "athleteData": false,
+    "athleteData": true,
     "writes": true,
     "coachReachRule": "n/a",
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Owner ruling OD-2026-10-07-009: an organization admin deactivates/reactivates a coach, staff or volunteer in their own gym. The target role is read in the caller's organization (getAccountRoleInOrganization) and must be in DEACTIVATABLE_ROLES; organization_admin, admin, platform_owner, athlete, parent, board and the caller's own account are refused (403), an unknown account 404. setAccountActiveStatus revokes the target's sessions; audited.",
+    "notes": "Owner rulings OD-2026-10-07-009 and OD-2026-11-19-025: an organization admin deactivates/reactivates a coach, staff member, volunteer or athlete in their own gym. The target role is read in the caller's organization (getAccountRoleInOrganization) and must be in DEACTIVATABLE_ROLES; organization_admin, admin, platform_owner, parent, board and the caller's own account are refused (403), an unknown account 404, an athlete with no PIN yet 409. setAccountActiveStatus revokes the target's sessions and, switching off, supersedes unredeemed activation codes (athlete login state); audited.",
     "mechanical": {
       "sessionGates": [
         "requireMicrosoftAuthenticatedPrincipal"

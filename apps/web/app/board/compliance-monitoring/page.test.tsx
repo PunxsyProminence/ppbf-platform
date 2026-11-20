@@ -101,7 +101,9 @@ test('suppresses a bucket drawn from fewer than five athletes', async () => {
 
   const critical = tile('Critical');
   expect(within(critical).getByText('Suppressed')).toBeTruthy();
-  expect(within(critical).getByText(/Fewer than 5 athletes are involved/)).toBeTruthy();
+  expect(within(critical).getByText('Fewer than 5 athletes are behind this figure, so it is suppressed rather than reduced.')).toBeTruthy();
+  // Lane BT, BOA-19: one word for the state on screen, "suppressed", never "withheld".
+  expect(document.body.textContent).not.toMatch(/withheld/i);
   expect(critical.textContent).not.toMatch(/\b1\b/);
 
   expect(within(tile('High')).getByText('13')).toBeTruthy();

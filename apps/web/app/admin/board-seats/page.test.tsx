@@ -117,6 +117,8 @@ it('shows every seat, its holder, its additional holders, and the unfilled ones'
 
   await screen.findByText('Board Chair');
   expect(screen.getAllByText('Dana').length).toBeGreaterThan(0);
+  // Lane BT, BOA-19: a figure under five athletes is "suppressed", the board's one word for it.
+  expect(screen.getByText(/any figure covering fewer than five athletes is\s+suppressed rather than shown\./)).toBeTruthy();
   expect(screen.getAllByText('Holds the seat').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Rosa').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Additional holder').length).toBeGreaterThan(0);

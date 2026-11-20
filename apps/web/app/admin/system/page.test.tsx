@@ -39,6 +39,16 @@ jest.mock('@/src/server/pilot/pilotOpsReadiness', () => ({
   buildPilotOpsReadinessReport: () => ({ shadowWorker: { enabled: readiness.workerOn } }),
 }));
 
+// Lane BT, BOA-13: the Stripe platform config the registration section reads (a yes or no).
+const payment: { connectClientId: string | null; platformSecretKey: string | null; webhookSecret: string | null } = {
+  connectClientId: null,
+  platformSecretKey: null,
+  webhookSecret: null,
+};
+jest.mock('@/src/server/pilot/paymentConnect', () => ({
+  readPaymentPlatformConfig: () => ({ ...payment }),
+}));
+
 const WORKFLOWS_DIR = path.join(__dirname, '../../../../../.github/workflows');
 const SCRIPTS_DIR = path.join(__dirname, '../../../scripts');
 
@@ -85,6 +95,9 @@ function tableRows(headingName: RegExp): HTMLElement[] {
 beforeEach(() => {
   principal.role = 'platform_owner';
   readiness.workerOn = false;
+  payment.connectClientId = null;
+  payment.platformSecretKey = null;
+  payment.webhookSecret = null;
 });
 
 test('every inventory route is listed, and none claims a runtime status', async () => {
@@ -169,4 +182,46 @@ test('the page can run or change nothing, and prints no audit confidence or flag
   expect(document.querySelector('input, select, textarea')).toBeNull();
   const headers = screen.getAllByRole('columnheader').map((header) => header.textContent ?? '');
   expect(headers.some((header) => /confidence|missing gate|looks wrong|certainty/i.test(header))).toBe(false);
+});
+
+// Lane BT, BOA-13 (Overwatch Q7 A): the Stripe platform registration steps moved here from the
+// gym admin's Payment Accounts page. They are shown to the platform owner, on this server-rendered
+// view, until all three Container App secrets are set; a configured value is never printed.
+describe('Stripe platform account registration', () => {
+  const HEADING = 'Platform account registration (done once by PPBF)';
+
+  test('while unregistered, the platform owner gets the exact walkthrough, with no control', async () => {
+    await renderAs('platform_owner');
+
+    const section = screen.getByRole('heading', { name: HEADING }).closest('section') as HTMLElement;
+    const steps = within(section).getAllByRole('listitem');
+    expect(steps).toHaveLength(6);
+    for (const name of ['PAYMENT_CONNECT_CLIENT_ID', 'PAYMENT_PLATFORM_SECRET_KEY', 'PAYMENT_PLATFORM_WEBHOOK_SECRET', 'account.application.deauthorized']) {
+      expect(within(section).getByText(name)).toBeTruthy();
+    }
+    expect(steps[0].textContent).toContain('connect to it later from Payment Accounts.');
+    expect(steps[5].textContent).toMatch(/^The Connect buttons on Payment Accounts now work\./);
+    expect(section.textContent).not.toMatch(/buttons above|Reload this page/);
+    expect(within(section).getByText(/nothing charges through these accounts yet\. Configuration only\s+opens onboarding\./)).toBeTruthy();
+    expect(section.querySelector('a, button, form, input, select, textarea')).toBeNull();
+  });
+
+  test.each([
+    ['one value set', { connectClientId: 'ca_value_never_shown', platformSecretKey: null, webhookSecret: null }],
+    ['two values set', { connectClientId: 'ca_value_never_shown', platformSecretKey: 'sk_value_never_shown', webhookSecret: null }],
+  ])('with %s it still shows, and prints no configured value', async (_label, config) => {
+    Object.assign(payment, config);
+    await renderAs('platform_owner');
+
+    expect(screen.getByRole('heading', { name: HEADING })).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/value_never_shown/);
+  });
+
+  test('once all three are set, the section is gone and no value is printed', async () => {
+    Object.assign(payment, { connectClientId: 'ca_value_never_shown', platformSecretKey: 'sk_value_never_shown', webhookSecret: 'whsec_value_never_shown' });
+    await renderAs('platform_owner');
+
+    expect(screen.queryByRole('heading', { name: HEADING })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/value_never_shown|PAYMENT_PLATFORM_SECRET_KEY/);
+  });
 });

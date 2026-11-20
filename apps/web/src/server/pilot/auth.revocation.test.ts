@@ -119,16 +119,40 @@ describe('session revocation after provider/role/organization changes', () => {
     expect(revokeCalls()[0][1]).toEqual(['acct-1']);
   });
 
+  // The account UPDATE returns the login's role (pilot.accounts.role, NOT NULL
+  // and checked to the PilotRole values), and the switch asks the credential
+  // policy about it.
+  function codeSupersedeCalls() {
+    return currentClient.query.mock.calls.filter(([sql]) => sql.includes('pilot.account_activation_tokens'));
+  }
+
   test('setAccountActiveStatus revokes sessions on deactivation', async () => {
-    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-1' }] });
+    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-1', role: 'coach' }] });
     await setAccountActiveStatus('acct-1', 'org-1', false);
     expect(revokeCalls()).toHaveLength(1);
+    // A staff switch runs no activation-code statement (OD-2026-11-19-025 build).
+    expect(codeSupersedeCalls()).toHaveLength(0);
   });
 
   test('setAccountActiveStatus does not revoke on activation', async () => {
-    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-1' }] });
+    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-1', role: 'coach' }] });
     await setAccountActiveStatus('acct-1', 'org-1', true);
     expect(revokeCalls()).toHaveLength(0);
+    expect(codeSupersedeCalls()).toHaveLength(0);
+  });
+
+  test('switching an athlete off supersedes unredeemed codes and revokes sessions (OD-2026-11-19-025)', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-a', role: 'athlete' }] });
+    await setAccountActiveStatus('acct-a', 'org-1', false);
+    expect(codeSupersedeCalls()).toHaveLength(1);
+    expect(revokeCalls()).toHaveLength(1);
+  });
+
+  test('switching an athlete back on revokes any session row still open, and supersedes nothing', async () => {
+    currentClient.query.mockResolvedValue({ rows: [{ account_id: 'acct-a', role: 'athlete' }] });
+    await setAccountActiveStatus('acct-a', 'org-1', true);
+    expect(revokeCalls()).toHaveLength(1);
+    expect(codeSupersedeCalls()).toHaveLength(0);
   });
 
   test('setOrganizationStatus revokes every session in that organization when it becomes inactive', async () => {

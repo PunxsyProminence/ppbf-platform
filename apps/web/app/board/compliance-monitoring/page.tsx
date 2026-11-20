@@ -50,7 +50,7 @@ function violationDisplay(
   if (metric.status === 'insufficient_data') {
     return {
       value: 'Suppressed',
-      note: `Fewer than ${minimumCohortSize} athletes are involved, so the count is withheld.`,
+      note: `Fewer than ${minimumCohortSize} athletes are behind this figure, so it is suppressed rather than reduced.`,
     };
   }
 

@@ -53,9 +53,7 @@ const EXCLUDED: Record<string, string> = {
   '/coach/calibration': 'compatibility redirect to /teach-shadow/annotation, where Clip Annotation now lives -- not a second annotation surface',
   '/guardian': 'permanent redirect to /parent/dashboard (UX audit A-10: one parent front door) -- the door is the Parent Hub itself',
   '/guardian/dashboard': 'permanent redirect to /parent/dashboard, as /guardian',
-
-  // Reads no data. Door goes in when it is wired to something real.
-  '/director/dashboard': 'signpost only: the mock incident center was deleted; this route now just points at /admin/escalations and /admin/safety-review, which already have their own doors',
+  '/director/dashboard': 'redirect to /admin/escalations, after its organization_admin gate (lane BT, BOA-23) -- the door is the queue itself',
 };
 
 /**

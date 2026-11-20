@@ -10,6 +10,7 @@ import { listFloorValidations } from './drillFloorValidations';
 import {
   getDrillWithDetail,
   getOtherVersionAdoption,
+  labelIsDraft,
   listReferenceLifecycles,
   type DrillWithDetail,
 } from './drillLibraryV3';
@@ -222,6 +223,54 @@ export async function getWorkoutTemplateWithItems(
   );
 
   return { template, items };
+}
+
+/**
+ * The template fields the opened template shows, by their field_labels key:
+ * coaches and admins see the AI-draft mark beside each drafted one (lane ED-UI
+ * PR3, Q5 = A; OW25-57). 'items' is the item list, as an edit labels it.
+ */
+export const TEMPLATE_MARKED_FIELDS = [
+  'name', 'session_type', 'difficulty', 'age_band', 'duration_minutes', 'intent', 'requires_coach_authorization', 'coach_notes', 'items',
+] as const;
+export type TemplateMarkedField = (typeof TEMPLATE_MARKED_FIELDS)[number];
+/** As a drill's (drillLibraryV3.ts DrillFieldDrafts): true a draft, false labelled and not one, null NOT CHECKED. */
+export type TemplateFieldDrafts = Record<TemplateMarkedField, boolean | null> & { labelled: boolean | null };
+
+/** One version's field_labels read by the drill reader's rule (labelIsDraft). Exported for its test. */
+export function templateFieldDrafts(fieldLabels: unknown, labelled: boolean | null): TemplateFieldDrafts {
+  const labels = typeof fieldLabels === 'object' && fieldLabels !== null && !Array.isArray(fieldLabels)
+    ? (fieldLabels as Record<string, unknown>)
+    : {};
+  const fields = Object.fromEntries(TEMPLATE_MARKED_FIELDS.map((field) => [field, labelIsDraft(labels[field])]));
+  return { ...(fields as Record<TemplateMarkedField, boolean | null>), labelled };
+}
+
+/**
+ * STAFF ONLY: the template GET calls this in its coach and organization-admin
+ * branch alone (workout-templates/route.ts), so no other reader is sent it. The
+ * labels of this template VERSION (kind 'workout_template', its lineage and
+ * version: contentLabels.ts, written by the import and by workoutTemplateEdit.ts).
+ * A failed read is "not checked" and the template still answers; before the
+ * labels table exists (42P01) no version has a row.
+ */
+export async function readWorkoutTemplateFieldDrafts(
+  organizationId: string,
+  template: Pick<WorkoutTemplateRow, 'template_id' | 'lineage_id' | 'version'>,
+): Promise<TemplateFieldDrafts> {
+  try {
+    const row = await queryOne<{ field_labels: unknown }>(
+      `select field_labels from pilot.content_record_labels
+       where organization_id = $1 and target_kind = 'workout_template' and target_lineage_id = $2 and target_version = $3`,
+      [organizationId, template.lineage_id, template.version],
+    );
+    return templateFieldDrafts(row?.field_labels ?? null, Boolean(row));
+  } catch (error) {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code === '42P01') return templateFieldDrafts(null, false);
+    console.error({ event: 'template-field-drafts-read-failed', template_id: template.template_id, ...(typeof code === 'string' ? { code } : {}) });
+    return templateFieldDrafts(null, null);
+  }
 }
 
 // ---------------------------------------------------------------------------

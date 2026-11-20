@@ -111,26 +111,25 @@ test('the remaining-steps checklist renders and the page states the no-charging 
   expect(screen.getByText(/Nothing charges until\s+compliance sign-off/)).toBeTruthy();
 });
 
-test('while the platform account is unregistered, the slot shows the owner the exact setup walkthrough', async () => {
-  global.fetch = mockFetch({ remainingSteps: ['Register the platform Stripe account.'] });
+// Lane BT, BOA-13: the Stripe platform registration steps name the secret keys and the
+// Container App secrets, so they are the platform owner's (on System's platform view,
+// app/admin/system/page.test.tsx). The gym admin's page, read by organization admins,
+// carries none of them even while the platform account is unregistered.
+test('while the platform account is unregistered, the gym admin is shown no secret and no setup walkthrough', async () => {
+  const firstStep = "PPBF registers the platform's Stripe account and Connect OAuth client — done once, for every organization.";
+  global.fetch = mockFetch({ remainingSteps: [firstStep] });
 
   await act(async () => {
     render(<PaymentsSettingsPage />);
   });
 
-  expect(screen.getByText('Platform account registration (done once by PPBF)')).toBeTruthy();
-  expect(screen.queryByText(/one-time, owner/)).toBeNull();
-  expect(screen.getByText(/the Connect buttons above now work/)).toBeTruthy();
-  // The three secret names are stated verbatim -- the owner should never
-  // have to guess what Azure wants.
-  expect(screen.getByText('PAYMENT_CONNECT_CLIENT_ID')).toBeTruthy();
-  expect(screen.getByText('PAYMENT_PLATFORM_SECRET_KEY')).toBeTruthy();
-  expect(screen.getByText('PAYMENT_PLATFORM_WEBHOOK_SECRET')).toBeTruthy();
-  expect(screen.getByText('account.application.deauthorized')).toBeTruthy();
-  // And the boundary holds even here, without naming a checkout that does
-  // not exist (paymentSetup.ts: no charging, no checkout).
-  expect(screen.getByText(/nothing charges through these accounts yet\. Configuration only\s+opens onboarding\./)).toBeTruthy();
-  expect(screen.queryByText(/feature-flagged/)).toBeNull();
+  expect(screen.getByText('Remaining setup')).toBeTruthy();
+  expect(screen.getByText(firstStep)).toBeTruthy();
+  expect(screen.queryByText(/Platform account registration/)).toBeNull();
+  const text = document.body.textContent ?? '';
+  for (const secret of ['PAYMENT_CONNECT_CLIENT_ID', 'PAYMENT_PLATFORM_SECRET_KEY', 'PAYMENT_PLATFORM_WEBHOOK_SECRET', 'sk_test_', 'sk_live_', 'whsec_', 'secret key', 'signing secret']) {
+    expect(text).not.toContain(secret);
+  }
 });
 
 test('a failed read never says a lane is "not connected" or offers a first connect', async () => {

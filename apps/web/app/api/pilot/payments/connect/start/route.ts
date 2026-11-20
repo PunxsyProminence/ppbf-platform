@@ -36,10 +36,12 @@ export async function GET(request: NextRequest) {
     const config = readPaymentPlatformConfig();
     if (!config.connectClientId || !config.platformSecretKey) {
       // Honest, not broken: the platform account has not been registered yet.
+      // The gym admin reads this body (the Connect button is a plain link), so it
+      // names no secret; the steps are on System's platform view (lane BT, BOA-13).
       return NextResponse.json(
         {
           ok: false,
-          error: 'The platform Stripe account is not registered yet. The connect button lights up once PAYMENT_CONNECT_CLIENT_ID and PAYMENT_PLATFORM_SECRET_KEY exist.',
+          error: 'The platform Stripe account is not registered yet.',
         },
         { status: 503 },
       );

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import ClusterNav from '@/components/ClusterNav';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import ReturnPlanBlock, { type Outcome } from '@/components/ReturnPlanBlock';
@@ -285,6 +286,7 @@ export default function CoachInjuriesPage() {
           <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
             Injury Record
           </h1>
+          <ClusterNav cluster="clinic" />
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             Record what the athlete, a parent, a coach or a clinician reported, and say which. This is a record, not a
             diagnosis, and it does not stop training: place a Training Hold for that, then link it here.

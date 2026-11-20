@@ -312,16 +312,22 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
                   fields were the only thing carrying it before. */}
               <h2 className="t-command">{BOARD_RECORD_NOT_HELD}</h2>
               <p className="t-body mt-[var(--s3)]">
-                None of the following exists as a record here, for this seat or any other. There is no figure to load and none is being withheld.
+                None of the following exists as a record here, for this seat or any other. There is no figure to load and none is being suppressed.
               </p>
               <ul className="t-body mt-[var(--s3)] space-y-[var(--s1)]">
                 <li>- Board actions and their status</li>
                 <li>- Policy reviews and due dates</li>
                 <li>- Meeting and compliance calendars</li>
                 <li>- Risk register entries</li>
-                <li>- Financial reserves, grants, and budgets</li>
+                <li>- Financial reserves and budgets</li>
                 <li>- Annual filings</li>
               </ul>
+              {/* Lane BT, BOA-16: grants are not "not stored": /admin/grants keeps the
+                  gym's grant obligations, written by the gym admin only
+                  (grant-obligations route, GRANT_ROLES). Named by its page
+                  title; no link, because that page does not open for a board
+                  seat. */}
+              <p className="t-body mt-[var(--s3)]">Grant obligations are kept by the gym admin, on Grant Obligations.</p>
             </section>
 
             <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
