@@ -5,6 +5,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AnnouncementBanner from './AnnouncementBanner';
 import ArmedButton from './ArmedButton';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
+import PainReportsPanel, {
+  PAIN_PROVENANCE,
+  painDetailAbsent,
+  painObservedLabel,
+  painReportTime,
+  painSeverityTone,
+} from './PainReportsPanel';
+import { usePainReports } from './usePainReports';
 import AthleteGoalsReadOnly from './AthleteGoalsReadOnly';
 import CapacityNotesPanel from './CapacityNotesPanel';
 import GymTvPanel from './GymTvPanel';
@@ -32,7 +40,6 @@ import {
   formatGymDateShort,
   formatGymDateTimeShort,
   formatGymDay,
-  formatGymStamp,
   formatGymTimeOfDay,
 } from '@/src/lib/gymTime';
 import { formatCalendarDay } from '@/lib/calendarDay';
@@ -402,55 +409,6 @@ interface ShadowObservationItem {
   review_state: 'pending_review' | 'approved' | 'rejected' | 'promoted' | 'unknown';
   created_at: string;
 }
-
-// One pain report, already filtered server-side to the athletes this coach is
-// authorized for. Every nullable field is a detail the REPORTER did not supply
-// -- render it as "not stated" and never as a value.
-//
-// NOT NECESSARILY SELF-REPORTED. The observations route admits athlete, coach,
-// organization_admin and admin, and this card said "Self-reported by the
-// athlete" for all four until 2026-08-24. A coach writing down what they
-// observed was shown to the next coach as the child's own words, which changes
-// what that coach does with it.
-interface CoachPainReport {
-  nearMissId: string;
-  athleteId: string;
-  athleteName: string | null;
-  severity: 'low' | 'moderate' | 'high' | 'critical';
-  painScore: number | null;
-  location: string | null;
-  painType: string | null;
-  observedAt: string | null;
-  recordedAt: string | null;
-  /** Bounded classification from the server. 'unknown' on reports written
-   *  before provenance was persisted -- see painReportAlert.ts. */
-  reporter: 'athlete' | 'coach' | 'staff_admin' | 'unknown';
-}
-
-/** What a missing detail is called, which depends on who was asked. */
-function painDetailAbsent(reporter: CoachPainReport['reporter']): string {
-  return reporter === 'athlete' ? 'Not stated by the athlete' : 'Not stated';
-}
-
-/** The label over the time the report refers to. */
-function painObservedLabel(reporter: CoachPainReport['reporter']): string {
-  return reporter === 'athlete' ? 'Athlete reported it happened' : 'Reported as happening';
-}
-
-/* The provenance sentence under each card. Only an athlete's own report is
-   described as self-reported; a staff-entered one says so and says it is not a
-   medical assessment; an unestablished reporter says that rather than
-   defaulting to the athlete. */
-const PAIN_PROVENANCE: Record<CoachPainReport['reporter'], string> = {
-  athlete:
-    'Self-reported by the athlete. This is not a coach assessment and not a medical assessment.',
-  coach:
-    'Entered by a coach, not self-reported by the athlete. This is an observation, not a medical assessment.',
-  staff_admin:
-    'Entered by staff, not self-reported by the athlete. This is an observation, not a medical assessment.',
-  unknown:
-    'The reporter is not recorded. Do not read this as self-reported by the athlete. This is an observation, not a medical assessment.',
-};
 
 interface CoachBarrierReport {
   note_id: string;
@@ -1017,24 +975,6 @@ function taskStatusTone(status: CoachTask['status']): BadgeTone {
   return 'cleared';
 }
 
-// --locked means a medical stop (OD-2026-09-29-001). A pain report is not one,
-// whatever its severity (Jason, 2026-10-03), so critical, high and moderate share
-// the restricted rung; the badge label still names the severity.
-function painSeverityTone(severity: CoachPainReport['severity']): BadgeTone {
-  if (severity === 'critical' || severity === 'high' || severity === 'moderate') return 'restricted';
-  return 'monitor';
-}
-
-// A stored timestamp the browser cannot parse is shown verbatim rather than as
-// "Invalid Date": the raw value is at least something a coach can report.
-function painReportTime(value: string | null): string {
-  if (!value) {
-    return 'Not recorded';
-  }
-  const parsed = new Date(value);
-  return formatGymStamp(parsed) ?? value;
-}
-
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const activeTabLabel = COACH_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Dashboard';
@@ -1078,7 +1018,9 @@ export default function CoachWorkspace() {
   // while a different one's error is still on screen.
   const [intakeActionBusyId, setIntakeActionBusyId] = useState<string | null>(null);
   const [intakeActionErrors, setIntakeActionErrors] = useState<Record<string, string>>({});
-  const [painReports, setPainReports] = useState<CoachPainReport[]>([]);
+  // Athlete pain reports: the one read the list and the floor board share (lane U2-6b-2).
+  const painRead = usePainReports();
+  const painReports = painRead.reports;
   // The escalation inbox. Loading, failed, and empty are distinct: a failed
   // read rendered as "no escalations" would tell a coach their athletes are
   // clear when nobody knows.
@@ -1091,10 +1033,6 @@ export default function CoachWorkspace() {
   const [barrierReportsTruncated, setBarrierReportsTruncated] = useState(false);
   const [barrierReportsLoading, setBarrierReportsLoading] = useState(true);
   const [barrierReportsError, setBarrierReportsError] = useState('');
-  const [painReportWindowDays, setPainReportWindowDays] = useState<number | null>(null);
-  const [painReportsTruncated, setPainReportsTruncated] = useState(false);
-  const [painReportsLoading, setPainReportsLoading] = useState(true);
-  const [painReportsError, setPainReportsError] = useState('');
 
   /* The coach's session in progress, from /api/pilot/session-scripts/runs.
      Four states, not two: 'loading' and 'unavailable' must never collapse into
@@ -1501,41 +1439,6 @@ export default function CoachWorkspace() {
     ? sessionNoteRead
     : null;
 
-  // Athlete pain reports. The write path refuses to store a pain report it
-  // could not raise a coach-visible record for, so anything returned here is a
-  // child who told the platform they were hurting and was told a coach would
-  // see it. The server filters to the athletes this coach is authorized for.
-  const loadPainReports = useCallback(async () => {
-    setPainReportsLoading(true);
-    try {
-      const response = await fetch(`${apiBase()}/api/pilot/coach/pain-reports`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error('Unable to load athlete pain reports');
-      }
-
-      const payload = (await response.json()) as {
-        painReports?: CoachPainReport[];
-        windowDays?: number;
-        truncated?: boolean;
-      };
-      setPainReports(payload.painReports ?? []);
-      setPainReportWindowDays(typeof payload.windowDays === 'number' ? payload.windowDays : null);
-      setPainReportsTruncated(payload.truncated === true);
-      setPainReportsError('');
-    } catch (error) {
-      // Never fall through to the "no reports" line: a coach reading that after
-      // a failed read would believe no child had reported pain.
-      setPainReportsError(error instanceof Error ? error.message : 'Unable to load athlete pain reports');
-      setPainReports([]);
-      setPainReportsTruncated(false);
-    } finally {
-      setPainReportsLoading(false);
-    }
-  }, []);
-
   // Guardian barrier reports. The parent form's copy is "Sent to your
   // child's coach" -- this panel is what makes that true. The server filters
   // to the athletes this coach is authorized for.
@@ -1811,13 +1714,12 @@ export default function CoachWorkspace() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadPainReports();
     void loadBarrierReports();
     void loadLiveRun();
     void loadTodayClasses();
     void loadCredentials();
     void loadDevelopment();
-  }, [loadPainReports, loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials, loadDevelopment]);
+  }, [loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials, loadDevelopment]);
 
   useEffect(() => {
     void (async () => {
@@ -2740,11 +2642,11 @@ export default function CoachWorkspace() {
     },
     {
       name: 'Pain reports',
-      state: painReportsLoading ? 'loading' : painReportsError ? 'error' : 'loaded',
-      error: painReportsError,
+      state: painRead.loading ? 'loading' : painRead.error ? 'error' : 'loaded',
+      error: painRead.error,
       failureMeaning: 'Pain reports may exist that are not shown here. Do not read this as "no athlete reported pain" -- ask the floor.',
-      onRetry: () => void loadPainReports(),
-      truncatedNote: painReportsTruncated
+      onRetry: painRead.reload,
+      truncatedNote: painRead.truncated
         ? 'More pain reports matched than are listed; the rest are in each athlete\'s near-miss history on the decision loop.'
         : undefined,
     },
@@ -2836,7 +2738,7 @@ export default function CoachWorkspace() {
               isInactive: athlete.inactive === true,
             }))}
             readinessState={readinessFeedState}
-            painWindowDays={painReportWindowDays}
+            painWindowDays={painRead.windowDays}
             athletesState={athletesLoading ? 'loading' : athletesError ? 'error' : 'loaded'}
             athletesError={athletesError}
             onSelectAthlete={showAthleteOnRoster}
@@ -2852,125 +2754,10 @@ export default function CoachWorkspace() {
         {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
             everything else on the page. A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
-            they have to know to open. Drawn --restricted, not --locked: "A pain
-            report is not a medical stop at any severity" (OD-2026-10-03-017), and
-            --locked is the medical stop (UXB-10). */}
-        <section id="coach-dashboard-details" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
-          <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-            <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--restricted-ink)]">
-              Athlete Pain Reports
-            </h2>
-            <button
-              type="button"
-              onClick={() => void loadPainReports()}
-              className="btn btn--ghost"
-              aria-label="Refresh athlete pain reports"
-            >
-              Refresh
-            </button>
-          </div>
-
-          {painReportsLoading && (
-            <p className="text-xs text-[color:var(--bone-300)]">Checking for athlete pain reports...</p>
-          )}
-
-          {!painReportsLoading && painReportsError && (
-            <div className="border-2 border-[var(--restricted)] bg-[color-mix(in_srgb,var(--restricted)_22%,var(--hide-950))]/20 p-3">
-              <p className="text-sm font-semibold text-[color:var(--restricted-ink)]">{painReportsError}</p>
-              <p className="mt-1 text-xs text-[color:var(--restricted-ink)]">
-                Pain reports may exist that are not shown here. Do not read this as &quot;no athlete
-                reported pain&quot; -- ask the floor.
-              </p>
-            </div>
-          )}
-
-          {!painReportsLoading && !painReportsError && painReports.length === 0 && (
-            <p className="text-xs text-[color:var(--bone-400)]">
-              No athlete on your roster has reported pain
-              {painReportWindowDays === null ? '' : ` in the last ${painReportWindowDays} days`}. A report
-              appears here as soon as an athlete submits one.
-            </p>
-          )}
-
-          {!painReportsLoading && !painReportsError && painReports.length > 0 && (
-            <div className="space-y-3">
-              {painReportsTruncated && (
-                <p className="text-xs text-[var(--restricted-ink)]">
-                  More reports matched than are listed here. The highest-severity ones are shown first;
-                  the rest are in each athlete&apos;s near-miss history on the decision loop.
-                </p>
-              )}
-
-              {painReports.map((report) => (
-                <article key={report.nearMissId} className="mat-leather--raised rounded-[var(--r-md)] border-2 border-[color:var(--restricted)] p-[var(--s3)] space-y-[var(--s3)]">
-                  <div className="flex flex-wrap items-start justify-between gap-[var(--s3)]">
-                    <div>
-                      <p className="text-[length:var(--t-md)] font-black text-[color:var(--bone-100)]">
-                        {report.athleteName ?? 'Athlete name unavailable'}
-                      </p>
-                      <p className="t-data text-[color:var(--bone-400)]">Athlete ID {report.athleteId}</p>
-                    </div>
-                    <StatusBadge
-                      tone={painSeverityTone(report.severity)}
-                      label={painScoreLabel(report.painScore)}
-                    />
-                  </div>
-
-                  <dl className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
-                    <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Body location</dt>
-                      <dd className={report.location ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
-                        {report.location ?? painDetailAbsent(report.reporter)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Pain type</dt>
-                      <dd className={report.painType ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
-                        {report.painType ?? painDetailAbsent(report.reporter)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">{painObservedLabel(report.reporter)}</dt>
-                      <dd className={report.observedAt ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
-                        {painReportTime(report.observedAt)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="font-mono uppercase tracking-[0.08em] text-[color:var(--brass-300)]">Recorded</dt>
-                      <dd className={report.recordedAt ? 'text-[color:var(--bone-200)]' : 'text-[color:var(--bone-400)]'}>
-                        {painReportTime(report.recordedAt)}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <p className="text-xs text-[color:var(--bone-300)]">
-                    {PAIN_PROVENANCE[report.reporter]}
-                  </p>
-                </article>
-              ))}
-
-              <div className="flex flex-wrap items-center gap-3">
-                {boardShown ? (
-                  <p className="t-data text-[color:var(--bone-300)]">
-                    Record what you did from Needs You Now on the floor board above.
-                  </p>
-                ) : (
-                  <Link
-                    href="/coach/decision-loop"
-                    className="btn"
-                  >
-                    Record What You Did
-                  </Link>
-                )}
-                <p className="t-muted">
-                  There is no clear button: a report stays here until it ages out of the window, and the
-                  permanent record is the athlete&apos;s near-miss history, which nothing on this screen
-                  can remove.
-                </p>
-              </div>
-            </div>
-          )}
-        </section>
+            they have to know to open. The panel (PainReportsPanel, lane U2-6b-2)
+            is drawn --restricted, not --locked: "A pain report is not a medical
+            stop at any severity" (OD-2026-10-03-017). */}
+        <PainReportsPanel read={painRead} boardShown={boardShown} />
 
         {/* SAFETY ESCALATIONS -- also outside the tab switch, directly under
             the pain reports: an escalation is what a near miss, pain report,

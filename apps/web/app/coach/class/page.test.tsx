@@ -8,7 +8,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachClassPage from './page';
 
@@ -76,6 +76,15 @@ function plainRun(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const PAIN_EMPTY = { ok: true, windowDays: 7, truncated: false, painReports: [] };
+function painRow(id: string, name: string) {
+  return {
+    nearMissId: id, athleteId: `ath_${id}`, athleteName: name, severity: 'moderate', painScore: 5,
+    location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'athlete',
+  };
+}
+const painReads = (fetchMock: jest.Mock) => fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/pilot/coach/pain-reports'));
+
 /** The page's own reads and the start; everything the console reads answers empty. */
 function serve(handlers: {
   live?: () => Response;
@@ -83,6 +92,7 @@ function serve(handlers: {
   start?: (body: Record<string, unknown>) => Response;
   patch?: (body: Record<string, unknown>) => Response;
   tvs?: () => Response;
+  pain?: () => Response | Promise<Response>;
 } = {}) {
   const posts: Array<Record<string, unknown>> = [];
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -107,6 +117,7 @@ function serve(handlers: {
     if (url.includes('/api/pilot/gym-tvs')) return handlers.tvs ? handlers.tvs() : jsonResponse({ tvs: [] });
     if (url.endsWith('/timer')) return jsonResponse({ timer: null });
     if (url.endsWith('/athletes')) return jsonResponse({ present: [], gym: [] });
+    if (url.includes('/api/pilot/coach/pain-reports')) return handlers.pain ? handlers.pain() : jsonResponse(PAIN_EMPTY);
     return jsonResponse({ items: [] });
   });
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -392,4 +403,79 @@ test('when Gym TVs acts, the console reads the TVs again (Q10 = A: no timer)', a
 
   expect(await screen.findByText('ON Ring TV')).toBeInTheDocument();
   expect(before).toBe(1);
+});
+
+describe('the pain list on the class screen (lane U2-6b-2)', () => {
+  const live = () => jsonResponse({ run: plainRun() });
+  const tile = () => within(screen.getByRole('region', { name: 'Athlete pain reports' }));
+
+  test('while a session is live: the list under the console, and it and the tile count one read', async () => {
+    const { fetchMock } = serve({
+      live,
+      pain: () => jsonResponse({ ...PAIN_EMPTY, painReports: [painRow('n1', 'Casey R.'), painRow('n2', 'Jordan P.')] }),
+    });
+    await open();
+
+    expect(await screen.findByRole('heading', { name: 'Athlete Pain Reports' })).toBeInTheDocument();
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^2$/);
+    // One read, with limit=50, for both.
+    expect(painReads(fetchMock).map(([url]) => String(url))).toEqual(['/api/pilot/coach/pain-reports?limit=50']);
+    // No floor board here: the link to record what was done is the panel's.
+    expect(screen.getByRole('link', { name: 'Record What You Did' })).toHaveAttribute('href', '/coach/decision-loop');
+  });
+
+  test('a failed read: the tile says "?" and the list says it could not load, never "no athlete reported pain"', async () => {
+    serve({ live, pain: () => jsonResponse({ error: 'boom' }, false, 500) });
+    await open();
+
+    expect(await screen.findByText(/Pain reports may exist that are not shown here\./)).toBeInTheDocument();
+    expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
+    expect(tile().getByText('Pain reports: not checked').previousSibling).toHaveTextContent(/^\?$/);
+  });
+
+  test('Refresh reads the one feed again, and the tile and the list move together', async () => {
+    let rows = [painRow('n1', 'Casey R.')];
+    const { fetchMock } = serve({ live, pain: () => jsonResponse({ ...PAIN_EMPTY, painReports: rows }) });
+    await open();
+    expect(await screen.findAllByRole('article')).toHaveLength(1);
+    expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^1$/);
+
+    rows = [painRow('n1', 'Casey R.'), painRow('n2', 'Jordan P.'), painRow('n3', 'Riley S.')];
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh athlete pain reports' }));
+    });
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3));
+    expect(tile().getByText('Pain reports, last 7 days').previousSibling).toHaveTextContent(/^3$/);
+    expect(painReads(fetchMock)).toHaveLength(2);
+  });
+
+  test('the one read refreshes every two minutes (Q4 = A); the tile makes no read of its own', async () => {
+    jest.useFakeTimers();
+    try {
+      const { fetchMock } = serve({ live });
+      await open();
+      await act(async () => {
+        for (let i = 0; i < 5; i += 1) await Promise.resolve();
+      });
+      expect(painReads(fetchMock)).toHaveLength(1);
+      await act(async () => {
+        jest.advanceTimersByTime(120_000);
+      });
+      await act(async () => {
+        for (let i = 0; i < 5; i += 1) await Promise.resolve();
+      });
+      expect(painReads(fetchMock)).toHaveLength(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('with no live session the pain feed is not read and no list shows', async () => {
+    const { fetchMock } = serve({ classes: [YOUTH] });
+    await open();
+    expect(await screen.findByRole('button', { name: 'Start' })).toBeInTheDocument();
+    expect(painReads(fetchMock)).toEqual([]);
+    expect(screen.queryByRole('heading', { name: 'Athlete Pain Reports' })).toBeNull();
+  });
 });
