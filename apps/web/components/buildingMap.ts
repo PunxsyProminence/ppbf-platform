@@ -230,6 +230,7 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/memberships', label: 'Program Memberships', room: 'office', roles: ['admin'],
     keywords: 'memberships enrollment programs scholarships discounts',
     hint: 'Who is enrolled in what, scholarships recorded as discounts. No billing.' },
+  // The two gear pages paint no room of their own; office, as the other admin doors.
   { href: '/admin/gear', label: 'Equipment and margin', room: 'office', roles: ['admin'],
     keywords: 'equipment gear store stock margin' },
   { href: '/admin/gear/vendors', label: 'Suppliers and accounts', room: 'office', roles: ['admin'],
@@ -782,12 +783,18 @@ export const ROOM_BLURB: Record<Room, string> = {
 
 /**
  * Who is looking, beyond the role. Pass it, and a board seat door shows only to
- * a session that may open that seat (resolveBoardSeatAccess: the seat's holder,
- * an oversight seat, or the platform owner). Leave it out and seat doors show
- * by role alone, as before AS-4, until each menu passes its session (4c).
+ * a session that may open that seat (resolveBoardSeatAccess: a seat the member
+ * holds, any seat for an oversight seat, every seat for the platform owner).
+ * Leave it out and seat doors show by role alone, as before AS-4, until each
+ * menu passes its session (4c).
  */
 export interface DoorViewer {
-  boardSeat?: BoardSeatSlug | null;
+  /**
+   * Every seat the board member holds, as the seat pages read them
+   * (BoardRoleGate's useBoardSession().seats). A small board doubles up, and a
+   * member with two seats opens both, so the landing seat alone is not enough.
+   */
+  boardSeats?: readonly BoardSeatSlug[] | null;
 }
 
 /**
@@ -803,8 +810,7 @@ export function visibleDoors(role: ClubRole | null, viewer?: DoorViewer): Door[]
     // when that door names it.
     if (!d.roles.includes(role)) return false;
     if (d.seat && viewer && (role === 'board' || role === 'platform_owner')) {
-      const seats = viewer.boardSeat ? [viewer.boardSeat] : [];
-      return resolveBoardSeatAccess({ role, seats, seat: d.seat }).allowed;
+      return resolveBoardSeatAccess({ role, seats: viewer.boardSeats ?? [], seat: d.seat }).allowed;
     }
     return true;
   });

@@ -675,23 +675,29 @@ describe('menus show only pages a person can open (AS-4 4a)', () => {
   });
 
   it("shows a seat holder only their own seat's door", () => {
-    expect(seatDoors(hrefs('board', { boardSeat: 'treasurer' }))).toEqual(['/board/treasurer']);
+    expect(seatDoors(hrefs('board', { boardSeats: ['treasurer'] }))).toEqual(['/board/treasurer']);
+  });
+
+  it('shows a member who holds two seats both of them (a small board doubles up)', () => {
+    expect(seatDoors(hrefs('board', { boardSeats: ['secretary', 'at-large'] }))).toEqual(['/board/secretary', '/board/at-large']);
+    expect(seatDoors(hrefs('board', { boardSeats: ['secretary', 'chair'] }))).toHaveLength(8);
   });
 
   it('shows the president and the chair every seat, as they may open every seat', () => {
-    expect(seatDoors(hrefs('board', { boardSeat: 'president' }))).toHaveLength(8);
-    expect(seatDoors(hrefs('board', { boardSeat: 'chair' }))).toHaveLength(8);
+    expect(seatDoors(hrefs('board', { boardSeats: ['president'] }))).toHaveLength(8);
+    expect(seatDoors(hrefs('board', { boardSeats: ['chair'] }))).toHaveLength(8);
   });
 
   it('shows a board session with no seat no seat door, and the platform owner all eight', () => {
-    expect(seatDoors(hrefs('board', { boardSeat: null }))).toEqual([]);
+    expect(seatDoors(hrefs('board', { boardSeats: null }))).toEqual([]);
+    expect(seatDoors(hrefs('board', { boardSeats: [] }))).toEqual([]);
     expect(seatDoors(hrefs('board', {}))).toEqual([]);
     expect(seatDoors(hrefs('platform_owner', {}))).toHaveLength(8);
   });
 
   it('keeps the board hub and the board pages whatever the seat', () => {
     for (const href of ['/board', '/board/aggregates', '/board/escalation-monitoring', '/board/compliance-monitoring']) {
-      expect(hrefs('board', { boardSeat: 'treasurer' })).toContain(href);
+      expect(hrefs('board', { boardSeats: ['treasurer'] })).toContain(href);
     }
   });
 

@@ -43,13 +43,22 @@ describe('the job bars', () => {
     }
   });
 
-  it.each(BAR_ROLES)('%s: names no page twice', (role) => {
+  // One page in two sections only where the source puts its contents in both: the Parent Floor tab
+  // holds the support tasks (This week) and Report a Barrier, today's "Tell the coach" (Messages).
+  const TWICE: Partial<Record<ClubRole, string[]>> = { parent: ['/parent/dashboard#parent-floor'] };
+
+  it.each(BAR_ROLES)('%s: names no page twice, but for the named exception', (role) => {
     const keys = items(role).map((item) => `${item.href}#${item.tab ?? ''}`);
-    expect(new Set(keys).size).toBe(keys.length);
+    const repeated = [...new Set(keys.filter((key, i) => keys.indexOf(key) !== i))];
+    expect(repeated).toEqual(TWICE[role] ?? []);
+    for (const section of JOB_BARS[role]?.sections ?? []) {
+      const own = section.items.map((item) => `${item.href}#${item.tab ?? ''}`);
+      expect(new Set(own).size).toBe(own.length);
+    }
   });
 
   it.each(BAR_ROLES)('%s: names only pages the role can already open (none is dropped for them)', (role) => {
-    const viewer = role === 'board' ? { boardSeat: 'treasurer' as const } : {};
+    const viewer = role === 'board' ? { boardSeat: 'treasurer' as const, boardSeats: ['treasurer' as const] } : {};
     const bar = jobBarFor(role, viewer);
     const given = bar ? [...bar.sections.flatMap((section) => section.items), ...bar.more] : [];
     expect(given).toHaveLength(items(role).length);
@@ -74,7 +83,7 @@ describe('the job bars', () => {
 
 describe('a board member\'s bar', () => {
   it("opens Home on their own seat, and shows no other seat's door", () => {
-    const bar = jobBarFor('board', { boardSeat: 'treasurer' });
+    const bar = jobBarFor('board', { boardSeat: 'treasurer', boardSeats: ['treasurer'] });
     expect(bar?.sections[0]).toEqual({ label: 'Home', items: [{ href: '/board/treasurer' }] });
     const all = bar ? hrefsOf(bar.sections.flatMap((section) => section.items)) : [];
     expect(all.filter((href) => href.startsWith('/board/') && !href.includes('-monitoring') && href !== '/board/aggregates')).toEqual(['/board/treasurer']);
@@ -85,7 +94,7 @@ describe('a board member\'s bar', () => {
   });
 
   it('gives the chair their own seat as Home', () => {
-    expect(jobBarFor('board', { boardSeat: 'chair' })?.sections[0].items).toEqual([{ href: '/board/chair' }]);
+    expect(jobBarFor('board', { boardSeat: 'chair', boardSeats: ['chair'] })?.sections[0].items).toEqual([{ href: '/board/chair' }]);
   });
 });
 

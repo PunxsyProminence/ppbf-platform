@@ -1,3 +1,4 @@
+import type { BoardSeatSlug } from '../app/board/boardWorkspaceConfig';
 import { visibleDoors, type DoorViewer } from './buildingMap';
 import type { ClubRole } from './roleRoutes';
 
@@ -10,11 +11,17 @@ import type { ClubRole } from './roleRoutes';
  * (OD-2026-11-19-008). The file is not in this repo; Overwatch quoted its job
  * bars and section contents on #2029 (2026-11-20, QS = A corrected to the
  * source). Each item below is an existing door, named by its href, or a Parent
- * Hub tab named by the same word the stage 2 file uses. Items with no page yet
- * are left out, never invented:
- *   coach    Who needs you (one list); Groups and pathways; Lessons.
- *   parent   digest, achievements, your notes (This week's "parent support tasks").
- *   admin    New member flow; Morning check; Gym TVs (pairing).
+ * Hub tab whose heading carries the stage 2 words. Items with no page yet are
+ * left out, never invented (Overwatch named the first four):
+ *   coach    Who needs you (one list); Groups and pathways (Today's Floor and
+ *            Adult Pathway exist but are not that page); Lessons.
+ *   admin    New member flow; Morning check (AS-10 builds it on Gym Office, #2018;
+ *            Safety Review, today's nearest, is in Safety); Gym TVs (pairing) has
+ *            no page of its own: it is on Gym Setup, in Classes & floor.
+ *   platform owner  "a gym switcher" for Home: no such page, so Home is Omega,
+ *            as the approved names say ("Home (Omega)").
+ * The parent's "digest" is on Parent Hub's Overview, which is Home, and
+ * "achievements" is the Progress tab ("Progress & Achievements").
  * Stage 2's athlete bar is superseded by Q14 A (OD-2026-11-19-017), so there is
  * none here. Tell Us, Logout and the safety badge stay in the header.
  *
@@ -34,6 +41,11 @@ export interface JobSection {
   readonly items: readonly JobItem[];
 }
 
+/** The board member's landing seat (the session's boardSeat) picks their Home; their held seats, their doors. */
+export interface JobBarViewer extends DoorViewer {
+  boardSeat?: BoardSeatSlug | null;
+}
+
 export interface JobBar {
   readonly sections: readonly JobSection[];
   /** Stage 2's "More" for the coach and the parent: pages off the bar, drawn by 4b. */
@@ -43,7 +55,10 @@ export interface JobBar {
 const pages = (...hrefs: string[]): JobItem[] => hrefs.map((href) => ({ href }));
 const hubTab = (tab: string): JobItem => ({ href: '/parent/dashboard', tab });
 
-/** A board member's Home is their own seat's workspace, where their session lands; Board Hub with no seat. */
+/**
+ * A board member's Home is their own seat's workspace, where their session lands; with no seat it is
+ * Board Hub, the same page as the Board hub section.
+ */
 export const BOARD_HOME = 'board-home';
 
 const STAFF_BAR: JobBar = {
@@ -108,18 +123,20 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
       { label: 'Home', items: pages('/parent/dashboard') },
       // "Safety and consent page per child"
       { label: 'Safety', items: pages('/parent/safety', '/parent/consent') },
-      // "schedule and register, attendance"
-      { label: 'This week', items: [...pages('/schedule'), hubTab('attendance')] },
-      // "assignments, goals, their plan, mental skills, full record, film, family goals"
+      // "schedule and register, attendance, parent support tasks" (the Parent Floor tab)
+      { label: 'This week', items: [...pages('/schedule'), hubTab('attendance'), hubTab('parent-floor')] },
+      // "digest (Home's Overview), assignments, achievements (the Progress tab), goals, their plan, mental
+      // skills, full record, film, your notes (Observations), family goals"
       {
         label: 'Progress',
         items: [
-          hubTab('progress'), hubTab('home-assignments'), hubTab('family-goals'),
+          hubTab('progress'), hubTab('home-assignments'), hubTab('family-goals'), hubTab('observations'),
           ...pages('/parent/development-blocks', '/parent/mental-skills', '/parent/progression-visibility', '/parent/video'),
         ],
       },
-      // "coach messages and replies, "Tell the coach""
-      { label: 'Messages', items: [hubTab('messages')] },
+      // "coach messages and replies, "Tell the coach" (today's Report a Barrier)": Report a Barrier is on
+      // the Parent Floor tab, which This week also opens for the support tasks
+      { label: 'Messages', items: [hubTab('messages'), hubTab('parent-floor')] },
     ],
     // "Resources, help, print, Wall of Names, Ask SHADOW"
     more: [hubTab('resources'), ...pages('/help', '/print', '/names', '/shadow')],
@@ -128,7 +145,8 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
     sections: [
       { label: 'Home', items: pages('/admin/people') },
       // "roster with search, athlete records, Sign-in codes, Load a roster, Duplicate guardians, Data
-      // deletion, Enquiries; Staff (coverage, credentials, volunteers)". The roster with search is Home.
+      // deletion, Enquiries; Staff (coverage, credentials, volunteers)". The roster with search is Home;
+      // Enquiries is read as Public Interest (the public page's interest form), an inference.
       {
         label: 'Members & staff',
         items: pages(
@@ -197,7 +215,7 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
  * board seats by the session's seat; a section left with nothing is dropped.
  * Null for a role with no bar (athlete, or no session).
  */
-export function jobBarFor(role: ClubRole | null, viewer: DoorViewer = {}): JobBar | null {
+export function jobBarFor(role: ClubRole | null, viewer: JobBarViewer = {}): JobBar | null {
   if (!role) return null;
   const bar = JOB_BARS[role];
   if (!bar) return null;
