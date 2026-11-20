@@ -11,6 +11,7 @@ import { requirePrincipal } from '@/src/server/pilot/http';
 import { createCoachObservation, createReadiness, linkGuardianAthlete, upsertGuardian, upsertWaiver } from '@/src/server/pilot/intake';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { ConflictError } from '@/src/server/pilot/errors';
+import { GuardianLinkEndedError } from '@/src/server/pilot/guardianAccess';
 
 // The register reconciliation (Wave 9) found this route's coach_note write
 // path -- module 002 Raw Observation Intake -- carrying a role gate, athlete
@@ -285,6 +286,36 @@ test('a guardian_link write with no account_id skips account validation but stil
   expect(response.status).toBe(200);
   expect(mockAssertActiveParent).not.toHaveBeenCalled();
   expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.objectContaining({ accountId: undefined }), TX_CLIENT);
+});
+
+// Lane GA: the paper-only guardian add on an athlete who is 18 or over.
+// linkGuardianAthlete refuses inside the transaction (its own tests and
+// intakeDomainUpsertAtomic.pg.test.ts prove the read and the rollback); this
+// pins what the route does with that refusal.
+test('a guardian_link to an athlete 18 or over answers 403 GUARDIAN_LINK_ENDED, and nothing after it is written', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({ role: 'organization_admin', accountId: 'acct-admin-1' }));
+  mockAccess.mockResolvedValue(undefined);
+  mockUpsertGuardian.mockResolvedValue(undefined);
+  mockLinkGuardianAthlete.mockRejectedValue(new GuardianLinkEndedError());
+
+  const response = await POST(postRequest({
+    entity_type: 'guardian_link',
+    athlete_id: 'ath-1',
+    payload: { parent_id: 'parent-1', full_name: 'Paper Guardian' },
+  }));
+
+  expect(response.status).toBe(403);
+  await expect(response.json()).resolves.toEqual({
+    error: 'Forbidden: this athlete is 18 or older; guardian access has ended',
+    code: 'GUARDIAN_LINK_ENDED',
+  });
+  // The guardian record write is on the same transaction client, so the
+  // refusal rolls it back; no audit row, shadow event or metric follows.
+  expect(mockUpsertGuardian).toHaveBeenCalledWith(expect.anything(), TX_CLIENT);
+  expect(mockLinkGuardianAthlete).toHaveBeenCalledWith(expect.anything(), TX_CLIENT);
+  expect(mockAudit).not.toHaveBeenCalled();
+  expect(mockShadowEvent).not.toHaveBeenCalled();
+  expect(mockTelemetry).not.toHaveBeenCalled();
 });
 
 // CL-B8. A missing full_name used to reach upsertGuardian as the literal

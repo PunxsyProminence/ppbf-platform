@@ -765,7 +765,7 @@ export default function SessionScriptLiveDelivery({
         </div>
       </div>
 
-      {/* The top row: attendance, need attention and the SHADOW queue, counts only. */}
+      {/* The top row: attendance, need attention, athlete pain reports and the SHADOW queue, counts only. */}
       <CoachLiveTiles />
 
       {/* The floor controls: big, few, and above the fold. */}
