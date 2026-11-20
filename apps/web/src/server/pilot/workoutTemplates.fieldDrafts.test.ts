@@ -32,6 +32,11 @@ test('each shown field by its label key: a draft, an edit, or not checked', () =
   });
 });
 
+test('the blocks holding only part labels (an edit of an unlabelled version) are not checked, never "not a draft"', () => {
+  expect(templateFieldDrafts({ items: { 1: IN_APP_EDIT } }, true).items).toBeNull();
+  expect(templateFieldDrafts({ items: { 1: IN_APP_EDIT, 2: AI_DRAFT } }, true).items).toBe(true);
+});
+
 test('reads the labels of this version (kind workout_template, its lineage and version)', async () => {
   mockQueryOne.mockResolvedValue({ field_labels: { duration_minutes: AI_DRAFT } });
   const drafts = await readWorkoutTemplateFieldDrafts('org-1', TEMPLATE);

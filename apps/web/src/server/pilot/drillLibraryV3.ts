@@ -480,7 +480,15 @@ export function labelIsDraft(label: unknown): boolean | null {
   if (label === undefined || label === null) return null;
   if (!isPlainObject(label)) return null;
   if ('draft' in label) return true;
-  return Object.values(label).some((part) => isPlainObject(part) && 'draft' in part);
+  if (Object.values(label).some((part) => isPlainObject(part) && 'draft' in part)) return true;
+  // Not a draft only when the field has a label of its own; part labels alone (an edit of one part
+  // of an unlabelled version) leave the other parts unknown -- "a shape this reader does not know".
+  return hasOwnLabel(label) ? false : null;
+}
+
+/** A field's own group-level label (status, sources: the content's; or an in-app edit), beside any part labels. */
+function hasOwnLabel(label: Record<string, unknown>): boolean {
+  return 'status' in label || isPlainObject(label.edited);
 }
 
 /**
@@ -494,10 +502,11 @@ export function labelIsDraft(label: unknown): boolean | null {
 function partIsDraft(group: unknown, part: string): boolean | null {
   if (!isPlainObject(group)) return null;
   const own = group[part];
+  if (own !== undefined && !isPlainObject(own)) return null;
   if (isPlainObject(own) && 'draft' in own) return true;
   if (isPlainObject(own) && isPlainObject(own.edited)) return false;
   if ('draft' in group) return true;
-  return 'status' in group || isPlainObject(group.edited) ? false : null;
+  return hasOwnLabel(group) ? false : null;
 }
 
 /**

@@ -7,7 +7,7 @@ import { render, screen } from '@testing-library/react';
 
 import DrillDetail from './DrillDetail';
 import { fromAthleteDrillDetail, fromCoachDrillDetail } from './drillDetailView';
-import type { AthleteDrillDetail, DrillFieldDrafts, DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
+import type { AthleteDrillDetail, DrillFieldDrafts, DrillMarkedField, DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 import { AI_DRAFT_MARK, DRAFT_NOT_CHECKED } from '@/src/lib/sessionScriptWords';
 
 // THE STAFF AI-DRAFT MARK ON THE DRILL SCREEN (lane ED-UI PR3; OW25-57,
@@ -72,8 +72,8 @@ function every(state: boolean | null): DrillFieldDrafts {
   return { ...Object.fromEntries(SHOWN.map((field) => [field, state])), scale_levels: { A: state, B: state }, labelled: true } as unknown as DrillFieldDrafts;
 }
 
-function renderCoach(fieldDrafts: DrillFieldDrafts | undefined) {
-  const drill = { ...DRILL, field_drafts: fieldDrafts } as unknown as DrillWithDetail;
+function renderCoach(fieldDrafts: DrillFieldDrafts | undefined, overrides: Record<string, unknown> = {}) {
+  const drill = { ...DRILL, ...overrides, field_drafts: fieldDrafts } as unknown as DrillWithDetail;
   return render(<DrillDetail view={fromCoachDrillDetail(drill)} audience="coach" />);
 }
 
@@ -93,7 +93,9 @@ test('every drafted field shows the mark where the screen shows it, and only the
   expect(hasMark(line('Contact:'))).toBe(true);
   expect(hasMark(line('Coach authorization:'))).toBe(true);
   expect(hasMark(screen.getByText('Stop rules'))).toBe(true);
-  expect(hasMark(screen.getByText('Before contact or maximal effort'))).toBe(true);
+  // The readiness group: the drill's own rule carries the mark, not the group's heading.
+  expect(hasMark(screen.getByText('Re-warm after a long rest.').closest('li'))).toBe(true);
+  expect(hasMark(screen.getByText('Before contact or maximal effort'))).toBe(false);
   // Each section heading.
   for (const heading of ['What it is for', 'Setup', 'Equipment', 'How it runs', 'What good looks like', 'What to avoid', 'Exit condition', 'Coaching cues']) {
     expect(hasMark(besideHeading(heading))).toBe(true);
@@ -108,6 +110,79 @@ test('every drafted field shows the mark where the screen shows it, and only the
   expect(hasMark(screen.getByText(/^Transfer/))).toBe(true);
   // 20 fields, the drill's own stop rules marked in both of their groups, and two scale levels.
   expect(marks()).toHaveLength(23);
+});
+
+// One field drafted, every other field not: its mark is the only one, at its own place.
+const PLACE: Record<(typeof SHOWN)[number], (mark: Element) => boolean> = {
+  name: (mark) => Boolean(besideHeading('Jab return')?.contains(mark)),
+  difficulty: (mark) => Boolean(screen.getByText('beginner').closest('.plaque')?.parentElement?.contains(mark)),
+  discipline: (mark) => mark.previousSibling?.textContent === 'boxing',
+  category: (mark) => mark.previousSibling?.textContent === 'technical',
+  contact_level: (mark) => Boolean(line('Contact:')?.contains(mark)),
+  requires_coach_authorization: (mark) => Boolean(line('Coach authorization:')?.contains(mark)),
+  stop_rules: (mark) => screen.getByText('Stop rules').contains(mark) || Boolean(screen.getByText('Re-warm after a long rest.').closest('li')?.contains(mark)),
+  purpose: (mark) => Boolean(besideHeading('What it is for')?.contains(mark)),
+  standard_setup: (mark) => Boolean(besideHeading('Setup')?.contains(mark)),
+  equipment_needed: (mark) => Boolean(besideHeading('Equipment')?.contains(mark)),
+  execution: (mark) => Boolean(besideHeading('How it runs')?.contains(mark)),
+  cues: (mark) => Boolean(besideHeading('Coaching cues')?.contains(mark)),
+  what_good_looks_like: (mark) => Boolean(besideHeading('What good looks like')?.contains(mark)),
+  what_bad_looks_like: (mark) => Boolean(besideHeading('What to avoid')?.contains(mark)),
+  corrections: (mark) => Boolean(summary('Corrections')?.contains(mark)),
+  common_errors: (mark) => screen.getByText(/^Common errors/).contains(mark),
+  exit_condition: (mark) => Boolean(besideHeading('Exit condition')?.contains(mark)),
+  correction_path: (mark) => screen.getByText(/^Correction path/).contains(mark),
+  target_behavior: (mark) => Boolean(line('Target behaviour:')?.contains(mark)),
+  transfer: (mark) => screen.getByText(/^Transfer/).contains(mark),
+};
+
+test.each(SHOWN)('only %s drafted: its mark alone, at its own place', (key) => {
+  renderCoach({ ...every(false), [key]: true });
+  const found = screen.getAllByText(AI_DRAFT_MARK);
+  // The drill's own stop rules show in two groups here (Stop rules, and its readiness rule).
+  expect(found).toHaveLength(key === 'stop_rules' ? 2 : 1);
+  for (const mark of found) expect(PLACE[key](mark)).toBe(true);
+});
+
+test.each(['A', 'B'])('only scale level %s drafted: its mark alone, in its own summary', (level) => {
+  renderCoach({ ...every(false), scale_levels: { A: false, B: false, [level]: true } });
+  expect(marks()).toHaveLength(1);
+  expect(hasMark(summary(level === 'A' ? 'Easier (A)' : 'Standard (B)'))).toBe(true);
+});
+
+test('a readiness list holding a gym rule: only the drill\'s own rule carries the mark', () => {
+  renderCoach({ ...every(false), stop_rules: true }, {
+    universal_stop_rules: [{ ordinal: 1, condition_text: 'Re-warm after twenty idle minutes.', rule_kind: 'warmup_decay', origin: 'universal' }],
+  });
+  expect(hasMark(screen.getByText('Re-warm after a long rest.').closest('li'))).toBe(true);
+  expect(hasMark(screen.getByText('Re-warm after twenty idle minutes.').closest('li'))).toBe(false);
+  expect(marks()).toHaveLength(2);
+});
+
+test.each([
+  // [what the drill holds, the field whose words Equipment shows]
+  ['equipment written, setup shown', { equipment_needed: 'gloves' }, 'equipment_needed'],
+  ['equipment blank, setup "none" (shown as equipment)', { equipment_needed: '', standard_setup: 'none' }, 'standard_setup'],
+  ['equipment blank, setup written (shown as Setup)', { equipment_needed: '' }, 'equipment_needed'],
+  ['both blank', { equipment_needed: '', standard_setup: '' }, 'equipment_needed'],
+] as const)('Equipment carries the mark of the column it shows: %s', (_case, overrides, shown) => {
+  const other: DrillMarkedField = shown === 'equipment_needed' ? 'standard_setup' : 'equipment_needed';
+  const { unmount } = renderCoach({ ...every(false), [shown]: true }, overrides);
+  expect(hasMark(besideHeading('Equipment'))).toBe(true);
+  unmount();
+  renderCoach({ ...every(false), [other]: true }, overrides);
+  expect(hasMark(besideHeading('Equipment'))).toBe(false);
+});
+
+test('"not checked" in the header keeps the light ink; elsewhere it takes the card\'s', () => {
+  renderCoach({ ...every(false), name: null, purpose: null });
+  const inHeader = besideHeading('Jab return')?.querySelector('span');
+  expect(inHeader).toHaveTextContent(NOT_CHECKED);
+  expect(inHeader).toHaveStyle({ color: 'var(--bone-300)' });
+  const inBody = besideHeading('What it is for')?.querySelector('span');
+  expect(inBody).toHaveTextContent(NOT_CHECKED);
+  expect(inBody?.getAttribute('style')).toBeNull();
+  expect(inBody?.className).toContain('in-[.ge-drillcase]:text-[color:#3A2E1D]');
 });
 
 test('the headings keep their names: the mark sits beside them, not inside', () => {

@@ -28,6 +28,7 @@ import type { PilotPrincipal } from './auth';
 import type { PilotRole } from './contracts';
 import { query, queryOne } from './db';
 import {
+  DRILL_MARKED_FIELDS,
   drillFieldDrafts,
   getAthleteDrillDetail,
   getAthleteDrillDetailForOpenWork,
@@ -42,6 +43,8 @@ const mockRequirePrincipal = requirePrincipal as jest.Mock;
 
 const AI_DRAFT = { status: 'INFERRED', sources: ['Claude research draft'], draft: 'AI draft' };
 const IN_APP_EDIT = { status: 'REPORTED', sources: ['In-app edit'], edited: { by_account_id: 'acct-9', by_role: 'coach', at: '2026-11-19T00:00:00Z' } };
+// Every field the drill screen marks, unknown: what nothing recorded must read as (lane ED-UI PR3).
+const ALL_NOT_CHECKED = Object.fromEntries(DRILL_MARKED_FIELDS.map((field) => [field, null]));
 
 const DRILL_ROW = {
   organization_id: 'org-1',
@@ -161,6 +164,21 @@ describe('drillFieldDrafts: every shown field and each scale level (lane ED-UI P
     expect(drillFieldDrafts({ 'stop_rules.rule_kind': AI_DRAFT }).stop_rules).toBe(true);
   });
 
+  // writeEditedVersionLabels: "a version with no labels gets one holding only the edited parts".
+  // The edit speaks for its part only; the field's other parts are unknown, never "not a draft".
+  test('a field holding only part labels (an edit of an unlabelled version) is not checked, unless a part is a draft', () => {
+    expect(drillFieldDrafts({ stop_rules: { 2: IN_APP_EDIT } }).stop_rules).toBeNull();
+    expect(drillFieldDrafts({ corrections: { 1: IN_APP_EDIT } }).corrections).toBeNull();
+    expect(drillFieldDrafts({ stop_rules: { 1: IN_APP_EDIT, 2: AI_DRAFT } }).stop_rules).toBe(true);
+    // The writer's own "every part edited" case gives the group the edit's label: then it is not a draft.
+    expect(drillFieldDrafts({ stop_rules: { ...IN_APP_EDIT, 1: IN_APP_EDIT, 2: IN_APP_EDIT } }).stop_rules).toBe(false);
+  });
+
+  test('a scale level whose own label is not a label (a string, a list) is not checked, whatever its group says', () => {
+    const labels = { scale_levels: { ...AI_DRAFT, A: 'edited', B: ['draft'] } };
+    expect(drillFieldDrafts(labels, ['A', 'B']).scale_levels).toEqual({ A: null, B: null });
+  });
+
   test('a scale level: its own draft or edit wins; a sourcing-only label speaks with its drafted group', () => {
     const SOURCED = { status: 'INFERRED', sources: ['DOC-027'] };
     const labels = { scale_levels: { ...AI_DRAFT, A: SOURCED, B: IN_APP_EDIT, C: { ...SOURCED, draft: 'AI draft' } } };
@@ -197,8 +215,9 @@ describe('getDrillWithDetail carries field_drafts for the version it read', () =
 
   test('a version with no label row: every field "not checked", not "not a draft"', async () => {
     labelsRow = null;
+    scaleRows = [{ scale_level: 'A' }];
     const detail = await getDrillWithDetail('org-1', 'ref-1');
-    expect(detail?.field_drafts).toMatchObject({ ...{ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null }, labelled: false });
+    expect(detail?.field_drafts).toEqual({ ...ALL_NOT_CHECKED, scale_levels: { A: null }, labelled: false });
   });
 
   test('before the labels table exists (42P01): every field is "not checked", and nothing is logged', async () => {
@@ -206,7 +225,7 @@ describe('getDrillWithDetail carries field_drafts for the version it read', () =
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     const detail = await getDrillWithDetail('org-1', 'ref-1');
     // No table: no version has a row (Q4 = A: one "not checked" line under the header).
-    expect(detail?.field_drafts).toMatchObject({ ...{ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null }, labelled: false });
+    expect(detail?.field_drafts).toEqual({ ...ALL_NOT_CHECKED, scale_levels: {}, labelled: false });
     expect(detail?.name).toBe('Catch and return');
     expect(log).not.toHaveBeenCalled();
     log.mockRestore();
@@ -216,7 +235,7 @@ describe('getDrillWithDetail carries field_drafts for the version it read', () =
     labelsError = Object.assign(new Error('connection reset'), { code: '08006' });
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     const detail = await getDrillWithDetail('org-1', 'ref-1');
-    expect(detail?.field_drafts).toMatchObject({ ...{ cues: null, what_good_looks_like: null, what_bad_looks_like: null, corrections: null }, labelled: null });
+    expect(detail?.field_drafts).toEqual({ ...ALL_NOT_CHECKED, scale_levels: {}, labelled: null });
     expect(detail?.what_good_looks_like).toBe('Glove meets the punch.');
     expect(log).toHaveBeenCalledWith({ event: 'drill-field-drafts-read-failed', drill_id: 'ref-1', code: '08006' });
     log.mockRestore();

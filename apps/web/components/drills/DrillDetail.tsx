@@ -42,6 +42,9 @@ const KIOSK_TEXT = 'in-data-[surface=kiosk]:text-[length:var(--t-md)]';
 // card, about 5.6:1 inside an expander's 20% black wash); every other page is
 // unchanged. OD-2026-11-17-009 rulings 1 and 4 (OW25-34 A, OW25-37 A).
 const CARD_INK = 'in-[.ge-drillcase]:text-[color:inherit]';
+// Body-weight words inside a .t-label (an expander's summary, a label line) take the card's body ink
+// outright: inherited, they get the label ink #4A3B26, 4.07:1 at worst on the wash (lane ED-UI PR3).
+const CARD_BODY_INK = 'in-[.ge-drillcase]:text-[color:#3A2E1D]';
 const BODY = `text-[length:var(--t-sm)] ${KIOSK_TEXT} leading-relaxed text-[color:var(--bone-300)] ${CARD_INK}`;
 const LIST = `${BODY} list-disc space-y-[var(--s1)] pl-[var(--s5)]`;
 const EXPANDER = 'rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.2)] px-[var(--s3)] py-[var(--s2)]';
@@ -108,9 +111,13 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   // label row says so once, under the header (Q4 = A). Never on an athlete view (coach is null there).
   const drafts = audience === 'coach' ? view.coach?.fieldDrafts ?? null : null;
   const labelled = drafts?.labelled === true;
-  const mark = (state: boolean | null | undefined) => (labelled ? <DraftMark state={state} /> : null);
+  const mark = (state: boolean | null | undefined, onDark = false) => (labelled ? <DraftMark state={state} onDark={onDark} /> : null);
   const field = (key: DrillMarkedField) => mark(drafts?.fields[key]);
-  const equipmentKey: DrillMarkedField = view.equipment.trim() ? 'equipment_needed' : 'standard_setup';
+  // The header (a near-black ground on /coach/drills, Q-PR1-3) keeps the light ink.
+  const headerField = (key: DrillMarkedField) => mark(drafts?.fields[key], true);
+  // Equipment shows the setup column's word only when equipment is blank and that word is not shown as Setup
+  // (setupAndEquipment); otherwise its words are the equipment column's, a blank one's included.
+  const equipmentKey: DrillMarkedField = !view.equipment.trim() && setup === null && view.setup.trim() ? 'standard_setup' : 'equipment_needed';
 
   return (
     <article aria-labelledby={headingId} className="mat-leather--raised space-y-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
@@ -118,13 +125,17 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
         <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
           <div className="flex flex-wrap items-baseline gap-[var(--s2)]">
             <h2 id={headingId} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">{view.name}</h2>
-            {field('name')}
+            {headerField('name')}
           </div>
-          {view.coach && <span className="plaque"><span className={KIOSK_TEXT}>{view.coach.difficulty}</span></span>}
-          {field('difficulty')}
+          {view.coach && (
+            <span className="flex flex-wrap items-baseline">
+              <span className="plaque"><span className={KIOSK_TEXT}>{view.coach.difficulty}</span></span>
+              {headerField('difficulty')}
+            </span>
+          )}
         </div>
         {view.coach && (
-          <p className="t-label">{view.coach.discipline}{field('discipline')} · {view.coach.category}{field('category')}</p>
+          <p className="t-label">{view.coach.discipline}{headerField('discipline')} · {view.coach.category}{headerField('category')}</p>
         )}
         {/* Where the content came from, and whether it is current, sits beside
             the action it informs -- not behind an expander below it. */}
@@ -158,7 +169,8 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
           <StopRuleList heading="Stop rules for every drill" rules={everyDrillStops} />
         )}
         {readiness.length > 0 && (
-          <StopRuleList heading="Before contact or maximal effort" rules={readiness} mark={readiness.some((rule) => rule.origin === 'drill') ? field('stop_rules') : null} />
+          // The drill's own rules here carry the list's mark, each; the gym's stored-once rules are not the drill's.
+          <StopRuleList heading="Before contact or maximal effort" rules={readiness} itemMark={(rule) => (rule.origin === 'drill' ? field('stop_rules') : null)} />
         )}
       </section>
 
@@ -313,14 +325,27 @@ function Heading({ children, mark }: { children: ReactNode; mark: ReactNode }) {
 }
 
 /** The 6e mark and words (sessionScriptWords.ts), beside one field: a draft, or not checked; nothing when not a draft. */
-function DraftMark({ state }: { state: boolean | null | undefined }) {
+function DraftMark({ state, onDark = false }: { state: boolean | null | undefined; onDark?: boolean }) {
   if (state === false) return null;
   if (state === true) return <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>;
   // Sentence case and body weight, as 6e shows it; not .t-muted, which no card rule darkens on the parchment card.
-  return <span className="ml-[var(--s2)] font-normal normal-case tracking-normal text-[color:var(--bone-300)] in-[.ge-drillcase]:text-[color:inherit]">({DRAFT_NOT_CHECKED})</span>;
+  // On the card it takes the card's body ink (CARD_BODY_INK), also inside a label.
+  return (
+    <span
+      className={`ml-[var(--s2)] font-normal normal-case tracking-normal text-[color:var(--bone-300)] ${CARD_BODY_INK}`}
+      style={onDark ? { color: 'var(--bone-300)' } : undefined}
+    >
+      ({DRAFT_NOT_CHECKED})
+    </span>
+  );
 }
 
-function StopRuleList({ heading, rules, mark = null }: { heading: string; rules: DrillStopRuleView[]; mark?: ReactNode }) {
+function StopRuleList({ heading, rules, mark = null, itemMark }: {
+  heading: string;
+  rules: DrillStopRuleView[];
+  mark?: ReactNode;
+  itemMark?: (rule: DrillStopRuleView) => ReactNode;
+}) {
   return (
     <div className="space-y-[var(--s1)]">
       <p className={`text-[length:var(--t-sm)] ${KIOSK_TEXT} font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]`}>{heading}{mark}</p>
@@ -328,7 +353,7 @@ function StopRuleList({ heading, rules, mark = null }: { heading: string; rules:
         {/* Keyed by origin as well: the readiness list can hold a drill rule
             and a stored-once rule at the same ordinal. */}
         {rules.map((rule) => (
-          <li key={`stop-${rule.origin}-${rule.ordinal}`}>{rule.text}</li>
+          <li key={`stop-${rule.origin}-${rule.ordinal}`}>{rule.text}{itemMark?.(rule)}</li>
         ))}
       </ol>
     </div>
