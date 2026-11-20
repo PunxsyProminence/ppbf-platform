@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-20-003 | 2026-11-20 | Overwatch moves to a cloud session on the admin Claude account | REPORTED |  | yes |
 | OD-2026-11-20-002 | 2026-11-20 | SHADOW lane answers: SH-01 to SH-05, SH-07, MSG-1 and MSG-2 | RECONSTRUCTED |  |  |
 | OD-2026-11-20-001 | 2026-11-20 | OW27-01 to OW27-16: W4 email alerts, typed lines, athlete and parent words, recognizer start | RECONSTRUCTED |  |  |
 | OD-2026-11-19-031 | 2026-11-19 | OW26-06 and OW26-07: scrub research files go under docs/research | RECONSTRUCTED |  |  |
@@ -633,6 +634,25 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-20-003 -- Overwatch moves to a cloud session on the admin Claude account
+
+**Provenance: REPORTED.** Jason's first two sentences are quoted from the desktop Overwatch's handover brief, pasted into a claude.ai/code cloud session on 2026-11-20 (brief dated 16:40 UTC). They were not read from his own transcript: that is on his PC, which this session cannot read. What is uncertain: the brief is the desktop Overwatch's copy of his words. One redaction, following OD-2026-11-19-026: the account name in his second sentence is written "[the admin account]", because this repository is public; his other words, typos included, are as the brief gives them. His third message is PRIMARY: he typed it in that cloud session. New; edits no earlier entry's text.
+
+**Jason (to the desktop Overwatch, 2026-11-20, REPORTED):** *"i want to get to a stopping point, then we will hand over to anothe claude account to keep building"*
+
+**Jason (to the desktop Overwatch, 2026-11-20, REPORTED):** *"i have the [the admin account] claude set up in the browser i give you permission to get it set p to rplace you"*
+
+**Jason (to the cloud Overwatch, 2026-11-20, PRIMARY, answering whether a staging deploy was out):** *"no staging deploy is out, go ahead"*
+
+**Ruling:** Overwatch's build work runs in a claude.ai/code cloud session on the admin Claude account, in place of the desktop app on the personal Max account. That covers answering builder questions, checking and merging pull requests, writing the `docs/current/ACTIVE_WORK.md` rows at merge and recording his decisions here. This changes, on where Overwatch runs, OD-2026-10-10-001 ruling 2 and OD-2026-10-10-002 item 4 ("Overwatch stays on the personal Max account in the desktop app").
+
+**Applied limits (from the handover brief, not his words):** the desktop Overwatch on his PC keeps staging and production deploys, migrations, seed loads, every database, Azure, and the signed-in checks on staging and the live app; the cloud Overwatch runs or dispatches none of them, and a release happens only on Jason's own words (OD-2026-11-19-029 still governs staging). His files on his PC (Backbone research notes, answer cards) reach the cloud Overwatch only when he pastes them.
+
+**Not ruled here:** whether the cloud build lanes leave the account named in OD-2026-11-19-026; whether the desktop Overwatch keeps any merge role once its usage limit resets (2026-11-24).
+**Status:** recorded 2026-11-20 by PR.
 
 ---
 
