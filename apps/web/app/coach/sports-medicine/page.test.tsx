@@ -25,6 +25,12 @@ import type { ReactNode } from 'react';
 
 import SportsMedicinePage from './page';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
+import {
+  CLEARANCE_BOARD_PAGE,
+  DECISION_LOOP_PAGE,
+  handOffArrivalAthlete,
+  takeArrivalAthlete,
+} from '@/components/decisionLoopArrival';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
@@ -33,8 +39,8 @@ jest.mock('@/components/RoleStandaloneView', () => ({
 
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href }: { readonly children: ReactNode; readonly href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({ children, href, onClick }: { readonly children: ReactNode; readonly href: string; readonly onClick?: () => void }) => (
+    <a href={href} onClick={(event) => { event.preventDefault(); onClick?.(); }}>{children}</a>
   ),
 }));
 
@@ -2864,5 +2870,105 @@ describe('setting clearance on the board (OW25-45 B)', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+// Lane AS-5 (app scrub CS-03, CS-05, CS-08): find a name, the links above the
+// roster, a row's way to the family post, and the athlete Escalations hands
+// over. None of it changes what a row reads or shows.
+describe('finding an athlete and the links out (lane AS-5)', () => {
+  const SECOND = { athlete_id: 'ath-2', full_name: 'Sam Roe' };
+  const twoAthletes = () =>
+    mockFetch({ '/athletes/list': () => ({ ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) }) as Response });
+  const findBox = () => screen.getByLabelText('Find an athlete') as HTMLInputElement;
+
+  afterEach(() => {
+    takeArrivalAthlete(CLEARANCE_BOARD_PAGE);
+    takeArrivalAthlete(DECISION_LOOP_PAGE);
+  });
+
+  test('a name in the box narrows the roster; a miss says so; an empty box shows everyone', async () => {
+    global.fetch = twoAthletes();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+
+    fireEvent.change(findBox(), { target: { value: 'sam' } });
+    expect(screen.getByText('Sam Roe')).toBeTruthy();
+    expect(screen.queryByText('Jordan Doe')).toBeNull();
+
+    fireEvent.change(findBox(), { target: { value: 'nobody here' } });
+    expect(screen.getByRole('status').textContent).toBe('No athlete matches "nobody here". Clear the box to see them all.');
+    // A miss is not an empty roster.
+    expect(screen.queryByText('No athletes on your roster')).toBeNull();
+
+    fireEvent.change(findBox(), { target: { value: '' } });
+    expect(screen.getByText('Jordan Doe')).toBeTruthy();
+    expect(screen.getByText('Sam Roe')).toBeTruthy();
+  });
+
+  test('the box is not offered while the board could not be read, so a failed read never reads as a miss', async () => {
+    global.fetch = mockFetch({ '/athletes/list': () => ({ ok: false, json: async () => ({}) }) as Response });
+    render(<SportsMedicinePage />);
+    await screen.findByText('The clearance board could not be read');
+    expect(screen.queryByLabelText('Find an athlete')).toBeNull();
+  });
+
+  test('the board\'s links sit above the roster', async () => {
+    global.fetch = mockFetch();
+    render(<SportsMedicinePage />);
+    const name = await screen.findByText('Jordan Doe');
+    for (const label of ['Injury Record', 'Sparring Caps', 'Medical Restrictions', 'Progression Intelligence', 'Performance Analytics']) {
+      const link = screen.getByRole('link', { name: label });
+      expect(link.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(findBox().compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('each row opens the Decision Loop at the family post on that athlete, with no athlete in the address', async () => {
+    global.fetch = twoAthletes();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+
+    const links = screen.getAllByRole('link', { name: "Post to the Family's Page" });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link.getAttribute('href')).toBe('/coach/decision-loop#post-to-family');
+    }
+    const samRow = screen.getByText('Sam Roe').closest('li') as HTMLElement;
+    fireEvent.click(within(samRow).getByRole('link', { name: "Post to the Family's Page" }));
+    // Handed to the Decision Loop and to no other page.
+    expect(takeArrivalAthlete(CLEARANCE_BOARD_PAGE)).toBeNull();
+    fireEvent.click(within(samRow).getByRole('link', { name: "Post to the Family's Page" }));
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBe('ath-2');
+  });
+
+  test('an athlete handed over from Escalations is found by name when the roster lists them', async () => {
+    global.fetch = twoAthletes();
+    handOffArrivalAthlete('ath-2', CLEARANCE_BOARD_PAGE);
+    render(<SportsMedicinePage />);
+
+    await screen.findByText('Sam Roe');
+    expect(findBox().value).toBe('Sam Roe');
+    expect(screen.queryByText('Jordan Doe')).toBeNull();
+  });
+
+  test('an athlete the roster does not list: the board opens as it always has', async () => {
+    global.fetch = twoAthletes();
+    handOffArrivalAthlete('ath-not-yours', CLEARANCE_BOARD_PAGE);
+    render(<SportsMedicinePage />);
+
+    await screen.findByText('Sam Roe');
+    expect(findBox().value).toBe('');
+    expect(screen.getByText('Jordan Doe')).toBeTruthy();
+  });
+
+  test('a hand-off meant for the Decision Loop does not narrow the board', async () => {
+    global.fetch = twoAthletes();
+    handOffArrivalAthlete('ath-2');
+    render(<SportsMedicinePage />);
+
+    await screen.findByText('Sam Roe');
+    expect(findBox().value).toBe('');
+    expect(screen.getByText('Jordan Doe')).toBeTruthy();
   });
 });

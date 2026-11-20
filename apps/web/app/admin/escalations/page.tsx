@@ -18,6 +18,8 @@ import type { SafetyEscalationSourceType } from '@/src/server/pilot/escalationLa
 import { PAIN_ESCALATION_LABEL, isPainReportEscalation } from '@/src/shared/painScoreLabel';
 import BackHome from '@/components/BackHome';
 import RoleLink from '@/components/RoleLink';
+import Link from 'next/link';
+import { CLEARANCE_BOARD_PAGE, DECISION_LOOP_PAGE, handOffArrivalAthlete } from '@/components/decisionLoopArrival';
 
 type EscalationSeverity = 'low' | 'moderate' | 'high' | 'critical';
 type EscalationStatus = 'open' | 'acknowledged' | 'resolved';
@@ -448,7 +450,30 @@ export default function EscalationsPage() {
                           <span className={`badge ${badge.rung}`}><i>{badge.glyph}</i>{severityText(item)}</span>
                         </td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{SOURCE_LABEL[item.source_type]}</td>
-                        <td className="t-body px-[var(--s4)] py-[var(--s3)]">{athleteCell(item.athlete_id)}</td>
+                        <td className="t-body px-[var(--s4)] py-[var(--s3)]">
+                          {athleteCell(item.athlete_id)}
+                          {/* This athlete's records (app scrub CS-08), named by the
+                              pages' own titles. Both pages admit exactly the
+                              roles this one does (coach, admin). The athlete
+                              goes in page memory, never the address (#1474 Q2 = C);
+                              each page opens on them only if its roster lists them. */}
+                          <span className="mt-[var(--s2)] flex flex-wrap gap-x-[var(--s3)] gap-y-[var(--s2)] t-label">
+                            <Link
+                              href={CLEARANCE_BOARD_PAGE}
+                              className="underline"
+                              onClick={() => handOffArrivalAthlete(item.athlete_id, CLEARANCE_BOARD_PAGE)}
+                            >
+                              Clearance Board
+                            </Link>
+                            <Link
+                              href={DECISION_LOOP_PAGE}
+                              className="underline"
+                              onClick={() => handOffArrivalAthlete(item.athlete_id, DECISION_LOOP_PAGE)}
+                            >
+                              SHADOW Decision Loop
+                            </Link>
+                          </span>
+                        </td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)] max-w-[40ch]">{item.reason}</td>
                         <td className="t-body px-[var(--s4)] py-[var(--s3)]">{formatDate(item.created_at)}</td>
                         <td className="px-[var(--s4)] py-[var(--s3)]">
@@ -551,6 +576,11 @@ export default function EscalationsPage() {
           ) : null}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
+            {/* Safety Flags admits coach and admin (its RoleSessionGate);
+                one link to it from this queue (app scrub CS-08). */}
+            <RoleLink href="/admin/safety-flags" roles={['coach', 'admin']} className="btn btn--ghost">
+              Safety Flags
+            </RoleLink>
             {/* Admits a coach as well as an admin: Compliance Center is
                 admin-only, and back goes to the reader's own home (lane U2). */}
             <RoleLink href="/admin/compliance-center" roles={['admin']} className="btn btn--ghost">

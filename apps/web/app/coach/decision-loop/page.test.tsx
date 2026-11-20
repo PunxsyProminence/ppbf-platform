@@ -3426,6 +3426,60 @@ describe('arriving from "Record what you did"', () => {
   });
 });
 
+// Lane AS-5, CS-03: the Clearance Board's "Post to the Family's Page" link
+// opens this page on its athlete at that section. The address carries the
+// section's name, never the athlete.
+describe('arriving from "Post to the Family\'s Page"', () => {
+  const scrolled: Element[] = [];
+  const original = Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    scrolled.length = 0;
+    Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
+      scrolled.push(this);
+    };
+  });
+
+  afterEach(() => {
+    takeArrivalAthlete();
+    Element.prototype.scrollIntoView = original;
+    window.history.replaceState(null, '', '/');
+  });
+
+  test('the arriving athlete is chosen and the page scrolls to the post, once', async () => {
+    installFetch();
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await screen.findByText('Behavior & Habit Note');
+    expect(athletePicker().value).toBe('ath-1');
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+    expect(scrolled[0].id).toBe('post-to-family');
+    expect(within(scrolled[0] as HTMLElement).getByRole('heading', { name: "Post to the Family's Page" })).toBeInTheDocument();
+  });
+
+  test('an arrival without the section in the address does not scroll', async () => {
+    installFetch();
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await screen.findByText('Behavior & Habit Note');
+    expect(athletePicker().value).toBe('ath-1');
+    expect(scrolled).toEqual([]);
+  });
+
+  test('the section in the address with no athlete handed over: nobody is chosen, nothing scrolls', async () => {
+    installFetch();
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    render(<DecisionLoopReviewPage />);
+
+    await screen.findByRole('option', { name: 'Jordan T.' });
+    expect(athletePicker().value).toBe('');
+    expect(scrolled).toEqual([]);
+  });
+});
+
 // F-072: what the coach reads on this page is the gym's day and time in words,
 // never a stored instant in computer form or the account id of who set it.
 // Each instant below is late in the gym's evening, so a UTC day is the wrong day.

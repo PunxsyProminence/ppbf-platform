@@ -11,6 +11,14 @@ import WorkAxis from '@/components/WorkAxis';
 import PastTrainingHolds from '@/components/PastTrainingHolds';
 import ArmedButton from '@/components/ArmedButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
+import ClusterNav from '@/components/ClusterNav';
+import {
+  CLEARANCE_BOARD_PAGE,
+  DECISION_LOOP_PAGE,
+  POST_TO_FAMILY_SECTION,
+  handOffArrivalAthlete,
+  takeArrivalAthlete,
+} from '@/components/decisionLoopArrival';
 
 // The coach's clearance board (owner decision 2026-08-15): clearance status
 // and active training holds with athlete-safe explanations ONLY.
@@ -321,6 +329,14 @@ export default function SportsMedicinePage() {
   const [rows, setRows] = useState<ClearanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // "Find an athlete" (app scrub CS-05; the label admin/athletes uses). It
+  // narrows what is shown and nothing else: every row is still read, and a row
+  // the box hides keeps its own reads and re-reads.
+  const [findText, setFindText] = useState('');
+  // An athlete handed over by a link (Escalations, lane AS-5 CS-08), in page
+  // memory, never the address (#1474 Q2 = C). Taken once: the ref keeps a
+  // second effect run from taking it again.
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
 
   // Write state. One athlete at a time: a hold names one child, and a form
   // shared across rows cannot be submitted against the wrong one.
@@ -398,6 +414,7 @@ export default function SportsMedicinePage() {
   }, []);
 
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete(CLEARANCE_BOARD_PAGE);
     void (async () => {
       try {
         const rosterRes = await fetch(`${apiBase()}/api/pilot/athletes/list`, {
@@ -454,6 +471,14 @@ export default function SportsMedicinePage() {
 
         setRows(built);
         setErrorMessage(null);
+        // The handed-over athlete is shown only if the roster, the server's
+        // answer to whom this viewer may reach, lists them, and by the name
+        // the row shows. Not listed, or no name on file: the board opens as it
+        // always has.
+        const arriving = arrivalAthleteRef.current;
+        arrivalAthleteRef.current = null;
+        const named = arriving ? roster.find((athlete) => athlete.athlete_id === arriving)?.full_name?.trim() : '';
+        if (named) setFindText(named);
       } catch (error) {
         setRows([]);
         setErrorMessage(error instanceof Error ? error.message : 'Unable to load the clearance board.');
@@ -822,6 +847,10 @@ export default function SportsMedicinePage() {
     }
   };
 
+  // A name match, any case, anywhere in the name; an empty box shows everyone.
+  const findQuery = findText.trim().toLowerCase();
+  const shownRows = findQuery ? rows.filter((row) => row.full_name.toLowerCase().includes(findQuery)) : rows;
+
   return (
     <RoleStandaloneView roleLabel="Coach Workspace" routeLabel="/coach/sports-medicine" allowedRoles={['coach', 'admin']} room="clinic" showShellHeader={false}>
       {/* This div is a CHILD of RoleStandaloneView's room element, so nothing it
@@ -878,6 +907,7 @@ export default function SportsMedicinePage() {
             >
               Clearance Board
             </h1>
+            <ClusterNav cluster="clinic" />
             <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
               Clearance status and active training holds for your roster — exactly what the athlete themselves
               can read, and nothing more. Clearance records are set here, by coaches and the office. An athlete with no record
@@ -888,6 +918,29 @@ export default function SportsMedicinePage() {
               an organization admin in the same breath, and the sentence you write is the one that athlete and
               their guardian read.
             </p>
+          </div>
+
+          {/* The board's links, above the roster rather than under it (app
+              scrub CS-05): on a long roster the foot of the page is far. */}
+          <div className="mb-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
+            <Link href="/coach/injuries" className="btn btn--ghost">
+              Injury Record
+            </Link>
+            <Link href="/coach/sparring-caps" className="btn btn--ghost">
+              Sparring Caps
+            </Link>
+            {/* USA Boxing medical restrictions (Backbone P22) live on their own
+                page: this board's 2026-08-15 rule is clearance and holds only,
+                never clinical detail (OD-2026-10-04-001, -017). A link only. */}
+            <Link href="/coach/medical-restrictions" className="btn btn--ghost">
+              Medical Restrictions
+            </Link>
+            <Link href="/coach/progression-intelligence" className="btn btn--ghost">
+              Progression Intelligence
+            </Link>
+            <Link href="/coach/performance-analytics" className="btn btn--ghost">
+              Performance Analytics
+            </Link>
           </div>
 
           {/* A board that would not load is a network fact, not a medical one.
@@ -938,8 +991,25 @@ export default function SportsMedicinePage() {
               </div>
             </div>
           ) : (
+            <>
+            <div className="field mb-[var(--s4)]">
+              <label className="t-label" htmlFor="clearance-find">Find an athlete</label>
+              <input
+                id="clearance-find"
+                type="search"
+                className="input"
+                value={findText}
+                onChange={(event) => setFindText(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            {shownRows.length === 0 ? (
+              <p className="t-body" role="status">
+                {`No athlete matches "${findText.trim()}". Clear the box to see them all.`}
+              </p>
+            ) : null}
             <ul className="space-y-[var(--s3)]">
-              {rows.map((row) => {
+              {shownRows.map((row) => {
                 const badge = clearanceBadge(row);
                 const busy = busyAthletes.has(row.athlete_id);
                 const rowRefusal = refusals.get(row.athlete_id) ?? null;
@@ -1064,6 +1134,17 @@ export default function SportsMedicinePage() {
                         >
                           Set clearance status
                         </button>
+                        {/* Opens the Decision Loop on this athlete, at the post
+                            (app scrub CS-03). Named for the heading it lands on,
+                            one name per thing (lane AS-5 Q7a = A). The athlete
+                            goes in page memory, never the address. */}
+                        <Link
+                          href={`${DECISION_LOOP_PAGE}#${POST_TO_FAMILY_SECTION}`}
+                          className="btn btn--ghost"
+                          onClick={() => handOffArrivalAthlete(row.athlete_id, DECISION_LOOP_PAGE)}
+                        >
+                          Post to the Family&apos;s Page
+                        </Link>
                         {statusSetFor.has(row.athlete_id) ? (
                           <p role="status" className="t-body" style={{ fontSize: 'var(--t-sm)' }}>Status set.</p>
                         ) : null}
@@ -1361,28 +1442,9 @@ export default function SportsMedicinePage() {
                 );
               })}
             </ul>
+            </>
           )}
 
-          <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
-            <Link href="/coach/injuries" className="btn btn--ghost">
-              Injury Record
-            </Link>
-            <Link href="/coach/sparring-caps" className="btn btn--ghost">
-              Sparring Caps
-            </Link>
-            {/* USA Boxing medical restrictions (Backbone P22) live on their own
-                page: this board's 2026-08-15 rule is clearance and holds only,
-                never clinical detail (OD-2026-10-04-001, -017). A link only. */}
-            <Link href="/coach/medical-restrictions" className="btn btn--ghost">
-              Medical Restrictions
-            </Link>
-            <Link href="/coach/progression-intelligence" className="btn btn--ghost">
-              Progression Intelligence
-            </Link>
-            <Link href="/coach/performance-analytics" className="btn btn--ghost">
-              Performance Analytics
-            </Link>
-          </div>
 
         {/* The four words, at the foot of the page — the same foot the
             approved boards put under every full screen. See WorkAxis. */}

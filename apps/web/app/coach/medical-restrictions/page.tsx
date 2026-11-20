@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import ClusterNav from '@/components/ClusterNav';
 import MedicalRestrictionsPanel from '@/components/MedicalRestrictionsPanel';
 import { apiBase } from '@/lib/apiBase';
 import WorkAxis from '@/components/WorkAxis';
@@ -59,6 +60,7 @@ export default function MedicalRestrictionsPage() {
           <h1 className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]" style={{ fontSize: 'var(--t-2xl)' }}>
             Medical Restrictions
           </h1>
+          <ClusterNav cluster="clinic" />
           <p className="mt-[var(--s3)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
             USA Boxing medical restrictions: from a ringside Restriction Affidavit, a training knockout or
             concussion, or another source. The app stores the dates, not the documents.
