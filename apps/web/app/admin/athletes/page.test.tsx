@@ -156,22 +156,29 @@ describe('/admin/athletes', () => {
     });
   });
 
-  /* OFF-16 (lane U1). The left-the-gym block said "Turn the sign-in off on
-     the People screen", but Gym Office has no switch-off for an athlete row
-     (Deactivate is for coach, staff and volunteer rows, OD-2026-10-07-009).
-     It names the controls that do exist, by their own words. */
-  test('the left-the-gym block names the sign-in controls that exist, on Gym Office', async () => {
+  /* OFF-16. Gym Office now has the switch for an athlete login (Jason
+     2026-11-19, OD-2026-11-19-025; lane SW, Overwatch Q3 A), so the
+     left-the-gym block names it by its own words: the page is "Gym Office"
+     (its title and menu name) and the buttons are "Deactivate" and
+     "Reactivate". "Mark as left the gym" itself still switches nothing off. */
+  test('the left-the-gym block names the sign-in switch on Gym Office, by its own words', async () => {
     global.fetch = consoleFetch() as unknown as typeof fetch;
 
     render(<AthleteRecordsPage />);
     fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
 
-    const page = document.body.textContent ?? '';
+    const page = (document.body.textContent ?? '').replace(/\s+/g, ' ');
+    expect(page).toContain(
+      "Two things it does not do: it does not switch off their sign-in, and it does not take them off their coach's lists. "
+      + 'To switch their sign-in off, use Deactivate on Gym Office; Reactivate there turns it back on.',
+    );
+    // The sentence that stopped being true, and the older wording before it.
+    expect(page).not.toMatch(/There is no switch that turns an athlete.s sign-in off/);
     expect(page).not.toMatch(/People screen/);
     expect(page).not.toMatch(/Turn the sign-in off/);
-    expect(page).toMatch(/There is no switch that turns an athlete.s sign-in off for good\./);
-    expect(page).toMatch(/On Gym Office, Sign\s+Out Everywhere ends their open sessions; for a PIN athlete, Issue New Activation Code stops their PIN\s+working until the new code is redeemed\./);
-    expect(page).not.toMatch(/replaces their PIN/);
+    // One name for the page: the link to it says what its title says.
+    expect(screen.getByRole('link', { name: 'Gym Office' }).getAttribute('href')).toBe('/admin/people');
+    expect(screen.queryByRole('link', { name: 'People' })).toBeNull();
   });
 
   test('offboarding writes active_flag false and leaves the rest of the record standing', async () => {

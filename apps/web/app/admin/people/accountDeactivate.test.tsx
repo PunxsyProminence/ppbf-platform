@@ -4,10 +4,12 @@
 
 /**
  * Switching a departed coach, staff member or volunteer off (Jason
- * 2026-10-07, OD-2026-10-07-009, "Yes, org admin can").
+ * 2026-10-07, OD-2026-10-07-009, "Yes, org admin can"), and an athlete the
+ * same way (Jason 2026-11-19, OD-2026-11-19-025, "A: Add a switch").
  *
  * The control is offered only where the server will say yes -- coach, staff,
- * volunteer -- so an admin never meets a button that always refuses. It is
+ * volunteer, and an athlete who has activated (holds a PIN) -- so an admin
+ * never meets a button that always refuses. It is
  * armed, because a stray tap locks a colleague out, and the arming text says
  * what it does: sessions end now and sign-in is refused until reactivated.
  * A deactivated row carries the one-press way back.
@@ -58,6 +60,15 @@ const MEMBERS = [
   member('volunteer@example.com', 'volunteer'),
   member('parent@example.com', 'parent'),
   member('gone@example.com', 'coach', { active_flag: false, membership_active: false }),
+  // Athlete logins: a PIN athlete who has activated, one waiting for their
+  // code (active_flag false is "not activated yet"), and one switched off.
+  member('athlete-on', 'athlete', { login_email: null, auth_provider: 'ppbf_local', athlete_id: 'ath-on', has_pin: true }),
+  member('athlete-waiting', 'athlete', {
+    login_email: null, auth_provider: 'ppbf_local', athlete_id: 'ath-waiting', has_pin: false, active_flag: false, membership_active: false,
+  }),
+  member('athlete-off', 'athlete', {
+    login_email: null, auth_provider: 'ppbf_local', athlete_id: 'ath-off', has_pin: true, active_flag: false, membership_active: false,
+  }),
 ];
 
 interface Options {
@@ -81,6 +92,9 @@ function installFetch(options: Options = {}): jest.Mock {
         status: outcome.status ?? (outcome.ok ? 200 : 400),
         json: async () => (outcome.ok ? { ok: true, account_id: body.account_id, active_flag: body.active_flag } : { error: outcome.error }),
       } as Response;
+    }
+    if (url.includes('/api/pilot/admin/accounts/revoke')) {
+      return { ok: true, status: 200, json: async () => ({ ok: true }) } as Response;
     }
     if (url.includes('/api/pilot/admin/athlete-pin-directory')) {
       return { ok: true, status: 200, json: async () => ({ ok: true, items: [] }) } as Response;
@@ -119,7 +133,7 @@ afterEach(() => {
 });
 
 describe('where the switch is offered', () => {
-  it('is offered on coach, staff and volunteer rows, and on nobody else', async () => {
+  it('is offered on coach, staff and volunteer rows, and never on an admin or a guardian (athletes: below)', async () => {
     await renderConsole();
 
     for (const accountId of ['coach@example.com', 'staff@example.com', 'volunteer@example.com']) {
@@ -212,5 +226,86 @@ describe('reactivating', () => {
       expect(within(rowOf('gone@example.com')).queryByText('Deactivated')).toBeNull();
       expect(within(rowOf('gone@example.com')).getByRole('button', { name: 'Deactivate gone@example.com' })).not.toBeNull();
     });
+  });
+});
+
+/* ---- Athlete logins (OD-2026-11-19-025; Overwatch GO on lane SW, Q2 A) ---- */
+
+describe('an athlete login', () => {
+  it('gets the switch once activated, with the staff words, and none while awaiting activation', async () => {
+    const mock = await renderConsole();
+
+    const on = rowOf('athlete-on');
+    expect(within(on).getByRole('button', { name: 'Deactivate athlete-on' })).not.toBeNull();
+    expect(within(on).getByRole('button', { name: 'Issue New Activation Code' })).not.toBeNull();
+
+    // No PIN yet: the server refuses both directions, so no switch is offered.
+    const waiting = rowOf('athlete-waiting');
+    expect(within(waiting).getByText('Awaiting activation')).not.toBeNull();
+    expect(within(waiting).queryByRole('button', { name: /Deactivate|Reactivate/ })).toBeNull();
+    expect(within(waiting).getByRole('button', { name: 'Issue New Activation Code' })).not.toBeNull();
+
+    fireEvent.click(within(on).getByRole('button', { name: 'Deactivate athlete-on' }));
+    expect(statusCalls(mock)).toHaveLength(0);
+    expect(screen.getByText(
+      'Deactivates athlete-on now: signed out on every device, and their sign-in is refused until you reactivate them. Nothing else about them changes.',
+    )).not.toBeNull();
+  });
+
+  it('while switched off, the row reads Deactivated and offers Reactivate, not Issue New Activation Code', async () => {
+    await renderConsole();
+
+    const off = rowOf('athlete-off');
+    expect(within(off).getByText('Deactivated')).not.toBeNull();
+    expect(within(off).getByRole('button', { name: 'Reactivate athlete-off' })).not.toBeNull();
+    expect(within(off).queryByRole('button', { name: 'Issue New Activation Code' })).toBeNull();
+    expect(within(off).queryByRole('button', { name: /^Deactivate/ })).toBeNull();
+  });
+
+  it('deactivating posts the staff request; the re-read row reads Deactivated, with Reactivate in place of the code control', async () => {
+    const mock = await renderConsole();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate athlete-on' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Deactivate' }));
+
+    await waitFor(() => expect(statusCalls(mock)).toHaveLength(1));
+    expect(JSON.parse(String(statusCalls(mock)[0][1].body))).toEqual({ account_id: 'athlete-on', active_flag: false });
+    expect(await screen.findByText(
+      'athlete-on is deactivated: signed out on every device, and sign-in is refused until you reactivate them.',
+    )).not.toBeNull();
+    await waitFor(() => {
+      const row = rowOf('athlete-on');
+      expect(within(row).getByText('Deactivated')).not.toBeNull();
+      expect(within(row).getByRole('button', { name: 'Reactivate athlete-on' })).not.toBeNull();
+      expect(within(row).queryByRole('button', { name: 'Issue New Activation Code' })).toBeNull();
+    });
+    // Never the activation-code reset as a side effect.
+    expect(mock.mock.calls.some(([url]) => String(url).includes('/accounts/pin-reset'))).toBe(false);
+  });
+
+  it('reactivating posts active_flag true in one press, and the code control comes back', async () => {
+    const mock = await renderConsole();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivate athlete-off' }));
+
+    await waitFor(() => expect(statusCalls(mock)).toHaveLength(1));
+    expect(JSON.parse(String(statusCalls(mock)[0][1].body))).toEqual({ account_id: 'athlete-off', active_flag: true });
+    expect(await screen.findByText('athlete-off is active again and can sign in.')).not.toBeNull();
+    await waitFor(() => {
+      const row = rowOf('athlete-off');
+      expect(within(row).getByRole('button', { name: 'Deactivate athlete-off' })).not.toBeNull();
+      expect(within(row).getByRole('button', { name: 'Issue New Activation Code' })).not.toBeNull();
+    });
+  });
+
+  it('Sign Out Everywhere on an activated athlete names the switch as the next step', async () => {
+    await renderConsole();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign athlete-on out on every device' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign Them Out' }));
+
+    expect(await screen.findByText(
+      'athlete-on is signed out on every device. Their sign-in still works — they can sign back in. To stop that too, deactivate them.',
+    )).not.toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import { DEACTIVATABLE_ROLES, POST } from './route';
 import { getAccountRoleInOrganization, setAccountActiveStatus } from '@/src/server/pilot/auth';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import { writePilotAuditEvent } from '@/src/server/pilot/audit';
+import { ConflictError } from '@/src/server/pilot/errors';
 import { requireMicrosoftAuthenticatedPrincipal } from '@/src/server/pilot/http';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -54,13 +55,13 @@ beforeEach(() => {
   mockAudit.mockResolvedValue(undefined as never);
 });
 
-/* ---- The ruling's shape: coach, staff, volunteer, and nothing else ---- */
+/* ---- The rulings' shape: coach, staff, volunteer, athlete, and nothing else ---- */
 
-test('the deactivatable roles are exactly coach, staff and volunteer (OD-2026-10-07-009)', () => {
-  expect([...DEACTIVATABLE_ROLES].sort()).toEqual(['coach', 'staff', 'volunteer']);
+test('the deactivatable roles are exactly coach, staff, volunteer (OD-2026-10-07-009) and athlete (OD-2026-11-19-025)', () => {
+  expect([...DEACTIVATABLE_ROLES].sort()).toEqual(['athlete', 'coach', 'staff', 'volunteer']);
 });
 
-test.each(['coach', 'staff', 'volunteer'] as const)('deactivates a %s in the caller organization, revoking sessions through setAccountActiveStatus', async (role) => {
+test.each(['coach', 'staff', 'volunteer', 'athlete'] as const)('deactivates a %s in the caller organization, revoking sessions through setAccountActiveStatus', async (role) => {
   mockGetRole.mockResolvedValue(role);
 
   const response = await post({ account_id: 'acct-target', active_flag: false });
@@ -88,7 +89,6 @@ test.each([
   ['organization_admin', 'a peer admin'],
   ['admin', 'a peer admin under the legacy role name'],
   ['platform_owner', 'the platform owner'],
-  ['athlete', 'an athlete'],
   ['parent', 'a guardian'],
   ['board', 'a board seat'],
 ] as const)('refuses to deactivate %s (%s) and writes nothing', async (role, _why) => {
@@ -192,6 +192,35 @@ test('a deactivation is audited with the actor, the target and the role that was
     entity_id: 'acct-target',
     details: { action: 'organization_admin_deactivate_account', active_flag: false, target_role: 'volunteer' },
   });
+});
+
+test('an athlete is reactivated through the same route, the switch the staff rows use (OD-2026-11-19-025)', async () => {
+  mockGetRole.mockResolvedValue('athlete');
+
+  const response = await post({ account_id: 'acct-athlete', active_flag: true });
+
+  expect(response.status).toBe(200);
+  expect(mockSetStatus).toHaveBeenCalledWith('acct-athlete', 'org-1', true);
+  expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+    details: { action: 'organization_admin_reactivate_account', active_flag: true, target_role: 'athlete' },
+  }));
+});
+
+test.each([false, true])('an athlete with no PIN yet is refused by name (active_flag %s), and not audited as done', async (activeFlag) => {
+  mockGetRole.mockResolvedValue('athlete');
+  mockSetStatus.mockRejectedValue(new ConflictError(
+    'This athlete has not activated their sign-in yet, so there is nothing to switch off.',
+    'ATHLETE_SIGN_IN_NOT_ACTIVATED',
+  ));
+
+  const response = await post({ account_id: 'acct-athlete', active_flag: activeFlag });
+
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toEqual({
+    error: 'This athlete has not activated their sign-in yet, so there is nothing to switch off.',
+    code: 'ATHLETE_SIGN_IN_NOT_ACTIVATED',
+  });
+  expect(mockAudit).not.toHaveBeenCalled();
 });
 
 test('a refusal from setAccountActiveStatus (a deleted login) surfaces and is not audited as done', async () => {

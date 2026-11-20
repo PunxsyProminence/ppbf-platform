@@ -38,6 +38,18 @@ interface Member {
   staff_display_name?: string | null;
 }
 
+/**
+ * Whether this row gets Deactivate / Reactivate: the rows the deactivate route
+ * acts on. Its DEACTIVATABLE_ROLES are coach, staff, volunteer (OD-2026-10-07-009)
+ * and athlete (OD-2026-11-19-025); it refuses an athlete with no PIN yet,
+ * whose login already reads "Awaiting activation", so that row gets no switch.
+ * Offering one that always fails is a broken button.
+ */
+function canSwitchSignIn(member: Member): boolean {
+  if (member.role === 'coach' || member.role === 'staff' || member.role === 'volunteer') return true;
+  return member.role === 'athlete' && member.has_pin;
+}
+
 /** A row of pilot.athletes, with the login account joined on if it has one. */
 interface RosterAthlete {
   athlete_id: string;
@@ -273,7 +285,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
      roster. */
   const [revokeArmedId, setRevokeArmedId] = useState<string | null>(null);
   /* THE HEAVY ONE FOR STAFF (Jason 2026-10-07, OD-2026-10-07-009, "Yes, org
-     admin can"): switch a departed coach, staff member or volunteer off. The
+     admin can"): switch a departed coach, staff member or volunteer off, and
+     an athlete who has activated, the same way (OD-2026-11-19-025). The
      route ends their sessions and stops their sign-in; reactivation restores
      it. Armed per row like the sign-out above, because a stray tap here locks
      a colleague out. The server decides who may be switched off; this page
@@ -1014,14 +1027,14 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
         throw new Error(payload.error || 'Could not sign that account out');
       }
       setRevokeArmedId(null);
-      // The next step depends on who it is: only a PIN athlete has an
-      // activation code, and only coaches, staff and volunteers can be
-      // deactivated here (UXB-37).
+      // The next step depends on who it is (UXB-37): a row with the switch is
+      // deactivated, an athlete who has activated included (OD-2026-11-19-025);
+      // a PIN athlete with no PIN yet has only the activation code.
       const member = members.find((item) => item.account_id === accountId);
-      const nextStep = member?.auth_provider === 'ppbf_local' && member.role === 'athlete'
-        ? ' To stop that too, issue a new activation code.'
-        : member && member.active_flag && ['coach', 'staff', 'volunteer'].includes(member.role)
-          ? ' To stop that too, deactivate them.'
+      const nextStep = member && member.active_flag && canSwitchSignIn(member)
+        ? ' To stop that too, deactivate them.'
+        : member?.auth_provider === 'ppbf_local' && member.role === 'athlete'
+          ? ' To stop that too, issue a new activation code.'
           : '';
       setNotice(`${personLabel(accountId)} is signed out on every device. Their sign-in still works — they can sign back in.${nextStep}`);
     } catch (revokeError) {
@@ -1032,10 +1045,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
   }
 
   /**
-   * Switch a coach, staff or volunteer account off, or back on.
+   * Switch a coach, staff, volunteer or activated athlete account off, or
+   * back on.
    *
-   * Off: every session ends now and sign-in refuses until reactivated. On:
-   * sign-in works again, nothing else changes. The roster is re-read rather
+   * Off: every session ends now and sign-in refuses until reactivated (for an
+   * athlete, an unredeemed activation code stops working too). On: sign-in
+   * works again, nothing else changes. The roster is re-read rather
    * than patched, so the Sign-in badge shows what the server now holds.
    */
   async function handleSetAccountActive(accountId: string, activeFlag: boolean) {
@@ -1377,8 +1392,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     const linkCount = !isGuardian ? null : guardianLinksAvailable ? memberLinks.length : null;
                     const status = signInStatus(member, linkCount);
                     const isPinAthlete = member.auth_provider === 'ppbf_local' && member.role === 'athlete';
-                    // The same three roles the deactivate route accepts (its DEACTIVATABLE_ROLES).
-                    const isDeactivatable = member.role === 'coach' || member.role === 'staff' || member.role === 'volunteer';
+                    const isDeactivatable = canSwitchSignIn(member);
+                    const isSwitchedOff = !member.active_flag || !member.membership_active;
 
                     return (
                       <tr key={member.account_id}>
@@ -1613,7 +1628,11 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
 
                         <td>
                           <div className="flex flex-col items-start gap-[var(--s2)]">
-                            {isPinAthlete && (codeArmedId === member.account_id ? (
+                            {/* Not while a switched-off athlete's row shows
+                                Reactivate (OD-2026-11-19-025, Overwatch Q2 A):
+                                Reactivate is the way back on. The server still
+                                lets the gym admin issue a code. */}
+                            {isPinAthlete && !(isDeactivatable && isSwitchedOff) && (codeArmedId === member.account_id ? (
                               <>
                                 <p className="max-w-[34ch]">
                                   {/* Named as the office knows them: the roster's name for
@@ -1700,13 +1719,13 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                               </button>
                             )}
 
-                            {/* Only the rows the server will act on: coach,
-                                staff, volunteer (OD-2026-10-07-009). Admins,
-                                guardians and athletes have no switch here --
-                                offering one that always 403s is a broken
-                                button. */}
+                            {/* Only the rows the server will act on
+                                (canSwitchSignIn): coach, staff, volunteer, and
+                                an athlete who has activated. Admins, guardians
+                                and an athlete awaiting activation have no
+                                switch here. */}
                             {isDeactivatable && (
-                              !member.active_flag || !member.membership_active ? (
+                              isSwitchedOff ? (
                                 <button
                                   type="button"
                                   disabled={busy}

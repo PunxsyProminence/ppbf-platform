@@ -1499,22 +1499,52 @@ export async function getAccountRoleInOrganization(
   return rows.length > 0 ? rows[0].role : null;
 }
 
+/**
+ * The refusal for switching an athlete who has never activated (no PIN yet),
+ * in either direction (Overwatch GO on lane SW, 2026-11-20). Their
+ * active_flag is already false, meaning "not activated yet": there is no
+ * sign-in to switch off, and switching one "on" would leave an active login
+ * with no PIN. Issue New Activation Code is how such an athlete's code is
+ * replaced.
+ */
+export const ATHLETE_NOT_ACTIVATED_REFUSAL =
+  'This athlete has not activated their sign-in yet, so there is nothing to switch off.';
+
 export async function setAccountActiveStatus(accountId: string, organizationId: string, activeFlag: boolean): Promise<void> {
   await withTransaction(async (client) => {
     // A deleted login is changed in neither direction (OD-2026-09-30-004 e2):
     // activating it left it shown as active while sign-in refused it.
+    //
+    // Nor an athlete login with no PIN (OD-2026-11-19-025, lane SW): held in
+    // this WHERE, not only in a read before it, so a PIN reset that lands
+    // between the caller's read and this write is still refused. Every other
+    // role passes the condition unchanged.
+    //
+    // LOCK ORDER: THE ACCOUNT ROW FIRST. This UPDATE is the first lock taken,
+    // the same first lock activation-code issuance, redemption, PIN reset and
+    // deletion take before they touch the account's codes (activation.ts).
     const rows = await client.query<{ account_id: string }>(
       `update pilot.accounts a
        set active_flag = $3,
            updated_at = now()
        where account_id = $1 and organization_id = $2
          and not ${accountDeletedSql('a')}
+         and (a.role <> 'athlete' or a.pin_hash is not null)
        returning account_id`,
       [accountId, organizationId, activeFlag],
     );
 
     if (rows.rows.length === 0) {
       await refuseIfLoginDeleted(client, accountId, organizationId);
+      const notActivated = await client.query(
+        `select 1 from pilot.accounts a
+         where a.account_id = $1 and a.organization_id = $2
+           and a.role = 'athlete' and a.pin_hash is null`,
+        [accountId, organizationId],
+      );
+      if (notActivated.rows.length > 0) {
+        throw new ConflictError(ATHLETE_NOT_ACTIVATED_REFUSAL, 'ATHLETE_SIGN_IN_NOT_ACTIVATED');
+      }
       throw new Error('Missing account_id or organization_id');
     }
 
@@ -1527,6 +1557,19 @@ export async function setAccountActiveStatus(accountId: string, organizationId: 
     );
 
     if (!activeFlag) {
+      // An activation code issued before the switch and not yet redeemed would
+      // otherwise turn the login back on: redemption sets active_flag true
+      // (activation.ts redeemActivationCode). Superseded here, after the
+      // account-row lock above and in the same transaction, so a redemption
+      // either committed first (and is then switched off and signed out
+      // below) or waits on that lock and finds its code superseded. Only
+      // athlete logins carry codes; for any other role this matches nothing.
+      await client.query(
+        `update pilot.account_activation_tokens
+         set superseded_at = now()
+         where account_id = $1 and consumed_at is null and superseded_at is null`,
+        [accountId],
+      );
       await revokeAllSessionsForAccountTx(client, accountId);
     }
   });
