@@ -1,15 +1,18 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import GymTvPanel from '@/components/GymTvPanel';
+import { COACH_TILES_REFRESH_MS } from '@/components/CoachLiveTiles';
+import PainReportsPanel from '@/components/PainReportsPanel';
 import SessionScriptLiveDelivery, { RUN_GONE } from '@/components/SessionScriptLiveDelivery';
 import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
 import { fetchOwnLiveRun, startClassSession, startRefusalWords } from '@/src/client/startClassSession';
 import { defaultClassChoice, type ClassChoice, type TieableClassView } from '@/src/shared/sessionClassChoice';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
+import { painTileRead, usePainReports, type PainReportsRead } from '@/components/usePainReports';
 
 // THE CLASS SCREEN (lane U2-6a; app scrub AS-6; Overwatch GO 6a, Q4 = A, Q5 = A, Q6 = A, Q8 = A).
 //
@@ -19,7 +22,10 @@ import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns'
 //     when it is one of today's free classes. Plans are still started from Session Plans;
 //   - a live session: the live console (SessionScriptLiveDelivery, moved here from Session Plans)
 //     and Gym TVs (GymTvPanel), so the coach sends the session to a TV from the same screen.
-// The pain list by name is lane U2-6b, not here.
+// While a session is live the pain list shows under the console and Gym TVs (lane U2-6b-2;
+// QH = B on #2023): one read of the pain feed, every two minutes (6b Q4 = A, on #2005), draws
+// the list and the console's pain tile, so the two read the same rows over the same window
+// (Overwatch's 6b ruling).
 //
 // THE SERVER DECIDES. The first question is the same one Session Plans asks: does this coach
 // already have a session in progress? A failed read is its own state -- "a session may exist that
@@ -31,6 +37,12 @@ const CLASS_NOT_FREE = "That class is not one of today's free classes.";
 const RESTORED = 'You already had a session in progress. It has been restored, not restarted.';
 /** This screen's TV switch, named for Gym TVs below it (lane U2-6a). */
 const CLASS_SCREEN_TV_SWITCH = { name: 'Allow on a TV', place: 'above' } as const;
+
+/** The one pain read, made only while a session is live (it mounts with the console). */
+function LiveSessionPainRead({ children }: { children: (read: PainReportsRead) => ReactNode }) {
+  const read = usePainReports({ refreshMs: COACH_TILES_REFRESH_MS });
+  return <>{children(read)}</>;
+}
 
 function ClassScreen() {
   const params = useSearchParams();
@@ -187,43 +199,55 @@ function ClassScreen() {
         )}
 
         {liveRun && (
-          <>
-            <div className="mt-[var(--s5)]">
-              <SessionScriptLiveDelivery
-                key={liveRun.run_id}
-                initialRun={liveRun}
-                tvStatusRefresh={tvChanges}
-                // Every run the console adopts is the page's too, so Gym TVs below never works
-                // from an older copy of the switch or of which run is live.
-                onRunChange={setReportedRun}
-                onSettled={(settled) => {
-                  setLiveRun(null);
-                  resetClassChoice();
-                  setNotice(
-                    `This session was recorded as ${settled.run_state === 'abandoned' ? 'abandoned' : 'completed'}. `
-                    + 'It is settled and can no longer be changed from this screen.',
-                  );
-                }}
-                onRunGone={(message) => {
-                  setLiveRun(null);
-                  resetClassChoice();
-                  setNotice(message);
-                }}
-              />
-            </div>
-            <div className="mt-[var(--s6)]">
-              <GymTvPanel
-                liveRun={{ run_id: (shownRun ?? liveRun).run_id, show_on_wall: (shownRun ?? liveRun).show_on_wall }}
-                liveRunKnown
-                // The live run read is the coach's own (getLiveRunForCoach), so this is the
-                // signed-in coach: "your session" is said honestly.
-                coachAccountId={(shownRun ?? liveRun).delivered_by_account_id}
-                onRunStale={recheckLiveRun}
-                onTvsChanged={() => setTvChanges((count) => count + 1)}
-                tvSwitch={CLASS_SCREEN_TV_SWITCH}
-              />
-            </div>
-          </>
+          <LiveSessionPainRead>
+            {(painRead) => (
+              <>
+                <div className="mt-[var(--s5)]">
+                  <SessionScriptLiveDelivery
+                    key={liveRun.run_id}
+                    initialRun={liveRun}
+                    painFeed={painTileRead(painRead)}
+                    tvStatusRefresh={tvChanges}
+                    // Every run the console adopts is the page's too, so Gym TVs below never works
+                    // from an older copy of the switch or of which run is live.
+                    onRunChange={setReportedRun}
+                    onSettled={(settled) => {
+                      setLiveRun(null);
+                      resetClassChoice();
+                      setNotice(
+                        `This session was recorded as ${settled.run_state === 'abandoned' ? 'abandoned' : 'completed'}. `
+                        + 'It is settled and can no longer be changed from this screen.',
+                      );
+                    }}
+                    onRunGone={(message) => {
+                      setLiveRun(null);
+                      resetClassChoice();
+                      setNotice(message);
+                    }}
+                  />
+                </div>
+                <div className="mt-[var(--s6)]">
+                  <GymTvPanel
+                    liveRun={{ run_id: (shownRun ?? liveRun).run_id, show_on_wall: (shownRun ?? liveRun).show_on_wall }}
+                    liveRunKnown
+                    // The live run read is the coach's own (getLiveRunForCoach), so this is the
+                    // signed-in coach: "your session" is said honestly.
+                    coachAccountId={(shownRun ?? liveRun).delivered_by_account_id}
+                    onRunStale={recheckLiveRun}
+                    onTvsChanged={() => setTvChanges((count) => count + 1)}
+                    tvSwitch={CLASS_SCREEN_TV_SWITCH}
+                  />
+                </div>
+                {/* Under Gym TVs (QH = B on #2023): the top row's tile already shows the count, so up
+                    to 50 cards never push the TV controls off screen. No floor board on this screen:
+                    "Record What You Did" is the panel's link. The read is every two minutes
+                    (COACH_TILES_REFRESH_MS), which the panel's line under an empty list says. */}
+                <div className="mt-[var(--s6)]">
+                  <PainReportsPanel read={painRead} boardShown={false} readsEveryTwoMinutes />
+                </div>
+              </>
+            )}
+          </LiveSessionPainRead>
         )}
 
         {/* With the live-session check failed, Start shows but stays off, as the alert above says. */}

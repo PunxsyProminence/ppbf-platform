@@ -126,8 +126,9 @@ const FLOOR_ROUTES = [
   'coach/attempt-log',
   'coach/assessments',
   'coach/test-day',
-  'coach/injuries',
-  'coach/medical-restrictions', // OD-2026-11-17-009 ruling 4 (OW25-37 A)
+  // Injury Record and Medical Restrictions (OD-2026-11-17-009 ruling 4, OW25-37 A)
+  // are sections of Athlete Safety now (lane AS-5); their old addresses redirect.
+  'coach/athlete-safety',
   'coach/sparring-caps', // app scrub CS-11 (lane AS-5)
   'coach/drills', // OD-2026-11-17-009 ruling 4 (OW25-37 A)
   'coach/behavior-standards', // app scrub CF-24 (lane U1, SC2-2)

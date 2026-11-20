@@ -147,6 +147,25 @@ test('a failed pain-report read is shown on the floor first, never as "nothing n
   expect(floor().getByText('Pain reports')).toBeTruthy();
 });
 
+test('a pain report the coach home cannot draw marks the pain feed failed, never "nothing needs you" (lane U2-6b-2)', async () => {
+  await renderWorkspace({
+    painReports: () => jsonResponse({
+      ok: true, windowDays: 14, truncated: false,
+      painReports: [{
+        nearMissId: 'nm_9', athleteId: 'ath_9', athleteName: 'Casey R.', severity: 'moderate', painScore: 4,
+        location: null, painType: null, observedAt: null, recordedAt: null, reporter: 'parent',
+      }],
+    }),
+  });
+
+  expect(floor().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
+  expect(floor().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
+  expect(floor().getByText('Pain reports')).toBeTruthy();
+  // The floor says it in the panel's own failed-read words.
+  expect(floor().getByText(/Unable to load athlete pain reports/)).toBeTruthy();
+  expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
+});
+
 test('a failed escalation read is shown on the floor first, ahead of any report', async () => {
   await renderWorkspace({
     escalationsGet: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }),
@@ -161,6 +180,14 @@ test('with every read healthy and empty, the floor says nothing has been reporte
   await renderWorkspace({ athletesList: roster });
   expect(floor().getByRole('heading', { name: 'Nothing needs you right now' })).toBeTruthy();
   expect(floor().getByText(/not that everyone is fine/)).toBeTruthy();
+});
+
+test('the coach home\'s pain list, read on load and Refresh, says to press Refresh for new reports (QJ = B, #2023)', async () => {
+  await renderWorkspace();
+  expect(
+    await screen.findByText('No athlete on your roster has reported pain in the last 14 days. Press Refresh to check for new reports.'),
+  ).toBeTruthy();
+  expect(screen.queryByText(/within two minutes/)).toBeNull();
 });
 
 test('an unvalidated GREEN reading shows as "Not validated" on the floor, never as a band', async () => {

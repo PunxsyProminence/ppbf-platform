@@ -26,6 +26,7 @@ import type { ReactNode } from 'react';
 import SportsMedicinePage from './page';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import {
+  ATHLETE_SAFETY_PAGE,
   CLEARANCE_BOARD_PAGE,
   DECISION_LOOP_PAGE,
   handOffArrivalAthlete,
@@ -2898,6 +2899,32 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
   afterEach(() => {
     takeArrivalAthlete(CLEARANCE_BOARD_PAGE);
     takeArrivalAthlete(DECISION_LOOP_PAGE);
+    takeArrivalAthlete(ATHLETE_SAFETY_PAGE);
+  });
+
+  // Lane AS-5, AS5-2: Injury Record and Medical Restrictions are sections of
+  // Athlete Safety; the board's links open them, and each row opens the page.
+  test('the Injury Record and Medical Restrictions links open their sections of Athlete Safety', async () => {
+    global.fetch = mockFetch();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    expect(screen.getByRole('link', { name: 'Injury Record' }).getAttribute('href')).toBe('/coach/athlete-safety#injury-record');
+    expect(screen.getByRole('link', { name: 'Medical Restrictions' }).getAttribute('href')).toBe('/coach/athlete-safety#medical-restrictions');
+  });
+
+  test('each row opens Athlete Safety on that athlete, on a plain click only, with no athlete in the address', async () => {
+    global.fetch = twoAthletes();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+    const samRow = screen.getByText('Sam Roe').closest('li') as HTMLElement;
+    const link = within(samRow).getByRole('link', { name: 'Athlete Safety' });
+    expect(link.getAttribute('href')).toBe('/coach/athlete-safety');
+    fireEvent.click(link, { metaKey: true });
+    expect(takeArrivalAthlete(ATHLETE_SAFETY_PAGE)).toBeNull();
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBeNull();
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(ATHLETE_SAFETY_PAGE)).toBe('ath-2');
   });
 
   test('a name in the box narrows the roster and says how many match; a miss says so; an empty box shows everyone', async () => {

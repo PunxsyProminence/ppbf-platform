@@ -88,8 +88,7 @@ describe('the cluster lines', () => {
     expect(screen.getByRole('navigation', { name: 'Clinic' })).toBeTruthy();
     expect(screen.getByText('Clearance Board').getAttribute('aria-current')).toBe('page');
     expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
-      '/coach/injuries',
-      '/coach/medical-restrictions',
+      '/coach/athlete-safety',
       '/coach/sparring-exposure',
     ]);
   });
@@ -137,7 +136,7 @@ describe('the coach home', () => {
     const clinic = workspace.match(/const CLINIC_DOORS = \[([^\]]*)\]/);
     expect(clinic).not.toBeNull();
     const hrefs = [...clinic![1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
-    expect(hrefs).toEqual(['/coach/sports-medicine', '/coach/injuries', '/coach/athlete-limits', '/coach/sparring-caps']);
+    expect(hrefs).toEqual(['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']);
     for (const href of hrefs) {
       const door = BUILDING.find((d) => d.href === href);
       expect(door && door.roles !== OPEN && door.roles.includes('coach')).toBe(true);
