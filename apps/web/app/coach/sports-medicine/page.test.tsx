@@ -3047,7 +3047,7 @@ describe('finding an athlete and the links out (lane AS-5)', () => {
 test('the board reads a clearance and a hold through components/clearanceReading.ts, with no copy of its own', () => {
   const source = readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
   expect(source).toContain("from '@/components/clearanceReading'");
-  expect(source).not.toMatch(/function (readClearance|isClearanceRow|isoInstant|isActiveHold|whenPassed)\(/);
+  expect(source).not.toMatch(/function (readClearance|isClearanceRow|isoInstant|isActiveHold|readActiveHold|whenPassed)\(/);
   expect(source).not.toMatch(/const (readActiveHold|whenPassed|isActiveHold) =/);
   expect(source).not.toContain('CLEARANCE_VALUES');
   expect(source).not.toContain('/api/pilot/shadow/medical-status?athleteId=');

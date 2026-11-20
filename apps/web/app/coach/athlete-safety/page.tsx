@@ -154,13 +154,22 @@ async function errorOf(response: Response, fallback: string): Promise<string> {
  */
 const SECTIONS = ['medical-restrictions', POST_TO_FAMILY_SECTION];
 
+/** How long a hold read may go unanswered before it is said as unread: the Decision Loop's roster wait. */
+const HOLD_READ_WAIT_MS = 15_000;
+
 /**
  * The chosen athlete's active Training Hold, read only (AS-5 Q2 = A): a hold is
  * placed and lifted on the Clearance Board, and this section links there, on
  * this athlete. The read is the board's (components/clearanceReading.ts) and so
  * are the words (Q-B4 = A on #2041), each cut before the part about the
- * board's own controls. A read that found no hold shows nothing, as on the
- * board; a read that failed says so, and is never shown as no hold.
+ * board's own controls.
+ *
+ * AN UNKNOWN HOLD NEVER LOOKS LIKE NO HOLD. A read that found no hold draws no
+ * hold mark, only the link (where the board draws its place button). So the
+ * link is not drawn until the read has settled: a read still out shows the
+ * heading and the name and nothing else. A read that failed, or that is still
+ * unanswered after HOLD_READ_WAIT_MS, says the board's unread sentence; an
+ * answer that comes after that is still shown.
  *
  * Mounted with `key={athleteId}`, so one athlete's reading is never on screen
  * under another's name.
@@ -171,11 +180,17 @@ function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; 
 
   useEffect(() => {
     let live = true;
+    const overdue = setTimeout(() => {
+      if (live) setHold((now) => (now === undefined ? 'unavailable' : now));
+    }, HOLD_READ_WAIT_MS);
     readActiveHold(athleteId).then(
       (found) => { if (live) setHold(found); },
       () => { if (live) setHold('unavailable'); },
-    );
-    return () => { live = false; };
+    ).finally(() => clearTimeout(overdue));
+    return () => {
+      live = false;
+      clearTimeout(overdue);
+    };
   }, [athleteId]);
 
   return (
@@ -206,12 +221,14 @@ function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; 
           </div>
         </div>
       )}
-      <div className="mt-[var(--s3)]">
-        <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost"
-          onClick={(event) => { if (isPlainClick(event)) handOffArrivalAthlete(athleteId, CLEARANCE_BOARD_PAGE); }}>
-          Clearance Board
-        </Link>
-      </div>
+      {hold !== undefined && (
+        <div className="mt-[var(--s3)]">
+          <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost"
+            onClick={(event) => { if (isPlainClick(event)) handOffArrivalAthlete(athleteId, CLEARANCE_BOARD_PAGE); }}>
+            Clearance Board
+          </Link>
+        </div>
+      )}
     </section>
   );
 }

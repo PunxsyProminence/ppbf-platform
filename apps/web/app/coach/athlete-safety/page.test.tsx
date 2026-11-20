@@ -115,6 +115,11 @@ const HOLD = {
   hold_id: 'hold-1', athlete_id: 'ath-1', status: 'active', placed_by_role: 'coach', scope: 'all_training',
   athlete_explanation: 'Rest until the doctor has seen your wrist.', lift_condition_text: 'A note from the doctor.',
 };
+/** What the staff read of a hold also carries, and this page must never show. */
+const STAFF_ONLY = {
+  reason_text: 'STAFF-ONLY reason text', reason_category: 'STAFF-ONLY-category', lift_note: 'STAFF-ONLY lift note',
+  placed_by_account_id: 'STAFF-ONLY-account', lifted_by_account_id: 'STAFF-ONLY-lifter',
+};
 
 beforeEach(() => {
   posts = [];
@@ -867,6 +872,9 @@ describe('Athlete Safety (lane AS-5)', () => {
       expect(within(section()).getByText('Active Training Hold — all training')).toBeTruthy();
       expect(within(section()).getByText('Rest until the doctor has seen your wrist.')).toBeTruthy();
       expect(within(section()).getByText('Lifts when: A note from the doctor.')).toBeTruthy();
+      // The hold's brass mark, never the medical-stop mark (OW25-48 A): a hold is not a medical stop.
+      expect(stamp.closest('.stamp')?.className).toBe('stamp stamp--brass stamp--flat stamp--kiosk');
+      expect(section().outerHTML).not.toMatch(/locked|critical|danger/);
       // Placing and lifting are the Clearance Board's.
       expect(within(section()).queryAllByRole('button')).toEqual([]);
       expect(within(section()).queryAllByRole('textbox')).toEqual([]);
@@ -875,6 +883,61 @@ describe('Athlete Safety (lane AS-5)', () => {
         .filter(([u]) => String(u).includes('/api/pilot/training-holds'));
       expect(sent.map(([u, init]) => [String(u).split('/api/pilot/')[1], init?.method]))
         .toEqual([['training-holds?athlete_id=ath-1&status=active', 'GET']]);
+    });
+
+    // The board's surface rule (owner decision 2026-08-15): what the athlete reads, and nothing else.
+    test('only what the athlete reads is shown: no staff reason, category, lift note, account or hold id reaches the page', async () => {
+      holdsReply = { ok: true, holds: [{ ...HOLD, ...STAFF_ONLY, hold_id: 'STAFF-ONLY-hold-id' }] };
+      await openAthlete();
+      await within(section()).findByText('TRAINING HOLD');
+      // Text and attributes alike: nothing of the staff row is anywhere in the page.
+      expect(document.body.innerHTML).not.toMatch(/STAFF-ONLY/);
+    });
+
+    test('a hold read still out never looks like no hold: no link is drawn until it settles, and after the wait it is said as unread', async () => {
+      const base = global.fetch;
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).includes('/api/pilot/training-holds?athlete_id=ath-1')) {
+          await held;
+          return { ok: true, status: 200, json: async () => ({ ok: true, holds: [HOLD] }) };
+        }
+        return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+      }) as unknown as typeof fetch;
+      jest.useFakeTimers();
+      try {
+        await openAthlete();
+        // Still out: the heading and the name, and nothing that a settled "no hold" shows.
+        expect(section().getAttribute('aria-busy')).toBe('true');
+        expect(within(section()).queryByRole('link')).toBeNull();
+        expect(within(section()).queryByText(UNREAD)).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Clearance Board' })).toBeNull();
+
+        await act(async () => {
+          jest.advanceTimersByTime(14_000);
+        });
+        expect(within(section()).queryByText(UNREAD)).toBeNull();
+        await act(async () => {
+          jest.advanceTimersByTime(1_000);
+        });
+        expect(within(section()).getByText(UNREAD)).toBeTruthy();
+        expect(section().getAttribute('aria-busy')).toBe('false');
+        expect(within(section()).getByRole('link', { name: 'Clearance Board' })).toBeTruthy();
+        expect(section().querySelector('[data-refusal-stamp]')).toBeNull();
+
+        // An answer that comes late is still this athlete's, and is shown.
+        await act(async () => {
+          release();
+          await held;
+        });
+        expect(await within(section()).findByText('TRAINING HOLD')).toBeTruthy();
+        expect(within(section()).queryByText(UNREAD)).toBeNull();
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     test('a hold with no lift condition says so, in the board\'s words', async () => {
