@@ -2198,14 +2198,14 @@ describe('Edit (lane ED-UI PR2)', () => {
       }
       if (url.includes('template_id=wt-1-v2')) return jsonResponse({ template: V2, items: [item({ template_id: 'wt-1-v2' })] });
       if (url.includes('template_id=wt-1')) return jsonResponse({ template: BOXING_FUNDAMENTALS, items: [item()] });
-      return jsonResponse({ templates: [saved ? V2 : BOXING_FUNDAMENTALS] });
+      return jsonResponse({ templates: [saved ? V2 : BOXING_FUNDAMENTALS, CONDITIONING_ADV] });
     });
   }
   const writesOf = (fetchMock: jest.Mock) => fetchMock.mock.calls
     .filter((call) => ((call[1] as RequestInit | undefined)?.method ?? 'GET') !== 'GET')
     .map((call) => ({ url: String(call[0]), body: JSON.parse(String((call[1] as RequestInit).body)) as unknown }));
   const openAndEdit = async () => {
-    fireEvent.click(await screen.findByRole('button', { name: /open template/i }));
+    fireEvent.click((await screen.findAllByRole('button', { name: /open template/i }))[0]);
     fireEvent.click(await screen.findByRole('button', { name: 'Edit: Boxing Fundamentals 60' }));
     return screen.getByRole('region', { name: 'Edit Boxing Fundamentals 60' });
   };
@@ -2216,7 +2216,10 @@ describe('Edit (lane ED-UI PR2)', () => {
     const form = await openAndEdit();
     expect(within(form).getByLabelText('Intent')).toHaveValue('Stance, guard, and the first two punches.');
     expect(screen.queryByRole('heading', { name: 'Issue to athlete' })).not.toBeInTheDocument();
-    for (const button of screen.getAllByRole('button', { name: /open template|showing template/i })) expect(button).toBeDisabled();
+    // The other template's card too: opening it would drop the form and what was typed.
+    const cards = screen.getAllByRole('button', { name: /open template|showing template/i });
+    expect(cards).toHaveLength(2);
+    for (const button of cards) expect(button).toBeDisabled();
   });
 
   it('saves the change as the next version, opens that version from the server, and says so', async () => {
