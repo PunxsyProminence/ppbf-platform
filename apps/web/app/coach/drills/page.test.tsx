@@ -2664,6 +2664,28 @@ describe('Edit (lane ED-UI)', () => {
     expect(screen.queryByRole('region', { name: 'Edit Seeded jab return' })).not.toBeInTheDocument();
   });
 
+  it('holds Back through the re-reads after a save, until the new version is shown', async () => {
+    let release: (response: Response) => void = () => {};
+    global.fetch = routes({
+      // The second detail read is the new version's: held, to look at the page while it is in flight.
+      detailRead: (read) => (read === 2 ? (new Promise<Response>((resolve) => { release = resolve; }) as unknown as Response) : undefined),
+    }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    await openReference();
+    fireEvent.click(editButton()!);
+    fireEvent.change(within(screen.getByRole('region', { name: 'Edit Seeded jab return' })).getByLabelText('What it is for'), { target: { value: 'Bring the hand home.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Loading the drill...')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Edit Seeded jab return' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeDisabled();
+    await act(async () => {
+      release(jsonResponse({ drill: { ...referenceDetail, drill_id: 'reference-1-v2', version: 2 }, lifecycle: NOT_ADOPTED, floor_tested: null }));
+    });
+    expect(await screen.findByText('Saved as version 2.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to the reference library' })).toBeEnabled();
+  });
+
   it('writes nothing when nothing changed, and says so', async () => {
     const fetchMock = routes();
     global.fetch = fetchMock as unknown as typeof fetch;
