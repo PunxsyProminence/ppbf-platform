@@ -51,10 +51,11 @@ interface Values {
 }
 
 const asText = (value: string | number | null | undefined) => (value === null || value === undefined ? '' : String(value));
-/** A field as shown: Block and Session type as the page shows them (Overwatch, #2022). An untouched box equals this, so is never sent. */
+/** A field as shown: Block, Session type and Age group with underscores as spaces, case kept, as the page shows them
+ * (Overwatch on #2022, Q-PR2-2/3). An untouched box equals this, so is never sent; a changed one is sent as typed. */
 const spaced = (value: string | null) => (value ?? '').replace(/_/g, ' ');
 const shown = (item: Item, key: ItemKey) => (key === 'block' ? spaced(item.block) : asText(item[key]));
-const shownText = (template: Template, key: TextKey) => (key === 'session_type' ? spaced(template.session_type) : template[key] ?? '');
+const shownText = (template: Template, key: TextKey) => (key === 'name' ? template.name ?? '' : spaced(template[key]));
 
 function initialValues(template: Template, items: readonly Item[]): Values {
   return {

@@ -122,26 +122,28 @@ it('keeps the stored block and session type when their boxes are untouched, and 
   });
 });
 
-it('spaces only Block and Session type, every underscore; other text shows and stays as stored', async () => {
+it('spaces only Block, Session type and Age group, every underscore, case kept; other text shows and stays as stored', async () => {
   global.fetch = jest.fn() as unknown as typeof fetch;
   const onSaved = jest.fn();
   render(
-    <TemplateEditForm template={{ ...template, name: 'Bag_Work 45' } as WorkoutTemplateRow} items={[item({ block: 'main_set_a' })]} itemNames={['1. Rope intervals']}
+    <TemplateEditForm template={{ ...template, name: 'Bag_Work 45', age_band: 'Youth_and_Adult' } as WorkoutTemplateRow} items={[item({ block: 'main_set_a' })]} itemNames={['1. Rope intervals']}
       onSaved={onSaved} onCancel={jest.fn()} onSaving={jest.fn()} onFailed={jest.fn()} busy={false} />,
   );
   expect(screen.getByLabelText('Name')).toHaveValue('Bag_Work 45');
+  expect(screen.getByLabelText('Age group')).toHaveValue('Youth and Adult');
   expect(screen.getByLabelText('1. Rope intervals Block')).toHaveValue('main set a');
   save();
   expect(global.fetch).not.toHaveBeenCalled();
   expect(onSaved).toHaveBeenCalledWith({ changed: false });
 });
 
-it('sends a changed session type as typed', async () => {
+it('sends a changed session type or age group as typed', async () => {
   const { fetchMock } = renderForm();
   change('Session type', 'group class plus');
+  change('Age group', 'youth and adult');
   save();
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-  expect(sentBody(fetchMock)).toEqual({ template_id: 'wt-1', session_type: 'group class plus' });
+  expect(sentBody(fetchMock)).toEqual({ template_id: 'wt-1', session_type: 'group class plus', age_band: 'youth and adult' });
 });
 
 it('leaves the item list out when no item changed', async () => {
