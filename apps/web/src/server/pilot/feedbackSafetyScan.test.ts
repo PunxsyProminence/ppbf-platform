@@ -2243,6 +2243,8 @@ describe('HF12b seventh delta review (81ed7ee..bdd4987): blocking findings', () 
     'someone i dont know has the training pics',
     'a guy online had the training videos',
     'a guy online has the sparring videos',
+    // Single-rule pin (mutation proof).
+    'a guy messaging me online liked my fight video',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
