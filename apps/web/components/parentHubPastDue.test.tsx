@@ -69,7 +69,9 @@ async function renderHub(clockMs: number) {
   await act(async () => {
     render(<ParentHub />);
   });
-  await waitFor(() => expect(screen.getByRole('button', { name: 'First Child' })).toBeInTheDocument());
+  // One child: the picker draws nothing (AS9-3), so wait for the roster read
+  // to finish instead of for a child button.
+  await waitFor(() => expect(screen.queryByText('Loading your children...')).toBeNull());
 }
 
 async function openTab(name: string) {
