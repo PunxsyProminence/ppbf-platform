@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { ReactElement, ReactNode } from 'react';
@@ -11,6 +11,7 @@ import { render } from '@testing-library/react';
 
 import AthleteLayout from '../../app/athlete/layout';
 import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
+import { stripSourceComments } from './readComponentSource';
 
 /**
  * The gym-floor tap floor has two halves, and each is useless without the
@@ -140,6 +141,7 @@ const FLOOR_ROUTES = [
   'coach/mental-skills', // app scrub CF-24 (lane U1, SC2-2)
   'coach/development-blocks', // app scrub CF-24 (lane U1, SC2-2)
   'coach/class', // the class screen (lane U2-6a)
+  'coach/workout-templates', // app scrub CF-24 remainder: the whole page, not only Issue and Make a plan (lane SWP, SWP-2; Q3 = A on #2046)
   'shadow',
   'parent/safety',
 ] as const;
@@ -159,5 +161,52 @@ describe('gym-floor pages carry the kiosk surface', () => {
     expect(marker).not.toBeNull();
     expect(marker?.querySelector('button')).not.toBeNull();
     expect(marker?.className).toContain('contents');
+  });
+});
+
+/**
+ * Workout Templates went onto the kiosk surface whole (app scrub CF-24
+ * remainder; lane SWP, SWP-2). The surface lifts the six voice classes and the
+ * controls the stylesheet names, but two things on this page it cannot reach:
+ *
+ *  - a size written as a utility on an element that wears no voice class
+ *    (`<p className="text-[length:var(--t-sm)]">`, an `<h4 className="t-command
+ *    text-[length:var(--t-sm)]">`): `.t-command` sets no size, so the utility
+ *    is the size, and it is 15px;
+ *  - a `<summary>`, which is a control but is not in the kiosk tap selector
+ *    list (app/globals.css, design-system/foundation/ppbf-foundation.css), so it
+ *    is as tall as its text.
+ *
+ * Scoped to this folder on purpose: other floor pages still carry sub-floor
+ * sizes (activate, sports-medicine, attempt-log, assessments, shadow,
+ * parent/safety, counted 2026-11-21), and those files are other lanes'.
+ */
+describe('Workout Templates on the gym floor', () => {
+  const FOLDER = path.resolve(__dirname, '../../app/coach/workout-templates');
+  const SOURCES = readdirSync(FOLDER)
+    .filter((name) => name.endsWith('.tsx') && !name.endsWith('.test.tsx'))
+    .map((name) => ({ name, code: stripSourceComments(readFileSync(path.join(FOLDER, name), 'utf8')) }));
+  const SUB_FLOOR = /var\(\s*--t-(?:sm|xs)\s*\)|\btext-(?:xs|sm|base)\b|text-\[(?:\d|1[0-8])(?:\.\d+)?px\]/;
+
+  it('reads the page and its two parts, so nothing below passes on no files', () => {
+    expect(SOURCES.map((source) => source.name).sort()).toEqual(
+      ['MakeSessionScript.tsx', 'TemplateEditForm.tsx', 'page.tsx'],
+    );
+  });
+
+  it.each(['page.tsx', 'MakeSessionScript.tsx', 'TemplateEditForm.tsx'])(
+    '%s sets no type below --t-md (19.1px)',
+    (name) => {
+      const code = SOURCES.find((source) => source.name === name)?.code ?? '';
+      const lines = code.split('\n').filter((line) => SUB_FLOOR.test(line));
+      expect(lines.map((line) => line.trim())).toEqual([]);
+    },
+  );
+
+  it('gives every <summary> the 55px tap floor, which the kiosk stylesheet does not', () => {
+    const summaries = SOURCES.flatMap((source) =>
+      [...source.code.matchAll(/<summary\b[^>]*>/g)].map((match) => `${source.name}: ${match[0]}`));
+    expect(summaries.length).toBeGreaterThan(0);
+    expect(summaries.filter((tag) => !tag.includes('min-h-[var(--tap)]'))).toEqual([]);
   });
 });
