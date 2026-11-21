@@ -153,9 +153,10 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   `namePattern`. Any other name a reply holds stays: another athlete it mentions (a sibling or a
   teammate keeps their name, except a part shared with a scrubbed name, such as a sibling's
   surname), an athlete's or guardian's login or login email, a guardian's ring name, an emergency
-  contact, a guardian record's email, a staff member's volunteer-record name other than the
-  member's own, a nickname never recorded, a misspelling; so does anything else a reply restates
-  (a school, a town, a number). Kept times are the day, not the moment (an exact time
+  contact, a guardian record's email, a coach's or other staff member's name (other than the
+  member's own), a name on record only elsewhere (a waiver signer, a physician, another gym), a
+  nickname never recorded, a misspelling; so does anything else a reply restates (a school, a
+  town, a number). Kept times are the day, not the moment (an exact time
   would line the kept rows up with the member's own). What is kept takes **new ids**: a new conversation id
   and new message ids, so nothing that copied the old ones joins it (a background reply's id is
   a hash of its job's id; an escalation or an audit row can hold the conversation's). The
@@ -180,20 +181,23 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   office's words say "flagged for review" for that reason.
 - **The retention script ends the hold, on a full APPLY only.**
   `scripts/pilot-cleanup-deleted-data.mjs` (`clearMemberDeletedChats`) clears, the same way, a
-  flagged chat a member deleted more than two years ago, and any chat a member deleted before
-  this change (a delete then only set `deleted_at`). The review entries that point at a cleared
-  flagged chat take the chat's token, a fixed summary, empty metadata and a new id, and follow it
-  to its new id; the office's recorded reads of the exchange (`pilot.audit_events`) and any
-  escalation stay, as the review and safety records, and join nothing that is kept. A chat that is a
-  deleted person's (account `deleted_at` set, an athlete login whose athlete is deleted, or a
-  chat about a deleted athlete, which `markAthleteTiedRecords` stamps with the athlete's
-  deletion time) is left to that person's purge. The nightly run counts them
-  (`member_deleted_chats_due`) and touches nothing (OD-2026-10-07-010: "people's records
-  stay manual"); a dry run rehearses and rolls back (`member_deleted_chats_due`,
-  `would_clear_member_deleted_chats`). They take the room the families leave under
-  `PPBF_RETENTION_MAX_ROWS`, oldest deletion first, and never trip the refusal; the rest wait
-  (`member_deleted_chats_deferred`). The applied run and its audit row count
-  `member_deleted_chats_cleared`.
+  flagged chat a member deleted more than two years ago, and any unflagged chat a member deleted
+  before this change (a delete then only set `deleted_at`; a flagged one waits its two years like
+  any other). The review entries that point at a cleared flagged chat take the chat's token, a
+  fixed summary, empty metadata and a new id, and follow it to its new id; they keep their
+  category, severity, status and reviewer, at day precision. The office's recorded reads of the
+  exchange (`pilot.audit_events`, never purged) and any escalation stay, as the review and safety
+  records, and hold none of the kept ids; but the reviewer, the day and the severity of a kept
+  entry can be matched against them to point back to the member (the person purge's de-identified
+  entries keep the same fields). A chat that is a deleted person's (account `deleted_at` set, an
+  athlete login whose athlete is deleted, or a chat about a deleted athlete, which
+  `markAthleteTiedRecords` stamps with the athlete's deletion time) is left to that person's
+  purge. The nightly run counts them (`member_deleted_chats_due`) and touches nothing
+  (OD-2026-10-07-010: "people's records stay manual"); a dry run rehearses and rolls back
+  (`member_deleted_chats_due`, `would_clear_member_deleted_chats`). They take the room the
+  families leave under `PPBF_RETENTION_MAX_ROWS`, oldest deletion first, and never trip the
+  refusal; the rest wait (`member_deleted_chats_deferred`). The applied run and its audit row
+  count `member_deleted_chats_cleared`.
 - **The office completing a request reaches every chat on the account**, including one about an
   athlete who has since been deleted: the member asked. A search of
   `docs/current/OWNER_DECISIONS.md` on 2026-11-21 (for "SHADOW chat", "SHADOW conversation" and
