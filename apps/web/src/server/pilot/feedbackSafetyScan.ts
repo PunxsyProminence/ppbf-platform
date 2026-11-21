@@ -178,10 +178,11 @@ function joinSplitWords(text: string, extraReading = false): string {
   const joined = text
     .replace(/\bmy self\b/g, 'myself')
     .replace(/\bun alive\b/g, 'unalive');
-  // HF12b's own joins live in the extra reading only, so main's normal form
-  // (and every cue it gave) is unchanged.
+  // HF12b's own join lives in the extra reading only, so main's normal form
+  // (and every cue it gave) is unchanged. A split "i m" is joined there by
+  // the spelled-out run join.
   return extraReading
-    ? joined.replace(/\bi m\b/g, 'im').replace(/\b(your|ur) self\b/g, '$1self')
+    ? joined.replace(/\b(your|ur) self\b/g, '$1self')
     : joined;
 }
 
