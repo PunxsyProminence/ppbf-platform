@@ -253,21 +253,29 @@ const STRANGER = String.raw`(?:${STRANGER_ONE}|people(?: [a-z]+){0,2} (?:online|
 // watching or copying someone's tutorial are not a picture of the child.
 const STRANGER_GYM_VIDEO = String.raw`(?<!\b(?:${TECHNIQUE_NOUNS}|boxing|highlights?|knockouts?|kos?|tutorials?|instructional) )`;
 const STRANGER_GYM_CONTENT = String.raw`(?! (?:(?:of|on|about|from|showing|for) )?(?:${TECHNIQUE_FILLER} ){0,3}(?:${TECHNIQUE_NOUNS}|shoulder rol+s?|everyone|everybody)\b)`;
-const STRANGER_TUTORIAL = String.raw`(?<!\b(?:watched|watching|watch|saw|se+n|se+|copied|copying|copy|found|find|fol+ow|fol+ows|fol+owed|fol+owing|like|liked|love|loved|subscribed to|subbed to) (?:a |an |some |this |that |the |one )?)`;
+const STRANGER_TUTORIAL = String.raw`(?<!\b(?:watched|watching|watch|saw|se+n|se+|copied|copying|copy) (?:a |an |some |this |that |the |one )?)`;
 // Product and upload talk about a private video setting.
 const PRIVATE_PICTURE_PRODUCT = String.raw`(?<!\b(?:ap+|site|website|page|platform|youtube|channel)(?: (?:should|could|can|will|needs? to|must))? (?:have|has|get|add|allow)(?: (?:a|an))? )(?<!\b(?:made (?:it|this|that)(?: (?:a|an|into a))?|is there (?:a|an)) )`;
+const STRANGER_HARM = String.raw`pay|pays|paid|paying|money|cash|robux|vbucks|gift ?cards?|venmo\w*|cashap+\w*|offer\w*|buy|buys|bought|buying|sell|sells|selling|sold|threat\w*|leak\w*|expos\w*|blackmail\w*|owe|owes|owed|alone|secret|meet|meet up|dont tell|keep it|one back|delete|screenshot\w*|stole|steal\w*|i sent|sent him|sent them|has my|have my|got my|post them|post it|send them|share them|wants more|send more|against me|over me|private parts|for everyone to see|everyone will see|to everyone`;
 const PRIVATE_PICTURE_GUARD = String.raw`(?! (?:les+ons?|ses+ions?|coaching|clas+|clas+es|options?|set+ings?|(?:to|on) (?:youtube|the ap+|the site|my channel))\b)`;
 const PICTURE_NEAR_PLACE = [
   // A private or secret picture files with any verb; asking for one, or one
   // of the child, files whatever follows.
-  String.raw`(?:${ASK}|send|asks? me for|keeps? asking(?: me)? for)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}`,
+  String.raw`(?:${ASK}|send|asks? me for|keeps? asking(?: me)? for)${WORD}{0,5} (?:private|secret) ${ANY_PICTURE}`,
   String.raw`(?:private|secret) ${ANY_PICTURE} of (?:me|you|u|us|yourself|myself)`,
-  String.raw`\b(?:${PRIVATE_PICTURE_PRODUCT}private|secret) ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
+  String.raw`\b${PRIVATE_PICTURE_PRODUCT}private ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
+  String.raw`\bsecret ${ANY_PICTURE}\b${VIDEO_GUARD}`,
+  // A private picture for one person files whatever product words come first.
+  String.raw`\bprivate ${ANY_PICTURE}\b.*\b(?:with me|for me|for him|for her|so only (?:he|him|she|her|they|them))\b`,
   // A stranger online asking for a picture files whatever gym words follow;
   // any other stranger near a picture files unless the picture is gym
   // content or the child is watching a stranger's tutorial.
   String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging|askin|keeps? askin|beggin|keeps? beggin)${WORD}{0,4} ${ANY_PICTURE}`,
   String.raw`${STRANGER_TUTORIAL}${STRANGER_ONE}${WORD}{0,8}? ${STRANGER_GYM_VIDEO}${ANY_PICTURE}\b${STRANGER_GYM_CONTENT}`,
+  // With a payment, threat, secrecy or meeting word anywhere, no gym or
+  // tutorial guard applies.
+  String.raw`^(?=.*\b(?:${STRANGER_HARM})\b).*${STRANGER_ONE}${WORD}{0,10}? ${ANY_PICTURE}\b`,
+  String.raw`^(?=.*\b(?:${STRANGER_HARM})\b).*\b${ANY_PICTURE}\b.*${STRANGER_ONE}`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
   String.raw`(?:${ANY_PICTURE}|film|record)(?: of)? (?:me|her|him|us|them|myself|herself|himself|the (?:girls|boys|kids)|my (?:sister|brother|friends?|teammates?))(?: (?:while|whilst|when|as)(?: (?:i was|im|i am|i|she was|he was|we were|they were))?)? (?:changing|changed)(?! (?:up )?(?:my |his |her |the |our )?(?:stance|direction|levels?|angles?|gloves|wraps|weight(?: clas+)?|guard|feet|grip|partners?|pace|corners?|sides|rhythm|hands|mats|ropes|timer)(?: (?:on|in|at) (?:the |my )?(?:bag|pads|ring|mats?))?${TECHNIQUE_END})`,
