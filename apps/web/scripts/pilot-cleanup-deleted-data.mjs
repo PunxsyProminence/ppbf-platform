@@ -800,7 +800,11 @@ async function memberNamesOnRecord(client, organizationId, accountId, athleteId)
       where g.organization_id = $1 and g.account_id = $2
      union all
      select v.full_name from pilot.volunteers v
-      where v.organization_id = $1 and v.account_id = $2${labeller ? `
+      where v.organization_id = $1 and v.account_id = $2
+     union all
+     select e.details->>'author_name' from pilot.audit_events e
+      where e.organization_id = $1 and e.entity_type = 'announcement' and e.event_type = 'create'
+        and e.actor_account_id = $2${labeller ? `
      union all
      select c.display_name from pilot.labeller_credentials c
       where c.organization_id = $1 and c.account_id = $2` : ''}${lessons ? `
