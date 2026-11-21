@@ -19,11 +19,18 @@ import type { ClubRole } from '../../components/roleRoutes';
 
 const APP = path.resolve(__dirname, '..');
 
-/** The text of the first plain-text `t-eyebrow` paragraph in a page's source: its header eyebrow. */
+/**
+ * The page's header eyebrow: the first plain-text `t-eyebrow` paragraph inside the first
+ * `<header>` that holds the page's `<h1>`. Report and tile labels elsewhere on a page also use
+ * `t-eyebrow` (Attendance's "Report by athlete" comes first in its file), so the search is
+ * confined to the header.
+ */
 function headerEyebrow(file: string): string {
   const source = readFileSync(path.join(APP, file), 'utf8');
-  const match = source.match(/<p className="t-eyebrow[^"]*">([^<{]+)<\/p>/);
-  if (!match) throw new Error(`${file}: no t-eyebrow paragraph with plain text`);
+  const header = (source.match(/<header[\s\S]*?<\/header>/g) ?? []).find((block) => block.includes('<h1'));
+  if (!header) throw new Error(`${file}: no <header> holding the page's <h1>`);
+  const match = header.match(/<p className="t-eyebrow[^"]*">([^<{]+)<\/p>/);
+  if (!match) throw new Error(`${file}: no t-eyebrow paragraph with plain text in the page header`);
   // JSX text writes '&' as '&amp;' in this repo (Parent Consent's h1, Teach Shadow's h2).
   return match[1].replace(/&amp;/g, '&').trim();
 }
@@ -65,6 +72,13 @@ const TAKES_SECTION_NAME: readonly EyebrowCase[] = [
   { file: 'admin/content-import/page.tsx', href: '/admin/content-import' },
   { file: 'admin/export/page.tsx', href: '/admin/export' },
   { file: 'operations/page.tsx', href: '/operations' },
+  // Held by #2063 (AS10-5) until it merged on 2026-11-21.
+  { file: 'admin/attendance/page.tsx', href: '/admin/attendance' },
+  { file: 'admin/coach-coverage/page.tsx', href: '/admin/coach-coverage' },
+  { file: 'admin/safety-review/page.tsx', href: '/admin/safety-review' },
+  { file: 'admin/volunteer-management/page.tsx', href: '/admin/volunteer-management' },
+  { file: 'admin/waiver-status/page.tsx', href: '/admin/waiver-status' },
+  { file: 'admin/escalations/page.tsx', href: '/admin/escalations' },
 ];
 
 /** Q13 A's fallback C: no section fits for the roles that see the eyebrow, so it is left. */
