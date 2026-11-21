@@ -170,7 +170,15 @@ describe('the counts (new in 7b)', () => {
    the position line is a polite live region; the counts and lists are not
    re-read on every read that lands. */
 describe('focus and announcements', () => {
-  const FOCUS_RING = 'focus-visible:outline-[var(--bone-100)]!';
+  // Width, style, colour and offset: without the width the unlayered `.btn:focus-visible { outline: 0 }`
+  // leaves only the faint app-wide ring (design re-review of 7b).
+  const FOCUS_CLASSES = [
+    'focus-visible:outline-3!',
+    'focus-visible:outline-solid!',
+    'focus-visible:outline-[var(--bone-100)]!',
+    'focus-visible:outline-offset-2!',
+  ];
+  const hasRing = (element: HTMLElement) => FOCUS_CLASSES.every((cls) => element.className.split(/\s+/).includes(cls));
 
   test('every control on the strip carries the bone focus outline', () => {
     render(<CoachNeedsYouStrip {...props()} />);
@@ -180,16 +188,22 @@ describe('focus and announcements', () => {
     ];
     expect(controls.length).toBeGreaterThan(5);
     for (const control of controls) {
-      expect(control.className).toContain(FOCUS_RING);
+      expect(hasRing(control)).toBe(true);
     }
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    expect(screen.getByRole('button', { name: 'Acknowledge' }).className).toContain(FOCUS_RING);
+    expect(hasRing(screen.getByRole('button', { name: 'Acknowledge' }))).toBe(true);
   });
 
-  test('only the position line is a live region, not the whole strip', () => {
+  test('the strip is not one live region; the position line, the button row and the acknowledge status are', () => {
     render(<CoachNeedsYouStrip {...props()} />);
     expect(strip().getAttribute('aria-live')).toBeNull();
     expect(screen.getByRole('heading', { level: 2 }).getAttribute('aria-live')).toBe('polite');
+    // The armed Acknowledge changes its words ("Press again: ..."): the row it sits in is polite.
+    expect(screen.getByRole('button', { name: 'Open' }).closest('[aria-live="polite"]')).not.toBeNull();
+    // The acknowledge notice is mounted before anything is acknowledged, so its words arrive into it.
+    const status = strip().querySelector('[data-needs-ack-status]') as HTMLElement;
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.textContent).toBe('');
   });
 });
 

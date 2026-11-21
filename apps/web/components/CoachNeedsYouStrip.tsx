@@ -161,8 +161,10 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
       {/* Polite on the position line only (design review of 7b): the counts
           change as each read lands and the lists below are live regions of
           their own, so a live section re-read them all. The acknowledge
-          notice is role="status" and a failed read role="alert"; both still
-          announce themselves. */}
+          notice is a role="status" line that is always mounted (its words
+          arrive into it, which every screen reader reads), the pager's button
+          row is polite so an armed Acknowledge says "Press again", and a
+          failed read is role="alert" (safety re-review of 7b). */}
       <h2 id="coach-needs-you-heading" aria-live="polite" className="coach-floor-focus__panel-title">
         {queueLength > 0 ? `Needs you now · ${position + 1} of ${queueLength}` : 'Needs you now'}
       </h2>
@@ -183,11 +185,9 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
         <Link href="/coach/intelligence" className={`underline ${FOCUS}`}>More reads: The Morning Read</Link>
       </p>
 
-      {ackLanded && (
-        <p className="coach-floor-focus__label" role="status">
-          Acknowledged: {ackedItem.title}. It stays listed under Safety Escalations below.
-        </p>
-      )}
+      <p className={ackLanded ? 'coach-floor-focus__label' : 'sr-only'} role="status" data-needs-ack-status>
+        {ackLanded ? `Acknowledged: ${ackedItem.title}. It stays listed under Safety Escalations below.` : ''}
+      </p>
 
       {currentFeed && (
         <div className="coach-floor-focus__item" data-focus-kind="feed">
@@ -233,7 +233,7 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
             </div>
           )}
 
-          <div className="coach-floor-focus__row">
+          <div className="coach-floor-focus__row" aria-live="polite">
             {!open && (
               <button
                 type="button"
