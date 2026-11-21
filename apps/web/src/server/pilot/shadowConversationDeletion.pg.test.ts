@@ -772,8 +772,23 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     const dueBefore = await Promise.all([expired, legacy].map((seeded) => snapshot(sweepDb, seeded.conversationId)));
 
     // The nightly run (OD-2026-10-07-010) and a dry run count them and keep them.
+    // An expired public enquiry is due too, so the nightly run deletes
+    // something and COMMITS: with nothing of its own to delete it rolls back,
+    // which would hide a sweep that wrongly ran in this mode (the mutation
+    // run found exactly that).
+    await sweepDb.query(
+      `insert into pilot.public_interest_submissions
+         (organization_id, full_name, email, phone, visitor_type, program_interest,
+          preferred_contact_method, message, consent_to_contact, review_state, created_at)
+       values ($1, 'Old Enquiry', 'old.enquiry@example.test', '555-0100', 'Parent / Guardian', 'Youth Development',
+               'Email', 'please call', true, 'new', now() - interval '13 months')`,
+      [ORG],
+    );
     const nightly = await runCleanup(SWEEP_DB_NAME, 'nightly');
     expect(nightly.member_deleted_chats_due).toBe(2);
+    expect(nightly.inquiries).toBe(1);
+    expect(await Promise.all([expired, legacy].map((seeded) => snapshot(sweepDb, seeded.conversationId))))
+      .toEqual(dueBefore);
     const dry = await runCleanup(SWEEP_DB_NAME, 'dry');
     expect(dry.member_deleted_chats_due).toBe(2);
     expect(dry.would_clear_member_deleted_chats).toBe(2);
