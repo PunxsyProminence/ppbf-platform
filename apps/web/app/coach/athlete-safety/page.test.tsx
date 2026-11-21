@@ -1258,6 +1258,59 @@ describe('Athlete Safety (lane AS-5)', () => {
         }
       });
 
+      test('at the end date only the newest re-read is shown: an older one that answers late does not paint over it', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-01T15:59:00.000Z'));
+        const inForce = {
+          ok: true,
+          status: { athlete_id: 'ath-1', status: 'cleared', effective_at: '2026-06-01T14:00:00.000Z', expires_at: '2026-10-01 16:00:00+00' },
+          effectiveStatus: 'cleared',
+        };
+        clearanceReply = inForce;
+        const base = global.fetch;
+        let reads = 0;
+        let release: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+          if (String(url).includes('/api/pilot/shadow/medical-status?athleteId=ath-1')) {
+            reads += 1;
+            // The first re-read at the end date is slow, and answers with what was true when it was asked.
+            if (reads === 2) {
+              await held;
+              return { ok: true, status: 200, json: async () => inForce };
+            }
+            // The next one cannot be answered.
+            if (reads === 3) return { ok: false, status: 500, json: async () => ({}) };
+          }
+          return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+        }) as unknown as typeof fetch;
+        try {
+          await openAthlete();
+          await waitFor(() => expect(badge()?.textContent).toBe('✓cleared'));
+          await act(async () => {
+            jest.advanceTimersByTime(60_000);
+          });
+          expect(reads).toBe(2);
+          await act(async () => {
+            jest.advanceTimersByTime(30_000);
+          });
+          await waitFor(() => expect(badge()?.textContent).toBe('▲unavailable'));
+          expect(reads).toBe(3);
+          await act(async () => {
+            release();
+            await held;
+          });
+          await act(async () => {
+            await Promise.resolve();
+          });
+          expect(badge()?.textContent).toBe('▲unavailable');
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
       test('the section reads the clearance once, by GET, for the chosen athlete only, and nothing about a clearance is written', async () => {
         await openAthlete();
         await waitFor(() => expect(badge()).not.toBeNull());
