@@ -140,12 +140,13 @@ const EVENTS_A = [
   eventOf({ event_id: 'evt-a2', start_ms: 3_000, end_ms: 3_200, contact_ms: 3_100 }),
 ];
 
-/** Coach B saw the first one, called it a different punch, and missed the second. */
+/** Coach B saw the first one, called it a different punch, marked it starting
+ *  150 ms later (outside the 100 ms window), and missed the second. */
 const EVENTS_B = [
   eventOf({
     event_id: 'evt-b1',
     annotation_set_id: 'set-b',
-    start_ms: 1_050,
+    start_ms: 1_150,
     end_ms: 1_450,
     contact_ms: 1_250,
     punch_type: 'rear_hook',
@@ -493,7 +494,8 @@ describe('what an eligible read actually answers with', () => {
     const body = await (await GET(get())).json();
 
     expect(body.comparison.matchingPolicy.calibrationState).toBe('UNCALIBRATED');
-    expect(body.comparison.matchingPolicy.overlapToleranceMs).toBe(0);
+    expect(body.comparison.matchingPolicy.overlapToleranceMs).toBe(100);
+    expect(body.comparison.matchingPolicy.policyVersion).toBe('pilot-temporal-overlap-v1');
     expect(body.comparison.ontologyVersion).toBe('boxing-ontology-0.1');
   });
 

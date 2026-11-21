@@ -526,8 +526,8 @@ export default function TeachShadowHomePage() {
             <h2 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-lg)' }}>Capture examples</h2>
             <p className="t-body mt-[var(--s2)]">
               Film an example for Shadow. Several coaches can join one session from their own phones and record
-              the same attempt from different positions. Shadowboxing and heavy bag only, until a take can name
-              everyone who appears in it.
+              the same attempt from different positions: shadowboxing, heavy bag, mitts or sparring. With two
+              people in frame, each person&rsquo;s actions are labelled on their own.
             </p>
             {/* A plain anchor, so the recorder is served its own document
                 and with it the camera grant. See components/cameraDocuments.ts. */}

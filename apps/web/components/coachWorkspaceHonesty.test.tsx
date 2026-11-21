@@ -17,6 +17,11 @@ import { BUILDING } from './buildingMap';
 // coachWorkspaceFloorFocus.test.tsx covers it mounted in this workspace, so
 // these tests keep to the panels by leaving it out.
 jest.mock('./CoachFloorFocus', () => ({ __esModule: true, default: () => null }));
+// The Needs You Now strip (lane 6C7 7b) is the board's old card, moved: it pages
+// through the same reports, so it is left out for the same reason.
+// coachNeedsYouStrip.test.tsx pins it on its own and coachWorkspaceFloorFocus.test.tsx
+// mounted in this workspace.
+jest.mock('./CoachNeedsYouStrip', () => ({ __esModule: true, default: () => null }));
 
 interface RouteResponses {
   liveRunMarks?: () => Response;

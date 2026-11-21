@@ -196,7 +196,7 @@ export default function SafetyReviewPage() {
               screen and widened the page (#1482 item 5). Unchanged above ~900px. */}
           <i aria-hidden="true" className="lamp lamp--green right-[max(8%,73px)]" />
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-            <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Safety</p>
             <h1
               className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
               style={{ fontSize: 'var(--t-2xl)' }}

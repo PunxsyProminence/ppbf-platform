@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AnnouncementBanner from './AnnouncementBanner';
 import ArmedButton from './ArmedButton';
 import CoachFloorFocus, { type FocusFeed, type FocusItem } from './CoachFloorFocus';
+import CoachNeedsYouStrip, { type NeedsYouCount } from './CoachNeedsYouStrip';
 import PainReportsPanel, {
   PAIN_PROVENANCE,
   painDetailAbsent,
@@ -1141,6 +1142,15 @@ export default function CoachWorkspace() {
   const [escalationAckErrors, setEscalationAckErrors] = useState<Record<string, string>>({});
   const [barrierReports, setBarrierReports] = useState<CoachBarrierReport[]>([]);
   const [barrierReportsTruncated, setBarrierReportsTruncated] = useState(false);
+  /* CARDS TO VERIFY (app scrub CF-12; lane 6C7 7b): completions an athlete
+     logged on a card this coach issued, waiting for the coach to verify them on
+     Cards. One read of the route Cards itself uses (GET /api/pilot/coach/cards:
+     a coach gets the cards they issued, inside their own gym). A failed or
+     refused read is "error", shown as "?" and "not checked", never as 0. */
+  const [cardsToVerify, setCardsToVerify] = useState<{ state: 'loading' | 'error' | 'loaded'; count: number }>({
+    state: 'loading',
+    count: 0,
+  });
   const [barrierReportsLoading, setBarrierReportsLoading] = useState(true);
   const [barrierReportsError, setBarrierReportsError] = useState('');
 
@@ -1430,6 +1440,30 @@ export default function CoachWorkspace() {
   // Guardian barrier reports. The parent form's copy is "Sent to your
   // child's coach" -- this panel is what makes that true. The server filters
   // to the athletes this coach is authorized for.
+  const loadCardsToVerify = useCallback(async () => {
+    setCardsToVerify({ state: 'loading', count: 0 });
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/coach/cards`, { method: 'GET', credentials: 'include' });
+      if (!response.ok) throw new Error('cards');
+      const payload = (await response.json()) as {
+        items?: Array<{ cards?: Array<{ completions?: Array<{ verification_status?: unknown }> }> }>;
+      };
+      // A body without the list is not "nothing to verify".
+      if (!Array.isArray(payload.items)) throw new Error('cards');
+      let count = 0;
+      for (const group of payload.items) {
+        for (const card of group.cards ?? []) {
+          for (const completion of card.completions ?? []) {
+            if (completion.verification_status === 'pending') count += 1;
+          }
+        }
+      }
+      setCardsToVerify({ state: 'loaded', count });
+    } catch {
+      setCardsToVerify({ state: 'error', count: 0 });
+    }
+  }, []);
+
   const loadBarrierReports = useCallback(async () => {
     setBarrierReportsLoading(true);
     try {
@@ -1703,11 +1737,12 @@ export default function CoachWorkspace() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadBarrierReports();
+    void loadCardsToVerify();
     void loadLiveRun();
     void loadTodayClasses();
     void loadCredentials();
     void loadDevelopment();
-  }, [loadBarrierReports, loadLiveRun, loadTodayClasses, loadCredentials, loadDevelopment]);
+  }, [loadBarrierReports, loadCardsToVerify, loadLiveRun, loadTodayClasses, loadCredentials, loadDevelopment]);
 
   useEffect(() => {
     void (async () => {
@@ -2649,16 +2684,65 @@ export default function CoachWorkspace() {
     },
   ];
 
+  /* THE STRIP'S COUNTS (lane 6C7 7b). Each is a count this page already holds,
+     in the order the pager takes them, and each opens the list that holds those
+     items today: the three lists below on this page, and Cards for the
+     completions waiting to be verified (CF-12). */
+  const needsYouCounts: NeedsYouCount[] = [
+    {
+      key: 'escalations',
+      label: 'Safety escalations',
+      state: escalationsLoading ? 'loading' : escalationsError ? 'error' : 'loaded',
+      count: escalations.filter((escalation) => escalation.status === 'open').length,
+      href: '#coach-safety-escalations',
+      safety: true,
+      inPager: true,
+    },
+    {
+      key: 'pain',
+      label: 'Pain reports',
+      // The same rule as the pager's feed: rows that could not all be drawn make the read failed.
+      state: painRead.loading ? 'loading' : painRead.error || painRead.unreadRows > 0 ? 'error' : 'loaded',
+      count: painReports.length,
+      floor: painRead.truncated,
+      href: '#coach-dashboard-details',
+      safety: true,
+      inPager: true,
+    },
+    {
+      key: 'barrier',
+      label: 'Family barrier reports',
+      state: barrierReportsLoading ? 'loading' : barrierReportsError ? 'error' : 'loaded',
+      count: barrierReports.length,
+      floor: barrierReportsTruncated,
+      href: '#coach-barrier-reports',
+      safety: false,
+      inPager: true,
+    },
+    {
+      key: 'cards',
+      label: 'Cards to verify',
+      state: cardsToVerify.state,
+      count: cardsToVerify.count,
+      href: '/coach/cards',
+      safety: false,
+      inPager: false,
+    },
+  ];
+
   /* A medallion on the floor view takes the coach to that athlete's row on
      the roster below and puts focus on it. It opens nothing and reads nothing:
      the row is where a coach deliberately chooses to open a child's
      self-report, and that stays the coach's own tap. */
   /* ONE PLACE PER ACTION (Jason 2026-10-03, option A). On the Dashboard the
-     floor board carries every report action -- it pages through every open
-     escalation, pain report and barrier report -- so the full lists below it
-     stay complete but read-only there, and the old panels that repeated the
-     board (summary, mode toggle, session-scripts shortcuts) leave this tab.
-     On every other tab the board is absent and the lists keep their buttons. */
+     Needs You Now strip at the top of the page carries every report action --
+     it pages through every open escalation, pain report and barrier report --
+     so the full lists below it stay complete but read-only there, and the old
+     panels that repeated the board (summary, mode toggle, session-scripts
+     shortcuts) leave this tab. The strip was the floor board's card until lane
+     6C7's 7b; the name stays `boardShown` because it still means "the Dashboard,
+     where that pager is". On every other tab the pager is absent and the lists
+     keep their buttons. */
   const boardShown = activeTab === 'dashboard';
 
   const showAthleteOnRoster = (athleteId: string) => {
@@ -2744,6 +2828,18 @@ export default function CoachWorkspace() {
           </div>
         </div>
 
+        {/* NEEDS YOU NOW, THE HOME'S STRIP (stage 2 section 3.4 row 11; Q6 = A;
+            lane 6C7 7b): the board's card, moved to the top of the home and
+            widened with a count per list. On the home only, like the card. */}
+        {activeTab === 'dashboard' && (
+          <CoachNeedsYouStrip
+            counts={needsYouCounts}
+            items={floorFocusItems}
+            feeds={floorFocusFeeds}
+            painWindowDays={painRead.windowDays}
+          />
+        )}
+
         {activeTab === 'dashboard' && (
           <CoachFloorFocus
             athletes={athletes.map((athlete) => ({
@@ -2759,12 +2855,9 @@ export default function CoachWorkspace() {
               isInactive: athlete.inactive === true,
             }))}
             readinessState={readinessFeedState}
-            painWindowDays={painRead.windowDays}
             athletesState={athletesLoading ? 'loading' : athletesError ? 'error' : 'loaded'}
             athletesError={athletesError}
             onSelectAthlete={showAthleteOnRoster}
-            items={floorFocusItems}
-            feeds={floorFocusFeeds}
             sessionState={liveRunState === 'unavailable' ? 'error' : liveRunState}
             sessionLive={liveRunState === 'loaded' && liveRun !== null}
             sessionPaused={liveRun?.is_paused ?? false}
@@ -2774,8 +2867,9 @@ export default function CoachWorkspace() {
 
         {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
             everything else on the page but the tab row and, on the Dashboard,
-            the floor board, whose Needs You Now card pages through every pain
-            report (lane 6C7 7a-2 moved the tab row up). A child reporting pain has to reach the
+            the Needs You Now strip and the floor board (the strip pages
+            through every pain report; lane 6C7 7a-2 moved the tab row up, 7b
+            moved the pager into the strip). A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
             they have to know to open. The panel (PainReportsPanel, lane U2-6b-2)
             is drawn --restricted, not --locked: "A pain report is not a medical
@@ -2792,7 +2886,7 @@ export default function CoachWorkspace() {
             OW25-48 A: "Medical-stop mark only for a medical stop"). --locked is
             the medical stop, and no escalation source is one; each card's badge
             still names its severity. */}
-        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
+        <section id="coach-safety-escalations" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border-2 border-[color:var(--restricted)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[var(--restricted-ink)]">
               Safety Escalations
@@ -2854,7 +2948,7 @@ export default function CoachWorkspace() {
 
                     {escalation.status === 'open' && boardShown ? (
                       <p className="t-data text-[color:var(--bone-300)]">
-                        Open. Acknowledge it from Needs You Now on the floor board above.
+                        Open. Acknowledge it from Needs You Now at the top of the page.
                       </p>
                     ) : escalation.status === 'open' ? (
                       // The armed second press, as on the board (#1678, F-129).
@@ -2893,7 +2987,7 @@ export default function CoachWorkspace() {
             was sent to their child's coach; this panel is where that promise
             is kept. Lower urgency than pain, so brass trim rather than the
             restricted band the pain and escalation panels wear. */}
-        <section aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] p-[var(--s4)] space-y-[var(--s3)]">
+        <section id="coach-barrier-reports" aria-live="polite" className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.35)] p-[var(--s4)] space-y-[var(--s3)]">
           <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
             <h2 className="font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
               Family Barrier Reports

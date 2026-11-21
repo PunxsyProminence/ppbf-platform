@@ -381,7 +381,7 @@ describe('the list, as the coach home drew it', () => {
   });
 
   test.each([
-    [true, 'Record what you did from Needs You Now on the floor board above.', null],
+    [true, 'Record what you did from Needs You Now at the top of the page.', null],
     [false, null, 'Record What You Did'],
   ])('with the floor board shown = %s, "Record what you did" is where the coach can do it', async (boardShown, words, link) => {
     answers = [() => json({ ...EMPTY, painReports: [report('n1')] })];
