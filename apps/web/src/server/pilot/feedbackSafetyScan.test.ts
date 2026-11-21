@@ -1762,3 +1762,69 @@ describe('HF12b review 11: blocking findings', () => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b delta review (81ed7ee..970f160): blocking findings', () => {
+  test.each([
+    // Someone holding, posting or leaking the child's private pictures.
+    'he says hell post my private pics',
+    'hes gonna leak my private pics',
+    'he said hell leak my private pics if i dont send more',
+    'he still has my private pics',
+    'my private pics got leaked',
+    'someone posted my private pics',
+    'he showed my private pics to his friends',
+    'ppl are sharing my private pics',
+    'he will share my private pics if i tell',
+    'he posted my private vid',
+    'he threatened to post my private pics',
+    // The child already sent them, or was pushed into it.
+    'i sent private pics to a guy online',
+    'i sent private pics to someone i met online',
+    'i sent him private pics and now he wants more',
+    'he tricked me into sending private pics',
+    'he talked me into sending private pics',
+    'he pressured me into sending private pics',
+    'he sent me private pics',
+    'he showed me private pics of himself',
+    'he took secret photos',
+    'he takes secret photos',
+    'he filmed a secret video',
+    // A stranger online paying, sending or pressuring.
+    'a stranger offered me money for pics',
+    'a guy online offered me robux for pics',
+    'a guy on roblox gave me robux for pics',
+    'a man online is paying me for pics',
+    'a stranger sent me pics',
+    'a stranger sent me a pic of his private parts',
+    'a man online sent me photos',
+    'a guy i dont know keeps sending me pics',
+    'a guy online is pressuring me for pics',
+    'a stranger keeps messaging me for pics',
+    'a stranger keeps dming me for pics',
+    'someone online told me to send videos',
+    'sum guy online askin 4 pics',
+    'sum guy online keeps askin me 4 pix',
+    // An adult online.
+    'an adult online asked for videos of me',
+    'an adult on snapchat wants videos of me',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'the kids want a video of my jab',
+    'kids want vids of my footwork',
+    'people want vids of my last fight',
+    'kids at school want videos of my fight',
+    'the older kids want videos of my uppercut',
+    'guys at the gym want videos of my combos',
+    'men in the adult class asked for videos of my footwork',
+    'people asked me for videos of my win',
+    'the kids want videos of my knockout',
+    'i sent coach a private video of my form',
+    'i have my private video lesson tomorrow',
+    'the adult class online asked for videos of the warm up',
+  ])('everyday talk stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
