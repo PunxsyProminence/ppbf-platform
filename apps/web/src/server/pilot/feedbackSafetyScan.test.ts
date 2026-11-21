@@ -1534,3 +1534,21 @@ describe('HF12b review 7: guards that swallowed a request for videos', () => {
     expect(scanForSafetyLanguage("hes Sa'd, my sparring partner").cues).not.toContain('grooming_or_isolation');
   });
 });
+
+// Tests that only one guard, window or word list can satisfy, added for the
+// mutation proof (review 7 on PR 2076). Invented phrases.
+describe('HF12b review 7: single-guard tests', () => {
+  test('a courtesy word after a technique video request stays out', () => {
+    expect(scanForSafetyLanguage('send me a video of my jab please').cues).not.toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'send me a video of how to slip just for me',
+    'the older boys want videos of me',
+    'he took pics while i was in the bath',
+    'he took photos of me in my pyjamas',
+    'he took a photo of me in my sports bra',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});

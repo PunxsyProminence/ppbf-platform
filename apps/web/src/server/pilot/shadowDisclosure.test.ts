@@ -441,3 +441,13 @@ describe('HF12b: spelled-out staff words keep main\'s routing', () => {
     expect(detectShadowDisclosure('he kept hitting me in sparring o k i said stop', 'athlete')).not.toBeNull();
   });
 });
+
+describe('HF12b: the spelled-out reading only adds routing evidence', () => {
+  test('a spelled-out sparring-intent phrase overrides boxing context', () => {
+    expect(detectShadowDisclosure('he hit me in sparring o n p u r p o s e', 'athlete')).not.toBeNull();
+  });
+
+  test('a spelled-out boxing word does not suppress a disclosure main filed', () => {
+    expect(detectShadowDisclosure('he hits me when we s p a r', 'athlete')).not.toBeNull();
+  });
+});
