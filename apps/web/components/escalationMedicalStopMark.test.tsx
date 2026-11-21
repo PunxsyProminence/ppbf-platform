@@ -676,6 +676,29 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
     expect(clearanceBadgeUsers()).toEqual(['app/coach/athlete-safety/page.tsx', 'app/coach/sports-medicine/page.tsx']);
   });
 
+  // And the badge's own file hands the map out only through clearanceBadge().
+  // An alias (`export { CLEARANCE_BADGE as ... }`), a re-export or a wrapper
+  // exported under a new name would let a third page draw the mark past both
+  // checks above, so its exports are pinned: a new one is added here, with its
+  // reason, and is not a way to the badge.
+  test('the badge\'s own file exports no other way to the badge than clearanceBadge()', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('node:path') as typeof import('node:path');
+    const source = withoutComments(fs.readFileSync(path.resolve(__dirname, 'clearanceReading.ts'), 'utf8'));
+    expect(source).not.toMatch(/\bexport\s*(\{|\*|default\b)/);
+    const exported = [...source.matchAll(/\bexport\s+(?:declare\s+)?(?:async\s+)?(?:const|let|var|function|type|interface|class|enum)\s+(\w+)/g)]
+      .map((match) => match[1])
+      .sort();
+    expect(exported).toEqual([
+      'ActiveHold', 'CLEARANCE_UNREAD', 'ClearanceReading', 'ClearanceValue', 'clearanceBadge', 'isActiveHold',
+      'isClearanceRow', 'isoInstant', 'readActiveHold', 'readClearance', 'whenPassed',
+    ]);
+    // Every `export` in the file is one of those declarations.
+    expect((source.match(/\bexport\b/g) ?? []).length).toBe(exported.length);
+  });
+
   test('every file that carries the mark is allowed, with its reason, or still pending a sweep', () => {
     const unexplained = [...counts.keys()].filter((file) => !MARK_ALLOWED.has(file) && !pending.has(file));
     expect(unexplained).toEqual([]);

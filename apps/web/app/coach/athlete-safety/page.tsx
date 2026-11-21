@@ -271,7 +271,9 @@ function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; 
   return (
     <section id="training-hold" aria-busy={reading === undefined} className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
       <h2 className="t-command text-[length:var(--t-lg)]">Training Hold</h2>
-      <p className="t-label mt-[var(--s1)]">{name}</p>
+      {/* The board's voice for an athlete's name: this line says whose clearance and hold these are, and
+          t-label (--bone-400) measured about 3:1 on the clinic leather (tablet review, rendered). */}
+      <p className="t-body mt-[var(--s1)] font-semibold">{name}</p>
       {reading && badge && (
         <div data-clearance className="mt-[var(--s3)]">
           {/* The board's badge and dates for this athlete's clearance. Setting it is the board's. */}

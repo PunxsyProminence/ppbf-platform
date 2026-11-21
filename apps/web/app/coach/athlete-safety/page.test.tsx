@@ -1376,6 +1376,47 @@ describe('Athlete Safety (lane AS-5)', () => {
           }
         });
 
+        // Safety re-review of 24addc6e: answers may be shown out of the order the re-reads
+        // were sent, so once one says the clearance has lapsed, a "cleared" from a re-read
+        // already out (a server whose clock is behind) must not bring "cleared" back.
+        test('once a re-read says the clearance has lapsed, a later "cleared" from a re-read already out does not bring it back', async () => {
+          jest.useFakeTimers();
+          jest.setSystemTime(new Date('2026-10-01T15:59:00.000Z'));
+          const base = global.fetch;
+          let reads = 0;
+          global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+            if (String(url).includes('/api/pilot/shadow/medical-status?athleteId=ath-1')) {
+              reads += 1;
+              const n = reads;
+              if (n === 1) return { ok: true, status: 200, json: async () => IN_FORCE };
+              // Re-read 1 (sent at the end date) answers "lapsed" after 35 s; re-read 2 (sent
+              // 30 s later) answers "cleared" after 10 s, i.e. 5 s after re-read 1's answer.
+              await new Promise<void>((resolve) => {
+                setTimeout(resolve, n === 2 ? 35_000 : 10_000);
+              });
+              const body = n === 2 ? LAPSED : IN_FORCE;
+              return { ok: true, status: 200, json: async () => body };
+            }
+            return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+          }) as unknown as typeof fetch;
+          try {
+            await openAthlete();
+            await waitFor(() => expect(badge()?.textContent).toBe('✓cleared'));
+            await advance(60_000);
+            expect(reads).toBe(2);
+            await advance(30_000);
+            expect(reads).toBe(3);
+            await advance(5_000);
+            await waitFor(() => expect(badge()?.textContent).toBe('▲clearance expired'));
+            await advance(5_000);
+            await advance(30_000);
+            expect(badge()?.textContent).toBe('▲clearance expired');
+            expect(reads).toBe(3);
+          } finally {
+            jest.useRealTimers();
+          }
+        });
+
         test('a re-read that never answers is said as unread after the wait, and the date is still asked about', async () => {
           jest.useFakeTimers();
           jest.setSystemTime(new Date('2026-10-01T15:59:00.000Z'));
