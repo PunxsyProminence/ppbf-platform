@@ -934,6 +934,8 @@ describe('HF12b review: the picture guard hides no request main already caught',
     'he asked me to send him a pic of my hooks wearing nothing',
     'he asks me for pics of my footwork in my swimsuit',
     'he wants a pic of your stance in your bra',
+    'he keeps asking for pics of my stance',
+    'he asked for pics of my jab',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
@@ -975,6 +977,7 @@ describe('HF12b review: the place window and product talk', () => {
     'he wants pics of me in bed',
     'he filmed me in the toilet with his phone, then sent the video',
     'in the bedroom he took photos',
+    'pics he took in the locker room',
   ])('a person or request near the weaker place words still files: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
