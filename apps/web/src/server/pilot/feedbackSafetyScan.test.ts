@@ -971,6 +971,8 @@ describe('HF12b review: the place window and product talk', () => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 
+  // "he wants pics of me in bed" and "he filmed me in the toilet ..." already
+  // filed on main 4f26461; kept as regression cases for the person rule.
   test.each([
     'he took pics in the locker room',
     'he took a video of me in the bathroom',
