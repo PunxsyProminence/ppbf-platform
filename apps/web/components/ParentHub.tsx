@@ -349,15 +349,15 @@ export function safetyChildSentence(child: SafetyChild): string | null {
    tone below is mixed against paper, and every state pairs its colour with a
    glyph and an uppercase label via the .badge component (Law 3). */
 
-/* Selected tab / selected child: a control in the "on" position is brass
-   chassis, never a status colour (Laws 1 and 2). */
-/* --t-sm, not --t-xs: a guardian reads these on a phone in the car park,
-   and 11.8px uppercase mono was the smallest text on the page. Still a
-   desk size (no kiosk attribute; OD-2026-10-08-011). */
 /* AS9-3 (FAM-03; Q2 = A): the ten tabs sit in one row that scrolls sideways
    on a phone instead of wrapping to five or six rows, so a tab never shrinks
    or breaks its label. The child picker is FamilyChildPicker's buttons, not
    this tab style, so a child no longer looks like a tab. */
+/* Selected tab: a control in the "on" position is brass
+   chassis, never a status colour (Laws 1 and 2). */
+/* --t-sm, not --t-xs: a guardian reads these on a phone in the car park,
+   and 11.8px uppercase mono was the smallest text on the page. Still a
+   desk size (no kiosk attribute; OD-2026-10-08-011). */
 const TAB_BASE =
   'inline-flex shrink-0 whitespace-nowrap min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
@@ -366,6 +366,18 @@ const TAB_INACTIVE =
 
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
+  // The tab row scrolls sideways on a phone (AS9-3), so the open tab is
+  // brought into view in the row when it changes. Not on first paint, so
+  // opening the hub never moves the page.
+  const tabButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const tabShownOnceRef = useRef(false);
+  useEffect(() => {
+    if (!tabShownOnceRef.current) {
+      tabShownOnceRef.current = true;
+      return;
+    }
+    tabButtonsRef.current.get(activeTab)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [activeTab]);
 
   // Real API: Children (athletes accessible to parent)
   const [children, setChildren] = useState<Child[]>([]);
@@ -1523,6 +1535,10 @@ export default function ParentHub() {
             ].map(tab => (
               <button
                 key={tab.id}
+                ref={(element) => {
+                  if (element) tabButtonsRef.current.set(tab.id, element);
+                  else tabButtonsRef.current.delete(tab.id);
+                }}
                 type="button"
                 onClick={() => setActiveTab(tab.id as TabID)}
                 aria-pressed={activeTab === tab.id}

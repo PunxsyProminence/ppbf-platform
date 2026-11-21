@@ -288,3 +288,25 @@ describe('the record page takes its door\'s name on the hub too', () => {
     expect(document.body.textContent).not.toContain('Open the full progression record');
   });
 });
+
+describe('the open tab is brought into view in the scrolling row', () => {
+  test('on a tab change, not on first paint', async () => {
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
+      scrolled.push(this.textContent ?? '');
+    };
+    try {
+      installFetch();
+      await renderHub();
+      expect(scrolled).toEqual([]);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'SHADOW Intel' }));
+      });
+      expect(scrolled).toEqual(['SHADOW Intel']);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+});
