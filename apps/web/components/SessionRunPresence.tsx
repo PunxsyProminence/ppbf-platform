@@ -4,6 +4,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { apiBase } from '@/lib/apiBase';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
+import { formatGymTimeOfDay } from '@/src/lib/gymTime';
+import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 
 // "Who is here" on the live session screen (audit finding F-067).
 //
@@ -32,6 +34,16 @@ import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
 // A GYM OF HUNDREDS. Everyone marked is always listed. The rest of the gym is listed while it is
 // small; past COLLAPSE_AT athletes it is behind "Show all" or the name filter, so the controls
 // below this section (log an intervention, End session) stay within reach on a tablet.
+//
+// THE CLASS REGISTER, ON A TIED SESSION (lane 6C7, U2-6c; staging dry run 2026-11-19: this list was
+// empty for a class whose athletes had already pressed "I'm here"). With a class, the section also
+// reads GET /api/pilot/scheduler -- the read /schedule draws the same register from, so it shows
+// nothing this coach cannot already read there -- and lists, after those marked here, the athletes
+// that class's register has Present who are not marked here yet, each with how the mark was made.
+// Nothing is copied from the register: a tap marks them here, as it does anyone else. The register
+// is read when the section opens, after each tap, and when the coach asks; the line says when.
+// A failed read is "could not be read", never "nobody". A register mark for an athlete who is not
+// on this gym's list is counted, not named. Wording PROPOSED.
 
 interface Athlete {
   athlete_id: string;
@@ -41,6 +53,55 @@ interface Athlete {
 type Reading =
   | { runId: string; state: 'unavailable' }
   | { runId: string; state: 'loaded'; gym: Athlete[]; present: Set<string> };
+
+/** The tied class's register as last read: who it has Present, and how each mark was made (null: not a known way). */
+type RegisterReading =
+  | { classId: string; state: 'unavailable' }
+  | { classId: string; state: 'loaded'; present: Map<string, string | null>; readAt: number };
+
+/**
+ * Who GET /api/pilot/scheduler has Present on one class, or null when the answer cannot be read
+ * as a register (so the screen says "could not be read", never "nobody"). A row that is not this
+ * class's, not Present, or names no athlete is not this list's.
+ */
+export function registerPresent(payload: unknown, classId: string): Map<string, string | null> | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const { attendance: rows, classes } = payload as { attendance?: unknown; classes?: unknown };
+  if (!Array.isArray(rows)) return null;
+  // A class the answer does not carry (gone, or not this organization's) has no register to read here.
+  if (!Array.isArray(classes) || !classes.some((item) => (item as { class_id?: unknown } | null)?.class_id === classId)) {
+    return null;
+  }
+  const present = new Map<string, string | null>();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const { class_id, athlete_id, status, method } = row as Record<string, unknown>;
+    if (class_id !== classId || status !== 'present' || typeof athlete_id !== 'string') continue;
+    present.set(athlete_id, attendanceMethodWords(method));
+  }
+  return present;
+}
+
+/** What the class register has that this session does not, in one line. */
+export function registerLine(onRegister: number, named: number, unnamed: number): string {
+  // The scheduler sends a coach the register of a class they run, cover or scheduled, and nothing
+  // for any other: a coach whose cover was taken over gets no rows, which reads the same as an empty
+  // register. So no rows is never said to be "nobody" (review of #2055).
+  if (onRegister === 0) {
+    return 'The class register sent no Present mark for this class. If another coach now covers it, its register is not sent to you, so this does not mean nobody is here.';
+  }
+  if (named === 0 && unnamed === 0) return 'Everyone marked Present on the class register is marked here.';
+  const parts: string[] = [];
+  if (named > 0) {
+    parts.push(`${named} marked Present on the class register ${named === 1 ? 'is' : 'are'} not marked here yet.`);
+  }
+  if (unnamed > 0) {
+    parts.push(
+      `${unnamed} ${named > 0 ? 'more ' : ''}marked Present on the class register ${unnamed === 1 ? 'is' : 'are'} not on this gym’s list of athletes, so no name is shown.`,
+    );
+  }
+  return parts.join(' ');
+}
 
 // The route's own refusals: when one of these comes back, the server said no and wrote nothing.
 const REFUSAL_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
@@ -103,12 +164,15 @@ const ALERT = 'mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(-
 export default function SessionRunPresence({
   runId,
   tied = false,
+  classId = null,
   onPresentCount,
   onRunNotLive,
 }: {
   runId: string;
   /** The session is tied to a class (D4): marks here also go on its register. */
   tied?: boolean;
+  /** The tied class: with it, the section also shows who that class's register already has Present. */
+  classId?: string | null;
   /** The number of athletes marked here, each time the server says so; null while it is not known. */
   onPresentCount?: (count: number | null) => void;
   /** The server said this run is over or not this coach's: the live screen should ask what is live now. */
@@ -123,6 +187,12 @@ export default function SessionRunPresence({
   const [note, setNote] = useState<{ athleteId: string; text: string } | null>(null);
   const latestRead = useRef(0);
   const headingId = useId();
+  // The tied class's register, read beside the run's own marks; untied, nothing is read.
+  const registerClassId = tied && classId ? classId : null;
+  const [registerState, setRegister] = useState<RegisterReading | null>(null);
+  // A register read is on its way: its button says so, so a press is never met with silence.
+  const [registerBusy, setRegisterBusy] = useState(false);
+  const latestRegisterRead = useRef(0);
 
   // An answer for another run is not this run's: until this run's read lands, it is loading.
   const reading: Reading | { state: 'loading' } = useMemo(
@@ -166,6 +236,36 @@ export default function SessionRunPresence({
     void read();
   }, [read]);
 
+  // An answer for another class is not this class's: until this class's read lands, it is loading.
+  const register: RegisterReading | { state: 'loading' } | null = useMemo(() => {
+    if (!registerClassId) return null;
+    return registerState && registerState.classId === registerClassId ? registerState : { state: 'loading' };
+  }, [registerClassId, registerState]);
+
+  const readRegister = useCallback(async () => {
+    if (!registerClassId) return;
+    const ticket = latestRegisterRead.current + 1;
+    latestRegisterRead.current = ticket;
+    setRegisterBusy(true);
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/scheduler`, { method: 'GET', credentials: 'include' });
+      const payload = (await response.json().catch(() => null)) as unknown;
+      const present = response.ok ? registerPresent(payload, registerClassId) : null;
+      if (!present) throw new Error('unreadable');
+      if (latestRegisterRead.current !== ticket) return;
+      setRegister({ classId: registerClassId, state: 'loaded', present, readAt: Date.now() });
+    } catch {
+      if (latestRegisterRead.current === ticket) setRegister({ classId: registerClassId, state: 'unavailable' });
+    } finally {
+      if (latestRegisterRead.current === ticket) setRegisterBusy(false);
+    }
+  }, [registerClassId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void readRegister();
+  }, [readRegister]);
+
   const presentCount = reading.state === 'loaded' ? reading.present.size : null;
   useEffect(() => {
     onPresentCount?.(presentCount);
@@ -208,6 +308,8 @@ export default function SessionRunPresence({
             else next.delete(athlete.athlete_id);
             return { ...current, present: next };
           });
+          // A tap on a tied session writes the class register too: what it now has is read again.
+          void readRegister();
           return;
         }
         const payload = (await response.json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
@@ -223,18 +325,36 @@ export default function SessionRunPresence({
         setBusy(null);
       }
     },
-    [busy, onRunNotLive, read, runId],
+    [busy, onRunNotLive, read, readRegister, runId],
   );
 
   const needle = filter.trim().toLowerCase();
   const collapsed = reading.state === 'loaded' && reading.gym.length > COLLAPSE_AT && !showAll && needle === '';
+  // Present on the tied class's register and not marked here: named when on this gym's list, counted when not.
+  const onRegister = register && register.state === 'loaded' ? register.present : null;
+  const registerOnly = useMemo(() => {
+    const named = new Set<string>();
+    let unnamed = 0;
+    if (onRegister && reading.state === 'loaded') {
+      const known = new Set(reading.gym.map((athlete) => athlete.athlete_id));
+      for (const athleteId of onRegister.keys()) {
+        if (reading.present.has(athleteId)) continue;
+        if (known.has(athleteId)) named.add(athleteId);
+        else unnamed += 1;
+      }
+    }
+    return { named, unnamed };
+  }, [onRegister, reading]);
   const shown = useMemo(() => {
     if (reading.state !== 'loaded') return [];
     const matching = reading.gym.filter((athlete) => needle === '' || athlete.full_name.toLowerCase().includes(needle));
     const marked = matching.filter((athlete) => reading.present.has(athlete.athlete_id));
-    // Here first, then everyone else (unless the gym is too big to list), each in the server's name order.
-    return collapsed ? marked : [...marked, ...matching.filter((athlete) => !reading.present.has(athlete.athlete_id))];
-  }, [collapsed, needle, reading]);
+    const fromRegister = matching.filter((athlete) => registerOnly.named.has(athlete.athlete_id));
+    // Here first, then those the class register has Present, then everyone else (unless the gym is
+    // too big to list), each in the server's name order.
+    const rest = matching.filter((athlete) => !reading.present.has(athlete.athlete_id) && !registerOnly.named.has(athlete.athlete_id));
+    return collapsed ? [...marked, ...fromRegister] : [...marked, ...fromRegister, ...rest];
+  }, [collapsed, needle, reading, registerOnly]);
 
   return (
     <section className="mt-[var(--s6)] border-t border-[color:rgb(var(--brass-400-rgb)_/_.22)] pt-[var(--s4)]" aria-labelledby={headingId}>
@@ -266,6 +386,34 @@ export default function SessionRunPresence({
               : 'Staff only. This is who was in this session; it does not change anyone’s own check-in or attendance.'}
           </p>
 
+          {/* The tied class's register (lane 6C7, U2-6c): what it has that this session does not. */}
+          {register?.state === 'loading' ? (
+            <p className="t-body mt-[var(--s2)]" role="status">Reading the class register…</p>
+          ) : null}
+          {register?.state === 'unavailable' ? (
+            <div role="alert" className={ALERT}>
+              <p>The class register could not be read just now. That is not the same as nobody on it.</p>
+            </div>
+          ) : null}
+          {register?.state === 'loaded' ? (
+            <p className="t-body mt-[var(--s2)]">
+              {/* Only the counts are announced: the time changes on every read, and a read follows every tap. */}
+              <span role="status">{registerLine(register.present.size, registerOnly.named.size, registerOnly.unnamed)}</span>
+              {` Class register read at ${formatGymTimeOfDay(register.readAt) ?? 'a time that could not be shown'}.`}
+            </p>
+          ) : null}
+          {register && register.state !== 'loading' ? (
+            /* One button for both states, never disabled, so keyboard focus stays on it through a read. */
+            <button
+              type="button"
+              className="btn btn--ghost mt-[var(--s2)]"
+              aria-disabled={registerBusy}
+              onClick={() => { if (!registerBusy) void readRegister(); }}
+            >
+              {registerBusy ? 'Reading the class register…' : 'Read the class register again'}
+            </button>
+          ) : null}
+
           {message ? <p role="alert" className={ALERT}>{message}</p> : null}
           {/* Read out here; shown under the athlete's own row, where the coach just tapped. */}
           <p role="status" className="sr-only">{note?.text ?? ''}</p>
@@ -285,7 +433,9 @@ export default function SessionRunPresence({
               </label>
               {reading.gym.length > COLLAPSE_AT && needle === '' ? (
                 <button type="button" className="btn btn--ghost mt-[var(--s3)]" aria-expanded={showAll} onClick={() => setShowAll((open) => !open)}>
-                  {showAll ? 'Show only those marked here' : `Show all ${reading.gym.length} athletes`}
+                  {showAll
+                    ? register?.state === 'loaded' ? 'Show only those marked here or on the class register' : 'Show only those marked here'
+                    : `Show all ${reading.gym.length} athletes`}
                 </button>
               ) : null}
               {shown.length === 0 ? (
@@ -298,6 +448,8 @@ export default function SessionRunPresence({
                 <ul className="mt-[var(--s3)] space-y-[var(--s3)]" aria-label="Athletes of this gym">
                   {shown.map((athlete) => {
                     const here = reading.present.has(athlete.athlete_id);
+                    const fromRegister = registerOnly.named.has(athlete.athlete_id);
+                    const registerSource = fromRegister ? onRegister?.get(athlete.athlete_id) ?? null : null;
                     return (
                       <li key={athlete.athlete_id}>
                         <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
@@ -314,6 +466,11 @@ export default function SessionRunPresence({
                             <span className="sr-only">{athlete.full_name}</span>
                           </button>
                         </div>
+                        {fromRegister ? (
+                          <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]">
+                            {`Present on the class register${registerSource ? `, via ${registerSource}` : ''}. Not marked here yet.`}
+                          </p>
+                        ) : null}
                         {note && note.athleteId === athlete.athlete_id && note.text ? (
                           <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{note.text}</p>
                         ) : null}

@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import AthleteRecordLinks from '@/components/AthleteRecordLinks';
+import { PASSBOOK_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
 import BackHome from '@/components/BackHome';
@@ -22,8 +25,13 @@ import BackHome from '@/components/BackHome';
  * as sent: the server gives family readers the family wording
  * (getAthletePassbook), and this page is staff-only.
  *
- * ?athlete_id= in the address opens that athlete's book only when the id is
- * on the coach's own roster; anything else is ignored, not fetched.
+ * A link that names an athlete (Passbook Gaps' "Open passbook") opens this
+ * page on that athlete through the page-memory hand-off, never the address
+ * (Overwatch ruling on #1474, Q2 = C; lane AS-11 Q3 = A). The athlete is
+ * chosen only when the coach's own roster lists them; anything else opens the
+ * page with nobody chosen, and nothing is fetched. The page no longer reads
+ * ?athlete_id= from its address, so an old link that carries one opens the
+ * picker.
  */
 
 interface AuthorizedAthlete {
@@ -82,6 +90,10 @@ export default function CoachPassbookPage() {
   // another's name and a late failure never hides a newer book.
   const latestRequest = useRef(0);
 
+  // The athlete a link handed to this page: undefined until it is taken (once,
+  // on the first mount), then the id or null until the roster answers.
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+
   const selectAthlete = useCallback(async (id: string) => {
     const request = ++latestRequest.current;
     const stale = () => latestRequest.current !== request;
@@ -120,6 +132,7 @@ export default function CoachPassbookPage() {
   }, []);
 
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete(PASSBOOK_PAGE);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -132,8 +145,11 @@ export default function CoachPassbookPage() {
         const items = ((await response.json()) as { items?: AuthorizedAthlete[] }).items ?? [];
         setAthletes(items);
         setRosterState('loaded');
-        const wanted = new URLSearchParams(window.location.search).get('athlete_id') ?? '';
-        if (wanted && items.some((a) => a.athlete_id === wanted)) void selectAthlete(wanted);
+        // The roster is the server's answer to whom this coach may read: an
+        // athlete it does not list is not chosen, and nothing is fetched.
+        const arriving = arrivalAthleteRef.current;
+        arrivalAthleteRef.current = null;
+        if (arriving && items.some((a) => a.athlete_id === arriving)) void selectAthlete(arriving);
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') return;
         setAthletes([]);
@@ -206,10 +222,14 @@ export default function CoachPassbookPage() {
         {book && pages && bookState === 'loaded' && (
           <>
             <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-              <h2 className="t-command text-[length:var(--t-lg)]">{book.athlete.full_name}</h2>
+              <h2 id="passbook-athlete-name" className="t-command text-[length:var(--t-lg)]">{book.athlete.full_name}</h2>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 {book.athlete.weight_class || 'No weight class recorded'} · {humanize(book.athlete.gym_status)}
               </p>
+              {/* The rest of this athlete's record, each page opened on them
+                  (lane AS-11, CF-15). The id is the book's own, which the
+                  server returned for the athlete asked for. */}
+              <AthleteRecordLinks athleteId={book.athlete.athlete_id} labelledBy="passbook-athlete-name" />
             </section>
 
             <Page title="Attendance" empty={pages.attendance.length === 0}>

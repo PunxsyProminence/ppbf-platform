@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 
-import { gymDayIso } from '@/src/lib/gymTime';
+// The age rule lives in src/lib/minorAge.ts so a page can use the same one
+// (lane AS-10); it is re-exported here, so every import from this file stands.
+import { ADULT_AGE_YEARS, ageInYears, isMinor } from '@/src/lib/minorAge';
+
+export { ADULT_AGE_YEARS, ageInYears, isMinor };
 
 /**
  * THE WALL DISPLAY — the board the gym's TV points at.
@@ -125,8 +129,6 @@ const GUARDIAN_SIGNER_ROLES = new Set([
  */
 export const DISPLAY_CONSENT_MAX_AGE_DAYS = 365;
 
-export const ADULT_AGE_YEARS = 18;
-
 /**
  * The operator-level switch, on top of the per-athlete gate.
  *
@@ -178,48 +180,6 @@ export type WallConsentReason =
 export interface WallConsentDecision {
   readonly visibility: WallNameVisibility;
   readonly reason: WallConsentReason;
-}
-
-/**
- * Age in whole years on the GYM's calendar day, or null when the date of birth
- * is missing or unreadable.
- *
- * "Today" is read in the gym's zone, never from the server clock's own date
- * parts. A container running in UTC is already on tomorrow from 8pm Eastern
- * (7pm in winter), so UTC parts made an athlete an adult the evening before
- * their 18th birthday -- during the class -- and every minor protection that
- * asks isMinor() switched off a night early. An athlete is a minor until local
- * midnight at the start of their birthday, and not a minute before.
- */
-export function ageInYears(dob: string | null | undefined, now: Date): number | null {
-  if (typeof dob !== 'string') return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dob.trim());
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-
-  // An unusable `now` throws, as it did before: a null age reads as "no date
-  // of birth", which is not what happened.
-  const today = gymDayIso(now);
-  if (!today) throw new RangeError('Invalid time value');
-  const [yearNow, monthNow, dayNow] = today.split('-').map(Number);
-  let age = yearNow - year;
-  if (monthNow < month || (monthNow === month && dayNow < day)) {
-    age -= 1;
-  }
-  return age;
-}
-
-/**
- * Unknown age is treated as a minor. A gym whose records are incomplete must
- * not have that read as "adult, publish freely".
- */
-export function isMinor(dob: string | null | undefined, now: Date): boolean {
-  const age = ageInYears(dob, now);
-  return age === null || age < ADULT_AGE_YEARS;
 }
 
 /**

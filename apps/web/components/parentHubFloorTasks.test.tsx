@@ -273,9 +273,10 @@ describe('ticking a task off', () => {
     await renderFloor();
 
     const tileBefore = screen.getAllByText('Parent Floor tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent;
-    // Open tasks across both children: monday, prev_sunday, week_open,
-    // sunday, earlier_open, undated, next_week, sibling.
-    expect(tileBefore).toBe('Parent Floor tasks8');
+    // Open tasks, named per child (AS-9 Q4 = A): monday, prev_sunday,
+    // week_open, sunday, earlier_open, undated and next_week for the first
+    // child; sibling for the second.
+    expect(tileBefore).toBe('Parent Floor tasksFirst 7 · Second 1');
 
     const row = within(list('Due this week') as HTMLElement).getByText('Bring gloves Thursday').closest('li') as HTMLElement;
     await act(async () => {
@@ -289,7 +290,7 @@ describe('ticking a task off', () => {
 
     await waitFor(() => expect(within(row).getByRole('checkbox', { name: /^Done/ })).toBeChecked());
     expect(card().textContent).toContain('2 of 4 done this week');
-    expect(screen.getAllByText('Parent Floor tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent).toBe('Parent Floor tasks7');
+    expect(screen.getAllByText('Parent Floor tasks').find((element) => element.tagName === 'P')?.parentElement?.textContent).toBe('Parent Floor tasksFirst 6 · Second 1');
 
     await openTab('Messages');
     const messageCard = screen.getByText('Bring gloves Thursday').closest('div.mat-paper') as HTMLElement;

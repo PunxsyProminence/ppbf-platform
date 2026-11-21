@@ -11,13 +11,29 @@
 // the page never claims to be a queue of absences when the API returns a
 // queue of gaps.
 
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
+import { PASSBOOK_PAGE, PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import CoachPassbookGapsPage from './page';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+// A plain anchor that runs the link's own onClick, as next/link does, without
+// navigating (the pattern of the Escalations test, lane AS-5).
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href, className, onClick }: {
+    readonly children: React.ReactNode;
+    readonly href: string;
+    readonly className?: string;
+    readonly onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  }) => (
+    <a href={href} className={className} onClick={(event) => { event.preventDefault(); onClick?.(event); }}>{children}</a>
+  ),
 }));
 
 // Shaped exactly like `CoachPassbookGapQueueItem` in
@@ -174,16 +190,63 @@ test('a failed read admits gaps may be open that are not shown', async () => {
   expect(screen.queryByText('No open gaps in these books')).toBeNull();
 });
 
-test('each row opens that athlete\'s own passbook', async () => {
-  global.fetch = mockFetch({});
-
-  await act(async () => {
-    render(<CoachPassbookGapsPage />);
+// Lane AS-11 (app scrub CF-23): both row links open their page on the row's
+// athlete, who travels in page memory, never in an address (#1474 Q2 = C;
+// lane AS-11 Q3 = A).
+describe('each row opens its pages on that row\'s athlete (lane AS-11)', () => {
+  afterEach(() => {
+    takeArrivalAthlete(PASSBOOK_PAGE);
+    takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE);
   });
 
-  const rows = screen.getAllByRole('listitem');
-  expect(within(rows[0]).getByRole('link', { name: 'Open passbook' }).getAttribute('href'))
-    .toBe('/coach/passbook?athlete_id=ath-1');
-  expect(within(rows[1]).getByRole('link', { name: 'Open passbook' }).getAttribute('href'))
-    .toBe('/coach/passbook?athlete_id=ath-2');
+  async function rows() {
+    global.fetch = mockFetch({});
+    await act(async () => {
+      render(<CoachPassbookGapsPage />);
+    });
+    return screen.getAllByRole('listitem');
+  }
+
+  test('no link carries an athlete id in its address', async () => {
+    const listed = await rows();
+    for (const row of listed) {
+      expect(within(row).getByRole('link', { name: 'Open passbook' }).getAttribute('href')).toBe('/coach/passbook');
+      expect(within(row).getByRole('link', { name: 'Assign a drill' }).getAttribute('href'))
+        .toBe('/coach/progression-intelligence');
+    }
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.getAttribute('href')).not.toMatch(/ath-1|ath-2|athlete_id/);
+    }
+  });
+
+  test('"Open passbook" hands the row\'s athlete to the Passbook only', async () => {
+    const listed = await rows();
+    fireEvent.click(within(listed[1]).getByRole('link', { name: 'Open passbook' }));
+    expect(takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE)).toBeNull();
+    fireEvent.click(within(listed[1]).getByRole('link', { name: 'Open passbook' }));
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBe('ath-2');
+  });
+
+  test('"Assign a drill" hands the row\'s athlete to Progression Intelligence only', async () => {
+    const listed = await rows();
+    fireEvent.click(within(listed[0]).getByRole('link', { name: 'Assign a drill' }));
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBeNull();
+    fireEvent.click(within(listed[0]).getByRole('link', { name: 'Assign a drill' }));
+    expect(takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE)).toBe('ath-1');
+  });
+
+  test.each([
+    ['ctrl', { ctrlKey: true }],
+    ['cmd', { metaKey: true }],
+    ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
+    ['middle button', { button: 1 }],
+  ])('a %s click, which opens another tab, hands nothing over', async (_name, init) => {
+    const listed = await rows();
+    // Read after each click: a second hand-off would replace the first.
+    fireEvent.click(within(listed[0]).getByRole('link', { name: 'Open passbook' }), init);
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBeNull();
+    fireEvent.click(within(listed[0]).getByRole('link', { name: 'Assign a drill' }), init);
+    expect(takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE)).toBeNull();
+  });
 });

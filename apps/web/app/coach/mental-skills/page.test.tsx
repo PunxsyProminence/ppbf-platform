@@ -3,10 +3,13 @@
  */
 
 /*
- * The coach's mental skills page. The picking, the stale-answer guard and the
- * failure states are covered in the guardian page's test (same panel); this
- * file covers what differs: the staff sources, the goals read through the
- * coach block routes, and that the page never writes.
+ * The coach's mental skills page. The stale-answer guard and the failure
+ * states are covered in the guardian page's test (same panel); this file
+ * covers what differs: the staff sources, the goals read through the coach
+ * block routes, that the page never writes, and the coach's own picking --
+ * a select that opens on nobody and tells two same-named athletes apart. The
+ * guardian page moved to the family picker (lane AS-9, AS9-2), so that
+ * picking is proved here now.
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -23,12 +26,14 @@ jest.mock('@/components/RoleStandaloneView', () => ({
   },
 }));
 
-function installFetch(): jest.Mock {
+const ONE_ATHLETE = [{ athlete_id: 'ath-1', full_name: 'Casey' }];
+
+function installFetch(roster: Array<{ athlete_id: string; full_name?: string }> = ONE_ATHLETE): jest.Mock {
   const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
     if (url.includes('/api/pilot/coach/athletes')) {
-      return json({ items: [{ athlete_id: 'ath-1', full_name: 'Casey' }] });
+      return json({ items: roster });
     }
     if (url.includes('/api/pilot/coach/mental-skills?athlete_id=ath-1')) {
       return json({
@@ -53,7 +58,11 @@ function installFetch(): jest.Mock {
   return fetchMock;
 }
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  window.sessionStorage.clear();
+  window.localStorage.clear();
+});
 
 test('reads the chosen athlete through the staff routes, goals from active blocks only, and never writes', async () => {
   const fetchMock = installFetch();
@@ -78,4 +87,40 @@ test('reads the chosen athlete through the staff routes, goals from active block
     expect((init as RequestInit | undefined)?.method ?? 'GET').toBe('GET');
   }
   expect(screen.queryByRole('button')).toBeNull();
+});
+
+describe('the coach keeps the select (the family picker is the guardian page\'s only)', () => {
+  test('two athletes with the same name are told apart, and one with no name is still listed', async () => {
+    installFetch([
+      { athlete_id: 'ath-twin-1111', full_name: 'Sam' },
+      { athlete_id: 'ath-twin-2222', full_name: 'Sam' },
+      { athlete_id: 'ath-3333' },
+    ]);
+    await act(async () => {
+      render(<CoachMentalSkillsPage />);
+    });
+    const select = screen.getByLabelText('Which athlete') as HTMLSelectElement;
+    expect(select.tagName).toBe('SELECT');
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual([
+      'Choose',
+      'Sam (1111)',
+      'Sam (2222)',
+      'ath-3333',
+    ]);
+    expect(screen.queryByRole('group', { name: 'Which athlete' })).toBeNull();
+  });
+
+  test('nobody is picked at open, even with one athlete and a family page\'s remembered child', async () => {
+    // The guardian pages' remembered child (src/lib/chosenChild.ts) is not the
+    // coach's: a coach on a shared tablet must not open on it.
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'ath-1');
+    const fetchMock = installFetch();
+    await act(async () => {
+      render(<CoachMentalSkillsPage />);
+    });
+    await act(async () => {});
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('');
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((u) => u.includes('athlete_id='))).toEqual([]);
+    expect(screen.queryByText('hands home')).toBeNull();
+  });
 });

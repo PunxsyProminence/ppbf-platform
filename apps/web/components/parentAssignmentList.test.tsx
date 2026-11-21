@@ -289,11 +289,11 @@ describe('what the coach set, as it stands', () => {
     expect(tab.textContent ?? '').not.toMatch(/acct_|account/i);
   });
 
-  test('links to the full progression record', async () => {
+  test('links to the full progression record, by the door name (FAM-18)', async () => {
     installFetch();
     await renderAssignments();
     await screen.findByText('Shadowboxing rounds');
-    expect(screen.getByRole('link', { name: 'Open the full progression record' })).toHaveAttribute('href', '/parent/progression-visibility');
+    expect(screen.getByRole('link', { name: 'Open Progress Visibility' })).toHaveAttribute('href', '/parent/progression-visibility');
   });
 });
 

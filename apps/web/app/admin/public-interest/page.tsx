@@ -87,7 +87,7 @@ export default function PublicInterestReviewPage() {
 
   return (
     <RoleStandaloneView
-      roleLabel="Public Interest Review"
+      roleLabel="Public Interest"
       routeLabel="/admin/public-interest"
       allowedRoles={['admin', 'platform_owner']}
       /* Law 6: every screen inherits exactly one room, and this one inherited

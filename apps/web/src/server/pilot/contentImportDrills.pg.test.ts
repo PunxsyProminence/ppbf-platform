@@ -1036,6 +1036,115 @@ describe('universal stop rules (R3: stored once)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// A DRILL FILE MADE BEFORE A COLUMN EXISTED (lane GD; Overwatch Q3 = A on #2042).
+// NW-b (#1976) added exit_condition and correction_path. A file made before it has neither column,
+// and a missing column reads as blank, which stored '' over a filled field as the drill's next
+// version. The drill keeps the stored value instead (drills.ts, KEPT_WHEN_THE_HEADER_OMITS).
+
+const ADDED_COLUMNS = ['exit_condition', 'correction_path'] as const;
+/** The committed drills that hold either field: the ones a file without the columns would have blanked. */
+const FILLED = COMMITTED.library.filter((row) => ADDED_COLUMNS.some((name) => row[name].trim() !== ''));
+/** One that holds both, so each field's fate can be told apart on one drill. */
+const BOTH_FILLED = COMMITTED.library.find((row) => ADDED_COLUMNS.every((name) => row[name].trim() !== '')) as Row;
+
+/** The library file as a hand-off made before `columns` existed: no such column in its header. */
+function withoutColumns(files: Record<string, string>, columns: readonly string[]): Record<string, string> {
+  const table = readCsv(files[LIBRARY_CSV]);
+  const kept = table.header.map((name, index) => ({ name, index })).filter(({ name }) => !columns.includes(name));
+  return {
+    ...files,
+    [LIBRARY_CSV]: writeCsv(kept.map(({ name }) => name), table.records.map((record) => kept.map(({ index }) => record.cells[index] ?? ''))),
+  };
+}
+
+async function addedFieldsOf(organizationId: string, lineageId: string) {
+  const { rows } = await observer.query<{ version: number; purpose: string; exit_condition: string; correction_path: string }>(
+    `select version, purpose, exit_condition, correction_path from pilot.drill_library
+      where organization_id = $1 and lineage_id = $2 order by version`,
+    [organizationId, lineageId],
+  );
+  return rows;
+}
+
+describe('a drill file made before exit_condition and correction_path existed', () => {
+  it('the committed library has drills with those fields filled, and the old-shape file has neither column', () => {
+    // So the cases below cannot pass vacuously.
+    expect(FILLED.length).toBeGreaterThan(0);
+    expect(BOTH_FILLED).toBeDefined();
+    const header = readCsv(withoutColumns(drillFiles(), ADDED_COLUMNS)[LIBRARY_CSV]).header;
+    expect(header).not.toContain('exit_condition');
+    expect(header).not.toContain('correction_path');
+    expect(header).toHaveLength(readCsv(drillFiles()[LIBRARY_CSV]).header.length - 2);
+  });
+
+  it('re-imported onto the loaded library, finds every drill unchanged and writes nothing', async () => {
+    const admin = await prepareGym('gym_old_header');
+    await applyCommitted('gym_old_header', admin, drillFiles());
+    const before = await rowVersions('gym_old_header');
+
+    const result = await applyCommitted('gym_old_header', admin, withoutColumns(drillFiles(), ADDED_COLUMNS));
+    expect(result.plan.blocking).toEqual([]);
+    expect(result.plan.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: DRILLS, absent: 0, reject: 0 });
+    expect(result.importId).toBeNull();
+    expect(await rowVersions('gym_old_header')).toEqual(before);
+    // The filled fields are still what the first load wrote.
+    for (const drill of FILLED) {
+      expect(await addedFieldsOf('gym_old_header', drill.drill_id)).toEqual([
+        expect.objectContaining({ version: 1, exit_condition: drill.exit_condition.trim(), correction_path: drill.correction_path.trim() }),
+      ]);
+    }
+  });
+
+  it('a revision from such a file carries both stored fields into the new version', async () => {
+    const admin = await prepareGym('gym_old_header_revision');
+    await applyCommitted('gym_old_header_revision', admin, drillFiles());
+    const purpose = `${BOTH_FILLED.purpose} Revised by an old-shape file.`;
+    const revised = withEdit(withoutColumns(drillFiles(), ADDED_COLUMNS), LIBRARY_CSV, (row) =>
+      (row.drill_id === BOTH_FILLED.drill_id ? { ...row, purpose } : row));
+
+    const result = await applyCommitted('gym_old_header_revision', admin, revised);
+    expect(result.plan.blocking).toEqual([]);
+    expect(result.plan.counts['drill-library']).toEqual({ new: 0, new_version: 1, unchanged: DRILLS - 1, absent: 0, reject: 0 });
+    expect(unitOf(result.plan, BOTH_FILLED.drill_id)).toMatchObject({ outcome: 'new_version', fromVersion: 1, toVersion: 2 });
+
+    const [first, second] = await addedFieldsOf('gym_old_header_revision', BOTH_FILLED.drill_id);
+    expect(first.exit_condition).not.toBe('');
+    expect(first.correction_path).not.toBe('');
+    expect(second).toEqual({ version: 2, purpose, exit_condition: first.exit_condition, correction_path: first.correction_path });
+
+    // The same file again: nothing left to do, so the kept fields do not read as a difference either.
+    const again = await plan('gym_old_header_revision', admin, revised);
+    expect(again.counts['drill-library']).toEqual({ new: 0, new_version: 0, unchanged: DRILLS, absent: 0, reject: 0 });
+  });
+
+  it('a file that has the column says what its cell says: an empty cell blanks that field, and the column it lacks is still kept', async () => {
+    const admin = await prepareGym('gym_one_column');
+    await applyCommitted('gym_one_column', admin, drillFiles());
+    // exit_condition is in the header with an empty cell for one drill; correction_path is not in the header at all.
+    const files = withEdit(withoutColumns(drillFiles(), ['correction_path']), LIBRARY_CSV, (row) =>
+      (row.drill_id === BOTH_FILLED.drill_id ? { ...row, exit_condition: '' } : row));
+    expect(readCsv(files[LIBRARY_CSV]).header).toContain('exit_condition');
+
+    const result = await applyCommitted('gym_one_column', admin, files);
+    expect(result.plan.blocking).toEqual([]);
+    expect(result.plan.counts['drill-library']).toEqual({ new: 0, new_version: 1, unchanged: DRILLS - 1, absent: 0, reject: 0 });
+
+    const [first, second] = await addedFieldsOf('gym_one_column', BOTH_FILLED.drill_id);
+    expect(second).toEqual({ version: 2, purpose: first.purpose, exit_condition: '', correction_path: first.correction_path });
+    expect(first.correction_path).not.toBe('');
+  });
+
+  it('a first load from such a file has nothing stored to keep: every drill is new and both fields are blank', async () => {
+    const admin = await prepareGym('gym_old_header_first');
+    const result = await applyCommitted('gym_old_header_first', admin, withoutColumns(drillFiles(), ADDED_COLUMNS));
+    expect(result.plan.counts['drill-library']).toEqual({ new: DRILLS, new_version: 0, unchanged: 0, absent: 0, reject: 0 });
+    expect(await addedFieldsOf('gym_old_header_first', BOTH_FILLED.drill_id)).toEqual([
+      expect.objectContaining({ version: 1, exit_condition: '', correction_path: '' }),
+    ]);
+  });
+});
+
 describe('one transaction', () => {
   it('a failure mid-way through a drill load leaves nothing', async () => {
     const admin = await prepareGym('gym_midway');

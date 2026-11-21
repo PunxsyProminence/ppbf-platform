@@ -587,12 +587,6 @@ export default function CoachFloorFocus({
               {sessionState !== 'loaded' ? 'Open Session Plans' : 'Return to live delivery'}
             </Link>
           )}
-          {/* CF-05 (app scrub, lane U1): a Group / One-on-One toggle stood here.
-              It changed only the Floor tab's code-written block template, not
-              the session Start begins (that sends the class alone), so on the
-              board it looked like a setting that did nothing. The toggle lives
-              where its effect is; this line names where it went. */}
-          <p className="coach-floor-focus__quiet">Group / One-on-One block templates are on the Floor tab.</p>
           <Link href="/coach/decision-loop" className="btn coach-floor-focus__btn btn--ghost">
             Open Decision Loop
           </Link>

@@ -137,7 +137,9 @@ describe('the 005 mockup did not delete or invent scheduler controls', () => {
     'Submit Request',
     // 'Check In' is now "I'm here" for an athlete or parent (Jason
     // 2026-10-12, issue #1524), asserted on its own below.
-    'Update Attendance',
+    // The staff register's button. It read 'Update Attendance' until the register took the
+    // class screen's word, "Who is here" (lane 6C7, U2-6c; Overwatch Q1 = A on #2043).
+    'Save',
     'Mark Parent Reviewed',
     'Decline',
   ] as const;
