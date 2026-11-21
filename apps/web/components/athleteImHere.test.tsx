@@ -229,7 +229,11 @@ describe('a walk-in registers for an open class today', () => {
       },
     });
     await mount();
+    const readsBefore = calls.filter((call) => call.method === 'GET').length;
     await pressRegister();
+    // A refusal does not reload the card, as on /schedule: the answer stands
+    // over the read it was given against.
+    expect(calls.filter((call) => call.method === 'GET')).toHaveLength(readsBefore);
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toBe(
       'Training hold: registration is paused for this athlete'
