@@ -2181,3 +2181,44 @@ describe('HF12b fifth delta review (81ed7ee..6e572aa): blocking findings', () =>
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b sixth delta review (81ed7ee..c3c1cd6): blocking findings', () => {
+  test.each([
+    'i sent coach private pics',
+    'i sent coach private photos',
+    'i sent coach private videos',
+    'i sent coach private pics so only coach can see it',
+    'i shared private pics with coach',
+    'i shared private photos with my coach',
+    'i have private photos with coach',
+    'i had private pics with my coach',
+    'i had a private photo session with coach',
+    'i booked a private photo session with coach',
+    'i shared private pics',
+    'i uploaded my private pics',
+    'coach has secret videos of my training',
+    'coach has a secret video of my sparring',
+    'coach has secret videos of my workout',
+    'coach has a secret video of my squats',
+    'coach sent us a secret video of my training',
+    'can i see secret videos of my training',
+    'a stranger at the gym took pictures of everyone',
+    'a man i dont know at the gym took pictures of everyone',
+    'a guy i dont know at the gym filmed everyone today',
+    'a stranger at the gym filmed my training again',
+    'a man i dont know filmed my training',
+    'someone i dont know recorded my training',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'i showed coach a video of a guy on tiktok doing the combo',
+    'i sent my friend a video of some guy on tiktok doing shoulder rolls',
+    'i showed my coach the videos of that guy online',
+    'i sent coach a video from a guy on insta',
+    'i showed coach a pic of a guy online with the same gloves',
+  ])('everyday talk stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
