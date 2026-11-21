@@ -1446,3 +1446,49 @@ describe('HF12b review 5: product, school and gym talk stays out', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+// Review round 6 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review 6: a lone text-speak letter does not swallow an obfuscated word', () => {
+  test.each([
+    'he followed me home n r*ped me',
+    'he got me alone n r@ped me',
+    'he got me alone n r ped me',
+    'he w r*ped me',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 6: mixed separators inside a spelled-out staff word', () => {
+  test.each([
+    ['my c o.a.c.h hit me', /\bcoach\b/],
+    ['my c.o.a c.h yells at me', /\bcoach\b/],
+    ['my c-o-a-c h broke my nose', /\bcoach\b/],
+    ['c o.a.c.h punched me in sparring', /\bcoach\b/],
+  ])('%p keeps the staff word', (sentence, word) => {
+    expect(normalizeForSafetyScan(sentence)).toMatch(word);
+  });
+});
+
+describe('HF12b review 6: guards that swallowed a person asking for videos', () => {
+  test.each([
+    'some guy from the app keeps asking me for videos',
+    'a man off the app asks me for vids',
+    'a guy called shadow keeps asking me for videos',
+    'a man at the gym wants videos of me every day',
+    'the man from boxing wants videos of me every time',
+    'he wants videos for the website of me in my shorts',
+    'he wants me to send a video of my training at night when no one is around',
+    'he asks for videos of my workouts in my room',
+    'he wants a video of my squats in my room at night',
+    'he wants a video of me before class',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 6: sa\'d with "im", "by" or a number', () => {
+  test.each(["i'm sa'd by my coach", "coach sa'd 2 girls"])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
