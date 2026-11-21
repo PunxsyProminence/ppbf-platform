@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 import {
+  doorForPath,
   pathAllowsEggs,
   searchDoors,
   visibleDoors,
@@ -337,6 +338,8 @@ export default function CardCatalog() {
   const grouped = useMemo(() => searchGroups(openDoors, role), [openDoors, role]);
 
   const trimmed = query.trim().toLowerCase();
+  // The page you are on, marked in the list (the corridor menu used to).
+  const hereHref = useMemo(() => doorForPath(pathname ?? '')?.href ?? null, [pathname]);
 
   /* Typed: searchDoors' ranking, kept to the pages above. Not typed: All
      pages in the order it is drawn, so the arrow keys walk what the eye
@@ -421,13 +424,19 @@ export default function CardCatalog() {
   useEffect(() => {
     function onOpenAt(event: Event) {
       const group = (event as CustomEvent<{ group?: SearchGroupKey | null }>).detail?.group ?? null;
+      /* The keyboard starts where the eye is sent: on the room's first page,
+         so Enter opens a page in it and the arrows walk it (layout review
+         round 1). Search is shut here, so `rows` is the empty-query list. */
+      const first = group
+        ? rows.findIndex((row) => row.kind === 'door' && searchGroupOf(row.door.href, role) === group)
+        : -1;
       setQuery('');
-      setCursor(0);
+      setCursor(Math.max(first, 0));
       openCatalog(group);
     }
     window.addEventListener(OPEN_SEARCH_EVENT, onOpenAt);
     return () => window.removeEventListener(OPEN_SEARCH_EVENT, onOpenAt);
-  }, [openCatalog]);
+  }, [openCatalog, rows, role]);
 
   useEffect(() => {
     if (!open || !startGroup) return;
@@ -598,6 +607,7 @@ export default function CardCatalog() {
                   <CatalogRow
                     key={door.href}
                     door={door}
+                    current={door.href === hereHref}
                     idx={actCount + i}
                     active={actCount + i === cursor}
                     showRoom
@@ -613,7 +623,12 @@ export default function CardCatalog() {
                   </li>,
                   ...grouped.map((group) => (
                   <li key={group.key} role="presentation">
-                    <div className="catalog-group" data-group={group.key}>{group.label}</div>
+                    {/* Inline, because the legacy .catalog-group rule (unlayered,
+                        9.5px) beats a utility class; these headings are now
+                        the only way to browse by room (layout review round 1). */}
+                    <div className="catalog-group" data-group={group.key} style={{ fontSize: 'var(--t-sm)' }}>
+                      {group.label}
+                    </div>
                     <ul role="group" aria-label={group.label} className="contents">
                       {group.doors.map((door) => {
                         const i = actCount + doors.indexOf(door);
@@ -621,6 +636,7 @@ export default function CardCatalog() {
                           <CatalogRow
                             key={door.href}
                             door={door}
+                            current={door.href === hereHref}
                             idx={i}
                             active={i === cursor}
                             onPick={() => go(door)}
@@ -660,9 +676,9 @@ export default function CardCatalog() {
 }
 
 function CatalogRow({
-  door, idx, active, showRoom, role, onPick, onHover,
+  door, idx, active, showRoom, role, current, onPick, onHover,
 }: {
-  door: Door; idx: number; active: boolean; showRoom?: boolean; role?: ClubRole | null;
+  door: Door; idx: number; active: boolean; showRoom?: boolean; role?: ClubRole | null; current?: boolean;
   onPick: () => void; onHover: () => void;
 }) {
   const group = showRoom ? searchGroupOf(door.href, role ?? null) : null;
@@ -672,18 +688,22 @@ function CatalogRow({
       data-idx={idx}
       role="option"
       aria-selected={active}
+      aria-current={current ? 'page' : undefined}
       className={`catalog-row${active ? ' is-active' : ''}`}
       onMouseDown={(e) => { e.preventDefault(); onPick(); }}
       onMouseEnter={onHover}
     >
       <div className="catalog-row-main">
         <b>{door.label}</b>
+        {current && <span className="catalog-row-hint">You are here.</span>}
         {door.hint && <span className="catalog-row-hint">{door.hint}</span>}
       </div>
       <div className="catalog-row-meta">
         {/* "in", so a room that shares a page's name (the Operations room
             and the Operations hub) is never read as that page. */}
-        {showRoom && group && <span className="catalog-room-tag">in {searchGroupLabel(group)}</span>}
+        {showRoom && group && (
+          <span className="catalog-room-tag" style={{ fontSize: 'var(--t-xs)' }}>in {searchGroupLabel(group)}</span>
+        )}
         <code>{door.href}</code>
       </div>
     </li>

@@ -43,7 +43,8 @@ export default function Corridor() {
       <button
         type="button"
         className="corridor-trigger"
-        aria-label={`Where you are: ${where}. Opens All pages in Search.`}
+        // A page the map does not know is not a place: say only what it opens.
+        aria-label={here ? `Where you are: ${where}. Opens All pages in Search.` : 'Open All pages in Search.'}
         onClick={() => openSearchAt(group)}
       >
         <span className="corridor-trigger-glyph" aria-hidden="true">▤</span>

@@ -201,3 +201,47 @@ describe('the keyboard walks All pages in the order it is drawn', () => {
     expect(Number(active?.getAttribute('data-idx'))).toBe(options.length - 1);
   });
 });
+
+describe('layout review round 1 (4c)', () => {
+  it('the plate puts the keyboard on its room: the highlighted row is that room\'s first page', async () => {
+    const { ROOM_PLACE_DOORS } = await import('./roomPlaces');
+    const { default: Corridor } = await import('./Corridor');
+    pathname = '/coach/drills';
+    render(<><Corridor /><CardCatalog /></>);
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /where you are/i }));
+    });
+    const dialog = screen.getByRole('dialog');
+    const active = dialog.querySelector('li[role="option"][aria-selected="true"]');
+    expect(ROOM_PLACE_DOORS['drill-cabinet']).toContain(active?.querySelector('code')?.textContent);
+    const field = within(dialog).getByRole('combobox');
+    expect(field.getAttribute('aria-activedescendant')).toBe(active?.id);
+  });
+
+  it('marks the page you are on in All pages', () => {
+    pathname = '/coach/drills';
+    const dialog = openSearch();
+    const row = within(dialog).getByRole('option', { name: /Drill Library/ });
+    expect(row.getAttribute('aria-current')).toBe('page');
+    expect(row.textContent).toMatch(/you are here/i);
+    const other = within(dialog).getByRole('option', { name: /Cue Library/ });
+    expect(other.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('draws room headings and room tags at a readable size, not the legacy 9px', () => {
+    const dialog = openSearch();
+    const heading = dialog.querySelector<HTMLElement>('[data-group="drill-cabinet"]');
+    expect(heading?.style.fontSize).toBe('var(--t-sm)');
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'library' } });
+    const tag = dialog.querySelector<HTMLElement>('.catalog-room-tag');
+    expect(tag?.style.fontSize).toBe('var(--t-xs)');
+  });
+
+  it('does not call a page the map does not know a place you are', async () => {
+    const { default: Corridor } = await import('./Corridor');
+    pathname = '/coach/no-such-page';
+    render(<Corridor />);
+    const plate = screen.getByRole('button', { name: /all pages/i });
+    expect(plate.getAttribute('aria-label')).not.toMatch(/where you are/i);
+  });
+});
