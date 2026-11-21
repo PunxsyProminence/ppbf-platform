@@ -5,6 +5,7 @@ import * as buildingMap from './buildingMap';
 import { BUILDING } from './buildingMap';
 import { QUEUES } from './GymOfficeQueues';
 import { BOARD_HOME, JOB_BARS, jobBarFor, type JobItem } from './jobBars';
+import { LAB_HREFS } from './roomPlaces';
 import { getPilotRoleDestination } from '../src/shared/pilotRoleRouting';
 import type { ClubRole } from './roleRoutes';
 
@@ -114,6 +115,9 @@ describe('the job bars', () => {
   it("keeps the admin's Lab pages out of the bar: Capabilities, System and Door Register are in Search", () => {
     const admin = hrefsOf(items('admin'));
     for (const href of ['/admin', '/admin/system', '/admin/door-register']) expect(admin).not.toContain(href);
+    // Every Lab page is Search only for the admin (QU = A), save Audit Trace, which stage 2 also names in
+    // the Office ("audit trace").
+    expect(admin.filter((href) => LAB_HREFS.has(href))).toEqual(['/audit']);
   });
 
   it('opens Parent Hub only on tabs Parent Hub has', () => {

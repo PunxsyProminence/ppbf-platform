@@ -26,7 +26,8 @@ import type { ClubRole } from './roleRoutes';
  * today's coach pages, listed under Athletes after Passbook.
  *   admin    New member flow; Morning check has no page of its own: it is on
  *            Gym Office, which is Home (AS10-3, #2038), and Safety lists the
- *            pages it counts; Gym TVs (pairing) has no page of its own: it is on
+ *            pages it counts but Staff Credentials, which is in Members & staff;
+ *            Gym TVs (pairing) has no page of its own: it is on
  *            Gym Setup, in Classes & floor.
  *   platform owner  "a gym switcher" for Home: no such page, so Home is Omega,
  *            as the approved names say ("Home (Omega)").
