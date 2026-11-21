@@ -939,11 +939,11 @@ it('shows a platform owner no compliance center link; a gym admin finds it on Gy
 });
 
 /*
- * AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A). The header's launcher moved to Gym
- * Office, grouped by the admin's job sections. Gym Setup was already linked from Gym Office's
- * header (AS10-1), so it is not repeated there. People (the way back to Gym Office) and Export JSON
- * (this page's own export) stay. Video Analysis, Drill Library, Waivers & Consent and System sit in
- * no admin section: where they go is Overwatch's Q19 on #2018, so they stay here until it is answered.
+ * AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A, Q19 A). The header's launcher moved to
+ * Gym Office: grouped by the admin's job sections, then Video Analysis, Drill Library, Waivers &
+ * Consent and System in one row (they sit in no section). Gym Setup was already linked from Gym
+ * Office's header (AS10-1), so it is not repeated there. Gym Office (the way back) and Export JSON
+ * (this page's own export) stay.
  */
 it('the header no longer launches the office pages that moved to Gym Office', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
@@ -952,24 +952,21 @@ it('the header no longer launches the office pages that moved to Gym Office', as
 
   for (const href of [
     '/admin/setup', '/admin/athletes', '/admin/export', '/admin/import', '/admin/gear', '/admin/customize', '/operations',
-    '/admin/compliance-center',
+    '/admin/compliance-center', '/coach/video-analysis', '/coach/drills', '/admin/consent', '/admin/system',
   ]) {
     expect(document.querySelectorAll(`a[href="${href}"]`)).toHaveLength(0);
   }
-  for (const href of ['/admin/people', '/coach/video-analysis', '/coach/drills', '/admin/consent', '/admin/system']) {
-    expect(document.querySelectorAll(`a[href="${href}"]`)).toHaveLength(1);
-  }
+  expect(document.querySelectorAll('a[href="/admin/people"]')).toHaveLength(1);
   expect(screen.getByRole('button', { name: 'EXPORT JSON' })).toBeTruthy();
 });
 
-// The plan named two kept labels that did not say their page's title (OFF-15; admin:1473 and :1554
-// on c27c581c): PEOPLE opens Gym Office, CONSENT opens Waivers & Consent.
-it('the two kept links the plan named say the title of the page they open', async () => {
+// The plan named a kept label that did not say its page's title (OFF-15; admin:1473 on c27c581c):
+// PEOPLE opens Gym Office. (CONSENT, :1554, moved to Gym Office under Q19 A, worded by its door.)
+it('the kept Gym Office link says the title of the page it opens', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
   await renderPage(fetchMock, 'organization_admin');
   await screen.findByRole('heading', { name: 'Capabilities' });
   expect(document.querySelector('a[href="/admin/people"]')?.textContent?.trim()).toBe('Gym Office');
-  expect(document.querySelector('a[href="/admin/consent"]')?.textContent?.trim()).toBe('Waivers & Consent');
 });
 
 // R2-F-004: /admin/organizations admits the platform owner only, so an

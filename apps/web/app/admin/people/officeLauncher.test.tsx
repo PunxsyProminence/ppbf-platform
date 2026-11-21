@@ -12,8 +12,8 @@
 //
 // Gym Setup is not repeated: Gym Office's header already links it (AS10-1).
 // Video Analysis, Drill Library, Waivers & Consent and System sit in no admin
-// section; where they go is Overwatch's Q19 on #2018, so they stay on
-// Capabilities until it is answered.
+// section. Q19 A (Overwatch, #2018, 2026-11-21): they follow the grouped links
+// in one row, in Capabilities' old order, with no heading.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -57,6 +57,10 @@ const MOVED = [
   '/admin/athletes', '/admin/export', '/admin/import', '/admin/gear', '/admin/customize', '/operations', '/admin/compliance-center',
 ];
 
+/** The four in no admin section, in Capabilities' old order (main 9dde6e5, :1495-:1540). Q19 A. */
+const UNSECTIONED = ['/coach/video-analysis', '/coach/drills', '/admin/consent', '/admin/system'];
+const UNSECTIONED_LINKS = UNSECTIONED.map((href) => ({ href, label: BUILDING.find((door) => door.href === href)?.label }));
+
 /** What the admin's bar says: each section holding a moved page, with those pages in the bar's order. */
 const EXPECTED = (JOB_BARS.admin?.sections ?? [])
   .map((section) => ({
@@ -82,7 +86,15 @@ test('every moved page sits in an admin job section and has a door label', () =>
   expect(EXPECTED.map((group) => group.label)).toEqual(['Members & staff', 'Safety', 'Classes & floor', 'Office']);
 });
 
-test.each(MOVED)("the label for %s is a title on that page", (href) => {
+test('the four unsectioned pages sit in no admin section and each has a door label', () => {
+  const sectioned = new Set((JOB_BARS.admin?.sections ?? []).flatMap((section) => section.items.map((item) => item.href)));
+  for (const link of UNSECTIONED_LINKS) {
+    expect(sectioned.has(link.href)).toBe(false);
+    expect(link.label).toBeTruthy();
+  }
+});
+
+test.each([...MOVED, ...UNSECTIONED])("the label for %s is a title on that page", (href) => {
   const label = BUILDING.find((door) => door.href === href)?.label;
   expect(titles(href)).toContain(label);
 });
@@ -96,7 +108,21 @@ test('Gym Office lists the office pages under the admin job sections, in the bar
   expect(groups).toEqual(EXPECTED.map((group) => group.label));
 
   const links = within(nav).getAllByRole('link').map((link) => ({ href: link.getAttribute('href'), label: link.textContent }));
-  expect(links).toEqual(EXPECTED.flatMap((group) => group.links));
+  expect(links).toEqual([...EXPECTED.flatMap((group) => group.links), ...UNSECTIONED_LINKS]);
+});
+
+test('the four unsectioned pages follow the groups in one row with no heading (Q19 A)', async () => {
+  global.fetch = quietFetch() as never;
+  render(<PeopleConsolePage />);
+  const nav = await screen.findByRole('navigation', { name: 'Office pages' });
+  const groups = within(nav).getAllByRole('group');
+  const row = nav.lastElementChild as HTMLElement;
+  expect(row.tagName).toBe('UL');
+  expect(groups.some((group) => group.contains(row))).toBe(false);
+  expect(within(row).queryByRole('heading')).toBeNull();
+  expect(within(row).getAllByRole('link').map((link) => ({ href: link.getAttribute('href'), label: link.textContent })))
+    .toEqual(UNSECTIONED_LINKS);
+  expect(within(nav).getAllByRole('heading')).toHaveLength(EXPECTED.length);
 });
 
 test('each link sits under its own section heading', async () => {
@@ -136,5 +162,5 @@ test('a platform owner, who is shown the wrong-role notice on Gym Office, gets n
   render(<PeopleConsolePage />);
   await screen.findByRole('heading', { level: 1 });
   expect(screen.queryByRole('navigation', { name: 'Office pages' })).toBeNull();
-  for (const href of MOVED) expect(document.querySelectorAll(`a[href="${href}"]`)).toHaveLength(0);
+  for (const href of [...MOVED, ...UNSECTIONED]) expect(document.querySelectorAll(`a[href="${href}"]`)).toHaveLength(0);
 });
