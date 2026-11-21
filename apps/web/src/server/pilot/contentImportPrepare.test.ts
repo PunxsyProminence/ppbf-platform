@@ -374,6 +374,26 @@ describe('a drill file made before exit_condition and correction_path existed', 
     }
   });
 
+  it('re-sending one whose committed row is otherwise as prepare writes it: no change, committed bytes kept', () => {
+    // As above, the committed row's blank created_by_account_id would read as a revision on its own, so this
+    // drill is given its placeholder in the temporary copy first: the two missing columns are the only difference.
+    const drill = { ...bothFilled(), created_by_account_id: '{{SEED_ACCOUNT_ID}}' };
+    const committed = readCsv(fs.readFileSync(path.join(seedData, LIBRARY), 'utf8'));
+    const idAt = committed.header.indexOf('drill_id');
+    const placeholderAt = committed.header.indexOf('created_by_account_id');
+    fs.writeFileSync(path.join(seedData, LIBRARY), writeCsv(committed.header, committed.records.map((record) =>
+      record.cells.map((cell, index) => (index === placeholderAt && record.cells[idAt] === drill.drill_id ? drill.created_by_account_id : cell)))));
+    writePackageFile('seed_drill_library.csv', [drill], ADDED_COLUMNS);
+
+    const before = hashTree(seedData);
+    const { code, output } = prepare(true);
+    expect(code).toBe(0);
+    expect(output).toContain(`${LIBRARY}: no change`);
+    expect(output).toContain('unchanged: 1');
+    expect(output).not.toContain('REVISED');
+    expect(hashTree(seedData)).toEqual(before);
+  });
+
   it('a revision from such a file keeps both committed cells', () => {
     const drill = bothFilled();
     const purpose = `${drill.purpose} Revised by an old-shape file.`;
