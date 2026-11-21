@@ -126,7 +126,8 @@ function joinSpelledOutWords(text: string, peelEdgeLetters: boolean): string {
 function joinSplitWords(text: string): string {
   return text
     .replace(/\bmy self\b/g, 'myself')
-    .replace(/\bun alive\b/g, 'unalive');
+    .replace(/\bun alive\b/g, 'unalive')
+    .replace(/\b(your|ur) self\b/g, '$1self');
 }
 
 /**
@@ -180,7 +181,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
   {
     // HF1 (PR 2059) added the suicide and self-harm words a child actually
     // types, short forms included ("kms", "sewerslide", "unalive"). Crisis
-    // files even in boxing context, so three guards keep gym talk out. Each
+    // files even in boxing context, so four guards keep gym talk out. Each
     // names only the gym phrase to EXCLUDE; four review rounds showed that a
     // guard listing what to KEEP drops real disclosures.
     //  - kms: not after a number or counting phrase (kilometres of roadwork).
@@ -197,6 +198,9 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     //  - off myself: not after gear ("tape off myself") or after take, took,
     //    get, got, pull, pulled or cut followed by it or them ("took it off
     //    myself"); a bare "it" is not excluded ("end it, off myself").
+    //  - kys and kill yourself (HF12b): said TO a child, filed as crisis so
+    //    they file in boxing context. Not coaching about pace: "in the
+    //    first round", "in round one", "on the bag/pads/mitts/treadmill".
     // Pinned, accepted false alerts: "suicide runs after sparring", "only"
     // before digits or ten..nineteen and kms ("only 3 kms today"), "take the
     // pressure off myself", "i ran kms before school", "dont wanna live in
@@ -204,7 +208,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     // my life seriously"); "take my own life" is.
     id: 'crisis',
     pattern:
-      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|(?<!\b(?:wraps?|tape|gloves?|shoes?|boots|shirt|headgear|headguard|mouthguard|pads|(?:take|took|get|got|pull|pulled|cut) (?:it|them)) )off myself|shoot myself|neck myself|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself)\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|ten|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n|twenty|thirty|forty|fifty) )\bkms\b|\b(?:im|i am|(?<![0-9] )am|only|age)(?: only)? (?:[0-9]+|ten|eleven|twelve|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n)(?: yo| years old| and)? kms\b(?! (?:away|to go|from (?:the|my|home|here|school))\b)/,
+      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|(?<!\b(?:wraps?|tape|gloves?|shoes?|boots|shirt|headgear|headguard|mouthguard|pads|(?:take|took|get|got|pull|pulled|cut) (?:it|them)) )off myself|shoot myself|neck myself|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself|kys|kill (?:yourself|urself)(?! (?:in (?:the )?(?:first |1st |opening |early )?rounds?|in round (?:one|1)|on the (?:bag|pads|mitts|treadmill))\b))\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|ten|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n|twenty|thirty|forty|fifty) )\bkms\b|\b(?:im|i am|(?<![0-9] )am|only|age)(?: only)? (?:[0-9]+|ten|eleven|twelve|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n)(?: yo| years old| and)? kms\b(?! (?:away|to go|from (?:the|my|home|here|school))\b)/,
   },
   {
     // Naming what was touched instead of who was touching. Every cue above
