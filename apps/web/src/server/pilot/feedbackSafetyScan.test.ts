@@ -1124,3 +1124,114 @@ describe('HF12b review 2: single-guard tests', () => {
     expect(scanForSafetyLanguage("my uncle sa'd me").cues).toContain('grooming_or_isolation');
   });
 });
+
+// Review round 3 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review 3: spelled-out staff words with a trailing i or a digit', () => {
+  test.each([
+    ['s e n s e i hit me during sparring', /\bsensei\b/],
+    ['s.e.n.s.e.i punched me at pads', /\bsensei\b/],
+  ])('%p keeps the staff word', (sentence, word) => {
+    expect(normalizeForSafetyScan(sentence)).toMatch(word);
+  });
+
+  // A run touching a digit is left as main left it, so SHADOW's own digit
+  // fold still reads the staff word.
+  test.each([
+    ['c 0 a c h hit me in sparring', 'c 0 a c h hit me in sparring'],
+    ['t r a 1 n e r hit me during sparring', 't r a 1 n e r hit me during sparring'],
+    ['5 t a f f hit me at pads', '5 t a f f hit me at pads'],
+  ])('%p is left unjoined', (sentence, normal) => {
+    expect(normalizeForSafetyScan(sentence)).toBe(normal);
+  });
+});
+
+describe('HF12b review 3: the video guard does not skip body words', () => {
+  test.each([
+    'he wants me to send him vids of my legs after workouts',
+    'he asked me to send him a video of my abs during workouts',
+    'he asked me for videos of my thighs during drills',
+    'he asked me to send him videos of my stretching',
+    'coach wants me to send him a video of my stretching routine',
+    'he said send me vids of u doing ur warm up',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 3: pictures of someone changing', () => {
+  test.each([
+    'he took a video of me changing',
+    'he took a vid of me changing after class',
+    'he took photos of me while i was changing',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 3: a command is not pace advice', () => {
+  test.each([
+    'he told me go kill yourself in round one',
+    'coach said kill yourself in the first round nobody wants you here',
+    'he said kill urself in the opening round',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  test('pace advice after "no need to" stays out', () => {
+    expect(scanForSafetyLanguage('no need to kill yourself in the first round').cues).not.toContain('crisis');
+  });
+});
+
+describe('HF12b review 3: more phrases inside a spelled-out run', () => {
+  test.each([
+    ['i h a t e m y s e l f', 'crisis'],
+    ['b e t t e r o f f d e a d', 'crisis'],
+    ['i d o n t w a n t t o l i v e', 'crisis'],
+    ['i w i s h i w a s d e a d', 'crisis_indirect'],
+    ['h e s e x u a l l y a s s a u l t e d m e', 'grooming_or_isolation'],
+    ['he said its a s e c r e t', 'secrecy'],
+  ])('%p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+});
+
+describe('HF12b review 3: snapchat and video talk', () => {
+  test.each(['he asked me to send him a snapchat', 'he wants me to send him snapchats'])(
+    'grooming_or_isolation: %p',
+    (sentence) => {
+      expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+    },
+  );
+
+  test.each([
+    'can coaches send videos in the app',
+    'i want to send videos to my coach',
+    'let me send videos to coach',
+    'it would be cool to send videos',
+    'send videos feature',
+    'the app should let coaches send videos',
+    'send video please',
+    'coach asked me to send a video of my training',
+    'coach asked me to send a video of my shadowboxing',
+    'coach asked me to send a video of my punches',
+    'coach asked me to send a video of my form',
+    'coach asked me to send a video of my head movement',
+    'coach asked me to send a video of my progress',
+    'coach asked me to send a video of my jump rope',
+    'coach asked me to send a video of my roadwork',
+    'he wants video of the pads',
+    'send me a video of my defense',
+    'send snaps of your hand wraps',
+    'coach wants snap, speed and power',
+    'he wanted snap behind it',
+  ])('no grooming cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate: the name Sa'd before "my"
+  // reads as the abbreviation, and dropping the object form would hide "he
+  // sa'd me".
+  test('accepted false alert: "hes Sa\'d, my sparring partner" files grooming_or_isolation', () => {
+    expect(scanForSafetyLanguage("hes Sa'd, my sparring partner").cues).toContain('grooming_or_isolation');
+  });
+});
