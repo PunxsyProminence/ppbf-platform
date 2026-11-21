@@ -153,7 +153,7 @@ function joinSpelledOutWords(text: string): string {
     const spaced = word
       .replace(SPACED_BACK, (compact) => ` ${SPACED_BACK_FORM.get(compact) ?? compact} `)
       .split(' ')
-      .map((part) => (SPACED_BACK_FORM.has(part) ? part : part.replace(SPACED_BACK_STAFF, (title) => ` ${title} `)))
+      .map((part) => part.replace(SPACED_BACK_STAFF, (title) => ` ${title} `))
       .join(' ')
       .replace(/ +/g, ' ')
       .trim();
