@@ -739,3 +739,31 @@ describe('HF12b: a word spelled out letter by letter', () => {
     expect(cues).not.toContain('grooming_or_isolation');
   });
 });
+
+// "kys" and "kill yourself" are said TO a child. Filed as crisis so they reach
+// a person even in boxing context (this module errs toward a human; crisis
+// is a SHADOW override cue).
+describe('HF12b: being told to kill yourself', () => {
+  test.each([
+    'kys',
+    'he keeps telling me kys',
+    'they said kill yourself',
+    'everyone at school says i should kill urself',
+    'he told me to go kill ur self',
+    'k y s',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  test.each([
+    'dont kill yourself in the first round',
+    'pace it, dont kill yourself in round one',
+    'dont kill yourself on the bag',
+  ])('coaching about pace is not crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('crisis');
+  });
+
+  test('a pace guard does not hide what follows it', () => {
+    expect(scanForSafetyLanguage('he said kill yourself in the locker room').cues).toContain('crisis');
+  });
+});
