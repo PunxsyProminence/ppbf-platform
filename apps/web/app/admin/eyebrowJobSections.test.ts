@@ -25,10 +25,10 @@ const APP = path.resolve(__dirname, '..');
  * `t-eyebrow` (Attendance's "Report by athlete" comes first in its file), so the search is
  * confined to the header.
  */
-function headerEyebrow(file: string): string {
+function headerEyebrow(file: string, headerIndex = 0): string {
   const source = readFileSync(path.join(APP, file), 'utf8');
-  const header = (source.match(/<header[\s\S]*?<\/header>/g) ?? []).find((block) => block.includes('<h1'));
-  if (!header) throw new Error(`${file}: no <header> holding the page's <h1>`);
+  const header = (source.match(/<header[\s\S]*?<\/header>/g) ?? []).filter((block) => block.includes('<h1'))[headerIndex];
+  if (!header) throw new Error(`${file}: no <header> number ${headerIndex} holding an <h1>`);
   const match = header.match(/<p className="t-eyebrow[^"]*">([^<{]+)<\/p>/);
   if (!match) throw new Error(`${file}: no t-eyebrow paragraph with plain text in the page header`);
   // JSX text writes '&' as '&amp;' in this repo (Parent Consent's h1, Teach Shadow's h2).
@@ -58,6 +58,8 @@ interface EyebrowCase {
   readonly href: string;
   /** Set only where the page draws this eyebrow for fewer roles than its door admits. */
   readonly seenBy?: readonly ClubRole[];
+  /** Which <header> holding an <h1> carries this eyebrow, where a page draws more than one view. */
+  readonly headerIndex?: number;
 }
 
 const roles = (page: EyebrowCase) => page.seenBy ?? doorRoles(page.href);
@@ -90,10 +92,10 @@ const TAKES_SECTION_NAME: readonly EyebrowCase[] = [
 const NO_SECTION: readonly EyebrowCase[] = [
   { file: 'admin/door-register/page.tsx', href: '/admin/door-register' },
   { file: 'admin/page.tsx', href: '/admin' },
-  // "Admin Workspace" is drawn only in the organization admin's view (GymSystemView); the
-  // platform owner's view has its own eyebrow, "Platform Desk". The admin's bar has no section
-  // for /admin/system.
-  { file: 'admin/system/page.tsx', href: '/admin/system', seenBy: ['admin'] },
+  // "Admin Workspace" is drawn only in the organization admin's view (GymSystemView, the file's
+  // second header); the platform owner's view (the first) has its own eyebrow, "Platform Desk".
+  // The admin's bar has no section for /admin/system.
+  { file: 'admin/system/page.tsx', href: '/admin/system', seenBy: ['admin'], headerIndex: 1 },
 ];
 
 describe('AS10-6b: each office eyebrow is the job section the page sits under', () => {
@@ -111,7 +113,7 @@ describe('AS10-6b: each office eyebrow is the job section the page sits under', 
     (_file, page) => {
       expect(sectionNames(page.href, roles(page))).toEqual([]);
       // Left as it was: whatever it reads, it is not a job section's name it does not sit under.
-      expect([...ALL_SECTION_NAMES]).not.toContain(headerEyebrow(page.file));
+      expect([...ALL_SECTION_NAMES]).not.toContain(headerEyebrow(page.file, page.headerIndex));
     },
   );
 
