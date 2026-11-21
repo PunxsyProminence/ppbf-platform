@@ -877,3 +877,41 @@ describe('HF12b: "sa\'d" (sexually assaulted) is not read as "sad"', () => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+// Review round 1 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review: text-speak single letters are not joined into a word', () => {
+  test.each([
+    'he hits me when we spar n i said stop',
+    'my sparring partner hits me n i told him to stop',
+    'my spar partner punches me k i told him to stop',
+    'he grabbed my arm during pad work n i said stop',
+  ])('the SHADOW sparring-intent override still reads it: %p', (sentence) => {
+    expect(normalizeForSafetyScan(sentence)).toMatch(/\bi (?:said|told)\b/);
+  });
+
+  test('a split "i m" is still read as "im"', () => {
+    expect(normalizeForSafetyScan('i m 14 kms')).toBe('im 14 kms');
+  });
+});
+
+describe('HF12b review: a phrase spelled out with one space throughout', () => {
+  test.each([
+    ['h u r t m y s e l f', 'crisis'],
+    ['i want to c u t m y s e l f', 'crisis'],
+    ['i w a n t t o d i e', 'crisis'],
+    ['he says its o u r s e c r e t', 'grooming_or_isolation'],
+    ['i a m s c a r e d of him', 'fear'],
+    ['k y s u loser', 'crisis'],
+    ['he t o u c h e d m e', 'someone_is_frightening_me'],
+  ])('%p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+
+  test('the touch word is spaced back out for the SHADOW touch check', () => {
+    expect(normalizeForSafetyScan('he t o u c h e d m e')).toMatch(/\btouched me\b/);
+  });
+
+  test('"s.a\'d" is read as sexually assaulted', () => {
+    expect(scanForSafetyLanguage("i got s.a'd by him").cues).toContain('grooming_or_isolation');
+  });
+});
