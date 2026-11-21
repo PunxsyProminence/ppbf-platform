@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import * as buildingMap from './buildingMap';
 import { BUILDING } from './buildingMap';
+import { QUEUES } from './GymOfficeQueues';
 import { BOARD_HOME, JOB_BARS, jobBarFor, type JobItem } from './jobBars';
 import { getPilotRoleDestination } from '../src/shared/pilotRoleRouting';
 import type { ClubRole } from './roleRoutes';
@@ -91,6 +92,23 @@ describe('the job bars', () => {
     // Injury Record and Medical Restrictions are sections of that page now, not pages of their own.
     expect(safety).not.toContain('/coach/injuries');
     expect(safety).not.toContain('/coach/medical-restrictions');
+  });
+
+  it("lists every queue Gym Office's morning check counts (AS10-3), in its order, in the admin's bar", () => {
+    const section = (label: string) =>
+      hrefsOf(JOB_BARS.admin?.sections.find((candidate) => candidate.label === label)?.items ?? []);
+    const safety = section('Safety');
+    // Stage 2 puts "credentials" in Members & staff, so Staff Credentials is there and not in Safety.
+    const IN_MEMBERS = new Set(['/admin/credentials']);
+    const queues = QUEUES.map((queue) => queue.href);
+    expect(queues.length).toBeGreaterThan(0);
+    for (const href of queues.filter((queueHref) => IN_MEMBERS.has(queueHref))) {
+      expect(section('Members & staff')).toContain(href);
+    }
+    const inSafety = queues.filter((href) => !IN_MEMBERS.has(href));
+    expect(safety.filter((href) => inSafety.includes(href))).toEqual(inSafety);
+    // The morning check's Safety strip opens Safety Review; it leads the section.
+    expect(safety[0]).toBe('/admin/safety-review');
   });
 
   it("keeps the admin's Lab pages out of the bar: Capabilities, System and Door Register are in Search", () => {

@@ -24,9 +24,10 @@ import type { ClubRole } from './roleRoutes';
  *            page of their own; its "film" is Film, in More.
  * Until the athlete page (AS-11) holds them, the athlete page's parts are
  * today's coach pages, listed under Athletes after Passbook.
- *   admin    New member flow; Morning check (AS-10 builds it on Gym Office, #2018;
- *            Safety Review, today's nearest, is in Safety); Gym TVs (pairing) has
- *            no page of its own: it is on Gym Setup, in Classes & floor.
+ *   admin    New member flow; Morning check has no page of its own: it is on
+ *            Gym Office, which is Home (AS10-3, #2038), and Safety lists the
+ *            pages it counts; Gym TVs (pairing) has no page of its own: it is on
+ *            Gym Setup, in Classes & floor.
  *   platform owner  "a gym switcher" for Home: no such page, so Home is Omega,
  *            as the approved names say ("Home (Omega)").
  * The parent's "digest" is on Parent Hub's Overview, which is Home, and
@@ -179,14 +180,19 @@ export const JOB_BARS: Partial<Record<ClubRole, JobBar>> = {
           '/admin/coach-coverage', '/admin/credentials', '/admin/volunteer-management',
         ),
       },
-      // "Morning check and each queue", read as the admin's review and compliance queues (an inference).
-      // The waiver queue is Waiver Compliance; Waivers & Consent (the records) stays in Search, in Back
-      // Office.
+      // "Morning check and each queue". The morning check is on Gym Office, which is Home (AS10-3, #2038):
+      // its Safety strip opens Safety Review (Escalations and Safety Flags are two of its feeds), and its
+      // "Needs review" list counts the office's queues (QUEUES in GymOfficeQueues.tsx), listed here in its
+      // order. Staff Credentials is one of them but stays in Members & staff, where stage 2 puts
+      // "credentials". Compliance Center is kept: an inference that it is a compliance queue. The waiver queue is
+      // Waiver Compliance; Waivers & Consent (the records) stays in Search, in Back Office.
       {
         label: 'Safety',
         items: pages(
-          '/admin/safety-review', '/admin/escalations', '/admin/safety-flags', '/admin/feedback',
-          '/admin/waiver-status', '/admin/athlete-consent', '/admin/video-compliance', '/admin/compliance-center',
+          '/admin/safety-review', '/admin/escalations', '/admin/safety-flags',
+          '/admin/waiver-status', '/admin/athlete-consent', '/admin/video-compliance', '/admin/video-review',
+          '/admin/portrait-review', '/admin/feedback', '/admin/shadow-reviews',
+          '/admin/compliance-center',
         ),
       },
       // "Schedule, attendance, program phases, setup, competitions"
