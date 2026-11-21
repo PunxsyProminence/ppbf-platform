@@ -1109,7 +1109,7 @@ describe('HF12b review 2: the name Sa\'d is not read as sexually assaulted', () 
 // proof (review 2 on PR 2076). Invented phrases.
 describe('HF12b review 2: single-guard tests', () => {
   test('"snap on" is boxing even without "more"', () => {
-    expect(scanForSafetyLanguage('coach wants snap on my jab').cues).not.toContain('grooming_or_isolation');
+    expect(scanForSafetyLanguage('coach wants snap in my punches').cues).not.toContain('grooming_or_isolation');
   });
 
   test.each([
