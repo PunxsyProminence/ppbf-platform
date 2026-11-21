@@ -232,7 +232,7 @@ export default function VolunteerManagementPage() {
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               This page keeps the volunteer record. A volunteer&rsquo;s sign-in is given on{' '}
               <Link href="/admin/people" className="underline">Gym Office</Link>. The certification status typed
-              here is a note: a volunteer&rsquo;s certificates are checked on Staff Credentials.
+              here is a note: the certificates of a volunteer with a sign-in are checked on Staff Credentials.
             </p>
             {errorMessage ? (
               <p role="alert" className="alert alert--warning">

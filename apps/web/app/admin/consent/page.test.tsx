@@ -429,7 +429,8 @@ describe('Waiver Compliance (lane AS-10)', () => {
     global.fetch = mockApi() as unknown as typeof fetch;
     render(<ConsentPage />);
     await screen.findByText('Sample Athlete One');
-    expect(screen.getByText(/Waiver Compliance page records the same waivers/)).toBeTruthy();
+    expect(screen.getByText(/Waiver Compliance page records the same waivers/).textContent?.replace(/\s+/g, ' '))
+      .toContain('shows every athlete against every tracked waiver type.');
     expect(screen.getByRole('link', { name: 'Waiver Compliance' }).getAttribute('href')).toBe('/admin/waiver-status');
   });
 

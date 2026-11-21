@@ -205,7 +205,9 @@ describe('Gym Office and Staff Credentials (lane AS-10)', () => {
   test('the page says where the sign-in is given and links Gym Office and Staff Credentials', async () => {
     createPersistentRoleSession('admin');
     await renderPage(jest.fn(async () => jsonResponse({ items: [] })));
-    expect(screen.getByText(/This page keeps the volunteer record\. A volunteer.s sign-in is given on/)).toBeTruthy();
+    const said = screen.getByText(/This page keeps the volunteer record\. A volunteer.s sign-in is given on/);
+    // Staff Credentials lists signed-in accounts, so the sentence says so (review of #2063).
+    expect(said.textContent).toContain('the certificates of a volunteer with a sign-in are checked on Staff Credentials.');
     expect(screen.getByRole('link', { name: 'Gym Office' }).getAttribute('href')).toBe('/admin/people');
     expect(screen.getByRole('link', { name: 'Staff Credentials' }).getAttribute('href')).toBe('/admin/credentials');
   });

@@ -300,7 +300,7 @@ function ConsentConsole() {
               entity_type 'waiver'), and neither said so. */}
           <p className="t-body mt-[var(--s3)] max-w-[68ch]">
             The office&rsquo;s Waiver Compliance page records the same waivers, and shows every athlete
-            against every waiver type.
+            against every tracked waiver type.
           </p>
           <p className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
             {/* Ghost is correct HERE and nowhere else on this page: it is bone
