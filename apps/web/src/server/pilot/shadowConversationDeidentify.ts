@@ -188,7 +188,7 @@ export async function namesOnRecord(
 }
 
 /**
- * Clears one conversation that is not held for safeguarding: the member's
+ * Clears one conversation that is not flagged: the member's
  * messages deleted, the replies kept under a new token and new ids with
  * `pattern` scrubbed out, every join from the member's rows to a reply cut,
  * its jobs deleted. With no pattern, the conversation is deleted whole. The

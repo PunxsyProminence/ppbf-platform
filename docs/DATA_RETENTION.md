@@ -192,7 +192,7 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   athlete who has since been deleted: the member asked. A search of
   `docs/current/OWNER_DECISIONS.md` on 2026-11-21 (for "SHADOW chat", "SHADOW conversation" and
   "AI chat" beside retention words) found no ruling that holds an unflagged SHADOW chat for an
-  athlete's retention window; Overwatch was asked to confirm on #2062. The script, which acts
+  athlete's retention window; Overwatch accepted this on #2062 (review S2, accepted as reasoned). The script, which acts
   without a request, leaves such a chat to the athlete's purge.
 - **Not reached by a member's delete**, so the screens do not claim it: the research row an
   unanswered question was filed as (keyed by account and text, not by chat), the member's own
