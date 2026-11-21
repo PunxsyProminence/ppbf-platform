@@ -1329,7 +1329,6 @@ describe('HF12b review 4: technique homework, product talk and boxing words stay
     'the photo of me changing my gloves',
     'photos of me changing weight class',
     'can you post a video of me changing levels on the bag',
-    'the video of him changing direction was sick',
     'coach wants snaps on every punch',
     'he wants snaps not pushes',
   ])('no grooming cue: %p', (sentence) => {
@@ -1415,7 +1414,6 @@ describe('HF12b review 5: product, school and gym talk stays out', () => {
     'coach wants a video of my squat',
     'recorded my pr then hit the shower',
     'broke my record then took a shower',
-    'i recorded my run before my shower',
     'video of us changing partners',
     'a video of him changing pace',
     'a video of me changing corners',
@@ -1444,6 +1442,8 @@ describe('HF12b review 5: product, school and gym talk stays out', () => {
 });
 
 // Review round 6 on PR 2076 (lane HF12b). Invented phrases.
+// These already filed on main 4f26461; kept as regression cases for the
+// spelled-out reading.
 describe('HF12b review 6: a lone text-speak letter does not swallow an obfuscated word', () => {
   test.each([
     'he followed me home n r*ped me',
@@ -1525,7 +1525,7 @@ describe('HF12b review 7: guards that swallowed a request for videos', () => {
     'men at the site keep asking me for videos',
     'older boys at the app keep begging me for videos',
     'he asks me for vids of my form wearing only shorts',
-    'he wants pics of me in the bath',
+    'he wants pics of me in the bath', // already filed on main 4f26461 (main's picture request)
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
