@@ -127,6 +127,12 @@ export interface CalibrationQaReport {
   hedgedCertaintyRate: RateWithDenominator;
   adjudicationRate: RateWithDenominator;
   unresolvableRate: RateWithDenominator;
+  /** Current adjudications on compared clips that name no pairing which
+   *  raises a disagreement under this report's matching rule -- recorded
+   *  under an earlier rule (v0 reported marks a few ms apart, or labels that
+   *  differ only in case or spacing, as disagreements). Counted here, not in
+   *  either rate, so "reviewed" never exceeds "disagreed". */
+  adjudicationsUnderEarlierRule: number;
   strata: {
     bySamplingReason: Record<string, Record<DisagreementCategory, number>>;
     byVisibility: Record<string, Record<DisagreementCategory, number>>;
@@ -360,6 +366,9 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
   let matchedPairCount = 0;
   let totalComparedEvents = 0;
   let pairingsRaisingDisagreement = 0;
+  // The pairings that raise a disagreement, keyed the way an adjudication
+  // names one: the two readings and the two marks ("no mark" kept distinct).
+  const disagreeingPairings = new Set<string>();
 
   for (const comparison of input.comparisons) {
     const samplingReason =
@@ -368,7 +377,15 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
     for (const pairing of comparison.pairings) {
       totalComparedEvents += 1;
       if (pairing.outcome === 'MATCHED') matchedPairCount += 1;
-      if (pairing.disagreements.length > 0) pairingsRaisingDisagreement += 1;
+      if (pairing.disagreements.length > 0) {
+        pairingsRaisingDisagreement += 1;
+        disagreeingPairings.add(JSON.stringify([
+          comparison.annotationSetIdA,
+          comparison.annotationSetIdB,
+          pairing.eventA?.event_id ?? null,
+          pairing.eventB?.event_id ?? null,
+        ]));
+      }
 
       // Stratify by what the pairing is ABOUT. Where the two readings differ
       // on visibility, both are recorded -- the disagreement belongs to both
@@ -438,7 +455,27 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
     (event) => event.certainty === 'probable' || event.certainty === 'uncertain',
   ).length;
 
-  const unresolvable = input.adjudications.filter(
+  /*
+   * ONLY ADJUDICATIONS OF A DISAGREEMENT THAT STILL EXISTS. An adjudication
+   * names the pair of marks it settled, not the rule that raised it. Under
+   * the window (A-Q10c) a pair whose only difference was a few ms is no longer
+   * a disagreement, and a v0 near miss -- once two missed events, each
+   * adjudicated on its own -- is now one matched punch. Counting those
+   * answers against today's disagreements would let "reviewed" pass
+   * "disagreed". They are counted apart instead. Either orientation of the
+   * pair is accepted, so a pair named B-then-A is not lost.
+   */
+  const namesCurrentDisagreement = (row: AdjudicationRow) =>
+    disagreeingPairings.has(JSON.stringify([
+      row.annotation_set_id_a, row.annotation_set_id_b, row.source_event_id_a, row.source_event_id_b,
+    ]))
+    || disagreeingPairings.has(JSON.stringify([
+      row.annotation_set_id_b, row.annotation_set_id_a, row.source_event_id_b, row.source_event_id_a,
+    ]));
+  const adjudicationsOfCurrent = input.adjudications.filter(namesCurrentDisagreement);
+  const adjudicationsUnderEarlierRule = input.adjudications.length - adjudicationsOfCurrent.length;
+
+  const unresolvable = adjudicationsOfCurrent.filter(
     (adjudicationRow) => adjudicationRow.resolution_type === 'unresolvable',
   ).length;
 
@@ -471,17 +508,18 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
       belowFloor,
     ),
     adjudicationRate: makeRate(
-      input.adjudications.length,
+      adjudicationsOfCurrent.length,
       pairingsRaisingDisagreement,
       'pairings that raised a disagreement',
       belowFloor,
     ),
     unresolvableRate: makeRate(
       unresolvable,
-      input.adjudications.length,
+      adjudicationsOfCurrent.length,
       'adjudications recorded',
       belowFloor,
     ),
+    adjudicationsUnderEarlierRule,
     strata: {
       bySamplingReason,
       byVisibility,

@@ -253,7 +253,10 @@ describe('every rate names its denominator, and they are not the same one', () =
   });
 
   test('the unresolvable rate is counted against adjudications, not against clips', () => {
+    // clip-0's two readings disagree on the punch, so there is something for
+    // the adjudication to have settled.
     const staged = fullStudy();
+    staged[0] = stagedClip('clip-0', 'isolated_punch', {}, { punch_type: 'rear_hook' });
     const adjudications: AdjudicationRow[] = [
       {
         organization_id: ORG,
@@ -508,6 +511,31 @@ describe('superseded adjudications are history, not answers', () => {
     expect(kept([...HISTORY].reverse())).toEqual(['w-2', 'x-2', 'y-1', 'z-1']);
   });
 
+  /** clip-0's comparison, with one disagreeing pairing for each pair of
+   *  marks HISTORY names, so every current answer settles a disagreement
+   *  that exists. */
+  function clip0WithHistoryDisagreements(staged: ReturnType<typeof fullStudy>) {
+    const mark = (suffix: 'a' | 'b', id: string | null) =>
+      id === null ? null : { ...makeEvent('clip-0', suffix), event_id: id };
+    const disagreeing = (a: string | null, b: string | null) => ({
+      outcome: 'MATCHED' as const,
+      eventA: mark('a', a),
+      eventB: mark('b', b),
+      candidateCount: 1,
+      disagreements: [{ category: 'PUNCH_TYPE' as const, field: 'punch_type', valueA: 'x', valueB: 'y' }],
+      boundaryDeltas: [],
+    });
+    return {
+      ...staged[0].comparison,
+      pairings: [
+        disagreeing('clip-0-evt-a', 'clip-0-evt-b'),
+        disagreeing('clip-0-evt-a', null),
+        disagreeing('clip-0-evt-a', ''),
+        disagreeing('e2', 'f2'),
+      ],
+    };
+  }
+
   test('the report counts current answers: four adjudications, two of them unresolvable', () => {
     const staged = fullStudy();
     const report = buildCalibrationQaReport({
@@ -517,7 +545,7 @@ describe('superseded adjudications are history, not answers', () => {
       clips: staged.map((entry) => entry.clip),
       sets: staged.flatMap((entry) => entry.sets),
       events: staged.flatMap((entry) => entry.events),
-      comparisons: staged.map((entry) => entry.comparison),
+      comparisons: [clip0WithHistoryDisagreements(staged), ...staged.slice(1).map((entry) => entry.comparison)],
       adjudications: HISTORY,
     });
 
@@ -526,5 +554,81 @@ describe('superseded adjudications are history, not answers', () => {
     expect(report.adjudicationRate.count).toBe(4);
     expect(report.unresolvableRate.count).toBe(2);
     expect(report.unresolvableRate.denominator).toBe(4);
+    expect(report.adjudicationsUnderEarlierRule).toBe(0);
+  });
+});
+
+/* HF6 (TEACH-T T-2). An adjudication names the marks it settled, not the rule
+ * that raised the disagreement. Under the window some of those are no longer
+ * disagreements, and "reviewed" must never pass "disagreed". */
+describe('adjudications recorded under an earlier matching rule', () => {
+  function adjudicationOf(clipId: string, a: string | null, b: string | null): AdjudicationRow {
+    return {
+      organization_id: ORG,
+      adjudication_id: `adj-${clipId}-${a}-${b}`,
+      calibration_clip_id: clipId,
+      annotation_set_id_a: `${clipId}-set-a`,
+      annotation_set_id_b: `${clipId}-set-b`,
+      source_event_id_a: a,
+      source_event_id_b: b,
+      resolution_type: 'unresolvable',
+      missed_event_verdict: null,
+      revision: 1,
+      adjudicator_account_id: 'acct-reviewer',
+      adjudicated_at: '2026-08-27T02:00:00.000Z',
+      ontology_version: ONTOLOGY,
+      notes: null,
+      created_at: '2026-08-27T02:00:00.000Z',
+    };
+  }
+
+  test('a v0 near miss -- once two missed events, each adjudicated -- is one matched punch now; its answers are counted apart', () => {
+    const staged = fullStudy();
+    // 20 ms apart: v0 called this two EVENT_MISSED; the window matches it.
+    staged[0] = stagedClip('clip-0', 'isolated_punch', { start_ms: 1_000, end_ms: 1_400 }, { start_ms: 1_420, end_ms: 1_800 });
+    const report = buildCalibrationQaReport({
+      organizationId: ORG,
+      calibrationProjectId: PROJECT,
+      ontologyVersion: ONTOLOGY,
+      clips: staged.map((entry) => entry.clip),
+      sets: staged.flatMap((entry) => entry.sets),
+      events: staged.flatMap((entry) => entry.events),
+      comparisons: staged.map((entry) => entry.comparison),
+      adjudications: [
+        adjudicationOf('clip-0', 'clip-0-evt-a', null),
+        adjudicationOf('clip-0', null, 'clip-0-evt-b'),
+      ],
+    });
+
+    expect(report.adjudicationRate.count).toBe(0);
+    expect(report.unresolvableRate.count).toBe(0);
+    expect(report.adjudicationsUnderEarlierRule).toBe(2);
+  });
+
+  test('an answer on a pair that still disagrees is counted, in either orientation; one on a pair that now agrees is not', () => {
+    const staged = fullStudy();
+    staged[0] = stagedClip('clip-0', 'isolated_punch', {}, { punch_type: 'rear_hook' });
+    // clip-1's readings are 40 ms apart: a disagreement under v0, none now.
+    staged[1] = stagedClip('clip-1', 'isolated_punch', { start_ms: 1_000 }, { start_ms: 1_040 });
+    const swapped = {
+      ...adjudicationOf('clip-0', 'clip-0-evt-b', 'clip-0-evt-a'),
+      adjudication_id: 'adj-swapped',
+      annotation_set_id_a: 'clip-0-set-b',
+      annotation_set_id_b: 'clip-0-set-a',
+    };
+    const report = buildCalibrationQaReport({
+      organizationId: ORG,
+      calibrationProjectId: PROJECT,
+      ontologyVersion: ONTOLOGY,
+      clips: staged.map((entry) => entry.clip),
+      sets: staged.flatMap((entry) => entry.sets),
+      events: staged.flatMap((entry) => entry.events),
+      comparisons: staged.map((entry) => entry.comparison),
+      adjudications: [swapped, adjudicationOf('clip-1', 'clip-1-evt-a', 'clip-1-evt-b')],
+    });
+
+    expect(report.adjudicationRate.count).toBe(1);
+    expect(report.adjudicationRate.denominator).toBe(1);
+    expect(report.adjudicationsUnderEarlierRule).toBe(1);
   });
 });

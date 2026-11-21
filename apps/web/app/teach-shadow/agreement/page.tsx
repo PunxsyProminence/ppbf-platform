@@ -318,8 +318,8 @@ export default function LabelAgreementPage() {
 
             {typeof payload.matching_window_ms === 'number' ? (
               <p className="t-body mt-[var(--s3)]" data-testid="matching-window">
-                Marks within {payload.matching_window_ms} ms of each other count as the same moment, so a
-                difference that small is not counted as a disagreement.
+                Marks within {payload.matching_window_ms} ms of each other count as the same moment: a
+                timing difference that small is not counted as a disagreement.
               </p>
             ) : null}
 

@@ -514,6 +514,41 @@ describe('the window rescues a near miss and never re-pairs marks that overlap',
     expect(result.pairings.map((pairing) => pairing.outcome)).toEqual(['MATCHED', 'ONLY_IN_A']);
   });
 
+  test('an A mark that already overlaps is not also paired with a B near miss (either way round)', () => {
+    // a1 overlaps b1. b2 overlaps nothing and is within 100 ms of a1, but a1
+    // is already paired by real overlap, so b2 stays ONLY_IN_B.
+    const a = [makeEvent({ event_id: 'a1', start_ms: 1_000, end_ms: 1_200 })];
+    const b = [
+      inB({ event_id: 'b1', start_ms: 1_000, end_ms: 1_200 }),
+      inB({ event_id: 'b2', start_ms: 1_250, end_ms: 1_400 }),
+    ];
+    expect(compareAnnotationSets(SET_A, a, SET_B, b).pairings.map((p) => p.outcome))
+      .toEqual(['MATCHED', 'ONLY_IN_B']);
+    const swappedA = b.map((event) => ({ ...event, annotation_set_id: 'set-a' }));
+    const swappedB = a.map((event) => ({ ...event, annotation_set_id: 'set-b' }));
+    expect(compareAnnotationSets(SET_A, swappedA, SET_B, swappedB).pairings.map((p) => p.outcome))
+      .toEqual(['MATCHED', 'ONLY_IN_A']);
+  });
+
+  test('two near misses on one side of a lone mark are ambiguous, never first-come pairing', () => {
+    // a1 and a2 overlap nothing; b1 is within the window of both. The window
+    // offers b1 to both, so no pairing is forced -- whatever the event order.
+    const a = [
+      makeEvent({ event_id: 'a1', start_ms: 1_000, end_ms: 1_200 }),
+      makeEvent({ event_id: 'a2', start_ms: 1_380, end_ms: 1_500 }),
+    ];
+    const b = [inB({ event_id: 'b1', start_ms: 1_250, end_ms: 1_330 })];
+    for (const order of [a, [...a].reverse()]) {
+      expect(compareAnnotationSets(SET_A, order, SET_B, b).pairings.map((p) => p.outcome))
+        .toEqual(['MATCH_AMBIGUOUS', 'MATCH_AMBIGUOUS', 'MATCH_AMBIGUOUS']);
+    }
+    const flipped = compareAnnotationSets(
+      SET_A, b.map((event) => ({ ...event, annotation_set_id: 'set-a' })),
+      SET_B, a.map((event) => ({ ...event, annotation_set_id: 'set-b' })),
+    );
+    expect(flipped.pairings.map((p) => p.outcome)).toEqual(['MATCH_AMBIGUOUS', 'MATCH_AMBIGUOUS', 'MATCH_AMBIGUOUS']);
+  });
+
   test('beyond the window two marks are still two missed events', () => {
     const result = compareAnnotationSets(
       SET_A, [makeEvent({ start_ms: 1_000, end_ms: 1_400 })],
