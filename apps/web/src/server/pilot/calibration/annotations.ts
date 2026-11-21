@@ -5,6 +5,7 @@ import { PilotError } from '../errors';
 import {
   ANNOTATION_CERTAINTIES,
   BODY_POINT_ONTOLOGY_VERSIONS,
+  FIGHTER_TRACKS,
   CONTACT_RESULTS,
   CONTACT_RESULTS_WITH_CONTACT,
   CONTACT_ZONES,
@@ -156,7 +157,9 @@ function requireVocabulary<T extends string>(
   field: string,
 ): T {
   if (!isInVocabulary(vocabulary, value)) {
-    throw new Error(`Missing ${field}: not a value in boxing-ontology-0.1`);
+    // The event vocabulary is 0.1's in every version (0.2+ add body points
+    // beside it), so the refusal names the vocabulary, not one version.
+    throw new Error(`Missing ${field}: not a value in the event vocabulary`);
   }
   return value;
 }
@@ -493,7 +496,7 @@ function resolveEventShape(input: RecordAnnotationEventInput): ResolvedEventShap
     ['counter_against_event_id', input.counterAgainstEventId],
   ] as const) {
     if (value !== null && value !== undefined) {
-      throw new Error(`Missing ${field}: a defense cannot carry it in boxing-ontology-0.1`);
+      throw new Error(`Missing ${field}: a defense cannot carry it`);
     }
   }
 
@@ -584,6 +587,7 @@ export async function recordAnnotationEvent(
   // rules were the trigger's alone, and its refusal reached the caller as a
   // 500 with no field in it.
   assertVersionEventRules(context.ontology_version, fields);
+  assertFighterTracks(context.ontology_version, input.actorTrack, input.opponentTrack ?? null);
 
   const row = await queryOne<AnnotationEventRow>(
     `insert into pilot.calibration_annotation_events
@@ -668,6 +672,25 @@ const EVENT_FIELD_COLUMNS = {
   certainty: 'certainty', combinationGroup: 'combination_group', sequenceOrder: 'sequence_order',
   counterAgainstEventId: 'counter_against_event_id', defendsAgainstEventId: 'defends_against_event_id',
 } as const satisfies Record<keyof Omit<RecordAnnotationEventInput, 'organizationId' | 'eventId' | 'annotationSetId'>, string>;
+
+/** Who an event is about, on a body-point set: Fighter 1 or Fighter 2
+ * (FIGHTER_TRACKS; OD-2026-10-08-005 A-Q10a). An opponent may be left empty --
+ * whether to require one is not ruled -- but when given it is one of the two.
+ * Application code only: the column stays text, so a 0.1 set's typed actors
+ * are untouched (OD-2026-10-02-008 4A). */
+function assertFighterTracks(
+  ontologyVersion: string,
+  actorTrack: unknown,
+  opponentTrack: unknown,
+): void {
+  if (!isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, ontologyVersion)) return;
+  if (!isInVocabulary(FIGHTER_TRACKS, actorTrack)) {
+    throw new Error(`Missing actor_track: on ${ontologyVersion} the actor is ${FIGHTER_TRACKS.join(' or ')}`);
+  }
+  if (opponentTrack !== null && opponentTrack !== undefined && !isInVocabulary(FIGHTER_TRACKS, opponentTrack)) {
+    throw new Error(`Missing opponent_track: on ${ontologyVersion} the opponent is ${FIGHTER_TRACKS.join(' or ')}, or none`);
+  }
+}
 
 /** The 0.2+ rules on the event row, as refusals that name the field. The
  * calibration-body-point-rules migration holds the same three. */
@@ -808,6 +831,7 @@ export async function updateAnnotationEvent(
       throw new Error('Missing start_ms: the event falls outside the clip it belongs to');
     }
     assertVersionEventRules(context.ontology_version, fields);
+    assertFighterTracks(context.ontology_version, actorTrack, merged.opponentTrack);
 
     // A relationship never points at the event itself. That it stays inside
     // this set is the composite foreign keys' to hold; their refusal is

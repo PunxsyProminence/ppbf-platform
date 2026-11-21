@@ -17,6 +17,7 @@ import {
   CONTACT_RESULTS_WITH_CONTACT,
   CONTACT_ZONES,
   DEFENSE_TYPES,
+  FIGHTER_TRACKS,
   HAND_ROLES,
   PHYSICAL_HANDS,
   PUNCH_TYPES,
@@ -307,6 +308,13 @@ function draftFromEvent(event: AnnotationEvent): EventDraft {
 /** Vocabulary tokens are stored lower_snake; this is display only. */
 function label(token: string): string {
   return token.replace(/_/g, ' ');
+}
+
+/** The two fighters as a coach reads them (OD-2026-10-08-005 A-Q10a: "Fighter
+ * 1" and "Fighter 2"). A 0.1 set's typed actor is shown as typed. */
+const FIGHTER_LABELS: Record<string, string> = { fighter_1: 'Fighter 1', fighter_2: 'Fighter 2' };
+function actorLabel(track: string): string {
+  return FIGHTER_LABELS[track] ?? track;
 }
 
 function describeEvent(event: AnnotationEvent): string {
@@ -1630,7 +1638,7 @@ export default function CoachCalibrationPage() {
                     >
                       <p className="t-data">
                         {label(event.event_class)} · {formatMediaOffset(event.start_ms)} to{' '}
-                        {formatMediaOffset(event.end_ms)} · {event.actor_track}
+                        {formatMediaOffset(event.end_ms)} · {actorLabel(event.actor_track)}
                       </p>
                       <p className="t-body mt-[var(--s2)]">{describeEvent(event)}</p>
                       <p className="t-muted mt-[var(--s2)]">
@@ -1756,7 +1764,7 @@ export default function CoachCalibrationPage() {
           {activeMoment && bodyDataForSet?.expected_points ? (
             <BodyPointMomentPanel
               moment={activeMoment}
-              actorTrack={events.find((row) => row.event_id === activeMoment.event_id)?.actor_track ?? ''}
+              actorTrack={actorLabel(events.find((row) => row.event_id === activeMoment.event_id)?.actor_track ?? '')}
               expectedPoints={bodyDataForSet.expected_points}
               activePointCode={canEdit ? pointToPlace : null}
               disabled={!canEdit || busy}
@@ -1787,24 +1795,65 @@ export default function CoachCalibrationPage() {
               ) : null}
 
               <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
-                <div className="field">
-                  <label htmlFor="draft-actor" className="t-label">Actor (which fighter)</label>
-                  <input
-                    id="draft-actor"
-                    className="input"
-                    value={draft.actorTrack}
-                    onChange={(e) => setDraft({ ...draft, actorTrack: e.target.value })}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="draft-opponent" className="t-label">Opponent (optional)</label>
-                  <input
-                    id="draft-opponent"
-                    className="input"
-                    value={draft.opponentTrack}
-                    onChange={(e) => setDraft({ ...draft, opponentTrack: e.target.value })}
-                  />
-                </div>
+                {/* On a body-point set the two fighters are a fixed choice
+                    (OD-2026-10-08-005 A-Q10a), and each person's actions go
+                    on their own events (OD-2026-10-03-006); the server refuses
+                    anything else. Nothing is pre-picked: who the event is
+                    about is the coach's observation. A 0.1 set keeps the typed
+                    actor it started with (OD-2026-10-02-008 4A). */}
+                {isBodyPointSet ? (
+                  <>
+                    <div className="field">
+                      <label htmlFor="draft-actor" className="t-label">Who did it (one person in frame: Fighter 1)</label>
+                      <select
+                        id="draft-actor"
+                        className="select"
+                        value={draft.actorTrack}
+                        onChange={(e) => setDraft({ ...draft, actorTrack: e.target.value })}
+                      >
+                        <option value="">Choose&hellip;</option>
+                        {FIGHTER_TRACKS.map((track) => (
+                          <option key={track} value={track}>{actorLabel(track)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="draft-opponent" className="t-label">Against (optional)</label>
+                      <select
+                        id="draft-opponent"
+                        className="select"
+                        value={draft.opponentTrack}
+                        onChange={(e) => setDraft({ ...draft, opponentTrack: e.target.value })}
+                      >
+                        <option value="">Nobody</option>
+                        {FIGHTER_TRACKS.map((track) => (
+                          <option key={track} value={track}>{actorLabel(track)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="field">
+                      <label htmlFor="draft-actor" className="t-label">Actor (which fighter)</label>
+                      <input
+                        id="draft-actor"
+                        className="input"
+                        value={draft.actorTrack}
+                        onChange={(e) => setDraft({ ...draft, actorTrack: e.target.value })}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="draft-opponent" className="t-label">Opponent (optional)</label>
+                      <input
+                        id="draft-opponent"
+                        className="input"
+                        value={draft.opponentTrack}
+                        onChange={(e) => setDraft({ ...draft, opponentTrack: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="field">
                   <label htmlFor="draft-start" className="t-label">Start (ms, video time)</label>
