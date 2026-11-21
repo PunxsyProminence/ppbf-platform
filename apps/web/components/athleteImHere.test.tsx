@@ -309,12 +309,16 @@ describe('a walk-in registers for an open class today', () => {
     expect(screen.getByRole('button', { name: REGISTER })).toBeTruthy();
     const readsBefore = calls.filter((call) => call.method === 'GET').length;
     // The tab stayed open past the class's end.
-    jest.spyOn(Date, 'now').mockReturnValue(NOW + 120_000);
-    await pressRegister();
-    expect(posts(calls)).toHaveLength(0);
-    expect(calls.filter((call) => call.method === 'GET').length).toBe(readsBefore + 1);
-    expect(screen.queryByRole('button', { name: REGISTER })).toBeNull();
-    expect(screen.queryByRole('alert')).toBeNull();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(NOW + 120_000);
+    try {
+      await pressRegister();
+      expect(posts(calls)).toHaveLength(0);
+      expect(calls.filter((call) => call.method === 'GET').length).toBe(readsBefore + 1);
+      expect(screen.queryByRole('button', { name: REGISTER })).toBeNull();
+      expect(screen.queryByRole('alert')).toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   test('a 200 that says ok: false is a refusal, never a registration', async () => {
