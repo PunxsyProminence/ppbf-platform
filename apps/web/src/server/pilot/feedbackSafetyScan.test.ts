@@ -792,6 +792,7 @@ describe('HF12b: picture requests said as pix, vid or snaps', () => {
     'send a video of how to slip',
     'send me pics of the combo',
     'can you send a video of my pad work',
+    'send me a video of a combo',
   ])('no grooming cue: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
