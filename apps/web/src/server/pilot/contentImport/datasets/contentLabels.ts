@@ -256,8 +256,9 @@ export function inAppEditLabel(editor: LabelEditor): Record<string, unknown> {
  * label (status, sources, draft) and is the label of that part; the group-level
  * label still speaks for every part nobody edited. A reader of field_labels
  * must look for the part's own label first. When every part the new version
- * has (groupParts) carries an in-app edit, the group-level label is replaced by
- * the edit's too, so the group as a whole no longer reads as a draft.
+ * has (groupParts) carries an in-app edit or a coach's "Looks right", the
+ * group-level label is replaced by the edit's too, so the group as a whole no
+ * longer reads as a draft.
  *
  * Unlike carryLabelsToNewVersion this always writes a row when anything was
  * edited -- a version with no labels gets one holding only the edited parts:
@@ -301,7 +302,8 @@ export async function writeEditedVersionLabels(
       labels[field] = group;
     }
   }
-  const isInAppEdit = (value: unknown) => isObject(value) && isObject(value.edited) && !('draft' in value);
+  // A part a coach confirmed counts as an edited part counts (Q-PR4-1 = A).
+  const isInAppEdit = (value: unknown) => isObject(value) && (isObject(value.edited) || isObject(value.looks_right)) && !('draft' in value);
   for (const field of new Set(input.edited.filter((part) => part.part !== undefined).map((part) => part.field))) {
     const parts = input.groupParts?.[field] ?? [];
     const group = labels[field] as Record<string, unknown>;
@@ -326,6 +328,97 @@ export async function writeEditedVersionLabels(
     ],
   );
   return true;
+}
+
+/** A version's stored labels, for a "Looks right" press (lane ED-UI PR4); null when it has none. */
+export async function readVersionLabels(
+  client: DbClient,
+  organizationId: string,
+  dataset: DatasetName,
+  lineageId: string,
+  version: number,
+): Promise<{ fieldLabels: Record<string, unknown>; evidence: unknown; backboneVersion: string | null } | null> {
+  if (!(await labelTablesExist(client))) return null;
+  const { rows } = await client.query<{ field_labels: unknown; evidence: unknown; backbone_version: string | null }>(
+    `select field_labels, evidence, backbone_version from pilot.content_record_labels
+      where organization_id = $1 and target_kind = $2 and target_lineage_id = $3 and target_version = $4`,
+    [organizationId, labelTargetKind(dataset), lineageId, version],
+  );
+  const row = rows[0];
+  if (!row || typeof row.field_labels !== 'object' || row.field_labels === null || Array.isArray(row.field_labels)) return null;
+  return { fieldLabels: row.field_labels as Record<string, unknown>, evidence: row.evidence, backboneVersion: row.backbone_version };
+}
+
+/**
+ * A COACH CONFIRMS AN AI-DRAFTED FIELD: "Looks right" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4,
+ * Q1 = A, Q2 = A). The text is unchanged, so the label keeps its status and sources, loses `draft`
+ * and gains `looks_right` (who, when). A whole field confirms its parts too (`alsoFields`: the stop
+ * rules' kinds); a part (a scale level) is confirmed on its own label, and its group still speaks
+ * for the others. Returns a new object.
+ */
+export function confirmLooksRight(
+  labels: Record<string, unknown>,
+  target: { field: string; part?: string },
+  editor: LabelEditor,
+  alsoFields: readonly string[] = [],
+): Record<string, unknown> {
+  const record = { by_account_id: editor.accountId, by_role: editor.role, at: editor.at };
+  const isObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value);
+  // Labels are JSON: a JSON copy also parts any object two keys happen to share.
+  const out = JSON.parse(JSON.stringify(labels)) as Record<string, unknown>;
+  if (target.part !== undefined) {
+    const group = isObject(out[target.field]) ? (out[target.field] as Record<string, unknown>) : {};
+    const own = isObject(group[target.part]) ? (group[target.part] as Record<string, unknown>) : {};
+    delete own.draft;
+    own.looks_right = structuredClone(record);
+    group[target.part] = own;
+    out[target.field] = group;
+    return out;
+  }
+  for (const field of [target.field, ...alsoFields]) {
+    const label = out[field];
+    if (!isObject(label)) continue;
+    delete label.draft;
+    // A record is not a part: edited and looks_right are records about the field.
+    for (const [key, part] of Object.entries(label)) {
+      if (key !== 'edited' && key !== 'looks_right' && isObject(part)) delete part.draft;
+    }
+    label.looks_right = structuredClone(record);
+  }
+  return out;
+}
+
+/** The labels of the version a press made, with the old version's evidence; import_id names the press. */
+export async function writeLooksRightVersionLabels(
+  client: DbClient,
+  input: {
+    organizationId: string;
+    dataset: DatasetName;
+    lineageId: string;
+    toVersion: number;
+    editId: string;
+    editor: LabelEditor;
+    fieldLabels: Record<string, unknown>;
+    evidence: unknown;
+    backboneVersion: string | null;
+  },
+): Promise<void> {
+  await client.query(
+    `insert into pilot.content_record_labels
+       (organization_id, target_kind, target_lineage_id, target_version, field_labels, evidence, backbone_version,
+        import_id, recorded_by_account_id, recorded_by_role)
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10)`,
+    [
+      input.organizationId, labelTargetKind(input.dataset), input.lineageId, input.toVersion,
+      JSON.stringify(input.fieldLabels),
+      input.evidence === null || input.evidence === undefined ? null : JSON.stringify(input.evidence),
+      input.backboneVersion,
+      `looks-right:${input.editId}`,
+      input.editor.accountId,
+      input.editor.role,
+    ],
+  );
 }
 
 /**

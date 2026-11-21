@@ -25,6 +25,9 @@ import type { DbClient } from './actor';
 //       depth (contentLabels.ts#inAppEditLabel). The edit paths carry earlier
 //       in-app labels forward, so a coach's text edited two versions ago
 //       still counts;
+//       A coach's "Looks right" (drillLibraryEdit.ts, workoutTemplateEdit.ts;
+//       lane ED-UI PR4, Q1 = A) counts too: its label records the coach
+//       (`looks_right`) and is no longer an AI draft;
 //   (b) pilot.audit_events holds an in_app_edit event on the current version's
 //       id (the edit paths write one in the same transaction), which catches an
 //       edit made before the label table existed.
@@ -39,12 +42,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 /**
  * True for a label written by an in-app edit: it names the "In-app edit"
- * source, or it records the editor (`edited`) and is not an AI draft.
+ * source, or it records the editor (`edited`) or a coach's "Looks right"
+ * (`looks_right`) and is not an AI draft.
  */
 export function isInAppEditLabel(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   if (Array.isArray(value.sources) && value.sources.includes(IN_APP_EDIT_SOURCE)) return true;
-  return isPlainObject(value.edited) && !('draft' in value);
+  return (isPlainObject(value.edited) || isPlainObject(value.looks_right)) && !('draft' in value);
 }
 
 export interface FoundInAppLabel {
@@ -76,8 +80,8 @@ export function findInAppEditLabels(fieldLabels: unknown): FoundInAppLabel[] {
     }
     if (!isPlainObject(node)) return;
     for (const [key, value] of Object.entries(node)) {
-      // A label's own sources and editor record are not labels.
-      if (key === 'sources' || key === 'edited') continue;
+      // A label's own sources and its editor's or confirmer's record are not labels.
+      if (key === 'sources' || key === 'edited' || key === 'looks_right') continue;
       const at = path ? `${path}.${key}` : key;
       if (isInAppEditLabel(value)) out.push({ path: at, label: value as Record<string, unknown> });
       walk(value, at);
@@ -123,7 +127,8 @@ export async function inAppEditedHeads(
   for (const head of heads) {
     const [first] = findInAppEditLabels(head.fieldLabels);
     if (!first) continue;
-    const edited = isPlainObject(first.label.edited) ? first.label.edited : {};
+    const edited = isPlainObject(first.label.edited) ? first.label.edited
+      : isPlainObject(first.label.looks_right) ? first.label.looks_right : {};
     out.set(head.lineage, {
       path: first.path,
       role: typeof edited.by_role === 'string' ? edited.by_role : undefined,
