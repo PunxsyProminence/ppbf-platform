@@ -702,8 +702,9 @@ export default function SignInPanel({
             </p>
             <p className="t-body mt-[var(--s4)] rounded-[var(--r-sm)] border border-[rgba(0,0,0,0.14)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)]">
               First time here with an activation code?{' '}
+              {/* The athlete sign-in page's words for the same link (lane AS-8, scrub ATH-15, Q14 A on #2020). */}
               <Link href="/activate" className="font-semibold text-[color:var(--brass-800)] underline">
-                Set up your account
+                Set up your sign-in
               </Link>
             </p>
           </div>
