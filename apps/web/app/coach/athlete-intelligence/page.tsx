@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AthleteDrillExposurePanel from '@/components/AthleteDrillExposurePanel';
 import RoleSessionGate from '@/components/RoleSessionGate';
@@ -12,6 +12,8 @@ import type {
   IntelligenceSourceAvailability,
 } from '@/src/server/pilot/athleteIntelligence';
 import ClusterNav from '@/components/ClusterNav';
+import { ATHLETE_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 
 // THE SCREEN THAT READS WHAT THE ENGINE COMPUTES.
 //
@@ -207,7 +209,15 @@ export default function AthleteIntelligencePage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // The athlete a link handed to this page (lane AS-11, CF-15; Passbook's
+  // line): undefined until it is taken, once, on the first mount; then the id
+  // until the roster answers, then null.
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) {
+      arrivalAthleteRef.current = takeArrivalAthlete(ATHLETE_INTELLIGENCE_PAGE);
+    }
     const controller = new AbortController();
     void (async () => {
       try {
@@ -217,7 +227,17 @@ export default function AthleteIntelligencePage() {
         });
         if (!response.ok) return;
         const payload = (await response.json()) as { items?: AthleteOption[] };
-        if (!controller.signal.aborted) setAthletes(payload.items ?? []);
+        if (controller.signal.aborted) return;
+        const items = payload.items ?? [];
+        setAthletes(items);
+        // Chosen only if this page's own roster, which the server answers,
+        // lists them; anything else opens with nobody chosen, as it always did.
+        const arriving = arrivalAthleteRef.current;
+        arrivalAthleteRef.current = null;
+        if (arriving && items.some((athlete) => athlete.athlete_id === arriving)) {
+          setLoading(true);
+          setAthleteId(arriving);
+        }
       } catch {
         // Silent: the picker degrades to empty, same as Transfer Check.
       }

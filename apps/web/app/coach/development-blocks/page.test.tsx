@@ -18,8 +18,10 @@
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 
+import { DEVELOPMENT_PLANS_PAGE, PASSBOOK_PAGE } from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import CoachDevelopmentBlocksPage from './page';
 
 /* The ten domains, mirrored ONLY as stub data. The page holds no copy of the
@@ -428,6 +430,92 @@ describe('choosing an athlete', () => {
 
     expect(screen.getByText(/no active athletes in your gym/i)).toBeTruthy();
     expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+});
+
+// Lane AS-11 (app scrub CF-15; Q2 = A): Passbook's line opens this page on
+// the athlete, taken from page memory and chosen only when the access
+// contract's roster lists them. No athlete id is read from the address.
+describe('arriving from a link (lane AS-11)', () => {
+  const blockReads = (fetchMock: jest.Mock) => fetchMock.mock.calls
+    .map((call) => String(call[0]))
+    .filter((url) => url.includes('/api/pilot/coach/development-blocks?athlete_id='));
+  const picked = () => (screen.getByLabelText('Which athlete') as HTMLSelectElement).value;
+
+  afterEach(() => {
+    takeArrivalAthlete(DEVELOPMENT_PLANS_PAGE);
+    takeArrivalAthlete(PASSBOOK_PAGE);
+    window.history.replaceState(null, '', '/');
+  });
+
+  test('a hand-off opens the rostered athlete it names and reads their blocks', async () => {
+    handOffArrivalAthlete('ath-2', DEVELOPMENT_PLANS_PAGE);
+    const fetchMock = await renderPage({ blocks: [blockRow({ athlete_id: 'ath-2' })] });
+    await act(async () => {});
+
+    expect(picked()).toBe('ath-2');
+    expect(blockReads(fetchMock)).toEqual([expect.stringMatching(/athlete_id=ath-2$/)]);
+    expect(screen.getByText('Winter technical block')).toBeTruthy();
+  });
+
+  test('a hand-off for an athlete the roster does not list chooses nobody and reads nothing', async () => {
+    handOffArrivalAthlete('ath-9', DEVELOPMENT_PLANS_PAGE);
+    const fetchMock = await renderPage();
+    await act(async () => {});
+
+    expect(picked()).toBe('');
+    expect(blockReads(fetchMock)).toEqual([]);
+  });
+
+  test('a hand-off with a roster that fails to load chooses nobody and reads nothing', async () => {
+    handOffArrivalAthlete('ath-2', DEVELOPMENT_PLANS_PAGE);
+    const fetchMock = await renderPage({ rosterOk: false });
+    await act(async () => {});
+
+    expect(picked()).toBe('');
+    expect(blockReads(fetchMock)).toEqual([]);
+  });
+
+  test('a hand-off meant for another page is not taken here', async () => {
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    const fetchMock = await renderPage();
+    await act(async () => {});
+
+    expect(picked()).toBe('');
+    expect(blockReads(fetchMock)).toEqual([]);
+  });
+
+  test('an athlete id in the address opens nothing', async () => {
+    window.history.replaceState(null, '', '/coach/development-blocks?athlete_id=ath-2');
+    const fetchMock = await renderPage();
+    await act(async () => {});
+
+    expect(picked()).toBe('');
+    expect(blockReads(fetchMock)).toEqual([]);
+  });
+
+  test('under StrictMode the hand-off opens the athlete, and their blocks are read once', async () => {
+    handOffArrivalAthlete('ath-2', DEVELOPMENT_PLANS_PAGE);
+    const fetchMock = installFetch({ blocks: [blockRow({ athlete_id: 'ath-2' })] });
+    await act(async () => {
+      render(<StrictMode><CoachDevelopmentBlocksPage /></StrictMode>);
+    });
+    await act(async () => {});
+
+    expect(picked()).toBe('ath-2');
+    expect(blockReads(fetchMock)).toHaveLength(1);
+  });
+
+  test('a hand-off is taken once: the next visit opens with nobody chosen', async () => {
+    handOffArrivalAthlete('ath-2', DEVELOPMENT_PLANS_PAGE);
+    await renderPage();
+    await act(async () => {});
+    document.body.innerHTML = '';
+    const fetchMock = await renderPage();
+    await act(async () => {});
+
+    expect(picked()).toBe('');
+    expect(blockReads(fetchMock)).toEqual([]);
   });
 });
 

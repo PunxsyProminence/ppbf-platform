@@ -22,7 +22,10 @@
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { StrictMode } from 'react';
 
+import { ATHLETE_INTELLIGENCE_PAGE, PASSBOOK_PAGE } from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import AthleteIntelligencePage from './page';
 
 jest.mock('@/components/RoleSessionGate', () => ({
@@ -127,6 +130,75 @@ async function renderAndPick(payload: unknown, init?: { ok?: boolean }) {
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+// Lane AS-11 (app scrub CF-15; Q2 = A): Passbook's line opens this page on
+// the athlete, taken from page memory and chosen only when this page's own
+// roster lists them. No athlete id is read from the address.
+describe('arriving from a link (lane AS-11)', () => {
+  const intelligenceReads = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/api/pilot/coach/athlete-intelligence'));
+  const picked = () => (screen.getByLabelText('Athlete') as HTMLSelectElement).value;
+
+  async function arrive(strict = false) {
+    const fetchMock = installFetch(model());
+    await act(async () => {
+      render(strict ? <StrictMode><AthleteIntelligencePage /></StrictMode> : <AthleteIntelligencePage />);
+    });
+    await act(async () => {});
+    return fetchMock;
+  }
+
+  afterEach(() => {
+    takeArrivalAthlete(ATHLETE_INTELLIGENCE_PAGE);
+    takeArrivalAthlete(PASSBOOK_PAGE);
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('a hand-off opens the rostered athlete it names and reads their values', async () => {
+    handOffArrivalAthlete('ath-1', ATHLETE_INTELLIGENCE_PAGE);
+    const fetchMock = await arrive();
+    expect(picked()).toBe('ath-1');
+    expect(intelligenceReads(fetchMock)).toEqual([expect.stringMatching(/athlete_id=ath-1$/)]);
+    expect(screen.getByText(/412/)).toBeTruthy();
+  });
+
+  it('a hand-off for an athlete the roster does not list chooses nobody and reads nothing', async () => {
+    handOffArrivalAthlete('ath-9', ATHLETE_INTELLIGENCE_PAGE);
+    const fetchMock = await arrive();
+    expect(picked()).toBe('');
+    expect(intelligenceReads(fetchMock)).toEqual([]);
+  });
+
+  it('a hand-off meant for another page is not taken here', async () => {
+    handOffArrivalAthlete('ath-1', PASSBOOK_PAGE);
+    const fetchMock = await arrive();
+    expect(picked()).toBe('');
+    expect(intelligenceReads(fetchMock)).toEqual([]);
+  });
+
+  it('an athlete id in the address opens nothing', async () => {
+    window.history.replaceState(null, '', '/coach/athlete-intelligence?athlete_id=ath-1');
+    const fetchMock = await arrive();
+    expect(picked()).toBe('');
+    expect(intelligenceReads(fetchMock)).toEqual([]);
+  });
+
+  it('under StrictMode the hand-off still opens the athlete', async () => {
+    handOffArrivalAthlete('ath-1', ATHLETE_INTELLIGENCE_PAGE);
+    await arrive(true);
+    expect(picked()).toBe('ath-1');
+    expect(screen.getByText(/412/)).toBeTruthy();
+  });
+
+  it('a hand-off is taken once: the next visit opens with nobody chosen', async () => {
+    handOffArrivalAthlete('ath-1', ATHLETE_INTELLIGENCE_PAGE);
+    await arrive();
+    document.body.innerHTML = '';
+    const fetchMock = await arrive();
+    expect(picked()).toBe('');
+    expect(intelligenceReads(fetchMock)).toEqual([]);
+  });
 });
 
 describe('drill exposure', () => {

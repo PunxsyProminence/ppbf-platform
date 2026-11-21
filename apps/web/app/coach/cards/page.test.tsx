@@ -12,8 +12,10 @@
 // silently imposed.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 
+import { COACH_CARDS_PAGE, PASSBOOK_PAGE } from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import CoachCardsPage from './page';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
@@ -455,6 +457,90 @@ test('the two form modes swap the target picker: roster athletes vs ACTIVE progr
   // Archived programs are history, not a target for new work.
   expect(within(programSelect).queryByText(/Old Guard/)).toBeNull();
   expect(screen.queryByLabelText('Athlete')).toBeNull();
+});
+
+// Lane AS-11 (app scrub CF-15; Q2b = A): Passbook's line opens Coach Cards
+// with "One athlete" pressed and that athlete chosen in the form that issues
+// a card. The athlete comes from page memory, only when this page's roster
+// lists them. Arriving issues nothing.
+describe('arriving from a link (lane AS-11)', () => {
+  const picked = () => (screen.getByLabelText('Athlete') as HTMLSelectElement).value;
+  const posts = (calls: FetchCall[]) =>
+    calls.filter((call) => call.url.includes('/api/pilot/coach/cards') && call.init?.method === 'POST');
+
+  async function arrive(strict = false) {
+    const calls = installFetch();
+    await act(async () => {
+      render(strict ? <StrictMode><CoachCardsPage /></StrictMode> : <CoachCardsPage />);
+    });
+    await act(async () => {});
+    return calls;
+  }
+
+  afterEach(() => {
+    takeArrivalAthlete(COACH_CARDS_PAGE);
+    takeArrivalAthlete(PASSBOOK_PAGE);
+    window.history.replaceState(null, '', '/');
+  });
+
+  test('a hand-off opens the card form on "One athlete" with that athlete chosen, and issues nothing', async () => {
+    handOffArrivalAthlete('ath-2', COACH_CARDS_PAGE);
+    const calls = await arrive();
+    expect(screen.getByRole('button', { name: 'One athlete' }).getAttribute('aria-pressed')).toBe('true');
+    expect(picked()).toBe('ath-2');
+    expect(posts(calls)).toEqual([]);
+  });
+
+  test('the card the coach then issues goes to that athlete', async () => {
+    handOffArrivalAthlete('ath-2', COACH_CARDS_PAGE);
+    const calls = await arrive();
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Issue card' }));
+    });
+    expect(posts(calls)).toHaveLength(1);
+    expect(JSON.parse(String(posts(calls)[0].init?.body))).toMatchObject({ athlete_id: 'ath-2', drill_id: 'drill-rope' });
+  });
+
+  test('a hand-off for an athlete the roster does not list chooses nobody, and no card can go to them', async () => {
+    handOffArrivalAthlete('ath-9', COACH_CARDS_PAGE);
+    const calls = await arrive();
+    expect(picked()).toBe('');
+    // The picker shows nobody either way; what matters is that the form
+    // holds nobody, so a card issued now is stopped for want of an athlete.
+    fireEvent.change(screen.getByLabelText('Drill'), { target: { value: 'drill-rope' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Issue card' }));
+    });
+    expect(screen.getByText('Pick an athlete.')).toBeTruthy();
+    expect(posts(calls)).toEqual([]);
+  });
+
+  test('a hand-off meant for another page is not taken here', async () => {
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    await arrive();
+    expect(picked()).toBe('');
+  });
+
+  test('an athlete id in the address chooses nobody', async () => {
+    window.history.replaceState(null, '', '/coach/cards?athlete_id=ath-2');
+    await arrive();
+    expect(picked()).toBe('');
+  });
+
+  test('under StrictMode the hand-off still chooses the athlete', async () => {
+    handOffArrivalAthlete('ath-2', COACH_CARDS_PAGE);
+    await arrive(true);
+    expect(picked()).toBe('ath-2');
+  });
+
+  test('a hand-off is taken once: the next visit opens with nobody chosen', async () => {
+    handOffArrivalAthlete('ath-2', COACH_CARDS_PAGE);
+    await arrive();
+    document.body.innerHTML = '';
+    await arrive();
+    expect(picked()).toBe('');
+  });
 });
 
 test('a group issue posts program_id and renders the issued/skipped report verbatim', async () => {
