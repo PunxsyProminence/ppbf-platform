@@ -46,6 +46,7 @@ Three jobs: (a) open body-point marking, (b) fix HF6 in Label Agreement, (c) two
   - It hides the 0.1-only stance and peak fields on those sets (`:2015-2020`).
   - The server enforces the 0.2+ event rules (`src/server/pilot/calibration/annotations.ts:673-687`, `assertVersionEventRules`) and the body-point rules (`bodyPoints.ts:198-214`, `:595-601`, `resolveMomentTiming` at `:282`). Six `.pg.test.ts` suites cover them.
   - Not verified: whether a coach can walk the 0.4 flow end to end on a real screen. That is UNVERIFIED and is Jason's signed-in staging check (see T-1).
+- The cut page locks a study whose version is not `supported_ontology_version` (`app/teach-shadow/cut/page.tsx:321-325`). Once creation moves to 0.4, that would lock out every running 0.1 study, which breaks 4A, so T-1 must fix it.
 - The version to open is 0.4 (23 points, ankles dropped: OD-2026-10-04-021, -024). 0.2 and 0.3 stay closed; their marks stay as made (-024 Q2).
 - Opening 0.4 changes what six pg suites create. Each one builds its project with `ontology.PROJECT_CREATION_ONTOLOGY_VERSION` (`calibrationRemarkPass.pg.test.ts:222`, `calibrationEventsFreezeOldParent.pg.test.ts:146`, `calibrationBodyPointRules.pg.test.ts:159`, `calibrationEventInPlaceEdit.pg.test.ts:158`, `calibrationBodyPoints.pg.test.ts:380`, `:1269`, `calibrationBodyPointsModule.pg.test.ts:150`). Each must be pinned to the version it means.
 
@@ -68,7 +69,6 @@ Three jobs: (a) open body-point marking, (b) fix HF6 in Label Agreement, (c) two
 - `app/teach-shadow/capture/page.tsx:50-51` offers only Shadowboxing and Heavy bag.
 - `route.test.ts:332` (`test.each(['sparring','mitts','other'])`) and `:395` pin the refusal.
 - The Teach Shadow hub page says so too: `app/teach-shadow/page.tsx:506`, "Shadowboxing and heavy bag only, until a take can name everyone who appears in it."
-- One more thing T-1 must fix: the cut page locks a study whose version is not `supported_ontology_version` (`app/teach-shadow/cut/page.tsx:321-325`). Once creation moves to 0.4, that would lock out every running 0.1 study, which breaks 4A.
 - The database already accepts all five contexts (`infra/azure/pilot_slice_postgres_capture_sessions_migration.sql:41`), so no migration is needed. The code comment says the same: "lifting it ... is deleting an entry here, not a migration" (`captureSessions.ts:64-68`).
 - Teach Shadow footage names nobody. TS-ANON-01: the route refuses an `athlete_id` (`capture-session/route.ts:101-117`), and the upload route refuses one on a take (`upload/route.ts:198-202`). So the older consent reason in the comments at `captureSessions.ts:46-60` and `capture/page.tsx:36-48` is out of date. The route's own comment at `:82-85` says so.
 - How "each person on their own event" works: each event row already has one actor (`actor_track`). The OD-2026-10-03-006 rule (no opponent body points inside the puncher's event) is already enforced: #1150 dropped the `subject` column. What is missing is A-Q10a's fixed "Fighter 1 / Fighter 2" labels in place of free text.
@@ -134,7 +134,7 @@ No migration in any of them. No new role, gate, warning or permission. No model,
   - `captureSessions.ts`: the capture list becomes shadowboxing, heavy_bag, mitts and sparring. `other` stays withheld, because it promises no subject count. The out-of-date consent comment is corrected to TS-ANON-01.
   - Route: the refusal message and comment are updated; `other` is still refused.
   - Capture page: adds Mitts and Sparring.
-  - Tests: `route.test.ts:332` and `:399` now expect mitts and sparring to be accepted and `other` refused.
+  - Tests: `route.test.ts:332` and `:395` now expect mitts and sparring to be accepted and `other` refused.
   - A take stays one take. How two-person takes are split is Q2, and nothing here depends on the answer.
 - **Allowlist.**
   - `apps/web/src/server/pilot/captureSessions.ts` (and its test, if one exists)
@@ -179,9 +179,9 @@ Lane PATTERN-1 (`patterns/`, `learningPolicyApprovedV1.ts`, the learning-policie
 
 - **Q1: how adults-only is enforced at export** (the architect's call, OD-2026-10-02-016). Teach footage names nobody (TS-ANON-01), so no row holds an age to filter on. Block T builds no export. T-3 opens capture without an age step, and no ruling names one (a warning or step there would be a new gate). Nothing in T-1..T-4 depends on the answer.
 - **Q2: how a two-person take is split** (one take with both fighters' events, as T-3/T-4 leave it, or split per fighter at cut or export, which also decides which side of a train/test split each lands on). T keeps the take whole and labels each person on their own events, so either answer can be applied later at cut or export.
-- **Q3: `combination_group` naming** (finding 2b). Is comparing combination membership through matched pairs inside HF6, or a separate item? T-2 folds case and spaces only.
-- **Q5: the spelling fold for labels already stored** (finding 2b). HF6's wording comes from this brief. A-Q10c rules only the window, and A-Q10a's fixed labels cover new labels. Should T-2 also fold case and spaces when comparing labels that are already stored as free text? Yes keeps the fold commit; no drops it.
+- **Q3: `combination_group` naming** (finding 2b). Is comparing combination membership through matched pairs inside HF6, or a separate item? T-2 changes nothing about combination membership (at most the Q5 fold).
 - **Q4: the window number.** 100 ms is what A-Q10c "asked as". Should it be confirmed on screen at 100, or tuned first on pilot pairs (none submitted under 0.4 yet)?
+- **Q5: the spelling fold for labels already stored** (finding 2b). HF6's wording comes from this brief. A-Q10c rules only the window, and A-Q10a's fixed labels cover new labels. Should T-2 also fold case and spaces when comparing labels that are already stored as free text? Yes keeps the fold commit; no drops it.
 
 ## 6. Review
 
