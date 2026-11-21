@@ -59,21 +59,10 @@ const APOSTROPHE_LIKE = /[\u2018\u2019\u02bc'`\u00b4\u02b9\u02bb\u02bd\u02c8\u20
  * "slaped", "bleeeeeding" would become "bleding". None would match anything.
  */
 export function normalizeForSafetyScan(body: string): string {
-  return normalizeWith(body, false);
-}
-
-/**
- * "sa'd" / "sa-ed" is short for sexually assaulted. Stripping the apostrophe
- * would make it "sad", so it is spelled out first (HF12b). Only the form
- * with an apostrophe or hyphen: plain "sad" is sad.
- */
-const SA_D = new RegExp(`\\bsa(?:${APOSTROPHE_LIKE.source}|-)e?d\\b`, 'g');
-
-function normalizeWith(body: string, peelEdgeLetters: boolean): string {
   return joinSplitWords(joinSpelledOutWords(body
     .toLowerCase()
     .replace(SA_D, 'sexually assaulted')
-    .replace(APOSTROPHE_LIKE, ''), peelEdgeLetters)
+    .replace(APOSTROPHE_LIKE, ''))
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/(.)\1{2,}/g, '$1$1')
     .replace(/\bdo not\b/g, 'dont')
@@ -89,37 +78,62 @@ function normalizeWith(body: string, peelEdgeLetters: boolean): string {
 }
 
 /**
+ * "sa'd" / "sa-ed" (also "s.a'd") is short for sexually assaulted. Stripping
+ * the apostrophe would make it "sad", so it is spelled out first (HF12b).
+ * Only the form with an apostrophe or hyphen: plain "sad" is sad.
+ */
+const SA_D = new RegExp(`\\bs\\.?a\\.?(?:${APOSTROPHE_LIKE.source}|-)e?d\\b`, 'g');
+
+/**
  * A word spelled out letter by letter, the letters separated by one repeated
  * character ("s u i c i d e", "k.m.s", "k-i-l-l m-y-s-e-l-f"): the run is
  * joined back into the word (HF12b). Done in the normal form itself, so every
- * reader of it (the SHADOW disclosure's touch, staff and boxing-context
- * checks) sees the word too. Letters only: "5 k m s" keeps the 5 apart, so the
- * roadwork guard still reads it as a distance. Two letters are a run, so
- * "t o" reads "to" and "i m" reads "im"; "a.m." reads "am", which the kms
- * guard already treats as a time after a digit.
+ * reader of it (the SHADOW disclosure's touch, staff, boxing-context and
+ * sparring-intent checks) sees the word too. Letters only: "5 k m s" keeps
+ * the 5 apart, so the roadwork guard still reads it as a distance.
  *
- * A standalone "i" or "a" typed beside the run with the same single space is
- * swallowed into it ("i k m s" reads "ikms"). The second reading peels one
- * such letter off either end ("i kms", "suicide a"); it is a separate reading
- * because a real word can start or end with one ("abused", "inappropriate").
+ * A run is three or more letters, or two letters neither of which is "i" or
+ * "a" ("t o" reads "to"). Text-speak puts a lone "i" beside another single
+ * letter ("n i said stop", "k i told him"), and joining those would hide the
+ * SHADOW sparring-intent words that start with "i" (review on PR 2076). "i m"
+ * is joined on its own in joinSplitWords.
  */
 const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z]([^a-z0-9])[a-z](?:\1[a-z])*(?![a-z0-9])/gu;
 
-function joinSpelledOutWords(text: string, peelEdgeLetters: boolean): string {
+/**
+ * A run typed with one space between every letter swallows the gaps between
+ * words too ("h u r t m y s e l f" joins to one block), and a lone "i" or "a"
+ * beside it ("i k m s"). These phrases are spaced back out inside a joined
+ * run, longest first, so the cues and the SHADOW touch check read them. Each
+ * is a phrase some cue already holds; a run is rare in ordinary text, so a
+ * phrase found inside an unrelated spelled-out word costs at most a reading.
+ */
+const SPACED_BACK_PHRASES: readonly string[] = [
+  'kill myself', 'hurt myself', 'cut myself', 'harm myself', 'hang myself', 'shoot myself', 'off myself',
+  'want to die', 'wanna die', 'end my life', 'end it all', 'self harm', 'suicidal', 'suicide', 'unalive',
+  'kms', 'kys', 'our little secret', 'our secret', 'dont tell', 'raped', 'rapist', 'molested', 'molest',
+  'nudes', 'groped', 'touched me', 'touches me', 'touching me', 'touched', 'touches', 'touching',
+  'hitting me', 'hits me', 'hit me', 'hurts me', 'hurt me', 'abused me', 'abused', 'scared', 'afraid',
+  'terrified', 'not safe', 'unsafe',
+];
+
+const SPACED_BACK = new RegExp(
+  [...SPACED_BACK_PHRASES]
+    .sort((x, y) => y.replace(/ /g, '').length - x.replace(/ /g, '').length)
+    .map((phrase) => phrase.replace(/ /g, ''))
+    .join('|'),
+  'g',
+);
+
+const SPACED_BACK_FORM: ReadonlyMap<string, string> = new Map(
+  SPACED_BACK_PHRASES.map((phrase) => [phrase.replace(/ /g, ''), phrase]),
+);
+
+function joinSpelledOutWords(text: string): string {
   return text.replace(SPELLED_OUT_RUN, (run) => {
-    let word = run.replace(/[^a-z]/g, '');
-    if (!peelEdgeLetters) return word;
-    let head = '';
-    let tail = '';
-    if (/^[ia]/.test(word) && word.length >= 4) {
-      head = `${word[0]} `;
-      word = word.slice(1);
-    }
-    if (/[ia]$/.test(word) && word.length >= 4) {
-      tail = ` ${word[word.length - 1]}`;
-      word = word.slice(0, -1);
-    }
-    return head + word + tail;
+    const word = run.replace(/[^a-z]/g, '');
+    if (word.length === 2 && /[ia]/.test(word)) return run;
+    return ` ${word.replace(SPACED_BACK, (compact) => ` ${SPACED_BACK_FORM.get(compact) ?? compact} `)} `;
   });
 }
 
@@ -132,6 +146,7 @@ function joinSpelledOutWords(text: string, peelEdgeLetters: boolean): string {
 function joinSplitWords(text: string): string {
   return text
     .replace(/\bmy self\b/g, 'myself')
+    .replace(/\bi m\b/g, 'im')
     .replace(/\bun alive\b/g, 'unalive')
     .replace(/\b(your|ur) self\b/g, '$1self');
 }
@@ -282,12 +297,8 @@ export function scanForSafetyLanguage(body: string): FeedbackSafetyScanResult {
   // fully catches a single-letter word typed long ("sooooo"). Neither reading
   // alone covers both, and a disclosure must not depend on which way a child
   // happened to hold the key.
-  // A third and fourth reading peel a lone "i" or "a" off a spelled-out run
-  // (joinSpelledOutWords); they differ from the first two only when there is
-  // such a run.
   const normalized = normalizeForSafetyScan(body);
-  const peeled = normalizeWith(body, true);
-  const readings = [normalized, collapseFully(normalized), peeled, collapseFully(peeled)];
+  const readings = [normalized, collapseFully(normalized)];
   const cues = SAFETY_CUES
     .filter((cue) => readings.some((reading) => cue.pattern.test(reading)))
     .map((cue) => cue.id);
