@@ -1268,6 +1268,7 @@ describe('HF12b review 4: video requests from a title, a persistent asker or a p
     'he begged me for videos',
     'he begs me for pics',
     'he keeps begging for pics',
+    'a man at my gym wants videos of me',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
