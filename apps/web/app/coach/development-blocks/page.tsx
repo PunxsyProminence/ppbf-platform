@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -13,6 +13,8 @@ import {
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDay } from '@/src/lib/gymTime';
 import ClusterNav from '@/components/ClusterNav';
+import { DEVELOPMENT_PLANS_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 
 /*
  * A coach's multi-week plan for one athlete: writing one, reading it back,
@@ -431,7 +433,21 @@ export default function CoachDevelopmentBlocksPage() {
   const [domains, setDomains] = useState<string[]>([]);
   const [domainsState, setDomainsState] = useState<'loading' | 'loaded' | 'unavailable'>('loading');
 
+  // The athlete a link handed to this page (lane AS-11, CF-15; Passbook's
+  // line): undefined until it is taken, once, on the first mount; then the id
+  // until the roster answers, then null. The picker stays disabled until the
+  // roster answers, so the coach cannot have chosen anyone before this runs.
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+  // Chosen only if this page's own roster, which the server answers, lists
+  // them; anything else opens the page with nobody chosen, as it always did.
+  const openArrivingAthlete = useEffectEvent((items: AuthorizedAthlete[]) => {
+    const arriving = arrivalAthleteRef.current;
+    arrivalAthleteRef.current = null;
+    if (arriving && items.some((athlete) => athlete.athlete_id === arriving)) selectAthlete(arriving);
+  });
+
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete(DEVELOPMENT_PLANS_PAGE);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -442,8 +458,10 @@ export default function CoachDevelopmentBlocksPage() {
         });
         if (!response.ok) throw new Error('roster');
         const payload = (await response.json()) as { items?: AuthorizedAthlete[] };
-        setAthletes(payload.items ?? []);
+        const items = payload.items ?? [];
+        setAthletes(items);
         setRosterState('loaded');
+        openArrivingAthlete(items);
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') return;
         // An empty picker would read as "you have no athletes", which this

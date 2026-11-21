@@ -63,6 +63,8 @@ const BACK_HOME_PAGES = [
   '/coach/video-publications/library', '/athlete/dashboard/sparring', '/athlete/progression-intelligence',
   '/board/aggregates', '/board/escalation-monitoring', '/coach/cohorts', '/coach/disciplines',
   '/coach/adult-pathway', '/rabbit-holes',
+  // Lane AS-9 (app scrub FAM-18): the family record pages' one back link.
+  '/parent/video', '/parent/progression-visibility', '/parent/development-blocks', '/parent/mental-skills',
 ];
 
 describe('back links never bounce', () => {

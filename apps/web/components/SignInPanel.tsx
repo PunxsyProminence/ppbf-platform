@@ -517,10 +517,16 @@ export default function SignInPanel({
           <h1 className="t-painted mt-[var(--s4)]" style={{ fontSize: 'var(--t-2xl)' }}>
             The Bell
           </h1>
-          <p className="t-body mt-[var(--s3)]">Sign in to continue.</p>
+          {/* LEAD SENTENCES (app scrub FAM-15). The order of the three ways
+              stays (AS-9 Q10 = B), so the lead lines tell a parent which block
+              is theirs, in body type rather than the small muted line. */}
+          <p className="t-body mt-[var(--s3)]">
+            Sign in to continue. Parents: Email Link, the second way below, is
+            yours.
+          </p>
           <p className="t-muted mx-auto mt-[var(--s3)] max-w-[52ch]" style={{ fontSize: 'var(--t-sm)' }}>
-            Any of the three ways below will do. You will land on the right
-            dashboard for your role.
+            Once you are signed in, you will land on the right dashboard for
+            your role.
           </p>
         </header>
 
@@ -560,6 +566,7 @@ export default function SignInPanel({
             </h2>
             <p className="t-body mt-[var(--s3)]">
               For coaches, staff and admins. Your organization admin manages who can access the platform.
+              Parents: Email Link is below.
             </p>
           </div>
           <button type="button" onClick={microsoftSignIn} className="btn btn--kiosk">
@@ -597,9 +604,9 @@ export default function SignInPanel({
               Email Link
             </h2>
             <p className="t-body mt-[var(--s3)]">
-              For coaches, staff, volunteers and parents. Enter your email and we
-              will send a link that signs you in. Parents who have made a
-              password can type it instead.
+              For parents, and for coaches, staff and volunteers. Enter your
+              email and we will send a link that signs you in. Parents who have
+              made a password can type it instead.
             </p>
           </div>
           <div className="field">
@@ -695,8 +702,9 @@ export default function SignInPanel({
             </p>
             <p className="t-body mt-[var(--s4)] rounded-[var(--r-sm)] border border-[rgba(0,0,0,0.14)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)]">
               First time here with an activation code?{' '}
+              {/* The athlete sign-in page's words for the same link (lane AS-8, scrub ATH-15, Q14 A on #2020). */}
               <Link href="/activate" className="font-semibold text-[color:var(--brass-800)] underline">
-                Set up your account
+                Set up your sign-in
               </Link>
             </p>
           </div>

@@ -7,15 +7,39 @@
  * nothing is fetched until an athlete is chosen; exactly one athlete_id goes
  * per request; a refusal, a missing book and a failed load each read as what
  * they are and never as an empty book; a slow book for the previous athlete
- * never renders under the next; ?athlete_id= opens only an athlete on the
- * coach's own roster; account ids and date of birth are not rendered; gap text
- * is shown as the server sent it.
+ * never renders under the next; a link's hand-off opens only an athlete on the
+ * coach's own roster, and an athlete id in the address opens nothing (lane
+ * AS-11 Q3 = A); account ids and date of birth are not rendered; gap text is
+ * shown as the server sent it.
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { StrictMode, type ReactNode } from 'react';
 
+import {
+  ATHLETE_RECORD_PAGES,
+  DEVELOPMENT_PLANS_PAGE,
+  PASSBOOK_PAGE,
+  PROGRESSION_INTELLIGENCE_PAGE,
+  THE_WORK_PAGE,
+} from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 import CoachPassbookPage from './page';
+
+// A plain anchor that runs the link's own onClick, as next/link does, without
+// navigating (the pattern of the Escalations test, lane AS-5).
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href, className, onClick }: {
+    readonly children: ReactNode;
+    readonly href: string;
+    readonly className?: string;
+    readonly onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  }) => (
+    <a href={href} className={className} onClick={(event) => { event.preventDefault(); onClick?.(event); }}>{children}</a>
+  ),
+}));
 
 const standaloneProps: Array<{ allowedRoles: string[] }> = [];
 jest.mock('@/components/RoleStandaloneView', () => ({
@@ -205,22 +229,153 @@ test('a slow book for the previous athlete never renders under the next', async 
   expect(document.body.textContent).not.toContain('Guard is higher');
 });
 
-test('?athlete_id= opens a rostered athlete', async () => {
-  window.history.replaceState(null, '', '/coach/passbook?athlete_id=ath-2');
-  render(<CoachPassbookPage />);
-  await act(async () => {});
-  await act(async () => {});
-  expect(passbookCalls()).toEqual([expect.stringMatching(/athlete_id=ath-2$/)]);
-  expect(screen.getByRole('heading', { name: 'Ben Boxer' })).toBeTruthy();
+// Lane AS-11 (app scrub CF-23; Q3 = A): a link that names an athlete opens
+// this page on them in page memory; the address carries no athlete id, and an
+// old link that carries one opens the picker.
+describe('arriving from a link (lane AS-11)', () => {
+  afterEach(() => {
+    takeArrivalAthlete(PASSBOOK_PAGE);
+  });
+
+  test('a hand-off opens the rostered athlete it names', async () => {
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([expect.stringMatching(/athlete_id=ath-2$/)]);
+    expect(screen.getByRole('heading', { name: 'Ben Boxer' })).toBeTruthy();
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('ath-2');
+  });
+
+  test('a hand-off for an athlete not on the roster is ignored, not fetched', async () => {
+    handOffArrivalAthlete('ath-9', PASSBOOK_PAGE);
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([]);
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('');
+  });
+
+  test('a hand-off meant for another page is not taken here', async () => {
+    handOffArrivalAthlete('ath-2', PROGRESSION_INTELLIGENCE_PAGE);
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([]);
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('');
+  });
+
+  test('an athlete id in the address opens nothing', async () => {
+    window.history.replaceState(null, '', '/coach/passbook?athlete_id=ath-2');
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([]);
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('');
+  });
+
+  test('under StrictMode, with fetch honouring the abort, the hand-off opens the athlete once', async () => {
+    const answer = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await answer(input, init);
+      // As a browser does: a request whose controller was aborted rejects.
+      if (init?.signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      return response;
+    });
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    render(<StrictMode><CoachPassbookPage /></StrictMode>);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([expect.stringMatching(/athlete_id=ath-2$/)]);
+    expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('ath-2');
+  });
+
+  test('a hand-off with a roster that fails to load chooses nobody and reads no book', async () => {
+    fetchMock.mockImplementation(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response);
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([]);
+    expect(screen.getByRole('alert').textContent).toContain('This is not a statement that you have none');
+  });
+
+  test('a hand-off is taken once: the next visit opens with nobody chosen', async () => {
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    const first = render(<CoachPassbookPage />);
+    await act(async () => {});
+    await act(async () => {});
+    first.unmount();
+    fetchMock.mockClear();
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    await act(async () => {});
+    expect(passbookCalls()).toEqual([]);
+  });
 });
 
-test('?athlete_id= for an athlete not on the roster is ignored, not fetched', async () => {
-  window.history.replaceState(null, '', '/coach/passbook?athlete_id=ath-9');
-  render(<CoachPassbookPage />);
-  await act(async () => {});
-  await act(async () => {});
-  expect(passbookCalls()).toEqual([]);
-  expect((screen.getByLabelText('Which athlete') as HTMLSelectElement).value).toBe('');
+// Lane AS-11 (app scrub CF-15; Q1 = A, Q2 = A): Passbook is the athlete page.
+// Under the athlete's name, one line names the other pages that hold part of
+// their record, and each link opens its page on the athlete whose book this
+// is. The line itself is pinned in components/athleteRecordLinks.test.tsx.
+describe('the rest of the athlete\'s record (lane AS-11)', () => {
+  beforeEach(() => {
+    createPersistentRoleSession('coach');
+  });
+  afterEach(() => {
+    clearRoleSession();
+    for (const page of ATHLETE_RECORD_PAGES) takeArrivalAthlete(page);
+  });
+
+  test('a loaded book carries the line, named by the athlete, and a link hands over that athlete', async () => {
+    await open('ath-1');
+    const line = screen.getByRole('navigation', { name: 'Ana Boxer' });
+    expect(within(line).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([...ATHLETE_RECORD_PAGES]);
+    fireEvent.click(within(line).getByRole('link', { name: 'Development Plans' }));
+    expect(takeArrivalAthlete(DEVELOPMENT_PLANS_PAGE)).toBe('ath-1');
+  });
+
+  test('the line follows the book: after another pick it hands over the new athlete', async () => {
+    await open('ath-1');
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+    });
+    expect(screen.queryByRole('navigation', { name: 'Ana Boxer' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Ben Boxer' })).getByRole('link', { name: 'The Work' }));
+    expect(takeArrivalAthlete(THE_WORK_PAGE)).toBe('ath-2');
+  });
+
+  test('there is no line before a pick, while a book loads, or when it is refused, missing or unread', async () => {
+    const noLine = () => expect(screen.queryByRole('link', { name: 'Development Plans' })).toBeNull();
+    render(<CoachPassbookPage />);
+    await act(async () => {});
+    noLine();
+
+    let release = () => {};
+    holdAna = new Promise<void>((resolve) => { release = resolve; });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
+    });
+    noLine();
+    await act(async () => { release(); });
+    expect(screen.getByRole('link', { name: 'Development Plans' })).toBeTruthy();
+
+    for (const status of [403, 404, 500]) {
+      passbookResponses['ath-2'] = { status, body: {} };
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: '' } });
+      });
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-2' } });
+      });
+      noLine();
+    }
+  });
+
+  test('the line adds no athlete id to any address on the page', async () => {
+    await open('ath-1');
+    for (const link of screen.getAllByRole('link')) expect(link.getAttribute('href')).not.toContain('ath-1');
+  });
 });
 
 test('a roster that fails to load is not read as having no athletes', async () => {

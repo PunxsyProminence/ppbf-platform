@@ -59,6 +59,10 @@ export default function GymStorePage({ params }: { params: Promise<{ organizatio
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  // The gym's name, from the public list of shops (app scrub FAM-22; AS-9
+  // Q12 = A, no server change). Until it answers, or if it cannot, the
+  // heading says "Equipment" and names no gym.
+  const [gymName, setGymName] = useState('');
 
   useEffect(() => {
     void (async () => {
@@ -85,6 +89,26 @@ export default function GymStorePage({ params }: { params: Promise<{ organizatio
     })();
   }, [organizationId]);
 
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBase()}/api/public/store`, { method: 'GET', credentials: 'omit' });
+        if (!response.ok) return;
+        const payload = (await response.json().catch(() => ({}))) as {
+          stores?: Array<{ organization_id?: string; organization_name?: string }>;
+        };
+        const name = payload.stores?.find((store) => store.organization_id === organizationId)?.organization_name?.trim();
+        if (live && name) setGymName(name);
+      } catch {
+        // The heading stays "Equipment"; the products read is the page.
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [organizationId]);
+
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-10 text-[var(--black)]">
       <div className="mx-auto max-w-3xl">
@@ -95,11 +119,20 @@ export default function GymStorePage({ params }: { params: Promise<{ organizatio
           &larr; All shops
         </Link>
 
-        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Equipment</h1>
+        <h1 className="mt-2 font-display text-3xl font-black tracking-tight">
+          {gymName ? `${gymName} Equipment` : 'Equipment'}
+        </h1>
         <p className="mt-2 text-sm leading-6 text-[var(--gray-dark)]">
           Every purchase supports the gym. Checkout is handled by our payment provider &mdash; your
           card details are never entered on this site.
         </p>
+
+        {/* Not blank while the read is out (app scrub FAM-22). */}
+        {!isLoaded ? (
+          <p className="mt-6 text-sm leading-6 text-[var(--gray-dark)]" role="status">
+            Loading this gym&apos;s shop...
+          </p>
+        ) : null}
 
         {errorMessage ? (
           <p className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm">
