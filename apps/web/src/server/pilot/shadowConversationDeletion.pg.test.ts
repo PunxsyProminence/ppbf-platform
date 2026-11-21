@@ -228,11 +228,24 @@ async function seedPeople(db: Client): Promise<void> {
     `insert into pilot.account_profiles (organization_id, account_id, display_nickname) values ($1, $2, 'Lightning')`,
     [ORG, MEMBER],
   );
-  // A staff member whose only full name on record is the volunteer record
-  // staff provisioning links to their account.
+  // A staff login whose only full name on record is a linked volunteer
+  // record (staff provisioning links one to every volunteer login; the read
+  // does not look at the role, so a coach login stands in here).
   await db.query(
     `insert into pilot.volunteers (organization_id, volunteer_id, account_id, full_name, role)
      values ($1, 'vol-hf7', $2, 'Pat Rowan', 'coach')`,
+    [ORG, STAFF],
+  );
+  // And a labelling-station name they chose themselves, different from the
+  // volunteer record's, so each source is the only one for its name.
+  await db.query(
+    `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag)
+     values ($1, $2, 'coach', true)`,
+    [STAFF, ORG],
+  );
+  await db.query(
+    `insert into pilot.labeller_credentials (organization_id, account_id, display_name, pin_hash)
+     values ($1, $2, 'Ace Marlow', 'scrypt$test')`,
     [ORG, STAFF],
   );
   await db.query(
@@ -951,18 +964,18 @@ describe('T2b: what arrives at the edges', () => {
     expectNoNames(kept[0].content, ['Jordan', 'Pike', 'Lightning', 'Dana', 'Morgan', 'Quill']);
   });
 
-  test('a staff member\'s own chat loses the name on their volunteer record', async () => {
+  test('a staff member\'s own chat loses their volunteer-record and labelling-station names', async () => {
     const staffActor: ActorIdentity = { accountId: STAFF, role: 'coach', organizationId: ORG, athleteId: null };
     const target = await seedConversation(mainDb, {
       organizationId: ORG, accountId: STAFF, role: 'coach',
-      userWords: 'session plan', replyWords: 'Pat Rowan, open with footwork and keep the rounds short.',
+      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station), open with footwork and keep the rounds short.',
     });
     await expect(deleteOwnConversation!(staffActor, target.conversationId)).resolves.toBe(true);
     const keptId = await keptCopy(mainDb, target);
     expect(keptId).not.toBeNull();
     const kept = await messagesOf(mainDb, keptId!);
     expect(kept).toHaveLength(1);
-    expectNoNames(kept[0].content, ['Pat', 'Rowan']);
+    expectNoNames(kept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow']);
   });
 });
 
@@ -1119,7 +1132,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     // on record is their volunteer record.
     const legacyStaff = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: STAFF, role: 'coach', deletedAgo: '3 days',
-      userWords: 'session plan', replyWords: 'Pat Rowan, open with footwork and keep the rounds short.',
+      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station), open with footwork and keep the rounds short.',
     });
     const live = await seedConversation(sweepDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     // Flagged, past two years, and no name on record: nothing can be
@@ -1234,7 +1247,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     expect(staffKeptId).not.toBeNull();
     const staffKept = await messagesOf(sweepDb, staffKeptId!);
     expect(staffKept).toHaveLength(1);
-    expectNoNames(staffKept[0].content, ['Pat', 'Rowan']);
+    expectNoNames(staffKept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow']);
     for (const cleared of [expired, expiredEscalated, legacy, legacyGuardian, legacyCoach]) {
       const keptId = (await keptCopy(sweepDb, cleared))!;
       await expectDayTimes(sweepDb, 'shadow_chat_sessions', 'conversation_id', keptId,
