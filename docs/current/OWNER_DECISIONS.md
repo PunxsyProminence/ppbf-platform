@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-21-007 | 2026-11-21 | OW27-38 to OW27-44: athlete email address, email defaults, room renaming, stop-rule and safety-status words, Backbone Overwatch 28's home | RECONSTRUCTED |  |  |
+| OD-2026-11-21-006 | 2026-11-21 | OW27-17 to OW27-37: W4 items 2 to 7 (web push, floor line, parent messages, class plans, stopped coming, live-floor saves) and the restart limit | RECONSTRUCTED |  |  |
 | OD-2026-11-21-005 | 2026-11-21 | Backbone Overwatch 28 runs in Claude Science; SHADOW build order: hard floor first, learning tracks beside | RECONSTRUCTED |  |  |
 | OD-2026-11-21-004 | 2026-11-21 | SHADOW REVIEW lane answers: eighteen cards and typed answers, and who wrote the two SHADOW lane prompts | RECONSTRUCTED |  | yes |
 | OD-2026-11-21-003 | 2026-11-21 | HF lanes: start the two hard-floor fix lanes; Ask SHADOW and SHADOW-deletion wording is option A | PRIMARY |  |  |
@@ -639,6 +641,396 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-21-007 -- OW27-38 to OW27-44: athlete email address, email defaults, room renaming, stop-rule and safety-status words, Backbone Overwatch 28's home
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone thread, not in this transcript. Copied by script from `CARDS_OW27.md` (OneDrive, PPBF-AI-Lanes, Research/Backbone/working/overwatch; sha256[:16] `6860d3fc2cc048e4` when read 2026-11-21), from the heading "## Batch 4:" to the end of the file, unchanged. What is uncertain: the card file is Backbone's record of his answers, written by someone else. New; edits no earlier entry's text.
+
+```text
+## Batch 4: from App Overwatch's 15:54Z note (TO_BACKBONE.md) and the stopping point (OW27-38 to OW27-44), 2026-11-20 US Eastern
+
+Already-answered check, before asking: W4_SIZING.md on main after #2050 (blob 1c84b6f030) for Q1.11, Q1.12, Q9.1 and Q9.2; #2027 and #2041 bodies and comments for the two word items; OD on main (to OD-2026-11-20-002), CARDS_OW24-27 (with batch 3 and OW27-37). Found: Q9.1 partly answered by OW27-11 and OW27-15 (quoted on the card; the sizing's option C left out). Nothing else answered.
+
+## OW27-38 (header 'Athlete email'), 2026-11-20 ~12:10 US Eastern
+Question, as shown:
+Official (OW27-38, W4 Q1.11, lane W4R #2050): Where does an athlete 18 or over get an email address for the opt-in email? Already ruled, not asked again: athletes 18 or over may opt in (OW27-02 C); email text "Only 'open the app'" (OD-2026-11-19-009). No address exists for athletes today (W4_SIZING). Checked, not answered in: OD on main (to OD-2026-11-20-002), CARDS_OW24-27, #2050. Outside: M3AAWG Sender Best Common Practices v4.0 (27 Aug 2026) calls confirmed opt-in the best practice; single opt-in lets typos onto a list. Source: W4_SIZING.md item 1 on main (blob 1c84b6f030). The sizing recommends A; Overwatch recommends B on the outside source.
+Plain: Adult athletes have no email in the app. How should they add one?
+
+Options, in the order shown:
+1. "B: Typed, then confirmed with a code (Recommended)": Used only after the athlete enters a code the app emails to it. Picking B also allows that one code email to say more than 'open the app'. One more PR, about 150 lines, maybe a migration. Pros: The address is known to be theirs; the outside best practice. Cons: One more step for the athlete; a little more build.
+2. "A: Typed beside their switch, no confirm": The sizing's pick. Item 1 about 2,140 lines, 7 PRs. Pros: Smallest; every email stays 'open the app'. Cons: A mistyped address gets the emails until fixed.
+3. "C: The gym office enters it": On Gym Office; the athlete keeps the switch. About the size of A. Pros: Staff can check it in person. Cons: Office work; the athlete cannot change it alone.
+4. "D: None for now": No athlete email parts; adults get nothing until a source exists. About 2,000 lines. Pros: Less to build. Cons: Undoes the adult part of OW27-02 C in practice.
+
+Jason's answer: "B: Typed, then confirmed with a code (Recommended)"
+As recommended by Overwatch (the sizing recommended A). The adult athlete types the address beside their switch; it is used only after they enter a code the app emails to it. That one code email may say more than 'open the app' (a narrow exception to OD-2026-11-19-009's alert wording, by this answer). Item 1 grows by one PR, about 150 lines, maybe a migration (W4_SIZING).
+
+## OW27-39 (header 'Email defaults'), 2026-11-20 ~12:10 US Eastern
+Question, as shown:
+Official (OW27-39, W4 Q1.12, #2050): When a gym first gets the email settings, which events start turned on? Already ruled, not asked again: the gym picks the events per user type and each person has one switch (OW27-10 A); email is opt-in per person (OD-2026-11-19-019); a parent's new message is on the list (OW27-25 A). The list itself is App Overwatch's reading of OW27-01 (Q1.9 on #2050, not your words): staff get safety escalations and parent replies; parents get new family notes; athletes 18 or over get a coach's message; everyone gets gym announcements. Checked, not answered in: OD on main (OW27-01's reading says the starting set is "not stated"), CARDS_OW24-27, #2050. INFERRED: a ticked event still reaches only people who switched email on. Source: W4_SIZING.md item 1 on main.
+Plain: Before the gym admin changes anything, which alert emails are allowed?
+
+Options, in the order shown:
+1. "A: All ticked; each person still opts in (Recommended)": Every event starts on; nobody gets email unless they switched it on. About the same size (INFERRED). Pros: A person who switches email on gets alerts straight away. Cons: An admin who wants fewer must untick them.
+2. "B: Safety escalations only": Only staff safety escalations start on. Pros: Most important first; fewer emails. Cons: A parent who switches on gets nothing until the admin ticks more.
+3. "C: None ticked": The sizing's assumption. Pros: The gym chooses every one. Cons: Everyone's switch does nothing until the admin acts.
+
+Jason's answer: "A: All ticked; each person still opts in (Recommended)"
+As recommended. Every event on the gym's list starts ticked; each person's own switch still starts off (opt-in, OD-2026-11-19-019).
+
+## OW27-40 (header 'Rename scope'), 2026-11-20 ~12:10 US Eastern
+Question, as shown:
+Official (OW27-40, W4 Q9.1, room renaming, lane W4R #2050): What can a gym rename? Already answered, not asked again: on OW27-11 (the three 'Corner' labels) you wrote "these room should be able to be changed in the app by the organization to relat e to it", and OW27-15 A made "Your Profile", "Who you train with" and "Your entry" the starting names with renaming later. So those names are renamable. Open part only: the Room Map rooms and every page name. The sizing's option C (rooms only, card names fixed) is not offered, because it would undo OW27-11. Checked in: OD on main, CARDS_OW24-27, #2050. Source: W4_SIZING.md item 9 on main (blob 1c84b6f030).
+Plain: Besides the names you already said gyms can change, what else can a gym rename?
+
+Options, in the order shown:
+1. "A: Those names plus the Room Map rooms (Recommended)": #2029's 17 Room Map rooms (and the 7 rooms while their names still show), the OW27-15 names and 'My Corner' (INFERRED). About 1,090 lines, 4 PRs. Pros: A gym's rooms read in its own words; each menu label still matches its page title. Cons: Other page names stay fixed.
+2. "B: A plus every page name (144)": About 700 to 1,000 more lines in 3 more PRs; the title test is rebuilt. Pros: Every name can change. Cons: Biggest; more to test.
+3. "C: Only the names already answered": The OW27-15 names and 'My Corner'; Room Map rooms keep theirs. Not sized; smaller than A (INFERRED). Pros: Least work. Cons: Room Map rooms cannot match the gym's words.
+
+Jason's answer: "A: Those names plus the Room Map rooms (Recommended)"
+As recommended. Matches W4_SIZING Q9.1 A (sized: about 1,090 lines, 4 PRs). The sizing's option C was not offered (it would undo OW27-11); this card's C is a different option.
+
+## OW27-41 (header 'Old names'), 2026-11-20 ~12:10 US Eastern
+Question, as shown:
+Official (OW27-41, W4 Q9.2, #2050): Does Search find a renamed page or room by its old name? Checked, not answered in: OD on main, CARDS_OW24-27, #2050. The app has a test written because "the catalog search found a page by a name the page never showed" (doorLabelsMatchTitles.test.ts:7-9, per W4_SIZING). Source: W4_SIZING.md item 9 on main.
+Plain: If a gym renames "Your Profile", should searching "Your Profile" still find it?
+
+Options, in the order shown:
+1. "A: No; Search uses the shown name (Recommended)": Search matches the name shown and the existing keywords. Sized this way. Pros: Search never shows a page by a name it does not display. Cons: Someone who learned the old name must learn the new one.
+2. "B: Yes; the old name stays a search word": About 20 more lines. Pros: Old habits still work. Cons: Search shows a page for a name it does not show.
+
+Jason's answer: "A: No; Search uses the shown name (Recommended)"
+As recommended.
+
+## OW27-42 (header 'Stop-rule words'), 2026-11-20 ~12:10 US Eastern
+Question, as shown:
+Official (OW27-42, words, ED-UI PR4 #2027, not blocking): Beside the stop-rule list's one "Looks right" press, the screen says, and a screen reader reads: "Confirms all of this drill's own stop rules and their kinds, including those under Before contact or maximal effort." Built with the lane's words; Overwatch on #2027: "Jason may change the words later; they go on his words card after this PR." Checked: no earlier words for this line (OD on main, CARDS_OW24-27). Source: #2027 body and comment of 15:51Z.
+Plain: Are these the right words beside the coach's stop-rule "Looks right" button?
+
+Options, in the order shown:
+1. "A: Keep these words (Recommended)": No change. Pros: Says exactly what the press does; built and tested. Cons: Long for one line.
+2. "B: Shorter, same meaning": "Confirms this drill's own stop rules and kinds, including Before contact or maximal effort." Pros: Shorter; keeps 'own'. Cons: A small change to built text.
+
+Jason's answer: "A: Keep these words (Recommended)"
+As recommended. The #2027 words stand; no change.
+
+## OW27-43 (header 'Safety status'), 2026-11-20 ~12:10 US Eastern
+Question, as shown:
+Official (OW27-43, words, Athlete Safety status line, #2041 Q-B5, not blocking): The approved stage 2 design (section 3.5) puts "status at the top with a glyph and a word for each state" on each job page. On Athlete Safety it is not built (#2041 Q-B5 A) because the app has no words for "no hold" or a count of open injuries; those words are yours. Binding (pack file 02): an unknown value never looks complete or zero; colour is never the only signal; a medical-stop mark means only that. The app already says "Unknown is not 'no hold'" (#2041). Checked: no earlier words (OD on main, CARDS_OW24-27).
+Plain: What should the top line of an athlete's safety page say when there is no training hold, and how should it count open injuries?
+
+Options, in the order shown:
+1. "A: "No training hold" · "2 open injury reports" (Recommended)": Zero reads "No open injury reports"; not yet read reads "Hold not read yet" and "Injury reports not read yet". Pros: Names each state plainly; 'report' says it is not a diagnosis; never says 'clear' (INFERRED: could be mistaken for the separate clearance record). Cons: A longer line.
+2. "B: "Hold: none" · "Open injuries: 2"": Short labels. Pros: Fits a tablet line. Cons: 'none' can read as an all-clear at a glance (INFERRED).
+3. "C: Do not build the line": Keep the Training Hold section first, as built. Pros: No new words. Cons: The page differs from the approved stage 2 design.
+
+Jason's answer: "A: "No training hold" · "2 open injury reports" (Recommended)"
+As recommended. Words for the Athlete Safety status line: "No training hold"; "N open injury reports" (zero: "No open injury reports"); unread: "Hold not read yet" and "Injury reports not read yet". The line can now be built (stage 2 section 3.5).
+
+## OW27-44 (header 'OW28 account'), 2026-11-20 ~12:10 US Eastern
+Question, as shown:
+Official (OW27-44): STATUS line 634 records your words to Claude Code at 16:17Z: "stop using fable pick the best modle for the job, i want to get to a stopping point, then we will hand over to anothe claude account to keep building". STATUS line 630 (REPORTED): weekly usage 80%, "At this pace you'll run out tonight, before Tuesday's reset" (Tue Nov 24 10:00). Not known here: whether this Claude Science app uses that same weekly limit (UNVERIFIED). Where should Backbone Overwatch 28 run?
+Plain: Should the next Overwatch run here, on the new account, or wait?
+
+Options, in the order shown:
+1. "A: Here in Claude Science, as now (Recommended)": Folder grants, GitHub token and files are already set up here; a visit is a few tool calls. Pros: Starts now; checks the stopping-point merges. Cons: If this account runs out, it stops until Tuesday's reset.
+2. "B: On the new account, once set up": Same account as the builders. Pros: Runs on the account doing the work. Cons: Folders, token and profile must be set up there first; not checked here.
+3. "C: Pause until the new account is building": No Overwatch until building restarts. Pros: No usage while nothing is building. Cons: Stopping-point merges are not checked against the frozen data until then.
+
+Jason's answer: "A: Here in Claude Science, as now (Recommended)"
+As recommended. Backbone Overwatch 28 runs here in Claude Science.
+```
+
+**Ruling:** each card's answer stands as recorded above ("Jason's answer" lines). Together with OD-2026-11-21-006 this answers the last open W4 questions (Q1.11 by OW27-38; Q9.1 and Q9.2 by OW27-40 and OW27-41).
+**Status:** recorded 2026-11-21 by PR.
+
+---
+
+## OD-2026-11-21-006 -- OW27-17 to OW27-37: W4 items 2 to 7 (web push, floor line, parent messages, class plans, stopped coming, live-floor saves) and the restart limit
+
+**Provenance: RECONSTRUCTED.** Jason answered these cards in the Backbone thread, not in this transcript. Copied by script from `CARDS_OW27.md` (sha256[:16] `6860d3fc2cc048e4` when read 2026-11-21), from the heading "## Batch 3: W4 items 2 to 7" up to "## Batch 4:", unchanged: the batch's already-answered check, each card's text, options in the order shown, his answer and Backbone's note, the batch summary, and OW27-37. What is uncertain: the card file is Backbone's record of his answers, written by someone else. New; edits no earlier entry's text.
+
+```text
+## Batch 3: W4 items 2 to 7 (OW27-17 to OW27-36), 2026-11-20 US Eastern
+
+Already-answered check, before asking (Jason, OW27-16 and SH-05): W4_SIZING.md on main (blob 10ead55ad0), each of the 19 open questions (Q2.1-Q2.2, Q3.1-Q3.5, Q4.1, Q4.3-Q4.5, Q5.1-Q5.2, Q6.1-Q6.4, Q7.1-Q7.2) searched by topic in docs/current/OWNER_DECISIONS.md on main (blob 6c95120322, read whole through the git blob API, to OD-2026-11-20-002), CARDS_OW24.md to CARDS_OW27.md, STATUS.md, TO_BACKBONE.md, the findings files dated 2026-11-1x and 2026-11-20, the BUILD-PLAN files in Documents\PPBF-overwatch, and App Overwatch's W4_ALREADY_RULED_CHECK_2026-11-20.md (132000c4de1e76ed). Result: no answer to any of the 19; the answered parts of Q3.2, Q3.5, Q4.3, Q4.5, Q6.3 and Q7.1 are quoted on their cards. Not asked: Q-SF-1 (Wi-Fi drop frequency), already answered as a fact in OD-2026-11-19-009 ("depends on which system we use"); Q4.2 and Q8.2 (ruled, batch 1). A search, not a full read of every file.
+
+## OW27-17 (header 'Push tablet'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-17, W4 Q2.1, for when web push starts): On a shared gym tablet, may a person turn on web push? Already ruled, not asked again: web push is "later" (OD-2026-11-19-019); alert text "Only 'open the app'" (OD-2026-11-19-009); the tablet signs out after 1 hour idle, gym admin adjustable (Q5, OW25-53 A). Already-answered check today (OD on main to OD-2026-11-20-002, CARDS_OW24-27, STATUS, TO_BACKBONE, findings): open. Outside: on iPad, web push works only for a web app added to the Home Screen, and permission must come from a tap (WebKit, webkit.org/blog/13878). Source: W4_SIZING.md item 2 on main.
+Plain: Should the gym tablet be allowed to get "open the app" pop-ups for whoever turned them on?
+
+Options, in the order shown:
+1. "A: Allowed; ends at sign-out (Recommended)": Like any device; the push subscription is removed at sign-out, including the 1-hour idle sign-out. No new restriction. Size unchanged: item 2 about 890 lines, 3 PRs. Pros: No new rule (RULES s1); same path as phones; content-free text limits what a passer-by sees. Cons: A pop-up on a shared tablet does not say who it is for; on iPads it works only if the gym adds the app to the Home Screen.
+2. "B: No push on a gym tablet": A device marked as a gym tablet never offers push. A new restriction, so only on your direction. Small extra check, not sized. Pros: No pop-ups on a shared screen; nothing to clean up at sign-out. Cons: New restriction; a coach using the floor tablet gets no push there.
+
+Jason's answer: "B: No push on a gym tablet"
+Against the recommendation. This is the new restriction, by Jason's direction (RULES s1 allows it when the owner directs it): a device marked as a gym tablet never offers web push.
+
+## OW27-18 (header 'Push events'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-18, W4 Q2.2): Does web push use the same events and limits as the email? Already ruled for email, not asked again: the gym picks the events per user type and each person has one switch (OW27-10 A; OW27-01, OW27-04); one email per event (OW27-03 B); none to a switched-off account (OW27-08 A). Already-answered check today: open for push. Source: W4_SIZING.md item 2 on main.
+Plain: Should phone pop-ups follow the same gym settings as the emails, or have their own list?
+
+Options, in the order shown:
+1. "A: Same settings as the email (Recommended)": Push follows the gym's event picks, one per event, none to switched-off accounts. Sized: about 890 lines, 3 PRs. Pros: One settings page; nothing new to learn. Cons: Push cannot be used for an event that does not email.
+2. "B: Its own list": A second events list for push on the gym settings page. Not sized. Pros: Push could be kept for urgent events only. Cons: Two lists to keep straight; more build.
+
+Jason's answer: "A: Same settings as the email (Recommended)"
+As recommended.
+
+## OW27-19 (header 'Floor now'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-19, W4 Q3.1): What counts as "on the floor now" for the live line? Already ruled, not asked again: the line goes on every home, parents see only their own child, built as a FUTURE lane with a privacy review (OD-2026-11-19-009, Q12 A). Today's rule: a run-presence mark is not attendance (CT-13, ATTENDANCE_PRECEDENCE.md); this line is not an attendance figure. Already-answered check today: open. Source: W4_SIZING.md item 3 on main (about 640 lines, 4 PRs).
+Plain: When does the app say someone is on the floor right now?
+
+Options, in the order shown:
+1. "A: Marked here in a running session (Recommended)": Only the live session record counts; the line clears when the session ends. Pros: The only record that is live; clears itself; no attendance figure changes. Cons: If a coach does not run the session in the app, nobody shows.
+2. "B: Present on today's class register": A present mark on today's register counts. Pros: Works when the coach only takes the register. Cons: May still show someone after they have gone home (INFERRED: the register has no end time).
+3. "C: Either one": Either record counts. Pros: Catches both ways of marking. Cons: Has B's may-still-show problem.
+
+Jason's answer: "C: Either one"
+Against the recommendation. Either a here mark in a running session or a present mark on today's register shows a person on the floor. The card's con stands for the build to handle: a register mark has no end time (INFERRED).
+
+## OW27-20 (header 'Parent view'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-20, W4 Q3.2): What does a parent see on the live line? Already ruled, not asked again: "parents see only their own child" (OD-2026-11-19-009, Q12 A). Open part only: also show the class and the time it started? Outside: the UK children's code (ICO; not US law, a design reference) says a service that lets a parent monitor a child should show the child an obvious sign (ico.org.uk, code standards). Source: W4_SIZING.md item 3 on main.
+Plain: Should the parent's line say only "your child is on the floor", or also which class and when it started?
+
+Options, in the order shown:
+1. "A: Own child's line only (Recommended)": A line for each of their own children on the floor now; nothing about anyone else. Pros: Least data about a minor; exactly the ruled part. Cons: Parent does not see which class or when it started.
+2. "B: A, plus class and start time": Adds the class name and the time it started. Not sized separately. Pros: Helps with pickup timing. Cons: More about a minor's whereabouts on a phone that may be shared.
+
+Jason's answer: "A: Own child's line only (Recommended)"
+As recommended.
+
+## OW27-21 (header 'Coach view'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-21, W4 Q3.3): What do coaches and admins see on the live line? Already-answered check today: open. Coaches can already read every athlete in their gym (access.ts:398-401, per W4_SIZING). Source: W4_SIZING.md item 3 on main.
+Plain: Should coaches see the names of who is on the floor, or just how many?
+
+Options, in the order shown:
+1. "A: Names of everyone on the floor (Recommended)": Names of all athletes on the floor now. Adds no new access. Pros: Coaches know who is here, for safety and the head count. Cons: Names on a screen others may see over a shoulder.
+2. "B: A count only": Just the number. Pros: Less on screen. Cons: Coach cannot tell who is here without opening the class.
+
+Jason's answer: "A: Names of everyone on the floor (Recommended)"
+As recommended.
+
+## OW27-22 (header 'Athlete view'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-22, W4 Q3.4): What does an athlete see on the live line? Already-answered check today: open. The public wall already shows today's head count. Source: W4_SIZING.md item 3 on main.
+Plain: Should an athlete see only their own line, or also how many people are on the floor?
+
+Options, in the order shown:
+1. "A: A line about themselves only (Recommended)": Their own status; nothing about others. Pros: Nothing about anyone else. Cons: No sense of how busy the floor is.
+2. "B: A, plus how many are on the floor": Adds a number, no names. Small extra, not sized. Pros: A count shows no names; the wall already shows today's head count. Cons: A little more build.
+
+Jason's answer: "A: A line about themselves only (Recommended)"
+As recommended.
+
+## OW27-23 (header 'Privacy sign'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-23, W4 Q3.5): Who signs off the privacy review (FN-0) before the live line is built (FN-1)? Already ruled, not asked again: a privacy review is required ("FUTURE lane with a privacy review", OD-2026-11-19-009). Open part only: who signs. Outside: the UK children's code expects the privacy assessment (a DPIA, data protection impact assessment) to build in its standards (ico.org.uk, code standards; a design reference). Source: W4_SIZING.md item 3 on main.
+Plain: Who says yes to the privacy check before the "on the floor now" line is built?
+
+Options, in the order shown:
+1. "A: Jason (Recommended)": You read one review file and approve or send it back. Pros: It decides what minors' data each home shows; that is an owner call. Cons: One more file for you to read; item 3 waits on it.
+2. "B: Overwatch, after two reviewers pass it": The way content drafts are handled (OD-2026-11-15-011). Pros: Does not wait on you. Cons: What minors' data the homes show is settled without you reading it.
+
+Jason's answer: "B: Overwatch, after two reviewers pass it"
+Against the recommendation. FN-0 is signed off by Overwatch once two adversarial reviewers pass it, the way content drafts are handled (OD-2026-11-15-011); Jason does not read it first.
+
+## OW27-24 (header 'Parent msg'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-24, W4 Q4.1): What does FAM-09 (a parent starts a message to the coach) build? In completion per OW26-02 C. Already-answered check today: open. Outside: SafeSport's MAAPP requires adult-to-minor electronic messages to be open and transparent, with another adult copied (2025 MAAPP, uscenterforsafesport.org); a parent-to-staff thread is adult to adult, so that rule does not bind it (INFERRED). Source: W4_SIZING.md item 4 on main.
+Plain: What should a parent be able to do to message the coach?
+
+Options, in the order shown:
+1. "A: A message box on the Parent Hub (Recommended)": Compose box on the Messages tab; the parent's message sits with the coach's notes and the coach answers under it. About 970 lines, 3 PRs, 1 migration. Pros: What the scrub called for; one place for the conversation. Cons: Largest of the three; staff get one more place to watch.
+2. "B: Staff reply under Observations notes": No new box; staff answer under a parent's existing Observations note, and the parent sees it there. About 880 lines, 3 PRs. Pros: Uses what parents already do. Cons: A parent can only start with an observation, not a question.
+3. "C: Nothing to build": Observations and Report a Barrier already exist; the empty Messages tab would point to them. 0 lines. Pros: No build. Cons: No real two-way thread; the scrub's FUTURE item stays open.
+
+Jason's answer: "A: A message box on the Parent Hub (Recommended)"
+As recommended.
+
+## OW27-25 (header 'Msg email'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-25, W4 Q4.3): Can a parent's new message send the email alert? Already ruled, not asked again: the gym picks which events send email, per user type, and each person has one switch (OW27-10 A; OW27-01 "it should be settings for the gym"). Open part only: is "a parent's new message" one of the events the gym can pick? Source: W4_SIZING.md item 4 on main (its option A: "yes, to staff who opted in").
+Plain: Should "new message from a parent" be one of the email choices on the gym's settings page?
+
+Options, in the order shown:
+1. "A: Yes, the gym can pick it (Recommended)": If the gym turns this event on, staff who switched email on get 'open the app' when a parent writes. Pros: Messages do not sit unread; follows your settings answer. Cons: Item 1 handles one more event (small).
+2. "B: No, in the app only": A parent's message never sends email. Pros: Fewer emails. Cons: A parent's message waits until a coach opens the app.
+
+Jason's answer: "A: Yes, the gym can pick it (Recommended)"
+As recommended. Narrowed from W4_SIZING Q4.3 because OW27-10 A already put the event list in the gym's settings.
+
+## OW27-26 (header 'Reply place'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-26, W4 Q4.4): Where do coaches answer a parent's message? Already-answered check today: open. Source: W4_SIZING.md item 4 on main.
+Plain: Where in the app does a coach read and answer parents?
+
+Options, in the order shown:
+1. "A: Decision Loop 'From the family' (Recommended)": Where coaches read parents' notes today. Pros: Existing place; no clash with lane U2's coach-home file. Cons: Not on the coach home.
+2. "B: Coach home, beside the alerts": An inbox on the coach home. Not sized. Pros: Seen first thing. Cons: Edits CoachWorkspace.tsx, which lane U2 owns: waits on U2.
+
+Jason's answer: "A: Decision Loop 'From the family' (Recommended)"
+As recommended.
+
+## OW27-27 (header 'Unread count'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-27, W4 Q4.5): Whose unread count goes up when a parent sends a message? Already-answered check today: open; by analogy only, a SHADOW safety alert reaches the assigned coach, covering coaches and admins (OD-2026-10-01-008 section 3). Any staff member can already read every note type (route.ts:31-32); this changes only who is nudged, not who can read. Source: W4_SIZING.md item 4 on main.
+Plain: Who gets the little unread number when a parent writes?
+
+Options, in the order shown:
+1. "A: Child's coach, covering coaches, admins (Recommended)": Same people a SHADOW safety alert reaches. Pros: The people responsible are nudged. Cons: Other coaches are not nudged (they can still read it).
+2. "B: Every coach in the gym": Everyone's count goes up. Pros: Nobody misses it. Cons: Counts for kids they do not coach; counts get ignored.
+
+Jason's answer: "A: Child's coach, covering coaches, admins (Recommended)"
+As recommended.
+
+## OW27-28 (header 'Plan blocks'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-28, W4 Q5.1): When a coach builds a session plan, what can they add? Already-answered check today: open. Related: OW27-09 B ("a new drill for every line") turns typed lines into library drills. Source: W4_SIZING.md item 5 on main (about 1,150 lines, 4 PRs for A; B and C not sized).
+Plain: What can a coach put into a class plan?
+
+Options, in the order shown:
+1. "A: A library drill, as a new block (Recommended)": Pick a drill from the library; it becomes a block. Pros: Every block points at a library drill, like OW27-09 B; sized. Cons: No teaching-minute or transition blocks.
+2. "B: A, plus copy a block from another plan": Also reuse a block from an existing plan. Not sized. Pros: Reuse a good block fast. Cons: More to build.
+3. "C: A, plus a text block (teach, reset, transition)": Uses block kinds that already exist in the database. Not sized. Pros: Matches how classes really run. Cons: Free text has no drill behind it; more to build.
+
+Jason's answer (free text): "which is the most veritile"
+Free text: a question back. Answered on OW27-36.
+
+## OW27-36 (header 'Plan blocks 2'), 2026-11-20 ~11:05 US Eastern
+Question, as shown:
+Official (OW27-36, W4 Q5.1, follow-up to OW27-28, where you asked "which is the most veritile"): None of the three offered options is the most versatile alone; B (copy a block) and C (text block) each add one thing to A (library drill), and neither includes the other. Most versatile: all three. Of the two add-ons, the text block adds more for running a real class, because teaching, reset and transition minutes are not drills and those block kinds already exist in the database (INFERRED; W4_SIZING cites the migration, lines 84-86). Sizes: drill only about 1,150 lines, 4 PRs; the add-ons are not sized, so Claude Code sizes your pick.
+Plain: The most flexible is all three. Which do you want?
+
+Options, in the order shown:
+1. "A: All three: drill, copied block, text block (Recommended)": The most versatile. Not sized; Claude Code sizes it. Pros: Coaches can build any real class and reuse good blocks. Cons: Largest; text blocks have no drill behind them.
+2. "B: Drill plus text block": Was option C on OW27-28. Pros: Covers teaching, reset and transition minutes; uses existing block kinds. Cons: No copying blocks between plans.
+3. "C: Drill plus copied block": Was option B on OW27-28. Pros: Fast reuse of a good block. Cons: No non-drill minutes.
+4. "D: Drill only": Was option A on OW27-28. Sized: about 1,150 lines, 4 PRs. Pros: Smallest; every block is a library drill. Cons: Least flexible.
+
+Jason's answer: "A: All three: drill, copied block, text block (Recommended)"
+As recommended. Settles W4 Q5.1: library drill, copied block and text block. Item 5 needs re-sizing (the add-ons were not sized).
+
+## OW27-29 (header 'Class plan'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-29, W4 Q5.2): What does "schedules a class from it" keep? Already-answered check today: open. Source: W4_SIZING.md item 5 on main.
+Plain: When a coach schedules a class from a plan, does the class remember the plan?
+
+Options, in the order shown:
+1. "A: Class keeps the plan; Start runs it (Recommended)": The scrub's wording: 'a class that carries its session plan ahead of time'. Adds 1 migration. Pros: Plan ahead; Start on the class screen opens that plan. Cons: One migration; waits on U2's class-screen PRs.
+2. "B: Plan only fills the form": Title and length are copied; nothing is kept. Pros: No migration. Cons: The coach picks the plan again at the start.
+
+Jason's answer: "A: Class keeps the plan; Start runs it (Recommended)"
+As recommended.
+
+## OW27-30 (header 'Gap length'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-30, W4 Q6.1): How long without coming puts an athlete on the "who has stopped coming" list? Already-answered check today: open. Outside: retention vendors (adult commercial gyms; vendor blogs, not peer-reviewed; no youth or boxing evidence found) commonly flag after 2 weeks with no visits; one blog's claim that cancellation risk jumps from 8% to 48% after 14 days names no source (UNVERIFIED). Your pattern: gym settings (OW27-01, OW27-04; tablet sign-out "1 hr for now"). Option A is new, not in the sizing. Source: W4_SIZING.md item 6 on main.
+Plain: How long can someone be away before the coach's list shows them?
+
+Options, in the order shown:
+1. "A: Gym setting, first value 2 weeks (Recommended)": The admin can change it, like the tablet sign-out time. Small extra build (INFERRED, not sized). Pros: The gym tunes it; 2 weeks matches common practice. Cons: A bit more build; holidays put many on the list.
+2. "B: Fixed 3 weeks": The sizing's pick: three missed weekly classes. Pros: Sized; fewer holiday false alarms. Cons: Later than the usual 2-week trigger.
+3. "C: Fixed 2 weeks": Earliest fixed value. Pros: Matches vendor practice. Cons: More names after short breaks.
+4. "D: Fixed 30 days": Latest fixed value. Pros: Fewest names. Cons: Late; retention sources say act earlier.
+
+Jason's answer: "A: Gym setting, first value 2 weeks (Recommended)"
+As recommended. New option (not in W4_SIZING): a gym setting the organization admin can change; first value 2 weeks. Item 6 needs the setting added to its size.
+
+## OW27-31 (header 'Who listed'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-31, W4 Q6.2): Who can appear on the "who has stopped coming" list? Already-answered check today: open. Source: W4_SIZING.md item 6 on main.
+Plain: Should the list only include active members who have come before?
+
+Options, in the order shown:
+1. "A: Active members seen at least once (Recommended)": Active membership and present at least once before. Pros: Skips people who signed up and never came, or have left. Cons: Never-came sign-ups need a different check.
+2. "B: Everyone on the roster": Every athlete on the roster. Pros: Nobody missed. Cons: Lists people who never came or have left.
+
+Jason's answer: "A: Active members seen at least once (Recommended)"
+As recommended.
+
+## OW27-32 (header 'Open gym'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-32, W4 Q6.3): On this page only, does an open-gym "here" mark count as coming? Already ruled, not asked again: one system of record for attendance (OD-2026-09-28-008); a run-presence mark is not attendance (CT-13, ATTENDANCE_PRECEDENCE.md); Overwatch's 2026-10-13 note says a mark "feeds NO attendance report". Open part only: a page-only exception. Source: W4_SIZING.md item 6 on main.
+Plain: If an athlete only comes to open gym, should the "stopped coming" list leave them off?
+
+Options, in the order shown:
+1. "A: Yes, on this page only (Recommended)": Open-gym marks keep an athlete off the list; no attendance figure changes. Departs from the 10-13 note, so it needs your ruling. Pros: No false 'stopped coming' for open-gym regulars. Cons: 'Came' means two things in the app.
+2. "B: Register marks only": As attendance is counted today; SC-1 about 250 lines. Pros: One meaning of 'came'; no exception. Cons: Lists athletes who only come to open gym.
+
+Jason's answer: "A: Yes, on this page only (Recommended)"
+As recommended. Jason's ruling for this page only: open-gym here marks count as coming on the stopped-coming page; no attendance figure, report, board or grant figure changes (OD-2026-09-28-008 and CT-13 stand).
+
+## OW27-33 (header 'Page actions'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-33, W4 Q6.4): What can a coach do on the "who has stopped coming" page? Already-answered check today: open. Outside: retention vendors advise a personal reach-out soon after a gap (vendor blogs, adult gyms). Source: W4_SIZING.md item 6 on main.
+Plain: Should the page just list people, or also let a coach mark "I reached out"?
+
+Options, in the order shown:
+1. "A: Read the list, open the athlete (Recommended)": About 550 lines, 2 PRs, no migration. Pros: Smallest. Cons: Two coaches may both reach out, or neither.
+2. "B: A, plus mark 'reached out'": Adds a migration and a third PR, about 200 lines more. Pros: Shows who already made contact. Cons: More build; a new record about minors.
+
+Jason's answer: "B: A, plus mark 'reached out'"
+Against the recommendation. Adds the 'reached out' mark: a migration and a third PR, about 200 lines more (W4_SIZING).
+
+## OW27-34 (header 'Save store'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-34, W4 Q7.1): Where is a failed save kept until it goes through? Already ruled, not asked again: "offline storage stays parked" (OD-2026-09-28-008); failed saves "A: small honesty fixes now, offline queue later" (OD-2026-11-19-009); offline saves are in completion (OW26-02 C); tablets "most likley two but will eventually need a mix" and Wi-Fi drops "depends on which system we use" (OD-2026-11-19-009). Outside: Safari and iPad have no Background Sync, so retries run only while the page is open (MDN/caniuse data); Safari deletes a site's stored data after 7 days of Safari use without interaction, Home Screen web apps excepted (webkit.org/blog/10218). Source: W4_SIZING.md item 7 on main (blocked on this card).
+Plain: If a save fails because the wifi dropped, where should the app hold it until it can send?
+
+Options, in the order shown:
+1. "A: In the open page; dropped at sign-out (Recommended)": Retried until it goes through or the page closes; tied to the account that made it. About 1,120 lines, 4 PRs. Pros: Nothing left on a shared tablet; same on iPad and Android. Cons: An unsent save is lost if the page is closed.
+2. "B: On the device, encrypted, wiped at sign-out": The design the PARKED row asks for. About 1,620 lines, 6 PRs, plus a privacy review. Pros: Survives a closed page or a restart. Cons: Minors' data stored on a shared tablet; Safari may delete it anyway; biggest build.
+3. "C: B for staff saves only": Never for an athlete's own entries on a shared tablet. A new restriction that falls on minors. Pros: Staff notes survive; athletes' data is never stored on the device. Cons: New restriction; two behaviours to explain.
+
+Jason's answer: "A: In the open page; dropped at sign-out (Recommended)"
+As recommended. Unblocks W4 item 7 (with OW27-35). Offline storage on the device stays parked (OD-2026-09-28-008).
+
+## OW27-35 (header 'Which saves'), 2026-11-20 ~11:00 US Eastern
+Question, as shown:
+Official (OW27-35, W4 Q7.2): Which saves get the retry? Already-answered check today: open. Source: W4_SIZING.md item 7 on main.
+Plain: Should the retry cover the live floor saves first, or every save in the app?
+
+Options, in the order shown:
+1. "A: Live floor saves first (Recommended)": 'Here' taps, run actions, staff notes, intervention log. Sized: about 1,120 lines, 4 PRs. Pros: Covers the saves made where the wifi matters. Cons: Other saves keep today's behaviour, with the honesty fixes.
+2. "B: Every save in the app": One rule everywhere. Not sized. Pros: Consistent. Cons: Much larger build.
+
+Jason's answer: "A: Live floor saves first (Recommended)"
+As recommended.
+
+## Batch 3 summary
+- Against the recommendation: OW27-17 B (no web push on a gym tablet; a new restriction by Jason's direction), OW27-19 C (either record counts as on the floor), OW27-23 B (Overwatch signs off FN-0 after two adversarial reviewers), OW27-33 B (add the "reached out" mark).
+- New or changed options: OW27-30 A (a gym setting, first value 2 weeks; not in W4_SIZING); OW27-25 narrowed to the open part after OW27-10 A; OW27-36 settles Q5.1 as all three block types.
+- Re-sizing owed (Claude Code): item 2 (gym-tablet check), item 3 (Q3.1 C), item 5 (copied and text blocks), item 6 (gym setting; reached-out mark, migration and third PR). Item 7 is unblocked (OW27-34 A, OW27-35 A).
+- All 30 W4 owner questions are now answered or ruled (batch 1: Q1.1-Q1.8, Q8.1; ruled: Q4.2, Q8.2; batch 3: the other 19).
+
+## OW27-37 (header 'Restart limit'), 2026-11-20 ~11:28 US Eastern
+Question, as shown:
+Official (OW27-37, changes A-61 for the Backbone Overwatch only; build-session limits unchanged): When should a Backbone Overwatch thread hand over? Today (A-61, Jason 2026-11-08 option B): restart past about 350 messages. Outside: (1) Chroma "Context Rot" (Hong, Troynikov, Huber, July 2025, research.trychroma.com/context-rot): all 18 models tested got less reliable as input grew, task difficulty held fixed. (2) Laban et al. 2025 (arXiv 2505.06120): 15 LLMs, average 39% drop in multi-turn versus single-turn; a wrong early turn is not recovered. (3) Anthropic, "Effective context engineering for AI agents" (2025): compaction plus notes kept in files is the main tool for long work. This thread (OBSERVED, archive): first visit about 70 messages; the 4 recorded mistakes at about messages 229-298; automatic compaction at 361; none recorded in the about 80 since. INFERRED: the risk is context size before a compaction, not the count. One thread, 4 errors: weak evidence.
+Plain: Should Overwatch keep going past 350 now that the app shrinks the context by itself, and restart later?
+
+Options, in the order shown:
+1. "A: Continue through compaction; restart by ~600 (Recommended)": Restart at a clean point after about 600 messages or after the second automatic compaction, whichever comes first. From about 200 messages until the first compaction, re-open the file before saying 'checked' or quoting, every time. Pros: Fewer restarts (each costs about 70 messages of re-reading); works on a small context after compaction. Cons: The compaction summary is lossy, so numbers and IDs must be looked up again; based on one thread.
+2. "B: Restart earlier, at about 230": Hand over before the point where this thread's mistakes began. Pros: Skips the long-context stretch; a fresh thread resets the context (Laban). Cons: More restarts; about 70 messages of re-reading each time.
+3. "C: Keep about 350 (A-61)": No change. Pros: Nothing to change. Cons: Goes through the riskiest stretch, then restarts just before compaction would shrink the context (INFERRED).
+4. "D: Raise to about 450, fixed": A plain count, not tied to compaction. Pros: Simple. Cons: No evidence for 450 itself.
+
+Jason's answer: "A: Continue through compaction; restart by ~600 (Recommended)"
+As recommended. Asked because Jason wrote: "lets rais the linit for when to switch i think there is a fine line with accuracey when you restart threads verse too long context and usage validate that sfter questions". Already-answered check: A-61 (Jason, 2026-11-08, option B) is the only earlier ruling on the restart point; this card changes it for the Backbone Overwatch only. A-128.
+```
+
+**Ruling:** each card's answer stands as recorded above ("Jason's answer" lines). OW27-28 picked no option (his question back is answered on OW27-36). Against the recommendation, each by his direction: OW27-17 B (no web push on a gym tablet), OW27-19 C (either record counts as on the floor), OW27-23 B (Overwatch signs off FN-0 after two adversarial reviewers pass it), OW27-33 B (add the "reached out" mark).
+
+**Applied:** none yet. Re-sizing owed by Overwatch before the build: items 2, 3, 5 and 6 (batch summary).
+**Status:** recorded 2026-11-21 by PR.
 
 ---
 
