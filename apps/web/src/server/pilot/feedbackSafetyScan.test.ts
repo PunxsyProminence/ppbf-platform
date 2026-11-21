@@ -561,7 +561,6 @@ describe('HF1 re-review round 3: the specific gym phrases stay out', () => {
     'we touch gloves before every round',
     'im 2 kms from the gym',
     'i am 5 kms away',
-    'only 3 kms today',
   ])('no crisis or grooming cue: %p', (sentence) => {
     const { cues } = scanForSafetyLanguage(sentence);
     expect(cues).not.toContain('crisis');
@@ -573,5 +572,71 @@ describe('HF1 re-review round 3: the specific gym phrases stay out', () => {
   // "makes me touch my toes while he stands behind me".
   test('accepted false alert: "he made me touch my toes in warmup" files grooming_or_isolation', () => {
     expect(scanForSafetyLanguage('he made me touch my toes in warmup').cues).toContain('grooming_or_isolation');
+  });
+});
+
+// Words and scope re-review round 4 on PR 2059 (lane HF12): the age guard's
+// lookahead had swallowed "im 14 kms today", and "am"/"only" had been dropped.
+describe('HF1 re-review round 4', () => {
+  test.each([
+    'im 14 kms today',
+    'only 14 kms',
+    'am 14 kms',
+    'im 14 kms more than ever',
+    'i want to do it off myself',
+    'i wanna end it, off myself',
+    'im gonna do it. off myself tonight',
+    'im only 14 kms today',
+    'im 14 kms out here',
+    'im 13 kms from now',
+    'im 14 kms left alone',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): each reads like a disclosure to a word match.
+  test.each([
+    ['only 3 kms today', 'crisis'],
+    ['i want a picture with the champ', 'grooming_or_isolation'],
+    ['coach wants photos for the website', 'grooming_or_isolation'],
+    ['make me touch my gloves', 'grooming_or_isolation'],
+    ['take the pressure off myself', 'crisis'],
+    ['i want a picture with my coach', 'grooming_or_isolation'],
+  ])('accepted false alert: %p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+});
+
+describe('HF1 re-review round 4: picture requests said the common ways', () => {
+  test.each([
+    'he wanted pics',
+    'he wanted a selfie',
+    'he keeps wanting photos',
+    'he asked me to send him pics',
+    'he asked me to send him a selfie',
+    'he told me to send pics',
+    'he asked for more pics',
+    'he asked for some pics',
+    'he asked for private pics',
+    'he asked to see a pic of me',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'my mum wants a picture of my sparring',
+    'can you send pics of the tournament',
+    'i took it off myself',
+    'got the tape off myself',
+    'took my mouthguard off myself',
+    'got my headguard off myself',
+    'im 2 kms from the gym',
+    'i am 5 kms away',
+    'im 3 kms to go',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
   });
 });
