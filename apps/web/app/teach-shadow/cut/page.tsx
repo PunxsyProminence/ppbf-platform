@@ -69,7 +69,11 @@ function readable(term: string): string {
 export default function CutStudyClipPage() {
   const [footage, setFootage] = useState<ReleasedFootage[]>([]);
   const [projects, setProjects] = useState<CalibrationProject[]>([]);
-  const [supportedOntology, setSupportedOntology] = useState('');
+  /* The vocabularies this build can label (the projects route's
+     annotatable_ontology_versions). Null until read, and when the route sends
+     none: then nothing is disabled here, and POST /annotation-set still
+     refuses a study it cannot label. */
+  const [annotatableOntologies, setAnnotatableOntologies] = useState<readonly string[] | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -100,7 +104,7 @@ export default function CutStudyClipPage() {
         items?: ReleasedFootage[]; error?: string;
       };
       const projectsPayload = (await projectsResponse.json().catch(() => ({}))) as {
-        projects?: CalibrationProject[]; supported_ontology_version?: string; error?: string;
+        projects?: CalibrationProject[]; annotatable_ontology_versions?: string[]; error?: string;
       };
 
       if (!footageResponse.ok) throw new Error(footagePayload.error || 'Released footage could not be read.');
@@ -119,7 +123,15 @@ export default function CutStudyClipPage() {
       // option that can only be refused is not an option.
       setFootage(footagePayload.items.filter((item) => !item.archived));
       setProjects(projectsPayload.projects);
-      setSupportedOntology(projectsPayload.supported_ontology_version ?? '');
+      /* The LABELLABLE list, not the version new studies are created on: a
+         study still running on 0.1 is labelled to the end on 0.1
+         (OD-2026-10-02-008 4A), so it stays cuttable after new studies move
+         to 0.4. */
+      setAnnotatableOntologies(
+        Array.isArray(projectsPayload.annotatable_ontology_versions)
+          ? projectsPayload.annotatable_ontology_versions
+          : null,
+      );
       setError('');
     } catch (readError) {
       setError(readError instanceof Error ? readError.message : 'This page could not be loaded.');
@@ -318,10 +330,10 @@ export default function CutStudyClipPage() {
                     /* A study stamped with a vocabulary this build does not
                        implement cannot be labelled here, so it cannot honestly
                        be cut into either. */
-                    disabled={Boolean(supportedOntology) && project.ontology_version !== supportedOntology}
+                    disabled={annotatableOntologies !== null && !annotatableOntologies.includes(project.ontology_version)}
                   >
                     {project.name}
-                    {supportedOntology && project.ontology_version !== supportedOntology
+                    {annotatableOntologies !== null && !annotatableOntologies.includes(project.ontology_version)
                       ? ` — ${project.ontology_version}, which this page cannot label`
                       : ''}
                   </option>

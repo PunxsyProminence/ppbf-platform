@@ -219,7 +219,7 @@ async function newProject(orgId: string = ORG_ID, creator: string = A): Promise<
     organizationId: orgId,
     calibrationProjectId: projectId,
     name: `Remark pass study ${projectId.slice(0, 8)}`,
-    ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: creator,
   });
   return projectId;
