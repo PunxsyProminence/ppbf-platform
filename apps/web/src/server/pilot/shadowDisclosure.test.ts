@@ -391,3 +391,13 @@ describe('HF1: boxing talk files nothing', () => {
     expect(detectShadowDisclosure('coach hit me with your best shot on purpose', 'athlete')).not.toBeNull();
   });
 });
+
+describe('HF1 review: sexual abuse in the present tense routes admin-only', () => {
+  test.each([
+    'my uncle is sexually abusing me',
+    'my uncle is sexually abusing me after sparring rounds',
+    'i think he is grooming me',
+  ])('admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')?.adminOnly).toBe(true);
+  });
+});

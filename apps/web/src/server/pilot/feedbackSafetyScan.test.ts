@@ -314,3 +314,102 @@ describe('HF1: gym and boxing talk stays out of the new cues', () => {
     expect(cues).not.toContain('grooming_or_isolation');
   });
 });
+
+// Safeguarding review on PR 2059 (lane HF12), round 1. Each sentence was
+// missed by the first HF1 build (OBSERVED by the reviewer's probe, re-run
+// here). Invented phrases.
+describe('HF1 review: the guards no longer swallow a disclosure', () => {
+  test.each([
+    'im thinking of kms',
+    'thoughts of kms again',
+    'the kms thoughts are back',
+    'more kms thoughts',
+    'some days kms',
+    'suicide runs in my family and i think about it',
+    'thinking about suicide lines up with my mood',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF1 review: held keys inside a split word', () => {
+  test.each([
+    'i want to kill myyy self',
+    'i want to kill my selfff',
+    'i want to un aliveee myself',
+    'i want to unnn alive myself',
+    'i wanna hurt my selff',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF1 review: past and -ing forms, and more short forms', () => {
+  test.each([
+    'i self harmed last night',
+    'i selfharmed again',
+    'i overdosed on pills',
+    'thinking about overdosing',
+    'i want to unalive',
+    'i wanna unalive tbh',
+    'thinking about unaliving',
+    'gonna slit my wrist',
+    'i want to off myself',
+    'i want to shoot myself',
+    'i want to neck myself',
+    'i wanna killmyself',
+    'im suicidial',
+    'im suisidal',
+    'thinking about suicde',
+    'i want to commit sudoku',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF1 review: sexual abuse said other ways is grooming_or_isolation', () => {
+  test.each([
+    'my uncle is sexually abusing me',
+    'he is sexually assaulting me',
+    'i was sexualy abused',
+    'i think he is grooming me',
+    'he groomed me',
+    'he sent me a dick pic',
+    'he keeps asking for pictures of me',
+    'he asks me for pics',
+    'there was molestation',
+    'he is a paedo',
+    'he r*ped me',
+    'he r@ped me',
+    'he rap3d me',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF1 review: abuse and assault named as such', () => {
+  test.each([
+    'he is abusive',
+    'my dad is abusive',
+    'she was abusive to me',
+    'he assaulted me',
+  ])('someone_is_hurting_me: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('someone_is_hurting_me');
+  });
+});
+
+describe('HF1 review: gym talk the narrowed guards still keep out', () => {
+  test.each([
+    'i did twenty kms of roadwork',
+    'we ran fifteen kms',
+    'hundreds of kms this year',
+    'we did suicide shuttles today',
+    'suicide sprints again',
+    'my pedometer says 10k',
+    'rapeseed oil in my meal prep',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+});
