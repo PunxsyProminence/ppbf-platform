@@ -2098,6 +2098,9 @@ describe('HF12b fourth delta review (81ed7ee..357131f): blocking findings', () =
     'a guy online sent me his boxing pics and wants mine',
     'a guy online sends me boxing videos and says not to tell anyone',
     'coach does private video sessions with me',
+    'a guy online told me its a secret and sent me boxing videos',
+    'a guy online made me promise to keep it a secret then sent boxing videos',
+    'my coach wants me to do private video sessions',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
