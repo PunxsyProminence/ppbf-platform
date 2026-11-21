@@ -68,7 +68,25 @@ beforeEach(() => {
       return jsonResponse(chatAnswer.body, chatAnswer.ok);
     }
     if (url.includes('/api/pilot/athlete/check-in')) {
-      return jsonResponse({ today: { check_in_id: 'ci_test' }, recent: [] });
+      // The shape the route returns (as athleteWorkspace.test.tsx's checkedInRecord):
+      // the workspace opens on How I feel today (lane AS-8), which draws the row.
+      return jsonResponse({
+        today: {
+          check_in_id: 'ci_test',
+          checked_in_on: '2026-08-28',
+          energy: null,
+          soreness: null,
+          focus: null,
+          sleep_hours: null,
+          hydration: null,
+          motivation: null,
+          mental_clarity: null,
+          stress: null,
+          nutrition_compliance: null,
+          note: '',
+        },
+        recent: [],
+      });
     }
     if (url.endsWith('/api/pilot/sessions') && init?.method === 'POST') return jsonResponse({ ok: true });
     if (url.includes('/api/pilot/goals/list')) return jsonResponse({ items: [] });
@@ -93,7 +111,8 @@ async function checkInAt(instant: string): Promise<Record<string, unknown>> {
   jest.useFakeTimers({ now: new Date(instant), advanceTimers: true });
   await renderWorkspace();
   const before = posted('/api/pilot/sessions').length;
-  fireEvent.click(await within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Start training' }));
+  // The one Start training is My Corner's (lane AS-8, ATH-24); same handleCheckIn.
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'My corner' })).findByRole('button', { name: 'Start training' }));
   await waitFor(() => expect(posted('/api/pilot/sessions')).toHaveLength(before + 1));
   return posted('/api/pilot/sessions')[before].body;
 }
@@ -119,7 +138,7 @@ describe('ATH-01: a check-in is filed under the gym day', () => {
 
 describe('ATH-02: a failed identity read is a failed read, not endless loading', () => {
   async function openGoals() {
-    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
     const goals = screen.queryByRole('button', { name: 'Goals' });
     if (goals) fireEvent.click(goals);
   }

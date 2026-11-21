@@ -63,8 +63,33 @@ test('a brand-new gym: every step is to do, and the admin sign-in is the one ste
   expect(lines['admin-sign-in'].detail).toMatch(/Users, New user, Invite external user/);
   // No minor on the roster means no minor without a guardian.
   expect(lines.guardians.state).toBe('done');
-  expect(lines.coaches.href).toBe('/admin/people');
   expect(lines.class.href).toBe('/schedule');
+  expect(mockQueryOne.mock.calls.every(([, params]) => JSON.stringify(params) === '["gym-1"]')).toBe(true);
+});
+
+// Lane AS-10 (OFF-08, OFF-09; Overwatch Q5 A, Q6 A): each step opens the Gym
+// Office tab that does it, Gym Office is the one place a code is issued, and
+// the guardian step also names the paper-only page for a family with no email.
+test('each step links to the Gym Office tab that does it, and the guardian step to both guardian screens', async () => {
+  counts({});
+  mockWaiverRoster.mockResolvedValue([]);
+  const lines = byKey(await readGymSetupStatus('gym-1'));
+
+  expect(lines.coaches).toMatchObject({ href: '/admin/people?tab=invite-staff', linkLabel: 'Add a coach' });
+  expect(lines.athletes).toMatchObject({ href: '/admin/people?tab=add-athlete', linkLabel: 'Add an athlete' });
+  expect(lines['athlete-sign-in']).toMatchObject({ href: '/admin/people?tab=add-athlete', linkLabel: 'Add Athlete' });
+  expect(lines.guardians).toMatchObject({
+    href: '/admin/people?tab=invite-staff&role=parent',
+    linkLabel: 'Add a guardian',
+    alsoHref: '/admin/athlete-consent',
+    alsoLinkLabel: 'Media Consent Audit',
+  });
+  // Nobody is waiting on a code here, so the re-issue sentence is not said.
+  expect(lines['athlete-sign-in'].detail).not.toMatch(/Issue New Activation Code/);
+  // No step links to the typed-account-ID page any more.
+  expect(Object.values(lines).some((line) => line.href === '/admin/activation-codes')).toBe(false);
+  // Only the guardian step has a second screen.
+  expect(Object.values(lines).filter((line) => line.alsoHref).map((line) => line.key)).toEqual(['guardians']);
   expect(mockQueryOne.mock.calls.every(([, params]) => JSON.stringify(params) === '["gym-1"]')).toBe(true);
 });
 
@@ -93,7 +118,7 @@ test('what is still open is counted', async () => {
   // From the roster: the athlete never issued a code is counted too.
   expect(lines['athlete-sign-in']).toMatchObject({
     state: 'to_do',
-    detail: '1 athlete has set a PIN; 2 are waiting to redeem an activation code; 1 has not been issued a code yet.',
+    detail: '1 athlete has set a PIN; 2 are waiting to redeem an activation code; 1 has not been issued a code yet. An unredeemed code is replaced from the athlete\'s row on Gym Office: Issue New Activation Code.',
   });
   expect(lines.guardians).toMatchObject({ state: 'to_do', detail: '1 athlete under 18 has no guardian on file.' });
   // Only active athletes are counted.

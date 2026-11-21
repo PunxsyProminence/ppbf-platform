@@ -288,7 +288,8 @@ describe('New until this guardian opens it (FC-08)', () => {
     installFetch({ readsGet: readsAnswer([OPENED.note_id]) });
     await renderHub();
 
-    expect(newTileValue()).toBe('1');
+    // Named per child (AS-9 Q4 = A): OPENED is the first child's, UNOPENED the second's.
+    expect(newTileValue()).toBe('First 0 · Second 1');
     await openTab('Messages');
     await screen.findByText(OPENED.note_text);
     expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
@@ -311,13 +312,13 @@ describe('New until this guardian opens it (FC-08)', () => {
     await openTab('Messages');
     await screen.findByText(OPENED.note_text);
     expect(within(card(OPENED.note_id)).getByText('New')).toBeInTheDocument();
-    expect(newTileValue()).toBe('2');
+    expect(newTileValue()).toBe('First 1 · Second 1');
 
     await act(async () => {
       showMessage(OPENED.note_id, 1);
     });
 
-    await waitFor(() => expect(newTileValue()).toBe('1'));
+    await waitFor(() => expect(newTileValue()).toBe('First 0 · Second 1'));
     expect(within(card(OPENED.note_id)).getByText('New')).toBeInTheDocument();
     expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
   });
@@ -333,7 +334,7 @@ describe('New until this guardian opens it (FC-08)', () => {
     });
 
     expect(within(card(OPENED.note_id)).getByText('New')).toBeInTheDocument();
-    expect(newTileValue()).toBe('2');
+    expect(newTileValue()).toBe('First 1 · Second 1');
   });
 
   test('an open recorded before the reads answer keeps its New when the answer already includes it', async () => {
@@ -360,7 +361,7 @@ describe('New until this guardian opens it (FC-08)', () => {
 
     expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
     expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
-    expect(newTileValue()).toBe('0');
+    expect(newTileValue()).toBe('First 0 · Second 0');
   });
 
   test('an open recorded before the reads answer stays opened when the answer lands without it', async () => {
@@ -381,7 +382,7 @@ describe('New until this guardian opens it (FC-08)', () => {
     // loaded and was opened during this visit: New stays on it; the tile counts 0.
     expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
     expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
-    expect(newTileValue()).toBe('0');
+    expect(newTileValue()).toBe('First 0 · Second 0');
   });
 
   test("switching child moves no New between messages, and a late reads answer marks only the notes it names", async () => {
@@ -406,6 +407,6 @@ describe('New until this guardian opens it (FC-08)', () => {
     });
     expect(within(card(OPENED.note_id)).queryByText('New')).toBeNull();
     expect(within(card(UNOPENED.note_id)).getByText('New')).toBeInTheDocument();
-    expect(newTileValue()).toBe('1');
+    expect(newTileValue()).toBe('First 0 · Second 1');
   });
 });

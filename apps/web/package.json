@@ -682,11 +682,11 @@
     "test:migrations:content-import-in-app-edits": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runTestsByPath src/server/pilot/contentImportInAppEdits.pg.test.ts --testTimeout=300000"
   },
   "dependencies": {
-    "@azure/identity": "^4.14.0",
+    "@azure/identity": "^4.14.1",
     "@azure/storage-blob": "^12.34.0",
     "googleapis": "^190.0.0",
     "gym-tv-timer": "github:PunxsyProminence/gym-tv-timer#d24b44d123cf31b42699ee150d219479106ec474",
-    "jose": "^6.2.13",
+    "jose": "^6.2.17",
     "next": "16.4.6",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.20.2",
@@ -695,8 +695,8 @@
     "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1",
-    "@tailwindcss/postcss": "^4",
+    "@playwright/test": "^1.65.1",
+    "@tailwindcss/postcss": "^4.3.5",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.2",
@@ -710,10 +710,10 @@
     "csv-parse": "^7.0.3",
     "embedded-postgres": "18.4.0-beta.17",
     "eslint": "^9",
-    "eslint-config-next": "16.4.3",
+    "eslint-config-next": "16.4.6",
     "jest": "^30.5.2",
-    "jest-environment-jsdom": "^30.4.1",
-    "tailwindcss": "^4.3.3",
+    "jest-environment-jsdom": "^30.5.2",
+    "tailwindcss": "^4.3.5",
     "ts-jest": "^29.4.15",
     "tsx": "^4.23.15",
     "typescript": "^5"

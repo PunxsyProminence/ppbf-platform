@@ -10,11 +10,27 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
+import { PASSBOOK_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import InterventionReviewPage from './page';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+// A plain anchor that runs the link's own onClick, as next/link does, without
+// navigating (the pattern of the Escalations test, lane AS-5).
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href, className, onClick }: {
+    readonly children: React.ReactNode;
+    readonly href: string;
+    readonly className?: string;
+    readonly onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  }) => (
+    <a href={href} className={className} onClick={(event) => { event.preventDefault(); onClick?.(event); }}>{children}</a>
+  ),
 }));
 
 const CHAIN_ITEM = {
@@ -93,6 +109,40 @@ test('the chain renders in order with counterevidence visible and the unreviewed
   expect(stamp.className).not.toContain('badge--locked');
   expect(screen.getByText(/film study prop-7/)).toBeTruthy();
   expect(screen.getByText(/training attempt att-9/)).toBeTruthy();
+});
+
+// Lane AS-11 (app scrub CF-15; Q4 = A): the athlete's name on a record opens
+// their Passbook, in page memory on a plain click, never in the address.
+describe('the athlete\'s name opens their Passbook (lane AS-11)', () => {
+  afterEach(() => {
+    takeArrivalAthlete(PASSBOOK_PAGE);
+  });
+
+  test('a plain click hands the record\'s athlete to Passbook; another tab gets nothing; no id is in the address', async () => {
+    global.fetch = mockFetch({ posts: [] });
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+    const link = await screen.findByRole('link', { name: 'Jordan P.' });
+    expect(link.getAttribute('href')).toBe('/coach/passbook');
+    expect(link.className).toContain('min-h-[var(--tap)]');
+    expect(link.className).toContain('text-[length:var(--t-md)]');
+    fireEvent.click(link, { metaKey: true });
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBeNull();
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBe('ath-1');
+  });
+
+  test('a record with no name keeps its plain id and is not a link', async () => {
+    const nameless = { ...CHAIN_ITEM, execution: { ...CHAIN_ITEM.execution, athlete_name: null } };
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ items: [nameless] }) })) as unknown as typeof fetch;
+    await act(async () => {
+      render(<InterventionReviewPage />);
+    });
+    expect(await screen.findByText(/ath-1/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'ath-1' })).toBeNull();
+    expect(screen.getAllByRole('link').every((link) => link.getAttribute('href') !== '/coach/passbook')).toBe(true);
+  });
 });
 
 test('recording a review posts three separate answers -- no score field exists to post', async () => {

@@ -1,10 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import BackHome from '@/components/BackHome';
+import FamilyChildPicker, { openingChild } from '@/components/FamilyChildPicker';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 import { apiBase } from '@/lib/apiBase';
-import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { formatGymStamp } from '@/src/lib/gymTime';
 
 /*
@@ -79,6 +79,9 @@ export default function ParentVideoPage() {
   const [activeChildId, setActiveChildId] = useState<string | null>(null);
   const [videos, setVideos] = useState<VideoSession[]>([]);
   const [videosLoading, setVideosLoading] = useState(false);
+  // The child the list on screen was read for. Until it is the chosen child,
+  // the section says Loading, never "No film yet" for a child nobody read.
+  const [videosFor, setVideosFor] = useState<string | null>(null);
   const [videoError, setVideoError] = useState('');
   const [activeVideo, setActiveVideo] = useState<ActiveVideo | null>(null);
   const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
@@ -100,10 +103,10 @@ export default function ParentVideoPage() {
         const payload = (await response.json()) as { items?: LinkedChild[] };
         const items = payload.items ?? [];
         setChildren(items);
-        // The hub's chosen child when it is one of these (src/lib/chosenChild.ts),
-        // otherwise the first; the server checks the link on every read.
-        const chosen = readChosenChild();
-        setActiveChildId(items.find((item) => item.athlete_id === chosen)?.athlete_id ?? items[0]?.athlete_id ?? null);
+        // The remembered child when it is one of these, else the only child;
+        // with two or more and none remembered, the picker asks (FAM-11). The
+        // server checks the link on every read.
+        setActiveChildId(openingChild(items));
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
         setChildren([]);
@@ -142,7 +145,10 @@ export default function ParentVideoPage() {
         setVideos([]);
         setVideoError(error instanceof Error ? error.message : 'The film did not load. Try again in a minute.');
       } finally {
-        if (!controller.signal.aborted) setVideosLoading(false);
+        if (!controller.signal.aborted) {
+          setVideosFor(activeChildId);
+          setVideosLoading(false);
+        }
       }
     })();
     return () => controller.abort();
@@ -185,25 +191,14 @@ export default function ParentVideoPage() {
             </p>
           </header>
 
-          {children.length > 1 ? (
-            <nav aria-label="Choose athlete" className="flex flex-wrap gap-[var(--s3)]">
-              {children.map((child) => (
-                <button
-                  key={child.athlete_id}
-                  type="button"
-                  className={child.athlete_id === activeChildId ? 'btn' : 'btn btn--ghost'}
-                  aria-pressed={child.athlete_id === activeChildId}
-                  onClick={() => {
-                    setActiveChildId(child.athlete_id);
-                    // A switch here is the child the next family page opens on.
-                    rememberChosenChild(child.athlete_id);
-                  }}
-                >
-                  {child.full_name || 'Unknown'}
-                </button>
-              ))}
-            </nav>
-          ) : null}
+          {/* The family pages' one picker (FAM-11). A pick is remembered for
+              the next family page. */}
+          <FamilyChildPicker
+            linked={children}
+            activeId={activeChildId}
+            onChoose={setActiveChildId}
+            className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+          />
 
           {childrenLoading ? (
             <div className="mat-paper flex justify-center rounded-[var(--r-lg)] py-[var(--s7)]">
@@ -225,7 +220,9 @@ export default function ParentVideoPage() {
                 </p>
               </div>
             </div>
-          ) : (
+          ) : !activeChildId ? null : (
+            /* No child chosen yet (two or more, none remembered): the picker
+               asks, and nothing here says "No film yet" for nobody. */
             <>
               {activeVideo ? (
                 <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -273,7 +270,7 @@ export default function ParentVideoPage() {
                     </div>
                   </div>
                 ) : null}
-                {videosLoading ? (
+                {videosLoading || videosFor !== activeChildId ? (
                   <p className="t-muted mt-[var(--s4)]">Loading film...</p>
                 ) : !videoError && videos.length === 0 ? (
                   <p className="t-body mt-[var(--s4)]">No film yet. It shows up here when a coach puts some up.</p>
@@ -301,10 +298,10 @@ export default function ParentVideoPage() {
             </>
           )}
 
+          {/* The one back link (FAM-18): it names the signed-in person's
+              own home, "Back to Parent Hub" for a guardian. */}
           <div className="flex flex-wrap gap-[var(--s4)]">
-            <Link href="/parent/dashboard" className="btn btn--ghost min-h-[var(--tap)]">
-              Back to your dashboard
-            </Link>
+            <BackHome className="btn btn--ghost min-h-[var(--tap)]" />
           </div>
         </div>
       </div>
