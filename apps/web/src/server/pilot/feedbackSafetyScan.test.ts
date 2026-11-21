@@ -2226,3 +2226,24 @@ describe('HF12b sixth delta review (81ed7ee..c3c1cd6): blocking findings', () =>
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b seventh delta review (81ed7ee..bdd4987): blocking findings', () => {
+  test.each([
+    'a guy found me on insta and filmed my training',
+    'a man added me on snap and filmed my training',
+    'a man found me on tiktok and filmed my sparring',
+    'a man followed me on insta and filmed my training',
+    'a guy followed me online and filmed it',
+    'a man messaged me online and filmed my training',
+    'a man met me online and recorded it',
+    'a guy online has the training pics',
+    'a guy online has the boxing vids',
+    'a stranger has the workout pics',
+    'someone online has the workout pics',
+    'someone i dont know has the training pics',
+    'a guy online had the training videos',
+    'a guy online has the sparring videos',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
