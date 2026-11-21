@@ -357,23 +357,23 @@ test('a live-run read that failed shows the session gauge as unknown, never "Non
   expect(floor().queryByRole('link', { name: 'Start a session' })).toBeNull();
 });
 
-/* CF-05 (lane U1). Off the Dashboard the Group / One-on-One toggle stays, and
-   says what it switches: the Floor tab's block template, not the session. */
-test('off the Dashboard the toggle names itself a template, and the board has none', async () => {
+/* CF-05 then CF-06 (lane U1, then lane 6C7's 7a-1; Overwatch Q5 = A on #2043). The Group /
+   One-on-One toggle switched only the Floor tab's code-written block template. The tab and the
+   template are gone, so the toggle is gone everywhere, and the board no longer points at a tab
+   that does not exist. */
+test('neither the board nor any tab offers a Group / One-on-One toggle, and there is no Floor tab', async () => {
   await renderWorkspace();
   expect(floor().queryByRole('button', { name: /One-on-One/ })).toBeNull();
+  expect(floor().queryByText(/block templates are on the Floor tab/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Floor' })).toBeNull();
 
+  // Off the Dashboard, where the toggle used to stand above the tab row.
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Floor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Goals' }));
   });
-  expect(screen.getByRole('button', { name: 'Group template' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByRole('button', { name: 'One-on-One template' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /template$/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /One-on-One/ })).toBeNull();
   expect(screen.queryByRole('button', { name: /Mode$/ })).toBeNull();
-
-  await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'One-on-One template' }));
-  });
-  expect(screen.getByText(/This is the standard One-on-One block template/)).toBeTruthy();
 });
 
 test('a readiness feed that failed shows the readings gauge as unknown, never 0 of N', async () => {

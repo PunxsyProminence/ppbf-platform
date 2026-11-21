@@ -52,7 +52,8 @@ describe('the 002 mockup did not delete or invent coach tabs', () => {
   // Every tab that really exists on current main.
   const REAL_TABS = [
     'Dashboard',
-    'Floor',
+    // 'Floor' stood here until lane 6C7's 7a-1 removed the tab (app scrub CF-06; Overwatch
+    // Q5 = A on #2043); its removal is asserted below.
     // Renamed from Development (lane U2, Jason's glossary 2026-10-17): the coach's own growth.
     'Your Growth',
     'Goals',
@@ -73,6 +74,12 @@ describe('the 002 mockup did not delete or invent coach tabs', () => {
 
   test.each(REAL_TABS)('the real tab %s still exists', (label) => {
     expect(tabBlock()).toContain(`label: '${label}'`);
+  });
+
+  test('the Floor tab, a five-block workout written in the code, is not one of them (CF-06)', () => {
+    expect(tabBlock()).not.toContain(`label: 'Floor'`);
+    expect(tabBlock()).not.toContain(`id: 'floor'`);
+    expect(WORKSPACE).not.toMatch(/workoutBlocks|sessionMode/);
   });
 
   test('no tab was invented from the reference image', () => {

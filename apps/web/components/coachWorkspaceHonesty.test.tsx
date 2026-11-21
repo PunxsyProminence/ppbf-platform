@@ -9,6 +9,7 @@ import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
+import { BUILDING } from './buildingMap';
 
 // The floor view at the top of the dashboard repeats names and reports that
 // the panels below also show, which would make every query here ambiguous. It
@@ -674,36 +675,45 @@ describe('the Athlete Reviews tab does not call progression intelligence a place
   });
 });
 
-describe('floor tab presents a plan template, not a running session', () => {
-  test('no session progress bar and no per-block status badges', async () => {
-    await renderWorkspace();
-    openTab('Floor');
+/*
+ * The coach home's "Floor" tab is gone, and this pins the removal (lane 6C7, 7a-1; app scrub
+ * CF-06; Overwatch Q5 = A on #2043, stage 2 section 3.4 rows 13 and 14: "Removed"). It drew a
+ * five-block workout written in the component as if it were the gym's plan for the night, under
+ * help text promising "Start session when class begins" and "Record quick observations", which the
+ * tab could not do. The Group / One-on-One template toggle switched only that template and went
+ * with it. Three tests here used to pin that the template claimed no progress; they went with it.
+ */
+describe("the coach home's code-written Floor tab and its template toggle are gone", () => {
+  // Words that only the removed tab and its template drew.
+  const GONE = [
+    /Session Workout Plan/i,
+    /block template/i,
+    /Group Warmup Flow/,
+    /Start session when class begins/,
+    /Record quick observations for each athlete/,
+    /Planned Training/,
+  ];
 
-    expect(screen.queryByText(/Session Workout Plan/i)).not.toBeNull();
-    // The bar rendered a completion figure ("Session Progress: 40%"). Matching
-    // the bare words would also match copy that says progress is NOT tracked.
-    expect(screen.queryByText(/Session Progress:/i)).toBeNull();
-    expect(screen.queryByText(/\d+%/)).toBeNull();
-    expect(screen.queryByText('Not Started')).toBeNull();
-    expect(screen.queryByText('In Progress')).toBeNull();
-    expect(screen.queryByText('Completed')).toBeNull();
+  test('there is no Floor tab, and no tab draws the template or its toggle', async () => {
+    await renderWorkspace();
+
+    expect(screen.queryByRole('button', { name: /^Floor\b/ })).toBeNull();
+    for (const tab of ['Dashboard', 'Your Growth', 'Goals', 'Tasks', 'Assessments', 'Film Study', 'Athlete Reviews', 'SHADOW Intel']) {
+      openTab(tab);
+      for (const words of GONE) expect(screen.queryByText(words)).toBeNull();
+      expect(screen.queryByRole('button', { name: /template$/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^(Group|One-on-One)\b/ })).toBeNull();
+    }
   });
 
-  test('the template says THIS panel tracks nothing, not that the platform tracks nothing', async () => {
+  test('every remaining tab still opens, eight in all', async () => {
     await renderWorkspace();
-    openTab('Floor');
-
-    expect(screen.queryByText(/completion and session progress are not tracked yet/i)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Session Plans' }).getAttribute('href'))
-      .toBe('/coach/session-scripts');
-  });
-
-  test('with a run live, the floor tab points back at it instead of offering a fresh start', async () => {
-    await renderWorkspace({ liveRun: () => jsonResponse({ run: liveRunRow() }) });
-    openTab('Floor');
-
-    expect(screen.queryByRole('link', { name: 'Open Session Plans' })).toBeNull();
-    expect(screen.queryAllByRole('link', { name: 'Return to live delivery' }).length).toBeGreaterThan(0);
+    const tabs = ['Dashboard', 'Your Growth', 'Goals', 'Tasks', 'Assessments', 'Film Study', 'Athlete Reviews', 'SHADOW Intel'];
+    for (const tab of tabs) {
+      openTab(tab);
+      expect(screen.getByRole('button', { name: new RegExp(`^${tab}\\b`) }).getAttribute('aria-current')).toBe('page');
+    }
+    expect(screen.getAllByRole('button').filter((button) => button.getAttribute('aria-current') === 'page')).toHaveLength(1);
   });
 });
 
@@ -1552,8 +1562,9 @@ describe('authored announcements on the coach workspace', () => {
     // that does not move when the coach changes tabs.
     expect(screen.queryByText('Coach workspace · Live session management')).not.toBeNull();
 
-    openTab('Floor');
-    expect(screen.queryByText(/Session Workout Plan/i)).not.toBeNull();
+    // Another tab still opens (the Floor tab this used to open is gone: lane 6C7, 7a-1).
+    openTab('Goals');
+    expect(screen.getByRole('button', { name: /^Goals\b/ }).getAttribute('aria-current')).toBe('page');
   });
 });
 
@@ -1803,25 +1814,24 @@ describe('the hub links to the session-delivery surfaces', () => {
   // The delivery loop worked end to end while nothing linked to it: the
   // scripts page, floor groups, the drill library, the cue library and the
   // template catalog were all reachable only by typing the URL. These pin
-  // the Quick Actions links that make that loop part of the coach's day.
-  // Session Plans left this row on 2026-10-03: the floor board's Run the
-  // Room is the one door to it on the Dashboard (coachFloorFocus.test.tsx).
+  // that each stays one tap from the dashboard. Session Plans left this row on
+  // 2026-10-03: the floor board's Run the Room is the one door to it on the
+  // Dashboard (coachFloorFocus.test.tsx). Since lane 6C7's 7a-2 the links are
+  // in the home's four jobs (Class and Plan, stage 2 section 3.4 row 21), by
+  // their door labels; coachHomeLayout.test.tsx pins which job holds each.
   test.each([
-    ["Today's Floor Groups", '/coach/floor-groups'],
-    ['Open Drill Library', '/coach/drills'],
-    ['Open Cue Library', '/coach/cue-library'],
-    ['Browse Workout Templates', '/coach/workout-templates'],
-  ])('the dashboard links "%s" to %s', async (label, href) => {
+    '/coach/floor-groups',
+    '/coach/drills',
+    '/coach/cue-library',
+    '/coach/workout-templates',
+    '/schedule',
+  ])('the dashboard links %s', async (href) => {
     await renderWorkspace();
 
-    const link = screen.getByRole('link', { name: label });
-    expect(link.getAttribute('href')).toBe(href);
-  });
-
-  test('the existing operational quick actions were not displaced by the new links', async () => {
-    await renderWorkspace();
-
-    expect(screen.getByRole('link', { name: 'Open Scheduler' }).getAttribute('href')).toBe('/schedule');
+    const label = BUILDING.find((door) => door.href === href)?.label;
+    expect(label).toBeTruthy();
+    const link = screen.getAllByRole('link', { name: label }).find((candidate) => candidate.getAttribute('href') === href);
+    expect(link).toBeTruthy();
   });
 
   // Operations V1 (2026-08-21): the SHADOW Chat launcher and the Rabbit Hole
