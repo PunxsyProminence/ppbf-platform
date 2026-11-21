@@ -943,6 +943,7 @@ describe('HF12b review: the picture guard hides no request main already caught',
     'he wants a video of your stance with your shirt off',
     'he wants a vid of a hook up',
     'send me a video of how to pose on my bed',
+    'send me a video of how to kiss',
   ])('a video request carrying undress or a non-boxing how-to files: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
