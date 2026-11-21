@@ -228,9 +228,11 @@ async function seedPeople(db: Client): Promise<void> {
     `insert into pilot.account_profiles (organization_id, account_id, display_nickname) values ($1, $2, 'Lightning')`,
     [ORG, MEMBER],
   );
-  // A staff login whose only full name on record is a linked volunteer
-  // record (staff provisioning links one to every volunteer login; the read
-  // does not look at the role, so a coach login stands in here).
+  // A staff login with no login email, ring name or staff name. Its names
+  // on record are a linked volunteer record (staff provisioning links one to
+  // every volunteer login; the read does not look at the role, so a coach
+  // login stands in here), a labelling-station name, a lesson byline and a
+  // notice signature, each different.
   await db.query(
     `insert into pilot.volunteers (organization_id, volunteer_id, account_id, full_name, role)
      values ($1, 'vol-hf7', $2, 'Pat Rowan', 'coach')`,
@@ -255,6 +257,16 @@ async function seedPeople(db: Client): Promise<void> {
        (organization_id, rabbit_hole_id, anchor_type, anchor_key, title, concept,
         author_account_id, author_display_name)
      values ($1, gen_random_uuid(), 'gap_type', 'technique', 'Footwork first', 'Feet before hands.', $2, 'Doc Ellery')`,
+    [ORG, STAFF],
+  );
+  // And the name they sign gym notices with ("Your name, as members will see
+  // it"): the notice row has no account, so the post route's audit row is
+  // what ties it to them.
+  await db.query(
+    `insert into pilot.audit_events
+       (event_type, actor_account_id, actor_role, organization_id, entity_type, entity_id, details)
+     values ('create', $2, 'coach', $1, 'announcement', gen_random_uuid()::text,
+             jsonb_build_object('author_name', 'Tamsin Vale', 'author_role', 'coach'))`,
     [ORG, STAFF],
   );
   await db.query(
@@ -978,18 +990,18 @@ describe('T2b: what arrives at the edges', () => {
     expectNoNames(kept[0].content, ['Jordan', 'Pike', 'Lightning', 'Dana', 'Morgan', 'Quill']);
   });
 
-  test('a staff member\'s own chat loses their volunteer-record, labelling-station and lesson-byline names', async () => {
+  test('a staff member\'s own chat loses their volunteer-record, labelling-station, lesson-byline and notice names', async () => {
     const staffActor: ActorIdentity = { accountId: STAFF, role: 'coach', organizationId: ORG, athleteId: null };
     const target = await seedConversation(mainDb, {
       organizationId: ORG, accountId: STAFF, role: 'coach',
-      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station, Doc Ellery on the lessons), open with footwork and keep the rounds short.',
+      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station, Doc Ellery on the lessons, Tamsin Vale on the notices), open with footwork.',
     });
     await expect(deleteOwnConversation!(staffActor, target.conversationId)).resolves.toBe(true);
     const keptId = await keptCopy(mainDb, target);
     expect(keptId).not.toBeNull();
     const kept = await messagesOf(mainDb, keptId!);
     expect(kept).toHaveLength(1);
-    expectNoNames(kept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow', 'Doc', 'Ellery']);
+    expectNoNames(kept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow', 'Doc', 'Ellery', 'Tamsin', 'Vale']);
   });
 });
 
@@ -1143,10 +1155,11 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       replyWords: 'Jordan Pike (Lightning) can spar; tell Dana Pike and Morgan Quill.',
     });
     // A staff member's own chat, deleted before this change: their names on
-    // record are their volunteer record, labelling-station name and byline.
+    // record are their volunteer record, labelling-station name, byline and
+    // notice signature.
     const legacyStaff = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: STAFF, role: 'coach', deletedAgo: '3 days',
-      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station, Doc Ellery on the lessons), open with footwork and keep the rounds short.',
+      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station, Doc Ellery on the lessons, Tamsin Vale on the notices), open with footwork.',
     });
     const live = await seedConversation(sweepDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     // Flagged, past two years, and no name on record: nothing can be
@@ -1261,7 +1274,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     expect(staffKeptId).not.toBeNull();
     const staffKept = await messagesOf(sweepDb, staffKeptId!);
     expect(staffKept).toHaveLength(1);
-    expectNoNames(staffKept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow', 'Doc', 'Ellery']);
+    expectNoNames(staffKept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow', 'Doc', 'Ellery', 'Tamsin', 'Vale']);
     for (const cleared of [expired, expiredEscalated, legacy, legacyGuardian, legacyCoach]) {
       const keptId = (await keptCopy(sweepDb, cleared))!;
       await expectDayTimes(sweepDb, 'shadow_chat_sessions', 'conversation_id', keptId,
