@@ -962,6 +962,16 @@ it('the header no longer launches the office pages that moved to Gym Office', as
   expect(screen.getByRole('button', { name: 'EXPORT JSON' })).toBeTruthy();
 });
 
+// The plan named two kept labels that did not say their page's title (OFF-15; admin:1473 and :1554
+// on c27c581c): PEOPLE opens Gym Office, CONSENT opens Waivers & Consent.
+it('the two kept links the plan named say the title of the page they open', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+  await renderPage(fetchMock, 'organization_admin');
+  await screen.findByRole('heading', { name: 'Capabilities' });
+  expect(document.querySelector('a[href="/admin/people"]')?.textContent?.trim()).toBe('Gym Office');
+  expect(document.querySelector('a[href="/admin/consent"]')?.textContent?.trim()).toBe('Waivers & Consent');
+});
+
 // R2-F-004: /admin/organizations admits the platform owner only, so an
 // organization admin shown either provisioning link was sent to a refusal.
 it.each(['organization_admin', 'admin'] as const)(
