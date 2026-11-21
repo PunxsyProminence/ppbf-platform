@@ -1466,7 +1466,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   href="/admin/people"
                   className="btn"
                 >
-                  PEOPLE
+                  Gym Office
                 </Link>
               )}
               {/*
@@ -1474,8 +1474,8 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                 Athlete Records, Export, Load Roster, Equipment, Customize,
                 Operations and Compliance Center moved to Gym Office, grouped by the
                 admin's job sections there (Gym Setup was already on its header).
-                People stays as this page's way back to Gym Office. Video Upload,
-                Drill Library, Consent and System sit in no admin section; where they
+                Gym Office (was PEOPLE) stays as this page's way back. Video Upload,
+                Drill Library, Waivers & Consent (was CONSENT) and System sit in no admin section; where they
                 go is Overwatch's Q19 on #2018, so they stay here until it is answered.
               */}
               {/*
@@ -1528,7 +1528,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   href="/admin/consent"
                   className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
                 >
-                  CONSENT
+                  Waivers &amp; Consent
                 </Link>
               )}
               {canManagePeople && (
