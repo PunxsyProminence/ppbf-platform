@@ -778,9 +778,12 @@ async function countMemberDeletedChats(client, tables) {
 /** The names on record for a member in one gym, and for the people a chat of theirs is likely to name (namesOnRecord in the app). */
 async function memberNamesOnRecord(client, organizationId, accountId, athleteId) {
   // Three reads, as namesOnRecord in the app (why, there).
-  const labeller = (await client.query(
-    `select to_regclass('pilot.labeller_credentials') is not null as present`,
-  )).rows[0]?.present === true;
+  const optional = (await client.query(
+    `select to_regclass('pilot.labeller_credentials') is not null as labeller,
+            to_regclass('pilot.rabbit_holes') is not null as lessons`,
+  )).rows[0];
+  const labeller = optional?.labeller === true;
+  const lessons = optional?.lessons === true;
   const own = await client.query(
     `select case when a.account_id like '%@%' then a.account_id end as name
        from pilot.accounts a where a.account_id = $2
@@ -800,7 +803,10 @@ async function memberNamesOnRecord(client, organizationId, accountId, athleteId)
       where v.organization_id = $1 and v.account_id = $2${labeller ? `
      union all
      select c.display_name from pilot.labeller_credentials c
-      where c.organization_id = $1 and c.account_id = $2` : ''}`,
+      where c.organization_id = $1 and c.account_id = $2` : ''}${lessons ? `
+     union all
+     select r.author_display_name from pilot.rabbit_holes r
+      where r.organization_id = $1 and r.author_account_id = $2` : ''}`,
     [organizationId, accountId],
   );
   const keys = (await client.query(

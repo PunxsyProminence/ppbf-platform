@@ -125,7 +125,7 @@ type Queryable = Pick<PoolClient, 'query'>;
  * is), the login email, the ring name and staff name on their profile, their
  * guardian record's full name, the full name on their volunteer record (a
  * volunteer's may be their only one), the name they chose for the labelling
- * station; and, for every athlete that is theirs -- their
+ * station, the byline they typed on a lesson they wrote; and, for every athlete that is theirs -- their
  * own athlete record for an athlete login, the children their guardian record
  * is linked to, and the athlete the chat is about -- that athlete's full
  * name, the ring names of that athlete's logins, and the full names of every
@@ -143,11 +143,15 @@ export async function namesOnRecord(
      are read by athlete and guardian-record id, never in the same statement
      as an account (guardianAccess.test.ts keeps account-scoped guardian
      joins in one place). */
-  // The labelling-station name is one the member chose for themselves. Its
-  // table comes with its own migration, so it is read where that has run.
-  const labeller = (await client.query<{ present: boolean }>(
-    `select to_regclass('pilot.labeller_credentials') is not null as present`,
-  )).rows[0]?.present === true;
+  // The labelling-station name and a lesson's byline are names the member
+  // chose for themselves. Each table comes with its own migration, so each
+  // is read where that has run.
+  const optional = (await client.query<{ labeller: boolean; lessons: boolean }>(
+    `select to_regclass('pilot.labeller_credentials') is not null as labeller,
+            to_regclass('pilot.rabbit_holes') is not null as lessons`,
+  )).rows[0];
+  const labeller = optional?.labeller === true;
+  const lessons = optional?.lessons === true;
   const own = await client.query<{ name: string | null }>(
     `select case when a.account_id like '%@%' then a.account_id end as name
        from pilot.accounts a where a.account_id = $2
@@ -167,7 +171,10 @@ export async function namesOnRecord(
       where v.organization_id = $1 and v.account_id = $2${labeller ? `
      union all
      select c.display_name from pilot.labeller_credentials c
-      where c.organization_id = $1 and c.account_id = $2` : ''}`,
+      where c.organization_id = $1 and c.account_id = $2` : ''}${lessons ? `
+     union all
+     select r.author_display_name from pilot.rabbit_holes r
+      where r.organization_id = $1 and r.author_account_id = $2` : ''}`,
     [input.organizationId, input.accountId],
   );
   const keys = (await client.query<{ athlete_id: string | null; parent_ids: string[] }>(
