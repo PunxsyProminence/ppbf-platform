@@ -713,6 +713,9 @@ describe('the family ground (FAM-28)', () => {
 
     const main = container.querySelector('main') as HTMLElement;
     expect(main.className).toContain('on-canvas');
+    // The hub's family dress: its focus ring is the one that shows on this
+    // ground (a ghost button's ring is lost to `.on-canvas .btn--ghost`).
+    expect(main).toHaveClass('ge-family');
     expect(main.className).not.toContain('hide-950');
     expect(container.querySelector('header')).toHaveClass('mat-paper');
     expect(container.querySelector('article')).toHaveClass('mat-paper');
@@ -727,7 +730,7 @@ describe('the family ground (FAM-28)', () => {
     expect(line.className).not.toContain('bone');
   });
 
-  test('loading, failed and nobody-linked each stand on a paper panel', async () => {
+  test('loading, failed and nobody-linked each stand on a paper panel that inks .empty', async () => {
     for (const [response, title] of [
       [new Promise<Response>(() => {}), 'Loading safety status…'],
       [Promise.resolve(jsonResponse({ error: 'down' }, false)), 'Safety status could not be loaded'],
@@ -737,6 +740,10 @@ describe('the family ground (FAM-28)', () => {
       const view = render(<GuardianSafetyPage />);
       const heading = await screen.findByText(title);
       expect(heading.closest('.mat-paper')).not.toBeNull();
+      // .empty's inks are bone; the sheet restates them in ink only under
+      // .pap ("The empty state on paper"). Without it the title measured
+      // 1.36:1 to 1.12:1 on a local render (2026-11-21).
+      expect(heading.closest('.pap')).not.toBeNull();
       view.unmount();
     }
   });

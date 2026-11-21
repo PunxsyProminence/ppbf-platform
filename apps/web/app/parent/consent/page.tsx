@@ -102,14 +102,21 @@ export default function GuardianMediaConsentPage() {
      It is the grant the route already takes, with covers_video false: the
      route records a new signed row and takes published video down in the same
      transaction (OD-2026-10-05-021). The confirm is worded like the withdraw
-     one and says what follows from a photos-only consent: published video is
-     retracted, and video is not played back or published
-     (videoPlaybackConsent.ts refuses playback while it stands). A grant from
-     this page never carries public use (A-Q14), so when the consent on file
-     allows it, the confirm says that it ends. Wording PROPOSED. */
+     one and says what follows from a photos-only consent: the child's
+     published videos are retracted, and the child's videos are not played
+     back or published while it is in place (videoPlaybackConsent.ts refuses
+     playback while any linked guardian's signed consent leaves video out).
+     "The child's videos" and not "any video of the child": the takedown
+     covers publications filed under this child, and a clip filed under
+     another athlete stays up (OD-2026-10-12-003). "While … in place" and not
+     "until you grant video again": the refusal lasts while this consent
+     counts, and a grant from this guardian alone does not lift another
+     guardian's. A grant from this page never carries public use (A-Q14), so
+     when the consent on file allows it, the confirm says that it ends.
+     Wording PROPOSED. */
   function confirmPhotosOnly(childName: string, publicUseOnFile: boolean): boolean {
     return window.confirm(
-      `Change consent for ${childName} to photos only? Any video of ${childName} already published will be retracted from distribution immediately, and video of ${childName} will not be played back or published until you grant consent that includes video again.${
+      `Change consent for ${childName} to photos only? If you do, ${childName}’s published videos will be retracted from distribution immediately, and ${childName}’s videos will not be played back or published while your photos-only consent is in place.${
         publicUseOnFile ? ' Public use, which is allowed now, will end too.' : ''
       }`,
     );
@@ -181,9 +188,19 @@ export default function GuardianMediaConsentPage() {
           This page stands on the family ground, as the hub, film and progress
           pages do (app scrub FAM-28; AS-9 Q9 = A): the canvas, with paper
           panels on it. Its type goes through the design system's voices
-          (.t-body, .t-eyebrow, .badge, .alert, .empty), which the sheet
-          restates in ink for this ground, so nothing here sets a colour. */}
-      <main className="on-canvas min-h-screen">
+          (.t-body, .t-eyebrow, .badge, .alert), which the sheet restates in
+          ink for this ground. .ge-family is the hub's family dress: its focus
+          ring is what makes keyboard focus visible here, because on canvas
+          `.on-canvas .btn--ghost` replaces the box-shadow ring `.btn` draws
+          and the brass ring is about 1.2:1 on cream (golden-era.css, "FOCUS
+          THAT SHOWS"); it also floors every .btn at --tap and makes the h1
+          the brass nameplate. The loading, failed and nobody-linked panels
+          are .pap as well: .empty's inks are bone, written for leather, and
+          the sheet restates them in ink only under .pap ("The empty state on
+          paper"); measured on a local render, 2026-11-21, the title read
+          1.36:1 down to 1.12:1 on this paper without it. The one colour set
+          here is the checkbox's accent (below). */}
+      <main className="ge-family on-canvas min-h-screen">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
@@ -214,7 +231,7 @@ export default function GuardianMediaConsentPage() {
           {isLoading ? (
             /* Names what is loading and says it can take a few seconds (parent
                walk 2026-10-19 item 13). A status region. Wording PROPOSED. */
-            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
               <div className="empty" role="status">
                 <div className="empty-glyph" aria-hidden="true">◌</div>
                 <div className="empty-title">Loading consent status…</div>
@@ -222,7 +239,7 @@ export default function GuardianMediaConsentPage() {
               </div>
             </div>
           ) : errorMessage ? (
-            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-glyph" aria-hidden="true">✕</div>
                 <div className="empty-title">Consent status could not be loaded</div>
@@ -232,7 +249,7 @@ export default function GuardianMediaConsentPage() {
               </div>
             </div>
           ) : items.length === 0 ? (
-            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-glyph" aria-hidden="true">◌</div>
                 <div className="empty-title">No linked children found</div>
@@ -290,12 +307,18 @@ export default function GuardianMediaConsentPage() {
                             win: nothing unlayered sets min-height on a <label> or
                             width/height on a checkbox, so there is no ppbf.css rule
                             for them to lose to. The same pattern is already on
-                            /athlete/dashboard/sparring. */}
+                            /athlete/dashboard/sparring.
+
+                            The box's accent is --brass-700 on this paper: a
+                            checked box is a non-text mark (3:1), and
+                            --brass-600 computes to 3.16:1 at the panel's top
+                            and 2.61:1 at its foot; --brass-700 is 4.36:1 to
+                            3.6:1. */}
                         <label className="t-body flex min-h-[var(--tap)] cursor-pointer items-center gap-[var(--s3)]">
                           <input
                             type="checkbox"
                             defaultChecked
-                            className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-600)]"
+                            className="h-[var(--s5)] w-[var(--s5)] accent-[var(--brass-700)]"
                             onChange={(event) => setVideoByAthlete((prev) => ({ ...prev, [item.athlete_id]: event.target.checked }))}
                           />
                           Include video (unchecked = photos only)

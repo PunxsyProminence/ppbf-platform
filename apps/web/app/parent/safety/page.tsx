@@ -264,9 +264,22 @@ export default function GuardianSafetyPage() {
           the canvas, with paper panels on it. The conversion this note used
           to defer is done here: the page's text goes through the design
           system's voices (.t-body, .t-label, .t-eyebrow, .badge), which the
-          sheet restates in ink for this ground, and the raw bone colours it
-          carried for the dark ground are gone. */}
-      <main className="on-canvas min-h-screen">
+          sheet restates in ink for this ground, and the raw bone colours this
+          file carried for the dark ground are gone. One raw bone line is left
+          inside the shared MyInjuries component (who reported an injury, and
+          when the child is expected back), which this change does not edit;
+          the pull request names it.
+          .ge-family is the hub's family dress: its focus ring is what makes
+          keyboard focus visible here, because on canvas `.on-canvas
+          .btn--ghost` replaces the box-shadow ring `.btn` draws and the brass
+          ring is about 1.2:1 on cream (golden-era.css, "FOCUS THAT SHOWS"); it
+          also floors every .btn at --tap and makes the h1 the brass
+          nameplate. The loading, failed and nobody-linked panels are .pap as
+          well: .empty's inks are bone, written for leather, and the sheet
+          restates them in ink only under .pap ("The empty state on paper");
+          measured on a local render, 2026-11-21, the title read 1.36:1 down to
+          1.12:1 on this paper without it. */}
+      <main className="ge-family on-canvas min-h-screen">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
@@ -320,7 +333,7 @@ export default function GuardianSafetyPage() {
                seconds). A status region. The sheet's
                `.working` cue is not used: it pins 11px and this is a kiosk
                page with a 19.1px type floor. Wording PROPOSED. */
-            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
               <div className="empty" role="status">
                 <div className="empty-glyph" aria-hidden="true">◌</div>
                 <div className="empty-title">Loading safety status…</div>
@@ -328,7 +341,7 @@ export default function GuardianSafetyPage() {
               </div>
             </div>
           ) : errorMessage ? (
-            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-glyph" aria-hidden="true">✕</div>
                 <div className="empty-title">Safety status could not be loaded</div>
@@ -338,7 +351,7 @@ export default function GuardianSafetyPage() {
               </div>
             </div>
           ) : items.length === 0 ? (
-            <div className="mat-paper mt-[var(--s5)] rounded-[var(--r-lg)]">
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-glyph" aria-hidden="true">◌</div>
                 <div className="empty-title">No linked children found</div>
