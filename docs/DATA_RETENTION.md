@@ -147,22 +147,26 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   SHADOW's replies are kept under a one-off `anon_<uuid>` token, stored nowhere else, with these
   names replaced by `[name]`: the member's own (the login when it is an email, the login email,
   ring name, staff name, guardian-record name, volunteer-record name, labelling-station name, the
-  byline on a lesson they wrote, the name they sign gym notices with, read from the post's audit
-  row because a notice has no account); for each athlete that is theirs (their own athlete record,
-  the children their guardian record is linked to, the athlete the chat is about), the athlete
-  record's full name and the ring names on that athlete's logins; and those athletes' guardians'
-  guardian-record names. That is, for the member: the names stored against their account today,
-  and every byline they typed under it (lesson or notice, old ones included); an earlier value of
-  any other name is not read. The same method and limits as the purge's `namePattern`. Any other
-  name a reply holds stays: another athlete it mentions (a sibling or a teammate keeps their name,
-  except a part shared with a scrubbed name, such as a sibling's surname), an athlete's or
-  guardian's login or login email, a guardian's ring name, an emergency contact, a guardian
-  record's email, a coach's or other staff member's name (other than the member's own names listed
-  above), a name on record only elsewhere (a waiver signer, a physician, another gym), an earlier
-  name of the member's, after a rename, copied onto a record they wrote (a recognition, a 1% Club
-  nomination or vote) or kept in the audit log where an admin set it, a nickname never recorded, a
-  misspelling; so does anything else a reply restates (a school, a town, a number). Kept times are
-  the day, not the moment (an exact time
+  byline on a lesson they wrote, the name they sign gym notices and chalkboard lines with, read
+  from the post's audit row because a notice has no account); for each athlete that is theirs
+  (their own athlete record, the children their guardian record is linked to, the athlete the chat
+  is about), the athlete record's full name and the ring names on that athlete's logins; and those
+  athletes' guardians' guardian-record names. That is, for the member: the names stored against
+  their account in the chat's gym today, and every byline they typed under it there (a lesson's,
+  or a notice's as its post audit row records it; old ones included); an earlier value of any
+  other name is not read. The same method and limits as the purge's `namePattern`: every part of a
+  name is blanked wherever it stands as a word, so a byline or staff name that carries a title, a
+  role word or an article ("Coach Jason", "The Board") blanks that word throughout the member's
+  kept replies too. Any other name a reply holds stays: another athlete it mentions (a sibling or
+  a teammate keeps their name, except a part shared with a scrubbed name, such as a sibling's
+  surname), an athlete's or guardian's login or login email, a guardian's ring name, an emergency
+  contact, a guardian record's email, a coach's or other staff member's name (other than the
+  member's own names listed above), a name on record only elsewhere (a waiver signer, a physician,
+  another gym), an earlier name of the member's or of an athlete of theirs, after a rename, copied
+  onto another record (a recognition, a 1% Club nomination or vote, a floor plan) or kept in the
+  audit log where an admin set it, a notice signature whose post audit row was not written, a
+  nickname never recorded, a misspelling; so does anything else a reply restates (a school, a
+  town, a number). Kept times are the day, not the moment (an exact time
   would line the kept rows up with the member's own). What is kept takes **new ids**: a new conversation id
   and new message ids, so nothing that copied the old ones joins it (a background reply's id is
   a hash of its job's id; an escalation or an audit row can hold the conversation's). The
