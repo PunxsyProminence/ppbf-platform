@@ -145,6 +145,9 @@ export const BOXING_CONTEXT_WORDS: readonly string[] = [
   'rounds', 'gloves', 'glove', 'headgear', 'mouthguard', 'drill', 'drills',
   'fight night', 'first fight', 'next fight', 'my bout', 'bout', 'bouts', 'tournament', 'opponent',
   'getting hit', 'get hit', 'got hit', 'take a punch', 'taking punches',
+  // Pad-holder talk ("hit me with your best shot"), which trips the
+  // someone_is_hurting_me cue on "hit me" (Overwatch on PR 2059, Q2 = A).
+  'your best shot', 'hit me with your best',
 ];
 
 /**
