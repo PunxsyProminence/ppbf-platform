@@ -6,12 +6,15 @@ jest.mock('./db', () => ({
 
 import { query, queryOne, withTransaction } from './db';
 import {
+  CAPTURE_TRAINING_CONTEXTS,
+  TRAINING_CONTEXTS,
   advanceTake,
   closeRecordingSession,
   createRecordingSession,
   findMyOpenSession,
   findOpenSessionByJoinCode,
   generateJoinCode,
+  isCaptureTrainingContext,
   listTakeFiles,
   normalizeJoinCode,
 } from './captureSessions';
@@ -308,5 +311,21 @@ describe('the files on a take', () => {
     expect(String(sql)).toContain('capture_take_id = $2');
     expect(String(sql)).toContain('order by created_at asc');
     expect(params).toEqual(['org-a', 'take-1']);
+  });
+});
+
+describe('what capture may film (OD-2026-11-21-004, TS-Q1 A)', () => {
+  test('shadowboxing, heavy bag, mitts and sparring; never "other"', () => {
+    expect([...CAPTURE_TRAINING_CONTEXTS]).toEqual(['shadowboxing', 'heavy_bag', 'mitts', 'sparring']);
+    expect(isCaptureTrainingContext('mitts')).toBe(true);
+    expect(isCaptureTrainingContext('sparring')).toBe(true);
+    expect(isCaptureTrainingContext('other')).toBe(false);
+    expect(isCaptureTrainingContext('')).toBe(false);
+  });
+
+  test('every capture context is one the database accepts', () => {
+    for (const context of CAPTURE_TRAINING_CONTEXTS) {
+      expect(TRAINING_CONTEXTS as readonly string[]).toContain(context);
+    }
   });
 });
