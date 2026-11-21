@@ -2123,7 +2123,7 @@ export default function ParentHub() {
 
                 <p className="t-body">
                   <Link href="/schedule">Open the full scheduler</Link> to register, review a registration, or
-                  check an athlete in.
+                  mark your child here.
                 </p>
               </div>
             </div>
