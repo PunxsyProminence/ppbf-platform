@@ -266,8 +266,8 @@ const PICTURE_NEAR_PLACE = [
   String.raw`^(?!${SECRET_EVERYDAY}$).*\bsecret ${ANY_PICTURE}\b`,
   // A stranger online asking for a picture files whatever gym words follow;
   // any other stranger near a picture files unless the whole message is
-  // everyday tutorial or tournament talk; the child sending pictures and
-  // to a stranger files.
+  // everyday tutorial or tournament talk; a picture sent to a stranger
+  // files.
   String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging|askin|keeps? askin|beggin|keeps? beggin)${WORD}{0,4} ${ANY_PICTURE}`,
   String.raw`^(?!${STRANGER_EVERYDAY}$).*${STRANGER_ONE}${WORD}{0,14}? ${ANY_PICTURE}\b`,
   String.raw`\b(?:sent|send|sending|gave|give|showed|show)${WORD}{0,3} ${ANY_PICTURE}\b(?: (?:to|with))? (?:a |an |some |this |that |the )?${STRANGER_ONE}`,
