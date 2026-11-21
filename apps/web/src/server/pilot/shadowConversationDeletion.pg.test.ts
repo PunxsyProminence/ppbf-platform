@@ -248,6 +248,15 @@ async function seedPeople(db: Client): Promise<void> {
      values ($1, $2, 'Ace Marlow', 'scrypt$test')`,
     [ORG, STAFF],
   );
+  // And a byline they typed on a lesson they wrote ("Your name, as readers
+  // will see it"), a third name of their own choosing.
+  await db.query(
+    `insert into pilot.rabbit_holes
+       (organization_id, rabbit_hole_id, anchor_type, anchor_key, title, concept,
+        author_account_id, author_display_name)
+     values ($1, gen_random_uuid(), 'gap_type', 'technique', 'Footwork first', 'Feet before hands.', $2, 'Doc Ellery')`,
+    [ORG, STAFF],
+  );
   await db.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
      values ($1, 'par-hf7', $2, 'Dana Pike', '555-0100', 'dana.pike@example.test')`,
@@ -908,7 +917,12 @@ describe('T2b: what arrives at the edges', () => {
     await expect(deleteOwnConversation!(memberActor, target.conversationId)).resolves.toBe(true);
     const after = (await snapshot(mainDb, target.conversationId)) as typeof before;
     expect(after.messages).toEqual(before.messages);
-    expect((await sessionRow(mainDb, target.conversationId))?.deidentified_at).toBeNull();
+    const session = await sessionRow(mainDb, target.conversationId);
+    expect(session?.deidentified_at).toBeNull();
+    // Hidden from the member, as any held chat is.
+    expect(session?.deleted_at).not.toBeNull();
+    expect((await listConversations(memberActor, 100)).map((row) => row.conversationId))
+      .not.toContain(target.conversationId);
   });
 
   test('a review row written after its chat was cleared is kept, without the chat', async () => {
@@ -964,18 +978,18 @@ describe('T2b: what arrives at the edges', () => {
     expectNoNames(kept[0].content, ['Jordan', 'Pike', 'Lightning', 'Dana', 'Morgan', 'Quill']);
   });
 
-  test('a staff member\'s own chat loses their volunteer-record and labelling-station names', async () => {
+  test('a staff member\'s own chat loses their volunteer-record, labelling-station and lesson-byline names', async () => {
     const staffActor: ActorIdentity = { accountId: STAFF, role: 'coach', organizationId: ORG, athleteId: null };
     const target = await seedConversation(mainDb, {
       organizationId: ORG, accountId: STAFF, role: 'coach',
-      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station), open with footwork and keep the rounds short.',
+      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station, Doc Ellery on the lessons), open with footwork and keep the rounds short.',
     });
     await expect(deleteOwnConversation!(staffActor, target.conversationId)).resolves.toBe(true);
     const keptId = await keptCopy(mainDb, target);
     expect(keptId).not.toBeNull();
     const kept = await messagesOf(mainDb, keptId!);
     expect(kept).toHaveLength(1);
-    expectNoNames(kept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow']);
+    expectNoNames(kept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow', 'Doc', 'Ellery']);
   });
 });
 
@@ -1128,11 +1142,11 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       userWords: 'plan for this athlete',
       replyWords: 'Jordan Pike (Lightning) can spar; tell Dana Pike and Morgan Quill.',
     });
-    // A staff member's own chat, deleted before this change: their only name
-    // on record is their volunteer record.
+    // A staff member's own chat, deleted before this change: their names on
+    // record are their volunteer record, labelling-station name and byline.
     const legacyStaff = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: STAFF, role: 'coach', deletedAgo: '3 days',
-      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station), open with footwork and keep the rounds short.',
+      userWords: 'session plan', replyWords: 'Pat Rowan (Ace Marlow at the station, Doc Ellery on the lessons), open with footwork and keep the rounds short.',
     });
     const live = await seedConversation(sweepDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     // Flagged, past two years, and no name on record: nothing can be
@@ -1247,7 +1261,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     expect(staffKeptId).not.toBeNull();
     const staffKept = await messagesOf(sweepDb, staffKeptId!);
     expect(staffKept).toHaveLength(1);
-    expectNoNames(staffKept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow']);
+    expectNoNames(staffKept[0].content, ['Pat', 'Rowan', 'Ace', 'Marlow', 'Doc', 'Ellery']);
     for (const cleared of [expired, expiredEscalated, legacy, legacyGuardian, legacyCoach]) {
       const keptId = (await keptCopy(sweepDb, cleared))!;
       await expectDayTimes(sweepDb, 'shadow_chat_sessions', 'conversation_id', keptId,
