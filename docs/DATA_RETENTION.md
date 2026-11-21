@@ -155,11 +155,12 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   stored against their account in the chat's gym today, and every byline they typed under it there
   (a lesson's, or a notice's or chalkboard line's as its post audit row records it; old ones
   included); an earlier value of any other name is not read. The same method and limits as the
-  purge's `namePattern`: each part of a name two characters or longer, split on spaces and
-  `,.'’()@-` (not on `_`, so a login's `_`-joined parts stay), is blanked wherever it stands as a
-  word, so any name read that carries a title, a role word or an article (a byline or staff name
-  such as "Coach Jason" or "The Board", a ring name such as "The Hammer", a login such as
-  "coach.dave@…") blanks that word throughout the member's kept replies too. Any other name a
+  purge's `namePattern`: each part of a name two characters or longer, split on whitespace and
+  `,.'’()-` (not on `_`, so a login's `_`-joined parts stay; an email gives itself whole and its
+  part before the `@`, never its domain, so a domain quoted alone stays), is blanked wherever it
+  stands as a word, so any name read that carries a title, a role word or an article (a byline or
+  staff name such as "Coach Jason" or "The Board", a ring name such as "The Hammer", a login such
+  as "coach.dave@…") blanks that word throughout the member's kept replies too. Any other name a
   reply holds stays: another athlete it mentions (a sibling or a teammate keeps their name, except
   a part shared with a scrubbed name, such as a sibling's surname), an athlete's or guardian's
   login or login email, a guardian's ring name, an emergency contact, a guardian record's email, a
