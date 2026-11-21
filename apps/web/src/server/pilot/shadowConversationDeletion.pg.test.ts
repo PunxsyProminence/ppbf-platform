@@ -81,6 +81,7 @@ const {
   listConversations,
   listShadowDataDeletionRequests,
   loadHumanReviewExchange,
+  queueHumanReview,
 } = conversations;
 // Looked up by name so this suite runs (and fails by assertion) against a
 // build that does not have it yet.
@@ -283,9 +284,14 @@ async function seedConversation(db: Client, input: {
   escalated?: boolean;
   deletedAgo?: string | null;
   jobStatus?: 'pending' | 'running';
+  /** Also a finished job whose stored answer names the chat (as the processor's completion output does). */
+  completedJob?: boolean;
+  /** The escalation's conversation id as a client could have sent it: upper case. */
+  escalationIdUpperCase?: boolean;
+  subjectDeletedAgo?: string;
   userWords?: string;
   replyWords?: string;
-}): Promise<SeededConversation> {
+}): Promise<SeededConversation & { completedJobId: string | null }> {
   seq += 1;
   const ref = `ref${seq}x`;
   const conversationId = (await db.query(
@@ -316,6 +322,24 @@ async function seedConversation(db: Client, input: {
     [input.organizationId, input.accountId, input.athleteId ?? null, input.role, running ? 'running' : 'pending',
       conversationId, input.userWords ?? USER_WORDS, running],
   )).rows[0].job_id as string;
+  let completedJobId: string | null = null;
+  if (input.completedJob) {
+    completedJobId = (await db.query(
+      `insert into pilot.shadow_jobs
+         (job_type, organization_id, account_id, subject_id, role, status, input_payload, output_payload, safety_status, completed_at)
+       values ('heavy_bag_session', $1, $2, $3, $4, 'completed', '{}'::jsonb,
+               jsonb_build_object('conversationId', $5::text, 'response', $6::text), 'passed', now())
+       returning job_id`,
+      [input.organizationId, input.accountId, input.athleteId ?? null, input.role, conversationId,
+        `${input.replyWords ?? REPLY_WORDS} (stored answer)`],
+    )).rows[0].job_id as string;
+  }
+  if (input.subjectDeletedAgo) {
+    await db.query(
+      `update pilot.shadow_chat_sessions set subject_deleted_at = now() - $2::interval where conversation_id = $1`,
+      [conversationId, input.subjectDeletedAgo],
+    );
+  }
   // A background answer: its id is derived from the job's id.
   const replyId = derivedReplyId(jobId);
   await db.query(
@@ -398,10 +422,10 @@ async function seedConversation(db: Client, input: {
        values ($1, gen_random_uuid()::text, 'shadow_disclosure', $2, 'high', 'SHADOW disclosure', 'organization_admin', 'system',
                jsonb_build_object('channel', 'shadow_chat', 'conversation_id', $3::text))
        returning escalation_id`,
-      [input.organizationId, ATHLETE, conversationId],
+      [input.organizationId, ATHLETE, input.escalationIdUpperCase ? conversationId.toUpperCase() : conversationId],
     )).rows[0].escalation_id as string;
   }
-  return { conversationId, userMessageId, replyId, reviewId, escalationId, feedbackId, jobId, ref };
+  return { conversationId, userMessageId, replyId, reviewId, escalationId, feedbackId, jobId, ref, completedJobId };
 }
 
 /** Everything stored for one conversation, for before/after comparison. */
@@ -632,7 +656,9 @@ describe('T0: the fixtures stand for what the app writes', () => {
 describe('T1: a member deletes a chat nobody flagged', () => {
   test('their words are deleted, SHADOW\'s reply is kept under new ids without their names, and nothing else moves', async () => {
     expect(typeof deleteOwnConversation).toBe('function');
-    const target = await seedConversation(mainDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete', athleteId: ATHLETE });
+    const target = await seedConversation(mainDb, {
+      organizationId: ORG, accountId: MEMBER, role: 'athlete', athleteId: ATHLETE, completedJob: true,
+    });
     const ownOther = await seedConversation(mainDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     const otherPerson = await seedConversation(mainDb, { organizationId: ORG, accountId: OTHER_MEMBER, role: 'athlete' });
     const otherGym = await seedConversation(mainDb, { organizationId: OTHER_ORG, accountId: MEMBER, role: 'athlete' });
@@ -684,6 +710,23 @@ describe('T1: a member deletes a chat nobody flagged', () => {
     expect(links.citations).toBe(0);
     expect(links.claims).toBe(0);
     expect(links.job).toBeNull();
+    // A finished job's stored answer (SHADOW's words under the member's
+    // account) goes with it.
+    expect((await mainDb.query(`select count(*)::int as n from pilot.shadow_jobs where job_id = $1`,
+      [target.completedJobId])).rows[0].n).toBe(0);
+    // Kept times are the day, not the moment: an exact time would line the
+    // kept rows up with the member's own rows (evidence, the chat log).
+    const times = (await mainDb.query(
+      `select extract(epoch from s.created_at - date_trunc('day', s.created_at)) as session_offset,
+              extract(epoch from s.deidentified_at - date_trunc('day', s.deidentified_at)) as stamp_offset,
+              extract(epoch from s.updated_at - date_trunc('day', s.updated_at)) as updated_offset,
+              extract(epoch from s.deleted_at - date_trunc('day', s.deleted_at)) as deleted_offset,
+              (select max(extract(epoch from m.created_at - date_trunc('day', m.created_at)))
+                 from pilot.shadow_chat_messages m where m.conversation_id = s.conversation_id) as message_offset
+         from pilot.shadow_chat_sessions s where s.conversation_id = $1`,
+      [keptId],
+    )).rows[0];
+    for (const offset of Object.values(times)) expect(Number(offset)).toBeLessThan(1);
 
     // The member no longer sees it; their other chat is still there.
     const listed = (await listConversations(memberActor, 100)).map((row) => row.conversationId);
@@ -783,6 +826,8 @@ describe('T2: a member deletes a chat a safeguarding review or a safety escalati
   test('a chat only a safety escalation points at (its review entry never written) is held the same way', async () => {
     const target = await seedConversation(mainDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', athleteId: ATHLETE, escalated: true,
+      // Filed with the id as the client sent it; ids match whatever their case.
+      escalationIdUpperCase: true,
     });
     const before = (await snapshot(mainDb, target.conversationId)) as { messages: unknown; escalations: unknown };
 
@@ -798,6 +843,41 @@ describe('T2: a member deletes a chat a safeguarding review or a safety escalati
   });
 });
 
+describe('T2b: what arrives at the edges', () => {
+  test('a chat the purge marked as held (subject_deleted_at) is held, not cleared', async () => {
+    const target = await seedConversation(mainDb, {
+      organizationId: ORG, accountId: MEMBER, role: 'athlete', subjectDeletedAgo: '1 day',
+    });
+    const before = (await snapshot(mainDb, target.conversationId)) as { messages: unknown };
+    await expect(deleteOwnConversation!(memberActor, target.conversationId)).resolves.toBe(true);
+    const after = (await snapshot(mainDb, target.conversationId)) as typeof before;
+    expect(after.messages).toEqual(before.messages);
+    expect((await sessionRow(mainDb, target.conversationId))?.deidentified_at).toBeNull();
+  });
+
+  test('a review row written after its chat was cleared is kept, without the chat', async () => {
+    // The chat route writes its review row at the end of the request, after
+    // the exchange is stored; a delete from another tab can land in between.
+    // The row is a safety record and must not be lost to the foreign key.
+    const target = await seedConversation(mainDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
+    await expect(deleteOwnConversation!(memberActor, target.conversationId)).resolves.toBe(true);
+    const reviewId = await queueHumanReview({
+      organizationId: ORG,
+      accountId: MEMBER,
+      conversationId: target.conversationId,
+      category: 'self_harm',
+      severity: 'critical',
+      summary: 'A high-risk request reached SHADOW.',
+      metadata: { assistantMessageId: target.replyId },
+    });
+    const row = (await mainDb.query(
+      `select conversation_id, account_id, severity from pilot.shadow_human_review_queue where review_id = $1`,
+      [reviewId],
+    )).rows[0];
+    expect(row).toEqual({ conversation_id: null, account_id: MEMBER, severity: 'critical' });
+  });
+});
+
 describe('T3: the office completes a member\'s request', () => {
   test('every unflagged chat is cleared, the flagged ones are held, and nobody else is touched', async () => {
     const aboutChild = await seedConversation(mainDb, {
@@ -807,7 +887,7 @@ describe('T3: the office completes a member\'s request', () => {
     });
     const deletedEarlier = await seedConversation(mainDb, {
       organizationId: ORG, accountId: PARENT, role: 'parent', deletedAgo: '3 days',
-      userWords: 'Dana here again.', replyWords: 'Hello Dana. Hydration matters.',
+      userWords: 'Dana here again.', replyWords: 'Hello Dana. Make sure Jordan and Morgan Quill pack water. Hydration matters.',
     });
     const flagged = await seedConversation(mainDb, {
       organizationId: ORG, accountId: PARENT, role: 'parent', flagged: true,
@@ -911,6 +991,13 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       organizationId: ORG, accountId: MEMBER, role: 'athlete', deletedAgo: '3 days',
     });
     const live = await seedConversation(sweepDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
+    // Flagged, past two years, and no name on record: nothing can be
+    // scrubbed, so the chat goes whole; its review entry stays, under a new
+    // id and a token, without the chat.
+    const namelessFlagged = await seedConversation(sweepDb, {
+      organizationId: ORG, accountId: NAMELESS, role: 'athlete', flagged: true, deletedAgo: '25 months',
+      userWords: 'question', replyWords: 'answer',
+    });
     // A deleted athlete's mark (dataDeletion.ts markAthleteTiedRecords): the
     // athlete's own purge, two years after THEIR deletion, decides these --
     // a staff chat about them and their own login's chat. Not flagged, so
@@ -953,7 +1040,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
 
     const untouched = [stillHeld, stillEscalated, live, athleteMark, athleteOwn, deletedPerson];
     const untouchedBefore = await Promise.all(untouched.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
-    const due = [expired, expiredEscalated, legacy];
+    const due = [expired, expiredEscalated, legacy, namelessFlagged];
     const dueBefore = await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
 
     // The nightly run (OD-2026-10-07-010) and a dry run count them and keep them.
@@ -970,18 +1057,28 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       [ORG],
     );
     const nightly = await runCleanup(SWEEP_DB_NAME, 'nightly');
-    expect(nightly.member_deleted_chats_due).toBe(3);
+    expect(nightly.member_deleted_chats_due).toBe(4);
     expect(nightly.inquiries).toBe(1);
     expect(await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)))).toEqual(dueBefore);
     const dry = await runCleanup(SWEEP_DB_NAME, 'dry');
-    expect(dry.member_deleted_chats_due).toBe(3);
-    expect(dry.would_clear_member_deleted_chats).toBe(3);
+    expect(dry.member_deleted_chats_due).toBe(4);
+    expect(dry.would_clear_member_deleted_chats).toBe(4);
     expect(await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)))).toEqual(dueBefore);
 
     const applied = await runCleanup(SWEEP_DB_NAME, 'apply');
-    expect(applied.member_deleted_chats_cleared).toBe(3);
+    expect(applied.member_deleted_chats_cleared).toBe(4);
 
-    for (const cleared of due) {
+    await expectOldIdsGone(sweepDb, namelessFlagged);
+    expect(await keptCopy(sweepDb, namelessFlagged)).toBeNull();
+    expect((await sweepDb.query(`select count(*)::int as n from pilot.shadow_human_review_queue where review_id = $1`,
+      [namelessFlagged.reviewId])).rows[0].n).toBe(0);
+    const orphanReview = (await sweepDb.query(
+      `select conversation_id, deidentified_at from pilot.shadow_human_review_queue
+        where account_id ~ '^anon_' and summary like 'Review entry;%' and conversation_id is null`,
+    )).rows;
+    expect(orphanReview).toHaveLength(1);
+
+    for (const cleared of [expired, expiredEscalated, legacy]) {
       await expectOldIdsGone(sweepDb, cleared);
       const keptId = await keptCopy(sweepDb, cleared);
       const messages = await messagesOf(sweepDb, keptId!);
