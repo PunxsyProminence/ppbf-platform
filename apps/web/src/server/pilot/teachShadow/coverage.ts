@@ -1,10 +1,13 @@
 import { currentAdjudicationPredicate } from '@/src/server/pilot/calibration/adjudication';
 import { query } from '@/src/server/pilot/db';
 import {
-  BOXING_ONTOLOGY_VERSION_0_1,
+  ANNOTATABLE_ONTOLOGY_VERSIONS,
+  BODY_POINT_ONTOLOGY_VERSIONS,
   DEFENSE_TYPES,
+  PROJECT_CREATION_ONTOLOGY_VERSION,
   PUNCH_TYPES,
   STANCES,
+  isInVocabulary,
 } from '@/src/server/pilot/calibration/ontology';
 
 /*
@@ -65,8 +68,45 @@ export interface RefusedReasonCount {
   files: number;
 }
 
-export interface TeachShadowCoverage {
+/*
+ * ONE VOCABULARY AT A TIME, EACH SAID BY NAME (TEACH-T T-1b; Overwatch on
+ * #2085, Q-T1 (a)). New studies are created on PROJECT_CREATION_ONTOLOGY_VERSION
+ * (0.4, body points); studies already running on 0.1 are labelled to the end on
+ * 0.1 (OD-2026-10-02-008 4A). Pooling the two would add counts made under two
+ * vocabularies, so each labellable version is counted on its own and named.
+ */
+export interface VersionCoverage {
   ontology_version: string;
+  /** 'new_studies': the version new studies are created on. 'finishing': an
+   *  older version, still labellable for studies started on it (whether any
+   *  such study exists is not claimed). */
+  role: 'new_studies' | 'finishing';
+  /** Sets a coach has finished and frozen. In-progress work is not evidence. */
+  submitted_sets: number;
+  /** Clips two coaches have both finished -- the only ones agreement can be measured on. */
+  clips_with_two_submitted_sets: number;
+  adjudications: number;
+  /*
+   * PROMOTED, not merely nominated. governance_state runs candidate -> gold
+   * -> excluded, defaulting to 'candidate' so that a caller who forgets to
+   * say produces a row OUTSIDE the reference dataset rather than inside it.
+   * Counting every row and calling the total "gold records" would report
+   * deliberately EXCLUDED records as part of the reference set, which is the
+   * opposite of what somebody excluded them for.
+   */
+  gold_records: number;
+  /** Adjudicated and nominated, and deliberately not yet part of anything. */
+  gold_candidates: number;
+  /** False on a body-point version: its events' stance column is always empty
+   *  (the lead side is recorded per marked moment, and a stance type per event
+   *  lives in its own table), so its punch grid is one row per punch. */
+  stance_split: boolean;
+  /** Every term in the vocabulary, including the ones with nothing behind them. */
+  punch_evidence: PunchEvidenceCell[];
+  defense_evidence: DefenseEvidenceCell[];
+}
+
+export interface TeachShadowCoverage {
   capture: {
     recording_sessions: number;
     capture_takes: number;
@@ -96,28 +136,10 @@ export interface TeachShadowCoverage {
     /** videoScan's own reason keys as written to scan_detail.reason, never reworded. */
     by_reason: RefusedReasonCount[];
   };
-  labelling: {
-    clips_cut: number;
-    /** Sets a coach has finished and frozen. In-progress work is not evidence. */
-    submitted_sets: number;
-    /** Clips two coaches have both finished -- the only ones agreement can be measured on. */
-    clips_with_two_submitted_sets: number;
-    adjudications: number;
-    /*
-     * PROMOTED, not merely nominated. governance_state runs candidate -> gold
-     * -> excluded, defaulting to 'candidate' so that a caller who forgets to
-     * say produces a row OUTSIDE the reference dataset rather than inside it.
-     * Counting every row and calling the total "gold records" would report
-     * deliberately EXCLUDED records as part of the reference set, which is the
-     * opposite of what somebody excluded them for.
-     */
-    gold_records: number;
-    /** Adjudicated and nominated, and deliberately not yet part of anything. */
-    gold_candidates: number;
-  };
-  /** Every term in the vocabulary, including the ones with nothing behind them. */
-  punch_evidence: PunchEvidenceCell[];
-  defense_evidence: DefenseEvidenceCell[];
+  /** Clips cut from teaching footage, whatever vocabulary their study uses. */
+  clips_cut: number;
+  /** Each labellable version, the one new studies use first. */
+  versions: VersionCoverage[];
   vocabulary: {
     punch_types: readonly string[];
     defense_types: readonly string[];
@@ -134,12 +156,11 @@ export interface TeachShadowCoverage {
  * and the number would go DOWN when a coach deleted a mistaken event -- a
  * figure that moves backwards for a good reason is one nobody trusts.
  *
- * ONE ONTOLOGY VERSION. ontology.ts says every calibration row carries the
- * vocabulary it was created under precisely so a study run under 0.1 and one
- * run under 0.2 are never pooled, and that nothing here may aggregate across
- * versions without a recorded decision. Only one version exists today, so an
- * unfiltered count happens to be right -- and would quietly stop being right
- * the day a second one shipped, while still stamping the answer 0.1.
+ * ONE ONTOLOGY VERSION PER COUNT. ontology.ts says every calibration row
+ * carries the vocabulary it was created under precisely so a study run under
+ * 0.1 and one run under 0.4 are never pooled, and that nothing here may
+ * aggregate across versions without a recorded decision. So every label count
+ * is per version (VersionCoverage), for each version a coach can label.
  *
  * AND TEACHING FOOTAGE ONLY, which is the boundary the whole area exists to
  * hold. Film Study media can never be promoted into the recognition corpus,
@@ -219,8 +240,157 @@ const SUBMITTED_EVENTS_FROM = `
    and s.pass_number = 1
    and s.ontology_version = $2`;
 
+async function readVersionCoverage(
+  organizationId: string,
+  version: string,
+  role: VersionCoverage['role'],
+): Promise<VersionCoverage> {
+  /*
+   * NO STANCE SPLIT ON A BODY-POINT VERSION. Its events' stance column is
+   * always empty -- the lead side is recorded at each marked moment instead
+   * (OD-2026-10-02-011 3b), and the database refuses a stance on such an event
+   * -- so splitting its punches by stance would show every one as "stance not
+   * recorded". Its punches are grouped by type alone, so no row can fall
+   * outside the grid.
+   */
+  const stanceSplit = !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, version);
+  const stanceColumn = stanceSplit ? 'e.stance' : 'null::text';
+
+  const [labelling, punchRows, defenseRows] = await Promise.all([
+    query<{
+      submitted_sets: number;
+      clips_with_two_submitted_sets: number;
+      adjudications: number;
+      gold_records: number;
+      gold_candidates: number;
+    }>(
+      `select
+         (select count(*)::int from pilot.calibration_annotation_sets s
+            ${TEACHING_SOURCE_JOIN('s')}
+           where s.organization_id = $1 and s.status = 'submitted' and s.pass_number = 1
+             and s.ontology_version = $2)
+           as submitted_sets,
+         (select count(*)::int from (
+            select s.calibration_clip_id
+              from pilot.calibration_annotation_sets s
+              ${TEACHING_SOURCE_JOIN('s')}
+             where s.organization_id = $1 and s.status = 'submitted' and s.pass_number = 1
+               and s.ontology_version = $2
+             group by s.calibration_clip_id
+            having count(*) >= 2
+          ) c)
+           as clips_with_two_submitted_sets,
+         -- Current answers only. A correction is a later revision of the same
+         -- disagreement, not a second thing settled, so a superseded row is
+         -- not counted (OD-2026-08-29-005).
+         (select count(*)::int from pilot.calibration_adjudications a
+            ${TEACHING_SOURCE_JOIN('a')}
+           where a.organization_id = $1 and a.ontology_version = $2
+             and ${currentAdjudicationPredicate('a')})
+           as adjudications,
+         -- Gold carries its own video_session_id as provenance, so it needs no
+         -- hop through the clip.
+         (select count(*)::int from pilot.calibration_gold_records g
+            join pilot.video_sessions v
+              on v.video_session_id = g.video_session_id
+             and v.organization_id = g.organization_id
+             and v.capture_take_id is not null
+             and v.status <> 'archived'
+           where g.organization_id = $1 and g.ontology_version = $2
+             and g.governance_state = 'gold')
+           as gold_records,
+         (select count(*)::int from pilot.calibration_gold_records g
+            join pilot.video_sessions v
+              on v.video_session_id = g.video_session_id
+             and v.organization_id = g.organization_id
+             and v.capture_take_id is not null
+             and v.status <> 'archived'
+           where g.organization_id = $1 and g.ontology_version = $2
+             and g.governance_state = 'candidate')
+           as gold_candidates`,
+      [organizationId, version],
+    ),
+    query<{ punch_type: string; stance: string | null; events: number; clips: number }>(
+      `select e.punch_type, ${stanceColumn} as stance,
+              count(*)::int as events,
+              count(distinct e.calibration_clip_id)::int as clips
+         ${SUBMITTED_EVENTS_FROM}
+           and e.event_class = 'punch'
+           and e.punch_type is not null
+        group by e.punch_type, 2`,
+      [organizationId, version],
+    ),
+    query<{ defense_type: string; events: number; clips: number }>(
+      `select e.defense_type,
+              count(*)::int as events,
+              count(distinct e.calibration_clip_id)::int as clips
+         ${SUBMITTED_EVENTS_FROM}
+           and e.event_class = 'defense'
+           and e.defense_type is not null
+        group by e.defense_type`,
+      [organizationId, version],
+    ),
+  ]);
+
+
+  /*
+   * EVERY TERM APPEARS, INCLUDING THE EMPTY ONES, and that is the feature. A
+   * group-by returns only what exists, so a punch nobody has ever labelled --
+   * exactly the gap this surface is for -- would silently not be listed. The
+   * vocabulary is the list; the query only fills it in.
+   */
+  const punchCounts = new Map(punchRows.map((row) => [`${row.punch_type}\u0000${row.stance ?? ''}`, row]));
+  const punch_evidence: PunchEvidenceCell[] = [];
+  for (const punchType of PUNCH_TYPES) {
+    for (const stance of stanceSplit ? [...STANCES, null] : [null]) {
+      const row = punchCounts.get(`${punchType}\u0000${stance ?? ''}`);
+      // A cell nobody has ever labelled is reported as zero rather than
+      // omitted; a cell for a stance value nothing uses is left out so the
+      // grid does not fill with rows that were never going to be filmed.
+      if (stanceSplit && !row && stance !== 'orthodox' && stance !== 'southpaw') continue;
+      punch_evidence.push({
+        punch_type: punchType,
+        stance,
+        events: row?.events ?? 0,
+        clips: row?.clips ?? 0,
+      });
+    }
+  }
+
+  const defenseCounts = new Map(defenseRows.map((row) => [row.defense_type, row]));
+  const defense_evidence: DefenseEvidenceCell[] = DEFENSE_TYPES.map((defenseType) => ({
+    defense_type: defenseType,
+    events: defenseCounts.get(defenseType)?.events ?? 0,
+    clips: defenseCounts.get(defenseType)?.clips ?? 0,
+  }));
+
+  const counts = labelling[0] ?? {
+    submitted_sets: 0,
+    clips_with_two_submitted_sets: 0,
+    adjudications: 0,
+    gold_records: 0,
+    gold_candidates: 0,
+  };
+  return {
+    ontology_version: version,
+    role,
+    ...counts,
+    stance_split: stanceSplit,
+    punch_evidence,
+    defense_evidence,
+  };
+}
+
+/** One version's counts, or undefined when that version is not labellable. */
+export function coverageForVersion(
+  coverage: TeachShadowCoverage,
+  version: string,
+): VersionCoverage | undefined {
+  return coverage.versions.find((entry) => entry.ontology_version === version);
+}
+
 export async function readTeachShadowCoverage(organizationId: string): Promise<TeachShadowCoverage> {
-  const [capture, refusedRows, labelling, punchRows, defenseRows] = await Promise.all([
+  const [capture, refusedRows, clipsCut, versions] = await Promise.all([
     query<{
       recording_sessions: number;
       capture_takes: number;
@@ -268,14 +438,7 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
         group by 1`,
       [organizationId],
     ),
-    query<{
-      clips_cut: number;
-      submitted_sets: number;
-      clips_with_two_submitted_sets: number;
-      adjudications: number;
-      gold_records: number;
-      gold_candidates: number;
-    }>(
+    query<{ clips_cut: number }>(
       `select
          -- Clips cut from teaching footage. A clip cut from anything else is
          -- history, not corpus, so it is not counted as either.
@@ -286,104 +449,33 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
              and v.capture_take_id is not null
              and v.status <> 'archived'
            where c.organization_id = $1)
-           as clips_cut,
-         (select count(*)::int from pilot.calibration_annotation_sets s
-            ${TEACHING_SOURCE_JOIN('s')}
-           where s.organization_id = $1 and s.status = 'submitted' and s.pass_number = 1
-             and s.ontology_version = $2)
-           as submitted_sets,
-         (select count(*)::int from (
-            select s.calibration_clip_id
-              from pilot.calibration_annotation_sets s
-              ${TEACHING_SOURCE_JOIN('s')}
-             where s.organization_id = $1 and s.status = 'submitted' and s.pass_number = 1
-               and s.ontology_version = $2
-             group by s.calibration_clip_id
-            having count(*) >= 2
-          ) c)
-           as clips_with_two_submitted_sets,
-         -- Current answers only. A correction is a later revision of the same
-         -- disagreement, not a second thing settled, so a superseded row is
-         -- not counted (OD-2026-08-29-005).
-         (select count(*)::int from pilot.calibration_adjudications a
-            ${TEACHING_SOURCE_JOIN('a')}
-           where a.organization_id = $1 and a.ontology_version = $2
-             and ${currentAdjudicationPredicate('a')})
-           as adjudications,
-         -- Gold carries its own video_session_id as provenance, so it needs no
-         -- hop through the clip.
-         (select count(*)::int from pilot.calibration_gold_records g
-            join pilot.video_sessions v
-              on v.video_session_id = g.video_session_id
-             and v.organization_id = g.organization_id
-             and v.capture_take_id is not null
-             and v.status <> 'archived'
-           where g.organization_id = $1 and g.ontology_version = $2
-             and g.governance_state = 'gold')
-           as gold_records,
-         (select count(*)::int from pilot.calibration_gold_records g
-            join pilot.video_sessions v
-              on v.video_session_id = g.video_session_id
-             and v.organization_id = g.organization_id
-             and v.capture_take_id is not null
-             and v.status <> 'archived'
-           where g.organization_id = $1 and g.ontology_version = $2
-             and g.governance_state = 'candidate')
-           as gold_candidates`,
-      [organizationId, BOXING_ONTOLOGY_VERSION_0_1],
+           as clips_cut`,
+      [organizationId],
     ),
-    query<{ punch_type: string; stance: string | null; events: number; clips: number }>(
-      `select e.punch_type, e.stance,
-              count(*)::int as events,
-              count(distinct e.calibration_clip_id)::int as clips
-         ${SUBMITTED_EVENTS_FROM}
-           and e.event_class = 'punch'
-           and e.punch_type is not null
-        group by e.punch_type, e.stance`,
-      [organizationId, BOXING_ONTOLOGY_VERSION_0_1],
-    ),
-    query<{ defense_type: string; events: number; clips: number }>(
-      `select e.defense_type,
-              count(*)::int as events,
-              count(distinct e.calibration_clip_id)::int as clips
-         ${SUBMITTED_EVENTS_FROM}
-           and e.event_class = 'defense'
-           and e.defense_type is not null
-        group by e.defense_type`,
-      [organizationId, BOXING_ONTOLOGY_VERSION_0_1],
-    ),
+    /*
+     * Each labellable version on its own, the one new studies are created on
+     * first. Mapped from the ontology's own list, so a version opened for
+     * labelling later is counted without anyone remembering to add it here.
+     * ONE VERSION AT A TIME: each version runs three statements, and asking
+     * for every version at once would hold six or more of the pool's ten
+     * connections for one page load.
+     */
+    (async () => {
+      const ordered = [
+        PROJECT_CREATION_ONTOLOGY_VERSION,
+        ...ANNOTATABLE_ONTOLOGY_VERSIONS.filter((version) => version !== PROJECT_CREATION_ONTOLOGY_VERSION),
+      ];
+      const results: VersionCoverage[] = [];
+      for (const version of ordered) {
+        results.push(await readVersionCoverage(
+          organizationId,
+          version,
+          version === PROJECT_CREATION_ONTOLOGY_VERSION ? 'new_studies' : 'finishing',
+        ));
+      }
+      return results;
+    })(),
   ]);
-
-  /*
-   * EVERY TERM APPEARS, INCLUDING THE EMPTY ONES, and that is the feature. A
-   * group-by returns only what exists, so a punch nobody has ever labelled --
-   * exactly the gap this surface is for -- would silently not be listed. The
-   * vocabulary is the list; the query only fills it in.
-   */
-  const punchCounts = new Map(punchRows.map((row) => [`${row.punch_type}\u0000${row.stance ?? ''}`, row]));
-  const punch_evidence: PunchEvidenceCell[] = [];
-  for (const punchType of PUNCH_TYPES) {
-    for (const stance of [...STANCES, null]) {
-      const row = punchCounts.get(`${punchType}\u0000${stance ?? ''}`);
-      // A cell nobody has ever labelled is reported as zero rather than
-      // omitted; a cell for a stance value nothing uses is left out so the
-      // grid does not fill with rows that were never going to be filmed.
-      if (!row && stance !== 'orthodox' && stance !== 'southpaw') continue;
-      punch_evidence.push({
-        punch_type: punchType,
-        stance,
-        events: row?.events ?? 0,
-        clips: row?.clips ?? 0,
-      });
-    }
-  }
-
-  const defenseCounts = new Map(defenseRows.map((row) => [row.defense_type, row]));
-  const defense_evidence: DefenseEvidenceCell[] = DEFENSE_TYPES.map((defenseType) => ({
-    defense_type: defenseType,
-    events: defenseCounts.get(defenseType)?.events ?? 0,
-    clips: defenseCounts.get(defenseType)?.clips ?? 0,
-  }));
 
   const by_reason: RefusedReasonCount[] = refusedRows
     .map((row) => ({ reason: row.reason, files: row.files }))
@@ -400,7 +492,6 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
   };
 
   return {
-    ontology_version: BOXING_ONTOLOGY_VERSION_0_1,
     capture: capture[0] ?? {
       recording_sessions: 0,
       capture_takes: 0,
@@ -408,16 +499,8 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
       takes_with_multiple_files: 0,
     },
     refused,
-    labelling: labelling[0] ?? {
-      clips_cut: 0,
-      submitted_sets: 0,
-      clips_with_two_submitted_sets: 0,
-      adjudications: 0,
-      gold_records: 0,
-      gold_candidates: 0,
-    },
-    punch_evidence,
-    defense_evidence,
+    clips_cut: clipsCut[0]?.clips_cut ?? 0,
+    versions,
     vocabulary: {
       punch_types: PUNCH_TYPES,
       defense_types: DEFENSE_TYPES,
