@@ -232,7 +232,7 @@ export default function CoachCoveragePage() {
       <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-6xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-            <p className="t-eyebrow">Admin Workspace</p>
+            <p className="t-eyebrow">Members &amp; staff</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Coach Coverage</h1>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               A coverage grant lets a covering coach read one athlete&rsquo;s record temporarily -- a sub, a
