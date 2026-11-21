@@ -401,3 +401,43 @@ describe('HF1 review: sexual abuse in the present tense routes admin-only', () =
     expect(detectShadowDisclosure(message, 'athlete')?.adminOnly).toBe(true);
   });
 });
+
+// HF12b (PR 2076), safeguarding review round 7: a spelled-out staff word with a
+// symbol for a letter or mixed gaps routed admin-only on main and must still.
+// Invented phrases.
+describe('HF12b: spelled-out staff words keep main\'s routing', () => {
+  test.each([
+    'my c o @ c h hit me',
+    'my c.o.@.c.h hits me',
+    'c.o.a.c. h hit me',
+    'my c o a c  h hurt me on purpose',
+    'c o @ c h punched me in sparring',
+    'my c o a c  h punched me in sparring',
+    'my . c-o-a-c . h . broke . my . nose',
+    'my c o.a.c.h hit me',
+    'my c-o-a-c h broke my nose',
+  ])('files admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  test.each([
+    'he got me alone n r***ped me',
+    'u r***ped me',
+    'he got me alone n r . ped me',
+    'he_got_me_alone_n_r@ped_me',
+  ])('an obfuscated word after a text-speak letter files admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  // The spelled-out reading adds routing evidence; it never removes main's.
+  test.each([
+    'm y c o a c h h i t s m e',
+    'he t o u c h e d m e',
+  ])('a spelled-out staff or touch word routes admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  test('text-speak before the sparring-intent words still overrides boxing context', () => {
+    expect(detectShadowDisclosure('he kept hitting me in sparring o k i said stop', 'athlete')).not.toBeNull();
+  });
+});

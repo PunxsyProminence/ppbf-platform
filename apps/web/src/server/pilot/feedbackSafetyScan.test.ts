@@ -1510,3 +1510,33 @@ describe('HF12b review 6: single-guard tests', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+// Review round 7 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review 7: guards that swallowed a request for videos', () => {
+  test.each([
+    'he keeps asking me for videos of my training after my mom goes to sleep',
+    'coach keeps asking for videos of my form in bed',
+    'coach asks me for videos of my workouts in my pyjamas',
+    'he asks me for videos of my warm up when my parents are out',
+    'he asks me for videos of my workouts every night',
+    'he wants videos of my squats just for him',
+    'a guy wants videos on instagram',
+    'a man wants videos on tiktok',
+    'a guy wants vids on youtube of u',
+    "coach sa'd a girl",
+    "mr dave sa'd lots of kids",
+    "i think coach sa'd somebody",
+    "Sa'd me last night",
+    'everyone at the page keeps asking me for vids',
+    'men at the site keep asking me for videos',
+    'older boys at the app keep begging me for videos',
+    'he asks me for vids of my form wearing only shorts',
+    'he wants pics of me in the bath',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test('the given name Sa\'d, capitalised, is a name', () => {
+    expect(scanForSafetyLanguage("hes Sa'd, my sparring partner").cues).not.toContain('grooming_or_isolation');
+  });
+});
