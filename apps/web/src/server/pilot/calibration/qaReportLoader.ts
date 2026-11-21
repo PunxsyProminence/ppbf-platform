@@ -6,7 +6,11 @@ import {
   type AnnotationSetRow,
 } from './annotations';
 import { isFirstPass } from './blinding';
-import { compareAnnotationSets, type AnnotationSetComparison } from './comparison';
+import {
+  compareAnnotationSets,
+  PILOT_MATCHING_POLICY_IN_USE,
+  type AnnotationSetComparison,
+} from './comparison';
 import { getCalibrationProject, listCalibrationClips } from './projects';
 import { buildCalibrationQaReport, type CalibrationQaReport } from './qaReadModel';
 
@@ -184,7 +188,9 @@ export async function loadCalibrationQaReport(
       listAnnotationEvents(organizationId, choice.a.annotation_set_id),
       listAnnotationEvents(organizationId, choice.b.annotation_set_id),
     ]);
-    comparisons.push(compareAnnotationSets(choice.a, eventsA, choice.b, eventsB));
+    comparisons.push(
+      compareAnnotationSets(choice.a, eventsA, choice.b, eventsB, PILOT_MATCHING_POLICY_IN_USE),
+    );
     events.push(...eventsA, ...eventsB);
     // Every adjudication on a compared clip is of its one pair. Those of a
     // clip that is not compared stay out of the RATES: they have no pairing
@@ -201,6 +207,7 @@ export async function loadCalibrationQaReport(
     events,
     comparisons,
     adjudications,
+    matchingPolicy: PILOT_MATCHING_POLICY_IN_USE,
   });
 
   return {
