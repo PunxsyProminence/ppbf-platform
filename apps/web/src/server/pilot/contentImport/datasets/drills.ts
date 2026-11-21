@@ -119,7 +119,13 @@ function contentColumns(spec: FileSpec, skip: ReadonlySet<string>) {
 // as a label column the file leaves out does (contentLabels.ts#withStoredLabels).
 // A file that has the column says what its cell says: an empty cell there still
 // blanks the field. A new drill has nothing stored, so it loads blank.
+// content:prepare keeps the COMMITTED cell by the same list (prepare.ts; Q-GD2-1 = A on #2056).
 const KEPT_WHEN_THE_HEADER_OMITS = ['exit_condition', 'correction_path'] as const;
+
+/** The columns `spec`'s file keeps from the stored or committed row when its header has no such column. */
+export function keptWhenTheHeaderOmits(spec: FileSpec): readonly string[] {
+  return spec === ROOT ? KEPT_WHEN_THE_HEADER_OMITS : [];
+}
 
 function withStoredColumns(
   header: readonly string[],

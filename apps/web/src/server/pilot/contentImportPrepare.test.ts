@@ -53,11 +53,11 @@ function table(relative: string, dir = seedData) {
   return parsed.records.map((record) => Object.fromEntries(parsed.header.map((name, i) => [name, record.cells[i]])));
 }
 
-/** A package file with every column its spec defines. */
-function writePackageFile(file: string, rows: Record<string, string>[]): void {
+/** A package file with every column its spec defines, less any named in `omit` (a file made before they existed). */
+function writePackageFile(file: string, rows: Record<string, string>[], omit: readonly string[] = []): void {
   const spec = fileSpecByName(file);
   if (!spec) throw new Error(`no spec ${file}`);
-  const header = spec.columns.map((column) => column.name);
+  const header = spec.columns.map((column) => column.name).filter((name) => !omit.includes(name));
   fs.mkdirSync(path.join(handoff, spec.folder), { recursive: true });
   fs.writeFileSync(path.join(handoff, spec.folder, file), writeCsv(header, rows.map((row) => header.map((name) => row[name] ?? ''))));
 }
@@ -326,6 +326,84 @@ describe('re-sending committed rows unchanged', () => {
     expect(output).toContain('workout-templates/seed_workout_template_items.csv: no change');
     expect(output).not.toContain('REVISED');
     expect(hashTree(seedData)).toEqual(before);
+  });
+});
+
+// A DRILL FILE MADE BEFORE A COLUMN EXISTED (lane GD; Overwatch Q-GD2-1 = A on #2056).
+// NW-b (#1976) added exit_condition and correction_path. A hand-off made before it has neither column. prepare
+// read the missing column as blank: it reported every filled drill as REVISED and wrote empty cells over the
+// committed ones, which the next seed load then stored as the drills' next versions.
+describe('a drill file made before exit_condition and correction_path existed', () => {
+  const LIBRARY = 'drill-library/seed_drill_library.csv';
+  const ADDED_COLUMNS = ['exit_condition', 'correction_path'];
+  const committedLibrary = () => table(LIBRARY, REAL_SEED_DATA);
+  /** The committed drills that hold either field: the ones such a file would have blanked. */
+  const filled = () => committedLibrary().filter((row) => ADDED_COLUMNS.some((name) => row[name].trim() !== ''));
+  /** One that holds both, so each field's fate can be told apart on one drill. */
+  const bothFilled = () => {
+    const row = committedLibrary().find((candidate) => ADDED_COLUMNS.every((name) => candidate[name].trim() !== ''));
+    if (!row) throw new Error('no committed drill holds both fields');
+    return row;
+  };
+
+  it('re-sending the filled drills merges byte for byte as the same rows with both columns do', () => {
+    // Compared with the same rows sent WITH both columns, not with "no change": these drills' committed rows
+    // carry a blank created_by_account_id, which prepare fills with its placeholder either way (seen
+    // 2026-11-21), so the re-send reports them revised whether or not the hand-off has the two columns.
+    expect(filled().length).toBeGreaterThan(0);
+    const libraryAfter = (omit: readonly string[]) => {
+      fs.rmSync(seedData, { recursive: true, force: true });
+      copySeedData(seedData);
+      writePackageFile('seed_drill_library.csv', filled(), omit);
+      expect(prepare(true).code).toBe(0);
+      return fs.readFileSync(path.join(seedData, LIBRARY), 'utf8');
+    };
+    const withColumns = libraryAfter([]);
+    const withoutColumns = libraryAfter(ADDED_COLUMNS);
+    // So this cannot pass vacuously: the second hand-off really lacks both columns.
+    const header = readCsv(fs.readFileSync(path.join(handoff, LIBRARY), 'utf8')).header;
+    expect(header.filter((name) => ADDED_COLUMNS.includes(name))).toEqual([]);
+
+    expect(withoutColumns).toBe(withColumns);
+    const after = table(LIBRARY);
+    for (const drill of filled()) {
+      expect(after.find((row) => row.drill_id === drill.drill_id)).toMatchObject({
+        exit_condition: drill.exit_condition,
+        correction_path: drill.correction_path,
+      });
+    }
+  });
+
+  it('a revision from such a file keeps both committed cells', () => {
+    const drill = bothFilled();
+    const purpose = `${drill.purpose} Revised by an old-shape file.`;
+    writePackageFile('seed_drill_library.csv', [{ ...drill, purpose }], ADDED_COLUMNS);
+
+    const { code, output } = prepare(true);
+    expect(code).toBe(0);
+    expect(output).toContain(`revised: ${drill.drill_id}`);
+    const after = table(LIBRARY).find((row) => row.drill_id === drill.drill_id);
+    expect(after).toMatchObject({ purpose, exit_condition: drill.exit_condition, correction_path: drill.correction_path });
+  });
+
+  it('a file that has the column says what its cell says: an empty cell blanks it, and the column it lacks is kept', () => {
+    const drill = bothFilled();
+    writePackageFile('seed_drill_library.csv', [{ ...drill, exit_condition: '' }], ['correction_path']);
+    expect(readCsv(fs.readFileSync(path.join(handoff, LIBRARY), 'utf8')).header).toContain('exit_condition');
+
+    const { code, output } = prepare(true);
+    expect(code).toBe(0);
+    expect(output).toContain(`revised: ${drill.drill_id}`);
+    const after = table(LIBRARY).find((row) => row.drill_id === drill.drill_id);
+    expect(after).toMatchObject({ exit_condition: '', correction_path: drill.correction_path });
+    expect(drill.correction_path).not.toBe('');
+  });
+
+  it('a new drill from such a file has no committed row to keep from: both cells are blank', () => {
+    writePackageFile('seed_drill_library.csv', [newDrill()], ADDED_COLUMNS);
+    expect(prepare(true).code).toBe(0);
+    const added = table(LIBRARY).find((row) => row.drill_id === MINT.drill('boxing', 'Mirror Jab'));
+    expect(added).toMatchObject({ exit_condition: '', correction_path: '' });
   });
 });
 

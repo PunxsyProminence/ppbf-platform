@@ -222,6 +222,8 @@ export function describeContract(): string {
     '- prepare refuses to write if the merged files would carry a blocking problem the committed files do not.',
     '- A row whose content is the same as the committed row (true/TRUE, 2/2.0, a blank for the default shown) is',
     '  unchanged: the committed row is kept byte for byte.',
+    "- When seed_drill_library.csv's header has no exit_condition or correction_path column, a drill the file names",
+    '  keeps its committed cell, as a load keeps the stored value (lane GD). A new drill gets a blank one.',
     '',
     '## Blocking problems',
     '',
