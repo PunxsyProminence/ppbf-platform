@@ -737,7 +737,14 @@ async function deidentifyFlaggedConversations(client, tables, accountIds, organi
    THE SAME STATEMENTS AS clearConversation in shadowConversationDeidentify.ts
    (the app cannot be imported here). shadowConversationDeletion.pg.test.ts
    (T7) runs both on the same chat and compares the rows they leave. Change
-   one, change both. */
+   one, change both.
+
+   FLAGGED here means what it means there: a safeguarding review entry points
+   at the chat, or a safety escalation does (a disclosure's escalation is
+   filed with the conversation's id even when its review entry was capped or
+   failed). What is kept takes new ids -- conversation, messages, and the
+   review entries that follow it -- so the office's recorded reads, the
+   escalation and a background job's derived id join nothing that is kept. */
 const CLEARED_CONVERSATION_TITLE = 'Deleted conversation; de-identified.';
 const REVIEW_SUMMARY_AFTER_HOLD = 'Safeguarding review entry; the conversation was deleted by its member and de-identified after the two-year hold.';
 
@@ -754,11 +761,14 @@ const MEMBER_DELETED_CHATS_SQL = `
      and not exists (select 1 from pilot.athletes t
                       where t.organization_id = s.organization_id and t.athlete_id = s.athlete_id
                         and t.deleted_at is not null)
-     and (not exists (select 1 from pilot.shadow_human_review_queue q where q.conversation_id = s.conversation_id)
+     and ((not exists (select 1 from pilot.shadow_human_review_queue q where q.conversation_id = s.conversation_id)
+           and not exists (select 1 from pilot.safety_escalations e
+                            where e.organization_id = s.organization_id
+                              and e.metadata->>'conversation_id' = s.conversation_id::text))
           or s.deleted_at < (now() - ${SAFEGUARDING_CHAT_RETENTION}))`;
 
 async function countMemberDeletedChats(client, tables) {
-  if (!tables.deidentifyKeys || !tables.chatSessions || !tables.reviewQueue) return 0;
+  if (!tables.deidentifyKeys || !tables.chatSessions || !tables.reviewQueue || !tables.safetyEscalations) return 0;
   return (await client.query(`select count(*)::int as n ${MEMBER_DELETED_CHATS_SQL}`)).rows[0].n;
 }
 
@@ -788,7 +798,14 @@ async function memberNamesOnRecord(client, organizationId, accountId, athleteId)
      union all
      select p.display_nickname from pilot.accounts a
        join pilot.account_profiles p on p.organization_id = $1 and p.account_id = a.account_id
-      where $3::text is not null and a.athlete_id = $3 and a.organization_id = $1`,
+      where $3::text is not null and a.athlete_id = $3 and a.organization_id = $1
+     union all
+     select g.full_name from pilot.guardian_links l
+       join pilot.parents g on g.organization_id = l.organization_id and g.parent_id = l.parent_id
+      where l.organization_id = $1
+        and (l.athlete_id = $3
+             or l.athlete_id in (select a.athlete_id from pilot.accounts a
+                                  where a.account_id = $2 and a.athlete_id is not null))`,
     [organizationId, accountId, athleteId],
   );
   return rows.rows.map((row) => row.name).filter((name) => Boolean(name?.trim()));
@@ -844,15 +861,7 @@ async function clearMemberChat(client, { organizationId, accountId, conversation
     [organizationId, conversationId, replies],
   );
   await client.query(
-    `update pilot.shadow_jobs
-        set input_payload = '{}'::jsonb,
-            output_payload = null,
-            safety_status = case when status = 'pending' then 'not_applicable' else safety_status end,
-            lease_token = case when status = 'pending' then null else lease_token end,
-            lease_expires_at = case when status = 'pending' then null else lease_expires_at end,
-            completed_at = case when status = 'pending' then now() else completed_at end,
-            status = case when status = 'pending' then 'cancelled' else status end,
-            updated_at = now()
+    `delete from pilot.shadow_jobs
       where organization_id = $1 and account_id = $2
         and (input_payload->>'conversationId' = $3 or output_payload->>'conversationId' = $3)`,
     [organizationId, accountId, conversationId],
@@ -864,33 +873,51 @@ async function clearMemberChat(client, { organizationId, accountId, conversation
   );
   if (pattern === null) {
     await client.query(
+      `update pilot.shadow_human_review_queue set review_id = gen_random_uuid()
+        where conversation_id = $1 and organization_id = $2`,
+      [conversationId, organizationId],
+    );
+    await client.query(
       `delete from pilot.shadow_chat_sessions where conversation_id = $1 and organization_id = $2`,
       [conversationId, organizationId],
     );
-    return;
+    return null;
   }
+  const keptId = randomUUID();
+  await client.query(
+    `insert into pilot.shadow_chat_sessions
+       (conversation_id, organization_id, account_id, athlete_id, title, session_type,
+        deleted_at, created_at, updated_at, deidentified_at, subject_deleted_at)
+     select $3::uuid, organization_id, $4, case when athlete_id is null then null else $4 end, $5, session_type,
+            coalesce(deleted_at, now()), created_at, now(), now(), null
+       from pilot.shadow_chat_sessions
+      where conversation_id = $1 and organization_id = $2`,
+    [conversationId, organizationId, keptId, token, CLEARED_CONVERSATION_TITLE],
+  );
   await client.query(
     `update pilot.shadow_chat_messages
-        set account_id = $3, content = regexp_replace(content, $4, '[name]', 'gi')
+        set conversation_id = $3::uuid,
+            message_id = gen_random_uuid(),
+            account_id = $4,
+            content = regexp_replace(content, $5, '[name]', 'gi')
       where conversation_id = $1 and organization_id = $2`,
-    [conversationId, organizationId, token, pattern],
+    [conversationId, organizationId, keptId, token, pattern],
   );
   await client.query(
-    `update pilot.shadow_chat_sessions
-        set account_id = $3,
-            athlete_id = case when athlete_id is null then null else $3 end,
-            title = $4,
-            deidentified_at = now(),
-            deleted_at = coalesce(deleted_at, now()),
-            updated_at = now()
+    `update pilot.shadow_human_review_queue set conversation_id = $3::uuid, review_id = gen_random_uuid()
       where conversation_id = $1 and organization_id = $2`,
-    [conversationId, organizationId, token, CLEARED_CONVERSATION_TITLE],
+    [conversationId, organizationId, keptId],
   );
+  await client.query(
+    `delete from pilot.shadow_chat_sessions where conversation_id = $1 and organization_id = $2`,
+    [conversationId, organizationId],
+  );
+  return keptId;
 }
 
 /** Clears up to `limit` member-deleted chats, oldest deletion first; one savepoint each. */
 async function clearMemberDeletedChats(client, tables, limit, blocked) {
-  if (limit <= 0 || !tables.deidentifyKeys || !tables.chatSessions || !tables.reviewQueue) return 0;
+  if (limit <= 0 || !tables.deidentifyKeys || !tables.chatSessions || !tables.reviewQueue || !tables.safetyEscalations) return 0;
   const rows = (await client.query(
     `select s.conversation_id::text as conversation_id, s.organization_id, s.account_id, s.athlete_id,
             exists (select 1 from pilot.shadow_human_review_queue q where q.conversation_id = s.conversation_id) as flagged
@@ -2239,6 +2266,7 @@ async function main() {
               to_regclass('pilot.intake_cases') is not null as "intakeCases",
               to_regclass('pilot.shadow_chat_sessions') is not null as "chatSessions",
               to_regclass('pilot.shadow_human_review_queue') is not null as "reviewQueue",
+              to_regclass('pilot.safety_escalations') is not null as "safetyEscalations",
               exists (select 1 from information_schema.columns
                        where table_schema = 'pilot' and table_name = 'shadow_human_review_queue'
                          and column_name = 'deidentified_at') as "deidentifyKeys",

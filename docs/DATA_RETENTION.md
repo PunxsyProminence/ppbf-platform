@@ -143,26 +143,37 @@ data that male the Ai and ML bette3r"; OD-2026-10-06-023 Q1 "Delete theirs, keep
 (Recommended)", Q2 "Keep until retention ends (Recommended)"; OD-2026-10-06-027 Q14 "2 years
 after deletion (Recommended)"), applied to a member's own deletion under OD-2026-10-13-013.
 
-- **A chat no safeguarding review points at is cleared now.** The member's own messages are
-  deleted. SHADOW's replies are kept under a one-off `anon_<uuid>` token, stored nowhere else,
-  with every name on record for the member and for the athlete the chat is about replaced by
-  `[name]` (the login when it is an email, the login email, ring name, staff name, the athlete
-  record's or guardian record's full name; the same method and limits as the purge's
-  `namePattern`). The session takes the token, a fixed title and `deidentified_at`. Every id
-  that joined a kept reply back to the member is cut: the evidence claims and citations go; a
-  feedback row that rated a reply loses its link to it (a pending review of it leaves the queue,
-  undecided); learning-event, effectiveness and learning-loop research rows lose the reply's id;
-  a background job for the chat is cancelled and its payloads emptied. With no usable name on
-  record the chat is deleted whole. Each cleared chat has its own token.
-- **A chat flagged into a safeguarding review is kept intact and identified** for two years
-  after its deletion, hidden from the member; the office's read of the one flagged exchange
-  (OD-2026-10-07-009 ruling 4) keeps working. The member sees the same words either way, so a
-  member is never told a chat was flagged.
+- **A chat that is not flagged is cleared now.** The member's own messages are deleted.
+  SHADOW's replies are kept under a one-off `anon_<uuid>` token, stored nowhere else, with every
+  name on record for the member, for the athlete the chat is about and for the guardians linked
+  to that athlete replaced by `[name]` (the login when it is an email, the login email, ring
+  name, staff name, the athlete record's or guardian record's full name; the same method and
+  limits as the purge's `namePattern`). What is kept takes **new ids**: a new conversation id
+  and new message ids, so nothing that copied the old ones joins it (a background reply's id is
+  a hash of its job's id; an escalation or an audit row can hold the conversation's). The
+  session takes the token, a fixed title and `deidentified_at`. The joins from the member's own
+  rows are cut: the evidence claims and citations go; a feedback row that rated a reply loses its
+  link to it (a pending review of it leaves the queue, undecided, because approve and reject
+  find it through the reply by account); learning-event, effectiveness and learning-loop research
+  rows lose the reply's id; the chat's background jobs are deleted, whatever their state (a job
+  still running then has nothing to complete). With no usable name on record the chat is deleted
+  whole. Each cleared chat has its own token.
+- **A flagged chat is kept intact and identified** for two years after its deletion, hidden from
+  the member. Flagged means a safeguarding review entry (`pilot.shadow_human_review_queue`)
+  points at it, whatever its status, or a safety escalation does (`pilot.safety_escalations`,
+  `metadata.conversation_id`: a SHADOW disclosure's escalation is filed with the conversation's
+  id even when its review entry was capped or failed). The office's read of the one flagged
+  exchange (OD-2026-10-07-009 ruling 4) keeps working. The member sees the same words either
+  way, so a member is never told a chat was flagged. A review entry cannot be told apart, in the
+  table, from the operational entry written when the Library holds no evidence; such a chat is
+  held too (the hold errs toward keeping, as the purge's guardian hold does).
 - **The retention script ends the hold, on a full APPLY only.**
   `scripts/pilot-cleanup-deleted-data.mjs` (`clearMemberDeletedChats`) clears, the same way, a
   flagged chat a member deleted more than two years ago, and any chat a member deleted before
   this change (a delete then only set `deleted_at`). The review entries that point at a cleared
-  flagged chat take the chat's token, a fixed summary and empty metadata. A chat that is a
+  flagged chat take the chat's token, a fixed summary, empty metadata and a new id, and follow it
+  to its new id; the office's recorded reads of the exchange (`pilot.audit_events`) and the
+  escalation stay, as safeguarding records, and join nothing that is kept. A chat that is a
   deleted person's (account `deleted_at` set, an athlete login whose athlete is deleted, or a
   chat about a deleted athlete, which `markAthleteTiedRecords` stamps with the athlete's
   deletion time) is left to that person's purge. The nightly run counts them
@@ -172,11 +183,18 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   `PPBF_RETENTION_MAX_ROWS`, oldest deletion first, and never trip the refusal; the rest wait
   (`member_deleted_chats_deferred`). The applied run and its audit row count
   `member_deleted_chats_cleared`.
+- **The office completing a request reaches every chat on the account**, including one about an
+  athlete who has since been deleted: the member asked, and no ruling holds an unflagged SHADOW
+  chat for an athlete's retention window. The script, which acts without a request, leaves such
+  a chat to the athlete's purge.
 - **Not reached by a member's delete**, so the screens do not claim it: the research row an
   unanswered question was filed as (keyed by account and text, not by chat), the member's own
   feedback comments and memory corrections, SHADOW's remembered facts about them, evidence
-  bundles (a hash of each question, no text), a finished job's stored answer when it names no
-  chat, and the nightly database backups. Those go at the person's own purge or age out.
+  bundles (a hash of each question, no text), the timestamps a kept reply keeps, and the nightly
+  database backups. Those go at the person's own purge or age out.
+- **A race it cannot close:** a background answer's response-safety review entry is written after
+  its job completes (`shadowJobProcessor.ts`), so a member who deletes the chat while that job
+  runs leaves the job nothing to complete, and that entry is not written.
 
 The two copies of the clearing steps (the app's and the script's) are held equal by
 `shadowConversationDeletion.pg.test.ts` (T7) and `shadowNamePattern.test.ts`.

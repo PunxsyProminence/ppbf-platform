@@ -15,21 +15,28 @@ import type { PoolClient } from 'pg';
  * reaches a member deleting their own chat and the office clearing it on the
  * member's request (OD-2026-10-13-013; Overwatch's GO on PR #2062):
  *
- *   NOT FLAGGED (no safeguarding review entry points at it): cleared now.
- *     What the member typed is deleted. SHADOW's replies are kept under a
- *     one-off anon_<uuid> token, stored nowhere else, with every name on
- *     record for the member, and for the athlete the chat is about, replaced
- *     by [name] (shadowNamePattern). Every id that joins a kept reply back
- *     to the member's own rows is cut: the feedback that rated it, the
- *     learning-loop event and effectiveness rows that copied its id, the
- *     learning loop's research row keyed by it, and the evidence claims and
- *     citations, whose keys carry the login and cannot follow a token. A
- *     background job for the chat is cancelled and its payloads emptied (the
- *     input is the member's question, the output SHADOW's answer under their
- *     account). With no usable name on record nothing can be scrubbed, and
- *     the whole chat is deleted (the purge's rule for the same case).
+ *   NOT FLAGGED: cleared now. What the member typed is deleted. SHADOW's
+ *     replies are kept under a one-off anon_<uuid> token, stored nowhere
+ *     else, with every name on record for the member, for the athlete the
+ *     chat is about and for the guardians linked to that athlete replaced by
+ *     [name] (shadowNamePattern). WHAT IS KEPT TAKES NEW IDS: a new
+ *     conversation id and new message ids, so nothing that copied the old
+ *     ones joins it -- a background reply's id is a hash of its job's id
+ *     (messageIdForKey), and an escalation or an audit row may hold the
+ *     conversation's. The joins from the member's own rows are cut as well:
+ *     the feedback that rated a reply, the learning-loop event and
+ *     effectiveness rows that copied its id, the learning loop's research
+ *     row keyed by it, and the evidence claims and citations, whose keys
+ *     carry the login. The chat's background jobs are deleted (a payload is
+ *     the member's question or SHADOW's answer under their account; a job
+ *     still running can then complete nothing). With no usable name on
+ *     record nothing can be scrubbed, and the whole chat is deleted (the
+ *     purge's rule for the same case).
  *
- *   FLAGGED: kept intact and identified (Q2, Q14). Hidden from the member
+ *   FLAGGED -- a safeguarding review entry points at it, or a safety
+ *     escalation does (a disclosure's escalation is filed with the
+ *     conversation's id even when its review entry was capped or failed,
+ *     shadowDisclosure.ts): kept intact and identified (Q2, Q14). Hidden from the member
  *     like any deleted chat; the office's one-exchange read
  *     (loadHumanReviewExchange, OD-2026-10-07-009 ruling 4) keeps working.
  *     Two years after its deletion the retention script clears it the same
@@ -47,8 +54,13 @@ import type { PoolClient } from 'pg';
  * research row a member's unanswered question was filed as (keyed by account
  * and text, not by chat); their own feedback comments and memory
  * corrections; SHADOW's remembered facts about them; evidence bundles (a
- * hash of each question, no text); the nightly database backups. Those go at
- * the person's own purge.
+ * hash of each question, no text); the nightly database backups; timestamps
+ * (a kept reply keeps its created_at). Those go at the person's own purge.
+ *
+ * A RACE IT CANNOT CLOSE from here: a background answer's response-safety
+ * review row is written after its job completes (shadowJobProcessor.ts), so a
+ * member who deletes the chat while that job runs leaves the job nothing to
+ * complete, and that row is not written.
  * ------------------------------------------------------------------------- */
 
 /** The title a cleared chat keeps (the old one is the first words the member typed). */
@@ -94,8 +106,10 @@ type Queryable = Pick<PoolClient, 'query'>;
  * about: the login when it is an email (a guardian's login is), the login
  * email, the ring name and staff name on their profile, their athlete
  * record's full name for an athlete login, their guardian record's full name
- * for a guardian; and the subject athlete's full name and the ring names of
- * that athlete's logins. Read in the chat's gym only.
+ * for a guardian; the subject athlete's full name and the ring names of
+ * that athlete's logins; and the full names of the guardians linked to the
+ * member's own athlete record or to the subject athlete (a reply to a child
+ * can name a parent, the purge scrubs the same). Read in the chat's gym only.
  */
 export async function namesOnRecord(
   client: Queryable,
@@ -125,7 +139,14 @@ export async function namesOnRecord(
      union all
      select p.display_nickname from pilot.accounts a
        join pilot.account_profiles p on p.organization_id = $1 and p.account_id = a.account_id
-      where $3::text is not null and a.athlete_id = $3 and a.organization_id = $1`,
+      where $3::text is not null and a.athlete_id = $3 and a.organization_id = $1
+     union all
+     select g.full_name from pilot.guardian_links l
+       join pilot.parents g on g.organization_id = l.organization_id and g.parent_id = l.parent_id
+      where l.organization_id = $1
+        and (l.athlete_id = $3
+             or l.athlete_id in (select a.athlete_id from pilot.accounts a
+                                  where a.account_id = $2 and a.athlete_id is not null))`,
     [input.organizationId, input.accountId, input.athleteId],
   );
   return rows.rows.map((row) => row.name).filter((name): name is string => Boolean(name?.trim()));
@@ -133,15 +154,16 @@ export async function namesOnRecord(
 
 /**
  * Clears one conversation that is not held for safeguarding: the member's
- * messages deleted, the replies kept under a new token with `pattern`
- * scrubbed out, every join from the member's rows to a reply cut. With no
- * pattern, the conversation is deleted whole. The caller has checked it is
- * the member's, in this gym, and not flagged, and holds its row lock.
+ * messages deleted, the replies kept under a new token and new ids with
+ * `pattern` scrubbed out, every join from the member's rows to a reply cut,
+ * its jobs deleted. With no pattern, the conversation is deleted whole. The
+ * caller has checked it is the member's, in this gym, and not flagged, and
+ * holds its row lock. Returns the kept conversation's new id, or null.
  */
 export async function clearConversation(
   client: Queryable,
   input: { organizationId: string; accountId: string; conversationId: string; pattern: string | null },
-): Promise<'deidentified' | 'deleted'> {
+): Promise<string | null> {
   const { organizationId, accountId, conversationId, pattern } = input;
   const replies = (await client.query<{ message_id: string }>(
     `select message_id::text as message_id from pilot.shadow_chat_messages
@@ -198,19 +220,12 @@ export async function clearConversation(
       where organization_id = $1 and (conversation_id = $2 or assistant_message_id = any($3::uuid[]))`,
     [organizationId, conversationId, replies],
   );
-  // A queued question for this chat is cancelled; any job for it, whatever
-  // its state, loses its payloads. A running job finds the chat gone when it
-  // tries to append, and fails.
+  // The chat's jobs go, whatever their state: the row's id derives a
+  // background reply's old id, and its account and subject name the member.
+  // A job still running finds nothing to complete or fail, so the worker's
+  // answer is never stored.
   await client.query(
-    `update pilot.shadow_jobs
-        set input_payload = '{}'::jsonb,
-            output_payload = null,
-            safety_status = case when status = 'pending' then 'not_applicable' else safety_status end,
-            lease_token = case when status = 'pending' then null else lease_token end,
-            lease_expires_at = case when status = 'pending' then null else lease_expires_at end,
-            completed_at = case when status = 'pending' then now() else completed_at end,
-            status = case when status = 'pending' then 'cancelled' else status end,
-            updated_at = now()
+    `delete from pilot.shadow_jobs
       where organization_id = $1 and account_id = $2
         and (input_payload->>'conversationId' = $3 or output_payload->>'conversationId' = $3)`,
     [organizationId, accountId, conversationId],
@@ -222,39 +237,65 @@ export async function clearConversation(
   );
 
   if (pattern === null) {
+    // A review entry pointing at it (the retention script's flagged case)
+    // stays, under a new id, without its conversation.
+    await client.query(
+      `update pilot.shadow_human_review_queue set review_id = gen_random_uuid()
+        where conversation_id = $1 and organization_id = $2`,
+      [conversationId, organizationId],
+    );
     await client.query(
       `delete from pilot.shadow_chat_sessions where conversation_id = $1 and organization_id = $2`,
       [conversationId, organizationId],
     );
-    return 'deleted';
+    return null;
   }
 
+  // What is kept moves to a new conversation id, its messages to new ids.
+  // The session is re-created rather than updated (its id is referenced),
+  // naming every column; shadowConversationDeletion.pg.test.ts fails when
+  // the table gains one, so a new column is decided here, not dropped.
+  // Token and stamp in one statement: the table's check ties them together.
   const token = `anon_${randomUUID()}`;
+  const keptId = randomUUID();
+  await client.query(
+    `insert into pilot.shadow_chat_sessions
+       (conversation_id, organization_id, account_id, athlete_id, title, session_type,
+        deleted_at, created_at, updated_at, deidentified_at, subject_deleted_at)
+     select $3::uuid, organization_id, $4, case when athlete_id is null then null else $4 end, $5, session_type,
+            coalesce(deleted_at, now()), created_at, now(), now(), null
+       from pilot.shadow_chat_sessions
+      where conversation_id = $1 and organization_id = $2`,
+    [conversationId, organizationId, keptId, token, CLEARED_CONVERSATION_TITLE],
+  );
   await client.query(
     `update pilot.shadow_chat_messages
-        set account_id = $3, content = regexp_replace(content, $4, '[name]', 'gi')
+        set conversation_id = $3::uuid,
+            message_id = gen_random_uuid(),
+            account_id = $4,
+            content = regexp_replace(content, $5, '[name]', 'gi')
       where conversation_id = $1 and organization_id = $2`,
-    [conversationId, organizationId, token, pattern],
+    [conversationId, organizationId, keptId, token, pattern],
   );
-  // Token and stamp in one statement: the table's check ties them together.
+  // A review entry pointing at it follows it under a new id (the retention
+  // script's flagged case; the caller has tokened it): the office's earlier
+  // reads of it, recorded by id, join nothing that is kept.
   await client.query(
-    `update pilot.shadow_chat_sessions
-        set account_id = $3,
-            athlete_id = case when athlete_id is null then null else $3 end,
-            title = $4,
-            deidentified_at = now(),
-            deleted_at = coalesce(deleted_at, now()),
-            updated_at = now()
+    `update pilot.shadow_human_review_queue set conversation_id = $3::uuid, review_id = gen_random_uuid()
       where conversation_id = $1 and organization_id = $2`,
-    [conversationId, organizationId, token, CLEARED_CONVERSATION_TITLE],
+    [conversationId, organizationId, keptId],
   );
-  return 'deidentified';
+  await client.query(
+    `delete from pilot.shadow_chat_sessions where conversation_id = $1 and organization_id = $2`,
+    [conversationId, organizationId],
+  );
+  return keptId;
 }
 
 export interface ClearedConversations {
   /** Cleared now: de-identified, or deleted whole when nothing could be scrubbed. */
   cleared: number;
-  /** Flagged into a safeguarding review: hidden from the member, kept as it is. */
+  /** Flagged (a safeguarding review entry or a safety escalation points at it): hidden, kept as it is. */
   held: number;
 }
 
@@ -285,10 +326,15 @@ export async function clearMemberConversations(
 
   // Read after the lock, so a review entry written meanwhile is seen.
   const flagged = new Set((await client.query<{ conversation_id: string }>(
-    `select distinct q.conversation_id::text as conversation_id
+    `select q.conversation_id::text as conversation_id
        from pilot.shadow_human_review_queue q
-      where q.conversation_id = any($1::uuid[])`,
-    [rows.map((row) => row.conversation_id)],
+      where q.conversation_id = any($1::uuid[])
+     union
+     select e.metadata->>'conversation_id'
+       from pilot.safety_escalations e
+      where e.organization_id = $2
+        and e.metadata->>'conversation_id' = any($1::text[])`,
+    [rows.map((row) => row.conversation_id), input.organizationId],
   )).rows.map((row) => row.conversation_id));
 
   const held = rows.filter((row) => flagged.has(row.conversation_id)).map((row) => row.conversation_id);

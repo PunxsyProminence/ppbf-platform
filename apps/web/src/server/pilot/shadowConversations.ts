@@ -1011,7 +1011,8 @@ export async function listShadowDataDeletionRequests(
   }>(
     /* Every chat still under the account, the ones the member already
        deleted included: completing the request clears those too. A chat a
-       review entry points at is counted apart, because it is kept. */
+       review entry or a safety escalation points at is counted apart,
+       because it is kept. */
     `select r.request_id,
             r.account_id,
             r.status,
@@ -1025,14 +1026,20 @@ export async function listShadowDataDeletionRequests(
                 and s.account_id = r.account_id
                 and not exists (select 1 from pilot.shadow_human_review_queue q
                                  where q.conversation_id = s.conversation_id)
+                and not exists (select 1 from pilot.safety_escalations e
+                                 where e.organization_id = s.organization_id
+                                   and e.metadata->>'conversation_id' = s.conversation_id::text)
             ) as conversations_pending,
             (
               select count(*)::int
               from pilot.shadow_chat_sessions s
               where s.organization_id = r.organization_id
                 and s.account_id = r.account_id
-                and exists (select 1 from pilot.shadow_human_review_queue q
-                             where q.conversation_id = s.conversation_id)
+                and (exists (select 1 from pilot.shadow_human_review_queue q
+                              where q.conversation_id = s.conversation_id)
+                     or exists (select 1 from pilot.safety_escalations e
+                                 where e.organization_id = s.organization_id
+                                   and e.metadata->>'conversation_id' = s.conversation_id::text))
             ) as conversations_held
        from pilot.shadow_data_deletion_requests r
       where r.organization_id = $1
