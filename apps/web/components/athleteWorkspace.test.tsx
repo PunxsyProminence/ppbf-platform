@@ -22,6 +22,7 @@ import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/ty
 import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
+import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { IssuedWorkoutsUnreadableError } from '@/src/lib/issuedWorkouts';
 
@@ -2147,6 +2148,8 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
     });
 
     expect(postedTo('/api/pilot/athlete/chat').map((call) => call.body)).toEqual([{ message: 'How do I hold my guard?' }]);
+    // HF2: the saved line says when a coach or the gym office can be alerted.
+    expect(await screen.findByText(ASK_SHADOW_SENT_LINE)).toBeTruthy();
   });
 
   test('a surface is reachable through the group that owns it', async () => {
@@ -2408,7 +2411,23 @@ describe('the athlete question box does not imply a coach reads it', () => {
 
     openTab('Ask SHADOW');
 
-    expect(screen.getByText(/your parent is not automatically copied and no coach is notified/)).toBeTruthy();
+    // HF2: it also says when a coach or the gym office can be alerted, in
+    // place of "no coach is notified", which was false when a safety alert
+    // was filed (askShadowWords.ts).
+    expect(screen.getByText(/your parent is not automatically copied/)).toBeTruthy();
+    expect(screen.getByText(/your coach or the gym office can get an alert; otherwise no coach sees it/)).toBeTruthy();
+  });
+
+  test('the Ask SHADOW help says an alert can reach a coach, and no old line remains', async () => {
+    await renderWorkspace();
+
+    openTab('Ask SHADOW');
+    // The help panel opens closed.
+    fireEvent.click(screen.getByRole('button', { name: /HELP: Ask SHADOW/ }));
+
+    expect(screen.getByText(ASK_SHADOW_HELP_LINE)).toBeTruthy();
+    expect(screen.queryByText(/does not reach a coach/)).toBeNull();
+    expect(screen.queryByText(/No coach is notified/)).toBeNull();
   });
 });
 
