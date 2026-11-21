@@ -663,3 +663,13 @@ describe('the office records and withdraws a paper waiver (#1526)', () => {
     expect(posts).toHaveLength(1);
   });
 });
+
+// Lane AS-10, AS10-6a (app scrub OFF-15): the footer link is named by its
+// page's title, Media Consent Audit (it read "Photo & Media Consent Audit").
+test('the footer link to the media consent page is named by that page\'s title', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: INCOMPLETE })) as unknown as typeof fetch;
+  render(<WaiverComplianceAuditPage />);
+  const link = await screen.findByRole('link', { name: 'Media Consent Audit' });
+  expect(link.getAttribute('href')).toBe('/admin/athlete-consent');
+  expect(screen.queryByRole('link', { name: /Photo & Media Consent Audit/ })).toBeNull();
+});
