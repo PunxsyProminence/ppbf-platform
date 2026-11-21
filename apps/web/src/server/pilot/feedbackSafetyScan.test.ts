@@ -1010,3 +1010,95 @@ describe('HF12b review: the pace guard stays narrow', () => {
     expect(scanForSafetyLanguage('he said kill yourself in sparring').cues).toContain('crisis');
   });
 });
+
+// Review round 2 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review 2: a lone "i" after a spelled-out run stays a word', () => {
+  test.each([
+    'my sparring partner kept punching me after b c i said stop',
+    'he hit me in sparring b c i told her to stop',
+    'he kept hitting me in sparring o k i said stop',
+    'he kept hitting me in sparring y e s i said stop',
+  ])('the SHADOW sparring-intent override still reads it: %p', (sentence) => {
+    expect(normalizeForSafetyScan(sentence)).toMatch(/\bi (?:said|told)\b/);
+  });
+});
+
+describe('HF12b review 2: a staff word inside a spelled-out run is spaced back', () => {
+  test.each([
+    ['m y c o a c h h i t s m e', /\bcoach\b/],
+    ['o u r c o a c h h u r t s m e', /\bcoach\b/],
+    ['m y t r a i n e r h i t s m e', /\btrainer\b/],
+  ])('%p keeps the staff word for SHADOW routing', (sentence, word) => {
+    expect(normalizeForSafetyScan(sentence)).toMatch(word);
+  });
+
+  test('"scares me" inside a run is read', () => {
+    expect(scanForSafetyLanguage('m y c o a c h s c a r e s m e').cues).toContain('fear');
+  });
+});
+
+describe('HF12b review 2: being told to kill yourself, every spelling', () => {
+  test.each([
+    'k i l l y o u r s e l f',
+    'coach told me kill urselfff',
+    'he said kill yourselfff in sparring',
+    'he said go hang yourself',
+    'he told me to neck yourself',
+    'they said shoot urself',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF12b review 2: video requests near a bed or without a shirt', () => {
+  test.each([
+    'he wants a vid of my jab in my bedroom',
+    'he wants a video of my stance without a shirt',
+    'he wants pics of the team without shirts',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 2: product and coaching talk about videos and snap', () => {
+  test.each([
+    'i want more videos',
+    'we want more videos of the workouts',
+    'we want more video content',
+    'want more videos on defense',
+    'i want videos showing the combos',
+    'coach wants more snap on my jab',
+    'i want more snap in my punches',
+    'he wants more snap',
+    'i want snap in my jab',
+    'send me a snap of the schedule',
+    'send me a video of the slip drill',
+    'can you send me a vid of the 3 punch combo',
+    'send me a video of the warm up routine',
+    'send me a video of the workout',
+    'send me a video of todays class',
+    'i want a video of the session',
+    'send me a video of how to do the drill',
+  ])('no grooming cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'he wants vids of me',
+    'he wants me to send him a video',
+    'coach keeps asking me for videos',
+    'he wants a snap of me',
+    'send me a video of your body doing drills',
+  ])('a video request aimed at the child still files: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 2: the name Sa\'d is not read as sexually assaulted', () => {
+  test.each(["Sa'ed was great today", "Sa'd did really well at pads", "coach Sa'ed is the best"])(
+    'no grooming cue: %p',
+    (sentence) => {
+      expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+    },
+  );
+});
