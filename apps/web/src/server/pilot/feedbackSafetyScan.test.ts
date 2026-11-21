@@ -1736,6 +1736,11 @@ describe('HF12b review 11: blocking findings', () => {
     'a man online keeps asking me for videos of my squats',
     'he asks me for private videos of my form',
     'he wants private videos for the website',
+    // Single-rule pins (mutation proof): only the private-of-me rule and
+    // people in the stranger rule catch these.
+    'there are secret pics of me',
+    'he has private photos of me',
+    'people online want my pics',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
