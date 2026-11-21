@@ -132,3 +132,34 @@ test('a send that fails says so, and still says to tell the coach', async () => 
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   expect(await screen.findByRole('alert')).toHaveTextContent("That was not sent. Tell your coach now, and follow the gym's rules for head knocks.");
 });
+
+/* Lane AS-8, ATH-21 (Overwatch Q7 A on #2020): after a sparring end, the check
+   links the Sparring Log by its page title, where rounds and contact are
+   written down. The next-day check does not, and a check that draws nothing
+   draws no link either. */
+describe('the Sparring Log link', () => {
+  test('the after-sparring check links "Sparring Log" to its page, before and after an answer', async () => {
+    installFetch(today());
+    await renderCheck('after_sparring', true);
+    const link = await screen.findByRole('link', { name: 'Sparring Log' });
+    expect(link).toHaveAttribute('href', '/athlete/dashboard/sparring');
+
+    fireEvent.click(screen.getByRole('button', { name: `${AFTER_Q} Headache` }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    await screen.findByText('You said: Headache.');
+    expect(screen.getByRole('link', { name: 'Sparring Log' })).toHaveAttribute('href', '/athlete/dashboard/sparring');
+  });
+
+  test('the next-day check carries no Sparring Log link', async () => {
+    installFetch(today({ next_day_due: true }));
+    await renderCheck('next_day');
+    await screen.findByText(NEXT_Q);
+    expect(screen.queryByRole('link', { name: 'Sparring Log' })).toBeNull();
+  });
+
+  test('an after-sparring check with nothing due draws no link', async () => {
+    installFetch(today({ after_sparring_due: false }));
+    await renderCheck('after_sparring');
+    expect(screen.queryByRole('link', { name: 'Sparring Log' })).toBeNull();
+  });
+});
