@@ -392,7 +392,8 @@ describe('a tied session also shows the class register', () => {
     checked_in_at: '2026-10-14T21:55:00.000Z',
     ...over,
   });
-  const register = (attendance: unknown[]) => respond({ ok: true, role: 'coach', classes: [], registrations: [], coaching_requests: [], attendance });
+  const register = (attendance: unknown[], classes: unknown[] = [{ class_id: 'class-1' }, { class_id: 'class-2' }]) =>
+    respond({ ok: true, role: 'coach', classes, registrations: [], coaching_requests: [], attendance });
 
   let registerReads: number;
   function serveTied(
@@ -429,6 +430,9 @@ describe('a tied session also shows the class register', () => {
     });
   }
 
+  // The register line: the counts (a live region) and the read time, as one paragraph.
+  const registerText = () =>
+    screen.getByText((_content, el) => el?.tagName === 'P' && /Class register read at/.test(el.textContent ?? '')).textContent ?? '';
   const rowOf = (name: string) => rows().find((row) => row.querySelector('.font-semibold')?.textContent === name)!;
 
   test('those the register has Present and not marked here are listed after those marked, each with how it was marked', async () => {
@@ -447,7 +451,7 @@ describe('a tied session also shows the class register', () => {
     expect(rowOf('Cy Marsh').textContent).toContain('Present on the class register, via self check-in. Not marked here yet.');
     expect(rowOf('Ben Ortiz').textContent).not.toContain('Present on the class register');
     expect(rowOf('Ada Reyes').textContent).not.toContain('Present on the class register');
-    expect(screen.getByText(/^1 marked Present on the class register is not marked here yet\. Class register read at /)).toBeTruthy();
+    expect(registerText()).toMatch(/^1 marked Present on the class register is not marked here yet\. Class register read at /);
     // The count is still this session's own marks, and the register's note is never drawn.
     expect(screen.getByText('1 marked here.')).toBeTruthy();
     expect(screen.queryByText(/a coach note that this screen never shows/)).toBeNull();
@@ -509,23 +513,68 @@ describe('a tied session also shows the class register', () => {
     expect(screen.queryByText(/Nobody is marked Present on the class register/)).toBeNull();
   });
 
-  test('an empty register says nobody is on it, and one fully marked here says so', async () => {
+  test('no Present mark is never read as nobody here (a coach whose cover was taken gets no rows); one fully marked here says so', async () => {
     serveTied([], () => register([]));
     await showTied();
-    expect(screen.getByText(/^Nobody is marked Present on the class register yet\. Class register read at /)).toBeTruthy();
+    expect(screen.getByText(
+      'The class register sent no Present mark for this class. If another coach now covers it, its register is not sent to you, so this does not mean nobody is here.',
+    )).toBeTruthy();
+    expect(screen.queryByText(/Nobody is marked/)).toBeNull();
+    document.body.innerHTML = '';
     document.body.innerHTML = '';
 
     serveTied([ADA], () => register([onRegister('ath-1', 'coach_override')]));
     await showTied();
-    expect(screen.getByText(/^Everyone marked Present on the class register is marked here\. Class register read at /)).toBeTruthy();
+    expect(registerText()).toMatch(/^Everyone marked Present on the class register is marked here\. Class register read at /);
+  });
+
+  test('an answer that does not carry the class is unreadable, not an empty register', async () => {
+    serveTied([], () => register([onRegister('ath-1', 'self')], [{ class_id: 'class-2' }]));
+    await showTied();
+    expect(screen.getByRole('alert').textContent).toContain('The class register could not be read just now.');
+    expect(screen.queryByText(/sent no Present mark/)).toBeNull();
+    expect(screen.queryByText(/Present on the class register, via/)).toBeNull();
+  });
+
+  test('a refused read is unreadable even when its body carries register rows', async () => {
+    serveTied([], () => respond({ ok: true, classes: [{ class_id: 'class-1' }], attendance: [onRegister('ath-1', 'self')] }, 403));
+    await showTied();
+    expect(screen.getByRole('alert').textContent).toContain('The class register could not be read just now.');
+    expect(screen.queryByText(/Present on the class register, via/)).toBeNull();
+  });
+
+  test('only the counts are a live region; the read time and the retry button stay out of it, and the button keeps focus through a read', async () => {
+    serveTied([], () => register([onRegister('ath-1', 'self')]));
+    await showTied();
+    const status = screen.getByText('1 marked Present on the class register is not marked here yet.');
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.textContent).not.toContain('read at');
+    const button = screen.getByRole('button', { name: 'Read the class register again' });
+    expect(button.hasAttribute('disabled')).toBe(false);
+
+    // The next read hangs, so the button is seen while it is busy.
+    let finish: (answer: Response) => void = () => {};
+    serveTied([], () => new Promise<Response>((resolve) => { finish = resolve; }));
+    button.focus();
+    await act(async () => { fireEvent.click(button); });
+    expect(button.textContent).toBe('Reading the class register…');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(button);
+    // A press while busy starts no second read.
+    await act(async () => { fireEvent.click(button); });
+    expect(registerReads).toBe(1);
+
+    await act(async () => { finish(register([onRegister('ath-1', 'self')]) as Response); });
+    expect(button.textContent).toBe('Read the class register again');
+    expect(document.activeElement).toBe(button);
   });
 
   test('a register mark for an athlete who is not on the gym list is counted, not named', async () => {
     serveTied([], () => register([onRegister('ath-1', 'self'), onRegister('ath-gone', 'parent')]));
     await showTied();
-    expect(screen.getByText(
-      /^1 marked Present on the class register is not marked here yet\. 1 more marked Present on the class register is not on this gym’s list of athletes, so no name is shown\. /,
-    )).toBeTruthy();
+    expect(registerText()).toMatch(
+      /^1 marked Present on the class register is not marked here yet\. 1 more marked Present on the class register is not on this gym’s list of athletes, so no name is shown\. /);
     expect(rowNames()).toEqual(['Ada Reyes', 'Ben Ortiz', 'Cy Marsh']);
     expect(screen.queryByText(/ath-gone/)).toBeNull();
   });
@@ -544,6 +593,19 @@ describe('a tied session also shows the class register', () => {
     expect(rowNames()).toHaveLength(31);
     fireEvent.click(screen.getByRole('button', { name: 'Show only those marked here or on the class register' }));
     expect(rowNames()).toEqual(['Athlete 05', 'Athlete 07', 'Athlete 20']);
+  });
+
+  test('with the register unread, the collapse button promises only those marked here', async () => {
+    const big = Array.from({ length: 31 }, (_, index) => ({
+      athlete_id: `ath-${String(index).padStart(2, '0')}`,
+      full_name: `Athlete ${String(index).padStart(2, '0')}`,
+    }));
+    serveTied([big[5]], () => respond({ error: 'boom' }, 500), big);
+    await showTied();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 31 athletes' }));
+    expect(screen.getByRole('button', { name: 'Show only those marked here' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /or on the class register/ })).toBeNull();
   });
 
   test('a tap marks a register athlete here through the run route, and the register is read again', async () => {

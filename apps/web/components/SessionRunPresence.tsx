@@ -66,8 +66,12 @@ type RegisterReading =
  */
 export function registerPresent(payload: unknown, classId: string): Map<string, string | null> | null {
   if (!payload || typeof payload !== 'object') return null;
-  const rows = (payload as { attendance?: unknown }).attendance;
+  const { attendance: rows, classes } = payload as { attendance?: unknown; classes?: unknown };
   if (!Array.isArray(rows)) return null;
+  // A class the answer does not carry (gone, or not this organization's) has no register to read here.
+  if (!Array.isArray(classes) || !classes.some((item) => (item as { class_id?: unknown } | null)?.class_id === classId)) {
+    return null;
+  }
   const present = new Map<string, string | null>();
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
@@ -80,7 +84,12 @@ export function registerPresent(payload: unknown, classId: string): Map<string, 
 
 /** What the class register has that this session does not, in one line. */
 export function registerLine(onRegister: number, named: number, unnamed: number): string {
-  if (onRegister === 0) return 'Nobody is marked Present on the class register yet.';
+  // The scheduler sends a coach the register of a class they run, cover or scheduled, and nothing
+  // for any other: a coach whose cover was taken over gets no rows, which reads the same as an empty
+  // register. So no rows is never said to be "nobody" (review of #2055).
+  if (onRegister === 0) {
+    return 'The class register sent no Present mark for this class. If another coach now covers it, its register is not sent to you, so this does not mean nobody is here.';
+  }
   if (named === 0 && unnamed === 0) return 'Everyone marked Present on the class register is marked here.';
   const parts: string[] = [];
   if (named > 0) {
@@ -384,21 +393,25 @@ export default function SessionRunPresence({
           {register?.state === 'unavailable' ? (
             <div role="alert" className={ALERT}>
               <p>The class register could not be read just now. That is not the same as nobody on it.</p>
-              <button type="button" className="btn btn--ghost mt-[var(--s2)]" disabled={registerBusy} onClick={() => void readRegister()}>
-                {registerBusy ? 'Reading the class register…' : 'Read the class register again'}
-              </button>
             </div>
           ) : null}
           {register?.state === 'loaded' ? (
-            <div className="mt-[var(--s2)]">
-              <p className="t-body" role="status">
-                {registerLine(register.present.size, registerOnly.named.size, registerOnly.unnamed)}
-                {` Class register read at ${formatGymTimeOfDay(register.readAt) ?? 'a time that could not be shown'}.`}
-              </p>
-              <button type="button" className="btn btn--ghost mt-[var(--s2)]" disabled={registerBusy} onClick={() => void readRegister()}>
-                {registerBusy ? 'Reading the class register…' : 'Read the class register again'}
-              </button>
-            </div>
+            <p className="t-body mt-[var(--s2)]">
+              {/* Only the counts are announced: the time changes on every read, and a read follows every tap. */}
+              <span role="status">{registerLine(register.present.size, registerOnly.named.size, registerOnly.unnamed)}</span>
+              {` Class register read at ${formatGymTimeOfDay(register.readAt) ?? 'a time that could not be shown'}.`}
+            </p>
+          ) : null}
+          {register && register.state !== 'loading' ? (
+            /* One button for both states, never disabled, so keyboard focus stays on it through a read. */
+            <button
+              type="button"
+              className="btn btn--ghost mt-[var(--s2)]"
+              aria-disabled={registerBusy}
+              onClick={() => { if (!registerBusy) void readRegister(); }}
+            >
+              {registerBusy ? 'Reading the class register…' : 'Read the class register again'}
+            </button>
           ) : null}
 
           {message ? <p role="alert" className={ALERT}>{message}</p> : null}
@@ -421,7 +434,7 @@ export default function SessionRunPresence({
               {reading.gym.length > COLLAPSE_AT && needle === '' ? (
                 <button type="button" className="btn btn--ghost mt-[var(--s3)]" aria-expanded={showAll} onClick={() => setShowAll((open) => !open)}>
                   {showAll
-                    ? registerClassId ? 'Show only those marked here or on the class register' : 'Show only those marked here'
+                    ? register?.state === 'loaded' ? 'Show only those marked here or on the class register' : 'Show only those marked here'
                     : `Show all ${reading.gym.length} athletes`}
                 </button>
               ) : null}

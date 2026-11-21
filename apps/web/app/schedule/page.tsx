@@ -15,7 +15,7 @@ import {
   parseInstantAsGymTime,
 } from '@/src/lib/gymTime';
 import { defaultStaffAttendanceClassId } from '@/src/shared/attendanceDefaultClass';
-import { ATTENDANCE_METHOD_WORDS } from '@/src/shared/attendanceMethodWords';
+import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 import {
   REPEAT_WEEKS_DEFAULT,
   REPEAT_WEEKS_MAX,
@@ -1534,7 +1534,7 @@ export default function SchedulerPage() {
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
                           {`${athleteMap.get(item.athlete_id) || item.athlete_id} at ${classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}`}
                         </p>
-                        <p className="text-[color:var(--bone-300)]">{ATTENDANCE_STATUS_WORDS[item.status] ?? item.status}, via {ATTENDANCE_METHOD_WORDS[item.method] ?? item.method}</p>
+                        <p className="text-[color:var(--bone-300)]">{ATTENDANCE_STATUS_WORDS[item.status] ?? item.status}{attendanceMethodWords(item.method) ? `, via ${attendanceMethodWords(item.method)}` : ''}</p>
                         <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
                       </div>
                     ))}
