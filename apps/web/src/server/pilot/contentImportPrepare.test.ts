@@ -377,7 +377,7 @@ describe('a drill file made before exit_condition and correction_path existed', 
   it('re-sending one whose committed row is otherwise as prepare writes it: no change, committed bytes kept', () => {
     // As above, the committed row's blank created_by_account_id would read as a revision on its own, so this
     // drill is given its placeholder in the temporary copy first: the two missing columns are the only difference.
-    const drill = { ...bothFilled(), created_by_account_id: '{{SEED_ACCOUNT_ID}}' };
+    const drill: Record<string, string> = { ...bothFilled(), created_by_account_id: '{{SEED_ACCOUNT_ID}}' };
     const committed = readCsv(fs.readFileSync(path.join(seedData, LIBRARY), 'utf8'));
     const idAt = committed.header.indexOf('drill_id');
     const placeholderAt = committed.header.indexOf('created_by_account_id');
