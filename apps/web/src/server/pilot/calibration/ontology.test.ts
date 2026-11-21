@@ -33,6 +33,8 @@ import {
   BOXING_ONTOLOGY_VERSION_0_2,
   BOXING_ONTOLOGY_VERSION_0_3,
   BOXING_ONTOLOGY_VERSION_0_4,
+  FIGHTER_TRACKS,
+  fighterLabel,
   CALIBRATION_PROJECT_STATUSES,
   CLIP_SAMPLING_REASONS,
   CONTACT_RESULTS,
@@ -669,5 +671,18 @@ describe('named guards and stance types, by sanctioning body', () => {
         expect(allowed).toContain(key);
       }
     }
+  });
+});
+
+describe('who an event is about on a body-point set (OD-2026-10-08-005 A-Q10a)', () => {
+  test('exactly Fighter 1 and Fighter 2, in that order', () => {
+    // Ruling 1: "Teach labels the two fighters "Fighter 1" and "Fighter 2"".
+    expect([...FIGHTER_TRACKS]).toEqual(['fighter_1', 'fighter_2']);
+  });
+
+  test('a coach reads "Fighter 1" and "Fighter 2"; a typed 0.1 actor reads as typed', () => {
+    expect(fighterLabel('fighter_1')).toBe('Fighter 1');
+    expect(fighterLabel('fighter_2')).toBe('Fighter 2');
+    expect(fighterLabel('red corner')).toBe('red corner');
   });
 });

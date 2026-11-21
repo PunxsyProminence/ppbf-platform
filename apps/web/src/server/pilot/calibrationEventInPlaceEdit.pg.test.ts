@@ -199,8 +199,8 @@ async function punch(set: SetRef, overrides: Record<string, unknown> = {}): Prom
     eventId: crypto.randomUUID(),
     annotationSetId: set.setId,
     eventClass: 'punch',
-    actorTrack: 'red',
-    opponentTrack: 'blue',
+    actorTrack: 'fighter_1',
+    opponentTrack: 'fighter_2',
     startMs: EV_START,
     endMs: EV_END,
     contactMs: EV_CONTACT,
@@ -222,8 +222,8 @@ async function defense(set: SetRef, overrides: Record<string, unknown> = {}): Pr
     eventId: crypto.randomUUID(),
     annotationSetId: set.setId,
     eventClass: 'defense',
-    actorTrack: 'blue',
-    opponentTrack: 'red',
+    actorTrack: 'fighter_2',
+    opponentTrack: 'fighter_1',
     startMs: EV_START,
     endMs: EV_END,
     defenseType: 'slip',
@@ -450,7 +450,7 @@ describe('an edit in place keeps the event and everything marked on it', () => {
     const rowBefore = await eventRow(set, eventId);
 
     const edited = await edit(set, eventId, {
-      opponentTrack: 'blue corner',
+      opponentTrack: 'fighter_1',
       physicalHand: 'right',
       handRole: 'rear',
       punchType: 'rear_hook',
@@ -468,7 +468,7 @@ describe('an edit in place keeps the event and everything marked on it', () => {
     expect(await marksOf(set, eventId)).toEqual(before);
     expect(await eventRow(set, eventId)).toEqual({
       ...rowBefore,
-      opponent_track: 'blue corner',
+      opponent_track: 'fighter_1',
       physical_hand: 'right',
       hand_role: 'rear',
       punch_type: 'rear_hook',
@@ -519,7 +519,7 @@ describe('an edit in place keeps the event and everything marked on it', () => {
 
     const edited = await edit(set, eventId, {
       eventClass: 'punch',
-      actorTrack: 'red',
+      actorTrack: 'fighter_1',
       startMs: EV_START,
       endMs: EV_END,
       contactMs: EV_CONTACT,
@@ -580,7 +580,7 @@ describe('while an event holds marks, what a moment was checked against cannot c
     ['end', 'end', { endMs: EV_END + 100 }, { end_ms: EV_END + 100 }],
     ['contact time', 'contact time', { contactMs: EV_CONTACT + 10 }, { contact_ms: EV_CONTACT + 10 }],
     ['class', 'class', AS_DEFENSE, { event_class: 'defense', defense_type: 'slip', punch_type: null }],
-    ['actor', 'actor', { actorTrack: 'blue' }, { actor_track: 'blue' }],
+    ['actor', 'actor', { actorTrack: 'fighter_2' }, { actor_track: 'fighter_2' }],
   ];
 
   test.each(MOVES)('%s: refused naming it while a moment exists, nothing changed; allowed once the marks are removed', async (_label, named, changes, expected) => {
@@ -613,7 +613,7 @@ describe('while an event holds marks, what a moment was checked against cannot c
     const eventId = await punch(set);
     await open(set, eventId, 'end');
 
-    await expect(edit(set, eventId, { startMs: EV_START - 50, endMs: EV_END + 50, actorTrack: 'blue' })).rejects.toMatchObject({
+    await expect(edit(set, eventId, { startMs: EV_START - 50, endMs: EV_END + 50, actorTrack: 'fighter_2' })).rejects.toMatchObject({
       ...HAS_MARKS,
       message: expect.stringContaining('so its start, end, actor cannot change'),
     });
@@ -624,11 +624,11 @@ describe('while an event holds marks, what a moment was checked against cannot c
     const eventId = await punch(set);
     await bodyPoints.setEventStanceType({ organizationId: set.orgId, annotationSetId: set.setId, eventId, stanceType: 'usa_boxing__classic' });
 
-    await expect(edit(set, eventId, { actorTrack: 'blue' })).rejects.toMatchObject({
+    await expect(edit(set, eventId, { actorTrack: 'fighter_2' })).rejects.toMatchObject({
       ...HAS_MARKS,
       message: expect.stringContaining('has a stance type, so its actor cannot change'),
     });
-    expect((await eventRow(set, eventId)).actor_track).toBe('red');
+    expect((await eventRow(set, eventId)).actor_track).toBe('fighter_1');
 
     const edited = await edit(set, eventId, { startMs: EV_START - 100, contactMs: EV_CONTACT - 10 });
     expect(edited).toMatchObject({ event_id: eventId, start_ms: EV_START - 100, contact_ms: EV_CONTACT - 10 });
@@ -913,6 +913,50 @@ describe('recording a new event under a body-point version is refused by name, n
         where organization_id = $1 and event_id = $2`,
       [set.orgId, eventId],
     )).rejects.toThrow(refusal);
+  });
+});
+
+/* OD-2026-10-08-005 A-Q10a: "Teach labels the two fighters "Fighter 1" and
+ * "Fighter 2"". On a body-point set the actor is one of the two, and an
+ * opponent, when given, is too (TEACH-T T-4). A 0.1 set keeps its typed actors
+ * (OD-2026-10-02-008 4A). */
+describe('who an event is about, on a body-point set, is Fighter 1 or Fighter 2', () => {
+  describe.each([V02, V03, V04])('under %s', (version) => {
+    test.each([
+      ['a typed actor', { actorTrack: 'red' }, /^Missing actor_track: on boxing-ontology-0\.[234] the actor is fighter_1 or fighter_2/],
+      ['an actor in other words', { actorTrack: 'Fighter 1' }, /^Missing actor_track/],
+      ['a typed opponent', { opponentTrack: 'blue' }, /^Missing opponent_track: on boxing-ontology-0\.[234] the opponent is fighter_1 or fighter_2, or none/],
+    ])('recording %s is refused by name and nothing is written', async (_label, overrides, message) => {
+      const set = await newSet(version);
+      const refusal = await punch(set, overrides).then(() => null, (error: Error) => error);
+      expect(refusal?.message).toMatch(message);
+      expect(await countFor('calibration_annotation_events', set)).toBe(0);
+    });
+  });
+
+  test('Fighter 1 and Fighter 2 are recorded, each on their own events, with or without an opponent', async () => {
+    const set = await newSet(V04);
+    await punch(set);
+    await defense(set);
+    await punch(set, { opponentTrack: null });
+    await defense(set, { actorTrack: 'fighter_1', opponentTrack: null });
+    expect(await countFor('calibration_annotation_events', set)).toBe(4);
+  });
+
+  test('an edit cannot set a typed actor or opponent, and leaves the row as it was', async () => {
+    const set = await newSet(V04);
+    const eventId = await punch(set);
+    const before = await eventRow(set, eventId);
+    await expect(edit(set, eventId, { actorTrack: 'red' })).rejects.toThrow(/^Missing actor_track/);
+    await expect(edit(set, eventId, { opponentTrack: 'blue' })).rejects.toThrow(/^Missing opponent_track/);
+    expect(await eventRow(set, eventId)).toEqual(before);
+    expect(await edit(set, eventId, { opponentTrack: null })).toMatchObject({ opponent_track: null });
+  });
+
+  test('a 0.1 set keeps the typed actor and opponent it started with', async () => {
+    const set = await newSet(V01);
+    await punch(set, { actorTrack: 'red', opponentTrack: 'blue corner', stance: 'orthodox' });
+    expect(await countFor('calibration_annotation_events', set)).toBe(1);
   });
 });
 
