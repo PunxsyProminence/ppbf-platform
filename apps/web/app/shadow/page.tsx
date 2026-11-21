@@ -1031,7 +1031,7 @@ function ShadowChatPageContent() {
         setHeavyBagMode(false);
       }
       // Said the same whether or not the chat was flagged, so a member is
-      // never told one was (lane HF7; Q1 option A, pending Jason).
+      // never told one was (lane HF7; Jason on Q1, 2026-11-21: "A for both").
       setSessionNotice(`Deleted "${session.title}". Anything the gym must keep for safety is kept for two years.`);
     } catch (error) {
       handleSessionActionError(error, session, 'SHADOW could not delete that session.');

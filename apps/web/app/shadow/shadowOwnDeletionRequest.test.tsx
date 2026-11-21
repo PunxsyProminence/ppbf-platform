@@ -270,7 +270,7 @@ describe('a completed request', () => {
     // A chat flagged into a safeguarding review is kept for two years
     // (OD-2026-10-06-023, -027), so the sentence says so -- in general words,
     // the same for everyone, so it never tells a member one of theirs was
-    // flagged (lane HF7; Q1 option A, pending Jason).
+    // flagged (lane HF7; Jason on Q1, 2026-11-21: "A for both").
     expect(screen.getByText(
       'Your SHADOW conversation history was cleared, except anything the gym must keep for safety, '
       + 'which is kept for two years. Anything you have said since is still here, and you can ask again.',
