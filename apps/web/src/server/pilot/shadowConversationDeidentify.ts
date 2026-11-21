@@ -127,13 +127,13 @@ type Queryable = Pick<PoolClient, 'query'>;
  * volunteer's may be their only one), the name they chose for the labelling
  * station, the byline they typed on a lesson they wrote, the name they signed
  * gym notices and chalkboard lines with (the notice row has no account, so it
- * is read from the post's audit row, which records the poster); and, for every athlete that is theirs -- their
- * own athlete record for an athlete login, the children their guardian record
- * is linked to, and the athlete the chat is about -- that athlete's full
- * name, the ring names of that athlete's logins, and the full names of every
- * guardian linked to that athlete. Read in the chat's gym only. A name in
- * kept text identifies the member as surely as their own: a parent's reply
- * that names their child names them.
+ * is read from the post's audit row, which records the poster); and, for
+ * every athlete that is theirs -- their own athlete record for an athlete
+ * login, the children their guardian record is linked to, and the athlete the
+ * chat is about -- that athlete's full name, the ring names of that athlete's
+ * logins, and the full names of every guardian linked to that athlete. Read
+ * in the chat's gym only. A name in kept text identifies the member as surely
+ * as their own: a parent's reply that names their child names them.
  */
 export async function namesOnRecord(
   client: Queryable,
