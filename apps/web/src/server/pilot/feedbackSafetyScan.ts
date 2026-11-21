@@ -255,8 +255,8 @@ const STRANGER_GYM_VIDEO = String.raw`(?<!\b(?:${TECHNIQUE_NOUNS}|boxing|highlig
 const STRANGER_GYM_CONTENT = String.raw`(?! (?:(?:of|on|about|from|showing|for) )?(?:${TECHNIQUE_FILLER} ){0,3}(?:${TECHNIQUE_NOUNS}|shoulder rol+s?|everyone|everybody)\b)`;
 const STRANGER_TUTORIAL = String.raw`(?<!\b(?:watched|watching|watch|saw|se+n|se+|copied|copying|copy|found|find|fol+ow|fol+ows|fol+owed|fol+owing|like|liked|love|loved|subscribed to|subbed to) (?:a |an |some |this |that |the |one )?)`;
 // Product and upload talk about a private video setting.
-const PRIVATE_PICTURE_PRODUCT = String.raw`(?<!\b(?:ap+|site|website|page|platform|youtube|channel)(?: (?:should|could|can|will|needs? to|must))? (?:have|has|get|add|allow)(?: (?:a|an))? )(?<!\b(?:made (?:it|this|that)(?: (?:a|an|into a))?|set (?:it|this|that) to|i (?:uploaded|put up)(?: (?:a|an|my))?|is there (?:a|an)) )`;
-const PRIVATE_PICTURE_GUARD = String.raw`(?! (?:les+ons?|ses+ions?|coaching|clas+|clas+es|options?|set+ings?|links?)\b)`;
+const PRIVATE_PICTURE_PRODUCT = String.raw`(?<!\b(?:ap+|site|website|page|platform|youtube|channel)(?: (?:should|could|can|will|needs? to|must))? (?:have|has|get|add|allow)(?: (?:a|an))? )(?<!\b(?:made (?:it|this|that)(?: (?:a|an|into a))?|is there (?:a|an)) )`;
+const PRIVATE_PICTURE_GUARD = String.raw`(?! (?:les+ons?|ses+ions?|coaching|clas+|clas+es|options?|set+ings?|(?:to|on) (?:youtube|the ap+|the site|my channel))\b)`;
 const PICTURE_NEAR_PLACE = [
   // A private or secret picture files with any verb; asking for one, or one
   // of the child, files whatever follows.
