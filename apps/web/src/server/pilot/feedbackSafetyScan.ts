@@ -137,24 +137,30 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     pattern: /\b(unsafe|not safe|dont feel safe|feel unsafe|didnt feel safe|nobody helped|no one helped|nobody listens|no one listens|nobody believes me|no one believes me)\b/,
   },
   {
-    // HF1 added the suicide and self-harm words a child actually types,
-    // including short forms ("kms", "sewerslide", "unalive"). Two guards keep
-    // gym talk out, because crisis files even in boxing context: "kms" after a
-    // number or a counting phrase is kilometres of roadwork, and "suicides" or
-    // a "suicide drill/sprint/shuttle" is the conditioning sprint ("dril+" and
-    // "shut+les" because the fully collapsed reading spells "drills" as
-    // "drils"). Both guards are kept narrow on purpose: "thinking of kms" and
-    // "suicide runs in my family" are disclosures (safeguarding review, PR
-    // 2059), so "of", "the", "some", "runs" and "lines" are not in them. The
-    // kms guard's numbers are spelled out to survive the fully collapsed
-    // reading ("thre", "fiften"); a pattern like "any word ending in ten" or a
-    // bare "ran" swallowed "so often kms" and "got beaten kms" (re-review). An
-    // age before "kms" ("im 14 kms", "im fourteen kms") is a disclosure, not a
-    // distance, unless a distance word follows ("i am 5 kms away"). Plain "take
-    // my life" is not a cue ("take my life seriously"); "take my own life" is.
+    // HF1 (PR 2059) added the suicide and self-harm words a child actually
+    // types, short forms included ("kms", "sewerslide", "unalive"). Crisis
+    // files even in boxing context, so three guards keep gym talk out. Each
+    // names only the gym phrase to EXCLUDE; four review rounds showed that a
+    // guard listing what to KEEP drops real disclosures.
+    //  - kms: not after a number or counting phrase (kilometres of roadwork).
+    //    Numbers are spelled to survive the fully collapsed reading ("thre",
+    //    "fiften"). Not "of", "the" or "some" ("thinking of kms"), not "any
+    //    word ending in ten" ("so often kms"). An age before it ("im 14 kms",
+    //    "im fourteen kms") files unless a distance phrase follows ("kms
+    //    away", "kms to go", "kms from the gym"); "im 14 kms today" files.
+    //  - suicide: not "suicides" or a "suicide drill/sprint/shuttle" (the
+    //    conditioning sprint; "dril+" and "shut+les" for the collapsed
+    //    reading) or "suicide squad". Not "runs" or "lines" ("suicide runs in
+    //    my family").
+    //  - off myself: not after gear ("tape off myself") or "took it off
+    //    myself"; a bare "it" is not excluded ("end it, off myself").
+    // Pinned, accepted false alerts: "suicide runs after sparring", "only 3
+    // kms today", "take the pressure off myself", "i ran kms before school",
+    // "dont wanna live in this town". Plain "take my life" is not a cue ("take
+    // my life seriously"); "take my own life" is.
     id: 'crisis',
     pattern:
-      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|(?<!\b(?:wraps?|tape|gloves?|shoes?|shirt|headgear|it|them) )off myself|shoot myself|neck myself|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself)\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|ten|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n|twenty|thirty|forty|fifty) )\bkms\b|\b(?:im|i am|age)(?: only)? (?:[0-9]+|ten|eleven|twelve|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n)(?: yo| years old| and)? kms\b(?! (?:away|from|to go|left|out|today|more)\b)/,
+      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|(?<!\b(?:wraps?|tape|gloves?|shoes?|boots|shirt|headgear|headguard|mouthguard|pads|(?:take|took|get|got|pull|pulled|cut) (?:it|them)) )off myself|shoot myself|neck myself|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself)\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|ten|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n|twenty|thirty|forty|fifty) )\bkms\b|\b(?:im|i am|am|only|age)(?: only)? (?:[0-9]+|ten|eleven|twelve|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n)(?: yo| years old| and)? kms\b(?! (?:away|to go|from (?:the|my|home|here|school))\b)/,
   },
   {
     // Naming what was touched instead of who was touching. Every cue above
@@ -179,7 +185,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     // keep dropped real disclosures (safeguarding reviews, PR 2059).
     id: 'grooming_or_isolation',
     pattern:
-      /\b(when nobody is looking|when no one is looking|when nobodys looking|when everyone leaves|after everyone leaves|keeps me after|keep me after|stay behind|stays behind|by myself with|alone in the office|in the office alone|took a picture of me|takes pictures of me|filmed me|recorded me|watches me get changed|watches me change|watched me change|take my shirt off|took my shirt off|get changed in front|our little secret|our little thing|our secret|special friend|dont show anyone|dont show anybody|not allowed to tell|cant tell my mom|cant tell my dad|cant tell anyone|off the team if i tell|if i tell anyone|texts me at night|texting me at night|messages me at night|asked me not to say|molest|molests|molested|molesting|molester|molestation|rape|rapes|raped|raping|rapist|r ped|rap3d|sexual(?:ly)? (?:abus|assault)[a-z]*|sexualy (?:abus|assault)[a-z]*|sexually touched|grooming me|groomed me|grooms me|groped|gropes|groping|fondled|fondles|fondling|(?:made|makes|make|making) me touch(?! gloves\b)|sent me nudes|asked for nudes|asked me for nudes|wants nudes|send nudes|dick pic|dick pics|(?:asking|asks|asked|ask|wants|want) (?:me )?(?:for |to send )?(?:a )?(?:pic|pics|picture|pictures|photo|photos|selfie|selfies)\b(?! of (?:my|the|our|his|her|their) (?:fight|fights|bout|bouts|event|match|tournament|win|belt|medal|team|class|sparring)\b)|pedo|pedophile|paedo|paedophile|had sex with me|have sex with me)\b/,
+      /\b(when nobody is looking|when no one is looking|when nobodys looking|when everyone leaves|after everyone leaves|keeps me after|keep me after|stay behind|stays behind|by myself with|alone in the office|in the office alone|took a picture of me|takes pictures of me|filmed me|recorded me|watches me get changed|watches me change|watched me change|take my shirt off|took my shirt off|get changed in front|our little secret|our little thing|our secret|special friend|dont show anyone|dont show anybody|not allowed to tell|cant tell my mom|cant tell my dad|cant tell anyone|off the team if i tell|if i tell anyone|texts me at night|texting me at night|messages me at night|asked me not to say|molest|molests|molested|molesting|molester|molestation|rape|rapes|raped|raping|rapist|r ped|rap3d|sexual(?:ly)? (?:abus|assault)[a-z]*|sexualy (?:abus|assault)[a-z]*|sexually touched|grooming me|groomed me|grooms me|groped|gropes|groping|fondled|fondles|fondling|(?:made|makes|make|making) me touch(?! gloves\b)|sent me nudes|asked for nudes|asked me for nudes|wants nudes|send nudes|dick pic|dick pics|(?:(?:asking|asks|asked|ask|wants|want|wanted|wanting) (?:me )?(?:for |to see |to send (?:him |her |them )?)?|send (?:him |her |them |me )?)(?:a |an |more |some |private |another |any )?(?:pic|pics|picture|pictures|photo|photos|selfie|selfies)\b(?! of (?:my|the|our|his|her|their) (?:fight|fights|bout|bouts|event|match|tournament|win|belt|medal|team|class|spar+ing)\b)|pedo|pedophile|paedo|paedophile|had sex with me|have sex with me)\b/,
   },
   {
     // Refusal phrased as a request or a question, which the "dont want to"
