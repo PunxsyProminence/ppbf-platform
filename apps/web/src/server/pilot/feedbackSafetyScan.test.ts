@@ -796,3 +796,30 @@ describe('HF12b: picture requests said as pix, vid or snaps', () => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+// A gym noun no longer hides what follows it: a picture near a place or state
+// of undress files, in either order, whatever comes between.
+describe('HF12b: pictures near a changing room, a shower or undress', () => {
+  test.each([
+    'pics of the team changing room',
+    'pics of my sparring partner in the shower',
+    'he took pics in the locker room',
+    'he asked for pics from the tournament in the changing room',
+    'in the shower he took a video',
+    'naked pics',
+    'he wants nude photos',
+    'he asked for pics of me getting changed',
+    'he wanted pics of me in my underwear',
+    'he took a video of me in the bathroom',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'the profile pics keep changing',
+    'can you add pics of the new heavy bags',
+    'the showers in the locker room are cold',
+  ])('no grooming cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
