@@ -3055,4 +3055,8 @@ test('the board reads a clearance and a hold through components/clearanceReading
   // POST, stay here: this is still the only page that writes a hold.
   expect(source).not.toContain('/api/pilot/training-holds?athlete_id=');
   expect(source).toContain('`${apiBase()}/api/pilot/training-holds`');
+  // The clearance badge moved too (Q-B1 = A on #2041): the board draws each
+  // row's clearance with the shared badge, and keeps no badge map of its own.
+  expect(source).not.toMatch(/(const CLEARANCE_BADGE\b|function clearanceBadge\(|badge--locked|badge--cleared)/);
+  expect(source).toContain('const badge = clearanceBadge(row);');
 });

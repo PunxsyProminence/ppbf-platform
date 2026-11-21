@@ -47,7 +47,7 @@ export function isoInstant(value: string): string {
   return value.trim().replace(' ', 'T').replace(/(T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?[+-]\d{2})$/, '$1:00');
 }
 
-const CLEARANCE_UNREAD: ClearanceReading = { clearance: 'unavailable', effective_at: null, expired_at: null, ends_at: null };
+export const CLEARANCE_UNREAD: ClearanceReading = { clearance: 'unavailable', effective_at: null, expired_at: null, ends_at: null };
 
 /* One athlete's clearance, as the route reports it. Never throws: whatever
    goes wrong is the fail-closed reading, 'unavailable'.
@@ -93,6 +93,40 @@ export async function readClearance(athleteId: string): Promise<ClearanceReading
   } catch {
     return CLEARANCE_UNREAD;
   }
+}
+
+// Moved, not copied, from the Clearance Board with the reads above (Q-B1 = A
+// on #2041), so the board and Athlete Safety draw a clearance with one badge.
+//
+// Room DNA (clinic): --locked (#A81E22) marks a medical or safeguarding FACT;
+// red itself is not reserved (OD-2026-09-29-001). `not_cleared` is one: a
+// clinician looked at this child and
+// said no. `none` is not. It means nobody has typed a clearance record in yet,
+// which the board's own copy calls what it is -- a coach or the office
+// sets one. Both wore --locked, so a coach scanning the roster could
+// not tell "a doctor said no" from "the front desk hasn't got to it", and the
+// red that should stop a coach cold stopped meaning anything.
+//
+// `none` drops one rung to --restricted, where `pending` and `unavailable`
+// already sit: still an action state, still fail-closed (nothing here reads as
+// cleared), and still Law 3-legible because the LABEL, not the colour, is what
+// separates "no record" from "pending" from "unavailable".
+export const CLEARANCE_BADGE: Record<string, { className: string; glyph: string; label: string }> = {
+  cleared: { className: 'badge badge--cleared', glyph: '✓', label: 'cleared' },
+  restricted: { className: 'badge badge--restricted', glyph: '▲', label: 'restricted' },
+  not_cleared: { className: 'badge badge--locked', glyph: '✕', label: 'not cleared' },
+  pending: { className: 'badge badge--restricted', glyph: '▲', label: 'pending' },
+  // Amber, not red: the clearance ran out; no clinician said no
+  // (OD-2026-10-01-007 section 4).
+  cleared_expired: { className: 'badge badge--restricted', glyph: '▲', label: 'clearance expired' },
+  none: { className: 'badge badge--restricted', glyph: '▲', label: 'no record' },
+  unavailable: { className: 'badge badge--restricted', glyph: '▲', label: 'unavailable' },
+};
+
+export function clearanceBadge(reading: Pick<ClearanceReading, 'clearance'>) {
+  if (reading.clearance === 'unavailable') return CLEARANCE_BADGE.unavailable;
+  if (reading.clearance === null) return CLEARANCE_BADGE.none;
+  return CLEARANCE_BADGE[reading.clearance] ?? CLEARANCE_BADGE.unavailable;
 }
 
 /* The clock is looked at again at least this often while waiting. One long

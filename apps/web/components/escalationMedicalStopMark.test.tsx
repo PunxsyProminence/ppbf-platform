@@ -502,7 +502,8 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
 const MARK_TOKEN = /alert--critical|badge--locked|--locked-ink|var\(--locked\)|var\(--safety-locked\)|var\(--status-critical\)|var\(--status-danger\)|['"`]locked['"`]/g;
 
 const MARK_ALLOWED = new Map<string, { readonly count: number; readonly why: string }>([
-  ['app/coach/sports-medicine/page.tsx', { count: 1, why: "the Clearance Board's 'not cleared': a clearance record saying MEDICALLY_NOT_ALLOWED, the one medical stop" }],
+  // The clearance badge moved here from the Clearance Board (lane AS-5, Q-B1 = A on #2041); the board and Athlete Safety draw it.
+  ['components/clearanceReading.ts', { count: 1, why: "the clearance badge's 'not cleared' (the Clearance Board and Athlete Safety): a clearance record saying MEDICALLY_NOT_ALLOWED, the one medical stop" }],
   ['app/coach/decision-loop/page.tsx', { count: 2, why: "the Medical Administrative Status 'not_cleared' (the clearance record), and the tone type that names it" }],
   ['app/admin/waiver-status/page.tsx', { count: 1, why: "Tonight's 'Not cleared' when the clearance record itself says not_cleared (Overwatch Q5); a hold alone is restricted" }],
   ['app/admin/safety-flags/page.tsx', { count: 1, why: 'a blocking flag that is a clinician stop (concussion_rest_period, rtp_not_cleared; Overwatch Q5); other blocking flags are restricted' }],
@@ -638,7 +639,7 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
   });
 
   test('the scan sees the one real medical stop, so it is not blind', () => {
-    expect(counts.get('app/coach/sports-medicine/page.tsx')).toBe(1);
+    expect(counts.get('components/clearanceReading.ts')).toBe(1);
   });
 
   test('every file that carries the mark is allowed, with its reason, or still pending a sweep', () => {

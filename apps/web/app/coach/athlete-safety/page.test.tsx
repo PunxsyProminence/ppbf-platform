@@ -22,6 +22,8 @@ import type { ReactNode } from 'react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { formatGymDateNumeric } from '@/src/lib/gymTime';
+
 import CoachInjuriesPage from './page';
 import {
   ATHLETE_SAFETY_PAGE,
@@ -110,6 +112,15 @@ let accessibleReply: string[];
 /** What the training-holds route answers for ath-1's active holds. */
 let holdsReply: unknown;
 let holdsStatus: number;
+/** What the medical-status route answers for ath-1's clearance (route.ts GET: status row and effectiveStatus). */
+let clearanceReply: unknown;
+let clearanceStatus: number;
+
+const CLEARED = {
+  ok: true,
+  status: { athlete_id: 'ath-1', status: 'cleared', effective_at: '2026-09-01T14:00:00.000Z', expires_at: null },
+  effectiveStatus: 'cleared',
+};
 
 const HOLD = {
   hold_id: 'hold-1', athlete_id: 'ath-1', status: 'active', placed_by_role: 'coach', scope: 'all_training',
@@ -133,8 +144,13 @@ beforeEach(() => {
   accessibleReply = ['ath-1'];
   holdsReply = { ok: true, holds: [] };
   holdsStatus = 200;
+  clearanceReply = CLEARED;
+  clearanceStatus = 200;
   global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
+    if (u.includes('/api/pilot/shadow/medical-status?athleteId=ath-1') && init?.method === 'GET') {
+      return { ok: clearanceStatus < 300, status: clearanceStatus, json: async () => clearanceReply };
+    }
     if (u.includes('/api/pilot/training-holds?athlete_id=ath-1&status=active') && init?.method === 'GET') {
       return { ok: holdsStatus < 300, status: holdsStatus, json: async () => holdsReply };
     }
@@ -910,8 +926,10 @@ describe('Athlete Safety (lane AS-5)', () => {
       jest.useFakeTimers();
       try {
         await openAthlete();
-        // Still out: the heading and the name, and nothing that a settled "no hold" shows.
+        // Still out: the heading and the name, and nothing that a settled "no hold" shows --
+        // not even the clearance, which has answered: a badge over an unread hold reads as "no hold".
         expect(section().getAttribute('aria-busy')).toBe('true');
+        expect(section().querySelector('.badge')).toBeNull();
         expect(within(section()).queryByRole('link')).toBeNull();
         expect(within(section()).queryByText(UNREAD)).toBeNull();
         expect(screen.queryByRole('link', { name: 'Clearance Board' })).toBeNull();
@@ -1013,12 +1031,16 @@ describe('Athlete Safety (lane AS-5)', () => {
       expect(section().getAttribute('aria-busy')).toBe('true');
       expect(screen.queryByText('TRAINING HOLD')).toBeNull();
       expect(document.body.textContent).not.toContain('Rest until the doctor');
+      // ath-1's clearance is taken down too.
+      expect(section().querySelector('.badge')).toBeNull();
       await act(async () => {
         release();
         await held;
       });
       await waitFor(() => expect(section().getAttribute('aria-busy')).toBe('false'));
       expect(screen.queryByText('TRAINING HOLD')).toBeNull();
+      // ath-x's own clearance read failed: it is said as unread, never as ath-1's "cleared".
+      expect(section().querySelector('[data-clearance] .badge')?.textContent).toBe('▲unavailable');
     });
 
     test('nothing in the section is set below the gym-floor type size', async () => {
@@ -1027,6 +1049,223 @@ describe('Athlete Safety (lane AS-5)', () => {
       await within(section()).findByText('TRAINING HOLD');
       expect(section().querySelectorAll('[style*="font-size"]')).toHaveLength(0);
       expect(section().querySelector('.stamp')?.classList.contains('stamp--kiosk')).toBe(true);
+    });
+
+    // AS5-2b's last commit (Q-B1 = A on #2041): the clearance, read with the board's
+    // read (components/clearanceReading.ts) and drawn with the board's badge and words
+    // (Q-B4 = A), each cut before the part about the board's own form.
+    describe('the clearance', () => {
+      const CLEARANCE_UNREAD = 'Clearance could not be read just now. Unknown is not cleared — check again before making a call that depends on it.';
+      const clearancePart = () => section().querySelector('[data-clearance]') as HTMLElement | null;
+      const badge = () => clearancePart()?.querySelector('.badge') as HTMLElement | null;
+      const row = (status: string) => ({ athlete_id: 'ath-1', status, effective_at: '2026-09-01T14:00:00.000Z', expires_at: null });
+
+      test.each<[string, unknown, string, string, string | null]>([
+        ['cleared', CLEARED, 'badge badge--cleared', '✓cleared', null],
+        ['restricted', { ok: true, status: row('restricted'), effectiveStatus: 'restricted' }, 'badge badge--restricted', '▲restricted', null],
+        ['pending', { ok: true, status: row('pending'), effectiveStatus: 'pending' }, 'badge badge--restricted', '▲pending', null],
+        ['not cleared', { ok: true, status: row('not_cleared'), effectiveStatus: 'not_cleared' }, 'badge badge--locked', '✕not cleared', null],
+      ])('a clearance on file shows the board\'s badge and the date it took effect: %s', async (_name, reply, className, text) => {
+        clearanceReply = reply;
+        await openAthlete();
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge()?.className).toBe(className);
+        expect(badge()?.textContent).toBe(text);
+        expect(badge()?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
+        expect(clearancePart()?.textContent).toContain(`since ${formatGymDateNumeric('2026-09-01T14:00:00.000Z')}`);
+        expect(clearancePart()?.textContent).not.toMatch(/No clearance record|passed its end date|could not be read/);
+        // Read only: setting a clearance is the board's.
+        expect(within(section()).queryAllByRole('button')).toEqual([]);
+        expect(section().textContent).not.toMatch(/Set clearance status/);
+      });
+
+      test('no record on file is the board\'s "no record", one rung down from the medical stop, in the board\'s sentence cut before its form', async () => {
+        clearanceReply = { ok: true, status: null, effectiveStatus: 'no_record' };
+        await openAthlete();
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge()?.className).toBe('badge badge--restricted');
+        expect(badge()?.textContent).toBe('▲no record');
+        expect(within(clearancePart() as HTMLElement).getByText('No clearance record on file.')).toBeTruthy();
+        expect(section().textContent).not.toMatch(/A coach or the office sets one below/);
+        expect(clearancePart()?.textContent).not.toMatch(/since/);
+      });
+
+      test('a clearance past its end date says so, with the date it ended, and is never "cleared"', async () => {
+        clearanceReply = {
+          ok: true,
+          status: { athlete_id: 'ath-1', status: 'cleared', effective_at: '2026-06-01T14:00:00.000Z', expires_at: '2026-10-01 16:00:00+00' },
+          effectiveStatus: 'cleared_expired',
+        };
+        await openAthlete();
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge()?.className).toBe('badge badge--restricted');
+        expect(badge()?.textContent).toBe('▲clearance expired');
+        expect(clearancePart()?.textContent).toContain(`expired ${formatGymDateNumeric('2026-10-01T16:00:00+00:00')}`);
+        expect(clearancePart()?.textContent).not.toMatch(/since/);
+        expect(within(clearancePart() as HTMLElement).getByText('This clearance passed its end date, so it no longer counts.')).toBeTruthy();
+      });
+
+      test.each<[string, () => void]>([
+        ['the route refuses', () => { clearanceStatus = 500; }],
+        ['the answer does not say ok', () => { clearanceReply = { status: CLEARED.status, effectiveStatus: 'cleared' }; }],
+        ['the row is another athlete\'s', () => { clearanceReply = { ...CLEARED, status: { ...CLEARED.status, athlete_id: 'ath-2' } }; }],
+        ['the reading contradicts its own row', () => { clearanceReply = { ...CLEARED, effectiveStatus: 'not_cleared' }; }],
+        ['the answer carries no reading', () => { clearanceReply = { ok: true, status: CLEARED.status }; }],
+      ])('a clearance nobody could read is said as unread, never as cleared: %s', async (_name, arrange) => {
+        arrange();
+        await openAthlete();
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge()?.className).toBe('badge badge--restricted');
+        expect(badge()?.textContent).toBe('▲unavailable');
+        expect(within(clearancePart() as HTMLElement).getByText(CLEARANCE_UNREAD)).toBeTruthy();
+        expect(section().textContent).not.toMatch(/✓|\bsince\b/);
+      });
+
+      test('the medical-stop mark is the clearance badge\'s only: a hold beside a "not cleared" is still brass', async () => {
+        clearanceReply = { ok: true, status: row('not_cleared'), effectiveStatus: 'not_cleared' };
+        holdsReply = { ok: true, holds: [HOLD] };
+        await openAthlete();
+        await within(section()).findByText('TRAINING HOLD');
+        expect(section().querySelectorAll('.badge--locked')).toHaveLength(1);
+        expect(section().querySelector('.badge--locked')?.closest('[data-clearance]')).not.toBeNull();
+        const holdPart = section().querySelector('[data-refusal-stamp="training_hold"]') as HTMLElement;
+        expect(holdPart.outerHTML).not.toMatch(/locked|critical|danger/);
+      });
+
+      test('nothing is drawn until both reads have settled: a clearance still out holds back the hold, the badge and the link', async () => {
+        holdsReply = { ok: true, holds: [HOLD] };
+        const base = global.fetch;
+        let release: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+          if (String(url).includes('/api/pilot/shadow/medical-status?athleteId=ath-1')) {
+            await held;
+            return { ok: true, status: 200, json: async () => CLEARED };
+          }
+          return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+        }) as unknown as typeof fetch;
+        await openAthlete();
+        // Let the hold read answer: it has, and still nothing but the heading and the name is up.
+        await act(async () => {
+          await Promise.resolve();
+        });
+        const holdReads = (global.fetch as unknown as jest.Mock).mock.calls.filter(([u]) => String(u).includes('/api/pilot/training-holds'));
+        expect(holdReads).toHaveLength(1);
+        expect(section().getAttribute('aria-busy')).toBe('true');
+        expect(section().querySelector('.badge')).toBeNull();
+        expect(screen.queryByText('TRAINING HOLD')).toBeNull();
+        expect(within(section()).queryByRole('link')).toBeNull();
+        expect([...section().children].map((child) => child.textContent)).toEqual(['Training Hold', 'Jordan Doe']);
+        await act(async () => {
+          release();
+          await held;
+        });
+        await waitFor(() => expect(section().getAttribute('aria-busy')).toBe('false'));
+        expect(badge()?.textContent).toBe('✓cleared');
+        expect(within(section()).getByText('TRAINING HOLD')).toBeTruthy();
+        expect(within(section()).getByRole('link', { name: 'Clearance Board' })).toBeTruthy();
+      });
+
+      test('a clearance read still unanswered after the wait is said as unread; an answer that comes later is shown', async () => {
+        const base = global.fetch;
+        let release: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+          if (String(url).includes('/api/pilot/shadow/medical-status?athleteId=ath-1')) {
+            await held;
+            return { ok: true, status: 200, json: async () => CLEARED };
+          }
+          return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+        }) as unknown as typeof fetch;
+        jest.useFakeTimers();
+        try {
+          await openAthlete();
+          await act(async () => {
+            jest.advanceTimersByTime(14_000);
+          });
+          expect(section().getAttribute('aria-busy')).toBe('true');
+          expect(section().querySelector('.badge')).toBeNull();
+          await act(async () => {
+            jest.advanceTimersByTime(1_000);
+          });
+          expect(section().getAttribute('aria-busy')).toBe('false');
+          expect(badge()?.textContent).toBe('▲unavailable');
+          expect(within(section()).getByText(CLEARANCE_UNREAD)).toBeTruthy();
+          // The hold had answered (no hold): with both settled, the link is up.
+          expect(within(section()).getByRole('link', { name: 'Clearance Board' })).toBeTruthy();
+          await act(async () => {
+            release();
+            await held;
+          });
+          await waitFor(() => expect(badge()?.textContent).toBe('✓cleared'));
+          expect(within(section()).queryByText(CLEARANCE_UNREAD)).toBeNull();
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      test('a clearance that runs out while the page is open is read again at its end date, and a failed re-read keeps asking', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-10-01T15:55:00.000Z'));
+        clearanceReply = {
+          ok: true,
+          status: { athlete_id: 'ath-1', status: 'cleared', effective_at: '2026-06-01T14:00:00.000Z', expires_at: '2026-10-01 16:00:00+00' },
+          effectiveStatus: 'cleared',
+        };
+        const clearanceReads = () => (global.fetch as unknown as jest.Mock).mock.calls
+          .filter(([u]) => String(u).includes('/api/pilot/shadow/medical-status')).length;
+        try {
+          await openAthlete();
+          await waitFor(() => expect(badge()?.textContent).toBe('✓cleared'));
+          expect(clearanceReads()).toBe(1);
+
+          // Before the end date nothing is asked.
+          await act(async () => {
+            jest.advanceTimersByTime(4 * 60_000);
+          });
+          expect(clearanceReads()).toBe(1);
+
+          // At the end date the route is asked again; this time it cannot answer.
+          clearanceStatus = 500;
+          await act(async () => {
+            jest.advanceTimersByTime(60_000);
+          });
+          await waitFor(() => expect(badge()?.textContent).toBe('▲unavailable'));
+          expect(clearanceReads()).toBe(2);
+          expect(within(section()).getByText(CLEARANCE_UNREAD)).toBeTruthy();
+
+          // It keeps asking, and shows what the route then says.
+          clearanceStatus = 200;
+          clearanceReply = { ...(clearanceReply as Record<string, unknown>), effectiveStatus: 'cleared_expired' };
+          await act(async () => {
+            jest.advanceTimersByTime(30_000);
+          });
+          await waitFor(() => expect(badge()?.textContent).toBe('▲clearance expired'));
+          expect(clearanceReads()).toBe(3);
+          expect(within(section()).getByText('This clearance passed its end date, so it no longer counts.')).toBeTruthy();
+
+          // A lapsed clearance is not asked about again.
+          await act(async () => {
+            jest.advanceTimersByTime(5 * 60_000);
+          });
+          expect(clearanceReads()).toBe(3);
+        } finally {
+          jest.useRealTimers();
+        }
+      });
+
+      test('the section reads the clearance once, by GET, for the chosen athlete only, and nothing about a clearance is written', async () => {
+        await openAthlete();
+        await waitFor(() => expect(badge()).not.toBeNull());
+        const sent = (global.fetch as unknown as jest.Mock).mock.calls
+          .filter(([u]) => String(u).includes('/api/pilot/shadow/medical-status'));
+        expect(sent.map(([u, init]) => [String(u).split('/api/pilot/')[1], init?.method]))
+          .toEqual([['shadow/medical-status?athleteId=ath-1', 'GET']]);
+      });
     });
   });
 

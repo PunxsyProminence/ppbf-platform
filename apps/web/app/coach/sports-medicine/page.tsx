@@ -13,6 +13,7 @@ import ArmedButton from '@/components/ArmedButton';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import ClusterNav from '@/components/ClusterNav';
 import {
+  clearanceBadge,
   isActiveHold,
   readActiveHold,
   readClearance,
@@ -120,37 +121,6 @@ interface Refusal {
   // Said by this page about its own form, not by the server: it has nothing
   // to say once that form is gone.
   aboutTheOpenForm?: boolean;
-}
-
-// Room DNA (clinic): --locked (#A81E22) marks a medical or safeguarding FACT;
-// red itself is not reserved (OD-2026-09-29-001). `not_cleared` is one: a
-// clinician looked at this child and
-// said no. `none` is not. It means nobody has typed a clearance record in yet,
-// which this page's own copy below calls what it is -- a coach or the office
-// sets one. Both wore --locked, so a coach scanning the roster could
-// not tell "a doctor said no" from "the front desk hasn't got to it", and the
-// red that should stop a coach cold stopped meaning anything.
-//
-// `none` drops one rung to --restricted, where `pending` and `unavailable`
-// already sit: still an action state, still fail-closed (nothing here reads as
-// cleared), and still Law 3-legible because the LABEL, not the colour, is what
-// separates "no record" from "pending" from "unavailable".
-const CLEARANCE_BADGE: Record<string, { className: string; glyph: string; label: string }> = {
-  cleared: { className: 'badge badge--cleared', glyph: '✓', label: 'cleared' },
-  restricted: { className: 'badge badge--restricted', glyph: '▲', label: 'restricted' },
-  not_cleared: { className: 'badge badge--locked', glyph: '✕', label: 'not cleared' },
-  pending: { className: 'badge badge--restricted', glyph: '▲', label: 'pending' },
-  // Amber, not red: the clearance ran out; no clinician said no
-  // (OD-2026-10-01-007 section 4).
-  cleared_expired: { className: 'badge badge--restricted', glyph: '▲', label: 'clearance expired' },
-  none: { className: 'badge badge--restricted', glyph: '▲', label: 'no record' },
-  unavailable: { className: 'badge badge--restricted', glyph: '▲', label: 'unavailable' },
-};
-
-function clearanceBadge(row: ClearanceRow) {
-  if (row.clearance === 'unavailable') return CLEARANCE_BADGE.unavailable;
-  if (row.clearance === null) return CLEARANCE_BADGE.none;
-  return CLEARANCE_BADGE[row.clearance] ?? CLEARANCE_BADGE.unavailable;
 }
 
 /* SETTING CLEARANCE (Jason, card OW25-45 B, 2026-11-19: "Coaches and the
@@ -803,7 +773,7 @@ export default function SportsMedicinePage() {
                BOARD. This screen answers "who is medically cleared", so an
                empty roster here reads as "nothing to check" -- which on this
                one screen means "everyone may train". The per-row failure was
-               already fail-closed (CLEARANCE_BADGE.unavailable); only the
+               already fail-closed (clearanceBadge's 'unavailable'); only the
                whole-board failure escaped, and it escaped into the most
                reassuring sentence on the page. */
             <div className="mat-leather rounded-[var(--r-lg)] border-2 border-[var(--restricted)]">

@@ -15,7 +15,15 @@ import {
   isPlainClick,
   takeArrivalAthlete,
 } from '@/components/decisionLoopArrival';
-import { readActiveHold, type ActiveHold } from '@/components/clearanceReading';
+import {
+  CLEARANCE_UNREAD,
+  clearanceBadge,
+  readActiveHold,
+  readClearance,
+  whenPassed,
+  type ActiveHold,
+  type ClearanceReading,
+} from '@/components/clearanceReading';
 import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
@@ -154,22 +162,29 @@ async function errorOf(response: Response, fallback: string): Promise<string> {
  */
 const SECTIONS = ['medical-restrictions', POST_TO_FAMILY_SECTION];
 
-/** How long a hold read may go unanswered before it is said as unread: the Decision Loop's roster wait. */
-const HOLD_READ_WAIT_MS = 15_000;
+/** How long a read may go unanswered before it is said as unread: the Decision Loop's roster wait. */
+const READ_WAIT_MS = 15_000;
 
 /**
- * The chosen athlete's active Training Hold, read only (AS-5 Q2 = A): a hold is
- * placed and lifted on the Clearance Board, and this section links there, on
- * this athlete. The read is the board's (components/clearanceReading.ts) and so
- * are the words (Q-B4 = A on #2041), each cut before the part about the
- * board's own controls.
+ * The chosen athlete's clearance and active Training Hold, read only (AS-5
+ * Q2 = A): clearance is set, and a hold placed and lifted, on the Clearance
+ * Board, and this section links there, on this athlete. The reads, the badge
+ * and the end-date timer are the board's (components/clearanceReading.ts;
+ * Q-B1, Q-B2 and Q-B3 = A on #2041) and so are the words (Q-B4 = A), each cut
+ * before the part about the board's own controls.
  *
- * AN UNKNOWN HOLD NEVER LOOKS LIKE NO HOLD. A read that found no hold draws no
- * hold mark, only the link (where the board draws its place button). So the
- * link is not drawn until the read has settled: a read still out shows the
- * heading and the name and nothing else. A read that failed, or that is still
- * unanswered after HOLD_READ_WAIT_MS, says the board's unread sentence; an
- * answer that comes after that is still shown.
+ * NOTHING IS DRAWN UNTIL BOTH READS HAVE SETTLED. A read that found no hold
+ * draws no hold mark, only the link (where the board draws its place button),
+ * so a hold still being read must not sit under a badge as if it were "no
+ * hold". While either read is out the section shows the heading and the name
+ * and nothing else. A read that failed, or that is still unanswered after
+ * READ_WAIT_MS, says the board's unread sentence for it; an answer that comes
+ * after that is still shown.
+ *
+ * A CLEARANCE CAN RUN OUT WHILE THE PAGE IS OPEN. As on the board, a clearance
+ * in force with an end date is read again when that date arrives, and the
+ * section shows what the route answers; a re-read that fails keeps the end
+ * date, so it goes on being asked.
  *
  * Mounted with `key={athleteId}`, so one athlete's reading is never on screen
  * under another's name.
@@ -177,33 +192,98 @@ const HOLD_READ_WAIT_MS = 15_000;
 function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; readonly name: string }) {
   // undefined: not read yet. 'unavailable': nobody could look.
   const [hold, setHold] = useState<ActiveHold | null | 'unavailable' | undefined>(undefined);
+  // undefined: not read yet. A clearance of 'unavailable': nobody could look.
+  const [clearance, setClearance] = useState<ClearanceReading | undefined>(undefined);
 
   useEffect(() => {
     let live = true;
     const overdue = setTimeout(() => {
-      if (live) setHold((now) => (now === undefined ? 'unavailable' : now));
-    }, HOLD_READ_WAIT_MS);
+      if (!live) return;
+      setHold((now) => (now === undefined ? 'unavailable' : now));
+      setClearance((now) => (now === undefined ? CLEARANCE_UNREAD : now));
+    }, READ_WAIT_MS);
+    let out = 2;
+    const settled = () => {
+      out -= 1;
+      if (out === 0) clearTimeout(overdue);
+    };
     readActiveHold(athleteId).then(
       (found) => { if (live) setHold(found); },
       () => { if (live) setHold('unavailable'); },
-    ).finally(() => clearTimeout(overdue));
+    ).finally(settled);
+    // readClearance never throws: whatever goes wrong is 'unavailable'.
+    void readClearance(athleteId).then((reading) => { if (live) setClearance(reading); }).finally(settled);
     return () => {
       live = false;
       clearTimeout(overdue);
     };
   }, [athleteId]);
 
+  // The board's rule for which clearance is read again at its end date: one in
+  // force, or one whose re-read failed and kept the date.
+  const endsAt = clearance?.ends_at && (clearance.clearance === 'cleared' || clearance.clearance === 'unavailable')
+    ? clearance.ends_at
+    : null;
+  const clearanceReadSeq = useRef(0);
+  useEffect(() => {
+    if (!endsAt) return undefined;
+    let live = true;
+    const cancel = whenPassed(endsAt, () => {
+      clearanceReadSeq.current += 1;
+      const seq = clearanceReadSeq.current;
+      void readClearance(athleteId).then((reading) => {
+        if (!live || clearanceReadSeq.current !== seq) return;
+        setClearance(reading.clearance === 'unavailable' ? { ...reading, ends_at: endsAt } : reading);
+      });
+    });
+    return () => {
+      live = false;
+      cancel();
+    };
+  }, [athleteId, endsAt]);
+
+  const reading = hold === undefined ? undefined : clearance;
+  const badge = reading ? clearanceBadge(reading) : null;
+
   return (
-    <section id="training-hold" aria-busy={hold === undefined} className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+    <section id="training-hold" aria-busy={reading === undefined} className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
       <h2 className="t-command text-[length:var(--t-lg)]">Training Hold</h2>
       <p className="t-label mt-[var(--s1)]">{name}</p>
-      {hold === 'unavailable' && (
+      {reading && badge && (
+        <div data-clearance className="mt-[var(--s3)]">
+          {/* The board's badge and dates for this athlete's clearance. Setting it is the board's. */}
+          <div className="flex flex-wrap items-center gap-[var(--s3)]">
+            <span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{badge.label}</span>
+            {reading.effective_at ? (
+              <span className="t-label">since {formatGymDateNumeric(reading.effective_at)}</span>
+            ) : null}
+            {reading.expired_at && formatGymDateNumeric(reading.expired_at) ? (
+              <span className="t-label">expired {formatGymDateNumeric(reading.expired_at)}</span>
+            ) : null}
+          </div>
+          {reading.clearance === null && (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">No clearance record on file.</p>
+          )}
+          {reading.clearance === 'cleared_expired' && (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+              This clearance passed its end date, so it no longer counts.
+            </p>
+          )}
+          {reading.clearance === 'unavailable' && (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+              Clearance could not be read just now. Unknown is not cleared — check again before making a call that
+              depends on it.
+            </p>
+          )}
+        </div>
+      )}
+      {reading && hold === 'unavailable' && (
         <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
           Training hold could not be read just now. Unknown is not “no hold” — check again before making a call
           that depends on it.
         </p>
       )}
-      {hold && hold !== 'unavailable' && (
+      {reading && hold && hold !== 'unavailable' && (
         <div data-refusal-stamp="training_hold" className="mt-[var(--s3)]">
           {/* The board's mark and words for a hold. No lift here: that is the board's. */}
           <span className="stamp stamp--brass stamp--flat stamp--kiosk">
@@ -221,7 +301,7 @@ function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; 
           </div>
         </div>
       )}
-      {hold !== undefined && (
+      {reading && (
         <div className="mt-[var(--s3)]">
           <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost"
             onClick={(event) => { if (isPlainClick(event)) handOffArrivalAthlete(athleteId, CLEARANCE_BOARD_PAGE); }}>
