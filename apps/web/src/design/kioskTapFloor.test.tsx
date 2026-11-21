@@ -188,9 +188,9 @@ describe('Workout Templates on the gym floor', () => {
     .map((name) => ({ name, code: stripSourceComments(readFileSync(path.join(FOLDER, name), 'utf8')) }));
   const SUB_FLOOR = /var\(\s*--t-(?:sm|xs)\s*\)|\btext-(?:xs|sm|base)\b|text-\[(?:\d|1[0-8])(?:\.\d+)?px\]/;
 
-  it('reads the page and its two parts, so nothing below passes on no files', () => {
+  it('reads the page, its two parts and its layout, so nothing below passes on no files', () => {
     expect(SOURCES.map((source) => source.name).sort()).toEqual(
-      ['MakeSessionScript.tsx', 'TemplateEditForm.tsx', 'page.tsx'],
+      ['MakeSessionScript.tsx', 'TemplateEditForm.tsx', 'layout.tsx', 'page.tsx'],
     );
   });
 

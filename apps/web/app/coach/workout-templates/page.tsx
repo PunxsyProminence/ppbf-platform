@@ -1080,7 +1080,7 @@ function CoachWorkoutTemplates() {
             )}
 
             {!detailLoading && detailError && (
-              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">
+              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                 {detailError}
               </p>
             )}
@@ -1155,7 +1155,7 @@ function CoachWorkoutTemplates() {
                     >
                       <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
                         <span className="plaque">{item.block.replace(/_/g, ' ')}</span>
-                        <h4 className="t-command text-[length:var(--t-sm)]">
+                        <h4 className="t-command text-[length:var(--t-md)]">
                           {/* The lineage head's name; the raw drill_id only
                               when that row did not resolve. */}
                           {itemName(item)}
@@ -1180,7 +1180,7 @@ function CoachWorkoutTemplates() {
                           Said, not fixed -- the server never repoints an item
                           (workoutTemplates.ts), so the coach decides. */}
                       {item.uses_older_drill_version && (
-                        <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <p className="t-body mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           Uses an older drill version.
                         </p>
                       )}
@@ -1196,10 +1196,10 @@ function CoachWorkoutTemplates() {
                       {/* The source sheet's own fields for this item, as written (lane YR): information only. */}
                       {sheetFields(item).length > 0 && (
                         <details className="mt-[var(--s2)]">
-                          <summary className="t-label cursor-pointer">From the sheet</summary>
+                          <summary className="t-label min-h-[var(--tap)] cursor-pointer py-[var(--s3)]">From the sheet</summary>
                           <dl className="mt-[var(--s1)]">
                             {sheetFields(item).map(([key, value]) => (
-                              <div key={key} className="t-body mt-[var(--s1)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                              <div key={key} className="t-body mt-[var(--s1)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                                 <dt className="inline font-semibold">{`${key.replace(/_/g, ' ')}: `}</dt>
                                 <dd className="inline whitespace-pre-line">{sheetText(value)}</dd>
                               </div>
@@ -1281,7 +1281,7 @@ function CoachWorkoutTemplates() {
 
           {!loading && loadError && (
             <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
+              <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty catalog of templates.
               </p>
@@ -1343,7 +1343,7 @@ function CoachWorkoutTemplates() {
                   <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{orNotWritten(template.intent)}</p>
                   {template.requires_coach_authorization && (
-                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                       Requires coach authorization before use.
                     </p>
                   )}
