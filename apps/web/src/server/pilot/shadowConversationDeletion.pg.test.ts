@@ -673,6 +673,13 @@ describe('T1: a member deletes a chat nobody flagged', () => {
     const target = await seedConversation(mainDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', athleteId: ATHLETE, completedJob: true,
     });
+    // An earlier reply in the same chat: kept replies must keep their order.
+    await mainDb.query(
+      `insert into pilot.shadow_chat_messages
+         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, created_at)
+       values (gen_random_uuid(), $1, $2, $3, 'assistant', $4, 'ok', 'injury', 'heavy_bag', now() - interval '30 seconds')`,
+      [target.conversationId, ORG, MEMBER, `Earlier answer first ${target.ref}`],
+    );
     const ownOther = await seedConversation(mainDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     const otherPerson = await seedConversation(mainDb, { organizationId: ORG, accountId: OTHER_MEMBER, role: 'athlete' });
     const otherGym = await seedConversation(mainDb, { organizationId: OTHER_ORG, accountId: MEMBER, role: 'athlete' });
@@ -696,8 +703,16 @@ describe('T1: a member deletes a chat nobody flagged', () => {
     expect(keptId).not.toBeNull();
     expect(keptId).not.toBe(target.conversationId);
     const messages = await messagesOf(mainDb, keptId!);
-    expect(messages.map((message) => message.role)).toEqual(['assistant']);
-    const [reply] = messages;
+    expect(messages.map((message) => message.role)).toEqual(['assistant', 'assistant']);
+    const ordered = (await mainDb.query(
+      `select content from pilot.shadow_chat_messages where conversation_id = $1 order by created_at`,
+      [keptId],
+    )).rows.map((row) => row.content as string);
+    expect(ordered[0]).toContain('Earlier answer first');
+    expect(new Set((await mainDb.query(
+      `select created_at::text as at from pilot.shadow_chat_messages where conversation_id = $1`, [keptId],
+    )).rows.map((row) => row.at as string)).size).toBe(2);
+    const reply = messages.find((message) => message.content.includes(KEPT_REPLY_WORDS))!;
     expect(reply.message_id).not.toBe(target.replyId);
     expect(reply.account_id).toMatch(TOKEN);
     expect(reply.content).toContain(KEPT_REPLY_WORDS);
@@ -909,11 +924,16 @@ describe('T3: the office completes a member\'s request', () => {
     });
     const escalated = await seedConversation(mainDb, {
       organizationId: ORG, accountId: PARENT, role: 'parent', athleteId: ATHLETE, escalated: true,
+      escalationIdUpperCase: true,
       userWords: 'Jordan told me something.', replyWords: 'Thank you, Dana. The office will help.',
+    });
+    const purgeHeld = await seedConversation(mainDb, {
+      organizationId: ORG, accountId: PARENT, role: 'parent', subjectDeletedAgo: '1 day',
+      userWords: 'Dana again.', replyWords: 'Hello again, Dana.',
     });
     const someoneElse = await seedConversation(mainDb, { organizationId: ORG, accountId: OTHER_MEMBER, role: 'athlete' });
     const someoneElseBefore = await snapshot(mainDb, someoneElse.conversationId);
-    const heldBefore = await Promise.all([flagged, escalated].map((seeded) => snapshot(mainDb, seeded.conversationId)));
+    const heldBefore = await Promise.all([flagged, escalated, purgeHeld].map((seeded) => snapshot(mainDb, seeded.conversationId)));
 
     const requestId = (await mainDb.query(
       `insert into pilot.shadow_data_deletion_requests (request_id, organization_id, account_id)
@@ -924,14 +944,14 @@ describe('T3: the office completes a member\'s request', () => {
     const queued = (await listShadowDataDeletionRequests(adminActor, 'pending'))
       .find((row) => row.requestId === requestId);
     expect(queued?.conversationsPending).toBe(2);
-    expect(queued?.conversationsHeld).toBe(2);
+    expect(queued?.conversationsHeld).toBe(3);
 
     // Another gym's admin cannot reach it.
     await expect(completeShadowDataDeletionRequest(otherAdminActor, requestId))
       .rejects.toThrow('SHADOW_DELETION_REQUEST_NOT_ACTIONABLE');
 
     const outcome = await completeShadowDataDeletionRequest(adminActor, requestId);
-    expect(outcome).toMatchObject({ requestId, status: 'completed', conversationsCleared: 2, conversationsHeld: 2 });
+    expect(outcome).toMatchObject({ requestId, status: 'completed', conversationsCleared: 2, conversationsHeld: 3 });
 
     const tokens: string[] = [];
     for (const cleared of [aboutChild, deletedEarlier]) {
@@ -948,8 +968,8 @@ describe('T3: the office completes a member\'s request', () => {
     // Each cleared chat has its own token: two kept chats do not read as one person's.
     expect(new Set(tokens).size).toBe(2);
 
-    const heldAfter = await Promise.all([flagged, escalated].map((seeded) => snapshot(mainDb, seeded.conversationId)));
-    for (const [index, held] of [flagged, escalated].entries()) {
+    const heldAfter = await Promise.all([flagged, escalated, purgeHeld].map((seeded) => snapshot(mainDb, seeded.conversationId)));
+    for (const [index, held] of [flagged, escalated, purgeHeld].entries()) {
       const was = heldBefore[index] as { messages: unknown; reviews: unknown; escalations: unknown };
       const now = heldAfter[index] as typeof was;
       expect(now.messages).toEqual(was.messages);
@@ -998,8 +1018,11 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     const stillHeld = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: OTHER_MEMBER, role: 'athlete', flagged: true, deletedAgo: '23 months',
     });
+    // Upper case: the script must match it as the app does, or the next APPLY
+    // would clear a held disclosure chat early.
     const stillEscalated = await seedConversation(sweepDb, {
-      organizationId: ORG, accountId: MEMBER, role: 'athlete', escalated: true, deletedAgo: '23 months',
+      organizationId: ORG, accountId: MEMBER, role: 'athlete', escalated: true, escalationIdUpperCase: true,
+      deletedAgo: '23 months',
     });
     const legacy = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', deletedAgo: '3 days',
