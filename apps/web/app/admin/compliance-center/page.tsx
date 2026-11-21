@@ -635,7 +635,7 @@ export default function AdminComplianceCenterPage() {
             Escalations
           </Link>
           <Link href="/admin/waiver-status?view=all" className="btn btn--ghost">
-            Cleared tonight
+            Waiver Compliance
           </Link>
           <BackHome />
         </div>

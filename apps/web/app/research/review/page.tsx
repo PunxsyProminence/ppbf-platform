@@ -272,11 +272,11 @@ export default function ResearchSubmissionReviewPage() {
 
   return (
     <RoleStandaloneView
-      roleLabel="Research Submission Review"
+      roleLabel="Submission Review"
       routeLabel="/research/review"
       allowedRoles={['admin', 'platform_owner']}
       room="file"
-      breadcrumbs={[{ label: 'Research', href: '/research' }, { label: 'Submission Review' }]}
+      breadcrumbs={[{ label: 'Research Inbox', href: '/research' }, { label: 'Submission Review' }]}
     >
       <div className="space-y-[var(--s5)]">
         <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
@@ -367,7 +367,7 @@ export default function ResearchSubmissionReviewPage() {
                           {evidenceReview ? (
                             <p className="t-typed mt-[var(--s2)] text-[length:var(--t-sm)]">
                               {evidenceReview}{' '}
-                              <Link href="/evidence" className="underline">Open Evidence Review</Link>
+                              <Link href="/evidence" className="underline">Evidence Review Queue</Link>
                             </p>
                           ) : null}
                           {submission.submission_note ? (

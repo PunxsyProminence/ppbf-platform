@@ -146,7 +146,7 @@ function PlatformSystemView() {
             route or job is working. A workflow&apos;s runs are on GitHub.
           </p>
           <div className="mt-[var(--s4)]">
-            <Link href="/admin/platform" className="btn btn--ghost">Platform Desk</Link>
+            <Link href="/admin/platform" className="btn btn--ghost">Omega</Link>
           </div>
         </header>
 

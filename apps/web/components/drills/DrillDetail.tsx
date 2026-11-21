@@ -59,6 +59,8 @@ export interface DrillDetailProps {
   audience: 'athlete' | 'coach';
   /** Rendered in the header: e.g. the coach's lifecycle state and Promote action. */
   actions?: ReactNode;
+  /** "Looks right" (OW25-55; lane ED-UI PR4): the page's press for a drafted field, placed here; `describedBy` names the line saying what it covers. */
+  looksRight?: (target: string, label: string, describedBy?: string) => ReactNode;
   /**
    * Move focus to the drill's heading when it appears. The list that opened it
    * is hidden at that moment, taking the focused button with it; without this,
@@ -73,7 +75,7 @@ export interface DrillDetailProps {
   chosenScale?: string | null;
 }
 
-export default function DrillDetail({ view, audience, actions, focusOnMount = false, chosenScale = null }: DrillDetailProps) {
+export default function DrillDetail({ view, audience, actions, looksRight, focusOnMount = false, chosenScale = null }: DrillDetailProps) {
   const headingId = `drill-detail-${view.id}`;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   useEffect(() => {
@@ -112,9 +114,21 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   const drafts = audience === 'coach' ? view.coach?.fieldDrafts ?? null : null;
   const labelled = drafts?.labelled === true;
   const mark = (state: boolean | null | undefined, onDark = false) => (labelled ? <DraftMark state={state} onDark={onDark} /> : null);
-  const field = (key: DrillMarkedField) => mark(drafts?.fields[key]);
+  // "Looks right": a drafted field the form can change (Q3 = A), per scale level, the stop rules as one
+  // (Q2 = A); in an expander it sits inside, never in the summary.
+  const press = (state: boolean | null | undefined, target: string, label: string | null) => {
+    if (!(labelled && state === true && looksRight && label !== null)) return null;
+    if (target !== 'stop_rules') return looksRight(target, label);
+    // One press for the whole list (Q2 = A), so it says what it covers (Q-PR4-4 = A, Overwatch's approved words).
+    const noteId = `${headingId}-stop-rules-press`;
+    return <>{looksRight(target, label, noteId)}<span id={noteId} className={`block font-normal ${BODY}`}>{STOP_RULES_PRESS_COVERS}</span></>;
+  };
+  const pressFor = (key: DrillMarkedField, label = FIELD_LABEL[key]) => press(drafts?.fields[key], key, label);
+  const both = (marked: ReactNode, pressed: ReactNode) => (marked || pressed ? <>{marked}{pressed}</> : null);
+  const field = (key: DrillMarkedField, label = FIELD_LABEL[key]) => both(mark(drafts?.fields[key]), pressFor(key, label));
+  const markOnly = (key: DrillMarkedField) => mark(drafts?.fields[key]);
   // The header (a near-black ground on /coach/drills, Q-PR1-3) keeps a light ink.
-  const headerField = (key: DrillMarkedField) => mark(drafts?.fields[key], true);
+  const headerField = (key: DrillMarkedField) => both(mark(drafts?.fields[key], true), pressFor(key));
   // Equipment shows the setup column's word only when equipment is blank and that word is not shown as Setup
   // (setupAndEquipment); otherwise its words are the equipment column's, a blank one's included.
   const equipmentKey: DrillMarkedField = !view.equipment.trim() && setup === null && view.setup.trim() ? 'standard_setup' : 'equipment_needed';
@@ -135,7 +149,11 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
           )}
         </div>
         {view.coach && (
-          <p className="t-label">{view.coach.discipline}{headerField('discipline')} · {view.coach.category}{headerField('category')}</p>
+          // Each field with its own mark and press, wrapping as one, so a press never reads as the other field's.
+          <p className="t-label">
+            <span className="inline-flex flex-wrap items-baseline">{view.coach.discipline}{headerField('discipline')}{' ·\u00a0'}</span>
+            <span className="inline-flex flex-wrap items-baseline">{view.coach.category}{headerField('category')}</span>
+          </p>
         )}
         {/* Where the content came from, and whether it is current, sits beside
             the action it informs -- not behind an expander below it. */}
@@ -169,8 +187,13 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
           <StopRuleList heading="Stop rules for every drill" rules={everyDrillStops} />
         )}
         {readiness.length > 0 && (
-          // The drill's own rules here carry the list's mark, each; the gym's stored-once rules are not the drill's.
-          <StopRuleList heading="Before contact or maximal effort" rules={readiness} itemMark={(rule) => (rule.origin === 'drill' ? field('stop_rules') : null)} />
+          // Each of the drill's own rules carries the mark; the list's one press goes here only without "Stop rules".
+          <StopRuleList
+            heading="Before contact or maximal effort"
+            rules={readiness}
+            itemMark={(rule) => (rule.origin !== 'drill' ? null
+              : ownStops.length === 0 && rule === readiness.find((each) => each.origin === 'drill') ? field('stop_rules') : markOnly('stop_rules'))}
+          />
         )}
       </section>
 
@@ -191,7 +214,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
       )}
       {equipment && (
         <section className={SECTION}>
-          <Heading mark={field(equipmentKey)}>Equipment</Heading>
+          <Heading mark={field(equipmentKey, 'Equipment')}>Equipment</Heading>
           <p className={BODY}>{equipment}</p>
         </section>
       )}
@@ -254,7 +277,8 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
 
       {/* LEVEL 3: corrections, one expander deep; an unwritten field says so. */}
       <details className={EXPANDER}>
-        <summary className={EXPANDER_SUMMARY}>Corrections{field('corrections')}</summary>
+        <summary className={EXPANDER_SUMMARY}>Corrections{markOnly('corrections')}</summary>
+        {pressFor('corrections')}
         <ul className={`${LIST} mt-[var(--s2)]`}>
           {corrections.map((item, index) => <li key={`${view.id}-correction-${index}`}>{item}</li>)}
         </ul>
@@ -290,6 +314,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
                   {mark(drafts?.scaleLevels[level.level])}
                 </summary>
                 <div className="mt-[var(--s2)] space-y-[var(--s2)]">
+                  {press(drafts?.scaleLevels[level.level], `scale_levels.${level.level}`, scaleLevelName(level.level))}
                   {level.demand && <p className={BODY}>{level.demand}</p>}
                   {level.constraint && (
                     <p className={BODY}>
@@ -323,6 +348,19 @@ function Heading({ children, mark }: { children: ReactNode; mark: ReactNode }) {
     </div>
   );
 }
+
+/** What the stop-rule list's one press confirms (Q-PR4-4 = A; Overwatch on #2027, 2026-11-20). */
+const STOP_RULES_PRESS_COVERS = "Confirms all of this drill's own stop rules and their kinds, including those under Before contact or maximal effort.";
+
+/** How the screen names each marked field, for "Looks right: <field>"; null where the edit form cannot change it (Q3 = A). */
+const FIELD_LABEL: Record<DrillMarkedField, string | null> = {
+  name: 'Name', difficulty: 'Difficulty', discipline: null, category: 'Category', contact_level: 'Contact',
+  requires_coach_authorization: 'Coach authorization', stop_rules: 'Stop rules', purpose: 'What it is for',
+  standard_setup: 'Setup', equipment_needed: 'Equipment', execution: 'How it runs', cues: 'Coaching cues',
+  what_good_looks_like: 'What good looks like', what_bad_looks_like: 'What to avoid', corrections: 'Corrections',
+  common_errors: 'Common errors', exit_condition: 'Exit condition', correction_path: 'Correction path',
+  target_behavior: 'Target behaviour', transfer: 'Transfer',
+};
 
 /** The 6e mark and words (sessionScriptWords.ts), beside one field: a draft, or not checked; nothing when not a draft. */
 function DraftMark({ state, onDark = false }: { state: boolean | null | undefined; onDark?: boolean }) {

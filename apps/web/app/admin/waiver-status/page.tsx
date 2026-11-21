@@ -617,7 +617,7 @@ export default function WaiverComplianceAuditPage() {
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/admin/athlete-consent" className="btn btn--ghost">
-              Photo &amp; Media Consent Audit
+              Media Consent Audit
             </Link>
             <BackHome />
           </div>

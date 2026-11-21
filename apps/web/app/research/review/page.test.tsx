@@ -18,7 +18,13 @@ import ResearchSubmissionReviewPage from './page';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
-  default: ({ children }: { readonly children: ReactNode }) => <div>{children}</div>,
+  default: ({ children, roleLabel, breadcrumbs }: {
+    readonly children: ReactNode;
+    readonly roleLabel?: string;
+    readonly breadcrumbs?: ReadonlyArray<{ label: string; href?: string }>;
+  }) => (
+    <div data-testid="shell" data-role-label={roleLabel} data-breadcrumbs={JSON.stringify(breadcrumbs ?? [])}>{children}</div>
+  ),
 }));
 
 const OPEN_REQUIREMENT = {
@@ -388,8 +394,25 @@ describe('evidence state and closing on the verdict (#345; OD-2026-10-08-005 A-Q
     await act(async () => {
       render(<ResearchSubmissionReviewPage />);
     });
-    const line = await screen.findByText((_, element) => element?.tagName === 'P' && element.textContent === `${text} Open Evidence Review`);
+    const line = await screen.findByText((_, element) => element?.tagName === 'P' && element.textContent === `${text} Evidence Review Queue`);
     expect(line.querySelector('a')?.getAttribute('href')).toBe('/evidence');
+  });
+
+  // AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): the band title is this page's
+  // own title, and the breadcrumb to /research names that page's title.
+  test('the shell band title is the page title, and the breadcrumb names Research Inbox', async () => {
+    installDesk();
+    await act(async () => {
+      render(<ResearchSubmissionReviewPage />);
+    });
+    const title = screen.getByRole('heading', { level: 1 }).textContent?.trim();
+    expect(title).toBe('Submission Review');
+    const shell = screen.getByTestId('shell');
+    expect(shell.getAttribute('data-role-label')).toBe(title);
+    expect(JSON.parse(shell.getAttribute('data-breadcrumbs') ?? '[]')).toEqual([
+      { label: 'Research Inbox', href: '/research' },
+      { label: 'Submission Review' },
+    ]);
   });
 
   test('a source read without evidence fields shows no evidence line', async () => {
