@@ -6,17 +6,21 @@
  * files a safety alert when a message sounds like someone may not be safe: to
  * the athlete's coach of record, any covering coach and the admins, or to the
  * admins only when the message names gym staff or carries a grooming, secrecy
- * or touch cue. An account with no athlete record files nothing. Otherwise no
- * coach reads the words: the SHADOW reviews queue and other people's
- * conversations are admin-only.
+ * or touch cue. An account with no athlete record files nothing.
+ *
+ * Otherwise no coach reads the words (CODE_READ, PR 2059): a conversation is
+ * read only by its owner; the SHADOW reviews queue is admin-only; and a
+ * question SHADOW could not answer is filed for research with the words
+ * stored, but a coach receives it as a fixed sentence without them (F-054,
+ * OD-2026-10-13-018; researchFamilyView.ts researchRequirementsForReader).
  *
  * So every line here says an alert CAN reach a coach or the gym office, and
  * that otherwise no coach sees it. The earlier lines ("No coach is notified",
  * "it does not reach a coach") were false whenever an alert was filed (HF2).
  *
- * The wording is Jason's call (Overwatch on PR 2059, Q3). These are option A
- * from that PR, kept in one file so a change of words is one edit;
- * askShadowWords.test.ts pins what any wording must still say.
+ * The wording is the owner's ruling, relayed by Overwatch on PR 2059: Q3 = A,
+ * "A for both". Kept in one file so a change of words is one edit;
+ * askShadowWords.test.ts pins the exact words and what any wording must say.
  */
 
 /** Shown after an Ask SHADOW message is saved. */

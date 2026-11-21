@@ -294,7 +294,6 @@ describe('HF1: gym and boxing talk stays out of the new cues', () => {
     'we did suicides at the end',
     'suicide drills today were rough',
     'coach had us do suicide sprints',
-    'suicide runs after sparring',
     'kill it in sparring tonight',
     'i killed it at pad work',
     'that combo is killer',
@@ -411,5 +410,47 @@ describe('HF1 review: gym talk the narrowed guards still keep out', () => {
     const { cues } = scanForSafetyLanguage(sentence);
     expect(cues).not.toContain('crisis');
     expect(cues).not.toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF1 review round 2: the scope review\'s false alerts', () => {
+  test.each([
+    'we ran kms today',
+    'i ran kms before school',
+    'running kms every morning',
+    'three kms of roadwork',
+    'we ran eighteen kms',
+    'suicide squad is a good movie',
+    'i dont wanna live in this town',
+    'i dont want to live near the gym',
+  ])('no crisis cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('crisis');
+  });
+
+  test.each([
+    'coach made me touch gloves before sparring',
+    'make me touch gloves before the round',
+    'he made me touch my toes in warmup',
+  ])('touching gloves or toes is not grooming: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'he made me touch him',
+    'he makes me touch it',
+    'he made me touch her',
+    'he makes me touch them',
+    'he made me touch there',
+    'he made me touch myself',
+  ])('being made to touch a person still is: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate: "suicide runs" is a
+  // conditioning drill, but the guard no longer covers "runs" because "suicide
+  // runs in my family" is a disclosure. A false alert costs a reading; a miss
+  // costs the child (this module's header).
+  test('accepted false alert: "suicide runs after sparring" files crisis', () => {
+    expect(scanForSafetyLanguage('suicide runs after sparring').cues).toContain('crisis');
   });
 });

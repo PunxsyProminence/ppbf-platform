@@ -6,9 +6,10 @@
  * to the admins only (shadowDisclosure.ts). So those words were false whenever
  * a disclosure was detected.
  *
- * The words themselves are Jason's call (Overwatch on PR 2059, Q3). These tests
- * pin what every version must say to be true, not the exact wording: an alert
- * CAN reach a coach or the gym office, and otherwise no coach sees it.
+ * The words are the owner's ruling (Overwatch on PR 2059, Q3 = A). The first
+ * block pins them exactly; the rest pins what any future wording must still
+ * say to be true: an alert CAN reach a coach or the gym office, and otherwise
+ * no coach sees it.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -26,6 +27,25 @@ const LINES: ReadonlyArray<[string, string]> = [
 ];
 
 const WORKSPACE_SOURCE = readFileSync(path.join(__dirname, 'AthleteWorkspace.tsx'), 'utf8');
+
+describe('the ruled wording (PR 2059, Q3 = A)', () => {
+  test('each line is exactly as ruled', () => {
+    expect(ASK_SHADOW_SENT_LINE).toBe(
+      'Saved to your SHADOW conversation. SHADOW answers there -- open SHADOW Chat to read it. '
+      + 'If what you wrote sounds like someone may not be safe, your coach or the gym office can get an alert. '
+      + 'Otherwise no coach sees it.',
+    );
+    expect(ASK_SHADOW_HELP_LINE).toBe(
+      'Write a question. It is recorded in your own SHADOW conversation and answered by SHADOW. '
+      + 'No coach sees it, unless it sounds like someone may not be safe: then your coach or the gym office can get an alert.',
+    );
+    expect(ASK_SHADOW_SAFESPORT_LINE).toBe(
+      'what you send here is kept, and your parent is not automatically copied. '
+      + 'If it sounds like someone may not be safe, your coach or the gym office can get an alert; otherwise no coach sees it. '
+      + 'Tell a coach or a trusted adult in person about anything urgent or unsafe.',
+    );
+  });
+});
 
 describe('every Ask SHADOW line is true when a safety alert is filed', () => {
   test.each(LINES)('%s says a coach or the gym office can be alerted', (_name, line) => {

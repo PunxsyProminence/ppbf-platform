@@ -59,15 +59,11 @@ const APOSTROPHE_LIKE = /[\u2018\u2019\u02bc'`\u00b4\u02b9\u02bb\u02bd\u02c8\u20
  * "slaped", "bleeeeeding" would become "bleding". None would match anything.
  */
 export function normalizeForSafetyScan(body: string): string {
-  return body
+  return joinSplitWords(body
     .toLowerCase()
     .replace(APOSTROPHE_LIKE, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/(.)\1{2,}/g, '$1$1')
-    // A word split in two by a phone keyboard or a habit: "kill my self",
-    // "un alive". Joined so the cues below match either spelling.
-    .replace(/\bmy self\b/g, 'myself')
-    .replace(/\bun alive\b/g, 'unalive')
     .replace(/\bdo not\b/g, 'dont')
     .replace(/\bdoes not\b/g, 'doesnt')
     .replace(/\bdid not\b/g, 'didnt')
@@ -77,7 +73,19 @@ export function normalizeForSafetyScan(body: string): string {
     .replace(/\bwas not\b/g, 'wasnt')
     .replace(/\bhave not\b/g, 'havent')
     .replace(/\bwould not\b/g, 'wouldnt')
-    .trim();
+    .trim());
+}
+
+/**
+ * A word split in two by a phone keyboard or a habit: "kill my self", "un
+ * alive". Joined so the cues match either spelling. Run on both elongation
+ * readings, because a held key inside the split ("myyy self", "my selfff")
+ * only collapses to the joinable form in the fully collapsed one.
+ */
+function joinSplitWords(text: string): string {
+  return text
+    .replace(/\bmy self\b/g, 'myself')
+    .replace(/\bun alive\b/g, 'unalive');
 }
 
 /**
@@ -87,7 +95,7 @@ export function normalizeForSafetyScan(body: string): string {
  * elongation shape can hide a disclosure.
  */
 function collapseFully(normalized: string): string {
-  return normalized.replace(/(.)\1+/g, '$1');
+  return joinSplitWords(normalized.replace(/(.)\1+/g, '$1'));
 }
 
 
@@ -112,7 +120,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
   {
     id: 'someone_is_hurting_me',
     pattern:
-      /\b(hurt me|hurts me|hurting me|hit me|hits me|hitting me|punched me|punches me|punching me|kicked me|kicks me|kicking me|grabbed me|grabs me|grabbing me|pushed me|pushes me|pushing me|shoved me|shoves me|shoving me|slapped me|slaps me|slapping me|tripped me|trips me|tripping me|choked|choking me|threw me|throwing me|dragged me|drags me|dragging me|held me down|pinned me down|hits us|hurts us|abused me|abuses me|abusing me|was abused|got abused|been abused|being abused)\b/,
+      /\b(hurt me|hurts me|hurting me|hit me|hits me|hitting me|punched me|punches me|punching me|kicked me|kicks me|kicking me|grabbed me|grabs me|grabbing me|pushed me|pushes me|pushing me|shoved me|shoves me|shoving me|slapped me|slaps me|slapping me|tripped me|trips me|tripping me|choked|choking me|threw me|throwing me|dragged me|drags me|dragging me|held me down|pinned me down|hits us|hurts us|abused me|abuses me|abusing me|was abused|got abused|been abused|being abused|is abusive|was abusive|assaulted me|assaults me|assaulting me)\b/,
   },
   {
     id: 'someone_is_frightening_me',
@@ -132,13 +140,19 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     // HF1 added the suicide and self-harm words a child actually types,
     // including short forms ("kms", "sewerslide", "unalive"). Two guards keep
     // gym talk out, because crisis files even in boxing context: "kms" after a
-    // number or quantity word is kilometres of roadwork, and "suicides" or a
-    // "suicide drill/sprint/run/line" is the conditioning sprint ("dril+" and
-    // "run+" because the fully collapsed reading spells "drills" as "drils"). Plain "take
+    // number or a counting phrase is kilometres of roadwork, and "suicides" or
+    // a "suicide drill/sprint/shuttle" is the conditioning sprint ("dril+" and
+    // "shut+les" because the fully collapsed reading spells "drills" as
+    // "drils"). Both guards are kept narrow on purpose: "thinking of kms" and
+    // "suicide runs in my family" are disclosures (safeguarding review, PR
+    // 2059), so "of", "the", "some", "runs" and "lines" are not in them. The
+    // kms guard's numbers are spelled to survive the fully collapsed reading
+    // ("thre", "fiften"), and it also takes the verbs of roadwork ("ran kms").
+    // "dont want to live in/at/near ..." is about a place, not a life. Plain "take
     // my life" is not a cue ("take my life seriously"); "take my own life" is.
     id: 'crisis',
     pattern:
-      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicide(?! (?:dril+s?|sprints?|run+s?|lines?)\b)|suiside|sucide|suacide|sewerslide|sewer slide|unalive myself|unaliving myself|unalive me|kil myself|kill myslef|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists|hang myself|hanging myself|overdose|self harm|selfharm|self harming|harm myself|harming myself)\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|some|many|more|less|two|three|four|five|six|seven|eight|nine|ten|of|the|how many) )\bkms\b/,
+      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|off myself|shoot myself|neck myself|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live(?! (?:in|at|near|on|by)\b)|dont wanna live(?! (?:in|at|near|on|by)\b)|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself)\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|[a-z]*te+n|twenty|thirty|forty|fifty|ran|run+|run+ing|jog+ed|walked|biked|cycled) )\bkms\b/,
   },
   {
     // Naming what was touched instead of who was touching. Every cue above
@@ -161,7 +175,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     // Q1 = A).
     id: 'grooming_or_isolation',
     pattern:
-      /\b(when nobody is looking|when no one is looking|when nobodys looking|when everyone leaves|after everyone leaves|keeps me after|keep me after|stay behind|stays behind|by myself with|alone in the office|in the office alone|took a picture of me|takes pictures of me|filmed me|recorded me|watches me get changed|watches me change|watched me change|take my shirt off|took my shirt off|get changed in front|our little secret|our little thing|our secret|special friend|dont show anyone|dont show anybody|not allowed to tell|cant tell my mom|cant tell my dad|cant tell anyone|off the team if i tell|if i tell anyone|texts me at night|texting me at night|messages me at night|asked me not to say|molest|molests|molested|molesting|molester|rape|rapes|raped|raping|rapist|sexually abused|sexual abuse|sexually assaulted|sexual assault|sexually touched|groped|gropes|groping|fondled|fondles|fondling|made me touch|makes me touch|make me touch|sent me nudes|asked for nudes|asked me for nudes|wants nudes|send nudes|pedo|pedophile|had sex with me|have sex with me)\b/,
+      /\b(when nobody is looking|when no one is looking|when nobodys looking|when everyone leaves|after everyone leaves|keeps me after|keep me after|stay behind|stays behind|by myself with|alone in the office|in the office alone|took a picture of me|takes pictures of me|filmed me|recorded me|watches me get changed|watches me change|watched me change|take my shirt off|took my shirt off|get changed in front|our little secret|our little thing|our secret|special friend|dont show anyone|dont show anybody|not allowed to tell|cant tell my mom|cant tell my dad|cant tell anyone|off the team if i tell|if i tell anyone|texts me at night|texting me at night|messages me at night|asked me not to say|molest|molests|molested|molesting|molester|molestation|rape|rapes|raped|raping|rapist|r ped|rap3d|sexual(?:ly)? (?:abus|assault)[a-z]*|sexualy (?:abus|assault)[a-z]*|sexually touched|grooming me|groomed me|grooms me|groped|gropes|groping|fondled|fondles|fondling|(?:made|makes|make|making) me touch (?:him|her|his|hers|them|it|there|myself)|sent me nudes|asked for nudes|asked me for nudes|wants nudes|send nudes|dick pic|dick pics|asking for pictures|asks for pictures|asked for pictures|asking me for pictures|asks me for pictures|asked me for pictures|asking for pics|asks for pics|asked for pics|asking me for pics|asks me for pics|asked me for pics|pedo|pedophile|paedo|paedophile|had sex with me|have sex with me)\b/,
   },
   {
     // Refusal phrased as a request or a question, which the "dont want to"

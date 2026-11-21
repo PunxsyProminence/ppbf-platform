@@ -2147,7 +2147,8 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
       fireEvent.click(submit!);
     });
 
-    expect(postedTo('/api/pilot/athlete/chat').map((call) => call.body)).toEqual([{ message: 'How do I hold my guard?' }]);    // HF2: the saved line says when a coach or the gym office can be alerted.
+    expect(postedTo('/api/pilot/athlete/chat').map((call) => call.body)).toEqual([{ message: 'How do I hold my guard?' }]);
+    // HF2: the saved line says when a coach or the gym office can be alerted.
     expect(await screen.findByText(ASK_SHADOW_SENT_LINE)).toBeTruthy();
   });
 
