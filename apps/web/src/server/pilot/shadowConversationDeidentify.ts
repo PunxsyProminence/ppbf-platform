@@ -17,10 +17,11 @@ import type { PoolClient } from 'pg';
  *
  *   NOT FLAGGED: cleared now. What the member typed is deleted. SHADOW's
  *     replies are kept under a one-off anon_<uuid> token, stored nowhere
- *     else, with every name on record for the member and for the athletes
- *     that are theirs (their own record, the children their guardian record
- *     is linked to, the athlete the chat is about) and those athletes'
- *     guardians replaced by [name] (namesOnRecord, shadowNamePattern). Kept
+ *     else, with [name] in place of the member's own names on record, the
+ *     record and ring names of the athletes that are theirs (their own
+ *     record, the children their guardian record is linked to, the athlete
+ *     the chat is about) and those athletes' guardians' record names
+ *     (namesOnRecord says which; shadowNamePattern). Kept
  *     times are the day, not the moment. WHAT IS KEPT TAKES NEW IDS: a new
  *     conversation id and new message ids, so nothing that copied the old
  *     ones joins it -- a background reply's id is a hash of its job's id
