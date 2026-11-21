@@ -255,9 +255,10 @@ const PICTURE_NEAR_PLACE = [
   // The child's own private pictures held, shown or leaked, and private
   // pictures sent, shown or taken, file unless they are gym or lesson talk.
   String.raw`\b(?:my|me) (?:private|secret) ${ANY_PICTURE}\b${PRIVATE_PICTURE_GUARD}`,
-  String.raw`\b(?:send|sends|sent|sending|show|shows|showed|showing|leak|leaks|leaked|leaking|share|shares|shared|sharing|took|take|takes|taking|film|films|filmed|filming)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
+  String.raw`\b(?:owe|owes|owed|trade|trading|swap|swapping|send|sends|sent|sending|show|shows|showed|showing|leak|leaks|leaked|leaking|share|shares|shared|sharing|took|take|takes|taking|film|films|filmed|filming)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
   String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging|askin|keeps? askin)${WORD}{0,4} ${ANY_PICTURE}`,
-  String.raw`${STRANGER}${WORD}{0,4}? (?:sent me|sends me|sending me|keeps? sending(?: me)?|offered|offers|offering|paying|pays|paid|gave me|gives me|pressuring me|pressured me|pressures me|messaging me|dming me|dmed me|dms me|told me to send|tells me to send)${WORD}{0,4} ${ANY_PICTURE}\b${VIDEO_GUARD}`,
+  String.raw`${STRANGER}${WORD}{0,4}? (?:sent me|sends me|sending me|keeps? sending(?: me)?|offered|offers|offering|pay|pays|paid|paying|gave me|gives me|give me|money|robux|dmd me|told me to|tells me to|pressuring me|pressured me|pressures me|messaging me|dming me|dmed me|dms me)${WORD}{0,4} ${ANY_PICTURE}\b${VIDEO_GUARD}`,
+  String.raw`${STRANGER}${WORD}{0,2}? (?:has|have|got|kept|keeps)${WORD}{0,3} ${ANY_PICTURE} of (?:me|us|u|myself)\b`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
   String.raw`(?:${ANY_PICTURE}|film|record)(?: of)? (?:me|her|him|us|them|myself|herself|himself|the (?:girls|boys|kids)|my (?:sister|brother|friends?|teammates?))(?: (?:while|whilst|when|as)(?: (?:i was|im|i am|i|she was|he was|we were|they were))?)? (?:changing|changed)(?! (?:up )?(?:my |his |her |the |our )?(?:stance|direction|levels?|angles?|gloves|wraps|weight(?: clas+)?|guard|feet|grip|partners?|pace|corners?|sides|rhythm|hands|mats|ropes|timer)(?: (?:on|in|at) (?:the |my )?(?:bag|pads|ring|mats?))?${TECHNIQUE_END})`,
