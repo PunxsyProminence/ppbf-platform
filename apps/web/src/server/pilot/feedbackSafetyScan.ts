@@ -247,7 +247,7 @@ const PERSON_OR_REQUEST = String.raw`(?:he|she|they|hes|shes|theyre|someone|some
 // files when a person or request word is near too.
 // A request for a private or secret picture, and a stranger online asking for
 // one, file whatever gym words follow (reviews 10 and 11 on PR 2076).
-const STRANGER_ONE = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|men|guys|adult(?! (?:boxing )?(?:clas+|clas+es|program|programs|ses+ions?|schedule|section)\b| (?:boxing )?team\b(?! (?:members?|mates?)\b)))(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
+const STRANGER_ONE = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|men|guys|(?<=\b(?:from|in|on|of) (?:the|my|our) )adult|adult(?! (?:boxing )?(?:clas+|clas+es|program|programs|ses+ions?|schedule|section|team)\b(?! (?:members?|mates?)\b)))(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
 const STRANGER = String.raw`(?:${STRANGER_ONE}|people(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
 // Everyday stranger, private-video and secret-video talk is excused only as
 // a whole message in one of these forms; anything else near a picture files.
