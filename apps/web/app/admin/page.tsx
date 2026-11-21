@@ -1472,7 +1472,7 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
               {/*
                 AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A, Q19 A): the
                 rest of this row moved to Gym Office, grouped by the admin's job
-                sections, then Video Upload, Drill Library, Waivers & Consent and
+                sections, then Video Analysis (was VIDEO UPLOAD), Drill Library, Waivers & Consent and
                 System in one row (they sit in no section). Gym Setup was already
                 on Gym Office's header. Gym Office (was PEOPLE) stays as this page's
                 way back, and Export JSON exports this page.

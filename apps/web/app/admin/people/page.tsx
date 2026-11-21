@@ -37,9 +37,9 @@ import { JOB_BARS } from '@/components/jobBars';
  * console that draws this, and each of these pages admits one.
  *
  * Gym Setup is not repeated: the header links it already (AS10-1). Two of the four were linked
- * on Capabilities because nothing else led to them: Video Analysis is where an organization
- * admin uploads video, and Waivers & Consent sat unreachable for months after it was built.
- * Keep them linked.
+ * on Capabilities on purpose: Video Analysis so an organization admin, whom the video upload
+ * API admits, can find where to upload a video; Waivers & Consent when it was built, because
+ * its backend had sat months with no caller. Keep them linked.
  */
 const MOVED_FROM_CAPABILITIES: ReadonlySet<string> = new Set([
   '/admin/athletes', '/admin/export', '/admin/import', '/admin/gear', '/admin/customize', '/operations',
