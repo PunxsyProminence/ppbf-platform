@@ -146,16 +146,18 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
 - **A chat that is not flagged is cleared now.** The member's own messages are deleted.
   SHADOW's replies are kept under a one-off `anon_<uuid>` token, stored nowhere else, with these
   names replaced by `[name]`: the member's own (the login when it is an email, the login email,
-  ring name, staff name, guardian-record name, volunteer-record name); for each athlete that is
-  theirs (their own athlete record, the children their guardian record is linked to, the athlete
-  the chat is about), the athlete record's full name and the ring names on that athlete's logins;
-  and those athletes' guardians' guardian-record names. The same method and limits as the purge's
-  `namePattern`. Any other name a reply holds stays: another athlete it mentions (a sibling or a
-  teammate keeps their name, except a part shared with a scrubbed name, such as a sibling's
-  surname), an athlete's or guardian's login or login email, a guardian's ring name, an emergency
-  contact, a guardian record's email, a coach's or other staff member's name (other than the
-  member's own), a name on record only elsewhere (a waiver signer, a physician, another gym), a
-  nickname never recorded, a misspelling; so does anything else a reply restates (a school, a
+  ring name, staff name, guardian-record name, volunteer-record name, labelling-station name); for
+  each athlete that is theirs (their own athlete record, the children their guardian record is
+  linked to, the athlete the chat is about), the athlete record's full name and the ring names on
+  that athlete's logins; and those athletes' guardians' guardian-record names. The same method and
+  limits as the purge's `namePattern`. Any other name a reply holds stays: another athlete it
+  mentions (a sibling or a teammate keeps their name, except a part shared with a scrubbed name,
+  such as a sibling's surname), an athlete's or guardian's login or login email, a guardian's ring
+  name, an emergency contact, a guardian record's email, a coach's or other staff member's name
+  (other than the member's own names listed above), a name on record only elsewhere (a waiver
+  signer, a physician, another gym), an earlier name of the member's copied onto a record they
+  wrote (a recognition, a rabbit hole, a 1% Club nomination or vote) when they have since renamed,
+  a nickname never recorded, a misspelling; so does anything else a reply restates (a school, a
   town, a number). Kept times are the day, not the moment (an exact time
   would line the kept rows up with the member's own). What is kept takes **new ids**: a new conversation id
   and new message ids, so nothing that copied the old ones joins it (a background reply's id is
@@ -185,13 +187,13 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   before this change (a delete then only set `deleted_at`; a flagged one waits its two years like
   any other). The review entries that point at a cleared flagged chat take the chat's token, a
   fixed summary, empty metadata and a new id, and follow it to its new id; they keep their
-  category, severity, status and reviewer, at day precision. The office's recorded reads of the
-  exchange (`pilot.audit_events`, never purged) and any escalation stay, as the review and safety
-  records, and hold none of the kept ids; but the reviewer, the day and the severity of a kept
-  entry can be matched against them to point back to the member (the person purge's de-identified
-  entries keep the same fields). A chat that is a deleted person's (account `deleted_at` set, an
-  athlete login whose athlete is deleted, or a chat about a deleted athlete, which
-  `markAthleteTiedRecords` stamps with the athlete's deletion time) is left to that person's
+  category, severity, status and reviewer, with their times at day precision. The office's
+  recorded reads of the exchange (`pilot.audit_events`, never purged) and any escalation stay, as
+  the review and safety records, and hold none of the kept ids; but the reviewer, the day and the
+  severity of a kept entry can be matched against them to point back to the member (the person
+  purge's de-identified entries keep the same fields). A chat that is a deleted person's (account
+  `deleted_at` set, an athlete login whose athlete is deleted, or a chat about a deleted athlete,
+  which `markAthleteTiedRecords` stamps with the athlete's deletion time) is left to that person's
   purge. The nightly run counts them (`member_deleted_chats_due`) and touches nothing
   (OD-2026-10-07-010: "people's records stay manual"); a dry run rehearses and rolls back
   (`member_deleted_chats_due`, `would_clear_member_deleted_chats`). They take the room the
