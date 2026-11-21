@@ -59,9 +59,13 @@ const APOSTROPHE_LIKE = /[\u2018\u2019\u02bc'`\u00b4\u02b9\u02bb\u02bd\u02c8\u20
  * "slaped", "bleeeeeding" would become "bleding". None would match anything.
  */
 export function normalizeForSafetyScan(body: string): string {
-  return joinSplitWords(body
+  return normalizeWith(body, false);
+}
+
+function normalizeWith(body: string, peelEdgeLetters: boolean): string {
+  return joinSplitWords(joinSpelledOutWords(body
     .toLowerCase()
-    .replace(APOSTROPHE_LIKE, '')
+    .replace(APOSTROPHE_LIKE, ''), peelEdgeLetters)
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/(.)\1{2,}/g, '$1$1')
     .replace(/\bdo not\b/g, 'dont')
@@ -74,6 +78,43 @@ export function normalizeForSafetyScan(body: string): string {
     .replace(/\bhave not\b/g, 'havent')
     .replace(/\bwould not\b/g, 'wouldnt')
     .trim());
+}
+
+/**
+ * A word spelled out letter by letter, the letters separated by one repeated
+ * character ("s u i c i d e", "k.m.s", "k-i-l-l m-y-s-e-l-f"): the run is
+ * joined back into the word (HF12b). Done in the normal form itself, so every
+ * reader of it (the SHADOW disclosure's touch, staff and boxing-context
+ * checks) sees the word too. Letters only: "5 k m s" keeps the 5 apart, so the
+ * roadwork guard still reads it as a distance. Two letters are a run, so
+ * "t o" reads "to" and "i m" reads "im"; "a.m." reads "am", which the kms
+ * guard already treats as a time after a digit.
+ *
+ * A standalone "i" or "a" typed beside the run with the same single space is
+ * swallowed into it ("i k m s" reads "ikms"). The second reading peels one
+ * such letter off either end ("i kms", "suicide a"); it is a separate reading
+ * because a real word can start or end with one ("abused", "inappropriate").
+ * Phrases typed with one space between every letter AND between words can
+ * not be split back into words by a pattern.
+ */
+const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z]([^a-z0-9])[a-z](?:\1[a-z])*(?![a-z0-9])/gu;
+
+function joinSpelledOutWords(text: string, peelEdgeLetters: boolean): string {
+  return text.replace(SPELLED_OUT_RUN, (run) => {
+    let word = run.replace(/[^a-z]/g, '');
+    if (!peelEdgeLetters) return word;
+    let head = '';
+    let tail = '';
+    if (/^[ia]/.test(word) && word.length >= 4) {
+      head = `${word[0]} `;
+      word = word.slice(1);
+    }
+    if (/[ia]$/.test(word) && word.length >= 4) {
+      tail = ` ${word[word.length - 1]}`;
+      word = word.slice(0, -1);
+    }
+    return head + word + tail;
+  });
 }
 
 /**
@@ -224,10 +265,14 @@ export function scanForSafetyLanguage(body: string): FeedbackSafetyScanResult {
   // fully catches a single-letter word typed long ("sooooo"). Neither reading
   // alone covers both, and a disclosure must not depend on which way a child
   // happened to hold the key.
+  // A third and fourth reading peel a lone "i" or "a" off a spelled-out run
+  // (joinSpelledOutWords); they differ from the first two only when there is
+  // such a run.
   const normalized = normalizeForSafetyScan(body);
-  const fullyCollapsed = collapseFully(normalized);
+  const peeled = normalizeWith(body, true);
+  const readings = [normalized, collapseFully(normalized), peeled, collapseFully(peeled)];
   const cues = SAFETY_CUES
-    .filter((cue) => cue.pattern.test(normalized) || cue.pattern.test(fullyCollapsed))
+    .filter((cue) => readings.some((reading) => cue.pattern.test(reading)))
     .map((cue) => cue.id);
 
   return { safeguarding: cues.length > 0, cues };
