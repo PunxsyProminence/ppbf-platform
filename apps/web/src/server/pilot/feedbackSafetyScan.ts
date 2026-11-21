@@ -102,8 +102,6 @@ function normalizeWith(body: string, peelEdgeLetters: boolean): string {
  * swallowed into it ("i k m s" reads "ikms"). The second reading peels one
  * such letter off either end ("i kms", "suicide a"); it is a separate reading
  * because a real word can start or end with one ("abused", "inappropriate").
- * Phrases typed with one space between every letter AND between words can
- * not be split back into words by a pattern.
  */
 const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z]([^a-z0-9])[a-z](?:\1[a-z])*(?![a-z0-9])/gu;
 
