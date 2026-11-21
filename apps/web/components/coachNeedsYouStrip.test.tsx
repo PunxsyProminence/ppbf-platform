@@ -204,6 +204,25 @@ describe('focus and announcements', () => {
     const status = strip().querySelector('[data-needs-ack-status]') as HTMLElement;
     expect(status.getAttribute('role')).toBe('status');
     expect(status.textContent).toBe('');
+    // Out of the panel's flow while empty: the board panel's `> * { position: relative }` would keep it in.
+    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(['sr-only', 'absolute!']));
+  });
+
+  test('the armed Acknowledge sits in the polite row, and the notice lands in the same mounted status line', () => {
+    const first = { ...escalation(), id: 'escalation:e1', title: 'Ada Rivera' };
+    const second = { ...escalation(), id: 'escalation:e2', title: 'Marcus Bell' };
+    const { rerender } = render(<CoachNeedsYouStrip {...props({ items: [first, second] })} />);
+    const status = strip().querySelector('[data-needs-ack-status]') as HTMLElement;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    armOnly(screen.getByRole('button', { name: 'Acknowledge' }));
+    const armed = screen.getByRole('button', { name: 'Press again: acknowledge Ada Rivera' });
+    expect(armed.closest('[aria-live="polite"]')).not.toBeNull();
+    pressArmed(armed);
+
+    rerender(<CoachNeedsYouStrip {...props({ items: [second] })} />);
+    expect(strip().querySelector('[data-needs-ack-status]')).toBe(status);
+    expect(status.textContent).toContain('Acknowledged: Ada Rivera');
   });
 });
 

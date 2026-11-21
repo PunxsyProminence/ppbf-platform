@@ -185,7 +185,9 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
         <Link href="/coach/intelligence" className={`underline ${FOCUS}`}>More reads: The Morning Read</Link>
       </p>
 
-      <p className={ackLanded ? 'coach-floor-focus__label' : 'sr-only'} role="status" data-needs-ack-status>
+      {/* `absolute!`: `.coach-floor-focus__panel > * { position: relative }` loads after `.sr-only` and
+          would otherwise keep this empty line in the panel's flex column, one gap tall (final review of 7b). */}
+      <p className={ackLanded ? 'coach-floor-focus__label' : 'sr-only absolute!'} role="status" data-needs-ack-status>
         {ackLanded ? `Acknowledged: ${ackedItem.title}. It stays listed under Safety Escalations below.` : ''}
       </p>
 
