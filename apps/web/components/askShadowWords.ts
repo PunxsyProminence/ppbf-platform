@@ -6,7 +6,7 @@
  * files a safety alert when a message sounds like someone may not be safe: to
  * the athlete's coach of record, any covering coach and the admins, or to the
  * admins only when the message names gym staff, carries a grooming, secrecy
- * or touch cue, or comes in a conversation that already named gym staff. An
+ * or touch cue, or comes in a conversation that already filed admin-only. An
  * account with no athlete record files nothing.
  *
  * Otherwise no coach reads the words (CODE_READ, PR 2059): a conversation is
