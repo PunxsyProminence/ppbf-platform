@@ -11,10 +11,14 @@
 //     kept version, not the package's;
 //   - the dry run prints the held item, and the plan hash covers it: an edit
 //     that lands after a plan was shown makes its apply STALE_PLAN;
-//   - an edit recorded only in the audit log still counts.
+//   - an edit recorded only in the audit log still counts;
+//   - a session script a coach edited in the app, in place or as a new version,
+//     or made in the app from a template, is HELD the same way (lane GD, GD-4;
+//     Overwatch Q1 = A); retiring it, bringing it back or marking it reviewed
+//     does not hold it, and a script nobody edited still updates.
 //
 // The edits are made through the real edit paths (drillLibraryEdit.ts,
-// workoutTemplateEdit.ts). The engine's own unit half is contentImport/inAppEdits.test.ts. Spins up the same disposable, local-only embedded
+// workoutTemplateEdit.ts, sessionScriptAuthoring.ts). The engine's own unit half is contentImport/inAppEdits.test.ts. Spins up the same disposable, local-only embedded
 // Postgres the other pg suites use; it NEVER connects to production or staging.
 
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
@@ -33,7 +37,22 @@ let activeConnectionString: string | null = null;
 
 // The edit paths open their own transaction (db.ts withTransaction); here it is
 // a connection of its own to the test database, so an edit commits for real.
+// query and queryOne are the reads a script made from a template takes
+// (workoutTemplates.ts getWorkoutTemplateWithItems), on a connection of their own.
+async function ownQuery(text: string, values: unknown[] = []) {
+  if (!activeConnectionString) throw new Error('test bug: no active embedded database');
+  const own = new Client({ connectionString: activeConnectionString });
+  await own.connect();
+  try {
+    return (await own.query(text, values)).rows;
+  } finally {
+    await own.end();
+  }
+}
+
 jest.mock('./db', () => ({
+  query: jest.fn(async (text: string, values?: unknown[]) => ownQuery(text, values)),
+  queryOne: jest.fn(async (text: string, values?: unknown[]) => (await ownQuery(text, values))[0] ?? null),
   withTransaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) => {
     if (!activeConnectionString) throw new Error('test bug: no active embedded database');
     const own = new Client({ connectionString: activeConnectionString });
@@ -62,6 +81,12 @@ import { claimIdsFromChunksCsv, LOADED_RESEARCH_CHUNKS } from './contentImport/r
 import { ContentImportRefusal } from './contentImport/refusal';
 import type { DatasetName } from './contentImport/types';
 import { editLibraryDrill, parseDrillLibraryEdit } from './drillLibraryEdit';
+import {
+  createSessionScriptFromTemplate,
+  editSessionScript,
+  markSessionScriptReviewed,
+  setSessionScriptRetired,
+} from './sessionScriptAuthoring';
 import { editWorkoutTemplate, parseWorkoutTemplateEdit } from './workoutTemplateEdit';
 
 jest.setTimeout(300_000);
@@ -623,5 +648,219 @@ describe('what depends on a held item', () => {
     expect(finding?.message).toContain(`${T5} / 1 (light_technical)`);
     await expect(applyCommitted(org, admin, files, shown.planHash)).rejects.toMatchObject({ code: 'PLAN_BLOCKED' });
     expect((await head(org, 'drill_library', D1)).contact_level).toBe('light_technical');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session scripts (lane GD, GD-4). A script edit writes no in-app label; the
+// audit row it writes in the same transaction is the record
+// (sessionScriptAuthoring.ts editSessionScript: entity_id = the current
+// version's id, details.edited_script_id; createSessionScriptFromTemplate:
+// details.template_id).
+
+const SCRIPTS_CSV = 'session-scripts/seed_session_scripts.csv';
+const SCRIPT_BLOCKS_CSV = 'session-scripts/seed_session_script_blocks.csv';
+const S1 = 'scr_1a00000000000a';
+const S2 = 'scr_2b00000000000b';
+
+function scriptRow(scriptId: string, overrides: Row = {}): Row {
+  return {
+    organization_id: '{{PPBF_ORG_ID}}',
+    script_id: scriptId,
+    name: `Script ${scriptId}`,
+    discipline: 'boxing',
+    total_minutes: '30',
+    contact_structure: 'non_contact',
+    created_by_account_id: '{{SEED_ACCOUNT_ID}}',
+    ...overrides,
+  };
+}
+
+function scriptBlock(scriptId: string, order: number, overrides: Row = {}): Row {
+  return {
+    organization_id: '{{PPBF_ORG_ID}}',
+    script_id: scriptId,
+    block_order: String(order),
+    start_offset_min: String((order - 1) * 10),
+    end_offset_min: String(order * 10),
+    block_label: `Block ${order}`,
+    what_to_say: 'Stance first. Hands up.',
+    ...overrides,
+  };
+}
+
+function scripts(
+  roots: Row[] = [scriptRow(S1), scriptRow(S2)],
+  blocks: Row[] | null = [scriptBlock(S1, 1), scriptBlock(S1, 2), scriptBlock(S2, 1), scriptBlock(S2, 2)],
+): Files {
+  const out: Files = { [SCRIPTS_CSV]: csv(SCRIPTS_CSV, roots) };
+  if (blocks) out[SCRIPT_BLOCKS_CSV] = csv(SCRIPT_BLOCKS_CSV, blocks);
+  return out;
+}
+
+/** The package with S1 and S2 both renamed: each is a revision. */
+const RENAMED = scripts([scriptRow(S1, { name: 'Package name one' }), scriptRow(S2, { name: 'Package name two' })]);
+
+/** A coach account in the gym: a script's created_by_account_id names a real account. */
+async function addCoach(org: string): Promise<void> {
+  await client.query(
+    `insert into pilot.accounts (account_id, role, organization_id, is_platform_owner, active_flag)
+     values ($1, 'coach', $2, false, true) on conflict do nothing`,
+    [`coach@${org}`, org],
+  );
+}
+
+async function scriptGym() {
+  const gym = await createGym();
+  await addCoach(gym.org);
+  await applyCommitted(gym.org, gym.admin, scripts());
+  return gym;
+}
+
+async function scriptHead(org: string, lineage: string) {
+  return (await client.query(
+    `select * from pilot.session_scripts where organization_id = $1 and lineage_id = $2 order by version desc limit 1`,
+    [org, lineage],
+  )).rows[0];
+}
+
+async function scriptVersions(org: string, lineage: string): Promise<number> {
+  return Number((await client.query(
+    `select count(*)::int as n from pilot.session_scripts where organization_id = $1 and lineage_id = $2`,
+    [org, lineage],
+  )).rows[0].n);
+}
+
+function coach(org: string) {
+  return { organizationId: org, actorAccountId: `coach@${org}`, actorRole: 'coach' as const };
+}
+
+async function coachRenamesScript(org: string, lineage: string, name: string) {
+  return editSessionScript({ ...coach(org), scriptId: (await scriptHead(org, lineage)).script_id, name });
+}
+
+describe('a session script a coach edited in the app', () => {
+  it('edited in place (no run yet): is held, says why, and the other script still loads', async () => {
+    const { org, admin } = await scriptGym();
+    expect(await coachRenamesScript(org, S1, 'Coach name')).toMatchObject({ outcome: 'updated', version: 1 });
+
+    const shown = await plan(org, admin, RENAMED);
+    expect(shown.blocking).toEqual([]);
+    const held = unitOf(shown, 'session-scripts', S1);
+    expect(held).toMatchObject({ outcome: 'held', heldBy: 'in_app_edit' });
+    expect(held.fromVersion).toBeUndefined();
+    expect(held.toVersion).toBeUndefined();
+    expect(held.reasons).toEqual([
+      expect.stringMatching(/^kept: its current version v1 holds an in-app edit by coach, \d{4}-\d{2}-\d{2}; the package's version was not loaded/),
+    ]);
+    expect(unitOf(shown, 'session-scripts', S2)).toMatchObject({ outcome: 'new_version', fromVersion: 1, toVersion: 2 });
+    expect(formatPlan(shown)).toContain('  session-scripts: 0 new, 1 new version, 0 unchanged, 0 absent, 0 reject, 1 held');
+
+    const applied = await applyCommitted(org, admin, RENAMED, shown.planHash);
+    expect(applied.audit?.details.held).toEqual({ 'session-scripts': [S1] });
+    expect(await scriptHead(org, S1)).toMatchObject({ version: 1, name: 'Coach name' });
+    expect(await scriptVersions(org, S1)).toBe(1);
+    expect(await scriptHead(org, S2)).toMatchObject({ version: 2, name: 'Package name two' });
+  });
+
+  it('edited after a run (a new version in the app): is held, and a re-import changes nothing', async () => {
+    const { org, admin } = await scriptGym();
+    const v1 = await scriptHead(org, S1);
+    await client.query(
+      `insert into pilot.session_script_runs (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on)
+       values ($1, 'run_gd4_test_1', $2, 1, $3, current_date)`,
+      [org, v1.script_id, admin],
+    );
+    expect(await coachRenamesScript(org, S1, 'Coach name')).toMatchObject({ outcome: 'new_version', version: 2 });
+
+    const shown = await plan(org, admin, RENAMED);
+    expect(shown.blocking).toEqual([]);
+    expect(unitOf(shown, 'session-scripts', S1)).toMatchObject({ outcome: 'held', heldBy: 'in_app_edit' });
+    expect(unitOf(shown, 'session-scripts', S1).reasons?.[0]).toMatch(/^kept: its current version v2 holds an in-app edit by coach/);
+    await applyCommitted(org, admin, RENAMED, shown.planHash);
+
+    // The same package again: still held, and nothing is written.
+    const again = await plan(org, admin, RENAMED);
+    expect(unitOf(again, 'session-scripts', S1).outcome).toBe('held');
+    expect(again.changes).toBe(0);
+    expect(await scriptHead(org, S1)).toMatchObject({ version: 2, name: 'Coach name' });
+    expect(await scriptVersions(org, S1)).toBe(2);
+  });
+
+  it('is held when the package carries its blocks only', async () => {
+    const { org, admin } = await scriptGym();
+    await coachRenamesScript(org, S1, 'Coach name');
+    const blocksOnly = { [SCRIPT_BLOCKS_CSV]: scripts(undefined, [
+      scriptBlock(S1, 1, { block_label: 'Package block' }), scriptBlock(S1, 2),
+    ])[SCRIPT_BLOCKS_CSV] };
+
+    const shown = await plan(org, admin, blocksOnly);
+    expect(shown.blocking).toEqual([]);
+    expect(unitOf(shown, 'session-scripts', S1)).toMatchObject({ outcome: 'held', heldBy: 'in_app_edit' });
+    expect(shown.changes).toBe(0);
+    const nothing = await applyCommitted(org, admin, blocksOnly, shown.planHash);
+    expect(nothing.importId).toBeNull();
+    const labels = (await client.query(
+      `select b.block_label from pilot.session_script_blocks b
+        where b.organization_id = $1 and b.script_id = $2 order by b.block_order`,
+      [org, (await scriptHead(org, S1)).script_id],
+    )).rows.map((row) => row.block_label);
+    expect(labels).toEqual(['Block 1', 'Block 2']);
+  });
+
+  it('made in the app from a workout template: is held (Q1 = A)', async () => {
+    const { org, admin } = await loadedGym(true);
+    await addCoach(org);
+    const template = await head(org, 'workout_templates', T1);
+    const made = await createSessionScriptFromTemplate({ ...coach(org), templateId: template.template_id });
+    const stored = await scriptHead(org, made.lineage_id);
+
+    const files = scripts([scriptRow(made.lineage_id, {
+      name: 'Package name',
+      total_minutes: String(stored.total_minutes),
+      contact_structure: stored.contact_structure,
+    })], null);
+    const shown = await plan(org, admin, files);
+    expect(shown.blocking).toEqual([]);
+    expect(unitOf(shown, 'session-scripts', made.lineage_id)).toMatchObject({ outcome: 'held', heldBy: 'in_app_edit' });
+    await applyCommitted(org, admin, files, shown.planHash);
+    expect(await scriptHead(org, made.lineage_id)).toMatchObject({ version: 1, name: stored.name });
+    expect(await scriptVersions(org, made.lineage_id)).toBe(1);
+  });
+
+  it('retired, brought back and marked reviewed, but never edited: still updates (no false hold)', async () => {
+    const { org, admin } = await scriptGym();
+    const v1 = (await scriptHead(org, S2)).script_id;
+    expect(await markSessionScriptReviewed({ ...coach(org), scriptId: v1 })).toMatchObject({ outcome: 'reviewed' });
+    expect(await setSessionScriptRetired({ ...coach(org), scriptId: v1, retired: true })).toMatchObject({ outcome: 'retired' });
+    expect(await setSessionScriptRetired({ ...coach(org), scriptId: v1, retired: false })).toMatchObject({ outcome: 'brought_back' });
+    // Three audit rows on the current version's id, none of them an edit.
+    expect((await client.query(
+      `select count(*)::int as n from pilot.audit_events where organization_id = $1 and entity_type = 'session_script' and entity_id = $2`,
+      [org, v1],
+    )).rows[0].n).toBe(3);
+
+    const shown = await plan(org, admin, RENAMED);
+    expect(shown.blocking).toEqual([]);
+    expect(unitOf(shown, 'session-scripts', S1)).toMatchObject({ outcome: 'new_version', fromVersion: 1, toVersion: 2 });
+    expect(unitOf(shown, 'session-scripts', S2)).toMatchObject({ outcome: 'new_version', fromVersion: 1, toVersion: 2 });
+    await applyCommitted(org, admin, RENAMED, shown.planHash);
+    expect(await scriptHead(org, S2)).toMatchObject({ version: 2, name: 'Package name two' });
+  });
+
+  it('an edit audit row in another gym, or on an older version, does not hold this script', async () => {
+    const { org, admin } = await scriptGym();
+    const other = await scriptGym();
+    // Another gym's coach edits its own copy of S1.
+    await coachRenamesScript(other.org, S1, 'Other gym coach name');
+    const own = await scriptHead(org, S1);
+    // A stray edit row in this gym on an id that is not the current version of S1.
+    await client.query(
+      `insert into pilot.audit_events (event_type, actor_account_id, actor_role, organization_id, entity_type, entity_id, details)
+       values ('update', $1, 'coach', $2, 'session_script', 'scr_not_the_head', $3::jsonb)`,
+      [`coach@${org}`, org, JSON.stringify({ outcome: 'updated', edited_script_id: own.script_id })],
+    );
+    const shown = await plan(org, admin, RENAMED);
+    expect(unitOf(shown, 'session-scripts', S1)).toMatchObject({ outcome: 'new_version', toVersion: 2 });
   });
 });
