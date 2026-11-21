@@ -734,6 +734,11 @@ export default function AthleteProgressionIntelligencePage() {
           )}
 
           <div className={`space-y-[var(--s6)]${openedAssignment ? ' hidden' : ''}`}>
+            {/* Shown only when there is a gap (lane AS-8, ATH-19), as the
+                parent page does: an athlete whose only work is a drill
+                assignment has none, and a heading over nothing reads as a
+                list that failed to load. */}
+            {gaps.length > 0 && (
             <section>
               <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Identified Gaps</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
@@ -756,6 +761,7 @@ export default function AthleteProgressionIntelligencePage() {
                 ))}
               </div>
             </section>
+            )}
 
             <section>
               <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Drill Assignments</h2>
