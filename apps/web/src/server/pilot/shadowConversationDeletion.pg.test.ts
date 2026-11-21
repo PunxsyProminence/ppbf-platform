@@ -1078,6 +1078,14 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       userWords: 'Dana asking about the schedule.',
       replyWords: 'Dana, Jordan trains Tuesdays; Morgan Quill can pick up. Bring water.',
     });
+    // A coach's chat about a live athlete, deleted before this change: only
+    // the chat's subject names the athlete (the coach has no name on record
+    // and is not their guardian).
+    const legacyCoach = await seedConversation(sweepDb, {
+      organizationId: ORG, accountId: COACH, role: 'coach', athleteId: ATHLETE, deletedAgo: '3 days',
+      userWords: 'plan for this athlete',
+      replyWords: 'Jordan Pike (Lightning) can spar; tell Dana Pike and Morgan Quill.',
+    });
     const live = await seedConversation(sweepDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     // Flagged, past two years, and no name on record: nothing can be
     // scrubbed, so the chat goes whole; its review entry stays, under a new
@@ -1130,7 +1138,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     const untouchedBefore = await Promise.all(untouched.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
     // The held escalated chat's escalation (filed in upper case) is in its snapshot.
     expect((untouchedBefore[untouched.indexOf(stillEscalated)] as { escalations: unknown[] }).escalations).toHaveLength(1);
-    const due = [expired, expiredEscalated, legacy, legacyGuardian, namelessFlagged];
+    const due = [expired, expiredEscalated, legacy, legacyGuardian, legacyCoach, namelessFlagged];
     const dueBefore = await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
 
     // The nightly run (OD-2026-10-07-010) and a dry run count them and keep them.
@@ -1147,16 +1155,16 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       [ORG],
     );
     const nightly = await runCleanup(SWEEP_DB_NAME, 'nightly');
-    expect(nightly.member_deleted_chats_due).toBe(5);
+    expect(nightly.member_deleted_chats_due).toBe(6);
     expect(nightly.inquiries).toBe(1);
     expect(await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)))).toEqual(dueBefore);
     const dry = await runCleanup(SWEEP_DB_NAME, 'dry');
-    expect(dry.member_deleted_chats_due).toBe(5);
-    expect(dry.would_clear_member_deleted_chats).toBe(5);
+    expect(dry.member_deleted_chats_due).toBe(6);
+    expect(dry.would_clear_member_deleted_chats).toBe(6);
     expect(await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)))).toEqual(dueBefore);
 
     const applied = await runCleanup(SWEEP_DB_NAME, 'apply');
-    expect(applied.member_deleted_chats_cleared).toBe(5);
+    expect(applied.member_deleted_chats_cleared).toBe(6);
 
     await expectOldIdsGone(sweepDb, namelessFlagged);
     expect(await keptCopy(sweepDb, namelessFlagged)).toBeNull();
@@ -1184,7 +1192,10 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     expect(legacyOrder[0].at).not.toBe(legacyOrder[1].at);
     expectNoNames((await messagesOf(sweepDb, (await keptCopy(sweepDb, legacyGuardian))!))[0].content,
       ['Dana', 'Pike', 'Jordan', 'Morgan', 'Quill']);
-    for (const cleared of [expired, expiredEscalated, legacy, legacyGuardian]) {
+    const coachKept = await messagesOf(sweepDb, (await keptCopy(sweepDb, legacyCoach))!);
+    expect(coachKept).toHaveLength(1);
+    expectNoNames(coachKept[0].content, ['Jordan', 'Pike', 'Lightning', 'Dana', 'Morgan', 'Quill']);
+    for (const cleared of [expired, expiredEscalated, legacy, legacyGuardian, legacyCoach]) {
       const keptId = (await keptCopy(sweepDb, cleared))!;
       await expectDayTimes(sweepDb, 'shadow_chat_sessions', 'conversation_id', keptId,
         ['created_at', 'updated_at', 'deleted_at', 'deidentified_at']);
