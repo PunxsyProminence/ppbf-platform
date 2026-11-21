@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-21-001 | 2026-11-21 | App Overwatch moves to a local Claude Code session on the admin Claude account | REPORTED |  | yes |
 | OD-2026-11-20-003 | 2026-11-20 | Overwatch moves to a cloud session on the admin Claude account | REPORTED |  | yes |
 | OD-2026-11-20-002 | 2026-11-20 | SHADOW lane answers: SH-01 to SH-05, SH-07, MSG-1 and MSG-2 | RECONSTRUCTED |  |  |
 | OD-2026-11-20-001 | 2026-11-20 | OW27-01 to OW27-16: W4 email alerts, typed lines, athlete and parent words, recognizer start | RECONSTRUCTED |  |  |
@@ -634,6 +635,23 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-21-001 -- App Overwatch moves to a local Claude Code session on the admin Claude account
+
+**Provenance: REPORTED.** Jason's first sentence is quoted from the cloud Overwatch's handover brief, which he pasted into a local Claude Code session (the desktop app on his PC) on 2026-11-21 UTC. It was not read from his own transcript. His other words below are PRIMARY: he typed them in that local session. Typos are kept. New; edits no earlier entry's text.
+
+**Jason (to the cloud Overwatch, 2026-11-21, REPORTED):** *"juust give me the prompt to have the local claudecode open it and it will be the app overwatch"*
+
+**Jason (to the local Overwatch, 2026-11-21, PRIMARY, after the production release of `76c0797`):** *"Yes, merge them"* (#2032 and #2036) and *"Yes, do #2058"*
+
+**Ruling:** the app Overwatch runs in a local Claude Code session in the desktop app on his PC, signed in on the admin Claude account, in place of the cloud session named in OD-2026-11-20-003. There is one app Overwatch at a time; the cloud Overwatch stands down. The Claude Science session "PPBF Overwatch 28" (Backbone research) is not an app Overwatch.
+
+**Applied limits (from the handover brief, not his words):** the local Overwatch answers builder questions, checks and merges pull requests, records his decisions here and runs releases; production runs only on his own words and he approves the production gate himself.
+
+**Not ruled here:** whether OD-2026-11-20-003's split (desktop keeps deploys, cloud keeps merges) returns if the session moves again; which account the cloud build lanes run on.
+**Status:** recorded 2026-11-21 by PR.
 
 ---
 
