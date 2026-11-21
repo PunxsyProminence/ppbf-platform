@@ -116,7 +116,7 @@ test('a picker whose only class is cancelled shows nothing chosen, not a class i
   expect(Array.from(picker.options).map((option) => option.textContent)).toEqual(['No class to mark']);
   // Nothing is marked for a class nobody can mark: no athlete groups, no button.
   expect(screen.queryByLabelText('Athlete to mark')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Update Attendance' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
 });
 
 test('with a live class beside a cancelled one, the live class is chosen and its register shown', async () => {

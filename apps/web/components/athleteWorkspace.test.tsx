@@ -22,6 +22,7 @@ import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/ty
 import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
+import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { IssuedWorkoutsUnreadableError } from '@/src/lib/issuedWorkouts';
 
@@ -2147,6 +2148,8 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
     });
 
     expect(postedTo('/api/pilot/athlete/chat').map((call) => call.body)).toEqual([{ message: 'How do I hold my guard?' }]);
+    // HF2: the saved line says when a coach or the gym office can be alerted.
+    expect(await screen.findByText(ASK_SHADOW_SENT_LINE)).toBeTruthy();
   });
 
   test('a surface is reachable through the group that owns it', async () => {
@@ -2355,11 +2358,14 @@ describe('Today states the day back rather than offering a row of buttons', () =
 });
 
 describe('shipped features are not described to the athlete as unbuilt', () => {
+  // The three cards these tests read moved from the foot of every tab to the
+  // top of the Progress tabs (lane AS-8, Q6 A); the tests open Progress first.
   test('the film lane and progression are offered as working, not as coming', async () => {
     // Both pages read real routes -- /api/pilot/video/list and
     // /api/pilot/progression/gaps -- and were being advertised as "Not Built
     // Yet", one of them as "Nothing behind them works yet".
     await renderWorkspace();
+    openTab('Goals');
 
     expect(screen.queryByText(/Video Analysis - Not Built Yet/)).toBeNull();
     expect(screen.queryByText(/Automatic Progress Tracking - Not Built Yet/)).toBeNull();
@@ -2374,6 +2380,7 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     // knew it existed. This pins the fix, not just that a link renders: the
     // href has to be the real route.
     await renderWorkspace();
+    openTab('Goals');
 
     const link = screen.getByRole('link', { name: 'Open Sparring Log' });
     expect(link).toBeTruthy();
@@ -2384,8 +2391,76 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     // Automatic technique scoring is PARKED by owner decision. Correcting the
     // stale copy must not quietly promise it.
     await renderWorkspace();
+    openTab('Goals');
 
     expect(screen.getByText(/Nothing scores your technique automatically -- that part is not built/)).toBeTruthy();
+  });
+});
+
+/* THE PROGRESS PAGES (lane AS-8, ATH-04; Overwatch Q6 A on #2020). Five
+   cards in one open row at the top of each Progress tab: the three that sat in
+   the collapsed "More in your workspace" at the foot of every tab, moved with
+   the same words and links, and My Development Plan and Mental Skills, titled
+   with their page titles. The disclosure is gone. */
+describe('the Progress tabs open with the five Progress pages', () => {
+  const PAGES: Array<[string, string, string]> = [
+    ['My Film', 'Open My Film', '/athlete/video-analysis'],
+    ['My Progression', 'Open My Progression', '/athlete/progression-intelligence'],
+    ['Sparring Log', 'Open Sparring Log', '/athlete/dashboard/sparring'],
+    ['My Development Plan', 'Open My Development Plan', '/athlete/development-blocks'],
+    ['Mental Skills', 'Open Mental Skills', '/athlete/mental-skills'],
+  ];
+
+  function progressRow(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[data-progress-pages]');
+  }
+
+  test.each(['Goals', 'Attempts', 'Tracks'])('%s opens with all five cards, each titled and linked to its page', async (tab) => {
+    await renderWorkspace();
+    openTab(tab);
+
+    const row = progressRow();
+    expect(row).not.toBeNull();
+    const cards = Array.from(row!.querySelectorAll('article'));
+    expect(cards.map((card) => card.querySelector('p')?.textContent)).toEqual(PAGES.map(([title]) => title));
+    for (const [title, label, href] of PAGES) {
+      const card = cards.find((each) => each.querySelector('p')?.textContent === title)!;
+      expect(within(card).getByRole('link', { name: label }).getAttribute('href')).toBe(href);
+    }
+    // Open, not behind a disclosure.
+    expect(row!.closest('details')).toBeNull();
+  });
+
+  test('the new two cards are described in their pages\' own first sentence', async () => {
+    await renderWorkspace();
+    openTab('Goals');
+
+    expect(screen.getByText('What your coach is working on with you over the next several weeks, in their words.')).toBeTruthy();
+    expect(screen.getByText('Your self-talk cue and your imagery sessions.')).toBeTruthy();
+  });
+
+  test('the row comes before the tab\'s own content', async () => {
+    await renderWorkspace();
+    openTab('Goals');
+
+    const row = progressRow()!;
+    const goalsHeading = screen.getByRole('button', { name: /HELP: SMART Goals/ });
+    expect(row.compareDocumentPosition(goalsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('no other group shows the row, and the foot disclosure is gone from every tab', async () => {
+    await renderWorkspace();
+
+    for (const tab of ['How I feel today', 'Dashboard', 'Floor', 'Drills', 'Rabbit Holes', 'Schedule', 'SHADOW Intel', 'Ask SHADOW']) {
+      openTab(tab);
+      expect(progressRow()).toBeNull();
+      expect(screen.queryByText('More in your workspace')).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Open My Film' })).toBeNull();
+    }
+    openTab('Goals');
+    expect(screen.queryByText('More in your workspace')).toBeNull();
+    // One link per page: the cards are moved, not copied.
+    for (const [, label] of PAGES) expect(screen.getAllByRole('link', { name: label })).toHaveLength(1);
   });
 });
 
@@ -2408,7 +2483,23 @@ describe('the athlete question box does not imply a coach reads it', () => {
 
     openTab('Ask SHADOW');
 
-    expect(screen.getByText(/your parent is not automatically copied and no coach is notified/)).toBeTruthy();
+    // HF2: it also says when a coach or the gym office can be alerted, in
+    // place of "no coach is notified", which was false when a safety alert
+    // was filed (askShadowWords.ts).
+    expect(screen.getByText(/your parent is not automatically copied/)).toBeTruthy();
+    expect(screen.getByText(/your coach or the gym office can get an alert; otherwise no coach sees it/)).toBeTruthy();
+  });
+
+  test('the Ask SHADOW help says an alert can reach a coach, and no old line remains', async () => {
+    await renderWorkspace();
+
+    openTab('Ask SHADOW');
+    // The help panel opens closed.
+    fireEvent.click(screen.getByRole('button', { name: /HELP: Ask SHADOW/ }));
+
+    expect(screen.getByText(ASK_SHADOW_HELP_LINE)).toBeTruthy();
+    expect(screen.queryByText(/does not reach a coach/)).toBeNull();
+    expect(screen.queryByText(/No coach is notified/)).toBeNull();
   });
 });
 

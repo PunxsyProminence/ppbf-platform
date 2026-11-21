@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { getRoleSessionSnapshot, subscribeRoleSession } from '@/components/roleSession';
 import { apiBase } from '@/lib/apiBase';
 import BackHome from '@/components/BackHome';
+import RoleLink from '@/components/RoleLink';
 
 /**
  * Loading a gym's roster from a spreadsheet.
@@ -106,7 +107,7 @@ function RosterImportConsole() {
   return (
     <main className="min-h-screen bg-[var(--canvas-tan)] px-4 py-8 text-[var(--black)]">
       <div className="mx-auto max-w-4xl">
-        <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">
+        <p className="text-[length:var(--t-xs)] font-mono uppercase tracking-[0.3em] text-[color:var(--brass-800)]">
           Roster
         </p>
         <h1 className="mt-2 font-display text-3xl font-black tracking-tight">Load a Roster</h1>
@@ -131,10 +132,19 @@ function RosterImportConsole() {
               Export the roster first
             </Link>
           ) : null}
+          {/* Where the PINs are issued afterwards (lane AS-10, OFF-21). Shown only to the roles Gym
+              Office admits; this page also admits a coach. */}
+          <RoleLink
+            href="/admin/people?tab=add-athlete"
+            roles={['admin', 'platform_owner']}
+            className="inline-flex min-h-[44px] items-center border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-4 text-xs font-bold uppercase tracking-[0.12em]"
+          >
+            Gym Office
+          </RoleLink>
         </div>
 
         <section className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-4">
-          <label className="block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+          <label className="block text-[length:var(--t-xs)] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
             Choose a CSV file
             <input
               type="file"
@@ -148,7 +158,7 @@ function RosterImportConsole() {
             />
           </label>
 
-          <label className="mt-4 block text-[11px] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
+          <label className="mt-4 block text-[length:var(--t-xs)] font-mono uppercase tracking-[0.14em] text-[var(--gray-dark)]">
             Or paste it here
             <textarea
               aria-label="Roster CSV"
@@ -223,7 +233,7 @@ function RosterImportConsole() {
                   key={`${row.line}-${row.athlete_id}`}
                   className="border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] p-3 text-sm"
                 >
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
+                  <div className="flex flex-wrap items-center gap-2 text-[length:var(--t-xs)] font-mono uppercase tracking-[0.12em] text-[var(--gray-dark)]">
                     <span className="border-2 border-[var(--black)] bg-[var(--canvas-tan)] px-2 py-1 text-[var(--black)]">
                       Row {row.line}
                     </span>

@@ -1,5 +1,6 @@
 import { canonicalCell } from './canonical';
 import { writeCsv } from './csv';
+import { keptWhenTheHeaderOmits } from './datasets/drills';
 import { type IdKind, isNewId } from './ids';
 import { referenceSetsFromBaseline } from './referenceSets';
 import { committedPath, FILE_SPECS } from './specs';
@@ -79,6 +80,7 @@ function resolveNewIds(spec: FileSpec, cells: Cells, minted: MintedIds): void {
 /** The package row as it will be written: normalized, new ids resolved, placeholders and ids filled. */
 function preparedCells(
   spec: FileSpec,
+  header: readonly string[],
   values: Readonly<Record<string, string>>,
   minted: MintedIds,
   committedByKey: ReadonlyMap<string, Record<string, string>>,
@@ -109,6 +111,12 @@ function preparedCells(
     else if (column.role === 'lineage') cells[column.name] = kept || cells[spec.key[0]];
     else if (column.role === 'system') cells[column.name] = kept || (column.systemDefault ?? '');
     else if (column.role === 'child_id') cells[column.name] = kept;
+  }
+  // A drill file made before a column existed (lane GD; Q-GD2-1 = A on #2056): a column the package's
+  // header leaves out keeps the committed cell, as the engine keeps the stored value (datasets/drills.ts).
+  // Read as blank, it wrote '' over the committed cell, and the next load stored that as a new version.
+  for (const name of keptWhenTheHeaderOmits(spec)) {
+    if (!header.includes(name)) cells[name] = committed ? normalizeCell(committed[name]) : '';
   }
 
   const mint = spec.mint;
@@ -156,7 +164,7 @@ function mergeFile(
 ): FileChange {
   const committedByKey = new Map((committed?.rows ?? []).map((row) => [rowKey(spec, row.values), row.raw]));
   const prepared = packageFile.rows.map((row) =>
-    preparedCells(spec, row.values, validation.minted, committedByKey, counter, validation.blankKeyIds.get(row)),
+    preparedCells(spec, packageFile.header, row.values, validation.minted, committedByKey, counter, validation.blankKeyIds.get(row)),
   );
   const header = headerFor(spec, committed, prepared);
 

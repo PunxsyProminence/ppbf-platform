@@ -2389,7 +2389,7 @@ export default function AdminShadowConsolePage() {
                 href="/admin/platform"
                 className="btn btn--ghost flex-1"
               >
-                Platform Desk
+                Omega
               </Link>
             ) : (
               <Link

@@ -56,6 +56,7 @@ import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 import AthleteImHere, { useTodaySchedulerRead, type TodaySchedulerRead } from './AthleteImHere';
+import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SAFESPORT_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
@@ -148,7 +149,8 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
   },
   { id: 'schedule', label: 'Schedule', tabs: [{ id: 'schedule-session', label: 'Schedule' }] },
   // Ask SHADOW lives with SHADOW (WO-N5-02, N5-02-Q1 A). It was a "Messages" group of its own,
-  // which read as messaging a coach; the question is answered by SHADOW and reaches no coach.
+  // which read as messaging a coach; the question is answered by SHADOW, and a coach is told
+  // only when it sounds like someone may not be safe (askShadowWords.ts).
   // The tab id stays 'message-coach' so anything that opens it still does.
   {
     id: 'shadow',
@@ -1756,9 +1758,10 @@ export default function AthleteWorkspace() {
    *
    * This is the one thing on the athlete's screen that a person put there by
    * hand, and it was the hardest thing on the screen to find: the drills a
-   * coach assigned live at /athlete/progression-intelligence, reachable from
-   * here only through a collapsed "More in your workspace" at the foot of the
-   * page. Today states the day back to the athlete, so it has to include the
+   * coach assigned live at /athlete/progression-intelligence, which was then
+   * reachable from here only through a collapsed "More in your workspace" at
+   * the foot of the page (since lane AS-8 it is a card at the top of every
+   * Progress tab). Today states the day back to the athlete, so it has to include the
    * part of the day somebody else set.
    *
    * Every open item, in the order the API returned it. No "due today" window:
@@ -2802,15 +2805,14 @@ export default function AthleteWorkspace() {
       setCoachMessageBody('');
       // The old copy promised a coach reply. This posts to SHADOW, not to a
       // person: it is recorded in the athlete's own conversation and answered
-      // by SHADOW. No coach is notified and none ever sees it, so saying so
-      // would be a promise the system does not keep.
+      // by SHADOW. A coach or the gym office is alerted only when the message
+      // sounds like someone may not be safe (shadowDisclosure.ts); the line
+      // says so, because the old "no coach" line was false then (HF2).
       //
       // The coach's name is gone from this string along with the picker that
       // produced it. Naming a person beside "saved" invited exactly the reading
       // the rest of this copy spends its time denying.
-      setCoachMessageStatus(
-        'Saved to your SHADOW conversation. SHADOW answers there -- open SHADOW Chat to read it. No coach is notified.',
-      );
+      setCoachMessageStatus(ASK_SHADOW_SENT_LINE);
     } catch (error) {
       setCoachMessageStatus(error instanceof Error ? error.message : 'That message did not send. Try it again.');
     } finally {
@@ -3272,6 +3274,79 @@ export default function AthleteWorkspace() {
             Quick Actions -- including Check-In -- below the fold. */}
         {/* TAB CONTENT */}
         <div className="space-y-6">
+          {/* THE PROGRESS PAGES (lane AS-8, ATH-04; Overwatch Q6 A on #2020).
+              One open row at the top of each Progress tab. My Film, My
+              Progression and the Sparring Log were three cards in a collapsed
+              "More in your workspace" at the foot of every tab; they moved
+              here unchanged, and that disclosure is gone. My Development Plan
+              and Mental Skills had no link from this workspace (their doors
+              were only in the building map); each card is titled with its page
+              title and described by the first sentence of its page's own
+              intro, so nothing here is new wording.
+
+              The film and progression cards were once headed "What's Coming"
+              and described both pages as "Not Built Yet", one of them as "The
+              screens are drawn. Nothing behind them works yet." Both shipped
+              since that copy was written: /athlete/video-analysis reads
+              pilot.video via /api/pilot/video/list and the SHADOW observation
+              projection, and /athlete/progression-intelligence reads real gaps
+              and drill assignments and writes completions back. Telling an
+              athlete a working feature does not exist is the same class of
+              error as claiming one that does not -- it just fails in the
+              direction that hides their own record from them. What stays "not
+              built" is narrower and named: automatic scoring, which is PARKED
+              by owner decision and which those pages already label for
+              themselves. */}
+          {activeGroup === 'development' && (
+            <div data-progress-pages="" className="grid gap-[var(--s4)] sm:grid-cols-2 lg:grid-cols-3">
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Film</p>
+                <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
+                <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open My Film
+                </Link>
+              </article>
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Progression</p>
+                <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
+                <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open My Progression
+                </Link>
+              </article>
+              {/* /athlete/dashboard/sparring existed with a real, tested,
+                  API-backed form (rounds, contact, punch output feeding the
+                  same SHADOW formulas this tab is named for) and no link to it
+                  anywhere in the app -- reachable only by typing the URL or
+                  using site search. This card is the only thing that changed;
+                  the page itself and its own naming are untouched. */}
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Sparring Log</p>
+                <p className="t-muted mt-[var(--s2)]">Write down a sparring session -- rounds, contact, what you threw and what landed. Your coach reads it.</p>
+                <Link href="/athlete/dashboard/sparring" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open Sparring Log
+                </Link>
+              </article>
+              {/* Title and line: app/athlete/development-blocks/page.tsx's own
+                  h1 and the first sentence of its intro. */}
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Development Plan</p>
+                <p className="t-muted mt-[var(--s2)]">What your coach is working on with you over the next several weeks, in their words.</p>
+                <Link href="/athlete/development-blocks" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open My Development Plan
+                </Link>
+              </article>
+              {/* Title and line: app/athlete/mental-skills/page.tsx's own h1
+                  and the first sentence of its intro. */}
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Mental Skills</p>
+                <p className="t-muted mt-[var(--s2)]">Your self-talk cue and your imagery sessions.</p>
+                <Link href="/athlete/mental-skills" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open Mental Skills
+                </Link>
+              </article>
+            </div>
+          )}
+
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 panel-settle">
@@ -4274,9 +4349,11 @@ export default function AthleteWorkspace() {
           )}
 
           {/* ASK SHADOW.
-              Named for what it does. The copy here has been accurate for a
-              while -- it already said SHADOW answers and no coach is notified
-              -- but the surface around the copy said something else: it was
+              Named for what it does. The copy said SHADOW answers and no
+              coach is notified -- false whenever a safety alert is filed, so
+              it now says when a coach or the gym office can be alerted
+              (askShadowWords.ts, HF2). The surface around the copy had said
+              something else too: it was
               titled "Message Coach", its form said "Send Message to Coach",
               and it opened with a coach picker. Structure outranks body text,
               so an athlete reasonably read all that as "a coach will see this".
@@ -4285,7 +4362,7 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Ask SHADOW"
-                description="Write a question. It is recorded in your own SHADOW conversation and answered by SHADOW -- it does not reach a coach."
+                description={ASK_SHADOW_HELP_LINE}
                 usage={[
                   'Be clear and specific in questions',
                   'Everything you send here is kept',
@@ -4307,7 +4384,7 @@ export default function AthleteWorkspace() {
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
                   <p className="alert-title">Not Built Yet</p>
-                  <p className="alert-msg"><strong>SafeSport:</strong> what you send here is kept, but your parent is not automatically copied and no coach is notified. Tell a coach or a trusted adult in person about anything urgent or unsafe.</p>
+                  <p className="alert-msg"><strong>SafeSport:</strong> {ASK_SHADOW_SAFESPORT_LINE}</p>
                 </div>
               </div>
 
@@ -4548,52 +4625,6 @@ export default function AthleteWorkspace() {
             </Link>
           </div>
         </div>
-
-        {/* This panel was headed "What's Coming" and described both pages below
-            as "Not Built Yet", one of them as "The screens are drawn. Nothing
-            behind them works yet." Both shipped since that copy was written:
-            /athlete/video-analysis reads pilot.video via /api/pilot/video/list
-            and the SHADOW observation projection, and
-            /athlete/progression-intelligence reads real gaps and drill
-            assignments and writes completions back.
-
-            Telling an athlete a working feature does not exist is the same
-            class of error as claiming one that does not -- it just fails in the
-            direction that hides their own record from them. What stays "not
-            built" is narrower and named: automatic scoring, which is PARKED by
-            owner decision and which those pages already label for themselves. */}
-        <details className={PANEL}>
-          <summary className="t-label cursor-pointer">More in your workspace</summary>
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Film</p>
-              <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
-              <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open My Film
-              </Link>
-            </article>
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Progression</p>
-              <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
-              <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open My Progression
-              </Link>
-            </article>
-            {/* /athlete/dashboard/sparring existed with a real, tested,
-                API-backed form (rounds, contact, punch output feeding the
-                same SHADOW formulas this tab is named for) and no link to it
-                anywhere in the app -- reachable only by typing the URL or
-                using site search. This card is the only thing that changed;
-                the page itself and its own naming are untouched. */}
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Sparring Log</p>
-              <p className="t-muted mt-[var(--s2)]">Write down a sparring session -- rounds, contact, what you threw and what landed. Your coach reads it.</p>
-              <Link href="/athlete/dashboard/sparring" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Sparring Log
-              </Link>
-            </article>
-          </div>
-        </details>
 
         {/* PAIN MODAL */}
         {showPainModal && selectedPainLocation && aboveTheHeader(

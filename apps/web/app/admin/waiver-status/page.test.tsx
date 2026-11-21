@@ -58,6 +58,16 @@ test('the default view shows athletes with a missing waiver', async () => {
   expect(screen.getAllByText('Missing').length).toBeGreaterThan(0);
 });
 
+// Lane AS-10, AS10-6a (app scrub OFF-15): the footer link is named by its
+// page's title, Media Consent Audit (it read "Photo & Media Consent Audit").
+test('the footer link to the media consent page is named by that page\'s title', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: INCOMPLETE })) as unknown as typeof fetch;
+  render(<WaiverComplianceAuditPage />);
+  const link = await screen.findByRole('link', { name: 'Media Consent Audit' });
+  expect(link.getAttribute('href')).toBe('/admin/athlete-consent');
+  expect(screen.queryByRole('link', { name: /Photo & Media Consent Audit/ })).toBeNull();
+});
+
 test('an athlete with every tracked waiver signed is excluded from the default (incomplete) filter', async () => {
   global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: COMPLETE })) as unknown as typeof fetch;
 
@@ -662,4 +672,16 @@ describe('the office records and withdraws a paper waiver (#1526)', () => {
 
     expect(posts).toHaveLength(1);
   });
+});
+
+// Lane AS-10, AS10-5 (app scrub OFF-19): a waiver marked here is the record
+// Waivers & Consent keeps, and the page links it by its title.
+test('the page says it marks the record Waivers & Consent keeps, and links it', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: INCOMPLETE })) as unknown as typeof fetch;
+  render(<WaiverComplianceAuditPage />);
+  const link = await screen.findByRole('link', { name: 'Waivers & Consent' });
+  expect(link.getAttribute('href')).toBe('/admin/consent');
+  expect(link.closest('p')?.textContent?.replace(/\s+/g, ' ')).toBe(
+    'A waiver marked here is the same record kept on Waivers & Consent, which lists who signed and when.',
+  );
 });

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import BoardSeatEvidence from './BoardSeatEvidence';
 import { useBoardSession } from './BoardRoleGate';
 import BoardSummaryPanel from '@/app/board/BoardSummaryPanel';
+import BoardWorkspaceLinks from '@/app/board/BoardWorkspaceLinks';
 import {
   BOARD_AGGREGATE_BOUNDARY_STATEMENT,
   BOARD_PLANNED_STAMP,
@@ -24,7 +25,6 @@ import {
 
 interface BoardMemberDashboardProps {
   seat: BoardSeatConfig;
-  links: ReadonlyArray<{ label: string; href: string }>;
 }
 
 interface ModuleGroup {
@@ -94,7 +94,7 @@ const roleModulesBySeat: Record<BoardSeatSlug, ModuleGroup[]> = {
   ],
 };
 
-export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemberDashboardProps>) {
+export default function BoardMemberDashboard({ seat }: Readonly<BoardMemberDashboardProps>) {
   const router = useRouter();
   const session = useBoardSession();
   const [activeTab, setActiveTab] = useState<BoardWorkspaceTab>('Overview');
@@ -134,7 +134,7 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
             href="/board"
             className="btn btn--ghost mt-[var(--s5)]"
           >
-            Board hub
+            Board Hub
           </Link>
         </div>
       </main>
@@ -163,6 +163,11 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
           </div>
           <div className="plaque">{seat.seatLabel}</div>
         </header>
+
+        {/* Lane AS-12, BOA-03: the way to the board's three reads stood in the
+            aside, after every block below, and under the main column on a
+            narrow screen. It is the first thing under the header now. */}
+        <BoardWorkspaceLinks seat={seat.slug} />
 
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] mt-[var(--s5)]">
           <p className="t-eyebrow">Seat Access</p>
@@ -328,32 +333,6 @@ export default function BoardMemberDashboard({ seat, links }: Readonly<BoardMemb
                   title; no link, because that page does not open for a board
                   seat. */}
               <p className="t-body mt-[var(--s3)]">Grant obligations are kept by the gym admin, on Grant Obligations.</p>
-            </section>
-
-            <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-              <h2 className="t-command">Workspace Links</h2>
-              <div className="mt-[var(--s4)] grid gap-[var(--s2)]">
-                {links.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className="btn btn--ghost"
-                  >
-                    {link.label}
-                  </Link>
-                ))}
-                {/* F-003: the register's route serves 'board' alone, so the
-                    platform owner (platform-observer here) is not shown a
-                    door it cannot open. */}
-                {access.mode !== 'platform-observer' && (
-                  <Link
-                    href="/board/compliance-monitoring"
-                    className="btn btn--ghost"
-                  >
-                    Hand-Filed Compliance Register
-                  </Link>
-                )}
-              </div>
             </section>
 
             <section className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s5)]">
