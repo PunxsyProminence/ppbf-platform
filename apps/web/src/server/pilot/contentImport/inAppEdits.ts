@@ -121,7 +121,7 @@ export interface HeadToCheck {
  * an edit path that writes no `action: 'in_app_edit'` (see (b) above). A key
  * counts only when it holds a non-empty value.
  */
-export const IN_APP_EDIT_DETAIL_KEYS: Readonly<Record<string, readonly string[]>> = {
+const IN_APP_EDIT_DETAIL_KEYS: Readonly<Record<string, readonly string[]>> = {
   session_script: ['edited_script_id', 'template_id'],
 };
 

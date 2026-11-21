@@ -38,8 +38,12 @@ let activeConnectionString: string | null = null;
 // The edit paths open their own transaction (db.ts withTransaction); here it is
 // a connection of its own to the test database, so an edit commits for real.
 // query and queryOne are the reads a script made from a template takes
-// (workoutTemplates.ts getWorkoutTemplateWithItems), on a connection of their own.
+// (workoutTemplates.ts getWorkoutTemplateWithItems), on a connection of their
+// own. Allowed only while a test sets allowPoolReads, so an edit path that
+// wrote outside its transaction still throws everywhere else in this file.
+let allowPoolReads = false;
 async function ownQuery(text: string, values: unknown[] = []) {
+  if (!allowPoolReads) throw new Error('test bug: a pool read outside a test that allows one');
   if (!activeConnectionString) throw new Error('test bug: no active embedded database');
   const own = new Client({ connectionString: activeConnectionString });
   await own.connect();
@@ -660,6 +664,7 @@ describe('what depends on a held item', () => {
 
 const SCRIPTS_CSV = 'session-scripts/seed_session_scripts.csv';
 const SCRIPT_BLOCKS_CSV = 'session-scripts/seed_session_script_blocks.csv';
+const SCRIPT_RENDERINGS_CSV = 'session-scripts/seed_session_script_renderings.csv';
 const S1 = 'scr_1a00000000000a';
 const S2 = 'scr_2b00000000000b';
 
@@ -812,7 +817,13 @@ describe('a session script a coach edited in the app', () => {
     const { org, admin } = await loadedGym(true);
     await addCoach(org);
     const template = await head(org, 'workout_templates', T1);
-    const made = await createSessionScriptFromTemplate({ ...coach(org), templateId: template.template_id });
+    allowPoolReads = true;
+    let made;
+    try {
+      made = await createSessionScriptFromTemplate({ ...coach(org), templateId: template.template_id });
+    } finally {
+      allowPoolReads = false;
+    }
     const stored = await scriptHead(org, made.lineage_id);
 
     const files = scripts([scriptRow(made.lineage_id, {
@@ -848,7 +859,7 @@ describe('a session script a coach edited in the app', () => {
     expect(await scriptHead(org, S2)).toMatchObject({ version: 2, name: 'Package name two' });
   });
 
-  it('an edit audit row in another gym, or on an older version, does not hold this script', async () => {
+  it('an edit audit row in another gym, or on an id that is not the current version, does not hold this script', async () => {
     const { org, admin } = await scriptGym();
     const other = await scriptGym();
     // Another gym's coach edits its own copy of S1.
@@ -862,5 +873,40 @@ describe('a session script a coach edited in the app', () => {
     );
     const shown = await plan(org, admin, RENAMED);
     expect(unitOf(shown, 'session-scripts', S1)).toMatchObject({ outcome: 'new_version', toVersion: 2 });
+  });
+
+  it('edited and then retired: still held, from a renderings-only package too', async () => {
+    const { org, admin } = await scriptGym();
+    await coachRenamesScript(org, S1, 'Coach name');
+    await setSessionScriptRetired({ ...coach(org), scriptId: (await scriptHead(org, S1)).script_id, retired: true });
+
+    expect(unitOf(await plan(org, admin, RENAMED), 'session-scripts', S1)).toMatchObject({ outcome: 'held', heldBy: 'in_app_edit' });
+    const renderingsOnly = {
+      [SCRIPT_RENDERINGS_CSV]: csv(SCRIPT_RENDERINGS_CSV, [
+        { organization_id: '{{PPBF_ORG_ID}}', script_id: S1, format: 'cheat_sheet', body: 'Package cheat sheet.' },
+      ]),
+    };
+    const shown = await plan(org, admin, renderingsOnly);
+    expect(shown.blocking).toEqual([]);
+    expect(unitOf(shown, 'session-scripts', S1)).toMatchObject({ outcome: 'held', heldBy: 'in_app_edit' });
+    expect(shown.changes).toBe(0);
+    await applyCommitted(org, admin, renderingsOnly, shown.planHash);
+    expect(await scriptHead(org, S1)).toMatchObject({ version: 1, name: 'Coach name', authoring_state: 'retired' });
+    expect(await scriptVersions(org, S1)).toBe(1);
+  });
+
+  it('an edit that lands after the plan was shown makes the apply stale, and nothing is written', async () => {
+    const { org, admin } = await scriptGym();
+    const before = await plan(org, admin, RENAMED);
+    expect(unitOf(before, 'session-scripts', S1).outcome).toBe('new_version');
+
+    await coachRenamesScript(org, S1, 'Coach name');
+    const after = await plan(org, admin, RENAMED);
+    expect(unitOf(after, 'session-scripts', S1).outcome).toBe('held');
+    expect(after.planHash).not.toBe(before.planHash);
+
+    await expect(applyCommitted(org, admin, RENAMED, before.planHash)).rejects.toMatchObject({ code: 'STALE_PLAN' });
+    expect(await scriptHead(org, S1)).toMatchObject({ version: 1, name: 'Coach name' });
+    expect(await scriptHead(org, S2)).toMatchObject({ version: 1, name: `Script ${S2}` });
   });
 });

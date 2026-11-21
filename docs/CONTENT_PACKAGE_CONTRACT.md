@@ -86,12 +86,14 @@ Research releases have their own contract (not in this file yet).
   run list it with the reason, and the rest of the hand-off still loads. A session script a coach made in the app
   from a workout template is held the same way (lane GD); retiring a script, bringing it back or marking it
   reviewed does not hold it. A child file counts (a drill's cues, a template's items, a script's blocks and
-  renderings). A template step that links a held drill must fit the coach's kept version, or that template is held too;
+  renderings). A template step that links a held drill must fit the coach's kept version, or that template is
+  held too;
   a track session naming a template held that way (never loaded) holds its track. A held template or script keeps
   its steps, so a drill may not be lowered below them (blocking: drill_contact_below_steps). A held item is held on
   every later plan that would change it: the coach's version stays the one in use, and a coach who wants the
-  package's text enters it in the app. A script is also held when a block links a held drill it would not fit. A
-  package may not carry an "In-app edit" field label: only the app writes that label (blocking: in_app_edit_label).
+  package's text enters it in the app. A script is also held when a block links a held drill it would not fit.
+  A package may not carry an "In-app edit" field label: only the app writes that label
+  (blocking: in_app_edit_label).
 - A drill file made before a column existed keeps the stored value (lane GD). exit_condition and correction_path
   were added after the first drill files. When seed_drill_library.csv's header has no such column, a drill the
   file names keeps what the database holds in that field: the drill is UNCHANGED if nothing else differs, and a
