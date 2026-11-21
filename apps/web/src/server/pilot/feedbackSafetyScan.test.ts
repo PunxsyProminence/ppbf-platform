@@ -648,12 +648,9 @@ describe('HF1 re-review round 4: picture requests said the common ways', () => {
 describe('HF1 re-review round 5', () => {
   test.each([
     'can you send more photos from the tournament',
-    'please send some pics from sunday',
-    'send any pics from the show',
     'wanted more pictures from the event',
     'pls send pictures from class',
     'send me a pic of the scale',
-    'send him a pic of my weight each morning',
     'send pictures of my class to my mum',
     'up at 6 am 5 kms before school',
     'roadwork at 5 am 10 kms',
@@ -671,5 +668,33 @@ describe('HF1 re-review round 5', () => {
     ['i am 14 kms', 'crisis'],
   ])('still files: %p', (sentence, cue) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+});
+
+// Safeguarding re-review round 6 on PR 2059 (lane HF12): "weight", "weigh
+// in", day names and "show" are not specific gym phrases; excluding them hid
+// requests for body pictures. Invented phrases.
+describe('HF1 re-review round 6', () => {
+  test.each([
+    'coach keeps asking me to send pics of my weight loss progress',
+    'he wants me to send pics of my weight cut with no top on',
+    'he asked me to send pics of the weigh in in my underwear',
+    'he asked for pics from the weigh in',
+    'he asked for pics from saturday night when i stayed over',
+    'he keeps asking for pics from last friday at his house',
+    'he asked me for pics from the show at his place',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): these ask for gym pictures, but the words cannot tell them apart
+  // from the requests above.
+  test.each([
+    'please send some pics from sunday',
+    'send any pics from the show',
+    'send him a pic of my weight each morning',
+  ])('accepted false alert, files grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
