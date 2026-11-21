@@ -1216,7 +1216,6 @@ describe('HF12b review 3: snapchat and video talk', () => {
     'coach asked me to send a video of my punches',
     'coach asked me to send a video of my form',
     'coach asked me to send a video of my head movement',
-    'coach asked me to send a video of my progress',
     'coach asked me to send a video of my jump rope',
     'coach asked me to send a video of my roadwork',
     'he wants video of the pads',
@@ -1341,5 +1340,109 @@ describe('HF12b review 4: technique homework, product talk and boxing words stay
     'he wants snaps not pushes',
   ])('no grooming cue: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
+
+// Review round 5 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review 5: real messages the product and punch guards had swallowed', () => {
+  test.each([
+    'he dms me on the app, asks me for videos',
+    'he messages me on the app. asks me for videos every night',
+    'he texts me on the site asks me for videos',
+    'coach is weird about it. asks me for vids all the time',
+    'he asks me for snaps on snapchat',
+    'he wants snaps on insta',
+    'he asks for snaps behind my parents back',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 5: more askers and filming subjects', () => {
+  test.each([
+    'hes asking for videos',
+    'shes wanting vids',
+    'theyre asking for a video',
+    'hes filming in the showers',
+    'someone filmed in the bathroom',
+    'someone was recording in the toilets',
+    'my uncle asks for videos of me',
+    'my stepdad wanted a video of me',
+    'a boy in my class wants vids',
+    'this older boy asked for a video',
+    'there was a camera in the changing room',
+    'he was filming the girls changing',
+    'he films my sister changing',
+    'pics of me whilst changing',
+    'videos of me as i was changing',
+    'he asked me to film myself changing',
+    'he asks me for videos of my progress',
+    'coach wants videos of our sessions together',
+    'he wants videos of my training at his house',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 5: crisis and assault spellings', () => {
+  test.each([
+    ['dont want 2 be here anymore', 'crisis_indirect'],
+    ['i want 2 b dead', 'crisis'],
+    ['i wanna b dead', 'crisis'],
+    ['i want to b dead', 'crisis'],
+    ['i was sexually assalted', 'grooming_or_isolation'],
+    ['he assulted me', 'someone_is_hurting_me'],
+    ['he asaulted me', 'someone_is_hurting_me'],
+    ['m r a p e d me', 'grooming_or_isolation'],
+    ['k i l l i n g m y s e l f', 'crisis'],
+    ['c u t t i n g m y s e l f', 'crisis'],
+  ])('%p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+
+  test('a spelled-out staff title is still read after the two-pass re-spacing', () => {
+    expect(normalizeForSafetyScan('m r d a v e hit me')).toMatch(/\bmr dave\b/);
+  });
+});
+
+describe('HF12b review 5: product, school and gym talk stays out', () => {
+  test.each([
+    'the app keeps asking me for a video',
+    'shadow keeps asking me for videos',
+    'the app always asking for videos',
+    'staff want videos for the website',
+    'the staff asked for videos of the kids class for the newsletter',
+    'the trainer wants videos of everyone hitting pads for instagram',
+    'my teacher asked for a video for my school project',
+    'the volunteer wanted a video of the open house',
+    'the instructor wanted a video showing my stance',
+    'coach asked for a video of my run',
+    'coach wants a video of my lifts',
+    'coach wants a video of my squat',
+    'coach wants a video every week',
+    'coach wants a video before friday',
+    'recorded my pr then hit the shower',
+    'broke my record then took a shower',
+    'i recorded my run before my shower',
+    'video of us changing partners',
+    'a video of him changing pace',
+    'a video of me changing corners',
+    'video of me changing up my rhythm',
+    'video of us changing the mats',
+    'video of me while changing the timer',
+    'coach does film study with us in the locker room',
+    'he wants snaps not pushes',
+    'coach wants snaps on every punch',
+  ])('no grooming cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): each reads like a disclosure to a word match.
+  test.each([
+    'it keeps asking for a video',
+    'coach asked me to send a video of my progress',
+  ])('accepted false alert, files grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
