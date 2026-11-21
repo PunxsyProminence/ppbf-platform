@@ -1061,8 +1061,9 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       organizationId: ORG, accountId: MEMBER, role: 'athlete', escalated: true, escalationIdUpperCase: true,
       deletedAgo: '23 months',
     });
-    // A chat the purge's hold marks (subject_deleted_at), deleted by its
-    // member and otherwise unflagged: the purge decides it, not the sweep.
+    // A chat carrying the purge's hold marker (subject_deleted_at; nothing
+    // writes it today), deleted by its member and otherwise unflagged: the
+    // purge would decide it, not the sweep.
     const purgeMarked = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', deletedAgo: '3 days', subjectDeletedAgo: '1 day',
     });
@@ -1245,7 +1246,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     expect((await sweepDb.query(`select count(*)::int as n from pilot.shadow_human_review_queue where review_id = $1`,
       [expired.reviewId])).rows[0].n).toBe(0);
 
-    // The office's read and the escalation stay -- the safeguarding records --
+    // The office's read and the escalation stay -- the review and safety records --
     // and join nothing that is kept: every id they hold is gone.
     const audit = (await sweepDb.query(
       `select entity_id, details from pilot.audit_events
