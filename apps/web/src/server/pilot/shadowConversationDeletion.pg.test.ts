@@ -1061,6 +1061,11 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       organizationId: ORG, accountId: MEMBER, role: 'athlete', escalated: true, escalationIdUpperCase: true,
       deletedAgo: '23 months',
     });
+    // A chat the purge's hold marks (subject_deleted_at), deleted by its
+    // member and otherwise unflagged: the purge decides it, not the sweep.
+    const purgeMarked = await seedConversation(sweepDb, {
+      organizationId: ORG, accountId: MEMBER, role: 'athlete', deletedAgo: '3 days', subjectDeletedAgo: '1 day',
+    });
     const legacy = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', deletedAgo: '3 days',
     });
@@ -1134,7 +1139,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     });
     expect(read).toMatchObject({ recorded: true });
 
-    const untouched = [stillHeld, stillEscalated, live, athleteMark, athleteOwn, deletedPerson];
+    const untouched = [stillHeld, stillEscalated, purgeMarked, live, athleteMark, athleteOwn, deletedPerson];
     const untouchedBefore = await Promise.all(untouched.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
     // The held escalated chat's escalation (filed in upper case) is in its snapshot.
     expect((untouchedBefore[untouched.indexOf(stillEscalated)] as { escalations: unknown[] }).escalations).toHaveLength(1);
