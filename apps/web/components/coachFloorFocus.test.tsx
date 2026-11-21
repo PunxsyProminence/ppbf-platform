@@ -298,15 +298,17 @@ describe('Start a session', () => {
   });
 });
 
-/* CF-05 (lane U1). The Group / One-on-One toggle switched only the Floor tab's
-   block template, never the session Start begins, so the board no longer
-   offers it. The board names where it went instead (a removed action is named). */
-test('the board offers no Group / One-on-One toggle and names where the templates are', () => {
+/* CF-05 (lane U1), then CF-06 (lane 6C7's 7a-1). The Group / One-on-One toggle switched only the
+   coach home's code-written Floor tab template, never the session Start begins, so the board
+   stopped offering it and named where it went. The Floor tab and the template are gone now
+   (Overwatch Q5 = A on #2043), so the board points at neither. */
+test('the board offers no Group / One-on-One toggle and does not point at a Floor tab', () => {
   render(<CoachFloorFocus {...props()} />);
   expect(screen.queryByRole('group', { name: 'Session mode' })).toBeNull();
   expect(screen.queryByRole('button', { name: /^(✓ )?Group$/ })).toBeNull();
   expect(screen.queryByRole('button', { name: /^(✓ )?One-on-One$/ })).toBeNull();
-  expect(screen.getByText('Group / One-on-One block templates are on the Floor tab.')).toBeTruthy();
+  expect(screen.queryByText(/Floor tab/)).toBeNull();
+  expect(screen.queryByText(/block templates/)).toBeNull();
 });
 
 /* CF-04 (lane U1). With a plan written the tap opens Session Plans to pick one,
