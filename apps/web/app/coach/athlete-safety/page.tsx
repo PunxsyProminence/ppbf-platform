@@ -278,10 +278,10 @@ function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; 
           <div className="flex flex-wrap items-center gap-[var(--s3)]">
             <span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{badge.label}</span>
             {reading.effective_at ? (
-              <span className="t-label">since {formatGymDateNumeric(reading.effective_at)}</span>
+              <span className="t-data">since {formatGymDateNumeric(reading.effective_at)}</span>
             ) : null}
             {reading.expired_at && formatGymDateNumeric(reading.expired_at) ? (
-              <span className="t-label">expired {formatGymDateNumeric(reading.expired_at)}</span>
+              <span className="t-data">expired {formatGymDateNumeric(reading.expired_at)}</span>
             ) : null}
           </div>
           {reading.clearance === null && (
