@@ -249,24 +249,25 @@ const PERSON_OR_REQUEST = String.raw`(?:he|she|they|hes|shes|theyre|someone|some
 // one, file whatever gym words follow (reviews 10 and 11 on PR 2076).
 const STRANGER_ONE = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|men|guys|adult(?! (?:clas+|clas+es|program|programs|ses+ions?|schedule|boxing|team|section)\b))(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
 const STRANGER = String.raw`(?:${STRANGER_ONE}|people(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
-// A gym video of the child's ("my fight video") is not a picture of them.
-const STRANGER_GYM_VIDEO = String.raw`(?<!\b(?:my|our) (?:fight|fights|spar+ing|spar+|combo|combos|boxing|training|workout|bout|match|tournament|highlights?|knockout|ko|win|pad|pads|bag|form|jab|technique|progres+|gym|belt|event) )`;
+// Gym content ("jab videos", "my fight video", "a video of the drill") and
+// watching or copying someone's tutorial are not a picture of the child.
+const STRANGER_GYM_VIDEO = String.raw`(?<!\b(?:${TECHNIQUE_NOUNS}|boxing|highlights?|knockouts?|kos?|tutorials?|instructional) )`;
+const STRANGER_GYM_CONTENT = String.raw`(?! (?:(?:of|on|about|from|showing|for) )?(?:${TECHNIQUE_FILLER} ){0,3}(?:${TECHNIQUE_NOUNS}|shoulder rol+s?|everyone|everybody)\b)`;
+const STRANGER_TUTORIAL = String.raw`(?<!\b(?:watched|watching|watch|saw|se+n|se+|copied|copying|copy|found|find|fol+ow|fol+ows|fol+owed|fol+owing|like|liked|love|loved|subscribed to|subbed to) (?:a |an |some |this |that |the |one )?)`;
 // Product and upload talk about a private video setting.
-const PRIVATE_PICTURE_PRODUCT = String.raw`(?<!\b(?:ap+|site|website|page|platform|youtube|channel)(?: (?:should|could|can|will|needs? to|must))? (?:have|has|get|add|allow)(?: (?:a|an))? )(?<!\b(?:made (?:it|this|that)(?: (?:a|an|into a))?|set (?:it|this|that) to|i (?:uploaded|posted|put up|made)(?: (?:a|an|my))?|is there (?:a|an)) )`;
-const PRIVATE_PICTURE_GUARD = String.raw`(?! (?:les+ons?|ses+ions?|coaching|clas+|clas+es|cal+s?|options?|set+ings?|links?|ac+ounts?)\b)`;
+const PRIVATE_PICTURE_PRODUCT = String.raw`(?<!\b(?:ap+|site|website|page|platform|youtube|channel)(?: (?:should|could|can|will|needs? to|must))? (?:have|has|get|add|allow)(?: (?:a|an))? )(?<!\b(?:made (?:it|this|that)(?: (?:a|an|into a))?|set (?:it|this|that) to|i (?:uploaded|put up)(?: (?:a|an|my))?|is there (?:a|an)) )`;
+const PRIVATE_PICTURE_GUARD = String.raw`(?! (?:les+ons?|ses+ions?|coaching|clas+|clas+es|options?|set+ings?|links?)\b)`;
 const PICTURE_NEAR_PLACE = [
   // A private or secret picture files with any verb; asking for one, or one
   // of the child, files whatever follows.
   String.raw`(?:${ASK}|send|asks? me for|keeps? asking(?: me)? for)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}`,
   String.raw`(?:private|secret) ${ANY_PICTURE} of (?:me|you|u|us|yourself|myself)`,
-  String.raw`${PRIVATE_PICTURE_PRODUCT}\b(?:private|secret) ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
+  String.raw`\b(?:${PRIVATE_PICTURE_PRODUCT}private|secret) ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
   // A stranger online asking for a picture files whatever gym words follow;
-  // one aimed at the child, or with pressure, payment or a threat, files
-  // unless it is about a gym video.
+  // any other stranger near a picture files unless the picture is gym
+  // content or the child is watching a stranger's tutorial.
   String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging|askin|keeps? askin|beggin|keeps? beggin)${WORD}{0,4} ${ANY_PICTURE}`,
-  String.raw`${STRANGER_ONE}${WORD}{0,6}? (?:me|my|us|our)${WORD}{0,4} ${STRANGER_GYM_VIDEO}${ANY_PICTURE}\b${VIDEO_GUARD}`,
-  String.raw`${STRANGER_ONE}${WORD}{0,6}? ${ANY_PICTURE} of (?:me|us|myself)\b`,
-  String.raw`${STRANGER_ONE}${WORD}{0,4}? (?:sent|sends|sending|offered|offers|offering|pay|pays|paid|paying|money|robux|demand|demands|demanded|demanding|need|needs|buy|buys|bought|buying|get|got|leak|leaks|leaked|leaking|blackmail\w*|expos\w*|threat\w*|sell|sells|sold|selling|steal|steals|stole)${WORD}{0,4} ${ANY_PICTURE}\b${VIDEO_GUARD}`,
+  String.raw`${STRANGER_TUTORIAL}${STRANGER_ONE}${WORD}{0,8}? ${STRANGER_GYM_VIDEO}${ANY_PICTURE}\b${STRANGER_GYM_CONTENT}`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
   String.raw`(?:${ANY_PICTURE}|film|record)(?: of)? (?:me|her|him|us|them|myself|herself|himself|the (?:girls|boys|kids)|my (?:sister|brother|friends?|teammates?))(?: (?:while|whilst|when|as)(?: (?:i was|im|i am|i|she was|he was|we were|they were))?)? (?:changing|changed)(?! (?:up )?(?:my |his |her |the |our )?(?:stance|direction|levels?|angles?|gloves|wraps|weight(?: clas+)?|guard|feet|grip|partners?|pace|corners?|sides|rhythm|hands|mats|ropes|timer)(?: (?:on|in|at) (?:the |my )?(?:bag|pads|ring|mats?))?${TECHNIQUE_END})`,
