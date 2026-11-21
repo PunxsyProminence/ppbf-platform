@@ -405,11 +405,12 @@ async function seedConversation(db: Client, input: {
   if (input.flagged) {
     reviewId = (await db.query(
       `insert into pilot.shadow_human_review_queue
-         (review_id, organization_id, conversation_id, account_id, category, severity, summary, status, metadata)
+         (review_id, organization_id, conversation_id, account_id, category, severity, summary, status, metadata,
+          reviewed_by, reviewed_at)
        values (gen_random_uuid(), $1, $2, $3, 'safeguarding', 'high', 'A child may be at risk', 'resolved',
-               jsonb_build_object('assistantMessageId', $4::text))
+               jsonb_build_object('assistantMessageId', $4::text), $5, now() - interval '20 months')
        returning review_id`,
-      [input.organizationId, conversationId, input.accountId, replyId],
+      [input.organizationId, conversationId, input.accountId, replyId, ADMIN],
     )).rows[0].review_id as string;
   }
   // A disclosure's escalation, filed with the conversation's id whether or
@@ -536,6 +537,19 @@ async function replyLinks(db: Client, seeded: SeededConversation) {
     [seeded.jobId],
   )).rows[0] ?? null;
   return { feedback, learning, effectiveness, research, citations, claims, job };
+}
+
+/** Kept times are the day, not the moment: every given column is under a second into its day. */
+async function expectDayTimes(db: Client, table: string, idColumn: string, id: string, columns: string[]): Promise<void> {
+  const offsets = (await db.query(
+    `select ${columns.map((column) => `extract(epoch from ${column} - date_trunc('day', ${column})) as ${column}`).join(', ')}
+       from pilot.${table} where ${idColumn} = $1`,
+    [id],
+  )).rows[0] as Record<string, string | null>;
+  for (const column of columns) {
+    if (offsets[column] === null) continue;
+    expect([column, Number(offsets[column]) < 1]).toEqual([column, true]);
+  }
 }
 
 function expectNoNames(content: string, names: string[]): void {
@@ -990,6 +1004,13 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     const legacy = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', deletedAgo: '3 days',
     });
+    // A guardian's general chat, deleted before this change: their children and
+    // the children's other guardian are named in the reply.
+    const legacyGuardian = await seedConversation(sweepDb, {
+      organizationId: ORG, accountId: PARENT, role: 'parent', deletedAgo: '3 days',
+      userWords: 'Dana asking about the schedule.',
+      replyWords: 'Dana, Jordan trains Tuesdays; Morgan Quill can pick up. Bring water.',
+    });
     const live = await seedConversation(sweepDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     // Flagged, past two years, and no name on record: nothing can be
     // scrubbed, so the chat goes whole; its review entry stays, under a new
@@ -1040,7 +1061,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
 
     const untouched = [stillHeld, stillEscalated, live, athleteMark, athleteOwn, deletedPerson];
     const untouchedBefore = await Promise.all(untouched.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
-    const due = [expired, expiredEscalated, legacy, namelessFlagged];
+    const due = [expired, expiredEscalated, legacy, legacyGuardian, namelessFlagged];
     const dueBefore = await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
 
     // The nightly run (OD-2026-10-07-010) and a dry run count them and keep them.
@@ -1057,16 +1078,16 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       [ORG],
     );
     const nightly = await runCleanup(SWEEP_DB_NAME, 'nightly');
-    expect(nightly.member_deleted_chats_due).toBe(4);
+    expect(nightly.member_deleted_chats_due).toBe(5);
     expect(nightly.inquiries).toBe(1);
     expect(await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)))).toEqual(dueBefore);
     const dry = await runCleanup(SWEEP_DB_NAME, 'dry');
-    expect(dry.member_deleted_chats_due).toBe(4);
-    expect(dry.would_clear_member_deleted_chats).toBe(4);
+    expect(dry.member_deleted_chats_due).toBe(5);
+    expect(dry.would_clear_member_deleted_chats).toBe(5);
     expect(await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)))).toEqual(dueBefore);
 
     const applied = await runCleanup(SWEEP_DB_NAME, 'apply');
-    expect(applied.member_deleted_chats_cleared).toBe(4);
+    expect(applied.member_deleted_chats_cleared).toBe(5);
 
     await expectOldIdsGone(sweepDb, namelessFlagged);
     expect(await keptCopy(sweepDb, namelessFlagged)).toBeNull();
@@ -1077,7 +1098,23 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
         where account_id ~ '^anon_' and summary like 'Review entry;%' and conversation_id is null`,
     )).rows;
     expect(orphanReview).toHaveLength(1);
+    const orphanId = (await sweepDb.query(
+      `select review_id::text as review_id from pilot.shadow_human_review_queue
+        where account_id ~ '^anon_' and summary like 'Review entry;%' and conversation_id is null`,
+    )).rows[0].review_id as string;
+    await expectDayTimes(sweepDb, 'shadow_human_review_queue', 'review_id', orphanId,
+      ['created_at', 'reviewed_at', 'deidentified_at']);
 
+    expectNoNames((await messagesOf(sweepDb, (await keptCopy(sweepDb, legacyGuardian))!))[0].content,
+      ['Dana', 'Pike', 'Jordan', 'Morgan', 'Quill']);
+    for (const cleared of [expired, expiredEscalated, legacy, legacyGuardian]) {
+      const keptId = (await keptCopy(sweepDb, cleared))!;
+      await expectDayTimes(sweepDb, 'shadow_chat_sessions', 'conversation_id', keptId,
+        ['created_at', 'updated_at', 'deleted_at', 'deidentified_at']);
+      for (const message of await messagesOf(sweepDb, keptId)) {
+        await expectDayTimes(sweepDb, 'shadow_chat_messages', 'message_id', message.message_id, ['created_at']);
+      }
+    }
     for (const cleared of [expired, expiredEscalated, legacy]) {
       await expectOldIdsGone(sweepDb, cleared);
       const keptId = await keptCopy(sweepDb, cleared);
@@ -1106,6 +1143,8 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     expect(reviews[0].account_id).toBe((await sessionRow(sweepDb, expiredKept))?.account_id);
     expect(reviews[0].deidentified_at).not.toBeNull();
     expect(reviews[0].metadata).toEqual({});
+    await expectDayTimes(sweepDb, 'shadow_human_review_queue', 'review_id', reviews[0].review_id,
+      ['created_at', 'reviewed_at', 'deidentified_at']);
     expectNoNames(reviews[0].summary, ['other.kid']);
     expect((await sweepDb.query(`select count(*)::int as n from pilot.shadow_human_review_queue where review_id = $1`,
       [expired.reviewId])).rows[0].n).toBe(0);
