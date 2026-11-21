@@ -767,3 +767,32 @@ describe('HF12b: being told to kill yourself', () => {
     expect(scanForSafetyLanguage('he said kill yourself in the locker room').cues).toContain('crisis');
   });
 });
+
+describe('HF12b: picture requests said as pix, vid or snaps', () => {
+  test.each([
+    'send me pix',
+    'he keeps asking for pix',
+    'send me a vid',
+    'he wants vids of me',
+    'he asked me for a video',
+    'he asked me to send snaps',
+    'send him a snap',
+    'send me a vid of your body',
+    'he asked me for a video of how i look',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  // A boxing gym asks for technique videos all the time. Each guard names the
+  // gym phrase only.
+  test.each([
+    'can you send me a video of the drill',
+    'send me a vid of your jab',
+    'please send a video on footwork',
+    'send a video of how to slip',
+    'send me pics of the combo',
+    'can you send a video of my pad work',
+  ])('no grooming cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
