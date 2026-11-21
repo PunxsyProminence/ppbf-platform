@@ -27,15 +27,18 @@ jest.mock('next/link', () => ({
 }));
 
 let role: string | null = 'coach';
-const sessionCache = new Map<string, { role: string; expiresAt: number }>();
+/** A board member's cached landing seat (RoleSession.boardSeat), when a test sets one. */
+let landingSeat: string | undefined;
+const sessionCache = new Map<string, { role: string; expiresAt: number; boardSeat?: string }>();
 jest.mock('./roleSession', () => ({
   subscribeRoleSession: () => () => {},
   getRoleSessionSnapshot: () => {
     if (!role) return null;
-    let cached = sessionCache.get(role);
+    const key = `${role}:${landingSeat ?? ''}`;
+    let cached = sessionCache.get(key);
     if (!cached) {
-      cached = { role, expiresAt: 8.64e15 };
-      sessionCache.set(role, cached);
+      cached = { role, expiresAt: 8.64e15, ...(landingSeat ? { boardSeat: landingSeat } : {}) };
+      sessionCache.set(key, cached);
     }
     return cached;
   },
@@ -67,6 +70,7 @@ function groupHeadings(dialog: HTMLElement): string[] {
 
 beforeEach(() => {
   role = 'coach';
+  landingSeat = undefined;
   pathname = '/dashboard';
 });
 
@@ -136,6 +140,13 @@ describe('board seats fail closed', () => {
     fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: '' } });
     expect(offered(dialog)).toContain('/board');
     expect(offered(dialog)).not.toContain('/admin');
+  });
+
+  it('never takes the cached landing seat as a held seat (review: a stale session must not reopen a seat)', () => {
+    role = 'board';
+    landingSeat = 'treasurer';
+    const dialog = openSearch();
+    expect(offered(dialog).filter((href) => SEAT_DOOR.test(href))).toEqual([]);
   });
 
   it('under the board gate, offers only the seats the member holds', () => {
