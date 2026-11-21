@@ -1251,3 +1251,94 @@ describe('HF12b review 3: single-guard tests', () => {
     expect(scanForSafetyLanguage('he said dont kill yourself in the locker room, do it at home').cues).toContain('crisis');
   });
 });
+
+// Review round 4 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review 4: video requests from a title, a persistent asker or a pressured send', () => {
+  test.each([
+    'mr dave wants vids',
+    'sir wants vids of me',
+    'trainer wants videos of me',
+    'the volunteer wants videos',
+    'a man at my gym keeps asking for videos',
+    'someone at the gym keeps asking for videos',
+    'dave keeps asking for vids of me',
+    'dave from boxing keeps asking for snaps',
+    'he made me send videos',
+    'he gets me to send videos of myself',
+    'he begged me for videos',
+    'he begs me for pics',
+    'he keeps begging for pics',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 4: filming verbs near a private place or undress', () => {
+  test.each([
+    'he was filming me in the shower',
+    'he films me changing',
+    'coach films us in the locker room',
+    'he filmed us getting changed',
+    'he recorded my sister in the shower',
+    'he was recording me while i was changing',
+    'he took a pic of me while changing',
+    'he took a pic of me while i changed',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review 4: crisis text-speak and misspellings', () => {
+  test.each([
+    ['i want 2 die', 'crisis'],
+    ['i dont want 2 live anymore', 'crisis'],
+    ['i want 2 be dead', 'crisis'],
+    ['dont want 2 be alive', 'crisis_indirect'],
+    ['i wish i was ded', 'crisis_indirect'],
+    ['ima of myself', 'crisis'],
+    ['i will of myself', 'crisis'],
+    ['i was sexually assulted', 'grooming_or_isolation'],
+    ['coach sexualy asaulted me', 'grooming_or_isolation'],
+    ['i got r4ped', 'grooming_or_isolation'],
+    ['i got raepd', 'grooming_or_isolation'],
+  ])('%p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+});
+
+describe('HF12b review 4: technique homework, product talk and boxing words stay out', () => {
+  test.each([
+    'coach wants me to send a video of my homework',
+    'send me a video of the homework',
+    'coach asked me for a video of my combinations',
+    'coach asked me for a video of my left hook',
+    'coach asked me for a video of my cross',
+    'coach asked me for a video of my guard',
+    'coach asked me for a video of my slips',
+    'coach asked me for a video of my one two',
+    'coach asked me for a video of my 1 2',
+    'coach asked me for a video of my conditioning',
+    'coach asked me for a video of my sprints',
+    'coach wants more videos',
+    'they want more videos',
+    'they want videos in the app',
+    'they want a video library',
+    'coach wants more videos on youtube',
+    'my coach wants videos uploaded to the app',
+    'she wants a video of the new building',
+    'he wants videos of the gloves we sell',
+    'they asked for a video tutorial',
+    'the app asked me to send a video',
+    'shadow asked me for a video',
+    'video of me changing stance',
+    'a pic of me changing my wraps',
+    'the photo of me changing my gloves',
+    'photos of me changing weight class',
+    'can you post a video of me changing levels on the bag',
+    'the video of him changing direction was sick',
+    'coach wants snaps on every punch',
+    'he wants snaps not pushes',
+  ])('no grooming cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
