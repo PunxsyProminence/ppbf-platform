@@ -124,6 +124,29 @@ describe.each(['rail', 'phone'] as const)('the %s bar', (variant) => {
       expect(container.querySelectorAll('a[href="/board"]')).toHaveLength(1);
     });
 
+    it('under the board gate, draws the landing seat only when the held seats list it, and no other seat', () => {
+      // Not reachable today (the gate's provider sits inside the board pages,
+      // below this bar), but if the bar is ever mounted under it, the held seats
+      // are the truth (review round 1, NIT 1).
+      const gate = jest.requireActual('./BoardRoleGate') as typeof import('./BoardRoleGate');
+      const seats = jest.spyOn(gate, 'useBoardSession');
+      seats.mockReturnValue({ seats: ['chair', 'treasurer'] } as never);
+      signIn('board', { boardSeat: 'chair' });
+      const held = render(<JobBar variant={variant} />);
+      let hrefs = everyHref(held.container).map(pathOf);
+      expect(hrefs).toContain('/board/chair');
+      expect(hrefs).not.toContain('/board/treasurer');
+      cleanup();
+
+      seats.mockReturnValue({ seats: ['treasurer'] } as never);
+      signIn('board', { boardSeat: 'chair' });
+      const stale = render(<JobBar variant={variant} />);
+      hrefs = everyHref(stale.container).map(pathOf);
+      expect(hrefs).not.toContain('/board/chair');
+      expect(hrefs).not.toContain('/board/treasurer');
+      expect(hrefs).toContain('/board');
+    });
+
     it('lists Aggregates, Escalations and Compliance', () => {
       signIn('board');
       const { container } = render(<JobBar variant={variant} />);
