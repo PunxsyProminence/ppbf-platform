@@ -253,7 +253,7 @@ const STRANGER = String.raw`(?:${STRANGER_ONE}|people(?: [a-z]+){0,2} (?:online|
 // watching or copying someone's tutorial are not a picture of the child.
 // Gym and product words excuse a picture only when nothing personal or
 // harmful follows them in the message.
-const NEUTRAL_TAIL = String.raw`(?:(?! (?:me|he|hes|him|his|himself|she|shes|her|hers|they|theyre|them|alone|secret|nobody|dont tell|not tell|weird|pretty|body|mine)\b) [a-z0-9]+){0,5}$`;
+const NEUTRAL_TAIL = String.raw`(?:(?! (?:me|he|hes|him|his|himself|she|shes|her|hers|they|theyre|them|alone|secret|nobody|dont tell|not to tell|weird|pretty|body|mine)\b) [a-z0-9]+){0,5}$`;
 const STRANGER_GYM_WORDS = String.raw`${TECHNIQUE_NOUNS}|boxing|highlights?|knockouts?|kos?|tutorials?|instructional`;
 const STRANGER_PICTURE = String.raw`(?:(?<!\b(?:${STRANGER_GYM_WORDS}) )${ANY_PICTURE}\b|(?<=\b(?:${STRANGER_GYM_WORDS}) )${ANY_PICTURE}\b(?!${NEUTRAL_TAIL}))`;
 const STRANGER_GYM_CONTENT = String.raw`(?! (?:(?:of|on|about|from|showing|for) )?(?:(?!(?:his|her|their)\b)${TECHNIQUE_FILLER} ){0,3}(?:${TECHNIQUE_NOUNS}|shoulder rol+s?|everyone|everybody)\b${NEUTRAL_TAIL})`;
@@ -265,7 +265,7 @@ const PRIVATE_PICTURE_GUARD = String.raw`(?! (?:les+ons?|ses+ions?|coaching|clas
 const PICTURE_NEAR_PLACE = [
   // A private or secret picture files with any verb; asking for one, or one
   // of the child, files whatever follows.
-  String.raw`(?:${ASK}|send|asks? me for|keeps? asking(?: me)? for)${WORD}{0,5} (?:private|secret) ${ANY_PICTURE}`,
+  String.raw`(?:${ASK}|send|asks? me for|keeps? asking(?: me)? for)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}`,
   String.raw`(?:private|secret) ${ANY_PICTURE} of (?:me|you|u|us|yourself|myself)`,
   String.raw`\b${PRIVATE_PICTURE_PRODUCT}private ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
   String.raw`\bsecret ${ANY_PICTURE}\b${VIDEO_GUARD}`,
