@@ -278,7 +278,7 @@ function ScoutReportView() {
           <div className="mt-[var(--s5)] flex flex-wrap items-center justify-center gap-[var(--s3)]">
             <Link href="/shadow" className="btn btn--ghost">SHADOW</Link>
             {userRole === 'platform_owner' ? (
-              <Link href="/admin/platform" className="btn btn--ghost">Platform Desk</Link>
+              <Link href="/admin/platform" className="btn btn--ghost">Omega</Link>
             ) : null}
           </div>
         </div>

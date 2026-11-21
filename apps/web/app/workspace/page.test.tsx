@@ -83,14 +83,47 @@ afterEach(() => {
   jest.clearAllMocks();
 });
 
-it('shows the signed-in identity and organization from the server session', async () => {
+/** The session has been read: the heading names the role. */
+async function sessionRead() {
+  await screen.findByRole('heading', { level: 1, name: 'Volunteer Workspace' });
+}
+
+/*
+ * Lane AS-10, AS10-6a (app scrub OFF-18; Overwatch Q14 A on #2018): the page
+ * showed the raw account id and organization id. It now shows the role in
+ * words and no id, anywhere in the page (text or attribute). No server change:
+ * the session route still sends both ids; the page does not print them.
+ */
+it('shows the role in words and neither raw id from the session', async () => {
   global.fetch = fetchMock() as unknown as typeof fetch;
 
-  render(<WorkspacePage />);
+  const { container } = render(<WorkspacePage />);
+  await sessionRead();
 
-  await waitFor(() => expect(screen.getByText('vol@example.com')).toBeTruthy());
-  expect(screen.getByText('ppbf-default-org')).toBeTruthy();
-  expect(screen.getAllByText('Volunteer').length).toBeGreaterThan(0);
+  const account = screen.getByRole('heading', { level: 2, name: 'Your Account' }).closest('section') as HTMLElement;
+  expect(account.querySelector('dt')?.textContent).toBe('Role');
+  expect(account.querySelector('dd')?.textContent).toBe('Volunteer');
+  expect(container.innerHTML).not.toContain('vol@example.com');
+  expect(container.innerHTML).not.toContain('ppbf-default-org');
+  expect(screen.queryByText('Signed in as')).toBeNull();
+  expect(screen.queryByText('Organization')).toBeNull();
+});
+
+/*
+ * The two named removals (Q14 A): the page's own "SHADOW Chat" card (the
+ * SHADOW chat button in the header stays) and its own Sign out (the site
+ * header's Logout stays, GlobalRoleHeader).
+ */
+it('has no SHADOW Chat card and no Sign out of its own; the SHADOW chat button stays', async () => {
+  global.fetch = fetchMock() as unknown as typeof fetch;
+
+  const { container } = render(<WorkspacePage />);
+  await sessionRead();
+
+  expect(screen.queryByRole('heading', { level: 3, name: 'SHADOW Chat' })).toBeNull();
+  expect(container.querySelector('a[href="/shadow"]')).toBeNull();
+  expect(screen.getByText('shadow chat button')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /sign out/i })).toBeNull();
 });
 
 it('lists the organization gym notices the role can read', async () => {
@@ -126,11 +159,11 @@ it('links only to surfaces a staff or volunteer session is authorized for', asyn
   global.fetch = fetchMock() as unknown as typeof fetch;
 
   const { container } = render(<WorkspacePage />);
-  await waitFor(() => expect(screen.getByText('vol@example.com')).toBeTruthy());
+  await sessionRead();
 
   const hrefs = [...container.querySelectorAll('a')].map((anchor) => anchor.getAttribute('href') ?? '');
 
-  expect(hrefs).toContain('/shadow');
+  expect(hrefs).toContain('/research/chat');
   expect(hrefs.length).toBeGreaterThan(0);
   for (const href of hrefs.filter((h) => !ADMITS_STAFF.includes(h))) {
     for (const prefix of FORBIDDEN_HREF_PREFIXES) {
@@ -147,7 +180,7 @@ const ADMITS_STAFF = ['/coach/credentials', '/coach/development'];
 it.each(ADMITS_STAFF)('links %s, whose own gate admits staff and volunteers', async (href) => {
   global.fetch = fetchMock() as unknown as typeof fetch;
   const { container } = render(<WorkspacePage />);
-  await waitFor(() => expect(screen.getByText('vol@example.com')).toBeTruthy());
+  await sessionRead();
   expect(container.querySelector(`a[href="${href}"]`)).toBeTruthy();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('node:fs') as typeof import('node:fs');

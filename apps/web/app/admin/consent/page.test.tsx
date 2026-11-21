@@ -397,7 +397,8 @@ it('no longer offers "Photo and media" as something to record, and says where it
   expect(offered).toEqual(['general', 'medical_release', 'travel']);
   expect(offered).not.toContain('photo_media');
 
-  const pointer = screen.getByRole('link', { name: 'Guardian Media Consent desk' });
+  // Named by its page's title (lane AS-10, AS10-6a, OFF-15).
+  const pointer = screen.getByRole('link', { name: 'Media Consent Audit' });
   expect(pointer.getAttribute('href')).toBe('/admin/athlete-consent');
 });
 
@@ -408,5 +409,7 @@ it('still names an old photo_media row in the register, marked as not counted', 
 
   expect(await screen.findByText('Photo and media')).toBeTruthy();
   expect(screen.getByText(/not counted/)).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'consent desk' }).getAttribute('href')).toBe('/admin/athlete-consent');
+  // The row's own pointer (the form's pointer above carries the same words).
+  const note = screen.getByText(/not counted/).closest('span') as HTMLElement;
+  expect(within(note).getByRole('link', { name: 'Media Consent Audit' }).getAttribute('href')).toBe('/admin/athlete-consent');
 });

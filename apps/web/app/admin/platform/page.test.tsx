@@ -695,3 +695,14 @@ describe('a suppressed figure on the gym summary', () => {
     expect(screen.queryByText('Too few athletes to show')).toBeNull();
   });
 });
+
+// AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): the link to the new-gym wizard
+// reads that page's title.
+describe('the link to the new-gym wizard', () => {
+  test('reads "Get Your Gym Online", the title of /admin/organizations', async () => {
+    mountDesk();
+    const link = await screen.findByRole('link', { name: 'Get Your Gym Online' });
+    expect(link).toHaveAttribute('href', '/admin/organizations');
+    expect(screen.queryByText('Onboard A New Gym')).toBeNull();
+  });
+});
