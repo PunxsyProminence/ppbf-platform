@@ -754,21 +754,23 @@ h6 {
 
 .job-bar__cell {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   width: 100%;
   min-height: var(--tap);
-  padding: var(--s1) var(--s1);
+  padding: var(--s1) 2px;
   border: 0;
   background: transparent;
   color: var(--bone-200);
   font-family: var(--font-ui);
-  font-size: var(--t-xs);
+  /* 15px from about 405px wide; on a narrower phone it steps down so a word
+     ("Athletes" in a sixth of 360px) fits whole rather than breaking. */
+  font-size: clamp(var(--t-xs), 3.7vw, var(--t-sm));
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.15;
   text-align: center;
   text-decoration: none;
-  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -787,7 +789,9 @@ h6 {
 }
 
 .job-bar--phone .job-bar__caret {
-  margin-left: 2px;
+  margin-left: 0;
+  font-size: var(--t-xs);
+  line-height: 1;
 }
 
 .job-bar--phone .job-bar__sheet {
@@ -841,7 +845,7 @@ h6 {
   background: rgba(12, 9, 6, .55);
   color: var(--bone-200);
   font-family: var(--font-ui);
-  font-size: var(--t-sm);
+  font-size: var(--t-md);
   text-decoration: none;
 }
 

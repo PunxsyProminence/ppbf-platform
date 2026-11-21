@@ -13,7 +13,7 @@ import type { ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { usePathname } from 'next/navigation';
 
-import JobBar, { PARENT_HUB_TAB_LABEL } from './JobBar';
+import JobBar, { PARENT_HUB_OPENS_TAB, PARENT_HUB_TAB_LABEL } from './JobBar';
 import * as buildingMap from './buildingMap';
 import { JOB_BARS } from './jobBars';
 import { getRoleSessionSnapshot } from './roleSession';
@@ -180,16 +180,29 @@ describe.each(['rail', 'phone'] as const)('the %s bar', (variant) => {
     expect(container.querySelector('nav')).toBeNull();
   });
 
-  it('names each page by its door label, and a Parent Hub tab by the tab', () => {
+  it('names each page by its door label', () => {
     signIn('parent');
-    const { container } = render(<JobBar variant={variant} />);
+    render(<JobBar variant={variant} />);
     fireEvent.click(screen.getByRole('button', { name: /^Safety/ }));
     expect(screen.getByRole('link', { name: 'Safety Status' }).getAttribute('href')).toBe('/parent/safety');
-    fireEvent.click(screen.getByRole('button', { name: /^Messages/ }));
-    const messages = screen.getByRole('link', { name: /Messages/ });
-    expect(messages.getAttribute('href')).toBe('/parent/dashboard?tab=messages');
-    expect(messages.textContent).toMatch(/Parent Hub/);
-    expect(container.querySelectorAll('[role="list"], ul').length).toBeGreaterThan(0);
+  });
+
+  it('draws no Parent Hub tab item until Parent Hub opens a tab from the address (4e)', () => {
+    // A tab link would open the hub on Overview, and on the hub do nothing
+    // (layout review round 1, BLOCKER). Home is Parent Hub, which has every tab.
+    expect(PARENT_HUB_OPENS_TAB).toBe(false);
+    signIn('parent');
+    const { container } = render(<JobBar variant={variant} />);
+    const hrefs = everyHref(container);
+    expect(hrefs.some((href) => href.includes('?tab='))).toBe(false);
+    expect(hrefs.filter((href) => href === '/parent/dashboard')).toHaveLength(1);
+    // Messages is all tabs, so it waits for 4e; This week keeps Schedule as one link.
+    const nav = screen.getByRole('navigation', { name: 'Your jobs' });
+    expect(within(nav).queryByText('Messages')).toBeNull();
+    expect(screen.getByRole('link', { name: 'This week' }).getAttribute('href')).toBe('/schedule');
+    fireEvent.click(screen.getByRole('button', { name: /^Progress/ }));
+    expect(screen.getByRole('link', { name: 'Progress Visibility' })).toBeTruthy();
+    expect(screen.queryByText(/Parent Hub tab/)).toBeNull();
   });
 
   it('makes a one-page section a plain link and a longer one a sheet', () => {

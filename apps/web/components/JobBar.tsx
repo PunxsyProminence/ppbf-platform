@@ -60,7 +60,19 @@ export const PARENT_HUB_TAB_LABEL: Readonly<Record<string, string>> = {
   shadow: 'SHADOW Intel',
 };
 
+/**
+ * Whether Parent Hub opens a tab from the address (`?tab=`). It does not yet:
+ * AS-4's 4e adds that (useTabParam). Until then a tab item would name a place
+ * its link does not take you to, and on the hub itself would do nothing (layout
+ * review round 1, BLOCKER), so tab items are not drawn; a section of nothing
+ * but tabs (the parent's Messages) waits with them. Parent Hub, the parent's
+ * Home, still has every tab. 4e sets this to true.
+ */
+export const PARENT_HUB_OPENS_TAB = false;
+
 const DOOR_LABEL = new Map(BUILDING.map((door) => [door.href, door.label]));
+
+const drawable = (item: JobItem): boolean => PARENT_HUB_OPENS_TAB || !item.tab;
 
 function itemHref(item: JobItem): string {
   return item.tab ? `${item.href}?tab=${encodeURIComponent(item.tab)}` : item.href;
@@ -99,8 +111,9 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
   const sections = useMemo<DrawnSection[]>(() => {
     const bar = jobBarFor(role, { boardSeat: landingSeat, boardSeats: heldSeats });
     if (!bar) return [];
-    const all: JobSection[] = [...bar.sections];
-    if (bar.more.length > 0) all.push({ label: 'More', items: bar.more });
+    const all: JobSection[] = [...bar.sections, { label: 'More', items: bar.more }]
+      .map((section) => ({ label: section.label, items: section.items.filter(drawable) }))
+      .filter((section) => section.items.length > 0);
     // A section that only repeats an earlier one is drawn once: a board member
     // with no confirmed seat has Board Hub as both Home and "Board hub".
     const seen = new Set<string>();
@@ -155,6 +168,30 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
     };
   }, [openIndex, close]);
 
+  /* THE SHEET FITS THE SCREEN (layout review round 1). Measured once when it
+     opens: a rail sheet is moved left as far as it would run past the right
+     edge (a 768px tablet), and either sheet is cut to the room it actually has
+     -- below the screen's bottom for the rail (a landscape phone), above the
+     sticky session bar for the phone sheet (a short phone) -- and scrolls. */
+  const fitSheet = useCallback(
+    (sheet: HTMLDivElement | null) => {
+      if (!sheet || typeof window === 'undefined') return;
+      const gap = 8;
+      const box = sheet.getBoundingClientRect();
+      if (box.width === 0 && box.height === 0) return; // not laid out (jsdom)
+      if (variant === 'rail') {
+        const overflow = box.right - (window.innerWidth - gap);
+        if (overflow > 0) sheet.style.left = `${-Math.min(overflow, box.left - gap)}px`;
+        sheet.style.maxHeight = `${Math.max(120, window.innerHeight - box.top - gap)}px`;
+      } else {
+        const header = document.querySelector('header');
+        const headerBottom = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+        sheet.style.maxHeight = `${Math.max(120, box.bottom - headerBottom - gap)}px`;
+      }
+    },
+    [variant],
+  );
+
   const isWallRoute = pathname === '/wall' || pathname.startsWith('/wall/');
   if (!session || pathname === '/login' || isWallRoute || isRefusalSurface(role, pathname)) return null;
   if (sections.length === 0) return null;
@@ -200,7 +237,7 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
                   <span className="job-bar__caret" aria-hidden="true">{expanded ? '▴' : '▾'}</span>
                 </button>
                 {expanded ? (
-                  <div id={sheetId} className="job-bar__sheet">
+                  <div id={sheetId} ref={fitSheet} className="job-bar__sheet">
                     <p className="job-bar__sheet-head">{section.label}</p>
                     <ul className="job-bar__list">
                       {section.items.map((item) => {
