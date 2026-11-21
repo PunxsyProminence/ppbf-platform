@@ -2162,6 +2162,7 @@ describe('HF12b fifth delta review (81ed7ee..6e572aa): blocking findings', () =>
     'my private video on youtube got stolen',
     'private video option doesnt work my video got leaked',
     'i uploaded a private video to the app and now everyone saw it',
+    'a stranger sent me workout pics',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
@@ -2173,6 +2174,9 @@ describe('HF12b fifth delta review (81ed7ee..6e572aa): blocking findings', () =>
     'my mom bought the tournament photos from a guy online',
     'i paid for the tournament photos and a guy online said they look great',
     'coach is buying a camera from a guy online',
+    'coach showed us a video by a guy online',
+    'my brother showed me a video from a guy online',
+    'my dad sent me a video of a guy online doing pads',
   ])('everyday talk stays out: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
