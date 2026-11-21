@@ -19,6 +19,7 @@ import {
 // against `ls`, the cited source, here.
 const SERVABLE_CITED_SOURCE_SQL = SERVABLE_LIBRARY_SOURCE_SQL.replace(/\bs\./g, 'ls.');
 import { isMinor } from './wallDisplay';
+import { clearMemberConversations } from './shadowConversationDeidentify';
 
 export type ShadowConversationSessionType =
   | 'quick_round'
@@ -781,22 +782,45 @@ export async function renameConversation(
   return Boolean(rows[0]);
 }
 
-export async function softDeleteConversation(
+/**
+ * The Delete beside one of the member's own chats.
+ *
+ * It used to set deleted_at and nothing else, and nothing ever removed the
+ * rows, while the member was told the chat was deleted. Now, in one
+ * transaction, a chat no safeguarding review points at is cleared at once --
+ * what the member typed deleted, SHADOW's replies kept under a token with
+ * their names scrubbed -- and a flagged one is hidden from them and kept as
+ * it is for two years (shadowConversationDeidentify.ts says what each step
+ * is and which ruling it follows).
+ *
+ * Only the caller's own chat, in the caller's gym, still on their list: the
+ * session row is locked first, so a turn appended at the same moment either
+ * lands before (and is cleared with the rest) or finds the chat gone.
+ */
+export async function deleteOwnConversation(
   actor: ActorIdentity,
   conversationId: string,
 ): Promise<boolean> {
   requireTenantOwner(actor);
-  const rows = await query<{ conversation_id: string }>(
-    `update pilot.shadow_chat_sessions
-     set deleted_at = now(), updated_at = now()
-     where conversation_id = $1
-       and organization_id = $2
-       and account_id = $3
-       and deleted_at is null
-     returning conversation_id`,
-    [conversationId, actor.organizationId, actor.accountId],
-  );
-  return Boolean(rows[0]);
+  return withTransaction(async (client) => {
+    const owned = await client.query<{ conversation_id: string }>(
+      `select conversation_id
+       from pilot.shadow_chat_sessions
+       where conversation_id = $1
+         and organization_id = $2
+         and account_id = $3
+         and deleted_at is null
+       for update`,
+      [conversationId, actor.organizationId, actor.accountId],
+    );
+    if (!owned.rows[0]) return false;
+    await clearMemberConversations(client, {
+      organizationId: actor.organizationId,
+      accountId: actor.accountId,
+      conversationIds: [conversationId],
+    });
+    return true;
+  });
 }
 
 /**
@@ -920,13 +944,15 @@ export async function requestOwnShadowDataDeletion(
  * letter it replaces, because a dead letter at least does not claim to have
  * been answered. So completion PERFORMS the deletion and records what it did.
  *
- * SOFT, matching the delete control a person already has beside each of their
- * own conversations (softDeleteConversation). deleted_at is what every read
- * path filters on, so the history stops existing for every reader immediately;
- * purgeExpiredShadowChatData removes the rows for good once the retention
- * window passes. Nothing here needs new destructive code, and on a platform
- * where a chat may turn out to be a safeguarding record, the deletion a child
- * asks for should not outrun the retention policy the gym agreed to.
+ * THE SAME AS THE DELETE BESIDE EACH CHAT (deleteOwnConversation), for every
+ * chat on the account in this gym, the ones the member already deleted
+ * included: a chat no safeguarding review points at is cleared now (their
+ * words deleted, SHADOW's replies kept under a token with their names
+ * scrubbed); a flagged one is hidden and kept as it is, and the retention
+ * script clears it two years after its deletion (Jason: "Delete theirs, keep
+ * AI replies", "Keep until retention ends", "2 years after deletion";
+ * shadowConversationDeidentify.ts). The count of each comes back, so neither
+ * the admin nor the member is told more was cleared than was.
  *
  * SCOPE IS CONVERSATION HISTORY, AND IT SAYS SO. Memory corrections
  * (pilot.shadow_chat_memory_corrections) are NOT cleared. They are a person's
@@ -946,8 +972,10 @@ export interface ShadowDataDeletionRequest {
   requestedAt: string;
   completedAt: string | null;
   processedBy: string | null;
-  /** How many conversations the request would clear, counted at read time. */
+  /** How many conversations the request would clear now, counted at read time. */
   conversationsPending: number;
+  /** How many it would keep, flagged into a safeguarding review, counted at read time. */
+  conversationsHeld: number;
 }
 
 function requireOrganizationAdmin(actor: ActorIdentity): void {
@@ -979,7 +1007,11 @@ export async function listShadowDataDeletionRequests(
     completed_at: Date | null;
     processed_by: string | null;
     conversations_pending: number;
+    conversations_held: number;
   }>(
+    /* Every chat still under the account, the ones the member already
+       deleted included: completing the request clears those too. A chat a
+       review entry points at is counted apart, because it is kept. */
     `select r.request_id,
             r.account_id,
             r.status,
@@ -991,8 +1023,17 @@ export async function listShadowDataDeletionRequests(
               from pilot.shadow_chat_sessions s
               where s.organization_id = r.organization_id
                 and s.account_id = r.account_id
-                and s.deleted_at is null
-            ) as conversations_pending
+                and not exists (select 1 from pilot.shadow_human_review_queue q
+                                 where q.conversation_id = s.conversation_id)
+            ) as conversations_pending,
+            (
+              select count(*)::int
+              from pilot.shadow_chat_sessions s
+              where s.organization_id = r.organization_id
+                and s.account_id = r.account_id
+                and exists (select 1 from pilot.shadow_human_review_queue q
+                             where q.conversation_id = s.conversation_id)
+            ) as conversations_held
        from pilot.shadow_data_deletion_requests r
       where r.organization_id = $1
         and ($2::text is null or r.status = $2)
@@ -1008,23 +1049,26 @@ export async function listShadowDataDeletionRequests(
     completedAt: row.completed_at ? row.completed_at.toISOString() : null,
     processedBy: row.processed_by,
     conversationsPending: row.conversations_pending,
+    conversationsHeld: row.conversations_held,
   }));
 }
 
 export interface ShadowDataDeletionOutcome {
   requestId: string;
   status: ShadowDataDeletionRequestStatus;
-  /** Conversations actually soft-deleted by this call. Zero is a real answer. */
+  /** Conversations this call cleared. Zero is a real answer. */
   conversationsCleared: number;
+  /** Conversations this call kept, flagged into a safeguarding review. */
+  conversationsHeld: number;
 }
 
 /**
  * Fulfil a request: clear the conversations, then record that it happened.
  *
- * In that order, in one transaction. Marking the row first and deleting after
- * would leave a 'completed' request standing over conversations that are still
- * there if the second statement fails -- and a data-deletion record that is
- * wrong in that direction is the one that matters.
+ * In one transaction. A 'completed' request standing over conversations that
+ * are still there, because the clearing failed after the mark, is the wrong
+ * direction for a data-deletion record to be wrong in; here either both
+ * happen or neither does.
  *
  * The status guard is part of the UPDATE, not a read-then-write: two admins
  * working the same queue would otherwise both pass a check and both clear,
@@ -1051,20 +1095,26 @@ export async function completeShadowDataDeletionRequest(
     const accountId = claimed.rows[0]?.account_id;
     if (!accountId) throw new Error('SHADOW_DELETION_REQUEST_NOT_ACTIONABLE');
 
-    const cleared = await client.query<{ conversation_id: string }>(
-      `update pilot.shadow_chat_sessions
-          set deleted_at = now(), updated_at = now()
+    // The account the CLAIMED ROW names, in the admin's own gym; never
+    // anything the caller passed.
+    const owned = await client.query<{ conversation_id: string }>(
+      `select conversation_id
+         from pilot.shadow_chat_sessions
         where organization_id = $1
-          and account_id = $2
-          and deleted_at is null
-      returning conversation_id`,
+          and account_id = $2`,
       [actor.organizationId, accountId],
     );
+    const outcome = await clearMemberConversations(client, {
+      organizationId: actor.organizationId,
+      accountId,
+      conversationIds: owned.rows.map((row) => row.conversation_id),
+    });
 
     return {
       requestId,
       status: 'completed' as const,
-      conversationsCleared: cleared.rows.length,
+      conversationsCleared: outcome.cleared,
+      conversationsHeld: outcome.held,
     };
   });
 }
@@ -1094,7 +1144,7 @@ export async function denyShadowDataDeletionRequest(
     [requestId, actor.organizationId, actor.accountId],
   );
   if (!rows[0]) throw new Error('SHADOW_DELETION_REQUEST_NOT_ACTIONABLE');
-  return { requestId, status: 'denied', conversationsCleared: 0 };
+  return { requestId, status: 'denied', conversationsCleared: 0, conversationsHeld: 0 };
 }
 
 /**
@@ -1136,6 +1186,7 @@ export async function getOwnShadowDataDeletionRequest(
        handled it is, and the status carries that. */
     processedBy: null,
     conversationsPending: 0,
+    conversationsHeld: 0,
   };
 }
 
@@ -1462,22 +1513,4 @@ export async function updateHumanReview(input: {
     [input.status, input.reviewerId, input.reviewId, input.organizationId],
   );
   return Boolean(rows[0]);
-}
-
-export async function purgeExpiredShadowChatData(input: {
-  retentionDays: number;
-  confirmed: boolean;
-}): Promise<number> {
-  if (!input.confirmed) return 0;
-  if (!Number.isSafeInteger(input.retentionDays) || input.retentionDays < 1 || input.retentionDays > 3_650) {
-    throw new Error('Invalid SHADOW retention period');
-  }
-  const rows = await query<{ conversation_id: string }>(
-    `delete from pilot.shadow_chat_sessions
-     where deleted_at is not null
-       and deleted_at < now() - ($1 * interval '1 day')
-     returning conversation_id`,
-    [input.retentionDays],
-  );
-  return rows.length;
 }

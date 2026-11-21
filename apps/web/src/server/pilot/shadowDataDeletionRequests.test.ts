@@ -1,4 +1,5 @@
 import { query, withTransaction } from './db';
+import { clearMemberConversations } from './shadowConversationDeidentify';
 import {
   completeShadowDataDeletionRequest,
   denyShadowDataDeletionRequest,
@@ -20,9 +21,14 @@ import {
  * a green tick on a child's data request. It can let two admins each report a
  * deletion when only one happened. It can leak one gym's requests to another.
  * Or it can quietly claim to have erased more than it did.
+ *
+ * What clearing a chat does to its rows is proved on real Postgres in
+ * shadowConversationDeletion.pg.test.ts; here the clearing step is a stub, and
+ * these cases pin what reaches it and in what order.
  */
 
 jest.mock('./db', () => ({ query: jest.fn(), withTransaction: jest.fn() }));
+jest.mock('./shadowConversationDeidentify', () => ({ clearMemberConversations: jest.fn() }));
 jest.mock('./access', () => ({
   assertActorCanAccessAthlete: jest.fn(),
   isOrganizationAdminRole: (role: string) => role === 'organization_admin' || role === 'admin',
@@ -30,6 +36,7 @@ jest.mock('./access', () => ({
 
 const mockQuery = query as jest.MockedFunction<typeof query>;
 const mockWithTransaction = withTransaction as jest.MockedFunction<typeof withTransaction>;
+const mockClear = jest.mocked(clearMemberConversations);
 
 const admin = {
   accountId: 'admin-1',
@@ -52,8 +59,11 @@ let transactionCalls: Array<{ sql: string; params: readonly unknown[] }>;
  */
 function installTransaction(answers: {
   claimedAccountId?: string | null;
-  clearedConversationIds?: readonly string[];
+  ownedConversationIds?: readonly string[];
+  cleared?: number;
+  held?: number;
 }): void {
+  mockClear.mockResolvedValue({ cleared: answers.cleared ?? 0, held: answers.held ?? 0 });
   transactionCalls = [];
   mockWithTransaction.mockImplementation((async (fn: (client: unknown) => Promise<unknown>) => {
     const client = {
@@ -66,9 +76,9 @@ function installTransaction(answers: {
               : [],
           };
         }
-        if (sql.includes('update pilot.shadow_chat_sessions')) {
+        if (sql.includes('from pilot.shadow_chat_sessions')) {
           return {
-            rows: (answers.clearedConversationIds ?? []).map((id) => ({ conversation_id: id })),
+            rows: (answers.ownedConversationIds ?? []).map((id) => ({ conversation_id: id })),
           };
         }
         throw new Error(`Unexpected transaction query: ${sql}`);
@@ -120,7 +130,13 @@ describe('the queue', () => {
     // changes while a request sits -- the person can delete conversations
     // themselves, and can start new ones.
     expect(String(sql)).toContain('count(*)::int');
-    expect(String(sql)).toContain('s.deleted_at is null');
+    // Every chat still under the account counts, the ones the member already
+    // deleted included (completing clears those too); a flagged one counts
+    // as held, apart.
+    expect(String(sql)).not.toContain('s.deleted_at is null');
+    expect(String(sql)).toContain('as conversations_pending');
+    expect(String(sql)).toContain('as conversations_held');
+    expect(String(sql)).toContain('pilot.shadow_human_review_queue');
   });
 
   it('passes a status filter through as a parameter rather than into the SQL', async () => {
@@ -140,6 +156,7 @@ describe('the queue', () => {
       completed_at: null,
       processed_by: null,
       conversations_pending: 11,
+      conversations_held: 1,
     }] as never);
 
     const [item] = await listShadowDataDeletionRequests(admin);
@@ -150,15 +167,13 @@ describe('the queue', () => {
     expect(item.completedAt).toBeNull();
     expect(item.processedBy).toBeNull();
     expect(item.conversationsPending).toBe(11);
+    expect(item.conversationsHeld).toBe(1);
   });
 });
 
 describe('completing a request deletes, and then records that it deleted', () => {
-  it('clears the requester\'s conversations and reports how many', async () => {
-    installTransaction({
-      claimedAccountId: 'acct-child',
-      clearedConversationIds: ['c1', 'c2', 'c3'],
-    });
+  it('clears the requester\'s conversations and reports how many were cleared and how many held', async () => {
+    installTransaction({ claimedAccountId: 'acct-child', ownedConversationIds: ['c1', 'c2', 'c3', 'c4'], cleared: 3, held: 1 });
 
     const outcome = await completeShadowDataDeletionRequest(admin, 'req-1');
 
@@ -166,43 +181,44 @@ describe('completing a request deletes, and then records that it deleted', () =>
       requestId: 'req-1',
       status: 'completed',
       conversationsCleared: 3,
+      conversationsHeld: 1,
     });
   });
 
-  it('actually runs the delete rather than only marking the row', async () => {
+  it('actually runs the clearing rather than only marking the row', async () => {
     // THE CASE THIS FILE EXISTS FOR. An admin marking a row 'completed' with
     // nothing deleted is worse than the dead letter it replaces: a dead letter
     // does not claim to have been answered.
-    installTransaction({ claimedAccountId: 'acct-child', clearedConversationIds: ['c1'] });
+    installTransaction({ claimedAccountId: 'acct-child', ownedConversationIds: ['c1', 'c2'], cleared: 2 });
 
     await completeShadowDataDeletionRequest(admin, 'req-1');
 
-    const deleteCall = transactionCalls.find((call) =>
-      call.sql.includes('update pilot.shadow_chat_sessions'));
-    expect(deleteCall).toBeDefined();
-    expect(deleteCall?.sql).toContain('set deleted_at = now()');
-    // Scoped to the account the CLAIMED ROW named, never to anything the
-    // caller passed in. A request id is the only thing this route accepts.
-    expect(deleteCall?.params).toEqual(['org-a', 'acct-child']);
+    // Scoped to the account the CLAIMED ROW named, in the admin's gym, never
+    // to anything the caller passed in. A request id is the only thing this
+    // route accepts.
+    const owned = transactionCalls.find((call) => call.sql.includes('from pilot.shadow_chat_sessions'));
+    expect(owned?.params).toEqual(['org-a', 'acct-child']);
+    expect(mockClear).toHaveBeenCalledTimes(1);
+    expect(mockClear.mock.calls[0][1]).toEqual({
+      organizationId: 'org-a',
+      accountId: 'acct-child',
+      conversationIds: ['c1', 'c2'],
+    });
   });
 
-  it('deletes softly, matching the control a person already has on their own sessions', async () => {
-    // deleted_at is what every read path filters on, and
-    // purgeExpiredShadowChatData removes the rows for good once the retention
-    // window passes. A hard delete here would outrun the retention policy the
-    // gym agreed to, on a platform where a chat may turn out to be a
-    // safeguarding record.
-    installTransaction({ claimedAccountId: 'acct-child', clearedConversationIds: [] });
+  it('hands over every chat on the account, the ones the member already deleted included', async () => {
+    // A delete used to only hide a chat. Completing the request is what
+    // clears the ones hidden that way too.
+    installTransaction({ claimedAccountId: 'acct-child', ownedConversationIds: [] });
 
     await completeShadowDataDeletionRequest(admin, 'req-1');
 
-    const deleteCall = transactionCalls.find((call) =>
-      call.sql.includes('pilot.shadow_chat_sessions'));
-    expect(deleteCall?.sql).not.toMatch(/delete\s+from/i);
+    const owned = transactionCalls.find((call) => call.sql.includes('from pilot.shadow_chat_sessions'));
+    expect(owned?.sql).not.toContain('deleted_at');
   });
 
   it('claims the row in the UPDATE itself, so two admins cannot both clear it', async () => {
-    installTransaction({ claimedAccountId: 'acct-child', clearedConversationIds: ['c1'] });
+    installTransaction({ claimedAccountId: 'acct-child', ownedConversationIds: ['c1'], cleared: 1 });
 
     await completeShadowDataDeletionRequest(admin, 'req-1');
 
@@ -223,18 +239,19 @@ describe('completing a request deletes, and then records that it deleted', () =>
     );
     // Nothing was cleared. A no-op claim that went on to delete anyway would
     // erase a person's history off a request that was already denied.
-    expect(transactionCalls.some((call) =>
-      call.sql.includes('update pilot.shadow_chat_sessions'))).toBe(false);
+    expect(transactionCalls.some((call) => call.sql.includes('pilot.shadow_chat_sessions'))).toBe(false);
+    expect(mockClear).not.toHaveBeenCalled();
   });
 
   it('reports zero cleared as zero rather than as a failure', async () => {
     // A person who deleted everything themselves before the admin got to it
     // has had their request honoured. Zero is a real answer.
-    installTransaction({ claimedAccountId: 'acct-child', clearedConversationIds: [] });
+    installTransaction({ claimedAccountId: 'acct-child', ownedConversationIds: [] });
 
     const outcome = await completeShadowDataDeletionRequest(admin, 'req-1');
 
     expect(outcome.conversationsCleared).toBe(0);
+    expect(outcome.conversationsHeld).toBe(0);
     expect(outcome.status).toBe('completed');
   });
 
@@ -244,7 +261,7 @@ describe('completing a request deletes, and then records that it deleted', () =>
     // and folding them into a bulk clear would destroy the record of a
     // correction somebody asked for. What matters is that nothing here calls
     // itself a complete erasure -- the count returned is of conversations.
-    installTransaction({ claimedAccountId: 'acct-child', clearedConversationIds: ['c1'] });
+    installTransaction({ claimedAccountId: 'acct-child', ownedConversationIds: ['c1'], cleared: 1 });
 
     await completeShadowDataDeletionRequest(admin, 'req-1');
 
@@ -259,7 +276,7 @@ describe('denying a request', () => {
 
     const outcome = await denyShadowDataDeletionRequest(admin, 'req-1');
 
-    expect(outcome).toEqual({ requestId: 'req-1', status: 'denied', conversationsCleared: 0 });
+    expect(outcome).toEqual({ requestId: 'req-1', status: 'denied', conversationsCleared: 0, conversationsHeld: 0 });
     const [sql, params] = mockQuery.mock.calls[0];
     // "Nobody ever looked at it" and "an admin considered it and said no" are
     // different facts about a child's data request. processed_by is what keeps
