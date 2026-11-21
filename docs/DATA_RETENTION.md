@@ -149,7 +149,9 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   the children their guardian record is linked to, the athlete the chat is about) and those
   athletes' guardians replaced by `[name]` (the login when it is an email, the login email, ring
   name, staff name, the athlete record's or guardian record's full name; the same method and
-  limits as the purge's `namePattern`). Kept times are the day, not the moment (an exact time
+  limits as the purge's `namePattern`). Any other name a reply holds stays: another athlete it
+  mentions (a sibling or a teammate, whose shared surname alone is blanked), a nickname never
+  recorded, a misspelling. Kept times are the day, not the moment (an exact time
   would line the kept rows up with the member's own). What is kept takes **new ids**: a new conversation id
   and new message ids, so nothing that copied the old ones joins it (a background reply's id is
   a hash of its job's id; an escalation or an audit row can hold the conversation's). The
@@ -177,8 +179,8 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   flagged chat a member deleted more than two years ago, and any chat a member deleted before
   this change (a delete then only set `deleted_at`). The review entries that point at a cleared
   flagged chat take the chat's token, a fixed summary, empty metadata and a new id, and follow it
-  to its new id; the office's recorded reads of the exchange (`pilot.audit_events`) and the
-  escalation stay, as safeguarding records, and join nothing that is kept. A chat that is a
+  to its new id; the office's recorded reads of the exchange (`pilot.audit_events`) and any
+  escalation stay, as the review and safety records, and join nothing that is kept. A chat that is a
   deleted person's (account `deleted_at` set, an athlete login whose athlete is deleted, or a
   chat about a deleted athlete, which `markAthleteTiedRecords` stamps with the athlete's
   deletion time) is left to that person's purge. The nightly run counts them
@@ -192,8 +194,8 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   athlete who has since been deleted: the member asked. A search of
   `docs/current/OWNER_DECISIONS.md` on 2026-11-21 (for "SHADOW chat", "SHADOW conversation" and
   "AI chat" beside retention words) found no ruling that holds an unflagged SHADOW chat for an
-  athlete's retention window; Overwatch accepted this on #2062 (review S2, accepted as reasoned). The script, which acts
-  without a request, leaves such a chat to the athlete's purge.
+  athlete's retention window; Overwatch accepted reviewer A's S2 on #2062 as reasoned. The
+  script, which acts without a request, leaves such a chat to the athlete's purge.
 - **Not reached by a member's delete**, so the screens do not claim it: the research row an
   unanswered question was filed as (keyed by account and text, not by chat), the member's own
   feedback comments and memory corrections, SHADOW's remembered facts about them, evidence
