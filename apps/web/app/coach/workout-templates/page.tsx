@@ -726,7 +726,7 @@ const LIFT = { color: 'var(--bone-200)' } as const;
 function DraftMark({ state }: { state: boolean | null | undefined }) {
   if (state === false) return null;
   if (state === true) return <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>;
-  return <span className="ml-[var(--s2)] normal-case tracking-normal" style={LIFT}>({DRAFT_NOT_CHECKED})</span>;
+  return <span className="ml-[var(--s2)] text-[length:var(--t-md)] normal-case tracking-normal" style={LIFT}>({DRAFT_NOT_CHECKED})</span>;
 }
 
 // "LOOKS RIGHT" (OW25-55; lane ED-UI PR4): every field marked here is one the form can change (Q3 = A).
@@ -1154,7 +1154,7 @@ function CoachWorkoutTemplates() {
                       className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                     >
                       <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
-                        <span className="plaque">{item.block.replace(/_/g, ' ')}</span>
+                        <span className="plaque" style={{ fontSize: 'var(--t-md)' }}>{item.block.replace(/_/g, ' ')}</span>
                         <h4 className="t-command text-[length:var(--t-md)]">
                           {/* The lineage head's name; the raw drill_id only
                               when that row did not resolve. */}
@@ -1300,7 +1300,7 @@ function CoachWorkoutTemplates() {
               <input
                 id="template-find"
                 type="search"
-                className="input"
+                className="input input--kiosk"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Name, what it is for, session type, age group or level"
@@ -1338,7 +1338,7 @@ function CoachWorkoutTemplates() {
                 <article key={template.template_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                   <div className="flex items-baseline justify-between gap-[var(--s3)]">
                     <h3 className="t-command text-[length:var(--t-md)]">{template.name}</h3>
-                    {template.difficulty && <span className="plaque">{template.difficulty}</span>}
+                    {template.difficulty && <span className="plaque" style={{ fontSize: 'var(--t-md)' }}>{template.difficulty}</span>}
                   </div>
                   <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{orNotWritten(template.intent)}</p>
