@@ -642,3 +642,34 @@ describe('HF1 re-review round 4: picture requests said the common ways', () => {
     expect(cues).not.toContain('grooming_or_isolation');
   });
 });
+
+// Safeguarding re-review round 5 on PR 2059 (lane HF12): two common false
+// alerts the round-4 widening introduced. Invented phrases.
+describe('HF1 re-review round 5', () => {
+  test.each([
+    'can you send more photos from the tournament',
+    'please send some pics from sunday',
+    'send any pics from the show',
+    'wanted more pictures from the event',
+    'pls send pictures from class',
+    'send me a pic of the scale',
+    'send him a pic of my weight each morning',
+    'send pictures of my class to my mum',
+    'up at 6 am 5 kms before school',
+    'roadwork at 5 am 10 kms',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    ['he said can you send me pics', 'grooming_or_isolation'],
+    ['he asked me to send him private pics', 'grooming_or_isolation'],
+    ['send me pics of you', 'grooming_or_isolation'],
+    ['am 14 kms', 'crisis'],
+    ['i am 14 kms', 'crisis'],
+  ])('still files: %p', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+});
