@@ -322,8 +322,18 @@ test('every coverage count is rendered from the payload, not from a constant in 
 
   // Each version said by name, with what is true of it (Overwatch, Q-T1 (a)).
   expect(screen.getByTestId('vocabulary-versions')).toHaveTextContent(
-    'New studies: boxing-ontology-0.4 · still finishing: boxing-ontology-0.1',
+    'New studies: boxing-ontology-0.4 · also labellable for studies started on it: boxing-ontology-0.1',
   );
+  // The gap list says which vocabulary it ranks.
+  expect(screen.getByTestId('gap-list-vocabulary')).toHaveTextContent(
+    'Ranked on boxing-ontology-0.4, the vocabulary new studies use.',
+  );
+  // Each defence's count under each vocabulary, named: 0.4 has 28 slips and
+  // 0.1 has 7; neither stands in for the other, and they are never added.
+  const defenses = within(screen.getByTestId('defense-evidence')).getAllByRole('listitem').map((item) => item.textContent ?? '');
+  expect(defenses[0].replace(/\s+/g, ' ')).toBe('Slip · boxing-ontology-0.4: 28 labelled · boxing-ontology-0.1: 7 labelled');
+  expect(defenses[1].replace(/\s+/g, ' ')).toBe('Roll · boxing-ontology-0.4: no labelled examples · boxing-ontology-0.1: no labelled examples');
+  expect(pageText()).not.toContain('35 labelled');
 
   /*
    * EVERY COUNT READ THROUGH ITS OWN LABEL, not looked for anywhere on the
@@ -348,7 +358,7 @@ test('every coverage count is rendered from the payload, not from a constant in 
   const V04 = 'boxing-ontology-0.4';
   const V01 = 'boxing-ontology-0.1';
   expect(screen.getByTestId(`coverage-${V04}`)).toHaveTextContent(`${V04} · new studies`);
-  expect(screen.getByTestId(`coverage-${V01}`)).toHaveTextContent(`${V01} · studies still finishing on it`);
+  expect(screen.getByTestId(`coverage-${V01}`)).toHaveTextContent(`${V01} · labellable for studies started on it`);
   expect(versionValueFor(V04, 'Annotation sets submitted')).toBe('41');
   expect(versionValueFor(V04, 'Clips with two submitted sets')).toBe('17');
   expect(versionValueFor(V04, 'Adjudications settled')).toBe('9');
@@ -437,6 +447,13 @@ test('when the vocabulary new studies use does split by stance, the gap list nam
     .map((item) => item.textContent ?? '');
   expect(items[0]).toContain('Rear uppercut');
   expect(items[0]).toContain('Southpaw');
+});
+
+test('a coverage payload with an empty list of vocabularies is an error too, not a crash', async () => {
+  mockCoverageFetch(() => jsonResponse({ ok: true, coverage: { ...COVERAGE, versions: [] } }));
+  render(<TeachShadowHomePage />);
+
+  expect(await screen.findByText('The coverage figures could not be read.')).toBeInTheDocument();
 });
 
 test('a coverage payload with no vocabulary in it is an error, not an empty corpus', async () => {

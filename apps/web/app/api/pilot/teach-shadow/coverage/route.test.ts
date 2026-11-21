@@ -355,6 +355,12 @@ test('a body-point version has no stance split: one row per punch, its own count
   for (const cell of v04.punch_evidence) expect(cell.stance).toBeNull();
   expect(v04.punch_evidence).toContainEqual({ punch_type: 'lead_straight', stance: null, events: 6, clips: 2 });
   // 0.1's 40 are not pooled into 0.4's 6.
+  // On 0.4 the punches are grouped by type alone, so no row can fall outside
+  // the one-row-per-punch grid; 0.1 still groups by stance.
+  const punchStatements = mockQuery.mock.calls.filter(([text]) => String(text).includes("e.event_class = 'punch'"));
+  const byVersion = Object.fromEntries(punchStatements.map(([text, params]) => [params[1], String(text)]));
+  expect(byVersion[V04]).toContain('null::text as stance');
+  expect(byVersion[V01]).toContain('e.stance as stance');
   expect(v01.stance_split).toBe(true);
   expect(v01.punch_evidence).toContainEqual({ punch_type: 'lead_straight', stance: 'orthodox', events: 40, clips: 1 });
 });

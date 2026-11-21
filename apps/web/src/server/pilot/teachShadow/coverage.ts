@@ -78,7 +78,8 @@ export interface RefusedReasonCount {
 export interface VersionCoverage {
   ontology_version: string;
   /** 'new_studies': the version new studies are created on. 'finishing': an
-   *  older version whose running studies are still labelled on it. */
+   *  older version, still labellable for studies started on it (whether any
+   *  such study exists is not claimed). */
   role: 'new_studies' | 'finishing';
   /** Sets a coach has finished and frozen. In-progress work is not evidence. */
   submitted_sets: number;
@@ -96,8 +97,9 @@ export interface VersionCoverage {
   gold_records: number;
   /** Adjudicated and nominated, and deliberately not yet part of anything. */
   gold_candidates: number;
-  /** False on a body-point version: its events carry no stance (the lead side
-   *  is recorded per marked moment), so its punch grid is one row per punch. */
+  /** False on a body-point version: its events' stance column is always empty
+   *  (the lead side is recorded per marked moment, and a stance type per event
+   *  lives in its own table), so its punch grid is one row per punch. */
   stance_split: boolean;
   /** Every term in the vocabulary, including the ones with nothing behind them. */
   punch_evidence: PunchEvidenceCell[];
@@ -243,6 +245,17 @@ async function readVersionCoverage(
   version: string,
   role: VersionCoverage['role'],
 ): Promise<VersionCoverage> {
+  /*
+   * NO STANCE SPLIT ON A BODY-POINT VERSION. Its events' stance column is
+   * always empty -- the lead side is recorded at each marked moment instead
+   * (OD-2026-10-02-011 3b), and the database refuses a stance on such an event
+   * -- so splitting its punches by stance would show every one as "stance not
+   * recorded". Its punches are grouped by type alone, so no row can fall
+   * outside the grid.
+   */
+  const stanceSplit = !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, version);
+  const stanceColumn = stanceSplit ? 'e.stance' : 'null::text';
+
   const [labelling, punchRows, defenseRows] = await Promise.all([
     query<{
       submitted_sets: number;
@@ -298,13 +311,13 @@ async function readVersionCoverage(
       [organizationId, version],
     ),
     query<{ punch_type: string; stance: string | null; events: number; clips: number }>(
-      `select e.punch_type, e.stance,
+      `select e.punch_type, ${stanceColumn} as stance,
               count(*)::int as events,
               count(distinct e.calibration_clip_id)::int as clips
          ${SUBMITTED_EVENTS_FROM}
            and e.event_class = 'punch'
            and e.punch_type is not null
-        group by e.punch_type, e.stance`,
+        group by e.punch_type, 2`,
       [organizationId, version],
     ),
     query<{ defense_type: string; events: number; clips: number }>(
@@ -319,13 +332,6 @@ async function readVersionCoverage(
     ),
   ]);
 
-  /*
-   * NO STANCE SPLIT ON A BODY-POINT VERSION. Its events carry no stance --
-   * the lead side is recorded at each marked moment instead (OD-2026-10-02-011
-   * 3b) -- so splitting its punches by stance would show every one as "stance
-   * not recorded". One row per punch says what is there.
-   */
-  const stanceSplit = !isInVocabulary(BODY_POINT_ONTOLOGY_VERSIONS, version);
 
   /*
    * EVERY TERM APPEARS, INCLUDING THE EMPTY ONES, and that is the feature. A
@@ -450,17 +456,25 @@ export async function readTeachShadowCoverage(organizationId: string): Promise<T
      * Each labellable version on its own, the one new studies are created on
      * first. Mapped from the ontology's own list, so a version opened for
      * labelling later is counted without anyone remembering to add it here.
+     * ONE VERSION AT A TIME: each version runs three statements, and asking
+     * for every version at once would hold six or more of the pool's ten
+     * connections for one page load.
      */
-    Promise.all(
-      [
+    (async () => {
+      const ordered = [
         PROJECT_CREATION_ONTOLOGY_VERSION,
         ...ANNOTATABLE_ONTOLOGY_VERSIONS.filter((version) => version !== PROJECT_CREATION_ONTOLOGY_VERSION),
-      ].map((version) => readVersionCoverage(
-        organizationId,
-        version,
-        version === PROJECT_CREATION_ONTOLOGY_VERSION ? 'new_studies' : 'finishing',
-      )),
-    ),
+      ];
+      const results: VersionCoverage[] = [];
+      for (const version of ordered) {
+        results.push(await readVersionCoverage(
+          organizationId,
+          version,
+          version === PROJECT_CREATION_ONTOLOGY_VERSION ? 'new_studies' : 'finishing',
+        ));
+      }
+      return results;
+    })(),
   ]);
 
   const by_reason: RefusedReasonCount[] = refusedRows
