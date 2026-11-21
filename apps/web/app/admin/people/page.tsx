@@ -25,6 +25,36 @@ import {
   normalizeStaffDisplayName,
 } from '@/src/shared/staffDisplayName';
 import GymOfficeSafetyStrip from '@/components/GymOfficeSafetyStrip';
+import { BUILDING } from '@/components/buildingMap';
+import { JOB_BARS } from '@/components/jobBars';
+
+/**
+ * AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A). The office pages that the
+ * Capabilities header used to launch, grouped by the admin's job sections (AS-4,
+ * components/jobBars.ts) in the bar's order. Each link says its door's label in BUILDING,
+ * which is the title of the page it opens. Only an organization admin reaches the console
+ * that draws this, and each of these pages admits one.
+ *
+ * Gym Setup is not repeated: the header links it already (AS10-1). Video Analysis, Drill
+ * Library, Waivers & Consent and System sit in no admin section; where they go is
+ * Overwatch's Q19 on #2018, so they stay on Capabilities until it is answered.
+ */
+const MOVED_FROM_CAPABILITIES: ReadonlySet<string> = new Set([
+  '/admin/athletes', '/admin/export', '/admin/import', '/admin/gear', '/admin/customize', '/operations',
+  '/admin/compliance-center',
+]);
+
+const OFFICE_PAGES = (JOB_BARS.admin?.sections ?? [])
+  .map((section) => ({
+    label: section.label,
+    links: section.items.flatMap((item) => {
+      if (!MOVED_FROM_CAPABILITIES.has(item.href)) return [];
+      const door = BUILDING.find((candidate) => candidate.href === item.href);
+      // A page with no door has no title to show, so it is left out rather than shown as a bare address.
+      return door ? [{ href: door.href, label: door.label }] : [];
+    }),
+  }))
+  .filter((section) => section.links.length > 0);
 
 interface Member {
   account_id: string;
@@ -1437,6 +1467,22 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
               </Link>
             </div>
           </div>
+          <nav aria-label="Office pages" className="mt-[var(--s5)] flex flex-wrap gap-x-[var(--s6)] gap-y-[var(--s4)]">
+            {OFFICE_PAGES.map((section, index) => (
+              <div key={section.label} role="group" aria-labelledby={`office-pages-${index}`}>
+                <h2 id={`office-pages-${index}`} className="t-eyebrow">{section.label}</h2>
+                <ul className="mt-[var(--s2)] flex flex-wrap gap-[var(--s3)]">
+                  {section.links.map((link) => (
+                    <li key={link.href}>
+                      <Link href={link.href} className="btn btn--ghost">
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
         </header>
 
         {/* The admin's morning safety check, from home (lane U2, audit UX-A A-2). */}
