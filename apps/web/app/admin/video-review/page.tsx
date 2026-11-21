@@ -438,7 +438,7 @@ function WrongRoleNotice() {
           This console allows organization administrators to review quarantined video footage. As platform owner you manage organizations and platform settings.
         </p>
         <Link href="/admin/platform" className="btn btn--ghost">
-          Platform console
+          Omega
         </Link>
       </div>
     </main>

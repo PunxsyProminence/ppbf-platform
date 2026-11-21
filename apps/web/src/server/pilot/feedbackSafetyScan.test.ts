@@ -166,3 +166,535 @@ describe('ordinary feedback still reaches the product queue', () => {
     expect(scanForSafetyLanguage(sentence).safeguarding).toBe(false);
   });
 });
+
+// HF1 (lane HF12). Every sentence below was missed by the scan on main
+// 4f77642 (OBSERVED by a jest probe): no cue, so no disclosure alert. The
+// phrases are invented for these tests. Each new phrase sits in an existing cue
+// id, so routing and severity follow rulings already in force (Overwatch on
+// PR 2059: Q1 = A, the sexual-abuse words go into grooming_or_isolation).
+describe('HF1: crisis phrasings reach a person as crisis', () => {
+  test.each([
+    'im suicidal',
+    'i feel suicidal again',
+    'i keep thinking about suicide',
+    'sometimes i think about sucide',
+    'i thought about suiside last night',
+    'thinking about sewerslide',
+    'i want to unalive myself',
+    'i might un alive myself',
+    'kms',
+    'honestly kms',
+    'i want to end my life',
+    'i want to end my own life',
+    'i thought about ending my life',
+    'i want to take my own life',
+    'i want to kill my self',
+    'i want to kil myself',
+    'i want to kill myslef',
+    'i dont want to live anymore',
+    'i dont wanna live',
+    'i do not want to live',
+    'i want to be dead',
+    'i wanna be dead',
+    'everyone would be better off if i was dead, im better off dead',
+    'i want to slit my wrists',
+    'i want to hang myself',
+    'i thought about overdose',
+    'i self harm',
+    'i started selfharm',
+    'i have been self harming',
+    'i want to harm myself',
+    'i keep harming myself',
+    'i want to hurt my self',
+    'i cut my self last night',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF1: sexual-abuse words reach a person as grooming_or_isolation', () => {
+  test.each([
+    'my uncle molested me',
+    'someone molests me',
+    'he was molesting me',
+    'he is a molester',
+    'i got raped',
+    'he raped me',
+    'he tried to rape me',
+    'i was sexually abused',
+    'it was sexual abuse',
+    'i was sexually assaulted',
+    'it was a sexual assault',
+    'he sexually touched me',
+    'he groped me',
+    'he gropes me',
+    'he fondled me',
+    'he made me touch him',
+    'he makes me touch his',
+    'he sent me nudes',
+    'he asked me for nudes',
+    'he asked for nudes',
+    'he wants nudes',
+    'he said send nudes',
+    'he is a pedo',
+    'he had sex with me',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF1: abuse said as abuse reaches a person', () => {
+  test.each([
+    'he abused me',
+    'my stepdad abuses me',
+    'she keeps abusing me',
+    'i was abused',
+    'i got abused at home',
+    'i have been abused',
+    'i am being abused',
+  ])('someone_is_hurting_me: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('someone_is_hurting_me');
+  });
+});
+
+describe('HF1: a look-alike apostrophe does not hide a disclosure', () => {
+  // ´ U+00B4, ʹ U+02B9, ʻ U+02BB, ʽ U+02BD, ˈ U+02C8, ′ U+2032, ‛ U+201B,
+  // ＇ U+FF07, ꞌ U+A78C, and a combining acute U+0301 after a space-free n.
+  test.each([
+    'i don´t feel safe',
+    'i donʹt feel safe',
+    'i donʻt feel safe',
+    'i donʽt feel safe',
+    'i donˈt feel safe',
+    'i don′t feel safe',
+    'i don‛t feel safe',
+    'i don＇t feel safe',
+    'i donꞌt feel safe',
+    'i dońt feel safe',
+  ])('does_not_feel_safe: %p', (sentence) => {
+    expect(normalizeForSafetyScan(sentence)).toBe('i dont feel safe');
+    expect(scanForSafetyLanguage(sentence).cues).toContain('does_not_feel_safe');
+  });
+
+  test('split words are joined', () => {
+    expect(normalizeForSafetyScan('kill my self')).toBe('kill myself');
+    expect(normalizeForSafetyScan('un alive')).toBe('unalive');
+  });
+});
+
+describe('HF1: gym and boxing talk stays out of the new cues', () => {
+  // The new crisis phrases override boxing context in SHADOW, so the patterns
+  // themselves have to stay out of ordinary training talk.
+  test.each([
+    'i ran 5 kms this morning',
+    'we did 3 kms of roadwork',
+    'a few kms before practice',
+    'a couple kms on the treadmill',
+    'how many kms should i run',
+    'we did suicides at the end',
+    'suicide drills today were rough',
+    'coach had us do suicide sprints',
+    'kill it in sparring tonight',
+    'i killed it at pad work',
+    'that combo is killer',
+    'this drill is killing me',
+    'my legs are dead after roadwork',
+    'im dead tired',
+    'end the round strong',
+    'i want to take my life seriously in boxing',
+    'i want to take my life back after the loss',
+    'grape juice after training',
+    'can you show me grappling defense',
+    'the therapist said rest',
+    'the drapes in the lobby are new',
+  ])('no new cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+});
+
+// Safeguarding review on PR 2059 (lane HF12), round 1. Each sentence was
+// missed by the first HF1 build (OBSERVED by the reviewer's probe, re-run
+// here). Invented phrases.
+describe('HF1 review: the guards no longer swallow a disclosure', () => {
+  test.each([
+    'im thinking of kms',
+    'thoughts of kms again',
+    'the kms thoughts are back',
+    'more kms thoughts',
+    'some days kms',
+    'suicide runs in my family and i think about it',
+    'thinking about suicide lines up with my mood',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF1 review: held keys inside a split word', () => {
+  test.each([
+    'i want to kill myyy self',
+    'i want to kill my selfff',
+    'i want to un aliveee myself',
+    'i want to unnn alive myself',
+    'i wanna hurt my selff',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF1 review: past and -ing forms, and more short forms', () => {
+  test.each([
+    'i self harmed last night',
+    'i selfharmed again',
+    'i overdosed on pills',
+    'thinking about overdosing',
+    'i want to unalive',
+    'i wanna unalive tbh',
+    'thinking about unaliving',
+    'gonna slit my wrist',
+    'i want to off myself',
+    'i want to shoot myself',
+    'i want to neck myself',
+    'i wanna killmyself',
+    'im suicidial',
+    'im suisidal',
+    'thinking about suicde',
+    'i want to commit sudoku',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF1 review: sexual abuse said other ways is grooming_or_isolation', () => {
+  test.each([
+    'my uncle is sexually abusing me',
+    'he is sexually assaulting me',
+    'i was sexualy abused',
+    'i think he is grooming me',
+    'he groomed me',
+    'he sent me a dick pic',
+    'he keeps asking for pictures of me',
+    'he asks me for pics',
+    'there was molestation',
+    'he is a paedo',
+    'he r*ped me',
+    'he r@ped me',
+    'he rap3d me',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF1 review: abuse and assault named as such', () => {
+  test.each([
+    'he is abusive',
+    'my dad is abusive',
+    'she was abusive to me',
+    'he assaulted me',
+  ])('someone_is_hurting_me: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('someone_is_hurting_me');
+  });
+});
+
+describe('HF1 review: gym talk the narrowed guards still keep out', () => {
+  test.each([
+    'i did twenty kms of roadwork',
+    'we ran fifteen kms',
+    'hundreds of kms this year',
+    'we did suicide shuttles today',
+    'suicide sprints again',
+    'my pedometer says 10k',
+    'rapeseed oil in my meal prep',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF1 review round 2: the scope review\'s false alerts', () => {
+  test.each([
+    'three kms of roadwork',
+    'we ran eighteen kms',
+    'suicide squad is a good movie',
+  ])('no crisis cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('crisis');
+  });
+
+  test.each([
+    'coach made me touch gloves before sparring',
+    'make me touch gloves before the round',
+  ])('touching gloves or toes is not grooming: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'he made me touch him',
+    'he makes me touch it',
+    'he made me touch her',
+    'he makes me touch them',
+    'he made me touch there',
+    'he made me touch myself',
+  ])('being made to touch a person still is: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate: "suicide runs" is a
+  // conditioning drill, but the guard no longer covers "runs" because "suicide
+  // runs in my family" is a disclosure. A false alert costs a reading; a miss
+  // costs the child (this module's header).
+  test('accepted false alert: "suicide runs after sparring" files crisis', () => {
+    expect(scanForSafetyLanguage('suicide runs after sparring').cues).toContain('crisis');
+  });
+});
+
+// Safeguarding re-review on PR 2059 (lane HF12), round 2. The first round of
+// false-alarm fixes over-narrowed: each sentence below was missed at f3bef05
+// (OBSERVED by the reviewer's probe). A missed child costs more than a false
+// alert, so the guards went back to the narrowest form that keeps the gym's
+// commonest phrasings out. Invented phrases.
+describe('HF1 re-review: what the narrowed guards had swallowed', () => {
+  test.each([
+    'i dont want to live in this world anymore',
+    'i dont want to live on this earth',
+    'i dont want to live at all',
+    'i dont want to live on like this',
+    'i dont wanna live in this body',
+    'after sparring i dont want to live at all',
+    'this happens so often kms',
+    'got beaten kms',
+    'i feel so rotten kms',
+    'im a teen kms',
+    'listen kms',
+    'im 14 kms',
+    'im only 13 kms',
+    'i am 15 kms',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  test.each([
+    'he made me touch down there',
+    'my coach makes me touch down there after sparring',
+    'he made me touch my privates',
+    'he made me touch something',
+    'he made me touch stuff i didnt want to',
+    'made me touch u know what',
+    'he made me touch',
+    'he made me touch inappropriate places',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'i took the wraps off myself',
+    'got the tape off myself',
+    'my mum keeps asking for pics of my fight',
+    'coach is asking for pictures of the event',
+    'thirteen kms of roadwork',
+    'we did ten kms',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): without a number, roadwork verbs no longer shield "kms", and a
+  // place after "dont want to live" no longer shields it either.
+  test.each([
+    'i ran kms before school',
+    'i dont wanna live in this town',
+  ])('accepted false alert, files crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+// Safeguarding re-review round 3 on PR 2059 (lane HF12). Each guard that
+// named what to KEEP (intent words before "off myself", "me" in a picture
+// request, a list of gym objects after "made me touch") dropped real
+// disclosures. The guards now name only the specific gym phrase to EXCLUDE,
+// and the rest is accepted as false alerts. Invented phrases.
+describe('HF1 re-review round 3: misses', () => {
+  test.each([
+    'ill off myself',
+    'i should off myself',
+    'imma off myself',
+    'i might just off myself',
+    'finna off myself',
+    'im fourteen kms',
+    'im ten kms',
+    'i am thirteen kms',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  test.each([
+    'he keeps asking for pics',
+    'my coach keeps asking for pictures',
+    'coach asked for pics',
+    'he asked for a pic of me',
+    'he asked me for a pic',
+    'he wants photos of me',
+    'he asked me to send pics',
+    'he asked for selfies',
+    'he made me touch the ground and then he got on top of me',
+    'makes me touch my toes while he stands behind me',
+    'coach made me touch my gloves to his crotch',
+    'he made me touch the bag in his room',
+    'he made me touch the floor of his car',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF1 re-review round 3: the specific gym phrases stay out', () => {
+  test.each([
+    'i took the tape off myself',
+    'i pulled the wraps off myself',
+    'got my gloves off myself',
+    'my mum keeps asking for pics of my fight',
+    'coach is asking for pictures of the event',
+    'can you send pics of the tournament',
+    'coach made me touch gloves before sparring',
+    'we touch gloves before every round',
+    'im 2 kms from the gym',
+    'i am 5 kms away',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate: a stretching instruction
+  // reads as being made to touch something. Excluding it also excluded
+  // "makes me touch my toes while he stands behind me".
+  test('accepted false alert: "he made me touch my toes in warmup" files grooming_or_isolation', () => {
+    expect(scanForSafetyLanguage('he made me touch my toes in warmup').cues).toContain('grooming_or_isolation');
+  });
+});
+
+// Words and scope re-review round 4 on PR 2059 (lane HF12): the age guard's
+// lookahead had swallowed "im 14 kms today", and "am"/"only" had been dropped.
+describe('HF1 re-review round 4', () => {
+  test.each([
+    'im 14 kms today',
+    'only 14 kms',
+    'am 14 kms',
+    'im 14 kms more than ever',
+    'i want to do it off myself',
+    'i wanna end it, off myself',
+    'im gonna do it. off myself tonight',
+    'im only 14 kms today',
+    'im 14 kms out here',
+    'im 13 kms from now',
+    'im 14 kms left alone',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): each reads like a disclosure to a word match.
+  test.each([
+    ['only 3 kms today', 'crisis'],
+    ['i want a picture with the champ', 'grooming_or_isolation'],
+    ['coach wants photos for the website', 'grooming_or_isolation'],
+    ['make me touch my gloves', 'grooming_or_isolation'],
+    ['take the pressure off myself', 'crisis'],
+    ['i want a picture with my coach', 'grooming_or_isolation'],
+  ])('accepted false alert: %p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+});
+
+describe('HF1 re-review round 4: picture requests said the common ways', () => {
+  test.each([
+    'he wanted pics',
+    'he wanted a selfie',
+    'he keeps wanting photos',
+    'he asked me to send him pics',
+    'he asked me to send him a selfie',
+    'he told me to send pics',
+    'he said to send him pics',
+    'he says send her a selfie',
+    'he asked for more pics',
+    'he asked for some pics',
+    'he asked for private pics',
+    'he asked to see a pic of me',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'my mum wants a picture of my sparring',
+    'can you send pics of the tournament',
+    'i took it off myself',
+    'got the tape off myself',
+    'took my mouthguard off myself',
+    'got my headguard off myself',
+    'im 2 kms from the gym',
+    'i am 5 kms away',
+    'im 3 kms to go',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+});
+
+// Safeguarding re-review round 5 on PR 2059 (lane HF12): two common false
+// alerts the round-4 widening introduced. Invented phrases.
+describe('HF1 re-review round 5', () => {
+  test.each([
+    'can you send more photos from the tournament',
+    'wanted more pictures from the event',
+    'pls send pictures from class',
+    'send me a pic of the scale',
+    'send pictures of my class to my mum',
+    'up at 6 am 5 kms before school',
+    'roadwork at 5 am 10 kms',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    ['he said can you send me pics', 'grooming_or_isolation'],
+    ['he asked me to send him private pics', 'grooming_or_isolation'],
+    ['send me pics of you', 'grooming_or_isolation'],
+    ['am 14 kms', 'crisis'],
+    ['i am 14 kms', 'crisis'],
+  ])('still files: %p', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+});
+
+// Safeguarding re-review round 6 on PR 2059 (lane HF12): "weight", "weigh
+// in", day names and "show" are not specific gym phrases; excluding them hid
+// requests for body pictures. Invented phrases.
+describe('HF1 re-review round 6', () => {
+  test.each([
+    'coach keeps asking me to send pics of my weight loss progress',
+    'he wants me to send pics of my weight cut with no top on',
+    'he asked me to send pics of the weigh in in my underwear',
+    'he asked for pics from the weigh in',
+    'he asked for pics from saturday night when i stayed over',
+    'he keeps asking for pics from last friday at his house',
+    'he asked me for pics from the show at his place',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): these ask for gym pictures, but the words cannot tell them apart
+  // from the requests above.
+  test.each([
+    'please send some pics from sunday',
+    'send any pics from the show',
+    'send him a pic of my weight each morning',
+  ])('accepted false alert, files grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});

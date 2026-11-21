@@ -139,9 +139,15 @@ afterEach(() => {
 });
 
 describe('family check-in on /schedule (#1524)', () => {
-  test.each(['athlete', 'parent'] as const)(
-    'a %s on the class day sees only "I\'m here", and it sends Present',
-    async (role) => {
+  /* A parent's button and line name the child (AS9-4; Q7 = A): "My Athlete
+     is here", "My Athlete is marked here. Their coach can see it." An
+     athlete's "I'm here" is unchanged. */
+  test.each([
+    ['athlete', "I'm here", 'Checked in. Your coach can see you are here.'],
+    ['parent', 'My Athlete is here', 'My Athlete is marked here. Their coach can see it.'],
+  ] as const)(
+    'a %s on the class day sees only "%s", and it sends Present',
+    async (role, buttonName, doneLine) => {
       const fetchMock = installFetchMock({
         role,
         classes: [classRow('class-today', 'Tonight', 0)],
@@ -149,7 +155,7 @@ describe('family check-in on /schedule (#1524)', () => {
       });
       await renderPage();
 
-      const button = await screen.findByRole('button', { name: "I'm here" });
+      const button = await screen.findByRole('button', { name: buttonName });
       expect(screen.queryByRole('option', { name: 'Absent' })).toBeNull();
       expect(screen.queryByRole('option', { name: 'Excused' })).toBeNull();
       expect(screen.queryByPlaceholderText('Attendance notes')).toBeNull();
@@ -161,7 +167,7 @@ describe('family check-in on /schedule (#1524)', () => {
       expect(posts(fetchMock)).toEqual([
         { action: 'attendance_checkin', class_id: 'class-today', athlete_id: 'athlete-1', status: 'present' },
       ]);
-      expect(await screen.findByText('Checked in. Your coach can see you are here.')).toBeInTheDocument();
+      expect(await screen.findByText(doneLine)).toBeInTheDocument();
     },
   );
 

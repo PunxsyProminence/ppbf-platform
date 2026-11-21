@@ -225,3 +225,11 @@ describe('Stripe platform account registration', () => {
     expect(document.body.textContent).not.toMatch(/value_never_shown|PAYMENT_PLATFORM_SECRET_KEY/);
   });
 });
+
+// AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): the platform view's link to
+// /admin/platform reads that page's title. The eyebrow above it is not a link.
+test('the platform view links back to Omega by its title', async () => {
+  await renderAs('platform_owner');
+  expect(screen.getByRole('link', { name: 'Omega' }).getAttribute('href')).toBe('/admin/platform');
+  expect(screen.queryByRole('link', { name: 'Platform Desk' })).toBeNull();
+});
