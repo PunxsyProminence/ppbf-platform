@@ -425,7 +425,6 @@ describe('HF1 review round 2: the scope review\'s false alerts', () => {
   test.each([
     'coach made me touch gloves before sparring',
     'make me touch gloves before the round',
-    'he made me touch my toes in warmup',
   ])('touching gloves or toes is not grooming: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
@@ -509,5 +508,70 @@ describe('HF1 re-review: what the narrowed guards had swallowed', () => {
     'i dont wanna live in this town',
   ])('accepted false alert, files crisis: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+// Safeguarding re-review round 3 on PR 2059 (lane HF12). Each guard that
+// named what to KEEP (intent words before "off myself", "me" in a picture
+// request, a list of gym objects after "made me touch") dropped real
+// disclosures. The guards now name only the specific gym phrase to EXCLUDE,
+// and the rest is accepted as false alerts. Invented phrases.
+describe('HF1 re-review round 3: misses', () => {
+  test.each([
+    'ill off myself',
+    'i should off myself',
+    'imma off myself',
+    'i might just off myself',
+    'finna off myself',
+    'im fourteen kms',
+    'im ten kms',
+    'i am thirteen kms',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  test.each([
+    'he keeps asking for pics',
+    'my coach keeps asking for pictures',
+    'coach asked for pics',
+    'he asked for a pic of me',
+    'he asked me for a pic',
+    'he wants photos of me',
+    'he asked me to send pics',
+    'he asked for selfies',
+    'he made me touch the ground and then he got on top of me',
+    'makes me touch my toes while he stands behind me',
+    'coach made me touch my gloves to his crotch',
+    'he made me touch the bag in his room',
+    'he made me touch the floor of his car',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF1 re-review round 3: the specific gym phrases stay out', () => {
+  test.each([
+    'i took the tape off myself',
+    'i pulled the wraps off myself',
+    'got my gloves off myself',
+    'my mum keeps asking for pics of my fight',
+    'coach is asking for pictures of the event',
+    'can you send pics of the tournament',
+    'coach made me touch gloves before sparring',
+    'we touch gloves before every round',
+    'im 2 kms from the gym',
+    'i am 5 kms away',
+    'only 3 kms today',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate: a stretching instruction
+  // reads as being made to touch something. Excluding it also excluded
+  // "makes me touch my toes while he stands behind me".
+  test('accepted false alert: "he made me touch my toes in warmup" files grooming_or_isolation', () => {
+    expect(scanForSafetyLanguage('he made me touch my toes in warmup').cues).toContain('grooming_or_isolation');
   });
 });
