@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import StepNotes from '@/components/IssuedWorkoutStepNotes';
 import RabbitHole from '@/components/RabbitHole';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import BackHome from '@/components/BackHome';
+import FamilyChildPicker, { openingChild } from '@/components/FamilyChildPicker';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
@@ -14,7 +15,6 @@ import {
   type DatedIssuedWorkout,
   type IssuedWorkoutStepView,
 } from '@/src/lib/issuedWorkouts';
-import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 
 // A rabbit hole renders as a paper note carrying the gym's own vocabulary
 // lesson for a term on the card. Parent surfaces sit on the warm canvas
@@ -229,6 +229,9 @@ export default function ParentProgressionVisibilityPage() {
   // read must not render "No linked athletes" or "No progression gaps".
   const [childrenFailed, setChildrenFailed] = useState(false);
   const [progressionFailed, setProgressionFailed] = useState(false);
+  // The child the record on screen was read for. Until it is the chosen child,
+  // the page says Loading, never "No progression gaps" for a child nobody read.
+  const [progressionFor, setProgressionFor] = useState<string | null>(null);
 
   // One card per child, from the route that runs the guardian visibility
   // gate: /api/pilot/athletes/list returns only the athletes this guardian
@@ -248,11 +251,10 @@ export default function ParentProgressionVisibilityPage() {
         const items = payload.items ?? [];
         if (controller.signal.aborted) return;
         setChildren(items);
-        // The child chosen in the hub, when it is one of this guardian's own
-        // (src/lib/chosenChild.ts); otherwise the first. The server still
-        // checks the link on every read.
-        const chosen = readChosenChild();
-        setActiveChildId(items.find((item) => item.athlete_id === chosen)?.athlete_id ?? items[0]?.athlete_id ?? null);
+        // The remembered child when it is one of this guardian's own, else
+        // the only child; with two or more and none remembered, the picker
+        // asks (FAM-11). The server still checks the link on every read.
+        setActiveChildId(openingChild(items));
         setErrorMessage(null);
       } catch (error) {
         // Cancelled on unmount: nothing to say and nothing to write. A real
@@ -297,8 +299,9 @@ export default function ParentProgressionVisibilityPage() {
   // moment loading is false. That would tell a guardian their child has
   // nothing on record when nobody has looked yet.
   useEffect(() => {
-    // No active child means no children were linked: the progression state is
-    // still its initial [] and there is nothing to clear.
+    // No active child means none are linked, or two or more and none chosen
+    // yet: the progression state is still its initial [] and there is nothing
+    // to clear.
     if (!activeChildId) return;
 
     const controller = new AbortController();
@@ -372,7 +375,10 @@ export default function ParentProgressionVisibilityPage() {
         setProgressionFailed(true);
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load progression data.');
       } finally {
-        if (!signal.aborted) setProgressionLoading(false);
+        if (!signal.aborted) {
+          setProgressionFor(activeChildId);
+          setProgressionLoading(false);
+        }
       }
     })();
 
@@ -380,7 +386,7 @@ export default function ParentProgressionVisibilityPage() {
   }, [activeChildId]);
 
   const activeChild = children.find((child) => child.athlete_id === activeChildId);
-  const loading = childrenLoading || progressionLoading;
+  const loading = childrenLoading || progressionLoading || (activeChildId !== null && progressionFor !== activeChildId);
 
   const completionsForAssignment = (assignmentId: string) =>
     completions.filter((completion) => completion.assignment_id === assignmentId);
@@ -391,7 +397,8 @@ export default function ParentProgressionVisibilityPage() {
       <div className="on-canvas min-h-full rounded-[var(--r-lg)] p-[var(--s5)] md:p-[var(--s6)]">
         <div className="mx-auto w-full max-w-[1080px] space-y-[var(--s6)]">
           <header className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
-            <p className="t-eyebrow">Closed-Loop Progression Intelligence</p>
+            {/* The door's name for this record (FAM-18; AS-9 Q13 = A). */}
+            <p className="t-eyebrow">Progress Visibility</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>
               {activeChild ? `${activeChild.full_name || 'Your Athlete'}'s Progression` : 'Parent Progression Visibility'}
             </h1>
@@ -410,25 +417,14 @@ export default function ParentProgressionVisibilityPage() {
             ) : null}
           </header>
 
-          {children.length > 1 ? (
-            <nav aria-label="Choose athlete" className="flex flex-wrap gap-[var(--s3)]">
-              {children.map((child) => (
-                <button
-                  key={child.athlete_id}
-                  type="button"
-                  className={child.athlete_id === activeChildId ? 'btn' : 'btn btn--ghost'}
-                  aria-pressed={child.athlete_id === activeChildId}
-                  onClick={() => {
-                    setActiveChildId(child.athlete_id);
-                    // A switch here is the child the next family page opens on.
-                    rememberChosenChild(child.athlete_id);
-                  }}
-                >
-                  {child.full_name || 'Unknown'}
-                </button>
-              ))}
-            </nav>
-          ) : null}
+          {/* The family pages' one picker (FAM-11). A pick is remembered for
+              the next family page. */}
+          <FamilyChildPicker
+            linked={children}
+            activeId={activeChildId}
+            onChoose={setActiveChildId}
+            className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+          />
 
           {loading ? (
             <div className="mat-paper flex justify-center rounded-[var(--r-lg)] py-[var(--s7)]">
@@ -450,7 +446,9 @@ export default function ParentProgressionVisibilityPage() {
                 </p>
               </div>
             </div>
-          ) : progressionFailed ? (
+          ) : !activeChildId ? null /* No child chosen yet: the picker asks,
+               and nothing here says "No progression gaps" for nobody. */
+          : progressionFailed ? (
             <div className="mat-paper rounded-[var(--r-lg)]">
               <div className="empty">
                 <div className="empty-title">Could not load progression</div>
@@ -568,10 +566,9 @@ export default function ParentProgressionVisibilityPage() {
             </div>
           )}
 
+          {/* The one back link (FAM-18). */}
           <div className="flex flex-wrap gap-[var(--s3)]">
-            <Link href="/parent/dashboard" className="btn btn--ghost">
-              Back to Parent Hub
-            </Link>
+            <BackHome />
           </div>
         </div>
       </div>

@@ -1,11 +1,9 @@
 'use client';
 
-import Link from 'next/link';
-
+import BackHome from '@/components/BackHome';
 import MentalSkillsSubjectPanel, { entriesFrom, getJson, type SubjectLoaders } from '@/components/MentalSkillsSubjectPanel';
 import type { MentalSkillsData } from '@/components/MentalSkillsView';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
-import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 import { VISIBILITY_LINES } from '@/src/lib/mentalSkills/content';
 
 /*
@@ -51,21 +49,23 @@ export default function ParentMentalSkillsPage() {
           <p className="t-eyebrow">Parent Hub</p>
           <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">Mental Skills</h1>
           <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{VISIBILITY_LINES.guardian}</p>
-          <Link href="/parent/dashboard" className="btn btn--ghost mt-[var(--s4)]">
-            Back to the Parent Hub
-          </Link>
         </header>
         <MentalSkillsSubjectPanel
           loaders={LOADERS}
           pickerLabel="Which child"
           noneText="No child is linked to this account yet. The gym's administrator sets that link up."
           rosterErrorText="Your linked children could not be loaded. This is not a statement that you have none. Reload and try again."
-          // The child chosen in the hub, when it is one of this guardian's own
-          // (src/lib/chosenChild.ts); the route checks the link on every read.
-          initialSubject={readChosenChild}
-          // A switch here is the child the next family page opens on.
-          onSelect={rememberChosenChild}
+          // The family pages' one picker (FAM-11): it opens on the remembered
+          // child, else the only child, and remembers a pick for the next
+          // family page. The route checks the link on every read.
+          family
         />
+        {/* The one back link (FAM-18), at the foot on the family ground as on
+            the film and progress pages. In the leather header above it was ink
+            on dark. */}
+        <div className="flex flex-wrap gap-[var(--s3)]">
+          <BackHome />
+        </div>
       </div>
     </RoleStandaloneView>
   );

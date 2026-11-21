@@ -7,10 +7,13 @@
  * and a half down a phone, below the family line and five summary tiles.
  *
  * jsdom has no layout, so this holds the ORDER the page is built in, which is
- * what decides where the tabs land on a phone: the child selector and the tab
- * row come first, the family line and the summary tiles follow them, and the
- * tab's own content follows those. Nothing was removed: every tile and the
- * family line are still on the page, on every tab.
+ * what decides where things land on a phone: the child selector and the tab
+ * row come first, the summary tiles follow them on every tab, and the tab's
+ * own content follows those.
+ *
+ * AS-9 (scrub FAM-02, FAM-20; Q5 = A): the Safety & Consent card is the first
+ * block of the Overview, above the coach's digest and Quick Actions, and the
+ * fixed "Family Commitment" card that sat above every tab is gone.
  */
 
 import '@testing-library/jest-dom';
@@ -63,27 +66,38 @@ async function renderHub() {
   await waitFor(() => expect(screen.getByRole('button', { name: 'First Child' })).toBeInTheDocument());
 }
 
-test('the child selector and the tab row come before the family line and the summary tiles', async () => {
+test('the child selector and the tab row come before the summary tiles', async () => {
   await renderHub();
 
   const child = screen.getByRole('button', { name: 'First Child' });
   const firstTab = screen.getByRole('button', { name: 'Overview' });
   const lastTab = screen.getByRole('button', { name: 'SHADOW Intel' });
-  const family = screen.getByText('Family Commitment');
 
   expect(before(child, firstTab)).toBe(true);
   for (const label of ['Progress', 'Parent Floor tasks', 'Upcoming', 'Class attendance', 'New messages']) {
     expect(before(lastTab, tile(label))).toBe(true);
   }
-  expect(before(lastTab, family)).toBe(true);
 });
 
-test('the tab content follows the summary tiles, and nothing was dropped', async () => {
+test('the Overview opens on Safety & Consent, after the tiles and before the digest and Quick Actions', async () => {
   await renderHub();
 
-  // Overview's own content starts after the tiles.
-  expect(before(tile('New messages'), screen.getByText('Quick Actions'))).toBe(true);
-  expect(screen.getByText('Family Commitment')).toBeInTheDocument();
+  const safety = screen.getByTestId('parent-safety-card');
+  expect(before(tile('New messages'), safety)).toBe(true);
+  expect(before(safety, screen.getByText('Quick Actions'))).toBe(true);
+  // Nothing else of the Overview's own content comes before it.
+  const overview = safety.parentElement as HTMLElement;
+  expect(overview.firstElementChild).toBe(safety);
+});
+
+test('the fixed Family Commitment card is gone from every tab', async () => {
+  await renderHub();
+  expect(screen.queryByText('Family Commitment')).toBeNull();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+  });
+  expect(screen.queryByText('Family Commitment')).toBeNull();
 });
 
 test('the tiles are still on the page on a tab other than Overview', async () => {
@@ -95,5 +109,4 @@ test('the tiles are still on the page on a tab other than Overview', async () =>
 
   expect(tile('Class attendance')).toBeInTheDocument();
   expect(tile('New messages')).toBeInTheDocument();
-  expect(screen.getByText('Family Commitment')).toBeInTheDocument();
 });

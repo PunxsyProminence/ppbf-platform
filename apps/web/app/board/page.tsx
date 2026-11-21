@@ -1,6 +1,7 @@
 import BoardSeatDirectory from './BoardSeatDirectory';
 import { BOARD_AGGREGATE_BOUNDARY_STATEMENT } from './boardWorkspaceConfig';
 import BoardSummaryPanel from './BoardSummaryPanel';
+import BoardWorkspaceLinks from './BoardWorkspaceLinks';
 
 export default function BoardHubPage() {
   return (
@@ -33,6 +34,11 @@ export default function BoardHubPage() {
             </p>
           </div>
         </header>
+
+        {/* Lane AS-12, BOA-04: a board member with no seat lands here, and the
+            hub linked none of the board's three reads. The same row the seat
+            workspaces carry, directly under the header. */}
+        <BoardWorkspaceLinks />
 
         <section className="mat-leather mt-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command text-[length:var(--t-md)]">Aggregate boundary</h2>

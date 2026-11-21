@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTime } from '@/src/lib/gymTime';
+import { isMinor } from '@/src/lib/minorAge';
 // A plain constant with no server dependencies, so a client component can
 // import it and the admin copy can never drift from what the server sets.
 // Same reasoning: credentialPolicy is the single source of truth for which
@@ -99,6 +100,117 @@ interface GuardianLink {
 }
 
 type Tab = 'people' | 'invite-staff' | 'add-athlete';
+
+/**
+ * The tab a link to this page names (`?tab=invite-staff`, `?tab=add-athlete`),
+ * so Gym Setup's steps open their own form rather than the roster (lane AS-10,
+ * OFF-09). Anything else, or no value, opens Everyone, as before.
+ */
+function tabFromAddress(): Tab {
+  if (typeof window === 'undefined') return 'people';
+  const value = new URLSearchParams(window.location.search).get('tab');
+  return value === 'invite-staff' || value === 'add-athlete' ? value : 'people';
+}
+
+/**
+ * The invite role a link names (`?tab=invite-staff&role=parent`), so Gym
+ * Setup's guardian step opens the invite with Parent / Guardian chosen, not
+ * Coach (lane AS-10, AS10-1 review). Only a role the invite form itself
+ * offers, and only on the invite tab; anything else keeps Coach, as before.
+ */
+function inviteRoleFromAddress(): string {
+  if (typeof window === 'undefined') return 'coach';
+  const search = new URLSearchParams(window.location.search);
+  const value = search.get('role');
+  return search.get('tab') === 'invite-staff' && STAFF_ROLES.some((option) => option.value === value) ? (value as string) : 'coach';
+}
+
+/** The date of birth on file for the athlete a code was just issued to, as POST /api/pilot/athletes/get reads it. */
+type DobOnFile = { state: 'reading' } | { state: 'read'; dob: string | null } | { state: 'unread' };
+
+/** How long the date-of-birth read may take before the step is offered anyway (the minor's default). */
+const DOB_READ_TIMEOUT_MS = 8000;
+
+/**
+ * What comes after a sign-in code (lane AS-10, OFF-07; Overwatch Q7 A): the
+ * guardian, the waivers and the media consent, one tap each, under the code.
+ *
+ * "Next: add a guardian" is left off only when the date of birth ON FILE makes
+ * the athlete 18 or over: a guardian link to an adult starts dormant
+ * (OD-2026-10-07-008) and the server refuses it (lane GA). An unknown date of
+ * birth is a minor's (OD-2026-10-04-010), and so is one this page could not
+ * read, or not read within DOB_READ_TIMEOUT_MS. The rule is isMinor, the same
+ * one guardianLinkEnded asks. Nothing is shown about the athlete's age; the
+ * step is there or it is not.
+ */
+function CodeNextSteps({ athleteId, onAddGuardian }: { readonly athleteId: string; readonly onAddGuardian: () => void }) {
+  const [onFile, setOnFile] = useState<DobOnFile>({ state: 'reading' });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let unmounted = false;
+    // The first answer settles it: the read's, or the clock's. A read that has
+    // not answered in time is a read that did not answer: the minor's default,
+    // and a late answer is not taken.
+    let settled = false;
+    const settle = (next: DobOnFile) => {
+      if (unmounted || settled) return;
+      settled = true;
+      setOnFile(next);
+    };
+    const timer = setTimeout(() => {
+      settle({ state: 'unread' });
+      controller.abort();
+    }, DOB_READ_TIMEOUT_MS);
+    void (async () => {
+      try {
+        // This one athlete's row only (the route admits the gym admin).
+        const response = await fetch(`${apiBase()}/api/pilot/athletes/get`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ athlete_id: athleteId }),
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as { found?: unknown; athlete?: { athlete_id?: unknown; dob?: unknown } } | null;
+        if (!response.ok || !payload || typeof payload.found !== 'boolean') throw new Error('unread');
+        const row = payload.found && payload.athlete?.athlete_id === athleteId ? payload.athlete : null;
+        // Not found: nothing on file to go by, so the minor's default.
+        settle({ state: 'read', dob: row && typeof row.dob === 'string' ? row.dob : null });
+      } catch {
+        settle({ state: 'unread' });
+      } finally {
+        clearTimeout(timer);
+      }
+    })();
+    return () => {
+      unmounted = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [athleteId]);
+
+  // Offered once the read has answered, so the step never shows and then goes.
+  const offerGuardian = onFile.state === 'unread' || (onFile.state === 'read' && isMinor(onFile.dob, new Date()));
+
+  return (
+    <nav aria-label="Next steps" className="mt-[var(--s4)] flex flex-wrap items-center gap-[var(--s3)]">
+      {/* While the record is read, say so: the steps below are not yet all of them. */}
+      {onFile.state === 'reading' && <p className="t-muted">Checking the athlete&apos;s record…</p>}
+      {offerGuardian && (
+        <button type="button" onClick={onAddGuardian} className="btn">
+          Next: add a guardian
+        </button>
+      )}
+      <Link href="/admin/consent" className="btn btn--ghost">
+        Waivers &amp; Consent
+      </Link>
+      <Link href="/admin/athlete-consent" className="btn btn--ghost">
+        Media Consent Audit
+      </Link>
+    </nav>
+  );
+}
 
 /**
  * The two genuinely different jobs behind "add an athlete". They were
@@ -262,7 +374,9 @@ function WrongRoleNotice() {
 }
 
 function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession: boolean }) {
-  const [tab, setTab] = useState<Tab>('people');
+  // Read once from the address. Nothing behind RoleSessionGate renders on the
+  // server, so this first render is already the browser's.
+  const [tab, setTab] = useState<Tab>(tabFromAddress);
   const [members, setMembers] = useState<Member[]>([]);
   // False until the staff read answers: an unread list is not an empty gym.
   const [membersAvailable, setMembersAvailable] = useState(false);
@@ -282,7 +396,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
 
   // Invite staff form
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState('coach');
+  const [inviteRole, setInviteRole] = useState(inviteRoleFromAddress);
 
   // Guardian half of a parent invite. The server refuses the parent role
   // without all three, because the account is only useful attached to a child.
@@ -332,6 +446,9 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
   const [nameDraft, setNameDraft] = useState('');
   // Said next to the box, not in the banner at the top of a long list.
   const [nameError, setNameError] = useState('');
+  // The roster's box and role filter (lane AS-10, AS10-2a; see "FIND A PERSON ON THE ROSTER" below).
+  const [rosterFind, setRosterFind] = useState('');
+  const [rosterRole, setRosterRole] = useState('all');
   /* RE-INVITING IS HOW A ROLE CHANGES (staffProvisioning.ts), and the form
      said nothing when the address already belonged to someone in the gym: a
      coach re-invited as a guardian silently became a guardian. Now a role
@@ -370,7 +487,13 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
 
   // The plaintext activation code exists only in this response and is shown
   // once; only its hash is persisted server-side.
-  const [createdAthlete, setCreatedAthlete] = useState<{ accountId: string; activationCode: string; expiresAt: string } | null>(null);
+  const [createdAthlete, setCreatedAthlete] = useState<{
+    accountId: string;
+    activationCode: string;
+    expiresAt: string;
+    /** The roster record the code's login is for, so the next steps can name it; null when this page cannot tell. */
+    athleteId: string | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -425,6 +548,19 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
       setCodeArmedId((id) => (rowStillOffers(byId(id), 'code') ? id : null));
       setRevokeArmedId((id) => (rowStillOffers(byId(id), 'signOut') ? id : null));
       setDeactivateArmedId((id) => (rowStillOffers(byId(id), 'deactivate') ? id : null));
+      // A role filter nobody holds any more is dropped for good: left in place,
+      // it would switch itself back on when someone with that role is added later.
+      setRosterRole((role) => (role === 'all' || nextMembers.some((m) => roleLabel(m.role) === role) ? role : 'all'));
+      // The other things that hold a row in view (rowHeld) end with what they
+      // were about: a name editor on a row that can no longer carry a name, a
+      // guardian remove or move whose link is no longer there. Otherwise a row
+      // would stay held with nothing open on it.
+      const nextLinks = Array.isArray(membersPayload.guardian_links) ? membersPayload.guardian_links : [];
+      setNameEditId((id) => (id && nextMembers.some((m) => m.account_id === id && canCarryStaffDisplayName(m.role)) ? id : null));
+      setPendingUnlink((pending) =>
+        pending && nextLinks.some((link) => link.account_id === pending.accountId && link.athlete_id === pending.athleteId) ? pending : null);
+      setPendingMove((pending) =>
+        pending && nextLinks.some((link) => link.account_id === pending.accountId && link.parent_id === pending.parentId) ? pending : null);
       setMembersAvailable(true);
       setOrganizationName(membersPayload.organization_name?.trim() || '');
 
@@ -521,7 +657,11 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
    * roster the server returned or not at all — never from an id typed blind
    * against a roster this page could not read.
    */
-  const parentInviteBlockedReason = !rosterAvailable
+  // Still loading is not "could not be read": Gym Setup's guardian link lands
+  // here with Parent chosen before the first read answers (AS10-1 review).
+  const parentInviteBlockedReason = loading && !rosterAvailable
+    ? 'Your gym roster is still being read.'
+    : !rosterAvailable
     ? 'Your gym roster could not be read, so there is no verified list of athletes to link a guardian to. Reload this page and try again.'
     : roster.length === 0
       ? 'There are no athlete records in your gym yet. Add the athlete first, then invite their guardian.'
@@ -540,6 +680,56 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
     if (member?.athlete_id) return rosterById.get(member.athlete_id)?.full_name?.trim() || member.account_id;
     return member?.login_email || 'Account with no sign-in address';
   };
+
+  /*
+   * FIND A PERSON ON THE ROSTER (lane AS-10, PR AS10-2a; app scrub OFF-06): a
+   * box and a role filter, in Athlete Records' own pattern. They only narrow
+   * what is shown; nothing is re-read.
+   *
+   * The box searches what the row itself shows -- the person's name or sign-in
+   * address and the staff name the gym typed -- plus a PIN athlete's sign-in
+   * ID, which is what the athlete types at the tablet. It does not search an
+   * id or address the row does not show.
+   */
+  // The roles present, by the Role column's own words ("Gym Admin" covers both
+  // admin names), in the roster's order.
+  const rosterRoleOptions = Array.from(new Set(members.map((member) => roleLabel(member.role))));
+  // rosterRole always names a role present: load(), the only place the roster
+  // changes, resets it to All roles in the same step when nobody holds it.
+  const rosterMatches = (member: Member, find: string, role: string): boolean => {
+    if (role !== 'all' && roleLabel(member.role) !== role) return false;
+    const needle = find.trim().toLowerCase();
+    if (!needle) return true;
+    const shown: Array<string | null | undefined> = [member.staff_display_name];
+    // Not the "no sign-in address" stand-in: that is not something to find a person by.
+    if (member.athlete_id || member.login_email) shown.push(personLabel(member.account_id));
+    if (member.auth_provider === 'ppbf_local' && member.role === 'athlete') shown.push(member.account_id);
+    return shown.some((text) => typeof text === 'string' && text.toLowerCase().includes(needle));
+  };
+  /*
+   * A row with something armed or open on it stays in view whatever the box
+   * and the role say, until that is confirmed or cancelled. So nothing armed is
+   * ever out of sight, and nothing can come back armed, one tap from acting,
+   * when the list changes -- by typing, by choosing a role, or by a re-read
+   * that changes a name or a role (the rule rowStillOffers keeps for what a row
+   * offers). A name being edited stays put too, so its field is never
+   * re-opened under the admin's typing.
+   */
+  const rowHeld = (accountId: string): boolean =>
+    accountId === revokeArmedId
+    || accountId === codeArmedId
+    || accountId === deactivateArmedId
+    || accountId === nameEditId
+    || accountId === pendingUnlink?.accountId
+    || accountId === pendingMove?.accountId;
+  const matchingIds = new Set(
+    members.filter((member) => rosterMatches(member, rosterFind, rosterRole)).map((member) => member.account_id),
+  );
+  const shownMembers = members.filter((member) => matchingIds.has(member.account_id) || rowHeld(member.account_id));
+  // Rows in view only because something is open on them: said in the caption,
+  // so a held row never reads as a match for what was typed.
+  const keptOpenCount = shownMembers.length - matchingIds.size;
+  const rosterNarrowed = matchingIds.size !== members.length;
 
   /**
    * The next unused ath-NNN for this gym.
@@ -1003,7 +1193,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
 
       // The account remains inactive until this one-time code is redeemed.
       if (!createPayload.activation_code || !createPayload.expires_at) throw new Error('Account was created but no activation code was returned');
-      setCreatedAthlete({ accountId: createdAccountId, activationCode: createPayload.activation_code, expiresAt: createPayload.expires_at });
+      setCreatedAthlete({
+        accountId: createdAccountId,
+        activationCode: createPayload.activation_code,
+        expiresAt: createPayload.expires_at,
+        athleteId: recordId,
+      });
 
       await load();
       setTab('people');
@@ -1182,7 +1377,12 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
         throw new Error(payload.error || 'Could not reset that PIN');
       }
       if (!payload.activation_code || !payload.expires_at) throw new Error('Reset succeeded but no activation code was returned');
-      setCreatedAthlete({ accountId, activationCode: payload.activation_code, expiresAt: payload.expires_at });
+      setCreatedAthlete({
+        accountId,
+        activationCode: payload.activation_code,
+        expiresAt: payload.expires_at,
+        athleteId: members.find((member) => member.account_id === accountId)?.athlete_id ?? null,
+      });
       setNotice(`${personLabel(accountId)} is inactive until the new one-time activation code is redeemed.`);
       await load();
     } catch (resetError) {
@@ -1230,6 +1430,10 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
               <Link href="/admin" className="btn btn--ghost">
                 Capabilities
               </Link>
+              {/* What is left before the gym's first class (lane AS-10, OFF-09). */}
+              <Link href="/admin/setup" className="btn btn--ghost">
+                Gym Setup
+              </Link>
             </div>
           </div>
         </header>
@@ -1272,6 +1476,26 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
               <p className="t-muted mt-[var(--s3)]">
                 This code is shown only once and expires {formatGymDateTime(createdAthlete.expiresAt) ?? 'at the stated expiry time'}. The athlete stays inactive until they redeem it and choose their own PIN.
               </p>
+
+              {createdAthlete.athleteId && (
+                <CodeNextSteps
+                  key={createdAthlete.athleteId}
+                  athleteId={createdAthlete.athleteId}
+                  onAddGuardian={() => {
+                    // A fresh guardian invite for this athlete. Nothing armed or
+                    // typed earlier for someone else carries over: a role change
+                    // left armed would send under its old words (AS10-1 review).
+                    // The code stays on screen above until Done.
+                    setPendingRoleChange(null);
+                    setInviteEmail('');
+                    setGuardianFullName('');
+                    setGuardianRelationship(GUARDIAN_RELATIONSHIPS[0].value);
+                    setInviteRole('parent');
+                    setGuardianAthleteId(createdAthlete.athleteId ?? '');
+                    setTab('invite-staff');
+                  }}
+                />
+              )}
             </div>
           </section>
         )}
@@ -1405,9 +1629,43 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   </div>
                 </div>
               ) : (
-                /* The scroller is a child of .frame-in, which sets
+                <>
+                <div className="flex flex-wrap items-end gap-[var(--s4)] p-[var(--s4)]">
+                  <div className="field">
+                    <label htmlFor="roster-find" className="t-label">
+                      Find a person
+                    </label>
+                    <input
+                      id="roster-find"
+                      type="search"
+                      value={rosterFind}
+                      onChange={(event) => setRosterFind(event.target.value)}
+                      placeholder="Name, email or sign-in ID"
+                      className="input"
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="roster-role" className="t-label">
+                      Role
+                    </label>
+                    <select
+                      id="roster-role"
+                      value={rosterRole}
+                      onChange={(event) => setRosterRole(event.target.value)}
+                      className="select"
+                    >
+                      <option value="all">All roles</option>
+                      {rosterRoleOptions.map((label) => (
+                        <option key={label} value={label}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {/* The scroller is a child of .frame-in, which sets
                    overflow:hidden unlayered -- a layered overflow-x utility on
-                   the same element would never win. */
+                   the same element would never win. */}
                 <div className="overflow-x-auto">
                 <table className="ledger">
                   {/* The caption is as wide as the table, and the table scrolls
@@ -1415,7 +1673,15 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                      at the screen edge (#1482 item 5). The text stays put while
                      the table scrolls under it, and wraps to the visible width. */}
                   <caption className="text-left">
-                    <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">Everyone in this gym</span>
+                    {/* A narrowed list says so: it is not everyone in the gym. */}
+                    <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">
+                      {!rosterNarrowed
+                        ? 'Everyone in this gym'
+                        : `Showing ${matchingIds.size} of ${members.length}${
+                          keptOpenCount > 0
+                            ? `, and ${keptOpenCount} kept in view until what is open on ${keptOpenCount === 1 ? 'it' : 'them'} is confirmed or cancelled`
+                            : ''}`}
+                    </span>
                   </caption>
                   <thead>
                     <tr>
@@ -1427,7 +1693,16 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     </tr>
                   </thead>
                   <tbody>
-                  {members.map((member) => {
+                  {matchingIds.size === 0 && (
+                    <tr>
+                      <td colSpan={5}>
+                        {rosterRole === 'all'
+                          ? 'No one on the roster matches. Clear the box to see everyone.'
+                          : 'No one on the roster matches. Clear the box or choose All roles.'}
+                      </td>
+                    </tr>
+                  )}
+                  {shownMembers.map((member) => {
                     const isGuardian = member.role === 'parent';
                     const memberLinks = guardianLinksByAccount.get(member.account_id) || [];
                     const linkCount = !isGuardian ? null : guardianLinksAvailable ? memberLinks.length : null;
@@ -1827,6 +2102,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   </tbody>
                 </table>
                 </div>
+                </>
               )}
               </div>
             </div>

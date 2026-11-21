@@ -1,3 +1,4 @@
+import { resolveBoardSeatAccess, type BoardSeatSlug } from '../app/board/boardWorkspaceConfig';
 import { OPERATIONS_ROLES } from './operationsAccess';
 import type { ClubRole } from './roleRoutes';
 
@@ -107,6 +108,20 @@ export interface Door {
    * page. Still advisory: it decides chrome, never access.
    */
   refusesInPlace?: true;
+  /**
+   * The board seat this door is the workspace of. A board member's menus show
+   * only the seats their session may open (AS-4; BOA-05, "Show only the seats
+   * the session may open"), by the same rule the seat pages apply,
+   * resolveBoardSeatAccess. Advisory, like `roles`: the page still decides.
+   */
+  seat?: BoardSeatSlug;
+  /**
+   * Roles whose MENUS leave this door out, display only. `roles` is read
+   * elsewhere as who may open the page (parentMayOpenPath decides which pages a
+   * family resource may send a parent to), so a menu-only change must not touch
+   * it: the page and every rule that reads `roles` stay as they are.
+   */
+  menuHiddenFor?: readonly ClubRole[];
 }
 
 const BOARD_GATE: readonly ClubRole[] = ['board', 'platform_owner'];
@@ -159,6 +174,11 @@ export const BUILDING: readonly Door[] = [
     hint: 'Capability definitions, assignments, status and role exposure.' },
   { href: '/admin/people', label: 'Gym Office', room: 'office', roles: ['admin'],
     keywords: 'roster members directory participants' },
+  /* AS-4 (U2-4a, QV A): the plan's "Athlete Records and Export" and "Equipment
+     and Suppliers" are four doors under today's page titles, admin only. The
+     platform owner is shown a "managed per gym" notice on this one. */
+  { href: '/admin/athletes', label: 'Correct An Athlete Record', room: 'office', roles: ['admin'],
+    keywords: 'athlete records correct fix date of birth guardian record' },
   // Lane L31 P5: what is left before the gym's first class, read-only.
   { href: '/admin/setup', label: 'Gym Setup', room: 'office', roles: ['admin'],
     keywords: 'setup checklist onboarding first class ready coaches athletes guardians waivers schedule tv',
@@ -186,6 +206,8 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/import', label: 'Load a Roster', room: 'office', roles: ['admin', 'coach'],
     keywords: 'roster import load spreadsheet csv upload bulk add athletes members',
     hint: 'Check a spreadsheet, see what it would do, then add. Nobody already on the roster is overwritten.' },
+  { href: '/admin/export', label: 'Take Your Roster With You', room: 'office', roles: ['admin'],
+    keywords: 'export roster download spreadsheet csv athlete records leave' },
   { href: '/admin/volunteer-management', label: 'Volunteers', room: 'office', roles: ADMIN_GATE,
     keywords: 'volunteer hours coverage signup' },
   { href: '/admin/community-service', label: 'Community Service', room: 'office', roles: ['coach', 'admin'],
@@ -215,6 +237,11 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/memberships', label: 'Program Memberships', room: 'office', roles: ['admin'],
     keywords: 'memberships enrollment programs scholarships discounts',
     hint: 'Who is enrolled in what, scholarships recorded as discounts. No billing.' },
+  // The two gear pages paint no room of their own; office, as the other admin doors.
+  { href: '/admin/gear', label: 'Equipment and margin', room: 'office', roles: ['admin'],
+    keywords: 'equipment gear store stock margin' },
+  { href: '/admin/gear/vendors', label: 'Suppliers and accounts', room: 'office', roles: ['admin'],
+    keywords: 'suppliers vendors accounts equipment gear' },
   { href: '/admin/program-phases', label: 'Program Phases', room: 'office', roles: ['coach', 'admin'],
     keywords: 'phase block periodization foundation competition prep off season program cycle',
     hint: 'Which block each program is in, declared by a person. History kept.' },
@@ -281,6 +308,9 @@ export const BUILDING: readonly Door[] = [
      the exact failure this file's header says `roles` exists to prevent. */
   { href: '/admin/platform', label: 'Omega', room: 'office', roles: ['platform_owner'],
     keywords: 'system settings internals' },
+  // AS-4 (U2-4a): the platform owner's Gyms section, today's overview page.
+  { href: '/admin/platform/overview', label: 'All Gyms Overview', room: 'office', roles: ['platform_owner'],
+    keywords: 'gyms organizations overview all tenants' },
   { href: '/admin/system', label: 'System', room: 'office', roles: ['admin', 'platform_owner'],
     keywords: 'system routes jobs workflows inventory status',
     hint: 'The routes and jobs the platform is built from. Read-only; no row says a route or job is working.' },
@@ -381,7 +411,10 @@ export const BUILDING: readonly Door[] = [
     roles: ['athlete', 'coach', 'parent', 'admin'],
     keywords: 'classes sessions registration attendance calendar today',
     hint: "The day's sessions — registration and attendance." },
-  { href: '/wall', label: 'The Wall', room: 'floor', roles: OPEN,
+  /* AS-4 (U2-4a, QW): "/wall leaves the athlete and parent menus". Menus only:
+     the door stays OPEN, so the page, a TV, a direct link and a family resource
+     that points here are as before. */
+  { href: '/wall', label: 'The Wall', room: 'floor', roles: OPEN, menuHiddenFor: ['athlete', 'parent'],
     keywords: 'display floor screen tv broadcast', hint: 'Gym floor display — TV at the front desk.' },
   { href: '/athlete/dashboard', label: 'Athlete Workspace', room: 'floor', roles: ['athlete'],
     keywords: 'my training check-in rpe session athlete' },
@@ -584,18 +617,18 @@ export const BUILDING: readonly Door[] = [
   { href: '/board', label: 'Board Hub', room: 'board', roles: BOARD_GATE,
     keywords: 'governance seats directory board hub',
     hint: 'Seat directory and governance control surface.' },
-  { href: '/board/president', label: 'President Workspace', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
-  { href: '/board/chair', label: 'Board Chair Workspace', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
-  { href: '/board/vice-chair', label: 'Vice Chair Workspace', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
-  { href: '/board/treasurer', label: 'Treasurer Workspace', room: 'board', roles: BOARD_GATE,
+  { href: '/board/president', label: 'President Workspace', room: 'board', roles: BOARD_GATE, seat: 'president', keywords: 'seat officer' },
+  { href: '/board/chair', label: 'Board Chair Workspace', room: 'board', roles: BOARD_GATE, seat: 'chair', keywords: 'seat officer' },
+  { href: '/board/vice-chair', label: 'Vice Chair Workspace', room: 'board', roles: BOARD_GATE, seat: 'vice-chair', keywords: 'seat officer' },
+  { href: '/board/treasurer', label: 'Treasurer Workspace', room: 'board', roles: BOARD_GATE, seat: 'treasurer',
     keywords: 'seat officer finance budget funds' },
-  { href: '/board/secretary', label: 'Secretary Workspace', room: 'board', roles: BOARD_GATE,
+  { href: '/board/secretary', label: 'Secretary Workspace', room: 'board', roles: BOARD_GATE, seat: 'secretary',
     keywords: 'seat officer minutes records' },
-  { href: '/board/safety-director', label: 'Program & Safety Director Workspace', room: 'board', roles: BOARD_GATE,
+  { href: '/board/safety-director', label: 'Program & Safety Director Workspace', room: 'board', roles: BOARD_GATE, seat: 'safety-director',
     keywords: 'seat officer safety welfare' },
-  { href: '/board/community-director', label: 'Community & Development Director Workspace', room: 'board', roles: BOARD_GATE,
+  { href: '/board/community-director', label: 'Community & Development Director Workspace', room: 'board', roles: BOARD_GATE, seat: 'community-director',
     keywords: 'seat officer outreach community' },
-  { href: '/board/at-large', label: 'Director-at-Large Workspace', room: 'board', roles: BOARD_GATE, keywords: 'seat officer' },
+  { href: '/board/at-large', label: 'Director-at-Large Workspace', room: 'board', roles: BOARD_GATE, seat: 'at-large', keywords: 'seat officer' },
   /* Board, not clinic. Both pages are BoardRoleGate-only, both are headed
      "Board Workspace", and both are counts with a minimum cohort size and no
      name, case or detail -- "aggregate only", which is the board room's whole
@@ -752,17 +785,38 @@ export const ROOM_BLURB: Record<Room, string> = {
 };
 
 /**
+ * Who is looking, beyond the role. Pass it, and a board seat door shows only to
+ * a session that may open that seat (resolveBoardSeatAccess: a seat the member
+ * holds, any seat for an oversight seat, every seat for the platform owner).
+ * Leave it out and seat doors show by role alone, as before AS-4, until each
+ * menu passes its session (4c).
+ */
+export interface DoorViewer {
+  /**
+   * Every seat the board member holds, as the seat pages read them
+   * (BoardRoleGate's useBoardSession().seats). A small board doubles up, and a
+   * member with two seats opens both, so the landing seat alone is not enough.
+   */
+  boardSeats?: readonly BoardSeatSlug[] | null;
+}
+
+/**
  * Doors a session may see. Advisory only — see the note at the top of the file.
  * A null session sees only OPEN surfaces.
  */
-export function visibleDoors(role: ClubRole | null): Door[] {
+export function visibleDoors(role: ClubRole | null, viewer?: DoorViewer): Door[] {
   return BUILDING.filter((d) => {
+    if (role && d.menuHiddenFor?.includes(role)) return false;
     if (d.roles === OPEN) return true;
     if (!role) return false;
     // platform_owner is broader in breadth but NARROWER in depth (see
     // roleRoutes.ts) — so it is not a wildcard here either. It sees a door only
     // when that door names it.
-    return d.roles.includes(role);
+    if (!d.roles.includes(role)) return false;
+    if (d.seat && viewer && (role === 'board' || role === 'platform_owner')) {
+      return resolveBoardSeatAccess({ role, seats: viewer.boardSeats ?? [], seat: d.seat }).allowed;
+    }
+    return true;
   });
 }
 

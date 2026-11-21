@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import FinishedSessions from '@/components/FinishedSessions';
-import SessionClassPicker, { type ClassChoiceInfo } from '@/components/SessionClassPicker';
+import SessionClassPicker, { classTimes, type ClassChoiceInfo } from '@/components/SessionClassPicker';
 import { type ClassChoice, type TieableClassView, defaultClassChoice } from '@/src/shared/sessionClassChoice';
 import { apiBase } from '@/lib/apiBase';
 import { fetchOwnLiveRun, startClassSession, startRefusalWords } from '@/src/client/startClassSession';
@@ -143,10 +143,22 @@ function CoachSessionScripts() {
   // Whether the coach picked it, and the list it came from: a default is worked out again at the
   // moment of Start, so a page left open never starts a session on a class that has ended.
   const classPick = useRef<{ picked: boolean; classes: readonly TieableClassView[] }>({ picked: false, classes: [] });
+  // The same list, kept for the screen: the opened plan's start names the class chosen above (CF-08).
+  const [tieableClasses, setTieableClasses] = useState<readonly TieableClassView[]>([]);
   const onClassChoice = useCallback((choice: ClassChoice, info: ClassChoiceInfo) => {
     classPick.current = info;
+    setTieableClasses(info.classes);
     setClassChoice(choice);
   }, []);
+  // The chosen class in the picker's own words; null while none is chosen.
+  const chosenClass = typeof classChoice === 'string'
+    ? tieableClasses.find((item) => item.class_id === classChoice) ?? null
+    : null;
+  const classChoiceWords = classChoice === null
+    ? 'No class (open gym)'
+    : chosenClass
+      ? `${chosenClass.title}${classTimes(chosenClass) ? `, ${classTimes(chosenClass)}` : ''}`
+      : null;
 
   // Changing the open plan (lane L1): its name, block titles and minutes. The
   // notice says what the save did, in the server's terms -- changed where it
@@ -281,12 +293,29 @@ function CoachSessionScripts() {
     }
   }, []);
 
+  // THE OPENED PLAN IS BROUGHT INTO VIEW (lane 6C7, U2-6c; app scrub CF-08). It is drawn below the
+  // whole plans grid, and "Open plan" used to change only its own words, so the coach was left at
+  // the button with the plan out of sight. Opening one now moves focus to the plan's heading and
+  // scrolls it into view, as Workout Templates does (#1983). No smooth scroll: an instant move
+  // needs no reduced-motion exception.
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [focusDetail, setFocusDetail] = useState(0);
+  useEffect(() => {
+    if (focusDetail === 0) return;
+    const heading = detailHeadingRef.current;
+    heading?.focus({ preventScroll: true });
+    // The page's top bar is sticky and of no fixed height (it wraps on a narrow screen), so 'start'
+    // would put the heading under it (review of #2057). 'center' keeps it clear of the bar.
+    heading?.scrollIntoView?.({ block: 'center' });
+  }, [focusDetail]);
+
   const openScript = useCallback(async (scriptId: string) => {
     // Clearing the previous script's detail and error together: leaving either
     // in place shows one script's blocks -- or one script's failure -- under
     // another script's name while the new one loads. The delivery history is
     // cleared on the same principle.
     setOpenScriptId(scriptId);
+    setFocusDetail((count) => count + 1);
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
@@ -621,7 +650,7 @@ function CoachSessionScripts() {
 
         {openScriptId !== null && (
           <section data-surface="kiosk" className="mat-leather mt-[var(--s6)] rounded-[var(--r-lg)] p-[var(--s5)]">
-            <h2 className="t-command text-[length:var(--t-lg)]">
+            <h2 ref={detailHeadingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">
               {detail ? detail.name : 'Session plan'}
             </h2>
 
@@ -684,8 +713,15 @@ function CoachSessionScripts() {
 
                 {!editing && detail.authoring_state !== 'retired' && (
                   <div className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
+                    {/* The class choice, repeated by the start it belongs to (CF-08): the picker
+                        is at the top of the page, a long scroll above this button. */}
                     {detail.blocks.length > 0 && classChoice === undefined && (
                       <p className="t-body w-full text-[color:var(--brass-300)]">Choose the class at the top of the page to start.</p>
+                    )}
+                    {detail.blocks.length > 0 && classChoiceWords !== null && (
+                      <p className="t-body w-full text-[color:var(--bone-300)]">
+                        {`This session is for: ${classChoiceWords}. To change it, choose the class at the top of the page.`}
+                      </p>
                     )}
                     {detail.blocks.length > 0 && (
                       <button

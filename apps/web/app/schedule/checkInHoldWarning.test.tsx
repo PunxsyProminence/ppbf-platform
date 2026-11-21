@@ -4,7 +4,7 @@
 
 // OD-2026-10-06-024 ruling 1, "Warn only, both places": an active training hold
 // does not stop an attendance check-in, and the staff member who just marked the
-// athlete is told, beside the Attendance Check-In button. The scheduler route
+// athlete is told, beside the register's Save button. The scheduler route
 // sends `hold_warning` to a coach or organization admin only; this proves the
 // screen half -- the check-in's success still shows, the hold facts appear in
 // the document next to it, and an answer without a hold adds nothing.
@@ -91,7 +91,7 @@ function installFetchMock(checkInAnswer: Record<string, unknown>): jest.Mock {
 async function checkIn(): Promise<void> {
   render(<SchedulerPage />);
   await screen.findByText('Class Schedule');
-  fireEvent.click(await screen.findByRole('button', { name: 'Update Attendance' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
   await screen.findByText('Attendance saved.');
 }
 
@@ -105,7 +105,7 @@ describe('attendance check-in on a held athlete', () => {
 
     await checkIn();
 
-    const button = screen.getByRole('button', { name: 'Update Attendance' });
+    const button = screen.getByRole('button', { name: 'Save' });
     const card = button.closest('article') as HTMLElement;
     const notice = (await screen.findAllByRole('status')).find((el) => el.textContent?.includes('Active Training Hold'));
     expect(notice).toBeDefined();
@@ -163,7 +163,7 @@ describe('attendance check-in on a held athlete', () => {
     await checkIn();
     expect(await screen.findByText('Active Training Hold')).toBeInTheDocument();
 
-    const picker = screen.getByRole('button', { name: 'Update Attendance' }).closest('article')!.querySelectorAll('select')[1];
+    const picker = screen.getByRole('button', { name: 'Save' }).closest('article')!.querySelectorAll('select')[1];
     fireEvent.change(picker, { target: { value: 'athlete-2' } });
 
     await waitFor(() => expect(screen.queryByText('Active Training Hold')).toBeNull());
@@ -183,7 +183,7 @@ describe('attendance check-in on a held athlete', () => {
 
     render(<SchedulerPage />);
     await screen.findByText('Class Schedule');
-    const button = await screen.findByRole('button', { name: 'Update Attendance' });
+    const button = await screen.findByRole('button', { name: 'Save' });
     fireEvent.click(button); // athlete-1 is selected; the POST is now in flight
 
     const picker = button.closest('article')!.querySelectorAll('select')[1];
@@ -215,7 +215,7 @@ describe('attendance check-in on a held athlete', () => {
       }
       return jsonResponse({ ok: true, role: 'coach', classes, registrations: [], coaching_requests: [], attendance: [] });
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Update Attendance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(screen.queryByText('Active Training Hold')).toBeNull());
   });

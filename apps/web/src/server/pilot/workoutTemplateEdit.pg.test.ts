@@ -524,6 +524,46 @@ describe('editing a workout template', () => {
   });
 });
 
+// "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4, Q1 = A, Q3 = A).
+describe('"Looks right" on a template', () => {
+  it('writes the next version with the same content and items; the label keeps its sources, loses its draft and records the coach', async () => {
+    const org = await newGym();
+    await seedDrill(org, 'drl_lr_jab', 'Jab');
+    await seedTemplate(org, 'wtp_lr', 'Tuesday', 'drl_lr_jab');
+    const result = await edit(org, { template_id: 'wtp_lr', looks_right: 'intent' });
+    expect(result).toMatchObject({ changed: true, version: 2, edited: [], looks_right: 'intent' });
+
+    const [v1, v2] = await versionsOf(org, 'wtp_lr');
+    expect(v2.intent).toBe(v1.intent);
+    expect(v2.session_type).toBe(v1.session_type);
+    const oldItems = await itemsOf(org, 'wtp_lr');
+    const newItems = await itemsOf(org, result.template_id);
+    expect(newItems.map((item) => [item.ordinal, item.block, item.drill_id])).toEqual(oldItems.map((item) => [item.ordinal, item.block, item.drill_id]));
+
+    const labels = (await labelsOf(org, 'wtp_lr', 2)).field_labels;
+    expect(labels.intent).toEqual({
+      status: 'INFERRED', sources: ['DOC-1'], looks_right: { by_account_id: `${COACH}@${org}`, by_role: 'coach', at: expect.any(String) },
+    });
+    expect(labels.session_type.draft).toBe(DRAFT);
+
+    const audit = (await client.query(
+      `select * from pilot.audit_events where organization_id = $1 and entity_type = 'workout_template' and entity_id = $2`, [org, result.template_id],
+    )).rows;
+    expect(audit).toHaveLength(1);
+    expect(audit[0].details).toMatchObject({ action: 'in_app_edit', looks_right: 'intent', edited: [], from_template_id: 'wtp_lr' });
+  });
+
+  it('refuses a field that is not a draft (409 FIELD_NOT_DRAFT), and writes nothing', async () => {
+    const org = await newGym();
+    await seedDrill(org, 'drl_lr_cross', 'Cross');
+    await seedTemplate(org, 'wtp_lr_no', 'Wednesday', 'drl_lr_cross');
+    for (const looks_right of ['name', 'items', 'coach_notes']) {
+      expect(await rejection(edit(org, { template_id: 'wtp_lr_no', looks_right }))).toMatchObject({ status: 409, code: 'FIELD_NOT_DRAFT' });
+    }
+    expect(await versionsOf(org, 'wtp_lr_no')).toHaveLength(1);
+  });
+});
+
 describe('parseWorkoutTemplateEdit', () => {
   it('refuses unknown and never-editable fields by name', () => {
     expect(() => parseWorkoutTemplateEdit({ template_id: 'x', colour: 'red' })).toThrow('Unsupported field: colour');

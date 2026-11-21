@@ -8,7 +8,7 @@
 // admits items may exist; and the page carries the no-scores/no-predictions
 // framing the owner's approval was conditioned on.
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { PASSBOOK_PAGE, PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
@@ -227,5 +227,71 @@ describe('"Assign a drill" carries the gap\'s athlete (lane AS-11)', () => {
   ])('a %s click, which opens another tab, hands nothing over', async (_name, init) => {
     fireEvent.click(await link(), init);
     expect(takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE)).toBeNull();
+  });
+});
+
+// Lane AS-11 (app scrub CF-15; Q4 = A): the name on each of the Morning
+// Read's seven reads opens that athlete's Passbook, the athlete page. The
+// athlete travels in page memory on a plain click, never in the address.
+describe('an athlete\'s name opens their Passbook (lane AS-11)', () => {
+  const ALL_SEVEN = {
+    ...DIGEST,
+    open_safety_escalations: [{
+      athlete_id: 'ath-5', athlete_name: 'Lee T.', escalation_id: 'esc-1', source_type: 'near_miss',
+      severity: 'moderate', reason: 'Slipped on the apron.', created_at: '2026-08-10T12:00:00.000Z', pain_report: false,
+    }],
+    open_compliance_violations: [{
+      athlete_id: 'ath-6', athlete_name: 'Noor A.', violation_id: 'v-1', rule_id: 'r-1', rule_name: 'Waiver on file',
+      severity: 'medium', status: 'open', days_open: 3,
+    }],
+    unreviewed_sessions: [{ athlete_id: 'ath-7', athlete_name: 'Dana W.', session_id: 's-1', session_date: '2026-08-01', days_waiting: 15 }],
+  };
+  const READS = [
+    ['Open safety escalations', 'Lee T.', 'ath-5'],
+    ['Open compliance violations', 'Noor A.', 'ath-6'],
+    ['Holds expiring within 14 days', 'Kim L.', 'ath-4'],
+    ['3+ RED readiness days this week', 'Sam R.', 'ath-2'],
+    ['Attendance fading', 'Rosa D.', 'ath-3'],
+    ['Gaps waiting 14+ days for a drill', 'Jordan P.', 'ath-1'],
+    ['Sessions unreviewed for 7+ days', 'Dana W.', 'ath-7'],
+  ] as const;
+
+  afterEach(() => {
+    takeArrivalAthlete(PASSBOOK_PAGE);
+    takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE);
+  });
+
+  async function open() {
+    global.fetch = mockFetch({ digest: ALL_SEVEN });
+    await act(async () => {
+      render(<CoachIntelligencePage />);
+    });
+  }
+
+  test.each(READS)('%s: the name is a link that hands that athlete to Passbook', async (heading, name, athleteId) => {
+    await open();
+    const section = screen.getByRole('heading', { name: heading }).closest('section') as HTMLElement;
+    const link = within(section).getByRole('link', { name });
+    expect(link.getAttribute('href')).toBe('/coach/passbook');
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(PROGRESSION_INTELLIGENCE_PAGE)).toBeNull();
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBe(athleteId);
+  });
+
+  test('every read\'s name is a link, none carries an athlete id, and a click that opens another tab hands nothing over', async () => {
+    await open();
+    const names = screen.getAllByRole('link').filter((link) => link.getAttribute('href') === '/coach/passbook');
+    expect(names.map((link) => link.textContent)).toEqual(READS.map(([, name]) => name));
+    for (const link of screen.getAllByRole('link')) expect(link.getAttribute('href')).not.toMatch(/ath-\d/);
+    fireEvent.click(names[0], { ctrlKey: true });
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBeNull();
+  });
+
+  test('a name link carries the gym-floor height and the kiosk type size', async () => {
+    await open();
+    const link = screen.getByRole('link', { name: 'Kim L.' });
+    expect(link.className).toContain('min-h-[var(--tap)]');
+    expect(link.className).toContain('text-[length:var(--t-md)]');
   });
 });

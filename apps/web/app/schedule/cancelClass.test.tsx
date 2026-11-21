@@ -257,7 +257,7 @@ describe('Cancel Class (#1536)', () => {
   test('a cancelled class selected for the register offers no attendance action, for staff or a family', async () => {
     installFetchMock('coach', [classRow('gone', 'Called Off', 1 * HOUR, { status: 'cancelled' })]);
     await renderPage();
-    expect(screen.queryByRole('button', { name: 'Update Attendance' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
   });
 
   test("a family with a cancelled class of today selected is not offered I'm here", async () => {

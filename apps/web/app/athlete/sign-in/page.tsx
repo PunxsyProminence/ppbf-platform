@@ -71,8 +71,9 @@ export default function AthletePinSignInPage() {
       // now. Self-activation at /activate leaves must_change_pin false because
       // the athlete chose the PIN themselves and nobody else knows it, so the
       // ordinary path through this page does not reach this branch at all. It
-      // stays because rows predating the shared-PIN retirement still carry the
-      // flag, and an admin reset still sets it.
+      // stays for an account row that already carries the flag. The admin's
+      // reset does not set it: it clears the PIN and issues a new one-time code,
+      // with must_change_pin false (activation.ts).
       if (!resolution.ok && resolution.reason === 'pin_change_required') {
         router.replace('/change-pin');
         return;

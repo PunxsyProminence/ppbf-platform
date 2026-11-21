@@ -729,12 +729,41 @@ function DraftMark({ state }: { state: boolean | null | undefined }) {
   return <span className="ml-[var(--s2)] normal-case tracking-normal" style={LIFT}>({DRAFT_NOT_CHECKED})</span>;
 }
 
-function draftMark(detail: TemplateDetail, field: TemplateMarkedField) {
-  return detail.fieldDrafts?.labelled === true ? <DraftMark state={detail.fieldDrafts[field]} /> : null;
+// "LOOKS RIGHT" (OW25-55; lane ED-UI PR4): every field marked here is one the form can change (Q3 = A).
+interface LooksRightPress { onPress: (field: TemplateMarkedField) => void; disabled: boolean }
+// The Edit form's words for a save (TemplateEditForm.tsx).
+const LOOKS_RIGHT_FAILED = 'The template could not be saved.';
+const LOOKS_RIGHT_UNKNOWN = 'It is not known whether this change was saved.';
+const TEMPLATE_FIELD_LABEL: Record<TemplateMarkedField, string> = {
+  name: 'Name', session_type: 'Session type', difficulty: 'Difficulty', age_band: 'Age group', duration_minutes: 'Minutes',
+  intent: 'Intent', requires_coach_authorization: 'Coach authorization', coach_notes: 'Coach notes', items: 'The blocks',
+};
+
+function draftMark(detail: TemplateDetail, field: TemplateMarkedField, press?: LooksRightPress) {
+  if (detail.fieldDrafts?.labelled !== true) return null;
+  const state = detail.fieldDrafts[field];
+  return (
+    <>
+      <DraftMark state={state} />
+      {state === true && press && (
+        <span data-surface="kiosk" className="inline-block mb-[var(--s2)]">
+          <button type="button" className="btn btn--secondary ml-[var(--s2)]" aria-label={`Looks right: ${TEMPLATE_FIELD_LABEL[field]}`}
+            onClick={() => press.onPress(field)} disabled={press.disabled}>
+            Looks right
+          </button>
+        </span>
+      )}
+    </>
+  );
+}
+
+// draftMark as a component: the press reaches it as a prop, not during the page's render.
+function FieldMark({ detail, field, press }: { detail: TemplateDetail; field: TemplateMarkedField; press?: LooksRightPress }) {
+  return draftMark(detail, field, press);
 }
 
 /** The opened template's fields as a short list (Q5 = A), each with its mark. The name is the heading. */
-function TemplateFacts({ detail }: { detail: TemplateDetail }) {
+function TemplateFacts({ detail, press }: { detail: TemplateDetail; press?: LooksRightPress }) {
   const { template, fieldDrafts } = detail;
   const facts: Array<[TemplateMarkedField, string, string]> = [
     ['session_type', 'Session type', template.session_type.replace(/_/g, ' ')],
@@ -752,7 +781,7 @@ function TemplateFacts({ detail }: { detail: TemplateDetail }) {
         {facts.map(([field, label, value]) => (
           <div key={field} className="contents">
             <dt className="t-label" style={LIFT}>{label}</dt>
-            <dd className="t-body text-[color:var(--bone-300)]">{value}{draftMark(detail, field)}</dd>
+            <dd className="t-body text-[color:var(--bone-300)]">{value}{draftMark(detail, field, press)}</dd>
           </div>
         ))}
       </dl>
@@ -794,6 +823,9 @@ function CoachWorkoutTemplates() {
   const [editingId, setEditingId] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   const [editNotice, setEditNotice] = useState('');
+  // A "Looks right" press that did not land: the server's words, or that its outcome is not known. Focused when set.
+  const [looksRightError, setLooksRightError] = useState('');
+  const looksRightAlertRef = useRef<HTMLDivElement | null>(null);
   // After a stale or unknown save, Cancel opens the template again from the server.
   const rereadOnCancel = useRef(false);
   // The request key of every issue that has no settled answer yet, by template
@@ -842,6 +874,7 @@ function CoachWorkoutTemplates() {
     // template's name while the new read is in flight.
     setOpenTemplateId(templateId);
     setEditNotice('');
+    setLooksRightError('');
     setEditingId('');
     setDetail(null);
     setDetailError('');
@@ -914,6 +947,49 @@ function CoachWorkoutTemplates() {
     }
   }
 
+  // "LOOKS RIGHT" (lane ED-UI PR4): as after a save, the new version opens from the server; a 409 or an
+  // unknown outcome reads the list and this version again.
+  async function pressLooksRight(field: TemplateMarkedField) {
+    const opened = detail?.template;
+    if (!opened || editBusy) return;
+    setEditBusy(true);
+    setEditNotice('');
+    setLooksRightError('');
+    let status: number | null = null;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/workout-templates`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_id: opened.template_id, looks_right: field }),
+      });
+      status = response.status;
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; changed?: boolean; template_id?: unknown; version?: unknown };
+      if (!response.ok) throw new Error(payload.error || LOOKS_RIGHT_FAILED);
+      if (payload.changed !== true || typeof payload.template_id !== 'string' || typeof payload.version !== 'number') {
+        status = null; // A 2xx that does not say what it wrote: what happened is not known.
+        throw new Error(LOOKS_RIGHT_UNKNOWN);
+      }
+      await load();
+      await openTemplate(payload.template_id);
+      setEditNotice(`Recorded as looks right. Saved as version ${payload.version}.`);
+    } catch (failure) {
+      const unknown = status === null || status >= 500;
+      if (unknown || status === 409) {
+        await load();
+        await openTemplate(opened.template_id);
+      }
+      setLooksRightError(unknown ? LOOKS_RIGHT_UNKNOWN : (failure instanceof Error && failure.message) || LOOKS_RIGHT_FAILED);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  // On the current version only, as Edit is (TEMPLATE_VERSION_STALE).
+  const looksRightPress: LooksRightPress | undefined = detail && detail.template.superseded_at === null
+    ? { onPress: (field) => void pressLooksRight(field), disabled: issuing || making || editBusy }
+    : undefined;
+
   // After a 409 or an unknown outcome the list is read again; the form keeps what was typed.
   async function afterEditFailed(status: number | null) {
     try {
@@ -949,6 +1025,12 @@ function CoachWorkoutTemplates() {
     heading?.focus({ preventScroll: true });
     heading?.scrollIntoView?.({ block: 'start' });
   }, [focusDetail]);
+  // After the heading's: a press's alert, when there is one, is where focus ends.
+  useEffect(() => {
+    if (!looksRightError) return;
+    looksRightAlertRef.current?.focus({ preventScroll: true });
+    looksRightAlertRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [looksRightError]);
 
   const openIsListed = openTemplateId !== null && templates.some((template) => template.template_id === openTemplateId);
 
@@ -990,7 +1072,7 @@ function CoachWorkoutTemplates() {
               >
                 {detail ? detail.template.name : 'Workout template'}
               </h2>
-              {detail && editingId !== detail.template.template_id && draftMark(detail, 'name')}
+              {detail && editingId !== detail.template.template_id && <FieldMark detail={detail} field="name" press={looksRightPress} />}
             </div>
 
             {detailLoading && (
@@ -1005,6 +1087,13 @@ function CoachWorkoutTemplates() {
 
             {/* On the kiosk floor, as the Issue control is (a utility cannot beat .t-body's size). */}
             {editNotice && <div data-surface="kiosk"><p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p></div>}
+            {looksRightError && (
+              <div data-surface="kiosk">
+                <div ref={looksRightAlertRef} tabIndex={-1} role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[color:var(--hide-900)] p-[var(--s4)]">
+                  <p className="t-body font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> {looksRightError}</p>
+                </div>
+              </div>
+            )}
 
             {!detailLoading && !detailError && detail && editingId === detail.template.template_id && (
               <div className="mt-[var(--s4)]">
@@ -1033,23 +1122,23 @@ function CoachWorkoutTemplates() {
                 {detail.template.superseded_at === null && (
                   <div data-surface="kiosk" className="mt-[var(--s3)]">
                     <button ref={editButtonRef} type="button" disabled={issuing || making || editBusy}
-                      onClick={() => { setEditNotice(''); setEditingId(detail.template.template_id); }}
+                      onClick={() => { setEditNotice(''); setLooksRightError(''); setEditingId(detail.template.template_id); }}
                       className="btn btn--ghost" aria-label={`Edit: ${detail.template.name}`}>
                       Edit
                     </button>
                   </div>
                 )}
-                <TemplateFacts detail={detail} />
+                <TemplateFacts detail={detail} press={looksRightPress} />
                 {(detail.template.coach_notes ?? '').trim() !== '' && (
                   <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-                    <p className="t-label">Coach notes{draftMark(detail, 'coach_notes')}</p>
+                    <p className="t-label">Coach notes<FieldMark detail={detail} field="coach_notes" press={looksRightPress} /></p>
                     <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{detail.template.coach_notes}</p>
                   </div>
                 )}
 
                 <div className="mt-[var(--s5)] flex flex-wrap items-baseline">
                   <h3 className="t-command text-[length:var(--t-md)]">The blocks</h3>
-                  {draftMark(detail, 'items')}
+                  <FieldMark detail={detail} field="items" press={looksRightPress} />
                 </div>
 
                 {detail.items.length === 0 && (
