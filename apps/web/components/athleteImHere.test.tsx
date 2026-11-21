@@ -180,12 +180,14 @@ test('no open class today and none booked: no button, and the way to the schedul
 /* Lane AS-8, scrub ATH-07 (Overwatch Q9 A on #2020): a walk-in registers from
    the card, with the POST an athlete already sends from /schedule. */
 describe('a walk-in registers for an open class today', () => {
+  // Seen, the button reads Register; its name also carries its class (review of #2077).
+  const REGISTER = /^Register: /;
   const WALK_IN = { ...REGISTERED, registrations: [] };
   const registered = { status: 200, body: { ok: true, class_id: 'cls_today', athlete_id: 'ath_1', status: 'registered', membership_flags: [] } };
   const posts = (calls: Call[]) => calls.filter((call) => call.method === 'POST');
   const pressRegister = async () => {
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+      fireEvent.click(screen.getByRole('button', { name: REGISTER }));
     });
   };
 
@@ -195,7 +197,7 @@ describe('a walk-in registers for an open class today', () => {
     expect(screen.getByText(/No class for you today/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open the schedule' }).getAttribute('href')).toBe('/schedule');
     expect(screen.getByText(/Youth Boxing/)).toBeTruthy();
-    const button = screen.getByRole('button', { name: 'Register' });
+    const button = screen.getByRole('button', { name: REGISTER });
     // The class's own line describes the button, so two Registers are told apart.
     expect(document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent).toMatch(/^Youth Boxing/);
     expect(screen.queryByRole('button', { name: "I'm here" })).toBeNull();
@@ -205,7 +207,7 @@ describe('a walk-in registers for an open class today', () => {
     const calls = serve(WALK_IN, registered);
     await mount();
     await act(async () => {
-      const button = screen.getByRole('button', { name: 'Register' });
+      const button = screen.getByRole('button', { name: REGISTER });
       fireEvent.click(button);
       fireEvent.click(button);
     });
@@ -213,7 +215,7 @@ describe('a walk-in registers for an open class today', () => {
     expect(posts(calls)[0].url).toMatch(/\/api\/pilot\/scheduler$/);
     expect(posts(calls)[0].body).toEqual({ action: 'register_class', class_id: 'cls_today', athlete_id: 'ath_1' });
     expect(await screen.findByRole('button', { name: "I'm here" })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Register' })).toBeNull();
+    expect(screen.queryByRole('button', { name: REGISTER })).toBeNull();
     expect(screen.queryByText(/No class for you today/)).toBeNull();
     // Registering is not attendance: nothing marked the athlete here.
     expect(screen.queryByText('You are marked here. Your coach can see it.')).toBeNull();
@@ -243,7 +245,7 @@ describe('a walk-in registers for an open class today', () => {
     // Not the medical-stop mark, and no new warning dress: plain lines on the card.
     expect(alert.querySelector('.alert--critical, .escalation--locked, [class*="locked"]')).toBeNull();
     expect(posts(calls)).toHaveLength(1);
-    expect(screen.getByRole('button', { name: 'Register' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: REGISTER })).toBeTruthy();
     expect(screen.queryByRole('button', { name: "I'm here" })).toBeNull();
   });
 
@@ -278,7 +280,7 @@ describe('a walk-in registers for an open class today', () => {
     await pressRegister();
     expect((await screen.findByRole('status')).textContent).toBe('The class is full, so this athlete was added to the waitlist.');
     expect(screen.queryByRole('button', { name: "I'm here" })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Register' })).toBeNull();
+    expect(screen.queryByRole('button', { name: REGISTER })).toBeNull();
   });
 
   test('the membership note is not shown on the card (no new warning on the opening screen)', async () => {
@@ -293,6 +295,51 @@ describe('a walk-in registers for an open class today', () => {
     expect(container.textContent).not.toMatch(/membership|Youth Program|lapsed|NOT blocked/i);
   });
 
+  test('two Registers are named for their classes, and still read Register', async () => {
+    serve({ ...WALK_IN, classes: [klass(), klass({ class_id: 'cls_late', title: 'Evening Sparring', start_at: new Date(NOW + 1000).toISOString() })] }, registered);
+    await mount();
+    const buttons = screen.getAllByRole('button', { name: REGISTER });
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual(['Register: Youth Boxing', 'Register: Evening Sparring']);
+    expect(buttons.map((button) => button.textContent)).toEqual(['Register', 'Register']);
+  });
+
+  test('a class that ended after the card read is not sent: the card reads again and drops it', async () => {
+    const calls = serve({ ...WALK_IN, classes: [klass({ end_at: new Date(NOW + 60_000).toISOString() })] }, registered);
+    await mount();
+    expect(screen.getByRole('button', { name: REGISTER })).toBeTruthy();
+    const readsBefore = calls.filter((call) => call.method === 'GET').length;
+    // The tab stayed open past the class's end.
+    jest.spyOn(Date, 'now').mockReturnValue(NOW + 120_000);
+    await pressRegister();
+    expect(posts(calls)).toHaveLength(0);
+    expect(calls.filter((call) => call.method === 'GET').length).toBe(readsBefore + 1);
+    expect(screen.queryByRole('button', { name: REGISTER })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('a 200 that says ok: false is a refusal, never a registration', async () => {
+    const calls = serve(WALK_IN, { status: 200, body: { ok: false, error: 'Not this time.' } });
+    await mount();
+    const readsBefore = calls.filter((call) => call.method === 'GET').length;
+    await pressRegister();
+    expect(screen.getByRole('alert').textContent).toBe('Not this time.');
+    expect(calls.filter((call) => call.method === 'GET')).toHaveLength(readsBefore);
+    expect(screen.queryByRole('button', { name: "I'm here" })).toBeNull();
+  });
+
+  test('while one press is in flight, every Register on the card is held', async () => {
+    serve({ ...WALK_IN, classes: [klass(), klass({ class_id: 'cls_late', title: 'Evening Sparring', start_at: new Date(NOW + 1000).toISOString() })] }, registered);
+    const answered = global.fetch as jest.Mock;
+    global.fetch = jest.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      (init?.method === 'POST' ? new Promise<Response>(() => {}) : answered(input, init))) as unknown as typeof fetch;
+    await mount();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Register: Youth Boxing' }));
+    });
+    expect((screen.getByRole('button', { name: /^Sending…: Youth Boxing/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Register: Evening Sparring' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   test('booked for one class and not another: I\'m here for the first, Register for the second', async () => {
     serve({
       ...REGISTERED,
@@ -300,7 +347,7 @@ describe('a walk-in registers for an open class today', () => {
     }, registered);
     await mount();
     expect(screen.getAllByRole('button', { name: "I'm here" })).toHaveLength(1);
-    expect(screen.getAllByRole('button', { name: 'Register' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: REGISTER })).toHaveLength(1);
     expect(screen.queryByText(/No class for you today/)).toBeNull();
   });
 });

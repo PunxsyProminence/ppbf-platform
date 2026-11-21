@@ -173,6 +173,17 @@ export function todaysOpenClassesFor(
     .sort((a, b) => a.start_at.localeCompare(b.start_at));
 }
 
+/** Whether a class is still one to register for by the clock at the press,
+ *  not at the last read (see register below). Read at press time only. */
+function stillOpenNow(
+  athleteId: string,
+  classes: readonly ClassRow[],
+  registrations: readonly RegistrationRow[],
+  classId: string,
+): boolean {
+  return todaysOpenClassesFor(athleteId, classes, registrations, Date.now()).some((row) => row.class_id === classId);
+}
+
 const COULD_NOT_SAVE = 'That did not save. Try again, or tell a coach you are here.';
 const REGISTER_TAKEN = 'Your coach has already taken the register for this class.';
 // /schedule's own words for the same answers (app/schedule/page.tsx, runAction
@@ -263,6 +274,16 @@ export default function AthleteImHere({
     setAnswers((current) => ({ ...current, [classId]: null }));
     setWaitlistNotice('');
     try {
+      /* The list was drawn at the last read, and a Today tab can stay open
+         past a class's end or past midnight. /schedule judges "ended" and
+         "today" by the clock (its canRegisterFor), and the route does not
+         refuse a class that is over, so the press asks the clock again. A
+         class that is no longer one to register for is not sent: the card
+         reads again and drops it (review of #2077). */
+      if (schedule.state !== 'read' || !stillOpenNow(athleteId, schedule.classes, schedule.registrations, classId)) {
+        await onReload();
+        return;
+      }
       const response = await fetch(`${apiBase()}/api/pilot/scheduler`, {
         method: 'POST',
         credentials: 'include',
@@ -370,6 +391,10 @@ export default function AthleteImHere({
                   type="button"
                   onClick={() => void register(klass.class_id)}
                   disabled={sendingClassId !== null}
+                  /* Two Registers are two buttons with one word, so each is
+                     named for its class (review of #2077); seen, it still
+                     reads Register. The class line describes it, time and all. */
+                  aria-label={`${sendingClassId === klass.class_id ? 'Sending…' : 'Register'}: ${klass.title}`}
                   aria-describedby={nameId}
                   className="btn btn--kiosk btn--ghost disabled:opacity-50 disabled:grayscale"
                 >
