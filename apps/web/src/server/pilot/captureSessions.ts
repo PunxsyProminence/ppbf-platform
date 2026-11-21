@@ -44,33 +44,37 @@ export const TRAINING_CONTEXTS = [
 export type TrainingContext = (typeof TRAINING_CONTEXTS)[number];
 
 /*
- * WHAT CAPTURE MAY FILM TODAY, and why it is narrower than the vocabulary
- * above.
+ * WHAT CAPTURE MAY FILM, and why it is one narrower than the vocabulary above.
  *
- * A capture names ONE athlete, and the scan sweep checks guardian consent for
- * exactly that athlete. In a context where a second person is in frame, the
- * second person is never represented in the row and therefore never checked --
- * so a sparring take would record two people and ask about one. That is the
- * same defect as the unattributed recording this surface already refuses, just
- * narrowed from "nobody named" to "one of two named".
+ * Mitts and sparring are open (OD-2026-11-21-004, TS-Q1, Jason: "A: Open mitts
+ * and sparring capture now (Recommended)"). Two things that used to keep them
+ * out no longer hold:
  *
- * So the multi-person contexts are withheld from CAPTURE until a participant
- * model exists that can name everyone in a take and have consent evaluated for
- * each of them. That model is an owner decision and is deliberately not
- * invented here.
+ * - Consent for a second person. Teaching footage names nobody and asks
+ *   nobody (TS-ANON-01: the capture route refuses an athlete_id, and the
+ *   upload route refuses one on a take), so there is no per-person check for a
+ *   second person to slip past.
+ * - Two people's movement in one take. Each labelled event has one actor, and
+ *   body points belong to the person whose own event it is (OD-2026-10-03-006);
+ *   the two people are labelled "Fighter 1" and "Fighter 2" (OD-2026-10-08-005
+ *   A-Q10a). A take stays one take: how a two-person take is split for
+ *   training is the architect's call and is decided later, at cut or export,
+ *   not here (TEACH-T Q2).
  *
- * 'other' is withheld for the same reason rather than a different one: it
- * bounds nothing, so it cannot promise a single subject.
+ * Training on this footage stays adults-only (OD-2026-10-03-019). How that is
+ * enforced at export is the architect's call (TEACH-T Q1); nothing here
+ * filters by age, because nothing here knows who is in frame.
  *
- * THE VOCABULARY ITSELF IS UNCHANGED. The database still accepts all five, and
- * footage recorded another way keeps its meaning. This list narrows one
- * workflow, not the schema -- so lifting it when the participant model lands is
- * deleting an entry here, not a migration.
+ * 'other' stays withheld: it says nothing about who or what is in frame, so a
+ * labeller would not know what the take is of.
+ *
+ * THE VOCABULARY ITSELF IS UNCHANGED. The database accepts all five, and this
+ * list narrows one workflow, not the schema -- a code change, not a migration.
  */
-export const SINGLE_SUBJECT_TRAINING_CONTEXTS = ['shadowboxing', 'heavy_bag'] as const;
+export const CAPTURE_TRAINING_CONTEXTS = ['shadowboxing', 'heavy_bag', 'mitts', 'sparring'] as const;
 
-export function isSingleSubjectContext(value: string): value is TrainingContext {
-  return (SINGLE_SUBJECT_TRAINING_CONTEXTS as readonly string[]).includes(value);
+export function isCaptureTrainingContext(value: string): value is TrainingContext {
+  return (CAPTURE_TRAINING_CONTEXTS as readonly string[]).includes(value);
 }
 
 export const CAPTURE_SOURCES = ['in_app_recording', 'file_upload'] as const;

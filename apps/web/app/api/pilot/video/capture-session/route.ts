@@ -9,9 +9,9 @@ import {
   findOpenSessionByJoinCode,
   getOpenTake,
   getSessionById,
-  isSingleSubjectContext,
+  isCaptureTrainingContext,
   listTakeFiles,
-  SINGLE_SUBJECT_TRAINING_CONTEXTS,
+  CAPTURE_TRAINING_CONTEXTS,
   type RecordingSession,
   type CaptureTake,
 } from '@/src/server/pilot/captureSessions';
@@ -79,21 +79,16 @@ export async function POST(request: NextRequest) {
       /*
        * REFUSED SERVER-SIDE, not merely absent from the form's dropdown.
        *
-       * The original reason was that a capture named one athlete whose consent
-       * was then checked. That reason is gone -- teaching footage names nobody
-       * and asks nobody. What remains is a dataset reason: a take is the unit
-       * that groups angles of ONE attempt, and mitts or sparring put a second
-       * person in frame doing something different, so a single take would
-       * contain two subjects' movement labelled as one. The grouping is what
-       * keeps alternate views of the same punch on the same side of a
-       * train/test split, and it stops meaning that the moment a take holds
-       * two people.
-       *
-       * Withheld until the model can describe more than one subject in a take.
+       * Mitts and sparring are open (OD-2026-11-21-004, TS-Q1 A): each person
+       * in a two-person take is labelled on their own events, as Fighter 1 or
+       * Fighter 2 (OD-2026-10-03-006; OD-2026-10-08-005 A-Q10a). How such a
+       * take is split for training is decided later, at cut or export.
+       * 'other' is still refused: it says nothing about what is in frame.
+       * See CAPTURE_TRAINING_CONTEXTS.
        */
-      if (!isSingleSubjectContext(rawContext)) {
+      if (!isCaptureTrainingContext(rawContext)) {
         throw new Error(
-          `Unsupported training_context: capture currently records one athlete at a time, so it accepts only ${SINGLE_SUBJECT_TRAINING_CONTEXTS.join(' and ')}`,
+          `Unsupported training_context: capture accepts ${CAPTURE_TRAINING_CONTEXTS.join(', ')}`,
         );
       }
 
@@ -120,7 +115,7 @@ export async function POST(request: NextRequest) {
       const { session, take } = await createRecordingSession({
         organizationId: principal.organizationId,
         createdByAccountId: principal.accountId,
-        // isSingleSubjectContext is a type guard, so rawContext is already
+        // isCaptureTrainingContext is a type guard, so rawContext is already
         // narrowed to a real TrainingContext by the refusal above.
         trainingContext: rawContext,
       });

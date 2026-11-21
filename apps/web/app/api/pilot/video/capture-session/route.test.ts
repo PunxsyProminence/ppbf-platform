@@ -316,20 +316,18 @@ describe('a reload asks for the caller own open session (TEACH-04)', () => {
 });
 
 /*
- * CAPTURE RECORDS ONE ATHLETE AT A TIME, FOR NOW.
+ * WHICH CONTEXTS CAPTURE ACCEPTS.
  *
- * A capture names one athlete and the scan sweep checks guardian consent for
- * exactly that athlete. A context with a second person in frame would record
- * two people and ask about one -- the same defect as an unattributed
- * recording, narrowed from "nobody named" to "one of two named". These
- * contexts are therefore refused by the SERVER, not merely left out of the
- * form, so a client that posts one directly is refused too.
- *
- * When a participant model can name everyone in a take, these tests are the
- * ones to change, and changing them should be a deliberate act.
+ * These tests kept mitts and sparring out "until a participant model can name
+ * everyone in a take", and said changing them "should be a deliberate act".
+ * This is that act, on the owner's word: OD-2026-11-21-004, TS-Q1, "A: Open
+ * mitts and sparring capture now (Recommended)". Teaching footage names
+ * nobody (TS-ANON-01), and each person in a take is labelled on their own
+ * events (OD-2026-10-03-006). 'other' stays refused by the SERVER, not only
+ * left out of the form.
  */
-describe('multi-person contexts are withheld until a take can name everyone in it', () => {
-  test.each(['sparring', 'mitts', 'other'])('a %s session is refused and nothing is created', async (context) => {
+describe('which contexts capture accepts (OD-2026-11-21-004, TS-Q1 A: mitts and sparring open)', () => {
+  test.each(['other', 'shadow_sparring', ''])('a %p session is refused and nothing is created', async (context) => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
     const response = await POST(jsonRequest({ action: 'create', training_context: context }));
@@ -338,7 +336,7 @@ describe('multi-person contexts are withheld until a take can name everyone in i
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  test.each(['shadowboxing', 'heavy_bag'])('a %s session is allowed', async (context) => {
+  test.each(['shadowboxing', 'heavy_bag', 'mitts', 'sparring'])('a %s session is allowed', async (context) => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
     const response = await POST(
@@ -393,13 +391,25 @@ describe('multi-person contexts are withheld until a take can name everyone in i
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  test('the refusal says why, so a coach is not left guessing which contexts work', async () => {
+  test('the refusal says which contexts work, so a coach is not left guessing', async () => {
     mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
 
-    const response = await POST(jsonRequest({ action: 'create', training_context: 'sparring' }));
+    const response = await POST(jsonRequest({ action: 'create', training_context: 'other' }));
 
     const payload = (await response.json()) as { error: string };
-    expect(payload.error).toMatch(/one athlete at a time/);
-    expect(payload.error).toMatch(/shadowboxing/);
+    expect(payload.error).toBe(
+      'Unsupported training_context: capture accepts shadowboxing, heavy_bag, mitts, sparring',
+    );
+  });
+
+  test('a sparring session still names nobody: an athlete is refused there too (TS-ANON-01)', async () => {
+    mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+
+    const response = await POST(
+      jsonRequest({ action: 'create', training_context: 'sparring', athlete_id: 'ath-1' }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

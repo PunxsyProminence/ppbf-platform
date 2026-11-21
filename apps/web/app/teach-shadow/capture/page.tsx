@@ -34,21 +34,17 @@ import ClusterNav from '@/components/ClusterNav';
  */
 
 /*
- * ONLY THE CONTEXTS WITH ONE PERSON IN FRAME, and the server refuses the rest
- * independently rather than trusting this list.
- *
- * A capture names one athlete and the scan sweep checks consent for exactly
- * that athlete. Filming sparring would put a second person in frame whom the
- * row never names and nothing ever asks about -- the same defect as an
- * unattributed recording, narrowed from "nobody named" to "one of two". Mitts
- * has a second person for the same reason, and 'other' bounds nothing so it
- * cannot promise a single subject.
- *
- * These come back when a participant model can name everyone in a take.
+ * THE CONTEXTS CAPTURE ACCEPTS (captureSessions.ts, CAPTURE_TRAINING_CONTEXTS),
+ * and the server refuses any other independently rather than trusting this
+ * list. Mitts and sparring are open (OD-2026-11-21-004, TS-Q1 A); each person
+ * is labelled later as Fighter 1 or Fighter 2. 'other' is not offered: it says
+ * nothing about what is in frame.
  */
 const TRAINING_CONTEXTS: Array<{ value: string; label: string }> = [
   { value: 'shadowboxing', label: 'Shadowboxing' },
   { value: 'heavy_bag', label: 'Heavy bag' },
+  { value: 'mitts', label: 'Mitts' },
+  { value: 'sparring', label: 'Sparring' },
 ];
 
 interface TakeFile {

@@ -266,13 +266,12 @@ test('nothing stands between a coach and recording', async () => {
   expect(document.body.textContent ?? '').not.toMatch(/clearance|consent/i);
 });
 
-test('offers only the contexts with one person in frame', async () => {
+test('offers mitts and sparring beside shadowboxing and heavy bag, and not "other" (TS-Q1 A)', async () => {
   await renderPage();
 
-  // Mitts and sparring put a second person in frame. The server refuses them
-  // too; this is the half a coach can see.
+  // The server refuses 'other' too; this is the half a coach can see.
   const options = screen.getAllByRole('option').map((option) => option.textContent);
-  expect(options).toEqual(['Shadowboxing', 'Heavy bag']);
+  expect(options).toEqual(['Shadowboxing', 'Heavy bag', 'Mitts', 'Sparring']);
 });
 
 test('TS-ANON-01 -- the camera opens with nobody named', async () => {
