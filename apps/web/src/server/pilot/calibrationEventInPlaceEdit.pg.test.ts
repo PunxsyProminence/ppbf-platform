@@ -580,7 +580,7 @@ describe('while an event holds marks, what a moment was checked against cannot c
     ['end', 'end', { endMs: EV_END + 100 }, { end_ms: EV_END + 100 }],
     ['contact time', 'contact time', { contactMs: EV_CONTACT + 10 }, { contact_ms: EV_CONTACT + 10 }],
     ['class', 'class', AS_DEFENSE, { event_class: 'defense', defense_type: 'slip', punch_type: null }],
-    ['actor', 'actor', { actorTrack: 'fighter_2' }, { actor_track: 'blue' }],
+    ['actor', 'actor', { actorTrack: 'fighter_2' }, { actor_track: 'fighter_2' }],
   ];
 
   test.each(MOVES)('%s: refused naming it while a moment exists, nothing changed; allowed once the marks are removed', async (_label, named, changes, expected) => {

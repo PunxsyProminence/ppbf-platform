@@ -24,6 +24,7 @@ import {
   STANCES,
   TARGET_ZONES,
   VISIBILITIES,
+  fighterLabel,
   isInVocabulary,
 } from '@/src/server/pilot/calibration/ontology';
 import {
@@ -310,12 +311,8 @@ function label(token: string): string {
   return token.replace(/_/g, ' ');
 }
 
-/** The two fighters as a coach reads them (OD-2026-10-08-005 A-Q10a: "Fighter
- * 1" and "Fighter 2"). A 0.1 set's typed actor is shown as typed. */
-const FIGHTER_LABELS: Record<string, string> = { fighter_1: 'Fighter 1', fighter_2: 'Fighter 2' };
-function actorLabel(track: string): string {
-  return FIGHTER_LABELS[track] ?? track;
-}
+/** The two fighters as a coach reads them (OD-2026-10-08-005 A-Q10a). */
+const actorLabel = fighterLabel;
 
 function describeEvent(event: AnnotationEvent): string {
   if (event.event_class === 'punch') {
@@ -1804,7 +1801,7 @@ export default function CoachCalibrationPage() {
                 {isBodyPointSet ? (
                   <>
                     <div className="field">
-                      <label htmlFor="draft-actor" className="t-label">Who did it (one person in frame: Fighter 1)</label>
+                      <label htmlFor="draft-actor" className="t-label">Who did it</label>
                       <select
                         id="draft-actor"
                         className="select"

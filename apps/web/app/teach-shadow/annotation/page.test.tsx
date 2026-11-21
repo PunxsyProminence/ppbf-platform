@@ -605,7 +605,7 @@ describe('body points', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add defense' }));
     });
-    const actor = screen.getByLabelText(/^Who did it/) as HTMLSelectElement;
+    const actor = screen.getByLabelText('Who did it') as HTMLSelectElement;
     const opponent = screen.getByLabelText('Against (optional)') as HTMLSelectElement;
     // A choice, not a text box, and nothing pre-picked.
     expect(actor.tagName).toBe('SELECT');

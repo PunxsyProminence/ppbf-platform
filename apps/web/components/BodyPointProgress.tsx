@@ -8,6 +8,7 @@ import {
   SOURCE_MANUALS,
   STANCE_TYPES,
   STANCE_TYPE_SOURCES,
+  fighterLabel,
 } from '@/src/server/pilot/calibration/ontology';
 import { formatMediaOffset } from '@/src/lib/clipTime';
 
@@ -112,10 +113,11 @@ export function namedPositionLabel(token: string): string {
   return `${source.nameAsPrinted}, ${SOURCE_MANUALS[source.body].bodyName}`;
 }
 
-/** "punch at 0:12.400 (red corner)": the event as the coach would find it in
- * the clip, with the actor so two events at one time do not read alike. */
+/** "punch at 0:12.400 (Fighter 1)": the event as the coach would find it in
+ * the clip, with the actor so two events at one time do not read alike. A 0.1
+ * set's typed actor ("red corner") is shown as typed. */
 export function describeEventForProgress(event: ProgressEvent): string {
-  return `${label(event.event_class)} at ${formatMediaOffset(event.start_ms)} (${event.actor_track})`;
+  return `${label(event.event_class)} at ${formatMediaOffset(event.start_ms)} (${fighterLabel(event.actor_track)})`;
 }
 
 /**

@@ -198,6 +198,14 @@ export type Stance = (typeof STANCES)[number];
 export const FIGHTER_TRACKS = ['fighter_1', 'fighter_2'] as const;
 export type FighterTrack = (typeof FIGHTER_TRACKS)[number];
 
+/** An actor as a coach reads it: "Fighter 1" / "Fighter 2" for the ruled
+ * labels; a 0.1 set's typed actor is shown as typed. Display only. */
+export function fighterLabel(track: string): string {
+  if (track === 'fighter_1') return 'Fighter 1';
+  if (track === 'fighter_2') return 'Fighter 2';
+  return track;
+}
+
 /** Where the punch was AIMED. Distinct from CONTACT_ZONES, which is what it
  * actually reached -- a punch aimed at the head that lands on a glove is one
  * observation with two different answers, and the pair is the interesting
