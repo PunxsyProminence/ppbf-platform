@@ -276,15 +276,18 @@ describe('a handled request stays visible and says how it was handled', () => {
 
 /* What the office is told completing a request does (lane HF7). Clearing
    deletes what the member typed and keeps SHADOW's replies with their account
-   and names taken off; a chat under a safeguarding review is kept for two
-   years (OD-2026-10-06-012, -023, -027). Each sentence must be true. */
+   and names taken off; a chat flagged for review is kept for two years
+   (OD-2026-10-06-012, -023, -027). "Flagged for review", not "under a
+   safeguarding review": a row the Library-empty notice writes cannot be told
+   apart from a safety row, and holds a chat too (Overwatch, Q3 = A + C on
+   #2062). Each sentence must be true. */
 describe('the words say what clearing does', () => {
-  it('says what a completion deletes, what it keeps, and that a reviewed chat is kept for two years', async () => {
+  it('says what a completion deletes, what it keeps, and that a flagged chat is kept for two years', async () => {
     await renderQueue();
 
     expect(screen.getByText(
       'A member asked for their SHADOW conversation history to be cleared. Completing a request '
-      + 'clears it now, except a conversation under a safeguarding review, which is kept for two years. '
+      + 'clears it now, except a conversation flagged for review, which is kept for two years. '
       + 'Chat history only; memory corrections are kept, and nothing here touches their account, '
       + 'sessions or records.',
     )).not.toBeNull();
@@ -295,7 +298,7 @@ describe('the words say what clearing does', () => {
     expect(screen.getByText(
       "This clears their SHADOW conversation history now: what they typed is deleted, and SHADOW's "
       + 'replies are kept with their account and the names on record for them taken off. A conversation '
-      + 'under a safeguarding review is kept as it is for two years, then cleared the same way. It '
+      + 'flagged for review is kept as it is for two years, then cleared the same way. It '
       + 'cannot be undone from here.',
     )).not.toBeNull();
   });
@@ -305,7 +308,7 @@ describe('the words say what clearing does', () => {
       list: () => jsonResponse({ ok: true, items: [row({ conversationsPending: 4, conversationsHeld: 1 })] }),
     });
     expect(screen.getByText(
-      '4 conversations would be cleared. 1 under a safeguarding review would be kept for two years.',
+      '4 conversations would be cleared. 1 flagged for review would be kept for two years.',
     )).not.toBeNull();
   });
 
@@ -329,7 +332,7 @@ describe('the words say what clearing does', () => {
 
     const notice = await screen.findByRole('status');
     expect(notice.textContent).toBe(
-      'Cleared 3 conversations. Kept 1 under a safeguarding review for two years. '
+      'Cleared 3 conversations. Kept 1 flagged for review for two years. '
       + 'SHADOW chat history only — memory corrections are kept.',
     );
   });
