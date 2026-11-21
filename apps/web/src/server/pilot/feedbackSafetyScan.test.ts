@@ -2365,4 +2365,11 @@ describe('HF12b twelfth delta review (81ed7ee..b6f70d8): blocking findings', () 
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
+
+  test.each([
+    // Single-rule pin (mutation proof): the adult class page is the subject.
+    'the adult class page on insta asked for pics from our class',
+  ])('everyday talk stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
 });
