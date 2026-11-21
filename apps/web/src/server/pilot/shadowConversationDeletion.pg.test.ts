@@ -110,6 +110,7 @@ const PARENT = 'dana.pike@example.test';
 const OTHER_MEMBER = 'acct-hf7-other';
 const NAMELESS = 'acct-hf7-nameless';
 const COACH = 'acct-hf7-coach';
+const STAFF = 'acct-hf7-staff';
 const ADMIN = 'acct-hf7-admin';
 const OTHER_ADMIN = 'acct-hf7-other-admin';
 
@@ -202,6 +203,7 @@ async function seedPeople(db: Client): Promise<void> {
   }
   for (const [accountId, role, organization, athleteId, loginEmail] of [
     [COACH, 'coach', ORG, null, null],
+    [STAFF, 'coach', ORG, null, null],
     [MEMBER, 'athlete', ORG, ATHLETE, 'jpike2013@example.test'],
     [PARENT, 'parent', ORG, null, null],
     [OTHER_MEMBER, 'athlete', ORG, null, 'other.kid@example.test'],
@@ -225,6 +227,13 @@ async function seedPeople(db: Client): Promise<void> {
   await db.query(
     `insert into pilot.account_profiles (organization_id, account_id, display_nickname) values ($1, $2, 'Lightning')`,
     [ORG, MEMBER],
+  );
+  // A staff member whose only full name on record is the volunteer record
+  // staff provisioning links to their account.
+  await db.query(
+    `insert into pilot.volunteers (organization_id, volunteer_id, account_id, full_name, role)
+     values ($1, 'vol-hf7', $2, 'Pat Rowan', 'coach')`,
+    [ORG, STAFF],
   );
   await db.query(
     `insert into pilot.parents (organization_id, parent_id, account_id, full_name, phone, email)
@@ -878,7 +887,7 @@ describe('T2: a member deletes a chat a review entry or a safety escalation poin
 });
 
 describe('T2b: what arrives at the edges', () => {
-  test('a chat the purge marked as held (subject_deleted_at) is held, not cleared', async () => {
+  test('a chat carrying the purge\'s hold marker (subject_deleted_at) is held, not cleared', async () => {
     const target = await seedConversation(mainDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', subjectDeletedAgo: '1 day',
     });
@@ -940,6 +949,20 @@ describe('T2b: what arrives at the edges', () => {
     const kept = await messagesOf(mainDb, keptId!);
     expect(kept).toHaveLength(1);
     expectNoNames(kept[0].content, ['Jordan', 'Pike', 'Lightning', 'Dana', 'Morgan', 'Quill']);
+  });
+
+  test('a staff member\'s own chat loses the name on their volunteer record', async () => {
+    const staffActor: ActorIdentity = { accountId: STAFF, role: 'coach', organizationId: ORG, athleteId: null };
+    const target = await seedConversation(mainDb, {
+      organizationId: ORG, accountId: STAFF, role: 'coach',
+      userWords: 'session plan', replyWords: 'Pat Rowan, open with footwork and keep the rounds short.',
+    });
+    await expect(deleteOwnConversation!(staffActor, target.conversationId)).resolves.toBe(true);
+    const keptId = await keptCopy(mainDb, target);
+    expect(keptId).not.toBeNull();
+    const kept = await messagesOf(mainDb, keptId!);
+    expect(kept).toHaveLength(1);
+    expectNoNames(kept[0].content, ['Pat', 'Rowan']);
   });
 });
 
@@ -1092,6 +1115,12 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       userWords: 'plan for this athlete',
       replyWords: 'Jordan Pike (Lightning) can spar; tell Dana Pike and Morgan Quill.',
     });
+    // A staff member's own chat, deleted before this change: their only name
+    // on record is their volunteer record.
+    const legacyStaff = await seedConversation(sweepDb, {
+      organizationId: ORG, accountId: STAFF, role: 'coach', deletedAgo: '3 days',
+      userWords: 'session plan', replyWords: 'Pat Rowan, open with footwork and keep the rounds short.',
+    });
     const live = await seedConversation(sweepDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     // Flagged, past two years, and no name on record: nothing can be
     // scrubbed, so the chat goes whole; its review entry stays, under a new
@@ -1144,7 +1173,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     const untouchedBefore = await Promise.all(untouched.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
     // The held escalated chat's escalation (filed in upper case) is in its snapshot.
     expect((untouchedBefore[untouched.indexOf(stillEscalated)] as { escalations: unknown[] }).escalations).toHaveLength(1);
-    const due = [expired, expiredEscalated, legacy, legacyGuardian, legacyCoach, namelessFlagged];
+    const due = [expired, expiredEscalated, legacy, legacyGuardian, legacyCoach, legacyStaff, namelessFlagged];
     const dueBefore = await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
 
     // The nightly run (OD-2026-10-07-010) and a dry run count them and keep them.
@@ -1161,16 +1190,16 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       [ORG],
     );
     const nightly = await runCleanup(SWEEP_DB_NAME, 'nightly');
-    expect(nightly.member_deleted_chats_due).toBe(6);
+    expect(nightly.member_deleted_chats_due).toBe(7);
     expect(nightly.inquiries).toBe(1);
     expect(await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)))).toEqual(dueBefore);
     const dry = await runCleanup(SWEEP_DB_NAME, 'dry');
-    expect(dry.member_deleted_chats_due).toBe(6);
-    expect(dry.would_clear_member_deleted_chats).toBe(6);
+    expect(dry.member_deleted_chats_due).toBe(7);
+    expect(dry.would_clear_member_deleted_chats).toBe(7);
     expect(await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)))).toEqual(dueBefore);
 
     const applied = await runCleanup(SWEEP_DB_NAME, 'apply');
-    expect(applied.member_deleted_chats_cleared).toBe(6);
+    expect(applied.member_deleted_chats_cleared).toBe(7);
 
     await expectOldIdsGone(sweepDb, namelessFlagged);
     expect(await keptCopy(sweepDb, namelessFlagged)).toBeNull();
@@ -1201,6 +1230,11 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     const coachKept = await messagesOf(sweepDb, (await keptCopy(sweepDb, legacyCoach))!);
     expect(coachKept).toHaveLength(1);
     expectNoNames(coachKept[0].content, ['Jordan', 'Pike', 'Lightning', 'Dana', 'Morgan', 'Quill']);
+    const staffKeptId = await keptCopy(sweepDb, legacyStaff);
+    expect(staffKeptId).not.toBeNull();
+    const staffKept = await messagesOf(sweepDb, staffKeptId!);
+    expect(staffKept).toHaveLength(1);
+    expectNoNames(staffKept[0].content, ['Pat', 'Rowan']);
     for (const cleared of [expired, expiredEscalated, legacy, legacyGuardian, legacyCoach]) {
       const keptId = (await keptCopy(sweepDb, cleared))!;
       await expectDayTimes(sweepDb, 'shadow_chat_sessions', 'conversation_id', keptId,
