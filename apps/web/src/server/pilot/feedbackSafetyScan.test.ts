@@ -616,6 +616,8 @@ describe('HF1 re-review round 4: picture requests said the common ways', () => {
     'he asked me to send him pics',
     'he asked me to send him a selfie',
     'he told me to send pics',
+    'he said to send him pics',
+    'he says send her a selfie',
     'he asked for more pics',
     'he asked for some pics',
     'he asked for private pics',
