@@ -1494,3 +1494,19 @@ describe('HF12b review 6: sa\'d with "im", "by" or a number', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+// Tests that only one guard or window can satisfy, added for the mutation
+// proof (review 6 on PR 2076). Invented phrases.
+describe('HF12b review 6: single-guard tests', () => {
+  test.each([
+    'he took vids of my cousin playing in the bedroom',
+    "honestly i'm sa'd",
+    'this guy who runs the app asks me for vids',
+    'he wants a video of my workout tonight in my room',
+    'this creep off the app keeps asking me for videos',
+    'this creep called shadow keeps asking me for videos',
+    'he wants videos of me for the website',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
