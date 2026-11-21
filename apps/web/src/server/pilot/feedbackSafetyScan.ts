@@ -148,7 +148,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     //    word ending in ten" ("so often kms"). An age before it ("im 14 kms",
     //    "im fourteen kms") files unless a distance phrase follows ("kms
     //    away", "kms to go", "kms from the gym"); "im 14 kms today" files.
-    //    "am" after a number is a time ("6 am 5 kms"), not "i am".
+    //    "am" after a digit is a time ("6 am 5 kms"), not "i am".
     //  - suicide: not "suicides" or a "suicide drill/sprint/shuttle" (the
     //    conditioning sprint; "dril+" and "shut+les" for the collapsed
     //    reading) or "suicide squad". Not "runs" or "lines" ("suicide runs in
@@ -156,9 +156,10 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     //  - off myself: not after gear ("tape off myself") or after take, took,
     //    get, got, pull, pulled or cut followed by it or them ("took it off
     //    myself"); a bare "it" is not excluded ("end it, off myself").
-    // Pinned, accepted false alerts: "suicide runs after sparring", "only N
-    // kms" in any form ("only 3 kms today"), "take the pressure off myself", "i ran kms before school",
-    // "dont wanna live in this town". Plain "take my life" is not a cue ("take
+    // Pinned, accepted false alerts: "suicide runs after sparring", "only"
+    // before digits or ten..nineteen and kms ("only 3 kms today"), "take the
+    // pressure off myself", "i ran kms before school", "dont wanna live in
+    // this town". Plain "take my life" is not a cue ("take
     // my life seriously"); "take my own life" is.
     id: 'crisis',
     pattern:
