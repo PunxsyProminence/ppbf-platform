@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import GuardianMediaConsentPage from './page';
 
@@ -522,7 +522,7 @@ describe('Change to photos only', () => {
     await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     const asked = String(confirm.mock.calls[0][0]);
     expect(asked).toBe(
-      'Change consent for Jamie Rivera to photos only? If you do, Jamie Rivera’s published videos will be retracted from distribution immediately, and Jamie Rivera’s videos will not be published or opened for playback while your photos-only consent is in place.',
+      'Change consent for Jamie Rivera to photos only? If you do, Jamie Rivera’s published videos will be retracted from distribution immediately, and Jamie Rivera’s videos will not be published while your photos-only consent is in place.',
     );
     expect(asked).not.toContain('ath-1');
     expect(posts).toEqual([]);
@@ -590,15 +590,24 @@ describe('Change to photos only', () => {
     ]);
     render(<GuardianMediaConsentPage />);
     await screen.findAllByText('Consent on file');
+    expect(screen.getAllByRole('button', { name: 'Change to photos only' })).toHaveLength(2);
 
-    const buttons = screen.getAllByRole('button', { name: 'Change to photos only' });
-    expect(buttons).toHaveLength(2);
-    fireEvent.click(buttons[1]);
-
-    await screen.findByText('Consent changed to photos only.');
-    expect(String(confirm.mock.calls[0][0])).toMatch(/^Change consent for Alex Rivera to photos only\?/);
-    expect(String(confirm.mock.calls[0][0])).not.toContain('Jamie');
-    expect(posts).toEqual([{ athlete_id: 'ath-2', decision: 'grant', covers_video: false, public_use_allowed: false }]);
+    // Each card's own button, found inside that card, so a control bound to
+    // the first child, the last child, or a re-sorted list fails one of the two.
+    const cardOf = (name: string) => screen.getByText(name).closest('article') as HTMLElement;
+    const expected = [
+      { name: 'Jamie Rivera', other: 'Alex', athlete_id: 'ath-1' },
+      { name: 'Alex Rivera', other: 'Jamie', athlete_id: 'ath-2' },
+    ];
+    for (const [index, child] of expected.entries()) {
+      fireEvent.click(within(cardOf(child.name)).getByRole('button', { name: 'Change to photos only' }));
+      await waitFor(() => expect(posts).toHaveLength(index + 1));
+      const asked = String(confirm.mock.calls[index][0]);
+      expect(asked).toMatch(new RegExp(`^Change consent for ${child.name} to photos only\\?`));
+      expect(asked).not.toContain(child.other);
+      expect(posts[index]).toEqual({ athlete_id: child.athlete_id, decision: 'grant', covers_video: false, public_use_allowed: false });
+      await screen.findByText('Consent changed to photos only.');
+    }
   });
 
   test('when public use is on file and the guardian accepts, the grant sends public use off, as the confirm said', async () => {

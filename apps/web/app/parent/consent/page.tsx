@@ -104,11 +104,13 @@ export default function GuardianMediaConsentPage() {
      transaction (OD-2026-10-05-021). The confirm is worded like the withdraw
      one and says what follows from a photos-only consent: the child's
      published videos are retracted, and the child's videos are not published
-     or opened for playback while it is in place (videoPlaybackConsent.ts
-     refuses a playback link while any linked guardian's signed consent leaves
-     video out). "Opened for playback", not "played back": a link minted
-     before the change is a 60-minute credential that keeps playing in a tab
-     already open (videoPlaybackConsent.ts says the same of withdrawal).
+     while it is in place. Like the withdraw confirm it promises nothing about
+     playback: the server refuses every NEW playback link while any linked
+     guardian's signed consent leaves video out (videoPlaybackConsent.ts), but
+     a link issued before the change is a 60-minute credential that can still
+     start or keep playing until it expires (the same file says so of
+     withdrawal; the compliance queue issues such links when it loads), so
+     "will not be played" would be false for up to an hour.
      "The child's videos" and not "any video of the child": the takedown
      covers publications filed under this child, and a clip filed under
      another athlete stays up (OD-2026-10-12-003). "While … in place" and not
@@ -119,7 +121,7 @@ export default function GuardianMediaConsentPage() {
      Wording PROPOSED. */
   function confirmPhotosOnly(childName: string, publicUseOnFile: boolean): boolean {
     return window.confirm(
-      `Change consent for ${childName} to photos only? If you do, ${childName}’s published videos will be retracted from distribution immediately, and ${childName}’s videos will not be published or opened for playback while your photos-only consent is in place.${
+      `Change consent for ${childName} to photos only? If you do, ${childName}’s published videos will be retracted from distribution immediately, and ${childName}’s videos will not be published while your photos-only consent is in place.${
         publicUseOnFile ? ' Public use, which is allowed now, will end too.' : ''
       }`,
     );
@@ -370,8 +372,8 @@ export default function GuardianMediaConsentPage() {
                         was 156x38, so the control that leaves without deciding was a
                         bigger target than the control that decides. This one spans
                         the child's card and the escape hatch keeps its intrinsic
-                        width. Under the family dress (.ge-family) both are 55px
-                        tall, so on a phone 360px wide or more the decision is the
+                        width. Under the family dress (.ge-family) both are at
+                        least 55px tall, so on a phone 360px wide or more the decision is the
                         larger target (276x55 against 251x55 at 360); at 320 the
                         two are about the same size (236x57 against 251x55).
                         Measured on a local render, 2026-11-21. */}

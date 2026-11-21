@@ -23,8 +23,9 @@ import { readDesignSystemCss } from '../../../src/design/readDesignSystemCss';
  * stylesheets, records which rules are layered, matches them against the real
  * elements the page renders, and computes which declaration actually wins.
  *
- * Nothing here was seen in a browser -- the geometry below is computed from the
- * cascade, from the same two files the app ships.
+ * Nothing asserted here was seen in a browser -- the geometry below is computed
+ * from the cascade, from the same two files the app ships. (Sizes some comments
+ * cite from a local render are context, not assertions.)
  */
 
 const PPBF = path.resolve(__dirname, '../../../../../design-system/ppbf.css');
@@ -341,7 +342,7 @@ describe('guardian media consent: rendered target geometry', () => {
     expect(resolved.from).toContain('ppbf.css');
   });
 
-  it('never lets the escape hatch out-rank the decision', async () => {
+  it('never lets the escape hatch be taller than the decision, and the decision spans the card', async () => {
     await renderConsentPage();
     const grant = screen.getByRole('button', { name: 'Grant Consent' });
     const back = screen.getByRole('link', { name: 'Back to Parent Hub' });
