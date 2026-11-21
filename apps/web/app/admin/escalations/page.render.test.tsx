@@ -392,3 +392,27 @@ describe('a row reaches the athlete; the queue reaches Safety Flags (lane AS-5)'
     expect(screen.getByRole('link', { name: 'Safety Flags' }).getAttribute('href')).toBe('/admin/safety-flags');
   });
 });
+
+// Lane AS-10, AS10-5 (app scrub OFF-11): the queue leads back to Safety Review,
+// which admits an admin only, so a coach is not offered it.
+describe('the queue links Safety Review for an admin only (lane AS-10)', () => {
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
+
+  test('an admin is offered Safety Review', async () => {
+    createPersistentRoleSession('admin');
+    mockAdminFetch();
+    render(<EscalationsPage />);
+    expect((await screen.findByRole('link', { name: 'Safety Review' })).getAttribute('href')).toBe('/admin/safety-review');
+  });
+
+  test('a coach is not', async () => {
+    createPersistentRoleSession('coach');
+    mockAdminFetch();
+    render(<EscalationsPage />);
+    await screen.findByRole('link', { name: 'Safety Flags' });
+    expect(screen.queryByRole('link', { name: 'Safety Review' })).toBeNull();
+  });
+});

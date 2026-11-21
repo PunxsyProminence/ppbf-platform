@@ -673,3 +673,15 @@ describe('the office records and withdraws a paper waiver (#1526)', () => {
     expect(posts).toHaveLength(1);
   });
 });
+
+// Lane AS-10, AS10-5 (app scrub OFF-19): a waiver marked here is the record
+// Waivers & Consent keeps, and the page links it by its title.
+test('the page says it marks the record Waivers & Consent keeps, and links it', async () => {
+  global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: INCOMPLETE })) as unknown as typeof fetch;
+  render(<WaiverComplianceAuditPage />);
+  const link = await screen.findByRole('link', { name: 'Waivers & Consent' });
+  expect(link.getAttribute('href')).toBe('/admin/consent');
+  expect(link.closest('p')?.textContent?.replace(/\s+/g, ' ')).toBe(
+    'A waiver marked here is the same record kept on Waivers & Consent, which lists who signed and when.',
+  );
+});

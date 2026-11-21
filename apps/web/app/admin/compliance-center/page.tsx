@@ -401,15 +401,6 @@ export default function AdminComplianceCenterPage() {
           </div>
         </section>
 
-        {/* The data-subject request queue.
-            POST /api/pilot/shadow/data has filed deletion requests since the
-            SHADOW runtime slice and nothing anywhere read them, so its
-            promised "manual review" had nowhere to happen. It happens here:
-            this room is already where the platform puts rows a human owes an
-            answer to, and a deletion request parked on a SHADOW admin page
-            would be reachable and still never looked at. */}
-        <ShadowDataDeletionQueue />
-
         {/* Violations List */}
         <section>
           <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>
@@ -509,6 +500,17 @@ export default function AdminComplianceCenterPage() {
             )}
           </div>
         </section>
+
+        {/* The data-subject request queue.
+            POST /api/pilot/shadow/data has filed deletion requests since the
+            SHADOW runtime slice and nothing anywhere read them, so its
+            promised "manual review" had nowhere to happen. It happens here:
+            this room is already where the platform puts rows a human owes an
+            answer to, and a deletion request parked on a SHADOW admin page
+            would be reachable and still never looked at. Below the
+            violations list, not between it and its filters (lane AS-10,
+            OFF-20). */}
+        <ShadowDataDeletionQueue />
 
         {/* Escalation Modal.
             De-riveted: ppbf.css allows "one ceremonial rivet per screen at
