@@ -860,3 +860,19 @@ describe('HF12b: an age typed with a split "i m"', () => {
     },
   );
 });
+
+describe('HF12b: "sa\'d" (sexually assaulted) is not read as "sad"', () => {
+  test.each([
+    "he sa'd me",
+    'he sa’d me',
+    'i got sa´d',
+    'he SA-ed me',
+    "they sa'ed her",
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each(['im sad', 'i feel sad today', 'sad me'])('no grooming cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
