@@ -109,6 +109,19 @@ test('each link sits under its own section heading', async () => {
   }
 });
 
+// Carried from components/gymOfficeSafetyStrip.test.tsx, which checked the Capabilities button
+// (lane U2, audit UX-A A-2; Overwatch 2026-10-17): the Compliance Center works today, so its link
+// is not stamped Planned.
+test('the Compliance Center link carries no Planned stamp', async () => {
+  global.fetch = quietFetch() as never;
+  render(<PeopleConsolePage />);
+  const nav = await screen.findByRole('navigation', { name: 'Office pages' });
+  const link = within(nav).getByRole('link', { name: 'Compliance Center' });
+  expect(link.textContent).toBe('Compliance Center');
+  expect(link.querySelector('.stamp')).toBeNull();
+  expect(within(nav).queryByText(/planned/i)).toBeNull();
+});
+
 test('Gym Setup is linked once, from the header, not repeated in the office pages', async () => {
   global.fetch = quietFetch() as never;
   render(<PeopleConsolePage />);
