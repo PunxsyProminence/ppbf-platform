@@ -13,15 +13,7 @@ export default function BoardSeatWorkspace({ member }: BoardSeatWorkspaceProps) 
     notFound();
   }
 
-  return (
-    <BoardMemberDashboard
-      seat={seat}
-      links={[
-        { label: 'Board Hub', href: '/board' },
-        // Lane U2 (audit UX-A A-16): the board's two reads had no link in.
-        { label: 'Program Aggregates', href: '/board/aggregates' },
-        { label: 'Escalation Ladder', href: '/board/escalation-monitoring' },
-      ]}
-    />
-  );
+  // The seat's links (Board Hub and the board's reads) are BoardWorkspaceLinks,
+  // rendered by the dashboard directly under its header (lane AS-12, BOA-03).
+  return <BoardMemberDashboard seat={seat} />;
 }
