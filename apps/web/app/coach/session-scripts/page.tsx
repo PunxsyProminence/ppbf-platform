@@ -304,7 +304,9 @@ function CoachSessionScripts() {
     if (focusDetail === 0) return;
     const heading = detailHeadingRef.current;
     heading?.focus({ preventScroll: true });
-    heading?.scrollIntoView?.({ block: 'start' });
+    // The page's top bar is sticky and of no fixed height (it wraps on a narrow screen), so 'start'
+    // would put the heading under it (review of #2057). 'center' keeps it clear of the bar.
+    heading?.scrollIntoView?.({ block: 'center' });
   }, [focusDetail]);
 
   const openScript = useCallback(async (scriptId: string) => {

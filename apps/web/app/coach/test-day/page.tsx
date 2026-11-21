@@ -76,6 +76,9 @@ function classRead(payload: unknown): ClassRead | null {
     && typeof item.start_at === 'string'
     && typeof item.end_at === 'string'
     && typeof item.status === 'string');
+  // A class row that cannot be read makes the whole answer unreadable: "no class on this date"
+  // must never stand for "some classes could not be read" (review of #2057).
+  if (rows.length !== classes.length) return null;
   return { classes: rows, members };
 }
 
@@ -203,7 +206,7 @@ function TestDayForm() {
     })();
   }, []);
 
-  // The classes for "Whose numbers", read after the roster: the roster is the page; this narrows it.
+  // The classes for "Whose numbers", read beside the roster (not after it): the roster is the page; this narrows it.
   useEffect(() => {
     void (async () => {
       try {
@@ -326,6 +329,8 @@ function TestDayForm() {
         // this form under a new key would save the whole group twice.
         setPending(null);
         setCells({});
+        // The boxes are cleared, so a narrowed list would hide whoever has a missing box: everyone again.
+        setClassId('');
         setMessage({
           kind: 'refused',
           text: `${refusalWords({ error: payload?.error, status: 409 }, {}, 'An earlier press already saved this test day. The first numbers are kept.')} `
@@ -381,19 +386,32 @@ function TestDayForm() {
           </select>
         </label>
       ) : null}
-      {roster && roster.length > 0 && classData === 'failed' ? (
-        <p className="t-body">The classes could not be loaded, so everyone you can record for is listed.</p>
-      ) : null}
-      {roster && roster.length > 0 && classData && classData !== 'failed' && classOptions.length === 0 ? (
-        <p className="t-body">
-          No class on this date has a register you can pick from here, so everyone you can record for is listed.
-        </p>
-      ) : null}
-      {chosenClass ? (
-        <p className="t-body">
-          {`Registered for, or marked Present on, ${chosenClass.title}: ${chosenClass.athletes.size}. An athlete with a number typed stays listed.`}
-        </p>
-      ) : null}
+      {/* "Whose numbers" lines (review of #2057). One live region that is always on the page, so
+          what lands in it is read out: a region inserted with its text already in it often is not.
+          aria-live, not a status role: the page's one status is the save's. */}
+      <div aria-live="polite" data-testid="class-lines" className="space-y-[var(--s2)]">
+        {roster && roster.length > 0 && classData === 'failed' ? (
+          /* A failed class read is a degraded page, not an empty answer: a warning with a glyph and
+             a title (the roster still loaded, so it is not a refusal). */
+          <div className="alert alert--warning">
+            <span className="alert-icon" aria-hidden="true">▲</span>
+            <div className="alert-body">
+              <p className="alert-title">Classes not loaded</p>
+              <p className="alert-msg">The classes could not be loaded, so everyone you can record for is listed.</p>
+            </div>
+          </div>
+        ) : null}
+        {roster && roster.length > 0 && classData && classData !== 'failed' && classOptions.length === 0 ? (
+          <p className="t-body">
+            No class on this date has a register you can pick from here, so everyone you can record for is listed.
+          </p>
+        ) : null}
+        {chosenClass ? (
+          <p className="t-body">
+            {`Registered for, or marked Present on, ${chosenClass.title}, whom you can record for: ${chosenClass.athletes.size}. An athlete with a number typed stays listed.`}
+          </p>
+        ) : null}
+      </div>
 
       {failed ? (
         <div className="alert alert--warning" role="alert">

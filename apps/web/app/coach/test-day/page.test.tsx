@@ -420,7 +420,9 @@ describe('Whose numbers: one class, or everyone', () => {
 
     choose('c-1');
     expect(listed()).toEqual(['Ana Boxer']);
-    expect(screen.getByText('Registered for, or marked Present on, Evening Fundamentals: 1. An athlete with a number typed stays listed.')).toBeTruthy();
+    const count = screen.getByText('Registered for, or marked Present on, Evening Fundamentals, whom you can record for: 1. An athlete with a number typed stays listed.');
+    // Inside the page's always-present live region, so the narrowing is read out.
+    expect(count.closest('[aria-live="polite"]')).toBe(screen.getByTestId('class-lines'));
     choose('c-2');
     expect(listed()).toEqual(['Ben Boxer']);
     choose('');
@@ -481,10 +483,21 @@ describe('Whose numbers: one class, or everyone', () => {
     ['the read fails', () => respond(500, {})],
     ['the answer is not a schedule', () => respond(200, { ok: true, classes: 'none' })],
     ['the connection drops', () => { throw new Error('network'); }],
+    // One class row that cannot be read: "no class on this date" would be a claim the page cannot make.
+    ['a class row cannot be read', () => respond(200, {
+      ...NO_CLASSES,
+      classes: [klass('c-1', 'Evening Fundamentals'), { class_id: 'c-2' }],
+      registrations: [registered('c-1', 'ath-1')],
+    })],
   ])('when %s, the page says the classes could not be loaded and lists everyone', async (_label, answer) => {
     schedulerAnswer = answer as () => Response;
     await renderPage();
-    expect(screen.getByText('The classes could not be loaded, so everyone you can record for is listed.')).toBeTruthy();
+    const warning = screen.getByText('The classes could not be loaded, so everyone you can record for is listed.').closest('.alert') as HTMLElement;
+    // Set apart from an empty answer (a warning with a glyph and a title) and announced, not an alert.
+    expect(warning.className).toContain('alert--warning');
+    expect(warning.closest('[aria-live="polite"]')).toBe(screen.getByTestId('class-lines'));
+    expect(warning.textContent).toContain('Classes not loaded');
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText(/No class on this date/)).toBeNull();
     expect(screen.queryByLabelText('Whose numbers')).toBeNull();
     expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
@@ -492,6 +505,24 @@ describe('Whose numbers: one class, or everyone', () => {
     type('Ana Boxer: Height (cm)', '151.4');
     await pressSave();
     expect(saves()).toHaveLength(1);
+  });
+
+  test('"already recorded with different numbers" clears the boxes and lists everyone again, so no missing box is hidden', async () => {
+    schedulerAnswer = schedule({ classes: [klass('c-1', 'Evening Fundamentals')], registrations: [registered('c-1', 'ath-1')] });
+    saveAnswers = [
+      new Error('network'),
+      respond(409, { error: 'This save was already recorded with different numbers. The first numbers are kept, and nothing from this attempt was saved.' }),
+    ];
+    await renderPage();
+    type('Ben Boxer: Height (cm)', '148');
+    choose('c-1');
+    type('Ana Boxer: Height (cm)', '151.4');
+    await pressSave();
+    type('Ana Boxer: Height (cm)', '152.4');
+    await pressSave();
+    expect(screen.getByRole('alert').textContent).toMatch(/enter only the missing boxes again/);
+    expect((screen.getByLabelText('Whose numbers') as HTMLSelectElement).value).toBe('');
+    expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
   });
 
   test('a roster that failed says only that: no class line stands in for it', async () => {

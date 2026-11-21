@@ -132,7 +132,7 @@ describe('the opened plan is brought into view (CF-08)', () => {
     const heading = await openPlan('Friday sparring');
     expect(document.activeElement).toBe(heading);
     expect(heading).toHaveAttribute('tabindex', '-1');
-    expect(scrolled).toEqual([{ element: heading, options: { block: 'start' } }]);
+    expect(scrolled).toEqual([{ element: heading, options: { block: 'center' } }]);
   });
 
   test('opening another plan goes there again', async () => {
@@ -143,7 +143,7 @@ describe('the opened plan is brought into view (CF-08)', () => {
     const heading = await openPlan('Tuesday technical');
     expect(document.activeElement).toBe(heading);
     expect(scrolled).toHaveLength(2);
-    expect(scrolled[1]).toEqual({ element: heading, options: { block: 'start' } });
+    expect(scrolled[1]).toEqual({ element: heading, options: { block: 'center' } });
   });
 
   test('a plan opened from the address (?script=) is brought into view too', async () => {
@@ -152,7 +152,7 @@ describe('the opened plan is brought into view (CF-08)', () => {
     await renderPage();
     const heading = await screen.findByRole('heading', { level: 2, name: 'Tuesday technical' });
     expect(document.activeElement).toBe(heading);
-    expect(scrolled).toEqual([{ element: heading, options: { block: 'start' } }]);
+    expect(scrolled).toEqual([{ element: heading, options: { block: 'center' } }]);
   });
 
   test('nothing is scrolled or focused until a plan is opened', async () => {
@@ -203,6 +203,30 @@ describe('the class chosen at the top is named by the start button (CF-08)', () 
     )).toBeInTheDocument();
     expect(screen.queryByText('Choose the class at the top of the page to start.')).toBeNull();
     expect(screen.getByRole('button', { name: 'Start live delivery' })).toBeEnabled();
+  });
+
+  test('Start sends the class the line names', async () => {
+    const early = classRow('class-1', 'Evening Fundamentals', -10);
+    const late = classRow('class-2', 'Evening Sparring', -5);
+    serve([early, late]);
+    const readOnly = global.fetch as jest.Mock;
+    const starts: unknown[] = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST' && String(input).endsWith('/api/pilot/session-scripts/runs')) {
+        starts.push(JSON.parse(String(init.body)));
+        return json({ run: { run_id: 'run-1', class_id: 'class-2' } });
+      }
+      return readOnly(input, init);
+    }) as unknown as typeof fetch;
+    await renderPage();
+    await openPlan('Friday sparring');
+
+    fireEvent.click(screen.getByRole('radio', { name: new RegExp('^Evening Sparring') }));
+    expect(screen.getByText(/^This session is for: Evening Sparring, /)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start live delivery' }));
+    });
+    expect(starts).toEqual([{ script_id: 'scr-friday', class_id: 'class-2' }]);
   });
 
   test('a plan with no blocks has no start, so no class line either', async () => {
