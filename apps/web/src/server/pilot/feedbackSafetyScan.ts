@@ -63,7 +63,8 @@ export function normalizeForSafetyScan(body: string): string {
 }
 
 /**
- * The same normal form with spelled-out words joined (HF12b): an extra
+ * The same normal form with HF12b's rewrites (spelled-out words joined, the
+ * sexual-assault abbreviation spelled out, "i m", "ur self"): an extra
  * reading, never a replacement. The cues read both, and the SHADOW
  * disclosure's staff, person, touch and intent checks read both, so a
  * spelled-out word only ever adds evidence to what main's normal form already
@@ -73,9 +74,9 @@ export function spelledOutReading(body: string): string {
   return normalizeWith(body, true);
 }
 
-function normalizeWith(body: string, joinSpelledOut: boolean): string {
-  const lowered = spellOutSexualAssault(body).toLowerCase().replace(APOSTROPHE_LIKE, '');
-  return joinSplitWords((joinSpelledOut ? joinSpelledOutWords(lowered) : lowered)
+function normalizeWith(body: string, extraReading: boolean): string {
+  const lowered = (extraReading ? spellOutSexualAssault(body) : body).toLowerCase().replace(APOSTROPHE_LIKE, '');
+  return joinSplitWords((extraReading ? joinSpelledOutWords(lowered) : lowered)
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/(.)\1{2,}/g, '$1$1')
     .replace(/\bdo not\b/g, 'dont')
@@ -87,7 +88,7 @@ function normalizeWith(body: string, joinSpelledOut: boolean): string {
     .replace(/\bwas not\b/g, 'wasnt')
     .replace(/\bhave not\b/g, 'havent')
     .replace(/\bwould not\b/g, 'wouldnt')
-    .trim());
+    .trim(), extraReading);
 }
 
 /**
@@ -103,7 +104,8 @@ function spellOutSexualAssault(body: string): string {
     const after = body.slice(offset + match.length);
     const isGivenName = /^Sa/.test(match)
       && !/\b(?:got|get|gets|getting|was|were|been|being|be|is|am|im|i['\u2019]?m|he|she|they|someone|somebody|who)[^A-Za-z0-9]+$/i.test(before)
-      && !/^\s+(?:me|her|him|them|us|my|his|our|their|by|at|after|last|in|on|again|twice|a|some|somebody|someone|kids|girls|boys|[0-9]+|two|three)\b/i.test(after);
+      && (/\b(?:called|named|friend|with|and|to|from|for|hes|shes|meet|met|sparring|partner)[^A-Za-z0-9]+$/i.test(before)
+        || /^(?:,|['\u2019]s\b|\s+(?:is|was|did|does|has|had|and|will|can|said|says|won|wins|went)\b)/i.test(after));
     return isGivenName ? match : 'sexually assaulted';
   });
 }
@@ -172,12 +174,15 @@ function joinSpelledOutWords(text: string): string {
  * readings, because a held key inside the split ("myyy self", "my selfff")
  * only collapses to the joinable form in the fully collapsed one.
  */
-function joinSplitWords(text: string): string {
-  return text
+function joinSplitWords(text: string, extraReading = false): string {
+  const joined = text
     .replace(/\bmy self\b/g, 'myself')
-    .replace(/\bi m\b/g, 'im')
-    .replace(/\bun alive\b/g, 'unalive')
-    .replace(/\b(your|ur) self\b/g, '$1self');
+    .replace(/\bun alive\b/g, 'unalive');
+  // HF12b's own joins live in the extra reading only, so main's normal form
+  // (and every cue it gave) is unchanged.
+  return extraReading
+    ? joined.replace(/\bi m\b/g, 'im').replace(/\b(your|ur) self\b/g, '$1self')
+    : joined;
 }
 
 /**
@@ -186,8 +191,8 @@ function joinSplitWords(text: string): string {
  * own spelling. Both readings are scanned and their cues combined, so neither
  * elongation shape can hide a disclosure.
  */
-function collapseFully(normalized: string): string {
-  return joinSplitWords(normalized.replace(/(.)\1+/g, '$1'));
+function collapseFully(normalized: string, extraReading = false): string {
+  return joinSplitWords(normalized.replace(/(.)\1+/g, '$1'), extraReading);
 }
 
 
@@ -199,8 +204,8 @@ const TECHNIQUE_END = String.raw`(?: (?:please|pls|plz|thanks|thank you|thx|ty|a
 const PICTURE_NOUNS = String.raw`(?:pic|pics|pix|picture|pictures|photo|photos|selfie|selfies)`;
 // "snap" is also boxing for a sharp punch ("more snap on my jab", "snaps on
 // every punch"): the punch sense is left out.
-const VIDEO_NOUNS = String.raw`(?:vid|vids|video|videos|snaps(?! (?:on (?:my|the|every|each|his|your) (?:jabs?|punch(?:es)?|bag|pads|cros+|hooks?)|not push(?:es)?|behind (?:the|my|your|his) (?:jabs?|punch(?:es)?|cros+))${TECHNIQUE_END})|snapchats?|(?<=\b(?:a|another) )snap)`;
-const ANY_PICTURE = String.raw`(?:pic|pics|pix|picture|pictures|photo|photos|selfie|selfies|vid|vids|video|videos|snap|snaps|snapchats?|cameras?|films|filmed|filming|(?<!\b(?:new|my|the|a|personal|broke|set|his|her) )records?(?! (?:my|his|her) (?:pr|pb|score|best|time)${TECHNIQUE_END})|recorded(?! (?:my|his|her) (?:pr|pb|score|best|time)\b(?! (?:in|with|without|wearing|naked|no)\b))|recording)`;
+const VIDEO_NOUNS = String.raw`(?:vid|vids|videos?(?! consents?\b)|snaps(?! (?:on (?:my|the|every|each|his|your) (?:jabs?|punch(?:es)?|bag|pads|cros+|hooks?)|not push(?:es)?|behind (?:the|my|your|his) (?:jabs?|punch(?:es)?|cros+))${TECHNIQUE_END})|snapchats?|(?<=\b(?:a|another) )snap)`;
+const ANY_PICTURE = String.raw`(?:pic|pics|pix|picture|pictures|photo|photos|selfie|selfies|vid|vids|video|videos|snap|snaps|snapchats?|cameras?|films|filmed|filming|record (?:button|setting|mode)|(?:hit|hits|press|pressed|presses) record|records(?! (?:my|his|her) (?:pr|pb|score|best|time)${TECHNIQUE_END})|recorded(?! (?:my|his|her) (?:pr|pb|score|best(?: time| score)?|time)${TECHNIQUE_END})|recording)`;
 const WORD = String.raw`(?: [a-z0-9]+)`;
 const PICTURE_COUNT = String.raw`(?:a |an |more |some |private |another |any )?`;
 const GYM_EVENT_NOUNS = String.raw`fight|fights|bout|bouts|event|events|match|tournament|win|belt|medal|team|clas+|spar+ing|scale`;
@@ -221,7 +226,7 @@ const PICTURE_REQUEST = String.raw`(?:${ASK} (?:me )?(?:for |to see |to send (?:
 // made to send, someone who keeps asking, or a third person or staff title
 // wanting one. Feature requests and product talk stay out.
 const VIDEO_ASKER = String.raw`(?:he|she|they|hes|shes|theyre|coach|someone|somebody|guy|man|mr|mrs|ms|miss|sir|trainer|instructor|volunteer|staff|teacher|uncle|aunt|dad|daddy|stepdad|step dad|stepbrother|brother|cousin|grandpa|boyfriend|girlfriend|neighbou?r|boys?|girls?|kids?|men|guys|people)`;
-const VIDEO_PRODUCT_GUARD = String.raw`(?!(?:(?! of (?:me|you|u|us|yourself|myself)\b)${WORD}){0,8} for (?:the |my |our |a )?(?:website|newslet+er|instagram|insta|socials?|social media|promo|scho+l(?: project)?|project|tour)${TECHNIQUE_END})(?! (?:in the ap+|library|tutorials?|content|uploaded|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+|of the open house|of the kids clas+)\b)`;
+const VIDEO_PRODUCT_GUARD = String.raw`(?!(?:(?! of (?:me|you|u|us|yourself|myself)\b)${WORD}){0,8} for (?:the |my |our |a )?(?:website|newslet+er|instagram|insta|socials?|social media|promo|scho+l(?: project)?|project|tour)${TECHNIQUE_END})(?! (?:in the ap+|library|tutorials?|content|consent|uploaded(?: to (?:the )?(?:ap+|site|website))?|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+|of the open house|of the kids clas+)${TECHNIQUE_END})`;
 // The product asking for a video ("the app asks me", "shadow keeps asking")
 // is not a person; a message sent "on the app" is.
 const PRODUCT_SUBJECT = String.raw`(?<!(?<!\b(?:on|in|through|via|from|off|of|at) )\bthe (?:ap+|site|page|form|screen) (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)(?<!(?:^|\bthe )shadow (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)`;
@@ -320,7 +325,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     // my life seriously"); "take my own life" is.
     id: 'crisis',
     pattern:
-      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|(?<!\b(?:wraps?|tape|gloves?|shoes?|boots|shirt|headgear|headguard|mouthguard|pads|(?:take|took|get|got|pull|pulled|cut) (?:it|them)) )off myself|shoot myself|neck myself|want 2 die|want 2 be dead|want (?:to|2) b dead|wanna b dead|dont want 2 live|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself|(?:gonna|gunna|going to|wanna|want to|imma|ima|finna|about to|bout to|i will) of myself|kys|(?:hang|neck|shoot) (?:yourself|urself)|(?<=\b(?:dont|not|never|ne+d to|have to) )kil+ (?:yourself|urself)(?! (?:in (?:the )?(?:first |1st |opening |early )?rounds?|in round (?:one|1)|on the (?:heavy )?(?:bag|pads|mitts|treadmill))\b)|(?<!\b(?:dont|not|never|ne+d to|have to) )kil+ (?:yourself|urself)(?! on the (?:heavy )?(?:bag|pads|mitts|treadmill)\b))\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|ten|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n|twenty|thirty|forty|fifty) )\bkms\b|\b(?:im|i am|(?<![0-9] )am|only|age)(?: only)? (?:[0-9]+|ten|eleven|twelve|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n)(?: yo| years old| and)? kms\b(?! (?:away|to go|from (?:the|my|home|here|school))\b)/,
+      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|(?<!\b(?:wraps?|tape|gloves?|shoes?|boots|shirt|headgear|headguard|mouthguard|pads|(?:take|took|get|got|pull|pulled|cut) (?:it|them)) )off myself|shoot myself|neck myself|want 2 die|want 2 be dead|want (?:to|2) b dead|wanna b dead|dont want 2 live|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself|(?:gonna|gunna|going to|wanna|want to|imma|ima|finna|about to|bout to|i will) of myself|kys|(?:hang|neck|shoot) (?:yourself|urself)|(?<=\b(?:dont|not|never|ne+d to|have to) )kil+ (?:yourself|urself)(?! (?:in (?:the )?(?:first |1st |opening |early )?rounds?|in round (?:one|1)|on the (?:heavy )?(?:bag|pads|mit+s|tre+dmil+))(?: (?:please|pls|plz|thanks|lol))?$)|(?<!\b(?:dont|not|never|ne+d to|have to) )kil+ (?:yourself|urself)(?! on the (?:heavy )?(?:bag|pads|mit+s|tre+dmil+)(?: (?:please|pls|plz|thanks|lol))?$))\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|ten|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n|twenty|thirty|forty|fifty) )\bkms\b|\b(?:im|i am|(?<![0-9] )am|only|age)(?: only)? (?:[0-9]+|ten|eleven|twelve|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n)(?: yo| years old| and)? kms\b(?! (?:away|to go|from (?:the|my|home|here|school))\b)/,
   },
   {
     // Naming what was touched instead of who was touching. Every cue above
@@ -391,7 +396,7 @@ export function scanForSafetyLanguage(body: string): FeedbackSafetyScanResult {
   const spelled = spelledOutReading(body);
   const readings = spelled === normalized
     ? [normalized, collapseFully(normalized)]
-    : [normalized, collapseFully(normalized), spelled, collapseFully(spelled)];
+    : [normalized, collapseFully(normalized), spelled, collapseFully(spelled, true)];
   const cues = SAFETY_CUES
     .filter((cue) => readings.some((reading) => cue.pattern.test(reading)))
     .map((cue) => cue.id);

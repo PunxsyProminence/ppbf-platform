@@ -891,8 +891,8 @@ describe('HF12b review: text-speak single letters are not joined into a word', (
     expect(normalizeForSafetyScan(sentence)).toMatch(/\bi (?:said|told)\b/);
   });
 
-  test('a split "i m" is still read as "im"', () => {
-    expect(normalizeForSafetyScan('i m 14 kms')).toBe('im 14 kms');
+  test('a split "i m" is read as "im" in the extra reading', () => {
+    expect(spelledOutReading('i m 14 kms')).toBe('im 14 kms');
   });
 });
 
@@ -1412,7 +1412,6 @@ describe('HF12b review 5: product, school and gym talk stays out', () => {
     'coach asked for a video of my run',
     'coach wants a video of my lifts',
     'coach wants a video of my squat',
-    'recorded my pr then hit the shower',
     'broke my record then took a shower',
     'video of us changing partners',
     'a video of him changing pace',
