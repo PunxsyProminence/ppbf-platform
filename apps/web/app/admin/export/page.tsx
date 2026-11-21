@@ -93,7 +93,7 @@ export default function RosterExportPage() {
       <main className="room room--office min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
           <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
-            <p className="t-eyebrow">Admin Workspace</p>
+            <p className="t-eyebrow">Office</p>
             <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Take Your Roster With You</h1>
             <p className="t-body max-w-3xl">
               Downloads every athlete in your gym as a spreadsheet file. It is the gym&apos;s own record,
