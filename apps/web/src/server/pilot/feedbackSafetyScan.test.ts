@@ -1991,6 +1991,11 @@ describe('HF12b third delta review (81ed7ee..d4d2e32): blocking findings', () =>
     'i made a secret pic for him and now he wants more',
     'i made a private video for him and now he is sharing it',
     'i posted a private pic and he screenshotted it',
+    'i uploaded a private video and someone screenshotted it',
+    'i put up a private video and a man keeps messaging me',
+    'he set it to private video so my mom cant see',
+    'he sent me a private pics link',
+    'private pic links of me are going around',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
