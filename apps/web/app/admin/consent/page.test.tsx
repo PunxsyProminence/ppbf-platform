@@ -409,5 +409,7 @@ it('still names an old photo_media row in the register, marked as not counted', 
 
   expect(await screen.findByText('Photo and media')).toBeTruthy();
   expect(screen.getByText(/not counted/)).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Media Consent Audit' }).getAttribute('href')).toBe('/admin/athlete-consent');
+  // The row's own pointer (the form's pointer above carries the same words).
+  const note = screen.getByText(/not counted/).closest('span') as HTMLElement;
+  expect(within(note).getByRole('link', { name: 'Media Consent Audit' }).getAttribute('href')).toBe('/admin/athlete-consent');
 });
