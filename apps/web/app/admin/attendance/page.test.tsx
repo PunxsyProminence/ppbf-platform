@@ -379,3 +379,17 @@ describe('the attendance report by class (RP-02)', () => {
     expect(classReport().queryByRole('table')).toBeNull();
   });
 });
+
+// Lane AS-10, AS10-5 (app scrub OFF-20, a named move): the two report blocks
+// sat above the summary; they now follow the summary and the ledger.
+test('the summary comes first, and the two report blocks follow it', async () => {
+  installFetch({ ok: true, trend: [] });
+  render(<AttendanceDashboardPage />);
+  const summary = await screen.findByText('Athletes tracked');
+  const byClass = screen.getByRole('region', { name: 'Class attendance report' });
+  const download = screen.getAllByRole('button').find((button) => /download/i.test(button.textContent ?? '')) as HTMLElement;
+  expect(download).toBeDefined();
+  for (const report of [byClass, download]) {
+    expect(summary.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+});

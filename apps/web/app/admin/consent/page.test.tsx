@@ -15,7 +15,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 import ConsentPage from './page';
 
@@ -376,15 +377,18 @@ it('puts no ghost button on the paper', async () => {
     .map((el) => el.textContent?.trim());
   expect(ghostsOnPaper).toEqual([]);
 
-  // The one ghost this page states is the header's back link (BackHome), and the
+  // The ghosts this page states are the header's back link (BackHome) and, since
+  // lane AS-10 (OFF-19), the header's Waiver Compliance link beside it; the
   // header is leather. Counted off the source because the next/link mock above
   // renders a bare <a href> and drops className, so a rendered check here
-  // would pass on a page that had none.
+  // would pass on a page that had none. Each must sit inside the <header>.
   const source = readFileSync(join(__dirname, 'page.tsx'), 'utf8');
-  const ghostClasses = [...source.matchAll(CLASS_ATTR)]
+  const ghostsIn = (text: string) => [...text.matchAll(CLASS_ATTR)]
     .map((m) => m[1] ?? m[2] ?? m[3] ?? '')
     .filter((value) => value.split(/\s+/).includes('btn--ghost'));
-  expect(ghostClasses).toEqual(['btn btn--ghost']);
+  const header = source.slice(source.indexOf('<header'), source.indexOf('</header>'));
+  expect(ghostsIn(source)).toEqual(['btn btn--ghost', 'btn btn--ghost']);
+  expect(ghostsIn(header)).toEqual(ghostsIn(source));
 });
 
 /* ---- Photo and media leaves the register (Jason 2026-10-07, OD-2026-10-07-009) ---- */
@@ -409,4 +413,32 @@ it('still names an old photo_media row in the register, marked as not counted', 
   expect(await screen.findByText('Photo and media')).toBeTruthy();
   expect(screen.getByText(/not counted/)).toBeTruthy();
   expect(screen.getByRole('link', { name: 'consent desk' }).getAttribute('href')).toBe('/admin/athlete-consent');
+});
+
+// Lane AS-10, AS10-5 (app scrub OFF-19): this page and Waiver Compliance write
+// the same waiver record; the page says so, and links it for an admin (Waiver
+// Compliance does not admit a coach).
+describe('Waiver Compliance (lane AS-10)', () => {
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
+
+  test('an admin is told both pages record the same waivers and offered the link', async () => {
+    createPersistentRoleSession('admin');
+    global.fetch = mockApi() as unknown as typeof fetch;
+    render(<ConsentPage />);
+    await screen.findByText('Sample Athlete One');
+    expect(screen.getByText(/Waiver Compliance page records the same waivers/).textContent?.replace(/\s+/g, ' '))
+      .toContain('shows every athlete against every tracked waiver type.');
+    expect(screen.getByRole('link', { name: 'Waiver Compliance' }).getAttribute('href')).toBe('/admin/waiver-status');
+  });
+
+  test('a coach is not offered the link', async () => {
+    createPersistentRoleSession('coach');
+    global.fetch = mockApi() as unknown as typeof fetch;
+    render(<ConsentPage />);
+    await screen.findByText('Sample Athlete One');
+    expect(screen.queryByRole('link', { name: 'Waiver Compliance' })).toBeNull();
+  });
 });

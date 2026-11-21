@@ -434,6 +434,13 @@ export default function WaiverComplianceAuditPage() {
               time. Photo &amp; media consent has its own dedicated audit with guardian-level detail; that link
               is below.
             </p>
+            {/* Lane AS-10, OFF-19: the waiver this page marks is the same record Waivers & Consent
+                keeps (both POST domain-upsert, entity_type 'waiver'). */}
+            <p className="t-body mt-[var(--s3)] max-w-4xl">
+              A waiver marked here is the same record kept on{' '}
+              <Link href="/admin/consent" className="underline">Waivers &amp; Consent</Link>, which lists who
+              signed and when.
+            </p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Tonight is one answer per athlete. It follows training holds and medical clearance only.
               Papers, consent and open violations are listed under Also on file as they stand and do not
