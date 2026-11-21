@@ -15,7 +15,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 import ConsentPage from './page';
 
@@ -409,4 +410,31 @@ it('still names an old photo_media row in the register, marked as not counted', 
   expect(await screen.findByText('Photo and media')).toBeTruthy();
   expect(screen.getByText(/not counted/)).toBeTruthy();
   expect(screen.getByRole('link', { name: 'consent desk' }).getAttribute('href')).toBe('/admin/athlete-consent');
+});
+
+// Lane AS-10, AS10-5 (app scrub OFF-19): this page and Waiver Compliance write
+// the same waiver record; the page says so, and links it for an admin (Waiver
+// Compliance does not admit a coach).
+describe('Waiver Compliance (lane AS-10)', () => {
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
+
+  test('an admin is told both pages record the same waivers and offered the link', async () => {
+    createPersistentRoleSession('admin');
+    global.fetch = mockApi() as unknown as typeof fetch;
+    render(<ConsentPage />);
+    await screen.findByText('Sample Athlete One');
+    expect(screen.getByText(/Waiver Compliance page records the same waivers/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Waiver Compliance' }).getAttribute('href')).toBe('/admin/waiver-status');
+  });
+
+  test('a coach is not offered the link', async () => {
+    createPersistentRoleSession('coach');
+    global.fetch = mockApi() as unknown as typeof fetch;
+    render(<ConsentPage />);
+    await screen.findByText('Sample Athlete One');
+    expect(screen.queryByRole('link', { name: 'Waiver Compliance' })).toBeNull();
+  });
 });
