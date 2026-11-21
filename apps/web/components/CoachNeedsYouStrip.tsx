@@ -74,12 +74,21 @@ function countWord(count: NeedsYouCount): string {
   return count.count === 0 ? 'none' : 'waiting';
 }
 
+/* FOCUS THAT SHOWS ON LEATHER (design review of 7b). The board's 3px bone
+   outline (ppbf-golden-era.css, scoped to .coach-floor-focus) does not reach the
+   strip, which sits outside the board, and the app-wide ring measures under 2:1
+   on this leather. The same outline, as important utilities so they win over the
+   unlayered `.btn:focus-visible { outline: 0 }`. */
+const FOCUS = 'focus-visible:outline-3! focus-visible:outline-solid! focus-visible:outline-[var(--bone-100)]! focus-visible:outline-offset-2!';
+
 function CountLink({ count }: { readonly count: NeedsYouCount }) {
   const waiting = count.state === 'loaded' && count.count > 0;
   const unknown = count.state !== 'loaded';
   const className = [
-    'btn btn--ghost coach-floor-focus__btn h-full w-full flex-col items-start gap-[var(--s1)] text-left',
-    count.safety && (waiting || unknown) ? 'border-[color:var(--restricted)]' : '',
+    // Important: the unlayered .btn and .coach-floor-focus__btn rules set alignment, gap and the ghost
+    // border, and an ordinary utility loses to them (apps/web/scripts/css-layer-collisions.mjs).
+    `btn btn--ghost coach-floor-focus__btn h-full w-full flex-col items-start! gap-[var(--s1)]! text-left! ${FOCUS}`,
+    count.safety && (waiting || unknown) ? 'border-[color:var(--restricted)]!' : '',
   ].join(' ');
   const content = (
     <>
@@ -147,10 +156,14 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
   return (
     <section
       aria-labelledby="coach-needs-you-heading"
-      aria-live="polite"
       className="coach-floor-focus__panel coach-floor-focus__card text-[length:var(--t-md)]"
     >
-      <h2 id="coach-needs-you-heading" className="coach-floor-focus__panel-title">
+      {/* Polite on the position line only (design review of 7b): the counts
+          change as each read lands and the lists below are live regions of
+          their own, so a live section re-read them all. The acknowledge
+          notice is role="status" and a failed read role="alert"; both still
+          announce themselves. */}
+      <h2 id="coach-needs-you-heading" aria-live="polite" className="coach-floor-focus__panel-title">
         {queueLength > 0 ? `Needs you now · ${position + 1} of ${queueLength}` : 'Needs you now'}
       </h2>
 
@@ -167,7 +180,7 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
           Cross-link now"): The Morning Read is every read, most urgent
           first. Copy PROPOSED. */}
       <p className="coach-floor-focus__label">
-        <Link href="/coach/intelligence" className="underline">More reads: The Morning Read</Link>
+        <Link href="/coach/intelligence" className={`underline ${FOCUS}`}>More reads: The Morning Read</Link>
       </p>
 
       {ackLanded && (
@@ -186,7 +199,7 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
             </p>
           )}
           {currentFeed.state === 'error' && currentFeed.onRetry && (
-            <button type="button" className="btn coach-floor-focus__btn btn--ghost" onClick={currentFeed.onRetry}>
+            <button type="button" className={`btn coach-floor-focus__btn btn--ghost ${FOCUS}`} onClick={currentFeed.onRetry}>
               Try again
             </button>
           )}
@@ -224,7 +237,7 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
             {!open && (
               <button
                 type="button"
-                className="btn coach-floor-focus__btn"
+                className={`btn coach-floor-focus__btn ${FOCUS}`}
                 onClick={() => {
                   setSelectedKey(currentKey);
                   setOpenKey(currentKey);
@@ -238,7 +251,7 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
                 second, deliberate press (UXB-01). */}
             {open && currentItem.acknowledge && (
               <ArmedButton
-                className="btn coach-floor-focus__btn disabled:cursor-not-allowed disabled:opacity-60"
+                className={`btn coach-floor-focus__btn disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS}`}
                 armKey={currentKey ?? ''}
                 disabled={currentItem.acknowledge.disabled}
                 busy={currentItem.acknowledge.busy}
@@ -255,7 +268,7 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
             {open && currentItem.link && (
               <Link
                 href={currentItem.link.href}
-                className="btn coach-floor-focus__btn"
+                className={`btn coach-floor-focus__btn ${FOCUS}`}
                 onClick={(event) => {
                   // A plain click only: a modified click opens another
                   // tab, which would leave the hand-off waiting here for
@@ -284,7 +297,7 @@ export default function CoachNeedsYouStrip({ counts, items, feeds, painWindowDay
       )}
 
       {queueLength > 1 && (
-        <button type="button" className="btn coach-floor-focus__btn btn--ghost" onClick={next}>
+        <button type="button" className={`btn coach-floor-focus__btn btn--ghost ${FOCUS}`} onClick={next}>
           Next →
         </button>
       )}

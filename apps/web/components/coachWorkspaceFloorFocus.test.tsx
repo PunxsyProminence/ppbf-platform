@@ -574,6 +574,18 @@ describe('the Needs You Now strip on the coach home (7b)', () => {
     expect(screen.queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
   });
 
+  test('a failed barrier read makes its count "?", never 0', async () => {
+    await renderWorkspace({ barrierReports: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }) });
+    expect(countValue('barrier')).toBe('?');
+    expect(countText('barrier')).toContain('not checked');
+  });
+
+  test('a failed pain read makes its count "?", never 0', async () => {
+    await renderWorkspace({ painReports: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }) });
+    expect(countValue('pain')).toBe('?');
+    expect(countText('pain')).toContain('not checked');
+  });
+
   test('a failed escalation read makes its count "?", never 0', async () => {
     await renderWorkspace({ escalationsGet: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }) });
     expect(countValue('escalations')).toBe('?');

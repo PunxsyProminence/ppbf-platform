@@ -164,6 +164,35 @@ describe('the counts (new in 7b)', () => {
   });
 });
 
+/* DESIGN REVIEW OF 7b. The strip sits outside the board, so the board's
+   high-contrast focus rule does not reach it; each control carries the same 3px
+   bone outline itself (a browser render on the dev server measured it). Only
+   the position line is a polite live region; the counts and lists are not
+   re-read on every read that lands. */
+describe('focus and announcements', () => {
+  const FOCUS_RING = 'focus-visible:outline-[var(--bone-100)]!';
+
+  test('every control on the strip carries the bone focus outline', () => {
+    render(<CoachNeedsYouStrip {...props()} />);
+    const controls = [
+      ...within(strip()).getAllByRole('link'),
+      ...within(strip()).getAllByRole('button'),
+    ];
+    expect(controls.length).toBeGreaterThan(5);
+    for (const control of controls) {
+      expect(control.className).toContain(FOCUS_RING);
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(screen.getByRole('button', { name: 'Acknowledge' }).className).toContain(FOCUS_RING);
+  });
+
+  test('only the position line is a live region, not the whole strip', () => {
+    render(<CoachNeedsYouStrip {...props()} />);
+    expect(strip().getAttribute('aria-live')).toBeNull();
+    expect(screen.getByRole('heading', { level: 2 }).getAttribute('aria-live')).toBe('polite');
+  });
+});
+
 describe('the pager (moved from the floor board with its card)', () => {
   test('shows one thing at a time, and Next moves to the next without fetching or writing anything', () => {
     render(<CoachNeedsYouStrip {...props()} />);
