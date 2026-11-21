@@ -47,7 +47,7 @@ jest.mock('./db', () => ({
 
 import { setVideoArchiveState } from './videoArchive';
 import { readReleasedTeachingFootage } from './teachShadow/releasedFootage';
-import { readTeachShadowCoverage } from './teachShadow/coverage';
+import { coverageForVersion, readTeachShadowCoverage } from './teachShadow/coverage';
 import { BOXING_ONTOLOGY_VERSION_0_1 } from './calibration/ontology';
 
 jest.setTimeout(180_000);
@@ -81,10 +81,11 @@ const FOREIGN_VIDEO = 'vid-foreign';
 
 const CLIP = 'clip-1';
 const SECOND_CLIP = 'clip-2';
-// The real constant, not a plausible-looking '0.1'. coverage.ts filters every
-// labelling count on BOXING_ONTOLOGY_VERSION_0_1, so a fixture with a different
-// version reports zero submitted sets and the retraction test passes for the
-// wrong reason -- it would assert 0 before and 0 after.
+// The real constant, not a plausible-looking '0.1'. coverage.ts counts each
+// labellable version on its own, and these figures are read from 0.1's, so a
+// fixture with a different version reports zero submitted sets and the
+// retraction test passes for the wrong reason -- it would assert 0 before and
+// 0 after.
 const ONTOLOGY = BOXING_ONTOLOGY_VERSION_0_1;
 
 let PG_PORT: number;
@@ -476,15 +477,15 @@ describe('what archiving does to the corpus figures', () => {
      * the recognizer would be taught from.
      */
     expect(before.capture.captured_files).toBe(3); // taught + bare + held
-    expect(before.labelling.clips_cut).toBe(2);
-    expect(before.labelling.submitted_sets).toBe(1);
+    expect(before.clips_cut).toBe(2);
+    expect(coverageForVersion(before, ONTOLOGY)!.submitted_sets).toBe(1);
 
     await archive(TAUGHT_VIDEO);
 
     const after = await readTeachShadowCoverage(ORG);
     expect(after.capture.captured_files).toBe(2);
-    expect(after.labelling.clips_cut).toBe(0);
-    expect(after.labelling.submitted_sets).toBe(0);
+    expect(after.clips_cut).toBe(0);
+    expect(coverageForVersion(after, ONTOLOGY)!.submitted_sets).toBe(0);
   });
 
   test('held footage still counts as captured -- only archived footage is retracted', async () => {
@@ -509,7 +510,7 @@ describe('what archiving does to the corpus figures', () => {
 
     // Nothing was deleted to make a number move, so the number comes back.
     expect(after.capture.captured_files).toBe(before.capture.captured_files);
-    expect(after.labelling.clips_cut).toBe(before.labelling.clips_cut);
-    expect(after.labelling.submitted_sets).toBe(before.labelling.submitted_sets);
+    expect(after.clips_cut).toBe(before.clips_cut);
+    expect(coverageForVersion(after, ONTOLOGY)!.submitted_sets).toBe(coverageForVersion(before, ONTOLOGY)!.submitted_sets);
   });
 });

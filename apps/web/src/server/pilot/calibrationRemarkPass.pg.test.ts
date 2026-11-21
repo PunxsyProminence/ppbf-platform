@@ -1058,8 +1058,11 @@ describe('readers that compare people read first passes only', () => {
     await punch(other);
     await submit(other);
     const after = await coverage.readTeachShadowCoverage(ORG_ID);
-    expect(after.labelling.submitted_sets).toBe(before.labelling.submitted_sets + 1);
-    expect(after.labelling.clips_with_two_submitted_sets).toBe(before.labelling.clips_with_two_submitted_sets + 1);
+    // These passes are 0.1's (firstPass defaults to V01); coverage counts each
+    // labellable version on its own (TEACH-T T-1b).
+    const v01 = (report: typeof before) => coverage.coverageForVersion(report, V01)!;
+    expect(v01(after).submitted_sets).toBe(v01(before).submitted_sets + 1);
+    expect(v01(after).clips_with_two_submitted_sets).toBe(v01(before).clips_with_two_submitted_sets + 1);
   });
 });
 

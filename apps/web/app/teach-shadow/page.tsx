@@ -68,8 +68,21 @@ interface ReleasedFootage {
   archive_reason: string | null;
 }
 
-interface Coverage {
+/** One labellable vocabulary's counts (coverage.ts, VersionCoverage). */
+interface VersionCoverage {
   ontology_version: string;
+  role: 'new_studies' | 'finishing';
+  submitted_sets: number;
+  clips_with_two_submitted_sets: number;
+  adjudications: number;
+  gold_records: number;
+  gold_candidates: number;
+  stance_split: boolean;
+  punch_evidence: PunchEvidenceCell[];
+  defense_evidence: DefenseEvidenceCell[];
+}
+
+interface Coverage {
   capture: {
     recording_sessions: number;
     capture_takes: number;
@@ -82,16 +95,9 @@ interface Coverage {
     awaiting_human_review: number;
     by_reason: { reason: string | null; files: number }[];
   };
-  labelling: {
-    clips_cut: number;
-    submitted_sets: number;
-    clips_with_two_submitted_sets: number;
-    adjudications: number;
-    gold_records: number;
-    gold_candidates: number;
-  };
-  punch_evidence: PunchEvidenceCell[];
-  defense_evidence: DefenseEvidenceCell[];
+  clips_cut: number;
+  /** Each labellable version, the one new studies use first. */
+  versions: VersionCoverage[];
   vocabulary: {
     punch_types: string[];
     defense_types: string[];
@@ -164,7 +170,9 @@ export default function TeachShadowHomePage() {
        * unanswered read as zeros would paint a gym that has filmed nothing,
        * which is a specific and wrong claim about their work.
        */
-      if (!payload.coverage) throw new Error('The coverage figures could not be read.');
+      if (!payload.coverage || !Array.isArray(payload.coverage.versions) || payload.coverage.versions.length === 0) {
+        throw new Error('The coverage figures could not be read.');
+      }
       setCoverage(payload.coverage);
       setErrorMessage('');
     } catch (error) {
@@ -404,8 +412,15 @@ export default function TeachShadowHomePage() {
   const FILMABLE = (cell: PunchEvidenceCell) =>
     cell.punch_type !== 'other_punch' && cell.punch_type !== 'unclassifiable_punch';
 
-  const ranked = coverage
-    ? [...coverage.punch_evidence].filter(FILMABLE)
+  /*
+   * THE GAPS ARE THE NEW STUDIES' GAPS. What a coach films next is labelled on
+   * the vocabulary new studies are created on (versions[0]), so that is the
+   * one ranked here; a study still finishing on 0.1 is not where new footage
+   * goes. A body-point version has no stance split (its events carry none).
+   */
+  const current = coverage?.versions[0] ?? null;
+  const ranked = current
+    ? [...current.punch_evidence].filter(FILMABLE)
       .sort((a, b) => a.events - b.events || a.clips - b.clips)
     : [];
   const thinnest = ranked.slice(0, 8);
@@ -473,7 +488,8 @@ export default function TeachShadowHomePage() {
                 {thinnest.map((cell) => (
                   <li key={`${cell.punch_type}-${cell.stance ?? 'none'}`} className="t-body">
                     <span className="t-data uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
-                      {readable(cell.punch_type)} &middot; {stanceLabel(cell.stance)}
+                      {readable(cell.punch_type)}
+                      {current?.stance_split ? <> &middot; {stanceLabel(cell.stance)}</> : null}
                     </span>
                     <br />
                     {cell.events === 0
@@ -729,35 +745,48 @@ export default function TeachShadowHomePage() {
                 </div>
                 <div>
                   <dt className="t-eyebrow">Clips cut for labelling</dt>
-                  <dd className="t-body">{coverage.labelling.clips_cut}</dd>
+                  <dd className="t-body">{coverage.clips_cut}</dd>
                 </div>
-                <div>
-                  <dt className="t-eyebrow">Annotation sets submitted</dt>
-                  <dd className="t-body">{coverage.labelling.submitted_sets}</dd>
-                </div>
-                <div>
-                  {/* The only clips agreement can be measured on: one coach
-                      labelling alone produces no disagreement to measure. */}
-                  <dt className="t-eyebrow">Clips with two submitted sets</dt>
-                  <dd className="t-body">{coverage.labelling.clips_with_two_submitted_sets}</dd>
-                </div>
-                <div>
-                  <dt className="t-eyebrow">Adjudications settled</dt>
-                  <dd className="t-body">{coverage.labelling.adjudications}</dd>
-                </div>
-                <div>
-                  {/* PROMOTED, not nominated. A record defaults to candidate
-                      and can be deliberately excluded, so counting every row
-                      would report excluded records as part of the reference
-                      set -- the opposite of why somebody excluded them. */}
-                  <dt className="t-eyebrow">Gold records promoted</dt>
-                  <dd className="t-body">
-                    {coverage.labelling.gold_records}
-                    {coverage.labelling.gold_candidates > 0
-                      ? `, with ${coverage.labelling.gold_candidates} still a candidate`
-                      : ''}
-                  </dd>
-                </div>
+                {/* ONE VOCABULARY AT A TIME, EACH NAMED. Counts made under two
+                    vocabularies are two measurements and are never added
+                    together (ontology.ts); new studies' first. */}
+                {coverage.versions.map((version) => (
+                  <div key={version.ontology_version} className="sm:col-span-2" data-testid={`coverage-${version.ontology_version}`}>
+                    <p className="t-eyebrow text-[color:var(--brass-300)]">
+                      {version.ontology_version} &middot;{' '}
+                      {version.role === 'new_studies' ? 'new studies' : 'studies still finishing on it'}
+                    </p>
+                    <dl className="mt-[var(--s2)] grid gap-[var(--s3)] sm:grid-cols-2">
+                      <div>
+                        <dt className="t-eyebrow">Annotation sets submitted</dt>
+                        <dd className="t-body">{version.submitted_sets}</dd>
+                      </div>
+                      <div>
+                        {/* The only clips agreement can be measured on: one coach
+                            labelling alone produces no disagreement to measure. */}
+                        <dt className="t-eyebrow">Clips with two submitted sets</dt>
+                        <dd className="t-body">{version.clips_with_two_submitted_sets}</dd>
+                      </div>
+                      <div>
+                        <dt className="t-eyebrow">Adjudications settled</dt>
+                        <dd className="t-body">{version.adjudications}</dd>
+                      </div>
+                      <div>
+                        {/* PROMOTED, not nominated. A record defaults to candidate
+                            and can be deliberately excluded, so counting every row
+                            would report excluded records as part of the reference
+                            set -- the opposite of why somebody excluded them. */}
+                        <dt className="t-eyebrow">Gold records promoted</dt>
+                        <dd className="t-body">
+                          {version.gold_records}
+                          {version.gold_candidates > 0
+                            ? `, with ${version.gold_candidates} still a candidate`
+                            : ''}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))}
               </dl>
             ) : (
               <p className="t-body mt-[var(--s3)]">{loaded ? 'No coverage figures are available.' : 'Loading footage…'}</p>
@@ -774,8 +803,13 @@ export default function TeachShadowHomePage() {
             </p>
             {coverage ? (
               <>
-                <p className="t-data mt-[var(--s3)] uppercase tracking-[0.12em] text-[color:var(--brass-300)]">
-                  {coverage.ontology_version}
+                {/* WHAT IS TRUE OF EACH VERSION, said of each. New studies use
+                    the first; an older one is named only as still finishing. */}
+                <p className="t-data mt-[var(--s3)] uppercase tracking-[0.12em] text-[color:var(--brass-300)]" data-testid="vocabulary-versions">
+                  New studies: {coverage.versions[0].ontology_version}
+                  {coverage.versions.slice(1).map((version) => (
+                    <span key={version.ontology_version}> &middot; still finishing: {version.ontology_version}</span>
+                  ))}
                 </p>
                 <div className="mt-[var(--s3)] grid gap-[var(--s4)] sm:grid-cols-2">
                   <div>
@@ -789,7 +823,7 @@ export default function TeachShadowHomePage() {
                   <div>
                     <h3 className="t-eyebrow">Defense</h3>
                     <ul className="mt-[var(--s2)] flex flex-col gap-[var(--s1)]">
-                      {coverage.defense_evidence.map((cell) => (
+                      {coverage.versions[0].defense_evidence.map((cell) => (
                         <li key={cell.defense_type} className="t-body">
                           {readable(cell.defense_type)}
                           {' '}&middot;{' '}

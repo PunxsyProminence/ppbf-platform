@@ -116,7 +116,6 @@ function jsonResponse(body: unknown, ok = true) {
  * wrong field would read as a different number here, not as a coincidence.
  */
 const COVERAGE = {
-  ontology_version: 'boxing-ontology-0.1',
   capture: {
     recording_sessions: 5,
     capture_takes: 19,
@@ -131,28 +130,47 @@ const COVERAGE = {
       { reason: 'FIXTURE_SECOND_REASON', files: 2 },
     ],
   },
-  labelling: {
-    clips_cut: 64,
-    submitted_sets: 41,
-    clips_with_two_submitted_sets: 17,
-    adjudications: 9,
-    gold_records: 13,
-    gold_candidates: 6,
-  },
-  punch_evidence: [
-    // Deliberately handed to the page BEST-COVERED FIRST, so a page that simply
-    // rendered the payload in the order it arrived would fail the ordering test.
-    { punch_type: 'lead_straight', stance: 'orthodox', events: 412, clips: 57 },
-    { punch_type: 'lead_hook', stance: null, events: 6, clips: 3 },
-    { punch_type: 'rear_uppercut', stance: 'southpaw', events: 0, clips: 0 },
-    // Catch-alls, at zero. They must not occupy the list: nobody can be sent
-    // to the gym to film an unclassifiable punch.
-    { punch_type: 'other_punch', stance: 'orthodox', events: 0, clips: 0 },
-    { punch_type: 'unclassifiable_punch', stance: 'orthodox', events: 0, clips: 0 },
-  ],
-  defense_evidence: [
-    { defense_type: 'slip', events: 28, clips: 14 },
-    { defense_type: 'roll', events: 0, clips: 0 },
+  clips_cut: 64,
+  // Each labellable vocabulary on its own (TEACH-T T-1b): new studies' 0.4
+  // first, with no stance split; 0.1 still finishing, with its own counts.
+  versions: [
+    {
+      ontology_version: 'boxing-ontology-0.4',
+      role: 'new_studies',
+      submitted_sets: 41,
+      clips_with_two_submitted_sets: 17,
+      adjudications: 9,
+      gold_records: 13,
+      gold_candidates: 6,
+      stance_split: false,
+      punch_evidence: [
+        // Deliberately handed to the page BEST-COVERED FIRST, so a page that simply
+        // rendered the payload in the order it arrived would fail the ordering test.
+        { punch_type: 'lead_straight', stance: null, events: 412, clips: 57 },
+        { punch_type: 'lead_hook', stance: null, events: 6, clips: 3 },
+        { punch_type: 'rear_uppercut', stance: null, events: 0, clips: 0 },
+        // Catch-alls, at zero. They must not occupy the list: nobody can be sent
+        // to the gym to film an unclassifiable punch.
+        { punch_type: 'other_punch', stance: null, events: 0, clips: 0 },
+        { punch_type: 'unclassifiable_punch', stance: null, events: 0, clips: 0 },
+      ],
+      defense_evidence: [
+        { defense_type: 'slip', events: 28, clips: 14 },
+        { defense_type: 'roll', events: 0, clips: 0 },
+      ],
+    },
+    {
+      ontology_version: 'boxing-ontology-0.1',
+      role: 'finishing',
+      submitted_sets: 22,
+      clips_with_two_submitted_sets: 5,
+      adjudications: 2,
+      gold_records: 1,
+      gold_candidates: 0,
+      stance_split: true,
+      punch_evidence: [{ punch_type: 'lead_straight', stance: 'orthodox', events: 300, clips: 40 }],
+      defense_evidence: [{ defense_type: 'slip', events: 7, clips: 4 }],
+    },
   ],
   vocabulary: {
     punch_types: ['lead_straight', 'lead_hook', 'rear_uppercut', 'other_punch', 'unclassifiable_punch'],
@@ -178,6 +196,12 @@ function pageText(): string {
 /** The <dd> that belongs to a given <dt>, so a count is read through its label. */
 function valueFor(label: string): string {
   const term = screen.getByText(label);
+  return (term.nextElementSibling?.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/** The same, inside one vocabulary's block of the coverage panel. */
+function versionValueFor(version: string, label: string): string {
+  const term = within(screen.getByTestId(`coverage-${version}`)).getByText(label);
   return (term.nextElementSibling?.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
@@ -296,7 +320,10 @@ test('every coverage count is rendered from the payload, not from a constant in 
   // unauthenticated read, and the route would refuse it (route.ts:31).
   expect(fetchMock).toHaveBeenCalledWith(COVERAGE_URL, { credentials: 'include' });
 
-  expect(pageText()).toContain('boxing-ontology-0.1');
+  // Each version said by name, with what is true of it (Overwatch, Q-T1 (a)).
+  expect(screen.getByTestId('vocabulary-versions')).toHaveTextContent(
+    'New studies: boxing-ontology-0.4 · still finishing: boxing-ontology-0.1',
+  );
 
   /*
    * EVERY COUNT READ THROUGH ITS OWN LABEL, not looked for anywhere on the
@@ -317,12 +344,22 @@ test('every coverage count is rendered from the payload, not from a constant in 
   // authoritative would be worse than no number.
   expect(screen.queryByText('Athletes filmed')).toBeNull();
   expect(valueFor('Clips cut for labelling')).toBe('64');
-  expect(valueFor('Annotation sets submitted')).toBe('41');
-  expect(valueFor('Clips with two submitted sets')).toBe('17');
-  expect(valueFor('Adjudications settled')).toBe('9');
+  // Counted per vocabulary and never added together (41 + 22 = 63 appears nowhere).
+  const V04 = 'boxing-ontology-0.4';
+  const V01 = 'boxing-ontology-0.1';
+  expect(screen.getByTestId(`coverage-${V04}`)).toHaveTextContent(`${V04} · new studies`);
+  expect(screen.getByTestId(`coverage-${V01}`)).toHaveTextContent(`${V01} · studies still finishing on it`);
+  expect(versionValueFor(V04, 'Annotation sets submitted')).toBe('41');
+  expect(versionValueFor(V04, 'Clips with two submitted sets')).toBe('17');
+  expect(versionValueFor(V04, 'Adjudications settled')).toBe('9');
   // PROMOTED and CANDIDATE are different states and the panel must not merge
   // them: a candidate is adjudicated and deliberately not in the dataset.
-  expect(valueFor('Gold records promoted')).toBe('13, with 6 still a candidate');
+  expect(versionValueFor(V04, 'Gold records promoted')).toBe('13, with 6 still a candidate');
+  expect(versionValueFor(V01, 'Annotation sets submitted')).toBe('22');
+  expect(versionValueFor(V01, 'Clips with two submitted sets')).toBe('5');
+  expect(versionValueFor(V01, 'Adjudications settled')).toBe('2');
+  expect(versionValueFor(V01, 'Gold records promoted')).toBe('1');
+  expect(pageText()).not.toMatch(/\b63\b/);
 });
 
 test('with nothing refused the figure reads zero, with no breakdown', async () => {
@@ -364,7 +401,9 @@ test('the thinnest evidence is listed first, and a cell with nothing in it says 
 
   expect(items).toHaveLength(3);
   expect(items[0]).toContain('Rear uppercut');
-  expect(items[0]).toContain('Southpaw');
+  // New studies are on 0.4, whose events carry no stance: no stance is named,
+  // and "Stance not recorded" is not printed against every punch.
+  expect(items.join(' ')).not.toMatch(/Southpaw|Orthodox|Stance not recorded/);
   expect(items[1]).toContain('Lead hook');
   expect(items[2]).toContain('Lead straight');
 
@@ -373,6 +412,40 @@ test('the thinnest evidence is listed first, and a cell with nothing in it says 
   expect(items[0]).toContain('No labelled examples yet');
   expect(items[0]).not.toMatch(/\d/);
   expect(items[1]).toContain('6 labelled examples across 3 clips');
+});
+
+test('when the vocabulary new studies use does split by stance, the gap list names the stance', async () => {
+  // Today new studies are 0.4, with no stance on an event; this keeps the
+  // stance branch honest for a vocabulary that has one.
+  const split = {
+    ...COVERAGE,
+    versions: [{
+      ...COVERAGE.versions[1],
+      role: 'new_studies',
+      punch_evidence: [
+        { punch_type: 'lead_straight', stance: 'orthodox', events: 300, clips: 40 },
+        { punch_type: 'rear_uppercut', stance: 'southpaw', events: 0, clips: 0 },
+      ],
+    }],
+  };
+  mockCoverageFetch(() => jsonResponse({ ok: true, coverage: split }));
+  render(<TeachShadowHomePage />);
+  await screen.findByText('Takes with more than one file');
+
+  const items = within(screen.getByRole('heading', { name: 'What Shadow needs more of' }).closest('section') as HTMLElement)
+    .getAllByRole('listitem')
+    .map((item) => item.textContent ?? '');
+  expect(items[0]).toContain('Rear uppercut');
+  expect(items[0]).toContain('Southpaw');
+});
+
+test('a coverage payload with no vocabulary in it is an error, not an empty corpus', async () => {
+  const { versions: _dropped, ...noVersions } = COVERAGE;
+  void _dropped;
+  mockCoverageFetch(() => jsonResponse({ ok: true, coverage: noVersions }));
+  render(<TeachShadowHomePage />);
+
+  expect(await screen.findByText('The coverage figures could not be read.')).toBeInTheDocument();
 });
 
 test('the gap list names only punches somebody could go and film', async () => {
