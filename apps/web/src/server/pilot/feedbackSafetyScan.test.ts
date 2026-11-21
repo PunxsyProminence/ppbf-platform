@@ -2111,3 +2111,69 @@ describe('HF12b fourth delta review (81ed7ee..357131f): blocking findings', () =
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b fifth delta review (81ed7ee..6e572aa): blocking findings', () => {
+  test.each([
+    'a guy on snap says send me ur boxing pics',
+    'a guy online told me to send him my training vids',
+    'a guy online keeps dming me for my fight pics',
+    'a guy online messages me for training vids',
+    'a guy on insta wants me to post more workout pics',
+    'a guy online wnts my boxing pics',
+    'a guy online keeps askn 4 my boxing pics',
+    'a guy online says hell post my boxing pics',
+    'a guy online sez hell post my boxing pics',
+    'a guy online said hed send my workout vids to my mom',
+    'a guy online said hed show everyone my boxing pics',
+    'a guy online wont take down my boxing pics',
+    'a guy online gave me $50 for training pics',
+    'a guy online gave me 50 bucks for workout pics',
+    'a guy online gives me skins for training pics',
+    'a guy online gives me v bucks for boxing pics',
+    'a guy online said hed get me new gloves for training pics',
+    'a guy online wants to sponsor me for workout pics',
+    'i keep sending a guy online my boxing pics',
+    'ive been sending a guy online workout pics',
+    'i gave a guy online my training vids',
+    'i showed a guy online my workout pics',
+    'a guy online saw my workout video and said i look sexy',
+    'a guy online saw my fight video and said i look hot',
+    'a guy online saw my workout video and said im cute',
+    'a guy online liked my workout vid and asked where i live',
+    'a guy online liked my workout vid and asked my address',
+    'a guy online liked my training video and wants my number',
+    'a guy online found my boxing videos and knows where i live',
+    'a guy online has all my boxing pics',
+    'a stranger online saved my boxing pics',
+    'a guy online has a vid of my sparring',
+    'a guy online kept my training vids',
+    'a guy online wont give back my fight pics',
+    'a guy online is weird about my boxing pics',
+    'a guy online rates my body in my boxing pics',
+    'a guy online is obsessed with my boxing pics',
+    'a guy online zooms in on my workout pics',
+    'a guy online photoshopped my boxing pics',
+    'a stranger secretly filmed my sparring',
+    'private video lessons with coach are weird',
+    'the private video lessons are weird',
+    'a coach made me do private video sessions',
+    'coach made it a private video so only we can see',
+    'coach made it a private video so only i can see it',
+    'my private video on youtube got stolen',
+    'private video option doesnt work my video got leaked',
+    'i uploaded a private video to the app and now everyone saw it',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'i train alone with videos from a guy online',
+    'when im alone i watch boxing videos from a guy online',
+    'i bought gloves after watching videos from a guy online',
+    'my mom bought the tournament photos from a guy online',
+    'i paid for the tournament photos and a guy online said they look great',
+    'coach is buying a camera from a guy online',
+  ])('everyday talk stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
