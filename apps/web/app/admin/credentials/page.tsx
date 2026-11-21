@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import Link from 'next/link';
 import BackHome from '@/components/BackHome';
 import { gymDayIso } from '@/src/lib/gymTime';
 
@@ -326,7 +327,9 @@ export default function AdminCredentialsPage() {
             </>
           )}
 
-          <div className="mt-[var(--s5)]">
+          <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
+            {/* Who covers which athlete is set there (lane AS-10, OFF-17). */}
+            <Link href="/admin/coach-coverage" className="btn btn--ghost">Coach Coverage</Link>
             <BackHome />
           </div>
         </div>

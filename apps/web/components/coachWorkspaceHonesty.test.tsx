@@ -9,6 +9,7 @@ import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 
 import type { AnnouncementItem } from './AnnouncementBanner';
 import CoachWorkspace from './CoachWorkspace';
+import { BUILDING } from './buildingMap';
 
 // The floor view at the top of the dashboard repeats names and reports that
 // the panels below also show, which would make every query here ambiguous. It
@@ -1813,25 +1814,24 @@ describe('the hub links to the session-delivery surfaces', () => {
   // The delivery loop worked end to end while nothing linked to it: the
   // scripts page, floor groups, the drill library, the cue library and the
   // template catalog were all reachable only by typing the URL. These pin
-  // the Quick Actions links that make that loop part of the coach's day.
-  // Session Plans left this row on 2026-10-03: the floor board's Run the
-  // Room is the one door to it on the Dashboard (coachFloorFocus.test.tsx).
+  // that each stays one tap from the dashboard. Session Plans left this row on
+  // 2026-10-03: the floor board's Run the Room is the one door to it on the
+  // Dashboard (coachFloorFocus.test.tsx). Since lane 6C7's 7a-2 the links are
+  // in the home's four jobs (Class and Plan, stage 2 section 3.4 row 21), by
+  // their door labels; coachHomeLayout.test.tsx pins which job holds each.
   test.each([
-    ["Today's Floor Groups", '/coach/floor-groups'],
-    ['Open Drill Library', '/coach/drills'],
-    ['Open Cue Library', '/coach/cue-library'],
-    ['Browse Workout Templates', '/coach/workout-templates'],
-  ])('the dashboard links "%s" to %s', async (label, href) => {
+    '/coach/floor-groups',
+    '/coach/drills',
+    '/coach/cue-library',
+    '/coach/workout-templates',
+    '/schedule',
+  ])('the dashboard links %s', async (href) => {
     await renderWorkspace();
 
-    const link = screen.getByRole('link', { name: label });
-    expect(link.getAttribute('href')).toBe(href);
-  });
-
-  test('the existing operational quick actions were not displaced by the new links', async () => {
-    await renderWorkspace();
-
-    expect(screen.getByRole('link', { name: 'Open Scheduler' }).getAttribute('href')).toBe('/schedule');
+    const label = BUILDING.find((door) => door.href === href)?.label;
+    expect(label).toBeTruthy();
+    const link = screen.getAllByRole('link', { name: label }).find((candidate) => candidate.getAttribute('href') === href);
+    expect(link).toBeTruthy();
   });
 
   // Operations V1 (2026-08-21): the SHADOW Chat launcher and the Rabbit Hole

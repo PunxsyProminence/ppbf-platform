@@ -442,9 +442,10 @@ describe('the phone bar keeps the whole room name', () => {
     const caption = screen.getByText('Session active');
     expect(classesOf(caption)).toEqual(expect.arrayContaining(['hidden', 'sm:inline']));
 
-    const trigger = screen.getByRole('button', { name: /front office/i });
+    // AS-4 (U2-4c): the plate names Search's room for the page, from the Room Map.
+    const trigger = screen.getByRole('button', { name: /where you are: the family room/i });
     const room = trigger.querySelector('.corridor-trigger-lbl') as HTMLElement;
-    expect(room.textContent).toBe('Front Office');
+    expect(room.textContent).toBe('The Family Room');
     expect(classesOf(room)).not.toContain('hidden');
 
     const surface = trigger.querySelector('.corridor-trigger-here') as HTMLElement;

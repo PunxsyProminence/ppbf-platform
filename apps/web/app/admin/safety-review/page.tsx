@@ -212,8 +212,9 @@ export default function SafetyReviewPage() {
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               What is open across the five safety systems: training holds, safety-gate checks, the
               red-flag escalation ladder, compliance violations, and safety flags. Holds, gate checks,
-              escalations and safety flags are read in full. Each item links to the page that can act on it -- this view only rolls
-              them up.
+              escalations and safety flags are read in full. Holds link to the Clearance Board, where a hold is placed
+              and lifted; escalations, safety flags and compliance violations each link to their own queue. Failing
+              gate checks are listed here only. This view only rolls them up.
             </p>
             {review && review.violationsTruncated ? (
               <p role="status" className="alert alert--warning mt-[var(--s3)]">
@@ -281,6 +282,9 @@ export default function SafetyReviewPage() {
                       </li>
                     ))}
                   </ul>
+                  {/* Holds are placed and lifted on the Clearance Board (lane AS-10, OFF-11; Overwatch Q10 A:
+                      holds only). It admits coach and admin, so every reader of this admin-only page may open it. */}
+                  <Link href="/coach/sports-medicine" className="t-body mt-[var(--s3)] inline-block underline">Clearance Board</Link>
                 </section>
               )}
 
