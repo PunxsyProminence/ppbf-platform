@@ -177,6 +177,17 @@ describe('gym-floor pages carry the kiosk surface', () => {
  *    list (app/globals.css, design-system/foundation/ppbf-foundation.css), so it
  *    is as tall as its text.
  *
+ * Found in review (#2067), and each measured in Chromium by the reviewer:
+ *
+ *  - `.input` / `.select` / `.textarea` declare `min-height: 46px` UNLAYERED
+ *    (design-system/legacy/ppbf-leather-brass.css:901), which beats both kiosk
+ *    tap rules (one in `@layer base`, one at `:where()` zero weight). Only the
+ *    `input--kiosk` modifier (:911) lifts them, so every one must wear it.
+ *  - `.plaque` sets `font: 650 13px` unlayered (:1260) and no kiosk rule lifts
+ *    it; a utility cannot beat it, so it takes an inline size.
+ *  - a bare `<span>` with no size and no voice class falls through to the
+ *    body's 15px: the "(not checked)" draft words beside a heading.
+ *
  * Scoped to this folder on purpose: other floor pages still carry sub-floor
  * sizes (activate, sports-medicine, attempt-log, assessments, shadow,
  * parent/safety, counted 2026-11-21), and those files are other lanes'.
@@ -186,7 +197,18 @@ describe('Workout Templates on the gym floor', () => {
   const SOURCES = readdirSync(FOLDER)
     .filter((name) => name.endsWith('.tsx') && !name.endsWith('.test.tsx'))
     .map((name) => ({ name, code: stripSourceComments(readFileSync(path.join(FOLDER, name), 'utf8')) }));
-  const SUB_FLOOR = /var\(\s*--t-(?:sm|xs)\s*\)|\btext-(?:xs|sm|base)\b|text-\[(?:\d|1[0-8])(?:\.\d+)?px\]/;
+  const SUB_FLOOR = /var\(\s*--t-(?:sm|xs)\s*\)|\btext-(?:xs|sm|base)\b/;
+  /** A literal size, in a utility or an inline style, read as px (a rem or em at 16px). */
+  const LITERAL_SIZE = /text-\[(?:length:)?\s*([\d.]+)(px|rem|em)\s*\]|fontSize\s*:\s*['"`]?([\d.]+)(px|rem|em)?/g;
+  const KIOSK_TYPE_FLOOR_PX = 19.1;
+  const subFloorLiterals = (line: string): string[] =>
+    [...line.matchAll(LITERAL_SIZE)]
+      .filter((match) => {
+        const value = Number(match[1] ?? match[3]);
+        const unit = match[2] ?? match[4] ?? 'px';
+        return (unit === 'px' ? value : value * 16) < KIOSK_TYPE_FLOOR_PX;
+      })
+      .map((match) => match[0]);
 
   it('reads the page, its two parts and its layout, so nothing below passes on no files', () => {
     expect(SOURCES.map((source) => source.name).sort()).toEqual(
@@ -198,7 +220,7 @@ describe('Workout Templates on the gym floor', () => {
     '%s sets no type below --t-md (19.1px)',
     (name) => {
       const code = SOURCES.find((source) => source.name === name)?.code ?? '';
-      const lines = code.split('\n').filter((line) => SUB_FLOOR.test(line));
+      const lines = code.split('\n').filter((line) => SUB_FLOOR.test(line) || subFloorLiterals(line).length > 0);
       expect(lines.map((line) => line.trim())).toEqual([]);
     },
   );
@@ -208,5 +230,38 @@ describe('Workout Templates on the gym floor', () => {
       [...source.code.matchAll(/<summary\b[^>]*>/g)].map((match) => `${source.name}: ${match[0]}`));
     expect(summaries.length).toBeGreaterThan(0);
     expect(summaries.filter((tag) => !tag.includes('min-h-[var(--tap)]'))).toEqual([]);
+  });
+
+  it('reads a literal size below the floor, in a utility or inline, and passes one at or above it', () => {
+    expect(subFloorLiterals('className="text-[length:13px]"')).toEqual(['text-[length:13px]']);
+    expect(subFloorLiterals('className="text-[0.9rem]"')).toEqual(['text-[0.9rem]']);
+    expect(subFloorLiterals('style={{ fontSize: 13 }}')).toEqual(['fontSize: 13']);
+    expect(subFloorLiterals("style={{ fontSize: '12px' }}")).toEqual(["fontSize: '12px"]);
+    expect(subFloorLiterals('className="text-[length:24px]" style={{ fontSize: 20 }}')).toEqual([]);
+  });
+
+  it('puts every .input, .select and .textarea on input--kiosk: their unlayered 46px beats both kiosk tap rules', () => {
+    const fields = SOURCES.flatMap((source) =>
+      [...source.code.matchAll(/className=(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\})/g)]
+        .map((match) => match[1] ?? match[2] ?? match[3] ?? '')
+        .filter((classes) => /(?:^|\s)(?:input|select|textarea)(?:\s|$)/.test(classes))
+        .map((classes) => `${source.name}: ${classes}`));
+    expect(fields.length).toBeGreaterThan(0);
+    expect(fields.filter((field) => !/(?:^|\s)input--kiosk(?:\s|$)/.test(field))).toEqual([]);
+  });
+
+  it('sizes every .plaque inline at --t-md: its unlayered 13px shorthand beats any utility', () => {
+    const plaques = SOURCES.flatMap((source) =>
+      [...source.code.matchAll(/<\w+\b[^>]*className="[^"]*\bplaque\b[^"]*"[^>]*>/g)]
+        .map((match) => `${source.name}: ${match[0]}`));
+    expect(plaques.length).toBeGreaterThan(0);
+    expect(plaques.filter((tag) => !/fontSize:\s*'var\(--t-md\)'/.test(tag))).toEqual([]);
+  });
+
+  it('gives the "(not checked)" draft words a size of their own: a bare span beside a heading is 15px', () => {
+    const page = SOURCES.find((source) => source.name === 'page.tsx')?.code ?? '';
+    const marks = page.split('\n').filter((line) => line.includes('{DRAFT_NOT_CHECKED}'));
+    expect(marks.length).toBeGreaterThan(0);
+    expect(marks.filter((line) => !/\bt-body\b|\bt-label\b|var\(--t-md\)/.test(line)).map((line) => line.trim())).toEqual([]);
   });
 });
