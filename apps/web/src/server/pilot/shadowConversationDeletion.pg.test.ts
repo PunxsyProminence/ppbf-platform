@@ -456,7 +456,8 @@ async function snapshot(db: Client, conversationId: string): Promise<unknown> {
     [conversationId],
   )).rows;
   const escalations = (await db.query(
-    `select escalation_id, athlete_id from pilot.safety_escalations where metadata->>'conversation_id' = $1::text`,
+    `select escalation_id, athlete_id from pilot.safety_escalations
+      where lower(metadata->>'conversation_id') = lower($1::text)`,
     [conversationId],
   )).rows;
   return { session, messages, claims, reviews, jobs, escalations };
@@ -678,7 +679,7 @@ describe('T1: a member deletes a chat nobody flagged', () => {
       `insert into pilot.shadow_chat_messages
          (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, created_at)
        values (gen_random_uuid(), $1, $2, $3, 'assistant', $4, 'ok', 'injury', 'heavy_bag', now() - interval '30 seconds')`,
-      [target.conversationId, ORG, MEMBER, `Earlier answer first ${target.ref}`],
+      [target.conversationId, ORG, MEMBER, `Earlier answer first, Jordan Pike. ${target.ref}`],
     );
     const ownOther = await seedConversation(mainDb, { organizationId: ORG, accountId: MEMBER, role: 'athlete' });
     const otherPerson = await seedConversation(mainDb, { organizationId: ORG, accountId: OTHER_MEMBER, role: 'athlete' });
@@ -712,6 +713,7 @@ describe('T1: a member deletes a chat nobody flagged', () => {
     expect(new Set((await mainDb.query(
       `select created_at::text as at from pilot.shadow_chat_messages where conversation_id = $1`, [keptId],
     )).rows.map((row) => row.at as string)).size).toBe(2);
+    for (const message of messages) expectNoNames(message.content, NAMES_OF_THE_CHILD);
     const reply = messages.find((message) => message.content.includes(KEPT_REPLY_WORDS))!;
     expect(reply.message_id).not.toBe(target.replyId);
     expect(reply.account_id).toMatch(TOKEN);
@@ -864,6 +866,8 @@ describe('T2: a member deletes a chat a safeguarding review or a safety escalati
 
     const after = (await snapshot(mainDb, target.conversationId)) as typeof before;
     expect(after.messages).toEqual(before.messages);
+    // The escalation itself is there to compare (filed in upper case).
+    expect(before.escalations).toHaveLength(1);
     expect(after.escalations).toEqual(before.escalations);
     const session = await sessionRow(mainDb, target.conversationId);
     expect(session?.account_id).toBe(MEMBER);
@@ -974,6 +978,7 @@ describe('T3: the office completes a member\'s request', () => {
       const now = heldAfter[index] as typeof was;
       expect(now.messages).toEqual(was.messages);
       expect(now.reviews).toEqual(was.reviews);
+      if (held === escalated) expect(was.escalations).toHaveLength(1);
       expect(now.escalations).toEqual(was.escalations);
       const session = await sessionRow(mainDb, held.conversationId);
       expect(session?.account_id).toBe(PARENT);
@@ -1032,7 +1037,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       `insert into pilot.shadow_chat_messages
          (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, created_at)
        values (gen_random_uuid(), $1, $2, $3, 'assistant', $4, 'ok', 'injury', 'heavy_bag', now() - interval '30 seconds')`,
-      [legacy.conversationId, ORG, MEMBER, `Earlier answer first ${legacy.ref}`],
+      [legacy.conversationId, ORG, MEMBER, `Earlier answer first, Jordan Pike. ${legacy.ref}`],
     );
     // A guardian's general chat, deleted before this change: their children and
     // the children's other guardian are named in the reply.
@@ -1091,6 +1096,8 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
 
     const untouched = [stillHeld, stillEscalated, live, athleteMark, athleteOwn, deletedPerson];
     const untouchedBefore = await Promise.all(untouched.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
+    // The held escalated chat's escalation (filed in upper case) is in its snapshot.
+    expect((untouchedBefore[untouched.indexOf(stillEscalated)] as { escalations: unknown[] }).escalations).toHaveLength(1);
     const due = [expired, expiredEscalated, legacy, legacyGuardian, namelessFlagged];
     const dueBefore = await Promise.all(due.map((seeded) => snapshot(sweepDb, seeded.conversationId)));
 
@@ -1157,7 +1164,8 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       await expectOldIdsGone(sweepDb, cleared);
       const keptId = await keptCopy(sweepDb, cleared);
       const messages = await messagesOf(sweepDb, keptId!);
-      expect(new Set(messages.map((message) => message.role))).toEqual(new Set(['assistant']));
+      expect(messages.map((message) => message.role))
+        .toEqual(cleared === legacy ? ['assistant', 'assistant'] : ['assistant']);
       expect(messages[0].account_id).toMatch(TOKEN);
       const session = await sessionRow(sweepDb, keptId!);
       expect(session?.account_id).toBe(messages[0].account_id);
