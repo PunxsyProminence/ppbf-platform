@@ -1923,6 +1923,13 @@ describe('HF12b second delta review (81ed7ee..ac0950e): blocking findings', () =
     'a stranger keeps hitting me up for pics',
     'a guy online keeps pushing me for pics',
     'a guy online wont stop beggin for pics',
+    // Single-rule pins (mutation proof).
+    'is there a private video of me',
+    'a guy online threatened to share pics',
+    'a guy online is blackmailing kids with pics',
+    'a stranger promised money for pics',
+    'a stranger i dont know keeps asking for pics',
+    'a man on discord keeps asking for snaps',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
