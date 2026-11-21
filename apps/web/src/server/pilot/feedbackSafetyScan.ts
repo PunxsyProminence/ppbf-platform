@@ -62,9 +62,17 @@ export function normalizeForSafetyScan(body: string): string {
   return normalizeWith(body, false);
 }
 
+/**
+ * "sa'd" / "sa-ed" is short for sexually assaulted. Stripping the apostrophe
+ * would make it "sad", so it is spelled out first (HF12b). Only the form
+ * with an apostrophe or hyphen: plain "sad" is sad.
+ */
+const SA_D = new RegExp(`\\bsa(?:${APOSTROPHE_LIKE.source}|-)e?d\\b`, 'g');
+
 function normalizeWith(body: string, peelEdgeLetters: boolean): string {
   return joinSplitWords(joinSpelledOutWords(body
     .toLowerCase()
+    .replace(SA_D, 'sexually assaulted')
     .replace(APOSTROPHE_LIKE, ''), peelEdgeLetters)
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/(.)\1{2,}/g, '$1$1')
