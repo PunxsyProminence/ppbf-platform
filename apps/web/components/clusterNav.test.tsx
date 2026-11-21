@@ -131,7 +131,6 @@ describe('the cluster lines', () => {
 
 describe('the coach home', () => {
   const workspace = fs.readFileSync(path.join(__dirname, 'CoachWorkspace.tsx'), 'utf8');
-  const floor = fs.readFileSync(path.join(__dirname, 'CoachFloorFocus.tsx'), 'utf8');
 
   /* The four clinic pages (lane U2, audit UX-A A-3) were a Clinic row on the
      Dashboard; since lane 6C7's 7a-2 they are in the home's Safety job, which
@@ -149,8 +148,10 @@ describe('the coach home', () => {
     expect(workspace).toContain("{activeTab === 'dashboard' && <CoachHomeJobs />}");
   });
 
+  // "Needs you now" is the home's strip since lane 6C7's 7b (it was the floor board's card).
   test('"Needs you now" links The Morning Read, not as the full list (CS-04)', () => {
-    expect(floor).toMatch(/<Link href="\/coach\/intelligence"[^>]*>More reads: The Morning Read<\/Link>/);
+    const strip = fs.readFileSync(path.join(__dirname, 'CoachNeedsYouStrip.tsx'), 'utf8');
+    expect(strip).toMatch(/<Link href="\/coach\/intelligence"[^>]*>More reads: The Morning Read<\/Link>/);
   });
 
   test('renders one h1: the tab masthead is an h2 under "Coach Workspace"', () => {
