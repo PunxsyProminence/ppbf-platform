@@ -302,7 +302,7 @@ describe('the platform owner', () => {
     render(<ScoutReportPage />);
 
     await screen.findByText('WRONG DOOR');
-    expect(screen.getByRole('link', { name: 'Platform Desk' }).getAttribute('href')).toBe('/admin/platform');
+    expect(screen.getByRole('link', { name: 'Omega' }).getAttribute('href')).toBe('/admin/platform');
     expect(screen.queryByRole('heading', { level: 1, name: 'Scout Reports' })).toBeNull();
     expect(reportCalls(fetchMock, '/shadow/jobs')).toHaveLength(0);
     expect(reportCalls(fetchMock, '/shadow/metrics')).toHaveLength(0);
@@ -318,7 +318,7 @@ describe('the platform owner', () => {
     await screen.findByRole('heading', { level: 1, name: 'Scout Reports' });
     await waitFor(() => expect(reportCalls(fetchMock, '/shadow/jobs')).toHaveLength(1));
     expect(reportCalls(fetchMock, '/shadow/metrics')).toHaveLength(1);
-    expect(screen.queryByRole('link', { name: 'Platform Desk' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Omega' })).toBeNull();
   });
 
   it('a coach still reads jobs only', async () => {

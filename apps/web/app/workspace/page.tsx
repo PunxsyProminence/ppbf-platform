@@ -2,13 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 import RoleSessionGate from '@/components/RoleSessionGate';
 import ShadowChatButton from '@/components/ShadowChatButton';
-import { clearRoleSession } from '@/components/roleSession';
 import { usePilotSession } from '@/components/usePilotSession';
-import { revokeShadowSession } from '@/client/shadowLogout';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 
@@ -32,12 +29,9 @@ interface WorkspaceSurface {
 // includes both through ORGANIZATION_MEMBER_ROLES. Anything backed by a route
 // that would answer 403 -- athlete records, the class scheduler, video, intake,
 // admin and board surfaces -- stays off this list on purpose.
+// SHADOW Chat has no card here: the ShadowChatButton in the header opens it
+// (lane AS-10, AS10-6a, OFF-18; Overwatch Q14 A, a named removal).
 const WORKSPACE_SURFACES: WorkspaceSurface[] = [
-  {
-    href: '/shadow',
-    label: 'SHADOW Chat',
-    description: 'Ask about your role, gym doctrine, and what SHADOW can and cannot support. Saved conversations are kept on the server under your account.',
-  },
   {
     href: '/research/chat',
     label: 'The Library',
@@ -78,12 +72,10 @@ function formatNoticeDate(value: string): string {
 }
 
 function WorkspaceContent() {
-  const router = useRouter();
   const session = usePilotSession();
   const [notices, setNotices] = useState<WorkspaceNotice[]>([]);
   const [noticesLoading, setNoticesLoading] = useState(true);
   const [noticesError, setNoticesError] = useState('');
-  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -125,21 +117,6 @@ function WorkspaceContent() {
     };
   }, []);
 
-  async function handleSignOut() {
-    setSigningOut(true);
-    try {
-      await revokeShadowSession(apiBase());
-    } catch {
-      // The server session is the only thing that grants access; if revoking
-      // it failed, say so by leaving the page in place rather than clearing
-      // the local cache and pretending the account is signed out.
-      setSigningOut(false);
-      return;
-    }
-    clearRoleSession();
-    router.replace('/login');
-  }
-
   const roleLabel = session.role ? ROLE_LABELS[session.role] ?? session.role : '';
 
   return (
@@ -158,39 +135,24 @@ function WorkspaceContent() {
               surfaces your role can open.
             </p>
           </div>
+          {/* No Sign out of its own: the site header's Logout is on this page
+              (lane AS-10, AS10-6a, OFF-18; Overwatch Q14 A, a named removal). */}
           <div className="flex flex-col items-start gap-[var(--s3)] md:items-end">
             <ShadowChatButton context="Workspace" />
-            <button
-              type="button"
-              onClick={() => void handleSignOut()}
-              disabled={signingOut}
-              className="btn btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {signingOut ? 'Signing out...' : 'Sign out'}
-            </button>
           </div>
         </header>
 
         <section className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
           <h2 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Your Account</h2>
-          {/* Law 4: account identity is an auditable record -- mono voice. */}
-          <dl className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-3">
-            <div>
-              <dt className="t-label">Signed in as</dt>
-              <dd className="t-data mt-[var(--s2)] break-all">
-                {session.loading ? 'Loading...' : session.accountId ?? 'Unknown'}
-              </dd>
-            </div>
+          {/* The role in words. The raw account and organization ids are not
+              shown (lane AS-10, AS10-6a, OFF-18; Overwatch Q14 A): they meant
+              nothing to the person reading, and the session route sends no
+              name to show instead. No server change. */}
+          <dl className="mt-[var(--s4)]">
             <div>
               <dt className="t-label">Role</dt>
-              <dd className="t-data mt-[var(--s2)]">
+              <dd className="t-body mt-[var(--s2)]">
                 {session.loading ? 'Loading...' : roleLabel || 'Unknown'}
-              </dd>
-            </div>
-            <div>
-              <dt className="t-label">Organization</dt>
-              <dd className="t-data mt-[var(--s2)] break-all">
-                {session.loading ? 'Loading...' : session.organizationId ?? 'Unknown'}
               </dd>
             </div>
           </dl>

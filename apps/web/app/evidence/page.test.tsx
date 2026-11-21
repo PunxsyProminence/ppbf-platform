@@ -25,7 +25,8 @@ jest.mock('@/components/RoleStandaloneView', () => {
   const React = jest.requireActual('react');
   return {
     __esModule: true,
-    default: (props: { readonly children: ReactNode }) => React.createElement('div', null, props.children),
+    default: (props: { readonly children: ReactNode; readonly roleLabel?: string }) =>
+      React.createElement('div', { 'data-testid': 'shell', 'data-role-label': props.roleLabel }, props.children),
   };
 });
 
@@ -289,4 +290,18 @@ test('a review refresh that lands after a shelf switch does not overwrite the ne
   });
   expect(screen.getByText('Gym paper')).toBeTruthy();
   expect(screen.queryByText('Platform paper')).toBeNull();
+});
+
+// AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): the shell band names the page
+// by its own title, not a second name.
+test('the shell band title is the page title, Evidence Review Queue', async () => {
+  mockQueue({ sources: [], documents: [] });
+
+  await act(async () => {
+    render(<EvidenceReviewPage />);
+  });
+
+  const title = screen.getByRole('heading', { level: 1 }).textContent?.trim();
+  expect(title).toBe('Evidence Review Queue');
+  expect(screen.getByTestId('shell').getAttribute('data-role-label')).toBe(title);
 });

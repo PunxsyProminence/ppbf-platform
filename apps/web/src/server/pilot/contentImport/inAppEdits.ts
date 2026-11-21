@@ -31,6 +31,15 @@ import type { DbClient } from './actor';
 //   (b) pilot.audit_events holds an in_app_edit event on the current version's
 //       id (the edit paths write one in the same transaction), which catches an
 //       edit made before the label table existed.
+//       A SESSION SCRIPT writes no in-app label and no `action` key (lane GD,
+//       GD-4). Its edit and its making-from-a-template each write an audit row
+//       on the current version's id in the same transaction
+//       (sessionScriptAuthoring.ts editSessionScript, details.edited_script_id;
+//       createSessionScriptFromTemplate, details.template_id; Overwatch Q1 = A:
+//       a script a coach made in the app is held too). For that entity those
+//       keys count as (b). Retire, bring back and "reviewed" hold neither key:
+//       they change authoring_state, which is lifecycle, outside the content
+//       hash (datasets/sessionScripts.ts), and do not hold a script.
 // NOT created_by_*: the importer writes its own actor there too.
 
 /** The source an in-app edit's label names (contentLabels.ts#inAppEditLabel). */
@@ -101,11 +110,20 @@ export interface InAppEditedHead {
 
 export interface HeadToCheck {
   lineage: string;
-  /** The current version's row id (drill_id, template_id). */
+  /** The current version's row id (drill_id, template_id, script_id). */
   id: string;
   /** field_labels of the current version as overlaid (contentLabels.ts#overlayStoredLabels): JSON text, or undefined. */
   fieldLabels: unknown;
 }
+
+/**
+ * Per audit entity_type, the details keys that also mark an in-app edit, for
+ * an edit path that writes no `action: 'in_app_edit'` (see (b) above). A key
+ * counts only when it holds a non-empty value.
+ */
+const IN_APP_EDIT_DETAIL_KEYS: Readonly<Record<string, readonly string[]>> = {
+  session_script: ['edited_script_id', 'template_id'],
+};
 
 function day(value: unknown): string | undefined {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -115,7 +133,7 @@ function day(value: unknown): string | undefined {
 /**
  * Which of `heads` hold an in-app edit, by lineage. `auditEntityType` is the
  * audit_events entity_type the edit path writes (drill_library,
- * workout_template); undefined skips (b).
+ * workout_template, session_script); undefined skips (b).
  */
 export async function inAppEditedHeads(
   client: DbClient,
@@ -143,9 +161,10 @@ export async function inAppEditedHeads(
   const { rows } = await client.query<{ entity_id: string; actor_role: string | null; created_at: unknown }>(
     `select entity_id, actor_role, created_at from pilot.audit_events
       where organization_id = $1 and entity_type = $2 and entity_id = any($3::text[])
-        and details->>'action' = 'in_app_edit'
+        and (details->>'action' = 'in_app_edit'
+             or exists (select 1 from unnest($4::text[]) as edit_key where coalesce(details->>edit_key, '') <> ''))
       order by created_at desc`,
-    [organizationId, auditEntityType, unchecked.map((head) => head.id)],
+    [organizationId, auditEntityType, unchecked.map((head) => head.id), IN_APP_EDIT_DETAIL_KEYS[auditEntityType] ?? []],
   );
   for (const row of rows) {
     const head = unchecked.find((candidate) => candidate.id === row.entity_id);
