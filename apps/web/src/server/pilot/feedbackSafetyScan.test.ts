@@ -915,3 +915,77 @@ describe('HF12b review: a phrase spelled out with one space throughout', () => {
     expect(scanForSafetyLanguage("i got s.a'd by him").cues).toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b review: the picture guard hides no request main already caught', () => {
+  // Each filed grooming_or_isolation on main 4f26461 and nothing on a64d3e3.
+  test.each([
+    'he asked for pics showing how to kiss',
+    'he wants pics about how to touch him',
+    'send me pics of how to undress',
+    'send me pics on the drill',
+    'he wants pics of a hook up',
+    'he asked me for pics of your stance',
+    'he keeps asking for pics of how to kiss',
+    'he asked me to send pics of how to pose on my bed',
+    'he asks for pics of my jab with my shirt off',
+    'he asks for pics of my stance in my sports bra',
+    'he asked me to send him a pic of my hooks wearing nothing',
+    'he asks me for pics of my footwork in my swimsuit',
+    'he wants a pic of your stance in your bra',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'he asked for a video of how to undress',
+    'he wants a video of your stance with your shirt off',
+    'he wants a vid of a hook up',
+    'send me a video of how to pose on my bed',
+  ])('a video request carrying undress or a non-boxing how-to files: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'send a video of how to slip',
+    'can you send me a video of how to throw a jab',
+  ])('a boxing how-to video stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review: the place window and product talk', () => {
+  test.each([
+    'i do the workout videos in my bedroom',
+    'videos keep buffering in my bedroom',
+    'i watch boxing videos in bed every night',
+    'can the gym post pics of the new locker room',
+    'the photos of the new showers look great',
+    'pic of the locker room lights broken',
+    'can we get photos of the toilet that is blocked',
+  ])('no grooming cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'he took pics in the locker room',
+    'he took a video of me in the bathroom',
+    'he wants pics of me in bed',
+    'he filmed me in the toilet with his phone, then sent the video',
+    'in the bedroom he took photos',
+  ])('a person or request near the weaker place words still files: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): "shower" files without a person, because "pics of my sparring
+  // partner in the shower" names nobody doing it.
+  test('accepted false alert: "watched the video after my shower" files grooming_or_isolation', () => {
+    expect(scanForSafetyLanguage('watched the video after my shower').cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review: pace guard on the heavy bag', () => {
+  test('coaching about pace on the heavy bag is not crisis', () => {
+    expect(scanForSafetyLanguage('dont kill yourself on the heavy bag').cues).not.toContain('crisis');
+  });
+});
