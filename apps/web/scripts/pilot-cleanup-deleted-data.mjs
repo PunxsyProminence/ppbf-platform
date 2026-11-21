@@ -791,7 +791,10 @@ async function memberNamesOnRecord(client, organizationId, accountId, athleteId)
       where p.organization_id = $1 and p.account_id = $2
      union all
      select g.full_name from pilot.parents g
-      where g.organization_id = $1 and g.account_id = $2`,
+      where g.organization_id = $1 and g.account_id = $2
+     union all
+     select v.full_name from pilot.volunteers v
+      where v.organization_id = $1 and v.account_id = $2`,
     [organizationId, accountId],
   );
   const keys = (await client.query(

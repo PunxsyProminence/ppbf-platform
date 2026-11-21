@@ -146,15 +146,16 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
 - **A chat that is not flagged is cleared now.** The member's own messages are deleted.
   SHADOW's replies are kept under a one-off `anon_<uuid>` token, stored nowhere else, with these
   names replaced by `[name]`: the member's own (the login when it is an email, the login email,
-  ring name, staff name, guardian-record name); for each athlete that is theirs (their own
-  athlete record, the children their guardian record is linked to, the athlete the chat is
-  about), the athlete record's full name and the ring names on that athlete's logins; and those
-  athletes' guardians' guardian-record names. The same method and limits as the purge's
+  ring name, staff name, guardian-record name, volunteer-record name); for each athlete that is
+  theirs (their own athlete record, the children their guardian record is linked to, the athlete
+  the chat is about), the athlete record's full name and the ring names on that athlete's logins;
+  and those athletes' guardians' guardian-record names. The same method and limits as the purge's
   `namePattern`. Any other name a reply holds stays: another athlete it mentions (a sibling or a
-  teammate, whose shared surname alone is blanked), an athlete's or guardian's login or login
-  email, a guardian's ring name, an emergency contact, a guardian record's email, a staff
-  member's volunteer-record name, a nickname never recorded, a misspelling; so does anything else
-  a reply restates (a school, a town, a number). Kept times are the day, not the moment (an exact time
+  teammate keeps their name, except a part shared with a scrubbed name, such as a sibling's
+  surname), an athlete's or guardian's login or login email, a guardian's ring name, an emergency
+  contact, a guardian record's email, a staff member's volunteer-record name other than the
+  member's own, a nickname never recorded, a misspelling; so does anything else a reply restates
+  (a school, a town, a number). Kept times are the day, not the moment (an exact time
   would line the kept rows up with the member's own). What is kept takes **new ids**: a new conversation id
   and new message ids, so nothing that copied the old ones joins it (a background reply's id is
   a hash of its job's id; an escalation or an audit row can hold the conversation's). The

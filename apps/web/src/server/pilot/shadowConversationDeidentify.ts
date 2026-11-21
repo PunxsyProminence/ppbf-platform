@@ -123,7 +123,8 @@ type Queryable = Pick<PoolClient, 'query'>;
  * The names on record for a member in one gym, and for the people a chat of
  * theirs is likely to name: the login when it is an email (a guardian's login
  * is), the login email, the ring name and staff name on their profile, their
- * guardian record's full name; and, for every athlete that is theirs -- their
+ * guardian record's full name, the full name on their volunteer record (a
+ * staff member's may be their only one); and, for every athlete that is theirs -- their
  * own athlete record for an athlete login, the children their guardian record
  * is linked to, and the athlete the chat is about -- that athlete's full
  * name, the ring names of that athlete's logins, and the full names of every
@@ -154,7 +155,10 @@ export async function namesOnRecord(
       where p.organization_id = $1 and p.account_id = $2
      union all
      select g.full_name from pilot.parents g
-      where g.organization_id = $1 and g.account_id = $2`,
+      where g.organization_id = $1 and g.account_id = $2
+     union all
+     select v.full_name from pilot.volunteers v
+      where v.organization_id = $1 and v.account_id = $2`,
     [input.organizationId, input.accountId],
   );
   const keys = (await client.query<{ athlete_id: string | null; parent_ids: string[] }>(
