@@ -267,10 +267,10 @@ const PICTURE_NEAR_PLACE = [
   // A stranger online asking for a picture files whatever gym words follow;
   // any other stranger near a picture files unless the whole message is
   // everyday tutorial or tournament talk; the child sending pictures and
-  // then naming a stranger files.
+  // to a stranger files.
   String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging|askin|keeps? askin|beggin|keeps? beggin)${WORD}{0,4} ${ANY_PICTURE}`,
   String.raw`^(?!${STRANGER_EVERYDAY}$).*${STRANGER_ONE}${WORD}{0,14}? ${ANY_PICTURE}\b`,
-  String.raw`\b(?:i|ive|i have|i keep|i kept|i been|ive been)(?: just)? (?:sent|send|sending|gave|give|showed|show)${WORD}{0,3} ${ANY_PICTURE}\b(?: (?:to|with))? (?:a |an |some |this |that |the )?${STRANGER_ONE}`,
+  String.raw`\b(?:sent|send|sending|gave|give|showed|show)${WORD}{0,3} ${ANY_PICTURE}\b(?: (?:to|with))? (?:a |an |some |this |that |the )?${STRANGER_ONE}`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
   String.raw`(?:${ANY_PICTURE}|film|record)(?: of)? (?:me|her|him|us|them|myself|herself|himself|the (?:girls|boys|kids)|my (?:sister|brother|friends?|teammates?))(?: (?:while|whilst|when|as)(?: (?:i was|im|i am|i|she was|he was|we were|they were))?)? (?:changing|changed)(?! (?:up )?(?:my |his |her |the |our )?(?:stance|direction|levels?|angles?|gloves|wraps|weight(?: clas+)?|guard|feet|grip|partners?|pace|corners?|sides|rhythm|hands|mats|ropes|timer)(?: (?:on|in|at) (?:the |my )?(?:bag|pads|ring|mats?))?${TECHNIQUE_END})`,
