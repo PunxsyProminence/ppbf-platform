@@ -74,17 +74,26 @@ const MARCUS: Child = { athlete_id: 'ath-marcus', full_name: 'Marcus Webb' };
 function installFetchMock(options: {
   role?: 'parent' | 'athlete' | 'coach';
   children?: Child[];
+  /** Roster answers in turn (a reload reads it again); the last repeats. */
+  rosters?: Child[][];
   registrations?: ReturnType<typeof registration>[];
   classes?: ReturnType<typeof classRow>[];
 }): jest.Mock {
   const role = options.role ?? 'parent';
+  let rosterReads = 0;
   const fetchMock = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const json = (payload: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(payload) } as Response);
     if (url.endsWith('/api/pilot/auth/session')) {
       return json({ authenticated: true, role, athlete_id: role === 'athlete' ? 'ath-rosa' : null });
     }
-    if (url.endsWith('/api/pilot/athletes/list')) return json({ items: options.children ?? [ROSA, MARCUS] });
+    if (url.endsWith('/api/pilot/athletes/list')) {
+      if (options.rosters) {
+        rosterReads += 1;
+        return json({ items: options.rosters[Math.min(rosterReads, options.rosters.length) - 1] });
+      }
+      return json({ items: options.children ?? [ROSA, MARCUS] });
+    }
     if (url.endsWith('/api/pilot/athletes/get')) return json({ found: true, athlete: { full_name: 'Rosa Delgado' } });
     if (url.endsWith('/api/pilot/admin/staff')) return json({ members: [] });
     if (url.endsWith('/api/pilot/scheduler') && init?.method === 'POST') {
@@ -268,5 +277,50 @@ describe("a parent's check-in words (FAM-23; Q7 = A)", () => {
     expect(screen.getByRole('combobox', { name: 'Athlete to mark' })).toBeInTheDocument();
     const coaching = screen.getByText('Request Individual Coaching').closest('article') as HTMLElement;
     expect(within(coaching).getByRole('combobox')).toBeInTheDocument();
+  });
+});
+
+describe('review notes (AS9-4)', () => {
+  test('a child no longer on the list after a reload is not kept, named or sent', async () => {
+    const fetchMock = installFetchMock({
+      rosters: [[ROSA, MARCUS], [ROSA]],
+      classes: [classRow('class-today', 'Tonight', HOUR), classRow('class-next', 'Next week', 7 * 24 * HOUR)],
+    });
+    await renderPage();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Marcus Webb' }));
+    });
+    // Register reloads the page's reads quietly; the second roster read no
+    // longer has Marcus.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Register Marcus Webb' }));
+    });
+    await act(async () => {});
+
+    expect(screen.queryByText(/Marcus/)).toBeNull();
+    expect(document.body.textContent).not.toContain('ath-marcus');
+    // Register moved the check-in card to next week's class, so the next
+    // action is the coaching request, which now names and sends Rosa.
+    const coaching = screen.getByText('Request Individual Coaching').closest('article') as HTMLElement;
+    expect(within(coaching).getByText('For Rosa Delgado')).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(coaching).getByRole('button', { name: 'Submit Request' }));
+    });
+    expect(posts(fetchMock).map((body) => [body.action, body.athlete_id])).toEqual([
+      ['register_class', MARCUS.athlete_id],
+      ['request_coaching', ROSA.athlete_id],
+    ]);
+  });
+
+  test('a chosen child who is not on today\'s class is told so, with no button', async () => {
+    installFetchMock({ registrations: [registration('class-today', ROSA.athlete_id)] });
+    await renderPage();
+    expect(screen.queryByText(/is not registered for this class/)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Marcus Webb' }));
+    });
+    expect(screen.getByText('Marcus Webb is not registered for this class.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /is here$/ })).toBeNull();
   });
 });

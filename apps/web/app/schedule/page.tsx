@@ -528,14 +528,20 @@ export default function SchedulerPage() {
         }
         const rows = athletesPayload.items || [];
         setAthletes(rows);
-        if (rows.length > 0) {
+        if (auth.role === 'parent') {
           // A parent opens on the child chosen last on any family page
           // (src/lib/chosenChild.ts) when that child is one of theirs, else on
-          // the first, as Parent Hub does (AS9-4; FAM-10). Staff open on the
-          // first, as before.
-          const remembered = auth.role === 'parent' ? readChosenChild() : null;
-          const openingAthleteId = rows.find((row) => row.athlete_id === remembered)?.athlete_id ?? rows[0].athlete_id;
-          setSelectedAthleteId((current) => current || openingAthleteId);
+          // the first, as Parent Hub does (AS9-4; FAM-10).
+          // A parent's child is always one from this list: a child
+          // kept from before a reload stays only while it is still here, so a
+          // link removed in the meantime never stays chosen, named or sent.
+          const remembered = readChosenChild();
+          const opening = rows.find((row) => row.athlete_id === remembered)?.athlete_id ?? rows[0]?.athlete_id ?? '';
+          setSelectedAthleteId((current) => (current && rows.some((row) => row.athlete_id === current) ? current : opening));
+        } else if (rows.length > 0) {
+          // Staff open on the first athlete, as before.
+          const firstAthleteId = rows[0].athlete_id;
+          setSelectedAthleteId((current) => current || firstAthleteId);
         }
       } else {
         setAthletes([]);
@@ -813,9 +819,12 @@ export default function SchedulerPage() {
   const familyChildInSentence = familyChild && familyChildName
     ? (familyChildHasName(familyChild) ? familyChildName : familyChildName.replace(/^Your child/, 'your child'))
     : null;
+  // A parent's button never falls back to the id: no child from the list, no name.
   const registerTargetName = role === 'athlete' || !targetAthlete
     ? null
-    : familyChildInSentence ?? (registerTarget?.full_name?.trim() || targetAthlete);
+    : role === 'parent'
+      ? familyChildInSentence
+      : registerTarget?.full_name?.trim() || targetAthlete;
   // A class row names its coach, never the login (#1596; OD-2026-10-06-025
   // "Show coach name, hide ID"). The name is derived as the server derives a
   // coach's signature (coachDisplayName.ts): from the login on the admin's
@@ -1460,6 +1469,13 @@ export default function SchedulerPage() {
                     />
                   ) : null}
 
+                  {/* Why there is no button for a parent's child on today's class
+                      (AS9-4 review; PROPOSED words): the child chosen at the
+                      top is not on it. The picker at the top changes child. */}
+                  {familyChildName && selectedClass && !selectedClassCancelled && today
+                    && gymDayIso(selectedClass.start_at) === today && !registeredForSelectedClass.has(targetAthlete) ? (
+                    <p className="t-body">{familyChildName} is not registered for this class.</p>
+                  ) : null}
                   {(!isFamily && markClassId) || familyCanCheckIn ? (
                     <button
                       type="button"
@@ -1483,9 +1499,9 @@ export default function SchedulerPage() {
                           // not something the coach did; a first normal mark read as one
                           // (live walkthrough 2026-10-19). PROPOSED copy.
                           // A parent marks a child, so the line names the child
-                          // (Q7 = A, mirroring the athlete's "You are marked
-                          // here. Your coach can see it."). An athlete's line is
-                          // unchanged.
+                          // (Q7 = A; the words mirror "You are marked here. Your
+                          // coach can see it.", AthleteImHere.tsx). An athlete's
+                          // line on this page is unchanged.
                           familyChildName
                             ? `${familyChildName} is marked here. Their coach can see it.`
                             : isFamily ? 'Checked in. Your coach can see you are here.' : 'Attendance saved.',
