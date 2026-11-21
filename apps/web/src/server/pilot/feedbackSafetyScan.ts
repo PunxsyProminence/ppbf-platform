@@ -59,10 +59,23 @@ const APOSTROPHE_LIKE = /[\u2018\u2019\u02bc'`\u00b4\u02b9\u02bb\u02bd\u02c8\u20
  * "slaped", "bleeeeeding" would become "bleding". None would match anything.
  */
 export function normalizeForSafetyScan(body: string): string {
-  return joinSplitWords(joinSpelledOutWords(body
-    .toLowerCase()
-    .replace(SA_D, 'sexually assaulted')
-    .replace(APOSTROPHE_LIKE, ''))
+  return normalizeWith(body, false);
+}
+
+/**
+ * The same normal form with spelled-out words joined (HF12b): an extra
+ * reading, never a replacement. The cues read both, and the SHADOW
+ * disclosure's staff, person, touch and intent checks read both, so a
+ * spelled-out word only ever adds evidence to what main's normal form already
+ * gave (safeguarding review round 7 on PR 2076).
+ */
+export function spelledOutReading(body: string): string {
+  return normalizeWith(body, true);
+}
+
+function normalizeWith(body: string, joinSpelledOut: boolean): string {
+  const lowered = spellOutSexualAssault(body).toLowerCase().replace(APOSTROPHE_LIKE, '');
+  return joinSplitWords((joinSpelledOut ? joinSpelledOutWords(lowered) : lowered)
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/(.)\1{2,}/g, '$1$1')
     .replace(/\bdo not\b/g, 'dont')
@@ -80,28 +93,24 @@ export function normalizeForSafetyScan(body: string): string {
 /**
  * "sa'd" / "sa-ed" (also "s.a'd") is short for sexually assaulted. Stripping
  * the apostrophe would make it "sad", so it is spelled out first (HF12b).
- * Plain "sad" is sad, and the given name Sa'd / Sa'ed is left out (review 2
- * on PR 2076).
+ * Plain "sad" is sad. The given name Sa'd / Sa'ed, written with a capital S
+ * and a small a, is left as a name unless an object follows ("Sa'd me").
  */
-const SA_FORM = String.raw`s\.?a\.?(?:${APOSTROPHE_LIKE.source}|-)e?d`;
-const SA_D = new RegExp(
-  String.raw`(?<=\b(?:got|get|gets|getting|been|was|were|be|being|he|she|they|someone|somebody|who|i${APOSTROPHE_LIKE.source}?m|i am)[^a-z0-9]+)${SA_FORM}\b`
-  + String.raw`|\b${SA_FORM}(?=[^a-z0-9]+(?:me|her|him|them|us|my|our|by|[0-9]+|two|three|four|some|other|girls|boys|kids)\b)`,
-  'g',
-);
+const SA_D = new RegExp(String.raw`(?<![A-Za-z0-9])[sS]\.?[aA]\.?(?:${APOSTROPHE_LIKE.source}|-)[eE]?[dD](?![A-Za-z0-9])`, 'g');
+
+function spellOutSexualAssault(body: string): string {
+  return body.replace(SA_D, (match: string, offset: number) => {
+    const isGivenName = /^Sa/.test(match)
+      && !/^[^A-Za-z0-9]+(?:me|her|him|them|us)\b/i.test(body.slice(offset + match.length));
+    return isGivenName ? match : 'sexually assaulted';
+  });
+}
 
 /**
  * A word spelled out letter by letter ("s u i c i d e", "k.m.s"): the run is
- * joined back into the word (HF12b). Done in the normal form itself, so every
- * reader of it (the SHADOW disclosure's touch, staff, boxing-context and
- * sparring-intent checks) sees the word too. Roadwork distances still read
- * as distances.
- *
- * Text-speak single letters ("n i said stop", "k i told him") are kept apart
- * where joining them would hide the SHADOW sparring-intent words that start
- * with "i" (review on PR 2076). "i m" is joined on its own in joinSplitWords.
+ * joined back into the word, in the spelled-out reading only (HF12b).
  */
-const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z0-9](?:[^a-z0-9][a-z0-9])+(?![a-z0-9])(?![^a-z0-9]{1,2}ped\b)/gu;
+const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z](?:[^a-z0-9][a-z])+(?![a-z0-9])/gu;
 
 /**
  * A run typed with one space between every letter swallows the gaps between
@@ -110,10 +119,7 @@ const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z0-9](?:[^a-z0-9][a-z0-9])+(?![a-z0-9])
  * run, longest first, so the cues and the SHADOW touch and staff checks read
  * them. Each is a phrase some cue already holds, or a staff word; a run is
  * rare in ordinary text, so a phrase found inside an unrelated spelled-out
- * word costs at most a reading. A lone "i" left at the end of a run after
- * that ("b c i said stop") is split off, so SHADOW's sparring-intent words
- * that start with "i" still read. Roadwork distances still read as
- * distances.
+ * word costs at most a reading.
  */
 const SPACED_BACK_PHRASES: readonly string[] = [
   'kill myself', 'hurt myself', 'cut myself', 'harm myself', 'hang myself', 'shoot myself', 'off myself',
@@ -147,21 +153,14 @@ const SPACED_BACK_FORM: ReadonlyMap<string, string> = new Map(
 
 function joinSpelledOutWords(text: string): string {
   return text.replace(SPELLED_OUT_RUN, (run) => {
-    if (/[0-9]/.test(run)) return run;
-    const word = run.replace(/[^a-z]/g, '');
-    if (word.length === 2 && /[ia]/.test(word)) return run;
-    const spaced = word
+    const spaced = run.replace(/[^a-z]/g, '')
       .replace(SPACED_BACK, (compact) => ` ${SPACED_BACK_FORM.get(compact) ?? compact} `)
       .split(' ')
       .map((part) => part.replace(SPACED_BACK_STAFF, (title) => ` ${title} `))
       .join(' ')
       .replace(/ +/g, ' ')
       .trim();
-    // A lone trailing "i" no phrase took ("b c i said stop") is its own word.
-    const last = spaced.slice(spaced.lastIndexOf(' ') + 1);
-    const isTitle = last.replace(SPACED_BACK_STAFF, '') === '';
-    const split = spaced.length >= 3 && /[a-z]i$/.test(spaced) && !isTitle ? `${spaced.slice(0, -1)} i` : spaced;
-    return ` ${split} `;
+    return ` ${spaced} `;
   });
 }
 
@@ -209,24 +208,28 @@ const PICTURE_GUARD = String.raw`(?! (?:of|from) (?:(?:my|the|our|his|her|their)
 // cannot hide them.
 const TECHNIQUE_NOUNS = String.raw`(?:${GYM_EVENT_NOUNS}|dril+s?|combos?|jabs?|ho+ks?(?! up\b)|up+ercuts?|fo+twork|stance|pad ?work|mit+ ?work|bag ?work|technique|warm ?ups?|workouts?|ses+ions?|routines?|circuits?|schedule|timetable|calendar|training|shadow ?boxing|punch(?:es)?|defen[cs]e|head movement|form|pads|roadwork|skip+ing|jump rope|(?:hand )?wraps|homework|combinations?|cros+(?:es)?|guard|slips|rol+s|conditioning|sprints|one two|1 2|runs?|lifts?|squats?|deadlifts?|bench|miles?)`;
 const TECHNIQUE_FILLER = String.raw`(?:the|my|your|ur|his|her|our|their|a|an|that|this|todays|[0-9]+|one|two|three|four|punch|slip|jab|pad|bag|mit+|shadow|new|basic|first|last|next|left|right|lead|rear)`;
-const VIDEO_GUARD = String.raw`(?! (?:(?:of|from|on|showing) (?:${TECHNIQUE_FILLER} ){0,3}${TECHNIQUE_NOUNS}(?!${WORD}{0,6} (?:together|alone|at night|late at night|when no ?one|when nobody|in (?:my|his|her|their) (?:room|bedroom|bed)|at (?:his|her|their) (?:house|place|home|flat))\b)|(?:of|on|about|showing) how to (?:do )?(?:the |a |that |this )?(?:slip|jab|throw|block|parry|duck|rol+|pivot|wrap|punch|hook|uppercut|skip|hold the pads|${TECHNIQUE_NOUNS}))\b)`;
+// A technique video request is left out only when it is the whole of what is
+// asked: anything after it other than a courtesy ("of my form in bed", "of my
+// squats just for him", "after my mom goes to sleep") files.
+const TECHNIQUE_END = String.raw`(?: (?:please|pls|plz|thanks|thank you|thx|ty|asap|again|today|lol))?$`;
+const VIDEO_GUARD = String.raw`(?! (?:(?:of|from|on|showing) (?:${TECHNIQUE_FILLER} ){0,3}${TECHNIQUE_NOUNS}(?: ${TECHNIQUE_NOUNS})?${TECHNIQUE_END}|(?:of|on|about|showing) how to (?:do )?(?:the |a |that |this )?(?:slip|jab|throw|block|parry|duck|rol+|pivot|wrap|punch|hook|uppercut|skip|hold the pads|${TECHNIQUE_NOUNS})(?: (?:${TECHNIQUE_FILLER} ){0,3}${TECHNIQUE_NOUNS})?${TECHNIQUE_END}))`;
 const ASK = String.raw`(?:asking|asks|asked|ask|wants|want|wanted|wanting|begs|begged|begging|beg)`;
 // Main's picture request, with "pix" and begging added.
 const PICTURE_REQUEST = String.raw`(?:${ASK} (?:me )?(?:for |to see |to send (?:him |her |them )?)?|send (?:him |her |them |me )?)${PICTURE_COUNT}${PICTURE_NOUNS}\b${PICTURE_GUARD}`;
 // A video request aimed at the child: a send to someone, "asks me for", being
 // made to send, someone who keeps asking, or a third person or staff title
 // wanting one. Feature requests and product talk stay out.
-const VIDEO_ASKER = String.raw`(?:he|she|they|hes|shes|theyre|coach|someone|somebody|guy|man|mr|mrs|ms|miss|sir|trainer|instructor|volunteer|staff|teacher|uncle|aunt|dad|daddy|stepdad|step dad|stepbrother|brother|cousin|grandpa|boyfriend|girlfriend|neighbou?r|boy|girl|kid)`;
-const VIDEO_PRODUCT_GUARD = String.raw`(?!(?:(?! of (?:me|you|u|us|yourself|myself)\b)${WORD}){0,8} for (?:the |my |our |a )?(?:website|newslet+er|instagram|insta|socials?|social media|promo|scho+l(?: project)?|project|tour)\b(?!${WORD}{0,6} of (?:me|you|u|us|yourself|myself)\b))(?! (?:in the ap+|on (?:the ap+|youtube|instagram|tiktok)|library|tutorials?|content|uploaded|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+|of the open house|of the kids clas+)\b)`;
+const VIDEO_ASKER = String.raw`(?:he|she|they|hes|shes|theyre|coach|someone|somebody|guy|man|mr|mrs|ms|miss|sir|trainer|instructor|volunteer|staff|teacher|uncle|aunt|dad|daddy|stepdad|step dad|stepbrother|brother|cousin|grandpa|boyfriend|girlfriend|neighbou?r|boys?|girls?|kids?|men|guys|people)`;
+const VIDEO_PRODUCT_GUARD = String.raw`(?!(?:(?! of (?:me|you|u|us|yourself|myself)\b)${WORD}){0,8} for (?:the |my |our |a )?(?:website|newslet+er|instagram|insta|socials?|social media|promo|scho+l(?: project)?|project|tour)\b(?!${WORD}{0,6} of (?:me|you|u|us|yourself|myself)\b))(?! (?:in the ap+|library|tutorials?|content|uploaded|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+|of the open house|of the kids clas+)\b)`;
 // The product asking for a video ("the app asks me", "shadow keeps asking")
 // is not a person; a message sent "on the app" is.
-const PRODUCT_SUBJECT = String.raw`(?<!(?<!\b(?:on|in|through|via|from|off|of) )\bthe (?:ap+|site|page|form|screen) (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)(?<!(?<!\b(?:called|named|nicknamed) )\bshadow (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)`;
+const PRODUCT_SUBJECT = String.raw`(?<!(?<!\b(?:on|in|through|via|from|off|of|at) )\bthe (?:ap+|site|page|form|screen) (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)(?<!(?<!\b(?:called|named|nicknamed) )\bshadow (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)`;
 const VIDEO_REQUEST = [
   String.raw`(?:send (?:him |her |them |me )|${PRODUCT_SUBJECT}${ASK} me (?:for |to see |to send (?:him |her |them )?|to make (?:him |her |them )?)?|(?:made|makes|make|making|gets|got|get) me (?:to )?send (?:him |her |them )?|${PRODUCT_SUBJECT}(?:keeps|kept|keep|always|wont stop) (?:asking|begging|bugging) (?:me )?for )${PICTURE_COUNT}${VIDEO_NOUNS}\b${VIDEO_GUARD}`,
   String.raw`\b${VIDEO_ASKER}(?: [a-z]+){0,4}? ${ASK} (?:me )?(?:for |to see )?(?:a |an |some |private |another |any )?${VIDEO_NOUNS}\b${VIDEO_GUARD}${VIDEO_PRODUCT_GUARD}`,
 ].join('|');
-const UNDRESS_WORDS = String.raw`(?:shower|showering|changing rooms?|change rooms?|get+ing changed|get changed|got changed|undres+|undres+ed|undres+ing|naked|nude|no clothes|underwear|no shirt|no top|shirt off|top off|shirtles+|toples+|without (?:a |any |your |my |his |her )?(?:shirts?|tops?|clothes)|bra|sports bra|swimsuit|swimming costume|bikini|wearing nothing)`;
-const PRIVATE_PLACE_WORDS = String.raw`(?:showers|locker rooms?|bathrooms?|toilets?|in bed|bedro+m|on (?:my|the|your|his|her) bed)`;
+const UNDRESS_WORDS = String.raw`(?:shower|showering|changing rooms?|change rooms?|get+ing changed|get changed|got changed|undres+|undres+ed|undres+ing|naked|nude|no clothes|underwear|no shirt|no top|shirt off|top off|shirtles+|toples+|without (?:a |any |your |my |his |her )?(?:shirts?|tops?|clothes)|bra|sports bra|swimsuit|swimming costume|bikini|wearing nothing|pyjamas|pajamas|pjs|(?:wearing )?only (?:in )?(?:my |his |her )?(?:shorts|boxers|underwear))`;
+const PRIVATE_PLACE_WORDS = String.raw`(?:showers|in the bath|bathtub|locker rooms?|bathrooms?|toilets?|in bed|bedro+m|on (?:my|the|your|his|her) bed)`;
 const PERSON_OR_REQUEST = String.raw`(?:he|she|they|hes|shes|theyre|someone|somebody|him|her|his|me|us|asked|asks|wants|wanted|send|sent|took|takes|taking|filmed|filming)`;
 // A picture near undress files in either order; near a private place it
 // files when a person or request word is near too.
@@ -379,8 +382,13 @@ export function scanForSafetyLanguage(body: string): FeedbackSafetyScanResult {
   // fully catches a single-letter word typed long ("sooooo"). Neither reading
   // alone covers both, and a disclosure must not depend on which way a child
   // happened to hold the key.
+  // The spelled-out reading is added, never substituted, so every cue main's
+  // normal form gave is still given.
   const normalized = normalizeForSafetyScan(body);
-  const readings = [normalized, collapseFully(normalized)];
+  const spelled = spelledOutReading(body);
+  const readings = spelled === normalized
+    ? [normalized, collapseFully(normalized)]
+    : [normalized, collapseFully(normalized), spelled, collapseFully(spelled)];
   const cues = SAFETY_CUES
     .filter((cue) => readings.some((reading) => cue.pattern.test(reading)))
     .map((cue) => cue.id);

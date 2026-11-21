@@ -9,7 +9,7 @@
 // "routes to a human" list is long and forgiving, and the "stays product" list
 // holds only sentences that are plainly about the software.
 
-import { normalizeForSafetyScan, scanForSafetyLanguage } from './feedbackSafetyScan';
+import { normalizeForSafetyScan, scanForSafetyLanguage, spelledOutReading } from './feedbackSafetyScan';
 
 describe('language that must reach a person', () => {
   test.each([
@@ -722,10 +722,10 @@ describe('HF12b: a word spelled out letter by letter', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
   });
 
-  test('a spelled-out word is joined in the normal form every consumer reads', () => {
-    expect(normalizeForSafetyScan('he t o u c h e d me')).toBe('he touched me');
-    expect(normalizeForSafetyScan('k.i.l.l m.y.s.e.l.f')).toBe('kill myself');
-    expect(normalizeForSafetyScan('i  w a n t  t o  d i e')).toBe('i want to die');
+  test('a spelled-out word is joined in the spelled-out reading', () => {
+    expect(spelledOutReading('he t o u c h e d me')).toBe('he touched me');
+    expect(spelledOutReading('k.i.l.l m.y.s.e.l.f')).toBe('kill myself');
+    expect(spelledOutReading('i  w a n t  t o  d i e')).toBe('i want to die');
   });
 
   test.each([
@@ -910,7 +910,7 @@ describe('HF12b review: a phrase spelled out with one space throughout', () => {
   });
 
   test('the touch word is spaced back out for the SHADOW touch check', () => {
-    expect(normalizeForSafetyScan('he t o u c h e d m e')).toMatch(/\btouched me\b/);
+    expect(spelledOutReading('he t o u c h e d m e')).toMatch(/\btouched me\b/);
   });
 
   test('"s.a\'d" is read as sexually assaulted', () => {
@@ -1031,7 +1031,7 @@ describe('HF12b review 2: a staff word inside a spelled-out run is spaced back',
     ['o u r c o a c h h u r t s m e', /\bcoach\b/],
     ['m y t r a i n e r h i t s m e', /\btrainer\b/],
   ])('%p keeps the staff word for SHADOW routing', (sentence, word) => {
-    expect(normalizeForSafetyScan(sentence)).toMatch(word);
+    expect(spelledOutReading(sentence)).toMatch(word);
   });
 
   test('"scares me" inside a run is read', () => {
@@ -1131,7 +1131,7 @@ describe('HF12b review 3: spelled-out staff words with a trailing i or a digit',
     ['s e n s e i hit me during sparring', /\bsensei\b/],
     ['s.e.n.s.e.i punched me at pads', /\bsensei\b/],
   ])('%p keeps the staff word', (sentence, word) => {
-    expect(normalizeForSafetyScan(sentence)).toMatch(word);
+    expect(spelledOutReading(sentence)).toMatch(word);
   });
 
   // A run touching a digit is left as main left it, so SHADOW's own digit
@@ -1227,12 +1227,6 @@ describe('HF12b review 3: snapchat and video talk', () => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 
-  // Accepted, and pinned so a change is deliberate: the name Sa'd before "my"
-  // reads as the abbreviation, and dropping the object form would hide "he
-  // sa'd me".
-  test('accepted false alert: "hes Sa\'d, my sparring partner" files grooming_or_isolation', () => {
-    expect(scanForSafetyLanguage("hes Sa'd, my sparring partner").cues).toContain('grooming_or_isolation');
-  });
 });
 
 // Tests that only one guard can satisfy, added for the mutation proof (review
@@ -1401,7 +1395,7 @@ describe('HF12b review 5: crisis and assault spellings', () => {
   });
 
   test('a spelled-out staff title is still read after the two-pass re-spacing', () => {
-    expect(normalizeForSafetyScan('m r d a v e hit me')).toMatch(/\bmr dave\b/);
+    expect(spelledOutReading('m r d a v e hit me')).toMatch(/\bmr dave\b/);
   });
 });
 
@@ -1468,7 +1462,7 @@ describe('HF12b review 6: mixed separators inside a spelled-out staff word', () 
     ['my c-o-a-c h broke my nose', /\bcoach\b/],
     ['c o.a.c.h punched me in sparring', /\bcoach\b/],
   ])('%p keeps the staff word', (sentence, word) => {
-    expect(normalizeForSafetyScan(sentence)).toMatch(word);
+    expect(spelledOutReading(sentence)).toMatch(word);
   });
 });
 
