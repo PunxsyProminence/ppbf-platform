@@ -1685,3 +1685,34 @@ describe('HF12b review 9: single-rule tests', () => {
     expect(cues).not.toContain('crisis');
   });
 });
+
+// Review round 10 on PR 2076 (lane HF12b), under Overwatch's stopping rule:
+// only blocking findings are fixed. Invented phrases.
+describe('HF12b review 10: blocking findings', () => {
+  test.each([
+    'he asks me for private videos of my form',
+    'my coach keeps asking me for private vids of my workouts',
+    'he wants private videos of my squats',
+    'a man online keeps asking me for videos of my squats',
+    'a grown man i dont know keeps begging me for vids of my workouts',
+    'he wants vids of my body for insta',
+    'she wants vids of my legs for a promo',
+    'he wants private videos for the website',
+    "my friend Sa'd me",
+    "my sparring partner Sa'd me",
+    "he kissed me and Sa'd me",
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'people want videos',
+    'kids want videos',
+    'a lot of kids asked for videos',
+    'most people want videos instead of text',
+    'staff want videos for the website',
+    'the staff asked for videos of the kids class for the newsletter',
+  ])('feature requests and product talk stay out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
