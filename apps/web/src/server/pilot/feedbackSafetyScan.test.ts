@@ -1952,3 +1952,58 @@ describe('HF12b second delta review (81ed7ee..ac0950e): blocking findings', () =
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b third delta review (81ed7ee..d4d2e32): blocking findings', () => {
+  test.each([
+    'a guy online has the pics i sent him',
+    'a guy on snap has the pics i sent',
+    'a man online said he would share the pics unless i pay',
+    'a guy online sed he wud share the pics unless i pay him',
+    'guy online sayin hell post the pics if i dont pay',
+    'a guy online wants 100 dollars or hell post the vid',
+    'the man online has the pictures and says he will share them unless i send more',
+    'a guy online said hell send the pics to my mom',
+    'a guy online will send the pics to my school',
+    'a stranger online is gonna send the video to my mom',
+    'a stranger online will post the video if i tell',
+    'a guy online is using the pics against me',
+    'someone online is holding the pics over me',
+    'a guy online screenshotted the pics',
+    'a guy online still has the pics',
+    'a stranger has the pics',
+    'someone i met online has the pics',
+    'a guy online keeps pushing for pics',
+    'a man i dont know was filming us',
+    'a man i dont know was filming us at the park',
+    'a stranger was taking photos of the kids',
+    'some guy online recorded our facetime',
+    'some guy online recorded our call',
+    'someone online is posting pics of my friend',
+    'someone i dont know is posting pics of my sister',
+    'my coach does secret video calls with me',
+    'coach says we should do secret video calls and not tell my mom',
+    'my coach does private video calls with me late at night',
+    'he made me make a secret snapchat account to talk to him',
+    'coach told me to get a secret snapchat account',
+    'i made a secret video for him',
+    'i made a secret video for my coach',
+    'i made a private video for coach because he asked',
+    'i made a secret pic for him and now he wants more',
+    'i made a private video for him and now he is sharing it',
+    'i posted a private pic and he screenshotted it',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'i found someone online with good videos on footwork',
+    'watched a guy online break down the jab in a video',
+    'a person online made a great video about hand wraps',
+    'i copied a guy on tiktok and recorded my combo',
+    'guys on tiktok post videos of sparring all the time',
+    'some guy on tiktok has the best jab videos',
+    'someone online keeps messaging me about my fight video',
+  ])('everyday talk stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
