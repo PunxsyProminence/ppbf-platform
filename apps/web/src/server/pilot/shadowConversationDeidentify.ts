@@ -62,18 +62,20 @@ import type { PoolClient } from 'pg';
  * RACES IT CANNOT CLOSE from here. The rows that flag a chat are written
  * after the exchange they are about, in their own statements: the chat
  * route writes its review rows and a disclosure's safety escalation at the
- * end of the request, after the exchange is stored (chat/route.ts), and the
- * job processor writes a background answer's response-safety review row
- * after its job completes (shadowJobProcessor.ts). A member who deletes the
- * chat in that gap (from another tab or device; the page disables Delete
- * while its own request is in flight) has it cleared as not flagged: the
- * words are gone before the row that would have held them arrives. The
- * route's review row is still kept, without the chat (queueHumanReview
- * retries without the conversation on that foreign key); an escalation is
- * filed naming an id that no longer exists; a background job has nothing
- * to complete, so its response-safety row is not written. Closing the gap
- * means writing those rows with the exchange, in chat/route.ts and the job
- * processor, which this lane does not change.
+ * end of the request, after the exchange is stored (chat/route.ts); the job
+ * processor stores a background answer, completes its job, then writes that
+ * answer's response-safety review row (shadowJobProcessor.ts). A clear in
+ * that gap -- the member deleting from another tab or device, or from the
+ * same page while a background job it queued runs (the page disables Delete
+ * only while its own request is in flight), or the office completing a
+ * request -- clears the chat as not flagged: the words are gone before the
+ * row that would have held them arrives. A review row that arrives later is
+ * still kept, without the chat (queueHumanReview retries without the
+ * conversation on that foreign key); an escalation is filed naming an id
+ * that no longer exists; a job whose row was deleted before it completed
+ * has nothing to complete, so its response-safety row is not written.
+ * Closing the gap means writing those rows with the exchange, in
+ * chat/route.ts and the job processor, which this lane does not change.
  * ------------------------------------------------------------------------- */
 
 /** The title a cleared chat keeps (the old one is the first words the member typed). */
@@ -257,7 +259,9 @@ export async function clearConversation(
     // A review entry pointing at it (the retention script's flagged case)
     // stays, under a new id, without its conversation.
     await client.query(
-      `update pilot.shadow_human_review_queue set review_id = gen_random_uuid()
+      `update pilot.shadow_human_review_queue
+          set review_id = gen_random_uuid(),
+              created_at = date_trunc('day', created_at), reviewed_at = date_trunc('day', reviewed_at)
         where conversation_id = $1 and organization_id = $2`,
       [conversationId, organizationId],
     );
@@ -356,9 +360,10 @@ export async function clearMemberConversations(
   if (rows.length === 0) return { cleared: 0, held: 0 };
 
   // Read after the lock, so a review entry written meanwhile is seen. An
-  // escalation's id is matched whatever its case (it is stored as the client
-  // sent it). A session the person purge marked held (subject_deleted_at)
-  // is held too.
+  // escalation's id is matched whatever its case (on a path that stores no
+  // exchange the route files it as the client sent it). A session with
+  // subject_deleted_at set (the column the purge's hold reads; nothing writes
+  // it today) is held too.
   const flagged = new Set((await client.query<{ conversation_id: string }>(
     `select q.conversation_id::text as conversation_id
        from pilot.shadow_human_review_queue q

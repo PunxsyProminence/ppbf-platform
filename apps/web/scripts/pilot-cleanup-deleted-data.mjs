@@ -721,8 +721,9 @@ async function deidentifyFlaggedConversations(client, tables, accountIds, organi
    - one deleted BEFORE that change, when a delete only set deleted_at and
      nothing cleared it: cleared now, or at two years if flagged.
    A chat that is a DELETED PERSON's is left to attemptPurge with the rest of
-   their records (which holds a chat a review entry points at; one only an
-   escalation points at is not held there, finding F5 on #2062): an account with
+   their records (which keeps a chat a review entry points at identified while
+   its two years run, then de-identifies it; one only an escalation points at
+   is not kept there, finding F5 on #2062): an account with
    deleted_at set, an athlete login whose athlete is deleted, and a chat ABOUT
    a deleted athlete (dataDeletion.ts markAthleteTiedRecords stamps those with
    the athlete's deletion time, so deleted_at alone cannot tell the two apart).
@@ -877,7 +878,9 @@ async function clearMemberChat(client, { organizationId, accountId, conversation
   );
   if (pattern === null) {
     await client.query(
-      `update pilot.shadow_human_review_queue set review_id = gen_random_uuid()
+      `update pilot.shadow_human_review_queue
+          set review_id = gen_random_uuid(),
+              created_at = date_trunc('day', created_at), reviewed_at = date_trunc('day', reviewed_at)
         where conversation_id = $1 and organization_id = $2`,
       [conversationId, organizationId],
     );
@@ -951,7 +954,7 @@ async function clearMemberDeletedChats(client, tables, limit, blocked) {
         // Token and stamp in one update, as the table's check requires.
         await client.query(
           `update pilot.shadow_human_review_queue
-              set account_id = $3, deidentified_at = now(), summary = $4, metadata = '{}'::jsonb
+              set account_id = $3, deidentified_at = date_trunc('day', now()), summary = $4, metadata = '{}'::jsonb
             where conversation_id = $1 and organization_id = $2`,
           [row.conversation_id, row.organization_id, token, REVIEW_SUMMARY_AFTER_HOLD],
         );

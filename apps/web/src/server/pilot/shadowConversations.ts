@@ -1305,13 +1305,14 @@ export async function queueHumanReview(input: {
     await insert(input.conversationId ?? null);
   } catch (error) {
     /* THE CHAT WAS CLEARED IN BETWEEN. The chat route writes this row at the
-       end of the request, after the exchange is stored; a member who deletes
-       the chat from another tab in that gap has it cleared and moved to a new
-       id (shadowConversationDeidentify.ts), so the old id fails the foreign
-       key. The row is a safety record: it is kept, without the chat, as a
-       ticket whose exchange is not recorded (loadHumanReviewExchange answers
-       'no_message_on_ticket'). Only that one constraint; anything else
-       throws as before. */
+       end of the request, after the exchange is stored, and the job
+       processor after its job completes; a chat cleared in that gap
+       (shadowConversationDeidentify.ts, "RACES") has moved to a new id, so
+       the old id fails the foreign key. The row is a review record (a
+       safety one, or the operational one the table cannot tell apart from
+       it): it is kept, without the chat, as a ticket whose exchange is not
+       recorded (loadHumanReviewExchange answers 'no_message_on_ticket').
+       Only that one constraint; anything else throws as before. */
     const code = (error as { code?: unknown })?.code;
     const constraint = String((error as { constraint?: unknown })?.constraint ?? '');
     if (!input.conversationId || code !== '23503' || !constraint.includes('conversation_id')) throw error;

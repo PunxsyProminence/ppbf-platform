@@ -164,8 +164,9 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   the member. Flagged means a safeguarding review entry (`pilot.shadow_human_review_queue`)
   points at it, whatever its status, or a safety escalation does (`pilot.safety_escalations`,
   `metadata.conversation_id`, matched whatever its case: a SHADOW disclosure's escalation is
-  filed with the conversation's id even when its review entry was capped or failed). A session the
-  person purge marked held (`subject_deleted_at`, written by nothing today) is held too. The office's read of the one flagged
+  filed with the conversation's id even when its review entry was capped or failed). A session with
+  `subject_deleted_at` set (the column the purge's hold reads; nothing writes it today) is held
+  too, and the script leaves it to the purge. The office's read of the one flagged
   exchange (OD-2026-10-07-009 ruling 4) keeps working. The member sees the same words either
   way, so a member is never told a chat was flagged. A review entry cannot be told apart, in the
   table, from the operational entry written when the Library holds no evidence; such a chat is
@@ -199,15 +200,18 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   database backups. Those go at the person's own purge or age out.
 - **Races it cannot close:** the rows that flag a chat are written after the exchange they are
   about, in their own statements: the chat route writes its review entries and a disclosure's
-  safety escalation at the end of the request (`app/api/pilot/shadow/chat/route.ts`), and the job
-  processor writes a background answer's response-safety entry after its job completes
-  (`shadowJobProcessor.ts`). A member who deletes the chat in that gap (from another tab or
-  device; the page disables Delete while its own request is in flight) has it cleared as not
-  flagged: the words are gone before the row that would have held them arrives. The route's
-  review entry is still kept, without the chat (`queueHumanReview` retries without the
-  conversation on that foreign key); an escalation is filed naming an id that no longer exists;
-  a background job has nothing to complete, so its response-safety entry is not written. Closing
-  it means writing those rows with the exchange, outside this lane's files.
+  safety escalation at the end of the request (`app/api/pilot/shadow/chat/route.ts`); the job
+  processor stores a background answer, completes its job, then writes that answer's
+  response-safety entry (`shadowJobProcessor.ts`). A clear in that gap -- the member deleting from
+  another tab or device, or from the same page while a background job it queued runs (the page
+  disables Delete only while its own request is in flight), or the office completing a request --
+  clears the chat as not flagged: the words are gone before the row that would have held them
+  arrives. A review entry that arrives later is still kept, without the chat (`queueHumanReview`
+  retries without the conversation on that foreign key) and, having no chat for the sweep to
+  follow, stays identified until the person's own purge, as the escalation and the office's
+  recorded reads do; an escalation is filed naming an id that no longer exists; a job whose row
+  was deleted before it completed has nothing to complete, so its response-safety entry is not
+  written. Closing it means writing those rows with the exchange, outside this lane's files.
 
 The two copies of the clearing steps (the app's and the script's) are held equal by
 `shadowConversationDeletion.pg.test.ts` (T7) and `shadowNamePattern.test.ts`.
