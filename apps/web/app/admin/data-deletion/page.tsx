@@ -369,7 +369,8 @@ function DataDeletionScreen() {
                         Everything tied to them is marked deleted at the same moment: their videos and
                         what was made from them, their photo, coach notes, session notes, SHADOW
                         conversations, attendance, plans, entries and the rest. No screen shows it
-                        after that. Nothing is erased; it stays in the database until permanent removal.
+                        after that. It stays in the database until permanent removal, except their
+                        cycle-tracking dates, if they kept any, which are erased at once.
                       </li>
                       <li className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
                         Not changed: the admin safety screens (escalations, safety flags, training
@@ -386,7 +387,8 @@ function DataDeletionScreen() {
                       <li className="border-l-2 border-[color:var(--brass-700)] pl-[var(--s3)]">
                         Any linked child with no other guardian is withdrawn at the same moment: the
                         child&rsquo;s record is marked deleted, the child&rsquo;s own login is closed, and
-                        everything tied to the child is marked deleted with them.
+                        everything tied to the child is marked deleted with them, except the child&rsquo;s
+                        cycle-tracking dates, if they kept any, which are erased at once.
                       </li>
                     </>
                   )}
@@ -489,15 +491,14 @@ function DataDeletionScreen() {
           <h2 className="t-command" style={{ fontSize: 'var(--t-lg)' }}>What happens after</h2>
           <ul className="t-body mt-[var(--s3)] space-y-[var(--s2)]">
             <li className="border-l-2 border-[color:var(--hide-600)] pl-[var(--s3)]">
-              The nightly cleanup is a dry run: it only reports what it would remove. Permanent
+              For the people deleted here, the nightly cleanup only reports what it would remove. Permanent
               removal happens only when someone dispatches the retention cleanup with APPLY, and only
               for records past their waiting period: 2 years after deletion for an athlete record,
               1 year for a guardian account.
             </li>
             <li className="border-l-2 border-[color:var(--hide-600)] pl-[var(--s3)]">
-              Stored video and photo files are not erased, by this screen or by the permanent
-              removal: neither one deletes a stored file. Whether the storage account removes them
-              on its own has not been checked.
+              This screen erases no stored file. Permanent removal of an athlete erases the stored
+              files of their own videos and of their photo, with their records.
             </li>
             <li className="border-l-2 border-[color:var(--hide-600)] pl-[var(--s3)]">
               Every deletion is recorded with who did it, when, and the reason. A person already
