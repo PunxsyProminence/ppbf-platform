@@ -17,9 +17,11 @@ import type { PoolClient } from 'pg';
  *
  *   NOT FLAGGED: cleared now. What the member typed is deleted. SHADOW's
  *     replies are kept under a one-off anon_<uuid> token, stored nowhere
- *     else, with every name on record for the member, for the athlete the
- *     chat is about, and for the guardians linked to the member's own athlete
- *     record or to that athlete, replaced by [name] (shadowNamePattern). WHAT IS KEPT TAKES NEW IDS: a new
+ *     else, with every name on record for the member and for the athletes
+ *     that are theirs (their own record, the children their guardian record
+ *     is linked to, the athlete the chat is about) and those athletes'
+ *     guardians replaced by [name] (namesOnRecord, shadowNamePattern). Kept
+ *     times are the day, not the moment. WHAT IS KEPT TAKES NEW IDS: a new
  *     conversation id and new message ids, so nothing that copied the old
  *     ones joins it -- a background reply's id is a hash of its job's id
  *     (messageIdForKey), and an escalation or an audit row may hold the
@@ -54,8 +56,8 @@ import type { PoolClient } from 'pg';
  * research row a member's unanswered question was filed as (keyed by account
  * and text, not by chat); their own feedback comments and memory
  * corrections; SHADOW's remembered facts about them; evidence bundles (a
- * hash of each question, no text); the nightly database backups; timestamps
- * (a kept reply keeps its created_at). Those go at the person's own purge.
+ * hash of each question, no text); the nightly database backups; the day a
+ * kept reply was written. Those go at the person's own purge.
  *
  * RACES IT CANNOT CLOSE from here. The rows that flag a chat are written
  * after the exchange they are about, in their own statements: the chat
@@ -64,10 +66,12 @@ import type { PoolClient } from 'pg';
  * job processor writes a background answer's response-safety review row
  * after its job completes (shadowJobProcessor.ts). A member who deletes the
  * chat in that gap (from another tab or device; the page disables Delete
- * while its own request is in flight) has it cleared as not flagged. Then a
- * review row is not written (its insert fails the conversation foreign key,
- * and the chat request fails closed; a job has nothing to complete), and an
- * escalation is filed naming an id that no longer exists. Closing the gap
+ * while its own request is in flight) has it cleared as not flagged: the
+ * words are gone before the row that would have held them arrives. The
+ * route's review row is still kept, without the chat (queueHumanReview
+ * retries without the conversation on that foreign key); an escalation is
+ * filed naming an id that no longer exists; a background job has nothing
+ * to complete, so its response-safety row is not written. Closing the gap
  * means writing those rows with the exchange, in chat/route.ts and the job
  * processor, which this lane does not change.
  * ------------------------------------------------------------------------- */
@@ -111,21 +115,32 @@ export function shadowNamePattern(names: ReadonlyArray<string | null | undefined
 type Queryable = Pick<PoolClient, 'query'>;
 
 /**
- * The names on record for a member in one gym, and for the athlete a chat is
- * about: the login when it is an email (a guardian's login is), the login
- * email, the ring name and staff name on their profile, their athlete
- * record's full name for an athlete login, their guardian record's full name
- * for a guardian; the subject athlete's full name and the ring names of
- * that athlete's logins; and the full names of the guardians linked to the
- * member's own athlete record or to the subject athlete (a reply to a child
- * can name a parent, the purge scrubs the same). Read in the chat's gym only.
+ * The names on record for a member in one gym, and for the people a chat of
+ * theirs is likely to name: the login when it is an email (a guardian's login
+ * is), the login email, the ring name and staff name on their profile, their
+ * guardian record's full name; and, for every athlete that is theirs -- their
+ * own athlete record for an athlete login, the children their guardian record
+ * is linked to, and the athlete the chat is about -- that athlete's full
+ * name, the ring names of that athlete's logins, and the full names of every
+ * guardian linked to that athlete. Read in the chat's gym only. A name in
+ * kept text identifies the member as surely as their own: a parent's reply
+ * that names their child names them.
  */
 export async function namesOnRecord(
   client: Queryable,
   input: { organizationId: string; accountId: string; athleteId: string | null },
 ): Promise<string[]> {
   const rows = await client.query<{ name: string | null }>(
-    `select case when a.account_id like '%@%' then a.account_id end as name
+    `with athletes_of_theirs as (
+       select a.athlete_id from pilot.accounts a where a.account_id = $2 and a.athlete_id is not null
+       union
+       select $3::text where $3::text is not null
+       union
+       select l.athlete_id from pilot.parents g
+         join pilot.guardian_links l on l.organization_id = g.organization_id and l.parent_id = g.parent_id
+        where g.organization_id = $1 and g.account_id = $2
+     )
+     select case when a.account_id like '%@%' then a.account_id end as name
        from pilot.accounts a where a.account_id = $2
      union all
      select a.login_email from pilot.accounts a where a.account_id = $2
@@ -136,26 +151,19 @@ export async function namesOnRecord(
      select p.staff_display_name from pilot.account_profiles p
       where p.organization_id = $1 and p.account_id = $2
      union all
-     select t.full_name from pilot.accounts a
-       join pilot.athletes t on t.organization_id = $1 and t.athlete_id = a.athlete_id
-      where a.account_id = $2
-     union all
      select g.full_name from pilot.parents g
       where g.organization_id = $1 and g.account_id = $2
      union all
      select t.full_name from pilot.athletes t
-      where $3::text is not null and t.organization_id = $1 and t.athlete_id = $3
+      where t.organization_id = $1 and t.athlete_id in (select athlete_id from athletes_of_theirs)
      union all
      select p.display_nickname from pilot.accounts a
        join pilot.account_profiles p on p.organization_id = $1 and p.account_id = a.account_id
-      where $3::text is not null and a.athlete_id = $3 and a.organization_id = $1
+      where a.organization_id = $1 and a.athlete_id in (select athlete_id from athletes_of_theirs)
      union all
      select g.full_name from pilot.guardian_links l
        join pilot.parents g on g.organization_id = l.organization_id and g.parent_id = l.parent_id
-      where l.organization_id = $1
-        and (l.athlete_id = $3
-             or l.athlete_id in (select a.athlete_id from pilot.accounts a
-                                  where a.account_id = $2 and a.athlete_id is not null))`,
+      where l.organization_id = $1 and l.athlete_id in (select athlete_id from athletes_of_theirs)`,
     [input.organizationId, input.accountId, input.athleteId],
   );
   return rows.rows.map((row) => row.name).filter((name): name is string => Boolean(name?.trim()));
@@ -265,6 +273,10 @@ export async function clearConversation(
   // naming every column; shadowConversationDeletion.pg.test.ts fails when
   // the table gains one, so a new column is decided here, not dropped.
   // Token and stamp in one statement: the table's check ties them together.
+  // KEPT TIMES ARE THE DAY, NOT THE MOMENT: an exact time lines the kept rows
+  // up with the member's own (their evidence bundles, the chat log, an
+  // escalation). Messages keep their order by a millisecond step per message
+  // within the day.
   const token = `anon_${randomUUID()}`;
   const keptId = randomUUID();
   await client.query(
@@ -272,25 +284,35 @@ export async function clearConversation(
        (conversation_id, organization_id, account_id, athlete_id, title, session_type,
         deleted_at, created_at, updated_at, deidentified_at, subject_deleted_at)
      select $3::uuid, organization_id, $4, case when athlete_id is null then null else $4 end, $5, session_type,
-            coalesce(deleted_at, now()), created_at, now(), now(), null
+            date_trunc('day', coalesce(deleted_at, now())), date_trunc('day', created_at),
+            date_trunc('day', now()), date_trunc('day', now()), null
        from pilot.shadow_chat_sessions
       where conversation_id = $1 and organization_id = $2`,
     [conversationId, organizationId, keptId, token, CLEARED_CONVERSATION_TITLE],
   );
   await client.query(
-    `update pilot.shadow_chat_messages
+    `with ordered as (
+       select message_id, row_number() over (order by created_at, message_id) as n
+         from pilot.shadow_chat_messages
+        where conversation_id = $1 and organization_id = $2
+     )
+     update pilot.shadow_chat_messages m
         set conversation_id = $3::uuid,
             message_id = gen_random_uuid(),
             account_id = $4,
-            content = regexp_replace(content, $5, '[name]', 'gi')
-      where conversation_id = $1 and organization_id = $2`,
+            content = regexp_replace(m.content, $5, '[name]', 'gi'),
+            created_at = date_trunc('day', m.created_at) + o.n * interval '1 millisecond'
+       from ordered o
+      where m.message_id = o.message_id and m.conversation_id = $1 and m.organization_id = $2`,
     [conversationId, organizationId, keptId, token, pattern],
   );
   // A review entry pointing at it follows it under a new id (the retention
   // script's flagged case; the caller has tokened it): the office's earlier
   // reads of it, recorded by id, join nothing that is kept.
   await client.query(
-    `update pilot.shadow_human_review_queue set conversation_id = $3::uuid, review_id = gen_random_uuid()
+    `update pilot.shadow_human_review_queue
+        set conversation_id = $3::uuid, review_id = gen_random_uuid(),
+            created_at = date_trunc('day', created_at), reviewed_at = date_trunc('day', reviewed_at)
       where conversation_id = $1 and organization_id = $2`,
     [conversationId, organizationId, keptId],
   );
@@ -320,8 +342,8 @@ export async function clearMemberConversations(
   input: { organizationId: string; accountId: string; conversationIds: readonly string[] },
 ): Promise<ClearedConversations> {
   if (input.conversationIds.length === 0) return { cleared: 0, held: 0 };
-  const rows = (await client.query<{ conversation_id: string; athlete_id: string | null }>(
-    `select s.conversation_id, s.athlete_id
+  const rows = (await client.query<{ conversation_id: string; athlete_id: string | null; purge_held: boolean }>(
+    `select s.conversation_id, s.athlete_id, s.subject_deleted_at is not null as purge_held
        from pilot.shadow_chat_sessions s
       where s.conversation_id = any($1::uuid[])
         and s.organization_id = $2
@@ -333,18 +355,22 @@ export async function clearMemberConversations(
   )).rows;
   if (rows.length === 0) return { cleared: 0, held: 0 };
 
-  // Read after the lock, so a review entry written meanwhile is seen.
+  // Read after the lock, so a review entry written meanwhile is seen. An
+  // escalation's id is matched whatever its case (it is stored as the client
+  // sent it). A session the person purge marked held (subject_deleted_at)
+  // is held too.
   const flagged = new Set((await client.query<{ conversation_id: string }>(
     `select q.conversation_id::text as conversation_id
        from pilot.shadow_human_review_queue q
       where q.conversation_id = any($1::uuid[])
      union
-     select e.metadata->>'conversation_id'
+     select lower(e.metadata->>'conversation_id')
        from pilot.safety_escalations e
       where e.organization_id = $2
-        and e.metadata->>'conversation_id' = any($1::text[])`,
+        and lower(e.metadata->>'conversation_id') = any($1::text[])`,
     [rows.map((row) => row.conversation_id), input.organizationId],
   )).rows.map((row) => row.conversation_id));
+  for (const row of rows) if (row.purge_held) flagged.add(row.conversation_id);
 
   const held = rows.filter((row) => flagged.has(row.conversation_id)).map((row) => row.conversation_id);
   if (held.length > 0) {

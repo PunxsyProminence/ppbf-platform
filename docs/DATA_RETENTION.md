@@ -145,10 +145,12 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
 
 - **A chat that is not flagged is cleared now.** The member's own messages are deleted.
   SHADOW's replies are kept under a one-off `anon_<uuid>` token, stored nowhere else, with every
-  name on record for the member, for the athlete the chat is about, and for the guardians linked
-  to the member's own athlete record or to that athlete, replaced by `[name]` (the login when it is an email, the login email, ring
+  name on record for the member and for the athletes that are theirs (their own athlete record,
+  the children their guardian record is linked to, the athlete the chat is about) and those
+  athletes' guardians replaced by `[name]` (the login when it is an email, the login email, ring
   name, staff name, the athlete record's or guardian record's full name; the same method and
-  limits as the purge's `namePattern`). What is kept takes **new ids**: a new conversation id
+  limits as the purge's `namePattern`). Kept times are the day, not the moment (an exact time
+  would line the kept rows up with the member's own). What is kept takes **new ids**: a new conversation id
   and new message ids, so nothing that copied the old ones joins it (a background reply's id is
   a hash of its job's id; an escalation or an audit row can hold the conversation's). The
   session takes the token, a fixed title and `deidentified_at`. The joins from the member's own
@@ -161,8 +163,9 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
 - **A flagged chat is kept intact and identified** for two years after its deletion, hidden from
   the member. Flagged means a safeguarding review entry (`pilot.shadow_human_review_queue`)
   points at it, whatever its status, or a safety escalation does (`pilot.safety_escalations`,
-  `metadata.conversation_id`: a SHADOW disclosure's escalation is filed with the conversation's
-  id even when its review entry was capped or failed). The office's read of the one flagged
+  `metadata.conversation_id`, matched whatever its case: a SHADOW disclosure's escalation is
+  filed with the conversation's id even when its review entry was capped or failed). A session the
+  person purge marked held (`subject_deleted_at`, written by nothing today) is held too. The office's read of the one flagged
   exchange (OD-2026-10-07-009 ruling 4) keeps working. The member sees the same words either
   way, so a member is never told a chat was flagged. A review entry cannot be told apart, in the
   table, from the operational entry written when the Library holds no evidence; such a chat is
@@ -192,7 +195,7 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
 - **Not reached by a member's delete**, so the screens do not claim it: the research row an
   unanswered question was filed as (keyed by account and text, not by chat), the member's own
   feedback comments and memory corrections, SHADOW's remembered facts about them, evidence
-  bundles (a hash of each question, no text), the timestamps a kept reply keeps, and the nightly
+  bundles (a hash of each question, no text), the day a kept reply was written, and the nightly
   database backups. Those go at the person's own purge or age out.
 - **Races it cannot close:** the rows that flag a chat are written after the exchange they are
   about, in their own statements: the chat route writes its review entries and a disclosure's
@@ -200,10 +203,11 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   processor writes a background answer's response-safety entry after its job completes
   (`shadowJobProcessor.ts`). A member who deletes the chat in that gap (from another tab or
   device; the page disables Delete while its own request is in flight) has it cleared as not
-  flagged: a review entry is then not written (its insert fails the conversation foreign key, and
-  the chat request fails closed; a job has nothing to complete), and an escalation is filed naming
-  an id that no longer exists. Closing it means writing those rows with the exchange, outside
-  this lane's files.
+  flagged: the words are gone before the row that would have held them arrives. The route's
+  review entry is still kept, without the chat (`queueHumanReview` retries without the
+  conversation on that foreign key); an escalation is filed naming an id that no longer exists;
+  a background job has nothing to complete, so its response-safety entry is not written. Closing
+  it means writing those rows with the exchange, outside this lane's files.
 
 The two copies of the clearing steps (the app's and the script's) are held equal by
 `shadowConversationDeletion.pg.test.ts` (T7) and `shadowNamePattern.test.ts`.

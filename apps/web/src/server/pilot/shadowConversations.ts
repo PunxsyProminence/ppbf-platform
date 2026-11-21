@@ -1030,7 +1030,8 @@ export async function listShadowDataDeletionRequests(
                                  where q.conversation_id = s.conversation_id)
                 and not exists (select 1 from pilot.safety_escalations e
                                  where e.organization_id = s.organization_id
-                                   and e.metadata->>'conversation_id' = s.conversation_id::text)
+                                   and lower(e.metadata->>'conversation_id') = s.conversation_id::text)
+                and s.subject_deleted_at is null
             ) as conversations_pending,
             (
               select count(*)::int
@@ -1041,7 +1042,8 @@ export async function listShadowDataDeletionRequests(
                               where q.conversation_id = s.conversation_id)
                      or exists (select 1 from pilot.safety_escalations e
                                  where e.organization_id = s.organization_id
-                                   and e.metadata->>'conversation_id' = s.conversation_id::text))
+                                   and lower(e.metadata->>'conversation_id') = s.conversation_id::text)
+                     or s.subject_deleted_at is not null)
             ) as conversations_held
        from pilot.shadow_data_deletion_requests r
       where r.organization_id = $1
@@ -1284,14 +1286,14 @@ export async function queueHumanReview(input: {
     throw new Error('Forbidden: SHADOW review requires an organization-scoped account');
   }
   const reviewId = randomUUID();
-  await query(
+  const insert = (conversationId: string | null) => query(
     `insert into pilot.shadow_human_review_queue
        (review_id, organization_id, conversation_id, account_id, category, severity, summary, metadata)
      values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
     [
       reviewId,
       input.organizationId,
-      input.conversationId ?? null,
+      conversationId,
       input.accountId,
       input.category.slice(0, 100),
       input.severity,
@@ -1299,6 +1301,22 @@ export async function queueHumanReview(input: {
       JSON.stringify(input.metadata ?? {}),
     ],
   );
+  try {
+    await insert(input.conversationId ?? null);
+  } catch (error) {
+    /* THE CHAT WAS CLEARED IN BETWEEN. The chat route writes this row at the
+       end of the request, after the exchange is stored; a member who deletes
+       the chat from another tab in that gap has it cleared and moved to a new
+       id (shadowConversationDeidentify.ts), so the old id fails the foreign
+       key. The row is a safety record: it is kept, without the chat, as a
+       ticket whose exchange is not recorded (loadHumanReviewExchange answers
+       'no_message_on_ticket'). Only that one constraint; anything else
+       throws as before. */
+    const code = (error as { code?: unknown })?.code;
+    const constraint = String((error as { constraint?: unknown })?.constraint ?? '');
+    if (!input.conversationId || code !== '23503' || !constraint.includes('conversation_id')) throw error;
+    await insert(null);
+  }
   return reviewId;
 }
 

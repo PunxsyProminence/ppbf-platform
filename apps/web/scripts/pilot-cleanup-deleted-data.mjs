@@ -766,7 +766,7 @@ const MEMBER_DELETED_CHATS_SQL = `
      and ((not exists (select 1 from pilot.shadow_human_review_queue q where q.conversation_id = s.conversation_id)
            and not exists (select 1 from pilot.safety_escalations e
                             where e.organization_id = s.organization_id
-                              and e.metadata->>'conversation_id' = s.conversation_id::text))
+                              and lower(e.metadata->>'conversation_id') = s.conversation_id::text))
           or s.deleted_at < (now() - ${SAFEGUARDING_CHAT_RETENTION}))`;
 
 async function countMemberDeletedChats(client, tables) {
@@ -774,10 +774,19 @@ async function countMemberDeletedChats(client, tables) {
   return (await client.query(`select count(*)::int as n ${MEMBER_DELETED_CHATS_SQL}`)).rows[0].n;
 }
 
-/** The names on record for a member in one gym, and for the athlete a chat is about (namesOnRecord in the app). */
+/** The names on record for a member in one gym, and for the people a chat of theirs is likely to name (namesOnRecord in the app). */
 async function memberNamesOnRecord(client, organizationId, accountId, athleteId) {
   const rows = await client.query(
-    `select case when a.account_id like '%@%' then a.account_id end as name
+    `with athletes_of_theirs as (
+       select a.athlete_id from pilot.accounts a where a.account_id = $2 and a.athlete_id is not null
+       union
+       select $3::text where $3::text is not null
+       union
+       select l.athlete_id from pilot.parents g
+         join pilot.guardian_links l on l.organization_id = g.organization_id and l.parent_id = g.parent_id
+        where g.organization_id = $1 and g.account_id = $2
+     )
+     select case when a.account_id like '%@%' then a.account_id end as name
        from pilot.accounts a where a.account_id = $2
      union all
      select a.login_email from pilot.accounts a where a.account_id = $2
@@ -788,26 +797,19 @@ async function memberNamesOnRecord(client, organizationId, accountId, athleteId)
      select p.staff_display_name from pilot.account_profiles p
       where p.organization_id = $1 and p.account_id = $2
      union all
-     select t.full_name from pilot.accounts a
-       join pilot.athletes t on t.organization_id = $1 and t.athlete_id = a.athlete_id
-      where a.account_id = $2
-     union all
      select g.full_name from pilot.parents g
       where g.organization_id = $1 and g.account_id = $2
      union all
      select t.full_name from pilot.athletes t
-      where $3::text is not null and t.organization_id = $1 and t.athlete_id = $3
+      where t.organization_id = $1 and t.athlete_id in (select athlete_id from athletes_of_theirs)
      union all
      select p.display_nickname from pilot.accounts a
        join pilot.account_profiles p on p.organization_id = $1 and p.account_id = a.account_id
-      where $3::text is not null and a.athlete_id = $3 and a.organization_id = $1
+      where a.organization_id = $1 and a.athlete_id in (select athlete_id from athletes_of_theirs)
      union all
      select g.full_name from pilot.guardian_links l
        join pilot.parents g on g.organization_id = l.organization_id and g.parent_id = l.parent_id
-      where l.organization_id = $1
-        and (l.athlete_id = $3
-             or l.athlete_id in (select a.athlete_id from pilot.accounts a
-                                  where a.account_id = $2 and a.athlete_id is not null))`,
+      where l.organization_id = $1 and l.athlete_id in (select athlete_id from athletes_of_theirs)`,
     [organizationId, accountId, athleteId],
   );
   return rows.rows.map((row) => row.name).filter((name) => Boolean(name?.trim()));
@@ -891,22 +893,32 @@ async function clearMemberChat(client, { organizationId, accountId, conversation
        (conversation_id, organization_id, account_id, athlete_id, title, session_type,
         deleted_at, created_at, updated_at, deidentified_at, subject_deleted_at)
      select $3::uuid, organization_id, $4, case when athlete_id is null then null else $4 end, $5, session_type,
-            coalesce(deleted_at, now()), created_at, now(), now(), null
+            date_trunc('day', coalesce(deleted_at, now())), date_trunc('day', created_at),
+            date_trunc('day', now()), date_trunc('day', now()), null
        from pilot.shadow_chat_sessions
       where conversation_id = $1 and organization_id = $2`,
     [conversationId, organizationId, keptId, token, CLEARED_CONVERSATION_TITLE],
   );
   await client.query(
-    `update pilot.shadow_chat_messages
+    `with ordered as (
+       select message_id, row_number() over (order by created_at, message_id) as n
+         from pilot.shadow_chat_messages
+        where conversation_id = $1 and organization_id = $2
+     )
+     update pilot.shadow_chat_messages m
         set conversation_id = $3::uuid,
             message_id = gen_random_uuid(),
             account_id = $4,
-            content = regexp_replace(content, $5, '[name]', 'gi')
-      where conversation_id = $1 and organization_id = $2`,
+            content = regexp_replace(m.content, $5, '[name]', 'gi'),
+            created_at = date_trunc('day', m.created_at) + o.n * interval '1 millisecond'
+       from ordered o
+      where m.message_id = o.message_id and m.conversation_id = $1 and m.organization_id = $2`,
     [conversationId, organizationId, keptId, token, pattern],
   );
   await client.query(
-    `update pilot.shadow_human_review_queue set conversation_id = $3::uuid, review_id = gen_random_uuid()
+    `update pilot.shadow_human_review_queue
+        set conversation_id = $3::uuid, review_id = gen_random_uuid(),
+            created_at = date_trunc('day', created_at), reviewed_at = date_trunc('day', reviewed_at)
       where conversation_id = $1 and organization_id = $2`,
     [conversationId, organizationId, keptId],
   );
