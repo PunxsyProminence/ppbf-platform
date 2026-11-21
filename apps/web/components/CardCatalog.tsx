@@ -8,12 +8,21 @@ import { useSyncExternalStore } from 'react';
 import { apiBase } from '@/lib/apiBase';
 import { clearRoleSession, getRoleSessionSnapshot, subscribeRoleSession } from './roleSession';
 import {
-  ROOM_LABEL,
-  doorsByRoom,
   pathAllowsEggs,
   searchDoors,
+  visibleDoors,
   type Door,
 } from './buildingMap';
+import { useBoardSession } from './BoardRoleGate';
+import {
+  LAB_LABEL,
+  ROOM_PLACE_LABEL,
+  ROOM_PLACE_ORDER,
+  searchGroupOf,
+  searchGroups,
+  type SearchGroupKey,
+} from './roomPlaces';
+import type { ClubRole } from './roleRoutes';
 import { isTypingTarget } from './shortcuts';
 import useGymSound from './useGymSound';
 import { beforeDawnNote, catalogNod, recordCatalogOpen } from './gymNotices';
@@ -56,6 +65,37 @@ import { beforeDawnNote, catalogNod, recordCatalogOpen } from './gymNotices';
  * put a keystroke in front of a decision the platform deliberately gates behind
  * a human document review. Read that file before adding one.
  */
+
+/**
+ * SEARCH (AS-4, U2-4c). Jump is Search, and the corridor's Rooms list is
+ * "All pages" inside it (S2-2 A, OD-2026-11-19-008: "the Rooms list becomes
+ * 'All pages' inside Search"). With nothing typed it lists every page the
+ * person can open, grouped Home first, then the Room Map's rooms in order, then
+ * Lab for the admin and the platform owner only (searchGroups, roomPlaces.ts;
+ * QT A and QU A on #2029). Typed, it ranks as before (searchDoors) and tags
+ * each page with its group.
+ *
+ * WHICH PAGES. visibleDoors with the board gate's held seats, so a board member
+ * is offered only the seat workspaces they hold (BOA-05). This drawer is
+ * mounted by the header, above BoardRoleGate's provider, so there the seats are
+ * unknown and are passed as null ("holds none"): a seat it cannot confirm is
+ * never offered. Board Hub, which lists the member's seats, stays.
+ */
+
+/** The window event that opens Search at a group of All pages (the corridor plate sends it). */
+export const OPEN_SEARCH_EVENT = 'ppbf:open-search';
+
+/** Opens Search at All pages, scrolled to `group` when given. */
+export function openSearchAt(group: SearchGroupKey | null): void {
+  window.dispatchEvent(new CustomEvent(OPEN_SEARCH_EVENT, { detail: { group } }));
+}
+
+/** A Search group's name: Home, a Room Map room, or Lab. */
+export function searchGroupLabel(key: SearchGroupKey): string {
+  if (key === 'home') return 'Home';
+  if (key === 'lab') return LAB_LABEL;
+  return ROOM_PLACE_LABEL[key];
+}
 
 /** A row that runs something. */
 interface Act {
@@ -127,6 +167,7 @@ export default function CardCatalog() {
   const eggsAllowed = pathAllowsEggs(pathname);
   const session = useSyncExternalStore(subscribeRoleSession, getRoleSessionSnapshot, () => null);
   const role = session?.role ?? null;
+  const heldSeats = useBoardSession()?.seats ?? null;
   /* Destructured rather than held as one object: useGymSound returns a fresh
      object every render (play and setEnabled are the stable parts), so a memo
      keyed on the object would rebuild the act list on every keystroke. */
@@ -144,6 +185,8 @@ export default function CardCatalog() {
      opens it — never during render, because both read a clock or storage and a
      render that React discards or replays must do neither. */
   const [notice, setNotice] = useState<string | null>(null);
+  /* The group of All pages to bring into view on open (the corridor plate). */
+  const [startGroup, setStartGroup] = useState<SearchGroupKey | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -289,10 +332,20 @@ export default function CardCatalog() {
   }, [soundEnabled, soundStatus, playSound, setSoundEnabled, role, router, eggsAllowed]);
 
   /* ---- results ---------------------------------------------------------- */
-  const doors = useMemo(() => searchDoors(role, query), [role, query]);
-  const grouped = useMemo(() => doorsByRoom(role), [role]);
+  // Every page this person may be offered: the door list with the held seats.
+  const openDoors = useMemo(() => visibleDoors(role, { boardSeats: heldSeats }), [role, heldSeats]);
+  const grouped = useMemo(() => searchGroups(openDoors, role), [openDoors, role]);
 
   const trimmed = query.trim().toLowerCase();
+
+  /* Typed: searchDoors' ranking, kept to the pages above. Not typed: All
+     pages in the order it is drawn, so the arrow keys walk what the eye
+     reads. */
+  const doors = useMemo(() => {
+    if (!trimmed) return grouped.flatMap((group) => group.doors);
+    const allowed = new Set(openDoors.map((door) => door.href));
+    return searchDoors(role, query).filter((door) => allowed.has(door.href));
+  }, [trimmed, grouped, openDoors, role, query]);
 
   const matchedActs = useMemo(
     () => (trimmed ? acts.filter((a) => actMatches(a, trimmed)) : acts.filter((a) => !a.hidden)),
@@ -311,10 +364,11 @@ export default function CardCatalog() {
   );
 
   /* ---- global shortcut ------------------------------------------------- */
-  const openCatalog = useCallback(() => {
+  const openCatalog = useCallback((group: SearchGroupKey | null = null) => {
     restoreRef.current = document.activeElement as HTMLElement;
     setOpen(true);
     setSaid(null);
+    setStartGroup(group);
     /* Read here rather than in an effect on [open]: both of these touch a
        clock and localStorage, and they belong to the gesture that opened the
        drawer, not to a render pass.
@@ -362,6 +416,24 @@ export default function CardCatalog() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, close, openCatalog]);
+
+  /* ---- the corridor plate opens Search at its room -------------------- */
+  useEffect(() => {
+    function onOpenAt(event: Event) {
+      const group = (event as CustomEvent<{ group?: SearchGroupKey | null }>).detail?.group ?? null;
+      setQuery('');
+      setCursor(0);
+      openCatalog(group);
+    }
+    window.addEventListener(OPEN_SEARCH_EVENT, onOpenAt);
+    return () => window.removeEventListener(OPEN_SEARCH_EVENT, onOpenAt);
+  }, [openCatalog]);
+
+  useEffect(() => {
+    if (!open || !startGroup) return;
+    const heading = listRef.current?.querySelector<HTMLElement>(`[data-group="${startGroup}"]`);
+    if (typeof heading?.scrollIntoView === 'function') heading.scrollIntoView({ block: 'start' });
+  }, [open, startGroup]);
 
   /* ---- focus the field on open ----------------------------------------- */
   useEffect(() => {
@@ -442,7 +514,7 @@ export default function CardCatalog() {
     }
   }
 
-  if (!open) return <CatalogHint onOpen={openCatalog} />;
+  if (!open) return <CatalogHint onOpen={() => openCatalog()} />;
 
   const actCount = matchedActs.length;
 
@@ -458,7 +530,7 @@ export default function CardCatalog() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Card catalog — jump to any surface, or do something"
+        aria-label="Search: every page you can open, or something to do"
         className="catalog relative w-full max-w-[620px]"
       >
         <div className="catalog-field">
@@ -475,8 +547,8 @@ export default function CardCatalog() {
               setSaid(null);
             }}
             onKeyDown={onFieldKey}
-            placeholder="Find a room, a record, a queue — or type a verb…"
-            aria-label="Search surfaces and actions"
+            placeholder="Find a page by name, a room, a queue — or type a verb…"
+            aria-label="Search pages and actions"
             aria-controls="catalog-results"
             aria-activedescendant={rows[cursor] ? `catalog-opt-${cursor}` : undefined}
             role="combobox"
@@ -492,7 +564,7 @@ export default function CardCatalog() {
             <div className="catalog-empty-glyph" aria-hidden="true">⌾</div>
             <b>Nothing filed under that</b>
             <span>
-              Try a room ({Object.values(ROOM_LABEL).slice(0, 3).join(', ')}…), a layer number,
+              Try a room ({ROOM_PLACE_ORDER.slice(0, 3).map((key) => ROOM_PLACE_LABEL[key]).join(', ')}…), a layer number,
               a word from the surface you want, or a verb like “print” or “sign out”.
             </span>
           </div>
@@ -529,15 +601,20 @@ export default function CardCatalog() {
                     idx={actCount + i}
                     active={actCount + i === cursor}
                     showRoom
+                    role={role}
                     onPick={() => go(door)}
                     onHover={() => setCursor(actCount + i)}
                   />
                 ))
-              : /* Empty query: browse the building room by room. */
-                grouped.map((group) => (
-                  <li key={group.room} role="presentation">
-                    <div className="catalog-group">{ROOM_LABEL[group.room]}</div>
-                    <ul role="group" className="contents">
+              : /* Empty query: All pages, Home, the Room Map's rooms, then Lab. */
+                [
+                  <li key="all-pages" role="presentation">
+                    <div className="catalog-group">All pages</div>
+                  </li>,
+                  ...grouped.map((group) => (
+                  <li key={group.key} role="presentation">
+                    <div className="catalog-group" data-group={group.key}>{group.label}</div>
+                    <ul role="group" aria-label={group.label} className="contents">
                       {group.doors.map((door) => {
                         const i = actCount + doors.indexOf(door);
                         return (
@@ -553,7 +630,8 @@ export default function CardCatalog() {
                       })}
                     </ul>
                   </li>
-                ))}
+                  )),
+                ]}
           </ul>
         )}
 
@@ -562,7 +640,7 @@ export default function CardCatalog() {
           <span><kbd>↵</kbd> open or run</span>
           <span><kbd>esc</kbd> close</span>
           <span className="catalog-count">
-            {doors.length} {doors.length === 1 ? 'card' : 'cards'}
+            {doors.length} {doors.length === 1 ? 'page' : 'pages'}
             {actCount > 0 ? ` · ${actCount} to do` : ''}
             {role ? '' : ' · signed out'}
           </span>
@@ -582,11 +660,12 @@ export default function CardCatalog() {
 }
 
 function CatalogRow({
-  door, idx, active, showRoom, onPick, onHover,
+  door, idx, active, showRoom, role, onPick, onHover,
 }: {
-  door: Door; idx: number; active: boolean; showRoom?: boolean;
+  door: Door; idx: number; active: boolean; showRoom?: boolean; role?: ClubRole | null;
   onPick: () => void; onHover: () => void;
 }) {
+  const group = showRoom ? searchGroupOf(door.href, role ?? null) : null;
   return (
     <li
       id={`catalog-opt-${idx}`}
@@ -602,7 +681,9 @@ function CatalogRow({
         {door.hint && <span className="catalog-row-hint">{door.hint}</span>}
       </div>
       <div className="catalog-row-meta">
-        {showRoom && <span className="catalog-room-tag">{ROOM_LABEL[door.room]}</span>}
+        {/* "in", so a room that shares a page's name (the Operations room
+            and the Operations hub) is never read as that page. */}
+        {showRoom && group && <span className="catalog-room-tag">in {searchGroupLabel(group)}</span>}
         <code>{door.href}</code>
       </div>
     </li>
@@ -653,10 +734,10 @@ function CatalogHint({ onOpen }: { onOpen: () => void }) {
       type="button"
       className="catalog-hint"
       onClick={onOpen}
-      aria-label="Open the card catalog to jump to another surface or run a command"
+      aria-label="Open Search: find any page you can open, or run a command"
     >
       <span aria-hidden="true">⌕</span>
-      <span className="catalog-hint-lbl">Jump</span>
+      <span className="catalog-hint-lbl">Search</span>
       <kbd>⌘K</kbd>
     </button>
   );
