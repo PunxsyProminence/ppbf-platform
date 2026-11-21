@@ -104,13 +104,19 @@ export default function GuardianMediaConsentPage() {
      transaction (OD-2026-10-05-021). The confirm is worded like the withdraw
      one and says what follows from a photos-only consent: the child's
      published videos are retracted, and the child's videos are not published
-     while it is in place. Like the withdraw confirm it promises nothing about
-     playback: the server refuses every NEW playback link while any linked
-     guardian's signed consent leaves video out (videoPlaybackConsent.ts), but
-     a link issued before the change is a 60-minute credential that can still
-     start or keep playing until it expires (the same file says so of
-     withdrawal; the compliance queue issues such links when it loads), so
-     "will not be played" would be false for up to an hour.
+     while it is in place. "In place" ends in two ways this page does not
+     drive: at 18 the child's own consent governs and the guardian's row stops
+     counting (OD-2026-10-08-015; adults leave this page's list), and a staff
+     unlink of this guardian drops their row from the check (a photos-only
+     row does not block an unlink; only a withdrawn one does,
+     staffProvisioning.ts). Like the withdraw confirm it promises nothing
+     about playback: for a minor the server refuses every NEW playback link
+     while any linked guardian's signed consent leaves video out
+     (videoPlaybackConsent.ts), but a link issued before the change is a
+     60-minute credential that can still start or keep playing until it
+     expires (the same file says so of withdrawal; the compliance queue issues
+     such links when it loads), so "will not be played" would be false for up
+     to an hour.
      "The child's videos" and not "any video of the child": the takedown
      covers publications filed under this child, and a clip filed under
      another athlete stays up (OD-2026-10-12-003). "While … in place" and not
