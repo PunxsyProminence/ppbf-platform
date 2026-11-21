@@ -64,8 +64,8 @@ export function normalizeForSafetyScan(body: string): string {
 
 /**
  * The same normal form with HF12b's rewrites (spelled-out words joined, the
- * sexual-assault abbreviation spelled out, "i m", "ur self"): an extra
- * reading, never a replacement. The cues read both, and the SHADOW
+ * sexual-assault abbreviation spelled out, "ur self"): an extra reading,
+ * never a replacement. The cues read both, and the SHADOW
  * disclosure's staff, person, touch and intent checks read both, so a
  * spelled-out word only ever adds evidence to what main's normal form already
  * gave (safeguarding review round 7 on PR 2076).
@@ -103,6 +103,7 @@ function spellOutSexualAssault(body: string): string {
     const before = body.slice(0, offset);
     const after = body.slice(offset + match.length);
     const isGivenName = /^Sa/.test(match)
+      && !/^\s+(?:me|him|her|us|them|my)\b/i.test(after)
       && !/\b(?:got|get|gets|getting|was|were|been|being|be|is|am|im|i['\u2019]?m|he|she|they|someone|somebody|who)[^A-Za-z0-9]+$/i.test(before)
       && (/\b(?:called|named|friend|with|and|to|from|for|hes|shes|meet|met|sparring|partner)[^A-Za-z0-9]+$/i.test(before)
         || /^(?:,|['\u2019]s\b|\s+(?:is|was|did|does|has|had|and|will|can|said|says|won|wins|went)\b)/i.test(after));
@@ -226,8 +227,8 @@ const PICTURE_REQUEST = String.raw`(?:${ASK} (?:me )?(?:for |to see |to send (?:
 // A video request aimed at the child: a send to someone, "asks me for", being
 // made to send, someone who keeps asking, or a third person or staff title
 // wanting one. Feature requests and product talk stay out.
-const VIDEO_ASKER = String.raw`(?:he|she|they|hes|shes|theyre|coach|someone|somebody|guy|man|mr|mrs|ms|miss|sir|trainer|instructor|volunteer|staff|teacher|uncle|aunt|dad|daddy|stepdad|step dad|stepbrother|brother|cousin|grandpa|boyfriend|girlfriend|neighbou?r|boys?|girls?|kids?|men|guys|people)`;
-const VIDEO_PRODUCT_GUARD = String.raw`(?!(?:(?! of (?:me|you|u|us|yourself|myself)\b)${WORD}){0,8} for (?:the |my |our |a )?(?:website|newslet+er|instagram|insta|socials?|social media|promo|scho+l(?: project)?|project|tour)${TECHNIQUE_END})(?! (?:in the ap+|library|tutorials?|content|consent|uploaded(?: to (?:the )?(?:ap+|site|website))?|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+|of the open house|of the kids clas+)${TECHNIQUE_END})`;
+const VIDEO_ASKER = String.raw`(?:he|she|they|hes|shes|theyre|coach|someone|somebody|guy|man|mr|mrs|ms|miss|sir|trainer|instructor|volunteer|staff|teacher|uncle|aunt|dad|daddy|stepdad|step dad|stepbrother|brother|cousin|grandpa|boyfriend|girlfriend|neighbou?r|boys?|girls?|kid|men|guys)`;
+const VIDEO_PRODUCT_GUARD = String.raw`(?!(?: of (?:the |our |a )?(?:kids |adult |youth |new )?(?:clas+|team|gym|event|fight|tournament|open house|everyone[a-z ]{0,30}))? for (?:the |my |our |a )?(?:website|newslet+er|instagram|insta|socials?|social media|promo|scho+l(?: project)?|project|tour)${TECHNIQUE_END})(?! (?:in the ap+|library|tutorials?|content|consent|uploaded(?: to (?:the )?(?:ap+|site|website))?|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+|of the open house|of the kids clas+)${TECHNIQUE_END})`;
 // The product asking for a video ("the app asks me", "shadow keeps asking")
 // is not a person; a message sent "on the app" is.
 const PRODUCT_SUBJECT = String.raw`(?<!(?<!\b(?:on|in|through|via|from|off|of|at) )\bthe (?:ap+|site|page|form|screen) (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)(?<!(?:^|\bthe )shadow (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)`;
@@ -242,7 +243,12 @@ const PRIVATE_PLACE_WORDS = String.raw`(?:showers|in the bath|bathtub|locker roo
 const PERSON_OR_REQUEST = String.raw`(?:he|she|they|hes|shes|theyre|someone|somebody|him|her|his|me|us|asked|asks|wants|wanted|send|sent|took|takes|taking|filmed|filming)`;
 // A picture near undress files in either order; near a private place it
 // files when a person or request word is near too.
+// A private or secret picture, or a stranger online near a picture word, is
+// a request whatever gym words follow it (review 10 on PR 2076).
+const STRANGER = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|men|guys|adult)(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
 const PICTURE_NEAR_PLACE = [
+  String.raw`(?:private|secret) ${ANY_PICTURE}`,
+  String.raw`${STRANGER}${WORD}{0,8} ${ANY_PICTURE}`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
   String.raw`(?:${ANY_PICTURE}|film|record)(?: of)? (?:me|her|him|us|them|myself|herself|himself|the (?:girls|boys|kids)|my (?:sister|brother|friends?|teammates?))(?: (?:while|whilst|when|as)(?: (?:i was|im|i am|i|she was|he was|we were|they were))?)? (?:changing|changed)(?! (?:up )?(?:my |his |her |the |our )?(?:stance|direction|levels?|angles?|gloves|wraps|weight(?: clas+)?|guard|feet|grip|partners?|pace|corners?|sides|rhythm|hands|mats|ropes|timer)(?: (?:on|in|at) (?:the |my )?(?:bag|pads|ring|mats?))?${TECHNIQUE_END})`,
