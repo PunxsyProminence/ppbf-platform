@@ -125,9 +125,46 @@ describe('the Attendance tab reads the real schedule', () => {
     // The sibling's row is in the same payload and belongs to the other child.
     // Rendering it here is the sibling-leak this tab could most easily have
     // shipped. (The summary tile prints the word "Absent" beside the child's
-    // own count, so the check is on the tab's row: the glyph and the word.)
-    expect(container.textContent ?? '').not.toMatch(/✕\s*Absent/);
+    // own count, so the check is on the tab's row: the glyph and the word.
+    // The glyph is the restricted triangle since AS9-1; the old X is checked
+    // too, so this cannot go quiet if the glyph changes back.)
+    expect(container.textContent ?? '').not.toMatch(/[▲✕]\s*Absent/);
     expect(container.textContent ?? '').toContain('Present 1 · Excused 0 · Absent 0');
+  });
+
+  /* An absence is not a medical stop (OW25-48 A; Overwatch on #2033,
+     2026-11-20): the row wears the restricted rung and its triangle, never
+     the medical-stop rung or its X. */
+  it('draws the selected child’s own Absent row on the restricted rung, not the medical-stop mark', async () => {
+    installFetch(async () =>
+      jsonResponse({
+        ok: true,
+        classes: CLASSES,
+        registrations: [],
+        attendance: [
+          {
+            attendance_id: 'att_1',
+            class_id: 'cls_past',
+            athlete_id: 'ath_1',
+            status: 'absent',
+            checked_in_at: '2020-01-07T23:05:00.000Z',
+          },
+        ],
+      }),
+    );
+    const { container } = render(<ParentHub />);
+    await openAttendanceTab();
+
+    await waitFor(() => expect(screen.getByText(/Tuesday Fundamentals/)).toBeInTheDocument());
+    // The row is in the page: the positive control for the sibling check above.
+    expect(container.textContent ?? '').toMatch(/▲\s*Absent/);
+    expect(container.textContent ?? '').not.toMatch(/✕\s*Absent/);
+    const row = Array.from(container.querySelectorAll('span')).find(
+      (span) => /^▲\s*Absent$/.test(span.textContent ?? '') && span.className.includes('uppercase'),
+    );
+    expect(row?.className).toContain('var(--restricted-deep)');
+    expect(row?.className).not.toContain('locked');
+    expect(container.innerHTML).not.toContain('--locked');
   });
 
   it('says Unavailable when the read fails, and does not call that an empty record', async () => {

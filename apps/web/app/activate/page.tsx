@@ -178,7 +178,9 @@ function ActivatePageContent() {
     <main className="on-canvas min-h-screen px-[var(--s5)] py-[var(--s7)]">
       <div className="mx-auto flex w-full max-w-[540px] flex-col gap-[var(--s6)]">
         <header className="flex flex-col gap-[var(--s4)] text-center">
-          <p className={EYEBROW}>Set up your account</p>
+          {/* The name both links to this page carry (lane AS-8, Q-EYEBROW A on #2051;
+              OD-2026-10-17-001 ruling 1: a label matches the page it opens). */}
+          <p className={EYEBROW}>Set up your sign-in</p>
           <h1 className="t-command text-[length:var(--t-xl)]">Activate your PPBF account</h1>
           {stage !== 'done' && (
             <p className={LEDE}>
@@ -352,7 +354,8 @@ function ActivatePageContent() {
             ) : (
               <>
                 <p className={LEDE}>Your PIN is set. Sign in with your ID and your new PIN.</p>
-                <Link href="/login" className="btn btn--kiosk">
+                {/* The athlete PIN page, not /login (lane AS-8, scrub ATH-15, Q14 A on #2020). */}
+                <Link href="/athlete/sign-in" className="btn btn--kiosk">
                   Go to sign in
                 </Link>
               </>
@@ -362,7 +365,11 @@ function ActivatePageContent() {
 
         {stage !== 'done' && (
           <p className="text-center text-[length:var(--t-sm)] leading-[1.6] text-[color:var(--hide-800)]">
-            Lost your code or it stopped working? Ask your gym admin for a new one.{' '}
+            {/* "the gym office": OW25-46 A (OD-2026-11-19-003), Q14b A on #2020.
+                This link stays on /login (Q-BACK A on #2051): it is the one way
+                back to every sign-in door for someone here by mistake, and
+                /athlete/sign-in links only back to this page. */}
+            Lost your code or it stopped working? Ask the gym office for a new one.{' '}
             <Link
               href="/login"
               className="font-semibold text-[color:var(--brass-800)] underline underline-offset-2 hover:text-[color:var(--brass-700)]"

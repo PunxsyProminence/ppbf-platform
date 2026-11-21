@@ -77,6 +77,23 @@ interface Props {
       without it, loadError is a fact (no athlete record), not a failure. */
   onRetry?: () => void;
   onSaved: (row: AthleteCheckInRecord) => void;
+  /** What was entered and not yet saved, from the last time this form was on
+      screen; read once, when the form mounts. The workspace holds it: Report
+      pain on this tab opens the Dashboard, which unmounts the form, and the
+      answers must survive that. */
+  readDraft?: () => AthleteCheckInDraft | null;
+  /** Told every change to the unsaved answers. */
+  onDraftChange?: (draft: AthleteCheckInDraft) => void;
+}
+
+/** The form's unsaved answers, exactly as typed. Nothing in it is sent until Save. */
+export interface AthleteCheckInDraft {
+  answers: Partial<Record<WellnessScaleKey, number>>;
+  sleepHours: string;
+  bodyMass: string;
+  bodyMassUnit: 'lb' | 'kg';
+  note: string;
+  showExtended: boolean;
 }
 
 const MINIMAL_SCALES = WELLNESS_SCALES.filter((scale) => MINIMAL_CHECK_IN_KEYS.includes(scale.key));
@@ -160,13 +177,17 @@ function StoredAnswers({ record }: { record: AthleteCheckInRecord }) {
   );
 }
 
-export default function AthleteCheckInPanel({ today, recent, loading, loadError, onRetry, onSaved }: Props) {
-  // Starts EMPTY. A key appears only when the athlete picks a value, and only
+export default function AthleteCheckInPanel({
+  today, recent, loading, loadError, onRetry, onSaved, readDraft, onDraftChange,
+}: Props) {
+  const [draft] = useState(() => readDraft?.() ?? null);
+  // Starts EMPTY, or with the athlete's own unsaved picks when they come back
+  // to the form. A key appears only when the athlete picks a value, and only
   // the keys present here are sent -- this object IS rule 1 above.
-  const [answers, setAnswers] = useState<Partial<Record<WellnessScaleKey, number>>>({});
-  const [sleepHours, setSleepHours] = useState('');
-  const [bodyMass, setBodyMass] = useState('');
-  const [bodyMassUnit, setBodyMassUnit] = useState<'lb' | 'kg'>('lb');
+  const [answers, setAnswers] = useState<Partial<Record<WellnessScaleKey, number>>>(draft?.answers ?? {});
+  const [sleepHours, setSleepHours] = useState(draft?.sleepHours ?? '');
+  const [bodyMass, setBodyMass] = useState(draft?.bodyMass ?? '');
+  const [bodyMassUnit, setBodyMassUnit] = useState<'lb' | 'kg'>(draft?.bodyMassUnit ?? 'lb');
   // What happened to the weight just entered, shown once the check-in view
   // replaces the form. The server answers body_mass_saved; a weight it did not
   // store is said so rather than looking accepted.
@@ -175,8 +196,11 @@ export default function AthleteCheckInPanel({ today, recent, loading, loadError,
   // what was just entered was not stored, and the athlete is told so rather
   // than seeing their answers swapped for the earlier ones without a word.
   const [earlierCheckInNotice, setEarlierCheckInNotice] = useState('');
-  const [note, setNote] = useState('');
-  const [showExtended, setShowExtended] = useState(false);
+  const [note, setNote] = useState(draft?.note ?? '');
+  const [showExtended, setShowExtended] = useState(draft?.showExtended ?? false);
+  useEffect(() => {
+    onDraftChange?.({ answers, sleepHours, bodyMass, bodyMassUnit, note, showExtended });
+  }, [answers, sleepHours, bodyMass, bodyMassUnit, note, showExtended, onDraftChange]);
   const [saving, setSaving] = useState(false);
   // One save per press (#1529): a ref, because two presses in one tick both
   // read the same `saving` and both got through.

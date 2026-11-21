@@ -239,10 +239,13 @@ export default function ParentAssignmentList({ athleteId }: { readonly athleteId
           </>
         );
       })()}
-      {/* The full record page opens on the first linked child and has its own
-          chooser, so the link does not promise this child. */}
+      {/* The full record page opens on the child chosen last on a family page
+          (src/lib/chosenChild.ts) and has its own chooser, so the link does
+          not promise this child. */}
+      {/* Named for the door to the page, "Progress Visibility" (FAM-18;
+          AS-9 Q13 = A). */}
       <Link href="/parent/progression-visibility" className="btn btn--ghost">
-        Open the full progression record
+        Open Progress Visibility
       </Link>
     </div>
   );

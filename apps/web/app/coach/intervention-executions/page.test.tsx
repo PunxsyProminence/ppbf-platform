@@ -10,12 +10,29 @@
 // and the deviations text travels with the close.
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { StrictMode } from 'react';
 
+import { PASSBOOK_PAGE, THE_WORK_PAGE } from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import InterventionExecutionsPage from './page';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+// A plain anchor that runs the link's own onClick, as next/link does, without
+// navigating (the pattern of the Escalations test, lane AS-5).
+jest.mock('next/link', () => ({
+  __esModule: true,
+  default: ({ children, href, className, onClick }: {
+    readonly children: React.ReactNode;
+    readonly href: string;
+    readonly className?: string;
+    readonly onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  }) => (
+    <a href={href} className={className} onClick={(event) => { event.preventDefault(); onClick?.(event); }}>{children}</a>
+  ),
 }));
 
 const EXECUTION = {
@@ -739,5 +756,373 @@ describe('the version the form was opened on travels with the save', () => {
     expect(screen.getByRole('alert').textContent).toContain(sentence);
     expect(screen.getByRole('button', { name: 'Record correction' })).toBeTruthy();
     expect(valueOf('What was wrong? (required)')).toBe('logged three rounds; it was four');
+  });
+});
+
+// Lane AS-11 (app scrub CF-15; Q2b = A, Q4 = A). A link that opens The Work
+// on one athlete (Passbook's line) sets the start form to them and narrows
+// the list to their executions with the route's own athlete_id filter; "Show
+// every athlete" widens it. The athlete is taken from page memory, only when
+// this page's roster lists them. A name on a row opens that athlete's Passbook.
+describe('arriving from a link (lane AS-11)', () => {
+  const OTHER = { ...EXECUTION, execution_id: 'ex-2', lineage_id: 'ex-2', athlete_id: 'ath-2', athlete_name: 'Sam K.' };
+  const ROSTER = [
+    { athlete_id: 'ath-1', full_name: 'Jordan P.' },
+    { athlete_id: 'ath-2', full_name: 'Sam K.' },
+    // On the roster, with no execution on record.
+    { athlete_id: 'ath-3', full_name: 'Tess N.' },
+  ];
+
+  interface Options {
+    /** Status of a read that names an athlete. */
+    narrowedStatus?: number;
+    /** Status of a read that names nobody, after the first one. */
+    laterWholeStatus?: number;
+    /** Held open: the next read that names an athlete waits on this. */
+    holdNarrowed?: Promise<void> | null;
+    /** Held open: the next read that names nobody waits on this. */
+    holdWhole?: Promise<void> | null;
+    rosterStatus?: number;
+    honourAbort?: boolean;
+    /** The rows the route holds, when not the default two. */
+    rows?: Array<Record<string, unknown>>;
+  }
+
+  function arrivalFetch(options: Options = {}) {
+    const listReads: string[] = [];
+    const writes: string[] = [];
+    let wholeReads = 0;
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const respond = (status: number, body: unknown) => ({ ok: status < 400, status, json: async () => body }) as Response;
+      if (options.honourAbort && init?.signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      if (url.includes('/intervention-executions') && init?.method && init.method !== 'GET') {
+        writes.push(init.method);
+        return respond(200, { item: {} });
+      }
+      if (url.includes('/intervention-executions')) {
+        const query = url.split('/intervention-executions')[1] ?? '';
+        listReads.push(query);
+        const named = /^\?athlete_id=([^&]+)$/.exec(query);
+        if (named) {
+          if (options.holdNarrowed) {
+            const wait = options.holdNarrowed;
+            options.holdNarrowed = null;
+            await wait;
+          }
+          if (options.narrowedStatus && options.narrowedStatus >= 400) return respond(options.narrowedStatus, {});
+          const id = decodeURIComponent(named[1]);
+          return respond(200, { items: (options.rows ?? [EXECUTION, OTHER]).filter((row) => row.athlete_id === id) });
+        }
+        wholeReads += 1;
+        if (options.holdWhole) {
+          const wait = options.holdWhole;
+          options.holdWhole = null;
+          await wait;
+        }
+        if (wholeReads > 1 && options.laterWholeStatus) return respond(options.laterWholeStatus, {});
+        return respond(200, { items: options.rows ?? [EXECUTION, OTHER] });
+      }
+      if (url.includes('/intervention-protocols')) {
+        return respond(200, { items: [{ protocol_id: 'p-1', title: 'Round-3 endurance block', version: 1, athlete_id: null, status: 'active' }] });
+      }
+      if (url.includes('/athletes/list')) return respond(options.rosterStatus ?? 200, { items: ROSTER });
+      return respond(200, { items: [] });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return { listReads, writes };
+  }
+
+  const startAthlete = () => (screen.getByLabelText('Athlete') as HTMLSelectElement).value;
+  const rowNames = () => screen.getAllByRole('link').filter((link) => link.getAttribute('href') === '/coach/passbook').map((link) => link.textContent);
+  const widen = () => screen.queryByRole('button', { name: 'Show every athlete' });
+
+  async function open(strict = false) {
+    await act(async () => {
+      render(strict ? <StrictMode><InterventionExecutionsPage /></StrictMode> : <InterventionExecutionsPage />);
+    });
+    await act(async () => {});
+  }
+
+  afterEach(() => {
+    takeArrivalAthlete(THE_WORK_PAGE);
+    takeArrivalAthlete(PASSBOOK_PAGE);
+  });
+
+  test('with no hand-off the page opens as before: every athlete, one read, nobody chosen', async () => {
+    const { listReads } = arrivalFetch();
+    await open();
+    expect(listReads).toEqual(['']);
+    expect(startAthlete()).toBe('');
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+    expect(widen()).toBeNull();
+  });
+
+  test('a hand-off sets the start form to the athlete and narrows the list to them', async () => {
+    const { listReads, writes } = arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    expect(listReads).toEqual(['', '?athlete_id=ath-2']);
+    expect(startAthlete()).toBe('ath-2');
+    expect(rowNames()).toEqual(['Sam K.']);
+    expect(widen()).not.toBeNull();
+    // Arriving starts nothing: no write left the page.
+    expect(writes).toEqual([]);
+  });
+
+  test('the narrowed list names its athlete, and still does when that athlete has no execution', async () => {
+    arrivalFetch();
+    handOffArrivalAthlete('ath-3', THE_WORK_PAGE);
+    await open();
+    expect(rowNames()).toEqual([]);
+    expect(screen.getByText('No executions on record')).toBeTruthy();
+    expect(screen.getByTestId('list-athlete').textContent).toBe('Tess N.');
+    expect(widen()).not.toBeNull();
+    await act(async () => {
+      fireEvent.click(widen()!);
+    });
+    expect(screen.queryByTestId('list-athlete')).toBeNull();
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+  });
+
+  test('"Show every athlete" reads the whole list again and leaves the start form alone', async () => {
+    const { listReads } = arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    await act(async () => {
+      fireEvent.click(widen()!);
+    });
+    expect(listReads).toEqual(['', '?athlete_id=ath-2', '']);
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+    expect(widen()).toBeNull();
+    expect(startAthlete()).toBe('ath-2');
+  });
+
+  // This page has no kiosk layout, and `.btn` (unlayered) outranks a size
+  // utility. The button gets the 55px floor and the 19.1px type only from a
+  // kiosk surface around it, so the row carries one.
+  test('the widen button is a .btn inside a kiosk surface', async () => {
+    arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    expect(widen()!.classList.contains('btn')).toBe(true);
+    expect(widen()!.closest('[data-surface="kiosk"]')).not.toBeNull();
+  });
+
+  test('work started for another athlete while the list is narrowed reads every athlete\'s list, so the new work shows', async () => {
+    const { listReads, writes } = arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Athlete'), { target: { value: 'ath-1' } });
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'p-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start execution' }));
+    });
+    expect(writes).toEqual(['POST']);
+    expect(listReads).toEqual(['', '?athlete_id=ath-2', '']);
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+    expect(widen()).toBeNull();
+  });
+
+  test('a read that a newer one has replaced says nothing when it fails: no alert over the fresh list', async () => {
+    arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    // A write's reload for the narrowed list is held open, and will fail...
+    let release = () => {};
+    arrivalFetch({ holdNarrowed: new Promise<void>((resolve) => { release = resolve; }), narrowedStatus: 500 });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'p-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start execution' }));
+    });
+    // ...the coach widens, and the whole list lands first...
+    await act(async () => {
+      fireEvent.click(widen()!);
+    });
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+    // ...then the held read fails. It was replaced, so it says nothing.
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+    expect(widen()).toBeNull();
+  });
+
+  test('a widen that a newer read has replaced does not clear that newer read\'s alert', async () => {
+    arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    // The coach widens, and that whole-list read is held open...
+    let release = () => {};
+    arrivalFetch({ holdWhole: new Promise<void>((resolve) => { release = resolve; }), narrowedStatus: 500 });
+    await act(async () => {
+      fireEvent.click(widen()!);
+    });
+    // ...then starts work for the listed athlete; that newer read fails, and says so...
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'p-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start execution' }));
+    });
+    expect(screen.getByRole('alert').textContent).toContain('Unable to load executions.');
+    // ...then the held widen lands. It was replaced: no rows from it, and the alert stays.
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(screen.getByRole('alert').textContent).toContain('Unable to load executions.');
+    expect(rowNames()).toEqual(['Sam K.']);
+    expect(widen()).not.toBeNull();
+  });
+
+  test('a row with no name keeps its plain id and is not a link', async () => {
+    arrivalFetch({ rows: [EXECUTION, { ...OTHER, athlete_id: 'ath-7', athlete_name: null }] });
+    await open();
+    expect(rowNames()).toEqual(['Jordan P.']);
+    expect(screen.getByText(/ath-7/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'ath-7' })).toBeNull();
+  });
+
+  test('a hand-off for an athlete the roster does not list chooses nobody and asks for nobody', async () => {
+    const { listReads } = arrivalFetch();
+    handOffArrivalAthlete('ath-9', THE_WORK_PAGE);
+    await open();
+    expect(listReads).toEqual(['']);
+    expect(startAthlete()).toBe('');
+    expect(widen()).toBeNull();
+  });
+
+  test('a hand-off with a roster that was refused chooses nobody and asks for nobody', async () => {
+    const { listReads } = arrivalFetch({ rosterStatus: 403 });
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    expect(listReads).toEqual(['']);
+    expect(startAthlete()).toBe('');
+    expect(widen()).toBeNull();
+  });
+
+  test('a hand-off meant for another page is not taken here', async () => {
+    const { listReads } = arrivalFetch();
+    handOffArrivalAthlete('ath-2', PASSBOOK_PAGE);
+    await open();
+    expect(listReads).toEqual(['']);
+    expect(startAthlete()).toBe('');
+  });
+
+  test('a hand-off is taken once: the next visit opens on every athlete', async () => {
+    const { listReads } = arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    document.body.innerHTML = '';
+    listReads.length = 0;
+    await open();
+    expect(listReads).toEqual(['']);
+    expect(startAthlete()).toBe('');
+  });
+
+  test('under StrictMode, with fetch honouring the abort, the hand-off still narrows the list', async () => {
+    const { listReads } = arrivalFetch({ honourAbort: true });
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open(true);
+    expect(startAthlete()).toBe('ath-2');
+    expect(rowNames()).toEqual(['Sam K.']);
+    expect(listReads.filter((query) => query === '?athlete_id=ath-2')).toHaveLength(1);
+  });
+
+  test('if the narrowed read fails, the list on screen is still every athlete\'s, the failure is said, and the next read asks for every athlete', async () => {
+    const { listReads } = arrivalFetch({ narrowedStatus: 500 });
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    expect(screen.getByRole('alert').textContent).toContain('Unable to load executions.');
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+    expect(widen()).toBeNull();
+    // The start form still opened on the athlete, and still has its protocols.
+    expect(startAthlete()).toBe('ath-2');
+    expect(screen.getByRole('option', { name: 'Round-3 endurance block (v1)' })).toBeTruthy();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'p-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start execution' }));
+    });
+    expect(listReads).toEqual(['', '?athlete_id=ath-2', '']);
+  });
+
+  test('a read after a write asks for the list on screen: one athlete\'s while narrowed', async () => {
+    const { listReads, writes } = arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'p-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start execution' }));
+    });
+    expect(writes).toEqual(['POST']);
+    expect(listReads).toEqual(['', '?athlete_id=ath-2', '?athlete_id=ath-2']);
+    expect(widen()).not.toBeNull();
+  });
+
+  test('if widening fails, the list stays the one athlete\'s and the button stays', async () => {
+    arrivalFetch({ laterWholeStatus: 500 });
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    await act(async () => {
+      fireEvent.click(widen()!);
+    });
+    expect(screen.getByRole('alert').textContent).toContain('Unable to load executions.');
+    expect(rowNames()).toEqual(['Sam K.']);
+    expect(widen()).not.toBeNull();
+  });
+
+  test('a slow answer for one athlete never replaces the whole list the coach asked for after it', async () => {
+    const { listReads } = arrivalFetch();
+    handOffArrivalAthlete('ath-2', THE_WORK_PAGE);
+    await open();
+    // A write's reload for the narrowed list is held open...
+    let release = () => {};
+    const options: Options = { holdNarrowed: new Promise<void>((resolve) => { release = resolve; }) };
+    const held = arrivalFetch(options);
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 'p-1' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start execution' }));
+    });
+    expect(held.listReads).toEqual(['?athlete_id=ath-2']);
+    // ...the coach widens, and the whole list lands first...
+    await act(async () => {
+      fireEvent.click(widen()!);
+    });
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+    expect(widen()).toBeNull();
+    // ...then the held answer lands, and changes nothing.
+    await act(async () => {
+      release();
+    });
+    await act(async () => {});
+    expect(rowNames()).toEqual(['Jordan P.', 'Sam K.']);
+    expect(widen()).toBeNull();
+    expect(listReads).toEqual(['', '?athlete_id=ath-2']);
+  });
+
+  test('an athlete\'s name on a row opens their Passbook, in page memory and not in the address', async () => {
+    arrivalFetch();
+    await open();
+    const link = screen.getByRole('link', { name: 'Sam K.' });
+    expect(link.getAttribute('href')).toBe('/coach/passbook');
+    expect(link.className).toContain('min-h-[var(--tap)]');
+    expect(link.className).toContain('text-[length:var(--t-md)]');
+    fireEvent.click(link, { ctrlKey: true });
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBeNull();
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(PASSBOOK_PAGE)).toBe('ath-2');
   });
 });

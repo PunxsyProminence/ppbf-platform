@@ -100,6 +100,9 @@ export const PG_SUITE_DEPENDENCIES = [
   'apps/web/src/lib/drillFloorValidation.ts',
   'apps/web/src/lib/drillPresentation.ts',
   'apps/web/src/lib/gymTime.ts',
+  // The age rule (lane AS-10): wallDisplay.ts re-exports it, and the guardian,
+  // minor-limit and consent suites run through it.
+  'apps/web/src/lib/minorAge.ts',
   'apps/web/src/lib/sessionScriptWords.ts',
   'apps/web/src/shared/achievementPaths.ts',
   'apps/web/src/shared/adultPathwayStages.ts',

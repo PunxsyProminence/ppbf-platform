@@ -850,7 +850,14 @@ async function enterWorkspaceOrSkip(page: Page): Promise<void> {
     test.skip(true, SERVER_GUARDED_SKIP);
     return;
   }
-  if (await openAthleteWorkspace(page)) return;
+  if (await openAthleteWorkspace(page)) {
+    /* The workspace opens on How I feel today (lane AS-8, Overwatch Q1 A on
+       #2020). These proofs are about the Session Log, which is on the
+       Dashboard, so they open it the way an athlete does. */
+    await expect(page.getByRole('button', { name: 'How I feel today', exact: true }).first()).toHaveAttribute('aria-current', 'page');
+    await page.getByRole('button', { name: 'Dashboard', exact: true }).first().click();
+    return;
+  }
   if (ATHLETE_DB_REQUIRED) {
     throw new Error(
       'PPBF_E2E_REQUIRE_ATHLETE_DB=1 declares that a database was provided for this run, but the '
@@ -892,7 +899,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
     const draft = 'my left wrist is sore from Tuesday';
     await page.locator('#pre-check-in-note').fill(draft);
-    // The corner's button and the Session Log's both read 'Start training' and send the same (UXB-19).
+    // One Start training, My Corner's (lane AS-8, ATH-24); the note above is the Session Log's box.
     await page.getByRole('button', { name: 'Start training', exact: true }).first().click();
 
     /* Check-in deliberately moves the athlete off the Session Log -- to
