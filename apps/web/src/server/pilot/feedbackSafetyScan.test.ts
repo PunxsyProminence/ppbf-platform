@@ -1996,6 +1996,10 @@ describe('HF12b third delta review (81ed7ee..d4d2e32): blocking findings', () =>
     'he set it to private video so my mom cant see',
     'he sent me a private pics link',
     'private pic links of me are going around',
+    // Single-rule pins (mutation proof).
+    'people online keep askin 4 pics',
+    'people online keep beggin me for pics',
+    'he made it a secret video so my mom wont find it',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
@@ -2008,6 +2012,9 @@ describe('HF12b third delta review (81ed7ee..d4d2e32): blocking findings', () =>
     'guys on tiktok post videos of sparring all the time',
     'some guy on tiktok has the best jab videos',
     'someone online keeps messaging me about my fight video',
+    'i copied a guy on tiktok and filmed it',
+    'i found a guy online with good videos',
+    'some stranger at the tournament took pictures of everyone',
   ])('everyday talk stays out: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
