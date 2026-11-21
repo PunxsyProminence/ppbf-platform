@@ -1419,8 +1419,6 @@ describe('HF12b review 5: product, school and gym talk stays out', () => {
     'coach asked for a video of my run',
     'coach wants a video of my lifts',
     'coach wants a video of my squat',
-    'coach wants a video every week',
-    'coach wants a video before friday',
     'recorded my pr then hit the shower',
     'broke my record then took a shower',
     'i recorded my run before my shower',
@@ -1442,6 +1440,10 @@ describe('HF12b review 5: product, school and gym talk stays out', () => {
   test.each([
     'it keeps asking for a video',
     'coach asked me to send a video of my progress',
+    // Review 6: a time phrase is not a gym phrase ("wants videos of me every
+    // day" is a disclosure), so a coach's deadline files too.
+    'coach wants a video every week',
+    'coach wants a video before friday',
   ])('accepted false alert, files grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });

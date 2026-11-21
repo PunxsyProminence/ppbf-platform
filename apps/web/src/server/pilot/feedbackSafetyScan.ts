@@ -85,8 +85,8 @@ export function normalizeForSafetyScan(body: string): string {
  */
 const SA_FORM = String.raw`s\.?a\.?(?:${APOSTROPHE_LIKE.source}|-)e?d`;
 const SA_D = new RegExp(
-  String.raw`(?<=\b(?:got|get|gets|getting|been|was|were|be|being|he|she|they|someone|somebody|who)[^a-z0-9]+)${SA_FORM}\b`
-  + String.raw`|\b${SA_FORM}(?=[^a-z0-9]+(?:me|her|him|them|us|my|our)\b)`,
+  String.raw`(?<=\b(?:got|get|gets|getting|been|was|were|be|being|he|she|they|someone|somebody|who|i${APOSTROPHE_LIKE.source}?m|i am)[^a-z0-9]+)${SA_FORM}\b`
+  + String.raw`|\b${SA_FORM}(?=[^a-z0-9]+(?:me|her|him|them|us|my|our|by|[0-9]+|two|three|four|some|other|girls|boys|kids)\b)`,
   'g',
 );
 
@@ -101,7 +101,7 @@ const SA_D = new RegExp(
  * where joining them would hide the SHADOW sparring-intent words that start
  * with "i" (review on PR 2076). "i m" is joined on its own in joinSplitWords.
  */
-const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z0-9]([^a-z0-9])[a-z0-9](?:\1[a-z0-9])*(?![a-z0-9])/gu;
+const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z0-9](?:[^a-z0-9][a-z0-9])+(?![a-z0-9])(?![^a-z0-9]{1,2}ped\b)/gu;
 
 /**
  * A run typed with one space between every letter swallows the gaps between
@@ -209,7 +209,7 @@ const PICTURE_GUARD = String.raw`(?! (?:of|from) (?:(?:my|the|our|his|her|their)
 // cannot hide them.
 const TECHNIQUE_NOUNS = String.raw`(?:${GYM_EVENT_NOUNS}|dril+s?|combos?|jabs?|ho+ks?(?! up\b)|up+ercuts?|fo+twork|stance|pad ?work|mit+ ?work|bag ?work|technique|warm ?ups?|workouts?|ses+ions?|routines?|circuits?|schedule|timetable|calendar|training|shadow ?boxing|punch(?:es)?|defen[cs]e|head movement|form|pads|roadwork|skip+ing|jump rope|(?:hand )?wraps|homework|combinations?|cros+(?:es)?|guard|slips|rol+s|conditioning|sprints|one two|1 2|runs?|lifts?|squats?|deadlifts?|bench|miles?)`;
 const TECHNIQUE_FILLER = String.raw`(?:the|my|your|ur|his|her|our|their|a|an|that|this|todays|[0-9]+|one|two|three|four|punch|slip|jab|pad|bag|mit+|shadow|new|basic|first|last|next|left|right|lead|rear)`;
-const VIDEO_GUARD = String.raw`(?! (?:(?:of|from|on|showing) (?:${TECHNIQUE_FILLER} ){0,3}${TECHNIQUE_NOUNS}(?! (?:together|alone|at (?:his|her|their) (?:house|place|home))\b)|(?:of|on|about|showing) how to (?:do )?(?:the |a |that |this )?(?:slip|jab|throw|block|parry|duck|rol+|pivot|wrap|punch|hook|uppercut|skip|hold the pads|${TECHNIQUE_NOUNS}))\b)`;
+const VIDEO_GUARD = String.raw`(?! (?:(?:of|from|on|showing) (?:${TECHNIQUE_FILLER} ){0,3}${TECHNIQUE_NOUNS}(?!${WORD}{0,6} (?:together|alone|at night|late at night|when no ?one|when nobody|in (?:my|his|her|their) (?:room|bedroom|bed)|at (?:his|her|their) (?:house|place|home|flat))\b)|(?:of|on|about|showing) how to (?:do )?(?:the |a |that |this )?(?:slip|jab|throw|block|parry|duck|rol+|pivot|wrap|punch|hook|uppercut|skip|hold the pads|${TECHNIQUE_NOUNS}))\b)`;
 const ASK = String.raw`(?:asking|asks|asked|ask|wants|want|wanted|wanting|begs|begged|begging|beg)`;
 // Main's picture request, with "pix" and begging added.
 const PICTURE_REQUEST = String.raw`(?:${ASK} (?:me )?(?:for |to see |to send (?:him |her |them )?)?|send (?:him |her |them |me )?)${PICTURE_COUNT}${PICTURE_NOUNS}\b${PICTURE_GUARD}`;
@@ -217,13 +217,13 @@ const PICTURE_REQUEST = String.raw`(?:${ASK} (?:me )?(?:for |to see |to send (?:
 // made to send, someone who keeps asking, or a third person or staff title
 // wanting one. Feature requests and product talk stay out.
 const VIDEO_ASKER = String.raw`(?:he|she|they|hes|shes|theyre|coach|someone|somebody|guy|man|mr|mrs|ms|miss|sir|trainer|instructor|volunteer|staff|teacher|uncle|aunt|dad|daddy|stepdad|step dad|stepbrother|brother|cousin|grandpa|boyfriend|girlfriend|neighbou?r|boy|girl|kid)`;
-const VIDEO_PRODUCT_GUARD = String.raw`(?!${WORD}{0,8} (?:for (?:the |my |our |a )?(?:website|newslet+er|instagram|insta|socials?|social media|promo|scho+l(?: project)?|project|tour)|every (?:we+k|day|clas+|ses+ion|time)|(?:by|before) (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomor+ow|tonight|clas+|practice))\b)(?! (?:in the ap+|on (?:the ap+|youtube|instagram|tiktok)|library|tutorials?|content|uploaded|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+|of the open house|of the kids clas+)\b)`;
+const VIDEO_PRODUCT_GUARD = String.raw`(?!(?:(?! of (?:me|you|u|us|yourself|myself)\b)${WORD}){0,8} for (?:the |my |our |a )?(?:website|newslet+er|instagram|insta|socials?|social media|promo|scho+l(?: project)?|project|tour)\b(?!${WORD}{0,6} of (?:me|you|u|us|yourself|myself)\b))(?! (?:in the ap+|on (?:the ap+|youtube|instagram|tiktok)|library|tutorials?|content|uploaded|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+|of the open house|of the kids clas+)\b)`;
 // The product asking for a video ("the app asks me", "shadow keeps asking")
 // is not a person; a message sent "on the app" is.
-const PRODUCT_SUBJECT = String.raw`(?<!(?<!\b(?:on|in|through|via) )\bthe (?:ap+|site|page|form|screen) (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)(?<!\bshadow (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)`;
+const PRODUCT_SUBJECT = String.raw`(?<!(?<!\b(?:on|in|through|via|from|off|of) )\bthe (?:ap+|site|page|form|screen) (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)(?<!(?<!\b(?:called|named|nicknamed) )\bshadow (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)`;
 const VIDEO_REQUEST = [
   String.raw`(?:send (?:him |her |them |me )|${PRODUCT_SUBJECT}${ASK} me (?:for |to see |to send (?:him |her |them )?|to make (?:him |her |them )?)?|(?:made|makes|make|making|gets|got|get) me (?:to )?send (?:him |her |them )?|${PRODUCT_SUBJECT}(?:keeps|kept|keep|always|wont stop) (?:asking|begging|bugging) (?:me )?for )${PICTURE_COUNT}${VIDEO_NOUNS}\b${VIDEO_GUARD}`,
-  String.raw`\b${VIDEO_ASKER}(?: [a-z]+){0,4}? ${ASK} (?:for |to see )?(?:a |an |some |private |another |any )?${VIDEO_NOUNS}\b${VIDEO_GUARD}${VIDEO_PRODUCT_GUARD}`,
+  String.raw`\b${VIDEO_ASKER}(?: [a-z]+){0,4}? ${ASK} (?:me )?(?:for |to see )?(?:a |an |some |private |another |any )?${VIDEO_NOUNS}\b${VIDEO_GUARD}${VIDEO_PRODUCT_GUARD}`,
 ].join('|');
 const UNDRESS_WORDS = String.raw`(?:shower|showering|changing rooms?|change rooms?|get+ing changed|get changed|got changed|undres+|undres+ed|undres+ing|naked|nude|no clothes|underwear|no shirt|no top|shirt off|top off|shirtles+|toples+|without (?:a |any |your |my |his |her )?(?:shirts?|tops?|clothes)|bra|sports bra|swimsuit|swimming costume|bikini|wearing nothing)`;
 const PRIVATE_PLACE_WORDS = String.raw`(?:showers|locker rooms?|bathrooms?|toilets?|in bed|bedro+m|on (?:my|the|your|his|her) bed)`;
