@@ -502,9 +502,6 @@ export default function AttendanceDashboardPage() {
             ) : null}
           </header>
 
-          <AttendanceReportDownload />
-          <ClassAttendanceReport />
-
           <section className="mt-[var(--s5)] grid gap-[var(--s4)] md:grid-cols-3">
             <article className="border border-[color:var(--hide-700)] bg-[var(--hide-900)] px-[var(--s4)] py-[var(--s4)]">
               <p className="t-eyebrow">Athletes tracked</p>
@@ -616,6 +613,10 @@ export default function AttendanceDashboardPage() {
               </table>
             </section>
           )}
+
+          {/* The two report blocks sit below the summary and the ledger, not above them (lane AS-10, OFF-20). */}
+          <AttendanceReportDownload />
+          <ClassAttendanceReport />
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/schedule" className="btn btn--ghost">

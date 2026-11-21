@@ -1411,7 +1411,8 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
               <p className="t-eyebrow">People</p>
               <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Gym Office</h1>
               <p className="t-body mt-[var(--s3)]">
-                Add coaches and staff, and create athlete sign-ins.
+                Add coaches and staff, and create athlete sign-ins. A volunteer&rsquo;s sign-in is given here;
+                their volunteer record is kept on <Link href="/admin/volunteer-management" className="underline">Volunteers</Link>.
                 {organizationName && (
                   <>
                     {' '}Gym: <span className="t-data text-[color:var(--bone-100)]">{organizationName}</span>

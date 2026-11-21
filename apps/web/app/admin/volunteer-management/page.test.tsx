@@ -7,7 +7,8 @@
 // volunteer row, and a PATCH that matched no row still reported success.
 
 import type { ReactNode } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
 
 import VolunteerManagementPage from './page';
 
@@ -190,4 +191,30 @@ it('a genuinely empty roster still says so', async () => {
 
   await screen.findByText('No volunteers on record yet');
   expect(screen.queryByText('Unable to load volunteer roster.')).toBeNull();
+});
+
+// Lane AS-10, AS10-5 (app scrub OFF-19): which page gives a volunteer a sign-in
+// and which keeps the volunteer record, with links to Gym Office and, for an
+// admin, Staff Credentials (the page admits the platform owner too).
+describe('Gym Office and Staff Credentials (lane AS-10)', () => {
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
+
+  test('the page says where the sign-in is given and links Gym Office and Staff Credentials', async () => {
+    createPersistentRoleSession('admin');
+    await renderPage(jest.fn(async () => jsonResponse({ items: [] })));
+    const said = screen.getByText(/This page keeps the volunteer record\. A volunteer.s sign-in is given on/);
+    // Staff Credentials lists signed-in accounts, so the sentence says so (review of #2063).
+    expect(said.textContent).toContain('the certificates of a volunteer with a sign-in are checked on Staff Credentials.');
+    expect(screen.getByRole('link', { name: 'Gym Office' }).getAttribute('href')).toBe('/admin/people');
+    expect(screen.getByRole('link', { name: 'Staff Credentials' }).getAttribute('href')).toBe('/admin/credentials');
+  });
+
+  test('the platform owner, whom Staff Credentials refuses, is not offered it', async () => {
+    createPersistentRoleSession('platform_owner');
+    await renderPage(jest.fn(async () => jsonResponse({ items: [] })));
+    expect(screen.queryByRole('link', { name: 'Staff Credentials' })).toBeNull();
+  });
 });
