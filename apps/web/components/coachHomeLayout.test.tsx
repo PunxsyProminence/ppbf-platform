@@ -199,6 +199,11 @@ describe('the four jobs and More, from the coach job bar (stage 2 3.9; #2029)', 
     expect(before(screen.getByRole('heading', { name: 'Safety Escalations' }), region)).toBe(true);
     expect(before(screen.getByRole('heading', { name: 'Family Barrier Reports' }), region)).toBe(true);
     expect(before(region, screen.getByText('Coach Standard'))).toBe(true);
+    // The pain list keeps its place first among the safety lists, under the board.
+    const pain = screen.getByRole('heading', { name: 'Athlete Pain Reports' });
+    expect(before(screen.getByRole('region', { name: 'The floor' }), pain)).toBe(true);
+    expect(before(pain, screen.getByRole('heading', { name: 'Safety Escalations' }))).toBe(true);
+    expect(before(pain, screen.getByRole('heading', { name: 'Family Barrier Reports' }))).toBe(true);
   });
 });
 
