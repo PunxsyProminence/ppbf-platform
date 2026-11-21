@@ -82,7 +82,7 @@ const CLINIC_DOORS = ['/coach/sports-medicine', '/coach/athlete-safety', '/coach
   .map((href) => BUILDING.find((door) => door.href === href))
   .filter((door): door is NonNullable<typeof door> => door !== undefined);
 
-type TabID = 'dashboard' | 'floor' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
+type TabID = 'dashboard' | 'development' | 'goals' | 'tasks' | 'assessments' | 'film-study' | 'athlete-reviews' | 'shadow';
 
 /**
  * An explicit element type for the tab-bar array, rather than letting it
@@ -103,7 +103,7 @@ interface CoachTab {
 }
 
 /**
- * The coach workspace's nine surfaces, in the order the tab row draws them.
+ * The coach workspace's eight surfaces, in the order the tab row draws them.
  *
  * Hoisted out of the JSX so the masthead can name the open one without a
  * second copy of the labels standing next to the first: two lists of the same
@@ -112,12 +112,12 @@ interface CoachTab {
  * of the registry, and freezing one into a constant would be a lie the moment
  * the queue changed.
  *
- * 'Athlete Floor Plans' stood between Floor and Development until 2026-08-24.
- * See the comment where its panel used to render for why it is gone.
+ * 'Athlete Floor Plans' stood between Floor and Development until 2026-08-24,
+ * and 'Floor' itself stood second until lane 6C7's 7a-1 (app scrub CF-06). See
+ * the comments where their panels used to render for why each is gone.
  */
 const COACH_TABS = [
   { id: 'dashboard', label: 'Dashboard' },
-  { id: 'floor', label: 'Floor' },
   { id: 'development', label: 'Your Growth' },
   { id: 'goals', label: 'Goals' },
   { id: 'tasks', label: 'Tasks' },
@@ -134,8 +134,6 @@ const COACH_TABS = [
  * from two angles, not two counts that could disagree.
  */
 const REVIEW_BADGED_TABS: ReadonlySet<TabID> = new Set<TabID>(['tasks', 'shadow']);
-
-type SessionMode = 'Group' | 'One-on-One';
 
 interface Athlete {
   id: string;
@@ -193,18 +191,6 @@ interface Athlete {
      coach all coaches coach all athletes"), and that is the standing the clear
      route admits. "My athlete" is a different question from "may I act". */
   isMine?: boolean;
-}
-
-// A block template only. There is no live-session backend, so a block has no
-// runtime status. Do not add a status field or a progress bar without a feed
-// behind it: hardcoded values here read as a real running session.
-interface WorkoutBlock {
-  id: string;
-  title: string;
-  duration: number;
-  objective: string;
-  trainingItems: string[];
-  coachingCues: string[];
 }
 
 interface CoachTask {
@@ -978,7 +964,6 @@ function taskStatusTone(status: CoachTask['status']): BadgeTone {
 export default function CoachWorkspace() {
   const [activeTab, setActiveTab] = useState<TabID>('dashboard');
   const activeTabLabel = COACH_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Dashboard';
-  const [sessionMode, setSessionMode] = useState<SessionMode>('Group');
   const [coachAccountId, setCoachAccountId] = useState('');
   const [reviewSessionId, setReviewSessionId] = useState('');
   // The review picker: which athlete's sessions are listed, and the list
@@ -1165,128 +1150,6 @@ export default function CoachWorkspace() {
   const [sessionNoteRead, setSessionNoteRead] = useState<SessionNoteRead | null>(null);
   const sessionNoteAthleteRef = useRef('');
   const sessionNoteAbortRef = useRef<AbortController | null>(null);
-
-  const workoutBlocks = useMemo<WorkoutBlock[]>(() => {
-    if (sessionMode === 'One-on-One') {
-      return [
-        {
-          id: 'wb_1',
-          title: 'Individual Warmup + Movement Prep',
-          duration: 10,
-          objective: 'Prime mechanics and movement quality before technical rounds.',
-          trainingItems: [
-            '2 rounds jump rope x 2:00 with 0:30 reset',
-            'Hip/ankle mobility circuit x 6 minutes',
-            'Mirror stance checks and guard alignment x 2 minutes',
-          ],
-          coachingCues: ['Nose over toes in stance', 'Shoulders relaxed, guard alive'],
-        },
-        {
-          id: 'wb_2',
-          title: 'Footwork and Angle Entry',
-          duration: 15,
-          objective: 'Build clean entries and exits from jab range.',
-          trainingItems: [
-            '4 x 2:00 ladder step + pivot (inside/outside)',
-            'Cone angle entry drill 3 x 90s',
-            'Reactive call-outs: left exit/right exit x 4 sets',
-          ],
-          coachingCues: ['Push from rear foot, do not hop', 'Exit with hands home'],
-        },
-        {
-          id: 'wb_3',
-          title: 'Targeted Technical Rounds',
-          duration: 15,
-          objective: 'Refine high-value combinations with defensive responsibility.',
-          trainingItems: [
-            'Pad rounds: 3 x 3:00 (jab-cross-slip-cross focus)',
-            'Defense return drill: slip-counter x 3 sets',
-            '30-second burst finisher each round',
-          ],
-          coachingCues: ['Exhale on impact', 'Head off center after second shot'],
-        },
-        {
-          id: 'wb_4',
-          title: 'Conditioning Micro-Block',
-          duration: 10,
-          objective: 'Support repeat power without technique breakdown.',
-          trainingItems: [
-            'Battle rope intervals 6 x 30:30',
-            'Med-ball rotational throws 3 x 8 each side',
-            'Core brace plank ladder 3 sets',
-          ],
-          coachingCues: ['Quality over speed', 'Maintain posture under fatigue'],
-        },
-        {
-          id: 'wb_5',
-          title: 'Cooldown + Review',
-          duration: 5,
-          objective: 'Recover and lock one technical takeaway.',
-          trainingItems: ['Breath downshift x 2 minutes', 'Stretch reset x 3 minutes'],
-          coachingCues: ['Identify one repeatable win from session'],
-        },
-      ];
-    }
-
-    return [
-      {
-        id: 'wb_1',
-        title: 'Group Warmup Flow',
-        duration: 10,
-        objective: 'Raise heart rate and establish class rhythm safely.',
-        trainingItems: [
-          'Jump rope cadence ladder: 3 x 90s',
-          'Dynamic mobility line drills: hips, thoracic, ankles',
-          'Guard and stance shadow round x 2:00',
-        ],
-        coachingCues: ['Eyes up, shoulders down', 'Move with stance integrity'],
-      },
-      {
-        id: 'wb_2',
-        title: 'Footwork Pods',
-        duration: 15,
-        objective: 'Install directional movement under control and spacing.',
-        trainingItems: [
-          'Station A: forward/backward step-and-stop x 3 sets',
-          'Station B: lateral shuffle + pivot x 3 sets',
-          'Station C: partner mirror footwork x 3 sets',
-        ],
-        coachingCues: ['Stay balanced at every stop', 'Hands in position during movement'],
-      },
-      {
-        id: 'wb_3',
-        title: 'Defense + Combo Circuit',
-        duration: 15,
-        objective: 'Connect defensive reactions to simple scoring combinations.',
-        trainingItems: [
-          'Slip line: jab-slip-jab x 3 rounds',
-          'Partner feed: parry-cross-hook x 3 rounds',
-          'Coach call reaction: block/roll/return x 6 sets',
-        ],
-        coachingCues: ['Defense first, then fire', 'Reset feet before second phase'],
-      },
-      {
-        id: 'wb_4',
-        title: 'Group Conditioning',
-        duration: 15,
-        objective: 'Build engine while preserving technical form standards.',
-        trainingItems: [
-          'Bag intervals 5 x 2:00 (45s active recovery)',
-          'Bodyweight circuit: squat, pushup, mountain climber x 3 rounds',
-          'Finisher: 60-second nonstop straight punches',
-        ],
-        coachingCues: ['Form before pace', 'Match breathing to output'],
-      },
-      {
-        id: 'wb_5',
-        title: 'Cooldown + Team Debrief',
-        duration: 5,
-        objective: 'Return to baseline and reinforce key class lesson.',
-        trainingItems: ['Guided breathing x 2 minutes', 'Mobility reset x 2 minutes', 'Team takeaway x 1 minute'],
-        coachingCues: ['Name one technical habit to repeat next session'],
-      },
-    ];
-  }, [sessionMode]);
 
   /* This coach's own development record: what they said they are working on,
      and what they did about it.
@@ -2992,35 +2855,6 @@ export default function CoachWorkspace() {
         />
         )}
 
-        {/* TEMPLATE TOGGLE. It switches the Floor tab's code-written block
-            template and nothing else, so it says "template" (CF-05, lane U1);
-            the board names this place instead of offering a toggle. */}
-        {!boardShown && (
-        <div className="mat-leather flex w-fit gap-[var(--s3)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s3)]">
-          {(['Group', 'One-on-One'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => setSessionMode(mode)}
-              /* Which mode is running was carried by ui.modeButtonActive's
-                 background alone -- one Tailwind arbitrary -- and the
-                 golden-era sheet paints every button inside a `.mat-leather`
-                 panel from an unlayered rule, which beats Tailwind's utility
-                 layer. So both plaques painted identically and the toggle
-                 showed nothing at all: no colour difference, and no state for
-                 a screen reader to read either. Same defect the tab row below
-                 fixed with aria-current, answered the same way. */
-              aria-pressed={sessionMode === mode}
-              className={cx(
-                ui.modeButtonBase,
-                sessionMode === mode ? ui.modeButtonActive : ui.modeButtonInactive,
-              )}
-            >
-              {mode} template
-            </button>
-          ))}
-        </div>
-        )}
-
         {/* TAB NAVIGATION */}
         <div className={ui.tabContainer}>
           <div className={ui.tabRow}>
@@ -3065,7 +2899,9 @@ export default function CoachWorkspace() {
                     Session Scripts, Open Live Floor, Process Tasks and Open
                     SHADOW Intel left too (2026-10-03): the floor board's Run
                     the Room opens Session Scripts and the tab row opens the
-                    other three, so each was a second door to the same room. */}
+                    other three, so each was a second door to the same room.
+                    (The Floor tab that Open Live Floor opened is gone since
+                    lane 6C7's 7a-1; see the comment where it used to render.) */}
                 <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
                   <Link
                     href="/schedule"
@@ -4041,89 +3877,16 @@ export default function CoachWorkspace() {
               get a surface for real individualized plans, it starts from
               coach authorship and server-resolved identity, not this feed. */}
 
-          {/* FLOOR */}
-          {activeTab === 'floor' && (
-            <div className="space-y-6 animate-fadeIn">
-              <HelpPanel
-                title="Coach Floor"
-                description="Live session management. Track workout blocks, athlete observations, and make real-time adjustments."
-                usage={[
-                  'Start session when class begins',
-                  'Progress through workout blocks',
-                  'Record quick observations for each athlete',
-                  'Mark modifications for individual athletes',
-                  'End session and review summary'
-                ]}
-                mistakes={[
-                  'Not starting session timer',
-                  'Missing critical observations',
-                  'Forgetting to record modifications'
-                ]}
-              />
-
-              <div className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                <h3 className="t-eyebrow">Session Workout Plan</h3>
-                {/* The template is still a template -- these five blocks are a
-                    shape for a class, carry no run state, and must never grow
-                    a progress bar or a per-block status badge here.
-
-                    What changed is the second half of the old sentence. It
-                    said block completion and session progress "are not tracked
-                    yet", which stopped being true when pilot.session_script_runs
-                    shipped: a coach delivering an authored script at
-                    /coach/session-scripts has a server-clocked run with a block
-                    cursor, pause/resume, and a settled record at the end. The
-                    honest statement is that THIS panel does not track a
-                    session, not that the platform does not. */}
-                <p className="t-muted">
-                  This is the standard {sessionMode} block template, not a running session -- it has no
-                  run state, and nothing here records what was delivered.
-                </p>
-                <p className="t-muted">
-                  Live delivery of an authored session plan is real and runs on its own surface: the
-                  server holds the clock, the block cursor, pauses, and the settled record of the night.
-                  {liveRunState === 'loaded' && liveRun
-                    ? ' You have a session in progress right now.'
-                    : ''}
-                </p>
-                <Link href="/coach/session-scripts" className="btn">
-                  {liveRunState === 'loaded' && liveRun ? 'Return to live delivery' : 'Open Session Plans'}
-                </Link>
-
-                <div className="space-y-[var(--s3)]">
-                  {workoutBlocks.map((block) => (
-                    <div key={block.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)]">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="font-semibold text-[color:var(--bone-100)]">{block.title}</p>
-                          <p className="t-muted">{block.duration} minutes</p>
-                          <p className="t-muted mt-[var(--s2)] text-[color:var(--bone-300)]">{block.objective}</p>
-                        </div>
-                      </div>
-                      <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
-                        <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                          <p className="t-label">Planned Training</p>
-                          <ul className="mt-[var(--s2)] space-y-1 text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
-                            {block.trainingItems.map((item) => (
-                              <li key={item}>- {item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                          <p className="t-label">Coach Cues</p>
-                          <ul className="mt-[var(--s2)] space-y-1 text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
-                            {block.coachingCues.map((cue) => (
-                              <li key={cue}>- {cue}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* THE "FLOOR" TAB IS GONE (lane 6C7, 7a-1; app scrub CF-06; Overwatch
+              Q5 = A on #2043, stage 2 section 3.4 row 14: "Removed. Not a gym
+              template; its help promises actions the tab cannot do"). It drew
+              a five-block workout written in this file as if it were the
+              gym's plan for the night, under help text saying "Start session
+              when class begins" and "Record quick observations", neither of
+              which the tab could do. The Group / One-on-One template toggle
+              went with it (row 13): it switched only that template. Nothing
+              was stored, so nothing is lost. Session Plans is still opened
+              from the floor board's Run the room. */}
 
           {/* DEVELOPMENT */}
           {activeTab === 'development' && (
