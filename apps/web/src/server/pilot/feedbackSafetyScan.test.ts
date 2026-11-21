@@ -1104,3 +1104,23 @@ describe('HF12b review 2: the name Sa\'d is not read as sexually assaulted', () 
     },
   );
 });
+
+// Tests that only one guard or word list can satisfy, added for the mutation
+// proof (review 2 on PR 2076). Invented phrases.
+describe('HF12b review 2: single-guard tests', () => {
+  test('"snap on" is boxing even without "more"', () => {
+    expect(scanForSafetyLanguage('coach wants snap on my jab').cues).not.toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'he wants a video of my stance in my sports bra',
+    'he wants a vid of my footwork in my swimsuit',
+    'he wants a video of my jab wearing nothing',
+  ])('a technique video with a clothing word files: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test('"sa\'d me" after a person not on the person list files', () => {
+    expect(scanForSafetyLanguage("my uncle sa'd me").cues).toContain('grooming_or_isolation');
+  });
+});
