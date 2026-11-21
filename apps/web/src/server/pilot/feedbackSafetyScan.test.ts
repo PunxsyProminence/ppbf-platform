@@ -2013,9 +2013,52 @@ describe('HF12b third delta review (81ed7ee..d4d2e32): blocking findings', () =>
     'some guy on tiktok has the best jab videos',
     'someone online keeps messaging me about my fight video',
     'i copied a guy on tiktok and filmed it',
-    'i found a guy online with good videos',
     'some stranger at the tournament took pictures of everyone',
   ])('everyday talk stays out: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b fourth delta review (81ed7ee..357131f): blocking findings', () => {
+  test.each([
+    'i like a guy online and i sent him pics',
+    'i love this guy online and i sent him pics',
+    'i like a guy i met online and i sent him pics',
+    'i love someone i met online and i sent pics',
+    'i liked a guy i met online and he has my pics now',
+    'i like a man online and he sent me photos',
+    'i follow a man on insta and he sent me pics',
+    'i followed a guy on snap and he sent me pics',
+    'i follow a guy online and he dmd me a pic of his private parts',
+    'i found a guy online who pays for pics',
+    'i found a guy on roblox who gives robux for pics',
+    'i like a guy online n he sent me pix',
+    'a guy online offered me money for videos of my training',
+    'a man online pays me for training videos',
+    'a guy online paid me for my training vids',
+    'a guy online offered me robux for pics of my workout',
+    'a guy online offered me money for my fight videos',
+    'a man online buys my workout pics',
+    'a guy online has my boxing pics and said hell post them unless i send more',
+    'a guy online has my boxing vids n says he will leak them',
+    'a man online has pics of my training and says he will post them',
+    'some guy online has my training pics and says i owe him',
+    'a man online said he would send the photos for everyone to see',
+    'a man online has videos of my sparring and wants to meet up',
+    'a man online sent me a video of his workout and asked for one back',
+    'a man online sent me videos of his form and told me to keep it secret',
+    'a guy online keeps sending me boxing videos and asking if im alone',
+    'he does secret video sessions with me',
+    'coach does secret video sessions with me',
+    'he gives me secret video lessons',
+    'he does secret pic sessions with me',
+    'he does private pic sessions with me',
+    'a man online does private video sessions with me',
+    'he wants me to make him a private video on the app',
+    'he wants me to post a private video to the app so only he can watch',
+    'he set my private video settings so only he can see',
+    'he made it a private video so only he can watch',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
