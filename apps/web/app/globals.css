@@ -666,6 +666,222 @@ h6 {
   box-shadow: inset 0 -3px 0 var(--accent), var(--shadow-sm);
 }
 
+/* ==========================================================================
+   THE JOB BAR (AS-4, U2-4b; components/JobBar.tsx)
+   Scrub Q13 A (OD-2026-11-19-009): "tags on tablet and desk, plain bar on
+   phones". One component, two variants, switched here at 48rem (768px, the
+   md width the session bar's own classes use):
+     .job-bar--rail   leather tags in a row under the session bar (md and up)
+     .job-bar--phone  a plain bar fixed to the bottom (below md), with
+                      .job-bar-spacer holding the page clear of it
+   Every target is --tap tall; the "here" mark is a shape (an inset rule) and
+   words for a screen reader, never colour alone.
+   ========================================================================== */
+
+.job-bar__row {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.job-bar__section {
+  position: relative;
+}
+
+.job-bar__caret {
+  margin-left: var(--s2);
+}
+
+/* --- rail: tablet and desk --- */
+.job-bar--rail {
+  display: none;
+  border-top: 1px solid rgb(var(--brass-400-rgb) / .2);
+}
+
+.job-bar--rail .job-bar__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--s2) var(--s5);
+}
+
+.job-bar--rail .job-bar__tag {
+  min-height: var(--tap);
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+
+.job-bar--rail .job-bar__tag.is-open {
+  filter: brightness(1.1);
+}
+
+.job-bar--rail .job-bar__sheet {
+  position: absolute;
+  top: calc(100% + var(--s2));
+  left: 0;
+  z-index: 60;
+  min-width: 16rem;
+  max-width: min(92vw, 26rem);
+  max-height: min(70vh, 34rem);
+  overflow-y: auto;
+}
+
+/* --- phone: a plain bar along the bottom --- */
+.job-bar--phone {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  border-top: 2px solid var(--brass-700);
+  background: var(--hide-950);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -3px 10px rgba(0, 0, 0, .45);
+}
+
+.job-bar--phone .job-bar__row {
+  display: flex;
+}
+
+.job-bar--phone .job-bar__section {
+  position: static;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.job-bar__cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--s1) var(--s1);
+  border: 0;
+  background: transparent;
+  color: var(--bone-200);
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.job-bar__cell:hover {
+  color: var(--bone-100);
+  text-decoration: none;
+}
+
+.job-bar__cell.is-active {
+  color: var(--bone-100);
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+.job-bar__cell.is-open {
+  background: rgba(255, 255, 255, .06);
+}
+
+.job-bar--phone .job-bar__caret {
+  margin-left: 2px;
+}
+
+.job-bar--phone .job-bar__sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--tap) + env(safe-area-inset-bottom, 0px));
+  max-height: 60vh;
+  overflow-y: auto;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+
+.job-bar-spacer {
+  height: calc(var(--tap) + env(safe-area-inset-bottom, 0px));
+}
+
+/* --- the sheet a longer section opens (both variants) --- */
+.job-bar__sheet {
+  border: 1px solid var(--brass-700);
+  border-radius: var(--r-lg);
+  background-color: var(--hide-950);
+  box-shadow: 0 21px 55px rgba(0, 0, 0, .72);
+  padding: var(--s3);
+}
+
+.job-bar__sheet-head {
+  margin: 0 0 var(--s2);
+  padding: 0 var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--bone-400);
+}
+
+.job-bar__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s1);
+}
+
+.job-bar__link {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 var(--s4);
+  border: 1px solid rgb(var(--brass-400-rgb) / .26);
+  border-radius: var(--r-sm);
+  background: rgba(12, 9, 6, .55);
+  color: var(--bone-200);
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  text-decoration: none;
+}
+
+.job-bar__link:hover {
+  border-color: var(--brass-400);
+  color: var(--bone-100);
+  text-decoration: none;
+}
+
+.job-bar__link.is-current {
+  border-color: var(--brass-300);
+  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--bone-100);
+  font-weight: 650;
+}
+
+.job-bar__hint {
+  margin-left: var(--s1);
+  color: var(--bone-400);
+  font-size: var(--t-xs);
+}
+
+@media (min-width: 48rem) {
+  .job-bar--rail {
+    display: block;
+  }
+
+  .job-bar--phone,
+  .job-bar-spacer {
+    display: none;
+  }
+}
+
+@media print {
+  .job-bar--phone,
+  .job-bar-spacer {
+    display: none;
+  }
+}
+
 .paper-ticket {
   background: var(--canvas-tan-light);
   border: 3px solid var(--black);
