@@ -1722,3 +1722,38 @@ describe('HF12b review 10: single-rule test', () => {
     expect(scanForSafetyLanguage("my friend sa'd and nobody believes me").cues).toContain('grooming_or_isolation');
   });
 });
+
+// Review round 11 on PR 2076 (lane HF12b), the confirming round under
+// Overwatch's stopping rule: its blocking findings only. Invented phrases.
+describe('HF12b review 11: blocking findings', () => {
+  test.each([
+    'people want vids of me',
+    'the older kids want vids of me',
+    'some kids at school want videos of me',
+    'people i dont know want vids of me',
+    'older people want snaps of me',
+    'people on snapchat want vids of me',
+    'a man online keeps asking me for videos of my squats',
+    'he asks me for private videos of my form',
+    'he wants private videos for the website',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'i saw a guy on tiktok with a video on the shoulder roll',
+    'some guy on instagram posted a video of the drill we did',
+    'someone on insta liked my fight video',
+    'the adult class schedule online has a video of the warm up',
+    'a stranger filmed my fight at the tournament',
+    'a guy i dont know took a photo of the team at the tournament',
+    'can i book a private video lesson with coach',
+    'do you do private video sessions',
+    'can the app have private videos',
+    'i made it a private video so only coach can see it',
+    'people want videos',
+    'kids want videos',
+  ])('everyday talk stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
