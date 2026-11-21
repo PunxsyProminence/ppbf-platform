@@ -37,7 +37,7 @@ import ClusterNav from '@/components/ClusterNav';
  * THE CONTEXTS CAPTURE ACCEPTS (captureSessions.ts, CAPTURE_TRAINING_CONTEXTS),
  * and the server refuses any other independently rather than trusting this
  * list. Mitts and sparring are open (OD-2026-11-21-004, TS-Q1 A); each person
- * is labelled later as Fighter 1 or Fighter 2. 'other' is not offered: it says
+ * is labelled later on their own events. 'other' is not offered: it says
  * nothing about what is in frame.
  */
 const TRAINING_CONTEXTS: Array<{ value: string; label: string }> = [

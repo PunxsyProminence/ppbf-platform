@@ -55,11 +55,12 @@ export type TrainingContext = (typeof TRAINING_CONTEXTS)[number];
  *   upload route refuses one on a take), so there is no per-person check for a
  *   second person to slip past.
  * - Two people's movement in one take. Each labelled event has one actor, and
- *   body points belong to the person whose own event it is (OD-2026-10-03-006);
- *   the two people are labelled "Fighter 1" and "Fighter 2" (OD-2026-10-08-005
- *   A-Q10a). A take stays one take: how a two-person take is split for
- *   training is the architect's call and is decided later, at cut or export,
- *   not here (TEACH-T Q2).
+ *   body points belong to the person whose own event it is (OD-2026-10-03-006).
+ *   The ruled labels for the two people are "Fighter 1" and "Fighter 2"
+ *   (OD-2026-10-08-005 A-Q10a); the labelling page offers them as a fixed
+ *   choice from TEACH-T T-4, and takes a typed actor until then. A take stays
+ *   one take: how a two-person take is split for training is the architect's
+ *   call (TEACH-T Q2), not this file's.
  *
  * Training on this footage stays adults-only (OD-2026-10-03-019). How that is
  * enforced at export is the architect's call (TEACH-T Q1); nothing here

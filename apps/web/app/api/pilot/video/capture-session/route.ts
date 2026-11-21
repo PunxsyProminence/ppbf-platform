@@ -80,9 +80,10 @@ export async function POST(request: NextRequest) {
        * REFUSED SERVER-SIDE, not merely absent from the form's dropdown.
        *
        * Mitts and sparring are open (OD-2026-11-21-004, TS-Q1 A): each person
-       * in a two-person take is labelled on their own events, as Fighter 1 or
-       * Fighter 2 (OD-2026-10-03-006; OD-2026-10-08-005 A-Q10a). How such a
-       * take is split for training is decided later, at cut or export.
+       * in a two-person take is labelled on their own events (OD-2026-10-03-006);
+       * the ruled labels are Fighter 1 and Fighter 2 (OD-2026-10-08-005 A-Q10a),
+       * a fixed choice once TEACH-T T-4 lands. How such a take is split for
+       * training is the architect's call (TEACH-T Q2).
        * 'other' is still refused: it says nothing about what is in frame.
        * See CAPTURE_TRAINING_CONTEXTS.
        */
@@ -119,14 +120,6 @@ export async function POST(request: NextRequest) {
         // narrowed to a real TrainingContext by the refusal above.
         trainingContext: rawContext,
       });
-
-      /*
-       * Not in the same transaction as the session insert, and that is
-       * acceptable because the failure is safe: a session with no participant
-       * link cannot accept uploads at all -- the upload route refuses it --
-       * so the worst outcome is a dead session the coach starts again, never
-       * footage stored without a guardian behind it.
-       */
 
       return NextResponse.json({ ok: true, session: await sessionPayload(session, take) });
     }

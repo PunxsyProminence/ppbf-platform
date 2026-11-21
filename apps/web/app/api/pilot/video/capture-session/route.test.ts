@@ -410,6 +410,8 @@ describe('which contexts capture accepts (OD-2026-11-21-004, TS-Q1 A: mitts and 
     );
 
     expect(response.status).toBe(400);
+    // Refused for naming someone, not for the context.
+    expect(await response.json()).toMatchObject({ error: expect.stringMatching(/names nobody/i) });
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });
