@@ -145,8 +145,8 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
 
 - **A chat that is not flagged is cleared now.** The member's own messages are deleted.
   SHADOW's replies are kept under a one-off `anon_<uuid>` token, stored nowhere else, with every
-  name on record for the member, for the athlete the chat is about and for the guardians linked
-  to that athlete replaced by `[name]` (the login when it is an email, the login email, ring
+  name on record for the member, for the athlete the chat is about, and for the guardians linked
+  to the member's own athlete record or to that athlete, replaced by `[name]` (the login when it is an email, the login email, ring
   name, staff name, the athlete record's or guardian record's full name; the same method and
   limits as the purge's `namePattern`). What is kept takes **new ids**: a new conversation id
   and new message ids, so nothing that copied the old ones joins it (a background reply's id is
@@ -184,17 +184,26 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   (`member_deleted_chats_deferred`). The applied run and its audit row count
   `member_deleted_chats_cleared`.
 - **The office completing a request reaches every chat on the account**, including one about an
-  athlete who has since been deleted: the member asked, and no ruling holds an unflagged SHADOW
-  chat for an athlete's retention window. The script, which acts without a request, leaves such
-  a chat to the athlete's purge.
+  athlete who has since been deleted: the member asked. A search of
+  `docs/current/OWNER_DECISIONS.md` on 2026-11-21 (for "SHADOW chat", "SHADOW conversation" and
+  "AI chat" beside retention words) found no ruling that holds an unflagged SHADOW chat for an
+  athlete's retention window; Overwatch was asked to confirm on #2062. The script, which acts
+  without a request, leaves such a chat to the athlete's purge.
 - **Not reached by a member's delete**, so the screens do not claim it: the research row an
   unanswered question was filed as (keyed by account and text, not by chat), the member's own
   feedback comments and memory corrections, SHADOW's remembered facts about them, evidence
   bundles (a hash of each question, no text), the timestamps a kept reply keeps, and the nightly
   database backups. Those go at the person's own purge or age out.
-- **A race it cannot close:** a background answer's response-safety review entry is written after
-  its job completes (`shadowJobProcessor.ts`), so a member who deletes the chat while that job
-  runs leaves the job nothing to complete, and that entry is not written.
+- **Races it cannot close:** the rows that flag a chat are written after the exchange they are
+  about, in their own statements: the chat route writes its review entries and a disclosure's
+  safety escalation at the end of the request (`app/api/pilot/shadow/chat/route.ts`), and the job
+  processor writes a background answer's response-safety entry after its job completes
+  (`shadowJobProcessor.ts`). A member who deletes the chat in that gap (from another tab or
+  device; the page disables Delete while its own request is in flight) has it cleared as not
+  flagged: a review entry is then not written (its insert fails the conversation foreign key, and
+  the chat request fails closed; a job has nothing to complete), and an escalation is filed naming
+  an id that no longer exists. Closing it means writing those rows with the exchange, outside
+  this lane's files.
 
 The two copies of the clearing steps (the app's and the script's) are held equal by
 `shadowConversationDeletion.pg.test.ts` (T7) and `shadowNamePattern.test.ts`.

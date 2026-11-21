@@ -707,7 +707,8 @@ async function deidentifyFlaggedConversations(client, tables, accountIds, organi
 
 /* CHATS A MEMBER DELETED (lane HF7). The Delete beside a SHADOW chat, and an
    office-completed request to clear a member's history, clear a chat at once
-   unless a safeguarding review points at it (src/server/pilot/
+   unless it is flagged -- a safeguarding review entry or a safety escalation
+   points at it (src/server/pilot/
    shadowConversationDeidentify.ts says what each step is and which ruling it
    follows: OD-2026-10-06-012, OD-2026-10-06-023 Q1 "Delete theirs, keep AI
    replies (Recommended)" and Q2 "Keep until retention ends (Recommended)",
@@ -719,8 +720,9 @@ async function deidentifyFlaggedConversations(client, tables, accountIds, organi
      conversation and names nobody;
    - one deleted BEFORE that change, when a delete only set deleted_at and
      nothing cleared it: cleared now, or at two years if flagged.
-   A chat that is a DELETED PERSON's is left to attemptPurge, which already
-   holds and clears it with the rest of their records: an account with
+   A chat that is a DELETED PERSON's is left to attemptPurge with the rest of
+   their records (which holds a chat a review entry points at; one only an
+   escalation points at is not held there, finding F5 on #2062): an account with
    deleted_at set, an athlete login whose athlete is deleted, and a chat ABOUT
    a deleted athlete (dataDeletion.ts markAthleteTiedRecords stamps those with
    the athlete's deletion time, so deleted_at alone cannot tell the two apart).
@@ -746,7 +748,7 @@ async function deidentifyFlaggedConversations(client, tables, accountIds, organi
    review entries that follow it -- so the office's recorded reads, the
    escalation and a background job's derived id join nothing that is kept. */
 const CLEARED_CONVERSATION_TITLE = 'Deleted conversation; de-identified.';
-const REVIEW_SUMMARY_AFTER_HOLD = 'Safeguarding review entry; the conversation was deleted by its member and de-identified after the two-year hold.';
+const REVIEW_SUMMARY_AFTER_HOLD = 'Review entry; the conversation was deleted by its member and de-identified after the two-year hold.';
 
 const MEMBER_DELETED_CHATS_SQL = `
     from pilot.shadow_chat_sessions s

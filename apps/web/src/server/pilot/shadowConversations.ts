@@ -787,7 +787,8 @@ export async function renameConversation(
  *
  * It used to set deleted_at and nothing else, and nothing ever removed the
  * rows, while the member was told the chat was deleted. Now, in one
- * transaction, a chat no safeguarding review points at is cleared at once --
+ * transaction, a chat that is not flagged (no safeguarding review entry or
+ * safety escalation points at it) is cleared at once --
  * what the member typed deleted, SHADOW's replies kept under a token with
  * their names scrubbed -- and a flagged one is hidden from them and kept as
  * it is for two years (shadowConversationDeidentify.ts says what each step
@@ -946,7 +947,8 @@ export async function requestOwnShadowDataDeletion(
  *
  * THE SAME AS THE DELETE BESIDE EACH CHAT (deleteOwnConversation), for every
  * chat on the account in this gym, the ones the member already deleted
- * included: a chat no safeguarding review points at is cleared now (their
+ * included: a chat that is not flagged (no safeguarding review entry or
+ * safety escalation points at it) is cleared now (their
  * words deleted, SHADOW's replies kept under a token with their names
  * scrubbed); a flagged one is hidden and kept as it is, and the retention
  * script clears it two years after its deletion (Jason: "Delete theirs, keep

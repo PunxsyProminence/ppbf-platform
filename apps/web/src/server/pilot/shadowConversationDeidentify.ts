@@ -18,8 +18,8 @@ import type { PoolClient } from 'pg';
  *   NOT FLAGGED: cleared now. What the member typed is deleted. SHADOW's
  *     replies are kept under a one-off anon_<uuid> token, stored nowhere
  *     else, with every name on record for the member, for the athlete the
- *     chat is about and for the guardians linked to that athlete replaced by
- *     [name] (shadowNamePattern). WHAT IS KEPT TAKES NEW IDS: a new
+ *     chat is about, and for the guardians linked to the member's own athlete
+ *     record or to that athlete, replaced by [name] (shadowNamePattern). WHAT IS KEPT TAKES NEW IDS: a new
  *     conversation id and new message ids, so nothing that copied the old
  *     ones joins it -- a background reply's id is a hash of its job's id
  *     (messageIdForKey), and an escalation or an audit row may hold the
@@ -57,10 +57,19 @@ import type { PoolClient } from 'pg';
  * hash of each question, no text); the nightly database backups; timestamps
  * (a kept reply keeps its created_at). Those go at the person's own purge.
  *
- * A RACE IT CANNOT CLOSE from here: a background answer's response-safety
- * review row is written after its job completes (shadowJobProcessor.ts), so a
- * member who deletes the chat while that job runs leaves the job nothing to
- * complete, and that row is not written.
+ * RACES IT CANNOT CLOSE from here. The rows that flag a chat are written
+ * after the exchange they are about, in their own statements: the chat
+ * route writes its review rows and a disclosure's safety escalation at the
+ * end of the request, after the exchange is stored (chat/route.ts), and the
+ * job processor writes a background answer's response-safety review row
+ * after its job completes (shadowJobProcessor.ts). A member who deletes the
+ * chat in that gap (from another tab or device; the page disables Delete
+ * while its own request is in flight) has it cleared as not flagged. Then a
+ * review row is not written (its insert fails the conversation foreign key,
+ * and the chat request fails closed; a job has nothing to complete), and an
+ * escalation is filed naming an id that no longer exists. Closing the gap
+ * means writing those rows with the exchange, in chat/route.ts and the job
+ * processor, which this lane does not change.
  * ------------------------------------------------------------------------- */
 
 /** The title a cleared chat keeps (the old one is the first words the member typed). */
