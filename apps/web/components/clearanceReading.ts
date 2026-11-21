@@ -111,7 +111,11 @@ export async function readClearance(athleteId: string): Promise<ClearanceReading
 // already sit: still an action state, still fail-closed (nothing here reads as
 // cleared), and still Law 3-legible because the LABEL, not the colour, is what
 // separates "no record" from "pending" from "unavailable".
-export const CLEARANCE_BADGE: Record<string, { className: string; glyph: string; label: string }> = {
+// Not exported: a page draws a clearance through clearanceBadge(), and the
+// medical-stop guard (components/escalationMedicalStopMark.test.tsx) pins which
+// pages call it, since it cannot see the mark's token in a file that only reads
+// the map.
+const CLEARANCE_BADGE: Record<string, { className: string; glyph: string; label: string }> = {
   cleared: { className: 'badge badge--cleared', glyph: '✓', label: 'cleared' },
   restricted: { className: 'badge badge--restricted', glyph: '▲', label: 'restricted' },
   not_cleared: { className: 'badge badge--locked', glyph: '✕', label: 'not cleared' },

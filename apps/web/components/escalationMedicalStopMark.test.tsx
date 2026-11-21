@@ -616,6 +616,31 @@ function markCountsInSource(): Map<string, number> {
   return counts;
 }
 
+/** Non-test files under app/ and components/, other than the badge's own, that name the shared clearance badge. */
+function clearanceBadgeUsers(): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as typeof import('node:fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('node:path') as typeof import('node:path');
+  const webRoot = path.resolve(__dirname, '..');
+  const users: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') walk(full);
+      } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+        const relative = path.relative(webRoot, full).split(path.sep).join('/');
+        if (relative === 'components/clearanceReading.ts') continue;
+        if (/\b(clearanceBadge|CLEARANCE_BADGE)\b/.test(withoutComments(fs.readFileSync(full, 'utf8')))) users.push(relative);
+      }
+    }
+  };
+  walk(path.join(webRoot, 'app'));
+  walk(path.join(webRoot, 'components'));
+  return users.sort();
+}
+
 describe('the medical-stop mark appears nowhere else in the source', () => {
   const counts = markCountsInSource();
   const pending = new Map([...MARK_PENDING_SC2_3, ...MARK_PENDING_SC2_4]);
@@ -640,6 +665,15 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
 
   test('the scan sees the one real medical stop, so it is not blind', () => {
     expect(counts.get('components/clearanceReading.ts')).toBe(1);
+  });
+
+  // The scan counts the mark's TOKEN, so it cannot see a file that draws the
+  // mark by reading the shared badge (lane AS-5, Q-B1 = A on #2041). The badge
+  // map is not exported; this pins which files draw a clearance through
+  // clearanceBadge(), the ones MARK_ALLOWED's reason names. Another file
+  // drawing it has to be added here, with its reason.
+  test('the one real medical stop is drawn only where its reason says: the Clearance Board and Athlete Safety', () => {
+    expect(clearanceBadgeUsers()).toEqual(['app/coach/athlete-safety/page.tsx', 'app/coach/sports-medicine/page.tsx']);
   });
 
   test('every file that carries the mark is allowed, with its reason, or still pending a sweep', () => {

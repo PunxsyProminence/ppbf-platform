@@ -1311,6 +1311,105 @@ describe('Athlete Safety (lane AS-5)', () => {
         }
       });
 
+      // Safety review of 0e9a925c: re-reads go out every 30 seconds, so on a network slower
+      // than that, keeping only the newest read SENT threw every answer away and left
+      // "cleared" up past the end date for good; and a re-read that never answered left it up too.
+      describe('at the end date on a slow or silent network', () => {
+        const IN_FORCE = {
+          ok: true,
+          status: { athlete_id: 'ath-1', status: 'cleared', effective_at: '2026-06-01T14:00:00.000Z', expires_at: '2026-10-01 16:00:00+00' },
+          effectiveStatus: 'cleared',
+        };
+        const LAPSED = { ...IN_FORCE, effectiveStatus: 'cleared_expired' };
+
+        /** The first read answers at once; each re-read answers `reply()` after `delayMs`, or never if null. */
+        function slowReReads(delayMs: number | null, reply: () => unknown): () => number {
+          const base = global.fetch;
+          let reads = 0;
+          global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+            if (String(url).includes('/api/pilot/shadow/medical-status?athleteId=ath-1')) {
+              reads += 1;
+              if (reads === 1) return { ok: true, status: 200, json: async () => IN_FORCE };
+              if (delayMs === null) return new Promise<Response>(() => undefined);
+              await new Promise<void>((resolve) => {
+                setTimeout(resolve, delayMs);
+              });
+              const body = reply();
+              return { ok: true, status: 200, json: async () => body };
+            }
+            return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+          }) as unknown as typeof fetch;
+          return () => reads;
+        }
+
+        async function advance(ms: number) {
+          await act(async () => {
+            jest.advanceTimersByTime(ms);
+          });
+          await act(async () => {
+            await Promise.resolve();
+          });
+        }
+
+        test('re-reads slower than the 30 second repeat still bring the answer: "cleared" does not stay up', async () => {
+          jest.useFakeTimers();
+          jest.setSystemTime(new Date('2026-10-01T15:59:00.000Z'));
+          const reads = slowReReads(45_000, () => LAPSED);
+          try {
+            await openAthlete();
+            await waitFor(() => expect(badge()?.textContent).toBe('✓cleared'));
+            await advance(60_000);
+            expect(reads()).toBe(2);
+            // Unanswered after the wait: unread, never still "cleared".
+            await advance(15_000);
+            expect(badge()?.textContent).toBe('▲unavailable');
+            expect(within(section()).getByText(CLEARANCE_UNREAD)).toBeTruthy();
+            await advance(15_000);
+            expect(reads()).toBe(3);
+            // The first re-read answers while the second is still out: it is newer than
+            // anything on screen, so it is shown.
+            await advance(15_000);
+            await waitFor(() => expect(badge()?.textContent).toBe('▲clearance expired'));
+            expect(within(section()).getByText('This clearance passed its end date, so it no longer counts.')).toBeTruthy();
+          } finally {
+            jest.useRealTimers();
+          }
+        });
+
+        test('a re-read that never answers is said as unread after the wait, and the date is still asked about', async () => {
+          jest.useFakeTimers();
+          jest.setSystemTime(new Date('2026-10-01T15:59:00.000Z'));
+          let silent = true;
+          const reads = slowReReads(null, () => LAPSED);
+          try {
+            await openAthlete();
+            await waitFor(() => expect(badge()?.textContent).toBe('✓cleared'));
+            await advance(60_000);
+            expect(reads()).toBe(2);
+            await advance(14_000);
+            expect(badge()?.textContent).toBe('✓cleared');
+            await advance(1_000);
+            expect(badge()?.textContent).toBe('▲unavailable');
+            expect(within(section()).getByText(CLEARANCE_UNREAD)).toBeTruthy();
+            await advance(15_000);
+            expect(reads()).toBe(3);
+            // The network comes back: the next re-read answers, and the section shows it.
+            silent = false;
+            const base = global.fetch;
+            global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+              if (!silent && String(url).includes('/api/pilot/shadow/medical-status?athleteId=ath-1')) {
+                return { ok: true, status: 200, json: async () => LAPSED };
+              }
+              return (base as unknown as (u: string, i?: RequestInit) => Promise<Response>)(url, init);
+            }) as unknown as typeof fetch;
+            await advance(30_000);
+            await waitFor(() => expect(badge()?.textContent).toBe('▲clearance expired'));
+          } finally {
+            jest.useRealTimers();
+          }
+        });
+      });
+
       test('the section reads the clearance once, by GET, for the chosen athlete only, and nothing about a clearance is written', async () => {
         await openAthlete();
         await waitFor(() => expect(badge()).not.toBeNull());

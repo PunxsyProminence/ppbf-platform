@@ -184,7 +184,13 @@ const READ_WAIT_MS = 15_000;
  * A CLEARANCE CAN RUN OUT WHILE THE PAGE IS OPEN. As on the board, a clearance
  * in force with an end date is read again when that date arrives, and the
  * section shows what the route answers; a re-read that fails keeps the end
- * date, so it goes on being asked.
+ * date, so it goes on being asked. Two things differ from the board, both so
+ * that a "cleared" past its end date cannot stay up on a slow or silent
+ * network: an answer is shown when it is newer than the one on screen, not
+ * only when it is the newest read sent (re-reads go out every 30 seconds, so
+ * on a network slower than that the board would throw every answer away);
+ * and a re-read still unanswered after READ_WAIT_MS is said as unread, as the
+ * first read is.
  *
  * Mounted with `key={athleteId}`, so one athlete's reading is never on screen
  * under another's name.
@@ -224,21 +230,38 @@ function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; 
   const endsAt = clearance?.ends_at && (clearance.clearance === 'cleared' || clearance.clearance === 'unavailable')
     ? clearance.ends_at
     : null;
+  // Re-reads are numbered as they are sent. `clearanceShownSeq` is the newest
+  // one whose ANSWER is on screen: an older answer arriving late never paints
+  // over it, and a newer one always may.
   const clearanceReadSeq = useRef(0);
+  const clearanceShownSeq = useRef(0);
   useEffect(() => {
     if (!endsAt) return undefined;
     let live = true;
+    const overdues = new Set<ReturnType<typeof setTimeout>>();
     const cancel = whenPassed(endsAt, () => {
       clearanceReadSeq.current += 1;
       const seq = clearanceReadSeq.current;
+      // Unanswered after the wait, and nothing as new has answered: unread,
+      // keeping the end date so it goes on being asked. Its answer, if it
+      // comes later, is still shown.
+      const overdue = setTimeout(() => {
+        overdues.delete(overdue);
+        if (live && clearanceShownSeq.current < seq) setClearance({ ...CLEARANCE_UNREAD, ends_at: endsAt });
+      }, READ_WAIT_MS);
+      overdues.add(overdue);
       void readClearance(athleteId).then((reading) => {
-        if (!live || clearanceReadSeq.current !== seq) return;
+        clearTimeout(overdue);
+        overdues.delete(overdue);
+        if (!live || seq <= clearanceShownSeq.current) return;
+        clearanceShownSeq.current = seq;
         setClearance(reading.clearance === 'unavailable' ? { ...reading, ends_at: endsAt } : reading);
       });
     });
     return () => {
       live = false;
       cancel();
+      overdues.forEach((overdue) => clearTimeout(overdue));
     };
   }, [athleteId, endsAt]);
 
