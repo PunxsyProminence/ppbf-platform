@@ -280,7 +280,7 @@ const PICTURE_NEAR_PLACE = [
   String.raw`(?:${STRANGER_TUTORIAL}|(?=.*\bme\b))${STRANGER_ONE}${WORD}{0,8}? ${STRANGER_PICTURE}${STRANGER_GYM_CONTENT}`,
   // With a payment, threat, secrecy or meeting word anywhere, no gym or
   // tutorial guard applies.
-  String.raw`^(?=.*\b(?:${STRANGER_HARM})\b).*${STRANGER_ONE}${WORD}{0,10}? ${ANY_PICTURE}\b`,
+  String.raw`^(?=.*\b(?:${STRANGER_HARM})\b).*${STRANGER_ONE}${WORD}{0,14}? ${ANY_PICTURE}\b`,
   String.raw`^(?=.*\b(?:${STRANGER_HARM})\b).*\b${ANY_PICTURE}\b.*${STRANGER_ONE}`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
