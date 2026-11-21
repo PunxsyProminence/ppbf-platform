@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-21-003 | 2026-11-21 | HF lanes: start the two hard-floor fix lanes; Ask SHADOW and SHADOW-deletion wording is option A | PRIMARY |  |  |
+| OD-2026-11-21-002 | 2026-11-21 | Release 4f77642a with the organization-admin staging checks only | PRIMARY |  | yes |
 | OD-2026-11-21-001 | 2026-11-21 | App Overwatch moves to a local Claude Code session on the admin Claude account | REPORTED |  | yes |
 | OD-2026-11-20-003 | 2026-11-20 | Overwatch moves to a cloud session on the admin Claude account | REPORTED |  | yes |
 | OD-2026-11-20-002 | 2026-11-20 | SHADOW lane answers: SH-01 to SH-05, SH-07, MSG-1 and MSG-2 | RECONSTRUCTED |  |  |
@@ -635,6 +637,47 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-21-003 -- HF lanes: start the two hard-floor fix lanes; Ask SHADOW and SHADOW-deletion wording is option A
+
+**Provenance: PRIMARY.** Jason typed these in the local Overwatch session (Claude Code desktop app on his PC) on 2026-11-21 UTC. Typos are kept. The questions are the lanes' cards on PR #2059 (HF12, its Q3) and PR #2062 (HF7, its Q1), which Overwatch put to him; the option texts are in those PRs' bodies. New; edits no earlier entry's text.
+
+**Jason (2026-11-21, PRIMARY, on whether to start fix lanes for the research lane's hard-floor lines HF1+HF2 and HF7):** *"Yes, start both"*
+
+**Jason (2026-11-21, PRIMARY, answering #2059 Q3 and #2062 Q1 together):** *"A for both"*
+
+**Ruling:**
+1. Lanes HF12 (HF1 missed crisis and abuse wording; HF2 "No coach is notified") and HF7 (deleted SHADOW conversations are only hidden) are built. HF12 merged as #2059 (`b1013220`).
+2. #2059 Q3 = A: Ask SHADOW's three sentences (after sending, the help panel, the SafeSport box) say that a coach or the gym office can get an alert when a message sounds like someone may not be safe, and that otherwise no coach sees it. The words are the constants in `apps/web/components/askShadowWords.ts`.
+3. #2062 Q1 = A: the member's sentence after a SHADOW chat deletion says what is deleted "except anything the gym must keep for safety, which is kept for two years" (the plan's section 5, option A).
+
+**Applied by Overwatch (not his words):** #2059 Q1 = A and Q2 = A; #2062 Q2 = A (build the two-year de-identify sweep) and Q3 = A for the hold, with the office sentence reading "flagged for review" in place of "under a safeguarding review", because a review row for an empty Library is not a safeguarding review (PR comments on #2059 and #2062).
+**Status:** recorded 2026-11-21 by PR.
+
+---
+
+## OD-2026-11-21-002 -- Release 4f77642a with the organization-admin staging checks only
+
+**Provenance: PRIMARY.** Jason typed these in the local Overwatch session on 2026-11-21 UTC. The options are quoted from Overwatch's message just before his answer. New; edits no earlier entry's text.
+
+**Options as shown (Overwatch, 2026-11-21 04:56 UTC):**
+```text
+- **A (recommended):** check the public home page signed out now. You then sign in as the staging test athlete with its PIN, and a test parent if one exists; you type the credentials and I navigate.
+- **B:** release with what's been checked, leaving the athlete and parent screens unchecked.
+```
+
+**Jason (2026-11-21 05:02 UTC, PRIMARY):** *"b"*
+
+**Jason (2026-11-21 05:06 UTC, PRIMARY, on whether to approve production run 44868998724):** *"Approved"*
+
+**Ruling:** release `4f77642a` with the staging checks done as the organization admin (/activate signed out; Gym Office search, role filter and codes row; Passbook record links), leaving the athlete workspace (#2036), /change-pin (#2051) and the Parent Hub pages (#2033, #2053, #2049) unchecked on staging. B was against the recommendation; the cost, stated in the same exchange: those screens had not been looked at by anyone.
+
+**Applied:** Overwatch clicked the production approval for run 44868998724 on his "Approved", with the approval page open in the in-app browser (the per-run rule in the workspace rules). Production runs `4f77642a`, revision app-ppbf-production--0000211.
+
+**Not ruled here:** whether later releases may also skip the athlete and parent checks.
+**Status:** recorded 2026-11-21 by PR.
 
 ---
 
