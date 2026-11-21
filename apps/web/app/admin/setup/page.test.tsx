@@ -84,3 +84,30 @@ test('with every step done or outside the app, it says so', async () => {
   expect(screen.getByText('Every step below is done, optional, or done outside the app.')).toBeTruthy();
   expect(screen.getByText('Optional')).toBeTruthy();
 });
+
+// Lane AS-10 (OFF-09; Overwatch Q6 A): a step whose work is split over two
+// screens shows both links, and a step with one shows one.
+test('a step with a second screen shows both links, in order; other steps show one', async () => {
+  mockReadGymSetupStatus.mockResolvedValue([
+    { key: 'coaches', title: 'At least one coach', state: 'done', detail: '2 active coaches.', href: '/admin/people?tab=invite-staff', linkLabel: 'Add a coach' },
+    {
+      key: 'guardians',
+      title: 'A guardian for every athlete under 18',
+      state: 'to_do',
+      detail: '1 athlete under 18 has no guardian on file.',
+      href: '/admin/people?tab=invite-staff',
+      linkLabel: 'Add a guardian',
+      alsoHref: '/admin/athlete-consent',
+      alsoLinkLabel: 'Media Consent Audit',
+    },
+  ]);
+  render(await GymSetupPage());
+
+  const steps = within(screen.getByRole('list', { name: 'Setup steps' })).getAllByRole('listitem');
+  expect(within(steps[0]).getAllByRole('link').map((link) => link.textContent)).toEqual(['Add a coach']);
+  const guardianLinks = within(steps[1]).getAllByRole('link');
+  expect(guardianLinks.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+    ['Add a guardian', '/admin/people?tab=invite-staff'],
+    ['Media Consent Audit', '/admin/athlete-consent'],
+  ]);
+});

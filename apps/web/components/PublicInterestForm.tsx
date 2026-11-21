@@ -44,7 +44,13 @@ export default function PublicInterestForm() {
   const [message, setMessage] = useState('');
   // Honeypot: real visitors never see or fill this in.
   const [website, setWebsite] = useState('');
-  const [confirmation, setConfirmation] = useState('');
+  // A sent form and a failed one are told apart (app scrub FAM-25): the
+  // thanks is a status line, a failure is an alert the visitor cannot miss.
+  // The alert's title is "Failed", the word the app's other failure alerts
+  // use: after a dropped connection nobody knows whether the gym got it, so
+  // the title claims nothing about that.
+  const [sent, setSent] = useState('');
+  const [failure, setFailure] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
@@ -54,7 +60,8 @@ export default function PublicInterestForm() {
     }
 
     setSubmitting(true);
-    setConfirmation('');
+    setSent('');
+    setFailure('');
     try {
       // credentials: 'omit' -- a signed-out visitor's form; no session cookie
       // is needed or wanted.
@@ -77,20 +84,20 @@ export default function PublicInterestForm() {
       const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
 
       if (!response.ok || !payload.ok) {
-        setConfirmation(
+        setFailure(
           payload.error
           || `Something went wrong sending this and it did not go through.${comeBy}`,
         );
         return;
       }
 
-      setConfirmation('Got it -- thanks. A staff member reads every one of these, and someone will get back to you the way you asked.');
+      setSent('Got it -- thanks. A staff member reads every one of these, and someone will get back to you the way you asked.');
       setFullName('');
       setEmail('');
       setPhone('');
       setMessage('');
     } catch {
-      setConfirmation(`The connection dropped and this was not sent.${comeBy}`);
+      setFailure(`The connection dropped and this was not sent.${comeBy}`);
     } finally {
       setSubmitting(false);
     }
@@ -161,14 +168,23 @@ export default function PublicInterestForm() {
         {submitting ? 'Sending...' : 'Send this to a coach'}
       </button>
 
-      {confirmation && <p className="t-body" role="status">{confirmation}</p>}
+      {sent && <p className="t-body" role="status">{sent}</p>}
+      {failure && (
+        <div className="alert alert--warning" role="alert">
+          <span className="alert-icon" aria-hidden="true">▲</span>
+          <div className="alert-body">
+            <p className="alert-title">Failed</p>
+            <p className="alert-msg">{failure}</p>
+          </div>
+        </div>
+      )}
 
       {/* Jason's wording, relayed by overwatch 2026-10-04. */}
       <p className="t-muted">
         This form is for people 13 or older; a parent or guardian can send it for a younger child.
       </p>
       <p className="t-muted">
-        We use what you send only to answer you. We do not sell or share it. <Link href="/privacy">Privacy</Link>
+        We use what you send only to answer you. We do not sell or share it. <Link href="/privacy">Privacy: interest form</Link>
       </p>
     </form>
   );

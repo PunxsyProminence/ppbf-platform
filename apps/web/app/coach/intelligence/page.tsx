@@ -10,6 +10,9 @@ import { formatGymDateShort } from '@/src/lib/gymTime';
 import { PAIN_ESCALATION_LABEL } from '@/src/shared/painScoreLabel';
 import BackHome from '@/components/BackHome';
 import ClusterNav from '@/components/ClusterNav';
+import { AthleteNameLink } from '@/components/AthleteRecordLinks';
+import { PROGRESSION_INTELLIGENCE_PAGE } from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, isPlainClick } from '@/components/decisionLoopArrival';
 
 /** Some of this digest's instants arrive as Postgres text ("2026-08-20
  *  00:00:00+00"), which not every browser parses. Written as ISO first. */
@@ -189,7 +192,7 @@ export default function CoachIntelligencePage() {
                           <i aria-hidden="true">{escalationBadge(item.severity).glyph}</i>
                           {item.pain_report ? PAIN_ESCALATION_LABEL : item.severity}
                         </span>
-                        {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        {' '}<AthleteNameLink athleteId={item.athlete_id} name={item.athlete_name} />
                         {' '}— {humanize(item.source_type)}: {item.reason}
                         {' '}(filed {gymDay(item.created_at)}). <Link className="underline" href="/admin/escalations">Escalation queue</Link>
                       </li>
@@ -205,7 +208,7 @@ export default function CoachIntelligencePage() {
                     {digest.open_compliance_violations.map((item) => (
                       <li key={item.violation_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
                         <span className={`badge ${severityBadgeClass(item.severity)}`}><i aria-hidden="true">{severityGlyph(item.severity)}</i>{item.severity}</span>
-                        {' '}<span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        {' '}<AthleteNameLink athleteId={item.athlete_id} name={item.athlete_name} />
                         {' '}— {item.rule_name} ({humanize(item.status)}, open {item.days_open} days).
                         {' '}Closing one out is an organization admin action.
                       </li>
@@ -220,7 +223,7 @@ export default function CoachIntelligencePage() {
                   <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                     {digest.expiring_holds.map((item) => (
                       <li key={item.hold_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                        <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        <AthleteNameLink athleteId={item.athlete_id} name={item.athlete_name} />
                         {' '}— hold expires {gymDay(item.expires_at)}. <Link className="underline" href="/coach/sports-medicine">Clearance board</Link>
                       </li>
                     ))}
@@ -234,7 +237,7 @@ export default function CoachIntelligencePage() {
                   <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                     {digest.readiness_concerns.map((item) => (
                       <li key={item.athlete_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                        <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        <AthleteNameLink athleteId={item.athlete_id} name={item.athlete_name} />
                         {' '}— {item.red_days} RED check-in days in the last 7. Talk before training.
                       </li>
                     ))}
@@ -248,7 +251,7 @@ export default function CoachIntelligencePage() {
                   <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                     {digest.fading_attendance.map((item) => (
                       <li key={item.athlete_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                        <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        <AthleteNameLink athleteId={item.athlete_id} name={item.athlete_name} />
                         {' '}— {item.training_days_late} training days this fortnight, down from {item.training_days_early}.
                       </li>
                     ))}
@@ -262,8 +265,19 @@ export default function CoachIntelligencePage() {
                   <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                     {digest.stalled_gaps.map((item) => (
                       <li key={`${item.athlete_id}:${item.gap_type}:${item.days_open}`} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                        <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
-                        {' '}— {item.gap_type}: {item.gap_description} ({item.days_open} days). <Link className="underline" href="/coach/progression-intelligence">Assign a drill</Link>
+                        <AthleteNameLink athleteId={item.athlete_id} name={item.athlete_name} />
+                        {' '}— {item.gap_type}: {item.gap_description} ({item.days_open} days).{' '}
+                        {/* Opens Progression Intelligence on this athlete, in
+                            page memory, never the address (lane AS-11 Q5 = A). */}
+                        <Link
+                          className="underline"
+                          href="/coach/progression-intelligence"
+                          onClick={(event) => {
+                            if (isPlainClick(event)) handOffArrivalAthlete(item.athlete_id, PROGRESSION_INTELLIGENCE_PAGE);
+                          }}
+                        >
+                          Assign a drill
+                        </Link>
                       </li>
                     ))}
                   </ul>
@@ -276,7 +290,7 @@ export default function CoachIntelligencePage() {
                   <ul className="mt-[var(--s3)] space-y-[var(--s2)]">
                     {digest.unreviewed_sessions.map((item) => (
                       <li key={item.session_id} className="t-body" style={{ fontSize: 'var(--t-sm)' }}>
-                        <span className="font-semibold text-[color:var(--bone-100)]">{item.athlete_name}</span>
+                        <AthleteNameLink athleteId={item.athlete_id} name={item.athlete_name} />
                         {' '}— session on {formatCalendarDay(item.session_date.slice(0, 10))}, waiting {item.days_waiting} days.
                       </li>
                     ))}

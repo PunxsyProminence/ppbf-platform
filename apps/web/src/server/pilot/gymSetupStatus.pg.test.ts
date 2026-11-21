@@ -187,7 +187,7 @@ describe('Gym Setup counts against the real schema', () => {
       expect(lines.athletes).toMatchObject({ state: 'done', detail: '3 active athletes.' });
       expect(lines['athlete-sign-in']).toMatchObject({
         state: 'to_do',
-        detail: '1 athlete has set a PIN; 1 is waiting to redeem an activation code; 1 has not been issued a code yet.',
+        detail: '1 athlete has set a PIN; 1 is waiting to redeem an activation code; 1 has not been issued a code yet. An unredeemed code is replaced from the athlete\'s row on Gym Office: Issue New Activation Code.',
       });
       expect(lines.guardians).toMatchObject({ state: 'to_do', detail: '1 athlete under 18 has no guardian on file.' });
       expect(lines.waivers).toMatchObject({
