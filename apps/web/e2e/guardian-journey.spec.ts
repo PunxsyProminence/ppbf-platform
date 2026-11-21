@@ -181,7 +181,7 @@ test.describe('Guardian journey', () => {
     await expect.poll(() => asked).toHaveLength(1);
     expect(asked[0]).toContain(`Change consent for ${ROSA.full_name} to photos only?`);
     expect(asked[0]).toContain('retracted from distribution immediately');
-    expect(asked[0]).toContain('will not be played back or published');
+    expect(asked[0]).toContain('will not be published or opened for playback');
     expect(asked[0]).not.toContain(ROSA.athlete_id);
     expect(decisions).toEqual([]);
     await expect(page.getByText('Consent changed to photos only.')).toHaveCount(0);

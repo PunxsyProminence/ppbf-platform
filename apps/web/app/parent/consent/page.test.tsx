@@ -476,10 +476,11 @@ describe('Change to photos only', () => {
     /* The caller has signed, photos only, so their own row has nothing to
        change; the co-guardian has granted video. Offering the control here
        would be offering to change the co-guardian's consent. The co-guardian
-       comes first in the list, so a reader that took the first row, or any
-       row that granted video, would draw the button. (The server answers for
-       the caller's own guardian record only, whatever the page sends:
-       route.ts resolves it from the session.) */
+       comes first in the list: a page that offered the control whenever a
+       co-guardian's row is there would draw it, and one that read the first
+       row as the caller's would draw Grant instead of Withdraw. (The server
+       answers for the caller's own guardian record only, whatever the page
+       sends: route.ts resolves it from the session.) */
     const coGuardianFirst = (own: Record<string, unknown>) => [
       {
         athlete_id: 'ath-1',
@@ -521,7 +522,7 @@ describe('Change to photos only', () => {
     await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     const asked = String(confirm.mock.calls[0][0]);
     expect(asked).toBe(
-      'Change consent for Jamie Rivera to photos only? If you do, Jamie Rivera’s published videos will be retracted from distribution immediately, and Jamie Rivera’s videos will not be played back or published while your photos-only consent is in place.',
+      'Change consent for Jamie Rivera to photos only? If you do, Jamie Rivera’s published videos will be retracted from distribution immediately, and Jamie Rivera’s videos will not be published or opened for playback while your photos-only consent is in place.',
     );
     expect(asked).not.toContain('ath-1');
     expect(posts).toEqual([]);
@@ -575,6 +576,29 @@ describe('Change to photos only', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Change to photos only' }));
     await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     expect(String(confirm.mock.calls[0][0])).not.toMatch(/Public use/);
+  });
+
+  test('with two children, the control acts on and names the child whose card it is on', async () => {
+    /* A wrong-sibling change would be a real downgrade of a real child's
+       consent: the server only refuses a child who is not the caller's own. */
+    const confirm = jest.fn().mockReturnValue(true);
+    window.confirm = confirm;
+    const own = { you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' };
+    const { posts } = installFetch([
+      { athlete_id: 'ath-1', athlete_name: 'Jamie Rivera', consent_ok: true, guardian_count: 1, missing_guardian_count: 0, per_guardian: [own] },
+      { athlete_id: 'ath-2', athlete_name: 'Alex Rivera', consent_ok: true, guardian_count: 1, missing_guardian_count: 0, per_guardian: [own] },
+    ]);
+    render(<GuardianMediaConsentPage />);
+    await screen.findAllByText('Consent on file');
+
+    const buttons = screen.getAllByRole('button', { name: 'Change to photos only' });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1]);
+
+    await screen.findByText('Consent changed to photos only.');
+    expect(String(confirm.mock.calls[0][0])).toMatch(/^Change consent for Alex Rivera to photos only\?/);
+    expect(String(confirm.mock.calls[0][0])).not.toContain('Jamie');
+    expect(posts).toEqual([{ athlete_id: 'ath-2', decision: 'grant', covers_video: false, public_use_allowed: false }]);
   });
 
   test('when public use is on file and the guardian accepts, the grant sends public use off, as the confirm said', async () => {

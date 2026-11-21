@@ -350,14 +350,16 @@ describe('guardian media consent: rendered target geometry', () => {
     const backHeight = toPx(resolve(back, 'min-height').value);
     // Never shorter. Since AS9-5 the page wears the hub's family dress
     // (.ge-family), which floors every .btn at --tap, so the two now share
-    // the 55px height; the decision still out-ranks the escape hatch on the
-    // other half, below: it spans the card and the escape hatch does not.
+    // the 55px height. That changed the rank this test used to hold at every
+    // width: on a local render (2026-11-21) the decision is the larger target
+    // at 360px and up (276x55 against 251x55) and about the same size at 320
+    // (236x57 against 251x55). Named in the AS9-5 pull request.
     expect(grantHeight).toBeGreaterThanOrEqual(backHeight);
     expect(grantHeight).toBe(55);
 
     // Width is the half that actually reversed: 230x44 leaving vs 156x38
-    // deciding. The decision spans the child's card at every viewport; the
-    // escape hatch keeps its intrinsic width, so it can never be wider again.
+    // deciding. The decision spans the child's card; the escape hatch keeps
+    // its intrinsic width.
     expect(resolve(grant, 'width').value).toBe('100%');
     expect(resolve(back, 'width').value).toBeNull();
   });
