@@ -2249,3 +2249,28 @@ describe('HF12b seventh delta review (81ed7ee..bdd4987): blocking findings', () 
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b eighth delta review (81ed7ee..b2e6efe): blocking findings', () => {
+  test.each([
+    'an adult boxing coach on insta asked for my pics',
+    'an adult boxing coach on insta keeps asking for my pics',
+    'an adult boxing scout online wants my physique pics',
+    'an adult boxing promoter online offered me money for pics',
+    'an adult boxing fan online is threatening to post my pics',
+    'an adult boxing fan online has videos of me',
+    'an adult boxing trainer on insta has my pics',
+    'an adult boxing coach online asked me for training videos',
+    'an adult boxing fan i dont know took pictures of me',
+    'an adult boxing fan online sent me pics',
+    'an adult team member online keeps sending me pics',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'the adult boxing class online has a video of the warm up',
+    'the adult team online posted pics of the event',
+  ])('everyday talk stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
+  });
+});
