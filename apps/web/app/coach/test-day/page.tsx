@@ -388,7 +388,7 @@ function TestDayForm() {
       ) : null}
       {/* "Whose numbers" lines (review of #2057). One live region that is always on the page, so
           what lands in it is read out: a region inserted with its text already in it often is not.
-          aria-live, not a status role: the page's one status is the save's. */}
+          aria-live, not a status role, so these lines are not taken for the page's loading or save status. */}
       <div aria-live="polite" data-testid="class-lines" className="space-y-[var(--s2)]">
         {roster && roster.length > 0 && classData === 'failed' ? (
           /* A failed class read is a degraded page, not an empty answer: a warning with a glyph and
