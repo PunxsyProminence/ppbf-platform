@@ -925,6 +925,22 @@ describe('T2b: what arrives at the edges', () => {
     expect(kept).toHaveLength(1);
     expectNoNames(kept[0].content, ['Jordan', 'Pike']);
   });
+
+  test('a coach\'s chat about an athlete loses the athlete\'s names, though none are the coach\'s', async () => {
+    // Only the chat's subject names the athlete here: the coach has no
+    // name on record and is not their guardian.
+    const coachActor: ActorIdentity = { accountId: COACH, role: 'coach', organizationId: ORG, athleteId: null };
+    const target = await seedConversation(mainDb, {
+      organizationId: ORG, accountId: COACH, role: 'coach', athleteId: ATHLETE,
+      userWords: 'plan for this athlete', replyWords: 'Jordan Pike (Lightning) can spar; tell Dana Pike and Morgan Quill.',
+    });
+    await expect(deleteOwnConversation!(coachActor, target.conversationId)).resolves.toBe(true);
+    const keptId = await keptCopy(mainDb, target);
+    expect(keptId).not.toBeNull();
+    const kept = await messagesOf(mainDb, keptId!);
+    expect(kept).toHaveLength(1);
+    expectNoNames(kept[0].content, ['Jordan', 'Pike', 'Lightning', 'Dana', 'Morgan', 'Quill']);
+  });
 });
 
 describe('T3: the office completes a member\'s request', () => {
