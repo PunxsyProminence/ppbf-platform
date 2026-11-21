@@ -909,6 +909,21 @@ describe('T2b: what arrives at the edges', () => {
     )).rows[0];
     expect(row).toEqual({ conversation_id: null, account_id: MEMBER, severity: 'critical' });
   });
+
+  test('a general chat with no athlete on it still loses the member\'s own athlete name', async () => {
+    // The session names no athlete, so the member's name comes from their
+    // account's athlete record alone.
+    const target = await seedConversation(mainDb, {
+      organizationId: ORG, accountId: MEMBER, role: 'athlete',
+      userWords: 'general question', replyWords: 'Jordan Pike, keep your guard up.',
+    });
+    await expect(deleteOwnConversation!(memberActor, target.conversationId)).resolves.toBe(true);
+    const keptId = await keptCopy(mainDb, target);
+    expect(keptId).not.toBeNull();
+    const kept = await messagesOf(mainDb, keptId!);
+    expect(kept).toHaveLength(1);
+    expectNoNames(kept[0].content, ['Jordan', 'Pike']);
+  });
 });
 
 describe('T3: the office completes a member\'s request', () => {
