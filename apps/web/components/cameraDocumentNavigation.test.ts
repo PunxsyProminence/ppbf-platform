@@ -258,7 +258,9 @@ test('the two places that navigate by a variable href still consult the rule', (
      surface navigating by a variable href, which this file does not scan. So
      it may hold no link, no href and no programmatic navigation at all. */
   const corridor = readFileSync(path.join(WEB, 'components', 'Corridor.tsx'), 'utf8');
-  expect(corridor).not.toMatch(/ChromeLink|next\/link|href=|router\.|location\.(assign|replace)/);
+  expect(corridor).not.toMatch(
+    /ChromeLink|next\/link|href\s*=|\{\.\.\.|router\.|useRouter|location\.(assign|replace)|location\.href\s*=|window\.open/,
+  );
 });
 
 test('the gate that wraps both recorders redirects by loading a document', () => {
