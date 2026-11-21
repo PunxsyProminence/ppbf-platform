@@ -698,3 +698,44 @@ describe('HF1 re-review round 6', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+// HF12b (lane HF12b): the "Known misses" PR 2059 listed. Each sentence below
+// was missed on main 4f26461 (OBSERVED by a jest probe) unless the test says
+// otherwise. Invented phrases.
+describe('HF12b: a word spelled out letter by letter', () => {
+  test.each([
+    ['s u i c i d e', 'crisis'],
+    ['i keep thinking about s u i c i d e', 'crisis'],
+    ['k m s', 'crisis'],
+    ['k.m.s', 'crisis'],
+    ['k i l l  m y s e l f', 'crisis'],
+    ['k.i.l.l m.y.s.e.l.f', 'crisis'],
+    ['k-i-l-l m-y-s-e-l-f', 'crisis'],
+    ['k i l l m y s e l f', 'crisis'],
+    ['he r a p e d me', 'grooming_or_isolation'],
+    ['he m o l e s t e d me', 'grooming_or_isolation'],
+    ['he a b u s e d me', 'someone_is_hurting_me'],
+    ['im s c a r e d of him', 'fear'],
+    ['i k m s', 'crisis'],
+    ['i think about s u i c i d e a lot', 'crisis'],
+  ])('%p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+
+  test('a spelled-out word is joined in the normal form every consumer reads', () => {
+    expect(normalizeForSafetyScan('he t o u c h e d me')).toBe('he touched me');
+    expect(normalizeForSafetyScan('k.i.l.l m.y.s.e.l.f')).toBe('kill myself');
+    expect(normalizeForSafetyScan('i  w a n t  t o  d i e')).toBe('i want to die');
+  });
+
+  test.each([
+    'up at 6 a.m. 5 kms before school',
+    'i ran 5 k m s this morning',
+    'grade a b c on the test',
+    'the u.s.a. team won',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+});
