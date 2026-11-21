@@ -245,3 +245,44 @@ describe('layout review round 1 (4c)', () => {
     expect(plate.getAttribute('aria-label')).not.toMatch(/where you are/i);
   });
 });
+
+describe('layout review round 2 (4c)', () => {
+  it('draws every section heading at the room headings\' size, so All pages never reads smaller than its rooms', () => {
+    const dialog = openSearch();
+    for (const name of ['All pages', 'Things you can do here']) {
+      const heading = within(dialog).getByText(name);
+      expect(heading.style.fontSize).toBe('var(--t-sm)');
+    }
+  });
+
+  it('lets a result\'s room tag and address wrap rather than push the list sideways', () => {
+    const dialog = openSearch();
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'video' } });
+    const meta = dialog.querySelector<HTMLElement>('li[role="option"] .catalog-row-meta');
+    expect(meta?.style.flexWrap).toBe('wrap');
+    expect(meta?.style.flexShrink).toBe('1');
+    expect(meta?.querySelector<HTMLElement>('code')?.style.overflowWrap).toBe('anywhere');
+    expect(meta?.querySelector<HTMLElement>('.catalog-room-tag')?.style.whiteSpace).toBe('normal');
+  });
+
+  it('draws "You are here." at --t-xs', () => {
+    pathname = '/coach/drills';
+    const dialog = openSearch();
+    expect(within(dialog).getByText('You are here.').style.fontSize).toBe('var(--t-xs)');
+  });
+
+  it('lands on the first page, never an action, when the plate\'s room lists nothing for this person', async () => {
+    const { ROOM_PLACE_DOORS } = await import('./roomPlaces');
+    const { default: Corridor } = await import('./Corridor');
+    const cabinet = new Set(ROOM_PLACE_DOORS['drill-cabinet']);
+    const real = buildingMap.visibleDoors;
+    jest.spyOn(buildingMap, 'visibleDoors').mockImplementation((r, viewer) => real(r, viewer).filter((d) => !cabinet.has(d.href)));
+    pathname = '/coach/drills';
+    render(<><Corridor /><CardCatalog /></>);
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /where you are/i }));
+    });
+    const active = screen.getByRole('dialog').querySelector('li[role="option"][aria-selected="true"]');
+    expect(active?.querySelector('code')).not.toBeNull();
+  });
+});

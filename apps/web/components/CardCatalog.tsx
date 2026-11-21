@@ -427,9 +427,11 @@ export default function CardCatalog() {
       /* The keyboard starts where the eye is sent: on the room's first page,
          so Enter opens a page in it and the arrows walk it (layout review
          round 1). Search is shut here, so `rows` is the empty-query list. */
-      const first = group
+      // A room that lists nothing for this person: the first page, never an action.
+      const inRoom = group
         ? rows.findIndex((row) => row.kind === 'door' && searchGroupOf(row.door.href, role) === group)
         : -1;
+      const first = group && inRoom < 0 ? rows.findIndex((row) => row.kind === 'door') : inRoom;
       setQuery('');
       setCursor(Math.max(first, 0));
       openCatalog(group);
@@ -581,7 +583,7 @@ export default function CardCatalog() {
           <ul id="catalog-results" ref={listRef} role="listbox" className="catalog-list">
             {actCount > 0 && (
               <li role="presentation">
-                <div className="catalog-group">Things you can do here</div>
+                <div className="catalog-group" style={{ fontSize: 'var(--t-sm)' }}>Things you can do here</div>
                 <ul role="group" className="contents">
                   {matchedActs.map((act, i) => (
                     <ActRow
@@ -619,7 +621,7 @@ export default function CardCatalog() {
               : /* Empty query: All pages, Home, the Room Map's rooms, then Lab. */
                 [
                   <li key="all-pages" role="presentation">
-                    <div className="catalog-group">All pages</div>
+                    <div className="catalog-group" style={{ fontSize: 'var(--t-sm)' }}>All pages</div>
                   </li>,
                   ...grouped.map((group) => (
                   <li key={group.key} role="presentation">
@@ -695,16 +697,20 @@ function CatalogRow({
     >
       <div className="catalog-row-main">
         <b>{door.label}</b>
-        {current && <span className="catalog-row-hint">You are here.</span>}
+        {current && <span className="catalog-row-hint" style={{ fontSize: 'var(--t-xs)' }}>You are here.</span>}
         {door.hint && <span className="catalog-row-hint">{door.hint}</span>}
       </div>
-      <div className="catalog-row-meta">
+      {/* The legacy rule holds this line to one unshrinking row (flex-shrink 0,
+          a nowrap tag), so a room tag at a readable size pushed the list
+          sideways on a phone (layout review round 2). Here it may wrap, and a
+          long address may break. */}
+      <div className="catalog-row-meta" style={{ flexWrap: 'wrap', flexShrink: 1, minWidth: 0 }}>
         {/* "in", so a room that shares a page's name (the Operations room
             and the Operations hub) is never read as that page. */}
         {showRoom && group && (
-          <span className="catalog-room-tag" style={{ fontSize: 'var(--t-xs)' }}>in {searchGroupLabel(group)}</span>
+          <span className="catalog-room-tag" style={{ fontSize: 'var(--t-xs)', whiteSpace: 'normal' }}>in {searchGroupLabel(group)}</span>
         )}
-        <code>{door.href}</code>
+        <code style={{ overflowWrap: 'anywhere' }}>{door.href}</code>
       </div>
     </li>
   );
