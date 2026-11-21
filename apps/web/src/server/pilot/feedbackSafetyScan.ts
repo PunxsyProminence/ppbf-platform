@@ -249,39 +249,28 @@ const PERSON_OR_REQUEST = String.raw`(?:he|she|they|hes|shes|theyre|someone|some
 // one, file whatever gym words follow (reviews 10 and 11 on PR 2076).
 const STRANGER_ONE = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|men|guys|adult(?! (?:clas+|clas+es|program|programs|ses+ions?|schedule|boxing|team|section)\b))(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
 const STRANGER = String.raw`(?:${STRANGER_ONE}|people(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
-// Gym content ("jab videos", "my fight video", "a video of the drill") and
-// watching or copying someone's tutorial are not a picture of the child.
-// Gym and product words excuse a picture only when nothing personal or
-// harmful follows them in the message.
-const NEUTRAL_TAIL = String.raw`(?:(?! (?:me|he|hes|him|his|himself|she|shes|her|hers|they|theyre|them|alone|secret|nobody|dont tell|not to tell|weird|pretty|body|mine)\b) [a-z0-9]+){0,5}$`;
-const STRANGER_GYM_WORDS = String.raw`${TECHNIQUE_NOUNS}|boxing|highlights?|knockouts?|kos?|tutorials?|instructional`;
-const STRANGER_PICTURE = String.raw`(?:(?<!\b(?:${STRANGER_GYM_WORDS}) )${ANY_PICTURE}\b|(?<=\b(?:${STRANGER_GYM_WORDS}) )${ANY_PICTURE}\b(?!${NEUTRAL_TAIL}))`;
-const STRANGER_GYM_CONTENT = String.raw`(?! (?:(?:of|on|about|from|showing|for) )?(?:(?!(?:his|her|their)\b)${TECHNIQUE_FILLER} ){0,3}(?:${TECHNIQUE_NOUNS}|shoulder rol+s?|everyone|everybody)\b${NEUTRAL_TAIL})`;
-const STRANGER_TUTORIAL = String.raw`(?<!\b(?:watched|watching|watch|saw|se+n|se+|copied|copying|copy) (?:a |an |some |this |that |the |one )?)`;
-// Product and upload talk about a private video setting.
-const PRIVATE_PICTURE_PRODUCT = String.raw`(?<!\b(?:ap+|site|website|page|platform|youtube|channel)(?: (?:should|could|can|will|needs? to|must))? (?:have|has|get|add|allow)(?: (?:a|an))? )(?<!\b(?:made (?:it|this|that)(?: (?:a|an|into a))?|is there (?:a|an)) )`;
-const STRANGER_HARM = String.raw`pay|pays|paid|paying|money|cash|robux|vbucks|gift ?cards?|venmo\w*|cashap+\w*|offer\w*|buy|buys|bought|buying|sell|sells|selling|sold|threat\w*|leak\w*|expos\w*|blackmail\w*|owe|owes|owed|alone|secret|meet|meet up|dont tell|keep it|one back|delete|screenshot\w*|stole|steal\w*|i sent|sent him|sent them|has my|have my|got my|post them|post it|send them|share them|wants more|send more|against me|over me|private parts|for everyone to see|everyone will see|to everyone`;
-const PRIVATE_PICTURE_GUARD = String.raw`(?! (?:les+ons?|ses+ions?|coaching|clas+|clas+es|options?|set+ings?|(?:to|on) (?:youtube|the ap+|the site|my channel))\b)`;
+// Everyday stranger, private-video and secret-video talk is excused only as
+// a whole message in one of these forms; anything else near a picture files.
+// Doubled letters are matched as one or more, as the collapsed reading spells
+// them.
+const tolerant = (pattern: string) => pattern.replace(/([a-z])\1/g, '$1+');
+const GYM_THING = String.raw`(?:${TECHNIQUE_NOUNS}|boxing|shoulder rolls?|moves?)`;
+const EVERYDAY_PICTURE = String.raw`(?:videos?|vids?|pics?|photos?|pictures?)`;
+const STRANGER_EVERYDAY = tolerant(String.raw`(?:(?:i )?(?:saw|watched|found|copied) )?(?:a |an |some |this |that |the )?${STRANGER_ONE}(?: at the (?:tournament|event|gym|show))?(?: (?:liked|likes|commented on|reviewed|keeps messaging me about) (?:my|our|the|a) (?:${GYM_THING} )+${EVERYDAY_PICTURE}| (?:just |always |also )?(?:has|had|have|posted|posts|post|made|makes|shared|sent me|sends me|uploaded|with)(?: (?:a|an|the|some|great|good|best|new|cool))*(?:(?: ${GYM_THING})+ ${EVERYDAY_PICTURE}| ${EVERYDAY_PICTURE} (?:of|on|about|from) (?:the |a )?${GYM_THING}(?: ${GYM_THING})?)| breaks? down the ${GYM_THING} in (?:a|the) ${EVERYDAY_PICTURE}| (?:filmed|recorded|took (?:a |some )?(?:photos?|pictures?|pics?) of) (?:my |the |our )?(?:${GYM_THING}|everyone|everybody)| and (?:recorded|filmed) (?:my ${GYM_THING}|it))(?: (?:we did|all the time|at the tournament|at the event|today|again|lol))?`);
+const PRIVATE_EVERYDAY = tolerant(String.raw`(?:can i (?:book|get|have)|do you (?:do|have|offer)|can the app have|the app should have|is there|i (?:have|had|booked|shared|made it|uploaded|sent coach))(?: (?:a|an|the|my|our))? private (?:videos?|photos?|pics?)(?: (?:lessons?|sessions?|coaching|options?|settings?))?(?: (?:with (?:coach|my (?:mom|dad|parents|coach))|tomorrow|today|of my ${GYM_THING}|to youtube|so (?:only )?coach can (?:see it|check my ${GYM_THING})))*`);
+const SECRET_EVERYDAY = tolerant(String.raw`(?:can i (?:get|see|have)|show me|coach (?:has|showed us|sent us)) (?:a |the |some )?secret (?:videos?|vids?) of (?:the |a |my )?(?:new )?${GYM_THING}`);
 const PICTURE_NEAR_PLACE = [
-  // A private or secret picture files with any verb; asking for one, or one
-  // of the child, files whatever follows.
-  String.raw`(?:${ASK}|send|asks? me for|keeps? asking(?: me)? for)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}`,
-  String.raw`(?:private|secret) ${ANY_PICTURE} of (?:me|you|u|us|yourself|myself)`,
-  String.raw`\b${PRIVATE_PICTURE_PRODUCT}private ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
-  String.raw`\bsecret ${ANY_PICTURE}\b${VIDEO_GUARD}`,
-  // A private picture with another person in the message, or for one
-  // person, files whatever product or lesson words are near it.
-  String.raw`^(?=.*\b(?:he|hes|him|his|himself|she|shes|her|they|theyre|them|man|guy|someone|somebody|stranger)\b).*\bprivate ${ANY_PICTURE}\b`,
-  String.raw`\bprivate ${ANY_PICTURE}\b.*\b(?:with me|for me|for him|for her|so only (?:he|him|she|her|they|them))\b`,
+  // A private or secret picture files with any verb unless the whole message
+  // is everyday lesson, product or technique talk.
+  String.raw`^(?!${PRIVATE_EVERYDAY}$).*\bprivate ${ANY_PICTURE}\b`,
+  String.raw`^(?!${SECRET_EVERYDAY}$).*\bsecret ${ANY_PICTURE}\b`,
   // A stranger online asking for a picture files whatever gym words follow;
-  // any other stranger near a picture files unless the picture is gym
-  // content or the child is watching a stranger's tutorial.
+  // any other stranger near a picture files unless the whole message is
+  // everyday tutorial or tournament talk; the child sending pictures and
+  // then naming a stranger files.
   String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging|askin|keeps? askin|beggin|keeps? beggin)${WORD}{0,4} ${ANY_PICTURE}`,
-  String.raw`(?:${STRANGER_TUTORIAL}|(?=.*\bme\b))${STRANGER_ONE}${WORD}{0,8}? ${STRANGER_PICTURE}${STRANGER_GYM_CONTENT}`,
-  // With a payment, threat, secrecy or meeting word anywhere, no gym or
-  // tutorial guard applies.
-  String.raw`^(?=.*\b(?:${STRANGER_HARM})\b).*${STRANGER_ONE}${WORD}{0,14}? ${ANY_PICTURE}\b`,
-  String.raw`^(?=.*\b(?:${STRANGER_HARM})\b).*\b${ANY_PICTURE}\b.*${STRANGER_ONE}`,
+  String.raw`^(?!${STRANGER_EVERYDAY}$).*${STRANGER_ONE}${WORD}{0,14}? ${ANY_PICTURE}\b`,
+  String.raw`\b(?:sent|send|sending|sends|gave|give|showed|show)${WORD}{0,3} ${ANY_PICTURE}\b.*${STRANGER_ONE}`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
   String.raw`(?:${ANY_PICTURE}|film|record)(?: of)? (?:me|her|him|us|them|myself|herself|himself|the (?:girls|boys|kids)|my (?:sister|brother|friends?|teammates?))(?: (?:while|whilst|when|as)(?: (?:i was|im|i am|i|she was|he was|we were|they were))?)? (?:changing|changed)(?! (?:up )?(?:my |his |her |the |our )?(?:stance|direction|levels?|angles?|gloves|wraps|weight(?: clas+)?|guard|feet|grip|partners?|pace|corners?|sides|rhythm|hands|mats|ropes|timer)(?: (?:on|in|at) (?:the |my )?(?:bag|pads|ring|mats?))?${TECHNIQUE_END})`,
