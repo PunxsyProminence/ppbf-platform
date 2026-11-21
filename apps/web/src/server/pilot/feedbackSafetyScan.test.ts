@@ -2345,3 +2345,24 @@ describe('HF12b eleventh delta review (81ed7ee..ce38d6a): blocking findings', ()
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b twelfth delta review (81ed7ee..b6f70d8): blocking findings', () => {
+  test.each([
+    'an adult class fighter on snap has my pics',
+    'an adult class fighter on snap has pics of me',
+    'an adult class fighter on snap sent me pics',
+    'an adult class fighter online said hell post my pics unless i pay',
+    'an adult class fighter on insta said hell post my pics if i dont send more',
+    'an adult class teammate on snap wants my pics',
+    'an adult class teammate on snap is gonna leak my pics',
+    'an adult class student on snap wants my pics',
+    'an adult class parent on snap keeps sending me pics',
+    'an adult class fighter online sent me a pic of his private parts',
+    'this adult class fighter on insta has my pics',
+    'an adult class fighters on snap have my pics',
+    'an adult team captain on snap has my pics',
+    'an adult class friend on snap has my pics',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
