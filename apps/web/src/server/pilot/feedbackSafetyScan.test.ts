@@ -2208,6 +2208,10 @@ describe('HF12b sixth delta review (81ed7ee..c3c1cd6): blocking findings', () =>
     'a stranger at the gym filmed my training again',
     'a man i dont know filmed my training',
     'someone i dont know recorded my training',
+    // Single-rule pins (mutation proof).
+    'a man i dont know filmed my fight',
+    'a stranger filmed my training at the tournament',
+    'i sent coach a private video',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
