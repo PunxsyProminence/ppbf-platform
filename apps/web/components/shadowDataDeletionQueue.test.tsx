@@ -273,3 +273,64 @@ describe('a handled request stays visible and says how it was handled', () => {
     expect(badge.className).not.toContain('badge--locked');
   });
 });
+
+/* What the office is told completing a request does (lane HF7). Clearing
+   deletes what the member typed and keeps SHADOW's replies with their account
+   and names taken off; a chat under a safeguarding review is kept for two
+   years (OD-2026-10-06-012, -023, -027). Each sentence must be true. */
+describe('the words say what clearing does', () => {
+  it('says what a completion deletes, what it keeps, and that a reviewed chat is kept for two years', async () => {
+    await renderQueue();
+
+    expect(screen.getByText(
+      'A member asked for their SHADOW conversation history to be cleared. Completing a request '
+      + 'clears it now, except a conversation under a safeguarding review, which is kept for two years. '
+      + 'Chat history only; memory corrections are kept, and nothing here touches their account, '
+      + 'sessions or records.',
+    )).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Review/ }));
+    });
+    expect(screen.getByText(
+      "This clears their SHADOW conversation history now: what they typed is deleted, and SHADOW's "
+      + 'replies are kept with their account and the names on record for them taken off. A conversation '
+      + 'under a safeguarding review is kept as it is for two years, then cleared the same way. It '
+      + 'cannot be undone from here.',
+    )).not.toBeNull();
+  });
+
+  it('counts the held chats apart, and only when there are any', async () => {
+    await renderQueue({
+      list: () => jsonResponse({ ok: true, items: [row({ conversationsPending: 4, conversationsHeld: 1 })] }),
+    });
+    expect(screen.getByText(
+      '4 conversations would be cleared. 1 under a safeguarding review would be kept for two years.',
+    )).not.toBeNull();
+  });
+
+  it('says nothing about held chats when there are none', async () => {
+    await renderQueue({
+      list: () => jsonResponse({ ok: true, items: [row({ conversationsPending: 4, conversationsHeld: 0 })] }),
+    });
+    expect(screen.getByText('4 conversations would be cleared.')).not.toBeNull();
+  });
+
+  it('reports the held count the server gives back', async () => {
+    await renderQueue({
+      act: () => jsonResponse({ ok: true, status: 'completed', conversationsCleared: 3, conversationsHeld: 1 }),
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Review/ }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Clear the history' }));
+    });
+
+    const notice = await screen.findByRole('status');
+    expect(notice.textContent).toBe(
+      'Cleared 3 conversations. Kept 1 under a safeguarding review for two years. '
+      + 'SHADOW chat history only — memory corrections are kept.',
+    );
+  });
+});

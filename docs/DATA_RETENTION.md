@@ -93,7 +93,7 @@ the owner's decision.
 | Audit logs | 7 years | Legal: SOX compliance, incident investigation window | Created 7 years ago |
 | Session tokens | 30 days after expiration/revocation | Forensic window: debug session issues | Expired, or revoked, 30 days ago (`SESSION_TOKEN_RETENTION_DAYS`). Deleted by `.github/workflows/session-token-cleanup.yml` (`npm run session:cleanup`), nightly at 07:50 UTC or by dispatch with `apply=APPLY`. **The scheduled run only reports the count** until the repository variable `PPBF_SESSION_CLEANUP_SCHEDULED_APPLY` is `true`. |
 | Deleted account logs | 1 year | Forensic window: prove what was deleted and when | Deletion logged 1 year ago |
-| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **The 2-year hold is enforced, and the de-identification at the person's purge.** A guardian with any `pilot.shadow_human_review_queue` row (whatever its status) is not purged at the 1-year account window: `scripts/pilot-cleanup-deleted-data.mjs` holds the account (the review entries, the guardian's own conversations, the guardian record) until `deleted_at` + 2 years, and every run reports the held count as `guardians_held_for_safeguarding_chats`. At 2 years the guardian is purged: their review entries and the flagged conversations they point at are **de-identified** (one token for both; the summary and title replaced, metadata cleared, the person's own messages deleted, SHADOW's replies kept with the person's known names scrubbed). A flagged conversation of someone with no name on record cannot be scrubbed and is deleted; their unflagged conversations are deleted. `subject_deleted_at` (shadow-deidentify-keys migration) is still written by nothing, so no entry is held past the person's own purge. **Not held:** a flagged conversation that is about a child (`athlete_id` set) is deleted with that child at the child's own `deleted_at` + 2 years, which can come before the guardian's hold ends; the guardian's review entry stays. Whether a guardian's flag should hold a child's record is not decided. The athlete's own flagged chats coincide with the 2-year athlete purge. Purges run only on a manual `apply=APPLY` dispatch. |
+| Safeguarding-flagged SHADOW chats (`pilot.shadow_human_review_queue` rows and the conversation they point at) | 2 years after the person's deletion, identified; then de-identified, not deleted (Jason 2026-10-07: "2 years after deletion (Recommended)") | Safeguarding: the chat may be the record that a child was at risk (same reason as training notes) | Person's `deleted_at` + 2 years. **The 2-year hold is enforced, and the de-identification at the person's purge.** A guardian with any `pilot.shadow_human_review_queue` row (whatever its status) is not purged at the 1-year account window: `scripts/pilot-cleanup-deleted-data.mjs` holds the account (the review entries, the guardian's own conversations, the guardian record) until `deleted_at` + 2 years, and every run reports the held count as `guardians_held_for_safeguarding_chats`. At 2 years the guardian is purged: their review entries and the flagged conversations they point at are **de-identified** (one token for both; the summary and title replaced, metadata cleared, the person's own messages deleted, SHADOW's replies kept with the person's known names scrubbed). A flagged conversation of someone with no name on record cannot be scrubbed and is deleted; their unflagged conversations are deleted. `subject_deleted_at` (shadow-deidentify-keys migration) is still written by nothing, so no entry is held past the person's own purge. **Not held:** a flagged conversation that is about a child (`athlete_id` set) is deleted with that child at the child's own `deleted_at` + 2 years, which can come before the guardian's hold ends; the guardian's review entry stays. Whether a guardian's flag should hold a child's record is not decided. The athlete's own flagged chats coincide with the 2-year athlete purge. A flagged chat a member deletes while still a member is held two years from that deletion, then de-identified by an `apply=APPLY` run (*SHADOW chats a member deletes*, below). Purges run only on a manual `apply=APPLY` dispatch. |
 
 ### Public interest-form inquiries
 
@@ -129,6 +129,92 @@ block a family's purge nor become undeletable. The log and the audit row carry c
 (`inquiries`, `inquiries_deleted`, `inquiries_deferred`, and in the nightly mode `people_due`),
 never what anyone wrote. An inquiry can outlive 12 months by at most the nights a backlog
 larger than the cap takes to drain.
+
+### SHADOW chats a member deletes
+
+The Delete beside a SHADOW chat, and an organization admin completing a member's request to
+clear their SHADOW conversation history (the compliance center's queue), act at once, in one
+transaction (`deleteOwnConversation` and `completeShadowDataDeletionRequest`,
+`apps/web/src/server/pilot/shadowConversations.ts`; the steps are
+`apps/web/src/server/pilot/shadowConversationDeidentify.ts`). Before lane HF7 both only set
+`deleted_at` and nothing ever removed the rows. The rulings are Jason's for the final purge of
+a person (OD-2026-10-06-012: "delete any thing that personally Identifys the person but we keep
+data that male the Ai and ML bette3r"; OD-2026-10-06-023 Q1 "Delete theirs, keep AI replies
+(Recommended)", Q2 "Keep until retention ends (Recommended)"; OD-2026-10-06-027 Q14 "2 years
+after deletion (Recommended)"), applied to a member's own deletion under OD-2026-10-13-013.
+
+- **A chat that is not flagged is cleared now.** The member's own messages are deleted.
+  SHADOW's replies are kept under a one-off `anon_<uuid>` token, stored nowhere else, with every
+  name on record for the member and for the athletes that are theirs (their own athlete record,
+  the children their guardian record is linked to, the athlete the chat is about) and those
+  athletes' guardians replaced by `[name]` (the login when it is an email, the login email, ring
+  name, staff name, the athlete record's or guardian record's full name; the same method and
+  limits as the purge's `namePattern`). Kept times are the day, not the moment (an exact time
+  would line the kept rows up with the member's own). What is kept takes **new ids**: a new conversation id
+  and new message ids, so nothing that copied the old ones joins it (a background reply's id is
+  a hash of its job's id; an escalation or an audit row can hold the conversation's). The
+  session takes the token, a fixed title and `deidentified_at`. The joins from the member's own
+  rows are cut: the evidence claims and citations go; a feedback row that rated a reply loses its
+  link to it (a pending review of it leaves the queue, undecided, because approve and reject
+  find it through the reply by account); learning-event, effectiveness and learning-loop research
+  rows lose the reply's id; the chat's background jobs are deleted, whatever their state (a job
+  still running then has nothing to complete). With no usable name on record the chat is deleted
+  whole. Each cleared chat has its own token.
+- **A flagged chat is kept intact and identified** for two years after its deletion, hidden from
+  the member. Flagged means a safeguarding review entry (`pilot.shadow_human_review_queue`)
+  points at it, whatever its status, or a safety escalation does (`pilot.safety_escalations`,
+  `metadata.conversation_id`, matched whatever its case: a SHADOW disclosure's escalation is
+  filed with the conversation's id even when its review entry was capped or failed). A session with
+  `subject_deleted_at` set (the column the purge's hold reads; nothing writes it today) is held
+  too, and the script leaves it to the purge. The office's read of the one flagged
+  exchange (OD-2026-10-07-009 ruling 4) keeps working. The member sees the same words either
+  way, so a member is never told a chat was flagged. A review entry cannot be told apart, in the
+  table, from the operational entry written when the Library holds no evidence; such a chat is
+  held too (the hold errs toward keeping, as the purge's guardian hold does).
+- **The retention script ends the hold, on a full APPLY only.**
+  `scripts/pilot-cleanup-deleted-data.mjs` (`clearMemberDeletedChats`) clears, the same way, a
+  flagged chat a member deleted more than two years ago, and any chat a member deleted before
+  this change (a delete then only set `deleted_at`). The review entries that point at a cleared
+  flagged chat take the chat's token, a fixed summary, empty metadata and a new id, and follow it
+  to its new id; the office's recorded reads of the exchange (`pilot.audit_events`) and the
+  escalation stay, as safeguarding records, and join nothing that is kept. A chat that is a
+  deleted person's (account `deleted_at` set, an athlete login whose athlete is deleted, or a
+  chat about a deleted athlete, which `markAthleteTiedRecords` stamps with the athlete's
+  deletion time) is left to that person's purge. The nightly run counts them
+  (`member_deleted_chats_due`) and touches nothing (OD-2026-10-07-010: "people's records
+  stay manual"); a dry run rehearses and rolls back (`member_deleted_chats_due`,
+  `would_clear_member_deleted_chats`). They take the room the families leave under
+  `PPBF_RETENTION_MAX_ROWS`, oldest deletion first, and never trip the refusal; the rest wait
+  (`member_deleted_chats_deferred`). The applied run and its audit row count
+  `member_deleted_chats_cleared`.
+- **The office completing a request reaches every chat on the account**, including one about an
+  athlete who has since been deleted: the member asked. A search of
+  `docs/current/OWNER_DECISIONS.md` on 2026-11-21 (for "SHADOW chat", "SHADOW conversation" and
+  "AI chat" beside retention words) found no ruling that holds an unflagged SHADOW chat for an
+  athlete's retention window; Overwatch was asked to confirm on #2062. The script, which acts
+  without a request, leaves such a chat to the athlete's purge.
+- **Not reached by a member's delete**, so the screens do not claim it: the research row an
+  unanswered question was filed as (keyed by account and text, not by chat), the member's own
+  feedback comments and memory corrections, SHADOW's remembered facts about them, evidence
+  bundles (a hash of each question, no text), the day a kept reply was written, and the nightly
+  database backups. Those go at the person's own purge or age out.
+- **Races it cannot close:** the rows that flag a chat are written after the exchange they are
+  about, in their own statements: the chat route writes its review entries and a disclosure's
+  safety escalation at the end of the request (`app/api/pilot/shadow/chat/route.ts`); the job
+  processor stores a background answer, completes its job, then writes that answer's
+  response-safety entry (`shadowJobProcessor.ts`). A clear in that gap -- the member deleting from
+  another tab or device, or from the same page while a background job it queued runs (the page
+  disables Delete only while its own request is in flight), or the office completing a request --
+  clears the chat as not flagged: the words are gone before the row that would have held them
+  arrives. A review entry that arrives later is still kept, without the chat (`queueHumanReview`
+  retries without the conversation on that foreign key) and, having no chat for the sweep to
+  follow, stays identified until the person's own purge, as the escalation and the office's
+  recorded reads do; an escalation is filed naming an id that no longer exists; a job whose row
+  was deleted before it completed has nothing to complete, so its response-safety entry is not
+  written. Closing it means writing those rows with the exchange, outside this lane's files.
+
+The two copies of the clearing steps (the app's and the script's) are held equal by
+`shadowConversationDeletion.pg.test.ts` (T7) and `shadowNamePattern.test.ts`.
 
 ## How Data Gets Deleted
 
