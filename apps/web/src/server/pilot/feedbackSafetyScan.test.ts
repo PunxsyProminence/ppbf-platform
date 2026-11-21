@@ -1657,3 +1657,31 @@ describe('HF12b review 9: guards that swallowed a disclosure', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+// Tests that only one rule can satisfy, added for the mutation proof (review
+// 9 on PR 2076). Invented phrases.
+describe('HF12b review 9: single-rule tests', () => {
+  test('the normal form keeps main\'s reading of the abbreviation', () => {
+    expect(normalizeForSafetyScan("he sa'd me")).toBe('he sad me');
+  });
+
+  test.each([
+    ["my friend sa'd me", 'grooming_or_isolation'],
+    ["i was Sa'd and nobody helped", 'grooming_or_isolation'],
+    ['they said kill ur selfff', 'crisis'],
+    ['he said dont kill yourself on the pads, do it at home', 'crisis'],
+    ['he pressed record when i was in the shower', 'grooming_or_isolation'],
+  ])('%p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+
+  test.each([
+    "i sparred with Sa'd today",
+    'coach said kill yourself on the mitts',
+    'after my shower i recorded my best time',
+  ])('stays out: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('grooming_or_isolation');
+    expect(cues).not.toContain('crisis');
+  });
+});
