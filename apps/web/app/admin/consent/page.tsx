@@ -360,7 +360,7 @@ function ConsentConsole() {
                   <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)]">
                     Photo and video consent is recorded guardian by guardian on the{' '}
                     <Link href="/admin/athlete-consent" className="underline">
-                      Guardian Media Consent desk
+                      Media Consent Audit
                     </Link>
                     , not here.
                   </p>
@@ -544,7 +544,7 @@ function ConsentConsole() {
                           {RETIRED_WAIVER_TYPES.some((option) => option.value === waiver.waiver_type) ? (
                             <span className="ledger-id block">
                               not counted · record on the{' '}
-                              <Link href="/admin/athlete-consent" className="underline">consent desk</Link>
+                              <Link href="/admin/athlete-consent" className="underline">Media Consent Audit</Link>
                             </span>
                           ) : null}
                         </td>
