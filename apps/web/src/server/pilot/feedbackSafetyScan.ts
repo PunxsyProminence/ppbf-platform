@@ -37,6 +37,16 @@ interface SafetyCue {
 }
 
 /**
+ * Every character that stands in for an apostrophe on some keyboard, font or
+ * paste: the straight and curly quotes and backtick, plus the look-alikes that
+ * were splitting "don´t" into "don t" (HF1): acute accent U+00B4, modifier
+ * primes and turned comma U+02B9 U+02BB U+02BC U+02BD U+02C8, prime U+2032,
+ * reversed quote U+201B, full-width apostrophe U+FF07, saltillo U+A78C, and a
+ * combining acute U+0301 (an accent typed on its own).
+ */
+const APOSTROPHE_LIKE = /[\u2018\u2019\u02bc'`\u00b4\u02b9\u02bb\u02bd\u02c8\u2032\u201b\uff07\ua78c\u0301]/g;
+
+/**
  * Folds a typed sentence into the flat lowercase form the cues are written
  * against: apostrophes disappear entirely (so "don't" and "dont" are one
  * string), every other non-alphanumeric character becomes a space, and common
@@ -51,9 +61,13 @@ interface SafetyCue {
 export function normalizeForSafetyScan(body: string): string {
   return body
     .toLowerCase()
-    .replace(/[‘’ʼ'`]/g, '')
+    .replace(APOSTROPHE_LIKE, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/(.)\1{2,}/g, '$1$1')
+    // A word split in two by a phone keyboard or a habit: "kill my self",
+    // "un alive". Joined so the cues below match either spelling.
+    .replace(/\bmy self\b/g, 'myself')
+    .replace(/\bun alive\b/g, 'unalive')
     .replace(/\bdo not\b/g, 'dont')
     .replace(/\bdoes not\b/g, 'doesnt')
     .replace(/\bdid not\b/g, 'didnt')
@@ -98,7 +112,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
   {
     id: 'someone_is_hurting_me',
     pattern:
-      /\b(hurt me|hurts me|hurting me|hit me|hits me|hitting me|punched me|punches me|punching me|kicked me|kicks me|kicking me|grabbed me|grabs me|grabbing me|pushed me|pushes me|pushing me|shoved me|shoves me|shoving me|slapped me|slaps me|slapping me|tripped me|trips me|tripping me|choked|choking me|threw me|throwing me|dragged me|drags me|dragging me|held me down|pinned me down|hits us|hurts us)\b/,
+      /\b(hurt me|hurts me|hurting me|hit me|hits me|hitting me|punched me|punches me|punching me|kicked me|kicks me|kicking me|grabbed me|grabs me|grabbing me|pushed me|pushes me|pushing me|shoved me|shoves me|shoving me|slapped me|slaps me|slapping me|tripped me|trips me|tripping me|choked|choking me|threw me|throwing me|dragged me|drags me|dragging me|held me down|pinned me down|hits us|hurts us|abused me|abuses me|abusing me|was abused|got abused|been abused|being abused)\b/,
   },
   {
     id: 'someone_is_frightening_me',
@@ -115,9 +129,16 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     pattern: /\b(unsafe|not safe|dont feel safe|feel unsafe|didnt feel safe|nobody helped|no one helped|nobody listens|no one listens|nobody believes me|no one believes me)\b/,
   },
   {
+    // HF1 added the suicide and self-harm words a child actually types,
+    // including short forms ("kms", "sewerslide", "unalive"). Two guards keep
+    // gym talk out, because crisis files even in boxing context: "kms" after a
+    // number or quantity word is kilometres of roadwork, and "suicides" or a
+    // "suicide drill/sprint/run/line" is the conditioning sprint ("dril+" and
+    // "run+" because the fully collapsed reading spells "drills" as "drils"). Plain "take
+    // my life" is not a cue ("take my life seriously"); "take my own life" is.
     id: 'crisis',
     pattern:
-      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself)\b/,
+      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicide(?! (?:dril+s?|sprints?|run+s?|lines?)\b)|suiside|sucide|suacide|sewerslide|sewer slide|unalive myself|unaliving myself|unalive me|kil myself|kill myslef|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists|hang myself|hanging myself|overdose|self harm|selfharm|self harming|harm myself|harming myself)\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|some|many|more|less|two|three|four|five|six|seven|eight|nine|ten|of|the|how many) )\bkms\b/,
   },
   {
     // Naming what was touched instead of who was touching. Every cue above
@@ -134,10 +155,13 @@ const SAFETY_CUES: readonly SafetyCue[] = [
   },
   {
     // The grooming register: isolation, secrecy dressed as closeness,
-    // sexualized contact, and threats tied to belonging.
+    // sexualized contact, and threats tied to belonging. Sexual abuse named as
+    // such (HF1) sits here too, so it routes as touching does: critical,
+    // admins only, and filed even in boxing context (Overwatch on PR 2059,
+    // Q1 = A).
     id: 'grooming_or_isolation',
     pattern:
-      /\b(when nobody is looking|when no one is looking|when nobodys looking|when everyone leaves|after everyone leaves|keeps me after|keep me after|stay behind|stays behind|by myself with|alone in the office|in the office alone|took a picture of me|takes pictures of me|filmed me|recorded me|watches me get changed|watches me change|watched me change|take my shirt off|took my shirt off|get changed in front|our little secret|our little thing|our secret|special friend|dont show anyone|dont show anybody|not allowed to tell|cant tell my mom|cant tell my dad|cant tell anyone|off the team if i tell|if i tell anyone|texts me at night|texting me at night|messages me at night|asked me not to say)\b/,
+      /\b(when nobody is looking|when no one is looking|when nobodys looking|when everyone leaves|after everyone leaves|keeps me after|keep me after|stay behind|stays behind|by myself with|alone in the office|in the office alone|took a picture of me|takes pictures of me|filmed me|recorded me|watches me get changed|watches me change|watched me change|take my shirt off|took my shirt off|get changed in front|our little secret|our little thing|our secret|special friend|dont show anyone|dont show anybody|not allowed to tell|cant tell my mom|cant tell my dad|cant tell anyone|off the team if i tell|if i tell anyone|texts me at night|texting me at night|messages me at night|asked me not to say|molest|molests|molested|molesting|molester|rape|rapes|raped|raping|rapist|sexually abused|sexual abuse|sexually assaulted|sexual assault|sexually touched|groped|gropes|groping|fondled|fondles|fondling|made me touch|makes me touch|make me touch|sent me nudes|asked for nudes|asked me for nudes|wants nudes|send nudes|pedo|pedophile|had sex with me|have sex with me)\b/,
   },
   {
     // Refusal phrased as a request or a question, which the "dont want to"

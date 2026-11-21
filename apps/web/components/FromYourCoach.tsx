@@ -10,7 +10,8 @@ import { formatGymDateTimeShort } from '@/src/lib/gymTime';
  *
  * On the athlete's Dashboard: what their coaches wrote to them, newest first,
  * with who and when (gym time). Read only. Separate from Ask SHADOW, which is
- * the athlete's conversation with SHADOW and still does not reach a coach.
+ * the athlete's conversation with SHADOW; a coach or the gym office is alerted
+ * from it only when it sounds like someone may not be safe (askShadowWords.ts).
  *
  * Read from GET /api/pilot/athlete/coach-messages (the athlete's own, from the
  * session). A failed read says so; it is never shown as "no messages".
