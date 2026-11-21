@@ -341,7 +341,7 @@ const saveButton = () => screen.getByRole('button', { name: 'Save tracks' }) as 
    Access" card whose button opens SHADOW chat, a "Manage Login Announcements"
    link to /login (which sends a signed-in admin home; the sign-in page shows no
    announcements), and the working Compliance Center filed as "Planned". */
-it('the overview names SHADOW Chat, links no sign-in page, and files the Compliance Center once', async () => {
+it('the overview names SHADOW Chat, links no sign-in page, and files the Compliance Center in its note only', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
   await renderPage(fetchMock, 'organization_admin');
   await screen.findByRole('heading', { name: 'SHADOW Chat' });
@@ -351,7 +351,8 @@ it('the overview names SHADOW Chat, links no sign-in page, and files the Complia
   expect(screen.queryByText(/tutorial center/i)).toBeNull();
   expect(screen.queryByText('Manage Login Announcements')).toBeNull();
   expect(document.querySelector('a[href="/login"]')).toBeNull();
-  expect(document.querySelectorAll('a[href="/admin/compliance-center"]')).toHaveLength(1);
+  // AS10-2b (OFF-05, Q4 A): the header's Compliance Center link moved to Gym Office, under Safety.
+  expect(document.querySelectorAll('a[href="/admin/compliance-center"]')).toHaveLength(0);
   expect(screen.queryByText('Automated Compliance Monitoring Surface')).toBeNull();
   expect(screen.getByText('Automated compliance monitoring: not built yet. Violations are filed by hand from Video Analysis; the Compliance Center is where they are reviewed and closed.')).toBeTruthy();
   expect(screen.queryByText(/records violations by hand/)).toBeNull();
@@ -924,15 +925,41 @@ it('marks the open section on the tab that opened it', async () => {
   expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('aria-current')).toBeNull();
 });
 
-it('hides the compliance center from a platform owner and keeps it for a gym admin', async () => {
+it('shows a platform owner no compliance center link; a gym admin finds it on Gym Office now (AS10-2b)', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
 
   await renderAsPlatformOwner(fetchMock);
   expect(screen.queryByRole('link', { name: /compliance/i })).toBeNull();
 
+  // The gym admin's link moved to Gym Office (app/admin/people/officeLauncher.test.tsx), which a
+  // platform owner is not shown.
   jest.clearAllMocks();
   await renderPage(fetchMock, 'organization_admin');
-  expect(screen.getAllByRole('link', { name: /compliance/i }).length).toBeGreaterThan(0);
+  expect(screen.queryAllByRole('link', { name: /compliance/i })).toHaveLength(0);
+});
+
+/*
+ * AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A). The header's launcher moved to Gym
+ * Office, grouped by the admin's job sections. Gym Setup was already linked from Gym Office's
+ * header (AS10-1), so it is not repeated there. People (the way back to Gym Office) and Export JSON
+ * (this page's own export) stay. Video Analysis, Drill Library, Waivers & Consent and System sit in
+ * no admin section: where they go is Overwatch's Q19 on #2018, so they stay here until it is answered.
+ */
+it('the header no longer launches the office pages that moved to Gym Office', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+  await renderPage(fetchMock, 'organization_admin');
+  await screen.findByRole('heading', { name: 'Capabilities' });
+
+  for (const href of [
+    '/admin/setup', '/admin/athletes', '/admin/export', '/admin/import', '/admin/gear', '/admin/customize', '/operations',
+    '/admin/compliance-center',
+  ]) {
+    expect(document.querySelectorAll(`a[href="${href}"]`)).toHaveLength(0);
+  }
+  for (const href of ['/admin/people', '/coach/video-analysis', '/coach/drills', '/admin/consent', '/admin/system']) {
+    expect(document.querySelectorAll(`a[href="${href}"]`)).toHaveLength(1);
+  }
+  expect(screen.getByRole('button', { name: 'EXPORT JSON' })).toBeTruthy();
 });
 
 // R2-F-004: /admin/organizations admits the platform owner only, so an
