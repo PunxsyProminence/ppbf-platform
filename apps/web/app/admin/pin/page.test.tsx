@@ -178,3 +178,19 @@ describe.each([
     expect(screen.queryByText(/no athletes found in this organization/i)).toBeNull();
   });
 });
+
+// Lane AS-10, PR AS10-1 (app scrub OFF-08; Overwatch Q5 A). The page named a
+// control that does not exist ("Activate PIN"); it names the real button, and
+// it points at Gym Office, the one place a code is issued. It keeps working.
+describe('the words name controls that exist', () => {
+  it('names Issue Activation Code, never "Activate PIN", and links Gym Office', async () => {
+    installFetch({ ok: true });
+    render(<PinManagementPage />);
+    await screen.findByRole('button', { name: /Rosa Delgado/ });
+
+    expect(screen.queryByText(/Activate PIN|Activate or Reset PIN/i)).toBeNull();
+    expect(screen.getByText(/Then press Issue Activation Code below\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Issue Activation Code' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Gym Office' })).toHaveAttribute('href', '/admin/people');
+  });
+});
