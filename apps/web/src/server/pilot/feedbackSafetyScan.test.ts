@@ -1589,3 +1589,15 @@ describe('HF12b review 8: guards that swallowed a disclosure', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+// Tests that only one guard or word can satisfy, added for the mutation proof
+// (review 8 on PR 2076). Invented phrases.
+describe('HF12b review 8: single-guard tests', () => {
+  test.each([
+    'he recorded my pr in my underwear',
+    'honestly i got Sa\'d',
+    'he took a photo and said wear nothing next time',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
