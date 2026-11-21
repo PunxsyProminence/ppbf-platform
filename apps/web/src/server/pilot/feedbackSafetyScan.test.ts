@@ -2270,6 +2270,8 @@ describe('HF12b eighth delta review (81ed7ee..b2e6efe): blocking findings', () =
   test.each([
     'the adult boxing class online has a video of the warm up',
     'the adult team online posted pics of the event',
+    // Single-rule pin (mutation proof).
+    'the adult team online asked for pics from our class',
   ])('everyday talk stays out: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
