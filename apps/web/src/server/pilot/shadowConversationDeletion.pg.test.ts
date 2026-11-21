@@ -1027,6 +1027,13 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     const legacy = await seedConversation(sweepDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', deletedAgo: '3 days',
     });
+    // Two replies: the script must keep their order, as the app does.
+    await sweepDb.query(
+      `insert into pilot.shadow_chat_messages
+         (message_id, conversation_id, organization_id, account_id, role, content, response_state, topic, session_type, created_at)
+       values (gen_random_uuid(), $1, $2, $3, 'assistant', $4, 'ok', 'injury', 'heavy_bag', now() - interval '30 seconds')`,
+      [legacy.conversationId, ORG, MEMBER, `Earlier answer first ${legacy.ref}`],
+    );
     // A guardian's general chat, deleted before this change: their children and
     // the children's other guardian are named in the reply.
     const legacyGuardian = await seedConversation(sweepDb, {
@@ -1128,6 +1135,14 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     await expectDayTimes(sweepDb, 'shadow_human_review_queue', 'review_id', orphanId,
       ['created_at', 'reviewed_at', 'deidentified_at']);
 
+    const legacyKept = (await keptCopy(sweepDb, legacy))!;
+    const legacyOrder = (await sweepDb.query(
+      `select content, created_at::text as at from pilot.shadow_chat_messages where conversation_id = $1 order by created_at`,
+      [legacyKept],
+    )).rows as Array<{ content: string; at: string }>;
+    expect(legacyOrder).toHaveLength(2);
+    expect(legacyOrder[0].content).toContain('Earlier answer first');
+    expect(legacyOrder[0].at).not.toBe(legacyOrder[1].at);
     expectNoNames((await messagesOf(sweepDb, (await keptCopy(sweepDb, legacyGuardian))!))[0].content,
       ['Dana', 'Pike', 'Jordan', 'Morgan', 'Quill']);
     for (const cleared of [expired, expiredEscalated, legacy, legacyGuardian]) {
@@ -1142,7 +1157,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
       await expectOldIdsGone(sweepDb, cleared);
       const keptId = await keptCopy(sweepDb, cleared);
       const messages = await messagesOf(sweepDb, keptId!);
-      expect(messages.map((message) => message.role)).toEqual(['assistant']);
+      expect(new Set(messages.map((message) => message.role))).toEqual(new Set(['assistant']));
       expect(messages[0].account_id).toMatch(TOKEN);
       const session = await sessionRow(sweepDb, keptId!);
       expect(session?.account_id).toBe(messages[0].account_id);
@@ -1150,7 +1165,9 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
     }
     expectNoNames((await messagesOf(sweepDb, (await keptCopy(sweepDb, expired))!))[0].content, ['other.kid']);
     for (const mine of [expiredEscalated, legacy]) {
-      expectNoNames((await messagesOf(sweepDb, (await keptCopy(sweepDb, mine))!))[0].content, NAMES_OF_THE_CHILD);
+      for (const message of await messagesOf(sweepDb, (await keptCopy(sweepDb, mine))!)) {
+        expectNoNames(message.content, NAMES_OF_THE_CHILD);
+      }
     }
 
     // The flagged chat's review entry follows it under a new id and the
