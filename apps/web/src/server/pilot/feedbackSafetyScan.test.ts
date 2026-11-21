@@ -1235,3 +1235,19 @@ describe('HF12b review 3: snapchat and video talk', () => {
     expect(scanForSafetyLanguage("hes Sa'd, my sparring partner").cues).toContain('grooming_or_isolation');
   });
 });
+
+// Tests that only one guard can satisfy, added for the mutation proof (review
+// 3 on PR 2076). Invented phrases.
+describe('HF12b review 3: single-guard tests', () => {
+  test('a technique video "on" footwork sent to the child stays out', () => {
+    expect(scanForSafetyLanguage('send me a video on footwork').cues).not.toContain('grooming_or_isolation');
+  });
+
+  test('pace advice on the heavy bag without a negation stays out', () => {
+    expect(scanForSafetyLanguage('coach said kill yourself on the heavy bag').cues).not.toContain('crisis');
+  });
+
+  test('after a negation, a non-round place still files', () => {
+    expect(scanForSafetyLanguage('he said dont kill yourself in the locker room, do it at home').cues).toContain('crisis');
+  });
+});
