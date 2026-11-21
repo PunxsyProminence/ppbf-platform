@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import GlobalRoleHeader from "@/components/GlobalRoleHeader";
+import JobBar from "@/components/JobBar";
 import PlateVariantGround from "@/components/PlateVariantGround";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { OrganizationProfileProvider } from "@/components/OrganizationProfileProvider";
@@ -116,6 +117,11 @@ export default async function RootLayout({
             <OrganizationProfileProvider profile={gym}>
               <GlobalRoleHeader />
               {children}
+              {/* The job bar on a phone (AS-4, U2-4b; scrub Q13 A): a plain
+                  bar fixed to the bottom of the screen below the md width,
+                  after the page so its spacer keeps the page's last line in
+                  view. From md up the header draws it as leather tags. */}
+              <JobBar variant="phone" />
             </OrganizationProfileProvider>
           </PlateVariantGround>
         </ThemeProvider>

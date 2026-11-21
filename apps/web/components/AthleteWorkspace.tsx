@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
-import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
+import AthleteCheckInPanel, { type AthleteCheckInDraft, type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import AthleteCyclePanel from './AthleteCyclePanel';
 import AthleteMediaConsentPanel from './AthleteMediaConsentPanel';
 import { ENJOYMENT_LEVELS, ENJOYMENT_QUESTION, type EnjoymentLevel, enjoymentLabel } from '@/src/shared/enjoyment';
@@ -56,6 +56,7 @@ import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 import AthleteImHere, { useTodaySchedulerRead, type TodaySchedulerRead } from './AthleteImHere';
+import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SAFESPORT_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
@@ -112,7 +113,8 @@ type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
  * athletes and "shown on the athlete's Tracks tab" (OD-2026-10-07-010 ruling
  * 3). Something stores it now: the gym's admin sets a track per athlete on
  * /admin, and AthleteTracksPanel reads the athlete's own from
- * /api/pilot/athlete/tracks. It sits in Development.
+ * /api/pilot/athlete/tracks. It sits in Progress (the group read "Development"
+ * until lane AS-8, OD-2026-11-19-017).
  *
  * Assessments stays unlisted. Nothing has changed for it.
  */
@@ -126,9 +128,10 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
       { id: 'athlete-floor', label: 'Floor' },
     ],
   },
+  // "Progress", label only (OD-2026-11-19-017, Q14 A); the id stays.
   {
     id: 'development',
-    label: 'Development',
+    label: 'Progress',
     tabs: [
       { id: 'smart-goals', label: 'Goals' },
       // BASE-05: the athlete's own attempt log over the training-attempts ledger.
@@ -146,7 +149,8 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
   },
   { id: 'schedule', label: 'Schedule', tabs: [{ id: 'schedule-session', label: 'Schedule' }] },
   // Ask SHADOW lives with SHADOW (WO-N5-02, N5-02-Q1 A). It was a "Messages" group of its own,
-  // which read as messaging a coach; the question is answered by SHADOW and reaches no coach.
+  // which read as messaging a coach; the question is answered by SHADOW, and a coach is told
+  // only when it sounds like someone may not be safe (askShadowWords.ts).
   // The tab id stays 'message-coach' so anything that opens it still does.
   {
     id: 'shadow',
@@ -161,6 +165,13 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
 /** Which group owns a surface. Derived, never stored -- the tab stays the truth. */
 function groupForTab(tab: TabID): GroupID {
   return TAB_GROUPS.find((group) => group.tabs.some((entry) => entry.id === tab))?.id ?? 'today';
+}
+/* My Corner (Report pain first, then Start training and End training) is drawn
+   on How I feel today, where the workspace opens, and on the Dashboard (lane
+   AS-8, Overwatch Q1 A on #2020). On every other tab the hold and restriction
+   notices stand at the top instead, as before. */
+function cornerShownOn(tab: TabID): boolean {
+  return tab === 'bio-checkin' || tab === 'my-dashboard';
 }
 /**
  * The categories a goal can be filed under, and the mirror of GOAL_CATEGORIES
@@ -1109,7 +1120,11 @@ function EndTrainingControl({ children, failure }: { children: ReactNode; failur
 }
 
 export default function AthleteWorkspace() {
-  const [activeTab, setActiveTabRaw] = useState<TabID>('my-dashboard');
+  /* The workspace opens on How I feel today, Today's first tab (lane AS-8,
+     Overwatch Q1 A on #2020; the plan in OD-2026-11-19-007 ruling 1: "opens on
+     I'm here and How I feel today"). My Corner is drawn on that tab too, so
+     Report pain, Start training and End training are on the opening screen. */
+  const [activeTab, setActiveTabRaw] = useState<TabID>('bio-checkin');
   const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
   const [athleteIdentityState, setAthleteIdentityState] = useState<AthleteIdentityState>('loading');
   /* The last word from the backend about what just saved. A goal's message
@@ -1126,7 +1141,7 @@ export default function AthleteWorkspace() {
   // save that lands after they have left Goals has nobody to tell, and storing
   // its message would only bring it back on the next visit. Kept in step by
   // setActiveTab below, which is the only thing that changes the tab.
-  const currentTabRef = useRef<TabID>('my-dashboard');
+  const currentTabRef = useRef<TabID>('bio-checkin');
   const setGoalSyncMessage = useCallback((text: string) => {
     if (currentTabRef.current !== 'smart-goals') return;
     setSyncMessage({ text, tab: 'smart-goals' });
@@ -1150,6 +1165,16 @@ export default function AthleteWorkspace() {
   // state would leave the gate guessing until it mounted.
   const [todayCheckIn, setTodayCheckIn] = useState<AthleteCheckInRecord | null>(null);
   const [recentCheckIns, setRecentCheckIns] = useState<AthleteCheckInRecord[]>([]);
+  // The How I feel today form's unsaved answers (lane AS-8). My Corner's Report
+  // pain sits right above the form and opens the Dashboard, which unmounts it;
+  // without this the athlete came back to an empty form. Held here, so it goes
+  // with the workspace when the athlete signs out. A ref: nothing on screen
+  // reads it, and a keystroke must not redraw the workspace.
+  const checkInDraftRef = useRef<AthleteCheckInDraft | null>(null);
+  const rememberCheckInDraft = useCallback((draft: AthleteCheckInDraft) => {
+    checkInDraftRef.current = draft;
+  }, []);
+  const readCheckInDraft = useCallback(() => checkInDraftRef.current, []);
   const [checkInLoading, setCheckInLoading] = useState(true);
   const [checkInLoadError, setCheckInLoadError] = useState<string | null>(null);
   /* Set by the pain report below, never by the athlete directly. It is a
@@ -1315,7 +1340,8 @@ export default function AthleteWorkspace() {
   const [afterSparringCheck, setAfterSparringCheck] = useState(false);
   // After a successful end, bring the "Training ended ..." line into view
   // (lane U3 B4, Overwatch Q-CONFIRM A): the questions just closed under the
-  // athlete's thumb. My Corner's line on the Dashboard, the rail's elsewhere.
+  // athlete's thumb. My Corner's line on How I feel today and the Dashboard,
+  // the rail's elsewhere.
   const [endedAt, setEndedAt] = useState(0);
   const cornerLineRef = useRef<HTMLParagraphElement>(null);
   const railLineRef = useRef<HTMLParagraphElement>(null);
@@ -1378,10 +1404,8 @@ export default function AthleteWorkspace() {
   const activeGroupLabel = TAB_GROUPS.find((group) => group.id === activeGroup)?.label ?? 'Today';
   const activeTabLabel = activeGroupTabs.find((tab) => tab.id === activeTab)?.label ?? activeGroupLabel;
 
-  /* Where a group opens when its button is pressed. Only Today varies: it
-     opens on check-in until the athlete has checked in, then on their
-     dashboard, because the useful surface changes once that fact is recorded.
-     Every other group opens on its first surface. */
+  /* Where a group opens when its button is pressed: its first surface. For
+     Today that is How I feel today, which is also where the workspace opens. */
   const openingTabFor = (group: GroupID): TabID => {
     /* Today opens on Check In, because that is the first thing a visit is
        (owner decision 2026-08-28: "wellness and bios should be the first
@@ -2780,15 +2804,14 @@ export default function AthleteWorkspace() {
       setCoachMessageBody('');
       // The old copy promised a coach reply. This posts to SHADOW, not to a
       // person: it is recorded in the athlete's own conversation and answered
-      // by SHADOW. No coach is notified and none ever sees it, so saying so
-      // would be a promise the system does not keep.
+      // by SHADOW. A coach or the gym office is alerted only when the message
+      // sounds like someone may not be safe (shadowDisclosure.ts); the line
+      // says so, because the old "no coach" line was false then (HF2).
       //
       // The coach's name is gone from this string along with the picker that
       // produced it. Naming a person beside "saved" invited exactly the reading
       // the rest of this copy spends its time denying.
-      setCoachMessageStatus(
-        'Saved to your SHADOW conversation. SHADOW answers there -- open SHADOW Chat to read it. No coach is notified.',
-      );
+      setCoachMessageStatus(ASK_SHADOW_SENT_LINE);
     } catch (error) {
       setCoachMessageStatus(error instanceof Error ? error.message : 'That message did not send. Try it again.');
     } finally {
@@ -2862,23 +2885,42 @@ export default function AthleteWorkspace() {
   // the line. Read through refs, so a later tab change does not scroll again.
   useEffect(() => {
     if (endedAt === 0) return;
-    const line = currentTabRef.current === 'my-dashboard' ? cornerLineRef.current : railLineRef.current;
+    const line = cornerShownOn(currentTabRef.current) ? cornerLineRef.current : railLineRef.current;
     const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     line?.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'center' });
   }, [endedAt]);
 
-  const goToPainReport = () => {
+  /* Report pain takes the athlete to the Pain/Soreness Report card and puts
+     the cursor in its location. The card is on the Dashboard; My Corner is
+     also on How I feel today (lane AS-8), so from there the jump opens the
+     Dashboard first and lands once the card is drawn. A JS scroll with an
+     explicit behavior ignores the CSS reduced-motion rule, so the check is
+     made here (scrub ATH-23), as the end-of-training scroll above does. */
+  const painJumpPendingRef = useRef(false);
+  const landOnPainReport = useCallback((): boolean => {
     const picker = document.getElementById('pain-location-select');
-    if (picker) {
-      picker.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      picker.focus({ preventScroll: true });
-    }
+    if (!picker) return false;
+    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    picker.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'center' });
+    picker.focus({ preventScroll: true });
+    return true;
+  }, []);
+  const goToPainReport = () => {
+    if (landOnPainReport()) return;
+    painJumpPendingRef.current = true;
+    setActiveTab('my-dashboard');
   };
+  useEffect(() => {
+    if (!painJumpPendingRef.current || activeTab !== 'my-dashboard') return;
+    painJumpPendingRef.current = false;
+    landOnPainReport();
+  }, [activeTab, landOnPainReport]);
 
   /* END TRAINING WHERE THE ATHLETE IS (lane U3 B4, #2006). The Session Log's
      own check-out questions and End training, moved, not copied: same answers,
      same handleCheckOut, same request. They sit where "Training started" is
-     said (My Corner on the Dashboard, the top of the Floor); one tab is drawn
+     said (My Corner on How I feel today and the Dashboard, the top of the
+     Floor); one tab is drawn
      at a time, so a screen holds one End training. Built under the Session
      Log's conditions: athlete sign-in, an answered session read, an open
      session. */
@@ -3094,22 +3136,24 @@ export default function AthleteWorkspace() {
 
         {/* #82: an active training hold, in the athlete's own language.
             Same self-contained contract as ProfileHeader -- renders nothing
-            when there is no hold. On My Dashboard it sits inside My Corner,
-            directly after the pain report (so a hold can never push Report
-            pain off the first screen); on every other tab it stands here,
-            first. */}
-        {activeTab !== 'my-dashboard' && <TrainingHoldBanner />}
+            when there is no hold. Where My Corner is drawn (How I feel today
+            and the Dashboard) it sits inside My Corner, directly after the
+            pain report (so a hold can never push Report pain off the first
+            screen); on every other tab it stands here, first. */}
+        {!cornerShownOn(activeTab) && <TrainingHoldBanner />}
         {/* A USA Boxing medical restriction in force (lane P22c, OW25-06 A),
             beside the hold in both places; one neutral "could not be checked"
             line when the read fails (OD-2026-11-17-009 ruling 3); nothing
             otherwise. */}
-        {activeTab !== 'my-dashboard' && <MedicalRestrictionNotice />}
+        {!cornerShownOn(activeTab) && <MedicalRestrictionNotice />}
 
-        {/* MY CORNER: the day's actions -- check in, report pain, coach work,
-            goals -- at the top of the screen on My Dashboard. This is the
-            Today section that used to sit below the tab rail, moved and
-            restyled; the same handlers, the same reads. See AthleteCorner.tsx. */}
-        {activeTab === 'my-dashboard' && (
+        {/* MY CORNER: the day's actions -- report pain, start and end
+            training, coach work, goals -- on How I feel today and the
+            Dashboard (lane AS-8, Overwatch Q1 A on #2020). First under the
+            header, above the tab rail, so Report pain stays on a phone's
+            opening screen (Overwatch Q-PHONE A on #2036; measured there). The
+            same handlers, the same reads. See AthleteCorner.tsx. */}
+        {cornerShownOn(activeTab) && (
           <AthleteCorner
             sessionState={storedSessionLoad}
             identityState={athleteIdentityState}
@@ -3132,36 +3176,12 @@ export default function AthleteWorkspace() {
           />
         )}
 
-        {/* The athlete's own fight card. Self-contained: it fetches its own
-            data and renders nothing until it has some, so this is the single
-            insertion the profile layer makes into this file. */}
-        <ProfileHeader />
-
-        {/* Notices are posted paper on the leather wall. */}
-        <AnnouncementBanner
-          placement="athlete_workspace"
-          kind="notice"
-          heading="Gym Notices"
-          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
-        />
-
-        {/* The chalkboard REPLACES the paper "From the Gym" card that used to
-            sit here. Same table, same placement, same kind ('motivation') --
-            what changed is the object. A line somebody wrote by hand was being
-            rendered as a clean UI card with a heading on it; it is slate and
-            chalk now, and it shows one line rather than a list, because that is
-            what a board by the door holds. See Chalkboard.tsx. */}
-        <Chalkboard placement="athlete_workspace" />
-
-        {/* The role summary, the training card, achievements, "Off the
-            screen", and "What's Coming" all moved to the foot of the
-            page, below the tab content -- same reasoning already applied to
-            the gym wall (see its comment below): these are ambient/summary
-            content, not something an athlete opens this dashboard to act on,
-            and they used to sit between the header and Quick Actions, pushing
-            Quick Actions -- including Check-In -- below the fold. */}
-
-        {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels.
+        {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels. Under
+            My Corner where it is drawn, else under the header and the hold and
+            restriction notices; I'm here comes after it. Both sit above the
+            fight card, notices and chalkboard, so the way on is not below them
+            (lane AS-8, scrub ATH-02; Overwatch Q2 A on #2020, as Q-PHONE A on
+            #2036 replaced it: My Corner first).
             Five groups an athlete can hold in their head, each opening onto the
             surfaces it owns. A group with one surface has no second row: there
             is nothing to choose between, so nothing is drawn. */}
@@ -3223,6 +3243,34 @@ export default function AthleteWorkspace() {
           <AthleteImHere athleteId={backendAthleteId} schedule={todaySchedule.read} onReload={reloadTodaySchedule} />
         )}
 
+        {/* The athlete's own fight card. Self-contained: it fetches its own
+            data and renders nothing until it has some, so this is the single
+            insertion the profile layer makes into this file. */}
+        <ProfileHeader />
+
+        {/* Notices are posted paper on the leather wall. */}
+        <AnnouncementBanner
+          placement="athlete_workspace"
+          kind="notice"
+          heading="Gym Notices"
+          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+        />
+
+        {/* The chalkboard REPLACES the paper "From the Gym" card that used to
+            sit here. Same table, same placement, same kind ('motivation') --
+            what changed is the object. A line somebody wrote by hand was being
+            rendered as a clean UI card with a heading on it; it is slate and
+            chalk now, and it shows one line rather than a list, because that is
+            what a board by the door holds. See Chalkboard.tsx. */}
+        <Chalkboard placement="athlete_workspace" />
+
+        {/* The role summary, the training card, achievements, "Off the
+            screen", and "What's Coming" all moved to the foot of the
+            page, below the tab content -- same reasoning already applied to
+            the gym wall (see its comment below): these are ambient/summary
+            content, not something an athlete opens this dashboard to act on,
+            and they used to sit between the header and Quick Actions, pushing
+            Quick Actions -- including Check-In -- below the fold. */}
         {/* TAB CONTENT */}
         <div className="space-y-6">
           {/* MY DASHBOARD */}
@@ -3532,14 +3580,12 @@ export default function AthleteWorkspace() {
                         Optional. You can leave it empty. Nobody sees this until you start training and press Share with coach.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleCheckIn()}
-                      disabled={isCheckingIn}
-                      className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
-                    >
-                      {isCheckingIn ? 'Starting…' : 'Start training'}
-                    </button>
+                    {/* One Start training (lane AS-8, scrub ATH-24, Overwatch Q3 A
+                        on #2020): My Corner's, beside End training. It is drawn
+                        under the same conditions this branch is (athlete sign-in,
+                        an answered session read, no session open) and calls the
+                        same handleCheckIn, so the note above still carries into
+                        the session. This button is removed, not moved. */}
                   </div>
                 )}
 
@@ -4024,7 +4070,11 @@ export default function AthleteWorkspace() {
               loading={checkInLoading}
               loadError={checkInLoadError}
               onRetry={backendAthleteId ? () => void loadCheckIn() : undefined}
+              readDraft={readCheckInDraft}
+              onDraftChange={rememberCheckInDraft}
               onSaved={(row) => {
+                // Saved: nothing is left unsaved.
+                checkInDraftRef.current = null;
                 // The server has answered with today's check-in: the failed read is no longer the news.
                 setCheckInLoadError(null);
                 setTodayCheckIn(row);
@@ -4225,9 +4275,11 @@ export default function AthleteWorkspace() {
           )}
 
           {/* ASK SHADOW.
-              Named for what it does. The copy here has been accurate for a
-              while -- it already said SHADOW answers and no coach is notified
-              -- but the surface around the copy said something else: it was
+              Named for what it does. The copy said SHADOW answers and no
+              coach is notified -- false whenever a safety alert is filed, so
+              it now says when a coach or the gym office can be alerted
+              (askShadowWords.ts, HF2). The surface around the copy had said
+              something else too: it was
               titled "Message Coach", its form said "Send Message to Coach",
               and it opened with a coach picker. Structure outranks body text,
               so an athlete reasonably read all that as "a coach will see this".
@@ -4236,7 +4288,7 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Ask SHADOW"
-                description="Write a question. It is recorded in your own SHADOW conversation and answered by SHADOW -- it does not reach a coach."
+                description={ASK_SHADOW_HELP_LINE}
                 usage={[
                   'Be clear and specific in questions',
                   'Everything you send here is kept',
@@ -4258,7 +4310,7 @@ export default function AthleteWorkspace() {
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
                   <p className="alert-title">Not Built Yet</p>
-                  <p className="alert-msg"><strong>SafeSport:</strong> what you send here is kept, but your parent is not automatically copied and no coach is notified. Tell a coach or a trusted adult in person about anything urgent or unsafe.</p>
+                  <p className="alert-msg"><strong>SafeSport:</strong> {ASK_SHADOW_SAFESPORT_LINE}</p>
                 </div>
               </div>
 

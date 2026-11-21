@@ -583,6 +583,87 @@ describe('editing a library drill', () => {
   });
 });
 
+// "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4, Q1 = A, Q2 = A, Q3 = A).
+describe('"Looks right": a coach confirms one drafted field as it stands', () => {
+  it('writes the next version with the same text; the label keeps its sources, loses its draft and records the coach; one audit row', async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_lr_one', name: 'Looks Right One' });
+    const result = await edit(org, { drill_id: 'drl_lr_one', looks_right: 'purpose' });
+    expect(result).toMatchObject({ changed: true, version: 2, previous_drill_id: 'drl_lr_one', edited: [], looks_right: 'purpose' });
+
+    const [v1, v2] = await versionsOf(org, 'drl_lr_one');
+    expect(v1.superseded_at).not.toBeNull();
+    expect(v2.purpose).toBe(v1.purpose);
+    expect(v2.execution).toBe(v1.execution);
+    expect(v2.created_by_account_id).toBe(COACH);
+
+    const labels = await labelsOf(org, 'drl_lr_one', 2);
+    expect(labels.field_labels.purpose).toEqual({
+      status: 'INFERRED', sources: ['DOC-1'], looks_right: { by_account_id: COACH, by_role: 'coach', at: expect.any(String) },
+    });
+    // Nothing else changes: the other drafts stay drafts, the evidence is carried.
+    expect(labels.field_labels.execution.draft).toBe(DRAFT);
+    expect(labels.field_labels.scale_levels.draft).toBe(DRAFT);
+    expect(labels.evidence).toEqual({ category: 'test' });
+    expect(labels.import_id).toMatch(/^looks-right:/);
+    expect((await labelsOf(org, 'drl_lr_one', 1)).field_labels.purpose.draft).toBe(DRAFT);
+
+    const audit = (await client.query(
+      `select * from pilot.audit_events where organization_id = $1 and entity_type = 'drill_library' and entity_id = $2`, [org, result.drill_id],
+    )).rows;
+    expect(audit).toHaveLength(1);
+    expect(audit[0].details).toMatchObject({ action: 'in_app_edit', looks_right: 'purpose', edited: [], from_drill_id: 'drl_lr_one', version: 2 });
+  });
+
+  it('refuses a field that is not a draft on the current version (409 FIELD_NOT_DRAFT), and writes nothing', async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_lr_twice', name: 'Looks Right Twice' });
+    const first = await edit(org, { drill_id: 'drl_lr_twice', looks_right: 'purpose' });
+    // Pressed again on the new version; a field labelled and not a draft; a field with no label.
+    for (const looks_right of ['purpose', 'cues', 'transfer']) {
+      expect(await rejection(edit(org, { drill_id: first.drill_id, looks_right })))
+        .toMatchObject({ status: 409, code: 'FIELD_NOT_DRAFT' });
+    }
+    // An older version is refused as stale before anything is read.
+    expect(await rejection(edit(org, { drill_id: 'drl_lr_twice', looks_right: 'execution' }))).toMatchObject({ status: 409, code: 'DRILL_VERSION_STALE' });
+    expect(await versionsOf(org, 'drl_lr_twice')).toHaveLength(2);
+  });
+
+  it('refuses a version with no label row at all: nothing there is labelled a draft', async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_lr_unlabelled', name: 'Looks Right Unlabelled', labels: false });
+    expect(await rejection(edit(org, { drill_id: 'drl_lr_unlabelled', looks_right: 'purpose' })))
+      .toMatchObject({ status: 409, code: 'FIELD_NOT_DRAFT' });
+    expect(await versionsOf(org, 'drl_lr_unlabelled')).toHaveLength(1);
+  });
+
+  it('confirms one scale level on its own label, and the stop-rule list with its rules and kinds as one', async () => {
+    const org = await newGym();
+    await seedDrill(org, { drillId: 'drl_lr_parts', name: 'Looks Right Parts' });
+    const level = await edit(org, { drill_id: 'drl_lr_parts', looks_right: 'scale_levels.B' });
+    expect(level.looks_right).toBe('scale_levels.B');
+    const afterLevel = (await labelsOf(org, 'drl_lr_parts', 2)).field_labels;
+    expect(afterLevel.scale_levels.B).toEqual({
+      status: 'INFERRED', sources: ['DOC-1'], looks_right: { by_account_id: COACH, by_role: 'coach', at: expect.any(String) },
+    });
+    // The group still speaks for the level nobody confirmed.
+    expect(afterLevel.scale_levels.draft).toBe(DRAFT);
+    expect(afterLevel.scale_levels.A).toEqual({ status: 'INFERRED', sources: ['DOC-1'] });
+    // The confirmed level no longer reads as a draft (Q-PR4-1 = A): a second press is refused, and writes nothing.
+    expect(await rejection(edit(org, { drill_id: level.drill_id, looks_right: 'scale_levels.B' })))
+      .toMatchObject({ status: 409, code: 'FIELD_NOT_DRAFT' });
+    expect(await versionsOf(org, 'drl_lr_parts')).toHaveLength(2);
+
+    const list = await edit(org, { drill_id: level.drill_id, looks_right: 'stop_rules' });
+    const afterList = (await labelsOf(org, 'drl_lr_parts', list.version)).field_labels;
+    expect(afterList.stop_rules).not.toHaveProperty('draft');
+    expect(afterList.stop_rules.looks_right).toMatchObject({ by_account_id: COACH });
+    expect(afterList.stop_rules['1']).toEqual({ status: 'INFERRED', sources: ['DOC-1'] });
+
+    expect(await rejection(edit(org, { drill_id: list.drill_id, looks_right: 'scale_levels.C' }))).toMatchObject({ status: 400 });
+  });
+});
+
 describe('parseDrillLibraryEdit', () => {
   it('refuses an unknown field and a never-editable field by name', () => {
     expect(() => parseDrillLibraryEdit({ drill_id: 'x', colour: 'red' })).toThrow('Unsupported field: colour');

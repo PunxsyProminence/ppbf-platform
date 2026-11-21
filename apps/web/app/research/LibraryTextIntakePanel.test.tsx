@@ -74,7 +74,7 @@ describe('LibraryTextIntakePanel', () => {
     expect(status.textContent).toContain('Pending Review');
     expect(status.textContent).toContain(`in ${total} parts`);
     expect(status.textContent).toContain('SHADOW cannot cite it yet');
-    expect(screen.getByRole('link', { name: 'Evidence Review' }).getAttribute('href')).toBe('/evidence');
+    expect(screen.getByRole('link', { name: 'Evidence Review Queue' }).getAttribute('href')).toBe('/evidence');
 
     // Cleared for the next excerpt, same source kept.
     expect((screen.getByLabelText('Source text') as HTMLTextAreaElement).value).toBe('');

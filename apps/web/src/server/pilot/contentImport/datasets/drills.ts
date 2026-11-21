@@ -110,6 +110,38 @@ function contentColumns(spec: FileSpec, skip: ReadonlySet<string>) {
   return spec.columns.filter((column) => isTableContent(column) && !skip.has(column.name));
 }
 
+// A DRILL FILE MADE BEFORE A COLUMN EXISTED (lane GD; Overwatch Q3 = A on #2042).
+// exit_condition and correction_path were added by NW-b (#1976). A file made
+// before it has neither column, and a missing column reads as blank -- so
+// importing it as a revision stored '' over a filled field as the drill's next
+// version, and re-importing it unchanged read every filled drill as revised.
+// When the FILE'S HEADER has no such column, the drill keeps the stored value,
+// as a label column the file leaves out does (contentLabels.ts#withStoredLabels).
+// A file that has the column says what its cell says: an empty cell there still
+// blanks the field. A new drill has nothing stored, so it loads blank.
+// content:prepare keeps the COMMITTED cell by the same list (prepare.ts; Q-GD2-1 = A on #2056).
+const KEPT_WHEN_THE_HEADER_OMITS = ['exit_condition', 'correction_path'] as const;
+
+/** The columns `spec`'s file keeps from the stored or committed row when its header has no such column. */
+export function keptWhenTheHeaderOmits(spec: FileSpec): readonly string[] {
+  return spec === ROOT ? KEPT_WHEN_THE_HEADER_OMITS : [];
+}
+
+function withStoredColumns(
+  header: readonly string[],
+  values: Readonly<Record<string, string>>,
+  stored: Readonly<Record<string, unknown>> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = { ...values };
+  if (!stored) return out;
+  for (const name of KEPT_WHEN_THE_HEADER_OMITS) {
+    if (header.includes(name)) continue;
+    const kept = stored[name];
+    out[name] = typeof kept === 'string' ? kept : '';
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 
 type DbRow = Record<string, CellInput> & Record<string, unknown>;
@@ -373,9 +405,13 @@ export const DRILL_LIBRARY_ENGINE: DatasetEngine = {
       const database = head ? databaseUnit(head, children, transfers) : undefined;
 
       const packageRoot = packageRoots.get(key);
+      const header = rootFile?.header ?? [];
       const effective: UnitContentRows = {
-        // A label column the file leaves out keeps the stored value (contentLabels.ts).
-        root: packageRoot ? storedContent(ROOT, withStoredLabels((rootFile as ParsedFile).header, packageRoot.values, head?.row)) : database?.root ?? null,
+        // A label column the file leaves out keeps the stored value (contentLabels.ts), and so
+        // does a column added after the file was made (KEPT_WHEN_THE_HEADER_OMITS).
+        root: packageRoot
+          ? storedContent(ROOT, withStoredColumns(header, withStoredLabels(header, packageRoot.values, head?.row), head?.row))
+          : database?.root ?? null,
         children: new Map(),
         transfers: database?.transfers ?? [],
       };

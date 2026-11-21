@@ -15,6 +15,7 @@ import {
   parseInstantAsGymTime,
 } from '@/src/lib/gymTime';
 import { defaultStaffAttendanceClassId } from '@/src/shared/attendanceDefaultClass';
+import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 import {
   REPEAT_WEEKS_DEFAULT,
   REPEAT_WEEKS_MAX,
@@ -25,6 +26,8 @@ import { coachDisplayNameFor, deriveCoachDisplayName } from '@/src/shared/coachD
 import { roleWords } from '@/src/shared/roleWords';
 import BackHome from '@/components/BackHome';
 import ArmedButton from '@/components/ArmedButton';
+import FamilyChildPicker, { familyChildHasName, familyChildLabel } from '@/components/FamilyChildPicker';
+import { readChosenChild } from '@/src/lib/chosenChild';
 
 type SchedulerRole = 'athlete' | 'coach' | 'parent' | 'organization_admin' | 'admin';
 
@@ -135,15 +138,10 @@ type SchedulerAttendance = {
   checked_in_at: string;
 };
 
-// How a mark was made, in the words a coach reads on the floor -- the list
-// used to print the stored value ("coach_override") verbatim.
-const ATTENDANCE_METHOD_LABEL: Record<SchedulerAttendance['method'], string> = {
-  self: 'self check-in',
-  parent: 'parent',
-  coach_override: 'coach',
-  admin_override: 'admin',
-  walk_in: 'walk-in',
-};
+/** The class screen (/coach/class), opened on one class (lane 6C7, U2-6c; app scrub CF-07). */
+function classScreenHref(classId: string): string {
+  return `/coach/class?class=${encodeURIComponent(classId)}`;
+}
 
 type SchedulerResponse = {
   ok: boolean;
@@ -445,6 +443,16 @@ export default function SchedulerPage() {
     }
     return map;
   }, [athletes, ownAthlete]);
+  /* Who a record row is about. For a parent, a child is named as the family
+     pages name them (familyChildLabel): never the id, "Your child" when no
+     name is on file (AS9-4). Every other role reads as before. */
+  const recordName = (id: string): string => {
+    if (role === 'parent') {
+      const child = athletes.find((item) => item.athlete_id === id);
+      return child ? familyChildLabel(child, athletes) : 'Your child';
+    }
+    return athleteMap.get(id) || id;
+  };
 
   // Default selections are applied functionally rather than read out of a
   // closure so this loader keeps a stable identity: depending on the current
@@ -520,7 +528,18 @@ export default function SchedulerPage() {
         }
         const rows = athletesPayload.items || [];
         setAthletes(rows);
-        if (rows.length > 0) {
+        if (auth.role === 'parent') {
+          // A parent opens on the child chosen last on any family page
+          // (src/lib/chosenChild.ts) when that child is one of theirs, else on
+          // the first, as Parent Hub does (AS9-4; FAM-10).
+          // A parent's child is always one from this list: a child
+          // kept from before a reload stays only while it is still here, so a
+          // link removed in the meantime never stays chosen, named or sent.
+          const remembered = readChosenChild();
+          const opening = rows.find((row) => row.athlete_id === remembered)?.athlete_id ?? rows[0]?.athlete_id ?? '';
+          setSelectedAthleteId((current) => (current && rows.some((row) => row.athlete_id === current) ? current : opening));
+        } else if (rows.length > 0) {
+          // Staff open on the first athlete, as before.
           const firstAthleteId = rows[0].athlete_id;
           setSelectedAthleteId((current) => current || firstAthleteId);
         }
@@ -770,6 +789,17 @@ export default function SchedulerPage() {
      class, past or to come. restore_class refuses anyone else. */
   const showRestore = (item: SchedulerClass) =>
     item.status === 'cancelled' && (role === 'admin' || role === 'organization_admin');
+  /* OPEN CLASS SCREEN (lane 6C7, U2-6c; app scrub CF-07 and CF-09). Staff reach
+     the class screen from each of today's classes that is not cancelled: it
+     holds the live session's "Who is here", which marks this class's register.
+     The class screen decides what it does with the class (it says so when the
+     class is not one of today's free classes). Never offered to a family: the
+     class screen admits coaches and admins only. */
+  const opensClassScreen = (item: SchedulerClass) =>
+    roleCanManageClasses(role)
+    && item.status !== 'cancelled'
+    && Boolean(today)
+    && gymDayIso(item.start_at) === today;
   const upcomingClasses = classes.filter(classIsUpcoming);
   const pastOrCancelledClasses = classes.filter((item) => !classIsUpcoming(item));
 
@@ -779,9 +809,22 @@ export default function SchedulerPage() {
      registered whoever that picker happened to show. The button now says
      who, as the picker does: the name, or the id when there is no name. */
   const registerTarget = athletes.find((item) => item.athlete_id === targetAthlete);
+  /* A PARENT'S CHILD, BY NAME (AS9-4; FAM-10, FAM-23; Q7 = A). The child
+     chosen in the picker at the top of the page, named as the family pages
+     name them (familyChildLabel): the name on file, or "Your child", never
+     the id. Null for every other role and before the list has a child. */
+  const familyChild = role === 'parent' && registerTarget ? registerTarget : null;
+  const familyChildName = familyChild ? familyChildLabel(familyChild, athletes) : null;
+  // Mid-sentence ("Register your child", "For your child") when no name is on file.
+  const familyChildInSentence = familyChild && familyChildName
+    ? (familyChildHasName(familyChild) ? familyChildName : familyChildName.replace(/^Your child/, 'your child'))
+    : null;
+  // A parent's button never falls back to the id: no child from the list, no name.
   const registerTargetName = role === 'athlete' || !targetAthlete
     ? null
-    : registerTarget?.full_name?.trim() || targetAthlete;
+    : role === 'parent'
+      ? familyChildInSentence
+      : registerTarget?.full_name?.trim() || targetAthlete;
   // A class row names its coach, never the login (#1596; OD-2026-10-06-025
   // "Show coach name, hide ID"). The name is derived as the server derives a
   // coach's signature (coachDisplayName.ts): from the login on the admin's
@@ -820,6 +863,12 @@ export default function SchedulerPage() {
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
+        {opensClassScreen(item) ? (
+          <Link href={classScreenHref(item.class_id)} className="btn">
+            Open class screen
+            <span className="sr-only">: {item.title}</span>
+          </Link>
+        ) : null}
         {canRegisterFor(item) ? (
           <button
             type="button"
@@ -997,6 +1046,25 @@ export default function SchedulerPage() {
                 <p className="alert-msg">{actionMessage}</p>
               </div>
             </div>
+          ) : null}
+
+          {/* ONE CHILD PICKER FOR A PARENT (AS9-4; FAM-10, FAM-11): at the top,
+              opening on the child chosen last on a family page. Register, the
+              coaching request and "<name> is here" all act for this child; the
+              two selects that sat inside those cards are gone. With one child
+              there is nothing to choose and it draws nothing. The list is the
+              parent's own children (/api/pilot/athletes/list), and the server
+              checks the link again on every action. */}
+          {!loading && role === 'parent' ? (
+            <FamilyChildPicker
+              linked={athletes}
+              activeId={selectedAthleteId || null}
+              onChoose={(id) => {
+                setSelectedAthleteId(id);
+                setCheckInHold(null);
+              }}
+              className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]"
+            />
           ) : null}
 
           {loading ? (
@@ -1235,7 +1303,11 @@ export default function SchedulerPage() {
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
                   <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Request Individual Coaching</h3>
 
-                  {(role === 'parent' || roleCanManageClasses(role)) && athletes.length > 0 ? (
+                  {/* A parent's child is the one picked at the top (AS9-4). */}
+                  {role === 'parent' && familyChildInSentence ? (
+                    <p className="t-body">For {familyChildInSentence}</p>
+                  ) : null}
+                  {roleCanManageClasses(role) && athletes.length > 0 ? (
                     <select
                       value={selectedAthleteId}
                       onChange={(e) => setSelectedAthleteId(e.target.value)}
@@ -1299,7 +1371,12 @@ export default function SchedulerPage() {
 
               <section className="grid gap-4 lg:grid-cols-2">
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)] space-y-[var(--s4)]">
-                  <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Attendance Check-In</h3>
+                  {/* ONE REGISTER WORD FOR COACHES (CF-09; Overwatch Q1 = A on #2043):
+                      "Who is here", the class screen's word for the same register.
+                      A family's heading and "I'm here" are unchanged here. */}
+                  <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                    {isFamily ? 'Attendance Check-In' : 'Who is here'}
+                  </h3>
                   {noClassToday ? (
                     <p className="t-body">There is no class today to check in to.</p>
                   ) : null}
@@ -1325,6 +1402,14 @@ export default function SchedulerPage() {
                     ))}
                   </select>
                   )}
+                  {/* The other register (CF-09): the class screen marks this same class.
+                      Beside the class picker, for a class of today's only (staff only). */}
+                  {selectedClass && opensClassScreen(selectedClass) ? (
+                    <Link href={classScreenHref(selectedClass.class_id)} className="btn btn--ghost">
+                      Open class screen
+                      <span className="sr-only">: {selectedClass.title}</span>
+                    </Link>
+                  ) : null}
 
                   {/* The class register (OD-2026-10-07-008 ruling 4): the coach,
                       cover or scheduler marks everyone registered to the
@@ -1353,19 +1438,6 @@ export default function SchedulerPage() {
                           </option>
                         ))}
                       </optgroup>
-                    </select>
-                  ) : role === 'parent' && athletes.length > 0 && !noClassToday ? (
-                    <select
-                      aria-label="Athlete to mark"
-                      value={selectedAthleteId}
-                      onChange={(e) => setSelectedAthleteId(e.target.value)}
-                      className="select"
-                    >
-                      {athletes.map((item) => (
-                        <option key={item.athlete_id} value={item.athlete_id}>
-                          {item.full_name || item.athlete_id}
-                        </option>
-                      ))}
                     </select>
                   ) : null}
 
@@ -1397,6 +1469,13 @@ export default function SchedulerPage() {
                     />
                   ) : null}
 
+                  {/* Why there is no button for a parent's child on today's class
+                      (AS9-4 review; PROPOSED words): the child chosen at the
+                      top is not on it. The picker at the top changes child. */}
+                  {familyChildName && selectedClass && !selectedClassCancelled && today
+                    && gymDayIso(selectedClass.start_at) === today && !registeredForSelectedClass.has(targetAthlete) ? (
+                    <p className="t-body">{familyChildName} is not registered for this class.</p>
+                  ) : null}
                   {(!isFamily && markClassId) || familyCanCheckIn ? (
                     <button
                       type="button"
@@ -1419,13 +1498,19 @@ export default function SchedulerPage() {
                           // "override" is the stored method name for every staff mark,
                           // not something the coach did; a first normal mark read as one
                           // (live walkthrough 2026-10-19). PROPOSED copy.
-                          isFamily ? 'Checked in. Your coach can see you are here.' : 'Attendance saved.',
+                          // A parent marks a child, so the line names the child
+                          // (Q7 = A; the words mirror "You are marked here. Your
+                          // coach can see it.", AthleteImHere.tsx). An athlete's
+                          // line on this page is unchanged.
+                          familyChildName
+                            ? `${familyChildName} is marked here. Their coach can see it.`
+                            : isFamily ? 'Checked in. Your coach can see you are here.' : 'Attendance saved.',
                         );
                       }}
                       disabled={actionInFlight}
                       className="btn disabled:opacity-60 disabled:grayscale"
                     >
-                      {isFamily ? "I'm here" : 'Update Attendance'}
+                      {familyChildName ? `${familyChildName} is here` : isFamily ? "I'm here" : 'Save'}
                     </button>
                   ) : null}
 
@@ -1463,7 +1548,11 @@ export default function SchedulerPage() {
                 </article>
 
                 <article className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-                  <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Parent Review and Records</h3>
+                  {/* Titled by what it lists for staff (CF-26; Overwatch Q2 = A on #2043):
+                      a coach has nothing to review here. The family title is unchanged. */}
+                  <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>
+                    {isFamily ? 'Parent Review and Records' : 'Registrations and attendance'}
+                  </h3>
                   <div className="mt-3 space-y-2 max-h-[340px] overflow-y-auto">
                     {schedulerFailed ? (
                       <p className="t-muted">Records could not be loaded just now.</p>
@@ -1475,7 +1564,7 @@ export default function SchedulerPage() {
                       <div key={item.registration_id} className="input">
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
                           {registrationLine(
-                            athleteMap.get(item.athlete_id) || item.athlete_id,
+                            recordName(item.athlete_id),
                             classes.find((x) => x.class_id === item.class_id)?.title || item.class_id,
                             item.status,
                           )}
@@ -1502,9 +1591,9 @@ export default function SchedulerPage() {
                     {attendance.map((item) => (
                       <div key={item.attendance_id} className="input">
                         <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>
-                          {`${athleteMap.get(item.athlete_id) || item.athlete_id} at ${classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}`}
+                          {`${recordName(item.athlete_id)} at ${classes.find((x) => x.class_id === item.class_id)?.title || item.class_id}`}
                         </p>
-                        <p className="text-[color:var(--bone-300)]">{ATTENDANCE_STATUS_WORDS[item.status] ?? item.status}, via {ATTENDANCE_METHOD_LABEL[item.method] ?? item.method}</p>
+                        <p className="text-[color:var(--bone-300)]">{ATTENDANCE_STATUS_WORDS[item.status] ?? item.status}{attendanceMethodWords(item.method) ? `, via ${attendanceMethodWords(item.method)}` : ''}</p>
                         <p className="text-[color:var(--bone-400)]">{formatGymStamp(item.checked_in_at)}</p>
                       </div>
                     ))}
@@ -1520,7 +1609,7 @@ export default function SchedulerPage() {
                   ) : coachingRequests.length === 0 ? <p className="t-muted">No coaching requests yet.</p> : null}
                   {coachingRequests.map((item) => (
                     <div key={item.request_id} className="input">
-                      <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{athleteMap.get(item.athlete_id) || item.athlete_id}</p>
+                      <p className="t-command" style={{ fontSize: 'var(--t-sm)' }}>{recordName(item.athlete_id)}</p>
                       <p className="text-[color:var(--bone-300)]">
                         Preferred: {formatGymStamp(item.preferred_at)} | Status: {coachingRequestStatusText(item, cancelClockMs)}
                         {item.status === 'approved' && item.assigned_coach_account_id

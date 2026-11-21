@@ -102,7 +102,7 @@ const programCards = [
     whatItIs:
       "Actual boxing -- stance, footwork, combinations, pad work -- taught at a pace that fits someone with a job and a bad back. Sparring is available if you ever want it and is never required.",
     whoFor: "Adults who want to learn to box, whether or not they ever step in a ring.",
-    nextStep: `Pick "${programInterestLabels["Boxing / Fitness"]}" below and tell us you are an adult starting out.`,
+    nextStep: `Pick "${programInterestLabels["Boxing / Fitness"]}" in the form below and tell us you are an adult starting out.`,
   },
   {
     title: "Youth Boxing and Mentorship",
@@ -110,21 +110,21 @@ const programCards = [
       "Kids and teens train with coaches who also ask about school, attitude, and how they treat people. Everyone starts non-contact: footwork, technique, conditioning, supervised the whole time.",
     whoFor:
       "Young people who need somewhere to put their energy and adults who will stay in their corner. Kids train free.",
-    nextStep: `Pick "${programInterestLabels["Youth Development"]}" below. Parents, put your kid's age in the message.`,
+    nextStep: `Pick "${programInterestLabels["Youth Development"]}" in the form below. Parents, put your kid's age in the message.`,
   },
   {
     title: "Competitive Boxing",
     whatItIs:
       "For athletes who decide on their own that they want to compete. A coach confirms readiness before any of it. Nobody gets pushed toward a ring to fill a card.",
     whoFor: "Athletes who choose it. Competing is optional here and always has been.",
-    nextStep: `Pick "${programInterestLabels["Competition Track"]}" below.`,
+    nextStep: `Pick "${programInterestLabels["Competition Track"]}" in the form below.`,
   },
   {
     title: "Adaptive Training",
     whatItIs:
       "The same work, adjusted -- around an injury, a disability, a health condition, or a body coming back from a long time off.",
     whoFor: "Anyone who has been told they cannot, or has been quietly counted out somewhere else.",
-    nextStep: `Pick "${programInterestLabels["Adaptive Training"]}" below and tell us as much or as little as you want.`,
+    nextStep: `Pick "${programInterestLabels["Adaptive Training"]}" in the form below and tell us as much or as little as you want.`,
   },
   {
     title: "For Parents and Guardians",
@@ -132,23 +132,40 @@ const programCards = [
       "Straight answers about supervision, contact rules, what a session looks like, and how to reach a coach directly. You are welcome to stay and watch any session.",
     whoFor:
       "Parents deciding whether to bring their kid through the door, and parents whose kid already trains here.",
-    nextStep: `Pick "${programInterestLabels["Parent Support"]}" below and ask whatever you actually want to ask.`,
+    nextStep: `Pick "${programInterestLabels["Parent Support"]}" in the form below and ask whatever you actually want to ask.`,
   },
   {
     title: "Volunteering",
     whatItIs:
       "Events, transportation, equipment, timekeeping, the unglamorous work that keeps a gym open. No boxing background needed.",
     whoFor: "People with a few hours and a willingness to be useful.",
-    nextStep: `Pick "${programInterestLabels["Volunteer Support"]}" below and tell us when you are free.`,
+    nextStep: `Pick "${programInterestLabels["Volunteer Support"]}" in the form below and tell us when you are free.`,
   },
   {
     title: "Sponsors and Partners",
     whatItIs:
       "Businesses, schools, and community organizations who help keep training free for kids. We will tell you exactly what your support pays for.",
     whoFor: "Organizations or individuals who want to back this with money, space, or gear.",
-    nextStep: `Pick "${programInterestLabels["Sponsorship / Partnership"]}" below.`,
+    nextStep: `Pick "${programInterestLabels["Sponsorship / Partnership"]}" in the form below.`,
   },
 ];
+
+/* "the form below" in a How to start line is a link to the form's own
+   heading (app scrub FAM-17), so a visitor on a phone is not left scrolling
+   for it. Every nextStep above says it exactly once. */
+const FORM_BELOW = 'the form below';
+
+function NextStep({ text }: { readonly text: string }) {
+  const at = text.indexOf(FORM_BELOW);
+  if (at < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, at)}
+      <a href="#interest-intake">{FORM_BELOW}</a>
+      {text.slice(at + FORM_BELOW.length)}
+    </>
+  );
+}
 
 /* Moved from /public. The cost answer carries Jason's figure (adults $20 a
    month, 2026-10-03), replacing the old "Adults, ask us". The $20 is a
@@ -260,6 +277,12 @@ export default async function HomePage() {
               <Link href="/login" className="btn btn--ghost text-sm sm:text-base">
                 Log In
               </Link>
+              {/* The form's own heading (FAM-17), so a visitor who already
+                  knows what they want does not scroll past every program. Last,
+                  so Programs, Donate and Log In keep their places. */}
+              <a href="#interest-intake" className="btn btn--ghost text-sm sm:text-base">
+                Get in Touch
+              </a>
             </div>
           </div>
         </section>
@@ -408,7 +431,7 @@ export default async function HomePage() {
                 </h3>
                 <p className="t-body mt-[var(--s3)]">{program.whatItIs}</p>
                 <p className="t-body mt-[var(--s2)]"><strong>Who it is for:</strong> {program.whoFor}</p>
-                <p className="t-body mt-[var(--s2)]"><strong>How to start:</strong> {program.nextStep}</p>
+                <p className="t-body mt-[var(--s2)]"><strong>How to start:</strong> <NextStep text={program.nextStep} /></p>
               </article>
             ))}
           </div>
@@ -680,7 +703,9 @@ export default async function HomePage() {
               <a href={`mailto:${org.email}`}>{org.email}</a>
             </p>
             <p className="t-body">
-              <Link href="/privacy">Privacy</Link>
+              {/* The privacy page covers the interest form only (FAM-26; AS-9
+                  Q11 = A), so the link says so. */}
+              <Link href="/privacy">Privacy: interest form</Link>
               {" "}&middot;{" "}
               <Link href="/refund-policy">Donations, refunds and cancellations</Link>
             </p>

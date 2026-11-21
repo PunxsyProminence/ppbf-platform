@@ -7,7 +7,8 @@
  * page, and that page must open on child B -- carried by src/lib/chosenChild.ts,
  * never by an id in the address. A remembered id that is not one of THIS
  * guardian's children (another family's, on a shared tablet) is ignored and
- * the page keeps its own default: the first child, or none picked.
+ * the page keeps its own default: the only child, or, with two or more, none
+ * picked until the guardian chooses (app scrub FAM-11; lane AS-9, AS9-2).
  */
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -68,18 +69,17 @@ async function renderSettled(Page: ComponentType) {
   await act(async () => {});
 }
 
-/** Switches by the page's own control: a row of buttons, or a select. */
-const byButton = () => fireEvent.click(screen.getByRole('button', { name: 'Blake Doe' }));
-const bySelect = () => fireEvent.change(screen.getByLabelText('Which child'), { target: { value: 'kid-b' } });
+/** Switches by the family pages' one picker (components/FamilyChildPicker.tsx). */
+const pickB = () => fireEvent.click(screen.getByRole('button', { name: 'Blake Doe' }));
 
-const PAGES: Array<{ name: string; Page: ComponentType; read: string; fallback: string | null; pickB: () => void }> = [
-  { name: '/parent/progression-visibility', Page: ParentProgressionVisibilityPage, read: '/progression/gaps', fallback: 'kid-a', pickB: byButton },
-  { name: '/parent/video', Page: ParentVideoPage, read: '/video/list', fallback: 'kid-a', pickB: byButton },
-  { name: '/parent/development-blocks', Page: ParentDevelopmentBlocksPage, read: '/athlete/development-blocks', fallback: null, pickB: bySelect },
-  { name: '/parent/mental-skills', Page: ParentMentalSkillsPage, read: '/athlete/mental-skills', fallback: null, pickB: bySelect },
+const PAGES: Array<{ name: string; Page: ComponentType; read: string }> = [
+  { name: '/parent/progression-visibility', Page: ParentProgressionVisibilityPage, read: '/progression/gaps' },
+  { name: '/parent/video', Page: ParentVideoPage, read: '/video/list' },
+  { name: '/parent/development-blocks', Page: ParentDevelopmentBlocksPage, read: '/athlete/development-blocks' },
+  { name: '/parent/mental-skills', Page: ParentMentalSkillsPage, read: '/athlete/mental-skills' },
 ];
 
-describe.each(PAGES)('$name', ({ Page, read, fallback, pickB }) => {
+describe.each(PAGES)('$name', ({ Page, read }) => {
   test('opens on the child chosen in the hub when it is one of the guardian\'s own', async () => {
     rememberChosenChild('kid-b');
     await renderSettled(Page);
@@ -91,7 +91,30 @@ describe.each(PAGES)('$name', ({ Page, read, fallback, pickB }) => {
     rememberChosenChild('kid-other-family');
     await renderSettled(Page);
     expect(readsFor(read)).not.toContain('kid-other-family');
-    expect(readsFor(read)).toEqual(fallback ? expect.arrayContaining([fallback]) : []);
+    // Two children and nobody of theirs remembered: no child is read for
+    // until the guardian chooses, on every family page.
+    expect(readsFor(read)).toEqual([]);
+    expect(screen.getByText('Choose a child')).toBeTruthy();
+    // The foreign id is never shown, and never sent.
+    expect(document.body.textContent).not.toContain('kid-other-family');
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('kid-other-family'))).toBe(false);
+  });
+
+  test('a one-child family with another family\'s id remembered opens on its own child', async () => {
+    rememberChosenChild('kid-other-family');
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const body = String(input).includes('/athletes/list')
+        ? { items: [KIDS[0]] }
+        : { items: [], blocks: [], imagery_sessions: [], current_cue: null };
+      return { ok: true, status: 200, json: async () => body } as Response;
+    });
+    await act(async () => {
+      render(<Page />);
+    });
+    await act(async () => {});
+    expect(readsFor(read).length).toBeGreaterThan(0);
+    expect(new Set(readsFor(read))).toEqual(new Set(['kid-a']));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('kid-other-family'))).toBe(false);
   });
 
   test('a switch made here is remembered, and the next family page opens on it', async () => {
@@ -102,7 +125,8 @@ describe.each(PAGES)('$name', ({ Page, read, fallback, pickB }) => {
     });
     expect(readChosenChild()).toBe('kid-b');
 
-    // The next page: the video page reads its first child unless told otherwise.
+    // The next page: with two children the video page reads nobody unless a
+    // child of theirs is remembered.
     cleanup();
     fetchMock.mockClear();
     await renderSettled(ParentVideoPage);

@@ -9,11 +9,11 @@ interface PipelineStage {
 }
 
 const pipelineStages: PipelineStage[] = [
-  { key: 'research', label: 'RESEARCH INTAKE', href: '/research' },
-  { key: 'evidence', label: 'EVIDENCE REVIEW', href: '/evidence' },
-  { key: 'knowledge', label: 'KNOWLEDGE GRAPH', href: '/knowledge-graph' },
-  { key: 'simulator', label: 'SCENARIO SIMULATOR', href: '/simulator' },
-  { key: 'audit', label: 'AUDIT TRACE', href: '/audit' },
+  { key: 'research', label: 'Research Inbox', href: '/research' },
+  { key: 'evidence', label: 'Evidence Review Queue', href: '/evidence' },
+  { key: 'knowledge', label: 'Concept Relationship Map', href: '/knowledge-graph' },
+  { key: 'simulator', label: 'Validation Sandbox', href: '/simulator' },
+  { key: 'audit', label: 'Audit Trace', href: '/audit' },
 ];
 
 interface DevelopmentPipelineBannerProps {
