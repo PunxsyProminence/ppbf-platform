@@ -232,7 +232,9 @@ const VIDEO_PRODUCT_GUARD = String.raw`(?!(?: of (?:the |our |a )?(?:kids |adult
 // The product asking for a video ("the app asks me", "shadow keeps asking")
 // is not a person; a message sent "on the app" is.
 const PRODUCT_SUBJECT = String.raw`(?<!(?<!\b(?:on|in|through|via|from|off|of|at) )\bthe (?:ap+|site|page|form|screen) (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)(?<!(?:^|\bthe )shadow (?:(?:ke+ps|ke+pt|ke+p|always|wont stop) )?)`;
+const PLURAL_ASKER = String.raw`(?:people|kids|older kids|grown ups|adults|men|guys)`;
 const VIDEO_REQUEST = [
+  String.raw`\b${PLURAL_ASKER}(?: [a-z]+){0,4}? ${ASK} (?:me )?(?:for |to see )?${PICTURE_COUNT}${VIDEO_NOUNS} of (?:me|us|u|you|my|myself)\b`,
   String.raw`(?:send (?:him |her |them |me )|${PRODUCT_SUBJECT}${ASK} me (?:for |to see |to send (?:him |her |them )?|to make (?:him |her |them )?)?|(?:made|makes|make|making|gets|got|get) me (?:to )?send (?:him |her |them )?|${PRODUCT_SUBJECT}(?:keeps|kept|keep|always|wont stop) (?:asking|begging|bugging) (?:me )?for )${PICTURE_COUNT}${VIDEO_NOUNS}\b${VIDEO_GUARD}`,
   // The product asking is excused only when that ends what was asked.
   String.raw`(?:${ASK} me (?:for |to see |to send (?:him |her |them )?|to make (?:him |her |them )?)?|(?:keeps|kept|keep|always|wont stop) (?:asking|begging|bugging) (?:me )?for )${PICTURE_COUNT}${VIDEO_NOUNS}\b${VIDEO_GUARD}(?!${TECHNIQUE_END})`,
@@ -243,12 +245,13 @@ const PRIVATE_PLACE_WORDS = String.raw`(?:showers|in the bath|bathtub|locker roo
 const PERSON_OR_REQUEST = String.raw`(?:he|she|they|hes|shes|theyre|someone|somebody|him|her|his|me|us|asked|asks|wants|wanted|send|sent|took|takes|taking|filmed|filming)`;
 // A picture near undress files in either order; near a private place it
 // files when a person or request word is near too.
-// A private or secret picture, or a stranger online near a picture word, is
-// a request whatever gym words follow it (review 10 on PR 2076).
-const STRANGER = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|men|guys|adult)(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
+// A request for a private or secret picture, and a stranger online asking for
+// one, file whatever gym words follow (reviews 10 and 11 on PR 2076).
+const STRANGER = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|people|men|guys)(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
 const PICTURE_NEAR_PLACE = [
-  String.raw`(?:private|secret) ${ANY_PICTURE}`,
-  String.raw`${STRANGER}${WORD}{0,8} ${ANY_PICTURE}`,
+  String.raw`(?:${ASK}|send|asks? me for|keeps? asking(?: me)? for)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}`,
+  String.raw`(?:private|secret) ${ANY_PICTURE} of (?:me|you|u|us|yourself|myself)`,
+  String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging)${WORD}{0,4} ${ANY_PICTURE}`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
   String.raw`(?:${ANY_PICTURE}|film|record)(?: of)? (?:me|her|him|us|them|myself|herself|himself|the (?:girls|boys|kids)|my (?:sister|brother|friends?|teammates?))(?: (?:while|whilst|when|as)(?: (?:i was|im|i am|i|she was|he was|we were|they were))?)? (?:changing|changed)(?! (?:up )?(?:my |his |her |the |our )?(?:stance|direction|levels?|angles?|gloves|wraps|weight(?: clas+)?|guard|feet|grip|partners?|pace|corners?|sides|rhythm|hands|mats|ropes|timer)(?: (?:on|in|at) (?:the |my )?(?:bag|pads|ring|mats?))?${TECHNIQUE_END})`,
