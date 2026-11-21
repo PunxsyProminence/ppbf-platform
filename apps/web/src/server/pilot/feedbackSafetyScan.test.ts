@@ -2337,6 +2337,10 @@ describe('HF12b eleventh delta review (81ed7ee..ce38d6a): blocking findings', ()
     'the adult class coach on insta has my pics',
     'the adult team coach online wants my pics',
     'an adult class lady on insta wants my pics',
+    // Single-rule pins (mutation proof).
+    'my friend from adult class on snap wants my pics',
+    'my friend at the adult class on snap wants my pics',
+    'the coach who runs adult class on snap wants my pics',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
