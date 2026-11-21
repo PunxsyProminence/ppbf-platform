@@ -62,6 +62,11 @@ interface EyebrowCase {
 
 const roles = (page: EyebrowCase) => page.seenBy ?? doorRoles(page.href);
 
+/** Every section name on every bar. */
+const ALL_SECTION_NAMES = new Set(
+  Object.values(JOB_BARS).flatMap((bar) => (bar?.sections ?? []).map((section) => section.label)),
+);
+
 /** Pages whose eyebrow becomes their one section name. */
 const TAKES_SECTION_NAME: readonly EyebrowCase[] = [
   { file: 'admin/athlete-consent/page.tsx', href: '/admin/athlete-consent' },
@@ -102,9 +107,11 @@ describe('AS10-6b: each office eyebrow is the job section the page sits under', 
   );
 
   it.each(NO_SECTION.map((page) => [page.file, page] as const))(
-    '%s sits under no section for the roles that see its eyebrow, so it is left (Q13 C)',
+    '%s sits under no section for the roles that see its eyebrow (Q13 C), and wears no section name',
     (_file, page) => {
       expect(sectionNames(page.href, roles(page))).toEqual([]);
+      // Left as it was: whatever it reads, it is not a job section's name it does not sit under.
+      expect([...ALL_SECTION_NAMES]).not.toContain(headerEyebrow(page.file));
     },
   );
 
