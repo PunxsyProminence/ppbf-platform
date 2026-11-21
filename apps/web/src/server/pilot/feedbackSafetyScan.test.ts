@@ -1601,3 +1601,60 @@ describe('HF12b review 8: single-guard tests', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+// Review round 9 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review 9: the normal form is main\'s; rewrites live in the extra reading', () => {
+  test.each([
+    'do people notice ur self harm scars',
+    'how long do ur self harm scars last',
+    'ur self-harm cuts',
+    'how do i tell coach about your self harm',
+  ])('crisis, as on main: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  test('the normal form keeps "ur self" as main had it', () => {
+    expect(normalizeForSafetyScan('ur self harm')).toBe('ur self harm');
+  });
+});
+
+describe('HF12b review 9: guards that swallowed a disclosure', () => {
+  test.each([
+    ['he recorded my best friend in the shower', 'grooming_or_isolation'],
+    ['he recorded my best mate naked', 'grooming_or_isolation'],
+    ['he hit the record button while i was getting changed', 'grooming_or_isolation'],
+    ["Sa'd yesterday at the gym", 'grooming_or_isolation'],
+    ["Sa'd when i was 8", 'grooming_or_isolation'],
+    ["Sa'd. please help", 'grooming_or_isolation'],
+    ["coach Sa'd", 'grooming_or_isolation'],
+    ["i think my stepdad Sa'd", 'grooming_or_isolation'],
+    ['kill yourself on the bag loser', 'crisis'],
+    ['they told me to kill yourself on the pads and everyone laughed', 'crisis'],
+    ['he wants videos uploaded to his phone every night', 'grooming_or_isolation'],
+    ['coach wants videos in the app every night just for him', 'grooming_or_isolation'],
+    ['he wants videos content of me', 'grooming_or_isolation'],
+  ])('%p files %s', (sentence, cue) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain(cue);
+  });
+
+  test.each([
+    "Sa'ed was great today",
+    "hes Sa'd, my sparring partner",
+    'the app keeps asking me for video consent',
+    'my coach wants videos uploaded to the app',
+    'coach said kill yourself on the heavy bag',
+  ])('stays out: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('grooming_or_isolation');
+    expect(cues).not.toContain('crisis');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): the product asking, or a personal best, with anything after it.
+  test.each([
+    'the app asked me for a video but it wouldnt upload',
+    'recorded my pr then hit the shower',
+  ])('accepted false alert, files grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
