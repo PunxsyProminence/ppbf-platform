@@ -1552,3 +1552,40 @@ describe('HF12b review 7: single-guard tests', () => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
   });
 });
+
+// Review round 8 on PR 2076 (lane HF12b). Invented phrases.
+describe('HF12b review 8: guards that swallowed a disclosure', () => {
+  test.each([
+    "I got Sa'd at the gym",
+    "i was Sa'd last week",
+    "Sa'd by him after class",
+    'Sa-ed by my coach',
+    "coach Sa'd my sister",
+    'send him snaps on my jab in my room',
+    'coach keeps asking for snaps on my jab after my mom goes to sleep',
+    'he recorded my lifts in my underwear',
+    'he recorded my run with no top on',
+    'he records my lifts in the bathroom',
+    'he took a vid of me changing, my partners had all gone home',
+    'he took pics of me changing. the mats were empty',
+    'coach wants videos for instagram, just me in my room at night alone',
+    'he wants a video for my school project, just me in my room',
+    'my friend shadow asks me for videos',
+    'shadow keeps asking me for vids of me',
+    'the app keeps asking me for videos and so does coach',
+    'the site asks me for nudes',
+    'coach wants a video for the website, he said wear nothing',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): a guard that left these out also left out the disclosures above.
+  test.each([
+    'send me a video of the drill so i can practice at home',
+    'i recorded my run before my shower',
+    'the video of him changing direction was sick',
+  ])('accepted false alert, files grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
