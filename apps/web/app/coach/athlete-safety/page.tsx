@@ -15,6 +15,8 @@ import {
   isPlainClick,
   takeArrivalAthlete,
 } from '@/components/decisionLoopArrival';
+import { readActiveHold, type ActiveHold } from '@/components/clearanceReading';
+import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import ReturnPlanBlock, { type Outcome } from '@/components/ReturnPlanBlock';
@@ -147,10 +149,89 @@ async function errorOf(response: Response, fallback: string): Promise<string> {
 
 /**
  * The sections an old address or a link scrolls to. The Injury Record is not
- * one: it sits right under the pick, and scrolling to it would only push the
- * pick off the screen.
+ * one: it sits under the pick and the Training Hold section, and scrolling to
+ * it would only push both off the screen.
  */
 const SECTIONS = ['medical-restrictions', POST_TO_FAMILY_SECTION];
+
+/** How long a hold read may go unanswered before it is said as unread: the Decision Loop's roster wait. */
+const HOLD_READ_WAIT_MS = 15_000;
+
+/**
+ * The chosen athlete's active Training Hold, read only (AS-5 Q2 = A): a hold is
+ * placed and lifted on the Clearance Board, and this section links there, on
+ * this athlete. The read is the board's (components/clearanceReading.ts) and so
+ * are the words (Q-B4 = A on #2041), each cut before the part about the
+ * board's own controls.
+ *
+ * AN UNKNOWN HOLD NEVER LOOKS LIKE NO HOLD. A read that found no hold draws no
+ * hold mark, only the link (where the board draws its place button). So the
+ * link is not drawn until the read has settled: a read still out shows the
+ * heading and the name and nothing else. A read that failed, or that is still
+ * unanswered after HOLD_READ_WAIT_MS, says the board's unread sentence; an
+ * answer that comes after that is still shown.
+ *
+ * Mounted with `key={athleteId}`, so one athlete's reading is never on screen
+ * under another's name.
+ */
+function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; readonly name: string }) {
+  // undefined: not read yet. 'unavailable': nobody could look.
+  const [hold, setHold] = useState<ActiveHold | null | 'unavailable' | undefined>(undefined);
+
+  useEffect(() => {
+    let live = true;
+    const overdue = setTimeout(() => {
+      if (live) setHold((now) => (now === undefined ? 'unavailable' : now));
+    }, HOLD_READ_WAIT_MS);
+    readActiveHold(athleteId).then(
+      (found) => { if (live) setHold(found); },
+      () => { if (live) setHold('unavailable'); },
+    ).finally(() => clearTimeout(overdue));
+    return () => {
+      live = false;
+      clearTimeout(overdue);
+    };
+  }, [athleteId]);
+
+  return (
+    <section id="training-hold" aria-busy={hold === undefined} className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+      <h2 className="t-command text-[length:var(--t-lg)]">Training Hold</h2>
+      <p className="t-label mt-[var(--s1)]">{name}</p>
+      {hold === 'unavailable' && (
+        <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+          Training hold could not be read just now. Unknown is not “no hold” — check again before making a call
+          that depends on it.
+        </p>
+      )}
+      {hold && hold !== 'unavailable' && (
+        <div data-refusal-stamp="training_hold" className="mt-[var(--s3)]">
+          {/* The board's mark and words for a hold. No lift here: that is the board's. */}
+          <span className="stamp stamp--brass stamp--flat stamp--kiosk">
+            <i aria-hidden="true">{TRAINING_HOLD_GLYPH}</i>
+            <span>{TRAINING_HOLD_LABEL}</span>
+          </span>
+          <div className="mat-paper mt-[var(--s2)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s3)]">
+            <p className="t-eyebrow">Active Training Hold — {hold.scope.replaceAll('_', ' ')}</p>
+            <p className="t-body mt-[var(--s2)]">{hold.athlete_explanation}</p>
+            <p className="t-label mt-[var(--s2)]">
+              Lifts when:{' '}
+              {hold.lift_condition_text
+                || 'Not written down — all this athlete is told is to ask whoever placed the hold. Tell them what ends it.'}
+            </p>
+          </div>
+        </div>
+      )}
+      {hold !== undefined && (
+        <div className="mt-[var(--s3)]">
+          <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost"
+            onClick={(event) => { if (isPlainClick(event)) handOffArrivalAthlete(athleteId, CLEARANCE_BOARD_PAGE); }}>
+            Clearance Board
+          </Link>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function AthleteSafetyPage() {
   const [roster, setRoster] = useState<RosterAthlete[] | null>(null);
@@ -396,6 +477,8 @@ export default function AthleteSafetyPage() {
         </div>
         )}
 
+        {athleteId && <TrainingHoldSection key={athleteId} athleteId={athleteId} name={chosenName} />}
+
         {athleteId && (
         <section id="injury-record" className="mb-[var(--s5)]">
         <div className="mat-leather mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -552,13 +635,13 @@ export default function AthleteSafetyPage() {
           </section>
         )}
 
-        <div className="mt-[var(--s5)]">
-          {/* Holds and clearance are placed, lifted and set on the board (AS-5 Q2 = A); it opens on this athlete. */}
-          <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost"
-            onClick={(event) => { if (athleteId && isPlainClick(event)) handOffArrivalAthlete(athleteId, CLEARANCE_BOARD_PAGE); }}>
-            Clearance Board
-          </Link>
-        </div>
+        {/* Holds and clearance are placed, lifted and set on the board (AS-5 Q2 = A). With an athlete
+            chosen, the link is in the Training Hold section and opens the board on them. */}
+        {!athleteId && (
+          <div className="mt-[var(--s5)]">
+            <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost">Clearance Board</Link>
+          </div>
+        )}
         <WorkAxis />
       </div>
     </RoleStandaloneView>
