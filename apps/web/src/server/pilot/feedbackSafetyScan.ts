@@ -93,19 +93,15 @@ const SA_D = new RegExp(
 );
 
 /**
- * A word spelled out letter by letter, the letters separated by one repeated
- * character ("s u i c i d e", "k.m.s", "k-i-l-l m-y-s-e-l-f"): the run is
+ * A word spelled out letter by letter ("s u i c i d e", "k.m.s"): the run is
  * joined back into the word (HF12b). Done in the normal form itself, so every
  * reader of it (the SHADOW disclosure's touch, staff, boxing-context and
- * sparring-intent checks) sees the word too. Letters only: "5 k m s" keeps
- * the 5 apart (see SPACED_BACK_PHRASES), so the roadwork guard still reads it
- * as a distance.
+ * sparring-intent checks) sees the word too. Roadwork distances still read
+ * as distances.
  *
- * A run is three or more letters, or two letters neither of which is "i" or
- * "a" ("t o" reads "to"). Text-speak puts a lone "i" beside another single
- * letter ("n i said stop", "k i told him"), and joining those would hide the
- * SHADOW sparring-intent words that start with "i" (review on PR 2076). "i m"
- * is joined on its own in joinSplitWords.
+ * Text-speak single letters ("n i said stop", "k i told him") are kept apart
+ * where joining them would hide the SHADOW sparring-intent words that start
+ * with "i" (review on PR 2076). "i m" is joined on its own in joinSplitWords.
  */
 const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z0-9]([^a-z0-9])[a-z0-9](?:\1[a-z0-9])*(?![a-z0-9])/gu;
 
@@ -118,9 +114,8 @@ const SPELLED_OUT_RUN = /(?<![a-z0-9])[a-z0-9]([^a-z0-9])[a-z0-9](?:\1[a-z0-9])*
  * rare in ordinary text, so a phrase found inside an unrelated spelled-out
  * word costs at most a reading. A lone "i" left at the end of a run after
  * that ("b c i said stop") is split off, so SHADOW's sparring-intent words
- * that start with "i" still read. A run that holds a digit ("c 0 a c h",
- * "5 k m s") is left as it was typed: SHADOW folds digits in its own staff
- * check, and the roadwork guard reads "5 k m s" as a distance.
+ * that start with "i" still read. Roadwork distances still read as
+ * distances, and SHADOW's own staff check reads digits as it did on main.
  */
 const SPACED_BACK_PHRASES: readonly string[] = [
   'kill myself', 'hurt myself', 'cut myself', 'harm myself', 'hang myself', 'shoot myself', 'off myself',
@@ -190,47 +185,51 @@ function collapseFully(normalized: string): string {
 // guard is stated once (HF12b; review rounds on PR 2076).
 const PICTURE_NOUNS = String.raw`(?:pic|pics|pix|picture|pictures|photo|photos|selfie|selfies)`;
 // "snap" is also boxing for a sharp punch ("more snap on my jab"), so the
-// singular counts only after "a" or "another".
-const VIDEO_NOUNS = String.raw`(?:vid|vids|video|videos|snaps|snapchats?|(?<=\b(?:a|another) )snap)`;
-const ANY_PICTURE = String.raw`(?:pic|pics|pix|picture|pictures|photo|photos|selfie|selfies|vid|vids|video|videos|snap|snaps|snapchats?)`;
+// singular counts only after "a" or "another", and "snaps on/not/behind" is
+// the punch.
+const VIDEO_NOUNS = String.raw`(?:vid|vids|video|videos|snaps(?! (?:on|not|behind)\b)|snapchats?|(?<=\b(?:a|another) )snap)`;
+const ANY_PICTURE = String.raw`(?:pic|pics|pix|picture|pictures|photo|photos|selfie|selfies|vid|vids|video|videos|snap|snaps|snapchats?|film|films|filmed|filming|record|records|recorded|recording)`;
 const PICTURE_COUNT = String.raw`(?:a |an |more |some |private |another |any )?`;
 const GYM_EVENT_NOUNS = String.raw`fight|fights|bout|bouts|event|events|match|tournament|win|belt|medal|team|clas+|spar+ing|scale`;
 // Main's picture guard, unchanged: pictures of or from a fight, an event, the
 // team, a class, sparring or the scale.
 const PICTURE_GUARD = String.raw`(?! (?:of|from) (?:(?:my|the|our|his|her|their) )?(?:${GYM_EVENT_NOUNS})\b)`;
-// Technique, session and homework videos, for video words only. Only short
-// fillers may sit before the noun ("of the 3 punch combo", "of the slip
-// drill"), so a body word or a person in between ("of my legs after
-// workouts", "of u doing ur warm up") still files. Undress, shower and
-// changing-room words are a separate alternative below, so this guard cannot
-// hide them.
-const TECHNIQUE_NOUNS = String.raw`(?:${GYM_EVENT_NOUNS}|dril+s?|combos?|jabs?|ho+ks?(?! up\b)|up+ercuts?|fo+twork|stance|pad ?work|mit+ ?work|bag ?work|technique|warm ?ups?|workouts?|ses+ions?|routines?|circuits?|schedule|timetable|calendar|training|shadow ?boxing|punch(?:es)?|defen[cs]e|head movement|form|progres+|pads|roadwork|skip+ing|jump rope|(?:hand )?wraps)`;
-const TECHNIQUE_FILLER = String.raw`(?:the|my|your|ur|his|her|our|their|a|an|that|this|todays|[0-9]+|one|two|three|four|punch|slip|jab|pad|bag|mit+|shadow|new|basic|first|last|next)`;
+// Technique, session and homework videos, for video words only, named as
+// gym phrases ("of the 3 punch combo", "of my left hook"). Undress, shower
+// and changing-room words are a separate alternative below, so this guard
+// cannot hide them.
+const TECHNIQUE_NOUNS = String.raw`(?:${GYM_EVENT_NOUNS}|dril+s?|combos?|jabs?|ho+ks?(?! up\b)|up+ercuts?|fo+twork|stance|pad ?work|mit+ ?work|bag ?work|technique|warm ?ups?|workouts?|ses+ions?|routines?|circuits?|schedule|timetable|calendar|training|shadow ?boxing|punch(?:es)?|defen[cs]e|head movement|form|progres+|pads|roadwork|skip+ing|jump rope|(?:hand )?wraps|homework|combinations?|cros+(?:es)?|guard|slips|rol+s|conditioning|sprints|one two|1 2)`;
+const TECHNIQUE_FILLER = String.raw`(?:the|my|your|ur|his|her|our|their|a|an|that|this|todays|[0-9]+|one|two|three|four|punch|slip|jab|pad|bag|mit+|shadow|new|basic|first|last|next|left|right|lead|rear)`;
 const VIDEO_GUARD = String.raw`(?! (?:(?:of|from|on) (?:${TECHNIQUE_FILLER} ){0,3}${TECHNIQUE_NOUNS}|(?:of|on|about|showing) how to (?:do )?(?:the |a |that |this )?(?:slip|jab|throw|block|parry|duck|rol+|pivot|wrap|punch|hook|uppercut|skip|hold the pads|${TECHNIQUE_NOUNS}))\b)`;
-const ASK = String.raw`(?:asking|asks|asked|ask|wants|want|wanted|wanting)`;
-// Main's picture request, with "pix" added.
+const ASK = String.raw`(?:asking|asks|asked|ask|wants|want|wanted|wanting|begs|begged|begging|beg)`;
+// Main's picture request, with "pix" and begging added.
 const PICTURE_REQUEST = String.raw`(?:${ASK} (?:me )?(?:for |to see |to send (?:him |her |them )?)?|send (?:him |her |them |me )?)${PICTURE_COUNT}${PICTURE_NOUNS}\b${PICTURE_GUARD}`;
-// A video is asked for only when the request is aimed at the child: a send to
-// someone, "asks me for", or a third person wanting one. "i want more videos"
-// and "send videos feature" are feature requests.
-const VIDEO_REQUEST = String.raw`(?:send (?:him |her |them |me )|${ASK} me (?:for |to see |to send (?:him |her |them )?|to make (?:him |her |them )?)?|\b(?:he|she|they|coach|someone|somebody|guy|man) (?:[a-z]+ ){0,2}?${ASK} (?:for |to see )?)${PICTURE_COUNT}${VIDEO_NOUNS}\b${VIDEO_GUARD}`;
+// A video request aimed at the child: a send to someone, "asks me for", being
+// made to send, someone who keeps asking, or a third person or staff title
+// wanting one. Feature requests and product talk stay out.
+const VIDEO_ASKER = String.raw`(?:he|she|they|coach|someone|somebody|guy|man|mr|mrs|ms|miss|sir|trainer|instructor|volunteer|staff|teacher)`;
+const VIDEO_PRODUCT_GUARD = String.raw`(?! (?:in the ap+|on (?:the ap+|youtube|instagram|tiktok)|library|tutorials?|content|uploaded|of the (?:new )?(?:building|gym|gear)|of the (?:gloves|gear|merch) we sel+)\b)`;
+const VIDEO_REQUEST = [
+  String.raw`(?:send (?:him |her |them |me )|(?<!\b(?:ap+|shadow|it|form|page|site|screen) )${ASK} me (?:for |to see |to send (?:him |her |them )?|to make (?:him |her |them )?)?|(?:made|makes|make|making|gets|got|get) me (?:to )?send (?:him |her |them )?|(?:keeps|kept|keep|always|wont stop) (?:asking|begging|bugging) (?:me )?for )${PICTURE_COUNT}${VIDEO_NOUNS}\b${VIDEO_GUARD}`,
+  String.raw`\b${VIDEO_ASKER}(?: [a-z]+){0,4}? ${ASK} (?:for |to see )?(?:a |an |some |private |another |any )?${VIDEO_NOUNS}\b${VIDEO_GUARD}${VIDEO_PRODUCT_GUARD}`,
+].join('|');
 const UNDRESS_WORDS = String.raw`(?:shower|showering|changing rooms?|change rooms?|get+ing changed|get changed|got changed|undres+|undres+ed|undres+ing|naked|nude|no clothes|underwear|no shirt|no top|shirt off|top off|shirtles+|toples+|without (?:a |any |your |my |his |her )?(?:shirts?|tops?|clothes)|bra|sports bra|swimsuit|swimming costume|bikini|wearing nothing)`;
 const PRIVATE_PLACE_WORDS = String.raw`(?:showers|locker rooms?|bathrooms?|toilets?|in bed|bedro+m|on (?:my|the|your|his|her) bed)`;
-const PERSON_OR_REQUEST = String.raw`(?:he|she|they|him|her|his|me|asked|asks|wants|wanted|send|sent|took|takes|taking|filmed|filming)`;
+const PERSON_OR_REQUEST = String.raw`(?:he|she|they|him|her|his|me|us|asked|asks|wants|wanted|send|sent|took|takes|taking|filmed|filming)`;
 const WORD = String.raw`(?: [a-z0-9]+)`;
 // A picture near undress files in either order; near a private place it
 // files when a person or request word is near too.
 const PICTURE_NEAR_PLACE = [
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
-  String.raw`${ANY_PICTURE} of (?:me|her|him|us|them)(?: (?:while|when) (?:i was|im|i am|she was|he was|we were))? changing`,
+  String.raw`${ANY_PICTURE}(?: of)? (?:me|her|him|us|them)(?: (?:while|when)(?: (?:i was|im|i am|i|she was|he was|we were))?)? (?:changing|changed)(?! (?:my |his |her |the )?(?:stance|direction|levels?|angles?|gloves|wraps|weight|guard|feet|grip)\b)`,
   String.raw`${PERSON_OR_REQUEST}${WORD}{0,4} ${ANY_PICTURE}${WORD}{0,6} ${PRIVATE_PLACE_WORDS}`,
   String.raw`${ANY_PICTURE}${WORD}{0,4} ${PERSON_OR_REQUEST}${WORD}{0,4} ${PRIVATE_PLACE_WORDS}`,
   String.raw`${PRIVATE_PLACE_WORDS}${WORD}{0,4} ${PERSON_OR_REQUEST}${WORD}{0,4} ${ANY_PICTURE}`,
 ].join('|');
 
 const GROOMING_PATTERN = new RegExp(
-  String.raw`\b(when nobody is looking|when no one is looking|when nobodys looking|when everyone leaves|after everyone leaves|keeps me after|keep me after|stay behind|stays behind|by myself with|alone in the office|in the office alone|took a picture of me|takes pictures of me|filmed me|recorded me|watches me get changed|watches me change|watched me change|take my shirt off|took my shirt off|get changed in front|our little secret|our little thing|our secret|special friend|dont show anyone|dont show anybody|not allowed to tell|cant tell my mom|cant tell my dad|cant tell anyone|off the team if i tell|if i tell anyone|texts me at night|texting me at night|messages me at night|asked me not to say|molest|molests|molested|molesting|molester|molestation|rape|rapes|raped|raping|rapist|r ped|rap3d|sexual(?:ly)? (?:abus|assault)[a-z]*|sexualy (?:abus|assault)[a-z]*|sexually touched|grooming me|groomed me|grooms me|groped|gropes|groping|fondled|fondles|fondling|(?:made|makes|make|making) me touch(?! gloves\b)|sent me nudes|asked for nudes|asked me for nudes|wants nudes|send nudes|dick pic|dick pics|${PICTURE_REQUEST}|${VIDEO_REQUEST}|pedo|pedophile|paedo|paedophile|had sex with me|have sex with me|${PICTURE_NEAR_PLACE})\b`,
+  String.raw`\b(when nobody is looking|when no one is looking|when nobodys looking|when everyone leaves|after everyone leaves|keeps me after|keep me after|stay behind|stays behind|by myself with|alone in the office|in the office alone|took a picture of me|takes pictures of me|filmed me|recorded me|watches me get changed|watches me change|watched me change|take my shirt off|took my shirt off|get changed in front|our little secret|our little thing|our secret|special friend|dont show anyone|dont show anybody|not allowed to tell|cant tell my mom|cant tell my dad|cant tell anyone|off the team if i tell|if i tell anyone|texts me at night|texting me at night|messages me at night|asked me not to say|molest|molests|molested|molesting|molester|molestation|rape|rapes|raped|raping|rapist|r ped|rap3d|r4ped|r4pe|raepd|sexual(?:ly)? (?:abus|as+a?ul+t)[a-z]*|sexualy (?:abus|as+a?ul+t)[a-z]*|sexually touched|grooming me|groomed me|grooms me|groped|gropes|groping|fondled|fondles|fondling|(?:made|makes|make|making) me touch(?! gloves\b)|sent me nudes|asked for nudes|asked me for nudes|wants nudes|send nudes|dick pic|dick pics|${PICTURE_REQUEST}|${VIDEO_REQUEST}|pedo|pedophile|paedo|paedophile|had sex with me|have sex with me|${PICTURE_NEAR_PLACE})\b`,
 );
 
 // Every cue is matched against the normalized string, so each phrase is
@@ -304,7 +303,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     // my life seriously"); "take my own life" is.
     id: 'crisis',
     pattern:
-      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|(?<!\b(?:wraps?|tape|gloves?|shoes?|boots|shirt|headgear|headguard|mouthguard|pads|(?:take|took|get|got|pull|pulled|cut) (?:it|them)) )off myself|shoot myself|neck myself|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself|(?:gonna|gunna|going to|wanna|want to|imma|finna|about to|bout to) of myself|kys|(?:hang|neck|shoot) (?:yourself|urself)|(?<=\b(?:dont|not|never|ne+d to|have to) )kil+ (?:yourself|urself)(?! (?:in (?:the )?(?:first |1st |opening |early )?rounds?|in round (?:one|1)|on the (?:heavy )?(?:bag|pads|mitts|treadmill))\b)|(?<!\b(?:dont|not|never|ne+d to|have to) )kil+ (?:yourself|urself)(?! on the (?:heavy )?(?:bag|pads|mitts|treadmill)\b))\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|ten|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n|twenty|thirty|forty|fifty) )\bkms\b|\b(?:im|i am|(?<![0-9] )am|only|age)(?: only)? (?:[0-9]+|ten|eleven|twelve|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n)(?: yo| years old| and)? kms\b(?! (?:away|to go|from (?:the|my|home|here|school))\b)/,
+      /\b(kill myself|killing myself|hurt myself|hurting myself|cut myself|cutting myself|want to die|wanna die|end it all|nobody cares|no one cares|hate myself|suicidal|suicidel|sucidal|suicidial|suisidal|suicide(?! (?:dril+s?|sprints?|shut+les?|squad)\b)|suiside|sucide|suacide|suicde|commit sudoku|sewerslide|sewer slide|unalive|unalived|unaliving|kil myself|kill myslef|killmyself|(?<!\b(?:wraps?|tape|gloves?|shoes?|boots|shirt|headgear|headguard|mouthguard|pads|(?:take|took|get|got|pull|pulled|cut) (?:it|them)) )off myself|shoot myself|neck myself|want 2 die|want 2 be dead|dont want 2 live|end my life|end my own life|ending my life|take my own life|taking my own life|dont want to live|dont wanna live|want to be dead|wanna be dead|better off dead|slit my wrists?|hang myself|hanging myself|overdose|overdosed|overdoses|overdosing|self ?harm|self ?harms|self ?harmed|self ?harming|harm myself|harming myself|(?:gonna|gunna|going to|wanna|want to|imma|ima|finna|about to|bout to|i will) of myself|kys|(?:hang|neck|shoot) (?:yourself|urself)|(?<=\b(?:dont|not|never|ne+d to|have to) )kil+ (?:yourself|urself)(?! (?:in (?:the )?(?:first |1st |opening |early )?rounds?|in round (?:one|1)|on the (?:heavy )?(?:bag|pads|mitts|treadmill))\b)|(?<!\b(?:dont|not|never|ne+d to|have to) )kil+ (?:yourself|urself)(?! on the (?:heavy )?(?:bag|pads|mitts|treadmill)\b))\b|(?<!\b(?:[0-9]+|a few|few|a couple|couple|many|how many|hundreds? of|thousands? of|hundred|two|thre+|four|five|six|seven|eight|nine|eleven|twelve|ten|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n|twenty|thirty|forty|fifty) )\bkms\b|\b(?:im|i am|(?<![0-9] )am|only|age)(?: only)? (?:[0-9]+|ten|eleven|twelve|thirte+n|fourte+n|fifte+n|sixte+n|sevente+n|eighte+n|ninete+n)(?: yo| years old| and)? kms\b(?! (?:away|to go|from (?:the|my|home|here|school))\b)/,
   },
   {
     // Naming what was touched instead of who was touching. Every cue above
@@ -349,7 +348,7 @@ const SAFETY_CUES: readonly SafetyCue[] = [
     // Crisis phrasing that never says "kill" or "die".
     id: 'crisis_indirect',
     pattern:
-      /\b(wish i was dead|wish i were dead|wish i wasnt alive|wish i wasnt here|dont want to be alive|dont want to be here anymore|do something bad to myself|hurt myself|run away|running away|ran away|disappear forever|better off without me|nobody would miss me|no one would miss me)\b/,
+      /\b(wish i was dead|wish i were dead|wish i was ded|wish i were ded|dont want 2 be alive|wish i wasnt alive|wish i wasnt here|dont want to be alive|dont want to be here anymore|do something bad to myself|hurt myself|run away|running away|ran away|disappear forever|better off without me|nobody would miss me|no one would miss me)\b/,
   },
   {
     // Distress reported as a body or a routine rather than a feeling.
