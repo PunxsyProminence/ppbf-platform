@@ -247,18 +247,26 @@ const PERSON_OR_REQUEST = String.raw`(?:he|she|they|hes|shes|theyre|someone|some
 // files when a person or request word is near too.
 // A request for a private or secret picture, and a stranger online asking for
 // one, file whatever gym words follow (reviews 10 and 11 on PR 2076).
-const STRANGER = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|people|men|guys|adult(?! (?:clas+|clas+es|program|programs|ses+ions?|schedule|boxing|team|section)\b))(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
+const STRANGER_ONE = String.raw`(?:stranger|(?:man|guy|someone|somebody|person|men|guys|adult(?! (?:clas+|clas+es|program|programs|ses+ions?|schedule|boxing|team|section)\b))(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
+const STRANGER = String.raw`(?:${STRANGER_ONE}|people(?: [a-z]+){0,2} (?:online|i dont know|i didnt know|i never met|on (?:insta|instagram|snapchat|snap|tiktok|discord|roblox|fortnite)))`;
+// A gym video of the child's ("my fight video") is not a picture of them.
+const STRANGER_GYM_VIDEO = String.raw`(?<!\b(?:my|our) (?:fight|fights|spar+ing|spar+|combo|combos|boxing|training|workout|bout|match|tournament|highlights?|knockout|ko|win|pad|pads|bag|form|jab|technique|progres+|gym|belt|event) )`;
+// Product and upload talk about a private video setting.
+const PRIVATE_PICTURE_PRODUCT = String.raw`(?<!\b(?:ap+|site|website|page|platform|youtube|channel)(?: (?:should|could|can|will|needs? to|must))? (?:have|has|get|add|allow)(?: (?:a|an))? )(?<!\b(?:made (?:it|this|that)(?: (?:a|an|into a))?|set (?:it|this|that) to|i (?:uploaded|posted|put up|made)(?: (?:a|an|my))?|is there (?:a|an)) )`;
 const PRIVATE_PICTURE_GUARD = String.raw`(?! (?:les+ons?|ses+ions?|coaching|clas+|clas+es|cal+s?|options?|set+ings?|links?|ac+ounts?)\b)`;
 const PICTURE_NEAR_PLACE = [
+  // A private or secret picture files with any verb; asking for one, or one
+  // of the child, files whatever follows.
   String.raw`(?:${ASK}|send|asks? me for|keeps? asking(?: me)? for)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}`,
   String.raw`(?:private|secret) ${ANY_PICTURE} of (?:me|you|u|us|yourself|myself)`,
-  // The child's own private pictures held, shown or leaked, and private
-  // pictures sent, shown or taken, file unless they are gym or lesson talk.
-  String.raw`\b(?:my|me) (?:private|secret) ${ANY_PICTURE}\b${PRIVATE_PICTURE_GUARD}`,
-  String.raw`\b(?:owe|owes|owed|trade|trading|swap|swapping|send|sends|sent|sending|show|shows|showed|showing|leak|leaks|leaked|leaking|share|shares|shared|sharing|took|take|takes|taking|film|films|filmed|filming)${WORD}{0,3} (?:private|secret) ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
-  String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging|askin|keeps? askin)${WORD}{0,4} ${ANY_PICTURE}`,
-  String.raw`${STRANGER}${WORD}{0,4}? (?:sent me|sends me|sending me|keeps? sending(?: me)?|offered|offers|offering|pay|pays|paid|paying|gave me|gives me|give me|money|robux|dmd me|told me to|tells me to|pressuring me|pressured me|pressures me|messaging me|dming me|dmed me|dms me)${WORD}{0,4} ${ANY_PICTURE}\b${VIDEO_GUARD}`,
-  String.raw`${STRANGER}${WORD}{0,2}? (?:has|have|got|kept|keeps)${WORD}{0,3} ${ANY_PICTURE} of (?:me|us|u|myself)\b`,
+  String.raw`${PRIVATE_PICTURE_PRODUCT}\b(?:private|secret) ${ANY_PICTURE}\b${VIDEO_GUARD}${PRIVATE_PICTURE_GUARD}`,
+  // A stranger online asking for a picture files whatever gym words follow;
+  // one aimed at the child, or with pressure, payment or a threat, files
+  // unless it is about a gym video.
+  String.raw`${STRANGER}${WORD}{0,4}? (?:${ASK}|keeps? asking|keeps? begging|askin|keeps? askin|beggin|keeps? beggin)${WORD}{0,4} ${ANY_PICTURE}`,
+  String.raw`${STRANGER_ONE}${WORD}{0,6}? (?:me|my|us|our)${WORD}{0,4} ${STRANGER_GYM_VIDEO}${ANY_PICTURE}\b${VIDEO_GUARD}`,
+  String.raw`${STRANGER_ONE}${WORD}{0,6}? ${ANY_PICTURE} of (?:me|us|myself)\b`,
+  String.raw`${STRANGER_ONE}${WORD}{0,4}? (?:sent|sends|sending|offered|offers|offering|pay|pays|paid|paying|money|robux|demand|demands|demanded|demanding|need|needs|buy|buys|bought|buying|get|got|leak|leaks|leaked|leaking|blackmail\w*|expos\w*|threat\w*|sell|sells|sold|selling|steal|steals|stole)${WORD}{0,4} ${ANY_PICTURE}\b${VIDEO_GUARD}`,
   String.raw`${ANY_PICTURE}${WORD}{0,6} ${UNDRESS_WORDS}`,
   String.raw`${UNDRESS_WORDS}${WORD}{0,6} ${ANY_PICTURE}`,
   String.raw`(?:${ANY_PICTURE}|film|record)(?: of)? (?:me|her|him|us|them|myself|herself|himself|the (?:girls|boys|kids)|my (?:sister|brother|friends?|teammates?))(?: (?:while|whilst|when|as)(?: (?:i was|im|i am|i|she was|he was|we were|they were))?)? (?:changing|changed)(?! (?:up )?(?:my |his |her |the |our )?(?:stance|direction|levels?|angles?|gloves|wraps|weight(?: clas+)?|guard|feet|grip|partners?|pace|corners?|sides|rhythm|hands|mats|ropes|timer)(?: (?:on|in|at) (?:the |my )?(?:bag|pads|ring|mats?))?${TECHNIQUE_END})`,
