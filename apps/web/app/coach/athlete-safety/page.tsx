@@ -15,6 +15,16 @@ import {
   isPlainClick,
   takeArrivalAthlete,
 } from '@/components/decisionLoopArrival';
+import {
+  CLEARANCE_UNREAD,
+  clearanceBadge,
+  readActiveHold,
+  readClearance,
+  whenPassed,
+  type ActiveHold,
+  type ClearanceReading,
+} from '@/components/clearanceReading';
+import { TRAINING_HOLD_GLYPH, TRAINING_HOLD_LABEL } from '@/components/RefusalStamp';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDateNumeric } from '@/src/lib/gymTime';
 import ReturnPlanBlock, { type Outcome } from '@/components/ReturnPlanBlock';
@@ -147,10 +157,186 @@ async function errorOf(response: Response, fallback: string): Promise<string> {
 
 /**
  * The sections an old address or a link scrolls to. The Injury Record is not
- * one: it sits right under the pick, and scrolling to it would only push the
- * pick off the screen.
+ * one: it sits under the pick and the Training Hold section, and scrolling to
+ * it would only push both off the screen.
  */
 const SECTIONS = ['medical-restrictions', POST_TO_FAMILY_SECTION];
+
+/** How long a read may go unanswered before it is said as unread: the Decision Loop's roster wait. */
+const READ_WAIT_MS = 15_000;
+
+/**
+ * The chosen athlete's clearance and active Training Hold, read only (AS-5
+ * Q2 = A): clearance is set, and a hold placed and lifted, on the Clearance
+ * Board, and this section links there, on this athlete. The reads, the badge
+ * and the end-date timer are the board's (components/clearanceReading.ts;
+ * Q-B1, Q-B2 and Q-B3 = A on #2041) and so are the words (Q-B4 = A), each cut
+ * before the part about the board's own controls.
+ *
+ * NOTHING IS DRAWN UNTIL BOTH READS HAVE SETTLED. A read that found no hold
+ * draws no hold mark, only the link (where the board draws its place button),
+ * so a hold still being read must not sit under a badge as if it were "no
+ * hold". While either read is out the section shows the heading and the name
+ * and nothing else. A read that failed, or that is still unanswered after
+ * READ_WAIT_MS, says the board's unread sentence for it; an answer that comes
+ * after that is still shown.
+ *
+ * A CLEARANCE CAN RUN OUT WHILE THE PAGE IS OPEN. As on the board, a clearance
+ * in force with an end date is read again when that date arrives, and the
+ * section shows what the route answers; a re-read that fails keeps the end
+ * date, so it goes on being asked. Two things differ from the board, both so
+ * that a "cleared" past its end date cannot stay up on a slow or silent
+ * network: an answer is shown when it is newer than the one on screen, not
+ * only when it is the newest read sent (re-reads go out every 30 seconds, so
+ * on a network slower than that the board would throw every answer away);
+ * and a re-read still unanswered after READ_WAIT_MS is said as unread, as the
+ * first read is.
+ *
+ * Mounted with `key={athleteId}`, so one athlete's reading is never on screen
+ * under another's name.
+ */
+function TrainingHoldSection({ athleteId, name }: { readonly athleteId: string; readonly name: string }) {
+  // undefined: not read yet. 'unavailable': nobody could look.
+  const [hold, setHold] = useState<ActiveHold | null | 'unavailable' | undefined>(undefined);
+  // undefined: not read yet. A clearance of 'unavailable': nobody could look.
+  const [clearance, setClearance] = useState<ClearanceReading | undefined>(undefined);
+
+  useEffect(() => {
+    let live = true;
+    const overdue = setTimeout(() => {
+      if (!live) return;
+      setHold((now) => (now === undefined ? 'unavailable' : now));
+      setClearance((now) => (now === undefined ? CLEARANCE_UNREAD : now));
+    }, READ_WAIT_MS);
+    let out = 2;
+    const settled = () => {
+      out -= 1;
+      if (out === 0) clearTimeout(overdue);
+    };
+    readActiveHold(athleteId).then(
+      (found) => { if (live) setHold(found); },
+      () => { if (live) setHold('unavailable'); },
+    ).finally(settled);
+    // readClearance never throws: whatever goes wrong is 'unavailable'.
+    void readClearance(athleteId).then((reading) => { if (live) setClearance(reading); }).finally(settled);
+    return () => {
+      live = false;
+      clearTimeout(overdue);
+    };
+  }, [athleteId]);
+
+  // The board's rule for which clearance is read again at its end date: one in
+  // force, or one whose re-read failed and kept the date.
+  const endsAt = clearance?.ends_at && (clearance.clearance === 'cleared' || clearance.clearance === 'unavailable')
+    ? clearance.ends_at
+    : null;
+  // Re-reads are numbered as they are sent. `clearanceShownSeq` is the newest
+  // one whose ANSWER is on screen: an older answer arriving late never paints
+  // over it, and a newer one always may.
+  const clearanceReadSeq = useRef(0);
+  const clearanceShownSeq = useRef(0);
+  useEffect(() => {
+    if (!endsAt) return undefined;
+    let live = true;
+    const overdues = new Set<ReturnType<typeof setTimeout>>();
+    const cancel = whenPassed(endsAt, () => {
+      clearanceReadSeq.current += 1;
+      const seq = clearanceReadSeq.current;
+      // Unanswered after the wait, and nothing as new has answered: unread,
+      // keeping the end date so it goes on being asked. Its answer, if it
+      // comes later, is still shown.
+      const overdue = setTimeout(() => {
+        overdues.delete(overdue);
+        if (live && clearanceShownSeq.current < seq) setClearance({ ...CLEARANCE_UNREAD, ends_at: endsAt });
+      }, READ_WAIT_MS);
+      overdues.add(overdue);
+      void readClearance(athleteId).then((reading) => {
+        clearTimeout(overdue);
+        overdues.delete(overdue);
+        if (!live || seq <= clearanceShownSeq.current) return;
+        clearanceShownSeq.current = seq;
+        setClearance(reading.clearance === 'unavailable' ? { ...reading, ends_at: endsAt } : reading);
+      });
+    });
+    return () => {
+      live = false;
+      cancel();
+      overdues.forEach((overdue) => clearTimeout(overdue));
+    };
+  }, [athleteId, endsAt]);
+
+  const reading = hold === undefined ? undefined : clearance;
+  const badge = reading ? clearanceBadge(reading) : null;
+
+  return (
+    <section id="training-hold" aria-busy={reading === undefined} className="mat-leather mb-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s4)]">
+      <h2 className="t-command text-[length:var(--t-lg)]">Training Hold</h2>
+      {/* The board's voice for an athlete's name: this line says whose clearance and hold these are, and
+          t-label (--bone-400) measured about 3:1 on the clinic leather (tablet review, rendered). */}
+      <p className="t-body mt-[var(--s1)] font-semibold">{name}</p>
+      {reading && badge && (
+        <div data-clearance className="mt-[var(--s3)]">
+          {/* The board's badge and dates for this athlete's clearance. Setting it is the board's. */}
+          <div className="flex flex-wrap items-center gap-[var(--s3)]">
+            <span className={badge.className}><i aria-hidden="true">{badge.glyph}</i>{badge.label}</span>
+            {reading.effective_at ? (
+              <span className="t-data">since {formatGymDateNumeric(reading.effective_at)}</span>
+            ) : null}
+            {reading.expired_at && formatGymDateNumeric(reading.expired_at) ? (
+              <span className="t-data">expired {formatGymDateNumeric(reading.expired_at)}</span>
+            ) : null}
+          </div>
+          {reading.clearance === null && (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">No clearance record on file.</p>
+          )}
+          {reading.clearance === 'cleared_expired' && (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+              This clearance passed its end date, so it no longer counts.
+            </p>
+          )}
+          {reading.clearance === 'unavailable' && (
+            <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
+              Clearance could not be read just now. Unknown is not cleared — check again before making a call that
+              depends on it.
+            </p>
+          )}
+        </div>
+      )}
+      {reading && hold === 'unavailable' && (
+        <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
+          Training hold could not be read just now. Unknown is not “no hold” — check again before making a call
+          that depends on it.
+        </p>
+      )}
+      {reading && hold && hold !== 'unavailable' && (
+        <div data-refusal-stamp="training_hold" className="mt-[var(--s3)]">
+          {/* The board's mark and words for a hold. No lift here: that is the board's. */}
+          <span className="stamp stamp--brass stamp--flat stamp--kiosk">
+            <i aria-hidden="true">{TRAINING_HOLD_GLYPH}</i>
+            <span>{TRAINING_HOLD_LABEL}</span>
+          </span>
+          <div className="mat-paper mt-[var(--s2)] rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] p-[var(--s3)]">
+            <p className="t-eyebrow">Active Training Hold — {hold.scope.replaceAll('_', ' ')}</p>
+            <p className="t-body mt-[var(--s2)]">{hold.athlete_explanation}</p>
+            <p className="t-label mt-[var(--s2)]">
+              Lifts when:{' '}
+              {hold.lift_condition_text
+                || 'Not written down — all this athlete is told is to ask whoever placed the hold. Tell them what ends it.'}
+            </p>
+          </div>
+        </div>
+      )}
+      {reading && (
+        <div className="mt-[var(--s3)]">
+          <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost"
+            onClick={(event) => { if (isPlainClick(event)) handOffArrivalAthlete(athleteId, CLEARANCE_BOARD_PAGE); }}>
+            Clearance Board
+          </Link>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function AthleteSafetyPage() {
   const [roster, setRoster] = useState<RosterAthlete[] | null>(null);
@@ -396,6 +582,8 @@ export default function AthleteSafetyPage() {
         </div>
         )}
 
+        {athleteId && <TrainingHoldSection key={athleteId} athleteId={athleteId} name={chosenName} />}
+
         {athleteId && (
         <section id="injury-record" className="mb-[var(--s5)]">
         <div className="mat-leather mb-[var(--s3)] rounded-[var(--r-lg)] p-[var(--s4)]">
@@ -552,13 +740,13 @@ export default function AthleteSafetyPage() {
           </section>
         )}
 
-        <div className="mt-[var(--s5)]">
-          {/* Holds and clearance are placed, lifted and set on the board (AS-5 Q2 = A); it opens on this athlete. */}
-          <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost"
-            onClick={(event) => { if (athleteId && isPlainClick(event)) handOffArrivalAthlete(athleteId, CLEARANCE_BOARD_PAGE); }}>
-            Clearance Board
-          </Link>
-        </div>
+        {/* Holds and clearance are placed, lifted and set on the board (AS-5 Q2 = A). With an athlete
+            chosen, the link is in the Training Hold section and opens the board on them. */}
+        {!athleteId && (
+          <div className="mt-[var(--s5)]">
+            <Link href={CLEARANCE_BOARD_PAGE} className="btn btn--ghost">Clearance Board</Link>
+          </div>
+        )}
         <WorkAxis />
       </div>
     </RoleStandaloneView>

@@ -133,6 +133,12 @@ const PAGE = readFileSync(
   'utf8',
 );
 
+/** Where the board's clearance badge lives since lane AS-5 moved it (Q-B1 = A on #2041). */
+const CLEARANCE_READING = readFileSync(
+  path.resolve(__dirname, '../../components/clearanceReading.ts'),
+  'utf8',
+);
+
 /**
  * The 009 block's DECLARATIONS, comments removed.
  *
@@ -365,7 +371,11 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
   });
 
   test.each(REAL_CLEARANCE_LABELS)('the clearance state %s is still a distinct label', (label) => {
-    expect(PAGE).toContain(`label: '${label}'`);
+    // The badge moved to components/clearanceReading.ts (lane AS-5, Q-B1 = A
+    // on #2041); the board draws each row's clearance through it.
+    expect(CLEARANCE_READING).toContain(`label: '${label}'`);
+    expect(PAGE).toMatch(/import \{[^}]*\bclearanceBadge\b[^}]*\} from '@\/components\/clearanceReading'/);
+    expect(PAGE).toContain('clearanceBadge(row)');
   });
 
   test('the two hold scopes the platform actually enforces are both still offered', () => {
@@ -382,8 +392,11 @@ describe('the 009 mockup did not delete or invent clinic controls', () => {
     // clinician looked at this child and said no, and it is the only state that
     // wears `badge--locked`. Every other action state sits one rung down on
     // --restricted, which is the correction this page already carries.
-    expect(PAGE).toMatch(/not_cleared:\s*\{\s*className:\s*'badge badge--locked'/);
-    expect(PAGE.match(/badge--locked/g) ?? []).toHaveLength(1);
+    // The badge map moved to components/clearanceReading.ts (lane AS-5, Q-B1 =
+    // A on #2041): the one mark is there, once, and the page draws none of its own.
+    expect(CLEARANCE_READING).toMatch(/not_cleared:\s*\{\s*className:\s*'badge badge--locked'/);
+    expect(CLEARANCE_READING.match(/badge--locked/g) ?? []).toHaveLength(1);
+    expect(PAGE.match(/badge--locked/g) ?? []).toHaveLength(0);
   });
 
   test('both stamps on this route are still brass rather than red', () => {
