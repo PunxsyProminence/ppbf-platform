@@ -1716,3 +1716,9 @@ describe('HF12b review 10: blocking findings', () => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b review 10: single-rule test', () => {
+  test('lower-case sa\'d is the abbreviation even in a name\'s place', () => {
+    expect(scanForSafetyLanguage("my friend sa'd and nobody believes me").cues).toContain('grooming_or_isolation');
+  });
+});
