@@ -823,3 +823,40 @@ describe('HF12b: pictures near a changing room, a shower or undress', () => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
+
+describe('HF12b: "of myself" typed for "off myself" after a word of intent', () => {
+  test.each([
+    'gonna of myself',
+    'im going to of myself tonight',
+    'i wanna of myself',
+    'imma of myself',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  test.each([
+    'im proud of myself',
+    'i want to take care of myself',
+    'im gonna think of myself first',
+  ])('no crisis cue: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('crisis');
+  });
+});
+
+describe('HF12b: an age typed with a split "i m"', () => {
+  // Closed by the spelled-out-run join (two single letters read as one word),
+  // so this test was green when added.
+  test.each(['i m 14 kms', 'i m fourteen kms'])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): "im 14 kms in my room" is a disclosure, so a distance word after
+  // the number does not shield it.
+  test.each(['im 5 kms in', 'im 5 kms behind', 'im 5 kms short'])(
+    'accepted false alert, files crisis: %p',
+    (sentence) => {
+      expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+    },
+  );
+});
