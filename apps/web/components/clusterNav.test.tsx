@@ -145,7 +145,7 @@ describe('the coach home', () => {
       const door = BUILDING.find((d) => d.href === href);
       expect(door && door.roles !== OPEN && door.roles.includes('coach')).toBe(true);
     }
-    expect(workspace).toMatch(/\{ section: 'Safety', title: 'Safety' \}/);
+    expect(workspace).toMatch(/\{ section: 'Safety', title: 'Safety'/);
     expect(workspace).toContain("{activeTab === 'dashboard' && <CoachHomeJobs />}");
   });
 

@@ -89,11 +89,16 @@ import { jobBarFor, type JobItem } from './jobBars';
    Today's Floor (/coach/floor-groups) was a Quick Action and is not in the
    bar (jobBars.ts: "Groups and pathways" has no page yet), so the Class job
    keeps it as one extra page rather than drop a link a coach used. */
-const HOME_JOBS: ReadonlyArray<{ section: string; title: string; extra?: readonly string[] }> = [
+/* `shown`: pages kept in view under the job's button, not behind its "more"
+   list. The Safety job keeps the old Clinic row's three other pages in view, so
+   placing a limit, a sparring cap or reading a safety record stays one tap from
+   home, as the Clinic row made it (lane U2, audit UX-A A-3); the Clearance Board
+   is the job's own button. */
+const HOME_JOBS: ReadonlyArray<{ section: string; title: string; extra?: readonly string[]; shown?: readonly string[] }> = [
   { section: 'Class', title: "Run tonight's class", extra: ['/coach/floor-groups'] },
   { section: 'Athletes', title: 'Athletes' },
   { section: 'Plan', title: 'Plan' },
-  { section: 'Safety', title: 'Safety' },
+  { section: 'Safety', title: 'Safety', shown: ['/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps'] },
 ];
 
 const doorLabel = (href: string): string | null => BUILDING.find((door) => door.href === href)?.label ?? null;
@@ -123,7 +128,9 @@ function CoachHomeJobs() {
           const extra = (job.extra ?? []).filter((href) => BUILDING.some((door) => door.href === href));
           const pages = labelled([...(sections.get(job.section) ?? []), ...extra.map((href) => ({ href }))]);
           if (pages.length === 0) return null;
-          const [first, ...rest] = pages;
+          const [first, ...others] = pages;
+          const inView = others.filter((page) => job.shown?.includes(page.href));
+          const rest = others.filter((page) => !job.shown?.includes(page.href));
           return (
             <div
               key={job.section}
@@ -131,13 +138,34 @@ function CoachHomeJobs() {
               aria-label={job.section}
               className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)] space-y-[var(--s2)]"
             >
-              <Link href={first.href} data-job={job.section} className="btn w-full justify-center">
+              <Link
+                href={first.href}
+                data-job={job.section}
+                aria-describedby={`coach-home-job-${job.section}`}
+                className="btn w-full justify-center"
+              >
                 {job.title}
               </Link>
-              <p className="t-data text-[color:var(--bone-400)]">Opens {first.label}</p>
+              <p id={`coach-home-job-${job.section}`} className="t-data text-[color:var(--bone-400)]">Opens {first.label}</p>
+              {inView.length > 0 && (
+                <ul className="grid gap-[var(--s2)]">
+                  {inView.map((page) => (
+                    <li key={page.href}>
+                      <Link href={page.href} className="btn btn--ghost w-full justify-start">
+                        {page.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {rest.length > 0 && (
-                <details>
+                <details className="group">
+                  {/* .btn is inline-flex, which hides the native marker, so the
+                      open state is drawn as a glyph (closed ▸, open ▾); screen
+                      readers get it from <summary> itself. */}
                   <summary className="btn btn--ghost w-full justify-center cursor-pointer">
+                    <span aria-hidden="true" className="group-open:hidden">▸</span>
+                    <span aria-hidden="true" className="hidden group-open:inline">▾</span>
                     {rest.length} more in {job.section}
                   </summary>
                   <ul className="mt-[var(--s2)] grid gap-[var(--s2)]">
@@ -157,8 +185,12 @@ function CoachHomeJobs() {
       </div>
       {more.length > 0 && (
         <div role="group" aria-label="More" className="mat-leather rounded-[var(--r-lg)] p-[var(--s3)]">
-          <details>
-            <summary className="btn btn--ghost cursor-pointer">More: {more.length} pages</summary>
+          <details className="group">
+            <summary className="btn btn--ghost cursor-pointer">
+              <span aria-hidden="true" className="group-open:hidden">▸</span>
+              <span aria-hidden="true" className="hidden group-open:inline">▾</span>
+              More: {more.length} pages
+            </summary>
             <ul className="mt-[var(--s2)] flex flex-wrap gap-[var(--s2)]">
               {more.map((page) => (
                 <li key={page.href}>
@@ -2741,7 +2773,9 @@ export default function CoachWorkspace() {
         )}
 
         {/* ATHLETE PAIN REPORTS -- deliberately outside the tab switch and above
-            everything else on the page. A child reporting pain has to reach the
+            everything else on the page but the tab row and, on the Dashboard,
+            the floor board, whose Needs You Now card pages through every pain
+            report (lane 6C7 7a-2 moved the tab row up). A child reporting pain has to reach the
             coach on whatever screen they are already looking at, not on a tab
             they have to know to open. The panel (PainReportsPanel, lane U2-6b-2)
             is drawn --restricted, not --locked: "A pain report is not a medical

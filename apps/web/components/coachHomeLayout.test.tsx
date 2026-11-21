@@ -104,6 +104,7 @@ describe('the tab row sits directly under the masthead (CF-03)', () => {
 
     const dashboardTab = screen.getByRole('button', { name: 'Dashboard' });
     expect(before(dashboardTab, screen.getByRole('region', { name: 'The floor' }))).toBe(true);
+    expect(before(dashboardTab, screen.getByRole('heading', { name: 'Athlete Pain Reports' }))).toBe(true);
     expect(before(dashboardTab, screen.getByRole('heading', { name: 'Safety Escalations' }))).toBe(true);
     expect(before(dashboardTab, screen.getByRole('heading', { name: 'Family Barrier Reports' }))).toBe(true);
     expect(before(dashboardTab, screen.getByRole('region', { name: 'Your jobs' }))).toBe(true);
@@ -132,6 +133,9 @@ describe('the four jobs and More, from the coach job bar (stage 2 3.9; #2029)', 
 
     const main = jobs().getAllByRole('link').filter((link) => link.hasAttribute('data-job'));
     expect(main.map((link) => [link.textContent, link.getAttribute('href')])).toEqual(expected);
+    // Each button says where it goes, to a screen reader as well as on screen.
+    expect(main.map((link) => (link as HTMLElement).getAttribute('aria-describedby') && document.getElementById(link.getAttribute('aria-describedby')!)?.textContent))
+      .toEqual(['Opens Class screen', 'Opens Passbook', 'Opens Class plans', 'Opens Clearance Board']);
   });
 
   test('every page in each section is reachable from its job, by its door label', async () => {
@@ -152,7 +156,12 @@ describe('the four jobs and More, from the coach job bar (stage 2 3.9; #2029)', 
 
     const safety = within(screen.getByRole('group', { name: 'Safety' }));
     for (const href of ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/athlete-limits', '/coach/sparring-caps']) {
-      expect(safety.getAllByRole('link').some((link) => link.getAttribute('href') === href)).toBe(true);
+      const link = safety.getAllByRole('link').find((candidate) => candidate.getAttribute('href') === href);
+      expect(link).toBeTruthy();
+      // Still one tap from home, as the Clinic row made them: in view, not
+      // behind the job's closed "more" list (jsdom draws a closed <details>
+      // whole, so this asks the DOM, not the screen).
+      expect(link!.closest('details')).toBeNull();
     }
     // The old row is gone, not kept beside it.
     expect(screen.queryByRole('heading', { name: 'Clinic' })).toBeNull();
@@ -186,6 +195,7 @@ describe('the four jobs and More, from the coach job bar (stage 2 3.9; #2029)', 
     await renderWorkspace();
 
     const region = screen.getByRole('region', { name: 'Your jobs' });
+    expect(before(screen.getByRole('heading', { name: 'Athlete Pain Reports' }), region)).toBe(true);
     expect(before(screen.getByRole('heading', { name: 'Safety Escalations' }), region)).toBe(true);
     expect(before(screen.getByRole('heading', { name: 'Family Barrier Reports' }), region)).toBe(true);
     expect(before(region, screen.getByText('Coach Standard'))).toBe(true);
