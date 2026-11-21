@@ -9,8 +9,9 @@
  *   is held in parentHubPhoneLayout.test.tsx.
  * - Quick Actions keeps one action, Open Scheduler. The four buttons that only
  *   switched to a tab, and "SHADOW Chat", are gone (FAM-04, FAM-05; Q3 = A).
- * - The film link leaves the Safety & Consent card, and it, Their Development
- *   Plan and Mental Skills sit at the top of the Progress tab (FAM-07, FAM-08).
+ * - The film link leaves the Safety & Consent card, and four record pages
+ *   (Progress Visibility, the film, Their Development Plan and Mental Skills)
+ *   sit at the top of the Progress tab (FAM-07, FAM-08).
  * - The two tiles that count every child name each child beside its own count
  *   (FAM-12; Q4 = A).
  * - A children read that failed wears the restricted rung, not the
@@ -138,8 +139,12 @@ describe('the record pages (FAM-07, FAM-08)', () => {
     expect(screen.getAllByRole('link', { name: 'Their Development Plan' })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: 'Mental Skills' })).toHaveLength(1);
 
-    // Above everything else the tab holds: every other link on the tab comes
-    // after the row in the document.
+    // Directly under the tab's heading and intro line ...
+    const intro = screen.getByText('Track skill development and milestone achievements.');
+    expect(intro.compareDocumentPosition(pages) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(intro.nextElementSibling).toBe(pages);
+    // ... and above everything else the tab holds: every other link on the
+    // tab comes after the row in the document.
     const panel = pages.parentElement as HTMLElement;
     const otherLinks = within(panel).getAllByRole('link').filter((link) => !pages.contains(link));
     expect(otherLinks.length).toBeGreaterThan(0);
@@ -207,51 +212,6 @@ describe('each count names its child (FAM-12)', () => {
     expect(tileValue('Parent Floor tasks')).toBe('0');
     expect(tileValue('New messages')).toBe('0');
   });
-});
-
-/* The two tiles name every child, so they need the children read as well as
-   the messages read. Until the children read has answered they are
-   Unavailable: never a bare 0, and never a line that leaves a child out. */
-describe('the named tiles wait for the children read', () => {
-  test('a failed children read: Unavailable, with no messages and with one', async () => {
-    installFetch({ roster: 'fail' });
-    await renderHub();
-    await waitFor(() => expect(screen.getAllByRole('alert').some((el) => el.textContent?.includes('Error loading children'))).toBe(true));
-    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
-    expect(tileValue('New messages')).toBe('Unavailable');
-  });
-
-  test('a failed children read with a task on file still says Unavailable, not a partial line', async () => {
-    installFetch({
-      roster: 'fail',
-      messages: [message({ task: { due_date: '2026-10-20', completed_at: null } })],
-    });
-    await renderHub();
-    await waitFor(() => expect(screen.getAllByRole('alert').some((el) => el.textContent?.includes('Error loading children'))).toBe(true));
-    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
-    expect(tileValue('New messages')).toBe('Unavailable');
-    expect(tileValue('Parent Floor tasks')).not.toContain('First');
-  });
-
-  test('a children read still out: Unavailable, then the named line when it answers', async () => {
-    let answerRoster: (value: Response) => void = () => {};
-    installFetch({ messages: [message({ task: { due_date: '2026-10-20', completed_at: null } })] });
-    const base = (global.fetch as jest.Mock).getMockImplementation() as (input: unknown) => Promise<Response>;
-    (global.fetch as jest.Mock).mockImplementation((input: unknown) =>
-      String(input).includes('/api/pilot/athletes/list')
-        ? new Promise<Response>((resolve) => { answerRoster = resolve; })
-        : base(input));
-    await renderHub();
-
-    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
-    expect(tileValue('New messages')).toBe('Unavailable');
-
-    await act(async () => {
-      answerRoster(jsonResponse({ items: TWO_CHILDREN }));
-    });
-    await waitFor(() => expect(tileValue('Parent Floor tasks')).toBe('First 1 · Second 0'));
-    expect(tileValue('New messages')).toBe('First 1 · Second 0');
-  });
 
   test('a one-child family sees the name with the figure', async () => {
     installFetch({
@@ -296,6 +256,52 @@ describe('the named tiles wait for the children read', () => {
 
     expect(tileValue('Parent Floor tasks')).toBe('First 0 · Other 1');
   });
+});
+
+/* The two tiles name every child, so they need the children read as well as
+   the messages read. Until the children read has answered they are
+   Unavailable: never a bare 0, and never a line that leaves a child out. */
+describe('the named tiles wait for the children read', () => {
+  test('a failed children read with no messages: Unavailable', async () => {
+    installFetch({ roster: 'fail' });
+    await renderHub();
+    await waitFor(() => expect(screen.getAllByRole('alert').some((el) => el.textContent?.includes('Error loading children'))).toBe(true));
+    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
+    expect(tileValue('New messages')).toBe('Unavailable');
+  });
+
+  test('a failed children read with a task on file still says Unavailable, not a partial line', async () => {
+    installFetch({
+      roster: 'fail',
+      messages: [message({ task: { due_date: '2026-10-20', completed_at: null } })],
+    });
+    await renderHub();
+    await waitFor(() => expect(screen.getAllByRole('alert').some((el) => el.textContent?.includes('Error loading children'))).toBe(true));
+    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
+    expect(tileValue('New messages')).toBe('Unavailable');
+    expect(tileValue('Parent Floor tasks')).not.toContain('First');
+  });
+
+  test('a children read still out: Unavailable, then the named line when it answers', async () => {
+    let answerRoster: (value: Response) => void = () => {};
+    installFetch({ messages: [message({ task: { due_date: '2026-10-20', completed_at: null } })] });
+    const base = (global.fetch as jest.Mock).getMockImplementation() as (input: unknown) => Promise<Response>;
+    (global.fetch as jest.Mock).mockImplementation((input: unknown) =>
+      String(input).includes('/api/pilot/athletes/list')
+        ? new Promise<Response>((resolve) => { answerRoster = resolve; })
+        : base(input));
+    await renderHub();
+
+    expect(tileValue('Parent Floor tasks')).toBe('Unavailable');
+    expect(tileValue('New messages')).toBe('Unavailable');
+
+    await act(async () => {
+      answerRoster(jsonResponse({ items: TWO_CHILDREN }));
+    });
+    await waitFor(() => expect(tileValue('Parent Floor tasks')).toBe('First 1 · Second 0'));
+    expect(tileValue('New messages')).toBe('First 1 · Second 0');
+  });
+
 });
 
 describe('a failed children read (FAM-13)', () => {

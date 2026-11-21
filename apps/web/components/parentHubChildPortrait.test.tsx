@@ -40,9 +40,21 @@ beforeEach(() => {
   global.fetch = jest.fn(async (input: unknown) => {
     const url = String(input);
     if (url.includes('/api/pilot/athletes/list')) {
-      return jsonResponse({ items: [{ athlete_id: 'ath_1', full_name: 'First Child' }] });
+      // Two children: with one there is nothing to choose and the picker
+      // draws nothing (AS9-3, FamilyChildPicker).
+      return jsonResponse({
+        items: [
+          { athlete_id: 'ath_1', full_name: 'First Child' },
+          { athlete_id: 'ath_2', full_name: 'Second Child' },
+        ],
+      });
     }
-    if (url.includes('/api/pilot/profile/card')) return jsonResponse({ card: card('ath_1', 'First Child', 'FC') });
+    if (url.includes('/api/pilot/profile/card')) {
+      const athleteId = new URL(url, 'http://localhost').searchParams.get('athlete_id');
+      return athleteId === 'ath_2'
+        ? jsonResponse({ card: card('ath_2', 'Second Child', 'SC') })
+        : jsonResponse({ card: card('ath_1', 'First Child', 'FC') });
+    }
     if (url.includes('/api/pilot/scheduler')) return jsonResponse({ ok: true, classes: [], registrations: [], attendance: [] });
     if (url.includes('/api/pilot/announcements/get')) return jsonResponse({ ok: true, announcements: [] });
     return jsonResponse({ ok: true, items: [] });
@@ -62,6 +74,7 @@ test('the child switcher shows the child’s face from the card’s path, never 
   await waitFor(() => {
     const sources = Array.from(container.querySelectorAll('img')).map((img) => img.getAttribute('src') ?? '');
     expect(sources).toContain('/api/pilot/profile/card/photo?athlete_id=ath_1');
+    expect(sources).toContain('/api/pilot/profile/card/photo?athlete_id=ath_2');
   });
 
   const sources = Array.from(container.querySelectorAll('img')).map((img) => img.getAttribute('src') ?? '');

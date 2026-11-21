@@ -13,7 +13,8 @@ import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
 import ParentDigest from './ParentDigest';
 import ProfilePortrait from './ProfilePortrait';
-import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow, type ChildCount } from './RoleSummaryPanels';
+import { ParentSummaryPanel, HelpPanel, type ChildCount } from './RoleSummaryPanels';
+import FamilyChildPicker from './FamilyChildPicker';
 import SentToYourAthlete from './SentToYourAthlete';
 import { cardPhotoUrl, type FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
@@ -348,19 +349,35 @@ export function safetyChildSentence(child: SafetyChild): string | null {
    tone below is mixed against paper, and every state pairs its colour with a
    glyph and an uppercase label via the .badge component (Law 3). */
 
-/* Selected tab / selected child: a control in the "on" position is brass
+/* AS9-3 (FAM-03; Q2 = A): the ten tabs sit in one row that scrolls sideways
+   on a phone instead of wrapping to five or six rows, so a tab never shrinks
+   or breaks its label. The child picker is FamilyChildPicker's buttons, not
+   this tab style, so a child no longer looks like a tab. */
+/* Selected tab: a control in the "on" position is brass
    chassis, never a status colour (Laws 1 and 2). */
 /* --t-sm, not --t-xs: a guardian reads these on a phone in the car park,
    and 11.8px uppercase mono was the smallest text on the page. Still a
    desk size (no kiosk attribute; OD-2026-10-08-011). */
 const TAB_BASE =
-  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
+  'inline-flex shrink-0 whitespace-nowrap min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
 
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
+  // The tab row scrolls sideways on a phone (AS9-3), so the open tab is
+  // brought into view in the row when it changes. Not on first paint, so
+  // opening the hub never moves the page.
+  const tabButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const tabShownOnceRef = useRef(false);
+  useEffect(() => {
+    if (!tabShownOnceRef.current) {
+      tabShownOnceRef.current = true;
+      return;
+    }
+    tabButtonsRef.current.get(activeTab)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [activeTab]);
 
   // Real API: Children (athletes accessible to parent)
   const [children, setChildren] = useState<Child[]>([]);
@@ -893,7 +910,16 @@ export default function ParentHub() {
         const items = data.items || [];
         
         // Do not fabricate attendance/progression values from index-based placeholders.
-        const childList: Child[] = items.map((item) => {
+        // One child per athlete id: a roster row sent twice is one child, so the
+        // picker never draws the same child twice (AS9-3; the tiles already
+        // counted it once).
+        const seen = new Set<string>();
+        const unique = items.filter((item) => {
+          if (seen.has(item.athlete_id)) return false;
+          seen.add(item.athlete_id);
+          return true;
+        });
+        const childList: Child[] = unique.map((item) => {
           return {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
@@ -1434,6 +1460,9 @@ export default function ParentHub() {
                 <span className="badge badge--restricted"><i>▲</i>Failed</span>
                 <button
                   onClick={() => {
+                    // Loading in the same render as clearing the error, so the
+                    // hub never shows "No children found" between the two.
+                    setChildrenLoading(true);
                     setChildrenError(null);
                     setChildrenRetryNonce((value) => value + 1);
                   }}
@@ -1457,20 +1486,24 @@ export default function ParentHub() {
           </div>
         )}
 
+        {/* THE CHILD PICKER (AS9-3; FAM-11): the family pages' one picker, so
+            a child is a button with the child's name, not a tab. Labels come
+            from familyChildLabel ("Your child" when no name is on file; two
+            that would read the same are told apart). With one child there is
+            nothing to choose and it draws nothing. The small portrait stays
+            in each button, decorative. Only this guardian's own children are
+            in the list (/api/pilot/athletes/list), and every read the hub
+            makes for the chosen child is checked again on the server. */}
         {!childrenLoading && children.length > 0 && (
-          <div className="mat-paper flex flex-wrap gap-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
-            {children.map(child => (
-              <button
-                key={child.id}
-                type="button"
-                onClick={() => setActiveChildId(child.id)}
-                aria-pressed={activeChildId === child.id}
-                className={cx(
-                  TAB_BASE,
-                  'gap-[var(--s3)] pl-[var(--s2)]',
-                  activeChildId === child.id ? TAB_ACTIVE : TAB_INACTIVE,
-                )}
-              >
+          <FamilyChildPicker
+            linked={children.map((child) => ({ athlete_id: child.id, full_name: child.name }))}
+            activeId={activeChildId}
+            onChoose={setActiveChildId}
+            className="mat-paper rounded-[var(--r-md)] p-[var(--s3)]"
+            lead={(option) => {
+              const child = children.find((each) => each.id === option.athlete_id);
+              if (!child) return null;
+              return (
                 <ProfilePortrait
                   accountId={null}
                   src={cardPhotoUrl(apiBase(), child.photoPath)}
@@ -1480,15 +1513,14 @@ export default function ParentHub() {
                   size="sm"
                   decorative
                 />
-                {child.name}
-              </button>
-            ))}
-          </div>
+              );
+            }}
+          />
         )}
 
         {/* TAB NAVIGATION */}
         <div className="ge-family__rail mat-paper rounded-[var(--r-md)]">
-          <div className="flex flex-wrap gap-[var(--s2)] p-[var(--s3)]">
+          <div className="flex flex-nowrap gap-[var(--s2)] overflow-x-auto p-[var(--s3)]">
             {[
               { id: 'overview', label: 'Overview' },
               { id: 'parent-floor', label: 'Parent Floor' },
@@ -1503,6 +1535,10 @@ export default function ParentHub() {
             ].map(tab => (
               <button
                 key={tab.id}
+                ref={(element) => {
+                  if (element) tabButtonsRef.current.set(tab.id, element);
+                  else tabButtonsRef.current.delete(tab.id);
+                }}
                 type="button"
                 onClick={() => setActiveTab(tab.id as TabID)}
                 aria-pressed={activeTab === tab.id}
@@ -1744,6 +1780,41 @@ export default function ParentHub() {
                 ]}
               />
 
+              {/* AS9-3 (FAM-24; Q6 = A): the coach's tasks come first, and
+                  "Report a Barrier" follows them. The tab keeps its name. */}
+              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
+                {!weekBounds ? (
+                  <p className="t-muted">
+                    Unavailable - your tasks could not be shown. This is not an empty list.
+                  </p>
+                ) : (
+                  <>
+                    <p className="t-body">
+                      {thisWeekTasks.length === 0
+                        ? `Nothing from the gym is due this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`
+                        : `${thisWeekDone} of ${thisWeekTasks.length} done this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`}
+                    </p>
+                    {taskNotice && taskNotice.athleteId === activeChildId && (
+                      <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
+                    )}
+                    {thisWeekTasks.length > 0 && (
+                      <ul className="space-y-[var(--s3)]" aria-label="Due this week">
+                        {thisWeekTasks.map((message) => renderParentTask(message))}
+                      </ul>
+                    )}
+                    {earlierOpenTasks.length > 0 && (
+                      <>
+                        <h4 className="t-label">Still open: earlier or no due date</h4>
+                        <ul className="space-y-[var(--s3)]" aria-label="Still open: earlier or no due date">
+                          {earlierOpenTasks.map((message) => renderParentTask(message))}
+                        </ul>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+
               {/* #95/#96: the guardian's barrier report. */}
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                 <h3 className="t-label">Report a Barrier</h3>
@@ -1785,39 +1856,6 @@ export default function ParentHub() {
                   </button>
                 </form>
               </div>
-
-              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
-                {!weekBounds ? (
-                  <p className="t-muted">
-                    Unavailable - your tasks could not be shown. This is not an empty list.
-                  </p>
-                ) : (
-                  <>
-                    <p className="t-body">
-                      {thisWeekTasks.length === 0
-                        ? `Nothing from the gym is due this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`
-                        : `${thisWeekDone} of ${thisWeekTasks.length} done this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`}
-                    </p>
-                    {taskNotice && taskNotice.athleteId === activeChildId && (
-                      <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
-                    )}
-                    {thisWeekTasks.length > 0 && (
-                      <ul className="space-y-[var(--s3)]" aria-label="Due this week">
-                        {thisWeekTasks.map((message) => renderParentTask(message))}
-                      </ul>
-                    )}
-                    {earlierOpenTasks.length > 0 && (
-                      <>
-                        <h4 className="t-label">Still open: earlier or no due date</h4>
-                        <ul className="space-y-[var(--s3)]" aria-label="Still open: earlier or no due date">
-                          {earlierOpenTasks.map((message) => renderParentTask(message))}
-                        </ul>
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
             </div>
           )}
 
@@ -1830,7 +1868,7 @@ export default function ParentHub() {
                 usage={[
                   'Review what is being worked on now and when it is due',
                   'Make time and space for the practice at home',
-                  'Open the full progression record for the logged work'
+                  'Open Progress Visibility for the logged work'
                 ]}
                 mistakes={[
                   'Missing a due date',
@@ -2210,7 +2248,7 @@ export default function ParentHub() {
                 <>
                   <p className="t-muted">Unavailable - no child selected.</p>
                   <Link href="/parent/progression-visibility" className="btn btn--ghost">
-                    Open the full progression record
+                    Open Progress Visibility
                   </Link>
                 </>
               )}
@@ -2236,11 +2274,19 @@ export default function ParentHub() {
           {/* SHADOW AI */}
           {activeTab === 'shadow' && (
             <div className="space-y-6 panel-settle">
-              <RoleSpecificShadow
-                role="parent"
-                description="Ask SHADOW how to support your child at home. Tap below to open a live chat scoped to your family — there is no canned answer here."
-                chatContext="Parent Hub"
-              />
+              {/* AS9-3 (FAM-04; Q3 = A): one way into SHADOW Chat on the hub.
+                  The parent job bar points at the chat page, /shadow
+                  (components/jobBars.ts, the parent's "More"), which is where
+                  the shell's OPEN SHADOW CHAT button at the top of this page
+                  goes. So that button stays, and this tab's own "Ask SHADOW"
+                  button goes. The tab itself stays (Q2 = A, all ten tabs) and
+                  says where the chat is. HelpPanel's "ASK SHADOW" stays. */}
+              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s3)]">
+                <h3 className="t-label">SHADOW Chat</h3>
+                <p className="t-body">
+                  Ask SHADOW how to support your child at home. The chat opens from the OPEN SHADOW CHAT button at the top of this page.
+                </p>
+              </div>
             </div>
           )}
         </div>
