@@ -331,3 +331,63 @@ describe('fileShadowDisclosureEscalation', () => {
     expect(mockFileEscalation.mock.calls[0][0].severity).toBe('high');
   });
 });
+
+// HF1 and Overwatch's Q1/Q2 on PR 2059 (lane HF12). Invented sentences.
+describe('HF1: the new phrasings file from SHADOW chat', () => {
+  test.each([
+    'im suicidal',
+    'kms',
+    'i want to end my life',
+    'i want to kill my self',
+    'i don´t feel safe',
+  ])('files, coach of record included: %p', (message) => {
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.adminOnly).toBe(false);
+  });
+
+  test.each([
+    'my uncle molested me',
+    'i got raped',
+    'he groped me',
+    'he asked me for nudes',
+  ])('sexual abuse files admin-only and critical (Q1 = A): %p', (message) => {
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure?.adminOnly).toBe(true);
+    expect(isCriticalShadowDisclosure(disclosure)).toBe(true);
+  });
+
+  test.each([
+    'i want to end my life, i hate sparring',
+    'im suicidal and my jab is bad',
+    'he molested me after pad work',
+  ])('files even in boxing context: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).not.toBeNull();
+  });
+
+  test('crisis phrasings are critical', () => {
+    expect(isCriticalShadowDisclosure(detectShadowDisclosure('im suicidal', 'athlete'))).toBe(true);
+  });
+});
+
+describe('HF1: boxing talk files nothing', () => {
+  test.each([
+    'hit me with your best shot',
+    'hit me with your best combo',
+    'give me your best shot on the pads',
+    'i ran 5 kms before sparring',
+    'we did suicides after rounds',
+    'kill it in sparring tonight',
+    'this drill is killing me',
+  ])('null: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toBeNull();
+  });
+
+  test('a person outside the gym still overrides "your best shot"', () => {
+    expect(detectShadowDisclosure('my dad hit me and said thats your best shot', 'athlete')).not.toBeNull();
+  });
+
+  test('naming a coach still files in boxing context (Overwatch 2026-10-15, decision 2)', () => {
+    expect(detectShadowDisclosure('coach hit me with your best shot on purpose', 'athlete')).not.toBeNull();
+  });
+});

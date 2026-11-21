@@ -166,3 +166,151 @@ describe('ordinary feedback still reaches the product queue', () => {
     expect(scanForSafetyLanguage(sentence).safeguarding).toBe(false);
   });
 });
+
+// HF1 (lane HF12). Every sentence below was missed by the scan on main
+// 4f77642 (OBSERVED by a jest probe): no cue, so no disclosure alert. The
+// phrases are invented for these tests. Each new phrase sits in an existing cue
+// id, so routing and severity follow rulings already in force (Overwatch on
+// PR 2059: Q1 = A, the sexual-abuse words go into grooming_or_isolation).
+describe('HF1: crisis phrasings reach a person as crisis', () => {
+  test.each([
+    'im suicidal',
+    'i feel suicidal again',
+    'i keep thinking about suicide',
+    'sometimes i think about sucide',
+    'i thought about suiside last night',
+    'thinking about sewerslide',
+    'i want to unalive myself',
+    'i might un alive myself',
+    'kms',
+    'honestly kms',
+    'i want to end my life',
+    'i want to end my own life',
+    'i thought about ending my life',
+    'i want to take my own life',
+    'i want to kill my self',
+    'i want to kil myself',
+    'i want to kill myslef',
+    'i dont want to live anymore',
+    'i dont wanna live',
+    'i do not want to live',
+    'i want to be dead',
+    'i wanna be dead',
+    'everyone would be better off if i was dead, im better off dead',
+    'i want to slit my wrists',
+    'i want to hang myself',
+    'i thought about overdose',
+    'i self harm',
+    'i started selfharm',
+    'i have been self harming',
+    'i want to harm myself',
+    'i keep harming myself',
+    'i want to hurt my self',
+    'i cut my self last night',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+});
+
+describe('HF1: sexual-abuse words reach a person as grooming_or_isolation', () => {
+  test.each([
+    'my uncle molested me',
+    'someone molests me',
+    'he was molesting me',
+    'he is a molester',
+    'i got raped',
+    'he raped me',
+    'he tried to rape me',
+    'i was sexually abused',
+    'it was sexual abuse',
+    'i was sexually assaulted',
+    'it was a sexual assault',
+    'he sexually touched me',
+    'he groped me',
+    'he gropes me',
+    'he fondled me',
+    'he made me touch him',
+    'he makes me touch his',
+    'he sent me nudes',
+    'he asked me for nudes',
+    'he asked for nudes',
+    'he wants nudes',
+    'he said send nudes',
+    'he is a pedo',
+    'he had sex with me',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF1: abuse said as abuse reaches a person', () => {
+  test.each([
+    'he abused me',
+    'my stepdad abuses me',
+    'she keeps abusing me',
+    'i was abused',
+    'i got abused at home',
+    'i have been abused',
+    'i am being abused',
+  ])('someone_is_hurting_me: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('someone_is_hurting_me');
+  });
+});
+
+describe('HF1: a look-alike apostrophe does not hide a disclosure', () => {
+  // ´ U+00B4, ʹ U+02B9, ʻ U+02BB, ʽ U+02BD, ˈ U+02C8, ′ U+2032, ‛ U+201B,
+  // ＇ U+FF07, ꞌ U+A78C, and a combining acute U+0301 after a space-free n.
+  test.each([
+    'i don´t feel safe',
+    'i donʹt feel safe',
+    'i donʻt feel safe',
+    'i donʽt feel safe',
+    'i donˈt feel safe',
+    'i don′t feel safe',
+    'i don‛t feel safe',
+    'i don＇t feel safe',
+    'i donꞌt feel safe',
+    'i dońt feel safe',
+  ])('does_not_feel_safe: %p', (sentence) => {
+    expect(normalizeForSafetyScan(sentence)).toBe('i dont feel safe');
+    expect(scanForSafetyLanguage(sentence).cues).toContain('does_not_feel_safe');
+  });
+
+  test('split words are joined', () => {
+    expect(normalizeForSafetyScan('kill my self')).toBe('kill myself');
+    expect(normalizeForSafetyScan('un alive')).toBe('unalive');
+  });
+});
+
+describe('HF1: gym and boxing talk stays out of the new cues', () => {
+  // The new crisis phrases override boxing context in SHADOW, so the patterns
+  // themselves have to stay out of ordinary training talk.
+  test.each([
+    'i ran 5 kms this morning',
+    'we did 3 kms of roadwork',
+    'a few kms before practice',
+    'a couple kms on the treadmill',
+    'how many kms should i run',
+    'we did suicides at the end',
+    'suicide drills today were rough',
+    'coach had us do suicide sprints',
+    'suicide runs after sparring',
+    'kill it in sparring tonight',
+    'i killed it at pad work',
+    'that combo is killer',
+    'this drill is killing me',
+    'my legs are dead after roadwork',
+    'im dead tired',
+    'end the round strong',
+    'i want to take my life seriously in boxing',
+    'i want to take my life back after the loss',
+    'grape juice after training',
+    'can you show me grappling defense',
+    'the therapist said rest',
+    'the drapes in the lobby are new',
+  ])('no new cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+});
