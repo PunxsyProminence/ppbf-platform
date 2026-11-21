@@ -312,6 +312,22 @@ describe('boundary deltas', () => {
     return studyOf(staged);
   }
 
+  test('HF6: a difference inside the window is not a BOUNDARY disagreement, and still counts in the timing figures', () => {
+    // A-Q10c: marks within the small window are the same moment. The timing
+    // figures answer a different question -- how far apart were the marks --
+    // and keep every difference, or the median would only see the large ones.
+    const report = studyWithOffsets([40, 40, 40, 40, 160]);
+    expect(report.disagreementCounts.BOUNDARY).toBe(1);
+    expect(report.boundaryDeltas.start_ms.count).toBe(5);
+    expect(report.boundaryDeltas.start_ms.medianAbsoluteMs).toBe(40);
+  });
+
+  test('the report names the rule its comparisons were made under, so the screen can show the window', () => {
+    const report = studyWithOffsets([40]);
+    expect(report.matchingPolicy.policyVersion).toBe('pilot-temporal-overlap-v1');
+    expect(report.matchingPolicy.overlapToleranceMs).toBe(100);
+  });
+
   test('a systematic offset and symmetric noise are distinguishable', () => {
     // The delta is (A - B), so an offset of 40 means A read the boundary 40ms
     // later than B did.

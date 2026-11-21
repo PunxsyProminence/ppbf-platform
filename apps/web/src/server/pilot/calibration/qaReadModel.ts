@@ -2,8 +2,10 @@ import type { AdjudicationRow } from './adjudication';
 import type { AnnotationEventRow, AnnotationSetRow } from './annotations';
 import {
   DISAGREEMENT_CATEGORIES,
+  PILOT_MATCHING_POLICY_IN_USE,
   type AnnotationSetComparison,
   type DisagreementCategory,
+  type EventMatchingPolicy,
 } from './comparison';
 
 // The calibration QA read-out: how the ANNOTATION SYSTEM is behaving.
@@ -106,6 +108,10 @@ export interface CalibrationQaReport {
   organizationId: string;
   calibrationProjectId: string;
   ontologyVersion: string;
+  /** The rule every comparison in this report was made under, so the screen
+   * can say what window counted as "the same punch" (OD-2026-10-08-005
+   * ruling 3: the lane "shows it on screen"). */
+  matchingPolicy: EventMatchingPolicy;
   minimumComparisons: number;
   status: QaStatus;
   comparisonCount: number;
@@ -237,6 +243,9 @@ export interface BuildQaReportInput {
    *  to the current revision of each disagreement itself. */
   adjudications: readonly AdjudicationRow[];
   minimumComparisons?: number;
+  /** The rule the comparisons were made under. The loader passes the one it
+   *  used; omitted, it is the rule compareAnnotationSets uses by default. */
+  matchingPolicy?: EventMatchingPolicy;
 }
 
 /**
@@ -391,11 +400,17 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
           byEventClass[eventClass][disagreement.category] += 1;
         }
 
-        if (disagreement.category === 'BOUNDARY' && typeof disagreement.deltaMs === 'number') {
-          if (disagreement.field === 'start_ms') startDeltas.push(disagreement.deltaMs);
-          if (disagreement.field === 'contact_ms') contactDeltas.push(disagreement.deltaMs);
-          if (disagreement.field === 'end_ms') endDeltas.push(disagreement.deltaMs);
-        }
+      }
+
+      // TIMING FIGURES FROM EVERY DIFFERENCE, NOT ONLY THE DISAGREEMENTS. A
+      // difference inside the matching window is not a disagreement (A-Q10c),
+      // but it is still how far apart two coaches marked the same moment;
+      // reading only BOUNDARY disagreements would drop the small ones and make
+      // the median look worse than the marking is.
+      for (const delta of pairing.boundaryDeltas) {
+        if (delta.field === 'start_ms') startDeltas.push(delta.deltaMs);
+        if (delta.field === 'contact_ms') contactDeltas.push(delta.deltaMs);
+        if (delta.field === 'end_ms') endDeltas.push(delta.deltaMs);
       }
     }
   }
@@ -431,6 +446,7 @@ export function buildCalibrationQaReport(rawInput: BuildQaReportInput): Calibrat
     organizationId: input.organizationId,
     calibrationProjectId: input.calibrationProjectId,
     ontologyVersion: input.ontologyVersion,
+    matchingPolicy: input.matchingPolicy ?? PILOT_MATCHING_POLICY_IN_USE,
     minimumComparisons,
     status: belowFloor ? 'insufficient_data' : 'available',
     comparisonCount,

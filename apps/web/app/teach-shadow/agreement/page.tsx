@@ -49,6 +49,9 @@ interface AgreementPayload {
   status: 'available' | 'insufficient_data';
   comparison_count: number;
   minimum_comparisons: number;
+  /** The matching window in ms (OD-2026-10-08-005 A-Q10c). Absent from an
+   *  older server: then the page says nothing about it rather than a guess. */
+  matching_window_ms?: number;
   report: {
     disagreementCounts: Record<string, number>;
     disagreementRates: Record<string, Rate>;
@@ -310,6 +313,13 @@ export default function LabelAgreementPage() {
               <p className="t-body mt-[var(--s3)]" data-testid="left-out">
                 {clips(leftOut)} not counted yet: a third coach is part-way through, the pair to
                 compare has not been settled, or the labels use a different version of the vocabulary.
+              </p>
+            ) : null}
+
+            {typeof payload.matching_window_ms === 'number' ? (
+              <p className="t-body mt-[var(--s3)]" data-testid="matching-window">
+                Marks within {payload.matching_window_ms} ms of each other count as the same moment, so a
+                difference that small is not counted as a disagreement.
               </p>
             ) : null}
 

@@ -82,28 +82,32 @@ export type PairingOutcome = 'MATCHED' | 'MATCH_AMBIGUOUS' | 'ONLY_IN_A' | 'ONLY
  */
 export interface EventMatchingPolicy {
   readonly policyVersion: string;
-  /** Always 'UNCALIBRATED' in v0. There is no ratified alternative, and the
-   * type says so rather than leaving room for a value nobody has earned. */
+  /** Always 'UNCALIBRATED'. v1's window is the number the owner's ruling was
+   * asked as, not one measured on pilot pairs, and the type says so rather
+   * than leaving room for a value nobody has earned. */
   readonly calibrationState: 'UNCALIBRATED';
-  /** Milliseconds by which each event's span is widened before testing for
-   * overlap.
+  /** The window, in milliseconds. It does two things, both from one ruling:
    *
-   * ZERO in the pilot policy, on purpose. The order says to prefer plain
-   * temporal overlap first and not to invent a "same event if within 300ms"
-   * rule, so the pilot runs with no tolerance at all: two events match only if
-   * the spans two humans actually marked genuinely overlap.
+   * 1. Two events whose spans come within this many ms of each other are
+   *    candidates for the same moment -- but only when neither overlaps any
+   *    event on the other side (see compareAnnotationSets: the window rescues
+   *    a near miss and never re-pairs marks that already overlap).
+   * 2. On a matched pair, two readings of a start, contact, end or peak that
+   *    differ by this many ms or less are not a BOUNDARY disagreement.
    *
-   * The knob exists because the pilot will probably show it is needed -- two
-   * annotators marking the same punch as [1000,1400] and [1420,1800] produce
-   * two EVENT_MISSED here, when what happened was one punch and a boundary
-   * disagreement. That is a finding for the calibration study to produce, not
-   * a number for this file to guess. */
+   * OD-2026-10-08-005 A-Q10c, Jason: "Allow a small window (Recommended)";
+   * ruling 3: "two coaches' marks within a small window count as the same
+   * punch; the lane tunes the number (asked as about 100 ms) and shows it on
+   * screen". v0 ran with 0 -- marks of one punch at [1000,1400] and
+   * [1420,1800] were two EVENT_MISSED, and a start 1 ms apart was a
+   * disagreement. That was lane HF6's finding; v1 is the fix. */
   readonly overlapToleranceMs: number;
   readonly requireSameActorTrack: boolean;
   readonly requireSameEventClass: boolean;
 }
 
-/** The rule the pilot runs under. Uncalibrated, and says so. */
+/** The first pilot rule: no window at all. Kept, unchanged, so a stored or
+ * pasted result that names it still means what it meant. */
 export const PILOT_MATCHING_POLICY_V0_UNCALIBRATED: EventMatchingPolicy = {
   policyVersion: 'pilot-temporal-overlap-v0',
   calibrationState: 'UNCALIBRATED',
@@ -111,6 +115,21 @@ export const PILOT_MATCHING_POLICY_V0_UNCALIBRATED: EventMatchingPolicy = {
   requireSameActorTrack: true,
   requireSameEventClass: true,
 };
+
+/** The rule the pilot runs under now: A-Q10c's small window, at the 100 ms it
+ * was asked as (OD-2026-10-08-005 ruling 3). Tuning it on pilot pairs is a
+ * later item (Overwatch, TEACH-T Q4); a tuned number is a new version, never
+ * an edit to this one. Uncalibrated, and says so. */
+export const PILOT_MATCHING_POLICY_V1_UNCALIBRATED: EventMatchingPolicy = {
+  policyVersion: 'pilot-temporal-overlap-v1',
+  calibrationState: 'UNCALIBRATED',
+  overlapToleranceMs: 100,
+  requireSameActorTrack: true,
+  requireSameEventClass: true,
+};
+
+/** The rule a comparison uses when the caller names none. */
+export const PILOT_MATCHING_POLICY_IN_USE: EventMatchingPolicy = PILOT_MATCHING_POLICY_V1_UNCALIBRATED;
 
 export interface Disagreement {
   category: DisagreementCategory;
@@ -125,6 +144,13 @@ export interface Disagreement {
   deltaMs?: number;
 }
 
+/** How far apart two readings of one time were, on a matched pair, whether or
+ * not that counts as a disagreement. Signed as (A - B). */
+export interface BoundaryDelta {
+  field: 'start_ms' | 'end_ms' | 'contact_ms' | 'peak_ms';
+  deltaMs: number;
+}
+
 export interface EventPairing {
   outcome: PairingOutcome;
   eventA: AnnotationEventRow | null;
@@ -133,6 +159,12 @@ export interface EventPairing {
    * The number is the evidence for why no pairing was forced. */
   candidateCount: number;
   disagreements: Disagreement[];
+  /** Every non-zero difference between two recorded times on a MATCHED pair,
+   * including those inside the window that are not disagreements. The timing
+   * figures read this, so hiding a 40 ms difference from the disagreement list
+   * does not hide it from "how far apart were the marks". Empty on every
+   * other outcome. */
+  boundaryDeltas: BoundaryDelta[];
 }
 
 export interface AnnotationSetComparison {
@@ -275,14 +307,34 @@ function widenedOverlaps(
   return a.start_ms - toleranceMs <= b.end_ms && b.start_ms - toleranceMs <= a.end_ms;
 }
 
-function isCandidate(
+/**
+ * A coach-typed label, with only its formatting taken out: letter case, and
+ * runs of whitespace (collapsed to one space; none at either end). Nothing
+ * else -- "Fighter 1" and "fighter  1" are one label; "Fighter 1" and
+ * "fighter_1" are not.
+ *
+ * Overwatch's application of the HF6 finding (TEACH-T, Q5): a difference
+ * that is only formatting is not a disagreement. Used ONLY to compare the
+ * three free-text fields (actor_track, opponent_track, combination_group);
+ * stored rows are frozen and never rewritten, and a reported disagreement
+ * still shows both values exactly as stored.
+ */
+export function foldFreeTextLabel(value: string | null): string | null {
+  if (value === null) return null;
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function sameKind(
   a: AnnotationEventRow,
   b: AnnotationEventRow,
   policy: EventMatchingPolicy,
 ): boolean {
   if (policy.requireSameEventClass && a.event_class !== b.event_class) return false;
-  if (policy.requireSameActorTrack && a.actor_track !== b.actor_track) return false;
-  return widenedOverlaps(a, b, policy.overlapToleranceMs);
+  if (
+    policy.requireSameActorTrack
+    && foldFreeTextLabel(a.actor_track) !== foldFreeTextLabel(b.actor_track)
+  ) return false;
+  return true;
 }
 
 /** The per-field comparisons for a matched pair.
@@ -295,6 +347,8 @@ function isCandidate(
 const FIELD_CATEGORIES: Array<{
   field: keyof AnnotationEventRow;
   category: DisagreementCategory;
+  /** A coach types this field, so it is compared through foldFreeTextLabel. */
+  freeText?: true;
 }> = [
   { field: 'punch_type', category: 'PUNCH_TYPE' },
   { field: 'physical_hand', category: 'PHYSICAL_HAND' },
@@ -306,9 +360,9 @@ const FIELD_CATEGORIES: Array<{
   { field: 'defense_type', category: 'DEFENSE_TYPE' },
   { field: 'visibility', category: 'VISIBILITY' },
   { field: 'certainty', category: 'CERTAINTY' },
-  { field: 'combination_group', category: 'COMBINATION' },
+  { field: 'combination_group', category: 'COMBINATION', freeText: true },
   { field: 'sequence_order', category: 'COMBINATION' },
-  { field: 'opponent_track', category: 'OTHER' },
+  { field: 'opponent_track', category: 'OTHER', freeText: true },
 ];
 
 function asComparable(value: unknown): string | null {
@@ -344,30 +398,40 @@ function diffMatchedPair(
   a: AnnotationEventRow,
   b: AnnotationEventRow,
   matchedPartner: ReadonlyMap<string, string>,
-): Disagreement[] {
+  policy: EventMatchingPolicy,
+): { disagreements: Disagreement[]; boundaryDeltas: BoundaryDelta[] } {
   const disagreements: Disagreement[] = [];
+  const boundaryDeltas: BoundaryDelta[] = [];
 
   for (const boundary of ['start_ms', 'end_ms', 'contact_ms', 'peak_ms'] as const) {
     const valueA = a[boundary];
     const valueB = b[boundary];
     if (valueA === valueB) continue;
+    // Only meaningful when both annotators recorded one. A delta against a
+    // missing reading would be a number invented out of an absence -- and one
+    // reading present and the other absent is always a disagreement, however
+    // wide the window.
+    const bothRecorded = typeof valueA === 'number' && typeof valueB === 'number';
+    if (bothRecorded) {
+      const deltaMs = valueA - valueB;
+      boundaryDeltas.push({ field: boundary, deltaMs });
+      // Inside the window: the same moment marked a few ms apart (A-Q10c).
+      if (Math.abs(deltaMs) <= policy.overlapToleranceMs) continue;
+    }
     disagreements.push({
       category: 'BOUNDARY',
       field: boundary,
       valueA: asComparable(valueA),
       valueB: asComparable(valueB),
-      // Only meaningful when both annotators recorded one. A delta against a
-      // missing reading would be a number invented out of an absence.
-      ...(typeof valueA === 'number' && typeof valueB === 'number'
-        ? { deltaMs: valueA - valueB }
-        : {}),
+      ...(bothRecorded ? { deltaMs: (valueA as number) - (valueB as number) } : {}),
     });
   }
 
-  for (const { field, category } of FIELD_CATEGORIES) {
+  for (const { field, category, freeText } of FIELD_CATEGORIES) {
     const valueA = asComparable(a[field]);
     const valueB = asComparable(b[field]);
     if (valueA === valueB) continue;
+    if (freeText && foldFreeTextLabel(valueA) === foldFreeTextLabel(valueB)) continue;
     disagreements.push({ category, field, valueA, valueB });
   }
 
@@ -388,7 +452,7 @@ function diffMatchedPair(
     });
   }
 
-  return disagreements;
+  return { disagreements, boundaryDeltas };
 }
 
 /**
@@ -409,7 +473,7 @@ export function compareAnnotationSets(
   eventsA: readonly AnnotationEventRow[],
   setB: AnnotationSetRow,
   eventsB: readonly AnnotationEventRow[],
-  policy: EventMatchingPolicy = PILOT_MATCHING_POLICY_V0_UNCALIBRATED,
+  policy: EventMatchingPolicy = PILOT_MATCHING_POLICY_IN_USE,
 ): AnnotationSetComparison {
   if (setA.organization_id !== setB.organization_id) {
     throw new ComparisonNotEligibleError(
@@ -455,11 +519,31 @@ export function compareAnnotationSets(
   for (const a of eventsA) candidatesForA.set(a.event_id, []);
   for (const b of eventsB) candidatesForB.set(b.event_id, []);
 
+  // FIRST, SPANS THAT REALLY OVERLAP. Exactly v0's rule.
   for (const a of eventsA) {
     for (const b of eventsB) {
-      if (!isCandidate(a, b, policy)) continue;
+      if (!sameKind(a, b, policy) || !widenedOverlaps(a, b, 0)) continue;
       candidatesForA.get(a.event_id)?.push(b);
       candidatesForB.get(b.event_id)?.push(a);
+    }
+  }
+
+  // THEN THE WINDOW, ONLY FOR EVENTS THAT OVERLAP NOTHING (A-Q10c). Widening
+  // every span would make two different punches of a fast combination --
+  // marked by both coaches, 80 ms apart -- candidates for each other, and a
+  // pair that really overlaps would turn MATCH_AMBIGUOUS. So the window only
+  // rescues a near miss: an event with no overlapping partner, near an event
+  // on the other side that has none either. Two marks that overlap are paired
+  // exactly as v0 paired them.
+  if (policy.overlapToleranceMs > 0) {
+    const unpairedB = eventsB.filter((b) => (candidatesForB.get(b.event_id) ?? []).length === 0);
+    for (const a of eventsA) {
+      if ((candidatesForA.get(a.event_id) ?? []).length > 0) continue;
+      for (const b of unpairedB) {
+        if (!sameKind(a, b, policy) || !widenedOverlaps(a, b, policy.overlapToleranceMs)) continue;
+        candidatesForA.get(a.event_id)?.push(b);
+        candidatesForB.get(b.event_id)?.push(a);
+      }
     }
   }
 
@@ -490,7 +574,7 @@ export function compareAnnotationSets(
         eventA: a,
         eventB: b,
         candidateCount: 1,
-        disagreements: diffMatchedPair(a, b, matchedPartner),
+        ...diffMatchedPair(a, b, matchedPartner, policy),
       });
       continue;
     }
@@ -507,6 +591,7 @@ export function compareAnnotationSets(
         disagreements: [
           { category: 'EVENT_MISSED', field: 'event_id', valueA: a.event_id, valueB: null },
         ],
+        boundaryDeltas: [],
       });
       continue;
     }
@@ -517,6 +602,7 @@ export function compareAnnotationSets(
       eventB: null,
       candidateCount: candidates.length,
       disagreements: [],
+      boundaryDeltas: [],
     });
   }
 
@@ -533,6 +619,7 @@ export function compareAnnotationSets(
         disagreements: [
           { category: 'EVENT_MISSED', field: 'event_id', valueA: null, valueB: b.event_id },
         ],
+        boundaryDeltas: [],
       });
       continue;
     }
@@ -543,6 +630,7 @@ export function compareAnnotationSets(
       eventB: b,
       candidateCount: candidates.length,
       disagreements: [],
+      boundaryDeltas: [],
     });
   }
 

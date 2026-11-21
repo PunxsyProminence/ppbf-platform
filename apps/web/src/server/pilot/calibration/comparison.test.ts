@@ -9,8 +9,11 @@ import type { AnnotationEventRow, AnnotationSetRow } from './annotations';
 import {
   ComparisonNotEligibleError,
   DISAGREEMENT_CATEGORIES,
+  PILOT_MATCHING_POLICY_IN_USE,
   PILOT_MATCHING_POLICY_V0_UNCALIBRATED,
+  PILOT_MATCHING_POLICY_V1_UNCALIBRATED,
   compareAnnotationSets,
+  foldFreeTextLabel,
   countDisagreementsByCategory,
   resolveComparisonPair,
   type AnnotationSetComparison,
@@ -237,8 +240,28 @@ describe('what a matched pair disagrees about', () => {
   });
 
   test('each boundary is reported separately, with a signed delta', () => {
-    // A start 40ms early and an end 40ms late is a different observation from
-    // both being 40ms early, so the deltas are per boundary and never summed.
+    // A start 140ms early and an end 140ms late is a different observation
+    // from both being 140ms early, so the deltas are per boundary and never
+    // summed. (Both are outside the 100 ms window.)
+    const result = compareAnnotationSets(
+      SET_A,
+      [makeEvent({ start_ms: 1_000, end_ms: 1_400 })],
+      SET_B,
+      [inB({ start_ms: 1_140, end_ms: 1_260 })],
+    );
+
+    const boundaries = result.pairings[0].disagreements.filter(
+      (disagreement) => disagreement.category === 'BOUNDARY',
+    );
+    expect(boundaries).toHaveLength(2);
+    expect(boundaries.find((entry) => entry.field === 'start_ms')?.deltaMs).toBe(-140);
+    expect(boundaries.find((entry) => entry.field === 'end_ms')?.deltaMs).toBe(140);
+  });
+
+  test('HF6: marks a few ms apart are not a disagreement, but the difference is still carried (A-Q10c)', () => {
+    // OD-2026-10-08-005 ruling 3: "two coaches' marks within a small window
+    // count as the same punch". Under v0 these two 40 ms differences were two
+    // BOUNDARY disagreements.
     const result = compareAnnotationSets(
       SET_A,
       [makeEvent({ start_ms: 1_000, end_ms: 1_400 })],
@@ -246,12 +269,29 @@ describe('what a matched pair disagrees about', () => {
       [inB({ start_ms: 1_040, end_ms: 1_360 })],
     );
 
-    const boundaries = result.pairings[0].disagreements.filter(
-      (disagreement) => disagreement.category === 'BOUNDARY',
+    expect(result.pairings[0].outcome).toBe('MATCHED');
+    expect(result.pairings[0].disagreements).toEqual([]);
+    // How far apart the marks were is still known, for the timing figures.
+    expect(result.pairings[0].boundaryDeltas).toEqual([
+      { field: 'start_ms', deltaMs: -40 },
+      { field: 'end_ms', deltaMs: 40 },
+    ]);
+  });
+
+  test('the window edge: exactly 100 ms is inside it, 101 ms is a BOUNDARY disagreement', () => {
+    const inside = compareAnnotationSets(SET_A, [makeEvent({ start_ms: 1_000 })], SET_B, [inB({ start_ms: 1_100 })]);
+    expect(categoriesOf(inside)).toEqual([]);
+
+    const outside = compareAnnotationSets(SET_A, [makeEvent({ start_ms: 1_000 })], SET_B, [inB({ start_ms: 1_101 })]);
+    expect(categoriesOf(outside)).toEqual(['BOUNDARY']);
+  });
+
+  test('v0 still reports a 1 ms difference, so a stored v0 result keeps its meaning', () => {
+    const result = compareAnnotationSets(
+      SET_A, [makeEvent({ start_ms: 1_000 })], SET_B, [inB({ start_ms: 1_001 })],
+      PILOT_MATCHING_POLICY_V0_UNCALIBRATED,
     );
-    expect(boundaries).toHaveLength(2);
-    expect(boundaries.find((entry) => entry.field === 'start_ms')?.deltaMs).toBe(-40);
-    expect(boundaries.find((entry) => entry.field === 'end_ms')?.deltaMs).toBe(40);
+    expect(categoriesOf(result)).toEqual(['BOUNDARY']);
   });
 
   test('a delta is not invented when only one annotator recorded the boundary', () => {
@@ -385,9 +425,19 @@ describe('the matching policy is a stated choice, not a hidden constant', () => 
     expect(PILOT_MATCHING_POLICY_V0_UNCALIBRATED.overlapToleranceMs).toBe(0);
   });
 
+  test('the rule in use is v1: the 100 ms window A-Q10c was asked as, still marked UNCALIBRATED', () => {
+    // OD-2026-10-08-005 A-Q10c, Jason: "Allow a small window (Recommended)";
+    // ruling 3: "the lane tunes the number (asked as about 100 ms) and shows
+    // it on screen". Tuning on pilot pairs is a later item (a new version).
+    expect(PILOT_MATCHING_POLICY_IN_USE).toBe(PILOT_MATCHING_POLICY_V1_UNCALIBRATED);
+    expect(PILOT_MATCHING_POLICY_V1_UNCALIBRATED.policyVersion).toBe('pilot-temporal-overlap-v1');
+    expect(PILOT_MATCHING_POLICY_V1_UNCALIBRATED.overlapToleranceMs).toBe(100);
+    expect(PILOT_MATCHING_POLICY_V1_UNCALIBRATED.calibrationState).toBe('UNCALIBRATED');
+  });
+
   test('the policy travels inside every comparison', () => {
     const result = compareAnnotationSets(SET_A, [makeEvent()], SET_B, [inB()]);
-    expect(result.matchingPolicy.policyVersion).toBe('pilot-temporal-overlap-v0');
+    expect(result.matchingPolicy.policyVersion).toBe('pilot-temporal-overlap-v1');
     expect(result.matchingPolicy.calibrationState).toBe('UNCALIBRATED');
     expect(result.ontologyVersion).toBe('boxing-ontology-0.1');
   });
@@ -405,11 +455,17 @@ describe('the matching policy is a stated choice, not a hidden constant', () => 
       setB: [inB({ start_ms: 1_420, end_ms: 1_800 })],
     };
 
-    const strict = compareAnnotationSets(SET_A, near.setA, SET_B, near.setB);
+    const strict = compareAnnotationSets(
+      SET_A, near.setA, SET_B, near.setB, PILOT_MATCHING_POLICY_V0_UNCALIBRATED,
+    );
     expect(strict.pairings.map((pairing) => pairing.outcome).sort()).toEqual([
       'ONLY_IN_A',
       'ONLY_IN_B',
     ]);
+
+    // HF6: under the rule in use, one punch marked 20 ms apart is one punch.
+    const inUse = compareAnnotationSets(SET_A, near.setA, SET_B, near.setB);
+    expect(inUse.pairings.map((pairing) => pairing.outcome)).toEqual(['MATCHED']);
 
     const lenient = compareAnnotationSets(SET_A, near.setA, SET_B, near.setB, {
       ...PILOT_MATCHING_POLICY_V0_UNCALIBRATED,
@@ -420,6 +476,104 @@ describe('the matching policy is a stated choice, not a hidden constant', () => 
     expect(lenient.pairings[0].outcome).toBe('MATCHED');
     // And the output says which rule produced it.
     expect(lenient.matchingPolicy.policyVersion).toBe('test-tolerance-50ms');
+  });
+});
+
+describe('the window rescues a near miss and never re-pairs marks that overlap', () => {
+  test('a fast combination marked by both coaches stays two matched punches', () => {
+    // Two punches 80 ms apart. Widening every span by 100 ms would make each
+    // of A's punches a candidate for both of B's, and all four would turn
+    // MATCH_AMBIGUOUS. Overlapping marks pair first, exactly as under v0.
+    const a = [
+      makeEvent({ event_id: 'a1', start_ms: 1_000, end_ms: 1_200 }),
+      makeEvent({ event_id: 'a2', start_ms: 1_280, end_ms: 1_480, punch_type: 'rear_straight' }),
+    ];
+    const b = [
+      inB({ event_id: 'b1', start_ms: 1_010, end_ms: 1_190 }),
+      inB({ event_id: 'b2', start_ms: 1_290, end_ms: 1_470, punch_type: 'rear_straight' }),
+    ];
+
+    const result = compareAnnotationSets(SET_A, a, SET_B, b);
+
+    expect(result.pairings.map((pairing) => pairing.outcome)).toEqual(['MATCHED', 'MATCHED']);
+    expect(categoriesOf(result)).toEqual([]);
+  });
+
+  test('a near miss next to a pair that already overlaps is not pulled into it', () => {
+    // a1/b1 overlap. a2 overlaps nothing; b1 is within 100 ms of it but is
+    // already paired by real overlap, so a2 stays ONLY_IN_A.
+    const result = compareAnnotationSets(
+      SET_A,
+      [
+        makeEvent({ event_id: 'a1', start_ms: 1_000, end_ms: 1_200 }),
+        makeEvent({ event_id: 'a2', start_ms: 1_250, end_ms: 1_400 }),
+      ],
+      SET_B,
+      [inB({ event_id: 'b1', start_ms: 1_000, end_ms: 1_200 })],
+    );
+    expect(result.pairings.map((pairing) => pairing.outcome)).toEqual(['MATCHED', 'ONLY_IN_A']);
+  });
+
+  test('beyond the window two marks are still two missed events', () => {
+    const result = compareAnnotationSets(
+      SET_A, [makeEvent({ start_ms: 1_000, end_ms: 1_400 })],
+      SET_B, [inB({ start_ms: 1_501, end_ms: 1_800 })],
+    );
+    expect(result.pairings.map((pairing) => pairing.outcome).sort()).toEqual(['ONLY_IN_A', 'ONLY_IN_B']);
+  });
+});
+
+describe('HF6: a difference that is only formatting is not a disagreement (Overwatch, TEACH-T Q5)', () => {
+  test('the fold takes out letter case and runs of whitespace, and nothing else', () => {
+    expect(foldFreeTextLabel('  Fighter   1 ')).toBe('fighter 1');
+    expect(foldFreeTextLabel('FIGHTER\t1')).toBe('fighter 1');
+    expect(foldFreeTextLabel(null)).toBeNull();
+    // Not formatting: an underscore, a hyphen, a missing space.
+    expect(foldFreeTextLabel('fighter_1')).not.toBe(foldFreeTextLabel('fighter 1'));
+    expect(foldFreeTextLabel('fighter-1')).not.toBe(foldFreeTextLabel('fighter 1'));
+    expect(foldFreeTextLabel('fighter1')).not.toBe(foldFreeTextLabel('fighter 1'));
+  });
+
+  test('"Fighter 1" and "fighter  1" are the same actor, so the punch matches', () => {
+    const result = compareAnnotationSets(
+      SET_A, [makeEvent({ actor_track: 'Fighter 1' })],
+      SET_B, [inB({ actor_track: 'fighter  1' })],
+    );
+    expect(result.pairings.map((pairing) => pairing.outcome)).toEqual(['MATCHED']);
+  });
+
+  test('"Fighter 1" and "fighter_1" are still different actors', () => {
+    const result = compareAnnotationSets(
+      SET_A, [makeEvent({ actor_track: 'Fighter 1' })],
+      SET_B, [inB({ actor_track: 'fighter_1' })],
+    );
+    expect(result.pairings.map((pairing) => pairing.outcome).sort()).toEqual(['ONLY_IN_A', 'ONLY_IN_B']);
+  });
+
+  test('opponent and combination labels that differ only in case or spaces agree', () => {
+    const result = compareAnnotationSets(
+      SET_A, [makeEvent({ opponent_track: 'Blue', combination_group: 'Exchange  2' })],
+      SET_B, [inB({ opponent_track: 'blue ', combination_group: 'exchange 2' })],
+    );
+    expect(categoriesOf(result)).toEqual([]);
+  });
+
+  test('a real difference is reported with both values exactly as stored', () => {
+    const result = compareAnnotationSets(
+      SET_A, [makeEvent({ opponent_track: 'Blue' })],
+      SET_B, [inB({ opponent_track: 'green' })],
+    );
+    expect(result.pairings[0].disagreements).toEqual([
+      { category: 'OTHER', field: 'opponent_track', valueA: 'Blue', valueB: 'green' },
+    ]);
+  });
+
+  test('the fold touches only the free-text fields: a closed-vocabulary value is compared as stored', () => {
+    const result = compareAnnotationSets(
+      SET_A, [makeEvent({ punch_type: 'lead_straight' })],
+      SET_B, [inB({ punch_type: 'LEAD_STRAIGHT' })],
+    );
+    expect(categoriesOf(result)).toEqual(['PUNCH_TYPE']);
   });
 });
 

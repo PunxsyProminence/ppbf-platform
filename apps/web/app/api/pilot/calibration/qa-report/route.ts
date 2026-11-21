@@ -110,6 +110,10 @@ export async function GET(request: NextRequest) {
       status: report.status,
       comparison_count: report.comparisonCount,
       minimum_comparisons: report.minimumComparisons,
+      // The rule, not a figure: shown to everyone who reads the report, so the
+      // screen can say what counted as "the same punch" (OD-2026-10-08-005
+      // ruling 3: the lane "shows it on screen").
+      matching_window_ms: report.matchingPolicy.overlapToleranceMs,
       report: showFigures ? figures : null,
       clip_progress: showProgress ? progress : null,
     }, {

@@ -117,6 +117,23 @@ test('says body points are not included, and that nobody is being scored', async
   expect(note).toHaveTextContent('not a coach and not an athlete');
 });
 
+test('says what window counted as the same moment, when the server sends it (OD-2026-10-08-005 A-Q10c)', async () => {
+  mockFetch([STUDY], { 'proj-1': { body: report({ matching_window_ms: 100 }) } });
+  render(<LabelAgreementPage />);
+
+  expect(await screen.findByTestId('matching-window')).toHaveTextContent(
+    'Marks within 100 ms of each other count as the same moment',
+  );
+});
+
+test('says nothing about a window when the server sends none, rather than guessing one', async () => {
+  mockFetch([STUDY], { 'proj-1': { body: report() } });
+  render(<LabelAgreementPage />);
+
+  await screen.findByTestId('headline');
+  expect(screen.queryByTestId('matching-window')).not.toBeInTheDocument();
+});
+
 test('with several studies it asks which, and reads only the one chosen', async () => {
   const fetchMock = mockFetch([STUDY, OTHER_STUDY], {
     'proj-2': { body: report({ project_name: 'Hook study', comparison_count: 0 }) },
