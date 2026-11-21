@@ -252,7 +252,7 @@ describe('family check-in on /schedule (#1524)', () => {
     expect(await screen.findByRole('option', { name: 'Absent' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Excused' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Attendance notes')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Update Attendance' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
   });
 });
 
