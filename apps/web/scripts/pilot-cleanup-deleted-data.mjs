@@ -705,6 +705,234 @@ async function deidentifyFlaggedConversations(client, tables, accountIds, organi
   return counts;
 }
 
+/* CHATS A MEMBER DELETED (lane HF7). The Delete beside a SHADOW chat, and an
+   office-completed request to clear a member's history, clear a chat at once
+   unless a safeguarding review points at it (src/server/pilot/
+   shadowConversationDeidentify.ts says what each step is and which ruling it
+   follows: OD-2026-10-06-012, OD-2026-10-06-023 Q1 "Delete theirs, keep AI
+   replies (Recommended)" and Q2 "Keep until retention ends (Recommended)",
+   OD-2026-10-06-027 Q14 "2 years after deletion (Recommended)"). Two kinds of
+   member-deleted chat are left for this run:
+   - a FLAGGED one, two years after its deletion: the hold is over, and it is
+     cleared the same way; the review entries that point at it take the
+     chat's token, a fixed summary and empty metadata, so an entry keeps its
+     conversation and names nobody;
+   - one deleted BEFORE that change, when a delete only set deleted_at and
+     nothing cleared it: cleared now, or at two years if flagged.
+   A chat that is a DELETED PERSON's is left to attemptPurge, which already
+   holds and clears it with the rest of their records: an account with
+   deleted_at set, an athlete login whose athlete is deleted, and a chat ABOUT
+   a deleted athlete (dataDeletion.ts markAthleteTiedRecords stamps those with
+   the athlete's deletion time, so deleted_at alone cannot tell the two apart).
+   subject_deleted_at is not written or read as a start here: a session that
+   carries it is the purge's.
+
+   ON A FULL APPLY ONLY. The nightly run (OD-2026-10-07-010: "people's records
+   stay manual") counts them and never enters; a dry run rehearses and rolls
+   back. They never trip the blast-radius refusal: like inquiries, they take
+   the room the families leave under the cap, oldest deletion first, and the
+   rest wait for the next run (member_deleted_chats_deferred), so a backlog
+   can never stop a family's purge.
+
+   THE SAME STATEMENTS AS clearConversation in shadowConversationDeidentify.ts
+   (the app cannot be imported here). shadowConversationDeletion.pg.test.ts
+   (T7) runs both on the same chat and compares the rows they leave. Change
+   one, change both. */
+const CLEARED_CONVERSATION_TITLE = 'Deleted conversation; de-identified.';
+const REVIEW_SUMMARY_AFTER_HOLD = 'Safeguarding review entry; the conversation was deleted by its member and de-identified after the two-year hold.';
+
+const MEMBER_DELETED_CHATS_SQL = `
+    from pilot.shadow_chat_sessions s
+    join pilot.accounts a on a.account_id = s.account_id
+   where s.deleted_at is not null
+     and s.deidentified_at is null
+     and s.subject_deleted_at is null
+     and a.deleted_at is null
+     and not exists (select 1 from pilot.athletes t
+                      where t.organization_id = a.organization_id and t.athlete_id = a.athlete_id
+                        and t.deleted_at is not null)
+     and not exists (select 1 from pilot.athletes t
+                      where t.organization_id = s.organization_id and t.athlete_id = s.athlete_id
+                        and t.deleted_at is not null)
+     and (not exists (select 1 from pilot.shadow_human_review_queue q where q.conversation_id = s.conversation_id)
+          or s.deleted_at < (now() - ${SAFEGUARDING_CHAT_RETENTION}))`;
+
+async function countMemberDeletedChats(client, tables) {
+  if (!tables.deidentifyKeys || !tables.chatSessions || !tables.reviewQueue) return 0;
+  return (await client.query(`select count(*)::int as n ${MEMBER_DELETED_CHATS_SQL}`)).rows[0].n;
+}
+
+/** The names on record for a member in one gym, and for the athlete a chat is about (namesOnRecord in the app). */
+async function memberNamesOnRecord(client, organizationId, accountId, athleteId) {
+  const rows = await client.query(
+    `select case when a.account_id like '%@%' then a.account_id end as name
+       from pilot.accounts a where a.account_id = $2
+     union all
+     select a.login_email from pilot.accounts a where a.account_id = $2
+     union all
+     select p.display_nickname from pilot.account_profiles p
+      where p.organization_id = $1 and p.account_id = $2
+     union all
+     select p.staff_display_name from pilot.account_profiles p
+      where p.organization_id = $1 and p.account_id = $2
+     union all
+     select t.full_name from pilot.accounts a
+       join pilot.athletes t on t.organization_id = $1 and t.athlete_id = a.athlete_id
+      where a.account_id = $2
+     union all
+     select g.full_name from pilot.parents g
+      where g.organization_id = $1 and g.account_id = $2
+     union all
+     select t.full_name from pilot.athletes t
+      where $3::text is not null and t.organization_id = $1 and t.athlete_id = $3
+     union all
+     select p.display_nickname from pilot.accounts a
+       join pilot.account_profiles p on p.organization_id = $1 and p.account_id = a.account_id
+      where $3::text is not null and a.athlete_id = $3 and a.organization_id = $1`,
+    [organizationId, accountId, athleteId],
+  );
+  return rows.rows.map((row) => row.name).filter((name) => Boolean(name?.trim()));
+}
+
+/** clearConversation in shadowConversationDeidentify.ts, statement for statement. */
+async function clearMemberChat(client, { organizationId, accountId, conversationId, pattern, token }) {
+  const replies = (await client.query(
+    `select message_id::text as message_id from pilot.shadow_chat_messages
+      where conversation_id = $1 and organization_id = $2 and role = 'assistant'`,
+    [conversationId, organizationId],
+  )).rows.map((row) => row.message_id);
+  if (replies.length > 0) {
+    await client.query(
+      `update pilot.shadow_feedback
+          set correlation_id = case when correlation_type = 'shadow_message' and correlation_id = any($2::text[])
+                                    then null else correlation_id end,
+              recommendation_ref = case when recommendation_ref = any($2::text[]) then null else recommendation_ref end,
+              human_review_required = case when correlation_type = 'shadow_message' and correlation_id = any($2::text[])
+                                           then false else human_review_required end
+        where organization_id = $1
+          and ((correlation_type = 'shadow_message' and correlation_id = any($2::text[]))
+               or recommendation_ref = any($2::text[]))`,
+      [organizationId, replies],
+    );
+    await client.query(
+      `update pilot.shadow_learning_events set message_id = ''
+        where organization_id = $1 and message_id = any($2::text[])`,
+      [organizationId, replies],
+    );
+    await client.query(
+      `update pilot.shadow_recommendation_effectiveness set recommendation_id = null
+        where organization_id = $1 and recommendation_id = any($2::text[])`,
+      [organizationId, replies],
+    );
+    await client.query(
+      `update pilot.shadow_research_requirements
+          set source_entity_id = 'cleared-' || research_requirement_id
+        where organization_id = $1
+          and source_event_name = 'shadow_learning_negative_outcome'
+          and source_entity_id = any($2::text[])`,
+      [organizationId, replies],
+    );
+    await client.query(
+      `delete from pilot.shadow_message_citations
+        where organization_id = $1 and assistant_message_id = any($2::uuid[])`,
+      [organizationId, replies],
+    );
+  }
+  await client.query(
+    `delete from pilot.shadow_evidence_claims
+      where organization_id = $1 and (conversation_id = $2 or assistant_message_id = any($3::uuid[]))`,
+    [organizationId, conversationId, replies],
+  );
+  await client.query(
+    `update pilot.shadow_jobs
+        set input_payload = '{}'::jsonb,
+            output_payload = null,
+            safety_status = case when status = 'pending' then 'not_applicable' else safety_status end,
+            lease_token = case when status = 'pending' then null else lease_token end,
+            lease_expires_at = case when status = 'pending' then null else lease_expires_at end,
+            completed_at = case when status = 'pending' then now() else completed_at end,
+            status = case when status = 'pending' then 'cancelled' else status end,
+            updated_at = now()
+      where organization_id = $1 and account_id = $2
+        and (input_payload->>'conversationId' = $3 or output_payload->>'conversationId' = $3)`,
+    [organizationId, accountId, conversationId],
+  );
+  await client.query(
+    `delete from pilot.shadow_chat_messages
+      where conversation_id = $1 and organization_id = $2 and role = 'user'`,
+    [conversationId, organizationId],
+  );
+  if (pattern === null) {
+    await client.query(
+      `delete from pilot.shadow_chat_sessions where conversation_id = $1 and organization_id = $2`,
+      [conversationId, organizationId],
+    );
+    return;
+  }
+  await client.query(
+    `update pilot.shadow_chat_messages
+        set account_id = $3, content = regexp_replace(content, $4, '[name]', 'gi')
+      where conversation_id = $1 and organization_id = $2`,
+    [conversationId, organizationId, token, pattern],
+  );
+  await client.query(
+    `update pilot.shadow_chat_sessions
+        set account_id = $3,
+            athlete_id = case when athlete_id is null then null else $3 end,
+            title = $4,
+            deidentified_at = now(),
+            deleted_at = coalesce(deleted_at, now()),
+            updated_at = now()
+      where conversation_id = $1 and organization_id = $2`,
+    [conversationId, organizationId, token, CLEARED_CONVERSATION_TITLE],
+  );
+}
+
+/** Clears up to `limit` member-deleted chats, oldest deletion first; one savepoint each. */
+async function clearMemberDeletedChats(client, tables, limit, blocked) {
+  if (limit <= 0 || !tables.deidentifyKeys || !tables.chatSessions || !tables.reviewQueue) return 0;
+  const rows = (await client.query(
+    `select s.conversation_id::text as conversation_id, s.organization_id, s.account_id, s.athlete_id,
+            exists (select 1 from pilot.shadow_human_review_queue q where q.conversation_id = s.conversation_id) as flagged
+     ${MEMBER_DELETED_CHATS_SQL}
+      order by s.deleted_at, s.conversation_id
+      limit $1
+        for update of s`,
+    [limit],
+  )).rows;
+  let cleared = 0;
+  for (const row of rows) {
+    await client.query('savepoint clear_member_chat');
+    try {
+      const pattern = namePattern(await memberNamesOnRecord(client, row.organization_id, row.account_id, row.athlete_id));
+      const token = anonymousToken();
+      if (row.flagged) {
+        // Token and stamp in one update, as the table's check requires.
+        await client.query(
+          `update pilot.shadow_human_review_queue
+              set account_id = $3, deidentified_at = now(), summary = $4, metadata = '{}'::jsonb
+            where conversation_id = $1 and organization_id = $2`,
+          [row.conversation_id, row.organization_id, token, REVIEW_SUMMARY_AFTER_HOLD],
+        );
+      }
+      await clearMemberChat(client, {
+        organizationId: row.organization_id,
+        accountId: row.account_id,
+        conversationId: row.conversation_id,
+        pattern,
+        token,
+      });
+      await client.query('release savepoint clear_member_chat');
+      cleared += 1;
+    } catch (error) {
+      await client.query('rollback to savepoint clear_member_chat');
+      const by = blockedBy(error);
+      blocked[by] = (blocked[by] ?? 0) + 1;
+    }
+  }
+  return cleared;
+}
+
 /* THE PERSON'S NAMES LEAVE EVERY OTHER KEPT AI CHAT NOTE IN THEIR GYM
    (F-090). Jason 2026-10-07, OD-2026-10-06-027 ruling 1 ("Gym-wide
    (Recommended)"): "their name is removed from every kept AI chat note in the
@@ -2018,6 +2246,9 @@ async function main() {
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];
+    // Chats members deleted that this run clears (clearMemberDeletedChats).
+    // Counted in every mode; never counted against the refusal.
+    const memberChats = await countMemberDeletedChats(client, tables);
     const expiredInquiries = tables.inquiries
       ? await client.query(
         `select count(*)::int as n from pilot.public_interest_submissions
@@ -2044,8 +2275,10 @@ async function main() {
     // inquiries-only mode no family is removed, so none takes room under the
     // cap: inquiries get all of it, and the whole cap is what bounds the run.
     const families = athletes + accounts;
-    const inquiryRoom = applyInquiries ? maxRows : Math.max(0, maxRows - families);
-    const total = families + inquiries;
+    // Member-deleted chats take the room the families leave, and inquiries the
+    // room left after both (computed once the chats are cleared, below).
+    const chatRoom = applyInquiries ? 0 : Math.max(0, maxRows - families);
+    const total = families + inquiries + memberChats;
 
     if (families > maxRows) {
       // The guard protects people's records from a runaway sweep. The
@@ -2060,6 +2293,7 @@ async function main() {
           accounts,
           videos,
           inquiries,
+          member_deleted_chats_due: memberChats,
           total,
           guardians_held_for_safeguarding_chats: heldGuardians,
           max_rows: maxRows,
@@ -2092,6 +2326,13 @@ async function main() {
         blocked: {}, guardianLinkLock: 'none',
       }
       : await attemptPurge(client, expiredAthletes.rows, accountIds, { tables, blobStore: await createBlobStore() });
+
+    // Never in the inquiries-only run; rehearsed and rolled back in a dry run.
+    const memberChatsCleared = applyInquiries
+      ? 0
+      : await clearMemberDeletedChats(client, tables, chatRoom, outcome.blocked);
+    const memberChatsDeferred = Math.max(0, memberChats - memberChatsCleared);
+    const inquiryRoom = applyInquiries ? maxRows : Math.max(0, maxRows - families - memberChatsCleared);
 
     // Run in both modes, like the family purge: the dry run rolls it back, so
     // its count is one the DELETE actually earned. Its own savepoint, so a
@@ -2136,6 +2377,10 @@ async function main() {
         // which is which.
         nightly_deletes_inquiries: Math.min(inquiries, maxRows),
         apply_needed_for: { athletes, accounts, videos },
+        // Waits for APPLY too, like apply_needed_for (clearMemberDeletedChats).
+        member_deleted_chats_due: memberChats,
+        would_clear_member_deleted_chats: memberChatsCleared,
+        member_deleted_chats_deferred: memberChatsDeferred,
         guardians_held_for_safeguarding_chats: heldGuardians,
         would_delete_athletes: outcome.athletesDeleted,
         would_delete_accounts: outcome.accountsDeleted,
@@ -2181,6 +2426,7 @@ async function main() {
         inquiries: 0,
         total: 0,
         guardians_held_for_safeguarding_chats: heldGuardians,
+        member_deleted_chats_due: memberChats,
         ...(applyInquiries ? { people_due: { athletes, accounts, videos } } : {}),
       }));
       return;
@@ -2202,6 +2448,9 @@ async function main() {
           videos_deleted: outcome.videosDeleted,
           inquiries_deleted: inquiriesDeleted,
           inquiries_deferred: inquiriesDeferred,
+          member_deleted_chats_due: memberChats,
+          member_deleted_chats_cleared: memberChatsCleared,
+          member_deleted_chats_deferred: memberChatsDeferred,
           files_deleted: outcome.filesDeleted,
           files_missing: outcome.filesMissing,
           shadow_memory_corrections_deleted: outcome.correctionsDeleted,
@@ -2232,6 +2481,9 @@ async function main() {
       videos: outcome.videosDeleted,
       inquiries: inquiriesDeleted,
       inquiries_deferred: inquiriesDeferred,
+      member_deleted_chats_due: memberChats,
+      member_deleted_chats_cleared: memberChatsCleared,
+      member_deleted_chats_deferred: memberChatsDeferred,
       files_deleted: outcome.filesDeleted,
       files_missing: outcome.filesMissing,
       shadow_memory_corrections_deleted: outcome.correctionsDeleted,

@@ -107,7 +107,6 @@ const TOKEN = /^anon_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 const memberActor: ActorIdentity = { accountId: MEMBER, role: 'athlete', organizationId: ORG, athleteId: ATHLETE };
 const parentActor: ActorIdentity = { accountId: PARENT, role: 'parent', organizationId: ORG, athleteId: null };
-const otherActor: ActorIdentity = { accountId: OTHER_MEMBER, role: 'athlete', organizationId: ORG, athleteId: null };
 const namelessActor: ActorIdentity = { accountId: NAMELESS, role: 'athlete', organizationId: ORG, athleteId: null };
 const adminActor: ActorIdentity = { accountId: ADMIN, role: 'organization_admin', organizationId: ORG, athleteId: null };
 const otherAdminActor: ActorIdentity = {
@@ -774,7 +773,7 @@ describe('T6 and T7: the retention script ends the two-year hold, on APPLY only'
 
     // The nightly run (OD-2026-10-07-010) and a dry run count them and keep them.
     const nightly = await runCleanup(SWEEP_DB_NAME, 'nightly');
-    expect(nightly.people_due).toMatchObject({ member_deleted_chats: 2 });
+    expect(nightly.member_deleted_chats_due).toBe(2);
     const dry = await runCleanup(SWEEP_DB_NAME, 'dry');
     expect(dry.member_deleted_chats_due).toBe(2);
     expect(dry.would_clear_member_deleted_chats).toBe(2);
