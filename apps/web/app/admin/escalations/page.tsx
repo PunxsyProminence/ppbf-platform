@@ -592,6 +592,8 @@ export default function EscalationsPage() {
             <RoleLink href="/admin/compliance-center" roles={['admin']} className="btn btn--ghost">
               Compliance Center
             </RoleLink>
+            {/* Safety Review is admin-only; this queue also admits a coach (lane AS-10, OFF-11). */}
+            <RoleLink href="/admin/safety-review" roles={['admin']} className="btn btn--ghost">Safety Review</RoleLink>
             <BackHome />
           </div>
         </div>

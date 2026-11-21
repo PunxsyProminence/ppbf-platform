@@ -6,6 +6,7 @@ import { apiBase } from '@/lib/apiBase';
 import { formatGymDateTimeShort } from '@/src/lib/gymTime';
 import { canCarryStaffDisplayName } from '@/src/shared/staffDisplayName';
 import { STAFF_LIST_NAME_FLOOR, staffListLabels, staffListNameFor, type StaffListSource } from '@/src/shared/staffListNames';
+import Link from 'next/link';
 import BackHome from '@/components/BackHome';
 
 interface ActiveCoverageRow {
@@ -394,6 +395,8 @@ export default function CoachCoveragePage() {
           )}
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
+            {/* A covering coach's papers are checked there (lane AS-10, OFF-17). */}
+            <Link href="/admin/credentials" className="btn btn--ghost">Staff Credentials</Link>
             <BackHome />
           </div>
         </div>

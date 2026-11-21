@@ -349,3 +349,35 @@ test('a review without the flags list is a failed read, never an all-clear', asy
   expect(await screen.findByText('The review could not be loaded')).toBeTruthy();
   expect(screen.queryByText('Nothing open right now')).toBeNull();
 });
+
+// Lane AS-10, AS10-5 (app scrub OFF-11; Overwatch Q10 A on #2018): holds link
+// the Clearance Board, where a hold is placed and lifted; failing gate checks
+// have no page that acts on them, so they link nowhere, and the header says
+// which sections link instead of "each item links".
+describe('which sections link (lane AS-10, OFF-11)', () => {
+  const REVIEW = {
+    ok: true,
+    openHolds: [{ hold_id: 'hold-1', athlete_id: 'ath-1', athlete_name: 'Jordan T.', scope: 'all_training', reason_category: 'medical', placed_by_role: 'coach', placed_at: '2026-08-01T00:00:00.000Z' }],
+    failingGates: [{ athlete_id: 'ath-2', athlete_name: 'Sam R.', gate_name: 'sparring_readiness', outcome: 'blocked', evaluated_at: '2026-08-01T00:00:00.000Z' }],
+    openEscalations: [], openViolations: [], openFlags: [], violationsReadLimit: 200, violationsTruncated: false,
+  };
+
+  test('the holds section links the Clearance Board; the gates section links nothing', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse(REVIEW)) as unknown as typeof fetch;
+    render(<SafetyReviewPage />);
+    const holds = (await screen.findByRole('heading', { name: 'Active Training Holds (1)' })).closest('section') as HTMLElement;
+    expect(within(holds).getByRole('link', { name: 'Clearance Board' }).getAttribute('href')).toBe('/coach/sports-medicine');
+    const gates = screen.getByRole('heading', { name: 'Failing Safety Gates (1)' }).closest('section') as HTMLElement;
+    expect(within(gates).queryAllByRole('link')).toEqual([]);
+  });
+
+  test('the header says which sections link, and no longer that every item does', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse(REVIEW)) as unknown as typeof fetch;
+    const { container } = render(<SafetyReviewPage />);
+    await screen.findByRole('heading', { name: 'Active Training Holds (1)' });
+    const header = (container.querySelector('header') as HTMLElement).textContent?.replace(/\s+/g, ' ') ?? '';
+    expect(header).toContain('Holds link to the Clearance Board, where a hold is placed and lifted;');
+    expect(header).toContain('Failing gate checks are listed here only.');
+    expect(header).not.toContain('Each item links to the page that can act on it');
+  });
+});
