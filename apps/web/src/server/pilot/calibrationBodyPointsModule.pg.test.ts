@@ -147,7 +147,7 @@ async function seedOrganization(orgId: string): Promise<void> {
     organizationId: orgId,
     calibrationProjectId: projectId,
     name: 'Body points module study',
-    ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: `${ANNOTATOR}-${orgId}`,
   });
   PROJECTS[orgId] = projectId;

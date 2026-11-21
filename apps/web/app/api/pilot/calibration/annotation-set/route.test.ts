@@ -150,8 +150,8 @@ describe('GET the workspace', () => {
 
     const body = await (await GET(get())).json();
 
-    expect(body.supported_ontology_version).toBe('boxing-ontology-0.1');
-    expect(body.annotatable_ontology_versions).toEqual(['boxing-ontology-0.1']);
+    expect(body.supported_ontology_version).toBe('boxing-ontology-0.4');
+    expect(body.annotatable_ontology_versions).toEqual(['boxing-ontology-0.1', 'boxing-ontology-0.4']);
   });
 
   test('the other annotator leaves no trace anywhere in the response', async () => {

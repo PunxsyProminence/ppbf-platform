@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 
-import { BOXING_ONTOLOGY_VERSION_0_1 } from '@/src/server/pilot/calibration/ontology';
+import { BOXING_ONTOLOGY_VERSION_0_4 } from '@/src/server/pilot/calibration/ontology';
 import {
   createCalibrationProject,
   listCalibrationProjects,
@@ -72,16 +72,16 @@ test('a coach sees the studies their own organization is running', async () => {
 });
 
 test('the list says which vocabulary new studies use and which ones can be labelled', async () => {
-  // The cut page disables any study it cannot label. A 0.2 in the labellable
-  // list before 0.2's rules and screen exist would let a coach cut clips into
-  // a study nobody can open.
+  // The cut page disables any study it cannot label. New studies are 0.4
+  // (TEACH-T T-1); 0.1 stays labellable so running studies finish on their own
+  // labels (OD-2026-10-02-008 4A); 0.2 and 0.3 are never opened (-024 2A).
   mockPrincipal.mockResolvedValueOnce({ accountId: 'coach-1', role: 'coach', organizationId: 'org-1' });
   mockList.mockResolvedValueOnce([]);
 
   const body = await (await GET(request())).json();
 
-  expect(body.supported_ontology_version).toBe('boxing-ontology-0.1');
-  expect(body.annotatable_ontology_versions).toEqual(['boxing-ontology-0.1']);
+  expect(body.supported_ontology_version).toBe('boxing-ontology-0.4');
+  expect(body.annotatable_ontology_versions).toEqual(['boxing-ontology-0.1', 'boxing-ontology-0.4']);
 });
 
 test('the organization comes from the session, never from the request', async () => {
@@ -178,7 +178,7 @@ describe('POST /api/pilot/calibration/projects', () => {
     expect(mockCreateProject).toHaveBeenCalledWith(expect.objectContaining({
       organizationId: 'org-1',
       name: 'Calibration round 2',
-      ontologyVersion: BOXING_ONTOLOGY_VERSION_0_1,
+      ontologyVersion: BOXING_ONTOLOGY_VERSION_0_4,
       createdByAccountId: 'coach-1',
     }));
     expect(mockCreateProject.mock.calls[0]![0]).not.toHaveProperty('status');

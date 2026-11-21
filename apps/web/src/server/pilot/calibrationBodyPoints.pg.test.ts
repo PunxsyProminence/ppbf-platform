@@ -377,7 +377,7 @@ beforeAll(async () => {
     organizationId: ORG_ID,
     calibrationProjectId: PROJECT_ID,
     name: 'Body points study',
-    ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: ANNOTATOR,
   });
 });
@@ -1266,7 +1266,7 @@ describe('deleting a whole organization', () => {
       organizationId: orgId,
       calibrationProjectId: projectId,
       name: 'Doomed study',
-      ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+      ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
       createdByAccountId: accountId,
     });
     const clipId = crypto.randomUUID();

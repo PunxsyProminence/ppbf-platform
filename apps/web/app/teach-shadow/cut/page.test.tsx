@@ -88,7 +88,10 @@ function mockFetch(overrides: {
     }
     if (requested === PROJECTS_URL && init?.method !== 'POST') {
       return (overrides.projects ?? (() => jsonResponse({
-        ok: true, projects: [PROJECT], supported_ontology_version: 'boxing-ontology-0.1',
+        ok: true,
+        projects: [PROJECT],
+        supported_ontology_version: 'boxing-ontology-0.4',
+        annotatable_ontology_versions: ['boxing-ontology-0.1', 'boxing-ontology-0.4'],
       })))();
     }
     if (requested === PROJECTS_URL) {
@@ -161,6 +164,29 @@ test('archived footage is not offered, because it can only be refused', async ()
 
   await screen.findByText('take-2-front.webm');
   expect(screen.queryByText('take-9-desk.webm')).not.toBeInTheDocument();
+});
+
+test('a study still on 0.1 stays cuttable after new studies move to 0.4; one the page cannot label is not (OD-2026-10-02-008 4A)', async () => {
+  mockFetch({
+    projects: () => jsonResponse({
+      ok: true,
+      projects: [
+        PROJECT,
+        { ...PROJECT, calibration_project_id: 'proj-04', name: 'Body points round', ontology_version: 'boxing-ontology-0.4' },
+        { ...PROJECT, calibration_project_id: 'proj-02', name: 'Old 0.2 round', ontology_version: 'boxing-ontology-0.2' },
+      ],
+      supported_ontology_version: 'boxing-ontology-0.4',
+      annotatable_ontology_versions: ['boxing-ontology-0.1', 'boxing-ontology-0.4'],
+    }),
+  });
+  render(<CutStudyClipPage />);
+
+  const running = await screen.findByRole('option', { name: 'Calibration round 1' });
+  expect(running).not.toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Body points round' })).not.toBeDisabled();
+  const closed = screen.getByRole('option', { name: /Old 0\.2 round/ });
+  expect(closed).toBeDisabled();
+  expect(closed).toHaveTextContent('boxing-ontology-0.2, which this page cannot label');
 });
 
 test('a clip cannot be cut until the study, the footage, the span and the code are all there', async () => {
