@@ -395,9 +395,7 @@ export function scanForSafetyLanguage(body: string): FeedbackSafetyScanResult {
   // normal form gave is still given.
   const normalized = normalizeForSafetyScan(body);
   const spelled = spelledOutReading(body);
-  const readings = spelled === normalized
-    ? [normalized, collapseFully(normalized)]
-    : [normalized, collapseFully(normalized), spelled, collapseFully(spelled, true)];
+  const readings = [...new Set([normalized, collapseFully(normalized), spelled, collapseFully(spelled, true)])];
   const cues = SAFETY_CUES
     .filter((cue) => readings.some((reading) => cue.pattern.test(reading)))
     .map((cue) => cue.id);
