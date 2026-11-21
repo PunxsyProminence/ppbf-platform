@@ -777,17 +777,9 @@ async function countMemberDeletedChats(client, tables) {
 
 /** The names on record for a member in one gym, and for the people a chat of theirs is likely to name (namesOnRecord in the app). */
 async function memberNamesOnRecord(client, organizationId, accountId, athleteId) {
-  const rows = await client.query(
-    `with athletes_of_theirs as (
-       select a.athlete_id from pilot.accounts a where a.account_id = $2 and a.athlete_id is not null
-       union
-       select $3::text where $3::text is not null
-       union
-       select l.athlete_id from pilot.parents g
-         join pilot.guardian_links l on l.organization_id = g.organization_id and l.parent_id = g.parent_id
-        where g.organization_id = $1 and g.account_id = $2
-     )
-     select case when a.account_id like '%@%' then a.account_id end as name
+  // Three reads, as namesOnRecord in the app (why, there).
+  const own = await client.query(
+    `select case when a.account_id like '%@%' then a.account_id end as name
        from pilot.accounts a where a.account_id = $2
      union all
      select a.login_email from pilot.accounts a where a.account_id = $2
@@ -799,9 +791,24 @@ async function memberNamesOnRecord(client, organizationId, accountId, athleteId)
       where p.organization_id = $1 and p.account_id = $2
      union all
      select g.full_name from pilot.parents g
-      where g.organization_id = $1 and g.account_id = $2
-     union all
-     select t.full_name from pilot.athletes t
+      where g.organization_id = $1 and g.account_id = $2`,
+    [organizationId, accountId],
+  );
+  const keys = (await client.query(
+    `select (select a.athlete_id from pilot.accounts a where a.account_id = $2) as athlete_id,
+            coalesce((select array_agg(g.parent_id) from pilot.parents g
+                       where g.organization_id = $1 and g.account_id = $2), '{}'::text[]) as parent_ids`,
+    [organizationId, accountId],
+  )).rows[0];
+  const athleteIds = [keys?.athlete_id, athleteId].filter(Boolean);
+  const theirs = await client.query(
+    `with athletes_of_theirs as (
+       select unnest($2::text[]) as athlete_id
+       union
+       select l.athlete_id from pilot.guardian_links l
+        where l.organization_id = $1 and l.parent_id = any($3::text[])
+     )
+     select t.full_name as name from pilot.athletes t
       where t.organization_id = $1 and t.athlete_id in (select athlete_id from athletes_of_theirs)
      union all
      select p.display_nickname from pilot.accounts a
@@ -811,9 +818,9 @@ async function memberNamesOnRecord(client, organizationId, accountId, athleteId)
      select g.full_name from pilot.guardian_links l
        join pilot.parents g on g.organization_id = l.organization_id and g.parent_id = l.parent_id
       where l.organization_id = $1 and l.athlete_id in (select athlete_id from athletes_of_theirs)`,
-    [organizationId, accountId, athleteId],
+    [organizationId, athleteIds, keys?.parent_ids ?? []],
   );
-  return rows.rows.map((row) => row.name).filter((name) => Boolean(name?.trim()));
+  return [...own.rows, ...theirs.rows].map((row) => row.name).filter((name) => Boolean(name?.trim()));
 }
 
 /** clearConversation in shadowConversationDeidentify.ts, statement for statement. */
