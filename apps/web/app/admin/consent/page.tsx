@@ -7,6 +7,7 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatCalendarDay } from '@/lib/calendarDay';
 import BackHome from '@/components/BackHome';
+import RoleLink from '@/components/RoleLink';
 
 /**
  * Recording that a guardian signed.
@@ -295,13 +296,21 @@ function ConsentConsole() {
             This records that a consent or waiver was given, so the gym can answer later who signed and
             when. It does not collect a signature, and it does not stop anyone training.
           </p>
-          <p className="mt-[var(--s4)]">
+          {/* Lane AS-10, OFF-19: both pages write the same waiver record (POST domain-upsert,
+              entity_type 'waiver'), and neither said so. */}
+          <p className="t-body mt-[var(--s3)] max-w-[68ch]">
+            The office&rsquo;s Waiver Compliance page records the same waivers, and shows every athlete
+            against every waiver type.
+          </p>
+          <p className="mt-[var(--s4)] flex flex-wrap gap-[var(--s3)]">
             {/* Ghost is correct HERE and nowhere else on this page: it is bone
                 text on a translucent black wash, tuned for leather. Every
                 secondary control that landed on the paper below is a
                 .btn--lever instead -- ppbf.css documents ghost-on-light as
                 grey-on-grey. */}
             <BackHome className="btn btn--ghost" />
+            {/* Shown only to the roles Waiver Compliance admits; this page also admits a coach. */}
+            <RoleLink href="/admin/waiver-status" roles={['admin']} className="btn btn--ghost">Waiver Compliance</RoleLink>
           </p>
         </header>
 

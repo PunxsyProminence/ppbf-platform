@@ -377,15 +377,18 @@ it('puts no ghost button on the paper', async () => {
     .map((el) => el.textContent?.trim());
   expect(ghostsOnPaper).toEqual([]);
 
-  // The one ghost this page states is the header's back link (BackHome), and the
+  // The ghosts this page states are the header's back link (BackHome) and, since
+  // lane AS-10 (OFF-19), the header's Waiver Compliance link beside it; the
   // header is leather. Counted off the source because the next/link mock above
   // renders a bare <a href> and drops className, so a rendered check here
-  // would pass on a page that had none.
+  // would pass on a page that had none. Each must sit inside the <header>.
   const source = readFileSync(join(__dirname, 'page.tsx'), 'utf8');
-  const ghostClasses = [...source.matchAll(CLASS_ATTR)]
+  const ghostsIn = (text: string) => [...text.matchAll(CLASS_ATTR)]
     .map((m) => m[1] ?? m[2] ?? m[3] ?? '')
     .filter((value) => value.split(/\s+/).includes('btn--ghost'));
-  expect(ghostClasses).toEqual(['btn btn--ghost']);
+  const header = source.slice(source.indexOf('<header'), source.indexOf('</header>'));
+  expect(ghostsIn(source)).toEqual(['btn btn--ghost', 'btn btn--ghost']);
+  expect(ghostsIn(header)).toEqual(ghostsIn(source));
 });
 
 /* ---- Photo and media leaves the register (Jason 2026-10-07, OD-2026-10-07-009) ---- */
