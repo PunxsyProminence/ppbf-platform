@@ -1470,75 +1470,13 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                 </Link>
               )}
               {/*
-                AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A): Gym Setup,
-                Athlete Records, Export, Load Roster, Equipment, Customize,
-                Operations and Compliance Center moved to Gym Office, grouped by the
-                admin's job sections there (Gym Setup was already on its header).
-                Gym Office (was PEOPLE) stays as this page's way back. Video Upload,
-                Drill Library, Waivers & Consent (was CONSENT) and System sit in no admin section; where they
-                go is Overwatch's Q19 on #2018, so they stay here until it is answered.
+                AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A, Q19 A): the
+                rest of this row moved to Gym Office, grouped by the admin's job
+                sections, then Video Upload, Drill Library, Waivers & Consent and
+                System in one row (they sit in no section). Gym Setup was already
+                on Gym Office's header. Gym Office (was PEOPLE) stays as this page's
+                way back, and Export JSON exports this page.
               */}
-              {/*
-                Video upload lives on a COACH page, and an organization_admin
-                lands here -- so the only surface that calls
-                POST /api/pilot/video/upload had no entry point for a role its
-                own API admits. The owner found it the only way anyone would:
-                by trying to upload a video and not finding a button.
-                Gated on the same organization-admin check as PEOPLE, because
-                platform_owner is refused by that API (access.ts bars Omega
-                from athlete-scoped records) and a link that 403s is worse
-                than no link.
-              */}
-              {canManagePeople && (
-                <Link
-                  href="/coach/video-analysis"
-                  className="btn btn--ghost"
-                >
-                  VIDEO UPLOAD
-                </Link>
-              )}
-              {/*
-                The same defect the VIDEO UPLOAD comment above describes,
-                repeated by the change that shipped these consoles: /coach/drills
-                (with /admin/athletes and /admin/export, now on Gym Office) was
-                reachable only by typing the URL -- no navigation anywhere in the
-                app pointed at it.
-
-                Gated on the same organization-admin check: a link that 403s is
-                worse than no link.
-              */}
-              {canManagePeople && (
-                <Link
-                  href="/coach/drills"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  DRILL LIBRARY
-                </Link>
-              )}
-              {/*
-                Linked in the same change that built the screen, deliberately.
-                pilot.waivers and domain-upsert both existed for months with no
-                caller, and two planning documents ended up disagreeing about
-                whether consent capture existed at all -- because from the
-                outside, a capability with no way in is indistinguishable from
-                one that was never built.
-              */}
-              {canManagePeople && (
-                <Link
-                  href="/admin/consent"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  Waivers &amp; Consent
-                </Link>
-              )}
-              {canManagePeople && (
-                <Link
-                  href="/admin/system"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  SYSTEM
-                </Link>
-              )}
               <button
                 type="button"
                 onClick={exportCapabilities}

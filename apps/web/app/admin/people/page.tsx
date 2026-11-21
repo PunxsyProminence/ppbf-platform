@@ -29,15 +29,17 @@ import { BUILDING } from '@/components/buildingMap';
 import { JOB_BARS } from '@/components/jobBars';
 
 /**
- * AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A). The office pages that the
+ * AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A, Q19 A). The office pages that the
  * Capabilities header used to launch, grouped by the admin's job sections (AS-4,
- * components/jobBars.ts) in the bar's order. Each link says its door's label in BUILDING,
- * which is the title of the page it opens. Only an organization admin reaches the console
- * that draws this, and each of these pages admits one.
+ * components/jobBars.ts) in the bar's order, then the four that sit in no admin section in
+ * one row with no heading, in Capabilities' old order. Each link says its door's label in
+ * BUILDING, which is the title of the page it opens. Only an organization admin reaches the
+ * console that draws this, and each of these pages admits one.
  *
- * Gym Setup is not repeated: the header links it already (AS10-1). Video Analysis, Drill
- * Library, Waivers & Consent and System sit in no admin section; where they go is
- * Overwatch's Q19 on #2018, so they stay on Capabilities until it is answered.
+ * Gym Setup is not repeated: the header links it already (AS10-1). Two of the four were linked
+ * on Capabilities because nothing else led to them: Video Analysis is where an organization
+ * admin uploads video, and Waivers & Consent sat unreachable for months after it was built.
+ * Keep them linked.
  */
 const MOVED_FROM_CAPABILITIES: ReadonlySet<string> = new Set([
   '/admin/athletes', '/admin/export', '/admin/import', '/admin/gear', '/admin/customize', '/operations',
@@ -55,6 +57,14 @@ const OFFICE_PAGES = (JOB_BARS.admin?.sections ?? [])
     }),
   }))
   .filter((section) => section.links.length > 0);
+
+/** In no admin job section (Q19 A): after the groups, in the order Capabilities had them. */
+const UNSECTIONED_FROM_CAPABILITIES = ['/coach/video-analysis', '/coach/drills', '/admin/consent', '/admin/system'];
+
+const OFFICE_PAGES_UNSECTIONED = UNSECTIONED_FROM_CAPABILITIES.flatMap((href) => {
+  const door = BUILDING.find((candidate) => candidate.href === href);
+  return door ? [{ href: door.href, label: door.label }] : [];
+});
 
 interface Member {
   account_id: string;
@@ -1482,6 +1492,15 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                 </ul>
               </div>
             ))}
+            <ul className="flex basis-full flex-wrap gap-[var(--s3)]">
+              {OFFICE_PAGES_UNSECTIONED.map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href} className="btn btn--ghost">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </nav>
         </header>
 
