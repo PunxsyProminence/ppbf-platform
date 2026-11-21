@@ -220,6 +220,10 @@ describe.each(['rail', 'phone'] as const)('the %s bar', (variant) => {
     const plan = screen.getByRole('button', { name: /^Plan/ });
     expect(plan.className).toMatch(/is-active/);
     expect(plan.textContent).toMatch(/you are here/i);
+    // Only that section: the others carry neither the mark nor the words.
+    const marked = Array.from(document.querySelectorAll('nav[aria-label="Your jobs"] .is-active'));
+    expect(marked).toEqual([plan]);
+    expect(screen.getByRole('button', { name: /^Safety/ }).textContent).not.toMatch(/you are here/i);
     fireEvent.click(plan);
     expect(screen.getByRole('link', { name: 'Drill Library' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('link', { name: 'Home' }).getAttribute('aria-current')).toBeNull();
