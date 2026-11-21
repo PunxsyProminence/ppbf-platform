@@ -267,7 +267,7 @@ describe('a completed request', () => {
     }));
     await renderPage();
 
-    // A chat flagged into a safeguarding review is kept for two years
+    // A chat flagged for review is kept for two years
     // (OD-2026-10-06-023, -027), so the sentence says so -- in general words,
     // the same for everyone, so it never tells a member one of theirs was
     // flagged (lane HF7; Jason on Q1, 2026-11-21: "A for both").

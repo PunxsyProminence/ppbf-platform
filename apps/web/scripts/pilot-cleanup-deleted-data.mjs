@@ -707,8 +707,8 @@ async function deidentifyFlaggedConversations(client, tables, accountIds, organi
 
 /* CHATS A MEMBER DELETED (lane HF7). The Delete beside a SHADOW chat, and an
    office-completed request to clear a member's history, clear a chat at once
-   unless it is flagged -- a safeguarding review entry or a safety escalation
-   points at it (src/server/pilot/
+   unless it is flagged -- a review entry (any shadow_human_review_queue row)
+   or a safety escalation points at it (src/server/pilot/
    shadowConversationDeidentify.ts says what each step is and which ruling it
    follows: OD-2026-10-06-012, OD-2026-10-06-023 Q1 "Delete theirs, keep AI
    replies (Recommended)" and Q2 "Keep until retention ends (Recommended)",
@@ -742,8 +742,8 @@ async function deidentifyFlaggedConversations(client, tables, accountIds, organi
    (T7) runs both on the same chat and compares the rows they leave. Change
    one, change both.
 
-   FLAGGED here means what it means there: a safeguarding review entry points
-   at the chat, or a safety escalation does (a disclosure's escalation is
+   FLAGGED here means what it means there: a review entry (any
+   shadow_human_review_queue row) points at the chat, or a safety escalation does (a disclosure's escalation is
    filed with the conversation's id even when its review entry was capped or
    failed). What is kept takes new ids -- conversation, messages, and the
    review entries that follow it -- so the office's recorded reads, the

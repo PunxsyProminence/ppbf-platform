@@ -35,7 +35,9 @@ import type { PoolClient } from 'pg';
  *     record nothing can be scrubbed, and the whole chat is deleted (the
  *     purge's rule for the same case).
  *
- *   FLAGGED -- a safeguarding review entry points at it, or a safety
+ *   FLAGGED -- a review entry (any shadow_human_review_queue row, a
+ *     safeguarding one or the operational one the Library-empty notice
+ *     writes; the table cannot tell them apart) points at it, or a safety
  *     escalation does (a disclosure's escalation is filed with the
  *     conversation's id even when its review entry was capped or failed,
  *     shadowDisclosure.ts): kept intact and identified (Q2, Q14). Hidden from the member
@@ -344,7 +346,7 @@ export async function clearConversation(
 export interface ClearedConversations {
   /** Cleared now: de-identified, or deleted whole when nothing could be scrubbed. */
   cleared: number;
-  /** Flagged (a safeguarding review entry or a safety escalation points at it): hidden, kept as it is. */
+  /** Flagged (a review entry or a safety escalation points at it): hidden, kept as it is. */
   held: number;
 }
 

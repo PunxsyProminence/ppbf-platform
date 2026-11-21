@@ -787,8 +787,8 @@ export async function renameConversation(
  *
  * It used to set deleted_at and nothing else, and nothing ever removed the
  * rows, while the member was told the chat was deleted. Now, in one
- * transaction, a chat that is not flagged (no safeguarding review entry or
- * safety escalation points at it) is cleared at once --
+ * transaction, a chat that is not flagged (no review entry or safety
+ * escalation points at it) is cleared at once --
  * what the member typed deleted, SHADOW's replies kept under a token with
  * their names scrubbed -- and a flagged one is hidden from them and kept as
  * it is for two years (shadowConversationDeidentify.ts says what each step
@@ -947,8 +947,8 @@ export async function requestOwnShadowDataDeletion(
  *
  * THE SAME AS THE DELETE BESIDE EACH CHAT (deleteOwnConversation), for every
  * chat on the account in this gym, the ones the member already deleted
- * included: a chat that is not flagged (no safeguarding review entry or
- * safety escalation points at it) is cleared now (their
+ * included: a chat that is not flagged (no review entry or safety
+ * escalation points at it) is cleared now (their
  * words deleted, SHADOW's replies kept under a token with their names
  * scrubbed); a flagged one is hidden and kept as it is, and the retention
  * script clears it two years after its deletion (Jason: "Delete theirs, keep
@@ -976,7 +976,7 @@ export interface ShadowDataDeletionRequest {
   processedBy: string | null;
   /** How many conversations the request would clear now, counted at read time. */
   conversationsPending: number;
-  /** How many it would keep, flagged into a safeguarding review, counted at read time. */
+  /** How many it would keep, flagged for review, counted at read time. */
   conversationsHeld: number;
 }
 
@@ -1069,7 +1069,7 @@ export interface ShadowDataDeletionOutcome {
   status: ShadowDataDeletionRequestStatus;
   /** Conversations this call cleared. Zero is a real answer. */
   conversationsCleared: number;
-  /** Conversations this call kept, flagged into a safeguarding review. */
+  /** Conversations this call kept, flagged for review. */
   conversationsHeld: number;
 }
 

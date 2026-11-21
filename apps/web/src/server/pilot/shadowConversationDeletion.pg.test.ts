@@ -18,7 +18,8 @@
  *   - not flagged: their own messages are deleted now; SHADOW's replies are
  *     kept under a one-off anon_<uuid> token with their recorded names
  *     scrubbed, and every id that joined a reply back to them is cleared;
- *   - flagged into a safeguarding review: hidden from them and otherwise kept
+ *   - flagged for review (a review entry or a safety escalation points at
+ *     it): hidden from them and otherwise kept
  *     intact and identified; the office still reads the one flagged exchange;
  *   - two years after its deletion a flagged chat is cleared the same way, by
  *     the retention script on a manual APPLY only.
@@ -818,7 +819,7 @@ describe('T1: a member deletes a chat nobody flagged', () => {
   });
 });
 
-describe('T2: a member deletes a chat a safeguarding review or a safety escalation points at', () => {
+describe('T2: a member deletes a chat a review entry or a safety escalation points at', () => {
   test('a reviewed chat is hidden from them and otherwise kept intact; the office still reads the one exchange', async () => {
     const target = await seedConversation(mainDb, {
       organizationId: ORG, accountId: MEMBER, role: 'athlete', athleteId: ATHLETE, flagged: true,

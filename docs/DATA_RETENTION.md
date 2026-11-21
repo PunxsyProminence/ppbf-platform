@@ -161,16 +161,17 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   still running then has nothing to complete). With no usable name on record the chat is deleted
   whole. Each cleared chat has its own token.
 - **A flagged chat is kept intact and identified** for two years after its deletion, hidden from
-  the member. Flagged means a safeguarding review entry (`pilot.shadow_human_review_queue`)
+  the member. Flagged means a review entry (`pilot.shadow_human_review_queue`)
   points at it, whatever its status, or a safety escalation does (`pilot.safety_escalations`,
   `metadata.conversation_id`, matched whatever its case: a SHADOW disclosure's escalation is
   filed with the conversation's id even when its review entry was capped or failed). A session with
   `subject_deleted_at` set (the column the purge's hold reads; nothing writes it today) is held
   too, and the script leaves it to the purge. The office's read of the one flagged
   exchange (OD-2026-10-07-009 ruling 4) keeps working. The member sees the same words either
-  way, so a member is never told a chat was flagged. A review entry cannot be told apart, in the
-  table, from the operational entry written when the Library holds no evidence; such a chat is
-  held too (the hold errs toward keeping, as the purge's guardian hold does).
+  way, so a member is never told a chat was flagged. A safeguarding review entry cannot be told
+  apart, in the table, from the operational entry written when the Library holds no evidence; such
+  a chat is held too (the hold errs toward keeping, as the purge's guardian hold does), and the
+  office's words say "flagged for review" for that reason.
 - **The retention script ends the hold, on a full APPLY only.**
   `scripts/pilot-cleanup-deleted-data.mjs` (`clearMemberDeletedChats`) clears, the same way, a
   flagged chat a member deleted more than two years ago, and any chat a member deleted before
