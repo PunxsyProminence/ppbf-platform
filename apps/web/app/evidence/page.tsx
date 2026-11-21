@@ -193,7 +193,7 @@ export default function EvidenceReviewPage() {
 
   return (
     <RoleStandaloneView
-      roleLabel="Evidence Review"
+      roleLabel="Evidence Review Queue"
       routeLabel="/evidence"
       allowedRoles={['admin', 'platform_owner']}
       room="file"
