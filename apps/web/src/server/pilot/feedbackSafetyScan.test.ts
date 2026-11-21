@@ -790,7 +790,7 @@ describe('HF12b: picture requests said as pix, vid or snaps', () => {
     'send me a vid of your jab',
     'please send a video on footwork',
     'send a video of how to slip',
-    'send me pics of the combo',
+    'send me a vid of the combo',
     'can you send a video of my pad work',
     'send me a video of a combo',
   ])('no grooming cue: %p', (sentence) => {
@@ -799,7 +799,9 @@ describe('HF12b: picture requests said as pix, vid or snaps', () => {
 });
 
 // A gym noun no longer hides what follows it: a picture near a place or state
-// of undress files, in either order, whatever comes between.
+// of undress files, in either order, whatever comes between. Two of these
+// already filed on main 4f26461 ("getting changed", "underwear") and are kept
+// as regression cases.
 describe('HF12b: pictures near a changing room, a shower or undress', () => {
   test.each([
     'pics of the team changing room',
@@ -987,5 +989,20 @@ describe('HF12b review: the place window and product talk', () => {
 describe('HF12b review: pace guard on the heavy bag', () => {
   test('coaching about pace on the heavy bag is not crisis', () => {
     expect(scanForSafetyLanguage('dont kill yourself on the heavy bag').cues).not.toContain('crisis');
+  });
+});
+
+describe('HF12b review: pictures keep the guard they had on main', () => {
+  // Accepted, and pinned so a change is deliberate: the technique-noun guard
+  // covers video words only, because on picture words it hid body-picture
+  // requests ("pics of my jab with my shirt off").
+  test('accepted false alert: "send me pics of the combo" files grooming_or_isolation', () => {
+    expect(scanForSafetyLanguage('send me pics of the combo').cues).toContain('grooming_or_isolation');
+  });
+});
+
+describe('HF12b review: the pace guard stays narrow', () => {
+  test('"in sparring" is not a pace phrase: it is where a child may be told it', () => {
+    expect(scanForSafetyLanguage('he said kill yourself in sparring').cues).toContain('crisis');
   });
 });
