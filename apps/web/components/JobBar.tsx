@@ -103,6 +103,7 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
   const openIndex = opened && opened.path === pathname ? opened.index : null;
   const navRef = useRef<HTMLElement>(null);
   const triggers = useRef(new Map<number, HTMLButtonElement>());
+  const sheetRef = useRef<HTMLDivElement | null>(null);
 
   const role = session?.role ?? null;
   const landingSeat = session?.boardSeat ?? null;
@@ -149,6 +150,37 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
     [openIndex],
   );
 
+  /* THE SHEET FITS THE SCREEN (layout review round 1). Measured once when it
+     opens: a rail sheet is moved left as far as it would run past the right
+     edge (a 768px tablet), and either sheet is cut to the room it actually has
+     -- below the screen's bottom for the rail (a landscape phone), above the
+     sticky session bar for the phone sheet (a short phone) -- and scrolls. */
+  const fitSheet = useCallback(
+    (sheet: HTMLDivElement | null) => {
+      if (!sheet || typeof window === 'undefined') return;
+      const gap = 8;
+      // Clear the last fit first, so a second measure (a re-render, a turn of
+      // the tablet) starts from where the sheet really sits.
+      sheet.style.left = '';
+      sheet.style.maxHeight = '';
+      const box = sheet.getBoundingClientRect();
+      if (box.width === 0 && box.height === 0) return; // not laid out (jsdom)
+      if (variant === 'rail') {
+        const overflow = box.right - (window.innerWidth - gap);
+        if (overflow > 0) sheet.style.left = `${-Math.min(overflow, box.left - gap)}px`;
+        sheet.style.maxHeight = `${Math.max(120, window.innerHeight - box.top - gap)}px`;
+      } else {
+        const header = document.querySelector('header');
+        const headerBottom = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+        // No floor here: on a landscape phone the room below the session bar
+        // can be small, and a taller sheet would slide under that bar (layout
+        // review round 2). It scrolls instead.
+        sheet.style.maxHeight = `${Math.max(0, box.bottom - headerBottom - gap)}px`;
+      }
+    },
+    [variant],
+  );
+
   useEffect(() => {
     if (openIndex === null) return;
     function onKey(event: KeyboardEvent) {
@@ -160,37 +192,22 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
     function onDown(event: MouseEvent) {
       if (navRef.current && !navRef.current.contains(event.target as Node)) close(false);
     }
+    // A tablet turned with a sheet open: measure it again, or its foot can sit
+    // below the screen inside the sticky bar, out of reach (layout review round 2).
+    function onResize() {
+      const sheet = sheetRef.current;
+      if (sheet) fitSheet(sheet);
+    }
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onDown);
+    window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('resize', onResize);
     };
-  }, [openIndex, close]);
+  }, [openIndex, close, fitSheet]);
 
-  /* THE SHEET FITS THE SCREEN (layout review round 1). Measured once when it
-     opens: a rail sheet is moved left as far as it would run past the right
-     edge (a 768px tablet), and either sheet is cut to the room it actually has
-     -- below the screen's bottom for the rail (a landscape phone), above the
-     sticky session bar for the phone sheet (a short phone) -- and scrolls. */
-  const fitSheet = useCallback(
-    (sheet: HTMLDivElement | null) => {
-      if (!sheet || typeof window === 'undefined') return;
-      const gap = 8;
-      const box = sheet.getBoundingClientRect();
-      if (box.width === 0 && box.height === 0) return; // not laid out (jsdom)
-      if (variant === 'rail') {
-        const overflow = box.right - (window.innerWidth - gap);
-        if (overflow > 0) sheet.style.left = `${-Math.min(overflow, box.left - gap)}px`;
-        sheet.style.maxHeight = `${Math.max(120, window.innerHeight - box.top - gap)}px`;
-      } else {
-        const header = document.querySelector('header');
-        const headerBottom = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
-        sheet.style.maxHeight = `${Math.max(120, box.bottom - headerBottom - gap)}px`;
-      }
-    },
-    [variant],
-  );
 
   const isWallRoute = pathname === '/wall' || pathname.startsWith('/wall/');
   if (!session || pathname === '/login' || isWallRoute || isRefusalSurface(role, pathname)) return null;
@@ -237,7 +254,14 @@ export default function JobBar({ variant }: { readonly variant: JobBarVariant })
                   <span className="job-bar__caret" aria-hidden="true">{expanded ? '▴' : '▾'}</span>
                 </button>
                 {expanded ? (
-                  <div id={sheetId} ref={fitSheet} className="job-bar__sheet">
+                  <div
+                    id={sheetId}
+                    ref={(node) => {
+                      sheetRef.current = node;
+                      fitSheet(node);
+                    }}
+                    className="job-bar__sheet"
+                  >
                     <p className="job-bar__sheet-head">{section.label}</p>
                     <ul className="job-bar__list">
                       {section.items.map((item) => {
