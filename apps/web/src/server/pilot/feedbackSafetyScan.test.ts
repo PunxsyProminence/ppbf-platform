@@ -1811,6 +1811,10 @@ describe('HF12b delta review (81ed7ee..970f160): blocking findings', () => {
     'a guy online said hed give me money for pics',
     'he said i owe him private pics',
     'he wants to trade private pics',
+    // Single-rule pins (mutation proof).
+    'he leaked private pics',
+    'a stranger promised me money for pics',
+    'a stranger promised robux for pics',
     // An adult online.
     'an adult online asked for videos of me',
     'an adult on snapchat wants videos of me',
@@ -1833,6 +1837,8 @@ describe('HF12b delta review (81ed7ee..970f160): blocking findings', () => {
     'the adult class online asked for videos of the warm up',
     'a guy on tiktok has the best jab videos',
     'a guy online has videos of the drill',
+    'i shared the private video lesson with my mom',
+    'a guy on tiktok sent me a video of the drill',
   ])('everyday talk stays out: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
