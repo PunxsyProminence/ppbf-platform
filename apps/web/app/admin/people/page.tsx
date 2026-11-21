@@ -446,6 +446,9 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
   const [nameDraft, setNameDraft] = useState('');
   // Said next to the box, not in the banner at the top of a long list.
   const [nameError, setNameError] = useState('');
+  // The roster's box and role filter (lane AS-10, AS10-2a; see "FIND A PERSON ON THE ROSTER" below).
+  const [rosterFind, setRosterFind] = useState('');
+  const [rosterRole, setRosterRole] = useState('all');
   /* RE-INVITING IS HOW A ROLE CHANGES (staffProvisioning.ts), and the form
      said nothing when the address already belonged to someone in the gym: a
      coach re-invited as a guardian silently became a guardian. Now a role
@@ -545,6 +548,19 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
       setCodeArmedId((id) => (rowStillOffers(byId(id), 'code') ? id : null));
       setRevokeArmedId((id) => (rowStillOffers(byId(id), 'signOut') ? id : null));
       setDeactivateArmedId((id) => (rowStillOffers(byId(id), 'deactivate') ? id : null));
+      // A role filter nobody holds any more is dropped for good: left in place,
+      // it would switch itself back on when someone with that role is added later.
+      setRosterRole((role) => (role === 'all' || nextMembers.some((m) => roleLabel(m.role) === role) ? role : 'all'));
+      // The other things that hold a row in view (rowHeld) end with what they
+      // were about: a name editor on a row that can no longer carry a name, a
+      // guardian remove or move whose link is no longer there. Otherwise a row
+      // would stay held with nothing open on it.
+      const nextLinks = Array.isArray(membersPayload.guardian_links) ? membersPayload.guardian_links : [];
+      setNameEditId((id) => (id && nextMembers.some((m) => m.account_id === id && canCarryStaffDisplayName(m.role)) ? id : null));
+      setPendingUnlink((pending) =>
+        pending && nextLinks.some((link) => link.account_id === pending.accountId && link.athlete_id === pending.athleteId) ? pending : null);
+      setPendingMove((pending) =>
+        pending && nextLinks.some((link) => link.account_id === pending.accountId && link.parent_id === pending.parentId) ? pending : null);
       setMembersAvailable(true);
       setOrganizationName(membersPayload.organization_name?.trim() || '');
 
@@ -664,6 +680,56 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
     if (member?.athlete_id) return rosterById.get(member.athlete_id)?.full_name?.trim() || member.account_id;
     return member?.login_email || 'Account with no sign-in address';
   };
+
+  /*
+   * FIND A PERSON ON THE ROSTER (lane AS-10, PR AS10-2a; app scrub OFF-06): a
+   * box and a role filter, in Athlete Records' own pattern. They only narrow
+   * what is shown; nothing is re-read.
+   *
+   * The box searches what the row itself shows -- the person's name or sign-in
+   * address and the staff name the gym typed -- plus a PIN athlete's sign-in
+   * ID, which is what the athlete types at the tablet. It does not search an
+   * id or address the row does not show.
+   */
+  // The roles present, by the Role column's own words ("Gym Admin" covers both
+  // admin names), in the roster's order.
+  const rosterRoleOptions = Array.from(new Set(members.map((member) => roleLabel(member.role))));
+  // rosterRole always names a role present: load(), the only place the roster
+  // changes, resets it to All roles in the same step when nobody holds it.
+  const rosterMatches = (member: Member, find: string, role: string): boolean => {
+    if (role !== 'all' && roleLabel(member.role) !== role) return false;
+    const needle = find.trim().toLowerCase();
+    if (!needle) return true;
+    const shown: Array<string | null | undefined> = [member.staff_display_name];
+    // Not the "no sign-in address" stand-in: that is not something to find a person by.
+    if (member.athlete_id || member.login_email) shown.push(personLabel(member.account_id));
+    if (member.auth_provider === 'ppbf_local' && member.role === 'athlete') shown.push(member.account_id);
+    return shown.some((text) => typeof text === 'string' && text.toLowerCase().includes(needle));
+  };
+  /*
+   * A row with something armed or open on it stays in view whatever the box
+   * and the role say, until that is confirmed or cancelled. So nothing armed is
+   * ever out of sight, and nothing can come back armed, one tap from acting,
+   * when the list changes -- by typing, by choosing a role, or by a re-read
+   * that changes a name or a role (the rule rowStillOffers keeps for what a row
+   * offers). A name being edited stays put too, so its field is never
+   * re-opened under the admin's typing.
+   */
+  const rowHeld = (accountId: string): boolean =>
+    accountId === revokeArmedId
+    || accountId === codeArmedId
+    || accountId === deactivateArmedId
+    || accountId === nameEditId
+    || accountId === pendingUnlink?.accountId
+    || accountId === pendingMove?.accountId;
+  const matchingIds = new Set(
+    members.filter((member) => rosterMatches(member, rosterFind, rosterRole)).map((member) => member.account_id),
+  );
+  const shownMembers = members.filter((member) => matchingIds.has(member.account_id) || rowHeld(member.account_id));
+  // Rows in view only because something is open on them: said in the caption,
+  // so a held row never reads as a match for what was typed.
+  const keptOpenCount = shownMembers.length - matchingIds.size;
+  const rosterNarrowed = matchingIds.size !== members.length;
 
   /**
    * The next unused ath-NNN for this gym.
@@ -1563,9 +1629,43 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   </div>
                 </div>
               ) : (
-                /* The scroller is a child of .frame-in, which sets
+                <>
+                <div className="flex flex-wrap items-end gap-[var(--s4)] p-[var(--s4)]">
+                  <div className="field">
+                    <label htmlFor="roster-find" className="t-label">
+                      Find a person
+                    </label>
+                    <input
+                      id="roster-find"
+                      type="search"
+                      value={rosterFind}
+                      onChange={(event) => setRosterFind(event.target.value)}
+                      placeholder="Name, email or sign-in ID"
+                      className="input"
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="roster-role" className="t-label">
+                      Role
+                    </label>
+                    <select
+                      id="roster-role"
+                      value={rosterRole}
+                      onChange={(event) => setRosterRole(event.target.value)}
+                      className="select"
+                    >
+                      <option value="all">All roles</option>
+                      {rosterRoleOptions.map((label) => (
+                        <option key={label} value={label}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {/* The scroller is a child of .frame-in, which sets
                    overflow:hidden unlayered -- a layered overflow-x utility on
-                   the same element would never win. */
+                   the same element would never win. */}
                 <div className="overflow-x-auto">
                 <table className="ledger">
                   {/* The caption is as wide as the table, and the table scrolls
@@ -1573,7 +1673,15 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                      at the screen edge (#1482 item 5). The text stays put while
                      the table scrolls under it, and wraps to the visible width. */}
                   <caption className="text-left">
-                    <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">Everyone in this gym</span>
+                    {/* A narrowed list says so: it is not everyone in the gym. */}
+                    <span className="sticky left-0 inline-block max-w-[calc(100vw-5rem)]">
+                      {!rosterNarrowed
+                        ? 'Everyone in this gym'
+                        : `Showing ${matchingIds.size} of ${members.length}${
+                          keptOpenCount > 0
+                            ? `, and ${keptOpenCount} kept in view until what is open on ${keptOpenCount === 1 ? 'it' : 'them'} is confirmed or cancelled`
+                            : ''}`}
+                    </span>
                   </caption>
                   <thead>
                     <tr>
@@ -1585,7 +1693,16 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                     </tr>
                   </thead>
                   <tbody>
-                  {members.map((member) => {
+                  {matchingIds.size === 0 && (
+                    <tr>
+                      <td colSpan={5}>
+                        {rosterRole === 'all'
+                          ? 'No one on the roster matches. Clear the box to see everyone.'
+                          : 'No one on the roster matches. Clear the box or choose All roles.'}
+                      </td>
+                    </tr>
+                  )}
+                  {shownMembers.map((member) => {
                     const isGuardian = member.role === 'parent';
                     const memberLinks = guardianLinksByAccount.get(member.account_id) || [];
                     const linkCount = !isGuardian ? null : guardianLinksAvailable ? memberLinks.length : null;
@@ -1985,6 +2102,7 @@ function PeopleConsoleContent({ microsoftSession }: { readonly microsoftSession:
                   </tbody>
                 </table>
                 </div>
+                </>
               )}
               </div>
             </div>
