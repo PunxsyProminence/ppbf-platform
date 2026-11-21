@@ -415,14 +415,9 @@ describe('HF1 review: gym talk the narrowed guards still keep out', () => {
 
 describe('HF1 review round 2: the scope review\'s false alerts', () => {
   test.each([
-    'we ran kms today',
-    'i ran kms before school',
-    'running kms every morning',
     'three kms of roadwork',
     'we ran eighteen kms',
     'suicide squad is a good movie',
-    'i dont wanna live in this town',
-    'i dont want to live near the gym',
   ])('no crisis cue: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).not.toContain('crisis');
   });
@@ -452,5 +447,67 @@ describe('HF1 review round 2: the scope review\'s false alerts', () => {
   // costs the child (this module's header).
   test('accepted false alert: "suicide runs after sparring" files crisis', () => {
     expect(scanForSafetyLanguage('suicide runs after sparring').cues).toContain('crisis');
+  });
+});
+
+// Safeguarding re-review on PR 2059 (lane HF12), round 2. The first round of
+// false-alarm fixes over-narrowed: each sentence below was missed at f3bef05
+// (OBSERVED by the reviewer's probe). A missed child costs more than a false
+// alert, so the guards went back to the narrowest form that keeps the gym's
+// commonest phrasings out. Invented phrases.
+describe('HF1 re-review: what the narrowed guards had swallowed', () => {
+  test.each([
+    'i dont want to live in this world anymore',
+    'i dont want to live on this earth',
+    'i dont want to live at all',
+    'i dont want to live on like this',
+    'i dont wanna live in this body',
+    'after sparring i dont want to live at all',
+    'this happens so often kms',
+    'got beaten kms',
+    'i feel so rotten kms',
+    'im a teen kms',
+    'listen kms',
+    'im 14 kms',
+    'im only 13 kms',
+    'i am 15 kms',
+  ])('crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
+  });
+
+  test.each([
+    'he made me touch down there',
+    'my coach makes me touch down there after sparring',
+    'he made me touch my privates',
+    'he made me touch something',
+    'he made me touch stuff i didnt want to',
+    'made me touch u know what',
+    'he made me touch',
+    'he made me touch inappropriate places',
+  ])('grooming_or_isolation: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'i took the wraps off myself',
+    'got the tape off myself',
+    'my mum keeps asking for pics of my fight',
+    'coach is asking for pictures of the event',
+    'thirteen kms of roadwork',
+    'we did ten kms',
+  ])('no crisis or grooming cue: %p', (sentence) => {
+    const { cues } = scanForSafetyLanguage(sentence);
+    expect(cues).not.toContain('crisis');
+    expect(cues).not.toContain('grooming_or_isolation');
+  });
+
+  // Accepted, and pinned so a change is deliberate (this module errs toward a
+  // human): without a number, roadwork verbs no longer shield "kms", and a
+  // place after "dont want to live" no longer shields it either.
+  test.each([
+    'i ran kms before school',
+    'i dont wanna live in this town',
+  ])('accepted false alert, files crisis: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).toContain('crisis');
   });
 });
