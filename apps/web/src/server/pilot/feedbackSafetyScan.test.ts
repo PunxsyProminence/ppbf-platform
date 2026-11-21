@@ -2086,7 +2086,25 @@ describe('HF12b fourth delta review (81ed7ee..357131f): blocking findings', () =
     'he takes private photo sessions of me',
     'he made me put private pics on the site',
     'he made it a private video then sent me the link',
+    // Single-rule pins (mutation proof).
+    'i sent pics to a guy online and now he wants money',
+    'a guy online said its our secret and sent me videos of the drill',
+    'a guy online asks if im alone and sends me boxing videos',
+    'i sent a guy online my boxing pics',
+    'a guy online has my boxing pics',
+    'a guy online will leak my fight videos',
+    'a guy online sent me boxing videos and wants one back',
+    'a guy online sends me boxing videos from his house',
+    'a guy online sent me his boxing pics and wants mine',
+    'a guy online sends me boxing videos and says not to tell anyone',
+    'coach does private video sessions with me',
   ])('grooming_or_isolation: %p', (sentence) => {
     expect(scanForSafetyLanguage(sentence).cues).toContain('grooming_or_isolation');
+  });
+
+  test.each([
+    'can i get a secret video of the combo',
+  ])('everyday talk stays out: %p', (sentence) => {
+    expect(scanForSafetyLanguage(sentence).cues).not.toContain('grooming_or_isolation');
   });
 });
