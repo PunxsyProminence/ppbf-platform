@@ -3,6 +3,13 @@
  * (learningPolicyApprovedV1.ts, pinned to the research report there). Each
  * case builds evidence that meets one tier exactly, or misses it for one
  * reason, so the standing and its shortfalls can be read off.
+ *
+ * Who counts and what a dispute does follow Overwatch's answers on the
+ * PATTERN-1 plan (PunxsyProminence/ppbf-platform#2082, 2026-11-21): Q1 A, a
+ * coach's reading counts only when that coach is in a calibrated pair on this
+ * behaviour (OD-2026-10-17-027 ruling 3 as written), so most cases here carry
+ * a calibration history; Q4 A, a disputed attempt is left out and listed, and
+ * only film contradicting a coach withholds.
  */
 
 import {
@@ -85,56 +92,63 @@ function establishedEvidence(): BehaviourObservation[] {
 }
 
 /** Thirty attempts both coaches coded alike, long ago (outside the currency window): a calibrated pair. */
-function calibrationHistory(): BehaviourObservation[] {
+function calibrationHistory(first = 'coach-a', second = 'coach-b'): BehaviourObservation[] {
   const rows: BehaviourObservation[] = [];
   for (let i = 0; i < 30; i += 1) {
     const polarity = i < 20 ? 'occurrence' : 'counterexample';
-    const at = { sessionId: `old-${i}`, observedAt: '2026-01-10T10:00:00.000Z', opportunityKey: `cal-${i}`, polarity } as const;
-    rows.push(chance(0, { ...at, observerAccountId: 'coach-a' }), chance(0, { ...at, observerAccountId: 'coach-b' }));
+    const at = {
+      sessionId: `old-${first}-${second}-${i}`, observedAt: '2026-01-10T10:00:00.000Z', opportunityKey: `cal-${i}`, polarity,
+    } as const;
+    rows.push(chance(0, { ...at, observerAccountId: first }), chance(0, { ...at, observerAccountId: second }));
   }
   return rows;
 }
 
+const idsOf = (rows: readonly BehaviourObservation[]) => rows.map((row) => row.observationId).sort();
+
 describe('the approved tiers', () => {
-  test('emerging: three sessions in one drill, one coach -- context-specific and single-observer', () => {
-    const result = tiersOf(emergingEvidence());
+  test('emerging: three sessions in one drill, one calibrated coach -- context-specific and single-observer', () => {
+    const result = tiersOf([...emergingEvidence(), ...calibrationHistory()]);
     expect(result.tier).toBe('emerging');
     expect(result.singleObserver).toBe(true);
     expect(result.standings.pattern.shortfalls).toEqual(['sessions', 'coded_chances', 'contexts', 'span', 'observers']);
   });
 
-  test('a pattern: 5 sessions, 7 of 8 chances, 2 drills, 15 days, 2 coaches', () => {
-    const result = tiersOf(patternEvidence());
+  test('a pattern: 5 sessions, 7 of 8 chances, 2 drills, 15 days, 2 calibrated coaches', () => {
+    const result = tiersOf([...patternEvidence(), ...calibrationHistory()]);
     expect(result.counts).toEqual(expect.objectContaining({ sessions: 5, codedChances: 8, occurrences: 7, contexts: 3, coaches: 2 }));
     expect(result.tier).toBe('pattern');
     expect(result.standings.established.met).toBe(false);
   });
 
-  test('established needs the two coaches to be a calibrated pair; without one it stays a pattern', () => {
+  test('established needs the two coaches to be a calibrated pair; each calibrated only with a third, it stays a pattern', () => {
     const evidence = establishedEvidence();
     expect(tiersOf([...evidence, ...calibrationHistory()]).tier).toBe('established');
-    const uncalibrated = tiersOf(evidence);
-    expect(uncalibrated.tier).toBe('pattern');
-    expect(uncalibrated.standings.established.shortfalls).toEqual(['observers']);
+    const notTogether = tiersOf([...evidence, ...calibrationHistory('coach-a', 'coach-c'), ...calibrationHistory('coach-b', 'coach-c')]);
+    expect(notTogether.unverifiedObservationIds).toEqual([]);
+    expect(notTogether.tier).toBe('pattern');
+    expect(notTogether.standings.established.shortfalls).toEqual(['observers']);
   });
 
-  test('not until calibrated: an attempt two uncalibrated coaches coded is shown, not counted', () => {
+  test('not until calibrated: coaches in no calibrated pair are shown, not counted', () => {
     const doubled = [
       chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-a' }),
       chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-b' }),
     ];
-    const result = tiersOf([...emergingEvidence(), ...doubled], false);
-    expect(result.unverifiedObservationIds).toHaveLength(2);
-    expect(result.counts.codedChances).toBe(5);
-    // With a calibrated history the same attempt counts once.
-    const calibrated = tiersOf([...emergingEvidence(), ...doubled, ...calibrationHistory()]);
+    const evidence = [...emergingEvidence(), ...doubled];
+    const result = tiersOf(evidence);
+    expect(result.unverifiedObservationIds).toEqual(idsOf(evidence));
+    expect(result.counts.codedChances).toBe(0);
+    expect(result.tier).toBeNull();
+    // With a calibrated history the double-coded attempt counts once.
+    const calibrated = tiersOf([...evidence, ...calibrationHistory()]);
     expect(calibrated.unverifiedObservationIds).toEqual([]);
     expect(calibrated.counts.codedChances).toBe(6);
   });
 
   test('a pattern lapses after the latest chances all missed', () => {
     const misses = [21, 22, 23].map((day) => chance(day, { polarity: 'counterexample', taskContextKey: 'task-bag' }));
-    const result = tiersOf([...patternEvidence(), ...misses]);
+    const result = tiersOf([...patternEvidence(), ...misses, ...calibrationHistory()]);
     expect(result.counts.trailingMisses).toBe(3);
     expect(result.standings.pattern.shortfalls).toContain('lapsed');
     expect(result.tier).not.toBe('pattern');
@@ -142,37 +156,42 @@ describe('the approved tiers', () => {
 
   test('evidence older than the currency window is history, not the athlete now', () => {
     const old = emergingEvidence().map((row) => ({ ...row, observedAt: '2026-02-01T10:00:00.000Z' }));
-    const result = tiersOf(old);
+    const result = tiersOf([...old, ...calibrationHistory()]);
     expect(result.counts.codedChances).toBe(0);
     expect(result.tier).toBeNull();
   });
 
-  test('an attempt read both ways withholds every tier until a person looks', () => {
+  test('an attempt read both ways is left out and listed for a person; the tiers stand on the rest', () => {
     const disputed = [
       chance(12, { opportunityKey: 'rep-9', observerAccountId: 'coach-a' }),
       chance(12, { opportunityKey: 'rep-9', observerAccountId: 'coach-a', polarity: 'counterexample' }),
     ];
-    const result = tiersOf([...patternEvidence(), ...disputed]);
-    expect(result.withheld).toContain('ATTEMPT_DISPUTED');
-    expect(result.tier).toBeNull();
+    const result = tiersOf([...patternEvidence(), ...disputed, ...calibrationHistory()]);
+    expect(result.disputed).toEqual({ attempts: 1, observationIds: idsOf(disputed) });
+    expect(result.withheld).toEqual([]);
+    expect(result.counts.codedChances).toBe(8);
+    expect(result.tier).toBe('pattern');
     expect(result.humanReviewRequired).toBe(true);
   });
 });
 
 describe('review fixes', () => {
-  test('two coaches not yet calibrated who disagree still withhold', () => {
+  test('two coaches not yet calibrated who disagree: the attempt is listed as disputed and withholds nothing', () => {
     const disputed = [
-      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-a' }),
-      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-c' }),
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-d', polarity: 'counterexample' }),
     ];
-    const result = tiersOf([...emergingEvidence(), ...disputed], false);
-    expect(result.withheld).toContain('ATTEMPT_DISPUTED');
-    expect(result.tier).toBeNull();
+    const result = tiersOf([...emergingEvidence(), ...disputed, ...calibrationHistory()]);
+    expect(result.disputed).toEqual({ attempts: 1, observationIds: idsOf(disputed) });
+    expect(result.unverifiedObservationIds).toEqual(idsOf(disputed));
+    expect(result.withheld).toEqual([]);
+    expect(result.tier).toBe('emerging');
   });
 
   test('a third coach does not undo a calibrated pair', () => {
+    // coach-c is calibrated with coach-a only, so its readings count, and coach-a and coach-b are still a calibrated pair.
     const third = [0, 10, 20].map((day) => chance(day, { observerAccountId: 'coach-c' }));
-    const result = tiersOf([...establishedEvidence(), ...calibrationHistory(), ...third]);
+    const result = tiersOf([...establishedEvidence(), ...calibrationHistory(), ...calibrationHistory('coach-a', 'coach-c'), ...third]);
     expect(result.counts.coaches).toBe(3);
     expect(result.tier).toBe('established');
   });
@@ -183,9 +202,10 @@ describe('review fixes', () => {
     const gym = calibrationHistory().map((row, index) => ({ ...row, athleteId: athletes[Math.floor(index / 2) % 3] }));
     const evidence = establishedEvidence();
     expect(tiersOf(evidence, true, { calibrationReadings: [...evidence, ...gym] }).tier).toBe('established');
-    // Only this athlete's 10: too few paired judgments.
-    expect(tiersOf(evidence, true, { calibrationReadings: [...evidence, ...gym.filter((row) => row.athleteId === ATHLETE)] }).tier)
-      .toBe('pattern');
+    // Only this athlete's 10: too few paired judgments, so no pair is calibrated and nothing counts.
+    const thin = tiersOf(evidence, true, { calibrationReadings: [...evidence, ...gym.filter((row) => row.athleteId === ATHLETE)] });
+    expect(thin.tier).toBeNull();
+    expect(thin.unverifiedObservationIds).toEqual(idsOf(evidence));
   });
 
   test('two athletes\' "rep-1" in the same session are two attempts, not one paired judgment', () => {
@@ -210,7 +230,7 @@ describe('review fixes', () => {
       observerAccountId: null, interpretation: 'ai_proposed',
       source: { type: 'computer_vision', quality: 'high', referenceId: `clip-${day}` },
     }));
-    const result = tiersOf([chance(0), ...model]);
+    const result = tiersOf([chance(0), ...model, ...calibrationHistory()]);
     expect(result.counts.codedChances).toBe(1);
     expect(result.tier).toBeNull();
   });
@@ -221,7 +241,7 @@ describe('review fixes', () => {
       chance(12), chance(15), chance(15, { taskContextKey: 'task-sparring' }),
       chance(12, { observerAccountId: 'coach-b', polarity: 'counterexample' }),
     ];
-    const result = tiersOf(rows);
+    const result = tiersOf([...rows, ...calibrationHistory()]);
     expect(result.counts.coaches).toBe(1);
     expect(result.singleObserver).toBe(true);
     expect(result.standings.pattern.shortfalls).toContain('observers');
@@ -235,8 +255,108 @@ describe('review fixes', () => {
       at('2027-03-11T23:00:00.000Z', 's2'), at('2027-03-11T23:10:00.000Z', 's2'),
       at('2027-03-15T22:00:00.000Z', 's3'),
     ];
-    const result = tiersOf(rows, true, { asOf: '2027-03-20T12:00:00.000Z' });
+    const result = tiersOf([...rows, ...calibrationHistory()], true, { asOf: '2027-03-20T12:00:00.000Z' });
     expect(result.counts.spanDays).toBe(7);
     expect(result.tier).toBe('emerging');
+  });
+});
+
+describe('who counts before calibration (Overwatch Q1 A on #2082; OD-2026-10-17-027 ruling 3)', () => {
+  test('no ratified calibration bar: nothing counts, every coach reading is shown as unverified, and the result says so', () => {
+    const evidence = patternEvidence();
+    const result = tiersOf([...evidence, ...calibrationHistory()], false);
+    expect(result.calibrationBarInForce).toBe(false);
+    expect(result.unverifiedObservationIds).toEqual(idsOf(evidence));
+    expect(result.counts.codedChances).toBe(0);
+    expect(result.tier).toBeNull();
+    expect(tiersOf([...evidence, ...calibrationHistory()]).calibrationBarInForce).toBe(true);
+  });
+
+  test('a lone coach in no calibrated pair counts toward nothing, not even emerging', () => {
+    const evidence = emergingEvidence();
+    const result = tiersOf(evidence);
+    expect(result.calibrationBarInForce).toBe(true);
+    expect(result.unverifiedObservationIds).toEqual(idsOf(evidence));
+    expect(result.counts.codedChances).toBe(0);
+    expect(result.singleObserver).toBe(false);
+    expect(result.tier).toBeNull();
+  });
+
+  test('two coaches who never coded the same attempt are no calibrated pair: their readings count for nothing', () => {
+    const result = tiersOf(patternEvidence());
+    expect(result.counts.coaches).toBe(0);
+    expect(result.tier).toBeNull();
+  });
+
+  test('unverified readings are counted separately, in attempts and in how many showed', () => {
+    const shownOnly = [chance(20, { observerAccountId: 'coach-c' }), chance(21, { observerAccountId: 'coach-c', polarity: 'counterexample' })];
+    const result = tiersOf([...emergingEvidence(), ...shownOnly, ...calibrationHistory()]);
+    expect(result.unverifiedObservationIds).toEqual(idsOf(shownOnly));
+    expect(result.unverifiedCounts).toEqual({ codedChances: 2, occurrences: 1 });
+    expect(result.counts.codedChances).toBe(5);
+    expect(result.tier).toBe('emerging');
+  });
+
+  test('a reading with no attempt named is judged by its coach like any other', () => {
+    const keyless = chance(20, { observerAccountId: 'coach-c', opportunityKey: undefined });
+    const result = tiersOf([...emergingEvidence(), keyless, ...calibrationHistory()]);
+    expect(result.unverifiedObservationIds).toEqual([keyless.observationId]);
+  });
+
+  test('an attempt coded together counts only when that pair is calibrated, even if each is calibrated with someone else', () => {
+    const together = [
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-a' }),
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-c' }),
+    ];
+    const history = [...calibrationHistory('coach-a', 'coach-b'), ...calibrationHistory('coach-b', 'coach-c')];
+    const result = tiersOf([...emergingEvidence(), ...together, ...history]);
+    expect(result.unverifiedObservationIds).toEqual(idsOf(together));
+    expect(result.counts.codedChances).toBe(5);
+  });
+
+  test('a person\'s reading with no coach named does not count', () => {
+    const nameless = chance(20, { observerAccountId: null });
+    const result = tiersOf([...emergingEvidence(), nameless, ...calibrationHistory()]);
+    expect(result.unverifiedObservationIds).toEqual([nameless.observationId]);
+    expect(result.counts.codedChances).toBe(5);
+  });
+});
+
+describe('disputed attempts (Overwatch Q4 A on #2082)', () => {
+  test('two calibrated coaches who disagree: the attempt counts for neither side', () => {
+    const disputed = [
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-a' }),
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ];
+    const result = tiersOf([...emergingEvidence(), ...disputed, ...calibrationHistory()]);
+    expect(result.disputed).toEqual({ attempts: 1, observationIds: idsOf(disputed) });
+    expect(result.counts).toEqual(expect.objectContaining({ codedChances: 5, occurrences: 5, sessions: 3 }));
+    expect(result.withheld).toEqual([]);
+    expect(result.tier).toBe('emerging');
+  });
+
+  test('a coach whose only sighting was a disputed attempt did not see it', () => {
+    const disputed = [
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-b' }),
+      chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-a', polarity: 'counterexample' }),
+    ];
+    const result = tiersOf([...emergingEvidence(), ...disputed, ...calibrationHistory()]);
+    expect(result.counts.coaches).toBe(1);
+    expect(result.singleObserver).toBe(true);
+  });
+
+  test('film contradicting a coach still withholds every tier', () => {
+    const contradicted = [
+      chance(12, { opportunityKey: 'rep-v', observerAccountId: 'coach-a' }),
+      chance(12, {
+        opportunityKey: 'rep-v', observerAccountId: null, interpretation: 'ai_proposed', polarity: 'counterexample',
+        source: { type: 'computer_vision', quality: 'high', referenceId: 'clip-v' },
+      }),
+    ];
+    const result = tiersOf([...patternEvidence(), ...contradicted, ...calibrationHistory()]);
+    expect(result.withheld).toEqual(['VIDEO_CONTRADICTS_OBSERVER']);
+    expect(result.disputed.attempts).toBe(1);
+    expect(result.standings.pattern).toEqual({ met: false, shortfalls: [] });
+    expect(result.tier).toBeNull();
   });
 });
