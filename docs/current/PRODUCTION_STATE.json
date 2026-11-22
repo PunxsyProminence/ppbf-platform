@@ -2,15 +2,15 @@
   "_readme": "Audit snapshot, not a controller and not bot-owned. Live Azure state and current GitHub workflow evidence outrank this file (docs/AI_DELIVERY_PIPELINE.md, Production-state records). Any authorized release verifier may propose an update only after directly observing the relevant environment -- workflow-run logs and live HTTPS probes count as observation of what they actually show, and nothing more. Use null / 'not_verified' rather than guessing; a wrong value here is worse than an honest gap.",
   "environments": {
     "staging": {
-      "deployed_sha": "7b2001d66bea757aff426dff649f8253a0a43f62",
-      "deployed_image_digest": "sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37",
-      "deployment_timestamp": "2026-11-09T01:19:25Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/42544381617",
+      "deployed_sha": "64eee64326c51e760c0a623ebf95e7e105976d53",
+      "deployed_image_digest": "sha256:1a73927569ac6fc0d7ba2f4db307746048ca3df9d908970b1bb15e72d9065f61",
+      "deployment_timestamp": "2026-11-22T21:23:03Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/45070988426",
       "container_app": "app-ppbf-staging",
-      "revision": "app-ppbf-staging--0000290",
-      "last_verified_by": "TV Timer Lead (Claude Code), 2026-11-09. It dispatched deploy-staging runs 40920362967 and 42544381617 and deploy-production run 42546308762; Jason approved the production environment in GitHub. Instruments: gh run view (job-step listings and job logs), gh api (run jobs and approvals) and the staging-image-digest artifacts of both staging runs, read-only. No live HTTPS probe beyond the workflow's own smoke checks, and no Azure read.",
-      "last_verified_at": "2026-11-09T02:24:43Z",
-      "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG (Release 36): deploy-staging run 42544381617, head 7b2001d66bea757aff426dff649f8253a0a43f62, inputs expected_sha 7b2001d66bea757aff426dff649f8253a0a43f62, schema_migrations_complete CONFIRMED (0 changes under infra/ or *.sql since fabeb7be), enable_shadow_gate false (SHADOW_CONTEXT_CONTRACT_VERSION 45 unchanged); job 128926098566 conclusion success, 34 steps: 25 success and 9 skipped (the SHADOW gate and its fixture steps, the gate being off). 'Verify Staging Schema Matches This Commit' and 'Build and Push Container Image to ACR' success. The staging-image-digest artifact reads sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37, the same as the run's 'release digest' line. 'Waiting on revision app-ppbf-staging--0000290'; poll 3 read 'Running 100' at 2026-11-09T01:19:25Z. NOT re-observed: known_staging_gaps (carried as history).",
+      "revision": "app-ppbf-staging--0000313",
+      "last_verified_by": "Production-state record fix (Claude Code side session started by App Overwatch), 2026-11-22. Read-only.",
+      "last_verified_at": "2026-11-22T21:34:36Z",
+      "last_verification_method": "az containerapp revision list (app-ppbf-staging, rg-ppbf-enterprise-staging): the only active revision is app-ppbf-staging--0000313, created 2026-11-22T21:22:12Z, traffic 100, Running. az containerapp show: its image is acrppbfenterprise.azurecr.io/ppbf-frontend@sha256:1a73927569ac6fc0d7ba2f4db307746048ca3df9d908970b1bb15e72d9065f61. gh run view 45070988426 (deploy-staging, conclusion success, head 64eee64326c51e760c0a623ebf95e7e105976d53, job 137357650699, 34 steps: 25 success and 9 skipped; EXPECTED_SHA 64eee643..., SCHEMA_MIGRATIONS_COMPLETE CONFIRMED; enable_shadow_gate false): 'Waiting on revision app-ppbf-staging--0000313', poll 8 read 'Running 100' at 2026-11-22T21:23:03Z (deployment_timestamp is that poll, as in earlier records). The run's staging-image-digest artifact, downloaded and read, equals the digest above, the run's 'release digest' line and the Azure image. apply-migrations run 45069168932 (conclusion success, head 64eee643, target staging, created 2026-11-22T20:55Z) ran before this deploy. NOT observed: any live HTTPS probe; the list of migrations applied to staging (only that run's target was read); known_staging_gaps (carried as history).",
       "known_staging_gaps": [
         "Outbound mail RESOLVED 2026-08-08T18:07Z. It was never a permissions gap and never a code gap: a token probe inside the container showed roles=[\"Mail.Send\"], and the refusal carried graph_error_code=ErrorAccessDenied, which is Exchange's application access policy rather than Entra. The policy was created 07:13Z and began enforcing between 07:54Z (last refusal) and 18:07Z (first success). Test-ApplicationAccessPolicy reported Granted the whole time because it evaluates configured state, not enforced state -- worth remembering before trusting it again.",
         "SHADOW gate Quick Round (athlete tier) flakiness history, preserved from the 57bc8a5 deploy record: gate step 12 filtered once and passed on retry during run 31513782551 (2026-08-11) -- the third sighting on that tier (2026-08-01, twice 2026-08-11). Under the gate's two-consecutive threshold, so no run failed. The 2026-08-15 gate run (31854517806) passed; its per-step retry behaviour was not re-inspected, so this history is carried, not extended.",
@@ -155,20 +155,31 @@
         "deployment_timestamp": "2026-10-29T17:27:41Z",
         "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/40920362967",
         "revision": "app-ppbf-staging--0000289"
+      },
+      "superseded_record_2026-11-22_release36": {
+        "note": "Carried, not deleted. Release 36 staging; correct from 2026-11-09T01:19:25Z until the 2026-11-22T21:23:03Z deploy above. Staging was redeployed after Release 36 and those deploys were not recorded here; this block is the Release 36 state as written by #1890.",
+        "deployed_sha": "7b2001d66bea757aff426dff649f8253a0a43f62",
+        "deployed_image_digest": "sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37",
+        "deployment_timestamp": "2026-11-09T01:19:25Z",
+        "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/42544381617",
+        "revision": "app-ppbf-staging--0000290",
+        "last_verified_by": "TV Timer Lead (Claude Code), 2026-11-09. It dispatched deploy-staging runs 40920362967 and 42544381617 and deploy-production run 42546308762; Jason approved the production environment in GitHub. Instruments: gh run view (job-step listings and job logs), gh api (run jobs and approvals) and the staging-image-digest artifacts of both staging runs, read-only. No live HTTPS probe beyond the workflow's own smoke checks, and no Azure read.",
+        "last_verified_at": "2026-11-09T02:24:43Z",
+        "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG (Release 36): deploy-staging run 42544381617, head 7b2001d66bea757aff426dff649f8253a0a43f62, inputs expected_sha 7b2001d66bea757aff426dff649f8253a0a43f62, schema_migrations_complete CONFIRMED (0 changes under infra/ or *.sql since fabeb7be), enable_shadow_gate false (SHADOW_CONTEXT_CONTRACT_VERSION 45 unchanged); job 128926098566 conclusion success, 34 steps: 25 success and 9 skipped (the SHADOW gate and its fixture steps, the gate being off). 'Verify Staging Schema Matches This Commit' and 'Build and Push Container Image to ACR' success. The staging-image-digest artifact reads sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37, the same as the run's 'release digest' line. 'Waiting on revision app-ppbf-staging--0000290'; poll 3 read 'Running 100' at 2026-11-09T01:19:25Z. NOT re-observed: known_staging_gaps (carried as history)."
       }
     },
     "production": {
-      "deployed_sha": "7b2001d66bea757aff426dff649f8253a0a43f62",
-      "deployed_image_digest": "sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37",
-      "deployment_timestamp": "2026-11-09T02:15:20Z",
-      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/42546308762",
+      "deployed_sha": "b6fa8fe648fc2408351004e0c5df027db45bfe7b",
+      "deployed_image_digest": "sha256:1bb1e18a781ffa9a175adeb6fef81efa60635d9576e0b0921897c70a309e75e5",
+      "deployment_timestamp": "2026-11-21T23:46:31Z",
+      "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44958860012",
       "container_app": "app-ppbf-production",
       "resource_group": "rg-ppbf-enterprise-staging",
-      "revision": "app-ppbf-production--0000194",
+      "revision": "app-ppbf-production--0000212",
       "app_origin": "https://www.punxsyprominence.org",
-      "last_verified_by": "TV Timer Lead (Claude Code), 2026-11-09. It dispatched deploy-staging runs 40920362967 and 42544381617 and deploy-production run 42546308762; Jason approved the production environment in GitHub. Instruments: gh run view (job-step listings and job logs), gh api (run jobs and approvals) and the staging-image-digest artifacts of both staging runs, read-only. No live HTTPS probe beyond the workflow's own smoke checks, and no Azure read.",
-      "last_verified_at": "2026-11-09T02:24:43Z",
-      "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG (Release 36): deploy-production run 42546308762, head 7b2001d66bea757aff426dff649f8253a0a43f62, dispatched by TV Timer Lead with confirm_sha 7b2001d66bea757aff426dff649f8253a0a43f62 (main's head at dispatch), release_digest sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37 (from the staging-image-digest artifact of deploy-staging run 42544381617), migrations_complete CONFIRMED, allow_rollback NO. The production environment was approved by PunxsyProminence (gh api .../approvals). Guard job 128931972151 (6 of 6 steps success) and build-and-deploy job 128932007846 (19 of 19 steps success, 02:13:22Z to 02:15:26Z), including Verify Production Schema Matches This Commit, Verify release digest exists in ACR and was built from this commit, Refuse To Deploy While SHADOW Jobs Are Waiting and Pilot API Smoke Checks. 'Latest revision app-ppbf-production--0000194 runs image ...@sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37' at 02:15:02Z; poll 4 read 'Running 100' at 2026-11-09T02:15:20Z.",
+      "last_verified_by": "Production-state record fix (Claude Code side session started by App Overwatch), 2026-11-22. Read-only.",
+      "last_verified_at": "2026-11-22T21:34:36Z",
+      "last_verification_method": "az containerapp revision list --all (app-ppbf-production, rg-ppbf-enterprise-staging): revisions 0000195 to 0000212 were created 2026-11-12T16:02:29Z to 2026-11-21T23:45:41Z; only app-ppbf-production--0000212 is active, traffic 100, Healthy, Running; 0000194 and 0000195 to 0000211 are inactive, traffic 0, Stopped. az containerapp show: image acrppbfenterprise.azurecr.io/ppbf-frontend@sha256:1bb1e18a781ffa9a175adeb6fef81efa60635d9576e0b0921897c70a309e75e5. gh run view 44958860012 (deploy-production, conclusion success, head b6fa8fe648fc2408351004e0c5df027db45bfe7b, created 2026-11-21T22:51:12Z, finished 23:46:36Z; jobs guard and build-and-deploy both success; build-and-deploy job 137012981727, 19 steps all success): guard logged CONFIRM_SHA b6fa8fe6... and RELEASE_DIGEST sha256:1bb1e18a...; 'Latest revision app-ppbf-production--0000212 runs image ...@sha256:1bb1e18a...' at 23:45:50Z; poll 8 read 'Running 100' at 23:46:31Z (deployment_timestamp is that poll). gh api .../actions/runs/44958860012/approvals: environment production, state approved, by PunxsyProminence; triggering actor PunxsyProminence. The digest is the one the run was given and the one Azure runs; the staging run that produced it was NOT looked up. NOT observed: any live HTTPS probe; production's applied-migration list (the staging migration run 45069168932 targeted staging only, per its own log; production was not read); known_production_gaps (carried as history).",
       "known_production_gaps": [
         "Production reference data is NOT seeded -- re-observed directly 2026-08-15: pilot.drill_library and pilot.disciplines both count 0 rows. The schema is present and the code is deployed, but seed-reference-data has never been run against production, so /coach/cohorts and /coach/disciplines render empty lists -- missing data, not a broken page. Still blocked on seed_account_id: drill-library (and therefore dataset 'all') requires it, production's active platform owner is Admin@punxsyprominence.org with a CAPITAL A, the lowercase row is retired, and no read-only workflow exposes the id -- it has to come from a human who can read it out of the database. Production also has ZERO session scripts (the seed for those is separately blocked on pilot_ssb_content, see the staging entry), so the newly deployed /coach/session-scripts browse renders an honest empty state until either seed is fixed or scripts are authored.",
         "Magic-link mail delivery is not_verified on production. It has never been attempted here -- no production account has auth_provider='magic_link', so nothing would be sent. Staging's refusal has since resolved on its own (see the staging entry), so the tenant-level condition that caused it is gone; production still needs its own access policy checked before anything is claimed.",
@@ -393,7 +404,167 @@
         "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/39966639567",
         "revision": "app-ppbf-production--0000193"
       },
-      "release_content_note_2026-11-09_release36": "OBSERVED with git log fabeb7be..7b2001d6 (9 commits; fabeb7be is an ancestor). Code: #1871 (GTT-01: the round clock from the gym-tv-timer package, pinned github:PunxsyProminence/gym-tv-timer#d24b44d123cf31b42699ee150d219479106ec474), #1875 (GTT-02b: the gym's sayings from the package; one test spy moved to the package module), #1876 (GTT-02a: PilotError and TV pairing from the package, one PilotError class, trap test). Research data and tooling: #1887 (A7-054 first author, A5-132 year), #1889 (the repair-research-baseline text action and its logs; the production repair itself is a separate run, 42023269418, still waiting on approval when this release shipped). Records: #1867, #1868, #1869, #1888. No migrations: 0 changes under infra/ or *.sql between fabeb7be and 7b2001d6 (git diff --name-only). SHADOW_CONTEXT_CONTRACT_VERSION 45 unchanged. First release with a github: dependency: npm ci installed gym-tv-timer inside the node:22-alpine image build (staging runs 40920362967 and 42544381617). Not verified: a real-TV run (pair, round, bell) against this release."
+      "release_content_note_2026-11-09_release36": "OBSERVED with git log fabeb7be..7b2001d6 (9 commits; fabeb7be is an ancestor). Code: #1871 (GTT-01: the round clock from the gym-tv-timer package, pinned github:PunxsyProminence/gym-tv-timer#d24b44d123cf31b42699ee150d219479106ec474), #1875 (GTT-02b: the gym's sayings from the package; one test spy moved to the package module), #1876 (GTT-02a: PilotError and TV pairing from the package, one PilotError class, trap test). Research data and tooling: #1887 (A7-054 first author, A5-132 year), #1889 (the repair-research-baseline text action and its logs; the production repair itself is a separate run, 42023269418, still waiting on approval when this release shipped). Records: #1867, #1868, #1869, #1888. No migrations: 0 changes under infra/ or *.sql between fabeb7be and 7b2001d6 (git diff --name-only). SHADOW_CONTEXT_CONTRACT_VERSION 45 unchanged. First release with a github: dependency: npm ci installed gym-tv-timer inside the node:22-alpine image build (staging runs 40920362967 and 42544381617). Not verified: a real-TV run (pair, round, bell) against this release.",
+      "superseded_record_2026-11-22_release36": {
+        "note": "Carried, not deleted. Release 36 production; correct from 2026-11-09T02:15:20Z until the 2026-11-12 deploy that created revision 0000195. STALE FOR 13 DAYS: 18 further deploy-production runs concluded success (listed in release_history_2026-11-12_to_2026-11-21) and none was recorded here. Found 2026-11-22 when Azure showed revision 0000212 against this file's 0000194.",
+        "deployed_sha": "7b2001d66bea757aff426dff649f8253a0a43f62",
+        "deployed_image_digest": "sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37",
+        "deployment_timestamp": "2026-11-09T02:15:20Z",
+        "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/42546308762",
+        "revision": "app-ppbf-production--0000194",
+        "last_verified_by": "TV Timer Lead (Claude Code), 2026-11-09. It dispatched deploy-staging runs 40920362967 and 42544381617 and deploy-production run 42546308762; Jason approved the production environment in GitHub. Instruments: gh run view (job-step listings and job logs), gh api (run jobs and approvals) and the staging-image-digest artifacts of both staging runs, read-only. No live HTTPS probe beyond the workflow's own smoke checks, and no Azure read.",
+        "last_verified_at": "2026-11-09T02:24:43Z",
+        "last_verification_method": "FROM THE RUN'S OWN JOB STEPS AND LOG (Release 36): deploy-production run 42546308762, head 7b2001d66bea757aff426dff649f8253a0a43f62, dispatched by TV Timer Lead with confirm_sha 7b2001d66bea757aff426dff649f8253a0a43f62 (main's head at dispatch), release_digest sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37 (from the staging-image-digest artifact of deploy-staging run 42544381617), migrations_complete CONFIRMED, allow_rollback NO. The production environment was approved by PunxsyProminence (gh api .../approvals). Guard job 128931972151 (6 of 6 steps success) and build-and-deploy job 128932007846 (19 of 19 steps success, 02:13:22Z to 02:15:26Z), including Verify Production Schema Matches This Commit, Verify release digest exists in ACR and was built from this commit, Refuse To Deploy While SHADOW Jobs Are Waiting and Pilot API Smoke Checks. 'Latest revision app-ppbf-production--0000194 runs image ...@sha256:634dafc5825c0278f8f50133da05b91fa244063b49077c658f44c5bd6aaf2e37' at 02:15:02Z; poll 4 read 'Running 100' at 2026-11-09T02:15:20Z."
+      },
+      "release_history_2026-11-12_to_2026-11-21": {
+        "note": "The 18 deploy-production runs with conclusion success created on or after 2026-11-12, read 2026-11-22 from gh run list (run id, head sha, run updatedAt) and az containerapp revision list --all (revision createdTime). Runs and revisions are paired oldest-first, and each revision was created shortly before its run finished (run 43665536976 is the longest: created 2026-11-15T01:58Z, finished 11:52Z, revision 0000198 created 11:51:40Z). The pairing is INFERRED from that timing, not read from each run's log. Digests of the intermediate releases were not read (null); only the last one (0000212) is verified in the production entry. Release 36 itself is carried in superseded_record_2026-11-22_release36.",
+        "releases": [
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/43250985820",
+            "deployed_sha": "9517bf1116f4cc666af788e0f25621e1324e1d36",
+            "run_finished_at": "2026-11-12T16:03:00Z",
+            "revision": "app-ppbf-production--0000195",
+            "revision_created_at": "2026-11-12T16:02:29Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/43360274522",
+            "deployed_sha": "a27ee86c99621a7a6459e4c9432978e794924487",
+            "run_finished_at": "2026-11-13T03:41:30Z",
+            "revision": "app-ppbf-production--0000196",
+            "revision_created_at": "2026-11-13T03:40:57Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/43635171605",
+            "deployed_sha": "410d05c9958716b9b4457f99bf2dedd73192fb3e",
+            "run_finished_at": "2026-11-14T20:06:40Z",
+            "revision": "app-ppbf-production--0000197",
+            "revision_created_at": "2026-11-14T20:06:06Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/43665536976",
+            "deployed_sha": "dad85991c586a8e3592220927baa5d9c89ecc3f9",
+            "run_finished_at": "2026-11-15T11:52:33Z",
+            "revision": "app-ppbf-production--0000198",
+            "revision_created_at": "2026-11-15T11:51:40Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/43723752806",
+            "deployed_sha": "bd9603e5c5b38039afe61de8af91e5248b624561",
+            "run_finished_at": "2026-11-15T15:54:00Z",
+            "revision": "app-ppbf-production--0000199",
+            "revision_created_at": "2026-11-15T15:53:05Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/43862612369",
+            "deployed_sha": "909f4502a8a5bf7bb3a0c4b7b2b294598c78527d",
+            "run_finished_at": "2026-11-16T12:02:59Z",
+            "revision": "app-ppbf-production--0000200",
+            "revision_created_at": "2026-11-16T12:02:24Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/43925299062",
+            "deployed_sha": "374d570387af6c3b97e01f1ef4ca3f7c47f4d7cd",
+            "run_finished_at": "2026-11-16T18:09:30Z",
+            "revision": "app-ppbf-production--0000201",
+            "revision_created_at": "2026-11-16T18:08:43Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44088659218",
+            "deployed_sha": "4032c4bb0d0403eab9895f5c15a0219c609794f5",
+            "run_finished_at": "2026-11-17T13:04:34Z",
+            "revision": "app-ppbf-production--0000202",
+            "revision_created_at": "2026-11-17T13:03:55Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44149208828",
+            "deployed_sha": "dc0f4a5e8eaedb3a8b1ac0fd6d5458dec7167cdf",
+            "run_finished_at": "2026-11-17T18:37:08Z",
+            "revision": "app-ppbf-production--0000203",
+            "revision_created_at": "2026-11-17T18:36:12Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44280883074",
+            "deployed_sha": "b833306faaf1c58fbf76638f6a9af12f0da307c0",
+            "run_finished_at": "2026-11-18T10:01:43Z",
+            "revision": "app-ppbf-production--0000204",
+            "revision_created_at": "2026-11-18T10:01:01Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44519205190",
+            "deployed_sha": "99ec01d3c463760c5357e6c6d3505906e9d138b4",
+            "run_finished_at": "2026-11-19T11:58:18Z",
+            "revision": "app-ppbf-production--0000205",
+            "revision_created_at": "2026-11-19T11:57:48Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44536463824",
+            "deployed_sha": "eb3cc422936d39f24927ad30841689466628eec0",
+            "run_finished_at": "2026-11-19T13:47:50Z",
+            "revision": "app-ppbf-production--0000206",
+            "revision_created_at": "2026-11-19T13:46:55Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44585396770",
+            "deployed_sha": "6ea31ed20c6ba930df65db004ea22330abe87bf5",
+            "run_finished_at": "2026-11-19T18:16:13Z",
+            "revision": "app-ppbf-production--0000207",
+            "revision_created_at": "2026-11-19T18:15:17Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44591420941",
+            "deployed_sha": "f97f7c107cbc721e19ef6f2c2e4ded6077dea43b",
+            "run_finished_at": "2026-11-19T18:50:19Z",
+            "revision": "app-ppbf-production--0000208",
+            "revision_created_at": "2026-11-19T18:49:23Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44752563952",
+            "deployed_sha": "1769758bd97ad82d879c539197dee91a9f6b22d0",
+            "run_finished_at": "2026-11-20T14:23:49Z",
+            "revision": "app-ppbf-production--0000209",
+            "revision_created_at": "2026-11-20T14:23:24Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44863981688",
+            "deployed_sha": "76c0797bd31f790cad2902e032dad3543f8b32c3",
+            "run_finished_at": "2026-11-21T04:08:32Z",
+            "revision": "app-ppbf-production--0000210",
+            "revision_created_at": "2026-11-21T04:08:03Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44868998724",
+            "deployed_sha": "4f77642a5ad9b99fa2f6d770b55639aab7cd6a1e",
+            "run_finished_at": "2026-11-21T05:10:06Z",
+            "revision": "app-ppbf-production--0000211",
+            "revision_created_at": "2026-11-21T05:09:12Z",
+            "deployed_image_digest": null
+          },
+          {
+            "deployment_run": "https://github.com/PunxsyProminence/ppbf-platform/actions/runs/44958860012",
+            "deployed_sha": "b6fa8fe648fc2408351004e0c5df027db45bfe7b",
+            "run_finished_at": "2026-11-21T23:46:36Z",
+            "revision": "app-ppbf-production--0000212",
+            "revision_created_at": "2026-11-21T23:45:41Z",
+            "deployed_image_digest": null
+          }
+        ]
+      }
     }
   },
   "schema": {
@@ -445,8 +616,8 @@
     "note": "Empty until the audit workflow's gap register is reconciled into intake/tickets/. Do not hand-populate this from source reading -- that is exactly the source-code-claims-mistaken-for-truth failure this file exists to prevent. The entries above are recorded from observed deploy runs and live probes, not from reading source."
   },
   "docs_only_verification_2026-08-19": "SUPERSEDED 2026-08-23. Both environments now run 2238ea17; see the environment entries above.\n\nSUPERSEDED 2026-08-22 -- kept because a note that was believed and then found wrong is worth more in place than deleted. This note said, correctly at the time and directly from the Actions API, that the most recent successful runs of both workflows sat on 1da832e9 (PR #391) and that ~122 commits from roughly PR #412 onward were undeployed. Both halves are now false: production advanced three times (latest run 32418590207 on a11ea7c1, 2026-08-20) and staging advanced several more (latest run 32526743194 on 247bf977, 2026-08-21). The undeployed batch is 22 commits and 2 migrations from a11ea7c1, not ~122 commits. The failure mode is worth naming: the note carried its own date but the deployed_sha fields it agreed with did not read as dated, so a later audit sized the pending release at 25 migrations and 62 commits from the stale value and was wrong by an order of magnitude in the direction that makes a release look scarier than it is.",
-  "last_updated_by": "TV Timer Lead (Claude Code), 2026-11-09: both environment entries moved to Release 36 (7b2001d6, the gym-tv-timer plug-back plus research data and records) from GitHub Actions run evidence only (see each entry's last_verification_method); Release 35 and the separate gym-tv-timer staging deploy carried as superseded records.",
-  "last_updated_at": "2026-11-09T02:24:43Z",
+  "last_updated_by": "Production-state record fix (Claude Code side session started by App Overwatch), 2026-11-22: staging moved to 64eee643 (revision 0000313) and production to b6fa8fe6 (revision 0000212) from direct az and gh reads (see each entry's last_verification_method); the Release 36 entries carried as superseded records and the 18 intermediate production releases listed.",
+  "last_updated_at": "2026-11-22T21:34:36Z",
   "production_seed_identity_2026-08-24": "check-database run 32770083477 (check=seed-identity, target=production, read-only) resolved production privileged accounts: 8 organizations, 34 privileged accounts, 6 active. The active privileged seeder is \"Admin@punxsyprominence.org\" (CAPITAL A), platform_owner, org ppbf-default-org. The lowercase \"admin@punxsyprominence.org\" exists and is active=NO. The check emits an explicit CASE-DIFFERING DUPLICATES warning; copy the exact string including capitals. Staging uses a DIFFERENT account and its value must never be reused here.",
   "production_reference_data_2026-08-24": "SEEDED. seed-reference-data run 32788628209 (target=production, dataset=all, mode=apply, seed_account_id=Admin@punxsyprominence.org, organization_id left blank so it resolved from the app-ppbf-production default org secret) completed success 2026-08-24T23:25:48Z against ppbf-pg-195892. All four loaders PASS. Inserted, matching the dry-run (run 32787708007) exactly: drill_library 119, drill_scale_levels 357, drill_stop_rules 674, drill_cues 258 rows processed, disciplines 5, competence_levels 6, cohort_definitions 6, session_scripts 3, session_script_blocks 65, session_script_renderings 4 -- every one reporting \"0 already present\", i.e. a genuine first fill of an empty production catalog set, not a re-run. The dry-run had proved the same numbers with nothing written (\"Rolled back. Nothing was written.\"), which is why the apply was safe to make. Run summary: \"Written. The loaders are idempotent -- re-running adds no duplicates.\" NOT OBSERVED: no authenticated end-user read of these catalogs through the deployed app; the evidence is the loader output, not a browser."
 }
