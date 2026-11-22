@@ -478,6 +478,31 @@ describe('a hand-off that leaves out a label column (field_labels, evidence, sta
     });
   });
 
+  it('a track block keeps them too, though in that child file they are plain content columns', () => {
+    // Data-integrity review on #2103: matched by role ('annotation', root files only), a hand-off of one
+    // track's blocks without these columns wiped their labels, exit 0.
+    const BLOCKS = 'training-tracks/seed_track_blocks.csv';
+    // The shared copy leaves the training-tracks folder out; this case needs the committed blocks.
+    fs.cpSync(path.join(REAL_SEED_DATA, 'training-tracks'), path.join(seedData, 'training-tracks'), { recursive: true });
+    const committed = table(BLOCKS, REAL_SEED_DATA);
+    const block = committed.find((row) => LABELS.every((name) => row[name].trim() !== ''));
+    if (!block) throw new Error('no committed track block carries all three labels');
+    const track = committed.filter((row) => row.track_id === block.track_id);
+    const title = `${block.title} Revised without labels.`;
+    writePackageFile('seed_track_blocks.csv', track.map((row) => (row.track_block_id === block.track_block_id ? { ...row, title } : row)), LABELS);
+
+    const { code, output } = prepare(true);
+    expect(code).toBe(0);
+    expect(output).toContain(`${BLOCKS}: changed`);
+    const after = table(BLOCKS);
+    expect(after.find((row) => row.track_block_id === block.track_block_id)?.title).toBe(title);
+    for (const row of track) {
+      expect(after.find((candidate) => candidate.track_block_id === row.track_block_id)).toMatchObject({
+        field_labels: row.field_labels, evidence: row.evidence, stage_keys: row.stage_keys,
+      });
+    }
+  });
+
   it('a new drill has no committed row to keep from: its label cells are blank', () => {
     writePackageFile('seed_drill_library.csv', [newDrill()], LABELS);
     expect(prepare(true).code).toBe(0);

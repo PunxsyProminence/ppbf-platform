@@ -66,6 +66,9 @@ export interface PrepareInput {
 
 type Cells = Record<string, string>;
 
+/** The Backbone label columns (specs/common.ts; datasets/contentLabels.ts). */
+const LABEL_COLUMNS = ['field_labels', 'evidence', 'stage_keys'] as const;
+
 function resolveNewIds(spec: FileSpec, cells: Cells, minted: MintedIds): void {
   for (const column of spec.columns) {
     const value = cells[column.name];
@@ -121,8 +124,9 @@ function preparedCells(
   // A label column (field_labels, evidence, stage_keys) the header leaves out keeps the committed cell
   // too, as a load keeps the stored labels (datasets/contentLabels.ts withStoredLabels; lane GD,
   // Q-GD2-2 = B). Read as blank, it wiped the labels, and a present blank cell means "no labels".
-  for (const column of spec.columns) {
-    if (column.role === 'annotation' && !header.includes(column.name)) cells[column.name] = committed ? normalizeCell(committed[column.name]) : '';
+  // By name, not role: a track block carries the three as plain content columns (specs/trainingTracks.ts).
+  for (const name of LABEL_COLUMNS) {
+    if (spec.columns.some((column) => column.name === name) && !header.includes(name)) cells[name] = committed ? normalizeCell(committed[name]) : '';
   }
 
   const mint = spec.mint;
