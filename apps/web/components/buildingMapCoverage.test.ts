@@ -72,11 +72,6 @@ const EXCLUDED: Record<string, string> = {
  * only with a reason as concrete as the ones above.
  */
 const PENDING_TRIAGE: Record<string, string> = {
-  '/admin/export': 'real admin feature ("Take Your Roster With You") -- wants a door, roles unconfirmed',
-  '/admin/gear': 'real admin feature ("Equipment and margin") -- wants a door, roles unconfirmed',
-  '/admin/gear/vendors': 'real admin feature ("Suppliers and accounts") -- wants a door, roles unconfirmed',
-  '/admin/athletes': 'renders a notice ("Athlete records are managed per gym") -- may be a signpost, not a surface',
-  '/admin/platform/overview': 'platform-owner gated ("Platform Owner Access Required") -- door depends on whether platform_owner gets a corridor at all',
 };
 
 /** Every route in app/ that renders a page, as a URL path. */

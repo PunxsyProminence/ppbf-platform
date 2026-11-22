@@ -21,7 +21,7 @@
  *      are told apart.
  */
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import ParentDevelopmentBlocksPage from './page';
@@ -112,22 +112,28 @@ async function renderPage(stubs: Stubs = {}) {
 }
 
 async function pickChild(id: string) {
+  // The family pages' one picker (FAM-11): a button per child, by name.
+  const name = CHILDREN.find((child) => child.athlete_id === id)?.full_name ?? id;
   await act(async () => {
-    fireEvent.change(screen.getByLabelText('Which child'), { target: { value: id } });
+    fireEvent.click(screen.getByRole('button', { name }));
   });
 }
 
 afterEach(() => {
   jest.restoreAllMocks();
+  // A pick is remembered (src/lib/chosenChild.ts); one test's pick must not
+  // choose the next test's opening child.
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe('choosing which child', () => {
   test('the picker offers exactly the children the guardian gate returned', async () => {
     await renderPage();
 
-    const picker = screen.getByLabelText('Which child') as HTMLSelectElement;
-    expect(Array.from(picker.options).map((o) => o.value).filter(Boolean))
-      .toEqual(['ath-1', 'ath-2']);
+    const picker = screen.getByRole('group', { name: 'Which child' });
+    expect(within(picker).getAllByRole('button').map((button) => button.textContent))
+      .toEqual(['Rosa Delgado', 'Marcus Webb']);
   });
 
   test('the child list comes from the guardian-gated route, not a roster read', async () => {
@@ -227,5 +233,53 @@ describe('a plan never lands under the wrong child', () => {
     // And still is: Rosa's failure did not blank it.
     expect(screen.getByText('Marcus block')).toBeTruthy();
     expect(screen.queryByText(/could not be loaded just now/i)).toBeNull();
+  });
+});
+
+describe('the family picker (FAM-11) and the one back link (FAM-18)', () => {
+  test('two children and none remembered: it asks "Choose a child"', async () => {
+    await renderPage();
+
+    expect(screen.getByText('Choose a child')).toBeTruthy();
+    expect(blockReads).toEqual([]);
+  });
+
+  test('a one-child family is shown no picker and their plan opens at once', async () => {
+    await renderPage({ children: [CHILDREN[0]] });
+
+    expect(screen.queryByRole('group', { name: 'Which child' })).toBeNull();
+    expect(screen.queryByText('Choose a child')).toBeNull();
+    expect(blockReads).toEqual(['ath-1']);
+    expect(screen.getByText('Blocks for Rosa Delgado')).toBeTruthy();
+  });
+
+  test('the remembered child opens, among two', async () => {
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'ath-2');
+    await renderPage();
+
+    expect(blockReads).toEqual(['ath-2']);
+    expect(screen.getByRole('button', { name: 'Marcus Webb' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('a child with no name on file is "Your child", never the id', async () => {
+    await renderPage({ children: [{ athlete_id: 'ath-1', full_name: 'Rosa Delgado' }, { athlete_id: 'ath-9' } as (typeof CHILDREN)[number]] });
+
+    expect(screen.getByRole('button', { name: 'Your child' })).toBeTruthy();
+    expect(document.body.textContent).not.toContain('ath-9');
+  });
+
+  test('the back link is the shared one', async () => {
+    await renderPage();
+
+    expect(screen.queryByText('Back to the Parent Hub')).toBeNull();
+    // No session is cached in this test, so BackHome names no role's home.
+    expect(screen.getByRole('link', { name: 'Back to your home page' }).getAttribute('href')).toBe('/dashboard');
+    // Rendered look, checked 2026-11-20: a ghost button on this page's leather
+    // is ink on dark. The back link stands on the family ground, outside the
+    // leather header, and the picker on its own paper panel.
+    expect(screen.getByRole('link', { name: 'Back to your home page' }).closest('header, .mat-leather')).toBeNull();
+    const picker = screen.getByRole('group', { name: 'Which child' });
+    expect(picker.className).toContain('mat-paper');
+    expect(picker.closest('.mat-leather')).toBeNull();
   });
 });

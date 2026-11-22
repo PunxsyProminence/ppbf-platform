@@ -28,6 +28,9 @@ export interface SetupLine {
   /** The screen where the step is done, or null when the org admin has none to go to. */
   href: string | null;
   linkLabel: string | null;
+  /** A second screen for the same step, when the work is split over two (the guardian step). */
+  alsoHref?: string | null;
+  alsoLinkLabel?: string | null;
 }
 
 async function count(sql: string, organizationId: string): Promise<number> {
@@ -64,7 +67,9 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
       href: null,
       linkLabel: null,
     }),
-    line({ key: 'coaches', title: 'At least one coach', href: '/admin/people', linkLabel: 'Add a coach' }, async () => {
+    // Gym Office opens on the tab a link names (lane AS-10, OFF-09), so each step
+    // lands on its own form, not on the roster.
+    line({ key: 'coaches', title: 'At least one coach', href: '/admin/people?tab=invite-staff', linkLabel: 'Add a coach' }, async () => {
       const n = await count(
         `select count(*)::int as n
            from pilot.accounts a
@@ -76,7 +81,7 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
         ? { state: 'done', detail: `${plural(n, 'active coach', 'active coaches')}.` }
         : { state: 'to_do', detail: 'No active coach yet. A class needs a coach, and adding an athlete names one.' };
     }),
-    line({ key: 'athletes', title: 'Athletes on the roster', href: '/admin/people', linkLabel: 'Add an athlete' }, async () => {
+    line({ key: 'athletes', title: 'Athletes on the roster', href: '/admin/people?tab=add-athlete', linkLabel: 'Add an athlete' }, async () => {
       const n = await count(
         `select count(*)::int as n from pilot.athletes a
           where a.organization_id = $1 and a.active_flag and a.deleted_at is null`,
@@ -87,7 +92,9 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
         : { state: 'to_do', detail: 'No athlete on the roster yet.' };
     }),
     line(
-      { key: 'athlete-sign-in', title: 'Athletes can sign in', href: '/admin/activation-codes', linkLabel: 'Activation codes' },
+      // Gym Office is the one place a code is issued (lane AS-10, OFF-08; Overwatch Q5 A):
+      // Add Athlete gives a roster athlete with no sign-in a code; a re-issue is on their row.
+      { key: 'athlete-sign-in', title: 'Athletes can sign in', href: '/admin/people?tab=add-athlete', linkLabel: 'Add Athlete' },
       async () => {
         // From the roster, so an athlete never issued a code counts too: an
         // athlete gets a login only when the first code is issued.
@@ -115,11 +122,26 @@ export async function readGymSetupStatus(organizationId: string): Promise<SetupL
           ...(waiting > 0 ? [`${plural(waiting, 'is', 'are')} waiting to redeem an activation code`] : []),
           ...(noCode > 0 ? [`${plural(noCode, 'has', 'have')} not been issued a code yet`] : []),
         ];
-        return { state: 'to_do', detail: `${parts.join('; ')}.` };
+        // The link opens Add Athlete, which gives a roster athlete with no sign-in a
+        // code. A code not redeemed is replaced on the athlete's own row, so the line
+        // names that control too (lane AS-10, AS10-1 review).
+        const reissue = waiting > 0 ? ' An unredeemed code is replaced from the athlete\'s row on Gym Office: Issue New Activation Code.' : '';
+        return { state: 'to_do', detail: `${parts.join('; ')}.${reissue}` };
       },
     ),
     line(
-      { key: 'guardians', title: 'A guardian for every athlete under 18', href: '/admin/athlete-consent', linkLabel: 'Guardians and consent' },
+      // A guardian who signs in is added on Gym Office; a family with no email gets a
+      // paper-only guardian on Media Consent Audit (OD-2026-10-07-009 ruling 3). The count
+      // below takes either (lane AS-10, OFF-09; Overwatch Q6 A).
+      {
+        key: 'guardians',
+        title: 'A guardian for every athlete under 18',
+        // role=parent: the invite opens with Parent / Guardian chosen, not Coach.
+        href: '/admin/people?tab=invite-staff&role=parent',
+        linkLabel: 'Add a guardian',
+        alsoHref: '/admin/athlete-consent',
+        alsoLinkLabel: 'Media Consent Audit',
+      },
       async () => {
         const n = await count(
           `select count(*)::int as n from pilot.athletes a

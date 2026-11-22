@@ -1003,6 +1003,7 @@ export default function SessionScriptLiveDelivery({
         key={run.run_id}
         runId={run.run_id}
         tied={Boolean(run.class_id) && !classCancelled}
+        classId={run.class_id ?? null}
         onPresentCount={presentFromMarks}
         onRunNotLive={() => void resyncAfterNotLive()}
       />

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import RoleStandaloneView from '@/components/RoleStandaloneView';
+import AthleteRecordLinks from '@/components/AthleteRecordLinks';
 import { PASSBOOK_PAGE } from '@/components/athleteRecordPages';
 import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { apiBase } from '@/lib/apiBase';
@@ -221,10 +222,14 @@ export default function CoachPassbookPage() {
         {book && pages && bookState === 'loaded' && (
           <>
             <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)]">
-              <h2 className="t-command text-[length:var(--t-lg)]">{book.athlete.full_name}</h2>
+              <h2 id="passbook-athlete-name" className="t-command text-[length:var(--t-lg)]">{book.athlete.full_name}</h2>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 {book.athlete.weight_class || 'No weight class recorded'} · {humanize(book.athlete.gym_status)}
               </p>
+              {/* The rest of this athlete's record, each page opened on them
+                  (lane AS-11, CF-15). The id is the book's own, which the
+                  server returned for the athlete asked for. */}
+              <AthleteRecordLinks athleteId={book.athlete.athlete_id} labelledBy="passbook-athlete-name" />
             </section>
 
             <Page title="Attendance" empty={pages.attendance.length === 0}>

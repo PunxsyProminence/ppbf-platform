@@ -39,6 +39,9 @@ function installFetch(respond: (call: Call, index: number) => { status: number; 
   return calls;
 }
 
+// "Evidence Review" not followed by " Queue": the old name for /evidence.
+const BARE_EVIDENCE_REVIEW = /Evidence Review(?! Queue)/;
+
 const created = { status: 201, json: { ok: true, document: { document_id: 'doc_9' } } };
 
 function fillForm() {
@@ -74,7 +77,7 @@ describe('LibraryTextIntakePanel', () => {
     expect(status.textContent).toContain('Pending Review');
     expect(status.textContent).toContain(`in ${total} parts`);
     expect(status.textContent).toContain('SHADOW cannot cite it yet');
-    expect(screen.getByRole('link', { name: 'Evidence Review' }).getAttribute('href')).toBe('/evidence');
+    expect(screen.getByRole('link', { name: 'Evidence Review Queue' }).getAttribute('href')).toBe('/evidence');
 
     // Cleared for the next excerpt, same source kept.
     expect((screen.getByLabelText('Source text') as HTMLTextAreaElement).value).toBe('');
@@ -131,9 +134,32 @@ describe('LibraryTextIntakePanel', () => {
     await click('Save to Library as pending');
     await click('Leave it incomplete');
 
-    expect(screen.getByRole('alert').textContent).toContain('still listed in Evidence Review');
+    // AS12-2c (OD-2026-10-17-001 ruling 1): the page is "Evidence Review Queue"
+    // (its title), so the sentence names it that way and no other.
+    expect(screen.getByRole('alert').textContent).toContain('still listed in Evidence Review Queue.');
+    expect(screen.getByRole('alert').textContent).not.toMatch(BARE_EVIDENCE_REVIEW);
     expect((screen.getByLabelText('Source text') as HTMLTextAreaElement).disabled).toBe(false);
     expect(screen.getByRole('button', { name: 'Save to Library as pending' })).toBeTruthy();
+  });
+
+  it('says the same page name when the entry was left unconfirmed (no document id)', async () => {
+    installFetch(() => ({ status: 500 }));
+    render(<LibraryTextIntakePanel sources={SOURCES} />);
+    fillForm();
+    await click('Save to Library as pending');
+    await click('Leave it incomplete');
+
+    const text = screen.getByRole('alert').textContent ?? '';
+    expect(text).toContain('Left unconfirmed.');
+    expect(text).toContain('it is listed in Evidence Review Queue, where it cannot be indexed or approved');
+    expect(text).not.toMatch(BARE_EVIDENCE_REVIEW);
+  });
+
+  it('names the page by its title in the intro sentence, and nowhere in the panel by the old name', () => {
+    const { container } = render(<LibraryTextIntakePanel sources={SOURCES} />);
+
+    expect(container.textContent).toContain('until it is indexed and approved in Evidence Review Queue.');
+    expect(container.textContent).not.toMatch(BARE_EVIDENCE_REVIEW);
   });
 
   it('shows no form when the gym has no registered source', () => {

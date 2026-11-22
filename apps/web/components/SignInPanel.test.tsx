@@ -132,6 +132,17 @@ describe('every way in still works', () => {
     expect(container.querySelector('a[href="/activate"]')).toBeTruthy();
   });
 
+  /* One name for one link (lane AS-8, scrub ATH-15, Q14 A on #2020; OD-2026-10-17-001
+     ruling 1): /athlete/sign-in calls its /activate link "Set up your sign-in", so this
+     panel does too. */
+  test('the activation link has the athlete sign-in page\'s name', async () => {
+    const { container } = await renderPanel();
+
+    const link = screen.getByRole('link', { name: 'Set up your sign-in' });
+    expect(link.getAttribute('href')).toBe('/activate');
+    expect(container.textContent ?? '').not.toContain('Set up your account');
+  });
+
   test('someone who has forgotten a PIN is not left without a door', async () => {
     const { container } = await renderPanel();
 

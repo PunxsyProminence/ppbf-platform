@@ -1030,7 +1030,9 @@ function ShadowChatPageContent() {
         setMessages([welcomeMessage()]);
         setHeavyBagMode(false);
       }
-      setSessionNotice(`Deleted "${session.title}".`);
+      // Said the same whether or not the chat was flagged, so a member is
+      // never told one was (lane HF7; Jason on Q1, 2026-11-21: "A for both").
+      setSessionNotice(`Deleted "${session.title}". Anything the gym must keep for safety is kept for two years.`);
     } catch (error) {
       handleSessionActionError(error, session, 'SHADOW could not delete that session.');
     } finally {
@@ -1643,8 +1645,9 @@ function ShadowChatPageContent() {
                 </p>
               ) : deletionRequest?.status === 'completed' ? (
                 <p className="t-muted">
-                  Your SHADOW conversation history was cleared. Anything you have said since is
-                  still here, and you can ask again.
+                  Your SHADOW conversation history was cleared, except anything the gym must keep
+                  for safety, which is kept for two years. Anything you have said since is still
+                  here, and you can ask again.
                 </p>
               ) : (
                 <>

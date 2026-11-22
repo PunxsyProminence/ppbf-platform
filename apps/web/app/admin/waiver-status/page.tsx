@@ -421,7 +421,7 @@ export default function WaiverComplianceAuditPage() {
               screen and widened the page (#1482 item 5). Unchanged above ~900px. */}
           <i aria-hidden="true" className="lamp lamp--green right-[max(8%,73px)]" />
           <header className="mat-wood rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
-            <p className="t-eyebrow text-[color:var(--brass-200)]">Admin Workspace</p>
+            <p className="t-eyebrow text-[color:var(--brass-200)]">Safety</p>
             <h1
               className="t-gothic mt-[var(--s3)] text-[color:var(--bone-100)]"
               style={{ fontSize: 'var(--t-2xl)' }}
@@ -433,6 +433,13 @@ export default function WaiverComplianceAuditPage() {
               photo &amp; media, travel -- so a missing waiver is visible without looking up athletes one at a
               time. Photo &amp; media consent has its own dedicated audit with guardian-level detail; that link
               is below.
+            </p>
+            {/* Lane AS-10, OFF-19: the waiver this page marks is the same record Waivers & Consent
+                keeps (both POST domain-upsert, entity_type 'waiver'). */}
+            <p className="t-body mt-[var(--s3)] max-w-4xl">
+              A waiver marked here is the same record kept on{' '}
+              <Link href="/admin/consent" className="underline">Waivers &amp; Consent</Link>, which lists who
+              signed and when.
             </p>
             <p className="t-body mt-[var(--s3)] max-w-4xl">
               Tonight is one answer per athlete. It follows training holds and medical clearance only.
@@ -610,7 +617,7 @@ export default function WaiverComplianceAuditPage() {
 
           <div className="mt-[var(--s6)] flex flex-wrap gap-[var(--s3)]">
             <Link href="/admin/athlete-consent" className="btn btn--ghost">
-              Photo &amp; Media Consent Audit
+              Media Consent Audit
             </Link>
             <BackHome />
           </div>

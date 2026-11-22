@@ -155,7 +155,8 @@ it.each(['athlete', 'coach', 'parent', 'staff', 'volunteer', 'board'])(
   (role) => {
     renderAs(role);
 
-    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
+    // The session bar's own Home (/dashboard); the job bar may draw a second Home beside it.
+    expect(screen.getAllByRole('link', { name: 'Home' }).some((link) => link.getAttribute('href') === '/dashboard')).toBe(true);
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
   },
 );
@@ -285,7 +286,8 @@ describe('the deny screen keeps this bar out of it', () => {
     renderAs('board');
 
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
+    // The session bar's own Home (/dashboard); the job bar may draw a second Home beside it.
+    expect(screen.getAllByRole('link', { name: 'Home' }).some((link) => link.getAttribute('href') === '/dashboard')).toBe(true);
   });
 
   it('is not fooled by a route the map has never heard of', () => {
@@ -440,9 +442,10 @@ describe('the phone bar keeps the whole room name', () => {
     const caption = screen.getByText('Session active');
     expect(classesOf(caption)).toEqual(expect.arrayContaining(['hidden', 'sm:inline']));
 
-    const trigger = screen.getByRole('button', { name: /front office/i });
+    // AS-4 (U2-4c): the plate names Search's room for the page, from the Room Map.
+    const trigger = screen.getByRole('button', { name: /where you are: the family room/i });
     const room = trigger.querySelector('.corridor-trigger-lbl') as HTMLElement;
-    expect(room.textContent).toBe('Front Office');
+    expect(room.textContent).toBe('The Family Room');
     expect(classesOf(room)).not.toContain('hidden');
 
     const surface = trigger.querySelector('.corridor-trigger-here') as HTMLElement;
@@ -508,5 +511,28 @@ describe('the gym tablet idle watcher rides every signed-in bar', () => {
     mockUsePathname.mockReturnValue('/login');
     renderAs('athlete');
     expect(screen.queryByTestId('tablet-idle-watch')).toBeNull();
+  });
+});
+
+describe('the job bar rides the full session bar (AS-4, U2-4b)', () => {
+  it('draws the coach their job sections as tags', () => {
+    renderAs('coach');
+    const nav = screen.getByRole('navigation', { name: 'Your jobs' });
+    expect(nav.className).toMatch(/job-bar--rail/);
+    expect(nav.querySelector('.leather-tag')).toBeTruthy();
+  });
+
+  it('draws no bar for an athlete (Q14 A) or a signed-out visitor', () => {
+    renderAs('athlete');
+    expect(screen.queryByRole('navigation', { name: 'Your jobs' })).toBeNull();
+    cleanup();
+    renderAs(null);
+    expect(screen.queryByRole('navigation', { name: 'Your jobs' })).toBeNull();
+  });
+
+  it('keeps it off a refusal screen, like every other control', () => {
+    mockUsePathname.mockReturnValue('/shadow');
+    renderAs('board');
+    expect(screen.queryByRole('navigation', { name: 'Your jobs' })).toBeNull();
   });
 });

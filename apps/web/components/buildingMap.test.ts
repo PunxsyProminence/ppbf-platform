@@ -19,6 +19,7 @@ import {
   visibleDoors,
 } from './buildingMap';
 import type { ClubRole } from './roleRoutes';
+import { parentMayOpenPath } from '../src/server/pilot/parentResources';
 
 describe('the building map itself', () => {
   it('has no duplicate hrefs', () => {
@@ -541,8 +542,11 @@ describe('doorForPath', () => {
   });
 
   it('prefers the longest prefix over a shorter one', () => {
-    // Both /admin and /admin/platform are doors; the deeper one wins.
-    expect(doorForPath('/admin/platform/overview')?.href).toBe('/admin/platform');
+    // Both /admin and /admin/platform are doors; the deeper one wins. (The
+    // example used to be /admin/platform/overview, which has its own door since
+    // AS-4 4a, so it now resolves to that door.)
+    expect(doorForPath('/admin/platform/not-a-door')?.href).toBe('/admin/platform');
+    expect(doorForPath('/admin/platform/overview')?.href).toBe('/admin/platform/overview');
   });
 
   it('returns null for a path in no room', () => {
@@ -643,5 +647,76 @@ describe('the SHADOW Human Review door', () => {
   it('describes the queue without calling every ticket a refusal', () => {
     const door = BUILDING.find((d) => d.href === '/admin/shadow-reviews');
     expect(door?.hint).toBe('SHADOW chats sent for human review. Critical tickets first.');
+  });
+});
+
+/*
+ * AS-4 4a: "Menus show only pages a person can open" (display only). /wall leaves
+ * the athlete and parent menus; a board member sees only the seats their session
+ * may open (BOA-05, by resolveBoardSeatAccess); the new admin and platform-owner
+ * doors (QV = A).
+ */
+describe('menus show only pages a person can open (AS-4 4a)', () => {
+  const hrefs = (role: Parameters<typeof visibleDoors>[0], viewer?: Parameters<typeof visibleDoors>[1]) =>
+    visibleDoors(role, viewer).map((d) => d.href);
+  const SEATS = ['president', 'chair', 'vice-chair', 'treasurer', 'secretary', 'safety-director', 'community-director', 'at-large'];
+  const seatDoors = (list: string[]) => list.filter((href) => SEATS.some((seat) => href === `/board/${seat}`));
+
+  it('takes The Wall out of the athlete and parent menus and leaves it for every other role', () => {
+    expect(hrefs('athlete')).not.toContain('/wall');
+    expect(hrefs('parent')).not.toContain('/wall');
+    for (const role of ['coach', 'admin', 'platform_owner', 'staff', 'volunteer', 'board'] as const) {
+      expect(hrefs(role)).toContain('/wall');
+    }
+    // A signed-out visitor's menu is as before.
+    expect(hrefs(null)).toContain('/wall');
+  });
+
+  it("changes only the menus: The Wall stays OPEN, and a family resource may still send a parent there", () => {
+    expect(BUILDING.find((d) => d.href === '/wall')?.roles).toBe(OPEN);
+    expect(parentMayOpenPath('/wall')).toBe(true);
+  });
+
+  it('marks each seat workspace door with its seat', () => {
+    for (const seat of SEATS) expect(BUILDING.find((d) => d.href === `/board/${seat}`)?.seat).toBe(seat);
+    expect(BUILDING.filter((d) => d.seat)).toHaveLength(SEATS.length);
+  });
+
+  it("shows a seat holder only their own seat's door", () => {
+    expect(seatDoors(hrefs('board', { boardSeats: ['treasurer'] }))).toEqual(['/board/treasurer']);
+  });
+
+  it('shows a member who holds two seats both of them (a small board doubles up)', () => {
+    expect(seatDoors(hrefs('board', { boardSeats: ['secretary', 'at-large'] }))).toEqual(['/board/secretary', '/board/at-large']);
+    expect(seatDoors(hrefs('board', { boardSeats: ['secretary', 'chair'] }))).toHaveLength(8);
+  });
+
+  it('shows the president and the chair every seat, as they may open every seat', () => {
+    expect(seatDoors(hrefs('board', { boardSeats: ['president'] }))).toHaveLength(8);
+    expect(seatDoors(hrefs('board', { boardSeats: ['chair'] }))).toHaveLength(8);
+  });
+
+  it('shows a board session with no seat no seat door, and the platform owner all eight', () => {
+    expect(seatDoors(hrefs('board', { boardSeats: null }))).toEqual([]);
+    expect(seatDoors(hrefs('board', { boardSeats: [] }))).toEqual([]);
+    expect(seatDoors(hrefs('board', {}))).toEqual([]);
+    expect(seatDoors(hrefs('platform_owner', {}))).toHaveLength(8);
+  });
+
+  it('keeps the board hub and the board pages whatever the seat', () => {
+    for (const href of ['/board', '/board/aggregates', '/board/escalation-monitoring', '/board/compliance-monitoring']) {
+      expect(hrefs('board', { boardSeats: ['treasurer'] })).toContain(href);
+    }
+  });
+
+  it('leaves seat doors to the role alone where a menu passes no session yet (until 4c)', () => {
+    expect(seatDoors(hrefs('board'))).toHaveLength(8);
+  });
+
+  it('opens the four new admin doors to the admin only, and All Gyms Overview to the platform owner only', () => {
+    for (const href of ['/admin/athletes', '/admin/export', '/admin/gear', '/admin/gear/vendors']) {
+      expect(BUILDING.find((d) => d.href === href)?.roles).toEqual(['admin']);
+    }
+    expect(BUILDING.find((d) => d.href === '/admin/platform/overview')?.roles).toEqual(['platform_owner']);
   });
 });

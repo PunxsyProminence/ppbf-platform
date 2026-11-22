@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
+import Link from 'next/link';
 import BackHome from '@/components/BackHome';
 
 // Data quality (register module 134's admin surface). One check today:
@@ -142,7 +143,9 @@ export default function DataQualityPage() {
             </div>
           )}
 
-          <div className="mt-[var(--s5)]">
+          <div className="mt-[var(--s5)] flex flex-wrap gap-[var(--s3)]">
+            {/* Guardians are added and linked there (lane AS-10, OFF-21). */}
+            <Link href="/admin/people" className="btn btn--ghost">Gym Office</Link>
             <BackHome />
           </div>
         </div>

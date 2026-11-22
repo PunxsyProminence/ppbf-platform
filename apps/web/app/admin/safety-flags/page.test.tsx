@@ -252,3 +252,24 @@ describe('lane N4-02: the copy matches what the queue does', () => {
     expect(hrefs).not.toContain('/admin');
   });
 });
+
+// Lane AS-10, AS10-5 (app scrub OFF-11): Safety Flags leads back to Safety
+// Review, which admits an admin only.
+describe('Safety Review link (lane AS-10)', () => {
+  test('an admin is offered Safety Review', async () => {
+    global.fetch = mockFetch({ flags: [] });
+    await act(async () => {
+      render(<SafetyFlagsBoardPage />);
+    });
+    expect(screen.getByRole('link', { name: 'Safety Review' }).getAttribute('href')).toBe('/admin/safety-review');
+  });
+
+  test('a coach is not', async () => {
+    sessionAs('coach');
+    global.fetch = mockFetch({ flags: [] });
+    await act(async () => {
+      render(<SafetyFlagsBoardPage />);
+    });
+    expect(screen.queryByRole('link', { name: 'Safety Review' })).toBeNull();
+  });
+});

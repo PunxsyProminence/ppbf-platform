@@ -17,6 +17,7 @@ import {
   SHADOW_DISCLOSURE_CLASSIFICATION,
   SHADOW_DISCLOSURE_MEDICAL_ONLY_CUES,
   SHADOW_DISCLOSURE_REASON,
+  shadowDisclosureFilesEscalation,
 } from './shadowDisclosure';
 
 const mockFileEscalation = jest.mocked(fileEscalation);
@@ -57,7 +58,7 @@ describe('detectShadowDisclosure', () => {
     expect(detectShadowDisclosure('My dad hits me and it hurts', 'athlete')).not.toBeNull();
   });
 
-  test.each(['coach', 'parent', 'organization_admin', 'admin', 'staff', 'volunteer', 'board', 'platform_owner'])(
+  test.each(['coach', 'organization_admin', 'admin', 'staff', 'volunteer', 'board', 'platform_owner'])(
     'role %s is out of scope',
     (role) => {
       expect(detectShadowDisclosure('My dad hits me', role)).toBeNull();
@@ -67,6 +68,49 @@ describe('detectShadowDisclosure', () => {
   test('the medical-only cue ids are real scan cues', () => {
     for (const cue of SHADOW_DISCLOSURE_MEDICAL_ONLY_CUES) {
       expect(ATHLETE_VOICE_TRIAGED_HIGH_CUES).toContain(cue);
+    }
+  });
+});
+
+// HF8-1 B (Jason, 2026-11-21, Q1 = B "office review only", relayed by
+// Overwatch on #2083): a parent's SHADOW message gets the athlete's scan and
+// the same carve-outs. A match is office review only: the org admin's SHADOW
+// review row for that one exchange (OD-2026-10-07-009 ruling 4), never a
+// coach alert or an escalation entry.
+describe('a parent\'s message (HF8-1, Q1 = B)', () => {
+  test.each(F076_SENTENCES)('a parent typing "$message" is a disclosure', ({ message, namesGymStaff: staff }) => {
+    const disclosure = detectShadowDisclosure(message, 'parent');
+    expect(disclosure).not.toBeNull();
+    // The same reading as an athlete's, except that it files no escalation.
+    expect({ ...disclosure, filesEscalation: true }).toEqual(detectShadowDisclosure(message, 'athlete'));
+    expect(disclosure?.filesEscalation).toBe(false);
+    expect(disclosure?.namesGymStaff).toBe(staff);
+  });
+
+  test.each(F076_SENTENCES)('an athlete\'s "$message" files an escalation', ({ message }) => {
+    expect(detectShadowDisclosure(message, 'athlete')?.filesEscalation).toBe(true);
+  });
+
+  test('a parent\'s disclosure files nothing, even when an athlete id is passed', async () => {
+    const disclosure = detectShadowDisclosure('My coach touched me and told me not to tell anyone', 'parent')!;
+    await expect(fileShadowDisclosureEscalation({
+      organizationId: 'org-1', athleteId: 'ATH-1', conversationId: 'conv-1', disclosure,
+    })).resolves.toBeNull();
+    expect(mockFileEscalation).not.toHaveBeenCalled();
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
+  test('the carve-outs hold for a parent as for an athlete', () => {
+    expect(detectShadowDisclosure('How do I throw a better jab?', 'parent')).toBeNull();
+    expect(detectShadowDisclosure('My legs are sore after roadwork, what should I stretch?', 'parent')).toBeNull();
+    expect(detectShadowDisclosure('I think I broke my thumb on the bag', 'parent')).toBeNull();
+    expect(detectShadowDisclosure('How do I keep my guard up when he punches me?', 'parent')).toBeNull();
+  });
+
+  test('only an athlete\'s disclosure files an escalation; a parent\'s is office review only', () => {
+    expect(shadowDisclosureFilesEscalation('athlete')).toBe(true);
+    for (const role of ['parent', 'coach', 'organization_admin', 'admin', 'staff', 'volunteer', 'board', 'platform_owner', '']) {
+      expect(shadowDisclosureFilesEscalation(role)).toBe(false);
     }
   });
 });
@@ -243,9 +287,38 @@ describe('a disclosure wins over the non-emergency medical withhold', () => {
     expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'athlete'))).toBe(base);
   });
 
-  test('a parent or coach sending the same words is unchanged (athletes only, as F-076)', () => {
+  test('a coach sending the same words is unchanged (coaches are not scanned)', () => {
+    const message = 'my coach hits me and it hurts';
+    const base = validateShadowRequest(message, 'coach', 'org');
+    expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'coach'))).toBe(base);
+  });
+
+  // HF8-1 B: the F-093 change applies to a parent (Overwatch on #2083,
+  // comment 7065230094: "the pain-word change (F-093) applies").
+  test('a parent\'s disclosure with a pain word is answered, not withheld (F-093, Q1 = B)', () => {
     const message = 'my coach hits me and it hurts';
     const base = validateShadowRequest(message, 'parent', 'org');
+    expect(base.valid).toBe(false);
+    expect(base.classification).toBe('personal_health_concern');
+    expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'parent'))).toEqual({
+      valid: true, highRisk: true, topic: base.topic, classification: SHADOW_DISCLOSURE_CLASSIFICATION,
+    });
+  });
+
+  test('a parent\'s disclosure with no pain word is marked high-risk and still answered (Q1 = B)', () => {
+    const message = 'My dad hits me';
+    const base = validateShadowRequest(message, 'parent', 'org');
+    expect(base.valid).toBe(true);
+    expect(base.highRisk).not.toBe(true);
+    const marked = markShadowDisclosure(base, detectShadowDisclosure(message, 'parent'));
+    expect(marked).toEqual({ ...base, highRisk: true, classification: SHADOW_DISCLOSURE_CLASSIFICATION });
+    expect(marked.valid).toBe(true);
+  });
+
+  test('a parent\'s pain report that is no disclosure is still withheld as main had it', () => {
+    const message = 'My legs are sore after roadwork';
+    const base = validateShadowRequest(message, 'parent', 'org');
+    expect(base.classification).toBe('personal_health_concern');
     expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'parent'))).toBe(base);
   });
 
@@ -329,5 +402,125 @@ describe('fileShadowDisclosureEscalation', () => {
     const disclosure = detectShadowDisclosure('I am scared of the older kids', 'athlete')!;
     await fileShadowDisclosureEscalation({ organizationId: 'org-1', athleteId: 'ATH-1', conversationId: null, disclosure });
     expect(mockFileEscalation.mock.calls[0][0].severity).toBe('high');
+  });
+});
+
+// HF1 and Overwatch's Q1/Q2 on PR 2059 (lane HF12). Invented sentences.
+describe('HF1: the new phrasings file from SHADOW chat', () => {
+  test.each([
+    'im suicidal',
+    'kms',
+    'i want to end my life',
+    'i want to kill my self',
+    'i don´t feel safe',
+  ])('files, coach of record included: %p', (message) => {
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.adminOnly).toBe(false);
+  });
+
+  test.each([
+    'my uncle molested me',
+    'i got raped',
+    'he groped me',
+    'he asked me for nudes',
+  ])('sexual abuse files admin-only and critical (Q1 = A): %p', (message) => {
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure?.adminOnly).toBe(true);
+    expect(isCriticalShadowDisclosure(disclosure)).toBe(true);
+  });
+
+  test.each([
+    'i want to end my life, i hate sparring',
+    'im suicidal and my jab is bad',
+    'he molested me after pad work',
+  ])('files even in boxing context: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).not.toBeNull();
+  });
+
+  test('crisis phrasings are critical', () => {
+    expect(isCriticalShadowDisclosure(detectShadowDisclosure('im suicidal', 'athlete'))).toBe(true);
+  });
+});
+
+describe('HF1: boxing talk files nothing', () => {
+  test.each([
+    'hit me with your best shot',
+    'hit me with your best combo',
+    'give me your best shot on the pads',
+    'i ran 5 kms before sparring',
+    'we did suicides after rounds',
+    'kill it in sparring tonight',
+    'this drill is killing me',
+  ])('null: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toBeNull();
+  });
+
+  test('a person outside the gym still overrides "your best shot"', () => {
+    expect(detectShadowDisclosure('my dad hit me and said thats your best shot', 'athlete')).not.toBeNull();
+  });
+
+  test('naming a coach still files in boxing context (Overwatch 2026-10-15, decision 2)', () => {
+    expect(detectShadowDisclosure('coach hit me with your best shot on purpose', 'athlete')).not.toBeNull();
+  });
+});
+
+describe('HF1 review: sexual abuse in the present tense routes admin-only', () => {
+  test.each([
+    'my uncle is sexually abusing me',
+    'my uncle is sexually abusing me after sparring rounds',
+    'i think he is grooming me',
+  ])('admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')?.adminOnly).toBe(true);
+  });
+});
+
+// HF12b (PR 2076), safeguarding review round 7: a spelled-out staff word with a
+// symbol for a letter or mixed gaps routed admin-only on main and must still.
+// Invented phrases.
+describe('HF12b: spelled-out staff words keep main\'s routing', () => {
+  test.each([
+    'my c o @ c h hit me',
+    'my c.o.@.c.h hits me',
+    'c.o.a.c. h hit me',
+    'my c o a c  h hurt me on purpose',
+    'c o @ c h punched me in sparring',
+    'my c o a c  h punched me in sparring',
+    'my . c-o-a-c . h . broke . my . nose',
+    'my c o.a.c.h hit me',
+    'my c-o-a-c h broke my nose',
+  ])('files admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  test.each([
+    'he got me alone n r***ped me',
+    'u r***ped me',
+    'he got me alone n r . ped me',
+    'he_got_me_alone_n_r@ped_me',
+  ])('an obfuscated word after a text-speak letter files admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  // The spelled-out reading adds routing evidence; it never removes main's.
+  test.each([
+    'm y c o a c h h i t s m e',
+    'he t o u c h e d m e',
+  ])('a spelled-out staff or touch word routes admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  test('text-speak before the sparring-intent words still overrides boxing context', () => {
+    expect(detectShadowDisclosure('he kept hitting me in sparring o k i said stop', 'athlete')).not.toBeNull();
+  });
+});
+
+describe('HF12b: the spelled-out reading only adds routing evidence', () => {
+  test('a spelled-out sparring-intent phrase overrides boxing context', () => {
+    expect(detectShadowDisclosure('he hit me in sparring o n p u r p o s e', 'athlete')).not.toBeNull();
+  });
+
+  test('a spelled-out boxing word does not suppress a disclosure main filed', () => {
+    expect(detectShadowDisclosure('he hits me when we s p a r', 'athlete')).not.toBeNull();
   });
 });

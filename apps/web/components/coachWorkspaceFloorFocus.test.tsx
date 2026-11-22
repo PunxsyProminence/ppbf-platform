@@ -31,6 +31,7 @@ interface Routes {
   barrierReports?: Route;
   escalationsGet?: Route;
   attendanceToday?: Route;
+  cards?: Route;
   escalationsPost?: (body: { action?: string; escalation_id?: string }) => Response;
 }
 
@@ -66,6 +67,7 @@ function installFetch(routes: Routes = {}): jest.Mock {
     if (url.includes('/api/pilot/coach/barrier-reports')) {
       return routes.barrierReports ? routes.barrierReports() : jsonResponse({ ok: true, barrierReports: [], truncated: false });
     }
+    if (url.includes('/api/pilot/coach/cards')) return routes.cards ? routes.cards() : jsonResponse({ items: [], workouts: [] });
     if (url.includes('/api/pilot/escalations')) {
       if (init?.method === 'POST') {
         const body = JSON.parse(String(init?.body ?? '{}')) as { action?: string; escalation_id?: string };
@@ -89,6 +91,9 @@ async function renderWorkspace(routes: Routes = {}): Promise<jest.Mock> {
 }
 
 const floor = () => within(screen.getByRole('region', { name: 'The floor' }));
+/* The "Needs you now" pager is the home's strip since lane 6C7's 7b (it was the
+   board's card): the item, Open, Acknowledge and Next are found there. */
+const needs = () => within(screen.getByRole('region', { name: /^Needs you now/ }));
 
 function escalation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -120,21 +125,21 @@ test('an open escalation is first on the floor, and acknowledging it there sends
     },
   });
 
-  expect(floor().getByText('Needs you now · 1 of 1')).toBeTruthy();
-  expect(floor().getByRole('heading', { name: 'Jordan P.' })).toBeTruthy();
+  expect(needs().getByText('Needs you now · 1 of 1')).toBeTruthy();
+  expect(needs().getByRole('heading', { name: 'Jordan P.' })).toBeTruthy();
 
   const before = fetchMock.mock.calls.length;
-  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  fireEvent.click(needs().getByRole('button', { name: 'Open' }));
   expect(fetchMock.mock.calls.length).toBe(before);
 
   // Two presses, each its own event: inside one act() the first would not have armed it yet.
-  pressArmed(floor().getByRole('button', { name: 'Acknowledge' }));
+  pressArmed(needs().getByRole('button', { name: 'Acknowledge' }));
   await act(async () => {});
 
   expect(posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc_1' }]);
   // Seen, so it leaves the floor's queue; the panel below still lists it.
-  expect(floor().queryByText('Needs you now · 1 of 1')).toBeNull();
-  expect(floor().getByRole('heading', { name: 'Nothing needs you right now' })).toBeTruthy();
+  expect(needs().queryByText('Needs you now · 1 of 1')).toBeNull();
+  expect(needs().getByRole('heading', { name: 'Nothing needs you right now' })).toBeTruthy();
 });
 
 test('a failed pain-report read is shown on the floor first, never as "nothing needs you"', async () => {
@@ -142,9 +147,9 @@ test('a failed pain-report read is shown on the floor first, never as "nothing n
     painReports: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }),
   });
 
-  expect(floor().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(floor().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
-  expect(floor().getByText('Pain reports')).toBeTruthy();
+  expect(needs().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
+  expect(needs().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
+  expect(document.querySelector('[data-focus-kind="feed"]')?.textContent).toContain('Pain reports');
 });
 
 test('a pain report the coach home cannot draw marks the pain feed failed, never "nothing needs you" (lane U2-6b-2)', async () => {
@@ -158,11 +163,13 @@ test('a pain report the coach home cannot draw marks the pain feed failed, never
     }),
   });
 
-  expect(floor().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(floor().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
-  expect(floor().getByText('Pain reports')).toBeTruthy();
+  expect(needs().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
+  expect(needs().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
+  expect(document.querySelector('[data-focus-kind="feed"]')?.textContent).toContain('Pain reports');
   // The floor says it in the panel's own failed-read words.
-  expect(floor().getByText(/Unable to load athlete pain reports/)).toBeTruthy();
+  expect(needs().getByText(/Unable to load athlete pain reports/)).toBeTruthy();
+  // ...and the strip's pain count is "?", never the one row it could draw (7b).
+  expect(document.querySelector('[data-needs-count="pain"] [data-needs-count-value]')?.textContent).toBe('?');
   expect(screen.queryByText(/No athlete on your roster has reported pain/)).toBeNull();
 });
 
@@ -171,15 +178,15 @@ test('a failed escalation read is shown on the floor first, ahead of any report'
     escalationsGet: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }),
   });
 
-  expect(floor().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(floor().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
-  expect(floor().getByText('Safety escalations')).toBeTruthy();
+  expect(needs().queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
+  expect(needs().getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
+  expect(document.querySelector('[data-focus-kind="feed"]')?.textContent).toContain('Safety escalations');
 });
 
 test('with every read healthy and empty, the floor says nothing has been reported', async () => {
   await renderWorkspace({ athletesList: roster });
-  expect(floor().getByRole('heading', { name: 'Nothing needs you right now' })).toBeTruthy();
-  expect(floor().getByText(/not that everyone is fine/)).toBeTruthy();
+  expect(needs().getByRole('heading', { name: 'Nothing needs you right now' })).toBeTruthy();
+  expect(needs().getByText(/not that everyone is fine/)).toBeTruthy();
 });
 
 test('the coach home\'s pain list, read on load and Refresh, says to press Refresh for new reports (QJ = B, #2023)', async () => {
@@ -252,17 +259,20 @@ test('every open escalation, pain report and barrier report the panels hold is o
     }),
   });
 
-  expect(floor().getByText('Needs you now · 1 of 4')).toBeTruthy();
-  const needs = floor().getByText('Needs you').closest('.coach-floor-focus__gauge') as HTMLElement;
-  expect(needs.querySelector('.coach-floor-focus__gauge-value')?.textContent).toBe('4');
+  expect(needs().getByText('Needs you now · 1 of 4')).toBeTruthy();
+  // The strip's counts, one per list: two open escalations (the acknowledged one is not counted), one pain
+  // report, one barrier report, and the cards read answered with nothing to verify.
+  const value = (key: string) =>
+    document.querySelector(`[data-needs-count="${key}"] [data-needs-count-value]`)?.textContent;
+  expect([value('escalations'), value('pain'), value('barrier'), value('cards')]).toEqual(['2', '1', '1', '0']);
   // Safety first: the open escalations lead, in the order the server sent them.
-  expect(floor().getByRole('heading', { name: 'Jordan P.' })).toBeTruthy();
-  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
-  expect(floor().getByRole('heading', { name: 'Athlete ID ath_unknown' })).toBeTruthy();
-  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
-  expect(floor().getByText('Pain report')).toBeTruthy();
-  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
-  expect(floor().getByText('Family barrier report')).toBeTruthy();
+  expect(needs().getByRole('heading', { name: 'Jordan P.' })).toBeTruthy();
+  fireEvent.click(needs().getByRole('button', { name: 'Next →' }));
+  expect(needs().getByRole('heading', { name: 'Athlete ID ath_unknown' })).toBeTruthy();
+  fireEvent.click(needs().getByRole('button', { name: 'Next →' }));
+  expect(needs().getByText('Pain report')).toBeTruthy();
+  fireEvent.click(needs().getByRole('button', { name: 'Next →' }));
+  expect(needs().getByText('Family barrier report')).toBeTruthy();
 });
 
 /* ONE PLACE PER ACTION (Jason 2026-10-03, option A). On the Dashboard every
@@ -270,7 +280,7 @@ test('every open escalation, pain report and barrier report the panels hold is o
    stay complete -- acknowledged rows included -- so nothing a coach could see
    before is lost. Off the Dashboard the board is absent and the lists keep
    their own buttons, so the actions are never unreachable. */
-test('on the Dashboard each report action is on the board only, and the full lists stay complete below it', async () => {
+test('on the Dashboard each report action is on the strip only, and the full lists stay complete below it', async () => {
   await renderWorkspace({
     athletesList: roster,
     escalationsGet: () => jsonResponse({
@@ -311,25 +321,26 @@ test('on the Dashboard each report action is on the board only, and the full lis
   expect(screen.getByText('Left shoulder')).toBeTruthy();
   expect(screen.getByText('We lost our ride on Tuesdays.')).toBeTruthy();
 
-  // No action below the board: none until the coach opens an item on it.
+  // No action below the strip: none until the coach opens an item on it.
   expect(screen.queryAllByRole('button', { name: 'Acknowledge' })).toHaveLength(0);
   expect(screen.queryAllByRole('link', { name: /record what you did/i })).toHaveLength(0);
   expect(screen.queryAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(0);
 
-  // Each one, opened on the board, is there exactly once on the page.
-  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  // Each one, opened on the strip, is there exactly once on the page.
+  fireEvent.click(needs().getByRole('button', { name: 'Open' }));
   expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(1);
-  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
-  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
-  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  fireEvent.click(needs().getByRole('button', { name: 'Next →' }));
+  fireEvent.click(needs().getByRole('button', { name: 'Next →' }));
+  fireEvent.click(needs().getByRole('button', { name: 'Open' }));
   expect(screen.getAllByRole('link', { name: /record what you did/i })).toHaveLength(1);
-  fireEvent.click(floor().getByRole('button', { name: 'Next →' }));
-  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  fireEvent.click(needs().getByRole('button', { name: 'Next →' }));
+  fireEvent.click(needs().getByRole('button', { name: 'Open' }));
   expect(screen.getAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(1);
 
-  // Off the Dashboard the board is gone and the lists carry the actions.
+  // Off the Dashboard the strip and the board are gone and the lists carry the actions.
   fireEvent.click(screen.getByRole('button', { name: /^Goals/ }));
   expect(screen.queryByRole('region', { name: 'The floor' })).toBeNull();
+  expect(screen.queryByRole('region', { name: /^Needs you now/ })).toBeNull();
   expect(screen.getAllByRole('button', { name: 'Acknowledge' })).toHaveLength(2);
   expect(screen.getAllByRole('link', { name: /record what you did/i })).toHaveLength(1);
   expect(screen.getAllByRole('link', { name: /Post to the Family's Page/ })).toHaveLength(1);
@@ -357,23 +368,23 @@ test('a live-run read that failed shows the session gauge as unknown, never "Non
   expect(floor().queryByRole('link', { name: 'Start a session' })).toBeNull();
 });
 
-/* CF-05 (lane U1). Off the Dashboard the Group / One-on-One toggle stays, and
-   says what it switches: the Floor tab's block template, not the session. */
-test('off the Dashboard the toggle names itself a template, and the board has none', async () => {
+/* CF-05 then CF-06 (lane U1, then lane 6C7's 7a-1; Overwatch Q5 = A on #2043). The Group /
+   One-on-One toggle switched only the Floor tab's code-written block template. The tab and the
+   template are gone, so the toggle is gone everywhere, and the board no longer points at a tab
+   that does not exist. */
+test('neither the board nor any tab offers a Group / One-on-One toggle, and there is no Floor tab', async () => {
   await renderWorkspace();
   expect(floor().queryByRole('button', { name: /One-on-One/ })).toBeNull();
+  expect(floor().queryByText(/block templates are on the Floor tab/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Floor' })).toBeNull();
 
+  // Off the Dashboard, where the toggle used to stand above the tab row.
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Floor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Goals' }));
   });
-  expect(screen.getByRole('button', { name: 'Group template' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByRole('button', { name: 'One-on-One template' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /template$/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /One-on-One/ })).toBeNull();
   expect(screen.queryByRole('button', { name: /Mode$/ })).toBeNull();
-
-  await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'One-on-One template' }));
-  });
-  expect(screen.getByText(/This is the standard One-on-One block template/)).toBeTruthy();
 });
 
 test('a readiness feed that failed shows the readings gauge as unknown, never 0 of N', async () => {
@@ -400,19 +411,19 @@ test('acknowledging two escalations in a row takes two deliberate taps on two op
     },
   });
 
-  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  fireEvent.click(needs().getByRole('button', { name: 'Open' }));
   // Two presses, each its own event: inside one act() the first would not have armed it yet.
-  pressArmed(floor().getByRole('button', { name: 'Acknowledge' }));
+  pressArmed(needs().getByRole('button', { name: 'Acknowledge' }));
   await act(async () => {});
   expect(posted).toEqual([{ action: 'acknowledge', escalation_id: 'esc_1' }]);
   // The second child's escalation is now in place -- closed, no Acknowledge under the coach's finger.
-  expect(floor().getByRole('heading', { name: 'Athlete ID ath_unknown' })).toBeTruthy();
-  expect(floor().queryByRole('button', { name: 'Acknowledge' })).toBeNull();
-  expect(floor().getByText(/Acknowledged: Jordan P\./)).toBeTruthy();
+  expect(needs().getByRole('heading', { name: 'Athlete ID ath_unknown' })).toBeTruthy();
+  expect(needs().queryByRole('button', { name: 'Acknowledge' })).toBeNull();
+  expect(needs().getByText(/Acknowledged: Jordan P\./)).toBeTruthy();
 
-  fireEvent.click(floor().getByRole('button', { name: 'Open' }));
+  fireEvent.click(needs().getByRole('button', { name: 'Open' }));
   // Two presses, each its own event: inside one act() the first would not have armed it yet.
-  pressArmed(floor().getByRole('button', { name: 'Acknowledge' }));
+  pressArmed(needs().getByRole('button', { name: 'Acknowledge' }));
   await act(async () => {});
   expect(posted).toEqual([
     { action: 'acknowledge', escalation_id: 'esc_1' },
@@ -477,9 +488,9 @@ test('the floor shows a pain report as its number only (#1528)', async () => {
       }],
     }),
   });
-  const badge = floor().getByText('6/10');
+  const badge = needs().getByText('6/10');
   expect(badge.closest('.coach-floor-focus__badge')).not.toBeNull();
-  expect(floor().queryByText(/\bhigh\b/i)).toBeNull();
+  expect(needs().queryByText(/\bhigh\b/i)).toBeNull();
 });
 
 test('an athlete who checked in today reads as a fresh reading on the tile and the chip (F-040)', async () => {
@@ -528,4 +539,81 @@ test('an athlete an admin marked inactive is marked on the floor roster, and is 
   expect(floor().getByRole('button', { name: /^Sam T\. \(inactive\)/ })).toBeTruthy();
   expect(floor().getByRole('button', { name: /^Jordan P\.: readiness/ })).toBeTruthy();
   expect(floor().getAllByText('Inactive')).toHaveLength(1);
+});
+
+/* LANE 6C7 7b: the home's Needs You Now strip. */
+describe('the Needs You Now strip on the coach home (7b)', () => {
+  const countValue = (key: string) =>
+    document.querySelector(`[data-needs-count="${key}"] [data-needs-count-value]`)?.textContent;
+  const countText = (key: string) => document.querySelector(`[data-needs-count="${key}"]`)?.textContent ?? '';
+
+  test('cards to verify counts the completions waiting on the coach, from the route Cards uses, and opens Cards', async () => {
+    const fetchMock = await renderWorkspace({
+      cards: () => jsonResponse({
+        items: [
+          { cards: [{ completions: [{ verification_status: 'pending' }, { verification_status: 'verified' }] }] },
+          { cards: [{ completions: [{ verification_status: 'pending' }] }, { completions: [] }] },
+        ],
+        workouts: [],
+      }),
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/pilot/coach/cards'))).toBe(true);
+    expect(countValue('cards')).toBe('2');
+    expect(document.querySelector('[data-needs-count="cards"]')?.getAttribute('href')).toBe('/coach/cards');
+  });
+
+  test.each([
+    ['a failed read', () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 })],
+    ['a refused read', () => jsonResponse({ error: 'forbidden' }, { ok: false, status: 403 })],
+    ['a body without the list', () => jsonResponse({ workouts: [] })],
+  ])('%s of the cards is "?" and "not checked", never 0', async (_name, cards) => {
+    await renderWorkspace({ cards });
+    expect(countValue('cards')).toBe('?');
+    expect(countText('cards')).toContain('not checked');
+    // ...and the all-clear does not say nothing needs the coach.
+    expect(screen.queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
+  });
+
+  test('a failed barrier read makes its count "?", never 0', async () => {
+    await renderWorkspace({ barrierReports: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }) });
+    expect(countValue('barrier')).toBe('?');
+    expect(countText('barrier')).toContain('not checked');
+  });
+
+  test('a failed pain read makes its count "?", never 0', async () => {
+    await renderWorkspace({ painReports: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }) });
+    expect(countValue('pain')).toBe('?');
+    expect(countText('pain')).toContain('not checked');
+  });
+
+  test('a failed escalation read makes its count "?", never 0', async () => {
+    await renderWorkspace({ escalationsGet: () => jsonResponse({ error: 'boom' }, { ok: false, status: 500 }) });
+    expect(countValue('escalations')).toBe('?');
+    expect(countText('escalations')).toContain('not checked');
+  });
+
+  test('the strip sits under the tab row and above the floor board and every list; each count opens a list that is on the page', async () => {
+    await renderWorkspace({ athletesList: roster });
+    const strip = screen.getByRole('region', { name: /^Needs you now/ });
+    const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(screen.getByRole('button', { name: 'Dashboard' }), strip)).toBe(true);
+    expect(follows(strip, screen.getByRole('region', { name: 'The floor' }))).toBe(true);
+    expect(follows(strip, screen.getByRole('heading', { name: 'Athlete Pain Reports' }))).toBe(true);
+    for (const key of ['escalations', 'pain', 'barrier']) {
+      const href = document.querySelector(`[data-needs-count="${key}"]`)?.getAttribute('href') ?? '';
+      expect(href.startsWith('#')).toBe(true);
+      expect(document.getElementById(href.slice(1))).not.toBeNull();
+    }
+    // The pain count opens the pain list itself.
+    expect(document.getElementById('coach-dashboard-details')?.textContent).toContain('Athlete Pain Reports');
+  });
+
+  test('the escalation list points at the strip, not at the floor board, for its Acknowledge', async () => {
+    await renderWorkspace({
+      athletesList: roster,
+      escalationsGet: () => jsonResponse({ ok: true, escalations: [escalation()] }),
+    });
+    expect(screen.getByText('Open. Acknowledge it from Needs You Now at the top of the page.')).toBeTruthy();
+    expect(screen.queryByText(/on the floor board above/)).toBeNull();
+  });
 });

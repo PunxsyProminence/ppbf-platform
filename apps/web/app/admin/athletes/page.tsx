@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 import AdminAthleteCoachNotes from '@/components/AdminAthleteCoachNotes';
+import TrackAssignmentControl from '@/components/TrackAssignmentControl';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { isOrganizationAdminSessionRole, usePilotSession } from '@/components/usePilotSession';
 import { apiBase } from '@/lib/apiBase';
@@ -995,6 +996,12 @@ function AthleteRecordsConsoleContent() {
             </section>
           </>
         )}
+
+        {/* Who Trains On What, moved here from the foot of the Capabilities
+            Overview tab (lane AS-10, AS10-4; app scrub OFF-13; Overwatch Q8 A).
+            This console renders only for the gym's own admin, the role the
+            track-assignments route admits. */}
+        <TrackAssignmentControl canAssign />
       </div>
     </main>
   );

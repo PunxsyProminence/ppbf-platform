@@ -35,7 +35,7 @@ interface GymOverviewRow {
 
 function metricLabel(metric: CountMetric | undefined): string {
   if (!metric) {
-    return '—';
+    return 'No data yet';
   }
   if (metric.status === 'available') {
     return String(metric.count);
@@ -43,7 +43,7 @@ function metricLabel(metric: CountMetric | undefined): string {
   if (metric.status === 'insufficient_data') {
     return 'Suppressed';
   }
-  return '—';
+  return 'No data yet';
 }
 
 export default function PlatformOverview() {
@@ -115,7 +115,7 @@ export default function PlatformOverview() {
             Every gym on the platform, one row each. Aggregate operational figures only.
           </p>
           <Link href="/admin/platform" className="btn btn--ghost">
-            Back To Gym Switcher
+            Omega
           </Link>
         </header>
 
@@ -155,7 +155,7 @@ export default function PlatformOverview() {
                         <td className="t-data px-[var(--s4)] py-[var(--s4)]">{metricLabel(gym.board?.activeAthletes)}</td>
                         <td className="t-data px-[var(--s4)] py-[var(--s4)]">{metricLabel(gym.board?.trainingSessions30Days)}</td>
                         <td className="t-data px-[var(--s4)] py-[var(--s4)]">{metricLabel(gym.board?.coachReviews30Days)}</td>
-                        <td className="t-data px-[var(--s4)] py-[var(--s4)]">{gym.growth?.totalInteractions ?? '—'}</td>
+                        <td className="t-data px-[var(--s4)] py-[var(--s4)]">{gym.growth?.totalInteractions ?? 'No data yet'}</td>
                       </>
                     )}
                     <td className="t-data px-[var(--s4)] py-[var(--s4)]">{gym.capabilityCount}</td>

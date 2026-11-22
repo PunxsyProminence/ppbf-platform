@@ -133,7 +133,7 @@ describe('the class register on /schedule', () => {
     const picker = await renderPage();
 
     fireEvent.change(picker, { target: { value: 'athlete-2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Update Attendance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByText('Marked present as a walk-in (not registered for this class).')).toBeInTheDocument();
   });
@@ -158,6 +158,26 @@ describe('the class register on /schedule', () => {
     expect(screen.queryByText(/walk_in/)).toBeNull();
   });
 
+  test('a way of marking this build does not know is never printed as it is stored (review of #2055)', async () => {
+    installFetchMock({
+      attendance: [
+        {
+          attendance_id: 'att-1',
+          class_id: 'class-1',
+          athlete_id: 'athlete-2',
+          status: 'present',
+          method: 'kiosk_v2',
+          note: '',
+          checked_in_at: '2026-08-03T13:05:00.000Z',
+        },
+      ],
+    });
+    await renderPage();
+
+    expect(await screen.findByText('Present', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.queryByText(/kiosk_v2/)).toBeNull();
+  });
+
   test('a hold on an athlete the coach does not coach shows the scope and says where the details are', async () => {
     installFetchMock({
       checkInMethod: 'walk_in',
@@ -174,7 +194,7 @@ describe('the class register on /schedule', () => {
     const picker = await renderPage();
 
     fireEvent.change(picker, { target: { value: 'athlete-2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Update Attendance' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     const notice = (await screen.findAllByRole('status')).find((el) => el.textContent?.includes('Active Training Hold'));
     expect(notice).toBeDefined();

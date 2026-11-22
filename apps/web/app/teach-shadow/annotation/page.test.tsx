@@ -595,6 +595,40 @@ describe('body points', () => {
     expect(screen.getByRole('button', { name: 'Add punch' })).toBeTruthy();
   });
 
+  test('on a body-point set, who did it is Fighter 1 or Fighter 2, picked by the coach (OD-2026-10-08-005 A-Q10a)', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [{ ...PUNCH_EVENT, actor_track: 'fighter_2' }] });
+
+    await openClip();
+    // The saved event reads as the coach would say it.
+    expect(screen.getByTestId('annotation-event').textContent).toContain('Fighter 2');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add defense' }));
+    });
+    const actor = screen.getByLabelText('Who did it') as HTMLSelectElement;
+    const opponent = screen.getByLabelText('Against (optional)') as HTMLSelectElement;
+    // A choice, not a text box, and nothing pre-picked.
+    expect(actor.tagName).toBe('SELECT');
+    expect([...actor.options].map((option) => option.textContent)).toEqual(['Choose…', 'Fighter 1', 'Fighter 2']);
+    expect(actor.value).toBe('');
+    expect([...opponent.options].map((option) => option.textContent)).toEqual(['Nobody', 'Fighter 1', 'Fighter 2']);
+    expect(screen.queryByLabelText('Actor (which fighter)')).toBeNull();
+
+    await act(async () => {
+      fireEvent.change(actor, { target: { value: 'fighter_2' } });
+      fireEvent.change(opponent, { target: { value: 'fighter_1' } });
+      fireEvent.change(screen.getByLabelText('Defense type'), { target: { value: 'slip' } });
+      fireEvent.change(screen.getByLabelText('Visibility (of the footage)'), { target: { value: 'clear' } });
+      fireEvent.change(screen.getByLabelText('Certainty (yours)'), { target: { value: 'clear' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    });
+
+    const write = calls.find((call) => call.url.includes('/calibration/events') && call.method === 'POST');
+    expect(write?.body).toMatchObject({ actor_track: 'fighter_2', opponent_track: 'fighter_1' });
+  });
+
   test('a body-point set reads its marks and shows the server\'s count and missing list', async () => {
     global.fetch = mockFetch({ set: BODY_POINT_SET, events: [PUNCH_EVENT] });
 

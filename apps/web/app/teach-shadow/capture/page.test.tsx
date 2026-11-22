@@ -266,13 +266,31 @@ test('nothing stands between a coach and recording', async () => {
   expect(document.body.textContent ?? '').not.toMatch(/clearance|consent/i);
 });
 
-test('offers only the contexts with one person in frame', async () => {
+test('offers mitts and sparring beside shadowboxing and heavy bag, and not "other" (TS-Q1 A)', async () => {
   await renderPage();
 
-  // Mitts and sparring put a second person in frame. The server refuses them
-  // too; this is the half a coach can see.
+  // The server refuses 'other' too; this is the half a coach can see.
   const options = screen.getAllByRole('option').map((option) => option.textContent);
-  expect(options).toEqual(['Shadowboxing', 'Heavy bag']);
+  expect(options).toEqual(['Shadowboxing', 'Heavy bag', 'Mitts', 'Sparring']);
+});
+
+test('a sparring session is asked for as sparring, and shown as sparring', async () => {
+  await renderPage();
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sparring' } });
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'POST') sessionPosts.push(JSON.parse(String(init.body)));
+    void input;
+    return {
+      ok: true, status: 200, json: async () => ({ session: { ...SESSION, training_context: 'sparring' } }),
+    } as Response;
+  }) as unknown as typeof fetch;
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Start recording session' }));
+  });
+
+  expect(sessionPosts).toEqual([{ action: 'create', training_context: 'sparring' }]);
+  expect(await screen.findByText(/Take 1 · sparring/)).toBeInTheDocument();
 });
 
 test('TS-ANON-01 -- the camera opens with nobody named', async () => {

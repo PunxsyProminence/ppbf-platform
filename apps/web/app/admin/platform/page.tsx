@@ -660,7 +660,7 @@ export default function PlatformConsole() {
               System
             </Link>
             <Link href="/admin/organizations" className="btn btn--ghost">
-              Onboard A New Gym
+              Get Your Gym Online
             </Link>
           </div>
         </header>

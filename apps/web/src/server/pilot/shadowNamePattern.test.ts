@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { shadowNamePattern } from './shadowConversationDeidentify';
+
 /* The copy that runs: scripts/pilot-cleanup-deleted-data.mjs, the only
    retention purge. The script runs its job on load, so it cannot be imported;
    namePattern is read out of its source and evaluated on its own (it uses no
@@ -52,5 +54,29 @@ describe('namePattern', () => {
     expect(namePattern(['Maria de la Cruz'], true)).toBe('\\m(Maria de la Cruz|Maria|Cruz)\\M');
     expect(namePattern(['Al Van Der Berg Jr.', 'Ed'], true)).toBe('\\m(Al Van Der Berg Jr|Berg)\\M');
     expect(namePattern(['Mac', 'Of'], true)).toBeNull();
+  });
+});
+
+/* The app's copy (shadowConversationDeidentify.ts), used when a member deletes
+   a chat, must build the same pattern as the script's, which clears the same
+   chats two years on: the two are compared on every case above and more, so
+   a change to one alone goes red here (lane HF7). */
+describe('the app\'s copy is the script\'s', () => {
+  const cases: Array<[Array<string | null | undefined>, boolean]> = [
+    [['Jordan Pike'], false],
+    [["Ann O'Brien (Jr.)", 'J', 'a@b.test'], false],
+    [['Mary-Kate Lee'], false],
+    [['jordan.pike2013@example.test'], false],
+    [[], false],
+    [[null, undefined, '', '  ', 'X'], false],
+    [['Casey Pike', 'Casey Pike', 'Pike'], false],
+    [['Maria de la Cruz'], false],
+    [['Maria de la Cruz'], true],
+    [['Al Van Der Berg Jr.', 'Ed'], true],
+    [['Mac', 'Of'], true],
+    [['dana.pike@example.test', 'Dana Pike', 'Lightning', 'Coach Rivera', 'José Núñez', 'a+b*c?'], false],
+  ];
+  test.each(cases)('%j (gym-wide %s)', (names, gymWide) => {
+    expect(shadowNamePattern(names, gymWide)).toBe(namePattern(names, gymWide));
   });
 });

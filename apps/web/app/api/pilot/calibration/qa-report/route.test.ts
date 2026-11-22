@@ -219,6 +219,17 @@ describe('GET /api/pilot/calibration/qa-report', () => {
     expect(body.clip_progress).toEqual({ total_clips: 6, still_to_do_count: 1, left_out_count: 0 });
   });
 
+  test.each([[ADMIN], [COACH]])('tells %o the matching window, so the screen can show it (OD-2026-10-08-005 A-Q10c)', async (who) => {
+    mockPrincipal.mockResolvedValue(who);
+    stageStudy(2);
+
+    const body = await (await GET(request())).json();
+
+    // Sent even below the minimum, when the figures may be withheld: it is
+    // the rule the comparisons were made under, not a figure about anyone.
+    expect(body.matching_window_ms).toBe(100);
+  });
+
   test('gives a coach the figures and the clip progress, and nothing else', async () => {
     mockPrincipal.mockResolvedValue(COACH);
     stageStudy(5);
@@ -230,7 +241,7 @@ describe('GET /api/pilot/calibration/qa-report', () => {
     // The body is exactly these, and the figures are exactly the six the
     // screen shows.
     expect(Object.keys(body).sort()).toEqual([
-      'clip_progress', 'comparison_count', 'minimum_comparisons',
+      'clip_progress', 'comparison_count', 'matching_window_ms', 'minimum_comparisons',
       'ok', 'project_name', 'report', 'status',
     ]);
     expect(Object.keys(body.report).sort()).toEqual([

@@ -31,6 +31,12 @@ import { childFile, versionedDatasetEngine } from './templateScriptVersions';
 //     handing files over counts as Jason's approval of their content; except
 //     that a script already retired stays retired, since a package can
 //     neither retire a script nor bring one back.
+//
+// A SCRIPT A COACH EDITED OR MADE IN THE APP IS HELD (lane GD, GD-4; the rule
+// lane IG made for drills and templates, inAppEdits.ts). The app's script
+// edit and its making-from-a-template write no in-app label; the audit row
+// each writes on the current version's id (entity_type 'session_script') is
+// the record, read by inAppEdits.ts (b).
 
 const LIFECYCLE_COLUMNS = ['authoring_state'] as const;
 
@@ -43,6 +49,7 @@ export const sessionScriptsEngine: DatasetEngine = versionedDatasetEngine({
   idPrefix: 'scr',
   head: 'highest_version',
   lifecycleColumns: LIFECYCLE_COLUMNS,
+  inAppEditAuditEntity: 'session_script',
   children: [
     {
       spec: childFile(dataset, 'seed_session_script_blocks.csv'),

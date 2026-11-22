@@ -10,8 +10,10 @@
  */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 
+import { ASSESSMENTS_PAGE, PASSBOOK_PAGE } from '@/components/athleteRecordPages';
+import { handOffArrivalAthlete, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import CoachAssessmentsPage from './page';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
@@ -107,6 +109,88 @@ async function chooseAthlete() {
     fireEvent.change(screen.getByLabelText('Which athlete'), { target: { value: 'ath-1' } });
   });
 }
+
+// Lane AS-11 (app scrub CF-15; Q2 = A): Passbook's line opens this page on
+// the athlete, taken from page memory and chosen only when the access
+// contract's roster lists them. No athlete id is read from the address.
+describe('arriving from a link (lane AS-11)', () => {
+  const athleteReads = () => fetchMock.mock.calls
+    .map(([url]) => String(url))
+    .filter((url) => /\/api\/pilot\/(coach\/assessments|data-collection-requests)\?athlete_id=/.test(url));
+  const picked = () => (screen.getByLabelText('Which athlete') as HTMLSelectElement).value;
+
+  async function arrive(strict = false) {
+    render(strict ? <StrictMode><CoachAssessmentsPage /></StrictMode> : <CoachAssessmentsPage />);
+    await act(async () => {});
+    await act(async () => {});
+  }
+
+  afterEach(() => {
+    takeArrivalAthlete(ASSESSMENTS_PAGE);
+    takeArrivalAthlete(PASSBOOK_PAGE);
+    window.history.replaceState(null, '', '/');
+  });
+
+  test('a hand-off opens the rostered athlete it names: their history and their retest queue', async () => {
+    handOffArrivalAthlete('ath-1', ASSESSMENTS_PAGE);
+    await arrive();
+    expect(picked()).toBe('ath-1');
+    expect(athleteReads().every((url) => url.endsWith('athlete_id=ath-1'))).toBe(true);
+    expect(athleteReads().some((url) => url.includes('/coach/assessments?'))).toBe(true);
+    expect(athleteReads().some((url) => url.includes('/data-collection-requests?'))).toBe(true);
+    expect(screen.getByText('Retest broad jump')).toBeTruthy();
+  });
+
+  test('a hand-off for an athlete the roster does not list chooses nobody and reads nothing', async () => {
+    handOffArrivalAthlete('ath-9', ASSESSMENTS_PAGE);
+    await arrive();
+    expect(picked()).toBe('');
+    expect(athleteReads()).toEqual([]);
+  });
+
+  test('a hand-off with a roster that fails to load chooses nobody and reads nothing', async () => {
+    const answer = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/api/pilot/coach/athletes')
+        ? ({ ok: false, status: 500, json: async () => ({}) }) as Response
+        : answer(input, init));
+    handOffArrivalAthlete('ath-1', ASSESSMENTS_PAGE);
+    await arrive();
+    expect(picked()).toBe('');
+    expect(athleteReads()).toEqual([]);
+  });
+
+  test('a hand-off meant for another page is not taken here', async () => {
+    handOffArrivalAthlete('ath-1', PASSBOOK_PAGE);
+    await arrive();
+    expect(picked()).toBe('');
+    expect(athleteReads()).toEqual([]);
+  });
+
+  test('an athlete id in the address opens nothing', async () => {
+    window.history.replaceState(null, '', '/coach/assessments?athlete_id=ath-1');
+    await arrive();
+    expect(picked()).toBe('');
+    expect(athleteReads()).toEqual([]);
+  });
+
+  test('under StrictMode the hand-off opens the athlete, and each of their reads is made once', async () => {
+    handOffArrivalAthlete('ath-1', ASSESSMENTS_PAGE);
+    await arrive(true);
+    expect(picked()).toBe('ath-1');
+    expect(athleteReads()).toHaveLength(2);
+  });
+
+  test('a hand-off is taken once: the next visit opens with nobody chosen', async () => {
+    handOffArrivalAthlete('ath-1', ASSESSMENTS_PAGE);
+    await arrive();
+    document.body.innerHTML = '';
+    fetchMock.mockClear();
+    await arrive();
+    expect(picked()).toBe('');
+    expect(athleteReads()).toEqual([]);
+  });
+});
 
 test('shows the one athlete\'s dated history with no total, average or rank', async () => {
   await chooseAthlete();

@@ -192,7 +192,7 @@ export default function PainReportsPanel({
           <div className="flex flex-wrap items-center gap-3">
             {boardShown ? (
               <p className="t-data text-[color:var(--bone-300)]">
-                Record what you did from Needs You Now on the floor board above.
+                Record what you did from Needs You Now at the top of the page.
               </p>
             ) : (
               <Link

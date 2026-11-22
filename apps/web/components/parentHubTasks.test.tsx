@@ -275,10 +275,12 @@ describe('the Parent Floor tasks tile', () => {
 
     expect(screen.queryByText('Home Tasks')).toBeNull();
     expect(screen.getByRole('button', { name: 'Parent Floor' })).toBeInTheDocument();
-    expect(tileValue('Parent Floor tasks')).toBe('1');
+    // Named per child (AS-9 Q4 = A): the tile counts every child, so each
+    // count carries its child's first name, a zero included.
+    expect(tileValue('Parent Floor tasks')).toBe('First 1 · Second 0');
   });
 
-  test('counts open tasks across every child once the messages read answered; a done task is not counted', async () => {
+  test('counts open tasks for each child, by name, once the messages read answered; a done task is not counted', async () => {
     installFetch({
       messages: async () =>
         jsonResponse({
@@ -293,14 +295,14 @@ describe('the Parent Floor tasks tile', () => {
     });
     await renderHub();
 
-    expect(tileValue('Parent Floor tasks')).toBe('2');
+    expect(tileValue('Parent Floor tasks')).toBe('First 1 · Second 1');
   });
 
   test('a real zero stays a number: messages answered, none with a due date', async () => {
     installFetch({ messages: async () => jsonResponse({ ok: true, items: [message()] }) });
     await renderHub();
 
-    expect(tileValue('Parent Floor tasks')).toBe('0');
+    expect(tileValue('Parent Floor tasks')).toBe('First 0 · Second 0');
   });
 
   test('an unanswered messages read is Unavailable, never 0', async () => {
@@ -319,14 +321,14 @@ describe('the Parent Floor tasks tile', () => {
       messages: async () => jsonResponse({ ok: true, items: [message({ task: { due_date: '2026-10-20', completed_at: null } })] }),
     });
     await renderHub();
-    expect(tileValue('Parent Floor tasks')).toBe('1');
+    expect(tileValue('Parent Floor tasks')).toBe('First 1 · Second 0');
 
     await openTab('Messages');
     await act(async () => {
       fireEvent.click(screen.getByRole('checkbox', { name: 'Done' }));
     });
 
-    await waitFor(() => expect(tileValue('Parent Floor tasks')).toBe('0'));
+    await waitFor(() => expect(tileValue('Parent Floor tasks')).toBe('First 0 · Second 0'));
   });
 });
 
@@ -424,7 +426,11 @@ describe('the selected child and tab are marked, not only coloured', () => {
     await renderHub();
 
     expect(screen.getByRole('button', { name: 'Overview' }).className).toContain('text-[length:var(--t-sm)]');
-    expect(screen.getByRole('button', { name: 'First Child' }).className).toContain('text-[length:var(--t-sm)]');
+    // AS9-3: a child is a FamilyChildPicker button, the design system's .btn,
+    // whose type is 15px (--t-sm) in ppbf-leather-brass.css; never --t-xs.
+    const child = screen.getByRole('button', { name: 'First Child' });
+    expect(child).toHaveClass('btn');
+    expect(child.className).not.toContain('--t-xs');
   });
 });
 

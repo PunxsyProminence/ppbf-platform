@@ -234,3 +234,20 @@ it('says the rest was loaded when some rows failed', async () => {
   expect(await screen.findByText(/The rest of the file was loaded/i)).toBeTruthy();
   expect(screen.getByText(/reported as already on the roster rather than duplicated/i)).toBeTruthy();
 });
+
+// Lane AS-10, AS10-5 (app scrub OFF-21): "PINs are issued afterwards" now
+// leads to where: Gym Office, on its Add Athlete tab. Gym Office does not admit
+// a coach, so a coach is not offered the link.
+describe('the Gym Office link (lane AS-10)', () => {
+  test('an admin is offered Gym Office, on the Add Athlete tab', () => {
+    mockSession = { role: 'admin', expiresAt: Date.now() + 60_000 };
+    render(<RosterImportPage />);
+    expect(screen.getByRole('link', { name: 'Gym Office' }).getAttribute('href')).toBe('/admin/people?tab=add-athlete');
+  });
+
+  test('a coach is not', () => {
+    mockSession = { role: 'coach', expiresAt: Date.now() + 60_000 };
+    render(<RosterImportPage />);
+    expect(screen.queryByRole('link', { name: 'Gym Office' })).toBeNull();
+  });
+});
