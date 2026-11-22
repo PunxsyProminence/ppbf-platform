@@ -38,7 +38,8 @@ const TASKS: Array<{ value: string; label: string }> = [
 // The routes' own refusals: the server said no and saved nothing.
 const REFUSAL_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
 const CONTROL = 'min-h-[var(--tap)] text-[length:var(--t-md)]';
-const BIG = `btn ${CONTROL} min-h-[calc(var(--tap)*2)] min-w-[160px] flex-1`;
+// The two tap buttons: twice --tap tall, at least 160px wide (the plan's floor for a tablet held in one hand).
+const BIG = 'btn min-h-[calc(var(--tap)*2)] min-w-[160px] flex-1 text-[length:var(--t-md)]';
 const WINDOWS = '/api/pilot/coach/behaviour-windows';
 
 type Polarity = 'occurrence' | 'counterexample';

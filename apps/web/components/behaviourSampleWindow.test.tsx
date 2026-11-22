@@ -130,8 +130,11 @@ test('a tap goes to the chance on screen, the count moves on, and change last ta
 
 test('a coach joining starts at the chance the count stands at; one coming back starts after their own last chance', async () => {
   let mine: unknown[] = [];
-  serve((call) => (call.method === 'GET' && call.url === `${WINDOWS}/win-1`
-    ? respond({ ok: true, window: OPEN_ROW, currentChance: 4, myTaps: mine }) : lists([OPEN_ROW, { ...OPEN_ROW, window_id: 'win-9', athlete_id: 'ath-2' }])(call)));
+  serve((call) => {
+    if (call.method === 'GET' && call.url === `${WINDOWS}/win-1`) return respond({ ok: true, window: OPEN_ROW, currentChance: 4, myTaps: mine });
+    if (call.method === 'PATCH') return respond({ ok: true, tap: { chance: call.body?.chance, polarity: call.body?.polarity } });
+    return lists([OPEN_ROW, { ...OPEN_ROW, window_id: 'win-9', athlete_id: 'ath-2' }])(call);
+  });
   await showOpened();
   // Only this athlete's open window is offered.
   expect(screen.getAllByRole('button', { name: /^Join:/ })).toHaveLength(1);
@@ -145,6 +148,8 @@ test('a coach joining starts at the chance the count stands at; one coming back 
   await press(/Join:/);
   expect(screen.getByText('Chance 3 of 10')).toBeInTheDocument();
   expect(screen.getByText('You: 1 shown of 2 tapped')).toBeInTheDocument();
+  await press('Shown');
+  expect(calls.at(-1)?.body).toEqual({ action: 'tap', chance: 3, polarity: 'occurrence' });
 });
 
 test('past its last chance the window shows as full, with no tap buttons; a closed window takes no tap', async () => {
@@ -222,4 +227,19 @@ test('the screen shows only the coach\'s own count: no tier, label, bar or other
   expect(screen.queryByRole('meter')).toBeNull();
   expect(document.body.textContent).not.toMatch(/tier|emerging|established|pattern|bar\b/i);
   expect(screen.getByText('You: 1 shown of 1 tapped')).toBeInTheDocument();
+});
+
+test('every control on the window screen keeps the gym-floor minimums: --tap targets (the two tap buttons twice that) and --t-md text', async () => {
+  serve((call) => (call.method === 'GET' && call.url === `${WINDOWS}/win-1`
+    ? respond({ ok: true, window: OPEN_ROW, currentChance: 1, myTaps: [] }) : lists([OPEN_ROW])(call)));
+  await showOpened();
+  for (const control of [...screen.getAllByRole('button'), ...screen.getAllByRole('combobox'), screen.getByRole('spinbutton')]) {
+    expect(control.className).toContain('min-h-[var(--tap)]');
+    expect(control.className).toContain('text-[length:var(--t-md)]');
+  }
+  await press(/Join:/);
+  for (const name of ['Shown', 'Not shown']) {
+    expect(screen.getByRole('button', { name }).className).toContain('min-h-[calc(var(--tap)*2)]');
+    expect(screen.getByRole('button', { name }).className).toContain('min-w-[160px]');
+  }
 });
