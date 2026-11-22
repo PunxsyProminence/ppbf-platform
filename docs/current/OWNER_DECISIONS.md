@@ -20,6 +20,9 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-22-001 | 2026-11-22 | The four restart lanes run on the Neeko account | PRIMARY |  | yes |
+| OD-2026-11-21-009 | 2026-11-21 | Stage and release `b6fa8fe6` | PRIMARY |  |  |
+| OD-2026-11-21-008 | 2026-11-21 | HF8 Q1 is office review only; HF9 Q3 is the full consent wording; HF8 Q2 was already ruled | PRIMARY |  |  |
 | OD-2026-11-21-007 | 2026-11-21 | OW27-38 to OW27-44: athlete email address, email defaults, room renaming, stop-rule and safety-status words, Backbone Overwatch 28's home | RECONSTRUCTED |  |  |
 | OD-2026-11-21-006 | 2026-11-21 | OW27-17 to OW27-37: W4 items 2 to 7 (web push, floor line, parent messages, class plans, stopped coming, live-floor saves) and the restart limit | RECONSTRUCTED |  |  |
 | OD-2026-11-21-005 | 2026-11-21 | Backbone Overwatch 28 runs in Claude Science; SHADOW build order: hard floor first, learning tracks beside | RECONSTRUCTED |  |  |
@@ -641,6 +644,90 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-22-001 -- The four restart lanes run on the Neeko account
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-22 UTC. The options are quoted from Overwatch's messages just before each answer. Copied from that session's exported transcript on 2026-11-22. New; edits no earlier entry's text.
+
+**Options as shown (Overwatch, 2026-11-22 01:20 UTC, how to split the restart of 5 lane items):**
+```text
+- **A (recommended):** put most of the work on admin@ (35% used). Neeko takes 1–2 small lanes. Its 2 full resets stay in reserve for later in the week.
+- B: everything on Neeko, and use a full reset when it hits its limit.
+- C: everything on admin@.
+```
+
+**Jason (2026-11-22 01:36 UTC, PRIMARY):** *"A"*
+
+**Options as shown (Overwatch, 2026-11-22 01:38 UTC, how to start the 4 admin@ lanes):**
+```text
+- **A (recommended):** you open the Claude desktop app through Chrome Remote Desktop and start 4 cloud sessions in the Code tab, pasting one brief into each.
+- B: I start them on the Neeko account in the browser pane myself. That goes against your "A" and uses Neeko's weekly limit (75% used).
+```
+
+**Jason (2026-11-22 02:15 UTC, PRIMARY):** *"Run them on Neeko"*
+
+**Ruling:** the four lanes planned for admin@ are started by Overwatch on the Neeko account in the in-app browser. B was against the recommendation; the cost, stated in the same exchange: the load goes on the account with less weekly use left.
+
+**Applied:** Overwatch started or resumed six lanes on Neeko that night (AS9-5, AS-10, HF7, HF8-9, AS-12, PATTERN-1).
+
+**Not ruled here:** which account later lanes use.
+**Status:** recorded 2026-11-22 by PR.
+
+---
+
+## OD-2026-11-21-009 -- Stage and release `b6fa8fe6`
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session on 2026-11-21 UTC. The questions are quoted from Overwatch's message before each answer. Copied from that session's exported transcript on 2026-11-22. His first message also covered other work; only the part that answers the question is quoted (the rest is marked [...]). New; edits no earlier entry's text.
+
+**Question (Overwatch, 2026-11-21 17:37 UTC):** "Do you want me to stage main now for your signed-in check (my recommendation), or wait until HF7 merges so it goes out in the same release?"
+
+**Jason (2026-11-21 22:07 UTC, PRIMARY):** *"[...] yes stage it now"*
+
+**Question (Overwatch, 2026-11-21 22:37 UTC, after his signed-in staging check):** "Release b6fa8fe6 to production ("Ship it"), or hold?"
+
+**Jason (2026-11-21 22:51 UTC, PRIMARY):** *"Ship"*
+
+**Jason (2026-11-21 23:45 UTC, PRIMARY, after approving the production gate himself):** *"Approved"*
+
+**Ruling:** release `b6fa8fe6` without waiting for HF7.
+
+**Applied:** deploy-staging run 44955133063 (success, `b6fa8fe6`); deploy-production run 44958860012 (success, `b6fa8fe6`; GitHub run state checked 2026-11-22), image digest `sha256:1bb1e18a781ffa9a175adeb6fef81efa60635d9576e0b0921897c70a309e75e5` from the staging artifact, revision `app-ppbf-production--0000212` (revision and digest as reported by the old Overwatch session). The gate was approved as PunxsyProminence by Jason himself. No migrations.
+
+**Status:** recorded 2026-11-22 by PR.
+
+---
+
+## OD-2026-11-21-008 -- HF8 Q1 is office review only; HF9 Q3 is the full consent wording; HF8 Q2 was already ruled
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session on 2026-11-21 UTC. The options are quoted from Overwatch's message of 14:48 UTC; the questions are the lane's on plan PR #2083. Copied from that session's exported transcript on 2026-11-22. New; edits no earlier entry's text.
+
+**HF9 Q3 options as shown:**
+```text
+- A: full wording, shown to every guardian, including the "whatever you choose" cases.
+- B: one shorter sentence, shown only to guardians who haven't signed yet.
+```
+
+**Jason (2026-11-21 15:53 UTC, PRIMARY):** *"A: full wording"*
+
+**HF8 Q1 options as shown (a parent's SHADOW message that sounds like their child is being hurt):**
+```text
+- A: the athlete rule (coach of record, covering coach and admins are alerted).
+- B: office safety review only.
+- C: as is.
+```
+
+**Jason (2026-11-21 15:54 UTC, PRIMARY):** *"B: office review only"*
+
+**Jason (2026-11-21 16:48 UTC, PRIMARY, when HF8 Q2 was asked again):** *"validate this we have already answered these questions"*
+
+**Ruling:**
+1. HF9 Q3 = A: both consent screens say in full that still frames go to Microsoft's Azure AI service, including the cases sent whatever the guardian chose. Being built as HF9-1 (#2095).
+2. HF8 Q1 = B: a parent's message gets the same disclosure scan; a match gives the organization admin the SHADOW review row for that exchange, and no coach alert. Merged as #2091 (`d4e54618`).
+
+**Applied by Overwatch (not his words):** HF8 Q2 (auto-filed staff questions naming a child) was withdrawn from Jason as already ruled by OD-2026-10-06-010 ("Family reads, staff closes (Recommended)") with OD-2026-10-10-007 ruling 3; Q2 = C (leave as is), and HF8-2 is not built (comment on #2083, 2026-11-21 16:49 UTC).
+**Status:** recorded 2026-11-22 by PR.
 
 ---
 
