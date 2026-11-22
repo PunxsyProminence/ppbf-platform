@@ -12,6 +12,7 @@ import type {
   ObservationPolarity,
   TaskConstraint,
 } from './patterns';
+import type { StoredBehaviourReading } from './patterns/fromStore';
 
 // The learning loop's writer (lane L49): the gym's shared list of behaviour
 // names (Jason 2026-10-18 Q1, "A: Shared growing list") and a coach's report of
@@ -473,5 +474,34 @@ export async function listBehaviourObservations(
       order by o.observed_at desc, o.created_at desc
       limit $3`,
     [organizationId, athleteId, Math.max(1, Math.min(500, Math.trunc(limit)))],
+  );
+}
+
+/**
+ * Every live report of one behaviour in this gym, every athlete, oldest first,
+ * for the tier engine (patterns/fromStore.ts, patternStanding.ts): the coach
+ * pairs are judged on the gym's whole record of the behaviour. A report a
+ * revision replaced is not read: the guard lets only its own coach revise it,
+ * and once that coach's account goes both rows lose their observer, so the
+ * engine could no longer tell the revision from a second call. Not read
+ * either: the coach's note, and any de-identified report (a purged
+ * athlete's). No limit: a cut-off list would count wrongly rather than fail.
+ */
+export async function listBehaviourReadingsForEvaluation(
+  organizationId: string,
+  behaviourKey: string,
+): Promise<StoredBehaviourReading[]> {
+  return query<StoredBehaviourReading>(
+    `select o.observation_id, o.organization_id, o.athlete_id, o.behaviour_key, o.episode_id, o.session_key, o.task_context_key,
+            o.task_constraint, o.fatigue_context, o.polarity, o.attribution_target, o.attribution_certainty,
+            o.source_type, o.source_quality, o.interpretation, o.observer_account_id, o.supersedes_observation_id,
+            o.observed_at
+       from pilot.behaviour_observations o
+      where o.organization_id = $1 and o.behaviour_key = $2 and o.deidentified_at is null
+        and not exists (
+          select 1 from pilot.behaviour_observations s
+           where s.organization_id = o.organization_id and s.supersedes_observation_id = o.observation_id)
+      order by o.observed_at, o.observation_id`,
+    [organizationId, behaviourKey],
   );
 }
