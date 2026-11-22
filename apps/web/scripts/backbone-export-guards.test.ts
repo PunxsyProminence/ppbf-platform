@@ -113,6 +113,16 @@ describe('typedLineFindings', () => {
     ]);
   });
 
+  it('follows a step by its item id first: one that moved and comes back typed is found; one that moved and keeps its link is not', () => {
+    // Review F1 on #2098: matched by position alone, the first was missed and the second was a false stop.
+    const linked = { item_id: 'wti_00000000000b0b' };
+    expect(run([step(T, '1', ''), step(T, '2', '', { item_id: 'wti_00000000000c0c' }), step(T, '3', D, linked)],
+      [step(T, '1', ''), step(T, '2', '', linked)])).toEqual([
+      { kind: 'typed_line', file: ITEMS, template: T, ordinal: '3', drill: D },
+    ]);
+    expect(run([step(T, '2', D, linked)], [step(T, '2', '', { item_id: 'wti_00000000000c0c' }), step(T, '3', D, linked)])).toEqual([]);
+  });
+
   it('finds nothing when the line was typed all along, the link is kept or changed, the export links a typed line, or the step is gone', () => {
     expect(run([step(T, '1', '')], [step(T, '1', '')])).toEqual([]);
     expect(run([step(T, '1', D)], [step(T, '1', D)])).toEqual([]);
@@ -136,6 +146,10 @@ describe('stopMessage', () => {
       };
     `);
     expect(result.none).toBeNull();
+    // An exporter with no --allow-overwrite (pathway-catalog) does not name it (review F2 on #2098).
+    const noFlag = evaluate<string>(`return m.stopMessage([{ kind: 'held_text', file: 'a.csv', row: 'row 1', column: 'details' }], { overwriteFlag: false });`);
+    expect(noFlag.split('\n')[0]).toMatch(/ Nothing was written\.$/);
+    expect(noFlag).not.toContain('--allow-overwrite');
     expect(result.both.split('\n')).toEqual([
       'refused: this run would write 1 cell(s) that name a held DOC-136 record (held out of this repository, OW25-49 (c)), and write 1 typed line(s) back over a step that links a drill (OW26-05 B, OW27-09 B). Nothing was written, and --allow-overwrite does not change that.',
       '  a.csv track_id trk_00000000000001: details names a held DOC-136 record',

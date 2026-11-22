@@ -101,7 +101,9 @@ describe('backbone-export-pathway-catalog', () => {
     const refused = run([held, '--out', out]);
     expect(refused.status).toBe(1);
     expect(refused.stderr).toMatch(/seed_pathway_stages\.csv .*: who_text names a held DOC-136 record/);
-    expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+    expect(refused.stderr).toContain('Nothing was written.');
+    // This exporter has no --allow-overwrite, so the refusal does not name one (review F2 on #2098).
+    expect(refused.stderr).not.toContain('--allow-overwrite');
     expect(fs.readdirSync(out)).toEqual([]);
   });
 

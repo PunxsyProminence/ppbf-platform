@@ -397,7 +397,7 @@ export function exportPathwayCatalog(backboneDir) {
     ...heldTextFindings('seed_pathway_stages.csv', HEADERS['seed_pathway_stages.csv'], stageRows),
     ...heldTextFindings('seed_pathway_stage_links.csv', HEADERS['seed_pathway_stage_links.csv'], linkRows),
     ...heldTextFindings('seed_pathway_stage_defaults.csv', HEADERS['seed_pathway_stage_defaults.csv'], defaultRows),
-  ]);
+  ], { overwriteFlag: false });
   if (stopText) throw new ExportError(stopText);
 
   const table = (name, rows) => writeCsv(HEADERS[name], rows.map((row) => HEADERS[name].map((column) => row[column] ?? '')));

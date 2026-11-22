@@ -75,18 +75,21 @@ export function heldTextFindings(file, header, rows, heldHashes = HELD_ID_HASHES
 
 /**
  * The committed template steps that link a drill and that `newRows` would write back as a typed
- * line (a blank drill_id). A step is matched by its template and position, so one re-minted under
- * a new item_id is still the same step. A committed step the export no longer has is not one of
- * these: the overwrite guard names a removed row.
+ * line (a blank drill_id). A step is followed by its item_id, so one that moved is still found
+ * where the export puts it, and one that moved and keeps its link is not; a step whose item_id the
+ * export does not have is matched by its template and position, so one re-minted under a new
+ * item_id is still the same step (review F1 on #2098). A committed step the export no longer has
+ * is not one of these: the overwrite guard names a removed row.
  * Returns [{ kind: 'typed_line', file, template, ordinal, drill }].
  */
 export function typedLineFindings(file, committedRows, newRows) {
   const position = (row) => `${row.template_id ?? ''}\u0000${Number(row.ordinal)}`;
   const fresh = new Map(newRows.map((row) => [position(row), row]));
+  const byItem = new Map(newRows.filter((row) => (row.item_id ?? '') !== '').map((row) => [row.item_id, row]));
   const found = [];
   for (const old of committedRows) {
     if ((old.drill_id ?? '') === '') continue;
-    const next = fresh.get(position(old));
+    const next = byItem.get(old.item_id ?? '') ?? fresh.get(position(old));
     if (next && (next.drill_id ?? '') === '') {
       found.push({ kind: 'typed_line', file, template: old.template_id, ordinal: String(old.ordinal), drill: old.drill_id });
     }
@@ -103,9 +106,10 @@ export function describeStops(findings) {
 
 /**
  * The refusal for `findings`, or null when there are none. The caller throws it before producing a
- * file, whatever --allow-overwrite says.
+ * file, whatever --allow-overwrite says. `overwriteFlag: false` for an exporter that has no such
+ * flag, so the refusal does not name one (review F2 on #2098).
  */
-export function stopMessage(findings) {
+export function stopMessage(findings, { overwriteFlag = true } = {}) {
   if (findings.length === 0) return null;
   const held = findings.filter((found) => found.kind === 'held_text').length;
   const typed = findings.length - held;
@@ -114,7 +118,7 @@ export function stopMessage(findings) {
     ...(typed ? [`write ${typed} typed line(s) back over a step that links a drill (OW26-05 B, OW27-09 B)`] : []),
   ].join(', and ');
   return [
-    `refused: this run would ${what}. Nothing was written, and --allow-overwrite does not change that.`,
+    `refused: this run would ${what}. Nothing was written${overwriteFlag ? ', and --allow-overwrite does not change that' : ''}.`,
     ...describeStops(findings),
   ].join('\n');
 }
