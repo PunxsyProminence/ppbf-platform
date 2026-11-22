@@ -510,8 +510,6 @@ const MARK_ALLOWED = new Map<string, { readonly count: number; readonly why: str
   ['app/admin/safety-review/page.tsx', { count: 1, why: 'the same clinician-stop blocking flags as /admin/safety-flags (Overwatch Q5)' }],
   ['app/admin/shadow/page.tsx', { count: 1, why: "the WORD 'locked' for a SHADOW feature not yet unlocked, on the restricted rung; not a class" }],
   ['components/uiStyles.ts', { count: 6, why: "token definitions (statusDanger, errorButton, errorContainer, errorText) that nothing renders" }],
-  ['components/CoachWorkspace.tsx', { count: 3, why: "the coach home: its marks are fixed with the home batch (AS-7), not in this sweep" }],
-  ['components/CoachFloorFocus.tsx', { count: 1, why: "draws whatever tone the coach home hands it ('locked' included); the home batch (AS-7) owns those tones" }],
 ]);
 
 /** Still to be swept, with today's count: SC2-3 (office, board and platform pages). */
