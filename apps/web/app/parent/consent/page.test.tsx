@@ -125,43 +125,53 @@ test('no "Allow public use" control is offered; the page says the consent is gym
    yet decided. Before this, the one sentence on it said photos and video
    "stay inside the gym", and only a guardian who had not signed saw it. */
 describe('where photos and video go', () => {
-  const own = (status: string | null, coversVideo: boolean | null) => ({
+  type Row = Record<string, unknown>;
+  const own = (status: string | null, coversVideo: boolean | null): Row => ({
     you: true,
     status,
     covers_video: coversVideo,
     public_use_allowed: status === null ? null : false,
     signed_at: status === null ? null : '2026-08-01T00:00:00Z',
   });
-  const child = (id: string, name: string, row: ReturnType<typeof own>) => ({
-    athlete_id: id,
-    athlete_name: name,
-    consent_ok: row.status === 'signed',
-    guardian_count: 1,
-    missing_guardian_count: row.status === 'signed' ? 0 : 1,
-    per_guardian: [row],
-  });
+  const child = (id: string, name: string, rows: Row[], overrides: Row = {}) => {
+    const signed = rows.filter((row) => row.status === 'signed' || row.status === 'granted').length;
+    return {
+      athlete_id: id,
+      athlete_name: name,
+      consent_ok: signed === rows.length,
+      guardian_count: rows.length,
+      missing_guardian_count: rows.length - signed,
+      per_guardian: rows,
+      ...overrides,
+    };
+  };
   const cardOf = (name: string) => screen.getByText(name).closest('article') as HTMLElement;
 
   test.each([
-    ['not yet decided', own(null, null)],
-    ['signed, photos and video', own('signed', true)],
-    ['signed, photos only', own('signed', false)],
-    ['withdrawn', own('withdrawn', false)],
-  ])('a guardian whose own consent is %s reads the words, whole, on the child\'s card', async (_label, row) => {
+    ['not yet decided', [own(null, null)]],
+    ['signed, photos and video', [own('signed', true)]],
+    ['signed, photos only', [own('signed', false)]],
+    ['withdrawn', [own('withdrawn', false)]],
+    ['a status this page does not recognise', [own('pending', true)]],
+    ['signed, while a co-guardian has not', [own('signed', true), { you: false, status: 'not_on_file' }]],
+    ['missing: only a co-guardian\'s row came back', [{ you: false, status: 'granted' }]],
+  ])('a guardian whose own consent is %s reads the words, whole and once, on the child\'s card', async (_label, rows) => {
     global.fetch = jest.fn().mockResolvedValue(
-      jsonResponse({ ok: true, items: [child('ath-1', 'Jamie Rivera', row)] }),
+      jsonResponse({ ok: true, items: [child('ath-1', 'Jamie Rivera', rows)] }),
     ) as unknown as typeof fetch;
 
-    render(<GuardianMediaConsentPage />);
+    const view = render(<GuardianMediaConsentPage />);
     await screen.findByText('Jamie Rivera');
 
-    expect(within(cardOf('Jamie Rivera')).getByText(GUARDIAN_MEDIA_WORDS)).toBeInTheDocument();
+    expect(within(cardOf('Jamie Rivera')).getAllByText(GUARDIAN_MEDIA_WORDS)).toHaveLength(1);
+    // The old sentence is gone in this state too, not only where it used to show.
+    expect(view.container.textContent).not.toMatch(/stays? inside the gym/i);
   });
 
   test('with two children, one signed and one not, each card carries the words once', async () => {
     global.fetch = jest.fn().mockResolvedValue(jsonResponse({
       ok: true,
-      items: [child('ath-1', 'Jamie Rivera', own('signed', true)), child('ath-2', 'Alex Rivera', own(null, null))],
+      items: [child('ath-1', 'Jamie Rivera', [own('signed', true)]), child('ath-2', 'Alex Rivera', [own(null, null)])],
     })) as unknown as typeof fetch;
 
     render(<GuardianMediaConsentPage />);
@@ -171,17 +181,6 @@ describe('where photos and video go', () => {
       expect(within(cardOf(name)).getAllByText(GUARDIAN_MEDIA_WORDS)).toHaveLength(1);
     }
     expect(screen.getAllByText(GUARDIAN_MEDIA_WORDS)).toHaveLength(2);
-  });
-
-  test('the page no longer says photos and video stay inside the gym, signed or not', async () => {
-    for (const items of [NEEDS_CONSENT, ALREADY_SIGNED]) {
-      global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items })) as unknown as typeof fetch;
-      const view = render(<GuardianMediaConsentPage />);
-      await screen.findByText(/^Consent (needed|on file)$/);
-      expect(view.container.textContent).not.toMatch(/stays? inside the gym/i);
-      expect(view.container.textContent).toContain('Still frames from videos are also sent to Microsoft');
-      view.unmount();
-    }
   });
 });
 

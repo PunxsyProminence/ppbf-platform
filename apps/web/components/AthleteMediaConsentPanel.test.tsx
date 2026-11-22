@@ -108,6 +108,10 @@ test('a minor is told their guardian decides until 18, and is offered nothing to
   expect(screen.getByText(/Until you are 18, your guardian decides/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Save my answer' })).toBeNull();
   expect(screen.queryByRole('radio')).toBeNull();
+  // The adult passage says "Your choice here covers ...", which is not true for
+  // a minor: their guardian decides (HF9-1; the ruling names the adult panel).
+  expect(document.body.textContent).not.toContain(ADULT_MEDIA_FRAMES_WORDS);
+  expect(screen.queryByText(/Your choice here covers/)).toBeNull();
 });
 
 test.each([

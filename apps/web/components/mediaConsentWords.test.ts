@@ -3,15 +3,19 @@
 // they are written out here a second time, by hand, so a change of one word in
 // mediaConsentWords.ts fails until someone decides it on purpose.
 //
-// The last test is a tripwire, not a proof. It lists the shipped files under
-// apps/web that call analyzeFramesWithVision, the one function that sends still
-// frames to the Azure AI service, and expects exactly the three callers the
-// words describe. A new caller fails here with a message that points at the
-// words. It reads code, not comments. It does NOT catch a new direct fetch that
-// sends images some other way.
+// The last test is a tripwire, not a proof. It counts, file by file, where the
+// shipped code under apps/web names analyzeFramesWithVision, the one function
+// that sends still frames to the Azure AI service, and expects exactly the
+// three callers the words describe, each with one call. A new caller, or a new
+// call in an old one, fails here with a message that points at the words. It
+// reads the TypeScript syntax tree, so comments do not count. It does NOT
+// catch a new direct fetch that sends images some other way, nor the name
+// built from pieces at run time.
 
 import fs from 'node:fs';
 import path from 'node:path';
+
+import ts from 'typescript';
 
 import { ADULT_MEDIA_FRAMES_WORDS, GUARDIAN_MEDIA_WORDS } from './mediaConsentWords';
 
@@ -45,8 +49,7 @@ test('the guardian words no longer say photos and video stay inside the gym', ()
 
 const WEB_DIR = path.resolve(__dirname, '..');
 const SKIPPED_DIRS = new Set(['node_modules', '.next', 'public', 'e2e', 'seed-data']);
-const SENDER_MODULE = 'src/server/pilot/shadowFilmStudy.ts';
-const SENDER = /\banalyzeFramesWithVision\b/g;
+const SENDER_NAME = 'analyzeFramesWithVision';
 
 function shippedSourceUnder(dir: string): string[] {
   const found: string[] = [];
@@ -54,44 +57,63 @@ function shippedSourceUnder(dir: string): string[] {
     if (entry.name.startsWith('.') || SKIPPED_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) found.push(...shippedSourceUnder(full));
-    else if (/\.(ts|tsx|mts|cts|js|mjs|cjs)$/.test(entry.name) && !/\.(test|spec)\.[a-z]+$/.test(entry.name)) found.push(full);
+    else if (/\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(entry.name) && !/\.(test|spec)\.[a-z]+$/.test(entry.name)) found.push(full);
   }
   return found;
 }
 
 const relative = (file: string) => path.relative(WEB_DIR, file).split(path.sep).join('/');
 
-// Code only: a comment that names the function (as mediaConsentWords.ts does)
-// is not a caller. Block comments go first, then line comments that do not
-// follow a colon or a quote, so a URL in a string keeps the rest of its line.
-const codeOf = (file: string) => fs.readFileSync(file, 'utf8')
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
+function scriptKind(file: string): ts.ScriptKind {
+  if (file.endsWith('.tsx')) return ts.ScriptKind.TSX;
+  if (file.endsWith('.jsx')) return ts.ScriptKind.JSX;
+  if (/\.(js|mjs|cjs)$/.test(file)) return ts.ScriptKind.JS;
+  return ts.ScriptKind.TS;
+}
+
+/**
+ * How many times a file's code names the sender: as an identifier (an import,
+ * a call, `module.analyzeFramesWithVision`, a declaration) or as a string
+ * (`module['analyzeFramesWithVision']`). Read from the TypeScript syntax tree,
+ * so a comment that names it (mediaConsentWords.ts does) is not counted, and a
+ * `//` or `/*` inside a string cannot hide a real use.
+ */
+function namesOfSender(file: string): number {
+  const text = fs.readFileSync(file, 'utf8');
+  if (!text.includes(SENDER_NAME)) return 0;
+  const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKind(file));
+  let count = 0;
+  const visit = (node: ts.Node) => {
+    if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && node.text === SENDER_NAME) count += 1;
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return count;
+}
 
 test('frames go to the AI service from exactly the callers these words describe', () => {
-  const callers = shippedSourceUnder(WEB_DIR)
-    .filter((file) => relative(file) !== SENDER_MODULE)
-    .filter((file) => (codeOf(file).match(SENDER) ?? []).length > 0)
-    .map(relative)
-    .sort();
+  const uses = Object.fromEntries(
+    shippedSourceUnder(WEB_DIR)
+      .map((file) => [relative(file), namesOfSender(file)] as const)
+      .filter(([, count]) => count > 0)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
 
-  const reason = 'A new caller of analyzeFramesWithVision sends still frames to the Azure AI service. Check that '
+  const reason = 'A new use of analyzeFramesWithVision sends still frames to the Azure AI service. Check that '
     + 'GUARDIAN_MEDIA_WORDS and ADULT_MEDIA_FRAMES_WORDS in components/mediaConsentWords.ts still tell families '
     + 'the truth, and ask the owner before changing them (HF9-1, Q3 on #2083). Then update this list.';
-  expect({ reason, callers }).toEqual({
+  expect({ reason, uses }).toEqual({
     reason,
-    callers: [
-      // Admin diagnostic: a clip it makes itself, no member footage.
-      'app/api/pilot/shadow/film-study/diagnostic/route.ts',
-      // Film Study, when a coach or the gym administrator asks.
-      'src/server/pilot/shadowJobProcessor.ts',
-      // The upload safety scan.
-      'src/server/pilot/videoScan.ts',
-    ],
+    uses: {
+      // Admin diagnostic, a clip it makes itself, no member footage: the import and one call.
+      'app/api/pilot/shadow/film-study/diagnostic/route.ts': 2,
+      // Film Study, when a coach or the gym administrator asks: the import and one call. A second call
+      // here (a new job type, say) is a new way out for frames, and fails.
+      'src/server/pilot/shadowJobProcessor.ts': 2,
+      // The sender itself: its declaration only.
+      'src/server/pilot/shadowFilmStudy.ts': 1,
+      // The upload safety scan: the import and one call.
+      'src/server/pilot/videoScan.ts': 2,
+    },
   });
-
-  // The module that sends names the function once, where it is declared, so a
-  // second call added inside it trips here too.
-  const inSender = codeOf(path.join(WEB_DIR, SENDER_MODULE)).match(SENDER) ?? [];
-  expect({ reason, namesInSender: inSender.length }).toEqual({ reason, namesInSender: 1 });
 });
