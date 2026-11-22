@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
-import { GUARDIAN_MEDIA_WORDS } from '@/components/mediaConsentWords';
+import { GUARDIAN_PAGE_INTRO_WORDS, guardianMediaWords } from '@/components/mediaConsentWords';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDate } from '@/lib/gymTime';
 
@@ -217,11 +217,11 @@ export default function GuardianMediaConsentPage() {
           <header className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Photo &amp; Video Consent</h1>
-            <p className="t-body mt-[var(--s3)] max-w-3xl">
-              Nothing here blocks your child from training. It controls one thing: whether photos or videos of your
-              child may be used in gym publications. You can grant or withdraw consent at any time. If your child
-              has more than one guardian, every guardian must consent before anything is published.
-            </p>
+            {/* The owner's answer (Overwatch on #2083, comment 7085637440):
+                no longer "controls one thing"; the same choice also decides
+                playback and the frames sent to Microsoft's Azure AI service
+                (mediaConsentWords.ts). */}
+            <p className="t-body mt-[var(--s3)] max-w-3xl">{GUARDIAN_PAGE_INTRO_WORDS}</p>
             {errorMessage ? (
               <p role="alert" className="alert alert--warning mt-[var(--s3)]">
                 <span className="alert-icon" aria-hidden="true">▲</span>
@@ -344,13 +344,19 @@ export default function GuardianMediaConsentPage() {
                       </div>
                     ) : null}
                     {/* Where photos and video go, in the owner's words (HF9-1,
-                        Q3 = A on #2083; mediaConsentWords.ts). On every card,
-                        signed or not: a guardian who signed before these words
-                        existed reads them too. They used to sit inside the
-                        not-yet-signed block and said photos and video "stay
-                        inside the gym", while still frames go to Microsoft's
-                        Azure AI service. */}
-                    <p className="t-muted mt-[var(--s2)]">{GUARDIAN_MEDIA_WORDS}</p>
+                        Q3 = A on #2083, OD-2026-11-21-008; mediaConsentWords.ts).
+                        On every card, signed or not: a guardian who signed
+                        before these words existed reads them too. They used to
+                        sit inside the not-yet-signed block and said photos and
+                        video "stay inside the gym", while still frames go to
+                        Microsoft's Azure AI service. A card whose own consent
+                        on file allows public use, the one that reads "public
+                        use allowed" above, leaves out "Nothing is posted
+                        publicly on this consent." (the owner's answer, comment
+                        7085637440). */}
+                    <p className="t-muted mt-[var(--s2)]">
+                      {guardianMediaWords(currentlySigned && myRow?.public_use_allowed === true)}
+                    </p>
                     {/* .btn .btn--kiosk, not `.btn--lever min-h-[44px]`.
 
                         The old class string asked for 44px and rendered 38. It is
