@@ -32,7 +32,7 @@ const TITLE_NOT_LITERAL: Record<string, string> = {
   '/athlete/dashboard': 'AthleteWorkspace prints the open tab group as the h1',
   '/coach/environment/intake-router': 'the shell prints roleLabel "Coach Workspace" as the h1',
   '/workspace': 'the h1 is "<role> Workspace", built from the session role',
-  '/profile': 'the shell prints roleLabel "Your Corner" as the h1',
+  '/profile': 'the shell prints roleLabel "Your Profile" as the h1',
   '/wall': 'the gym TV wall; its heading comes from the wall read',
   '/parent/progression-visibility': "the h1 is <child>'s Progression, built from the chosen child",
   '/parent/video': "the h1 is <child>'s Film (or Your Athlete's Film), built from the chosen child",

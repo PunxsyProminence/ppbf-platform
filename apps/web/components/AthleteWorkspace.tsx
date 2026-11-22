@@ -3167,7 +3167,7 @@ export default function AthleteWorkspace() {
             goals={goalsRead}
             onOpenGoals={() => setActiveTab('smart-goals')}
             onReportPain={goToPainReport}
-            onAskShadow={() => setActiveTab('shadow')}
+            onAskShadow={() => setActiveTab('message-coach')}
             checkedOutToday={checkedOutToday}
             checkInFailed={checkInFailed}
             afterPain={<><TrainingHoldBanner /><MedicalRestrictionNotice /></>}
@@ -4379,11 +4379,14 @@ export default function AthleteWorkspace() {
                   no recipient, address, or delivery step is stored or sent --
                   so this surface cannot claim parent CC is in force. A missing
                   safeguard is a caution, not a Layer 11 lock, so it takes the
-                  warning rung with its glyph (Laws 2 + 3). */}
+                  warning rung with its glyph (Laws 2 + 3). Its "Not Built Yet"
+                  title stood over a form that works (it posts to
+                  /api/pilot/athlete/chat), so the title is gone and the
+                  SafeSport sentence stays word for word (lane AS-8, ATH-05;
+                  Overwatch Q10 A on #2020). */}
               <div className="alert alert--warning">
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
-                  <p className="alert-title">Not Built Yet</p>
                   <p className="alert-msg"><strong>SafeSport:</strong> {ASK_SHADOW_SAFESPORT_LINE}</p>
                 </div>
               </div>
@@ -4427,7 +4430,7 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 panel-settle">
               <div className="flex flex-wrap gap-[var(--s3)]">
                 <Link href="/schedule" className="btn min-h-[var(--tap)]">
-                  Open Unified Scheduler
+                  Open Schedule
                 </Link>
               </div>
               {/* The athlete's classes and bookings, read in place (WO-N5-01).

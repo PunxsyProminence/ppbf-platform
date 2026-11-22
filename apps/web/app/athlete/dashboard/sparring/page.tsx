@@ -762,13 +762,13 @@ export default function SparringTelemetryPage() {
           to do that. */}
       <header className="flex flex-wrap items-center justify-between gap-[var(--s4)] border-b-[3px] border-[color:var(--brass-500)] px-[var(--s5)] py-[var(--s4)]">
         <div>
-          {/* The page's voice follows who is holding it. "Your Corner" over
+          {/* The page's voice follows who is holding it. "Your entry" over
               "Your training record" is written to the boxer whose record it
               is; a coach filling this in for a child is not that reader, and
               copy that tells them it is their own record is the same kind of
               small untruth this file's tests already police in the save
               messages. */}
-          <p className="t-eyebrow">{actor === 'staff' ? 'Coach Entry' : 'Your Corner'}</p>
+          <p className="t-eyebrow">{actor === 'staff' ? 'Coach Entry' : 'Your entry'}</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Sparring Log</h1>
           <ClusterNav cluster="sparring" />
           <div className="mt-[var(--s3)]"><BackHome /></div>

@@ -720,3 +720,19 @@ describe('menus show only pages a person can open (AS-4 4a)', () => {
     expect(BUILDING.find((d) => d.href === '/admin/platform/overview')?.roles).toEqual(['platform_owner']);
   });
 });
+
+/* AS10-7 (lane AS-10; app scrub OFF-08; plan #2018 Q5 A, Q21 A). Gym Office is the one place codes are
+   issued, so a search for resetting a sign-in finds it. The Reset Athlete Sign-In door keeps opening its
+   own page, /admin/pin, which links Gym Office (Q5 A): pointing it at Gym Office would break
+   "Each menu label matches its page title" (OD-2026-10-17-001 ruling 1). */
+describe('a search for resetting a sign-in finds Gym Office (Q21 A)', () => {
+  it.each(['reset sign-in', 'sign-in code'])('"%s" finds Gym Office for the gym admin', (query) => {
+    expect(searchDoors('admin', query).map((d) => d.href)).toContain('/admin/people');
+  });
+
+  it('the Reset Athlete Sign-In door still opens its own page under its own name', () => {
+    const reset = BUILDING.find((d) => d.label === 'Reset Athlete Sign-In');
+    expect(reset?.href).toBe('/admin/pin');
+    expect(searchDoors('admin', 'reset sign-in').map((d) => d.href)).toContain('/admin/pin');
+  });
+});

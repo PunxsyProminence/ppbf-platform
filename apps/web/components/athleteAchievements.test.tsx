@@ -375,3 +375,24 @@ describe('one mark per press (#1529)', () => {
     expect(posts()).toHaveLength(1);
   });
 });
+
+/* Lane AS-8 (Overwatch Q11 A and Q13 A on #2020; OD-2026-11-20-001): the
+   athlete's two headings. "Corner" stays for My Corner and the red or blue
+   choice; the family wording is unchanged. */
+describe("the athlete's headings", () => {
+  it('reads "What your coaches have said" and "Who you train with"', async () => {
+    mentorships = [{
+      mentorship_id: 'm1',
+      mentor_athlete_id: 'ath_1',
+      mentor_name: 'Ada Rivera',
+      mentee_athlete_id: 'ath_9',
+      mentee_name: 'Sam Doyle',
+      started_on: '2026-03-01',
+      ended_on: null,
+    }];
+    await renderPanel();
+    expect(screen.getByRole('heading', { name: 'What your coaches have said' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Who you train with' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: /^Your corner$|^From your coaches$/ })).toBeNull();
+  });
+});

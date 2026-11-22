@@ -173,7 +173,8 @@ export const BUILDING: readonly Door[] = [
     keywords: 'capabilities registry matrix builder admin authority',
     hint: 'Capability definitions, assignments, status and role exposure.' },
   { href: '/admin/people', label: 'Gym Office', room: 'office', roles: ['admin'],
-    keywords: 'roster members directory participants' },
+    // AS10-7 (Q21 A): codes are issued here, so a search for resetting a sign-in finds it.
+    keywords: 'roster members directory participants reset sign-in pin code' },
   /* AS-4 (U2-4a, QV A): the plan's "Athlete Records and Export" and "Equipment
      and Suppliers" are four doors under today's page titles, admin only. The
      platform owner is shown a "managed per gym" notice on this one. */
