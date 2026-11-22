@@ -38,6 +38,14 @@ import type { ShadowValidationResult } from './shadowChat';
  *
  * NON-DISCLOSING, like athleteVoice: a fixed reason and the conversation
  * pointer only. Never the message, never the matched cues.
+ *
+ * A PARENT'S MESSAGE (HF8-1 B; Jason, 2026-11-21, Q1 = B "office review
+ * only", relayed by Overwatch on #2083) gets the same scan and carve-outs and
+ * the same mark, so the admin SHADOW review row is owed, the words stay out of
+ * the research feed and F-093 applies. It files no escalation
+ * (shadowDisclosureFilesEscalation; fileShadowDisclosureEscalation returns
+ * null for it). The guard lives here, not in the chat route: the route still
+ * hands every disclosure to fileShadowDisclosureEscalation, which decides.
  */
 
 /**
@@ -219,15 +227,28 @@ export interface ShadowDisclosure {
   readonly namesGymStaff: boolean;
   /** Filed admin-only: names gym staff, or carries a grooming, secrecy or touch cue. */
   readonly adminOnly: boolean;
+  /**
+   * Whether the in-app safety escalation is filed: an athlete's own
+   * disclosure only (shadowDisclosureFilesEscalation). A parent's is office
+   * review only, and fileShadowDisclosureEscalation files nothing for it.
+   */
+  readonly filesEscalation: boolean;
 }
 
 /**
- * The disclosure in an athlete's SHADOW message, or null. Athletes only: the
- * lane brief scopes F-076 to an athlete's own message, whose athlete scope is
- * the sender's own record.
+ * Whose SHADOW messages are scanned: an athlete's (F-076) and a parent's
+ * (HF8-1 B; Jason, 2026-11-21, Q1 = B "office review only", relayed by
+ * Overwatch on #2083). Staff and every other role are not.
+ */
+const SCANNED_ROLES: ReadonlySet<string> = new Set(['athlete', 'parent']);
+
+/**
+ * The disclosure in an athlete's or a parent's SHADOW message, or null. The
+ * same scan and the same carve-outs for both. What a match then does differs
+ * by role: see shadowDisclosureFilesEscalation.
  */
 export function detectShadowDisclosure(message: string, role: string): ShadowDisclosure | null {
-  if (role !== 'athlete') return null;
+  if (!SCANNED_ROLES.has(role)) return null;
   const scan = scanForSafetyLanguage(message);
   if (!scan.safeguarding) return null;
   const normalized = normalizeForSafetyScan(message);
@@ -248,7 +269,18 @@ export function detectShadowDisclosure(message: string, role: string): ShadowDis
   const adminOnly = staff
     || scan.cues.some((cue) => ADMIN_ONLY_CUES.has(cue))
     || inAnyReading(TOUCH_PATTERN);
-  return { cues: scan.cues, namesGymStaff: staff, adminOnly };
+  return { cues: scan.cues, namesGymStaff: staff, adminOnly, filesEscalation: shadowDisclosureFilesEscalation(role) };
+}
+
+/**
+ * Whether a disclosure files the in-app safety escalation. Only an athlete's:
+ * its athlete scope is the sender's own record. A parent's is office review
+ * only (Q1 = B): the org admin's SHADOW review row for that one exchange
+ * (OD-2026-10-07-009 ruling 4), never a coach alert or an escalation entry,
+ * whatever athlete the parent's chat names.
+ */
+export function shadowDisclosureFilesEscalation(role: string): boolean {
+  return role === 'athlete';
 }
 
 /** A disclosure the Tell us box would file 'critical'. Its review row takes the critical allowance. */
@@ -282,8 +314,9 @@ function isEmergencyReturn(validation: ShadowValidationResult): boolean {
  * disclosure path, exactly as the same disclosure without the pain word:
  * SHADOW still answers (OD-2026-10-10-007). The emergency return stays
  * ahead of a disclosure (OD-2026-10-10-006; Overwatch, F-093 Q1), and a
- * result that is already high-risk and allowed is main's. The escalation
- * files in every case; this decides only the answer.
+ * result that is already high-risk and allowed is main's. An athlete's
+ * escalation files in every case, and a parent's disclosure files none
+ * (filesEscalation); this decides only the answer.
  */
 export function markShadowDisclosure(
   validation: ShadowValidationResult,
@@ -353,8 +386,10 @@ function escalationInput(params: FileShadowDisclosureParams & { athleteId: strin
 
 /**
  * Files the escalation, or returns null when the sender has no athlete record
- * (safety_escalations.athlete_id is NOT NULL). The admin SHADOW review row is
- * the route's, as for every high-risk message.
+ * (safety_escalations.athlete_id is NOT NULL) or the disclosure is a parent's
+ * (filesEscalation false: office review only, Q1 = B, whatever athlete id the
+ * caller passes). The admin SHADOW review row is the route's, as for every
+ * high-risk message.
  *
  * A database whose source_type CHECK predates 'shadow_disclosure' (code
  * deployed before pilot:apply-safety-escalations) rejects the row with 23514.
@@ -364,7 +399,7 @@ function escalationInput(params: FileShadowDisclosureParams & { athleteId: strin
 export async function fileShadowDisclosureEscalation(
   params: FileShadowDisclosureParams,
 ): Promise<SafetyEscalationRow | null> {
-  if (!params.athleteId) return null;
+  if (!params.athleteId || !params.disclosure.filesEscalation) return null;
   const withAthlete = { ...params, athleteId: params.athleteId };
   const adminOnly = params.disclosure.adminOnly || await conversationAlreadyNamedStaff(withAthlete);
   const sourceType = shadowDisclosureSourceType({ adminOnly });

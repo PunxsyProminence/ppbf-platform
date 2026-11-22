@@ -207,7 +207,7 @@ function SafetyChecks({ rows }: { readonly rows: readonly SafetyCheckRow[] }) {
       <p className="t-label">Safety checks</p>
       <div className="mt-[var(--s2)] flex flex-col gap-[var(--s2)]">
         {rows.map((row) => (
-          <div key={row.key} className="flex items-center justify-between gap-[var(--s3)] text-[length:var(--t-sm)]">
+          <div key={row.key} className="t-body flex items-center justify-between gap-[var(--s3)]">
             <span>{row.name}</span>
             <span className={`badge ${row.badge}`}>
               <i aria-hidden="true">{row.glyph}</i>
@@ -259,15 +259,28 @@ export default function GuardianSafetyPage() {
     <RoleSessionGate allowedRoles={['parent']}>
       {/* T7 (Plate Set v1): a family surface takes the warm ground or none --
           never another room's wall. This route is gated to `parent`, which
-          roleGround.ts calls family, so the office room it used to declare
-          would have put a plank-wall plate behind a safety page written for a
-          parent. The room is dropped rather than swapped for .on-canvas:
-          this page's type is still tuned for ink, and moving the ground
-          without converting the content is the readability trap roleGround.ts
-          warns about. Converting it is its own slice. */}
-      <main className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
+          roleGround.ts calls family. It stands on the family ground now, as
+          the hub, film and progress pages do (app scrub FAM-28; AS-9 Q9 = A):
+          the canvas, with paper panels on it. The conversion this note used
+          to defer is done here: the page's text goes through the design
+          system's voices (.t-body, .t-label, .t-eyebrow, .badge), which the
+          sheet restates in ink for this ground, and the raw bone colours this
+          file carried for the dark ground are gone, and so is the one the
+          shared MyInjuries component carried on its "who reported / expected
+          back" line (now .t-muted; Overwatch Q-D = A on AS9-5).
+          .ge-family is the hub's family dress: its focus ring is what makes
+          keyboard focus visible here, because on canvas `.on-canvas
+          .btn--ghost` replaces the box-shadow ring `.btn` draws and the brass
+          ring is about 1.2:1 on cream (golden-era.css, "FOCUS THAT SHOWS"); it
+          also floors every .btn at --tap and makes the h1 the brass
+          nameplate. The loading, failed and nobody-linked panels are .pap as
+          well: .empty's inks are bone, written for leather, and the sheet
+          restates them in ink only under .pap ("The empty state on paper");
+          measured on a local render, 2026-11-21, the title read 1.36:1 down to
+          1.12:1 on this paper without it. */}
+      <main className="ge-family on-canvas min-h-screen">
         <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
-          <header className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]">
+          <header className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]">
             <p className="t-eyebrow">Guardian</p>
             <h1 className="t-command mt-[var(--s3)]" style={{ fontSize: 'var(--t-xl)' }}>Safety Status</h1>
             {/* The "same information your child can see" claim covers the hold
@@ -319,31 +332,37 @@ export default function GuardianSafetyPage() {
                seconds). A status region. The sheet's
                `.working` cue is not used: it pins 11px and this is a kiosk
                page with a 19.1px type floor. Wording PROPOSED. */
-            <div className="empty mt-[var(--s5)]" role="status">
-              <div className="empty-glyph" aria-hidden="true">◌</div>
-              <div className="empty-title">Loading safety status…</div>
-              <div className="empty-msg">This can take a few seconds.</div>
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty" role="status">
+                <div className="empty-glyph" aria-hidden="true">◌</div>
+                <div className="empty-title">Loading safety status…</div>
+                <div className="empty-msg">This can take a few seconds.</div>
+              </div>
             </div>
           ) : errorMessage ? (
-            <div className="empty mt-[var(--s5)]">
-              <div className="empty-glyph" aria-hidden="true">✕</div>
-              <div className="empty-title">Safety status could not be loaded</div>
-              <button type="button" onClick={checkAgain} className="btn btn--ghost mt-[var(--s3)]">
-                Check again
-              </button>
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-glyph" aria-hidden="true">✕</div>
+                <div className="empty-title">Safety status could not be loaded</div>
+                <button type="button" onClick={checkAgain} className="btn btn--ghost mt-[var(--s3)]">
+                  Check again
+                </button>
+              </div>
             </div>
           ) : items.length === 0 ? (
-            <div className="empty mt-[var(--s5)]">
-              <div className="empty-glyph" aria-hidden="true">◌</div>
-              <div className="empty-title">No linked children found</div>
-              <div className="empty-msg">Contact the gym if this doesn&rsquo;t look right.</div>
+            <div className="mat-paper pap mt-[var(--s5)] rounded-[var(--r-lg)]">
+              <div className="empty">
+                <div className="empty-glyph" aria-hidden="true">◌</div>
+                <div className="empty-title">No linked children found</div>
+                <div className="empty-msg">Contact the gym if this doesn&rsquo;t look right.</div>
+              </div>
             </div>
           ) : (
             <section className="mt-[var(--s5)] flex flex-col gap-[var(--s5)]">
               {items.map((item) => (
                 <article
                   key={item.athlete_id}
-                  className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.14)] p-[var(--s5)]"
+                  className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]"
                 >
                   {/* A missing name says so; the athlete id is never shown to a
                       family (UXB-12). Wording PROPOSED. */}
@@ -370,7 +389,7 @@ export default function GuardianSafetyPage() {
                       />
                     </div>
                   ) : (
-                    <p className="t-body mt-[var(--s3)] text-[color:var(--bone-400)]">No training hold on file right now.</p>
+                    <p className="t-muted mt-[var(--s3)]">No training hold on file right now.</p>
                   )}
 
                   {/* While a restriction is in force, or when it could not be
@@ -396,7 +415,7 @@ export default function GuardianSafetyPage() {
                         const action =
                           status === 'missing' && isTrackedWaiverType(type) ? WAIVER_MISSING_ACTION[type] : null;
                         return (
-                          <div key={type} data-waiver-type={type} className="text-[length:var(--t-sm)]">
+                          <div key={type} data-waiver-type={type} className="t-body">
                             <div className="flex items-center justify-between gap-[var(--s3)]">
                               <span>{waiverTypeLabel(type)}</span>
                               <span className={`badge ${display.badge}`}>
@@ -404,7 +423,7 @@ export default function GuardianSafetyPage() {
                                 {display.label}
                               </span>
                             </div>
-                            {action ? <p className="mt-[var(--s1)] text-[color:var(--bone-300)]">{action}</p> : null}
+                            {action ? <p className="t-body mt-[var(--s1)]">{action}</p> : null}
                           </div>
                         );
                       })}

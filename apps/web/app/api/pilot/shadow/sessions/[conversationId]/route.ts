@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/src/server/pilot/access';
 import { hiddenNotFound, isUuid, jsonError, parseSafeLimit, requirePrincipal } from '@/src/server/pilot/http';
 import {
+  deleteOwnConversation,
   loadConversationMessages,
   renameConversation,
-  softDeleteConversation,
 } from '@/src/server/pilot/shadowConversations';
 
 interface RouteContext {
@@ -77,7 +77,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     requireShadowSessionRole(principal);
     const { conversationId } = await context.params;
     if (!isUuid(conversationId)) return hiddenNotFound();
-    const deleted = await softDeleteConversation(
+    const deleted = await deleteOwnConversation(
       principal,
       conversationId,
     );

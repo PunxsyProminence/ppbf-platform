@@ -120,3 +120,27 @@ describe('the picker', () => {
     expect(screen.getByRole('group', { name: "Which child's record" })).toBeTruthy();
   });
 });
+
+// AS9-3: the Parent Hub draws each child's small portrait before the name.
+// What it draws is decorative, so each button's name is still the label alone.
+describe('a lead before each name', () => {
+  test('is drawn inside each button and leaves the button named by its label', () => {
+    render(
+      <FamilyChildPicker
+        linked={[ROSA, MARCUS]}
+        activeId={ROSA.athlete_id}
+        onChoose={() => {}}
+        lead={(child) => <span aria-hidden="true" data-testid={`lead-${child.athlete_id}`}>*</span>}
+      />,
+    );
+    const rosa = screen.getByRole('button', { name: 'Rosa Delgado' });
+    const marcus = screen.getByRole('button', { name: 'Marcus Webb' });
+    expect(within(rosa).getByTestId('lead-ath-rosa')).toBeTruthy();
+    expect(within(marcus).getByTestId('lead-ath-marcus')).toBeTruthy();
+  });
+
+  test('without one, nothing is drawn before the name', () => {
+    render(<FamilyChildPicker linked={[ROSA, MARCUS]} activeId={null} onChoose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Rosa Delgado' }).childElementCount).toBe(0);
+  });
+});

@@ -155,6 +155,7 @@ describe('completing a request', () => {
       requestId: 'req-1',
       status: 'completed',
       conversationsCleared: 3,
+      conversationsHeld: 1,
     });
 
     const response = await POST(postRequest({ request_id: 'req-1', action: 'complete' }));
@@ -166,6 +167,7 @@ describe('completing a request', () => {
       requestId: 'req-1',
       status: 'completed',
       conversationsCleared: 3,
+      conversationsHeld: 1,
     });
     expect(mockComplete).toHaveBeenCalledWith(expect.anything(), 'req-1');
   });
@@ -179,6 +181,7 @@ describe('completing a request', () => {
       requestId: 'req-1',
       status: 'completed',
       conversationsCleared: 3,
+      conversationsHeld: 1,
     });
 
     await POST(postRequest({ request_id: 'req-1', action: 'complete' }));
@@ -187,7 +190,7 @@ describe('completing a request', () => {
     const event = mockAudit.mock.calls[0][0];
     expect(event.entity_type).toBe('shadow_data_deletion_request');
     expect(event.entity_id).toBe('req-1');
-    expect(event.details).toEqual({ action: 'complete', conversations_cleared: 3 });
+    expect(event.details).toEqual({ action: 'complete', conversations_cleared: 3, conversations_held: 1 });
     expect(event.shadow_mirror).toBe(false);
     expect(['create', 'update', 'delete']).toContain(event.event_type);
     expect(JSON.stringify(event)).not.toMatch(/conversation_id/i);
@@ -213,13 +216,13 @@ describe('completing a request', () => {
 
 describe('denying a request', () => {
   it('records the denial with zero cleared', async () => {
-    mockDeny.mockResolvedValue({ requestId: 'req-1', status: 'denied', conversationsCleared: 0 });
+    mockDeny.mockResolvedValue({ requestId: 'req-1', status: 'denied', conversationsCleared: 0, conversationsHeld: 0 });
 
     const response = await POST(postRequest({ request_id: 'req-1', action: 'deny' }));
 
     expect(response.status).toBe(200);
     expect(mockComplete).not.toHaveBeenCalled();
     expect(mockAudit.mock.calls[0][0].details)
-      .toEqual({ action: 'deny', conversations_cleared: 0 });
+      .toEqual({ action: 'deny', conversations_cleared: 0, conversations_held: 0 });
   });
 });

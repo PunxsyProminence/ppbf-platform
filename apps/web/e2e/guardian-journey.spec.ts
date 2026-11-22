@@ -52,7 +52,16 @@ test.describe('Guardian journey', () => {
     // The child, by name. A family hub that resolved but showed "No children
     // found" is the failure a guardian would report, and it is exactly what
     // the loading and error branches of this component can leave on screen.
-    await expect(page.getByRole('button', { name: ROSA.full_name })).toBeVisible();
+    // A one-child family has no picker (FamilyChildPicker draws none for one
+    // child, AS9-3), so the name is read where the hub puts the chosen child
+    // from the roster: the coach's corner on the Overview, whose heading is
+    // "<name>'s corner, as it stands" (ParentDigest, given the active child's
+    // roster name by ParentHub).
+    await expect(
+      page
+        .getByRole('region', { name: 'From the corner' })
+        .getByRole('heading', { name: `${ROSA.full_name}’s corner, as it stands` }),
+    ).toBeVisible();
     await expect(page.getByText('No children found')).toHaveCount(0);
     await expect(page.getByText('Loading your children...')).toHaveCount(0);
 
@@ -125,6 +134,82 @@ test.describe('Guardian journey', () => {
     });
 
     await expect(page.getByText('Consent granted.')).toBeVisible();
+  });
+
+  /* CHANGE TO PHOTOS ONLY (app scrub FAM-19; Jason's ruling on card OW27-14,
+     "B: Build it, with a confirm", OD-2026-11-20-001). A guardian whose
+     consent includes video takes video out without withdrawing everything.
+     Driven in a real browser because the confirm is the browser's own dialog:
+     declining it must send nothing, and accepting it must send the existing
+     grant with video left out. */
+  test('changes a signed consent to photos only, behind a confirm that names the child', async ({ page }) => {
+    const decisions: Array<Record<string, unknown>> = [];
+    const asked: string[] = [];
+    let coversVideo = true;
+
+    await installPilotApi(page, {
+      session: { role: 'parent' },
+      routes: {
+        '/api/pilot/parent/consent': (_url, route) => {
+          if (route.request().method() === 'POST') {
+            decisions.push(JSON.parse(route.request().postData() ?? '{}'));
+            coversVideo = false;
+            return { ok: true, athlete_id: ROSA.athlete_id, decision: 'grant', retracted_publication_ids: [] };
+          }
+          return {
+            ok: true,
+            items: [
+              {
+                athlete_id: ROSA.athlete_id,
+                athlete_name: ROSA.full_name,
+                consent_ok: true,
+                guardian_count: 1,
+                missing_guardian_count: 0,
+                per_guardian: [
+                  { you: true, status: 'signed', covers_video: coversVideo, public_use_allowed: false, signed_at: '2026-10-01T12:00:00Z' },
+                ],
+              },
+            ],
+          };
+        },
+      },
+    });
+
+    let accept = false;
+    page.on('dialog', (dialog) => {
+      asked.push(dialog.message());
+      void (accept ? dialog.accept() : dialog.dismiss());
+    });
+
+    await page.goto('/parent/consent');
+    await expect(page.getByText('Consent on file')).toBeVisible();
+    await expect(page.getByText(/photos and video/)).toBeVisible();
+
+    // Declined: the question names the child and what follows; nothing is sent.
+    await page.getByRole('button', { name: 'Change to photos only' }).click();
+    await expect.poll(() => asked).toHaveLength(1);
+    expect(asked[0]).toContain(`Change consent for ${ROSA.full_name} to photos only?`);
+    expect(asked[0]).toContain('retracted from distribution immediately');
+    expect(asked[0]).toContain('will not be published while your photos-only consent is in place');
+    expect(asked[0]).not.toContain(ROSA.athlete_id);
+    expect(decisions).toEqual([]);
+    await expect(page.getByText('Consent changed to photos only.')).toHaveCount(0);
+
+    // Accepted: the existing grant, with video left out and public use off.
+    accept = true;
+    await page.getByRole('button', { name: 'Change to photos only' }).click();
+    await expect.poll(() => decisions).toHaveLength(1);
+    expect(decisions[0]).toEqual({
+      athlete_id: ROSA.athlete_id,
+      decision: 'grant',
+      covers_video: false,
+      public_use_allowed: false,
+    });
+    await expect(page.getByText('Consent changed to photos only.')).toBeVisible();
+    // The re-read shows what is on file now, and there is nothing left to change.
+    await expect(page.getByText(/: photos only$/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Change to photos only' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Withdraw Consent' })).toBeVisible();
   });
 
   /* THE SAME PLAN THEIR CHILD READS, AND NO MORE.
