@@ -52,7 +52,16 @@ test.describe('Guardian journey', () => {
     // The child, by name. A family hub that resolved but showed "No children
     // found" is the failure a guardian would report, and it is exactly what
     // the loading and error branches of this component can leave on screen.
-    await expect(page.getByRole('button', { name: ROSA.full_name })).toBeVisible();
+    // A one-child family has no picker (FamilyChildPicker draws none for one
+    // child, AS9-3), so the name is read where the hub puts the chosen child
+    // from the roster: the coach's corner on the Overview, whose heading is
+    // "<name>'s corner, as it stands" (ParentDigest, given the active child's
+    // roster name by ParentHub).
+    await expect(
+      page
+        .getByRole('region', { name: 'From the corner' })
+        .getByRole('heading', { name: `${ROSA.full_name}’s corner, as it stands` }),
+    ).toBeVisible();
     await expect(page.getByText('No children found')).toHaveCount(0);
     await expect(page.getByText('Loading your children...')).toHaveCount(0);
 
