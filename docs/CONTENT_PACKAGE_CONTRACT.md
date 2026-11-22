@@ -115,6 +115,8 @@ Research releases have their own contract (not in this file yet).
   unchanged: the committed row is kept byte for byte.
 - When seed_drill_library.csv's header has no exit_condition or correction_path column, a drill the file names
   keeps its committed cell, as a load keeps the stored value (lane GD). A new drill gets a blank one.
+- A label column (field_labels, evidence, stage_keys) a file's header leaves out keeps each named item's committed cell,
+  as a load keeps the stored labels (lane GD). A header that has the column says what its cell says.
 
 ## Blocking problems
 
