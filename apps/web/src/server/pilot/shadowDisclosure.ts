@@ -5,7 +5,7 @@ import {
   type SafetyEscalationRow,
   type SafetyEscalationSourceType,
 } from './escalationLadder';
-import { normalizeForSafetyScan, scanForSafetyLanguage } from './feedbackSafetyScan';
+import { normalizeForSafetyScan, scanForSafetyLanguage, spelledOutReading } from './feedbackSafetyScan';
 import type { ShadowValidationResult } from './shadowChat';
 
 /**
@@ -108,12 +108,24 @@ function foldForStaffMatch(normalized: string): string {
     .replace(/\b(?:[a-z] ){2,}[a-z]\b/g, (run) => run.replace(/ /g, ''));
 }
 
+/**
+ * The scan's normal form and its spelled-out reading (HF12b, PR 2076). The
+ * staff, person, touch and intent checks read both, so a word spelled out
+ * letter by letter ("m y c o a c h h i t s m e") is still seen; the second
+ * reading only ever adds a match to what the normal form gave.
+ */
+function readingsOf(message: string): readonly string[] {
+  return [normalizeForSafetyScan(message), spelledOutReading(message)];
+}
+
 function matchesStaffForm(message: string, pattern: RegExp): boolean {
   // Both elongation readings, as the safety scan itself does: "coachhh"
   // collapses to "coachh" at two letters and to "coach" fully.
-  const normalized = foldForStaffMatch(normalizeForSafetyScan(message));
-  const fullyCollapsed = normalized.replace(/(.)\1+/g, '$1');
-  return pattern.test(normalized) || pattern.test(fullyCollapsed);
+  return readingsOf(message).some((reading) => {
+    const normalized = foldForStaffMatch(reading);
+    const fullyCollapsed = normalized.replace(/(.)\1+/g, '$1');
+    return pattern.test(normalized) || pattern.test(fullyCollapsed);
+  });
 }
 
 export function namesGymStaff(message: string): boolean {
@@ -145,6 +157,9 @@ export const BOXING_CONTEXT_WORDS: readonly string[] = [
   'rounds', 'gloves', 'glove', 'headgear', 'mouthguard', 'drill', 'drills',
   'fight night', 'first fight', 'next fight', 'my bout', 'bout', 'bouts', 'tournament', 'opponent',
   'getting hit', 'get hit', 'got hit', 'take a punch', 'taking punches',
+  // Pad-holder talk ("hit me with your best shot"), which trips the
+  // someone_is_hurting_me cue on "hit me" (Overwatch on PR 2059, Q2 = A).
+  'your best shot', 'hit me with your best',
 ];
 
 /**
@@ -216,19 +231,23 @@ export function detectShadowDisclosure(message: string, role: string): ShadowDis
   const scan = scanForSafetyLanguage(message);
   if (!scan.safeguarding) return null;
   const normalized = normalizeForSafetyScan(message);
+  const readings = readingsOf(message);
+  const inAnyReading = (pattern: RegExp) => readings.some((reading) => pattern.test(reading));
   const person = namesGymPerson(message);
   if (!person && scan.cues.every((cue) => MEDICAL_ONLY.has(cue))) return null;
+  // Boxing context, which only ever suppresses, reads the normal form alone,
+  // as on main; the overrides read every reading.
   if (BOXING_CONTEXT_PATTERN.test(normalized)) {
     const overridden = scan.cues.some((cue) => OVERRIDE_CUES.has(cue))
       || (person && scan.cues.some((cue) => STAFF_HARM_CUES.has(cue)))
-      || SPARRING_INTENT_PATTERN.test(normalized)
-      || OUTSIDE_GYM_PATTERN.test(normalized);
+      || inAnyReading(SPARRING_INTENT_PATTERN)
+      || inAnyReading(OUTSIDE_GYM_PATTERN);
     if (!overridden) return null;
   }
   const staff = namesGymStaff(message);
   const adminOnly = staff
     || scan.cues.some((cue) => ADMIN_ONLY_CUES.has(cue))
-    || TOUCH_PATTERN.test(normalized);
+    || inAnyReading(TOUCH_PATTERN);
   return { cues: scan.cues, namesGymStaff: staff, adminOnly };
 }
 

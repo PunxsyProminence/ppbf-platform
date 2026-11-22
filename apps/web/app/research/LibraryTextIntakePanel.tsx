@@ -501,7 +501,7 @@ export default function LibraryTextIntakePanel({
           <p className="t-body">
             Saved &ldquo;{outcome.documentName}&rdquo; in {outcome.chunkCount}{' '}
             {outcome.chunkCount === 1 ? 'part' : 'parts'}. SHADOW cannot cite it yet. Next:{' '}
-            <Link href="/evidence" className="underline">Evidence Review</Link> to index and approve it.
+            <Link href="/evidence" className="underline">Evidence Review Queue</Link> to index and approve it.
           </p>
           {outcome.linked ? <p className="t-muted">{ARCHIVE_LINK_WORDS.saved}</p> : null}
         </div>

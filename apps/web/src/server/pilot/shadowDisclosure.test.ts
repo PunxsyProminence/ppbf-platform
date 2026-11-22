@@ -331,3 +331,123 @@ describe('fileShadowDisclosureEscalation', () => {
     expect(mockFileEscalation.mock.calls[0][0].severity).toBe('high');
   });
 });
+
+// HF1 and Overwatch's Q1/Q2 on PR 2059 (lane HF12). Invented sentences.
+describe('HF1: the new phrasings file from SHADOW chat', () => {
+  test.each([
+    'im suicidal',
+    'kms',
+    'i want to end my life',
+    'i want to kill my self',
+    'i don´t feel safe',
+  ])('files, coach of record included: %p', (message) => {
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.adminOnly).toBe(false);
+  });
+
+  test.each([
+    'my uncle molested me',
+    'i got raped',
+    'he groped me',
+    'he asked me for nudes',
+  ])('sexual abuse files admin-only and critical (Q1 = A): %p', (message) => {
+    const disclosure = detectShadowDisclosure(message, 'athlete');
+    expect(disclosure?.adminOnly).toBe(true);
+    expect(isCriticalShadowDisclosure(disclosure)).toBe(true);
+  });
+
+  test.each([
+    'i want to end my life, i hate sparring',
+    'im suicidal and my jab is bad',
+    'he molested me after pad work',
+  ])('files even in boxing context: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).not.toBeNull();
+  });
+
+  test('crisis phrasings are critical', () => {
+    expect(isCriticalShadowDisclosure(detectShadowDisclosure('im suicidal', 'athlete'))).toBe(true);
+  });
+});
+
+describe('HF1: boxing talk files nothing', () => {
+  test.each([
+    'hit me with your best shot',
+    'hit me with your best combo',
+    'give me your best shot on the pads',
+    'i ran 5 kms before sparring',
+    'we did suicides after rounds',
+    'kill it in sparring tonight',
+    'this drill is killing me',
+  ])('null: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toBeNull();
+  });
+
+  test('a person outside the gym still overrides "your best shot"', () => {
+    expect(detectShadowDisclosure('my dad hit me and said thats your best shot', 'athlete')).not.toBeNull();
+  });
+
+  test('naming a coach still files in boxing context (Overwatch 2026-10-15, decision 2)', () => {
+    expect(detectShadowDisclosure('coach hit me with your best shot on purpose', 'athlete')).not.toBeNull();
+  });
+});
+
+describe('HF1 review: sexual abuse in the present tense routes admin-only', () => {
+  test.each([
+    'my uncle is sexually abusing me',
+    'my uncle is sexually abusing me after sparring rounds',
+    'i think he is grooming me',
+  ])('admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')?.adminOnly).toBe(true);
+  });
+});
+
+// HF12b (PR 2076), safeguarding review round 7: a spelled-out staff word with a
+// symbol for a letter or mixed gaps routed admin-only on main and must still.
+// Invented phrases.
+describe('HF12b: spelled-out staff words keep main\'s routing', () => {
+  test.each([
+    'my c o @ c h hit me',
+    'my c.o.@.c.h hits me',
+    'c.o.a.c. h hit me',
+    'my c o a c  h hurt me on purpose',
+    'c o @ c h punched me in sparring',
+    'my c o a c  h punched me in sparring',
+    'my . c-o-a-c . h . broke . my . nose',
+    'my c o.a.c.h hit me',
+    'my c-o-a-c h broke my nose',
+  ])('files admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  test.each([
+    'he got me alone n r***ped me',
+    'u r***ped me',
+    'he got me alone n r . ped me',
+    'he_got_me_alone_n_r@ped_me',
+  ])('an obfuscated word after a text-speak letter files admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  // The spelled-out reading adds routing evidence; it never removes main's.
+  test.each([
+    'm y c o a c h h i t s m e',
+    'he t o u c h e d m e',
+  ])('a spelled-out staff or touch word routes admin-only: %p', (message) => {
+    expect(detectShadowDisclosure(message, 'athlete')).toEqual(expect.objectContaining({ adminOnly: true }));
+  });
+
+  test('text-speak before the sparring-intent words still overrides boxing context', () => {
+    expect(detectShadowDisclosure('he kept hitting me in sparring o k i said stop', 'athlete')).not.toBeNull();
+  });
+});
+
+describe('HF12b: the spelled-out reading only adds routing evidence', () => {
+  test('a spelled-out sparring-intent phrase overrides boxing context', () => {
+    expect(detectShadowDisclosure('he hit me in sparring o n p u r p o s e', 'athlete')).not.toBeNull();
+  });
+
+  test('a spelled-out boxing word does not suppress a disclosure main filed', () => {
+    expect(detectShadowDisclosure('he hits me when we s p a r', 'athlete')).not.toBeNull();
+  });
+});

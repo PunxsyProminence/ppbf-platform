@@ -109,7 +109,6 @@ test('every surface that renders a list of doors decides per door', () => {
    * rather than by CI.
    */
   const doorLists = [
-    ['components/Corridor.tsx', 'ChromeLink'],
     ['components/CardCatalog.tsx', 'requiresDocumentLoad'],
     ['app/admin/door-register/page.tsx', 'ChromeLink'],
   ] as const;
@@ -253,8 +252,15 @@ test('the two places that navigate by a variable href still consult the rule', (
   expect(catalog).toMatch(/requiresDocumentLoad\(pathname, door\.href\)/);
   expect(catalog).toMatch(/window\.location\.assign\(door\.href\)/);
 
+  /* The corridor listed doors until AS-4 (U2-4c) folded its Rooms list into
+     Search as "All pages" (S2-2 A). It is now only the "you are here" plate,
+     and it must stay that way: a door list grown back here would be a fourth
+     surface navigating by a variable href, which this file does not scan. So
+     it may hold no link, no href and no programmatic navigation at all. */
   const corridor = readFileSync(path.join(WEB, 'components', 'Corridor.tsx'), 'utf8');
-  expect(corridor).toContain('ChromeLink');
+  expect(corridor).not.toMatch(
+    /ChromeLink|next\/link|href\s*=|\{\.\.\.|router\.|useRouter|location\.(assign|replace)|location\.href\s*=|window\.open/,
+  );
 });
 
 test('the gate that wraps both recorders redirects by loading a document', () => {

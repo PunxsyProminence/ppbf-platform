@@ -67,9 +67,10 @@ test('following a pain report\'s "Record what you did" hands that report\'s athl
     render(<CoachWorkspace />);
   });
 
-  const floor = within(await screen.findByRole('region', { name: 'The floor' }));
-  fireEvent.click(await floor.findByRole('button', { name: 'Open' }));
-  const link = floor.getByRole('link', { name: 'Record what you did' });
+  // The pager is the home's Needs You Now strip since lane 6C7's 7b (it was the floor board's card).
+  const needs = within(await screen.findByRole('region', { name: /^Needs you now/ }));
+  fireEvent.click(await needs.findByRole('button', { name: 'Open' }));
+  const link = needs.getByRole('link', { name: 'Record what you did' });
   expect(link.getAttribute('href')).toBe('/coach/decision-loop');
 
   fireEvent.click(link);

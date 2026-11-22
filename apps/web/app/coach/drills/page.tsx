@@ -118,6 +118,10 @@ const FILTERS: FilterSpec[] = [
 // including whether the re-read itself worked.
 type ActionOutcome = 'refused' | 'reread' | 'reread_failed' | 'unknown' | 'unknown_unread';
 
+// A "Looks right" press (lane ED-UI PR4) uses the Edit form's words for a save (DrillEditForm.tsx).
+const LOOKS_RIGHT_FAILED = 'The drill could not be saved.';
+const LOOKS_RIGHT_UNKNOWN = 'It is not known whether this change was saved.';
+
 const OUTCOME_EXPLANATIONS: Record<ActionOutcome, string> = {
   refused: 'Nothing was changed. This drill is as it was.',
   reread: 'Nothing was changed. This drill\'s status in this gym was read again.',
@@ -502,6 +506,15 @@ function CoachDrillLibrary() {
   // and whether its save -- the request and the re-reads after it -- is running.
   const [editingId, setEditingId] = useState('');
   const [editBusy, setEditBusy] = useState(false);
+  // A "Looks right" press that did not land: the server's words, or that its outcome is not known.
+  // Shown beside the opened drill, and focused, so a coach sees it where they pressed.
+  const [looksRightError, setLooksRightError] = useState('');
+  const looksRightAlertRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!looksRightError) return;
+    looksRightAlertRef.current?.focus({ preventScroll: true });
+    looksRightAlertRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [looksRightError]);
   const [focusRequest, setFocusRequest] = useState<{ referenceDrillId: string } | null>(null);
 
   // Versions and proposals (#1471): the drill whose history is open, and the
@@ -658,6 +671,7 @@ function CoachDrillLibrary() {
     openRequestRef.current = request;
     openerRef.current = openerId;
     setPromoteNotice('');
+    setLooksRightError('');
     setRestoreCueNeededFor('');
     setRestoreCues('');
     setEditingId('');
@@ -892,6 +906,41 @@ function CoachDrillLibrary() {
       await afterFailedAction(status, openReferenceId, openRequestRef.current);
     } finally {
       setEditBusy(false);
+    }
+  }
+
+  // "LOOKS RIGHT" (OW25-55; lane ED-UI PR4): the server writes the next version; as after a save, it opens from the server.
+  async function pressLooksRight(target: string) {
+    const detail = openReferenceDetail;
+    if (!detail || actionInFlight) return;
+    setEditBusy(true);
+    setPromoteNotice('');
+    setPromoteError('');
+    setLooksRightError('');
+    let status: number | null = null;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/drill-library`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drill_id: detail.drill_id, looks_right: target }),
+      });
+      status = response.status;
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; changed?: boolean; drill_id?: unknown; version?: unknown };
+      if (!response.ok) throw new Error(payload.error || LOOKS_RIGHT_FAILED);
+      if (payload.changed !== true || typeof payload.drill_id !== 'string' || typeof payload.version !== 'number') {
+        // A 2xx that does not say what it wrote: what happened is not known.
+        status = null;
+        throw new Error(LOOKS_RIGHT_UNKNOWN);
+      }
+      await loadReferenceLibrary();
+      await openReferenceDrill(payload.drill_id, openerRef.current);
+      setPromoteNotice(`Recorded as looks right. Saved as version ${payload.version}.`);
+      setEditBusy(false);
+    } catch (failure) {
+      const unknown = status === null || status >= 500;
+      setLooksRightError(unknown ? LOOKS_RIGHT_UNKNOWN : (failure instanceof Error && failure.message) || LOOKS_RIGHT_FAILED);
+      await afterEditFailed(status);
     }
   }
 
@@ -1195,6 +1244,12 @@ function CoachDrillLibrary() {
               <button type="button" onClick={closeReferenceDrill} disabled={leavingLocked} className="btn btn--ghost">
                 Back to the reference library
               </button>
+              {looksRightError && (
+                // Promote's error box, on solid leather: its own ground wherever the page scrolls it (a phone's backdrop poster).
+                <div ref={looksRightAlertRef} tabIndex={-1} role="alert" className="rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[color:var(--hide-900)] p-[var(--s4)]">
+                  <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> <span>{looksRightError}</span></p>
+                </div>
+              )}
               {openReferenceLoading && <p className="t-body text-[color:var(--bone-300)]">Loading the drill...</p>}
               {!openReferenceLoading && openReferenceError && (
                 <p className="t-body text-[color:var(--bone-300)]">
@@ -1218,6 +1273,15 @@ function CoachDrillLibrary() {
                   view={openReference}
                   audience="coach"
                   focusOnMount
+                  looksRight={canEdit && openReferenceDetail && openReferenceDetail.superseded_at === null
+                    ? (target, label, describedBy) => (
+                      // "Looks right" (OW25-55; Q7 = A), named for its field; the page owns the action, the detail places it.
+                      <button type="button" className="btn btn--secondary ml-[var(--s2)]" aria-label={`Looks right: ${label}`}
+                        aria-describedby={describedBy} onClick={() => void pressLooksRight(target)} disabled={actionInFlight}>
+                        Looks right
+                      </button>
+                    )
+                    : undefined}
                   actions={(
                     <>
                       {/* Only the current version: the route refuses any other
@@ -1230,6 +1294,7 @@ function CoachDrillLibrary() {
                           onClick={() => {
                             setPromoteNotice('');
                             setPromoteError('');
+                            setLooksRightError('');
                             setEditingId(openReference.id);
                           }}
                           disabled={actionInFlight}

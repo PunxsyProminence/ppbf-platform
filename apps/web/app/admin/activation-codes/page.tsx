@@ -158,6 +158,12 @@ function ActivationCodesConsoleContent() {
           <p className="t-body mt-[var(--s3)]">
             Issue one-time 12-character activation codes for pending athlete accounts. The code is shown exactly once and cannot be re-displayed later.
           </p>
+          {/* Gym Office is the one place a code is issued (lane AS-10, OFF-08;
+              Overwatch Q5 A); this page keeps working. */}
+          <p className="t-body mt-[var(--s3)]">
+            <Link href="/admin/people" className="underline">Gym Office</Link> issues codes too, with the roster in
+            view: Add Athlete for a new sign-in, or Issue New Activation Code on the athlete&apos;s row.
+          </p>
         </header>
 
         {error && (

@@ -66,7 +66,8 @@ describe('CardCatalog', () => {
   it('stays shut until asked, showing only the quiet trigger', () => {
     render(<CardCatalog />);
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByRole('button', { name: /open the card catalog/i })).toBeTruthy();
+    // AS-4 (U2-4c; S2-2 A): Jump is Search.
+    expect(screen.getByRole('button', { name: /open search/i }).textContent).toContain('Search');
   });
 
   it('opens on Cmd+K and closes on Escape', () => {
@@ -108,11 +109,12 @@ describe('CardCatalog', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
-  it('browses the building room by room before anything is typed', () => {
+  it('browses All pages by the Room Map\'s rooms before anything is typed', () => {
     render(<CardCatalog />);
     openCatalog();
-    // Coach sees the gym floor; a coach has no business in the board room.
-    expect(screen.getByText('Gym Floor')).toBeTruthy();
+    expect(screen.getByText('All pages')).toBeTruthy();
+    // A coach sees the Drill Cabinet; a coach has no business in the Board Room.
+    expect(screen.getByText('Drill Cabinet')).toBeTruthy();
     expect(screen.queryByText('Board Room')).toBeNull();
   });
 
@@ -248,72 +250,53 @@ describe('CardCatalog', () => {
   });
 });
 
-describe('Corridor', () => {
-  it('names the room you are standing in', () => {
+describe('Corridor: the "you are here" plate (AS-4, U2-4c)', () => {
+  // S2-2 A: "the Rooms list becomes 'All pages' inside Search". The corridor's
+  // menu is gone; its trigger stays as the plate that says where you are, in
+  // Search's own rooms, and opens Search there.
+  it('names the Room Map room you are standing in, and the page', () => {
     pathname = '/coach/drills';
     render(<Corridor />);
-    expect(screen.getByRole('button', { expanded: false }).textContent).toContain('Gym Floor');
-    expect(screen.getByRole('button', { expanded: false }).textContent).toContain('Drill Library');
+    const plate = screen.getByRole('button', { name: /where you are/i });
+    expect(plate.textContent).toContain('Drill Cabinet');
+    expect(plate.textContent).toContain('Drill Library');
   });
 
-  it('opens to the rooms the session can enter, and no others', () => {
-    render(<Corridor />);
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-    expect(screen.getByRole('navigation')).toBeTruthy();
-    expect(screen.getByText('Gym Floor')).toBeTruthy();
-    expect(screen.queryByText('Board Room')).toBeNull();
-  });
-
-  it('does not hang the Operations hub in a coach corridor', () => {
+  it('names Lab for an admin on a Lab page, and the room for a coach on the same page', () => {
+    role = 'admin';
+    pathname = '/research';
+    const { unmount } = render(<Corridor />);
+    expect(screen.getByRole('button', { name: /where you are/i }).textContent).toContain('Lab');
+    unmount();
     role = 'coach';
     render(<Corridor />);
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-
-    expect(screen.queryByRole('link', { name: 'Operations' })).toBeNull();
-    // The rest of the Front Office is untouched -- this narrows one door, not
-    // a room. A coach still reaches the two surfaces under the same prefix
-    // here, and the corridor is now their main route to both.
-    expect(screen.getByRole('link', { name: 'Wrestling League' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'External Competition' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /where you are/i }).textContent).toContain('File Room');
   });
 
-  it('still hangs it in an admin corridor', () => {
-    role = 'admin';
-    render(<Corridor />);
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-
-    expect(screen.getByRole('link', { name: 'Operations' })).toBeTruthy();
-  });
-
-  it('marks the current room as where you are', () => {
+  it('lists no page and holds no link: every page is in Search', () => {
     pathname = '/coach/drills';
-    render(<Corridor />);
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-    expect(screen.getByText(/you are here/i)).toBeTruthy();
-  });
-
-  it('marks the current surface with aria-current', () => {
-    pathname = '/coach/drills';
-    render(<Corridor />);
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-    const link = screen.getByRole('link', { name: 'Drill Library' });
-    expect(link.getAttribute('aria-current')).toBe('page');
-  });
-
-  it('closes on Escape', () => {
-    render(<Corridor />);
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-    expect(screen.getByRole('navigation')).toBeTruthy();
-    act(() => { fireEvent.keyDown(window, { key: 'Escape' }); });
+    const { container } = render(<Corridor />);
+    fireEvent.click(screen.getByRole('button', { name: /where you are/i }));
+    expect(container.querySelectorAll('a, [href]')).toHaveLength(0);
     expect(screen.queryByRole('navigation')).toBeNull();
   });
 
-  it('shows a board session its seats and not the admin console', () => {
-    role = 'board';
-    pathname = '/board';
-    render(<Corridor />);
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
-    expect(screen.getByRole('link', { name: 'Treasurer Workspace' })).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Capabilities' })).toBeNull();
+  it('opens Search at All pages, at the room it names', () => {
+    pathname = '/coach/drills';
+    const scrolled: string[] = [];
+    const proto = window.HTMLElement.prototype as unknown as { scrollIntoView?: () => void };
+    const before = proto.scrollIntoView;
+    proto.scrollIntoView = function (this: HTMLElement) {
+      scrolled.push(this.getAttribute('data-group') ?? '');
+    };
+    try {
+      render(<><Corridor /><CardCatalog /></>);
+      act(() => { fireEvent.click(screen.getByRole('button', { name: /where you are/i })); });
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(screen.getByText('All pages')).toBeTruthy();
+      expect(scrolled).toContain('drill-cabinet');
+    } finally {
+      proto.scrollIntoView = before;
+    }
   });
 });

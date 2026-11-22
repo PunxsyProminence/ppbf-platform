@@ -22,6 +22,7 @@ import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/ty
 import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
+import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { IssuedWorkoutsUnreadableError } from '@/src/lib/issuedWorkouts';
 
@@ -44,12 +45,14 @@ let schedulerRegistrations: Array<Record<string, unknown>> = [];
 /* Today's class and the attendance rows, when a test needs the I'm here card live (F-127). */
 let schedulerToday: { classes: Array<Record<string, unknown>>; attendance: Array<Record<string, unknown>> } | null = null;
 
-/* Two buttons say "Check in" on Today and do the same thing: the corner's and the
-   Session Log's (UXB-19, one verb). Each test names the one it means. */
+/* One Start training (lane AS-8, scrub ATH-24, Overwatch Q3 A on #2020): My
+   Corner's. The Session Log keeps its pre-check-in note box, and the note still
+   carries into the session, because the Corner's button calls the same
+   handleCheckIn. Until AS-8 the Session Log had a second Start training. */
 const corner = () => within(screen.getByRole('region', { name: 'My corner' }));
 const sessionLog = () => within(screen.getByRole('region', { name: 'Session log' }));
-const sessionLogCheckIn = async () =>
-  within(await screen.findByRole('region', { name: 'Session log' })).findByRole('button', { name: 'Start training' });
+const startTrainingButton = async () =>
+  within(await screen.findByRole('region', { name: 'My corner' })).findByRole('button', { name: 'Start training' });
 // The session read never answers: the workspace stays on 'loading'.
 let sessionListHangs = false;
 let sessionUpdateFails = false;
@@ -434,8 +437,21 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-async function renderWorkspace() {
+/* The workspace opens on How I feel today (lane AS-8, Overwatch Q1 A on
+   #2020). Most tests in this file exercise the Dashboard, so this helper opens
+   it the way an athlete does: the Dashboard surface in the Today row. The
+   opening screen itself is pinned with no navigation, by renderAsOpened() in
+   "the workspace opens on How I feel today" below. */
+async function renderAsOpened() {
   render(<AthleteWorkspace />);
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+async function renderWorkspace() {
+  await renderAsOpened();
+  fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
   await act(async () => {
     await Promise.resolve();
   });
@@ -451,9 +467,9 @@ async function renderWorkspace() {
 const GROUP_FOR_SURFACE: Record<string, string> = {
   Dashboard: 'Today',
   Floor: 'Today',
-  Goals: 'Development',
-  Attempts: 'Development',
-  Tracks: 'Development',
+  Goals: 'Progress',
+  Attempts: 'Progress',
+  Tracks: 'Progress',
   Drills: 'Learn',
   'Rabbit Holes': 'Learn',
   Schedule: 'Schedule',
@@ -511,13 +527,13 @@ async function expectEndRefusedSaid(): Promise<void> {
  * Leaves the box untouched when `note` is undefined -- the athlete who writes
  * nothing, which is the case the placeholder exists for.
  */
-async function checkInFromSessionLog(note?: string): Promise<Record<string, unknown>> {
+async function startTrainingFromCorner(note?: string): Promise<Record<string, unknown>> {
   const box = await screen.findByLabelText(PRE_CHECK_IN_NOTE);
   if (note !== undefined) {
     fireEvent.change(box, { target: { value: note } });
   }
   const before = postedTo('/api/pilot/sessions').length;
-  fireEvent.click(sessionLog().getByRole('button', { name: 'Start training' }));
+  fireEvent.click(corner().getByRole('button', { name: 'Start training' }));
   await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(before + 1));
   return postedTo('/api/pilot/sessions')[before].body;
 }
@@ -525,7 +541,7 @@ async function checkInFromSessionLog(note?: string): Promise<Record<string, unkn
 describe('one session check-in per press (#1529)', () => {
   test('two presses of Check In in the same tick open one session', async () => {
     await renderWorkspace();
-    const button = await sessionLogCheckIn();
+    const button = await startTrainingButton();
 
     await act(async () => {
       fireEvent.click(button);
@@ -535,6 +551,89 @@ describe('one session check-in per press (#1529)', () => {
     await waitFor(() => expect(openSurface()).toBe('Floor'));
     expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
   });
+});
+
+/* AS8-1 (lane AS-8, plan #2020; Overwatch Q1 A, Q2 A, Q4 A): the screen the
+   workspace opens on, and the order of the blocks above the tab content. */
+describe('the opening screen (lane AS-8)', () => {
+  const precedes = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  test('the workspace opens on How I feel today, with I\'m here and My Corner on it (ATH-01)', async () => {
+    await renderAsOpened();
+    expect(screen.getByRole('button', { name: 'Today' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: 'How I feel today' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: 'Dashboard' }).getAttribute('aria-current')).toBeNull();
+    expect(screen.getByRole('region', { name: "Today's class" })).toBeTruthy();
+    const myCorner = within(screen.getByRole('region', { name: 'My corner' }));
+    expect(myCorner.getByRole('button', { name: 'Report pain or soreness' })).toBeTruthy();
+    expect(await myCorner.findByRole('button', { name: 'Start training' })).toBeTruthy();
+  });
+
+  /* Overwatch Q-PHONE A on #2036: My Corner first, so Report pain stays on a
+     phone's opening screen; then the group nav and I'm here; then the fight
+     card, Gym Notices and chalkboard (ATH-02: the nav is above those). */
+  test.each([['How I feel today'], ['Dashboard']])(
+    'on %s: header, then My Corner, then the group nav and I\'m here, then the chalkboard (ATH-02, Q-PHONE A)',
+    async (tab) => {
+      const { container } = render(<AthleteWorkspace />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      if (tab === 'Dashboard') fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+      const heading = screen.getByRole('heading', { level: 1 });
+      const nav = screen.getByRole('button', { name: 'Today' });
+      const imHere = screen.getByRole('region', { name: "Today's class" });
+      const myCorner = screen.getByRole('region', { name: 'My corner' });
+      const reportPain = within(myCorner).getByRole('button', { name: 'Report pain or soreness' });
+      const chalkboard = container.querySelector('.chalkboard') as Element;
+      expect(chalkboard).not.toBeNull();
+      expect(precedes(heading, myCorner)).toBe(true);
+      expect(precedes(reportPain, nav)).toBe(true);
+      expect(precedes(myCorner, nav)).toBe(true);
+      expect(precedes(nav, imHere)).toBe(true);
+      expect(precedes(imHere, chalkboard)).toBe(true);
+    },
+  );
+
+  test('on a tab without My Corner the nav still comes before the chalkboard', async () => {
+    const { container } = render(<AthleteWorkspace />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    openTab('Goals');
+    expect(screen.queryByRole('region', { name: 'My corner' })).toBeNull();
+    expect(precedes(screen.getByRole('button', { name: 'Progress' }), container.querySelector('.chalkboard') as Element)).toBe(true);
+  });
+
+  test('the group that holds Goals, Attempts and Tracks reads "Progress" (Q14 A)', async () => {
+    await renderAsOpened();
+    expect(screen.getByRole('button', { name: 'Progress' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Development' })).toBeNull();
+  });
+
+  /* ATH-23: the jump to the pain report honours reduced motion. jsdom has no
+     matchMedia or scrollIntoView, so both are stood in for here. */
+  test.each([[true, 'auto'], [false, 'smooth']])(
+    'with prefers-reduced-motion %s, Report pain scrolls with behavior %s and focuses the picker',
+    async (reduce, behavior) => {
+      const proto = Element.prototype as unknown as { scrollIntoView?: (arg?: unknown) => void };
+      const original = proto.scrollIntoView;
+      const originalMatch = window.matchMedia;
+      const scrolls: unknown[] = [];
+      proto.scrollIntoView = function scrollIntoView(arg?: unknown) { scrolls.push(arg); };
+      window.matchMedia = ((query: string) => ({ matches: reduce && query.includes('reduce'), media: query })) as unknown as typeof window.matchMedia;
+      try {
+        await renderWorkspace();
+        fireEvent.click(within(screen.getByRole('region', { name: 'My corner' })).getByRole('button', { name: 'Report pain or soreness' }));
+        expect(scrolls).toEqual([{ behavior, block: 'center' }]);
+        expect(document.activeElement?.id).toBe('pain-location-select');
+      } finally {
+        if (original) proto.scrollIntoView = original;
+        else delete proto.scrollIntoView;
+        window.matchMedia = originalMatch;
+      }
+    },
+  );
 });
 
 // FC-06: the Dashboard carries what the coach wrote to the athlete. Fails if
@@ -597,10 +696,10 @@ describe('athlete workspace honesty', () => {
     expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
   });
 
-  // BASE-05 Slice 1: the athlete's own record, filed under Development beside
+  // BASE-05 Slice 1: the athlete's own record, filed under Progress beside
   // Goals. Reached through the two-level nav like every other surface, and it
   // reads the canonical training-attempts ledger for the session's athlete.
-  test('the Attempts surface sits under Development and reads the athlete\'s own ledger', async () => {
+  test('the Attempts surface sits under Progress and reads the athlete\'s own ledger', async () => {
     await renderWorkspace();
     openTab('Attempts');
 
@@ -1157,7 +1256,7 @@ describe('athlete safety reporting', () => {
   test('check-out puts the note the athlete shared on the session record', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
     // A stored check-in sends the athlete to their floor; the session log they
     // check out from is back on the dashboard.
     await waitFor(() => expect(openSurface()).toBe('Floor'));
@@ -1363,7 +1462,11 @@ describe('an open session across a reload', () => {
 
     expect(await screen.findByText(/Your training has not started/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
-    expect(sessionLog().getByRole('button', { name: 'Start training' })).toBeTruthy();
+    // One Start training on the screen, My Corner's; the Session Log keeps the note box (ATH-24).
+    expect(screen.getAllByRole('button', { name: 'Start training' })).toHaveLength(1);
+    expect(corner().getByRole('button', { name: 'Start training' })).toBeTruthy();
+    expect(sessionLog().queryByRole('button', { name: 'Start training' })).toBeNull();
+    expect(sessionLog().getByLabelText(PRE_CHECK_IN_NOTE)).toBeTruthy();
   });
 
   // "No open session" and "could not ask" have different answers, and telling
@@ -1428,7 +1531,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     expect(fetchCalls.some((call) => call.url.includes('/api/pilot/sessions/list'))).toBe(true);
 
     expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
-    expect(sessionLog().getByRole('button', { name: 'Start training' })).toBeTruthy();
+    expect(corner().getByRole('button', { name: 'Start training' })).toBeTruthy();
     // Nor is yesterday's note handed back as something to send today: there is
     // no open-session box at all, and the note is nowhere on screen as a draft.
     expect(screen.queryByPlaceholderText(/Session notes for your coach/)).toBeNull();
@@ -1443,7 +1546,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     storedSessions = [staleRow()];
     await renderWorkspace();
 
-    const checkIn = await checkInFromSessionLog('Right hand is sore today.');
+    const checkIn = await startTrainingFromCorner('Right hand is sore today.');
     expect(checkIn.session_id).not.toBe(STALE_SESSION_ID);
     openTab('Dashboard');
     await openEndTraining();
@@ -1569,7 +1672,7 @@ describe('an uncompleted session from a previous gym day is not today\'s session
     storedSessions = [staleRow()];
     await renderWorkspace();
 
-    const checkIn = await checkInFromSessionLog();
+    const checkIn = await startTrainingFromCorner();
     openTab('Dashboard');
     await openEndTraining();
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));
@@ -1657,7 +1760,7 @@ describe('authored announcements on the athlete workspace', () => {
     // Anchored on the Session Log's pre-check-in note since A-FIN-01. It was
     // the "Pre-Session Self-Report" card, which went with its defaulted slider.
     expect(await screen.findByLabelText(PRE_CHECK_IN_NOTE)).toBeTruthy();
-    expect(await sessionLogCheckIn()).toBeTruthy();
+    expect(await startTrainingButton()).toBeTruthy();
   });
 });
 
@@ -2011,14 +2114,14 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
   test('five groups are offered, and a surface inside one is not loose in the top row', async () => {
     await renderWorkspace();
 
-    for (const group of ['Today', 'Development', 'Learn', 'Schedule', 'SHADOW']) {
+    for (const group of ['Today', 'Progress', 'Learn', 'Schedule', 'SHADOW']) {
       expect(screen.getByRole('button', { name: group })).toBeTruthy();
     }
     // No Messages group (WO-N5-02, N5-02-Q1 A): the only question box is answered by SHADOW, so
     // no navigation suggests messaging a coach.
     expect(screen.queryByRole('button', { name: 'Messages' })).toBeNull();
 
-    // Goals belongs to Development. Until that group is open there is no Goals
+    // Goals belongs to Progress. Until that group is open there is no Goals
     // button at all -- that is the difference between grouping the nav and
     // merely captioning it.
     expect(screen.queryByRole('button', { name: 'Goals' })).toBeNull();
@@ -2045,6 +2148,8 @@ describe('the workspace nav groups its surfaces instead of listing them flat', (
     });
 
     expect(postedTo('/api/pilot/athlete/chat').map((call) => call.body)).toEqual([{ message: 'How do I hold my guard?' }]);
+    // HF2: the saved line says when a coach or the gym office can be alerted.
+    expect(await screen.findByText(ASK_SHADOW_SENT_LINE)).toBeTruthy();
   });
 
   test('a surface is reachable through the group that owns it', async () => {
@@ -2253,11 +2358,14 @@ describe('Today states the day back rather than offering a row of buttons', () =
 });
 
 describe('shipped features are not described to the athlete as unbuilt', () => {
+  // The three cards these tests read moved from the foot of every tab to the
+  // top of the Progress tabs (lane AS-8, Q6 A); the tests open Progress first.
   test('the film lane and progression are offered as working, not as coming', async () => {
     // Both pages read real routes -- /api/pilot/video/list and
     // /api/pilot/progression/gaps -- and were being advertised as "Not Built
     // Yet", one of them as "Nothing behind them works yet".
     await renderWorkspace();
+    openTab('Goals');
 
     expect(screen.queryByText(/Video Analysis - Not Built Yet/)).toBeNull();
     expect(screen.queryByText(/Automatic Progress Tracking - Not Built Yet/)).toBeNull();
@@ -2272,6 +2380,7 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     // knew it existed. This pins the fix, not just that a link renders: the
     // href has to be the real route.
     await renderWorkspace();
+    openTab('Goals');
 
     const link = screen.getByRole('link', { name: 'Open Sparring Log' });
     expect(link).toBeTruthy();
@@ -2282,8 +2391,76 @@ describe('shipped features are not described to the athlete as unbuilt', () => {
     // Automatic technique scoring is PARKED by owner decision. Correcting the
     // stale copy must not quietly promise it.
     await renderWorkspace();
+    openTab('Goals');
 
     expect(screen.getByText(/Nothing scores your technique automatically -- that part is not built/)).toBeTruthy();
+  });
+});
+
+/* THE PROGRESS PAGES (lane AS-8, ATH-04; Overwatch Q6 A on #2020). Five
+   cards in one open row at the top of each Progress tab: the three that sat in
+   the collapsed "More in your workspace" at the foot of every tab, moved with
+   the same words and links, and My Development Plan and Mental Skills, titled
+   with their page titles. The disclosure is gone. */
+describe('the Progress tabs open with the five Progress pages', () => {
+  const PAGES: Array<[string, string, string]> = [
+    ['My Film', 'Open My Film', '/athlete/video-analysis'],
+    ['My Progression', 'Open My Progression', '/athlete/progression-intelligence'],
+    ['Sparring Log', 'Open Sparring Log', '/athlete/dashboard/sparring'],
+    ['My Development Plan', 'Open My Development Plan', '/athlete/development-blocks'],
+    ['Mental Skills', 'Open Mental Skills', '/athlete/mental-skills'],
+  ];
+
+  function progressRow(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[data-progress-pages]');
+  }
+
+  test.each(['Goals', 'Attempts', 'Tracks'])('%s opens with all five cards, each titled and linked to its page', async (tab) => {
+    await renderWorkspace();
+    openTab(tab);
+
+    const row = progressRow();
+    expect(row).not.toBeNull();
+    const cards = Array.from(row!.querySelectorAll('article'));
+    expect(cards.map((card) => card.querySelector('p')?.textContent)).toEqual(PAGES.map(([title]) => title));
+    for (const [title, label, href] of PAGES) {
+      const card = cards.find((each) => each.querySelector('p')?.textContent === title)!;
+      expect(within(card).getByRole('link', { name: label }).getAttribute('href')).toBe(href);
+    }
+    // Open, not behind a disclosure.
+    expect(row!.closest('details')).toBeNull();
+  });
+
+  test('the new two cards are described in their pages\' own first sentence', async () => {
+    await renderWorkspace();
+    openTab('Goals');
+
+    expect(screen.getByText('What your coach is working on with you over the next several weeks, in their words.')).toBeTruthy();
+    expect(screen.getByText('Your self-talk cue and your imagery sessions.')).toBeTruthy();
+  });
+
+  test('the row comes before the tab\'s own content', async () => {
+    await renderWorkspace();
+    openTab('Goals');
+
+    const row = progressRow()!;
+    const goalsHeading = screen.getByRole('button', { name: /HELP: SMART Goals/ });
+    expect(row.compareDocumentPosition(goalsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('no other group shows the row, and the foot disclosure is gone from every tab', async () => {
+    await renderWorkspace();
+
+    for (const tab of ['How I feel today', 'Dashboard', 'Floor', 'Drills', 'Rabbit Holes', 'Schedule', 'SHADOW Intel', 'Ask SHADOW']) {
+      openTab(tab);
+      expect(progressRow()).toBeNull();
+      expect(screen.queryByText('More in your workspace')).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Open My Film' })).toBeNull();
+    }
+    openTab('Goals');
+    expect(screen.queryByText('More in your workspace')).toBeNull();
+    // One link per page: the cards are moved, not copied.
+    for (const [, label] of PAGES) expect(screen.getAllByRole('link', { name: label })).toHaveLength(1);
   });
 });
 
@@ -2306,7 +2483,23 @@ describe('the athlete question box does not imply a coach reads it', () => {
 
     openTab('Ask SHADOW');
 
-    expect(screen.getByText(/your parent is not automatically copied and no coach is notified/)).toBeTruthy();
+    // HF2: it also says when a coach or the gym office can be alerted, in
+    // place of "no coach is notified", which was false when a safety alert
+    // was filed (askShadowWords.ts).
+    expect(screen.getByText(/your parent is not automatically copied/)).toBeTruthy();
+    expect(screen.getByText(/your coach or the gym office can get an alert; otherwise no coach sees it/)).toBeTruthy();
+  });
+
+  test('the Ask SHADOW help says an alert can reach a coach, and no old line remains', async () => {
+    await renderWorkspace();
+
+    openTab('Ask SHADOW');
+    // The help panel opens closed.
+    fireEvent.click(screen.getByRole('button', { name: /HELP: Ask SHADOW/ }));
+
+    expect(screen.getByText(ASK_SHADOW_HELP_LINE)).toBeTruthy();
+    expect(screen.queryByText(/does not reach a coach/)).toBeNull();
+    expect(screen.queryByText(/No coach is notified/)).toBeNull();
   });
 });
 
@@ -2759,7 +2952,7 @@ describe('the Floor is the work a coach assigned', () => {
   test('check-in generates nothing: no plan is read or written, and no synthetic work appears', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
     await waitFor(() => expect(openSurface()).toBe('Floor'));
 
     expect(postedTo('/api/pilot/sessions')).toHaveLength(1);
@@ -3002,7 +3195,7 @@ describe('a session check-in goes where the day actually is', () => {
   test('stored, with wellness recorded: straight to the floor', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
 
     await waitFor(() => expect(openSurface()).toBe('Floor'));
     expect(screen.getByText("Training started. Your coach's work is on your floor.")).toBeTruthy();
@@ -3013,7 +3206,7 @@ describe('a session check-in goes where the day actually is', () => {
     storedCheckIn = null;
     await renderWorkspace();
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
 
     await waitFor(() => expect(openSurface()).toBe('How I feel today'));
     expect(screen.getByText('Training started. Say how you feel today next -- it opens your floor.')).toBeTruthy();
@@ -3025,7 +3218,7 @@ describe('a session check-in goes where the day actually is', () => {
     storedCheckIn = null;
     await renderWorkspace();
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
     await waitFor(() => expect(openSurface()).toBe('How I feel today'));
 
     fireEvent.click(await screen.findByRole('button', { name: 'Save how I feel' }));
@@ -3039,7 +3232,7 @@ describe('a session check-in goes where the day actually is', () => {
     sessionCreateFails = true;
     await renderWorkspace();
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
 
     expect(await screen.findByText(/Nothing was saved, so there is no training to end/)).toBeTruthy();
     expect(openSurface()).toBe('Dashboard');
@@ -3057,18 +3250,18 @@ describe('a session check-in goes where the day actually is', () => {
 // Tracks tab (OD-2026-10-07-010 ruling 3), which reverses its removal. Its
 // own cases are in 'the Tracks tab' below. Assessments is still not offered.
 describe('tabs with nothing behind them are not offered', () => {
-  test('Assessments is still gone from the nav, and Tracks is offered under Development', async () => {
+  test('Assessments is still gone from the nav, and Tracks is offered under Progress', async () => {
     await renderWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
     expect(screen.getByRole('button', { name: 'Tracks' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Assessments' })).toBeNull();
   });
 
-  test('Development opens straight onto Goals, its first surface', async () => {
+  test('Progress opens straight onto Goals, its first surface', async () => {
     await renderWorkspace();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
 
     expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
   });
@@ -3576,7 +3769,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     await renderWorkspace();
     expect(screen.queryByRole('slider')).toBeNull();
 
-    const checkIn = await checkInFromSessionLog('9');
+    const checkIn = await startTrainingFromCorner('9');
     expect(checkIn.rpe).toBeNull();
     expect(checkIn.rpe_method).toBe('UNKNOWN');
     // ARRIVING IS NOT SENDING (A-FIN-08): the number is carried into the open
@@ -3600,7 +3793,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     fetchCalls.length = 0;
 
     await renderWorkspace();
-    await checkInFromSessionLog('2');
+    await startTrainingFromCorner('2');
     openTab('Dashboard');
     await openEndTraining();
     fireEvent.click(effortButton(7));
@@ -3909,7 +4102,7 @@ describe('post-session effort is the athlete\'s answer at check-out, or nothing'
     fireEvent.click(effortButton(9));
     expect((await checkOut()).rpe).toBe(9);
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     expect(postedTo('/api/pilot/sessions')[0].body.rpe).toBeNull();
     expect(postedTo('/api/pilot/sessions')[0].body.rpe_method).toBe('UNKNOWN');
@@ -4068,7 +4261,7 @@ describe("post-session minutes are the athlete's answer at check-out, or nothing
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     // Check-in writes no minutes: the session has not happened yet.
     expect('duration_minutes' in postedTo('/api/pilot/sessions')[0].body).toBe(false);
@@ -4212,7 +4405,7 @@ describe("the enjoyment tap is the athlete's answer at check-out, or nothing", (
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));
     await waitFor(() => expect(checkOutBodies()).toHaveLength(1));
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     // Check-in writes no enjoyment: the session has not happened yet.
     expect('enjoyment' in postedTo('/api/pilot/sessions')[0].body).toBe(false);
@@ -4251,7 +4444,7 @@ describe('check-in records no session RPE at all', () => {
   test('the created session carries a null rpe and an UNKNOWN method', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
 
     const [checkIn] = postedTo('/api/pilot/sessions');
@@ -4267,14 +4460,14 @@ describe('check-in records no session RPE at all', () => {
     // with a bare number written in the pre-check-in note, too.
     await renderWorkspace();
 
-    const blank = await checkInFromSessionLog();
+    const blank = await startTrainingFromCorner();
     expect(typeof blank.rpe).not.toBe('number');
     expect(blank.notes).toBe(NO_NOTE_PLACEHOLDER);
     cleanup();
     fetchCalls.length = 0;
 
     await renderWorkspace();
-    const numeric = await checkInFromSessionLog('8');
+    const numeric = await startTrainingFromCorner('8');
     expect(typeof numeric.rpe).not.toBe('number');
     expect(numeric.rpe_method).toBe('UNKNOWN');
     // ARRIVING IS NOT SENDING (A-FIN-08): the session is created holding the
@@ -4332,7 +4525,7 @@ describe('nothing said before the session can change the work', () => {
   async function checkInWith(wellness: Record<string, unknown>, note?: string) {
     storedCheckIn = wellness;
     await renderWorkspace();
-    const session = await checkInFromSessionLog(note);
+    const session = await startTrainingFromCorner(note);
     await waitFor(() => expect(openSurface()).toBe('Floor'));
     return { session };
   }
@@ -4440,7 +4633,7 @@ describe('no session observation is fabricated for SHADOW', () => {
   test('check-in submits no session observation either', async () => {
     await renderWorkspace();
 
-    fireEvent.click(await sessionLogCheckIn());
+    fireEvent.click(await startTrainingButton());
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
 
     // Specifically: no session_rpe observation carrying the readiness slider.
@@ -4647,7 +4840,7 @@ describe('the pre-session self-report presents as a self-report, not a clearance
       }
     }
 
-    fireEvent.click(sessionLog().getByRole('button', { name: 'Start training' }));
+    fireEvent.click(corner().getByRole('button', { name: 'Start training' }));
     await waitFor(() => expect(postedTo('/api/pilot/sessions')).toHaveLength(1));
     const body = postedTo('/api/pilot/sessions')[0].body;
 
@@ -4779,7 +4972,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
   test('a note written before check-in is a draft, and sharing it stores the words exactly, trimmed', async () => {
     await renderWorkspace();
 
-    const body = await checkInFromSessionLog('   Left wrist still sore from Tuesday.  \n');
+    const body = await startTrainingFromCorner('   Left wrist still sore from Tuesday.  \n');
     expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
     expect(body.rpe).toBeNull();
     expect(body.rpe_method).toBe('UNKNOWN');
@@ -4810,7 +5003,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
   test('check-in without a note stores the fixed placeholder and invents no readiness', async () => {
     await renderWorkspace();
 
-    const body = await checkInFromSessionLog();
+    const body = await startTrainingFromCorner();
     // Non-empty, as the session contract requires -- and the one sentence
     // that satisfies it, built from nothing the athlete did or did not say.
     expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
@@ -4834,14 +5027,14 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
   test('a note of only spaces is no note: the placeholder, not an empty string', async () => {
     await renderWorkspace();
 
-    const body = await checkInFromSessionLog('   \n  ');
+    const body = await startTrainingFromCorner('   \n  ');
     expect(body.notes).toBe(NO_NOTE_PLACEHOLDER);
   });
 
   test('an untouched session keeps the placeholder through check-out, and it never becomes an RPE', async () => {
     await renderWorkspace();
 
-    await checkInFromSessionLog();
+    await startTrainingFromCorner();
     openTab('Dashboard');
     await openEndTraining();
     fireEvent.click(screen.getByRole('button', { name: 'End training' }));
@@ -4886,7 +5079,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
   test('a session check-in writes the session and nothing else: no wellness record, no readiness row', async () => {
     await renderWorkspace();
 
-    await checkInFromSessionLog('Ready when you are.');
+    await startTrainingFromCorner('Ready when you are.');
     expect(postedTo('/api/pilot/athlete/check-in')).toHaveLength(0);
     expect(fetchCalls.filter((call) => /readiness/i.test(call.url))).toEqual([]);
   });
@@ -4898,7 +5091,7 @@ describe('A-FIN-01: the session note is the athlete\'s words, or a placeholder t
     storedCheckIn = null;
     await renderWorkspace();
 
-    await checkInFromSessionLog('Shoulder feels fine today.');
+    await startTrainingFromCorner('Shoulder feels fine today.');
     await waitFor(() => expect(openSurface()).toBe('How I feel today'));
     openTab('Floor');
     expect(await screen.findByRole('button', { name: 'Go to How I feel today' })).toBeTruthy();
@@ -5179,7 +5372,7 @@ describe('the wellness check-in', () => {
     openTab('Drills');
     expect(await screen.findByText(/have not added any reference drills/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Development' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
     expect(screen.getByRole('button', { name: '+ New SMART Goal' })).toBeTruthy();
 
     openTab('Ask SHADOW');
@@ -5788,13 +5981,19 @@ describe('End training is where the athlete sees training has started', () => {
     }
   });
 
-  test('on the Dashboard the after-sparring check reads its status once: moved, not doubled', async () => {
-    await renderWorkspace();
-    await screen.findByText(/Your training has not started/);
+  /* My Corner is on How I feel today too (lane AS-8, Q1 A), so the opening tab
+     holds two checks, each with its own read of the one status route: the
+     next-day check (that tab's own) and the after-sparring check in My Corner.
+     Going on to the Dashboard keeps My Corner mounted, so its check is not read
+     again: moved, not doubled. */
+  test('the after-sparring check reads its status once; opening the Dashboard reads it no more', async () => {
+    await renderAsOpened();
     const reads = () => fetchCalls.filter((call) => call.url.includes('/api/pilot/athlete/sparring-symptoms') && call.method === 'GET').length;
-    await waitFor(() => expect(reads()).toBe(1));
+    await waitFor(() => expect(reads()).toBe(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }));
+    await screen.findByText(/Your training has not started/);
     await act(async () => { await Promise.resolve(); });
-    expect(reads()).toBe(1);
+    expect(reads()).toBe(2);
   });
 
   // Q-CONFIRM A: after a successful end, the "Training ended ..." line is brought into view.

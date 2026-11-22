@@ -25,9 +25,21 @@ import type { DbClient } from './actor';
 //       depth (contentLabels.ts#inAppEditLabel). The edit paths carry earlier
 //       in-app labels forward, so a coach's text edited two versions ago
 //       still counts;
+//       A coach's "Looks right" (drillLibraryEdit.ts, workoutTemplateEdit.ts;
+//       lane ED-UI PR4, Q1 = A) counts too: its label records the coach
+//       (`looks_right`) and is no longer an AI draft;
 //   (b) pilot.audit_events holds an in_app_edit event on the current version's
 //       id (the edit paths write one in the same transaction), which catches an
 //       edit made before the label table existed.
+//       A SESSION SCRIPT writes no in-app label and no `action` key (lane GD,
+//       GD-4). Its edit and its making-from-a-template each write an audit row
+//       on the current version's id in the same transaction
+//       (sessionScriptAuthoring.ts editSessionScript, details.edited_script_id;
+//       createSessionScriptFromTemplate, details.template_id; Overwatch Q1 = A:
+//       a script a coach made in the app is held too). For that entity those
+//       keys count as (b). Retire, bring back and "reviewed" hold neither key:
+//       they change authoring_state, which is lifecycle, outside the content
+//       hash (datasets/sessionScripts.ts), and do not hold a script.
 // NOT created_by_*: the importer writes its own actor there too.
 
 /** The source an in-app edit's label names (contentLabels.ts#inAppEditLabel). */
@@ -39,12 +51,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 /**
  * True for a label written by an in-app edit: it names the "In-app edit"
- * source, or it records the editor (`edited`) and is not an AI draft.
+ * source, or it records the editor (`edited`) or a coach's "Looks right"
+ * (`looks_right`) and is not an AI draft.
  */
 export function isInAppEditLabel(value: unknown): boolean {
   if (!isPlainObject(value)) return false;
   if (Array.isArray(value.sources) && value.sources.includes(IN_APP_EDIT_SOURCE)) return true;
-  return isPlainObject(value.edited) && !('draft' in value);
+  return (isPlainObject(value.edited) || isPlainObject(value.looks_right)) && !('draft' in value);
 }
 
 export interface FoundInAppLabel {
@@ -76,8 +89,8 @@ export function findInAppEditLabels(fieldLabels: unknown): FoundInAppLabel[] {
     }
     if (!isPlainObject(node)) return;
     for (const [key, value] of Object.entries(node)) {
-      // A label's own sources and editor record are not labels.
-      if (key === 'sources' || key === 'edited') continue;
+      // A label's own sources and its editor's or confirmer's record are not labels.
+      if (key === 'sources' || key === 'edited' || key === 'looks_right') continue;
       const at = path ? `${path}.${key}` : key;
       if (isInAppEditLabel(value)) out.push({ path: at, label: value as Record<string, unknown> });
       walk(value, at);
@@ -97,11 +110,20 @@ export interface InAppEditedHead {
 
 export interface HeadToCheck {
   lineage: string;
-  /** The current version's row id (drill_id, template_id). */
+  /** The current version's row id (drill_id, template_id, script_id). */
   id: string;
   /** field_labels of the current version as overlaid (contentLabels.ts#overlayStoredLabels): JSON text, or undefined. */
   fieldLabels: unknown;
 }
+
+/**
+ * Per audit entity_type, the details keys that also mark an in-app edit, for
+ * an edit path that writes no `action: 'in_app_edit'` (see (b) above). A key
+ * counts only when it holds a non-empty value.
+ */
+const IN_APP_EDIT_DETAIL_KEYS: Readonly<Record<string, readonly string[]>> = {
+  session_script: ['edited_script_id', 'template_id'],
+};
 
 function day(value: unknown): string | undefined {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -111,7 +133,7 @@ function day(value: unknown): string | undefined {
 /**
  * Which of `heads` hold an in-app edit, by lineage. `auditEntityType` is the
  * audit_events entity_type the edit path writes (drill_library,
- * workout_template); undefined skips (b).
+ * workout_template, session_script); undefined skips (b).
  */
 export async function inAppEditedHeads(
   client: DbClient,
@@ -123,7 +145,8 @@ export async function inAppEditedHeads(
   for (const head of heads) {
     const [first] = findInAppEditLabels(head.fieldLabels);
     if (!first) continue;
-    const edited = isPlainObject(first.label.edited) ? first.label.edited : {};
+    const edited = isPlainObject(first.label.edited) ? first.label.edited
+      : isPlainObject(first.label.looks_right) ? first.label.looks_right : {};
     out.set(head.lineage, {
       path: first.path,
       role: typeof edited.by_role === 'string' ? edited.by_role : undefined,
@@ -138,9 +161,10 @@ export async function inAppEditedHeads(
   const { rows } = await client.query<{ entity_id: string; actor_role: string | null; created_at: unknown }>(
     `select entity_id, actor_role, created_at from pilot.audit_events
       where organization_id = $1 and entity_type = $2 and entity_id = any($3::text[])
-        and details->>'action' = 'in_app_edit'
+        and (details->>'action' = 'in_app_edit'
+             or exists (select 1 from unnest($4::text[]) as edit_key where coalesce(details->>edit_key, '') <> ''))
       order by created_at desc`,
-    [organizationId, auditEntityType, unchecked.map((head) => head.id)],
+    [organizationId, auditEntityType, unchecked.map((head) => head.id), IN_APP_EDIT_DETAIL_KEYS[auditEntityType] ?? []],
   );
   for (const row of rows) {
     const head = unchecked.find((candidate) => candidate.id === row.entity_id);

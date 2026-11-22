@@ -686,7 +686,7 @@ describe('editing an event', () => {
   test('a rejected correction leaves the original untouched', async () => {
     openSetReady();
     mockListEvents.mockResolvedValueOnce([{ event_id: 'evt-1' }]);
-    mockRecord.mockRejectedValueOnce(new Error('Missing punch_type: not a value in boxing-ontology-0.1'));
+    mockRecord.mockRejectedValueOnce(new Error('Missing punch_type: not a value in the event vocabulary'));
 
     const response = await PUT(put({ ...PUNCH_BODY, event_id: 'evt-1', punch_type: 'haymaker' }));
 

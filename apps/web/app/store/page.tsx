@@ -61,6 +61,13 @@ export default function StoreIndexPage() {
           Buying gear here supports the gym directly.
         </p>
 
+        {/* Not blank while the read is out (app scrub FAM-22). */}
+        {!isLoaded ? (
+          <p className="mt-6 text-sm leading-6 text-[var(--gray-dark)]" role="status">
+            Loading the shops...
+          </p>
+        ) : null}
+
         {errorMessage ? (
           <p className="mt-6 border-2 border-[var(--black)] bg-[var(--canvas-tan-light)] px-3 py-2 text-sm">
             {errorMessage}

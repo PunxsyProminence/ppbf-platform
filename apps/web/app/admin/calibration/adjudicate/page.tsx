@@ -7,6 +7,7 @@ import CalibrationClipPicker from '@/components/CalibrationClipPicker';
 import RoleSessionGate from '@/components/RoleSessionGate';
 import { apiBase } from '@/lib/apiBase';
 import { formatDurationMs, formatMediaOffset } from '@/src/lib/clipTime';
+import { fighterLabel } from '@/src/server/pilot/calibration/ontology';
 import BackHome from '@/components/BackHome';
 
 /**
@@ -202,7 +203,7 @@ interface FieldDraft {
 function readingText(event: AnnotationEvent): string {
   const span = `${formatMediaOffset(event.start_ms)} – ${formatMediaOffset(event.end_ms)}`;
   const kind = event.punch_type ?? event.defense_type ?? event.event_class;
-  return `${span} · ${kind} · ${event.actor_track} · ${event.visibility}/${event.certainty}`;
+  return `${span} · ${kind} · ${fighterLabel(event.actor_track)} · ${event.visibility}/${event.certainty}`;
 }
 
 function ReadingTable({

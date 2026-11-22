@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import StepNotes from '@/components/IssuedWorkoutStepNotes';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -14,6 +14,8 @@ import { formatCalendarDay } from '@/lib/calendarDay';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { readIssuedWorkouts, type IssuedWorkoutView } from '@/src/lib/issuedWorkouts';
 import ClusterNav from '@/components/ClusterNav';
+import { COACH_CARDS_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 
 // Coach Cards -- issue work straight onto the assignment spine, to one
 // athlete or to a whole program. No gap, no detection, no new engine: a
@@ -201,6 +203,11 @@ export default function CoachCardsPage() {
     setCardsUnreadable(false);
   }, []);
 
+  // The athlete a link handed to this page (lane AS-11, CF-15; Passbook's
+  // line): undefined until it is taken, once, on the first mount; then the id
+  // until the roster answers, then null.
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+
   // Four reads on mount, every one of them abortable. Same shape as
   // components/usePilotSession.ts: one controller for the effect, every
   // fetch carries its signal, every setState is gated on the signal, and
@@ -210,6 +217,7 @@ export default function CoachCardsPage() {
   // swap "Loading cards…" for the "No cards issued yet" empty state, which
   // is a claim about the gym rather than about the request.
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete(COACH_CARDS_PAGE);
     const controller = new AbortController();
     const { signal } = controller;
 
@@ -232,7 +240,19 @@ export default function CoachCardsPage() {
         if (rosterRes.ok) {
           const data = (await rosterRes.json()) as { items?: RosterAthlete[] };
           if (signal.aborted) return;
-          setRoster(data.items || []);
+          const items = data.items || [];
+          setRoster(items);
+          // The card form opens on "One athlete" (the page's first mode) with
+          // that athlete chosen (AS-11 Q2b = A), only if this roster, which
+          // the server answers, lists them. Nothing is issued: the coach still
+          // picks the drill and presses Issue. The form shows only once the
+          // drill list, read after this, is in, so the coach cannot have
+          // changed the mode or chosen anyone before this runs.
+          const arriving = arrivalAthleteRef.current;
+          arrivalAthleteRef.current = null;
+          if (arriving && items.some((athlete) => athlete.athlete_id === arriving)) {
+            setForm((prev) => ({ ...prev, athlete_id: arriving }));
+          }
         }
         if (programsRes.ok) {
           const data = (await programsRes.json()) as { items?: ProgramOption[] };

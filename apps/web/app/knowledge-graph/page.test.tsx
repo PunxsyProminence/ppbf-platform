@@ -185,3 +185,28 @@ test('a projection that answered empty still says each stream has no items', asy
 
   await waitFor(() => expect(screen.getAllByText('No items.')).toHaveLength(4));
 });
+
+// AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): each header link reads the
+// title of the page it opens.
+test('the header links read the titles of the pages they open', async () => {
+  installFetch(async () => ({ ok: true, json: async () => ({ ok: true, items: [] }) } as Response));
+
+  await act(async () => {
+    render(<KnowledgeGraphPage />);
+  });
+
+  for (const [name, href] of [
+    ['Research Inbox', '/research'],
+    ['Evidence Review Queue', '/evidence'],
+    ['Validation Sandbox', '/simulator'],
+  ]) {
+    // The header link and the pipeline banner's stage link now share the name,
+    // as they share the page.
+    const links = screen.getAllByRole('link', { name });
+    expect(links.length).toBe(2);
+    for (const link of links) expect(link.getAttribute('href')).toBe(href);
+  }
+  for (const old of ['Research Intake', 'Evidence Review', 'Simulator']) {
+    expect(screen.queryByRole('link', { name: old })).toBeNull();
+  }
+});

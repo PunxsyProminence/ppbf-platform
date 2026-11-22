@@ -55,8 +55,14 @@ describe('doors and links that were missing (A-16)', () => {
   });
 
   test('a board seat links the board\'s two reads', () => {
-    const seat = read('app/board/BoardSeatWorkspace.tsx');
-    expect(seat).toContain("{ label: 'Program Aggregates', href: '/board/aggregates' }");
-    expect(seat).toContain("{ label: 'Escalation Ladder', href: '/board/escalation-monitoring' }");
+    // Lane AS-12 (BOA-03): the seat's links moved out of BoardSeatWorkspace into
+    // BoardWorkspaceLinks, which the seat dashboard renders under its header.
+    // What each session is shown there is pinned by render in
+    // app/board/BoardWorkspaceLinks.test.tsx and BoardMemberDashboard.test.tsx;
+    // this stays the A-16 source check, pointed at where the links now live.
+    const links = read('app/board/BoardWorkspaceLinks.tsx');
+    expect(links).toContain("{ label: 'Program Aggregates', href: '/board/aggregates' }");
+    expect(links).toContain("{ label: 'Escalation Ladder', href: '/board/escalation-monitoring' }");
+    expect(read('components/BoardMemberDashboard.tsx')).toContain('<BoardWorkspaceLinks seat={seat.slug} />');
   });
 });

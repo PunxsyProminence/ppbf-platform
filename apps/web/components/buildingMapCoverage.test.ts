@@ -50,6 +50,8 @@ const EXCLUDED: Record<string, string> = {
   '/coach': 'redirect to the coach home (getPilotRoleDestination) -- the door is the home itself, "Coach Workspace"',
   '/coach/dashboard': 'redirect to the coach home, as /coach -- every other role home is a /<role>/dashboard',
   '/admin/safety-escalations': 'redirect to /admin/escalations, whose door is the queue itself -- one queue, one door (lane U2, A-13)',
+  '/coach/injuries': 'redirect to /coach/athlete-safety#injury-record, whose door is Athlete Safety -- one page, one door (lane AS-5)',
+  '/coach/medical-restrictions': 'redirect to /coach/athlete-safety#medical-restrictions, whose door is Athlete Safety -- one page, one door (lane AS-5)',
   '/coach/calibration': 'compatibility redirect to /teach-shadow/annotation, where Clip Annotation now lives -- not a second annotation surface',
   '/guardian': 'permanent redirect to /parent/dashboard (UX audit A-10: one parent front door) -- the door is the Parent Hub itself',
   '/guardian/dashboard': 'permanent redirect to /parent/dashboard, as /guardian',
@@ -70,11 +72,6 @@ const EXCLUDED: Record<string, string> = {
  * only with a reason as concrete as the ones above.
  */
 const PENDING_TRIAGE: Record<string, string> = {
-  '/admin/export': 'real admin feature ("Take Your Roster With You") -- wants a door, roles unconfirmed',
-  '/admin/gear': 'real admin feature ("Equipment and margin") -- wants a door, roles unconfirmed',
-  '/admin/gear/vendors': 'real admin feature ("Suppliers and accounts") -- wants a door, roles unconfirmed',
-  '/admin/athletes': 'renders a notice ("Athlete records are managed per gym") -- may be a signpost, not a surface',
-  '/admin/platform/overview': 'platform-owner gated ("Platform Owner Access Required") -- door depends on whether platform_owner gets a corridor at all',
 };
 
 /** Every route in app/ that renders a page, as a URL path. */

@@ -7,17 +7,18 @@
  *
  * What is pinned here is what the view must never do, more than how it looks:
  * it fetches nothing until Start a session is tapped (#1523: then the plan list,
- * and a plain start when there are none), "Next" changes no record, the only
- * other write it can reach is the real escalation acknowledge it is handed, and
- * a feed that failed or is still loading is never read out as "nothing needs you".
+ * and a plain start when there are none), and a count that was not read is never
+ * shown as 0.
+ *
+ * The "Needs you now" card and its pager tests left this board for the home's
+ * strip in lane 6C7's 7b (coachNeedsYouStrip.test.tsx), with the "Needs you"
+ * gauge; the test at the end of this file pins that they are gone from here.
  */
 
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 import React from 'react';
 
-import CoachFloorFocus, { type CoachFloorFocusProps, type FocusFeed, type FocusItem } from './CoachFloorFocus';
-import { takeArrivalAthlete } from './decisionLoopArrival';
+import CoachFloorFocus, { type CoachFloorFocusProps } from './CoachFloorFocus';
 
 jest.mock('next/link', () => ({
   __esModule: true,
@@ -25,37 +26,6 @@ jest.mock('next/link', () => ({
     <a href={href} {...rest}>{children}</a>
   ),
 }));
-
-const LOADED: FocusFeed[] = [
-  { name: 'Safety escalations', state: 'loaded' },
-  { name: 'Pain reports', state: 'loaded' },
-  { name: 'Family barrier reports', state: 'loaded' },
-];
-
-function escalation(onAcknowledge = jest.fn()): FocusItem {
-  return {
-    id: 'escalation:e1',
-    kind: 'Safety escalation',
-    urgent: true,
-    title: 'Ada Rivera',
-    meta: 'Near miss · Oct 2',
-    badge: { tone: 'locked', label: 'high' },
-    details: [],
-    body: 'Took a hard shot and kept going.',
-    acknowledge: { busy: false, disabled: false, onAcknowledge },
-  };
-}
-
-const PAIN: FocusItem = {
-  id: 'pain:p1',
-  kind: 'Pain report',
-  urgent: true,
-  title: 'Marcus Bell',
-  meta: 'Athlete ID ath_2 · recorded Oct 2',
-  badge: { tone: 'restricted', label: 'moderate - 5/10' },
-  details: [{ label: 'Body location', value: 'Left shoulder' }],
-  link: { href: '/coach/decision-loop', label: 'Record what you did' },
-};
 
 function props(overrides: Partial<CoachFloorFocusProps> = {}): CoachFloorFocusProps {
   return {
@@ -66,8 +36,6 @@ function props(overrides: Partial<CoachFloorFocusProps> = {}): CoachFloorFocusPr
     athletesState: 'loaded',
     athletesError: null,
     onSelectAthlete: jest.fn(),
-    items: [escalation(), PAIN],
-    feeds: LOADED,
     readinessState: 'loaded',
     sessionState: 'loaded',
     sessionLive: false,
@@ -81,105 +49,6 @@ let fetchSpy: jest.Mock;
 beforeEach(() => {
   fetchSpy = jest.fn();
   global.fetch = fetchSpy as unknown as typeof fetch;
-});
-
-test('shows one thing at a time, and Next moves to the next without fetching or writing anything', () => {
-  render(<CoachFloorFocus {...props()} />);
-
-  expect(screen.getByText('Needs you now · 1 of 2')).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Ada Rivera' })).toBeTruthy();
-  expect(screen.queryByRole('heading', { name: 'Marcus Bell' })).toBeNull();
-
-  fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
-  expect(screen.getByText('Needs you now · 2 of 2')).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Marcus Bell' })).toBeTruthy();
-
-  fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
-  expect(screen.getByText('Needs you now · 1 of 2')).toBeTruthy();
-
-  expect(fetchSpy).not.toHaveBeenCalled();
-});
-
-test('a double tap on Open does not acknowledge: the tap that lands on Acknowledge does not even arm it (UXB-01)', () => {
-  const onAcknowledge = jest.fn();
-  render(<CoachFloorFocus {...props({ items: [escalation(onAcknowledge)] })} />);
-
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge' }));
-
-  expect(onAcknowledge).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Acknowledge' })).toBeTruthy();
-  expect(screen.getByText('Took a hard shot and kept going.')).toBeTruthy();
-});
-
-test('a deliberate press arms Acknowledge and names who; only the next press acknowledges', () => {
-  const onAcknowledge = jest.fn();
-  render(<CoachFloorFocus {...props({ items: [escalation(onAcknowledge)] })} />);
-
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  armOnly(screen.getByRole('button', { name: 'Acknowledge' }));
-  expect(onAcknowledge).not.toHaveBeenCalled();
-  pressArmed(screen.getByRole('button', { name: 'Press again: acknowledge Ada Rivera' }));
-  expect(onAcknowledge).toHaveBeenCalledTimes(1);
-});
-
-test('the only write it can reach is the acknowledge it is handed, and only for an escalation', () => {
-  const onAcknowledge = jest.fn();
-  render(<CoachFloorFocus {...props({ items: [escalation(onAcknowledge), PAIN] })} />);
-
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  pressArmed(screen.getByRole('button', { name: 'Acknowledge' }));
-  expect(onAcknowledge).toHaveBeenCalledTimes(1);
-
-  // A pain report has no acknowledge on the backend, so the view offers none.
-  fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull();
-  expect(screen.getByRole('link', { name: 'Record what you did' }).getAttribute('href')).toBe('/coach/decision-loop');
-  expect(screen.getByText('Left shoulder')).toBeTruthy();
-
-  expect(fetchSpy).not.toHaveBeenCalled();
-});
-
-test('says nothing needs you only when every feed answered and none had anything', () => {
-  render(<CoachFloorFocus {...props({ items: [] })} />);
-  expect(screen.getByRole('heading', { name: 'Nothing needs you right now' })).toBeTruthy();
-  expect(screen.getByText(/not that everyone is fine/)).toBeTruthy();
-});
-
-test('a failed read is put first and is never read out as "nothing needs you"', () => {
-  const onRetry = jest.fn();
-  const feeds: FocusFeed[] = [
-    { name: 'Safety escalations', state: 'loaded' },
-    {
-      name: 'Pain reports',
-      state: 'error',
-      error: 'Pain reports could not be loaded.',
-      failureMeaning: 'Do not read this as "no athlete reported pain".',
-      onRetry,
-    },
-    { name: 'Family barrier reports', state: 'loaded' },
-  ];
-  render(<CoachFloorFocus {...props({ items: [], feeds })} />);
-
-  expect(screen.queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(screen.getByRole('heading', { name: 'Could not be read' })).toBeTruthy();
-  expect(screen.getByText('Pain reports')).toBeTruthy();
-  expect(screen.getByRole('alert').textContent).toContain('Do not read this as "no athlete reported pain".');
-  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-  expect(onRetry).toHaveBeenCalledTimes(1);
-});
-
-test('a feed still loading is never read out as "nothing needs you" either', () => {
-  const feeds: FocusFeed[] = [
-    { name: 'Safety escalations', state: 'loading' },
-    { name: 'Pain reports', state: 'loaded' },
-    { name: 'Family barrier reports', state: 'loaded' },
-  ];
-  render(<CoachFloorFocus {...props({ items: [], feeds })} />);
-  expect(screen.queryByRole('heading', { name: 'Nothing needs you right now' })).toBeNull();
-  expect(screen.getByRole('heading', { name: 'Still checking' })).toBeTruthy();
-  expect(screen.getByText('Safety escalations')).toBeTruthy();
 });
 
 test('readiness is shown as its band in words, and an athlete with no reading is never shown as fine', () => {
@@ -298,15 +167,17 @@ describe('Start a session', () => {
   });
 });
 
-/* CF-05 (lane U1). The Group / One-on-One toggle switched only the Floor tab's
-   block template, never the session Start begins, so the board no longer
-   offers it. The board names where it went instead (a removed action is named). */
-test('the board offers no Group / One-on-One toggle and names where the templates are', () => {
+/* CF-05 (lane U1), then CF-06 (lane 6C7's 7a-1). The Group / One-on-One toggle switched only the
+   coach home's code-written Floor tab template, never the session Start begins, so the board
+   stopped offering it and named where it went. The Floor tab and the template are gone now
+   (Overwatch Q5 = A on #2043), so the board points at neither. */
+test('the board offers no Group / One-on-One toggle and does not point at a Floor tab', () => {
   render(<CoachFloorFocus {...props()} />);
   expect(screen.queryByRole('group', { name: 'Session mode' })).toBeNull();
   expect(screen.queryByRole('button', { name: /^(✓ )?Group$/ })).toBeNull();
   expect(screen.queryByRole('button', { name: /^(✓ )?One-on-One$/ })).toBeNull();
-  expect(screen.getByText('Group / One-on-One block templates are on the Floor tab.')).toBeTruthy();
+  expect(screen.queryByText(/Floor tab/)).toBeNull();
+  expect(screen.queryByText(/block templates/)).toBeNull();
 });
 
 /* CF-04 (lane U1). With a plan written the tap opens Session Plans to pick one,
@@ -315,14 +186,6 @@ test('the start button says it may open the plans to pick one', () => {
   render(<CoachFloorFocus {...props()} />);
   expect(screen.queryByRole('button', { name: 'Start a session' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Start or pick a session' })).toBeTruthy();
-});
-
-/* CS-04 (lane U1). The Morning Read has no pain-report or family-barrier read,
-   so the link does not call it the full list. */
-test('the Morning Read link does not claim to be the full list', () => {
-  render(<CoachFloorFocus {...props()} />);
-  expect(screen.queryByText(/Full list/)).toBeNull();
-  expect(screen.getByRole('link', { name: 'More reads: The Morning Read' }).getAttribute('href')).toBe('/coach/intelligence');
 });
 
 test('everything else on the dashboard stays one tap away', () => {
@@ -340,8 +203,6 @@ function gauge(label: string) {
 test('the gauges show the counts the board was handed', () => {
   render(<CoachFloorFocus {...props()} />);
   expect(gauge('Athletes').textContent).toContain('2');
-  expect(gauge('Needs you').textContent).toContain('2');
-  expect(gauge('Needs you').getAttribute('data-gauge-state')).toBe('alert');
   // One GREEN, one UNKNOWN: one reading, out of two.
   expect(gauge('Readings').textContent).toContain('1 of 2');
   expect(gauge('Session').textContent).toContain('None');
@@ -357,29 +218,6 @@ test('a running session reads as live delivery on the session gauge (CF-05)', ()
   expect(gauge('Session').textContent).not.toContain('Nothing running');
 });
 
-test('a failed feed makes the needs-you gauge "?", never 0', () => {
-  const feeds: FocusFeed[] = [
-    { name: 'Safety escalations', state: 'error', error: 'boom' },
-    { name: 'Pain reports', state: 'loaded' },
-    { name: 'Family barrier reports', state: 'loaded' },
-  ];
-  render(<CoachFloorFocus {...props({ items: [], feeds })} />);
-  const needs = gauge('Needs you');
-  expect(needs.querySelector('.coach-floor-focus__gauge-value')?.textContent).toBe('?');
-  expect(needs.textContent).toContain('A read failed');
-  expect(needs.textContent).not.toMatch(/\b0\b/);
-});
-
-test('a feed still loading makes the needs-you gauge a wait, never 0', () => {
-  const feeds: FocusFeed[] = [
-    { name: 'Safety escalations', state: 'loaded' },
-    { name: 'Pain reports', state: 'loading' },
-    { name: 'Family barrier reports', state: 'loaded' },
-  ];
-  render(<CoachFloorFocus {...props({ items: [], feeds })} />);
-  expect(gauge('Needs you').querySelector('.coach-floor-focus__gauge-value')?.textContent).toBe('…');
-});
-
 test('a live-run read that failed is never shown as "no session"', () => {
   render(<CoachFloorFocus {...props({ sessionState: 'error' })} />);
   expect(gauge('Session').textContent).toContain('?');
@@ -393,48 +231,6 @@ test('a roster that was not read leaves the athlete and readings gauges unknown'
   expect(gauge('Athletes').textContent).toContain('?');
   expect(gauge('Readings').textContent).toContain('?');
   expect(gauge('Readings').querySelector('.coach-floor-focus__dial')).toBeNull();
-});
-
-/* THE VIEW FOLLOWS AN ITEM, NOT A POSITION (review finding, 2026-10-03). */
-function escalationFor(id: string, title: string, onAcknowledge = jest.fn()): FocusItem {
-  return { ...escalation(onAcknowledge), id: `escalation:${id}`, title };
-}
-
-test('after an acknowledge, the next child\'s escalation arrives closed, and the coach is told it landed', () => {
-  const first = escalationFor('e1', 'Ada Rivera');
-  const second = escalationFor('e2', 'Marcus Bell');
-  const { rerender } = render(<CoachFloorFocus {...props({ items: [first, second] })} />);
-
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  pressArmed(screen.getByRole('button', { name: 'Acknowledge' }));
-  expect(first.acknowledge?.onAcknowledge).toHaveBeenCalledTimes(1);
-
-  // The workspace drops the acknowledged escalation from the queue.
-  rerender(<CoachFloorFocus {...props({ items: [second] })} />);
-
-  expect(screen.getByRole('heading', { name: 'Marcus Bell' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull();
-  expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
-  expect(screen.getByText(/Acknowledged: Ada Rivera/)).toBeTruthy();
-  expect(second.acknowledge?.onAcknowledge).not.toHaveBeenCalled();
-});
-
-test('a feed going back to loading does not move the coach onto a different child\'s item', () => {
-  const { rerender } = render(<CoachFloorFocus {...props()} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-  expect(screen.getByRole('heading', { name: 'Marcus Bell' })).toBeTruthy();
-
-  const feeds: FocusFeed[] = [
-    { name: 'Safety escalations', state: 'loading' },
-    { name: 'Pain reports', state: 'loaded' },
-    { name: 'Family barrier reports', state: 'loaded' },
-  ];
-  rerender(<CoachFloorFocus {...props({ feeds })} />);
-
-  expect(screen.getByRole('heading', { name: 'Marcus Bell' })).toBeTruthy();
-  expect(screen.getByText('Needs you now · 3 of 3')).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Record what you did' })).toBeTruthy();
 });
 
 test('a readiness read that failed makes the readings gauge "?", never 0 of N', () => {
@@ -466,21 +262,6 @@ test('an athlete on the roster who is not this coach\'s is marked so', () => {
   expect(screen.getByText('Not your athlete')).toBeTruthy();
 });
 
-test('the all-clear line names the pain window it read', () => {
-  render(<CoachFloorFocus {...props({ items: [], painWindowDays: 7 })} />);
-  expect(screen.getByText(/No pain report in the last 7 days/)).toBeTruthy();
-});
-
-test('a feed that returned fewer than matched makes the needs-you count a floor', () => {
-  const feeds: FocusFeed[] = [
-    { name: 'Safety escalations', state: 'loaded' },
-    { name: 'Pain reports', state: 'loaded', truncatedNote: 'More pain reports matched than are listed.' },
-    { name: 'Family barrier reports', state: 'loaded' },
-  ];
-  render(<CoachFloorFocus {...props({ feeds })} />);
-  expect(gauge('Needs you').querySelector('.coach-floor-focus__gauge-value')?.textContent).toBe('2+');
-});
-
 test('an empty roster draws no dial', () => {
   render(<CoachFloorFocus {...props({ athletes: [] })} />);
   expect(gauge('Readings').textContent).toContain('0 of 0');
@@ -488,16 +269,7 @@ test('an empty roster draws no dial', () => {
 });
 
 test('no heading on the board carries a feed panel\'s name, and the session sentence is not repeated', () => {
-  const feeds: FocusFeed[] = [
-    { name: 'Safety escalations', state: 'loading' },
-    { name: 'Pain reports', state: 'error', error: 'boom' },
-    { name: 'Family barrier reports', state: 'loaded' },
-  ];
-  render(<CoachFloorFocus {...props({ feeds })} />);
-  for (const heading of screen.getAllByRole('heading')) {
-    expect(heading.textContent ?? '').not.toMatch(/safety escalations|pain reports|barrier reports/i);
-  }
-  fireEvent.click(screen.getByRole('button', { name: 'Next →' }));
+  render(<CoachFloorFocus {...props()} />);
   for (const heading of screen.getAllByRole('heading')) {
     expect(heading.textContent ?? '').not.toMatch(/safety escalations|pain reports|barrier reports/i);
   }
@@ -593,49 +365,6 @@ describe('an athlete an admin marked inactive', () => {
   });
 });
 
-// #1474 item 5: "Record what you did" opens the Decision Loop on the athlete
-// the report is about. The athlete is handed over in page memory; the address
-// stays /coach/decision-loop with no athlete in it (Overwatch, #1474 Q2 = C).
-describe('"Record what you did" hands its athlete to the Decision Loop', () => {
-  const PAIN_FOR_ATH_2: FocusItem = { ...PAIN, link: { href: '/coach/decision-loop', label: 'Record what you did', athleteId: 'ath_2' } };
-
-  afterEach(() => {
-    takeArrivalAthlete();
-  });
-
-  function openLink(item: FocusItem): HTMLElement {
-    render(<CoachFloorFocus {...props({ items: [item] })} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-    return screen.getByRole('link', { name: 'Record what you did' });
-  }
-
-  test('a plain click hands over the athlete, and the address carries none', () => {
-    const link = openLink(PAIN_FOR_ATH_2);
-    expect(link.getAttribute('href')).toBe('/coach/decision-loop');
-    expect(takeArrivalAthlete()).toBeNull();
-
-    fireEvent.click(link);
-    expect(takeArrivalAthlete()).toBe('ath_2');
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  test.each([
-    ['ctrl', { ctrlKey: true }],
-    ['cmd', { metaKey: true }],
-    ['shift', { shiftKey: true }],
-    ['alt', { altKey: true }],
-    ['middle button', { button: 1 }],
-  ])('a %s click, which opens another tab, hands nothing over', (_name, init) => {
-    fireEvent.click(openLink(PAIN_FOR_ATH_2), init);
-    expect(takeArrivalAthlete()).toBeNull();
-  });
-
-  test('a link with no athlete on it hands nothing over', () => {
-    fireEvent.click(openLink(PAIN));
-    expect(takeArrivalAthlete()).toBeNull();
-  });
-});
-
 // D4 (OD-2026-10-21-002): the one-tap start ties the session only when exactly one class is under way.
 describe('Start a session, and the class', () => {
   const soon = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
@@ -679,4 +408,20 @@ describe('Start a session, and the class', () => {
     expect(posts()).toHaveLength(0);
     expect(onGoToSessions).toHaveBeenCalledTimes(1);
   });
+});
+
+/* LANE 6C7 7b: the "Needs you now" card is the home's strip now
+   (CoachNeedsYouStrip.tsx, stage 2 section 3.4 row 11; Q6 = A), and the
+   "Needs you" gauge went with it. The board keeps the roster, the other three
+   gauges and Run the room; the strip's own tests carry the pager's protections. */
+test('the board carries no "Needs you now" card, no pager and no "Needs you" gauge', () => {
+  render(<CoachFloorFocus {...props()} />);
+  expect(screen.queryByText(/Needs you now/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Next →' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Open' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull();
+  expect(within(screen.getByLabelText('Today at a glance')).queryByText('Needs you')).toBeNull();
+  expect(within(screen.getByLabelText('Today at a glance')).getAllByRole('term').map((t) => t.textContent)).toEqual([
+    'Athletes', 'Readings', 'Session',
+  ]);
 });

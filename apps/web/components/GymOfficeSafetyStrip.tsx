@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { apiBase } from '@/lib/apiBase';
+import GymOfficeQueues from './GymOfficeQueues';
 
 /**
  * THE SAFETY STRIP ON THE GYM OFFICE (lane U2, audit UX-A A-2).
@@ -17,6 +18,11 @@ import { apiBase } from '@/lib/apiBase';
  * It only counts and links; it adds no rule, no gate and no warning. A failed
  * or partial read says it could not be read, never zero: a false all-clear is
  * the expensive mistake here. Copy is PROPOSED.
+ *
+ * THE MORNING CHECK (lane AS-10, PR AS10-3; app scrub OFF-03; Overwatch Q2 A):
+ * one list on the Gym Office. These five safety counts come first, read as
+ * before; the office's other review queues follow (GymOfficeQueues), each with
+ * its own count and link.
  */
 
 interface Counts {
@@ -75,8 +81,9 @@ export default function GymOfficeSafetyStrip() {
       aria-labelledby="gym-office-safety"
       className="mat-leather rounded-[var(--r-lg)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] p-[var(--s5)]"
     >
-      <div className="flex flex-wrap items-center justify-between gap-[var(--s3)]">
-        <h2 id="gym-office-safety" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Safety</h2>
+      <h2 id="gym-office-safety" className="t-command" style={{ fontSize: 'var(--t-lg)' }}>Morning check</h2>
+      <div className="mt-[var(--s3)] flex flex-wrap items-center justify-between gap-[var(--s3)]">
+        <h3 className="t-command" style={{ fontSize: 'var(--t-md)' }}>Safety</h3>
         <Link href="/admin/safety-review" className="btn btn--ghost">
           Open Safety Review
         </Link>
@@ -104,6 +111,7 @@ export default function GymOfficeSafetyStrip() {
           ))}
         </dl>
       )}
+      <GymOfficeQueues />
     </section>
   );
 }

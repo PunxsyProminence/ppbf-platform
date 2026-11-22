@@ -275,3 +275,38 @@ test('the footer links the privacy notice and the donation refund policy', async
   // Stripe's website requirements: a refund and cancellation policy (Jason 2026-11-12).
   expect(footerLinks).toContain('/refund-policy');
 });
+
+/* The way to the form (app scrub FAM-17) and the privacy link's name
+   (FAM-26; AS-9 Q11 = A). */
+describe('a visitor can reach the form from where they are reading', () => {
+  test('every "How to start" line links "the form below" to the form', async () => {
+    const { container } = await renderPage();
+    const steps = Array.from(container.querySelectorAll('#programs article p')).filter((p) =>
+      p.textContent?.startsWith('How to start:'),
+    );
+    expect(steps).toHaveLength(8);
+    for (const step of steps) {
+      const links = Array.from(step.querySelectorAll('a'));
+      expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['the form below', '#interest-intake']]);
+    }
+    expect(container.querySelector('#interest-intake h2')?.textContent?.trim()).toBe('Get in Touch');
+  });
+
+  test('the hero offers Get in Touch, after Programs, Donate and Log In', async () => {
+    const { container } = await renderPage();
+    const links = Array.from(container.querySelectorAll('section a')).map((a) => [a.textContent?.trim(), a.getAttribute('href')]);
+    const i = links.findIndex(([name]) => name === 'Learn About Our Programs');
+    expect(links.slice(i, i + 4)).toEqual([
+      ['Learn About Our Programs', '#programs'],
+      ['Donate', '#support'],
+      ['Log In', '/login'],
+      ['Get in Touch', '#interest-intake'],
+    ]);
+  });
+
+  test('the footer privacy link names what the privacy page covers', async () => {
+    const { container } = await renderPage();
+    const privacy = Array.from(container.querySelectorAll('footer a')).filter((a) => a.getAttribute('href') === '/privacy');
+    expect(privacy.map((a) => a.textContent)).toEqual(['Privacy: interest form']);
+  });
+});

@@ -215,6 +215,9 @@ describe('request ordering when the guardian switches child', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
+    // Arriving from the hub on the first child: with two children and
+    // none remembered, the page asks instead (FAM-11).
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
     render(<ParentProgressionVisibilityPage />);
 
     // Wait until the first child's read is genuinely in flight before switching.
@@ -268,6 +271,9 @@ describe('request ordering when the guardian switches child', () => {
     });
     global.fetch = fetchMock as unknown as typeof fetch;
 
+    // Arriving from the hub on the first child: with two children and
+    // none remembered, the page asks instead (FAM-11).
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
     render(<ParentProgressionVisibilityPage />);
     await waitFor(() =>
       expect(
@@ -304,6 +310,9 @@ test('switching children refetches progression for the selected athlete only', a
   });
   global.fetch = fetchMock as unknown as typeof fetch;
 
+  // Arriving from the hub on the first child: with two children and
+  // none remembered, the page asks instead (FAM-11).
+  window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
   render(<ParentProgressionVisibilityPage />);
 
   await screen.findByText('Rear foot stays flat through the cross.');
@@ -547,6 +556,9 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
       return jsonOk({ items: [] });
     });
     global.fetch = fetchMock as unknown as typeof fetch;
+    // Arriving from the hub on the first child: with two children and
+    // none remembered, the page asks instead (FAM-11).
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
     render(<ParentProgressionVisibilityPage />);
     await screen.findByTestId('issued-workout');
 
@@ -637,6 +649,9 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
       return jsonOk({ items: [] });
     });
     global.fetch = fetchMock as unknown as typeof fetch;
+    // Arriving from the hub on the first child: with two children and
+    // none remembered, the page asks instead (FAM-11).
+    window.sessionStorage.setItem('ppbf.parent.chosenChild', 'athlete-001');
     render(<ParentProgressionVisibilityPage />);
     await waitFor(() =>
       expect(
@@ -681,4 +696,80 @@ describe("an issued workout keeps its shape on the guardian's page", () => {
     await screen.findByTestId('issued-workout');
     expect(screen.getByRole('heading', { name: 'Identified Gaps' })).toBeTruthy();
   });
+});
+
+describe('the family picker (FAM-11), the record name and the back link (FAM-18)', () => {
+  test('two children and none remembered: it asks, reads nothing, and never says "No progression gaps"', async () => {
+    const fetchMock = mockFetch({ '/athletes/list': async () => jsonOk({ items: [CHILD, SECOND_CHILD] }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<ParentProgressionVisibilityPage />);
+
+    await screen.findByText('Choose a child');
+    const progressionReads = () =>
+      fetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/progression/'));
+    expect(progressionReads()).toEqual([]);
+    expect(screen.queryByText('No progression gaps on record')).toBeNull();
+    expect(screen.queryByText(/Loading progression data/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Jordan Doe' }));
+    await screen.findByText('Rear foot stays flat through the cross.');
+    const childReads = progressionReads().filter((url) => url.includes('athlete_id='));
+    expect(childReads.length).toBeGreaterThan(0);
+    expect(childReads.every((url) => url.includes('athlete_id=athlete-001'))).toBe(true);
+    expect(window.sessionStorage.getItem('ppbf.parent.chosenChild')).toBe('athlete-001');
+  });
+
+  test('the eyebrow is the door\'s name, and the back link is the shared one', async () => {
+    global.fetch = mockFetch() as unknown as typeof fetch;
+
+    render(<ParentProgressionVisibilityPage />);
+
+    await screen.findByText('Rear foot stays flat through the cross.');
+    expect(screen.getByText('Progress Visibility')).toBeTruthy();
+    expect(screen.queryByText('Closed-Loop Progression Intelligence')).toBeNull();
+    expect(screen.queryByText('Back to Parent Hub')).toBeNull();
+    // No session is cached in this test, so BackHome names no role's home.
+    expect(screen.getByRole('link', { name: 'Back to your home page' }).getAttribute('href')).toBe('/dashboard');
+    // One child: nothing to choose.
+    expect(screen.queryByRole('group', { name: 'Which child' })).toBeNull();
+  });
+});
+
+/* Between the pick and the read starting there is one render with the child
+   chosen and nothing loaded. It must say Loading, never "No progression gaps
+   on record": nobody has read that child's record. React replaces that block
+   before a test can look, so this watches what was taken OFF the page: a
+   removed node keeps its text. */
+test('picking a child never draws "No progression gaps" before that child\'s record is read', async () => {
+  let answerGaps: (value: Response) => void = () => {};
+  const fetchMock = mockFetch({
+    '/athletes/list': async () => jsonOk({ items: [CHILD, SECOND_CHILD] }),
+    '/progression/gaps': () => new Promise<Response>((resolve) => { answerGaps = resolve; }),
+    '/progression/assignments': async () => jsonOk({ items: [] }),
+  });
+  global.fetch = fetchMock as unknown as typeof fetch;
+  render(<ParentProgressionVisibilityPage />);
+  await screen.findByText('Choose a child');
+
+  const takenOff: string[] = [];
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of Array.from(record.removedNodes)) takenOff.push(node.textContent ?? '');
+      if (record.oldValue) takenOff.push(record.oldValue);
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true, characterDataOldValue: true });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Riley Doe' }));
+  await screen.findByText(/Loading progression data/);
+  await act(async () => { answerGaps(jsonOk({ items: [] })); });
+  await screen.findByText('No progression gaps on record');
+  await act(async () => {});
+  observer.disconnect();
+
+  // The observer works: it saw the Loading line leave when the answer came.
+  expect(takenOff.some((text) => text.includes('Loading progression data'))).toBe(true);
+  // "No progression gaps" was drawn once, after the answer, and never taken back.
+  expect(takenOff.some((text) => text.includes('No progression gaps on record'))).toBe(false);
 });

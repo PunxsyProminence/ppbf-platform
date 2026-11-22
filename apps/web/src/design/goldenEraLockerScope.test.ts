@@ -14,7 +14,8 @@ const WORKSPACE = readFileSync(path.resolve(__dirname, '../../components/Athlete
 
 describe('the 003 visual pass kept every athlete tab group', () => {
   // WO-N5-02 (N5-02-Q1 A) removed the Messages group: Ask SHADOW is a tab under SHADOW.
-  const REAL_GROUPS = ['Today', 'Development', 'Learn', 'Schedule', 'SHADOW'] as const;
+  // "Progress" was "Development" until lane AS-8 (OD-2026-11-19-017, Q14 A: label only).
+  const REAL_GROUPS = ['Today', 'Progress', 'Learn', 'Schedule', 'SHADOW'] as const;
 
   function groupBlock(): string {
     const m = WORKSPACE.match(/const TAB_GROUPS[\s\S]*?\n\];/);

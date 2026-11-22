@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type FormEvent } from 'react';
 
 import Link from 'next/link';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
@@ -8,6 +8,8 @@ import { apiBase } from '@/lib/apiBase';
 import { NOT_WRITTEN_YET, equipmentLabel } from '@/src/lib/drillPresentation';
 import { formatGymDay } from '@/src/lib/gymTime';
 import BackHome from '@/components/BackHome';
+import { ASSESSMENTS_PAGE } from '@/components/athleteRecordPages';
+import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
 
 /*
  * Jump test and skill ratings for ONE athlete (map items 7-8).
@@ -116,7 +118,21 @@ export default function CoachAssessmentsPage() {
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // The athlete a link handed to this page (lane AS-11, CF-15; Passbook's
+  // line): undefined until it is taken, once, on the first mount; then the id
+  // until the roster answers, then null. The picker stays disabled until the
+  // roster answers, so the coach cannot have chosen anyone before this runs.
+  const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+  // Chosen only if this page's own roster, which the server answers, lists
+  // them; anything else opens the page with nobody chosen, as it always did.
+  const openArrivingAthlete = useEffectEvent((items: AuthorizedAthlete[]) => {
+    const arriving = arrivalAthleteRef.current;
+    arrivalAthleteRef.current = null;
+    if (arriving && items.some((athlete) => athlete.athlete_id === arriving)) selectAthlete(arriving);
+  });
+
   useEffect(() => {
+    if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete(ASSESSMENTS_PAGE);
     const controller = new AbortController();
     void (async () => {
       try {
@@ -127,8 +143,10 @@ export default function CoachAssessmentsPage() {
         });
         if (!response.ok) throw new Error('roster');
         const payload = (await response.json()) as { items?: AuthorizedAthlete[] };
-        setAthletes(payload.items ?? []);
+        const items = payload.items ?? [];
+        setAthletes(items);
         setRosterState('loaded');
+        openArrivingAthlete(items);
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') return;
         setAthletes([]);

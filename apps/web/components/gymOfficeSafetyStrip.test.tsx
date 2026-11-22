@@ -89,9 +89,12 @@ describe('where it sits', () => {
     expect(read('app/admin/people/page.tsx')).toMatch(/<GymOfficeSafetyStrip \/>/);
   });
 
-  test('the Compliance Center button carries no Planned stamp; the automation note stays', () => {
+  // AS10-2b (lane AS-10, OFF-05): the Compliance Center link moved from the Capabilities header to
+  // Gym Office's "Office pages"; app/admin/people/officeLauncher.test.tsx checks that it carries no
+  // Planned stamp there. Capabilities keeps the note that the automation is not built.
+  test('the Compliance Center link left Capabilities for Gym Office; the automation note stays', () => {
     const admin = read('app/admin/page.tsx');
-    expect(admin).not.toMatch(/COMPLIANCE CENTER\s*<span className="stamp/);
+    expect(admin).not.toContain('href="/admin/compliance-center"');
     expect(admin).toContain('Planned — Not Yet Implemented');
   });
 });

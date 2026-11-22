@@ -17,6 +17,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import TestDayPage from './page';
+import { gymDayIso } from '@/src/lib/gymTime';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
@@ -35,13 +36,22 @@ function respond(status: number, body: unknown): Response {
 
 let saveAnswers: Array<Response | Error>;
 let fetchMock: jest.Mock;
+// What GET /api/pilot/scheduler answers ("Whose numbers", lane 6C7): a schedule with no class
+// unless a test sets one.
+const NO_CLASSES = { ok: true, classes: [], registrations: [], coaching_requests: [], attendance: [] };
+let schedulerAnswer: () => Response | Promise<Response>;
 
 beforeEach(() => {
   window.sessionStorage.clear();
   saveAnswers = [];
+  schedulerAnswer = () => respond(200, NO_CLASSES);
   fetchMock = jest.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/api/pilot/athletes/list')) return respond(200, { items: ROSTER });
+    if (url.includes('/api/pilot/scheduler')) {
+      if (init?.method && init.method !== 'GET') throw new Error('Test Day never writes to the scheduler');
+      return schedulerAnswer();
+    }
     if (url.includes('/api/pilot/coach/test-day')) {
       const body = JSON.parse(String(init?.body ?? '{}'));
       if (body.action === 'accessible_athletes') return respond(200, { ok: true, athlete_ids: ['ath-1', 'ath-2'] });
@@ -359,4 +369,167 @@ test('an unanswered press is still the same save after the page is opened again 
   expect(b.request_key).toBe(a.request_key);
   // Settled: the stored key is gone.
   expect(window.sessionStorage.getItem('ppbf.testDay.pendingSave')).toBeNull();
+});
+
+/*
+ * WHOSE NUMBERS (lane 6C7, U2-6c; app scrub CF-13: "Let the coach pick a class or program first";
+ * Overwatch Q3 = A on #2043: a "Whose numbers" choice, "everyone" stays the default, no new route).
+ * The classes come from GET /api/pilot/scheduler, the read /schedule makes for the same reader.
+ */
+describe('Whose numbers: one class, or everyone', () => {
+  const TODAY = gymDayIso() as string;
+  const OTHER_DAY = '2026-01-05';
+  const at = (day: string, hourUtc: number) => `${day}T${String(hourUtc).padStart(2, '0')}:00:00.000Z`;
+  const klass = (id: string, title: string, day = TODAY, over: Record<string, unknown> = {}) => ({
+    class_id: id, title, start_at: at(day, 17), end_at: at(day, 18), location: 'Main Floor', capacity: 16, status: 'open', ...over,
+  });
+  const registered = (classId: string, athleteId: string, status = 'registered') => ({
+    registration_id: `reg-${classId}-${athleteId}`, class_id: classId, athlete_id: athleteId, status, parent_reviewed: true,
+  });
+  const marked = (classId: string, athleteId: string, status = 'present') => ({
+    attendance_id: `att-${classId}-${athleteId}`, class_id: classId, athlete_id: athleteId, status, method: 'self',
+  });
+  const schedule = (over: Record<string, unknown>) => () => respond(200, { ...NO_CLASSES, ...over });
+  const listed = () => ROSTER.map((athlete) => athlete.full_name).filter((name) => screen.queryByText(name) !== null);
+  const choose = (value: string) => fireEvent.change(screen.getByLabelText('Whose numbers'), { target: { value } });
+  const optionNames = () => Array.from((screen.getByLabelText('Whose numbers') as HTMLSelectElement).options).map((option) => option.textContent);
+
+  test('with no class to pick from, no choice is offered, everyone is listed and the page says why', async () => {
+    await renderPage();
+    expect(screen.queryByLabelText('Whose numbers')).toBeNull();
+    expect(screen.getByText('No class on this date has a register you can pick from here, so everyone you can record for is listed.')).toBeTruthy();
+    expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
+  });
+
+  test('everyone is the default; a class narrows the list to its registered and Present athletes the route will record for', async () => {
+    schedulerAnswer = schedule({
+      classes: [klass('c-1', 'Evening Fundamentals'), klass('c-2', 'Evening Sparring', TODAY, { start_at: at(TODAY, 19), end_at: at(TODAY, 20) })],
+      // Not Yours is registered too, and the route will not record for them: never listed.
+      registrations: [registered('c-1', 'ath-1'), registered('c-1', 'ath-3')],
+      attendance: [marked('c-2', 'ath-2')],
+    });
+    await renderPage();
+
+    expect((screen.getByLabelText('Whose numbers') as HTMLSelectElement).value).toBe('');
+    expect(optionNames()).toEqual([
+      'Everyone you can record for',
+      expect.stringMatching(/^Evening Fundamentals, .+-.+$/),
+      expect.stringMatching(/^Evening Sparring, .+-.+$/),
+    ]);
+    expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
+
+    choose('c-1');
+    expect(listed()).toEqual(['Ana Boxer']);
+    const count = screen.getByText('Registered for, or marked Present on, Evening Fundamentals, whom you can record for: 1. An athlete with a number typed stays listed.');
+    // Inside the page's always-present live region, so the narrowing is read out.
+    expect(count.closest('[aria-live="polite"]')).toBe(screen.getByTestId('class-lines'));
+    choose('c-2');
+    expect(listed()).toEqual(['Ben Boxer']);
+    choose('');
+    expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
+    expect(screen.queryByText(/^Registered for, or marked Present on/)).toBeNull();
+  });
+
+  test('a class on another date, a cancelled class, and a class with nobody the route will record for are not offered', async () => {
+    schedulerAnswer = schedule({
+      classes: [
+        klass('c-other-day', 'Last Week', OTHER_DAY),
+        klass('c-cancelled', 'Called Off', TODAY, { status: 'cancelled' }),
+        klass('c-not-yours', 'Somebody Else Runs This'),
+        klass('c-waitlist-only', 'Waitlist Only'),
+        klass('c-absent-only', 'Absent Only'),
+        klass('c-1', 'Evening Fundamentals'),
+      ],
+      registrations: [
+        registered('c-other-day', 'ath-1'),
+        registered('c-cancelled', 'ath-1'),
+        registered('c-not-yours', 'ath-3'),
+        registered('c-waitlist-only', 'ath-1', 'waitlisted'),
+        registered('c-1', 'ath-2'),
+      ],
+      attendance: [marked('c-absent-only', 'ath-1', 'absent')],
+    });
+    await renderPage();
+    expect(optionNames()).toEqual(['Everyone you can record for', expect.stringMatching(/^Evening Fundamentals, /)]);
+  });
+
+  test('changing the test date drops a class that is not on that date, and everyone is listed again', async () => {
+    schedulerAnswer = schedule({ classes: [klass('c-1', 'Evening Fundamentals')], registrations: [registered('c-1', 'ath-1')] });
+    await renderPage();
+    choose('c-1');
+    expect(listed()).toEqual(['Ana Boxer']);
+
+    fireEvent.change(screen.getByLabelText('Test date'), { target: { value: OTHER_DAY } });
+    expect(screen.queryByLabelText('Whose numbers')).toBeNull();
+    expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
+  });
+
+  test('an athlete with a number typed stays listed when a class is chosen, so nothing typed is hidden or sent unseen', async () => {
+    schedulerAnswer = schedule({ classes: [klass('c-1', 'Evening Fundamentals')], registrations: [registered('c-1', 'ath-1')] });
+    await renderPage();
+    type('Ben Boxer: Height (cm)', '148');
+    choose('c-1');
+    // Ben is not on the class, and stays because a number is typed for him.
+    expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
+    type('Ana Boxer: Height (cm)', '151.4');
+    await pressSave();
+    const [body] = saves();
+    expect(body.rows).toEqual([{ athlete_id: 'ath-1', height_cm: 151.4 }, { athlete_id: 'ath-2', height_cm: 148 }]);
+    // The save cleared the boxes: only the class is listed now.
+    expect(listed()).toEqual(['Ana Boxer']);
+  });
+
+  test.each([
+    ['the read fails', () => respond(500, {})],
+    ['the answer is not a schedule', () => respond(200, { ok: true, classes: 'none' })],
+    ['the connection drops', () => { throw new Error('network'); }],
+    // One class row that cannot be read: "no class on this date" would be a claim the page cannot make.
+    ['a class row cannot be read', () => respond(200, {
+      ...NO_CLASSES,
+      classes: [klass('c-1', 'Evening Fundamentals'), { class_id: 'c-2' }],
+      registrations: [registered('c-1', 'ath-1')],
+    })],
+  ])('when %s, the page says the classes could not be loaded and lists everyone', async (_label, answer) => {
+    schedulerAnswer = answer as () => Response;
+    await renderPage();
+    const warning = screen.getByText('The classes could not be loaded, so everyone you can record for is listed.').closest('.alert') as HTMLElement;
+    // Set apart from an empty answer (a warning with a glyph and a title) and announced, not an alert.
+    expect(warning.className).toContain('alert--warning');
+    expect(warning.closest('[aria-live="polite"]')).toBe(screen.getByTestId('class-lines'));
+    expect(warning.textContent).toContain('Classes not loaded');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/No class on this date/)).toBeNull();
+    expect(screen.queryByLabelText('Whose numbers')).toBeNull();
+    expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
+    // The form still saves: the class choice is a convenience, not a gate.
+    type('Ana Boxer: Height (cm)', '151.4');
+    await pressSave();
+    expect(saves()).toHaveLength(1);
+  });
+
+  test('"already recorded with different numbers" clears the boxes and lists everyone again, so no missing box is hidden', async () => {
+    schedulerAnswer = schedule({ classes: [klass('c-1', 'Evening Fundamentals')], registrations: [registered('c-1', 'ath-1')] });
+    saveAnswers = [
+      new Error('network'),
+      respond(409, { error: 'This save was already recorded with different numbers. The first numbers are kept, and nothing from this attempt was saved.' }),
+    ];
+    await renderPage();
+    type('Ben Boxer: Height (cm)', '148');
+    choose('c-1');
+    type('Ana Boxer: Height (cm)', '151.4');
+    await pressSave();
+    type('Ana Boxer: Height (cm)', '152.4');
+    await pressSave();
+    expect(screen.getByRole('alert').textContent).toMatch(/enter only the missing boxes again/);
+    expect((screen.getByLabelText('Whose numbers') as HTMLSelectElement).value).toBe('');
+    expect(listed()).toEqual(['Ana Boxer', 'Ben Boxer']);
+  });
+
+  test('a roster that failed says only that: no class line stands in for it', async () => {
+    fetchMock.mockImplementationOnce(async () => respond(500, {}));
+    await renderPage();
+    expect(screen.getByRole('alert').textContent).toMatch(/could not be loaded/);
+    expect(screen.queryByText(/so everyone you can record for is listed/)).toBeNull();
+    expect(screen.queryByLabelText('Whose numbers')).toBeNull();
+  });
 });

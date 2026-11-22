@@ -53,7 +53,7 @@ describe('VideoReviewManagementPage', () => {
     render(<VideoReviewManagementPage />);
 
     expect(screen.getByText('Video review escalation is managed per gym')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Platform console' }).getAttribute('href')).toBe('/admin/platform');
+    expect(screen.getByRole('link', { name: 'Omega' }).getAttribute('href')).toBe('/admin/platform');
   });
 
   it('renders quarantined videos list for organization admin', async () => {

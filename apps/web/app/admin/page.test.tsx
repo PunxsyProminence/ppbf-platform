@@ -284,7 +284,7 @@ it('a network error reports an unconfirmed save, never a definite loss', async (
    Access" card whose button opens SHADOW chat, a "Manage Login Announcements"
    link to /login (which sends a signed-in admin home; the sign-in page shows no
    announcements), and the working Compliance Center filed as "Planned". */
-it('the overview names SHADOW Chat, links no sign-in page, and files the Compliance Center once', async () => {
+it('the overview names SHADOW Chat, links no sign-in page, and files the Compliance Center in its note only', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
   await renderPage(fetchMock, 'organization_admin');
   await screen.findByRole('heading', { name: 'SHADOW Chat' });
@@ -294,7 +294,8 @@ it('the overview names SHADOW Chat, links no sign-in page, and files the Complia
   expect(screen.queryByText(/tutorial center/i)).toBeNull();
   expect(screen.queryByText('Manage Login Announcements')).toBeNull();
   expect(document.querySelector('a[href="/login"]')).toBeNull();
-  expect(document.querySelectorAll('a[href="/admin/compliance-center"]')).toHaveLength(1);
+  // AS10-2b (OFF-05, Q4 A): the header's Compliance Center link moved to Gym Office, under Safety.
+  expect(document.querySelectorAll('a[href="/admin/compliance-center"]')).toHaveLength(0);
   expect(screen.queryByText('Automated Compliance Monitoring Surface')).toBeNull();
   expect(screen.getByText('Automated compliance monitoring: not built yet. Violations are filed by hand from Video Analysis; the Compliance Center is where they are reviewed and closed.')).toBeTruthy();
   expect(screen.queryByText(/records violations by hand/)).toBeNull();
@@ -395,15 +396,48 @@ it('marks the open section on the tab that opened it', async () => {
   expect(screen.getByRole('button', { name: 'Overview' }).getAttribute('aria-current')).toBeNull();
 });
 
-it('hides the compliance center from a platform owner and keeps it for a gym admin', async () => {
+it('shows a platform owner no compliance center link; a gym admin finds it on Gym Office now (AS10-2b)', async () => {
   const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
 
   await renderAsPlatformOwner(fetchMock);
   expect(screen.queryByRole('link', { name: /compliance/i })).toBeNull();
 
+  // The gym admin's link moved to Gym Office (app/admin/people/officeLauncher.test.tsx), which a
+  // platform owner is not shown.
   jest.clearAllMocks();
   await renderPage(fetchMock, 'organization_admin');
-  expect(screen.getAllByRole('link', { name: /compliance/i }).length).toBeGreaterThan(0);
+  expect(screen.queryAllByRole('link', { name: /compliance/i })).toHaveLength(0);
+});
+
+/*
+ * AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A, Q19 A). The header's launcher moved to
+ * Gym Office: grouped by the admin's job sections, then Video Analysis, Drill Library, Waivers &
+ * Consent and System in one row (they sit in no section). Gym Setup was already linked from Gym
+ * Office's header (AS10-1), so it is not repeated there. Gym Office (the way back) and Export JSON
+ * (this page's own export) stay.
+ */
+it('the header no longer launches the office pages that moved to Gym Office', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+  await renderPage(fetchMock, 'organization_admin');
+  await screen.findByRole('heading', { name: 'Capabilities' });
+
+  for (const href of [
+    '/admin/setup', '/admin/athletes', '/admin/export', '/admin/import', '/admin/gear', '/admin/customize', '/operations',
+    '/admin/compliance-center', '/coach/video-analysis', '/coach/drills', '/admin/consent', '/admin/system',
+  ]) {
+    expect(document.querySelectorAll(`a[href="${href}"]`)).toHaveLength(0);
+  }
+  expect(document.querySelectorAll('a[href="/admin/people"]')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'EXPORT JSON' })).toBeTruthy();
+});
+
+// The plan named a kept label that did not say its page's title (OFF-15; admin:1473 on c27c581c):
+// PEOPLE opens Gym Office. (CONSENT, :1554, moved to Gym Office under Q19 A, worded by its door.)
+it('the kept Gym Office link says the title of the page it opens', async () => {
+  const fetchMock = jest.fn(async () => jsonResponse({ ok: true, capabilities: [] }));
+  await renderPage(fetchMock, 'organization_admin');
+  await screen.findByRole('heading', { name: 'Capabilities' });
+  expect(document.querySelector('a[href="/admin/people"]')?.textContent?.trim()).toBe('Gym Office');
 });
 
 // R2-F-004: /admin/organizations admits the platform owner only, so an

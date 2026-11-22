@@ -110,6 +110,7 @@ test('a start or end moment names its time once; other and unknown read as thems
 describe('readableMissingItem', () => {
   test('swaps the event id for the event\'s place in the clip and keeps the server\'s words', () => {
     expect(readableMissingItem('evt-1: start points, 2 of 23', [PUNCH])).toBe('punch at 0:12.400 (red corner): start points, 2 of 23');
+    expect(readableMissingItem('evt-1: start points, 2 of 23', [{ ...PUNCH, actor_track: 'fighter_1' }])).toBe('punch at 0:12.400 (Fighter 1): start points, 2 of 23');
     expect(readableMissingItem('evt-2: middle lead side', [PUNCH, DEFENSE])).toBe('defense at 0:13.000 (blue corner): middle lead side');
   });
 

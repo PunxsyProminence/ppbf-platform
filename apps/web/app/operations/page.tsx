@@ -195,7 +195,7 @@ export default function OperationsHubPage() {
                 shade and the pool of light under it; the room supplies the
                 wall behind, and nothing else on the page paints light. */}
             <span className="lamp" aria-hidden="true" style={{ left: '50%', translate: '-50% 0' }} />
-            <p className="t-eyebrow tracking-[0.35em]">Gym Administration</p>
+            <p className="t-eyebrow tracking-[0.35em]">Classes &amp; floor</p>
             <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Operations</h1>
             <p className="t-body max-w-[80ch]">
               Every corner has its own view. Athlete. Coach. Parent. Board. Admin. Public.

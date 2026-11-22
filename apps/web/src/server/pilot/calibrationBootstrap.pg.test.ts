@@ -400,9 +400,10 @@ describe('establishing a ready video as a calibration study', () => {
 
       // Nothing here is chosen by the bootstrap: 'draft' is the only status
       // createCalibrationProject can write, and the ontology version is the
-      // only one this build can validate.
+      // one new studies are created on (0.4 since TEACH-T T-1).
       expect(project.status).toBe('draft');
-      expect(project.ontology_version).toBe(ontology.BOXING_ONTOLOGY_VERSION_0_1);
+      expect(project.ontology_version).toBe(ontology.PROJECT_CREATION_ONTOLOGY_VERSION);
+      expect(project.ontology_version).toBe(ontology.BOXING_ONTOLOGY_VERSION_0_4);
       expect(project.organization_id).toBe(ORG_ID);
 
       expect(clip.calibration_project_id).toBe(project.calibration_project_id);
@@ -646,7 +647,7 @@ describe('the creation is recorded, not only stamped on the row', () => {
     expect(projectRow.organization_id).toBe(ORG_ID);
     expect(projectRow.details).toEqual({
       name: project.name,
-      ontology_version: ontology.BOXING_ONTOLOGY_VERSION_0_1,
+      ontology_version: ontology.BOXING_ONTOLOGY_VERSION_0_4,
       status: 'draft',
     });
 
