@@ -9,7 +9,10 @@
  * coach's reading counts only when that coach is in a calibrated pair on this
  * behaviour (OD-2026-10-17-027 ruling 3 as written), so most cases here carry
  * a calibration history; Q4 A, a disputed attempt is left out and listed, and
- * only film contradicting a coach withholds.
+ * only film contradicting a coach withholds. Where a reading that counts for
+ * nothing would change what counts under the rulings as written, the rulings
+ * collide; those attempts are held (no tier) until Overwatch rules (CONFLICT
+ * on PunxsyProminence/ppbf-platform#2092).
  */
 
 import {
@@ -105,6 +108,8 @@ function calibrationHistory(first = 'coach-a', second = 'coach-b'): BehaviourObs
 }
 
 const idsOf = (rows: readonly BehaviourObservation[]) => rows.map((row) => row.observationId).sort();
+const TIERS_MET = (result: ReturnType<typeof evaluatePatternTiers>) => (['emerging', 'pattern', 'established'] as const)
+  .filter((name) => result.standings[name].met);
 
 describe('the approved tiers', () => {
   test('emerging: three sessions in one drill, one calibrated coach -- context-specific and single-observer', () => {
@@ -359,12 +364,13 @@ describe('disputed attempts (Overwatch Q4 A on #2082)', () => {
     // The model's reading does not count, so it does not take the coach's reading out of the counts; it is listed.
     expect(result.disputed.attempts).toBe(0);
     expect(result.uncountedDissent).toEqual({ attempts: 1, observationIds: idsOf(contradicted) });
+    expect(result.heldForRulingConflict.attempts).toBe(1);
     expect(result.standings.pattern).toEqual({ met: false, shortfalls: [] });
     expect(result.tier).toBeNull();
   });
 });
 
-describe('a reading that does not count changes no count (review fixes on #2092)', () => {
+describe('readings that count for nothing (review fixes on #2092)', () => {
   /** Pattern evidence plus two more coach misses: 7 shown of 10, a share of 0.7, so no tier. */
   const missKeys = ['miss-1', 'miss-2'];
   function seventyPercent(): BehaviourObservation[] {
@@ -382,6 +388,11 @@ describe('a reading that does not count changes no count (review fixes on #2092)
     observerAccountId: null, interpretation: 'ai_proposed', polarity,
     source: { type: 'imported', quality: 'moderate', referenceId: 'model-run' },
   });
+  const filmModel = (polarity: BehaviourObservation['polarity']): Partial<BehaviourObservation> => ({
+    observerAccountId: null, interpretation: 'ai_proposed', polarity,
+    source: { type: 'computer_vision', quality: 'high', referenceId: 'clip-run' },
+  });
+  const missesOf = (rows: readonly BehaviourObservation[]) => rows.filter((row) => missKeys.includes(row.opportunityKey ?? ''));
 
   test('the base case: 7 of 10 is below the 80% share, so no tier', () => {
     const result = tiersOf([...seventyPercent(), ...calibrationHistory()]);
@@ -391,16 +402,57 @@ describe('a reading that does not count changes no count (review fixes on #2092)
 
   test.each([
     ['a person naming no coach agrees with the misses', { observerAccountId: null, polarity: 'counterexample' as const }],
-    ['a coach in no calibrated pair agrees with the misses', { observerAccountId: 'coach-z', polarity: 'counterexample' as const }],
-    ['a coach in no calibrated pair says the misses showed', { observerAccountId: 'coach-z', polarity: 'occurrence' as const }],
     ['a model agrees with the misses', model('counterexample')],
-    ['a model says the misses showed', model('occurrence')],
-  ])('%s: the misses still count and the tier does not move', (_label, overrides) => {
+  ])('%s: the misses still count, and nothing is held', (_label, overrides) => {
     const extra = onTheMisses(overrides);
     const result = tiersOf([...seventyPercent(), ...extra, ...calibrationHistory()]);
     expect(result.counts).toEqual(expect.objectContaining({ codedChances: 10, occurrences: 7 }));
     expect(result.disputed.attempts).toBe(0);
+    expect(result.heldForRulingConflict).toEqual({ attempts: 0, observationIds: [] });
     expect(result.tier).toBeNull();
+  });
+
+  // CONFLICT on #2092: under the rulings as written, each of these readings would change what counts --
+  // ruling 3's pair drops an attempt a coach in no calibrated pair co-coded, and Q4 A leaves a disputed
+  // attempt out -- yet Q1 A says the reading counts toward no tier. Until Overwatch rules, they are held.
+  test.each([
+    ['a person naming no coach says the misses showed', { observerAccountId: null, polarity: 'occurrence' as const }, 10],
+    ['a model says the misses showed', model('occurrence'), 10],
+    ['a coach in no calibrated pair agrees with the misses', { observerAccountId: 'coach-z', polarity: 'counterexample' as const }, 8],
+    ['a coach in no calibrated pair says the misses showed', { observerAccountId: 'coach-z', polarity: 'occurrence' as const }, 8],
+  ])('held: %s -- every tier withheld, the attempts listed', (_label, overrides, codedChances) => {
+    const base = seventyPercent();
+    const extra = onTheMisses(overrides);
+    const result = tiersOf([...base, ...extra, ...calibrationHistory()]);
+    expect(result.heldForRulingConflict).toEqual({ attempts: 2, observationIds: idsOf([...missesOf(base), ...extra]) });
+    // The pair rule takes a co-coded attempt out of the counts; a dissent from someone who is no coach does not.
+    expect(result.counts.codedChances).toBe(codedChances);
+    expect(TIERS_MET(result)).toEqual([]);
+    expect(result.tier).toBeNull();
+  });
+
+  test('held: a sighting disputed by a reading that counts for nothing cannot supply the session a tier needs', () => {
+    // coach-a alone: the third session's only attempt is the one in question.
+    const rows = [chance(0), chance(0), chance(4), chance(4), chance(9, { opportunityKey: 'rep-1' })];
+    expect(tiersOf([...rows, ...calibrationHistory()]).tier).toBe('emerging');
+    for (const overrides of [
+      { observerAccountId: 'coach-z' }, { observerAccountId: null }, model('counterexample'),
+    ] as Partial<BehaviourObservation>[]) {
+      const dissent = chance(9, { opportunityKey: 'rep-1', polarity: 'counterexample', ...overrides });
+      const result = tiersOf([...rows, dissent, ...calibrationHistory()]);
+      expect(result.heldForRulingConflict.attempts).toBe(1);
+      expect(result.tier).toBeNull();
+    }
+  });
+
+  test('a coach calibrated only with someone else, co-coding an attempt: ruling 3\'s pair -- neither reading counts, nothing is held', () => {
+    // Named for Overwatch on #2092: as written (and on main) this can lift a tier, here 7 of 8 instead of 7 of 10.
+    const base = seventyPercent();
+    const extra = onTheMisses({ observerAccountId: 'coach-c', polarity: 'counterexample' });
+    const result = tiersOf([...base, ...extra, ...calibrationHistory(), ...calibrationHistory('coach-c', 'coach-d')]);
+    expect(result.heldForRulingConflict.attempts).toBe(0);
+    expect(result.unverifiedObservationIds).toEqual(idsOf([...missesOf(base), ...extra]));
+    expect(result.counts.codedChances).toBe(8);
   });
 
   test('dissent that does not count is listed for a person', () => {
@@ -422,23 +474,53 @@ describe('a reading that does not count changes no count (review fixes on #2092)
     expect(result.tier).toBe('emerging');
   });
 
-  test('a calibrated coach disputing a miss still leaves that attempt out (Q4 A)', () => {
+  test('a calibrated coach disputing a miss still leaves that attempt out (Q4 A), and nothing is held', () => {
     const extra = [chance(16, { opportunityKey: 'miss-1', observerAccountId: 'coach-b', polarity: 'occurrence' })];
     const result = tiersOf([...seventyPercent(), ...extra, ...calibrationHistory()]);
     expect(result.disputed.attempts).toBe(1);
+    expect(result.heldForRulingConflict.attempts).toBe(0);
     expect(result.counts).toEqual(expect.objectContaining({ codedChances: 9, occurrences: 7 }));
   });
 
-  test('a lapse stands whatever a model or an uncalibrated coach says about the misses', () => {
+  test('an attempt the counting readings dispute is listed once, as disputed, even when a model also read it', () => {
+    const rows = [
+      chance(12, { opportunityKey: 'rep-n' }),
+      chance(12, { opportunityKey: 'rep-n', polarity: 'counterexample' }),
+      chance(12, { ...model('occurrence'), opportunityKey: 'rep-n' }),
+    ];
+    const result = tiersOf([...patternEvidence(), ...rows, ...calibrationHistory()]);
+    expect(result.disputed).toEqual({ attempts: 1, observationIds: idsOf(rows) });
+    expect(result.uncountedDissent).toEqual({ attempts: 0, observationIds: [] });
+  });
+
+  test('held: a model or an uncalibrated coach disputing a lapse cannot lift it', () => {
     const misses = [21, 22, 23].map((day) => chance(day, { opportunityKey: `lapse-${day}`, polarity: 'counterexample', taskContextKey: 'task-bag' }));
     const lapsed = tiersOf([...patternEvidence(), ...misses, ...calibrationHistory()]);
     expect(lapsed.standings.pattern.shortfalls).toContain('lapsed');
     for (const overrides of [model('occurrence'), { observerAccountId: 'coach-z', polarity: 'occurrence' as const }]) {
       const dissent = misses.map((miss) => chance(0, { ...miss, observationId: `${miss.observationId}-x`, ...overrides }));
       const result = tiersOf([...patternEvidence(), ...misses, ...dissent, ...calibrationHistory()]);
-      expect(result.counts.trailingMisses).toBe(3);
-      expect(result.tier).toBe(lapsed.tier);
+      expect(result.heldForRulingConflict.attempts).toBe(3);
+      expect(result.tier).toBeNull();
     }
+  });
+
+  test('film withholds only against a person\'s reading of the same attempt', () => {
+    const film = chance(12, { ...filmModel('counterexample'), opportunityKey: 'rep-x' });
+    const result = tiersOf([...patternEvidence(), film, ...calibrationHistory()]);
+    expect(result.withheld).toEqual([]);
+    expect(result.tier).toBe('pattern');
+  });
+
+  test('a model cannot take an unverified attempt out of the unverified counts', () => {
+    const rows = [
+      chance(20, { opportunityKey: 'rep-u', observerAccountId: 'coach-z' }),
+      chance(20, { ...model('counterexample'), opportunityKey: 'rep-u' }),
+    ];
+    const result = tiersOf([...emergingEvidence(), ...rows, ...calibrationHistory()]);
+    expect(result.unverifiedCounts).toEqual({ codedChances: 1, occurrences: 1 });
+    expect(result.heldForRulingConflict.attempts).toBe(0);
+    expect(result.tier).toBe('emerging');
   });
 
   test('film contradicting a coach in no calibrated pair still withholds', () => {
@@ -451,6 +533,7 @@ describe('a reading that does not count changes no count (review fixes on #2092)
     ];
     const result = tiersOf([...patternEvidence(), ...contradicted, ...calibrationHistory()]);
     expect(result.withheld).toEqual(['VIDEO_CONTRADICTS_OBSERVER']);
+    expect(result.heldForRulingConflict.attempts).toBe(0);
     expect(result.tier).toBeNull();
   });
 
