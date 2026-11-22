@@ -20,6 +20,8 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-22-004 | 2026-11-22 | Release 0a9b2972 without the signed-in staging check; App Overwatch approves the production gates | PRIMARY |  | yes |
+| OD-2026-11-22-003 | 2026-11-22 | Overwatch's recommendations on HF9-1, the coach home word, the release, #2059 and staging test accounts | PRIMARY |  |  |
 | OD-2026-11-22-002 | 2026-11-22 | Close the finished lanes' plan PRs; the Claude Science thread stays the research lane | PRIMARY |  |  |
 | OD-2026-11-22-001 | 2026-11-22 | The four restart lanes run on the Neeko account | PRIMARY |  | yes |
 | OD-2026-11-21-009 | 2026-11-21 | Stage and release `b6fa8fe6` | PRIMARY |  |  |
@@ -645,6 +647,52 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-22-004 -- Release 0a9b2972 without the signed-in staging check; App Overwatch approves the production gates
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-22 UTC. New; edits no earlier entry's text.
+
+**Jason (2026-11-22, PRIMARY):** *"dont start anything new in cloud work 5 hr limit is close"* and *"it resets at 640"*
+
+**Jason (2026-11-22, PRIMARY, after Overwatch said the release still needed his signed-in staging check):** *"skip my check this time and take it straight to production i give you permission to make the cliks if you can"*
+
+**Jason (2026-11-22, PRIMARY, on Overwatch's list of local work):** *"do them all"*
+
+**Ruling:**
+1. Release `0a9b2972` without Jason's signed-in staging check, this release only. The cost, stated in the same exchange: the sign-in, consent and safety screens for minors in this release were seen by no person signed in; only CI and the lanes' reviews checked them.
+2. For this release, App Overwatch approves the production gates on his words.
+3. No new cloud lane work until the Neeko 5-hour limit resets (6:40 PM US Eastern).
+
+**Applied:** apply-migrations run 45079947040 (production, `behaviour-sample-windows`, PASS) and deploy-production run 45080133853 (success), both gates approved as PunxsyProminence with his words in the approval comment; revision `app-ppbf-production--0000213`, image digest `sha256:a52c3d10eddc163cbb7b2dd62057d3dc5f2297c14811449749b127c6e7a9d916` from staging run 45079338035; www returned 200 at 22:55 UTC.
+
+**Not ruled here:** whether later releases may skip the signed-in check, or whether App Overwatch may approve production gates without a per-release instruction.
+**Status:** recorded 2026-11-22 by PR.
+
+---
+
+## OD-2026-11-22-003 -- Overwatch's recommendations on HF9-1, the coach home word, the release, #2059 and staging test accounts
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session on 2026-11-22 UTC. The questions were Overwatch's Q1 to Q5 in its message of about 20:40 UTC; each answer below is his reply to it. New; edits no earlier entry's text.
+
+**Jason (2026-11-22, PRIMARY):** *"go with your recomendation and create test users that yo have acess"*
+
+**Jason (2026-11-22, PRIMARY):** *"signed in, staging host is app-ppbf-staging"* and *"Yes, sign in"*
+
+**The recommendations he took (Overwatch's words, not his):**
+- Q1 (HF9-1, #2095): on a card whose consent on file allows public use, leave out only the sentence "Nothing is posted publicly on this consent."
+- Q1b: the consent page header no longer says the choice "controls one thing".
+- Q2 (CF-22): the coach home masthead word stays "Coach home".
+- Q3: stage main for release.
+- Q4: take the lists of missed safety-scan phrasings off #2059 (its body was already clean; the remaining copies are in the edit history).
+- Q5: test parent and staff accounts on staging.
+
+**Applied by Overwatch (not his words):**
+- HF9-1's header playback sentence, the lane's option A ("With photos only, or if you withdraw, they cannot be played back in the gym's app; a link already given out can still play for up to an hour."), applied under Q1b's principle that the header says what the choice actually does (comment 7085890882 on #2083). Merged in #2095.
+- Staging test accounts, made through Gym Office as the organization admin: a parent `admin+testparent@` linked as legal guardian to the staging test child, and a staff member `admin+teststaff@`; both signed in once through an emailed link (OBSERVED: Parent Hub and Staff workspace).
+- Q4's edit-history deletion needs a GitHub sign-in as PunxsyProminence and is not done at the time of this entry.
+**Status:** recorded 2026-11-22 by PR.
 
 ---
 
