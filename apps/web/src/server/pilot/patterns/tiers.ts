@@ -26,10 +26,11 @@
  * NOT UNTIL CALIBRATED (pick 3; Overwatch Q1 A on the PATTERN-1 plan,
  * PunxsyProminence/ppbf-platform#2082). A person's reading counts only when it
  * names a coach who is in a pair that has met the calibration bar on this
- * behaviour (inference/reliability.ts assessPairCalibration), and counting
- * coaches who coded one attempt together count on it only as a calibrated pair
- * (the ruling's "pair"). Every other person's reading is UNVERIFIED: returned,
- * and counted apart, so a coach can see it, and kept out of every tier count.
+ * behaviour (inference/reliability.ts assessPairCalibration), and named coaches
+ * who coded one attempt together count on it only when every pair of them has
+ * (the ruling's "pair", as main had it). Every other person's reading is
+ * UNVERIFIED: returned, and counted apart, so a coach can see it, and kept out
+ * of every tier count.
  * Calibration is per behaviour, per coach pair (report section 4), so it is
  * judged on the gym's whole record of this behaviour -- every athlete -- which
  * the caller passes as `calibrationReadings`. With no ratified calibration bar
@@ -37,23 +38,26 @@
  * calibrated coach can carry the emerging tier alone; it says "single
  * observer" when that is all there is.
  *
- * A READING THAT DOES NOT COUNT CHANGES NO COUNT. Only counting readings are
- * counted: an unverified reading, or a model's, cannot remove a counting
- * reading, by agreeing with it or by disputing it. Otherwise a reading that
- * counts toward no tier (Q1 A; for a model, types.ts InterpretationOrigin)
- * could lift one, by taking a calibrated coach's misses out of the share.
- *
  * DISPUTES (Overwatch Q4 A, #2082). An attempt the counting readings read
  * both ways -- one coach both ways, or two calibrated coaches -- counts for
  * neither side: it is left out of every count and listed for a person to look
- * at, and the tiers stand on the remaining attempts. Where only a reading that
- * does not count read an attempt the other way, the counts keep the attempt
- * as the counting readings read it, and the attempt is listed apart for a
- * person. Film contradicting a person's reading -- counting or not, whatever
- * the reading was sourced from -- still withholds every tier until a person
- * looks. Whose fault it was (attribution) is reported over the counted
- * attempts, not thresholded -- the approved bar sets no number for it, and
- * none is invented here.
+ * at, and the tiers stand on the remaining attempts. Other attempts read both
+ * ways that a person coded are listed apart. Film contradicting a person's
+ * reading -- counting or not, whatever the reading was sourced from -- still
+ * withholds every tier until a person looks. Whose fault it was (attribution)
+ * is reported over the counted attempts, not thresholded -- the approved bar
+ * sets no number for it, and none is invented here.
+ *
+ * HELD WHERE THE RULINGS COLLIDE (CONFLICT on
+ * PunxsyProminence/ppbf-platform#2092). Q1 A says a reading from a coach in no
+ * calibrated pair, a person naming no coach, or a model counts toward no tier.
+ * Yet on an attempt a calibrated coach coded, such a reading would change what
+ * counts under the rulings as written: as a co-coder, ruling 3's pair takes
+ * the attempt out; dissenting, Q4 A leaves it out. Either way a calibrated
+ * miss can leave the share and lift a tier, and the other ways round (ignore
+ * the reading; or keep main's withholding) each break one ruling's words.
+ * Until Overwatch says how they combine, any such attempt withholds every
+ * tier -- the fail-closed choice -- and is listed for a person.
  *
  * Nothing here decides anything: like the rest of this directory it returns
  * the standing and the reasons, and a coach decides what to do with it.
@@ -87,8 +91,9 @@ export interface TierStanding {
   readonly met: boolean;
   /**
    * What this tier still needs, in the bar's own terms; empty when every
-   * number is met. A withheld tier keeps its shortfalls, and
-   * `PatternTierEvaluation.withheld` says why it is not met.
+   * number is met. A withheld or held tier keeps its shortfalls, and
+   * `PatternTierEvaluation.withheld` or `heldForRulingConflict` says why it is
+   * not met.
    */
   readonly shortfalls: readonly TierShortfall[];
 }
@@ -115,17 +120,26 @@ export interface PatternTierEvaluation {
   readonly tier: PatternTier | null;
   readonly standings: Readonly<Record<PatternTier, TierStanding>>;
   readonly counts: TierCounts;
-  /** Film contradicting a coach: withholds every tier until a person looks. */
+  /** Film contradicting a person: withholds every tier until a person looks. */
   readonly withheld: readonly PatternReasonCode[];
   /** Attempts the counting readings read both ways: left out of every count; every reading of them, for a person to look at. */
   readonly disputed: Readonly<{ attempts: number; observationIds: readonly string[] }>;
   /**
-   * Attempts a person coded that only readings which do not count (an
-   * unverified person's, or a model's) read the other way: counted as the
-   * counting readings read them, if any; every reading of them, for a person
-   * to look at. A reading can be in this list or `disputed` and also unverified.
+   * Other attempts read both ways that a person coded -- not both ways among
+   * counting readings: by unverified readings, or a model's, against each
+   * other or against a counting reading. Every reading of them, for a person
+   * to look at. A reading can be here or in `disputed`, and also unverified or
+   * held.
    */
   readonly uncountedDissent: Readonly<{ attempts: number; observationIds: readonly string[] }>;
+  /**
+   * Attempts a calibrated coach coded on which a reading that counts toward no
+   * tier would change what counts under the rulings as written: a co-coding
+   * coach in no calibrated pair, or a dissent from such a coach, a person
+   * naming no coach, or a model. Any of them withholds every tier until
+   * Overwatch rules (CONFLICT on #2092); every reading of them, for a person.
+   */
+  readonly heldForRulingConflict: Readonly<{ attempts: number; observationIds: readonly string[] }>;
   /** Only one coach saw it. */
   readonly singleObserver: boolean;
   /** False when the gym has no ratified calibration bar: no coach is calibrated, so nothing counts. */
@@ -239,7 +253,7 @@ export function evaluatePatternTiers(input: EvaluatePatternTiersInput): PatternT
 
   // Not until calibrated, reading by reading (a reading with no key is an
   // attempt of its own): a person's reading counts when it names a calibrated
-  // coach, and counting coaches on one attempt count only as calibrated pairs.
+  // coach, and named coaches on one attempt count only as calibrated pairs.
   const calibratedCoaches = new Set([...pairs.values()].filter((pair) => pair.calibrated).flatMap((pair) => pair.observers));
   const isCalibratedCoach = (reading: BehaviourObservation) => reading.interpretation === 'human_observed'
     && typeof reading.observerAccountId === 'string' && calibratedCoaches.has(reading.observerAccountId);
@@ -249,18 +263,28 @@ export function evaluatePatternTiers(input: EvaluatePatternTiersInput): PatternT
     attempts.set(attempt, [...(attempts.get(attempt) ?? []), reading]);
   }
   const unverified = new Set<string>();
-  for (const readings of attempts.values()) {
-    const together = pairsCalibrated(observersOf(readings.filter(isCalibratedCoach)), pairs);
+  const held = new Set<string>();
+  for (const [attempt, readings] of attempts) {
+    const coaches = observersOf(readings);
+    const together = pairsCalibrated(coaches, pairs);
     for (const reading of readings) {
       if (reading.interpretation === 'human_observed' && !(together && isCalibratedCoach(reading))) {
         unverified.add(reading.observationId);
       }
     }
+    // Held where the rulings collide: a reading that counts toward no tier,
+    // on an attempt a calibrated coach coded, as a co-coder or a dissent.
+    const calibrated = readings.filter(isCalibratedCoach);
+    const others = readings.filter((reading) => !isCalibratedCoach(reading));
+    if (calibrated.length > 0 && (
+      coaches.some((coach) => !calibratedCoaches.has(coach))
+      || others.some((other) => calibrated.some((reading) => reading.polarity !== other.polarity))
+    )) held.add(attempt);
   }
   const counting = current.filter((reading) => reading.interpretation === 'human_observed' && !unverified.has(reading.observationId));
 
-  // Disputes among counting readings leave the attempt out; other dissent on
-  // an attempt a person coded is listed and changes no count. Film against a
+  // Disputes among counting readings leave the attempt out; other attempts a
+  // person coded and someone read both ways are listed. Film against a
   // person's reading withholds: evidence.ts's rule, and a model's film
   // reading against a person's reading of any source.
   const leftOut = new Set(collapseToEpisodes(counting).disputedEpisodeKeys);
@@ -342,7 +366,7 @@ export function evaluatePatternTiers(input: EvaluatePatternTiersInput): PatternT
     if (!observersMet(tier)) shortfalls.push('observers');
     if (counts.trailingMisses >= tier.lapseAfterMisses) shortfalls.push('lapsed');
     const standing: TierStanding = Object.freeze({
-      met: shortfalls.length === 0 && withheld.length === 0,
+      met: shortfalls.length === 0 && withheld.length === 0 && held.size === 0,
       shortfalls: Object.freeze(shortfalls),
     });
     return [name, standing];
@@ -360,6 +384,7 @@ export function evaluatePatternTiers(input: EvaluatePatternTiersInput): PatternT
     withheld: Object.freeze(withheld),
     disputed: listed(leftOut),
     uncountedDissent: listed(dissent),
+    heldForRulingConflict: listed(held),
     singleObserver: coaches.length === 1,
     calibrationBarInForce: calibration !== null,
     unverifiedObservationIds: Object.freeze([...unverified].sort()),
