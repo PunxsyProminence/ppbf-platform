@@ -525,7 +525,7 @@ function resolveSessionType(input: {
 type ShadowChatExit = {
   /** Writes this request's request-risk review row, once. Never throws. */
   writeRequestRiskReview: (() => Promise<void>) | null;
-  /** Files an athlete's SHADOW disclosure escalation (shadowDisclosure.ts). */
+  /** Hands a disclosure to shadowDisclosure.ts, which files an athlete's escalation and none for a parent's. */
   fileDisclosureEscalation: (() => Promise<unknown>) | null;
 };
 
@@ -727,7 +727,8 @@ async function handleShadowChat(
     // that pre-empts "chest pain" answers the wrong question about the wrong
     // thing. The refusal below therefore defers to it.
     //
-    // An athlete's disclosure (F-076) is marked high-risk here when the
+    // An athlete's disclosure (F-076), or a parent's (HF8-1 B, office review
+    // only), is marked high-risk here when the
     // validator did not mark it: the admin review row becomes owed and the
     // words stay out of the research feed. A disclosure is answered: one the
     // validator withheld for a non-emergency medical reason is answered on the
@@ -1014,7 +1015,8 @@ async function handleShadowChat(
     // The disclosure escalation is owed from the same point: authenticated,
     // authorized and inside the chat limits, which bound how many one account
     // can file. It is filed at the exit so it can carry the conversation the
-    // exchange was stored in.
+    // exchange was stored in. Every disclosure is handed over; a parent's
+    // files nothing (shadowDisclosure.ts, filesEscalation).
     if (shadowDisclosure) {
       atExit.fileDisclosureEscalation = () => fileShadowDisclosureEscalation({
         organizationId,
@@ -1803,7 +1805,15 @@ async function handleShadowChat(
     // true, because the escalation and the admin review row are that hand-off,
     // and a note that vanished only for disclosures would tell whoever is
     // beside the child that the words were caught.
-    const mainWouldHaveFiled = disclosureMarked && mayFileUnansweredQuestion({
+    //
+    // A parent's disclosure (HF8-1 B) files no escalation, so its only
+    // hand-off is the review row, which is bounded per hour
+    // (OD-2026-09-30-005) and can fail. The line is said for it only when that
+    // row was written; on this path it is written above, before this point.
+    // Otherwise nothing reached anyone, and saying so would be false.
+    const disclosureHandedOff = shadowDisclosure?.filesEscalation === true
+      || requestRisk.outcome().result === 'written';
+    const mainWouldHaveFiled = disclosureMarked && disclosureHandedOff && mayFileUnansweredQuestion({
       ...researchFilingFacts,
       requestHighRisk: baseRequestValidation.highRisk === true,
       requestFlagged: Boolean(baseRequestValidation.classification)

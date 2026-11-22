@@ -1,6 +1,6 @@
 'use client';
 
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import { readChosenChild, rememberChosenChild } from '@/src/lib/chosenChild';
 
 /*
@@ -64,12 +64,17 @@ export default function FamilyChildPicker({
   onChoose,
   label = 'Which child',
   className,
+  lead,
 }: {
   readonly linked: ReadonlyArray<FamilyChild>;
   readonly activeId: string | null;
   readonly onChoose: (athleteId: string) => void;
   readonly label?: string;
   readonly className?: string;
+  /** Drawn before each child's name inside its button (the Parent Hub's
+   *  small portrait, AS9-3). It must be decorative: the button's name is the
+   *  child's label and nothing else. */
+  readonly lead?: (child: FamilyChild) => ReactNode;
 }) {
   const labelId = useId();
   const askId = useId();
@@ -84,7 +89,7 @@ export default function FamilyChildPicker({
           <button
             key={child.athlete_id}
             type="button"
-            className={child.athlete_id === activeId ? 'btn' : 'btn btn--ghost'}
+            className={`${child.athlete_id === activeId ? 'btn' : 'btn btn--ghost'}${lead ? ' gap-[var(--s3)]' : ''}`}
             aria-pressed={child.athlete_id === activeId}
             onClick={() => {
               if (child.athlete_id === activeId) return;
@@ -92,6 +97,7 @@ export default function FamilyChildPicker({
               onChoose(child.athlete_id);
             }}
           >
+            {lead ? lead(child) : null}
             {familyChildLabel(child, linked)}
           </button>
         ))}
