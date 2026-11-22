@@ -382,8 +382,11 @@ async function episodeFor(
   client: PoolClient,
   input: RecordBehaviourObservationInput,
 ): Promise<{ episodeId: string; momentAt: string | null }> {
-  if ([input.trainingAttemptId, input.sameMomentAs, input.windowChance].filter(Boolean).length > 1) {
-    throw new ValidationError('Name one of the training attempt, the report of the same moment or the window chance.');
+  if (input.trainingAttemptId && input.sameMomentAs) {
+    throw new ValidationError('Name the training attempt or the report of the same moment, not both.');
+  }
+  if (input.windowChance && (input.trainingAttemptId || input.sameMomentAs)) {
+    throw new ValidationError('A window tap names its window chance and no other moment.');
   }
   if (input.windowChance) {
     const { windowId, chance } = input.windowChance;

@@ -612,7 +612,7 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
     await expect(direct(windowId, 4, { note: 'free text' })).rejects.toThrow(bare);
     await expect(direct(windowId, 4, { observedAt: new Date(Date.now() - 3_600_000).toISOString() })).rejects.toThrow(bare);
     await expect(direct(windowId, 4, { sameMomentAs: '00000000-0000-4000-8000-000000000000' }))
-      .rejects.toThrow('Name one of the training attempt, the report of the same moment or the window chance.');
+      .rejects.toThrow('A window tap names its window chance and no other moment.');
     expect(await readingsOf(windowId, 4)).toEqual([]);
   });
 
