@@ -531,6 +531,20 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'Free text a coach typed beside a child\'s limit; it may carry the reason, which can be '
       + 'health-adjacent. Staff only, same gate as the limits; never shown to the athlete or family.',
   },
+  'behaviour_observations_windows.athlete_id': {
+    tier: 'organization',
+    enforcedBy: [
+      'behaviourSampleWindows.ts#openBehaviourWindow',
+      'behaviourSampleWindows.ts#recordWindowTap',
+      'behaviourSampleWindows.ts#closeBehaviourWindow',
+      'behaviourSampleWindows.ts#listMyWindowTaps',
+    ],
+    note:
+      'Which child a coach opened a sampled window on, in which behaviour, run and drill (PATTERN-1d, '
+      + 'Q2 A). No free text. Staff only, like the reports its taps become (Jason 2026-10-18 Q2, '
+      + '"A: Staff only"); a coach reads back only their own taps. The public-surface denylist entry '
+      + 'pilot.behaviour_observations covers it (the wall tests match it as a substring). The purge de-identifies it with the reports.',
+  },
   'session_run_athletes.athlete_id': {
     tier: 'organization',
     enforcedBy: [

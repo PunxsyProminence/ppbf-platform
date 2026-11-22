@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import type { PoolClient } from 'pg';
 
@@ -181,6 +181,12 @@ export interface RecordBehaviourObservationInput {
   trainingAttemptId?: string;
   /** Another report of the same moment: this report joins its episode. */
   sameMomentAs?: string;
+  /**
+   * A tap in a sampled window (behaviourSampleWindows.ts): the episode is fixed
+   * by window and chance. Checked here, in this report's transaction: the
+   * window must be this gym's, open, and about this athlete, behaviour and run.
+   */
+  windowChance?: { windowId: string; chance: number };
   taskConstraint: string;
   fatigueContext?: string;
   polarity: string;
@@ -327,13 +333,74 @@ async function contextKeyFor(
   return `context:${oneOf(context.attemptContext, ATTEMPT_CONTEXTS, 'context')}`;
 }
 
+/** RFC 4122 version 5: a name-based UUID (SHA-1), hand-built on node:crypto. */
+export function uuidV5(name: string, namespace: string): string {
+  const bytes = createHash('sha1')
+    .update(Buffer.concat([Buffer.from(namespace.replace(/-/g, ''), 'hex'), Buffer.from(name, 'utf8')]))
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** PATTERN-1d's namespace for window chances: a fixed random UUID, never reused. */
+const WINDOW_EPISODE_NAMESPACE = '5d0c3a2e-8b7f-4c1e-9a64-2f8e1b7d4c90';
+
+/**
+ * The episode of one chance in one sampled window (Q2 A): every coach who taps
+ * that chance writes to it, so their readings are paired judgments, and no
+ * other report can land on it by accident.
+ */
+export function windowEpisodeId(organizationId: string, windowId: string, chance: number): string {
+  return `ep:${uuidV5(`${organizationId}|${windowId}|${chance}`, WINDOW_EPISODE_NAMESPACE)}`;
+}
+
+/** Where a report would be filed (behaviourSampleWindows.ts opens a window here): refused with the reason. */
+export async function reportPlaceFor(
+  client: PoolClient,
+  input: { organizationId: string; athleteId: string; session: SessionRef; context: ContextRef },
+): Promise<{ sessionKey: string; taskContextKey: string }> {
+  const { sessionKey, run } = await sessionFor(client, input.organizationId, input.session, input.athleteId);
+  return { sessionKey, taskContextKey: await contextKeyFor(client, input.organizationId, input.context, run) };
+}
+
 /** The episode, and the time its moment happened when that is already on record. */
 async function episodeFor(
   client: PoolClient,
   input: RecordBehaviourObservationInput,
 ): Promise<{ episodeId: string; momentAt: string | null }> {
-  if (input.trainingAttemptId && input.sameMomentAs) {
+  if ([input.trainingAttemptId, input.sameMomentAs, input.windowChance].filter(Boolean).length > 1) {
     throw new ValidationError('Name the training attempt or the report of the same moment, not both.');
+  }
+  if (input.windowChance) {
+    const { windowId, chance } = input.windowChance;
+    // Held for share until this report commits: closing the window waits.
+    const window = await client.query<{ chances: number; closed_at: string | null; athlete_id: string; behaviour_key: string; run_id: string }>(
+      `select chances, closed_at, athlete_id, behaviour_key, run_id from pilot.behaviour_observations_windows
+        where organization_id = $1 and window_id::text = $2
+        for share`,
+      [input.organizationId, plainId(windowId, 'window')],
+    );
+    const found = window.rows[0];
+    if (!found || found.athlete_id !== input.athleteId || found.behaviour_key !== input.behaviourKey
+        || !('runId' in input.session) || found.run_id !== input.session.runId) {
+      throw new ValidationError('That window is not in this gym.');
+    }
+    if (found.closed_at !== null) throw new ValidationError('That window is closed.');
+    if (!Number.isInteger(chance) || chance < 1 || chance > found.chances) {
+      throw new ValidationError(`A chance in this window is 1 to ${found.chances}.`);
+    }
+    const episodeId = windowEpisodeId(input.organizationId, windowId, chance);
+    // Every reading of a chance is of one moment: the first tap's.
+    const first = await client.query<{ observed_at: string | null }>(
+      `select min(observed_at) as observed_at from pilot.behaviour_observations
+        where organization_id = $1 and episode_id = $2`,
+      [input.organizationId, episodeId],
+    );
+    const firstAt = first.rows[0]?.observed_at ?? null;
+    return { episodeId, momentAt: firstAt === null ? null : new Date(firstAt).toISOString() };
   }
   if (input.trainingAttemptId) {
     const attemptId = plainId(input.trainingAttemptId, 'training attempt');

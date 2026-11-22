@@ -5,8 +5,11 @@
 // the purge's de-identify of a deleted athlete, and nothing else; inserts need
 // a live athlete, an active opener of this gym in its role and an active
 // behaviour name); a window still naming an athlete goes with the athlete row;
-// the purge gives a window the same token as the child's reports. Taps and the
-// window functions arrive with the writer change in PATTERN-1d-2.
+// the purge gives a window the same token as the child's reports. And
+// PATTERN-1d-2's window functions: a window opens through the writer's run,
+// presence and drill checks; a chance's episode is fixed by window and chance,
+// so two coaches' taps of one chance are one attempt; a coach's second tap of a
+// chance revises their first; each coach reads back only their own taps.
 //
 // Spins up the disposable local-only embedded Postgres the other suites use.
 // It NEVER connects to production or staging.
@@ -54,6 +57,7 @@ const COACH_LAPSED = 'acct-bsw-lapsed';
 const COACH_GONE = 'acct-bsw-gone';
 const RETIRED_KEY = 'bk_fixture_bsw_retired';
 const RUN = 'run-bsw-1';
+const PLANNED_RUN = 'run-bsw-2';
 const DRILL = 'drill-bsw-1';
 // A fixture key written straight to the table; keys the app makes are minted (bk_<hex>).
 const KEY = 'bk_fixture_bsw_guard';
@@ -61,6 +65,8 @@ const KEY = 'bk_fixture_bsw_guard';
 let PG_PORT: number;
 let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let db: Client;
+let windows: typeof import('./behaviourSampleWindows');
+let writer: typeof import('./behaviourObservations');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -260,6 +266,44 @@ beforeAll(async () => {
   );
   await db.query(`update pilot.behaviour_keys set status = 'retired' where organization_id = $1 and behaviour_key = $2`, [ORG, RETIRED_KEY]);
 
+  // A run that delivered a plan whose one block runs another drill: the window's drill was not part of it.
+  await db.query(
+    `insert into pilot.drill_library
+       (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
+        standard_setup, execution, what_good_looks_like, what_bad_looks_like, contact_level, skill_id)
+     values ($1, 'drill-bsw-2', 'lineage-bsw-2', 'Slip and counter', 'technical', 'b', 'p', 's', 'e', 'g', 'bad', 'none', 'SK-JAB-01')`,
+    [ORG],
+  );
+  await db.query(
+    `insert into pilot.session_scripts (organization_id, script_id, lineage_id, version, name, total_minutes, created_by_account_id)
+     values ($1, 'scr-bsw-1', 'scr-bsw-1', 1, 'Plan', 10, $2)`,
+    [ORG, COACH_A],
+  );
+  await db.query(
+    `insert into pilot.session_script_blocks
+       (organization_id, block_id, script_id, block_order, start_offset_min, end_offset_min, block_label, what_to_say, block_kind, drill_id)
+     values ($1, 'blk-bsw-1', 'scr-bsw-1', 1, 0, 10, 'Block', 'say', 'drill_round', 'drill-bsw-2')`,
+    [ORG],
+  );
+  await db.query(
+    `insert into pilot.session_script_runs
+       (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+        run_state, started_at, ended_at)
+     values ($1, $2, 'scr-bsw-1', 1, $3, current_date, 'completed', now() - interval '1 hour', now())`,
+    [ORG, PLANNED_RUN, COACH_A],
+  );
+  await db.query(
+    `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+     values ($1, $2, $3, $4, 'coach')`,
+    [ORG, PLANNED_RUN, ATHLETE, COACH_A],
+  );
+
+  process.env.AZURE_POSTGRES_CONNECTION_STRING = connectionStringFor(TEST_DB_NAME);
+  // db.ts only honors this when NODE_ENV is exactly 'test' (Jest sets it).
+  process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
+  windows = await import('./behaviourSampleWindows');
+  writer = await import('./behaviourObservations');
+
 });
 
 afterAll(async () => {
@@ -410,6 +454,99 @@ describe('the table\'s guard', () => {
         where organization_id = $1 and window_id = $2`,
       [ORG, windowId],
     )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+  });
+});
+
+const open = (overrides: Partial<Parameters<typeof windows.openBehaviourWindow>[0]> = {}) => windows.openBehaviourWindow({
+  organizationId: ORG,
+  athleteId: ATHLETE,
+  behaviourKey: KEY,
+  runId: RUN,
+  context: { drillId: DRILL },
+  taskConstraint: 'controlled',
+  openedByAccountId: COACH_A,
+  openedByRole: 'coach',
+  ...overrides,
+});
+
+const tap = (windowId: string, chance: number, observer: string, polarity: 'occurrence' | 'counterexample') => windows.recordWindowTap({
+  organizationId: ORG, windowId, chance, polarity, observerAccountId: observer, authorRole: 'coach',
+});
+
+describe('opening a window (PATTERN-1d-2; Q5 A, Q7 A)', () => {
+  test('opens under the run, for a present athlete, with ten chances unless set', async () => {
+    const row = await open();
+    expect(row).toEqual(expect.objectContaining({
+      athlete_id: ATHLETE, behaviour_key: KEY, run_id: RUN, context_kind: 'drill', context_id: DRILL,
+      task_constraint: 'controlled', chances: 10, opened_by_account_id: COACH_A, closed_at: null,
+    }));
+    expect((await open({ chances: 3 })).chances).toBe(3);
+  });
+
+  test('is refused for an athlete not marked present, a drill not in the gym, or a bad number', async () => {
+    await expect(open({ athleteId: OTHER_ATHLETE })).rejects.toThrow('not marked present');
+    await expect(open({ context: { drillId: 'drill-nowhere' } })).rejects.toThrow('not in this gym');
+    await expect(open({ chances: 51 })).rejects.toThrow('A window has 1 to 50 chances.');
+    await expect(open({ taskConstraint: 'sparring' })).rejects.toThrow('taskConstraint must be one of');
+    await expect(open({ behaviourKey: RETIRED_KEY })).rejects.toThrow('not on the active list');
+  });
+
+  test('a drill that was not part of the run\'s plan is refused (the writer\'s check, which the table cannot make)', async () => {
+    await expect(open({ runId: PLANNED_RUN })).rejects.toThrow('That drill was not part of that session run.');
+    expect(await open({ runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' } })).toEqual(expect.objectContaining({ context_kind: 'block' }));
+  });
+});
+
+describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
+  let windowId: string;
+  beforeAll(async () => {
+    windowId = (await open()).window_id;
+  });
+
+  test('two coaches\' taps of one chance are one episode, fixed by window and chance, with the window\'s task and an unsaid cause', async () => {
+    const first = await tap(windowId, 1, COACH_A, 'occurrence');
+    const second = await tap(windowId, 1, COACH_B, 'counterexample');
+    expect(first.episode_id).toBe(writer.windowEpisodeId(ORG, windowId, 1));
+    expect(second.episode_id).toBe(first.episode_id);
+    expect(first).toEqual(expect.objectContaining({
+      session_key: `run:${RUN}`, task_constraint: 'controlled',
+      attribution_target: 'unresolved', attribution_certainty: 'uncertain',
+    }));
+    expect(new Date(second.observed_at).toISOString()).toBe(new Date(first.observed_at).toISOString());
+  });
+
+  test('a coach\'s second tap of a chance revises their first and keeps its moment', async () => {
+    const before = (await db.query<{ observation_id: string; observed_at: Date }>(
+      `select observation_id, observed_at from pilot.behaviour_observations
+        where organization_id = $1 and episode_id = $2 and observer_account_id = $3`,
+      [ORG, writer.windowEpisodeId(ORG, windowId, 1), COACH_A],
+    )).rows[0];
+    const changed = await tap(windowId, 1, COACH_A, 'counterexample');
+    expect(changed.supersedes_observation_id).toBe(before.observation_id);
+    expect(new Date(changed.observed_at).toISOString()).toBe(before.observed_at.toISOString());
+  });
+
+  test('each coach reads back only their own taps, as they stand', async () => {
+    await tap(windowId, 2, COACH_B, 'occurrence');
+    expect(await windows.listMyWindowTaps({ organizationId: ORG, windowId, observerAccountId: COACH_A }))
+      .toEqual([{ chance: 1, polarity: 'counterexample' }]);
+    expect(await windows.listMyWindowTaps({ organizationId: ORG, windowId, observerAccountId: COACH_B }))
+      .toEqual([{ chance: 1, polarity: 'counterexample' }, { chance: 2, polarity: 'occurrence' }]);
+  });
+
+  test('a chance outside the window, or another gym\'s window, is refused', async () => {
+    await expect(tap(windowId, 11, COACH_A, 'occurrence')).rejects.toThrow('A chance in this window is 1 to 10.');
+    await expect(tap(windowId, 0, COACH_A, 'occurrence')).rejects.toThrow('A chance in this window is 1 to 10.');
+    await expect(windows.recordWindowTap({
+      organizationId: OTHER_ORG, windowId, chance: 1, polarity: 'occurrence', observerAccountId: OTHER_GYM_COACH, authorRole: 'coach',
+    })).rejects.toThrow('That window is not in this gym.');
+  });
+
+  test('a closed window takes no tap, and closes once', async () => {
+    const closed = await windows.closeBehaviourWindow({ organizationId: ORG, windowId });
+    expect(closed.closed_at).not.toBeNull();
+    await expect(tap(windowId, 3, COACH_A, 'occurrence')).rejects.toThrow('That window is closed.');
+    await expect(windows.closeBehaviourWindow({ organizationId: ORG, windowId })).rejects.toThrow('That window is already closed.');
   });
 });
 
