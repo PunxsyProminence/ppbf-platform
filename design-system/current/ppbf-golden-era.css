@@ -2662,8 +2662,18 @@
    hairline, letters cut into it. The page states only a bottom keyline here,
    which floats on brick; against the cabinet it needs to be an object. The
    padding is stated on all four sides because a filled plaque cannot inherit
-   the bottom-only padding the keyline version wanted. */
-.ge-drillcase header {
+   the bottom-only padding the keyline version wanted.
+
+   The PAGE's own header only: `> div > header`, the way .ge-board, .ge-scripts
+   and .ge-scheduler scope theirs. A bare `header` also caught the <header>
+   inside each opened drill card (DrillDetail), laying this near-black lacquer
+   under the card's dark parchment ink: the drill's name, its status line and
+   the "Not ready to adopt" list all but vanished (seen at 1024x768,
+   2026-11-20). The card's header stands on the card.
+   app/coach/drills/page.test.tsx, "the opened drill's header stands on the
+   card", reads every rule against the rendered card and fails if one paints a
+   ground there again. */
+.ge-drillcase > div > header {
   background-color: #14100D;
   background-image:
     var(--grain-fine),
@@ -2679,8 +2689,9 @@
 }
 
 /* Cut lettering: the title is engraved brass on the plaque, so it takes the
-   metal rather than the bone the rest of the cabinet uses. */
-.ge-drillcase header .t-command {
+   metal rather than the bone the rest of the cabinet uses. Scoped with the
+   plaque, so the lettering goes only where the plaque is. */
+.ge-drillcase > div > header .t-command {
   color: var(--brass-200);
   text-shadow: 0 1px 0 rgba(0,0,0,.78), 0 0 16px rgba(190,148,64,.20);
 }

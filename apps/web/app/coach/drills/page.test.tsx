@@ -2,11 +2,14 @@
  * @jest-environment jsdom
  */
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachDrillLibraryPage from './page';
+import { DESIGN_SYSTEM_ENTRY, readDesignSystemCss } from '@/src/design/readDesignSystemCss';
 import type { PilotSessionRole } from '@/components/usePilotSession';
 import type { DrillLineageResponse } from '@/app/api/pilot/drills/lineage/route';
 import type { DrillChangeProposalListResponse } from '@/app/api/pilot/drills/proposals/route';
@@ -2791,6 +2794,155 @@ describe('Edit (lane ED-UI)', () => {
     expect(await screen.findByText('It is not known whether this change was saved.')).toBeInTheDocument();
     await waitFor(() => expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=reference-1')).toBe(2));
     expect(readsOf(fetchMock, '/api/pilot/drill-library')).toBe(libraryReadsBefore + 1);
+  });
+});
+
+/*
+ * THE OPENED DRILL'S HEADER STANDS ON THE CARD (readable-and-usable, AGENT_KERNEL
+ * "UI and visual work" item 2). In the drill case the card is light parchment
+ * and every voice in it takes dark card ink. `.ge-drillcase header`, written for
+ * the page's own header plaque, also caught the <header> inside the card, so the
+ * drill's name, its status line and the "Not ready to adopt" list were dark ink
+ * on near-black lacquer (seen at 1024x768, 2026-11-20). This reads every author
+ * rule the browser loads and asks which ones reach the real header of the real
+ * opened card; none may paint a ground there. Conditional rules (@media) count
+ * too, and state pseudo-classes and ::before/::after are stripped before
+ * matching, so a plaque that only appears on hover or at one width is caught.
+ */
+describe('the opened drill\'s header stands on the card', () => {
+  const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const SHEETS = `${readDesignSystemCss(DESIGN_SYSTEM_ENTRY)}\n${readFileSync(path.resolve(__dirname, '../../globals.css'), 'utf8')}`;
+
+  /**
+   * Every style rule, flat. Rules under @media, @supports or @layer count (a
+   * plaque at one width is still a plaque); rules under @media print do not,
+   * since paper is not the screen, and @keyframes steps are not selectors.
+   */
+  const RULES = (() => {
+    const text = stripComments(SHEETS);
+    const rules: { selector: string; body: string }[] = [];
+    const atRules: string[] = [];
+    let prelude = '';
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (ch === '{') {
+        const head = prelude.trim();
+        prelude = '';
+        if (head.startsWith('@')) {
+          atRules.push(head);
+          continue;
+        }
+        const close = text.indexOf('}', i);
+        const body = text.slice(i + 1, close);
+        // These sheets use no CSS nesting; a nested block would mis-parse here.
+        expect(body).not.toContain('{');
+        const skipped = atRules.some((at) => /^@media\s+print\b/.test(at) || /^@(?:-\w+-)?keyframes\b/.test(at));
+        if (!skipped) rules.push({ selector: head, body });
+        i = close;
+        continue;
+      }
+      if (ch === '}') {
+        prelude = '';
+        atRules.pop();
+        continue;
+      }
+      if (ch === ';') {
+        // A statement at-rule (`@import`, `@layer a, b;`) or a declaration
+        // inside an at-rule block such as @theme ends here.
+        prelude = '';
+        continue;
+      }
+      prelude += ch;
+    }
+    return rules;
+  })();
+
+  /** A declaration that puts something behind the text. */
+  const GROUND = /(?:^|;)\s*background(?:-color|-image)?\s*:(?!\s*(?:none|transparent|initial|unset|revert)\s*(?:!important\s*)?(?:;|$))[^;]+/;
+
+  /** State and pseudo-element suffixes, so `header:hover` or `header::before` is judged as `header`. */
+  const asElement = (selector: string) =>
+    selector.replace(/::?(?:before|after)\b/g, '').replace(/:(?:hover|focus|focus-visible|focus-within|active)\b/g, '');
+
+  /** A selector list's parts, split only on commas outside (), [] and quotes. */
+  function selectorParts(list: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let quote = '';
+    let current = '';
+    for (const ch of list) {
+      if (quote) {
+        if (ch === quote) quote = '';
+      } else if (ch === '"' || ch === '\'') {
+        quote = ch;
+      } else if (ch === '(' || ch === '[') {
+        depth += 1;
+      } else if (ch === ')' || ch === ']') {
+        depth -= 1;
+      } else if (ch === ',' && depth === 0) {
+        parts.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += ch;
+    }
+    parts.push(current.trim());
+    return parts.filter(Boolean);
+  }
+
+  /** Every selector in the sheets that reaches `element` and paints a ground on it. */
+  function groundsOn(element: Element) {
+    const hits: string[] = [];
+    const unread: string[] = [];
+    for (const rule of RULES) {
+      if (!GROUND.test(rule.body)) continue;
+      for (const part of selectorParts(rule.selector)) {
+        try {
+          if (element.matches(asElement(part))) hits.push(part);
+        } catch {
+          unread.push(part);
+        }
+      }
+    }
+    return { hits, unread };
+  }
+
+  async function openDraftDrill() {
+    global.fetch = routes({
+      details: { [reference.drill_id]: { ...referenceDetail, field_provenance: LITERATURE_DRAFT } },
+    }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    const card = await openReference();
+    const cardHeader = card.querySelector(':scope > header') as HTMLElement;
+    // The header the defect hid: the drill's name, and the readiness list a
+    // coach lands on after saving a draft as a new version.
+    expect(within(cardHeader).getByRole('heading', { name: 'Seeded jab return' })).toBeInTheDocument();
+    expect(within(cardHeader).getByText('Not ready to adopt')).toBeInTheDocument();
+    return { card, cardHeader };
+  }
+
+  it('reads the sheets, and every selector that paints a ground is one jsdom can evaluate', () => {
+    expect(RULES.length).toBeGreaterThan(500);
+    const probe = document.createElement('div');
+    expect(groundsOn(probe).unread).toEqual([]);
+  });
+
+  it('no author rule paints a ground on the card\'s header', async () => {
+    const { card, cardHeader } = await openDraftDrill();
+    // Non-vacuity: the card's own parchment IS found on this markup, so the
+    // matcher is reading these selectors against the page as rendered. If the
+    // card stops having a light ground of its own, this test goes with it.
+    expect(card.closest('.ge-drillcase')).not.toBeNull();
+    expect(groundsOn(card).hits).toContain('.ge-drillcase .mat-leather--raised');
+    expect(groundsOn(cardHeader).hits).toEqual([]);
+  });
+
+  it('the page\'s own header keeps its plaque', async () => {
+    // Pins a look the defect report asked to keep; a redesign of the page
+    // header deletes this case with it (OD-2026-10-02-004).
+    await openDraftDrill();
+    const pageHeader = screen.getByRole('heading', { level: 1, name: 'Drill Library' }).closest('header') as HTMLElement;
+    expect(groundsOn(pageHeader).hits).toEqual(['.ge-drillcase > div > header']);
   });
 });
 
