@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import GuardianMediaConsentPage from './page';
 
@@ -415,4 +415,303 @@ test('a status this platform does not recognise still reads as NOT signed', asyn
   render(<GuardianMediaConsentPage />);
 
   expect(await screen.findByRole('button', { name: /grant consent/i })).toBeTruthy();
+});
+
+/* "CHANGE TO PHOTOS ONLY" (app scrub FAM-19; Jason's ruling on card OW27-14,
+   "B: Build it, with a confirm", OD-2026-11-20-001). A guardian whose consent
+   includes video can take video out without withdrawing everything. It is the
+   existing grant with covers_video false, behind a confirm that names the
+   child and says what follows. */
+describe('Change to photos only', () => {
+  const signedRow = (overrides: Record<string, unknown> = {}) => [
+    {
+      athlete_id: 'ath-1',
+      athlete_name: 'Jamie Rivera',
+      consent_ok: true,
+      guardian_count: 1,
+      missing_guardian_count: 0,
+      per_guardian: [{ you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z', ...overrides }],
+    },
+  ];
+
+  function installFetch(items: unknown, post?: (body: Record<string, unknown>) => Response | Promise<Response>) {
+    const posts: Array<Record<string, unknown>> = [];
+    const fetchMock = jest.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        posts.push(body);
+        return post ? post(body) : jsonResponse({ ok: true, athlete_id: 'ath-1', decision: 'grant', retracted_publication_ids: [] });
+      }
+      return jsonResponse({ ok: true, items });
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return { fetchMock, posts };
+  }
+
+  test('is offered only on the guardian’s own signed row that includes video', async () => {
+    installFetch(signedRow());
+    const { unmount } = render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+    expect(screen.getByRole('button', { name: 'Change to photos only' })).toBeInTheDocument();
+    // Withdraw keeps its place: first, and the kiosk-height primary.
+    const buttons = screen.getAllByRole('button').map((button) => button.textContent);
+    expect(buttons).toEqual(['Withdraw Consent', 'Change to photos only']);
+    unmount();
+
+    for (const items of [
+      signedRow({ covers_video: false }), // already photos only
+      signedRow({ covers_video: null }), // the scope did not arrive: not guessed at
+      NEEDS_CONSENT, // nothing signed
+      signedRow({ status: 'withdrawn', covers_video: true }), // not a signed row
+    ]) {
+      installFetch(items);
+      const view = render(<GuardianMediaConsentPage />);
+      await screen.findByText(/Consent on file|Consent needed/);
+      expect(screen.queryByRole('button', { name: 'Change to photos only' })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  test('a co-guardian’s row never offers it: only the caller’s own consent can be changed here', async () => {
+    /* The caller has signed, photos only, so their own row has nothing to
+       change; the co-guardian has granted video. Offering the control here
+       would be offering to change the co-guardian's consent. The co-guardian
+       comes first in the list: a page that offered the control whenever a
+       co-guardian's row is there would draw it, and one that read the first
+       row as the caller's would draw Grant instead of Withdraw. (The server
+       answers for the caller's own guardian record only, whatever the page
+       sends: route.ts resolves it from the session.) */
+    const coGuardianFirst = (own: Record<string, unknown>) => [
+      {
+        athlete_id: 'ath-1',
+        athlete_name: 'Jamie Rivera',
+        consent_ok: true,
+        guardian_count: 2,
+        missing_guardian_count: 0,
+        per_guardian: [
+          { you: false, status: 'granted' },
+          { you: true, status: 'signed', public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z', ...own },
+        ],
+      },
+    ];
+
+    installFetch(coGuardianFirst({ covers_video: false }));
+    const view = render(<GuardianMediaConsentPage />);
+    await screen.findByText(/photos only$/);
+    expect(screen.queryByRole('button', { name: 'Change to photos only' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Withdraw Consent' })).toBeInTheDocument();
+    view.unmount();
+
+    // Positive control: the same list with the caller's own row including
+    // video does draw it, so the absence above is the caller's row speaking.
+    installFetch(coGuardianFirst({ covers_video: true }));
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText(/photos and video$/);
+    expect(screen.getByRole('button', { name: 'Change to photos only' })).toBeInTheDocument();
+  });
+
+  test('asks first, naming the child and what follows, and sends nothing if declined', async () => {
+    const confirm = jest.fn().mockReturnValue(false);
+    window.confirm = confirm;
+    const { fetchMock, posts } = installFetch(signedRow());
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change to photos only' }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    const asked = String(confirm.mock.calls[0][0]);
+    expect(asked).toBe(
+      'Change consent for Jamie Rivera to photos only? If you do, Jamie Rivera’s published videos will be retracted from distribution immediately, and Jamie Rivera’s videos will not be published while your photos-only consent is in place.',
+    );
+    expect(asked).not.toContain('ath-1');
+    expect(posts).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Nothing on the page says it changed.
+    expect(screen.queryByText('Consent changed to photos only.')).not.toBeInTheDocument();
+    expect(screen.getByText(/photos and video/)).toBeInTheDocument();
+  });
+
+  test('once confirmed, sends the existing grant with video left out and public use off, then re-reads', async () => {
+    window.confirm = jest.fn().mockReturnValue(true);
+    let stored = signedRow();
+    const posts: Array<Record<string, unknown>> = [];
+    global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        stored = signedRow({ covers_video: false });
+        return jsonResponse({ ok: true, athlete_id: 'ath-1', decision: 'grant', retracted_publication_ids: ['pub-1'] });
+      }
+      return jsonResponse({ ok: true, items: stored });
+    }) as unknown as typeof fetch;
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change to photos only' }));
+
+    const done = await screen.findByText('Consent changed to photos only.');
+    expect(done).toHaveAttribute('role', 'status');
+    expect(posts).toEqual([{ athlete_id: 'ath-1', decision: 'grant', covers_video: false, public_use_allowed: false }]);
+    // The re-read shows what the server now holds, and the control is gone.
+    await screen.findByText(/photos only$/);
+    expect(screen.queryByRole('button', { name: 'Change to photos only' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Withdraw Consent' })).toBeInTheDocument();
+  });
+
+  test('when public use is on file, the confirm says it ends too; otherwise it does not mention it', async () => {
+    const confirm = jest.fn().mockReturnValue(false);
+    window.confirm = confirm;
+    installFetch(signedRow({ public_use_allowed: true }));
+    const view = render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+    fireEvent.click(screen.getByRole('button', { name: 'Change to photos only' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(String(confirm.mock.calls[0][0])).toMatch(/ Public use, which is allowed now, will end too\.$/);
+    view.unmount();
+
+    confirm.mockClear();
+    installFetch(signedRow());
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+    fireEvent.click(screen.getByRole('button', { name: 'Change to photos only' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(String(confirm.mock.calls[0][0])).not.toMatch(/Public use/);
+  });
+
+  test('with two children, the control acts on and names the child whose card it is on', async () => {
+    /* A wrong-sibling change would be a real downgrade of a real child's
+       consent: the server only refuses a child who is not the caller's own. */
+    const confirm = jest.fn().mockReturnValue(true);
+    window.confirm = confirm;
+    const own = { you: true, status: 'signed', covers_video: true, public_use_allowed: false, signed_at: '2026-08-01T00:00:00Z' };
+    const { posts } = installFetch([
+      { athlete_id: 'ath-1', athlete_name: 'Jamie Rivera', consent_ok: true, guardian_count: 1, missing_guardian_count: 0, per_guardian: [own] },
+      { athlete_id: 'ath-2', athlete_name: 'Alex Rivera', consent_ok: true, guardian_count: 1, missing_guardian_count: 0, per_guardian: [own] },
+    ]);
+    render(<GuardianMediaConsentPage />);
+    await screen.findAllByText('Consent on file');
+    expect(screen.getAllByRole('button', { name: 'Change to photos only' })).toHaveLength(2);
+
+    // Each card's own button, found inside that card, so a control bound to
+    // the first child, the last child, or a re-sorted list fails one of the two.
+    const cardOf = (name: string) => screen.getByText(name).closest('article') as HTMLElement;
+    const expected = [
+      { name: 'Jamie Rivera', other: 'Alex', athlete_id: 'ath-1' },
+      { name: 'Alex Rivera', other: 'Jamie', athlete_id: 'ath-2' },
+    ];
+    for (const [index, child] of expected.entries()) {
+      fireEvent.click(within(cardOf(child.name)).getByRole('button', { name: 'Change to photos only' }));
+      await waitFor(() => expect(posts).toHaveLength(index + 1));
+      const asked = String(confirm.mock.calls[index][0]);
+      expect(asked).toMatch(new RegExp(`^Change consent for ${child.name} to photos only\\?`));
+      expect(asked).not.toContain(child.other);
+      expect(posts[index]).toEqual({ athlete_id: child.athlete_id, decision: 'grant', covers_video: false, public_use_allowed: false });
+      await screen.findByText('Consent changed to photos only.');
+    }
+  });
+
+  test('when public use is on file and the guardian accepts, the grant sends public use off, as the confirm said', async () => {
+    /* The one case where "Public use … will end too" rests on the request:
+       a grant from this page never carries public use (A-Q14,
+       OD-2026-10-08-005), even when the row it replaces allowed it. */
+    window.confirm = jest.fn().mockReturnValue(true);
+    const { posts } = installFetch(signedRow({ public_use_allowed: true }));
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText(/public use allowed$/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change to photos only' }));
+
+    await screen.findByText('Consent changed to photos only.');
+    expect(posts).toEqual([{ athlete_id: 'ath-1', decision: 'grant', covers_video: false, public_use_allowed: false }]);
+  });
+
+  test('while the change is being sent, both of the row’s buttons are disabled', async () => {
+    window.confirm = jest.fn().mockReturnValue(true);
+    let answer: (response: Response) => void = () => {};
+    installFetch(signedRow(), () => new Promise<Response>((resolve) => { answer = resolve; }));
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change to photos only' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Change to photos only' })).toBeDisabled());
+    expect(screen.getByRole('button', { name: 'Withdraw Consent' })).toBeDisabled();
+    answer(jsonResponse({ ok: true, athlete_id: 'ath-1', decision: 'grant', retracted_publication_ids: [] }));
+    await screen.findByText('Consent changed to photos only.');
+  });
+
+  test('a refusal from the server reads as an alert in the server’s words, and nothing says it changed', async () => {
+    window.confirm = jest.fn().mockReturnValue(true);
+    installFetch(signedRow(), () =>
+      jsonResponse({ ok: false, error: 'Your consent for photos only was not recorded. Nothing was changed.' }, false));
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change to photos only' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Your consent for photos only was not recorded. Nothing was changed.');
+    expect(screen.queryByText('Consent changed to photos only.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change to photos only' })).toBeInTheDocument();
+  });
+
+  test('withdrawing still sends decision=withdraw with no scope, as before', async () => {
+    window.confirm = jest.fn().mockReturnValue(true);
+    const { posts } = installFetch(signedRow());
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw Consent' }));
+    await screen.findByText('Consent withdrawn.');
+    expect(posts).toEqual([{ athlete_id: 'ath-1', decision: 'withdraw' }]);
+  });
+});
+
+/* THE FAMILY GROUND (app scrub FAM-28; AS-9 Q9 = A). The page stands on the
+   canvas with paper panels, as the hub, film and progress pages do, and sets
+   no colour of its own: every voice comes from the design system, which
+   restates it in ink for this ground. Looked at on a local render,
+   2026-11-20. */
+describe('the family ground', () => {
+  test('the page is on the canvas with paper panels, not the dark ground with leather', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: ALREADY_SIGNED })) as unknown as typeof fetch;
+    const { container } = render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent on file');
+
+    const main = container.querySelector('main') as HTMLElement;
+    expect(main.className).toContain('on-canvas');
+    // The hub's family dress: its focus ring is the one that shows on this
+    // ground (a ghost button's ring is lost to `.on-canvas .btn--ghost`).
+    expect(main).toHaveClass('ge-family');
+    expect(main.className).not.toContain('hide-950');
+    expect(container.querySelectorAll('.mat-paper').length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelector('.mat-leather')).toBeNull();
+    // No colour tuned for the dark ground is left anywhere on the page.
+    expect(container.innerHTML).not.toMatch(/--bone-|--brass-300|--hide-9/);
+  });
+
+  test('the Include video box takes the brass rung that shows on paper', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items: NEEDS_CONSENT })) as unknown as typeof fetch;
+    const { container } = render(<GuardianMediaConsentPage />);
+    await screen.findByText('Consent needed');
+    const box = container.querySelector('input[type="checkbox"]') as HTMLElement;
+    expect(box.className).toContain('accent-[var(--brass-700)]');
+  });
+
+  test('loading, failed and nobody-linked each stand on a paper panel that inks .empty', async () => {
+    for (const [response, title] of [
+      [new Promise<Response>(() => {}), 'Loading consent status…'],
+      [Promise.resolve(jsonResponse({ error: 'down' }, false)), 'Consent status could not be loaded'],
+      [Promise.resolve(jsonResponse({ ok: true, items: [] })), 'No linked children found'],
+    ] as const) {
+      global.fetch = jest.fn().mockReturnValue(response) as unknown as typeof fetch;
+      const view = render(<GuardianMediaConsentPage />);
+      const heading = await screen.findByText(title);
+      expect(heading.closest('.mat-paper')).not.toBeNull();
+      // .empty's inks are bone; the sheet restates them in ink only under
+      // .pap ("The empty state on paper"). Without it the title measured
+      // 1.36:1 to 1.12:1 on a local render (2026-11-21).
+      expect(heading.closest('.pap')).not.toBeNull();
+      view.unmount();
+    }
+  });
 });

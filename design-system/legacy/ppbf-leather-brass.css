@@ -784,6 +784,18 @@ body.ppbf {
 .mat-wood .stamp--green,
 .mat-wood--dark .stamp--green      { color: var(--cleared-ink); }
 
+/* The brass stamp on the two light grounds. Its own ink, --brass-600, is
+   about 3.2:1 on paper at best and less once the stamp's screen-blended grain
+   lifts it: the training-hold stamp on /parent/safety measured 2.6:1 to 2.8:1
+   on a local render (2026-11-21), under the 3:1 floor for large bold text.
+   --brass-800 is the brass the sheet already gives a voice on paper
+   (.mat-paper .working). Stated BEFORE the dark-mat restatements below, at the
+   same specificity, so a leather card standing on the canvas still takes its
+   own --brass-300. A stamp on paper inside a dark mat is not answered here
+   (none is drawn today). Grounds this reaches, named in AS9-5's pull request. */
+.mat-paper .stamp--brass,
+.on-canvas .stamp--brass           { color: var(--brass-800); }
+
 .mat-leather .stamp--brass,
 .mat-leather--raised .stamp--brass,
 .mat-leather--worn .stamp--brass,
