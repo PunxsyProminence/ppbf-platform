@@ -20,6 +20,7 @@ Cost: every PR that adds an entry, or a fixed-form Status line, must run `node s
 
 | Id | Date | Topic | Provenance | Status | Not ruled here |
 | --- | --- | --- | --- | --- | --- |
+| OD-2026-11-22-002 | 2026-11-22 | Close the finished lanes' plan PRs; the Claude Science thread stays the research lane | PRIMARY |  |  |
 | OD-2026-11-22-001 | 2026-11-22 | The four restart lanes run on the Neeko account | PRIMARY |  | yes |
 | OD-2026-11-21-009 | 2026-11-21 | Stage and release `b6fa8fe6` | PRIMARY |  |  |
 | OD-2026-11-21-008 | 2026-11-21 | HF8 Q1 is office review only; HF9 Q3 is the full consent wording; HF8 Q2 was already ruled | PRIMARY |  |  |
@@ -644,6 +645,25 @@ written to fix in two other files.
 What this file can shorten is only the first shape: a session about to assert a
 policy can now check whether one has been ruled. It cannot prevent the second,
 and should not try to.
+
+---
+
+## OD-2026-11-22-002 -- Close the finished lanes' plan PRs; the Claude Science thread stays the research lane
+
+**Provenance: PRIMARY.** Jason typed these in the local App Overwatch session (Claude Code desktop app on his PC) on 2026-11-22 UTC. The question is quoted from Overwatch's message just before his first answer. New; edits no earlier entry's text.
+
+**Question (Overwatch, 2026-11-22 about 19:55 UTC):** "Should I close those six finished lanes' old plan PRs and fix the record line (recommended), or only fix the line?"
+
+**Jason (2026-11-22, PRIMARY):** *"Yes, do both"*
+
+**Jason (2026-11-22, PRIMARY, on the Claude Science thread that runs the Backbone Overwatch checker):** *"also it will still be the researchlane as well i will let it know to keep that piece in and you can as well"*
+
+**Ruling:**
+1. The plan PRs of lanes whose planned steps are all merged or ruled out are closed without merging; their branches are kept.
+2. The Claude Science thread keeps the research lane beside the slim checker role (OW30-02); App Overwatch may send it research requests too.
+
+**Applied by Overwatch (not his words):** the ruling's principle covers every closed lane, so nine plan PRs were closed at about 20:00 UTC, not six: #2081 TEACH-T, #2037 W3T, #2021 AS-9, #2018 AS-10, #2042 GD, #2020 AS-8, #2043 6C7, #2046 SWP, #2017 AS-11. The research request went to it through `TO_BACKBONE.md` (2026-11-22T20:05Z).
+**Status:** recorded 2026-11-22 by PR.
 
 ---
 
