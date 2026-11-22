@@ -51,13 +51,19 @@
  * HELD WHERE THE RULINGS COLLIDE (CONFLICT on
  * PunxsyProminence/ppbf-platform#2092). Q1 A says a reading from a coach in no
  * calibrated pair, a person naming no coach, or a model counts toward no tier.
- * Yet on an attempt a calibrated coach coded, such a reading would change what
- * counts under the rulings as written: as a co-coder, ruling 3's pair takes
- * the attempt out; dissenting, Q4 A leaves it out. Either way a calibrated
- * miss can leave the share and lift a tier, and the other ways round (ignore
- * the reading; or keep main's withholding) each break one ruling's words.
- * Until Overwatch says how they combine, any such attempt withholds every
- * tier -- the fail-closed choice -- and is listed for a person.
+ * Yet where the calibrated coaches on an attempt are a calibrated group and
+ * agree -- so the attempt would count -- such a reading would change that
+ * under the rulings as written: as a co-coder, ruling 3's pair takes the
+ * attempt out; dissenting, Q4 A leaves it out. Either way a calibrated miss
+ * can leave the share and lift a tier, and the other ways round (ignore the
+ * reading; or keep main's withholding) each break one ruling's words. Until
+ * Overwatch says how they combine, any such attempt withholds every tier --
+ * the fail-closed choice -- and is listed for a person. Where the rulings
+ * already settle the attempt without that reading (the calibrated readings
+ * disagree, or are no calibrated pair) it changes nothing and nothing is
+ * held. A co-coder calibrated only with someone else is not held either: Q1 A
+ * counts that coach, so nothing collides, and ruling 3's pair applies as
+ * written, as on main.
  *
  * Nothing here decides anything: like the rest of this directory it returns
  * the standing and the reasons, and a coach decides what to do with it.
@@ -133,11 +139,12 @@ export interface PatternTierEvaluation {
    */
   readonly uncountedDissent: Readonly<{ attempts: number; observationIds: readonly string[] }>;
   /**
-   * Attempts a calibrated coach coded on which a reading that counts toward no
-   * tier would change what counts under the rulings as written: a co-coding
-   * coach in no calibrated pair, or a dissent from such a coach, a person
-   * naming no coach, or a model. Any of them withholds every tier until
-   * Overwatch rules (CONFLICT on #2092); every reading of them, for a person.
+   * Attempts that would count -- their calibrated coaches a calibrated group,
+   * agreeing -- on which a reading that counts toward no tier would change
+   * that under the rulings as written: a co-coding coach in no calibrated
+   * pair, or a dissent from such a coach, a person naming no coach, or a
+   * model. Any of them withholds every tier until Overwatch rules (CONFLICT on
+   * #2092); every reading of them, for a person.
    */
   readonly heldForRulingConflict: Readonly<{ attempts: number; observationIds: readonly string[] }>;
   /** Only one coach saw it. */
@@ -272,13 +279,14 @@ export function evaluatePatternTiers(input: EvaluatePatternTiersInput): PatternT
         unverified.add(reading.observationId);
       }
     }
-    // Held where the rulings collide: a reading that counts toward no tier,
-    // on an attempt a calibrated coach coded, as a co-coder or a dissent.
+    // Held where the rulings collide: on an attempt that would count, a
+    // reading that counts toward no tier, as a co-coder or a dissent.
     const calibrated = readings.filter(isCalibratedCoach);
-    const others = readings.filter((reading) => !isCalibratedCoach(reading));
-    if (calibrated.length > 0 && (
+    const wouldCount = calibrated.length > 0 && pairsCalibrated(observersOf(calibrated), pairs)
+      && calibrated.every((reading) => reading.polarity === calibrated[0].polarity);
+    if (wouldCount && (
       coaches.some((coach) => !calibratedCoaches.has(coach))
-      || others.some((other) => calibrated.some((reading) => reading.polarity !== other.polarity))
+      || readings.some((other) => !isCalibratedCoach(other) && other.polarity !== calibrated[0].polarity)
     )) held.add(attempt);
   }
   const counting = current.filter((reading) => reading.interpretation === 'human_observed' && !unverified.has(reading.observationId));
