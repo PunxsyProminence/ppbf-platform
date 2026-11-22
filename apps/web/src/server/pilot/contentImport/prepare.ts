@@ -118,6 +118,12 @@ function preparedCells(
   for (const name of keptWhenTheHeaderOmits(spec)) {
     if (!header.includes(name)) cells[name] = committed ? normalizeCell(committed[name]) : '';
   }
+  // A label column (field_labels, evidence, stage_keys) the header leaves out keeps the committed cell
+  // too, as a load keeps the stored labels (datasets/contentLabels.ts withStoredLabels; lane GD,
+  // Q-GD2-2 = B). Read as blank, it wiped the labels, and a present blank cell means "no labels".
+  for (const column of spec.columns) {
+    if (column.role === 'annotation' && !header.includes(column.name)) cells[column.name] = committed ? normalizeCell(committed[column.name]) : '';
+  }
 
   const mint = spec.mint;
   if (mint && !cells[mint.column]) {

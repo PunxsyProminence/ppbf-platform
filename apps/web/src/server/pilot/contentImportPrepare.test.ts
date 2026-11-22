@@ -427,6 +427,64 @@ describe('a drill file made before exit_condition and correction_path existed', 
   });
 });
 
+// A HAND-OFF THAT LEAVES OUT A LABEL COLUMN (lane GD, GD-2b; Overwatch Q-GD2-2 = B on #2042).
+// prepare read a missing field_labels, evidence or stage_keys column as blank and wrote '' over the
+// committed labels, exit 0; the next load reads a file that has the column, and a present blank cell
+// means "no labels" (datasets/contentLabels.ts). A load keeps the stored labels instead (withStoredLabels).
+describe('a hand-off that leaves out a label column (field_labels, evidence, stage_keys)', () => {
+  const LABELS = ['field_labels', 'evidence', 'stage_keys'];
+  const LIBRARY = 'drill-library/seed_drill_library.csv';
+  const TEMPLATES = 'workout-templates/seed_workout_templates.csv';
+  /** Committed rows that carry all three labels: the ones such a hand-off would have wiped. */
+  const labelled = (relative: string) => table(relative, REAL_SEED_DATA).filter((row) => LABELS.every((name) => row[name].trim() !== ''));
+
+  it('a revision without them keeps every committed label cell', () => {
+    const drill = labelled(LIBRARY)[0];
+    const purpose = `${drill.purpose} Revised without labels.`;
+    writePackageFile('seed_drill_library.csv', [{ ...drill, purpose }], LABELS);
+    // So this cannot pass vacuously: the hand-off really lacks all three.
+    expect(readCsv(fs.readFileSync(path.join(handoff, LIBRARY), 'utf8')).header.filter((name) => LABELS.includes(name))).toEqual([]);
+
+    const { code, output } = prepare(true);
+    expect(code).toBe(0);
+    expect(output).toContain(`revised: ${drill.drill_id}`);
+    expect(table(LIBRARY).find((row) => row.drill_id === drill.drill_id)).toMatchObject({
+      purpose, field_labels: drill.field_labels, evidence: drill.evidence, stage_keys: drill.stage_keys,
+    });
+  });
+
+  it('re-sending labelled rows without them merges byte for byte as the same rows sent with them, drills and templates alike', () => {
+    for (const [file, relative] of [['seed_drill_library.csv', LIBRARY], ['seed_workout_templates.csv', TEMPLATES]] as const) {
+      const rows = labelled(relative).slice(0, 5);
+      expect(rows.length).toBeGreaterThan(0);
+      const after = (omit: readonly string[]) => {
+        for (const dir of [seedData, handoff]) fs.rmSync(dir, { recursive: true, force: true });
+        fs.mkdirSync(handoff);
+        copySeedData(seedData);
+        writePackageFile(file, rows, omit);
+        expect(prepare(true).code).toBe(0);
+        return fs.readFileSync(path.join(seedData, relative), 'utf8');
+      };
+      expect({ file, bytes: after(LABELS) }).toEqual({ file, bytes: after([]) });
+    }
+  });
+
+  it('a header that has the column says what its cell says: an empty cell blanks it, and the columns it lacks are kept', () => {
+    const drill = labelled(LIBRARY)[0];
+    writePackageFile('seed_drill_library.csv', [{ ...drill, field_labels: '' }], ['evidence', 'stage_keys']);
+    expect(prepare(true).code).toBe(0);
+    expect(table(LIBRARY).find((row) => row.drill_id === drill.drill_id)).toMatchObject({
+      field_labels: '', evidence: drill.evidence, stage_keys: drill.stage_keys,
+    });
+  });
+
+  it('a new drill has no committed row to keep from: its label cells are blank', () => {
+    writePackageFile('seed_drill_library.csv', [newDrill()], LABELS);
+    expect(prepare(true).code).toBe(0);
+    expect(table(LIBRARY).find((row) => row.drill_id === MINT.drill('boxing', 'Mirror Jab'))).toMatchObject({ field_labels: '', evidence: '', stage_keys: '' });
+  });
+});
+
 describe('a new drill whose lineage_id repeats its new:<name>', () => {
   it('is prepared like a blank lineage: both become the minted id, in the committed file and the hand-off', () => {
     // Before: validate passed it and prepare threw "has no minted id".
