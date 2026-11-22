@@ -174,11 +174,15 @@ test.each([
   expect(hasMark(besideHeading('Equipment'))).toBe(false);
 });
 
-test('"not checked" in the header keeps a light ink; elsewhere it takes the card\'s', () => {
+test('"not checked" takes the card\'s ink in the header as in the body, and the lift off the parchment', () => {
   renderCoach({ ...every(false), name: null, purpose: null });
   const inHeader = besideHeading('Jab return')?.querySelector('span');
   expect(inHeader).toHaveTextContent(NOT_CHECKED);
-  expect(inHeader).toHaveStyle({ color: 'var(--bone-200)' });
+  // The header stands on the parchment (the near-black plaque is the page header's alone): no forced light ink,
+  // which read 1.22:1 there.
+  expect(inHeader?.getAttribute('style')).toBeNull();
+  expect(inHeader?.className).toContain('in-[.ge-drillcase]:text-[color:#3A2E1D]');
+  expect(inHeader?.className).toContain('text-[color:var(--bone-200)]');
   const inBody = besideHeading('What it is for')?.querySelector('span');
   expect(inBody).toHaveTextContent(NOT_CHECKED);
   expect(inBody?.getAttribute('style')).toBeNull();
