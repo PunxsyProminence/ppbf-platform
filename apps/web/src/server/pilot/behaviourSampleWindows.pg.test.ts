@@ -650,10 +650,15 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
     const holder = await holdEpisode(windowId, 5);
     const first = tap(windowId, 5, COACH_A, 'occurrence');
     const second = tap(windowId, 5, COACH_B, 'counterexample');
-    // Both taps queued on the chance's lock before it is let go.
-    expect(await waiters(2)).toBe(true);
-    await release(holder);
+    // Both taps queued on the chance's lock before it is let go; let go whatever happens, so a failure cannot hang.
+    let queued = false;
+    try {
+      queued = await waiters(2);
+    } finally {
+      await release(holder);
+    }
     await Promise.all([first, second]);
+    expect(queued).toBe(true);
     const readings = await readingsOf(windowId, 5);
     expect(readings).toHaveLength(2);
     expect(readings[1].observed_at.toISOString()).toBe(readings[0].observed_at.toISOString());
@@ -663,18 +668,28 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
     const other = (await open()).window_id;
     const holder = await holdEpisode(other, 1);
     let closedEarly = false;
+    let tapQueued = false;
+    let closedWhileTapping = true;
+    let letGo = new Date(0);
     const tapping = tap(other, 1, COACH_A, 'occurrence');
-    // The tap holds the window and waits on the chance's lock; then the close queues behind the tap.
-    expect(await waiters(1)).toBe(true);
-    const closing = close(other).then((row) => {
-      closedEarly = true;
-      return row;
-    });
-    await waiters(2);
-    const closedWhileTapping = closedEarly;
-    const letGo = (await db.query<{ at: Date }>('select clock_timestamp() as at')).rows[0].at;
-    await release(holder);
+    let closing: ReturnType<typeof close> = Promise.reject(new Error('the close never started'));
+    closing.catch(() => undefined);
+    try {
+      // The tap holds the window and waits on the chance's lock; then the close queues behind the tap.
+      tapQueued = await waiters(1);
+      closing = close(other).then((row) => {
+        closedEarly = true;
+        return row;
+      });
+      await waiters(2);
+      closedWhileTapping = closedEarly;
+      letGo = (await db.query<{ at: Date }>('select clock_timestamp() as at')).rows[0].at;
+    } finally {
+      // Let go whatever happens, so a failure cannot hang the run.
+      await release(holder);
+    }
     const [, closed] = await Promise.all([tapping, closing]);
+    expect(tapQueued).toBe(true);
     expect(closedWhileTapping).toBe(false);
     // The close is stamped when it takes the row, after the tap it waited for, not when it began.
     const [reading] = await readingsOf(other, 1);
