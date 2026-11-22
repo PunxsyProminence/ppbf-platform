@@ -62,8 +62,8 @@
  * already settle the attempt without that reading (the calibrated readings
  * disagree, or are no calibrated pair) it changes nothing and nothing is
  * held. A co-coder calibrated only with someone else is not held either: Q1 A
- * counts that coach, so nothing collides, and ruling 3's pair applies as
- * written, as on main.
+ * does not exclude that coach, so nothing collides, and ruling 3's pair
+ * applies as written, as on main.
  *
  * Nothing here decides anything: like the rest of this directory it returns
  * the standing and the reasons, and a coach decides what to do with it.
