@@ -165,9 +165,9 @@ describe('review fixes on #2102', () => {
   test('the summary carries the observer rules and reads minimums as minimums', async () => {
     render(<LearningBarsPage />);
     const pattern = await waitFor(() => section('pattern_formation'));
-    expect(within(pattern).getByText(/Pattern: 5\+ sessions, 80%\+ of at least 8 chances.*2\+ coaches, or 20%\+ of sessions double-coded/))
+    expect(within(pattern).getByText(/Pattern: 5\+ sessions, 80%\+ of at least 8 chances.*2\+ coaches, or 20%\+ of sessions double-coded and agreeing/))
       .toBeInTheDocument();
-    expect(within(pattern).getByText(/Established: .*2\+ calibrated coaches, each 3\+ sessions, agreeing/)).toBeInTheDocument();
+    expect(within(pattern).getByText(/Established: .*2\+ coaches, each 3\+ sessions, agreeing;/)).toBeInTheDocument();
     expect(within(section('observer_calibration')).getByText(/below the bar, its notes stop counting/i)).toBeInTheDocument();
   });
 

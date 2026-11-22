@@ -36,11 +36,11 @@ const tier = APPROVED_PATTERN_FORMATION_V1.tiers;
 /** Who must have seen it, in the bar's own terms. */
 function observersLine(rule: (typeof tier)['pattern']['observers']): string {
   if (rule.coachesMustAgree) {
-    return `${rule.minimumCoaches}+ calibrated coaches`
+    return `${rule.minimumCoaches}+ coaches`
       + `${rule.minimumSessionsPerCoach ? `, each ${rule.minimumSessionsPerCoach}+ sessions` : ''}, agreeing`;
   }
   const coaches = rule.minimumCoaches === 1 ? '1 coach (shown as single observer)' : `${rule.minimumCoaches}+ coaches`;
-  return rule.orDoubleCodedShare === null ? coaches : `${coaches}, or ${pct(rule.orDoubleCodedShare)}+ of sessions double-coded`;
+  return rule.orDoubleCodedShare === null ? coaches : `${coaches}, or ${pct(rule.orDoubleCodedShare)}+ of sessions double-coded and agreeing`;
 }
 
 /** Every number in a bar, read from the bar itself, so none can be left out of what the admin sees. */
