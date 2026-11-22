@@ -81,8 +81,8 @@ describe('reading the bars', () => {
         expect(within(region).getByText(citation.source)).toBeInTheDocument();
       }
     }
-    expect(within(section('pattern_formation')).getByText(/Pattern: 5 sessions/)).toBeInTheDocument();
-    expect(within(section('observer_calibration')).getByText(/30 paired judgments/)).toBeInTheDocument();
+    expect(within(section('pattern_formation')).getByText(/Pattern: 5\+ sessions/)).toBeInTheDocument();
+    expect(within(section('observer_calibration')).getByText(/30\+ paired judgments/)).toBeInTheDocument();
   });
 
   test('a bar in force shows its version, and offers no second "Put in force"', async () => {
@@ -158,5 +158,61 @@ describe('who may put a bar in force (OD-2026-10-18-003)', () => {
     fireEvent.click(await within(region).findByRole('button', { name: 'Put in force' }));
     fireEvent.click(within(region).getByRole('button', { name: 'Yes, put Pattern labels in force' }));
     expect(await within(region).findByText(/Only an admin of this gym can ratify a bar/)).toBeInTheDocument();
+  });
+});
+
+describe('review fixes on #2102', () => {
+  test('the summary carries the observer rules and reads minimums as minimums', async () => {
+    render(<LearningBarsPage />);
+    const pattern = await waitFor(() => section('pattern_formation'));
+    expect(within(pattern).getByText(/Pattern: 5\+ sessions, 80%\+ of at least 8 chances.*2\+ coaches, or 20%\+ of sessions double-coded/))
+      .toBeInTheDocument();
+    expect(within(pattern).getByText(/Established: .*2\+ calibrated coaches, each 3\+ sessions, agreeing/)).toBeInTheDocument();
+    expect(within(section('observer_calibration')).getByText(/below the bar, its notes stop counting/i)).toBeInTheDocument();
+  });
+
+  test('every number the admin puts in force is listed, taken from the bar itself', async () => {
+    render(<LearningBarsPage />);
+    const lesson = await waitFor(() => section('athlete_lesson'));
+    expect(within(lesson).getByText('effectRule.shiftSd: 0.25')).toBeInTheDocument();
+    expect(within(lesson).getByText('followUpWeeks: 1, 4, 12')).toBeInTheDocument();
+    expect(within(section('observer_calibration')).getByText('belowBar: stop_counting')).toBeInTheDocument();
+    expect(within(section('pattern_formation')).getByText('tiers.pattern.observers.orDoubleCodedShare: 0.2')).toBeInTheDocument();
+  });
+
+  test('a save in flight says so and locks every button; once saved, the bar reads in force at once', async () => {
+    let finishSave: (value: Response) => void = () => {};
+    fetchMock = jest.fn((url: string, init?: RequestInit) => (init?.method === 'POST'
+      ? new Promise<Response>((resolve) => { finishSave = resolve; })
+      : (fetchMock.mock.calls.length > 2 ? new Promise<Response>(() => {}) : respond({ ok: true, policies: [] }))));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LearningBarsPage />);
+    const region = await waitFor(() => section('pattern_formation'));
+    fireEvent.click(await within(region).findByRole('button', { name: 'Put in force' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Yes, put Pattern labels in force' }));
+    expect(await within(region).findByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(within(section('athlete_lesson')).getByRole('button', { name: 'Put in force' })).toBeDisabled();
+    finishSave({ ok: true, status: 201, json: () => Promise.resolve({ ok: true, policy: {
+      policy_kind: 'pattern_formation', version: 1, status: 'active', ratified_at: '2026-11-22T16:00:00.000Z',
+    } }) } as Response);
+    // The reload never answers here: the saved version shows anyway, and no second "Put in force".
+    expect(await within(region).findByText(/In force: version 1/)).toBeInTheDocument();
+    expect(within(region).queryByRole('button', { name: /Put in force/ })).toBeNull();
+  });
+
+  test('a reply that is not JSON reads as "could not be read", not as a parser error', async () => {
+    fetchMock = jest.fn(() => Promise.resolve({ ok: false, status: 502, json: () => Promise.reject(new SyntaxError('Unexpected token <')) } as Response));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LearningBarsPage />);
+    expect(await screen.findByText(/could not be read/)).toBeInTheDocument();
+    expect(screen.queryByText(/Unexpected token/)).toBeNull();
+  });
+
+  test('while the first read is on its way, the page says so', () => {
+    fetchMock = jest.fn(() => new Promise<Response>(() => {}));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<LearningBarsPage />);
+    expect(screen.getByText('Reading the bars…')).toBeInTheDocument();
+    expect(screen.queryByText('Not in force')).toBeNull();
   });
 });

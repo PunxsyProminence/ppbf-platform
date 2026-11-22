@@ -32,6 +32,25 @@ interface PolicyRow {
 
 const pct = (share: number) => `${Math.round(share * 100)}%`;
 const tier = APPROVED_PATTERN_FORMATION_V1.tiers;
+
+/** Who must have seen it, in the bar's own terms. */
+function observersLine(rule: (typeof tier)['pattern']['observers']): string {
+  if (rule.coachesMustAgree) {
+    return `${rule.minimumCoaches}+ calibrated coaches`
+      + `${rule.minimumSessionsPerCoach ? `, each ${rule.minimumSessionsPerCoach}+ sessions` : ''}, agreeing`;
+  }
+  const coaches = rule.minimumCoaches === 1 ? '1 coach (shown as single observer)' : `${rule.minimumCoaches}+ coaches`;
+  return rule.orDoubleCodedShare === null ? coaches : `${coaches}, or ${pct(rule.orDoubleCodedShare)}+ of sessions double-coded`;
+}
+
+/** Every number in a bar, read from the bar itself, so none can be left out of what the admin sees. */
+function everyNumber(value: unknown, path = ''): string[] {
+  if (Array.isArray(value)) return [`${path}: ${value.join(', ')}`];
+  if (value && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, inner]) => everyNumber(inner, path ? `${path}.${key}` : key));
+  }
+  return [`${path}: ${String(value)}`];
+}
 const lesson = APPROVED_ATHLETE_LESSON_V1;
 const calibration = APPROVED_OBSERVER_CALIBRATION_V1;
 
@@ -42,9 +61,9 @@ const BARS: readonly { kind: Kind; title: string; parameters: unknown; lines: re
     parameters: APPROVED_PATTERN_FORMATION_V1,
     lines: (['emerging', 'pattern', 'established'] as const).map((name) => {
       const t = tier[name];
-      return `${name[0].toUpperCase()}${name.slice(1)}: ${t.minimumSessions} sessions, ${pct(t.minimumShare)} of at least `
-        + `${t.minimumCodedChances} chances, ${t.minimumContexts}+ settings, ${t.minimumSpanDays}+ days; `
-        + `lapses after ${t.lapseAfterMisses} misses in a row.`;
+      return `${name[0].toUpperCase()}${name.slice(1)}: ${t.minimumSessions}+ sessions, ${pct(t.minimumShare)}+ of at least `
+        + `${t.minimumCodedChances} chances, ${t.minimumContexts}+ settings, ${t.minimumSpanDays}+ days, `
+        + `${observersLine(t.observers)}; lapses after ${t.lapseAfterMisses} misses in a row.`;
     }).concat(`Only the last ${APPROVED_PATTERN_FORMATION_V1.currentWithinDays} days count.`),
   },
   {
@@ -56,6 +75,8 @@ const BARS: readonly { kind: Kind; title: string; parameters: unknown; lines: re
       `Improved after lesson: ${lesson.labels.improved_after.demonstrations} before/after.`,
       `Likely worked: ${lesson.labels.likely_worked.demonstrations}, staggered, with a delayed re-check.`,
       `Worked, replicated: ${lesson.labels.worked_replicated.demonstrations}, staggered, with a delayed re-check.`,
+      `Delayed re-check: ${lesson.delayedProbe.minimumHours}+ hours after, within ${lesson.delayedProbe.withinDays} days. `
+        + `Follow-ups at weeks ${lesson.followUpWeeks.join(', ')}.`,
     ],
   },
   {
@@ -63,10 +84,11 @@ const BARS: readonly { kind: Kind; title: string; parameters: unknown; lines: re
     title: 'Coach calibration',
     parameters: APPROVED_OBSERVER_CALIBRATION_V1,
     lines: [
-      `A coach pair agrees on ${pct(calibration.minimumAgreement)} (kappa ${calibration.minimumKappa}) `
-        + `over ${calibration.minimumPairedJudgments} paired judgments.`,
-      `${pct(calibration.ongoingDoubleCodedShare)} of sessions double-coded in every phase.`,
-      'Until a pair is calibrated, its notes are shown as unverified and count toward nothing.',
+      `A coach pair agrees on ${pct(calibration.minimumAgreement)}+ (kappa ${calibration.minimumKappa}+) `
+        + `over ${calibration.minimumPairedJudgments}+ paired judgments.`,
+      `${pct(calibration.ongoingDoubleCodedShare)}+ of sessions double-coded in every phase.`,
+      'Until a pair is calibrated, its notes are shown as unverified and count toward nothing; '
+        + 'a pair that falls below the bar, its notes stop counting.',
     ],
   },
 ];
@@ -80,6 +102,8 @@ function LearningBars() {
   const [confirming, setConfirming] = useState<Kind | null>(null);
   const [saving, setSaving] = useState<Kind | null>(null);
   const [saveError, setSaveError] = useState<{ kind: Kind; message: string } | null>(null);
+  // What a save returned, kept so the bar reads in force at once, even before (or without) the re-read.
+  const [saved, setSaved] = useState<Partial<Record<Kind, PolicyRow>>>({});
   // Bumped after a save, to read the list again.
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -88,11 +112,11 @@ function LearningBars() {
     void (async () => {
       try {
         const response = await fetch(`${apiBase()}${ENDPOINT}`, { credentials: 'include', signal: controller.signal });
-        const body = (await response.json()) as { ok?: boolean; policies?: PolicyRow[]; error?: string };
+        const body = (await response.json().catch(() => ({}))) as { ok?: boolean; policies?: PolicyRow[]; error?: string };
         if (controller.signal.aborted) return;
         if (!response.ok || !Array.isArray(body.policies)) {
           setPolicies(null);
-          setReadError(body.error ?? 'The bars could not be read.');
+          setReadError(body.error ?? `The server answered ${response.status}.`);
           return;
         }
         setPolicies(body.policies);
@@ -121,10 +145,14 @@ function LearningBars() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ kind: bar.kind, parameters: bar.parameters, citations: APPROVED_CITATIONS_V1[bar.kind] }),
       });
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      const body = (await response.json().catch(() => ({}))) as { error?: string; policy?: PolicyRow };
       if (!response.ok) {
         setSaveError({ kind: bar.kind, message: body.error ?? 'The bar was not put in force.' });
         return;
+      }
+      if (body.policy) {
+        const policy = body.policy;
+        setSaved((current) => ({ ...current, [bar.kind]: policy }));
       }
       setConfirming(null);
       setReloadKey((key) => key + 1);
@@ -148,6 +176,7 @@ function LearningBars() {
             agrees, as the owner approved them, with the sources each rests on. A bar does nothing until it is put in
             force.
           </p>
+          {!policies && !readError && <p className="t-body mt-[var(--s3)]">Reading the bars…</p>}
           {!mayRatify && !session.loading && (
             <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
               Only the gym&apos;s organization admin, signed in with Microsoft, can put a bar in force.
@@ -163,12 +192,13 @@ function LearningBars() {
         )}
 
         {BARS.map((bar) => {
-          const inForce = policies?.find((row) => row.policy_kind === bar.kind && row.status === 'active') ?? null;
+          const inForce = saved[bar.kind]
+            ?? policies?.find((row) => row.policy_kind === bar.kind && row.status === 'active') ?? null;
           const headingId = `bar-${bar.kind}`;
           return (
             <section key={bar.kind} aria-labelledby={headingId} className="mt-[var(--s5)] border border-[var(--hide-700)] bg-[var(--hide-900)] p-[var(--s4)]">
               <h2 id={headingId} className="t-title" style={{ fontSize: 'var(--t-lg)' }}>{bar.title}</h2>
-              {policies && (
+              {(policies || inForce) && (
                 <p className="t-body mt-[var(--s2)]">
                   {inForce
                     ? `In force: version ${inForce.version}, since ${formatGymDateTime(inForce.ratified_at) ?? inForce.ratified_at}`
@@ -178,6 +208,12 @@ function LearningBars() {
               <ul className="t-body mt-[var(--s3)] list-disc pl-[var(--s5)] text-[color:var(--bone-300)]">
                 {bar.lines.map((line) => <li key={line}>{line}</li>)}
               </ul>
+              <details className="mt-[var(--s3)]">
+                <summary className="t-body min-h-[var(--tap)] cursor-pointer">Every number in this bar</summary>
+                <ul className="t-body mt-[var(--s2)] pl-[var(--s5)] text-[color:var(--bone-300)]">
+                  {everyNumber(bar.parameters).map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </details>
               <h3 className="t-eyebrow mt-[var(--s4)]">Sources</h3>
               <ul className="t-body mt-[var(--s2)] list-disc pl-[var(--s5)] text-[color:var(--bone-300)]">
                 {APPROVED_CITATIONS_V1[bar.kind].map((citation) => (
@@ -194,17 +230,27 @@ function LearningBars() {
                       <button
                         type="button"
                         className="btn btn--ghost min-h-[var(--tap)] disabled:opacity-50"
-                        disabled={saving === bar.kind}
+                        disabled={saving !== null}
                         onClick={() => void putInForce(bar)}
                       >
-                        {`Yes, put ${bar.title} in force`}
+                        {saving === bar.kind ? 'Saving…' : `Yes, put ${bar.title} in force`}
                       </button>
-                      <button type="button" className="btn btn--ghost min-h-[var(--tap)]" onClick={() => setConfirming(null)}>
+                      <button
+                        type="button"
+                        className="btn btn--ghost min-h-[var(--tap)] disabled:opacity-50"
+                        disabled={saving !== null}
+                        onClick={() => setConfirming(null)}
+                      >
                         Cancel
                       </button>
                     </>
                   ) : (
-                    <button type="button" className="btn btn--ghost min-h-[var(--tap)]" onClick={() => setConfirming(bar.kind)}>
+                    <button
+                      type="button"
+                      className="btn btn--ghost min-h-[var(--tap)] disabled:opacity-50"
+                      disabled={saving !== null}
+                      onClick={() => setConfirming(bar.kind)}
+                    >
                       Put in force
                     </button>
                   )}
