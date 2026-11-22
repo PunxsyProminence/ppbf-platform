@@ -501,8 +501,15 @@ describe('readings that count for nothing (review fixes on #2092)', () => {
     ['a calibrated pair disputes it and a model agrees with one of them', [
       { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-b', polarity: 'counterexample' as const }, model('occurrence'),
     ]],
+    ['a calibrated pair disputes it and a model agrees with the other one', [
+      { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-b', polarity: 'counterexample' as const }, model('counterexample'),
+    ]],
     ['one coach scored it both ways and a person naming no coach also read it', [
       { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-a', polarity: 'counterexample' as const }, { observerAccountId: null },
+    ]],
+    ['one coach scored it both ways and a person naming no coach read it as a miss', [
+      { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-a', polarity: 'counterexample' as const },
+      { observerAccountId: null, polarity: 'counterexample' as const },
     ]],
     ['a coach calibrated only with someone else co-coded it and a model disputes it', [
       { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-c' }, model('counterexample'),
