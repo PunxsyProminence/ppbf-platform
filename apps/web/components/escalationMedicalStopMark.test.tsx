@@ -502,17 +502,14 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
 const MARK_TOKEN = /alert--critical|badge--locked|--locked-ink|var\(--locked\)|var\(--safety-locked\)|var\(--status-critical\)|var\(--status-danger\)|['"`]locked['"`]/g;
 
 const MARK_ALLOWED = new Map<string, { readonly count: number; readonly why: string }>([
-  ['app/coach/sports-medicine/page.tsx', { count: 1, why: "the Clearance Board's 'not cleared': a clearance record saying MEDICALLY_NOT_ALLOWED, the one medical stop" }],
+  // The clearance badge moved here from the Clearance Board (lane AS-5, Q-B1 = A on #2041); the board and Athlete Safety draw it.
+  ['components/clearanceReading.ts', { count: 1, why: "the clearance badge's 'not cleared' (the Clearance Board and Athlete Safety): a clearance record saying MEDICALLY_NOT_ALLOWED, the one medical stop" }],
   ['app/coach/decision-loop/page.tsx', { count: 2, why: "the Medical Administrative Status 'not_cleared' (the clearance record), and the tone type that names it" }],
   ['app/admin/waiver-status/page.tsx', { count: 1, why: "Tonight's 'Not cleared' when the clearance record itself says not_cleared (Overwatch Q5); a hold alone is restricted" }],
   ['app/admin/safety-flags/page.tsx', { count: 1, why: 'a blocking flag that is a clinician stop (concussion_rest_period, rtp_not_cleared; Overwatch Q5); other blocking flags are restricted' }],
   ['app/admin/safety-review/page.tsx', { count: 1, why: 'the same clinician-stop blocking flags as /admin/safety-flags (Overwatch Q5)' }],
   ['app/admin/shadow/page.tsx', { count: 1, why: "the WORD 'locked' for a SHADOW feature not yet unlocked, on the restricted rung; not a class" }],
   ['components/uiStyles.ts', { count: 6, why: "token definitions (statusDanger, errorButton, errorContainer, errorText) that nothing renders" }],
-  ['components/CoachWorkspace.tsx', { count: 3, why: "the coach home: its marks are fixed with the home batch (AS-7), not in this sweep" }],
-  ['components/CoachFloorFocus.tsx', { count: 1, why: "draws whatever tone the coach home hands it ('locked' included); the home batch (AS-7) owns those tones" }],
-  ['components/AthleteWorkspace.tsx', { count: 4, why: "the athlete home: its marks are fixed with the home batch (AS-8), not in this sweep" }],
-  ['components/ParentHub.tsx', { count: 2, why: "the parent home: its marks are fixed with the home batch (AS-9), not in this sweep" }],
 ]);
 
 /** Still to be swept, with today's count: SC2-3 (office, board and platform pages). */
@@ -616,6 +613,31 @@ function markCountsInSource(): Map<string, number> {
   return counts;
 }
 
+/** Non-test files under app/ and components/, other than the badge's own, that name the shared clearance badge. */
+function clearanceBadgeUsers(): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('node:fs') as typeof import('node:fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('node:path') as typeof import('node:path');
+  const webRoot = path.resolve(__dirname, '..');
+  const users: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') walk(full);
+      } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+        const relative = path.relative(webRoot, full).split(path.sep).join('/');
+        if (relative === 'components/clearanceReading.ts') continue;
+        if (/\b(clearanceBadge|CLEARANCE_BADGE)\b/.test(withoutComments(fs.readFileSync(full, 'utf8')))) users.push(relative);
+      }
+    }
+  };
+  walk(path.join(webRoot, 'app'));
+  walk(path.join(webRoot, 'components'));
+  return users.sort();
+}
+
 describe('the medical-stop mark appears nowhere else in the source', () => {
   const counts = markCountsInSource();
   const pending = new Map([...MARK_PENDING_SC2_3, ...MARK_PENDING_SC2_4]);
@@ -639,7 +661,39 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
   });
 
   test('the scan sees the one real medical stop, so it is not blind', () => {
-    expect(counts.get('app/coach/sports-medicine/page.tsx')).toBe(1);
+    expect(counts.get('components/clearanceReading.ts')).toBe(1);
+  });
+
+  // The scan counts the mark's TOKEN, so it cannot see a file that draws the
+  // mark by reading the shared badge (lane AS-5, Q-B1 = A on #2041). The badge
+  // map is not exported; this pins which files draw a clearance through
+  // clearanceBadge(), the ones MARK_ALLOWED's reason names. Another file
+  // drawing it has to be added here, with its reason.
+  test('the one real medical stop is drawn only where its reason says: the Clearance Board and Athlete Safety', () => {
+    expect(clearanceBadgeUsers()).toEqual(['app/coach/athlete-safety/page.tsx', 'app/coach/sports-medicine/page.tsx']);
+  });
+
+  // And the badge's own file hands the map out only through clearanceBadge().
+  // An alias (`export { CLEARANCE_BADGE as ... }`), a re-export or a wrapper
+  // exported under a new name would let a third page draw the mark past both
+  // checks above, so its exports are pinned: a new one is added here, with its
+  // reason, and is not a way to the badge.
+  test('the badge\'s own file exports no other way to the badge than clearanceBadge()', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('node:path') as typeof import('node:path');
+    const source = withoutComments(fs.readFileSync(path.resolve(__dirname, 'clearanceReading.ts'), 'utf8'));
+    expect(source).not.toMatch(/\bexport\s*(\{|\*|default\b)/);
+    const exported = [...source.matchAll(/\bexport\s+(?:declare\s+)?(?:async\s+)?(?:const|let|var|function|type|interface|class|enum)\s+(\w+)/g)]
+      .map((match) => match[1])
+      .sort();
+    expect(exported).toEqual([
+      'ActiveHold', 'CLEARANCE_UNREAD', 'ClearanceReading', 'ClearanceValue', 'clearanceBadge', 'isActiveHold',
+      'isClearanceRow', 'isoInstant', 'readActiveHold', 'readClearance', 'whenPassed',
+    ]);
+    // Every `export` in the file is one of those declarations.
+    expect((source.match(/\bexport\b/g) ?? []).length).toBe(exported.length);
   });
 
   test('every file that carries the mark is allowed, with its reason, or still pending a sweep', () => {

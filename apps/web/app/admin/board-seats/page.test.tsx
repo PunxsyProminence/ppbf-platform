@@ -117,6 +117,8 @@ it('shows every seat, its holder, its additional holders, and the unfilled ones'
 
   await screen.findByText('Board Chair');
   expect(screen.getAllByText('Dana').length).toBeGreaterThan(0);
+  // Lane BT, BOA-19: a figure under five athletes is "suppressed", the board's one word for it.
+  expect(screen.getByText(/any figure covering fewer than five athletes is\s+suppressed rather than shown\./)).toBeTruthy();
   expect(screen.getAllByText('Holds the seat').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Rosa').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Additional holder').length).toBeGreaterThan(0);
@@ -290,12 +292,14 @@ describe('lane N4-02: links and copy that match who is here', () => {
     expect(screen.getByRole('link', { name: 'Back to Gym Office' }).getAttribute('href')).toBe('/admin/people');
   });
 
-  it('a board member is not offered Admin Home, which refuses the board role, and keeps the Board Workspace', async () => {
+  it('a board member is not offered Admin Home, which refuses the board role, and keeps the link to the Board Hub', async () => {
     await renderPage(seatsFetch(), 'board', 'nils');
     await screen.findByText('Board Chair');
     expect(screen.queryByRole('link', { name: 'Back to Gym Office' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Back to Board Hub' }).getAttribute('href')).toBe('/board');
-    expect(screen.getByRole('link', { name: 'Board Workspace' }).getAttribute('href')).toBe('/board');
+    // Named by the title of the page it opens (lane AS-12, BOA-11); it read "Board Workspace".
+    expect(screen.getByRole('link', { name: 'Board Hub' }).getAttribute('href')).toBe('/board');
+    expect(screen.queryByRole('link', { name: 'Board Workspace' })).toBeNull();
   });
 
   it('says a new board member gets their account from the platform desk, not the People page', async () => {

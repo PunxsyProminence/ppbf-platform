@@ -241,16 +241,16 @@ type SkillPath = {
 
 function FamilyRecordLine({ record }: { record: PathRecord | undefined }) {
   if (!record || record.state === 'not_mapped') {
-    return <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NOT_MAPPED_YET}</p>;
+    return <p className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">{NOT_MAPPED_YET}</p>;
   }
   if (record.items.length === 0) {
-    return <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{NONE_ASSIGNED_HERE}</p>;
+    return <p className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">{NONE_ASSIGNED_HERE}</p>;
   }
   return (
     <ul className="mt-[var(--s2)] space-y-[var(--s2)]" aria-label="Your drills in this family">
       {record.items.map((item) => (
         <li key={item.assignment_id} className="flex items-center justify-between gap-[var(--s3)]">
-          <span className="text-[length:var(--t-sm)] text-[color:var(--bone-100)]">{item.drill_display_name}</span>
+          <span className="text-[length:var(--t-md)] text-[color:var(--bone-100)]">{item.drill_display_name}</span>
           <StatusBadge status={item.status} type="assignment" />
         </li>
       ))}
@@ -308,7 +308,7 @@ function SkillProgressionPath() {
                   {step.families.map((family) => (
                     <div key={family.familyId} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                       <h3 className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{family.name}</h3>
-                      <p className="mt-[var(--s1)] t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                      <p className="mt-[var(--s1)] t-data" style={{ fontSize: 'var(--t-md)' }}>
                         {family.prerequisites.length === 0
                           ? 'Starts here'
                           : `Needs: ${family.prerequisites.map((p) => p.name).join(', ')}`}
@@ -334,7 +334,7 @@ function SkillProgressionPath() {
             </div>
           )}
           {path.unlinked > 0 && (
-            <p className="mt-[var(--s4)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+            <p className="mt-[var(--s4)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
               {path.unlinked === 1
                 ? '1 of your drills is not linked to a skill family yet, so it is not shown on this path.'
                 : `${path.unlinked} of your drills are not linked to a skill family yet, so they are not shown on this path.`}
@@ -657,7 +657,7 @@ export default function AthleteProgressionIntelligencePage() {
                 </p>
                 {/* The coach's own words for this work stay on screen, so the
                     opened view is never emptier than the card it came from. */}
-                <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                   {openedAssignment.drill_display_description || openedAssignment.drill_description}
                 </p>
                 {openedStep && <StepNotes step={openedStep} />}
@@ -668,14 +668,14 @@ export default function AthleteProgressionIntelligencePage() {
                       surface falls back to. */}
                   <div>
                     <dt className="t-label">From</dt>
-                    <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                    <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
                       {openedDrill?.assignedBy ?? 'Your coach'}
                     </dd>
                   </div>
                   {openedAssignment.due_date && (
                     <div>
                       <dt className="t-label">Due</dt>
-                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
                         {formatCalendarDay(openedAssignment.due_date)}
                       </dd>
                     </div>
@@ -683,13 +683,13 @@ export default function AthleteProgressionIntelligencePage() {
                   {openedAssignment.rep_count != null && (
                     <div>
                       <dt className="t-label">Reps</dt>
-                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{openedAssignment.rep_count}</dd>
+                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>{openedAssignment.rep_count}</dd>
                     </div>
                   )}
                   {openedAssignment.duration_minutes != null && (
                     <div>
                       <dt className="t-label">Duration</dt>
-                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
                         {openedAssignment.duration_minutes} min
                       </dd>
                     </div>
@@ -697,14 +697,14 @@ export default function AthleteProgressionIntelligencePage() {
                   {openedAssignment.frequency_per_week != null && (
                     <div>
                       <dt className="t-label">Frequency</dt>
-                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                      <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
                         {openedAssignment.frequency_per_week}x/week
                       </dd>
                     </div>
                   )}
                   <div>
                     <dt className="t-label">Progress</dt>
-                    <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>
+                    <dd className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>
                       {Math.min(Math.max(openedAssignment.completion_percentage, 0), 100)}% ·{' '}
                       {openedAssignment.status.replaceAll('_', ' ')}
                     </dd>
@@ -734,6 +734,11 @@ export default function AthleteProgressionIntelligencePage() {
           )}
 
           <div className={`space-y-[var(--s6)]${openedAssignment ? ' hidden' : ''}`}>
+            {/* Shown only when there is a gap (lane AS-8, ATH-19), as the
+                parent page does: an athlete whose only work is a drill
+                assignment has none, and a heading over nothing reads as a
+                list that failed to load. */}
+            {gaps.length > 0 && (
             <section>
               <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Identified Gaps</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s4)]">
@@ -742,13 +747,13 @@ export default function AthleteProgressionIntelligencePage() {
                     <div className="flex items-start justify-between gap-[var(--s3)] mb-[var(--s4)]">
                       <div>
                         <h3 className="text-[length:var(--t-md)] font-semibold capitalize text-[color:var(--bone-100)]">{gap.gap_type.replaceAll('_', ' ')}</h3>
-                        <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{gap.gap_description}</p>
+                        <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">{gap.gap_description}</p>
                       </div>
                       <GapBadge severity={gap.severity} />
                     </div>
                     <div className="flex items-center gap-[var(--s3)]">
                       <StatusBadge status={gap.status} type="gap" />
-                      <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>Identified {formatGymDateShort(gap.created_at)}</span>
+                      <span className="t-data" style={{ fontSize: 'var(--t-md)' }}>Identified {formatGymDateShort(gap.created_at)}</span>
                     </div>
                     <RabbitHole anchor={{ anchorType: 'gap_type', anchorKey: gap.gap_type }} className={GAP_RABBIT_HOLE_CLASS} />
                     <RabbitHole anchor={{ anchorType: 'severity', anchorKey: gap.severity }} className={GAP_RABBIT_HOLE_CLASS} />
@@ -756,6 +761,7 @@ export default function AthleteProgressionIntelligencePage() {
                 ))}
               </div>
             </section>
+            )}
 
             <section>
               <h2 className="t-command mb-[var(--s4)]" style={{ fontSize: 'var(--t-lg)' }}>Drill Assignments</h2>
@@ -814,7 +820,7 @@ export default function AthleteProgressionIntelligencePage() {
                             <DrillHeading className="text-[length:var(--t-md)] font-bold text-[color:var(--bone-100)]">
                               {assignment.drill_display_name || assignment.drill_name}
                             </DrillHeading>
-                            <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                            <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                               {assignment.drill_display_description || assignment.drill_description}
                             </p>
                             {gap && (
@@ -856,25 +862,25 @@ export default function AthleteProgressionIntelligencePage() {
                           {assignment.rep_count != null && (
                             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                               <p className="t-label">Reps</p>
-                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.rep_count}</p>
+                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>{assignment.rep_count}</p>
                             </div>
                           )}
                           {assignment.duration_minutes != null && (
                             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                               <p className="t-label">Duration</p>
-                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.duration_minutes} min</p>
+                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>{assignment.duration_minutes} min</p>
                             </div>
                           )}
                           {assignment.frequency_per_week != null && (
                             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                               <p className="t-label">Frequency</p>
-                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{assignment.frequency_per_week}x/week</p>
+                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>{assignment.frequency_per_week}x/week</p>
                             </div>
                           )}
                           {assignment.due_date && (
                             <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                               <p className="t-label">Due Date</p>
-                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-sm)' }}>{formatCalendarDay(assignment.due_date)}</p>
+                              <p className="t-data mt-[var(--s2)]" style={{ fontSize: 'var(--t-md)' }}>{formatCalendarDay(assignment.due_date)}</p>
                             </div>
                           )}
                         </div>
@@ -955,7 +961,7 @@ export default function AthleteProgressionIntelligencePage() {
                                   <div key={completion.completion_id} className="mat-leather--raised flex items-start gap-[var(--s4)] rounded-[var(--r-md)] p-[var(--s4)]">
                                     <div className="flex-1">
                                       <div className="flex items-center gap-[var(--s3)]">
-                                        <span className="t-data" style={{ fontSize: 'var(--t-xs)' }}>
+                                        <span className="t-data" style={{ fontSize: 'var(--t-md)' }}>
                                           {formatGymDateShort(completion.completed_at)}
                                         </span>
                                         <StatusBadge status={completion.verification_status} type="completion" />
@@ -964,10 +970,10 @@ export default function AthleteProgressionIntelligencePage() {
                                         <p className="t-muted mt-[var(--s2)]">Completed {completion.reps_completed} reps</p>
                                       )}
                                       {completion.notes && (
-                                        <p className="mt-[var(--s3)] text-[length:var(--t-sm)] italic text-[color:var(--bone-300)]">&ldquo;{completion.notes}&rdquo;</p>
+                                        <p className="mt-[var(--s3)] text-[length:var(--t-md)] italic text-[color:var(--bone-300)]">&ldquo;{completion.notes}&rdquo;</p>
                                       )}
                                       {completion.verified_at && (
-                                        <p className="mt-[var(--s2)] text-[length:var(--t-xs)] font-medium text-[color:var(--cleared-ink)]">
+                                        <p className="mt-[var(--s2)] text-[length:var(--t-md)] font-medium text-[color:var(--cleared-ink)]">
                                           ✓ Verified on {formatGymDateShort(completion.verified_at)}
                                         </p>
                                       )}

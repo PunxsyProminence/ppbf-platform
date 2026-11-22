@@ -626,13 +626,13 @@ function BoardSeatsConsole() {
         <p className="mat-leather--raised t-muted rounded-[var(--r-lg)] px-[var(--s5)] py-[var(--s4)]">
           A board seat records an adult board member&apos;s appointment. It carries no athlete record and grants no
           access to one: the board role sees gym-wide figures, and any figure covering fewer than five athletes is
-          withheld rather than shown.
+          suppressed rather than shown.
         </p>
 
         {session.role === 'board' && (
           <div>
             <Link href="/board" className="btn btn--ghost">
-              Board Workspace
+              Board Hub
             </Link>
           </div>
         )}

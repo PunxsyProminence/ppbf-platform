@@ -608,7 +608,7 @@ describe('empty states', () => {
 
   it('says the gym is empty rather than showing a blank panel', async () => {
     await renderBoard({});
-    expect(screen.getByText(/Nobody checked in yet today/i)).toBeTruthy();
+    expect(screen.getByText(/Nobody is marked here yet today/i)).toBeTruthy();
   });
 
   it('says the schedule is empty rather than showing a blank panel', async () => {

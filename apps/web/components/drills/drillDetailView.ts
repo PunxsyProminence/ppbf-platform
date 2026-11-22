@@ -6,7 +6,7 @@
 // Type-only imports: nothing server-side reaches the client bundle.
 
 import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
-import type { AthleteDrillDetail, DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
+import type { AthleteDrillDetail, DrillMarkedField, DrillWithDetail } from '@/src/server/pilot/drillLibraryV3';
 
 export interface DrillScaleView {
   level: string;
@@ -102,6 +102,25 @@ export interface DrillFieldDraftsView {
   good: boolean | null;
   bad: boolean | null;
   corrections: boolean | null;
+  /** Every field the drill screen shows, by field_labels key (lane ED-UI PR3). A missing key is not checked. */
+  fields: Partial<Record<DrillMarkedField, boolean | null>>;
+  /** Each scale level's own state, by level. */
+  scaleLevels: Record<string, boolean | null>;
+  /** false: the version has no label row; null: not known (the read failed, or the response carried none). */
+  labelled: boolean | null;
+}
+
+function fieldDraftsView(drafts: DrillWithDetail['field_drafts']): DrillFieldDraftsView {
+  const { scale_levels: scaleLevels, labelled, ...fields } = drafts ?? {};
+  return {
+    cues: drafts?.cues ?? null,
+    good: drafts?.what_good_looks_like ?? null,
+    bad: drafts?.what_bad_looks_like ?? null,
+    corrections: drafts?.corrections ?? null,
+    fields,
+    scaleLevels: scaleLevels ?? {},
+    labelled: labelled ?? null,
+  };
 }
 
 export interface DrillDetailView {
@@ -212,12 +231,7 @@ export function fromCoachDrillDetail(
       sourceRef: drill.source_ref,
       groundingClaimIds: [...new Set((drill.grounding_claim_ids ?? []).map((id) => id.trim()).filter(Boolean))],
       groundingEvidence,
-      fieldDrafts: {
-        cues: drill.field_drafts?.cues ?? null,
-        good: drill.field_drafts?.what_good_looks_like ?? null,
-        bad: drill.field_drafts?.what_bad_looks_like ?? null,
-        corrections: drill.field_drafts?.corrections ?? null,
-      },
+      fieldDrafts: fieldDraftsView(drill.field_drafts),
     },
   };
 }

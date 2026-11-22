@@ -3,9 +3,9 @@ import { NextRequest } from 'next/server';
 import { DELETE, GET, PATCH } from './route';
 import { requirePrincipal } from '@/src/server/pilot/http';
 import {
+  deleteOwnConversation,
   loadConversationMessages,
   renameConversation,
-  softDeleteConversation,
 } from '@/src/server/pilot/shadowConversations';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -14,15 +14,15 @@ jest.mock('@/src/server/pilot/http', () => {
 });
 
 jest.mock('@/src/server/pilot/shadowConversations', () => ({
+  deleteOwnConversation: jest.fn(),
   loadConversationMessages: jest.fn(),
   renameConversation: jest.fn(),
-  softDeleteConversation: jest.fn(),
 }));
 
 const mockRequirePrincipal = jest.mocked(requirePrincipal);
 const mockLoadConversationMessages = jest.mocked(loadConversationMessages);
 const mockRenameConversation = jest.mocked(renameConversation);
-const mockSoftDeleteConversation = jest.mocked(softDeleteConversation);
+const mockDeleteOwnConversation = jest.mocked(deleteOwnConversation);
 const conversationId = '8d697e85-dde4-47ac-b03f-e6c74595a3bc';
 
 beforeEach(() => {
@@ -127,5 +127,5 @@ test('denies a Board user read, rename, and delete access to a saved chat from a
   ]).toEqual([403, 403, 403]);
   expect(mockLoadConversationMessages).not.toHaveBeenCalled();
   expect(mockRenameConversation).not.toHaveBeenCalled();
-  expect(mockSoftDeleteConversation).not.toHaveBeenCalled();
+  expect(mockDeleteOwnConversation).not.toHaveBeenCalled();
 });

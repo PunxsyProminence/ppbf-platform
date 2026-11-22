@@ -345,3 +345,68 @@ test('"none on file" still shows when the server sent none', async () => {
   await openFor('No medical restriction on file for this member.');
   expect(screen.queryByTestId('medical-restrictions-hidden')).toBeNull();
 });
+
+// Lane AS-5: on Athlete Safety the page has already chosen the athlete, so the
+// panel shows that one and offers no member picker of its own.
+describe('given the athlete the page chose', () => {
+  test('it reads that athlete once and offers no Member picker', async () => {
+    respondWith([ROW]);
+    render(<MedicalRestrictionsPanel athleteId="ath-1" />);
+    await screen.findByText('In force — release needed');
+    expect(screen.queryByLabelText('Member')).toBeNull();
+    const reads = calls.filter((c) => !c.init?.method || c.init.method === 'GET');
+    expect(reads.map((c) => c.url)).toEqual([expect.stringContaining('/api/pilot/coach/medical-restrictions?athlete_id=ath-1')]);
+  });
+
+  test('a read that fails says so, never "No medical restriction on file"', async () => {
+    calls = [];
+    global.fetch = jest.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response) as unknown as typeof fetch;
+    render(<MedicalRestrictionsPanel athleteId="ath-1" />);
+    await screen.findByRole('alert');
+    expect(screen.queryByText('No medical restriction on file for this member.')).toBeNull();
+  });
+});
+
+// Review follow-up (lane AS-5): the athlete read and the athlete written for
+// are always the one the page gives, and the page is told while a write is out.
+describe('given the athlete by the page, as it changes', () => {
+  test('a new athlete closes a half-written form, is read, and is the one a save is for', async () => {
+    createPersistentRoleSession('coach');
+    respondWith([]);
+    const { rerender } = render(<MedicalRestrictionsPanel athleteId="ath-1" />);
+    await screen.findByText('No medical restriction on file for this member.');
+    fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+    expect(screen.getByRole('button', { name: 'Save restriction' })).toBeTruthy();
+
+    rerender(<MedicalRestrictionsPanel athleteId="ath-2" />);
+    expect(screen.queryByRole('button', { name: 'Save restriction' })).toBeNull();
+    await waitFor(() => expect(calls.at(-1)?.url).toContain('athlete_id=ath-2'));
+
+    await screen.findByText('No medical restriction on file for this member.');
+    fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
+    fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-11-10' } });
+    fireEvent.change(screen.getByLabelText('Minimum end date'), { target: { value: '2026-12-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save restriction' }));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'POST')).toBe(true));
+    const posted = JSON.parse(String(calls.find((c) => c.init?.method === 'POST')!.init!.body));
+    expect(posted.athlete_id).toBe('ath-2');
+  });
+
+  test('the page is told a write is out, and told again when it ends', async () => {
+    createPersistentRoleSession('coach');
+    respondWith([]);
+    const onBusy = jest.fn();
+    render(<MedicalRestrictionsPanel athleteId="ath-1" onBusy={onBusy} />);
+    await screen.findByText('No medical restriction on file for this member.');
+    fireEvent.click(screen.getByRole('button', { name: 'Record a restriction' }));
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'other' } });
+    fireEvent.change(screen.getByLabelText('Loss of consciousness'), { target: { value: 'none' } });
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-11-10' } });
+    fireEvent.change(screen.getByLabelText('Minimum end date'), { target: { value: '2026-12-10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save restriction' }));
+    await waitFor(() => expect(onBusy).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(onBusy.mock.calls.at(-1)).toEqual([false]));
+  });
+});

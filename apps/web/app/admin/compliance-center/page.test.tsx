@@ -93,10 +93,13 @@ test('a new violation offers acknowledge, escalate, and dismiss -- not resolve',
 // Lane N4-01: the one cleared-tonight answer lives on Waiver Compliance. The
 // link opens that screen on every athlete, not on its "Missing a waiver"
 // default, which would hide an athlete on a hold whose papers are all signed.
-test('the Cleared tonight link opens Waiver Compliance on every athlete', async () => {
+// The link is named by its page's title, Waiver Compliance; it was "Cleared
+// tonight" (lane AS-10, AS10-6a, OFF-15). It still opens every athlete.
+test('the Waiver Compliance link opens Waiver Compliance on every athlete', async () => {
   await renderWithViolations([violation()]);
 
-  expect(screen.getByRole('link', { name: 'Cleared tonight' }).getAttribute('href')).toBe('/admin/waiver-status?view=all');
+  expect(screen.getByRole('link', { name: 'Waiver Compliance' }).getAttribute('href')).toBe('/admin/waiver-status?view=all');
+  expect(screen.queryByRole('link', { name: 'Cleared tonight' })).toBeNull();
 });
 
 test('an escalated violation offers resolve only -- it comes back down the ladder, never dismissed', async () => {
@@ -718,4 +721,13 @@ test('a re-read that fails leaves the rows on screen and the action’s own mess
   expect(screen.getByText('Athlete: Jordan T.')).toBeTruthy();
   expect(screen.queryByText(/could not be loaded/i)).toBeNull();
   expect(screen.queryByText(/Unable to load compliance violations/i)).toBeNull();
+});
+
+// Lane AS-10, AS10-5 (app scrub OFF-20, a named move): the SHADOW deletion
+// queue sat between the filters and the violations list; it now follows the list.
+test('the deletion queue comes after the violations list, not between it and its filters', async () => {
+  await renderWithViolations([violation()]);
+  const violations = screen.getByRole('heading', { name: /^Violations \(/ });
+  const queue = await screen.findByRole('heading', { name: 'SHADOW history deletion requests' });
+  expect(violations.compareDocumentPosition(queue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });

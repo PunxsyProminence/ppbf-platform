@@ -56,15 +56,18 @@ export default function BoardSeatDirectory() {
             ) : (
               // Law 7: a governance refusal is a static ink mark, not a
               // dimmed control or an empty slot where the button would be.
+              // Worded by the viewer's access, not by occupancy (lane BT,
+              // BOA-06): resolveBoardSeatAccess decides from the viewer's own
+              // seats, so a seat nobody holds is refused the same way.
               <div className="mt-[var(--s4)]">
                 <p>
                   <span className="stamp stamp--flat">
                     <span aria-hidden="true">✕ </span>
-                    <span>Seat held</span>
+                    <span>Not your seat</span>
                   </span>
                 </p>
                 <p className="t-muted mt-[var(--s2)]">
-                  Held by another seat. The president and chair can open any workspace; every other seat opens its own.
+                  The president and chair can open any workspace; every other seat opens its own.
                 </p>
               </div>
             )}

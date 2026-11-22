@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import SessionScriptLiveDelivery from './SessionScriptLiveDelivery';
 import type { LiveSessionScriptRun } from '@/src/server/pilot/sessionScriptRuns';
+import { REQUIRES_FLOOR_VALIDATION_PROVENANCE } from '@/src/lib/drillFloorValidation';
 
 jest.mock('@/lib/apiBase', () => ({ apiBase: () => '' }));
 
@@ -172,6 +173,14 @@ function mockFetch(handlers: Handlers = {}) {
   return fetchMock;
 }
 
+// The plan's blocks, in running order: every list item on the console except the top row's tiles.
+// Under this suite's fetch mock the tiles' reads fail, and since lane U2-6b a failed pain read is
+// a "?" tile (a list item), not a note, so a screen-wide list-item query would include it.
+function blockItems(): HTMLElement[] {
+  const tiles = screen.queryByRole('group', { name: 'The gym at a glance' });
+  return screen.queryAllByRole('listitem').filter((item) => !tiles?.contains(item));
+}
+
 function patchCalls(fetchMock: jest.Mock): Array<Record<string, unknown>> {
   return fetchMock.mock.calls
     .filter((call) => String(call[0]).includes('/api/pilot/session-scripts/runs/') && !String(call[0]).endsWith('/timer') && !String(call[0]).endsWith('/athletes'))
@@ -242,7 +251,7 @@ describe('live surface renders the real script and run', () => {
     expect(screen.getAllByText('Not written yet')).toHaveLength(3);
 
     // Position labels: before the cursor is Earlier, after it is Upcoming.
-    const items = screen.getAllByRole('listitem');
+    const items = blockItems();
     expect(items[0].textContent).toContain('Earlier');
     expect(items[1].textContent).toContain('Current');
     expect(items[2].textContent).toContain('Upcoming');
@@ -262,7 +271,7 @@ describe('live surface renders the real script and run', () => {
     expect(screen.getByRole('button', { name: 'End session...' })).toBeInTheDocument();
     // No block can be named, so navigation is disabled rather than guessing.
     expect(screen.getByRole('button', { name: 'Next block' })).toBeDisabled();
-    expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
+    expect(blockItems()).toEqual([]);
   });
 });
 
@@ -276,6 +285,9 @@ describe("the coach's console in look B", () => {
     expect(screen.getByRole('region', { name: 'Need attention · your athletes' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'SHADOW queue' })).toBeInTheDocument();
     expect(await screen.findAllByText('Could not read')).toHaveLength(3);
+    // The pain tile's unread feed says so in its own tile (lane U2-6b), never as a number.
+    const pain = within(screen.getByRole('region', { name: 'Athlete pain reports' }));
+    expect(pain.getByText('Pain reports: not checked').previousSibling).toHaveTextContent(/^\?$/);
   });
 
   it('sits in the frame with the kit scope on an ancestor, where the kit rules reach it', async () => {
@@ -535,7 +547,7 @@ describe('block movement always names the target block', () => {
     });
 
     expect(patchCalls(fetchMock)).toEqual([{ action: 'advance', to_block_id: 'blk-3' }]);
-    const items = screen.getAllByRole('listitem');
+    const items = blockItems();
     expect(items[2].textContent).toContain('Current');
   });
 
@@ -575,7 +587,7 @@ describe('block movement always names the target block', () => {
 
     expect(screen.getByRole('alert').textContent).toBe("That block is not part of this session's plan, so the session stayed where it was.");
     // The cursor stayed where the server left it.
-    expect(screen.getAllByRole('listitem')[1].textContent).toContain('Current');
+    expect(blockItems()[1].textContent).toContain('Current');
   });
 });
 
@@ -1684,6 +1696,29 @@ describe("the current block's drill instructions", () => {
     expect(patchCalls(fetchMock)).toEqual([]);
     // The drill's own panel is still closed until the coach opens it.
     expect(screen.queryByRole('article', { name: 'Jab drill' })).not.toBeInTheDocument();
+  });
+
+  // The 6e follow-up (Overwatch QA = B on #1991, Q9 = A on #2001): the console's lines follow the
+  // drill's own provenance where no label settles a field, as the plan page's do.
+  it('a drill whose own provenance says DRAFT shows the mark where no label settles it; a non-draft label keeps none', async () => {
+    await renderLive(liveRun(), {
+      detail: () => jsonResponse({ script: LINKED }),
+      drill: () => jsonResponse({
+        drill: {
+          ...referenceDrill(),
+          field_provenance: REQUIRES_FLOOR_VALIDATION_PROVENANCE[1],
+          field_drafts: { cues: true, what_good_looks_like: null, what_bad_looks_like: false, corrections: false },
+        },
+      }),
+    });
+    const card = (await screen.findByText('Current block')).parentElement as HTMLElement;
+    expect(await within(card).findByText('Snap it back')).toBeInTheDocument();
+    expect(Array.from(card.querySelectorAll('p.t-body')).map((line) => line.textContent)).toEqual([
+      'Say (From the drill): Snap it back ◉DRAFT, FOR COACH REVIEW',
+      'Explain: Not written yet',
+      'Watch (From the drill): The hand comes straight back to the chin. ◉DRAFT, FOR COACH REVIEW',
+      'Fix (From the drill): Elbow in before the next one.',
+    ]);
   });
 
   it('closes back to the block, and the running session is untouched', async () => {

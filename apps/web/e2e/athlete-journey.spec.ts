@@ -434,7 +434,7 @@ test.describe('Athlete journey', () => {
     await page.goto('/athlete/dashboard/sparring');
 
     await expect(page.getByRole('heading', { level: 1, name: 'Sparring Log' })).toBeVisible();
-    await expect(page.getByText('Your Corner')).toBeVisible();
+    await expect(page.getByText('Your entry', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Which athlete is this for')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Log This Session' })).toBeEnabled();
   });
@@ -850,7 +850,14 @@ async function enterWorkspaceOrSkip(page: Page): Promise<void> {
     test.skip(true, SERVER_GUARDED_SKIP);
     return;
   }
-  if (await openAthleteWorkspace(page)) return;
+  if (await openAthleteWorkspace(page)) {
+    /* The workspace opens on How I feel today (lane AS-8, Overwatch Q1 A on
+       #2020). These proofs are about the Session Log, which is on the
+       Dashboard, so they open it the way an athlete does. */
+    await expect(page.getByRole('button', { name: 'How I feel today', exact: true }).first()).toHaveAttribute('aria-current', 'page');
+    await page.getByRole('button', { name: 'Dashboard', exact: true }).first().click();
+    return;
+  }
   if (ATHLETE_DB_REQUIRED) {
     throw new Error(
       'PPBF_E2E_REQUIRE_ATHLETE_DB=1 declares that a database was provided for this run, but the '
@@ -892,7 +899,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
 
     const draft = 'my left wrist is sore from Tuesday';
     await page.locator('#pre-check-in-note').fill(draft);
-    // The corner's button and the Session Log's both read 'Start training' and send the same (UXB-19).
+    // One Start training, My Corner's (lane AS-8, ATH-24); the note above is the Session Log's box.
     await page.getByRole('button', { name: 'Start training', exact: true }).first().click();
 
     /* Check-in deliberately moves the athlete off the Session Log -- to
@@ -1004,6 +1011,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
     await enterWorkspaceOrSkip(page);
 
+    await page.getByRole('button', { name: 'End training' }).click();
     await page.getByLabel('How hard was the session you just finished? 7').click();
     await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
@@ -1020,6 +1028,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     const writes = await recordSessionWrites(page, { initialRows: [openSessionRow(NO_ATHLETE_NOTE)] });
     await enterWorkspaceOrSkip(page);
 
+    await page.getByRole('button', { name: 'End training' }).click();
     await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
 
@@ -1042,6 +1051,7 @@ test.describe('A-FIN-10 the session lifecycle on the wire', () => {
     await expect(page.getByText('Your coach can read this.')).toBeVisible();
 
     await box.fill(unsent);
+    await page.getByRole('button', { name: 'End training' }).click();
     await page.getByRole('button', { name: 'End training' }).click();
     await expect(page.getByText('Your training has not started.')).toBeVisible();
 

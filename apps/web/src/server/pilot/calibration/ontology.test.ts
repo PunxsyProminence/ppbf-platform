@@ -33,6 +33,8 @@ import {
   BOXING_ONTOLOGY_VERSION_0_2,
   BOXING_ONTOLOGY_VERSION_0_3,
   BOXING_ONTOLOGY_VERSION_0_4,
+  FIGHTER_TRACKS,
+  fighterLabel,
   CALIBRATION_PROJECT_STATUSES,
   CLIP_SAMPLING_REASONS,
   CONTACT_RESULTS,
@@ -376,12 +378,22 @@ describe('which version answers which question', () => {
     ]);
   });
 
-  test('until 0.2 can be labelled, only 0.1 is labelled and created', () => {
-    // 0.2's event rules and screen do not exist in this build. Opening or
-    // creating a 0.2 study now would put 0.1's forms over a 0.2 stamp. The
-    // change that makes 0.2 labellable changes this test on purpose.
-    expect([...ANNOTATABLE_ONTOLOGY_VERSIONS]).toEqual([BOXING_ONTOLOGY_VERSION_0_1]);
-    expect(PROJECT_CREATION_ONTOLOGY_VERSION).toBe(BOXING_ONTOLOGY_VERSION_0_1);
+  test('0.4 is labelled and every new study is created on it (OD-2026-10-04-024; TEACH-T T-1)', () => {
+    // -024 kept 0.4 closed "until the body-point marking screen exists". The
+    // labelling page now marks 0.4's points and the server enforces 0.4's
+    // event rules, so new studies are body-point studies.
+    expect(PROJECT_CREATION_ONTOLOGY_VERSION).toBe(BOXING_ONTOLOGY_VERSION_0_4);
+    expect(ANNOTATABLE_ONTOLOGY_VERSIONS).toContain(BOXING_ONTOLOGY_VERSION_0_4);
+  });
+
+  test('0.1 studies stay labellable so they finish on their own labels (OD-2026-10-02-008 4A)', () => {
+    expect(ANNOTATABLE_ONTOLOGY_VERSIONS).toContain(BOXING_ONTOLOGY_VERSION_0_1);
+  });
+
+  test('0.2 and 0.3 are never opened; their marks stay as made (OD-2026-10-04-024 2A)', () => {
+    expect(ANNOTATABLE_ONTOLOGY_VERSIONS).not.toContain(BOXING_ONTOLOGY_VERSION_0_2);
+    expect(ANNOTATABLE_ONTOLOGY_VERSIONS).not.toContain(BOXING_ONTOLOGY_VERSION_0_3);
+    expect([...ANNOTATABLE_ONTOLOGY_VERSIONS]).toEqual([BOXING_ONTOLOGY_VERSION_0_1, BOXING_ONTOLOGY_VERSION_0_4]);
   });
 });
 
@@ -659,5 +671,18 @@ describe('named guards and stance types, by sanctioning body', () => {
         expect(allowed).toContain(key);
       }
     }
+  });
+});
+
+describe('who an event is about on a body-point set (OD-2026-10-08-005 A-Q10a)', () => {
+  test('exactly Fighter 1 and Fighter 2, in that order', () => {
+    // Ruling 1: "Teach labels the two fighters "Fighter 1" and "Fighter 2"".
+    expect([...FIGHTER_TRACKS]).toEqual(['fighter_1', 'fighter_2']);
+  });
+
+  test('a coach reads "Fighter 1" and "Fighter 2"; a typed 0.1 actor reads as typed', () => {
+    expect(fighterLabel('fighter_1')).toBe('Fighter 1');
+    expect(fighterLabel('fighter_2')).toBe('Fighter 2');
+    expect(fighterLabel('red corner')).toBe('red corner');
   });
 });

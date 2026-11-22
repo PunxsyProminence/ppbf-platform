@@ -218,20 +218,23 @@ describe('parent hub child selector', () => {
     expect(screen.queryByRole('button', { name: 'First Child' })).not.toBeNull();
   });
 
-  test('the first child is selected by default and switching moves the overview to the other child', async () => {
+  test('the first child is selected by default and switching selects the other child', async () => {
     installFetch();
     await act(async () => {
       render(<ParentHub />);
     });
 
-    expect(screen.queryByText('First Child', { selector: 'p' })).not.toBeNull();
+    // The Overview's "Child Name" row went (scrub FAM-20): the child picker
+    // already says whose hub this is, so the selection is read from it.
+    expect(screen.getByRole('button', { name: 'First Child' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Second Child' })).toHaveAttribute('aria-pressed', 'false');
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Second Child' }));
     });
 
-    expect(screen.queryByText('Second Child', { selector: 'p' })).not.toBeNull();
-    expect(screen.queryByText('First Child', { selector: 'p' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Second Child' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'First Child' })).toHaveAttribute('aria-pressed', 'false');
   });
 });
 
@@ -473,14 +476,17 @@ describe('authored announcements on the parent hub', () => {
     expect(screen.queryByText('Ask questions about training')).toBeNull();
   });
 
-  test('the overview button opens the Messages tab by its new name', async () => {
+  test('the Messages tab opens the coaches\' messages; the Overview no longer repeats it as a button', async () => {
     installFetch();
     await act(async () => {
       render(<ParentHub />);
     });
 
+    // The Quick Action "View Messages from the Coaches" only switched to this
+    // tab, which is in the row above, so it went (scrub FAM-05).
+    expect(screen.queryByRole('button', { name: 'View Messages from the Coaches' })).toBeNull();
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'View Messages from the Coaches' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
     });
     expect(screen.getByText('HELP: Messages from the coaches')).toBeTruthy();
   });
@@ -852,8 +858,8 @@ describe('summary tile honesty', () => {
 
     // Parent Floor tasks reads the messages feed (lane P6): zero tasks with a due
     // date is an observation once that read answered. The unanswered case
-    // is pinned in parentHubTasks.test.tsx.
-    expect(tileValue('Parent Floor tasks')).toBe('0');
+    // is pinned in parentHubTasks.test.tsx. Named per child (AS-9 Q4 = A).
+    expect(tileValue('Parent Floor tasks')).toBe('First 0 · Second 0');
     // The schedule answered with nothing booked for this child: a real zero.
     // The unanswered case is pinned in parentHubSummary.test.tsx.
     expect(tileValue('Upcoming')).toBe('0');
@@ -877,8 +883,8 @@ describe('summary tile honesty', () => {
     });
 
     // The default mock answers with zero messages; that zero is an
-    // observation, not a fabrication, and stays a number.
-    expect(tileValue('New messages')).toBe('0');
+    // observation, not a fabrication, and stays a number, for each child.
+    expect(tileValue('New messages')).toBe('First 0 · Second 0');
   });
 
   test('a message that arrived, not yet opened, is counted on the tile', async () => {
@@ -886,14 +892,14 @@ describe('summary tile honesty', () => {
       jsonResponse({
         ok: true,
         items: [
-          { note_id: 'n1', note_text: 'Great week.', created_at: '2026-08-10T12:00:00.000Z', reporter_role: 'coach', athlete_name: 'First Child' },
-          { note_id: 'n2', note_text: 'See you Friday.', created_at: '2026-08-11T12:00:00.000Z', reporter_role: 'coach', athlete_name: 'First Child' },
+          { note_id: 'n1', note_text: 'Great week.', created_at: '2026-08-10T12:00:00.000Z', reporter_role: 'coach', athlete_id: 'ath_1', athlete_name: 'First Child' },
+          { note_id: 'n2', note_text: 'See you Friday.', created_at: '2026-08-11T12:00:00.000Z', reporter_role: 'coach', athlete_id: 'ath_1', athlete_name: 'First Child' },
         ],
       }));
     await act(async () => {
       render(<ParentHub />);
     });
 
-    expect(tileValue('New messages')).toBe('2');
+    expect(tileValue('New messages')).toBe('First 2 · Second 0');
   });
 });

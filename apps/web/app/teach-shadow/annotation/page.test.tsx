@@ -11,7 +11,7 @@
 // only guard -- but the page is where a coach actually meets the rules, and a
 // page that quietly lets them past one produces work that gets refused on save.
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import { BODY_POINTS_0_4 } from '@/src/server/pilot/calibration/ontology';
@@ -593,6 +593,40 @@ describe('body points', () => {
     expect(bodyPointCalls()).toHaveLength(0);
     expect(screen.queryByTestId('body-point-progress')).toBeNull();
     expect(screen.getByRole('button', { name: 'Add punch' })).toBeTruthy();
+  });
+
+  test('on a body-point set, who did it is Fighter 1 or Fighter 2, picked by the coach (OD-2026-10-08-005 A-Q10a)', async () => {
+    global.fetch = mockFetch({ set: BODY_POINT_SET, events: [{ ...PUNCH_EVENT, actor_track: 'fighter_2' }] });
+
+    await openClip();
+    // The saved event reads as the coach would say it.
+    expect(screen.getByTestId('annotation-event').textContent).toContain('Fighter 2');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add defense' }));
+    });
+    const actor = screen.getByLabelText('Who did it') as HTMLSelectElement;
+    const opponent = screen.getByLabelText('Against (optional)') as HTMLSelectElement;
+    // A choice, not a text box, and nothing pre-picked.
+    expect(actor.tagName).toBe('SELECT');
+    expect([...actor.options].map((option) => option.textContent)).toEqual(['Choose…', 'Fighter 1', 'Fighter 2']);
+    expect(actor.value).toBe('');
+    expect([...opponent.options].map((option) => option.textContent)).toEqual(['Nobody', 'Fighter 1', 'Fighter 2']);
+    expect(screen.queryByLabelText('Actor (which fighter)')).toBeNull();
+
+    await act(async () => {
+      fireEvent.change(actor, { target: { value: 'fighter_2' } });
+      fireEvent.change(opponent, { target: { value: 'fighter_1' } });
+      fireEvent.change(screen.getByLabelText('Defense type'), { target: { value: 'slip' } });
+      fireEvent.change(screen.getByLabelText('Visibility (of the footage)'), { target: { value: 'clear' } });
+      fireEvent.change(screen.getByLabelText('Certainty (yours)'), { target: { value: 'clear' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save event' }));
+    });
+
+    const write = calls.find((call) => call.url.includes('/calibration/events') && call.method === 'POST');
+    expect(write?.body).toMatchObject({ actor_track: 'fighter_2', opponent_track: 'fighter_1' });
   });
 
   test('a body-point set reads its marks and shows the server\'s count and missing list', async () => {
@@ -1535,4 +1569,186 @@ test.each([
   // word.
   expect(text).not.toMatch(/frames?\s*#?\d/i);
   expect(text).not.toMatch(/\d\s*fps\b/i);
+});
+
+// Lane AS-11 (app scrub CS-19; Q9 = A): an empty picker says what to do first,
+// in the words approved as written. A read that failed or never finished is
+// not read as "no study".
+describe('an empty picker says what to do first (lane AS-11)', () => {
+  const NO_STUDY = /No study yet\. Studies are made on/;
+  const UNREAD = 'The studies could not be read. Reload and try again.';
+  const NO_CLIPS = 'This study has no clips yet. Clips are cut on Cut Study Clips.';
+
+  function respond(body: unknown, status = 200) {
+    return { ok: status < 400, status, json: async () => body, headers: new Headers() } as unknown as Response;
+  }
+
+  function studiesFetch(
+    projects: () => Promise<Response> | Response,
+    clips: unknown[] | (() => Promise<Response> | Response) = [CLIP],
+  ) {
+    const base = mockFetch();
+    return jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/pilot/calibration/projects')) return projects();
+      if (url.includes('/api/pilot/calibration/clips')) {
+        return typeof clips === 'function' ? clips() : respond({ ok: true, clips });
+      }
+      return base(input, init);
+    }) as unknown as typeof fetch;
+  }
+
+  async function renderPage() {
+    await act(async () => {
+      render(<CoachCalibrationPage />);
+    });
+  }
+
+  it('with no study read back, it says none exists yet and links Cut Study Clips', async () => {
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [] }));
+    await renderPage();
+
+    const line = screen.getByText(NO_STUDY);
+    const link = line.querySelector('a');
+    expect(link?.textContent).toBe('Cut Study Clips');
+    expect(link?.getAttribute('href')).toBe('/teach-shadow/cut');
+    expect(line.textContent).toBe('No study yet. Studies are made on Cut Study Clips.');
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  it('a read that failed says the studies could not be read, never that there are none', async () => {
+    global.fetch = studiesFetch(() => { throw new TypeError('Failed to fetch'); });
+    await renderPage();
+
+    expect(screen.getByRole('alert').textContent).toContain(UNREAD);
+    expect(screen.queryByText(NO_STUDY)).toBeNull();
+  });
+
+  it('a refused read shows its refusal, and neither line', async () => {
+    global.fetch = studiesFetch(() => respond({ error: 'Forbidden' }, 403));
+    await renderPage();
+
+    expect(screen.getByText('Refused')).toBeTruthy();
+    expect(screen.queryByText(NO_STUDY)).toBeNull();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  it('while the read is out, neither line shows', async () => {
+    global.fetch = studiesFetch(() => new Promise<Response>(() => {}));
+    await renderPage();
+
+    expect(screen.queryByText(NO_STUDY)).toBeNull();
+    expect(screen.queryByText(UNREAD)).toBeNull();
+  });
+
+  it('a study with no clips says so; one with clips says nothing', async () => {
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), []);
+    await renderPage();
+    expect(screen.queryByText(NO_CLIPS)).toBeNull();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
+    });
+    expect(screen.getByText(NO_CLIPS)).toBeTruthy();
+    expect(screen.queryByText(NO_STUDY)).toBeNull();
+
+    cleanup();
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), [CLIP]);
+    await renderPage();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
+    });
+    expect(screen.queryByText(NO_CLIPS)).toBeNull();
+  });
+
+  it.each([
+    ['still out', () => new Promise<Response>(() => {})],
+    ['refused', () => respond({ error: 'Forbidden' }, 403)],
+  ])('a clips read that is %s is not read as "no clips"', async (_name, clips) => {
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), clips);
+    await renderPage();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
+    });
+    expect(screen.queryByText(NO_CLIPS)).toBeNull();
+  });
+
+  it('a clips read that fails offline is not read as "no clips"', async () => {
+    global.fetch = studiesFetch(() => respond({ ok: true, projects: [PROJECT] }), () => { throw new TypeError('Failed to fetch'); });
+    await renderPage();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: 'proj-1' } });
+    });
+    expect(screen.queryByText(NO_CLIPS)).toBeNull();
+  });
+
+  // A late answer for a study the coach has left must not speak for the study
+  // they are on (review finding on #2034).
+  describe('when the coach changes study before the first clips read answers', () => {
+    const OTHER = { ...PROJECT, calibration_project_id: 'proj-2', name: 'Second study' };
+    const OTHER_CLIP = { ...CLIP, calibration_clip_id: 'clip-2', clip_code: 'C-2' };
+
+    function heldClips() {
+      const answers = new Map<string, (response: Response) => void>();
+      const fetchFn = studiesFetch(() => respond({ ok: true, projects: [PROJECT, OTHER] }));
+      const base = fetchFn as unknown as jest.Mock;
+      const route = base.getMockImplementation()!;
+      base.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/pilot/calibration/clips')) {
+          const id = new URL(url, 'http://localhost').searchParams.get('calibration_project_id') ?? '';
+          return new Promise<Response>((resolve) => { answers.set(id, resolve); });
+        }
+        return route(input, init);
+      });
+      global.fetch = fetchFn;
+      return answers;
+    }
+
+    async function choose(id: string) {
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Calibration project'), { target: { value: id } });
+      });
+    }
+
+    it("the first study's late empty answer does not say the second study has no clips", async () => {
+      const answers = heldClips();
+      await renderPage();
+      await choose('proj-1');
+      await choose('proj-2');
+      await act(async () => {
+        answers.get('proj-2')!(respond({ ok: true, clips: [OTHER_CLIP] }));
+      });
+      await act(async () => {
+        answers.get('proj-1')!(respond({ ok: true, clips: [] }));
+      });
+      expect(screen.queryByText(NO_CLIPS)).toBeNull();
+      expect(screen.getAllByRole('option').some((option) => option.getAttribute('value') === 'clip-2')).toBe(true);
+    });
+
+    it("the first study's late clips do not land in the second study's picker", async () => {
+      const answers = heldClips();
+      await renderPage();
+      await choose('proj-1');
+      await choose('proj-2');
+      await act(async () => {
+        answers.get('proj-2')!(respond({ ok: true, clips: [] }));
+      });
+      await act(async () => {
+        answers.get('proj-1')!(respond({ ok: true, clips: [CLIP] }));
+      });
+      expect(screen.getByText(NO_CLIPS)).toBeTruthy();
+      expect(screen.getAllByRole('option').some((option) => option.getAttribute('value') === 'clip-1')).toBe(false);
+    });
+
+    it("the first study's late refusal is not shown under the second", async () => {
+      const answers = heldClips();
+      await renderPage();
+      await choose('proj-1');
+      await choose('proj-2');
+      await act(async () => {
+        answers.get('proj-1')!(respond({ error: 'Forbidden' }, 403));
+      });
+      expect(screen.queryByText('Refused')).toBeNull();
+    });
+  });
 });

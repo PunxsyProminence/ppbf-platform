@@ -10,7 +10,7 @@ import FamilyObservations from '@/components/FamilyObservations';
 import FamilyGoalsForStaff from '@/components/FamilyGoalsForStaff';
 import MessageAthlete from '@/components/MessageAthlete';
 import ShadowCoachRecommendationDraft from '@/components/ShadowCoachRecommendationDraft';
-import { takeArrivalAthlete } from '@/components/decisionLoopArrival';
+import { POST_TO_FAMILY_SECTION, takeArrivalAthlete } from '@/components/decisionLoopArrival';
 import { formatGymDate, formatGymDateTimeShort, formatGymDay } from '@/src/lib/gymTime';
 import { isPainReportNearMiss, painReportLabel, painScoreFromMetadata } from '@/src/shared/painScoreLabel';
 import BackHome from '@/components/BackHome';
@@ -633,6 +633,10 @@ export default function DecisionLoopReviewPage() {
      came for, handed over in page memory (decisionLoopArrival.ts). Taken once,
      on the first effect; undefined means not yet taken. */
   const arrivalAthleteRef = useRef<string | null | undefined>(undefined);
+  // An arrival from a "Post to the Family's Page" link (lane AS-5, CS-03)
+  // also asks for that section: the page scrolls to it once, when the arriving
+  // athlete's sections are on screen, and never on a later pick.
+  const scrollToFamilyRef = useRef(false);
   /* The picker is the only way to choose an athlete, so it is never an empty
      picker that reads as "no athletes": while the roster is read it says so,
      and a roster that would not load -- or has not answered within
@@ -673,10 +677,18 @@ export default function DecisionLoopReviewPage() {
     const arriving = arrivalAthleteRef.current;
     arrivalAthleteRef.current = null;
     if (arriving && roster.some((athlete) => athlete.athlete_id === arriving)) {
+      scrollToFamilyRef.current = window.location.hash === `#${POST_TO_FAMILY_SECTION}`;
       selectAthlete(arriving);
     }
     // selectAthlete moves refs and state setters only.
   }, []);
+  // After the athlete's records are read, so the lists above the section have
+  // their final height and do not push it off screen once scrolled.
+  useEffect(() => {
+    if (!athleteId || loadState === 'loading' || !scrollToFamilyRef.current) return;
+    scrollToFamilyRef.current = false;
+    document.getElementById(POST_TO_FAMILY_SECTION)?.scrollIntoView?.({ block: 'start' });
+  }, [athleteId, loadState]);
   useEffect(() => {
     if (arrivalAthleteRef.current === undefined) arrivalAthleteRef.current = takeArrivalAthlete();
     // The roster's answer sets state when it arrives, never in this effect's body.
@@ -1280,7 +1292,12 @@ export default function DecisionLoopReviewPage() {
               <span className="t-label">Athlete</span>
               <select
                 value={athleteId}
-                onChange={(event) => selectAthlete(event.target.value)}
+                onChange={(event) => {
+                  // A coach's own pick is not the arrival: a scroll still
+                  // waiting for the arriving athlete's records is dropped.
+                  scrollToFamilyRef.current = false;
+                  selectAthlete(event.target.value);
+                }}
                 disabled={rosterState === 'loading'}
                 className="select max-w-md"
               >
@@ -1681,7 +1698,7 @@ export default function DecisionLoopReviewPage() {
               </section>
 
               {/* Post to the family's page */}
-              <section className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
+              <section id={POST_TO_FAMILY_SECTION} className="mat-leather rounded-[var(--r-lg)] p-[var(--s4)]">
                 <h2 className="t-command text-[length:var(--t-lg)]">Post to the Family&apos;s Page</h2>
                 <p className="t-muted mt-[var(--s2)]">
                   A note to the athlete&apos;s family -- they&apos;ll see it on their Messages tab.

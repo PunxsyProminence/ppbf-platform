@@ -248,7 +248,29 @@ function withoutLaneHw(files: Record<string, string>): Record<string, string> {
   out[ITEMS_CSV] = rewrite(files[ITEMS_CSV], (row) => !hwTemplateIds.has(row.template_id));
   return out;
 }
-const committed = withoutLaneHw(readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES));
+/**
+ * Lane RS (#2008) came after this lane too: one cue each, and that cue's label, on three existing drills
+ * (OD-2026-11-15-011 ruling 3: a new version). Left out of this lane's set the same way; the first case below
+ * plans them on top and finds exactly those three drills as new versions. committedTemplateIssueSweep.test.ts
+ * checks what they change.
+ */
+const RS_MARK = '"draft":"AI selection, lane RS, 2026-11-20';
+const RS_SOURCE = '(AI selection, lane RS)';
+const LANE_RS_DRILLS = ['drl_146f4afdc88839', 'drl_39ed71de8c14cd', 'drl_af8541eacc70e5'];
+function withoutLaneRs(files: Record<string, string>): Record<string, string> {
+  const rewrite = (text: string, keep: (row: Row) => boolean, edit: (row: Row) => Row = (row) => row) => {
+    const header = readCsv(text).header;
+    return writeCsv(header, rowsOf(text).filter(keep).map(edit).map((row) => header.map((name) => row[name] ?? '')));
+  };
+  return {
+    ...files,
+    // Each of the three carries only lane RS's label; before lane RS it had none.
+    [DRILLS_CSV]: rewrite(files[DRILLS_CSV], () => true, (row) => (row.field_labels.includes(RS_MARK) ? { ...row, field_labels: '' } : row)),
+    [CUES_CSV]: rewrite(files[CUES_CSV], (row) => !(row.source_ref ?? '').endsWith(RS_SOURCE)),
+  };
+}
+const committedWithLaneRs = withoutLaneHw(readDatasetFiles(SEED_DATA_DIR, FT1_PACKAGES));
+const committed = withoutLaneRs(committedWithLaneRs);
 const ft1DrillIds = new Set(rowsOf(committed[DRILLS_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.drill_id));
 const ft1TemplateIds = new Set(rowsOf(committed[TEMPLATES_CSV]).filter((row) => row.stage_keys === 'FT1').map((row) => row.template_id));
 // Every Backbone template (stage_keys not blank): FT1's 33 plus lane YR's youth and recreational ones.
@@ -315,6 +337,12 @@ describe('FT1 content added to a loaded library', () => {
     expect(ft1DrillIds.size).toBe(131);
     expect(ft1TemplateIds.size).toBe(33);
     expect(result.blocking).toEqual([]);
+    // With lane RS's rows on top, its three drills, and only they, plan as new versions of drills already loaded.
+    const withLaneRs = await plan(ORG, admin, committedWithLaneRs);
+    expect(withLaneRs.counts['drill-library']).toEqual({ new: 387, new_version: 3, unchanged: 116, absent: 0, reject: 0 });
+    expect(withLaneRs.units.filter((unit) => unit.dataset === 'drill-library' && unit.outcome === 'new_version').map((unit) => unit.key).sort())
+      .toEqual(LANE_RS_DRILLS);
+    expect(withLaneRs.blocking).toEqual([]);
   });
 
   it('loads it, stores a blank setup as an empty string, and finds the next plan unchanged', async () => {

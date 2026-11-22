@@ -9,7 +9,7 @@
 // than for /login, which they have already satisfied.
 
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 
 import BoardMemberDashboard from './BoardMemberDashboard';
 import {
@@ -51,7 +51,7 @@ function renderSeat(
   session: { role: 'board' | 'platform_owner'; seats: BoardSeatSlug[] } | null,
 ) {
   mockUseBoardSession.mockReturnValue(session);
-  render(<BoardMemberDashboard seat={boardSeatMap[seat]} links={[{ label: 'Board hub', href: '/board' }]} />);
+  render(<BoardMemberDashboard seat={boardSeatMap[seat]} />);
 }
 
 afterEach(() => {
@@ -81,7 +81,8 @@ test('a board member holding another seat is sent to the hub, not to /login', ()
   expect(replace).not.toHaveBeenCalledWith('/login');
   expect(screen.queryByRole('heading', { name: 'Treasurer Workspace' })).toBeNull();
   // Never a dead end: the destination is on screen while the route changes.
-  expect(screen.getByRole('link', { name: 'Board hub' }).getAttribute('href')).toBe('/board');
+  // Named by the title of the page it opens (lane AS-12, BOA-11).
+  expect(screen.getByRole('link', { name: 'Board Hub' }).getAttribute('href')).toBe('/board');
 });
 
 test('a board member with no seat assigned gets the hub', () => {
@@ -120,7 +121,22 @@ test('the workspace shows no placeholder standing in for a figure', () => {
   // failed to load. No reserve is stored anywhere in the platform.
   expect(screen.queryAllByText('Unavailable')).toHaveLength(0);
   expect(screen.getByText('Not stored by this platform')).toBeDefined();
-  expect(screen.getByText(/Financial reserves, grants, and budgets/)).toBeDefined();
+  expect(screen.getByText('- Financial reserves and budgets')).toBeDefined();
+});
+
+// Lane BT, BOA-16: grant obligations ARE stored (/admin/grants), so they are not on the
+// "not stored" list; the seat is told who keeps them, by that page's title, with no link
+// (the page admits the gym admin only).
+test('grants are said to be kept by the gym admin, not listed as not stored', () => {
+  renderSeat('treasurer', { role: 'board', seats: ['treasurer'] });
+
+  const notHeld = screen.getByRole('heading', { name: 'Not stored by this platform' }).closest('section') as HTMLElement;
+  const listed = Array.from(notHeld.querySelectorAll('li')).map((item) => item.textContent ?? '');
+  expect(listed.some((item) => /grant/i.test(item))).toBe(false);
+  expect(within(notHeld).getByText('Grant obligations are kept by the gym admin, on Grant Obligations.')).toBeDefined();
+  expect(notHeld.querySelector('a[href="/admin/grants"]')).toBeNull();
+  // Lane BT, BOA-19: "none is being suppressed", the board's one word for it.
+  expect(document.body.textContent).not.toMatch(/withheld/i);
 });
 
 test('a 501(c)(3) is not described as owned', () => {
@@ -146,6 +162,64 @@ test('the platform owner is not shown the board-only compliance register door (F
   expect(screen.getByText('Platform owner view. Read-only, and no board seat is held.')).toBeDefined();
   expect(screen.queryByRole('link', { name: 'Hand-Filed Compliance Register' })).toBeNull();
   expect(document.querySelector('a[href="/board/compliance-monitoring"]')).toBeNull();
+});
+
+// Lane AS-12, BOA-03: the way to the board's three reads was in the aside, after
+// every other block (and under the main column on a narrow screen). It is one
+// row, directly under the header. Who is shown which link is pinned in
+// app/board/BoardWorkspaceLinks.test.tsx; this pins where the row stands.
+describe('Workspace Links stands directly under the header (lane AS-12, BOA-03)', () => {
+  const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  test('the row comes after the header and before every other block', () => {
+    renderSeat('treasurer', { role: 'board', seats: ['treasurer'] });
+
+    const header = screen.getByRole('heading', { name: 'Treasurer Workspace' }).closest('header') as HTMLElement;
+    const row = screen.getByRole('navigation', { name: 'Workspace Links' });
+    expect(header.nextElementSibling).toBe(row);
+    expect(follows(row, screen.getByText('Seat Access'))).toBe(true);
+    expect(follows(row, screen.getByText('organization aggregate panel'))).toBe(true);
+    expect(follows(row, screen.getByRole('heading', { name: 'Not stored by this platform' }))).toBe(true);
+  });
+
+  test('there is one Workspace Links block, and it holds Board Hub and the three reads', () => {
+    renderSeat('treasurer', { role: 'board', seats: ['treasurer'] });
+
+    expect(screen.getAllByText('Workspace Links')).toHaveLength(1);
+    const row = within(screen.getByRole('navigation', { name: 'Workspace Links' }));
+    expect(row.getAllByRole('link').map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+      ['Board Hub', '/board'],
+      ['Program Aggregates', '/board/aggregates'],
+      ['Escalation Ladder', '/board/escalation-monitoring'],
+      ['Hand-Filed Compliance Register', '/board/compliance-monitoring'],
+    ]);
+    // Each read is linked once on the page: the aside's copy moved, it was not doubled.
+    expect(document.querySelectorAll('a[href="/board/aggregates"]')).toHaveLength(1);
+  });
+
+  // BOA-07: seat assignment is the President's one administrative control.
+  test('the President workspace links Board Seats; another seat does not', () => {
+    renderSeat('president', { role: 'board', seats: ['president'] });
+    expect(screen.getByRole('link', { name: 'Board Seats' }).getAttribute('href')).toBe('/admin/board-seats');
+  });
+
+  test('the Treasurer workspace has no Board Seats link', () => {
+    renderSeat('treasurer', { role: 'board', seats: ['treasurer'] });
+    expect(screen.queryByRole('link', { name: 'Board Seats' })).toBeNull();
+  });
+
+  // OD-2026-10-05-006 part (b), F-003 option A: the platform owner is not served
+  // the board's aggregates. Program Aggregates and Escalation Ladder were still
+  // offered to that role here and opened on "served to board members only".
+  test('the platform owner is offered Board Hub and none of the board-only pages', () => {
+    renderSeat('president', { role: 'platform_owner', seats: [] });
+
+    const row = within(screen.getByRole('navigation', { name: 'Workspace Links' }));
+    expect(row.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual(['/board']);
+    for (const href of ['/board/aggregates', '/board/escalation-monitoring', '/board/compliance-monitoring', '/admin/board-seats']) {
+      expect(document.querySelector(`a[href="${href}"]`)).toBeNull();
+    }
+  });
 });
 
 test('an unbuilt module carries the placeholder stamp in the same view as a built one', () => {

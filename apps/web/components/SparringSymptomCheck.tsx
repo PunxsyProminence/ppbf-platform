@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
@@ -15,7 +16,8 @@ import {
 } from '@/src/shared/sparringSymptoms';
 
 // The sparring symptom flag on the athlete's own screens (OD-2026-10-17-023
-// item 1, OD-2026-10-17-029). 'after_sparring' shows on the Dashboard after
+// item 1, OD-2026-10-17-029). 'after_sparring' shows where the athlete ended
+// training (My Corner and the top of the Floor, beside End training) after
 // check-out of a session tagged Sparring, until it is answered (the server
 // says so after a refresh too); 'next_day' shows on "How I feel today" only
 // when the server says the athlete sparred recently and has not been asked
@@ -23,6 +25,11 @@ import {
 // flag, and the athlete sees one fixed message (plus the gym's own protocol
 // words when it has some). Nothing is scored, counted or explained here.
 // Copy PROPOSED.
+//
+// The after-sparring check links the Sparring Log, by its page title (lane
+// AS-8, ATH-21; Overwatch Q7 A on #2020): the session just ended was sparring,
+// and that page, where rounds and contact are written down, had no link from
+// here. The next-day check does not carry it.
 
 interface ReportView {
   symptoms: SparringSymptom[];
@@ -139,7 +146,7 @@ export default function SparringSymptomCheck({
           <p className="t-data">You said: {alreadyTicked.map(sparringSymptomLabel).join(', ')}.</p>
           <p className="t-data">{SPARRING_SYMPTOM_MESSAGE}</p>
           {today.protocol_text.trim() !== '' && <p className="t-data">{today.protocol_text}</p>}
-          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>{sparringSymptomSentLine(today.recipient_role)}</p>
+          <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>{sparringSymptomSentLine(today.recipient_role)}</p>
         </div>
       )}
       {saved && alreadyTicked.length === 0 && (
@@ -189,7 +196,7 @@ export default function SparringSymptomCheck({
             )}
           </div>
           {!none && picked.length === 0 && (
-            <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+            <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
               {saved ? 'Tap anything new, then Send.' : `Tap what you have, or ${SPARRING_SYMPTOM_NONE.toLowerCase()}, then Send.`}
             </p>
           )}
@@ -201,6 +208,12 @@ export default function SparringSymptomCheck({
       )}
 
       {error !== '' && <p className="t-data" role="alert">{error}</p>}
+
+      {context === 'after_sparring' && (
+        <Link href="/athlete/dashboard/sparring" className="btn btn--ghost">
+          Sparring Log
+        </Link>
+      )}
     </section>
   );
 }

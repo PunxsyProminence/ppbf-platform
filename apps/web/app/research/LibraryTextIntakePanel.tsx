@@ -366,7 +366,7 @@ export default function LibraryTextIntakePanel({
       <p className="t-body text-[color:var(--bone-300)]">
         Paste the source&apos;s own words, exactly as written, and say where they are in it. Do not summarize
         or reword: SHADOW shows this text as the evidence. It is saved as pending and nothing can cite it
-        until it is indexed and approved in Evidence Review.
+        until it is indexed and approved in Evidence Review Queue.
       </p>
       {shelf === 'platform' ? <p className="t-body">{SHELF_WORDS.platformNotice}</p> : null}
 
@@ -484,8 +484,8 @@ export default function LibraryTextIntakePanel({
                   setOutcome({
                     kind: 'refused',
                     message: confirmed
-                      ? 'Left incomplete. The partial entry is still listed in Evidence Review. It cannot be indexed or approved there; reject it, then enter the text again.'
-                      : 'Left unconfirmed. If the entry was saved, it is listed in Evidence Review, where it cannot be indexed or approved; reject it there, then enter the text again.',
+                      ? 'Left incomplete. The partial entry is still listed in Evidence Review Queue. It cannot be indexed or approved there; reject it, then enter the text again.'
+                      : 'Left unconfirmed. If the entry was saved, it is listed in Evidence Review Queue, where it cannot be indexed or approved; reject it there, then enter the text again.',
                   });
                 }}>
                 Leave it incomplete
@@ -501,7 +501,7 @@ export default function LibraryTextIntakePanel({
           <p className="t-body">
             Saved &ldquo;{outcome.documentName}&rdquo; in {outcome.chunkCount}{' '}
             {outcome.chunkCount === 1 ? 'part' : 'parts'}. SHADOW cannot cite it yet. Next:{' '}
-            <Link href="/evidence" className="underline">Evidence Review</Link> to index and approve it.
+            <Link href="/evidence" className="underline">Evidence Review Queue</Link> to index and approve it.
           </p>
           {outcome.linked ? <p className="t-muted">{ARCHIVE_LINK_WORDS.saved}</p> : null}
         </div>

@@ -17,12 +17,14 @@ import {
   CONTACT_RESULTS_WITH_CONTACT,
   CONTACT_ZONES,
   DEFENSE_TYPES,
+  FIGHTER_TRACKS,
   HAND_ROLES,
   PHYSICAL_HANDS,
   PUNCH_TYPES,
   STANCES,
   TARGET_ZONES,
   VISIBILITIES,
+  fighterLabel,
   isInVocabulary,
 } from '@/src/server/pilot/calibration/ontology';
 import {
@@ -309,6 +311,9 @@ function label(token: string): string {
   return token.replace(/_/g, ' ');
 }
 
+/** The two fighters as a coach reads them (OD-2026-10-08-005 A-Q10a). */
+const actorLabel = fighterLabel;
+
 function describeEvent(event: AnnotationEvent): string {
   if (event.event_class === 'punch') {
     const parts = [
@@ -355,6 +360,15 @@ export default function CoachCalibrationPage() {
   const [projectId, setProjectId] = useState('');
   const [clips, setClips] = useState<CalibrationClip[]>([]);
   const [clipId, setClipId] = useState('');
+  // What the two pickers' reads came back with, so an empty picker can say
+  // what to do first (lane AS-11, app scrub CS-19) without reading a read
+  // that failed or never finished as "none".
+  const [projectsRead, setProjectsRead] = useState<'loading' | 'loaded' | 'refused' | 'unread'>('loading');
+  const [clipsRead, setClipsRead] = useState<'idle' | 'loading' | 'loaded' | 'refused' | 'unread'>('idle');
+  // The latest clips read. An answer for a study the coach has since left is
+  // dropped, so one study's clips (or its empty list, or its refusal) never
+  // land under another.
+  const clipsRequestRef = useRef(0);
 
   const [clip, setClip] = useState<CalibrationClip | null>(null);
   const [project, setProject] = useState<CalibrationProject | null>(null);
@@ -440,32 +454,50 @@ export default function CoachCalibrationPage() {
         if (controller.signal.aborted) return;
         if (!response.ok) {
           setRefusal(await readError(response));
+          setProjectsRead('refused');
           return;
         }
         const payload = (await response.json()) as { projects?: CalibrationProject[] };
         setProjects(payload.projects ?? []);
+        setProjectsRead('loaded');
       } catch {
         // Aborted or offline. The picker degrades to empty rather than
-        // asserting that this gym runs no calibration studies.
+        // asserting that this gym runs no calibration studies; offline, the
+        // page says the studies could not be read.
+        if (!controller.signal.aborted) setProjectsRead('unread');
       }
     })();
     return () => controller.abort();
   }, []);
 
   const loadClips = useCallback(async (nextProjectId: string) => {
+    const request = ++clipsRequestRef.current;
+    const stale = () => clipsRequestRef.current !== request;
     setClips([]);
     setClipId('');
+    setClipsRead(nextProjectId ? 'loading' : 'idle');
     if (!nextProjectId) return;
-    const response = await fetch(
-      `${apiBase()}/api/pilot/calibration/clips?calibration_project_id=${encodeURIComponent(nextProjectId)}`,
-      { credentials: 'include' },
-    );
-    if (!response.ok) {
-      setRefusal(await readError(response));
-      return;
+    try {
+      const response = await fetch(
+        `${apiBase()}/api/pilot/calibration/clips?calibration_project_id=${encodeURIComponent(nextProjectId)}`,
+        { credentials: 'include' },
+      );
+      if (stale()) return;
+      if (!response.ok) {
+        const message = await readError(response);
+        if (stale()) return;
+        setRefusal(message);
+        setClipsRead('refused');
+        return;
+      }
+      const payload = (await response.json()) as { clips?: CalibrationClip[] };
+      if (stale()) return;
+      setClips(payload.clips ?? []);
+      setClipsRead('loaded');
+    } catch {
+      // Offline: no line is shown, because no clips were read.
+      if (!stale()) setClipsRead('unread');
     }
-    const payload = (await response.json()) as { clips?: CalibrationClip[] };
-    setClips(payload.clips ?? []);
   }, []);
 
   /**
@@ -1370,6 +1402,27 @@ export default function CoachCalibrationPage() {
               </div>
             </div>
 
+            {/* What to do first when a picker is empty (lane AS-11, app
+                scrub CS-19; the words approved as written, Q9 = A). A read
+                that was refused is already the alert above; one that failed
+                or never finished is not read as "no study". */}
+            {projectsRead === 'loaded' && projects.length === 0 ? (
+              <p className="t-muted mt-[var(--s3)]">
+                No study yet. Studies are made on{' '}
+                <Link href="/teach-shadow/cut" className="underline">Cut Study Clips</Link>.
+              </p>
+            ) : null}
+            {projectsRead === 'unread' ? (
+              <p role="alert" className="t-body mt-[var(--s3)] text-[color:var(--restricted-ink)]">
+                The studies could not be read. Reload and try again.
+              </p>
+            ) : null}
+            {projectId && clipsRead === 'loaded' && clips.length === 0 ? (
+              <p className="t-muted mt-[var(--s3)]">
+                This study has no clips yet. Clips are cut on Cut Study Clips.
+              </p>
+            ) : null}
+
             {selectedClipRow?.playable === false ? (
               <p className="t-muted mt-[var(--s3)]">
                 This clip&apos;s footage is not available for annotation right now. That check runs
@@ -1582,7 +1635,7 @@ export default function CoachCalibrationPage() {
                     >
                       <p className="t-data">
                         {label(event.event_class)} · {formatMediaOffset(event.start_ms)} to{' '}
-                        {formatMediaOffset(event.end_ms)} · {event.actor_track}
+                        {formatMediaOffset(event.end_ms)} · {actorLabel(event.actor_track)}
                       </p>
                       <p className="t-body mt-[var(--s2)]">{describeEvent(event)}</p>
                       <p className="t-muted mt-[var(--s2)]">
@@ -1708,7 +1761,7 @@ export default function CoachCalibrationPage() {
           {activeMoment && bodyDataForSet?.expected_points ? (
             <BodyPointMomentPanel
               moment={activeMoment}
-              actorTrack={events.find((row) => row.event_id === activeMoment.event_id)?.actor_track ?? ''}
+              actorTrack={actorLabel(events.find((row) => row.event_id === activeMoment.event_id)?.actor_track ?? '')}
               expectedPoints={bodyDataForSet.expected_points}
               activePointCode={canEdit ? pointToPlace : null}
               disabled={!canEdit || busy}
@@ -1739,24 +1792,65 @@ export default function CoachCalibrationPage() {
               ) : null}
 
               <div className="mt-[var(--s3)] grid gap-[var(--s3)] md:grid-cols-2">
-                <div className="field">
-                  <label htmlFor="draft-actor" className="t-label">Actor (which fighter)</label>
-                  <input
-                    id="draft-actor"
-                    className="input"
-                    value={draft.actorTrack}
-                    onChange={(e) => setDraft({ ...draft, actorTrack: e.target.value })}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="draft-opponent" className="t-label">Opponent (optional)</label>
-                  <input
-                    id="draft-opponent"
-                    className="input"
-                    value={draft.opponentTrack}
-                    onChange={(e) => setDraft({ ...draft, opponentTrack: e.target.value })}
-                  />
-                </div>
+                {/* On a body-point set the two fighters are a fixed choice
+                    (OD-2026-10-08-005 A-Q10a), and each person's actions go
+                    on their own events (OD-2026-10-03-006); the server refuses
+                    anything else. Nothing is pre-picked: who the event is
+                    about is the coach's observation. A 0.1 set keeps the typed
+                    actor it started with (OD-2026-10-02-008 4A). */}
+                {isBodyPointSet ? (
+                  <>
+                    <div className="field">
+                      <label htmlFor="draft-actor" className="t-label">Who did it</label>
+                      <select
+                        id="draft-actor"
+                        className="select"
+                        value={draft.actorTrack}
+                        onChange={(e) => setDraft({ ...draft, actorTrack: e.target.value })}
+                      >
+                        <option value="">Choose&hellip;</option>
+                        {FIGHTER_TRACKS.map((track) => (
+                          <option key={track} value={track}>{actorLabel(track)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="draft-opponent" className="t-label">Against (optional)</label>
+                      <select
+                        id="draft-opponent"
+                        className="select"
+                        value={draft.opponentTrack}
+                        onChange={(e) => setDraft({ ...draft, opponentTrack: e.target.value })}
+                      >
+                        <option value="">Nobody</option>
+                        {FIGHTER_TRACKS.map((track) => (
+                          <option key={track} value={track}>{actorLabel(track)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="field">
+                      <label htmlFor="draft-actor" className="t-label">Actor (which fighter)</label>
+                      <input
+                        id="draft-actor"
+                        className="input"
+                        value={draft.actorTrack}
+                        onChange={(e) => setDraft({ ...draft, actorTrack: e.target.value })}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="draft-opponent" className="t-label">Opponent (optional)</label>
+                      <input
+                        id="draft-opponent"
+                        className="input"
+                        value={draft.opponentTrack}
+                        onChange={(e) => setDraft({ ...draft, opponentTrack: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="field">
                   <label htmlFor="draft-start" className="t-label">Start (ms, video time)</label>

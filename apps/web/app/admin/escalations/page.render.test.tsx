@@ -14,10 +14,18 @@
 // a failed read does not wear the --locked red this room keeps for a medical
 // or safeguarding fact (red itself is not reserved, OD-2026-09-29-001).
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { ReactNode } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import EscalationsPage from './page';
+import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
+import {
+  CLEARANCE_BOARD_PAGE,
+  DECISION_LOOP_PAGE,
+  takeArrivalAthlete,
+} from '@/components/decisionLoopArrival';
 
 jest.mock('@/components/RoleSessionGate', () => ({
   __esModule: true,
@@ -26,8 +34,8 @@ jest.mock('@/components/RoleSessionGate', () => ({
 
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href }: { readonly children: ReactNode; readonly href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({ children, href, onClick }: { readonly children: ReactNode; readonly href: string; readonly onClick?: (event: MouseEvent) => void }) => (
+    <a href={href} onClick={(event) => { event.preventDefault(); onClick?.(event.nativeEvent); }}>{children}</a>
   ),
 }));
 
@@ -294,5 +302,117 @@ describe('a pain-report escalation reads "Pain report", not a severity word (#15
 
     // The same set the header badge counts apart: high and critical only.
     expect(tileValues()).toEqual(['0', '0', '1', '2']);
+  });
+});
+
+// Lane AS-5 (app scrub CS-08): each row reaches the athlete's Clearance Board
+// row and Decision Loop, and the queue links Safety Flags once. The athlete
+// goes in page memory, never in an address.
+describe('a row reaches the athlete; the queue reaches Safety Flags (lane AS-5)', () => {
+  afterEach(() => {
+    takeArrivalAthlete(CLEARANCE_BOARD_PAGE);
+    takeArrivalAthlete(DECISION_LOOP_PAGE);
+    // Unmount first: clearing the session while the page is mounted
+    // re-renders its RoleLinks outside act().
+    cleanup();
+    clearRoleSession();
+  });
+
+  const row = async () =>
+    (await screen.findByText('Reported pain in the same joint three sessions running.')).closest('tr') as HTMLElement;
+
+  test('the athlete cell links both pages by their titles, with no athlete id in either address', async () => {
+    mockAdminFetch();
+    render(<EscalationsPage />);
+    const cells = within(await row());
+
+    expect(cells.getByRole('link', { name: 'Clearance Board' }).getAttribute('href')).toBe('/coach/sports-medicine');
+    expect(cells.getByRole('link', { name: 'SHADOW Decision Loop' }).getAttribute('href')).toBe('/coach/decision-loop');
+    for (const link of cells.getAllByRole('link')) {
+      expect(link.getAttribute('href')).not.toContain('ath-1');
+    }
+  });
+
+  test('each link hands the row\'s athlete to its own page only', async () => {
+    mockAdminFetch();
+    render(<EscalationsPage />);
+    const cells = within(await row());
+
+    fireEvent.click(cells.getByRole('link', { name: 'Clearance Board' }));
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBeNull();
+    fireEvent.click(cells.getByRole('link', { name: 'Clearance Board' }));
+    expect(takeArrivalAthlete(CLEARANCE_BOARD_PAGE)).toBe('ath-1');
+
+    fireEvent.click(cells.getByRole('link', { name: 'SHADOW Decision Loop' }));
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBe('ath-1');
+  });
+
+  test.each([
+    ['ctrl', { ctrlKey: true }],
+    ['cmd', { metaKey: true }],
+    ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
+    ['middle button', { button: 1 }],
+  ])('a %s click, which opens another tab, hands nothing over', async (_name, init) => {
+    mockAdminFetch();
+    render(<EscalationsPage />);
+    const cells = within(await row());
+    // Read after each click: a second hand-off would replace the first, and
+    // a wrong-page read spends it, so reading both at the end hides a leak.
+    fireEvent.click(cells.getByRole('link', { name: 'Clearance Board' }), init);
+    expect(takeArrivalAthlete(CLEARANCE_BOARD_PAGE)).toBeNull();
+    fireEvent.click(cells.getByRole('link', { name: 'SHADOW Decision Loop' }), init);
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBeNull();
+  });
+
+  // The row links are plain links, offered to everyone this queue admits, so
+  // each page they open must admit exactly those roles; Safety Flags is a
+  // RoleLink whose list must be its page's gate.
+  test('every page these links open admits exactly the roles the link is shown to', () => {
+    const gate = (route: string) => {
+      const source = readFileSync(path.join(__dirname, '..', '..', ...route.split('/').filter(Boolean), 'page.tsx'), 'utf8');
+      const match = source.match(/allowedRoles=\{\[([^\]]*)\]\}/);
+      return match ? [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]).sort() : null;
+    };
+    const queue = gate('/admin/escalations');
+    expect(queue).toEqual(['admin', 'coach']);
+    expect(gate('/coach/sports-medicine')).toEqual(queue);
+    expect(gate('/coach/decision-loop')).toEqual(queue);
+    const own = readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+    const safetyFlags = own.match(/<RoleLink href="\/admin\/safety-flags" roles=\{\[([^\]]*)\]\}/);
+    expect(safetyFlags).not.toBeNull();
+    expect([...safetyFlags![1].matchAll(/'([^']+)'/g)].map((m) => m[1]).sort()).toEqual(gate('/admin/safety-flags'));
+  });
+
+  test.each(['coach', 'admin'] as const)('a %s is offered Safety Flags', async (role) => {
+    createPersistentRoleSession(role);
+    mockAdminFetch();
+    render(<EscalationsPage />);
+    await row();
+    expect(screen.getByRole('link', { name: 'Safety Flags' }).getAttribute('href')).toBe('/admin/safety-flags');
+  });
+});
+
+// Lane AS-10, AS10-5 (app scrub OFF-11): the queue leads back to Safety Review,
+// which admits an admin only, so a coach is not offered it.
+describe('the queue links Safety Review for an admin only (lane AS-10)', () => {
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
+
+  test('an admin is offered Safety Review', async () => {
+    createPersistentRoleSession('admin');
+    mockAdminFetch();
+    render(<EscalationsPage />);
+    expect((await screen.findByRole('link', { name: 'Safety Review' })).getAttribute('href')).toBe('/admin/safety-review');
+  });
+
+  test('a coach is not', async () => {
+    createPersistentRoleSession('coach');
+    mockAdminFetch();
+    render(<EscalationsPage />);
+    await screen.findByRole('link', { name: 'Safety Flags' });
+    expect(screen.queryByRole('link', { name: 'Safety Review' })).toBeNull();
   });
 });

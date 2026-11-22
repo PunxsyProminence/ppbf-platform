@@ -511,8 +511,8 @@ describe('nothing arrives as gold', () => {
   test('Teach Shadow coverage counts one settled disagreement once, however often it was corrected', async () => {
     // "Adjudications settled" is a count of answers. A correction is a later
     // revision of the same disagreement, not a second thing settled.
-    const { readTeachShadowCoverage } = await import('./teachShadow/coverage');
-    const before = (await readTeachShadowCoverage(ORG_ID)).labelling.adjudications;
+    const { coverageForVersion, readTeachShadowCoverage } = await import('./teachShadow/coverage');
+    const before = coverageForVersion(await readTeachShadowCoverage(ORG_ID), ontology.BOXING_ONTOLOGY_VERSION_0_1)!.adjudications;
 
     // stage() settles (A's mark, B's mark) once.
     const staged = await stage({ clipCode: 'G-COVERAGE' });
@@ -548,7 +548,7 @@ describe('nothing arrives as gold', () => {
     }
 
     // Five rows, two things settled.
-    const after = (await readTeachShadowCoverage(ORG_ID)).labelling.adjudications;
+    const after = coverageForVersion(await readTeachShadowCoverage(ORG_ID), ontology.BOXING_ONTOLOGY_VERSION_0_1)!.adjudications;
     expect(after - before).toBe(2);
   });
 

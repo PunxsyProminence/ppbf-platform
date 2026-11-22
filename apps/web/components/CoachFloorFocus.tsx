@@ -1,14 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 import { startClassSession } from '@/src/client/startClassSession';
 import { defaultClassChoice } from '@/src/shared/sessionClassChoice';
 import { fetchTieableClasses } from './SessionClassPicker';
-import ArmedButton from './ArmedButton';
-import { handOffArrivalAthlete } from './decisionLoopArrival';
 
 /**
  * THE FLOOR, AS A COMMAND BOARD.
@@ -25,11 +23,13 @@ import { handOffArrivalAthlete } from './decisionLoopArrival';
  * tap with no live session it reads the gym's plan list and, when there are
  * none, starts a plain session through the runs route -- the same route and role
  * gate the session page uses. Every other value arrives as a prop from
- * CoachWorkspace, which loads it through its own calls and role gates; the only
- * other write reachable here is the escalation acknowledge the workspace already
- * performs, passed in as a callback. "Next" moves the view to the next item and
- * changes no record: nothing is marked seen, nothing is stored.
+ * CoachWorkspace, which loads it through its own calls and role gates.
  * coachFloorFocus.test.tsx pins all of it.
+ *
+ * THE "NEEDS YOU NOW" CARD LEFT THE BOARD (lane 6C7, AS-7 step 7b): it is the
+ * home's strip now, at the top of the page (CoachNeedsYouStrip.tsx; stage 2
+ * section 3.4 row 11, "Kept, widened"; Q6 = A), with its counts. The board's
+ * "Needs you" gauge went with it: the strip's counts say the same, per list.
  *
  * NOTHING HERE REPEATS A SENTENCE OR A HEADING THE PANELS BELOW ALREADY SAY:
  * the session line lives in the panel and the Session gauge says none /
@@ -37,11 +37,8 @@ import { handOffArrivalAthlete } from './decisionLoopArrival';
  * generic heading, so no heading here carries a panel's name. A coach seeing
  * the same line twice is noise, and coach-journey.spec.ts finds each once.
  *
- * A READ THAT FAILED IS NEVER "NOTHING NEEDS YOU". A feed that could not be
- * read, or is still loading, is itself an item at the front of the queue, and
- * the all-clear line only appears when every feed answered and none had
- * anything. The gauges keep the same rule: a count that was not read shows "?"
- * and says why, never 0.
+ * A READ THAT FAILED IS NEVER 0. A gauge whose count was not read shows "?" and
+ * says why, never 0 (the strip keeps the same rule for its counts).
  *
  * NO GAUGE INVENTS A VALUE. Each one is a count the workspace already holds.
  * The only dial with a needle is readings-out-of-roster, the one gauge that
@@ -53,13 +50,12 @@ import { handOffArrivalAthlete } from './decisionLoopArrival';
  * read it, and showing it would need a read this view is not allowed to add.
  */
 
-export type FocusTone = 'cleared' | 'monitor' | 'restricted' | 'locked' | 'neutral';
+export type FocusTone = 'cleared' | 'monitor' | 'restricted' | 'neutral';
 
 const TONE_GLYPH: Record<FocusTone, string> = {
   cleared: '✓',
   monitor: '◉',
   restricted: '▲',
-  locked: '✕',
   neutral: '◌',
 };
 
@@ -132,12 +128,8 @@ export interface CoachFloorFocusProps {
   readonly athletesState: 'loading' | 'error' | 'loaded';
   readonly athletesError?: string | null;
   readonly onSelectAthlete: (athleteId: string) => void;
-  readonly items: readonly FocusItem[];
-  readonly feeds: readonly FocusFeed[];
   /** Whether the readiness feed answered. A failed read is not "0 readings". */
   readonly readinessState: 'loading' | 'error' | 'loaded';
-  /** The pain feed's window, so the all-clear line says no more than it read. */
-  readonly painWindowDays?: number | null;
   /** Whether the live-run read answered. A failed read is not "no session". */
   readonly sessionState: 'loading' | 'error' | 'loaded';
   readonly sessionLive: boolean;
@@ -184,7 +176,8 @@ function initials(name: string): string {
   return `${first}${last}`.toUpperCase();
 }
 
-function Badge({ badge }: { readonly badge: FocusBadge }) {
+/** A focus badge: its glyph and its word, never colour alone. The strip draws its items' badges with it. */
+export function FocusBadgeMark({ badge }: { readonly badge: FocusBadge }) {
   const cls = `${badge.tone === 'neutral' ? 'badge badge--filed' : `badge badge--${badge.tone}`} coach-floor-focus__badge`;
   return (
     <span className={cls}>
@@ -225,10 +218,7 @@ export default function CoachFloorFocus({
   athletesState,
   athletesError,
   onSelectAthlete,
-  items,
-  feeds,
   readinessState,
-  painWindowDays = null,
   sessionState,
   sessionLive,
   sessionPaused = false,
@@ -293,37 +283,6 @@ export default function CoachFloorFocus({
     }
   }
 
-  /* THE VIEW FOLLOWS AN ITEM, NOT A POSITION. The queue changes underneath
-     the coach -- an acknowledged escalation leaves it, a refreshed feed goes
-     back to loading and jumps to the front -- and a position would then point
-     at a different child's item, still open, with its Acknowledge button
-     where the coach just tapped. So the view holds the KEY of the item it is
-     showing and which key is open; anything else that slides into place
-     arrives closed. */
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [openKey, setOpenKey] = useState<string | null>(null);
-  const [ackedItem, setAckedItem] = useState<{ readonly key: string; readonly title: string } | null>(null);
-
-  const unanswered = useMemo(() => feeds.filter((feed) => feed.state !== 'loaded'), [feeds]);
-  const queueKeys = [...unanswered.map((feed) => `feed:${feed.name}`), ...items.map((item) => `item:${item.id}`)];
-  const queueLength = queueKeys.length;
-  const selectedIndex = selectedKey === null ? -1 : queueKeys.indexOf(selectedKey);
-  const position = selectedIndex >= 0 ? selectedIndex : 0;
-  const currentKey = queueKeys[position] ?? null;
-  const open = currentKey !== null && openKey === currentKey;
-
-  const currentFeed = position < unanswered.length ? unanswered[position] : null;
-  const currentItem = currentFeed ? null : items[position - unanswered.length] ?? null;
-
-  // An acknowledged escalation leaves the queue; say so until the coach moves on.
-  const ackLanded = ackedItem !== null && !queueKeys.includes(ackedItem.key);
-
-  const next = () => {
-    setOpenKey(null);
-    setAckedItem(null);
-    setSelectedKey(queueLength === 0 ? null : queueKeys[(position + 1) % queueLength]);
-  };
-
   const withReading = athletes.filter(
     (athlete) => athlete.readiness !== 'UNKNOWN' || athlete.unvalidatedReading || athlete.checkedInToday,
   ).length;
@@ -331,10 +290,6 @@ export default function CoachFloorFocus({
   const notValidatedReadings = athletes.filter(
     (athlete) => athlete.readiness === 'UNKNOWN' && athlete.unvalidatedReading,
   ).length;
-  const anyFeedFailed = feeds.some((feed) => feed.state === 'error');
-  const anyFeedLoading = feeds.some((feed) => feed.state === 'loading');
-  // A feed that returned fewer than matched makes the count a floor, not a total.
-  const anyFeedTruncated = feeds.some((feed) => feed.state === 'loaded' && Boolean(feed.truncatedNote));
 
   const gauges: GaugeReading[] = [
     athletesState === 'loaded'
@@ -342,16 +297,6 @@ export default function CoachFloorFocus({
       : athletesState === 'loading'
         ? { label: 'Athletes', value: '…', sub: 'Loading roster', state: 'unknown' }
         : { label: 'Athletes', value: '?', sub: 'Roster not read', state: 'unknown' },
-    anyFeedFailed
-      ? { label: 'Needs you', value: '?', sub: 'A read failed', state: 'unknown' }
-      : anyFeedLoading
-        ? { label: 'Needs you', value: '…', sub: 'Still checking', state: 'unknown' }
-        : {
-            label: 'Needs you',
-            value: anyFeedTruncated ? `${items.length}+` : String(items.length),
-            sub: items.length === 0 ? 'Nothing reported' : 'Waiting on you',
-            state: items.length === 0 ? 'ok' : 'alert',
-          },
     athletesState !== 'loaded'
       ? athletesState === 'loading'
         ? { label: 'Readings', value: '…', sub: 'Loading roster', state: 'unknown' }
@@ -391,7 +336,10 @@ export default function CoachFloorFocus({
         ))}
       </dl>
 
-      <div className="coach-floor-focus__columns">
+      {/* Two patches now that the card is the home's strip: the design
+          system's three-track grid (ppbf-golden-era.css) is overridden here, on
+          the same 600px container step, rather than leave an empty track. */}
+      <div className="coach-floor-focus__columns @min-[600px]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]!">
         <section aria-labelledby="coach-floor-athletes" className="coach-floor-focus__panel">
           <h3 id="coach-floor-athletes" className="coach-floor-focus__panel-title">Roster</h3>
           {athletesState === 'loading' && <p>Loading the roster...</p>}
@@ -417,7 +365,7 @@ export default function CoachFloorFocus({
                         {initials(athlete.name)}
                       </span>
                       <span className="coach-floor-focus__athlete-name">{athlete.name}</span>
-                      <Badge badge={mark} />
+                      <FocusBadgeMark badge={mark} />
                       {athlete.isInactive && <span className="coach-floor-focus__quiet">Inactive</span>}
                       {athlete.isMine === false && <span className="coach-floor-focus__quiet">Not your athlete</span>}
                     </button>
@@ -426,141 +374,6 @@ export default function CoachFloorFocus({
               })}
             </ul>
           )}
-        </section>
-
-        <section className="coach-floor-focus__panel coach-floor-focus__card" aria-live="polite">
-          <h3 className="coach-floor-focus__panel-title">
-            {queueLength > 0 ? `Needs you now · ${position + 1} of ${queueLength}` : 'Needs you now'}
-          </h3>
-          {/* The full list behind this card (lane U2; Jason 2026-10-17, "A:
-              Cross-link now"): The Morning Read is every read, most urgent
-              first. Copy PROPOSED. */}
-          <p className="coach-floor-focus__label">
-            <Link href="/coach/intelligence" className="underline">More reads: The Morning Read</Link>
-          </p>
-
-          {ackLanded && (
-            <p className="coach-floor-focus__label" role="status">
-              Acknowledged: {ackedItem.title}. It stays listed under Safety Escalations below.
-            </p>
-          )}
-
-          {currentFeed && (
-            <div className="coach-floor-focus__item" data-focus-kind="feed">
-              <p className="coach-floor-focus__label">{currentFeed.name}</p>
-              <h4 className="t-command">{currentFeed.state === 'loading' ? 'Still checking' : 'Could not be read'}</h4>
-              {currentFeed.state === 'error' && (
-                <p role="alert" className="coach-floor-focus__alert">
-                  {currentFeed.error} {currentFeed.failureMeaning}
-                </p>
-              )}
-              {currentFeed.state === 'error' && currentFeed.onRetry && (
-                <button type="button" className="btn coach-floor-focus__btn btn--ghost" onClick={currentFeed.onRetry}>
-                  Try again
-                </button>
-              )}
-            </div>
-          )}
-
-          {currentItem && (
-            <article className="coach-floor-focus__item" data-focus-kind={currentItem.urgent ? 'urgent' : 'item'}>
-              <p className="coach-floor-focus__label">{currentItem.kind}</p>
-              <h4 className="t-command">{currentItem.title}</h4>
-              <p className="coach-floor-focus__quiet">{currentItem.meta}</p>
-              {currentItem.badge && <Badge badge={currentItem.badge} />}
-
-              {open && (
-                <div className="coach-floor-focus__details">
-                  {currentItem.details.length > 0 && (
-                    <dl>
-                      {currentItem.details.map((detail) => (
-                        <div key={detail.label}>
-                          <dt className="coach-floor-focus__label">{detail.label}</dt>
-                          <dd className={detail.muted ? 'coach-floor-focus__quiet' : undefined}>{detail.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                  {currentItem.body && <p>{currentItem.body}</p>}
-                  {currentItem.note && <p className="coach-floor-focus__quiet">{currentItem.note}</p>}
-                  {currentItem.acknowledge?.error && (
-                    <p role="alert" className="coach-floor-focus__alert">{currentItem.acknowledge.error}</p>
-                  )}
-                </div>
-              )}
-
-              <div className="coach-floor-focus__row">
-                {!open && (
-                  <button
-                    type="button"
-                    className="btn coach-floor-focus__btn"
-                    onClick={() => {
-                      setSelectedKey(currentKey);
-                      setOpenKey(currentKey);
-                    }}
-                  >
-                    Open
-                  </button>
-                )}
-                {/* Drawn in the row where Open was. A double tap on Open that
-                    lands here does not even arm it, and an armed one needs a
-                    second, deliberate press (UXB-01). */}
-                {open && currentItem.acknowledge && (
-                  <ArmedButton
-                    className="btn coach-floor-focus__btn disabled:cursor-not-allowed disabled:opacity-60"
-                    armKey={currentKey ?? ''}
-                    disabled={currentItem.acknowledge.disabled}
-                    busy={currentItem.acknowledge.busy}
-                    busyLabel="Acknowledging..."
-                    armedLabel={`Press again: acknowledge ${currentItem.title}`}
-                    onConfirm={() => {
-                      if (currentKey) setAckedItem({ key: currentKey, title: currentItem.title });
-                      currentItem.acknowledge?.onAcknowledge();
-                    }}
-                  >
-                    Acknowledge
-                  </ArmedButton>
-                )}
-                {open && currentItem.link && (
-                  <Link
-                    href={currentItem.link.href}
-                    className="btn coach-floor-focus__btn"
-                    onClick={(event) => {
-                      // A plain click only: a modified click opens another
-                      // tab, which would leave the hand-off waiting here for
-                      // whatever this tab opens next.
-                      const athleteId = currentItem.link?.athleteId;
-                      const plain = event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
-                      if (athleteId && plain) handOffArrivalAthlete(athleteId);
-                    }}
-                  >
-                    {currentItem.link.label}
-                  </Link>
-                )}
-              </div>
-            </article>
-          )}
-
-          {queueLength === 0 && (
-            <div className="coach-floor-focus__item" data-focus-kind="clear">
-              <h4 className="t-command">Nothing needs you right now</h4>
-              <p>
-                No pain report{painWindowDays ? ` in the last ${painWindowDays} days` : ''}, open escalation or
-                family barrier report for your athletes. That means nothing has been reported, not that everyone is
-                fine.
-              </p>
-            </div>
-          )}
-
-          {queueLength > 1 && (
-            <button type="button" className="btn coach-floor-focus__btn btn--ghost" onClick={next}>
-              Next →
-            </button>
-          )}
-
-          {feeds.filter((feed) => feed.state === 'loaded' && feed.truncatedNote).map((feed) => (
-            <p key={feed.name} className="coach-floor-focus__quiet">{feed.truncatedNote}</p>
-          ))}
         </section>
 
         <section aria-labelledby="coach-floor-actions" className="coach-floor-focus__panel">
@@ -587,12 +400,6 @@ export default function CoachFloorFocus({
               {sessionState !== 'loaded' ? 'Open Session Plans' : 'Return to live delivery'}
             </Link>
           )}
-          {/* CF-05 (app scrub, lane U1): a Group / One-on-One toggle stood here.
-              It changed only the Floor tab's code-written block template, not
-              the session Start begins (that sends the class alone), so on the
-              board it looked like a setting that did nothing. The toggle lives
-              where its effect is; this line names where it went. */}
-          <p className="coach-floor-focus__quiet">Group / One-on-One block templates are on the Floor tab.</p>
           <Link href="/coach/decision-loop" className="btn coach-floor-focus__btn btn--ghost">
             Open Decision Loop
           </Link>

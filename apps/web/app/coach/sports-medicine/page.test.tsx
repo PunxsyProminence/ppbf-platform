@@ -19,12 +19,19 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { armOnly, pressArmed } from '@/src/testing/pressArmed';
 import type { ReactNode } from 'react';
 
 import SportsMedicinePage from './page';
 import { clearRoleSession, createPersistentRoleSession } from '@/components/roleSession';
+import {
+  ATHLETE_SAFETY_PAGE,
+  CLEARANCE_BOARD_PAGE,
+  DECISION_LOOP_PAGE,
+  handOffArrivalAthlete,
+  takeArrivalAthlete,
+} from '@/components/decisionLoopArrival';
 
 jest.mock('@/components/RoleStandaloneView', () => ({
   __esModule: true,
@@ -33,8 +40,8 @@ jest.mock('@/components/RoleStandaloneView', () => ({
 
 jest.mock('next/link', () => ({
   __esModule: true,
-  default: ({ children, href }: { readonly children: ReactNode; readonly href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({ children, href, onClick }: { readonly children: ReactNode; readonly href: string; readonly onClick?: (event: MouseEvent) => void }) => (
+    <a href={href} onClick={(event) => { event.preventDefault(); onClick?.(event.nativeEvent); }}>{children}</a>
   ),
 }));
 
@@ -449,7 +456,12 @@ test('a hold with no athlete sentence is refused before the request is sent', as
 });
 
 describe('a hold an admin placed (OD-2026-10-05-024 ruling 1)', () => {
-  afterEach(() => clearRoleSession());
+  // Unmount first: clearing the session while the page is mounted re-renders
+  // its Clinic line outside act().
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
 
   test('a coach is not offered Lift, and is told only an organization admin can lift it', async () => {
     createPersistentRoleSession('coach');
@@ -2484,6 +2496,9 @@ describe('past holds are read back on the board, athlete-safe fields only (F-071
       expect(within(list).getByText(HOLD.athlete_explanation)).toBeTruthy();
       expect(within(list).getByText(/Lifted 10\/5\/2026/)).toBeTruthy();
     } finally {
+      // Unmount first, as the afterEach hooks do: the Clinic line re-renders
+      // on a session change.
+      cleanup();
       clearRoleSession();
     }
   });
@@ -2498,7 +2513,12 @@ describe('past holds are read back on the board, athlete-safe fields only (F-071
    test; here: what the board sends, what it shows after, and that it shows
    nothing it did not read back. */
 describe('setting clearance on the board (OW25-45 B)', () => {
-  afterEach(() => clearRoleSession());
+  // Unmount first: clearing the session while the page is mounted re-renders
+  // its Clinic line outside act().
+  afterEach(() => {
+    cleanup();
+    clearRoleSession();
+  });
 
   const NOT_CLEARED_STATUS = {
     ...CLEARED_STATUS,
@@ -2865,4 +2885,178 @@ describe('setting clearance on the board (OW25-45 B)', () => {
       jest.useRealTimers();
     }
   });
+});
+
+// Lane AS-5 (app scrub CS-03, CS-05, CS-08): find a name, the links above the
+// roster, a row's way to the family post, and the athlete Escalations hands
+// over. None of it changes what a row reads or shows.
+describe('finding an athlete and the links out (lane AS-5)', () => {
+  const SECOND = { athlete_id: 'ath-2', full_name: 'Sam Roe' };
+  const twoAthletes = () =>
+    mockFetch({ '/athletes/list': () => ({ ok: true, json: async () => ({ items: [ATHLETE, SECOND] }) }) as Response });
+  const findBox = () => screen.getByLabelText('Find an athlete') as HTMLInputElement;
+
+  afterEach(() => {
+    takeArrivalAthlete(CLEARANCE_BOARD_PAGE);
+    takeArrivalAthlete(DECISION_LOOP_PAGE);
+    takeArrivalAthlete(ATHLETE_SAFETY_PAGE);
+  });
+
+  // Lane AS-5, AS5-2: Injury Record and Medical Restrictions are sections of
+  // Athlete Safety; the board's links open them, and each row opens the page.
+  test('the Injury Record and Medical Restrictions links open their sections of Athlete Safety', async () => {
+    global.fetch = mockFetch();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    expect(screen.getByRole('link', { name: 'Injury Record' }).getAttribute('href')).toBe('/coach/athlete-safety#injury-record');
+    expect(screen.getByRole('link', { name: 'Medical Restrictions' }).getAttribute('href')).toBe('/coach/athlete-safety#medical-restrictions');
+  });
+
+  test('each row opens Athlete Safety on that athlete, on a plain click only, with no athlete in the address', async () => {
+    global.fetch = twoAthletes();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+    const samRow = screen.getByText('Sam Roe').closest('li') as HTMLElement;
+    const link = within(samRow).getByRole('link', { name: 'Athlete Safety' });
+    expect(link.getAttribute('href')).toBe('/coach/athlete-safety');
+    fireEvent.click(link, { metaKey: true });
+    expect(takeArrivalAthlete(ATHLETE_SAFETY_PAGE)).toBeNull();
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBeNull();
+    fireEvent.click(link);
+    expect(takeArrivalAthlete(ATHLETE_SAFETY_PAGE)).toBe('ath-2');
+  });
+
+  test('a name in the box narrows the roster and says how many match; a miss says so; an empty box shows everyone', async () => {
+    global.fetch = twoAthletes();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+    expect(screen.getByText('2 athletes.')).toBeTruthy();
+
+    fireEvent.change(findBox(), { target: { value: 'sam' } });
+    expect(screen.getByText('Sam Roe')).toBeTruthy();
+    expect(screen.queryByText('Jordan Doe')).toBeNull();
+    expect(screen.getByText('1 of 2 athletes match.').getAttribute('aria-live')).toBe('polite');
+
+    fireEvent.change(findBox(), { target: { value: 'nobody here' } });
+    expect(screen.getByText('0 of 2 athletes match.')).toBeTruthy();
+    expect(screen.getByText('No athlete matches "nobody here". Clear the box to see them all.')).toBeTruthy();
+    // A miss is not an empty roster.
+    expect(screen.queryByText('No athletes on your roster')).toBeNull();
+
+    fireEvent.change(findBox(), { target: { value: '' } });
+    expect(screen.getByText('Jordan Doe')).toBeTruthy();
+    expect(screen.getByText('Sam Roe')).toBeTruthy();
+  });
+
+  // Law 5: `.input` alone is 46px; the kiosk 55px comes from input--kiosk.
+  test('the box is a gym-floor control', async () => {
+    global.fetch = mockFetch();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Jordan Doe');
+    expect(findBox().classList.contains('input--kiosk')).toBe(true);
+  });
+
+  test('the box is not offered while the board could not be read, so a failed read never reads as a miss', async () => {
+    global.fetch = mockFetch({ '/athletes/list': () => ({ ok: false, json: async () => ({}) }) as Response });
+    render(<SportsMedicinePage />);
+    await screen.findByText('The clearance board could not be read');
+    expect(screen.queryByLabelText('Find an athlete')).toBeNull();
+  });
+
+  test('the board\'s links sit above the roster', async () => {
+    global.fetch = mockFetch();
+    render(<SportsMedicinePage />);
+    const name = await screen.findByText('Jordan Doe');
+    for (const label of ['Injury Record', 'Sparring Caps', 'Medical Restrictions', 'Progression Intelligence', 'Performance Analytics']) {
+      const link = screen.getByRole('link', { name: label });
+      expect(link.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(findBox().compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('each row opens the Decision Loop at the family post on that athlete, with no athlete in the address', async () => {
+    global.fetch = twoAthletes();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+
+    const links = screen.getAllByRole('link', { name: "Post to the Family's Page" });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link.getAttribute('href')).toBe('/coach/decision-loop#post-to-family');
+    }
+    const samRow = screen.getByText('Sam Roe').closest('li') as HTMLElement;
+    fireEvent.click(within(samRow).getByRole('link', { name: "Post to the Family's Page" }));
+    // Handed to the Decision Loop and to no other page.
+    expect(takeArrivalAthlete(CLEARANCE_BOARD_PAGE)).toBeNull();
+    fireEvent.click(within(samRow).getByRole('link', { name: "Post to the Family's Page" }));
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBe('ath-2');
+  });
+
+  test.each([
+    ['ctrl', { ctrlKey: true }],
+    ['cmd', { metaKey: true }],
+    ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
+    ['middle button', { button: 1 }],
+  ])('a %s click on the family link, which opens another tab, hands nothing over', async (_name, init) => {
+    global.fetch = twoAthletes();
+    render(<SportsMedicinePage />);
+    await screen.findByText('Sam Roe');
+    const samRow = screen.getByText('Sam Roe').closest('li') as HTMLElement;
+    fireEvent.click(within(samRow).getByRole('link', { name: "Post to the Family's Page" }), init);
+    expect(takeArrivalAthlete(DECISION_LOOP_PAGE)).toBeNull();
+  });
+
+  test('an athlete handed over from Escalations is found by name when the roster lists them', async () => {
+    global.fetch = twoAthletes();
+    handOffArrivalAthlete('ath-2', CLEARANCE_BOARD_PAGE);
+    render(<SportsMedicinePage />);
+
+    await screen.findByText('Sam Roe');
+    expect(findBox().value).toBe('Sam Roe');
+    expect(screen.queryByText('Jordan Doe')).toBeNull();
+    expect(screen.getByText('1 of 2 athletes match.')).toBeTruthy();
+  });
+
+  test('an athlete the roster does not list: the board opens as it always has', async () => {
+    global.fetch = twoAthletes();
+    handOffArrivalAthlete('ath-not-yours', CLEARANCE_BOARD_PAGE);
+    render(<SportsMedicinePage />);
+
+    await screen.findByText('Sam Roe');
+    expect(findBox().value).toBe('');
+    expect(screen.getByText('Jordan Doe')).toBeTruthy();
+  });
+
+  test('a hand-off meant for the Decision Loop does not narrow the board', async () => {
+    global.fetch = twoAthletes();
+    handOffArrivalAthlete('ath-2');
+    render(<SportsMedicinePage />);
+
+    await screen.findByText('Sam Roe');
+    expect(findBox().value).toBe('');
+    expect(screen.getByText('Jordan Doe')).toBeTruthy();
+  });
+});
+
+// Lane AS-5, AS5-2b (Overwatch Q-3 = A on #2030; Q-B2 and Q-B3 = A on #2041):
+// the clearance reading, the active-hold read and the end-date timer moved to
+// components/clearanceReading.ts so Athlete Safety reads by the same rules.
+// Moved, not copied: the board keeps no reading of its own.
+test('the board reads a clearance and a hold through components/clearanceReading.ts, with no copy of its own', () => {
+  const source = readFileSync(path.join(__dirname, 'page.tsx'), 'utf8');
+  expect(source).toContain("from '@/components/clearanceReading'");
+  expect(source).not.toMatch(/function (readClearance|isClearanceRow|isoInstant|isActiveHold|readActiveHold|whenPassed)\(/);
+  expect(source).not.toMatch(/const (readActiveHold|whenPassed|isActiveHold) =/);
+  expect(source).not.toContain('CLEARANCE_VALUES');
+  expect(source).not.toContain('/api/pilot/shadow/medical-status?athleteId=');
+  // The hold READ moved too (Q-B2 = A on #2041). Placing and lifting, the
+  // POST, stay here: this is still the only page that writes a hold.
+  expect(source).not.toContain('/api/pilot/training-holds?athlete_id=');
+  expect(source).toContain('`${apiBase()}/api/pilot/training-holds`');
+  // The clearance badge moved too (Q-B1 = A on #2041): the board draws each
+  // row's clearance with the shared badge, and keeps no badge map of its own.
+  expect(source).not.toMatch(/(const CLEARANCE_BADGE\b|function clearanceBadge\(|badge--locked|badge--cleared)/);
+  expect(source).toContain('const badge = clearanceBadge(row);');
 });

@@ -125,12 +125,19 @@ describe('floor screens show no raw refusal (UXB-09, UXB-10)', () => {
   );
 
   it('the coach-home pain panel is not drawn in the medical-stop colour (OD-2026-10-03-017)', () => {
-    const source = readFileSync(path.join(APP, 'components/CoachWorkspace.tsx'), 'utf8');
-    const start = source.indexOf('id="coach-dashboard-details"');
-    const end = source.indexOf('SAFETY ESCALATIONS', start);
+    // The panel moved out of the coach home into PainReportsPanel (lane U2-6b-2), and the class
+    // screen draws it too; the guard follows it. Its drawing starts at the component.
+    const panel = readFileSync(path.join(APP, 'components/PainReportsPanel.tsx'), 'utf8');
+    const start = panel.indexOf('export default function PainReportsPanel');
     expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    expect(source.slice(start, end)).not.toMatch(/--locked/);
+    expect(panel.slice(start)).toContain('id="coach-dashboard-details"');
+    expect(panel.slice(start)).not.toMatch(/--locked|badge--locked|tone="locked"/);
+    // Its badge is one of the two rungs a pain report wears, never the medical stop.
+    expect(panel).toMatch(/function painSeverityTone\([^)]*\): 'restricted' \| 'monitor'/);
+    // The coach home draws the panel, not a copy of its own.
+    const source = readFileSync(path.join(APP, 'components/CoachWorkspace.tsx'), 'utf8');
+    expect(source).toContain('<PainReportsPanel read={painRead}');
+    expect(source).not.toContain('id="coach-dashboard-details"');
     // The show-on-wall refusal is words too.
     expect(source).not.toMatch(/refused: \$\{/);
   });

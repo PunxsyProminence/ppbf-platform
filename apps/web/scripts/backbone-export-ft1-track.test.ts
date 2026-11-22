@@ -278,6 +278,41 @@ ${oldHeader.map((column) => old[column]).join(',')}
     expect(snapshot(forced.out)).toEqual(snapshot(first.out));
   });
 
+  // LANE GD: TWO STOPS NO FLAG PASSES (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042).
+
+  it('a row that carries the DOC-136 source key stops the export, with or without --allow-overwrite, and nothing is written', () => {
+    const sourced = fixture();
+    sourced.track = track({ sources: ['DOC-123', 'DOC-136 (a made-up source line)'] });
+    const held = backbone(sourced);
+    for (const extra of [[], ['--allow-overwrite']]) {
+      const refused = exportInto(held, first.out, extra);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${TRACKS} track_id ${TRACK}: sources names a held DOC-136 record`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      expect(snapshot(refused.out)).toEqual(snapshot(first.out));
+    }
+    const fresh = exportInto(held);
+    expect(fresh.status).toBe(1);
+    expect(Object.values(snapshot(fresh.out)).filter((text) => text !== undefined)).toEqual([]);
+  });
+
+  it('a committed step that links a drill is never written back as a typed line, with or without --allow-overwrite', () => {
+    const typed = fixture();
+    // The Backbone still has T1's first step as a typed line; D1 stays in the set through the block's optional drills.
+    typed.templates[1].items = [{ item_id: 'wti_000000000000d1', ordinal: 1, block: 'footwork', contact_level: 'none', free_text_drill: 'Jump rope' },
+      (typed.templates[1].items as Json[])[1]];
+    typed.blocks[0].optional_drill_refs = [D3, D1];
+    const typedDir = backbone(typed);
+    for (const extra of [[], ['--allow-overwrite']]) {
+      const refused = exportInto(typedDir, first.out, extra);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${ITEMS} template_id ${T1}: step 1 links drill ${D1}; the export would write it back as a typed line`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      expect(snapshot(refused.out)).toEqual(snapshot(first.out));
+    }
+    expect(exportInto(typedDir, first.out).stderr).toContain('--allow-overwrite would not write this run either.');
+  });
+
   it('keeps the rows of another track in the training-tracks files (lane YR adds its tracks there), and the FT1 rows in their place', () => {
     const seed = exportInto(dir).out;
     const name = 'training-tracks/seed_training_tracks.csv';
@@ -362,19 +397,28 @@ describe('the committed FT1 rows', () => {
     // The lane-2 drills (backbone-export-drill-library.mjs, lane L2b) are Backbone rows too, with their own labels and stage keys.
     // Lane HW's six home sessions and the drills written for them (OD-2026-11-19-005) are AI drafts off the stage map
     // (Overwatch Q1 A and Q4 A): blank stage_keys, AI-draft labels; so is the cue lane HW added to one drill (Q6).
-    // hwContentPackage.test.ts checks them.
+    // hwContentPackage.test.ts checks them. Lane RS (#2008) gave three existing drills a cue taken word for word from a
+    // committed source (OD-2026-11-15-011 ruling 3, a new version), labelled the same way; committedTemplateIssueSweep.test.ts
+    // checks what that changes.
     const HW = '"draft":"AI draft, lane HW, 2026-11-19';
+    const RS = '"draft":"AI selection, lane RS, 2026-11-20';
+    const LANE_RS_CUE_DRILLS = ['drl_146f4afdc88839', 'drl_39ed71de8c14cd', 'drl_af8541eacc70e5'];
     const laneHw = (row: Record<string, string>) => (row.name ?? '').startsWith('PPBF Home Day ') || (row.content_class ?? '').startsWith('AI DRAFT - lane HW');
     for (const [name, key] of [[DRILLS, 'drill_id'], [TEMPLATES, 'template_id']] as const) {
       const rows = rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, name), 'utf8'));
       const others = rows.filter((row) => row.stage_keys === '' && !laneHw(row));
       expect(others.length).toBeGreaterThan(0);
       for (const row of others) {
-        // The one existing drill lane HW gave a cue keeps blank evidence and stage keys; its labels hold only that cue's label.
-        const labels = row.field_labels.includes(HW) && Object.keys(JSON.parse(row.field_labels)).join() === 'cues' ? '' : row.field_labels;
+        // The one existing drill lane HW gave a cue, and the three lane RS did, keep blank evidence and stage keys; their
+        // labels hold only that cue's label.
+        const laneCue = row.field_labels.includes(HW) || (row.field_labels.includes(RS) && LANE_RS_CUE_DRILLS.includes(row.drill_id));
+        const labels = laneCue && Object.keys(JSON.parse(row.field_labels)).join() === 'cues' ? '' : row.field_labels;
         expect([key, labels, row.evidence, row.stage_keys]).toEqual([key, '', '', '']);
       }
     }
+    // The lane RS exception covers exactly its three drills.
+    const rsRows = rowsOf(fs.readFileSync(path.join(SEED_DATA_DIR, DRILLS), 'utf8')).filter((row) => row.field_labels.includes(RS));
+    expect(rsRows.map((row) => row.drill_id).sort()).toEqual(LANE_RS_CUE_DRILLS);
   });
   it('are 131 drills, 131 cues, 235 stop rules, 33 templates, 131 items, 1 track, 8 blocks and 40 block sessions', () => {
     expect(count(DRILLS, (row) => row.stage_keys === 'FT1')).toBe(131);

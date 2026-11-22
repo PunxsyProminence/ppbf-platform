@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 
+import '@testing-library/jest-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 
 import MyInjuries from './MyInjuries';
@@ -58,4 +59,41 @@ test('a 200 without an injuries list is a failed read, not "no injuries"', async
   render(<MyInjuries />);
   expect(await screen.findByText(/could not be read right now/)).toBeTruthy();
   expect(screen.queryByText('No injuries on record.')).toBeNull();
+});
+
+/* THE ROWS SPEAK IN THE DESIGN SYSTEM'S VOICES (AS9-5, Overwatch Q-D = A).
+   The "who reported it · expected back" line carried a raw --bone-400, an ink
+   written for leather: on the parent Safety page's paper it read 2.11:1 to
+   1.74:1. As .t-muted it is restated in ink on paper and canvas and stays bone
+   on the athlete's dark floor; the row is .t-body, so on the two kiosk pages
+   that draw this list both lines take the --t-md floor together. */
+test('each row is the body voice and its second line the muted voice, with no raw colour or size', async () => {
+  mockFetch({ ok: true, body: { ok: true, injuries: [ROW] } });
+  const { container } = render(<MyInjuries athleteId="ath-1" />);
+  const second = await screen.findByText(/Stated by a clinician · Expected back/);
+  expect(second).toHaveClass('t-muted');
+  const row = second.closest('li') as HTMLElement;
+  expect(row).toHaveClass('t-body');
+  /* An allowlist, not a blocklist: every row and line carries exactly the
+     voice it should and nothing else, and no inline style. A blocklist of raw
+     forms missed the ones that do paint over an unlayered voice (an inline
+     colour; an `!important` utility). */
+  const list = container.querySelector('ul') as HTMLElement;
+  for (const li of Array.from(list.querySelectorAll('li'))) {
+    expect(li.className).toBe('t-body');
+    const [what, who] = Array.from(li.querySelectorAll('p'));
+    expect(what.className).toBe('');
+    expect(who.className).toBe('t-muted');
+  }
+  for (const element of Array.from(list.querySelectorAll('*'))) {
+    expect(element.hasAttribute('style')).toBe(false);
+  }
+});
+
+test('"No injuries on record." is the body voice and nothing else', async () => {
+  mockFetch({ ok: true, body: { ok: true, injuries: [] } });
+  render(<MyInjuries athleteId="ath-1" />);
+  const line = await screen.findByText('No injuries on record.');
+  expect(line.className).toBe('t-body mt-[var(--s2)]');
+  expect(line.hasAttribute('style')).toBe(false);
 });

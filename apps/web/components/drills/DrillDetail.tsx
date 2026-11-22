@@ -11,6 +11,8 @@ import {
 } from '@/src/lib/drillPresentation';
 
 import type { GroundingEvidence } from '@/src/server/pilot/drillGroundingEvidence';
+import type { DrillMarkedField } from '@/src/server/pilot/drillLibraryV3';
+import { AI_DRAFT_MARK, DRAFT_NOT_CHECKED } from '@/src/lib/sessionScriptWords';
 
 import type { DrillDetailView, DrillStopRuleView } from './drillDetailView';
 
@@ -40,6 +42,9 @@ const KIOSK_TEXT = 'in-data-[surface=kiosk]:text-[length:var(--t-md)]';
 // card, about 5.6:1 inside an expander's 20% black wash); every other page is
 // unchanged. OD-2026-11-17-009 rulings 1 and 4 (OW25-34 A, OW25-37 A).
 const CARD_INK = 'in-[.ge-drillcase]:text-[color:inherit]';
+// Body-weight words inside a .t-label (an expander's summary, a label line) take the card's body ink
+// outright: inherited, they get the label ink #4A3B26, 4.07:1 at worst on the wash (lane ED-UI PR3).
+const CARD_BODY_INK = 'in-[.ge-drillcase]:text-[color:#3A2E1D]';
 const BODY = `text-[length:var(--t-sm)] ${KIOSK_TEXT} leading-relaxed text-[color:var(--bone-300)] ${CARD_INK}`;
 const LIST = `${BODY} list-disc space-y-[var(--s1)] pl-[var(--s5)]`;
 const EXPANDER = 'rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.2)] px-[var(--s3)] py-[var(--s2)]';
@@ -54,6 +59,8 @@ export interface DrillDetailProps {
   audience: 'athlete' | 'coach';
   /** Rendered in the header: e.g. the coach's lifecycle state and Promote action. */
   actions?: ReactNode;
+  /** "Looks right" (OW25-55; lane ED-UI PR4): the page's press for a drafted field, placed here; `describedBy` names the line saying what it covers. */
+  looksRight?: (target: string, label: string, describedBy?: string) => ReactNode;
   /**
    * Move focus to the drill's heading when it appears. The list that opened it
    * is hidden at that moment, taking the focused button with it; without this,
@@ -68,7 +75,7 @@ export interface DrillDetailProps {
   chosenScale?: string | null;
 }
 
-export default function DrillDetail({ view, audience, actions, focusOnMount = false, chosenScale = null }: DrillDetailProps) {
+export default function DrillDetail({ view, audience, actions, looksRight, focusOnMount = false, chosenScale = null }: DrillDetailProps) {
   const headingId = `drill-detail-${view.id}`;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   useEffect(() => {
@@ -101,52 +108,98 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
   // Lane NW-b (PK-197 A): the frozen Backbone's two fields, shown as written or as not written.
   const exitCondition = listItemsOrNotWritten(view.exitCondition);
   const correctionPath = listItemsOrNotWritten(view.correctionPath);
+  // THE STAFF AI-DRAFT MARK (OW25-57, OD-2026-11-19-012: coaches and admins only; lane ED-UI PR3).
+  // Beside each drafted field; a labelled version's unchecked field says so; a version with no
+  // label row says so once, under the header (Q4 = A). Never on an athlete view (coach is null there).
+  const drafts = audience === 'coach' ? view.coach?.fieldDrafts ?? null : null;
+  const labelled = drafts?.labelled === true;
+  const mark = (state: boolean | null | undefined, onDark = false) => (labelled ? <DraftMark state={state} onDark={onDark} /> : null);
+  // "Looks right": a drafted field the form can change (Q3 = A), per scale level, the stop rules as one
+  // (Q2 = A); in an expander it sits inside, never in the summary.
+  const press = (state: boolean | null | undefined, target: string, label: string | null) => {
+    if (!(labelled && state === true && looksRight && label !== null)) return null;
+    if (target !== 'stop_rules') return looksRight(target, label);
+    // One press for the whole list (Q2 = A), so it says what it covers (Q-PR4-4 = A, Overwatch's approved words).
+    const noteId = `${headingId}-stop-rules-press`;
+    return <>{looksRight(target, label, noteId)}<span id={noteId} className={`block font-normal ${BODY}`}>{STOP_RULES_PRESS_COVERS}</span></>;
+  };
+  const pressFor = (key: DrillMarkedField, label = FIELD_LABEL[key]) => press(drafts?.fields[key], key, label);
+  const both = (marked: ReactNode, pressed: ReactNode) => (marked || pressed ? <>{marked}{pressed}</> : null);
+  const field = (key: DrillMarkedField, label = FIELD_LABEL[key]) => both(mark(drafts?.fields[key]), pressFor(key, label));
+  const markOnly = (key: DrillMarkedField) => mark(drafts?.fields[key]);
+  // The header (a near-black ground on /coach/drills, Q-PR1-3) keeps a light ink.
+  const headerField = (key: DrillMarkedField) => both(mark(drafts?.fields[key], true), pressFor(key));
+  // Equipment shows the setup column's word only when equipment is blank and that word is not shown as Setup
+  // (setupAndEquipment); otherwise its words are the equipment column's, a blank one's included.
+  const equipmentKey: DrillMarkedField = !view.equipment.trim() && setup === null && view.setup.trim() ? 'standard_setup' : 'equipment_needed';
 
   return (
     <article aria-labelledby={headingId} className="mat-leather--raised space-y-[var(--s5)] rounded-[var(--r-lg)] p-[var(--s5)]">
       <header className="space-y-[var(--s2)]">
         <div className="flex flex-wrap items-baseline justify-between gap-[var(--s3)]">
-          <h2 id={headingId} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">{view.name}</h2>
-          {view.coach && <span className="plaque"><span className={KIOSK_TEXT}>{view.coach.difficulty}</span></span>}
+          <div className="flex flex-wrap items-baseline gap-[var(--s2)]">
+            <h2 id={headingId} ref={headingRef} tabIndex={-1} className="t-command text-[length:var(--t-lg)]">{view.name}</h2>
+            {headerField('name')}
+          </div>
+          {view.coach && (
+            <span className="flex flex-wrap items-baseline">
+              <span className="plaque"><span className={KIOSK_TEXT}>{view.coach.difficulty}</span></span>
+              {headerField('difficulty')}
+            </span>
+          )}
         </div>
         {view.coach && (
-          <p className="t-label">{view.coach.discipline} · {view.coach.category}</p>
+          // Each field with its own mark and press, wrapping as one, so a press never reads as the other field's.
+          <p className="t-label">
+            <span className="inline-flex flex-wrap items-baseline">{view.coach.discipline}{headerField('discipline')}{' ·\u00a0'}</span>
+            <span className="inline-flex flex-wrap items-baseline">{view.coach.category}{headerField('category')}</span>
+          </p>
         )}
         {/* Where the content came from, and whether it is current, sits beside
             the action it informs -- not behind an expander below it. */}
         {coachStatus && <p className={BODY}>{coachStatus}</p>}
         {actions && <div className="flex flex-wrap items-center gap-[var(--s3)]">{actions}</div>}
       </header>
+      {/* Under the header (Q4 = A), on the card's own ground. */}
+      {drafts && !labelled && <p className={BODY}>({DRAFT_NOT_CHECKED})</p>}
 
       {/* SAFETY -- first and always open. */}
       <section aria-label="Safety" className={`${SECTION} rounded-[var(--r-md)] border-2 border-[color:var(--brass-700)] p-[var(--s4)]`}>
         <h3 className="t-label">Safety</h3>
         <p className={BODY}>
           <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Contact:</span> {humanizeContactLevel(view.contactLevel)}
+          {field('contact_level')}
         </p>
         <p className={BODY}>
           <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Coach authorization:</span>{' '}
           {view.requiresCoachAuthorization
             ? 'Required. Only run this drill with a coach who has approved it.'
             : 'Not required.'}
+          {field('requires_coach_authorization')}
         </p>
         {ownStops.length === 0 && everyDrillStops.length === 0 && (
           <p className={BODY}>No stop rules are recorded for this drill.</p>
         )}
         {ownStops.length > 0 && (
-          <StopRuleList heading="Stop rules" rules={ownStops} />
+          <StopRuleList heading="Stop rules" rules={ownStops} mark={field('stop_rules')} />
         )}
         {everyDrillStops.length > 0 && (
           <StopRuleList heading="Stop rules for every drill" rules={everyDrillStops} />
         )}
         {readiness.length > 0 && (
-          <StopRuleList heading="Before contact or maximal effort" rules={readiness} />
+          // Each of the drill's own rules carries the mark; the list's one press goes here only without "Stop rules".
+          <StopRuleList
+            heading="Before contact or maximal effort"
+            rules={readiness}
+            itemMark={(rule) => (rule.origin !== 'drill' ? null
+              : ownStops.length === 0 && rule === readiness.find((each) => each.origin === 'drill') ? field('stop_rules') : markOnly('stop_rules'))}
+          />
         )}
       </section>
 
       {view.purpose && (
         <section className={SECTION}>
-          <h3 className="t-label">What it is for</h3>
+          <Heading mark={field('purpose')}>What it is for</Heading>
           <p className={BODY}>{view.purpose}</p>
         </section>
       )}
@@ -155,20 +208,20 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
           of the corpus the "setup" column holds only the equipment word. */}
       {setup && (
         <section className={SECTION}>
-          <h3 className="t-label">Setup</h3>
+          <Heading mark={field('standard_setup')}>Setup</Heading>
           <p className={BODY}>{setup}</p>
         </section>
       )}
       {equipment && (
         <section className={SECTION}>
-          <h3 className="t-label">Equipment</h3>
+          <Heading mark={field(equipmentKey, 'Equipment')}>Equipment</Heading>
           <p className={BODY}>{equipment}</p>
         </section>
       )}
 
       {steps.length > 0 && (
         <section className={SECTION}>
-          <h3 className="t-label">How it runs</h3>
+          <Heading mark={field('execution')}>How it runs</Heading>
           {steps.length > 1 ? (
             <ol className={`${BODY} list-decimal space-y-[var(--s2)] pl-[var(--s5)]`}>
               {steps.map((step, index) => (
@@ -182,25 +235,25 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
       )}
 
       <section className={SECTION}>
-        <h3 className="t-label">What good looks like</h3>
+        <Heading mark={field('what_good_looks_like')}>What good looks like</Heading>
         <ul className={LIST}>
           {good.map((item, index) => <li key={`${view.id}-good-${index}`}>{item}</li>)}
         </ul>
       </section>
 
       <section className={SECTION}>
-        <h3 className="t-label">What to avoid</h3>
+        <Heading mark={field('what_bad_looks_like')}>What to avoid</Heading>
         <ul className={LIST}>
           {bad.map((item, index) => <li key={`${view.id}-bad-${index}`}>{item}</li>)}
         </ul>
-        <p className="t-label text-[color:var(--bone-300)]">Common errors</p>
+        <p className="t-label text-[color:var(--bone-300)]">Common errors{field('common_errors')}</p>
         <ul className={LIST}>
           {errors.map((item, index) => <li key={`${view.id}-error-${index}`}>{item}</li>)}
         </ul>
       </section>
 
       <section className={SECTION}>
-        <h3 className="t-label">Exit condition</h3>
+        <Heading mark={field('exit_condition')}>Exit condition</Heading>
         <ul className={LIST}>
           {exitCondition.map((item, index) => <li key={`${view.id}-exit-${index}`}>{item}</li>)}
         </ul>
@@ -208,7 +261,7 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
 
       {view.cues.length > 0 && (
         <section className={SECTION}>
-          <h3 className="t-label">Coaching cues</h3>
+          <Heading mark={field('cues')}>Coaching cues</Heading>
           <ul className="flex flex-wrap gap-[var(--s2)]">
             {view.cues.map((cue) => (
               <li
@@ -224,11 +277,12 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
 
       {/* LEVEL 3: corrections, one expander deep; an unwritten field says so. */}
       <details className={EXPANDER}>
-        <summary className={EXPANDER_SUMMARY}>Corrections</summary>
+        <summary className={EXPANDER_SUMMARY}>Corrections{markOnly('corrections')}</summary>
+        {pressFor('corrections')}
         <ul className={`${LIST} mt-[var(--s2)]`}>
           {corrections.map((item, index) => <li key={`${view.id}-correction-${index}`}>{item}</li>)}
         </ul>
-        <p className="t-label mt-[var(--s2)] text-[color:var(--bone-300)]">Correction path</p>
+        <p className="t-label mt-[var(--s2)] text-[color:var(--bone-300)]">Correction path{field('correction_path')}</p>
         <ul className={LIST}>
           {correctionPath.map((item, index) => <li key={`${view.id}-correction-path-${index}`}>{item}</li>)}
         </ul>
@@ -257,8 +311,10 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
                   {audience === 'coach' && level.authoringState && level.authoringState !== 'authored'
                     ? ' · draft, not floor-validated'
                     : ''}
+                  {mark(drafts?.scaleLevels[level.level])}
                 </summary>
                 <div className="mt-[var(--s2)] space-y-[var(--s2)]">
+                  {press(drafts?.scaleLevels[level.level], `scale_levels.${level.level}`, scaleLevelName(level.level))}
                   {level.demand && <p className={BODY}>{level.demand}</p>}
                   {level.constraint && (
                     <p className={BODY}>
@@ -277,20 +333,66 @@ export default function DrillDetail({ view, audience, actions, focusOnMount = fa
         </section>
       )}
 
-      {view.coach && <CoachContext view={view} />}
+      {view.coach && <CoachContext view={view} field={field} />}
     </article>
   );
 }
 
-function StopRuleList({ heading, rules }: { heading: string; rules: DrillStopRuleView[] }) {
+/** A section heading, with the staff AI-draft mark beside it (not inside: the heading keeps its name). */
+function Heading({ children, mark }: { children: ReactNode; mark: ReactNode }) {
+  if (!mark) return <h3 className="t-label">{children}</h3>;
+  return (
+    <div className="flex flex-wrap items-baseline">
+      <h3 className="t-label">{children}</h3>
+      {mark}
+    </div>
+  );
+}
+
+/** What the stop-rule list's one press confirms (Q-PR4-4 = A; Overwatch on #2027, 2026-11-20). */
+const STOP_RULES_PRESS_COVERS = "Confirms all of this drill's own stop rules and their kinds, including those under Before contact or maximal effort.";
+
+/** How the screen names each marked field, for "Looks right: <field>"; null where the edit form cannot change it (Q3 = A). */
+const FIELD_LABEL: Record<DrillMarkedField, string | null> = {
+  name: 'Name', difficulty: 'Difficulty', discipline: null, category: 'Category', contact_level: 'Contact',
+  requires_coach_authorization: 'Coach authorization', stop_rules: 'Stop rules', purpose: 'What it is for',
+  standard_setup: 'Setup', equipment_needed: 'Equipment', execution: 'How it runs', cues: 'Coaching cues',
+  what_good_looks_like: 'What good looks like', what_bad_looks_like: 'What to avoid', corrections: 'Corrections',
+  common_errors: 'Common errors', exit_condition: 'Exit condition', correction_path: 'Correction path',
+  target_behavior: 'Target behaviour', transfer: 'Transfer',
+};
+
+/** The 6e mark and words (sessionScriptWords.ts), beside one field: a draft, or not checked; nothing when not a draft. */
+function DraftMark({ state, onDark = false }: { state: boolean | null | undefined; onDark?: boolean }) {
+  if (state === false) return null;
+  if (state === true) return <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>;
+  // As 6e shows it: sentence case, the body face, weight and size (with the kiosk rise), also inside a label or
+  // beside a heading. Off the parchment, the design system's lift (--bone-200): the console's lit card is
+  // mid-brown. On the parchment card the card's body ink (CARD_BODY_INK); in its dark header the lift again.
+  return (
+    <span
+      className={`ml-[var(--s2)] font-[family-name:var(--font-body)] font-normal normal-case tracking-normal text-[length:var(--t-sm)] ${KIOSK_TEXT} text-[color:var(--bone-200)] ${CARD_BODY_INK}`}
+      style={onDark ? { color: 'var(--bone-200)' } : undefined}
+    >
+      ({DRAFT_NOT_CHECKED})
+    </span>
+  );
+}
+
+function StopRuleList({ heading, rules, mark = null, itemMark }: {
+  heading: string;
+  rules: DrillStopRuleView[];
+  mark?: ReactNode;
+  itemMark?: (rule: DrillStopRuleView) => ReactNode;
+}) {
   return (
     <div className="space-y-[var(--s1)]">
-      <p className={`text-[length:var(--t-sm)] ${KIOSK_TEXT} font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]`}>{heading}</p>
+      <p className={`text-[length:var(--t-sm)] ${KIOSK_TEXT} font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]`}>{heading}{mark}</p>
       <ol className={`${BODY} list-decimal space-y-[var(--s1)] pl-[var(--s5)]`}>
         {/* Keyed by origin as well: the readiness list can hold a drill rule
             and a stored-once rule at the same ordinal. */}
         {rules.map((rule) => (
-          <li key={`stop-${rule.origin}-${rule.ordinal}`}>{rule.text}</li>
+          <li key={`stop-${rule.origin}-${rule.ordinal}`}>{rule.text}{itemMark?.(rule)}</li>
         ))}
       </ol>
     </div>
@@ -312,7 +414,7 @@ function referenceStatus(coach: NonNullable<DrillDetailView['coach']>): string {
 }
 
 /** Coach-only: planning context, lifecycle, version and provenance. Never rendered for an athlete. */
-function CoachContext({ view }: { view: DrillDetailView }) {
+function CoachContext({ view, field }: { view: DrillDetailView; field: (key: DrillMarkedField) => ReactNode }) {
   const coach = view.coach;
   if (!coach) return null;
   const transfer = listItemsOrNotWritten(coach.transfer);
@@ -326,9 +428,10 @@ function CoachContext({ view }: { view: DrillDetailView }) {
           {showTarget && (
             <p className={BODY}>
               <span className="font-semibold text-[color:var(--bone-200)] in-[.ge-drillcase]:text-[color:inherit]">Target behaviour:</span> {coach.targetBehavior}
+              {field('target_behavior')}
             </p>
           )}
-          <p className="t-label text-[color:var(--bone-300)]">Transfer</p>
+          <p className="t-label text-[color:var(--bone-300)]">Transfer{field('transfer')}</p>
           <ul className={LIST}>
             {transfer.map((item, index) => <li key={`${view.id}-transfer-${index}`}>{item}</li>)}
           </ul>

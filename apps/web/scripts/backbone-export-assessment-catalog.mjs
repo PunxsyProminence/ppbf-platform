@@ -69,12 +69,18 @@
 // is not overwritten: each changed or removed row is printed by id and column,
 // and nothing is written. --allow-overwrite writes anyway and prints the same list.
 //
+// A STOP NO FLAG PASSES (lane GD; lib/backbone-export-guards.mjs). A row this run
+// would write that names a held DOC-136 record stops the export and nothing is
+// written, with or without --allow-overwrite.
+//
 // It describes and informs. Nothing reads the catalog to move, place or restrict anyone.
 
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { heldTextFindings, stopMessage } from './lib/backbone-export-guards.mjs';
 
 export const CATALOGS_FILE = 'working/design-2026-10-25/design_catalogs.json';
 export const ROOM_TRACK_FILE = 'data/content/tracks/trk_21ba0c958c98e1.json';
@@ -672,8 +678,10 @@ export function exportAssessmentCatalog(backboneDir, existing = () => undefined,
 
   const files = {};
   const overwrites = [];
+  const stops = [];
   for (const [name, list_] of Object.entries(rows)) {
     const rel = `${FOLDER}/${name}`;
+    stops.push(...heldTextFindings(rel, HEADERS[name], list_));
     files[rel] = writeCsv(HEADERS[name], list_.map((row) => HEADERS[name].map((column) => row[column] ?? '')));
     const committed = existing(rel);
     if (committed !== undefined && committed !== files[rel]) {
@@ -681,9 +689,15 @@ export function exportAssessmentCatalog(backboneDir, existing = () => undefined,
       overwrites.push(...overwritesOf(name, committed, list_, room ? (row) => row.list_key === 'room' : () => true));
     }
   }
+  const stopText = stopMessage(stops);
   if (overwrites.length && !allowOverwrite) {
-    throw new ExportError(['committed rows differ from the frozen Backbone; nothing was written (--allow-overwrite writes anyway):', ...overwrites].join('\n'));
+    throw new ExportError([
+      `committed rows differ from the frozen Backbone; nothing was written (--allow-overwrite ${stopText ? 'would not write this run either' : 'writes anyway'}):`,
+      ...overwrites,
+      ...(stopText ? [stopText] : []),
+    ].join('\n'));
   }
+  if (stopText) throw new ExportError(stopText);
 
   return {
     backboneVersion: version,

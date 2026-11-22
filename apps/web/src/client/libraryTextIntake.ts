@@ -345,7 +345,7 @@ export const INTAKE_RECOVERY_WORDS = {
   documentUnconfirmed:
     'The Library did not confirm the save. Use Finish saving: it finds the entry if it was saved and finishes it, without saving anything twice.',
   chunkConflict: (saved: number, total: number) =>
-    `Saved ${saved} of ${total} parts, then stopped: part ${saved + 1} is already saved with different text. Nothing was overwritten. The entry is incomplete; reject it in Evidence Review, then enter the text again.`,
+    `Saved ${saved} of ${total} parts, then stopped: part ${saved + 1} is already saved with different text. Nothing was overwritten. The entry is incomplete; reject it in Evidence Review Queue, then enter the text again.`,
 };
 
 // Generous: a chunk write embeds its text before it answers.
@@ -531,7 +531,7 @@ export async function submitLibraryTextIntake(
           ok: false,
           message: `Saved ${index} of ${chunks.length} parts, then stopped: ${
             refusalMessage(written.status, 'document', shelf, written.payload)
-          } The entry is incomplete; reject it in Evidence Review, or save a shorter excerpt.`,
+          } The entry is incomplete; reject it in Evidence Review Queue, or save a shorter excerpt.`,
           resume: null,
           writtenChunks: index,
           totalChunks: chunks.length,

@@ -17,6 +17,7 @@ import { requiresDocumentLoad } from "./cameraDocuments";
 import { canUseOperationsHub } from "./operationsAccess";
 import FeedbackBox from "./FeedbackBox";
 import Corridor from "./Corridor";
+import JobBar from "./JobBar";
 import CardCatalog from "./CardCatalog";
 import CommandsOverlay from "./CommandsOverlay";
 import SafetyAttentionBadge from "./SafetyAttentionBadge";
@@ -298,7 +299,7 @@ export default function GlobalRoleHeader() {
           <FeedbackBox />
           {FEEDBACK_TRIAGE_ROLES.includes(session.role) ? (
             <ChromeLink href="/admin/feedback" className={CONTROL_QUIET}>
-              Triage
+              Feedback Triage
             </ChromeLink>
           ) : null}
           {/* Administration, not a cross-role launcher (owner decision,
@@ -330,6 +331,13 @@ export default function GlobalRoleHeader() {
           </button>
         </div>
       </div>
+      {/* THE JOB BAR, tablet and desk (AS-4, U2-4b; scrub Q13 A: "tags on
+          tablet and desk, plain bar on phones"). A row of leather tags under
+          the session controls, from the md width up; below it, app/layout.tsx
+          draws the same bar as a plain bar along the bottom of the screen.
+          Only on this full branch: a signed-out, /login or refusal screen
+          gets no bar, and JobBar checks the same itself. */}
+      <JobBar variant="rail" />
     </header>
   );
 }

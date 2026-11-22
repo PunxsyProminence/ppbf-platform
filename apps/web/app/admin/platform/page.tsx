@@ -180,7 +180,7 @@ function metricLabel(metric: CountMetric): string {
     return String(metric.count);
   }
   if (metric.status === 'insufficient_data') {
-    return 'Too few athletes to show';
+    return 'Suppressed';
   }
   return 'No data yet';
 }
@@ -660,7 +660,7 @@ export default function PlatformConsole() {
               System
             </Link>
             <Link href="/admin/organizations" className="btn btn--ghost">
-              Onboard A New Gym
+              Get Your Gym Online
             </Link>
           </div>
         </header>

@@ -659,3 +659,50 @@ describe('the athlete sign-in ID guidance', () => {
     expect(screen.getByPlaceholderText('southpaw12')).toBeInTheDocument();
   });
 });
+
+// Lane BT, BOA-19: a figure below the cohort floor reads "Suppressed", the one
+// word the board pages use for it, not a third wording of the same state.
+describe('a suppressed figure on the gym summary', () => {
+  test('reads "Suppressed", and a counted figure still reads its count', async () => {
+    const summary = {
+      organization_id: 'org-punxsy',
+      board: {
+        activeAthletes: { status: 'insufficient_data', count: null },
+        trainingSessions30Days: { status: 'available', count: 40, completedCount: 30, completionRate: 0.75 },
+        goalStatusBuckets: {
+          active: { status: 'unavailable', count: null },
+          completed: { status: 'unavailable', count: null },
+          other: { status: 'unavailable', count: null },
+        },
+        coachReviews30Days: { status: 'unavailable', count: null, approvedCount: null, approvalRate: null },
+      },
+      growth: { totalInteractions: 7, avgSatisfaction: null, recommendationsMade: 0, researchRequirementsCreated: 0, researchRequirementsClosed: 0 },
+      capabilityAccess: {},
+      trackAssignments: {},
+    };
+    global.fetch = jest.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/api/pilot/platform/gym-summary')) return jsonResponse(summary);
+      if (target.includes('/api/pilot/platform/organizations')) return jsonResponse({ organizations: GYMS });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    render(<PlatformConsole />);
+    await chooseGym();
+
+    const tile = (label: string) => screen.getByText(label).parentElement as HTMLElement;
+    expect(within(tile('Active Athletes')).getByText('Suppressed')).toBeInTheDocument();
+    expect(within(tile('Sessions (30d)')).getByText('40')).toBeInTheDocument();
+    expect(screen.queryByText('Too few athletes to show')).toBeNull();
+  });
+});
+
+// AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): the link to the new-gym wizard
+// reads that page's title.
+describe('the link to the new-gym wizard', () => {
+  test('reads "Get Your Gym Online", the title of /admin/organizations', async () => {
+    mountDesk();
+    const link = await screen.findByRole('link', { name: 'Get Your Gym Online' });
+    expect(link).toHaveAttribute('href', '/admin/organizations');
+    expect(screen.queryByText('Onboard A New Gym')).toBeNull();
+  });
+});

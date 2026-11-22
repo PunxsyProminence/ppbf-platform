@@ -31,8 +31,8 @@ test('claims no stage is complete, on the page furthest down the pipeline', () =
 test('says where you are standing, counted rather than judged', () => {
   render(<DevelopmentPipelineBanner currentStage="simulator" />);
 
-  expect(screen.getByText('Stage 4 of 5: SCENARIO SIMULATOR')).toBeTruthy();
-  expect(screen.getByText('Next: AUDIT TRACE')).toBeTruthy();
+  expect(screen.getByText('Stage 4 of 5: Validation Sandbox')).toBeTruthy();
+  expect(screen.getByText('Next: Audit Trace')).toBeTruthy();
 });
 
 test('the last stage is the last stage, not a release announcement', () => {
@@ -41,7 +41,7 @@ test('the last stage is the last stage, not a release announcement', () => {
   const { container } = render(<DevelopmentPipelineBanner currentStage="audit" />);
 
   expect(container.textContent).not.toMatch(/Ecosystem Release Complete/);
-  expect(screen.getByText('Stage 5 of 5: AUDIT TRACE')).toBeTruthy();
+  expect(screen.getByText('Stage 5 of 5: Audit Trace')).toBeTruthy();
   expect(screen.getByText('Next: this is the last stage')).toBeTruthy();
   expect(container.querySelector('a[href^="/source-control"]')).toBeNull();
 });
@@ -56,7 +56,7 @@ test('every stage link but the current one is drawn the same way', () => {
 
   const current = links.filter((link) => link.getAttribute('aria-current') === 'page');
   expect(current).toHaveLength(1);
-  expect(current[0].textContent).toBe('SCENARIO SIMULATOR');
+  expect(current[0].textContent).toBe('Validation Sandbox');
 
   const others = links.filter((link) => link.getAttribute('aria-current') !== 'page');
   expect(new Set(others.map((link) => link.className)).size).toBe(1);
@@ -80,4 +80,22 @@ test('stands on leather rather than on the night ground', () => {
   const banner = container.querySelector('section');
   expect(banner?.className).toContain('mat-leather');
   expect(banner?.className).not.toContain('hide-950');
+});
+
+// AS12-2, BOA-11 (OD-2026-10-17-001 ruling 1): each stage is named by the
+// title of the page it opens. CSS draws the links in capitals; the words are
+// the titles.
+test('each stage label is the title of the page it opens', () => {
+  const { container } = render(<DevelopmentPipelineBanner currentStage="research" />);
+
+  const links = [...container.querySelectorAll('a')].map((link) => [link.textContent, link.getAttribute('href')]);
+  expect(links).toEqual([
+    ['Research Inbox', '/research'],
+    ['Evidence Review Queue', '/evidence'],
+    ['Concept Relationship Map', '/knowledge-graph'],
+    ['Validation Sandbox', '/simulator'],
+    ['Audit Trace', '/audit'],
+  ]);
+  expect(screen.getByText('Stage 1 of 5: Research Inbox')).toBeTruthy();
+  expect(screen.getByText('Next: Evidence Review Queue')).toBeTruthy();
 });

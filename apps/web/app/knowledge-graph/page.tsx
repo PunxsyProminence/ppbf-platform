@@ -121,13 +121,13 @@ export default function KnowledgeGraphPage() {
           <div className="flex flex-wrap items-center gap-[var(--s3)]">
             <ShadowChatButton context="Knowledge Graph" />
             <Link href="/research" className="btn btn--ghost">
-              Research Intake
+              Research Inbox
             </Link>
             <Link href="/evidence" className="btn btn--ghost">
-              Evidence Review
+              Evidence Review Queue
             </Link>
             <Link href="/simulator" className="btn btn--ghost">
-              Simulator
+              Validation Sandbox
             </Link>
           </div>
         </div>

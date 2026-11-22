@@ -1,6 +1,6 @@
 import { gymDayIso } from '@/src/lib/gymTime';
 
-// Which class the /schedule "Attendance Check-In" picker opens on for STAFF (coach, organization
+// Which class the /schedule "Who is here" picker opens on for STAFF (coach, organization
 // admin, admin). A family's default is the page's own rule (today's class, their own first).
 //
 // The picker used to open on the first class the scheduler returned, and the scheduler lists

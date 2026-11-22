@@ -90,6 +90,10 @@ function consoleFetch(handler?: (url: string, init?: RequestInit) => Response | 
     if (String(url).includes('/api/pilot/admin/staff')) {
       return jsonResponse(staffBody);
     }
+    // Who Trains On What (lane AS-10, AS10-4): the stored track map.
+    if (String(url).includes('/api/pilot/admin/track-assignments')) {
+      return jsonResponse({ ok: true, assignments: {} });
+    }
     if (String(url).includes('/api/pilot/athletes/update')) {
       return jsonResponse({ ok: true, athlete_id: 'ath-001' });
     }
@@ -156,22 +160,29 @@ describe('/admin/athletes', () => {
     });
   });
 
-  /* OFF-16 (lane U1). The left-the-gym block said "Turn the sign-in off on
-     the People screen", but Gym Office has no switch-off for an athlete row
-     (Deactivate is for coach, staff and volunteer rows, OD-2026-10-07-009).
-     It names the controls that do exist, by their own words. */
-  test('the left-the-gym block names the sign-in controls that exist, on Gym Office', async () => {
+  /* OFF-16. Gym Office now has the switch for an athlete login (Jason
+     2026-11-19, OD-2026-11-19-025; lane SW, Overwatch Q3 A), so the
+     left-the-gym block names it by its own words: the page is "Gym Office"
+     (its title and menu name) and the buttons are "Deactivate" and
+     "Reactivate". "Mark as left the gym" itself still switches nothing off. */
+  test('the left-the-gym block names the sign-in switch on Gym Office, by its own words', async () => {
     global.fetch = consoleFetch() as unknown as typeof fetch;
 
     render(<AthleteRecordsPage />);
     fireEvent.click(await screen.findByRole('button', { name: /correct record/i }));
 
-    const page = document.body.textContent ?? '';
+    const page = (document.body.textContent ?? '').replace(/\s+/g, ' ');
+    expect(page).toContain(
+      "Two things it does not do: it does not switch off their sign-in, and it does not take them off their coach's lists. "
+      + 'To switch their sign-in off, use Deactivate on Gym Office; Reactivate there turns it back on.',
+    );
+    // The sentence that stopped being true, and the older wording before it.
+    expect(page).not.toMatch(/There is no switch that turns an athlete.s sign-in off/);
     expect(page).not.toMatch(/People screen/);
     expect(page).not.toMatch(/Turn the sign-in off/);
-    expect(page).toMatch(/There is no switch that turns an athlete.s sign-in off for good\./);
-    expect(page).toMatch(/On Gym Office, Sign\s+Out Everywhere ends their open sessions; for a PIN athlete, Issue New Activation Code stops their PIN\s+working until the new code is redeemed\./);
-    expect(page).not.toMatch(/replaces their PIN/);
+    // One name for the page: the link to it says what its title says.
+    expect(screen.getByRole('link', { name: 'Gym Office' }).getAttribute('href')).toBe('/admin/people');
+    expect(screen.queryByRole('link', { name: 'People' })).toBeNull();
   });
 
   test('offboarding writes active_flag false and leaves the rest of the record standing', async () => {
@@ -384,7 +395,8 @@ describe('/admin/athletes', () => {
 
     render(<AthleteRecordsPage />);
 
-    await screen.findByText('Dawn Kellerman');
+    // The roster row, not the name's option in Who Trains On What's picker (AS10-4).
+    await screen.findByText('Dawn Kellerman', { selector: 'p' });
     expect(screen.queryByText(/attendance \d/i)).toBeNull();
   });
 
@@ -401,7 +413,7 @@ describe('/admin/athletes', () => {
     render(<AthleteRecordsPage />);
 
     expect(await screen.findByRole('button', { name: /correct record/i })).toBeDefined();
-    expect(screen.getByText('Dawn Kellerman')).toBeDefined();
+    expect(screen.getByText('Dawn Kellerman', { selector: 'p' })).toBeDefined();
     expect(screen.queryByText(/attendance \d/i)).toBeNull();
   });
 
@@ -702,5 +714,52 @@ describe('no goals block for the organization admin', () => {
     expect(screen.queryByTestId('athlete-goals')).toBeNull();
     expect(screen.queryByText(/Goals they have set/)).toBeNull();
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/pilot/goals/'))).toBe(false);
+  });
+});
+
+// Lane AS-10, PR AS10-4 (app scrub OFF-13; Overwatch Q8 A): Who Trains On What
+// moved here from the foot of the Capabilities Overview tab. The control's own
+// behaviour is tested in components/trackAssignmentControl.test.tsx; these hold
+// where it is and who reaches it.
+describe('Who Trains On What on Athlete Records', () => {
+  const trackCalls = (fetchMock: jest.Mock) =>
+    fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/pilot/admin/track-assignments'));
+
+  test('the gym admin sees it, with the gym\'s athletes to choose from and nothing written on load', async () => {
+    mockUsePilotSession.mockReturnValue(session('organization_admin'));
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Who Trains On What' })).toBeTruthy();
+    const picker = (await screen.findByLabelText('Athlete')) as HTMLSelectElement;
+    expect(picker.options.length).toBeGreaterThan(1);
+    expect(screen.getByRole('button', { name: 'Save tracks' })).toBeTruthy();
+    expect(trackCalls(fetchMock).map(([, init]) => (init as RequestInit | undefined)?.method ?? 'GET')).toEqual(['GET']);
+  });
+
+  test('a platform owner is shown the per-gym notice: no control, no track call', async () => {
+    mockUsePilotSession.mockReturnValue(session('platform_owner'));
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    expect(await screen.findByText(/athlete records are managed per gym/i)).toBeDefined();
+    expect(screen.queryByRole('heading', { name: 'Who Trains On What' })).toBeNull();
+    expect(trackCalls(fetchMock)).toHaveLength(0);
+  });
+
+  test('while the sign-in is still being read, nothing is asked', async () => {
+    mockUsePilotSession.mockReturnValue({ ...session(null), loading: true });
+    const fetchMock = consoleFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<AthleteRecordsPage />);
+
+    expect(await screen.findByText('Loading...')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Who Trains On What' })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

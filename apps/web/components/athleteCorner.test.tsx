@@ -180,3 +180,74 @@ test('the training-hold notice sits right after the pain report, never ahead of 
   expect(cells[0].getAttribute('data-section')).toBe('pain');
   expect(cells[1].textContent).toBe('Training is paused for you right now');
 });
+
+/* Lane U3 B4: the workspace's End training sits right under "Training started",
+   full width, and nowhere else the corner draws. The corner only places it. */
+describe('the End training slot', () => {
+  const slot = <button type="button">End training</button>;
+  const endCell = () => document.querySelector('[data-section="end-training"]');
+
+  test('with an open session it comes right after the Start training panel, full width', () => {
+    render(<AthleteCorner {...props({ checkedInAt: '4:05 PM', endTraining: slot })} />);
+    const cells = Array.from(document.querySelectorAll('.athlete-corner__grid > *'));
+    const at = cells.findIndex((cell) => cell.getAttribute('data-section') === 'check-in');
+    expect(cells[at].textContent).toContain('Training started 4:05 PM.');
+    expect(cells[at + 1]).toBe(endCell());
+    expect(endCell()?.classList.contains('athlete-corner__wide')).toBe(true);
+    expect(screen.getAllByRole('button', { name: 'End training' })).toHaveLength(1);
+  });
+
+  test.each([
+    ['no open session', { checkedInAt: null }],
+    ['the session read still in flight', { checkedInAt: '4:05 PM', sessionState: 'loading' as const }],
+    ['the session read failed', { checkedInAt: '4:05 PM', sessionState: 'unavailable' as const }],
+    ['no athlete sign-in', { checkedInAt: '4:05 PM', identityState: 'unavailable' as const }],
+  ])('is not drawn with %s', (_why, overrides) => {
+    render(<AthleteCorner {...props({ ...overrides, endTraining: slot })} />);
+    expect(endCell()).toBeNull();
+    expect(screen.queryByRole('button', { name: 'End training' })).toBeNull();
+  });
+});
+
+/* Lane U3 B4, Q-SPAR A and Q-CONFIRM A: once no session is open, the slot
+   under Start training holds the after-sparring check; the line can be
+   reached for scrolling. */
+describe('the after-sparring slot and the line', () => {
+  const check = <p>After sparring: do you have any of these right now?</p>;
+  const afterCell = () => document.querySelector('[data-section="after-sparring"]');
+
+  test('with no open session it comes right after the Start training panel', () => {
+    render(<AthleteCorner {...props({ afterEnd: check, checkedOutToday: true })} />);
+    const cells = Array.from(document.querySelectorAll('.athlete-corner__grid > *'));
+    const at = cells.findIndex((cell) => cell.getAttribute('data-section') === 'check-in');
+    expect(cells[at + 1]).toBe(afterCell());
+    expect(afterCell()?.textContent).toContain('After sparring');
+  });
+
+  test.each([
+    ['a session open', { checkedInAt: '4:05 PM' }],
+    ['the session read still in flight', { sessionState: 'loading' as const }],
+    ['the session read failed', { sessionState: 'unavailable' as const }],
+  ])('is not drawn with %s', (_why, overrides) => {
+    render(<AthleteCorner {...props({ ...overrides, afterEnd: check })} />);
+    expect(afterCell()).toBeNull();
+  });
+
+  test('checkInLineRef reaches the "Training ..." line', () => {
+    const ref = React.createRef<HTMLParagraphElement>();
+    render(<AthleteCorner {...props({ checkedOutToday: true, checkInLineRef: ref })} />);
+    expect(ref.current?.textContent).toBe('Training ended today. Start again if you are back on the floor.');
+  });
+});
+
+/* Lane AS-8 (Overwatch Q13 A on #2020; OD-2026-11-20-001): the scheduler link
+   reads the page title, and the work count says whose work it is. "From your
+   coach" stays the messages block's (FromYourCoach). */
+test('the corner says "Your coach\'s work" and "Open Schedule"', () => {
+  render(<AthleteCorner {...props()} />);
+  const work = within(document.querySelector('[data-section="coach-work"]') as HTMLElement);
+  expect(work.getByText("Your coach's work")).toBeTruthy();
+  expect(screen.queryByText('From your coach')).toBeNull();
+  expect(screen.getByRole('link', { name: 'Open Schedule' }).getAttribute('href')).toBe('/schedule');
+  expect(screen.queryByRole('link', { name: 'Open Scheduler' })).toBeNull();
+});

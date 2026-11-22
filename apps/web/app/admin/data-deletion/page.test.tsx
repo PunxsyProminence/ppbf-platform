@@ -242,7 +242,13 @@ describe('two confirmations before anything is sent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review deletion' }));
 
     expect(screen.getByText(/Everything tied to them is marked deleted at the same moment/)).toBeTruthy();
-    expect(screen.getByText(/Nothing is erased; it stays in the database until permanent removal\./)).toBeTruthy();
+    // Cycle-tracking dates are deleted in the same transaction
+    // (dataDeletion.ts, deleteCycleTrackingForDeletedAthletes), so the
+    // screen may not say "Nothing is erased".
+    expect(
+      screen.getByText(/It stays in the database until permanent removal, except their\s+cycle-tracking dates, if they kept any, which are erased at once\./),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Nothing is erased/)).toBeNull();
     expect(screen.getByText(/the admin safety screens .* still show their items/)).toBeTruthy();
     // The scope-A sentence this replaces is gone.
     expect(screen.queryByText(/They stay on file/)).toBeNull();
@@ -254,6 +260,20 @@ describe('two confirmations before anything is sent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review deletion' }));
 
     expect(screen.getByText(/everything tied to the child is marked deleted with them/)).toBeTruthy();
+    expect(screen.getByText(/cycle-tracking dates, if they kept any, which are erased at once\./)).toBeTruthy();
+  });
+
+  test('"What happens after" says which stored files permanent removal erases, and that this screen erases none', async () => {
+    await renderPage();
+
+    // The purge deletes a purged athlete's video and photo files
+    // (scripts/pilot-cleanup-deleted-data.mjs, "STORED FILES GO WITH THEIR ROWS").
+    expect(screen.getByText(/This screen erases no stored file\. Permanent removal of an athlete erases the stored\s+files of their own videos and of their photo, with their records\./)).toBeTruthy();
+    expect(screen.queryByText(/neither one deletes a stored file/)).toBeNull();
+    // The nightly run deletes expired public enquiries, so it is not a dry
+    // run as a whole; for people's records it only reports.
+    expect(screen.getByText(/For the people deleted here, the nightly cleanup only reports what it would remove\./)).toBeTruthy();
+    expect(screen.queryByText(/The nightly cleanup is a dry run/)).toBeNull();
   });
 
   test('Go back sends nothing and returns to the form', async () => {

@@ -428,12 +428,12 @@ function FixSparringEntry({ athleteId }: { athleteId: string | null }) {
         </button>
         {message && <p className="m-0 text-[length:var(--t-md)] text-[color:var(--bone-200)]" role="status">{message}</p>}
         {listState === 'unavailable' && (
-          <p className="m-0 text-[length:var(--t-sm)] text-[var(--restricted-ink)]">
+          <p className="m-0 text-[length:var(--t-md)] text-[var(--restricted-ink)]">
             Recent entries could not be loaded. Try again.
           </p>
         )}
         {listState === 'loaded' && entries.length === 0 && (
-          <p className="m-0 text-[length:var(--t-sm)] text-[color:var(--bone-300)]">No sparring entries yet.</p>
+          <p className="m-0 text-[length:var(--t-md)] text-[color:var(--bone-300)]">No sparring entries yet.</p>
         )}
         {entries.length > 0 && (
           <ul className="m-0 grid list-none gap-[var(--s3)] p-0">
@@ -762,13 +762,13 @@ export default function SparringTelemetryPage() {
           to do that. */}
       <header className="flex flex-wrap items-center justify-between gap-[var(--s4)] border-b-[3px] border-[color:var(--brass-500)] px-[var(--s5)] py-[var(--s4)]">
         <div>
-          {/* The page's voice follows who is holding it. "Your Corner" over
+          {/* The page's voice follows who is holding it. "Your entry" over
               "Your training record" is written to the boxer whose record it
               is; a coach filling this in for a child is not that reader, and
               copy that tells them it is their own record is the same kind of
               small untruth this file's tests already police in the save
               messages. */}
-          <p className="t-eyebrow">{actor === 'staff' ? 'Coach Entry' : 'Your Corner'}</p>
+          <p className="t-eyebrow">{actor === 'staff' ? 'Coach Entry' : 'Your entry'}</p>
           <h1 className="t-command mt-[var(--s2)]" style={{ fontSize: 'var(--t-xl)' }}>Sparring Log</h1>
           <ClusterNav cluster="sparring" />
           <div className="mt-[var(--s3)]"><BackHome /></div>
@@ -834,7 +834,7 @@ export default function SparringTelemetryPage() {
 
                 {rosterState === 'unavailable' && (
                   <div className="rounded-[var(--r-md)] border-2 border-[var(--restricted)] bg-[rgba(0,0,0,.28)] p-[var(--s3)]">
-                    <p className="m-0 text-[length:var(--t-sm)] font-semibold text-[var(--restricted-ink)]">
+                    <p className="m-0 text-[length:var(--t-md)] font-semibold text-[var(--restricted-ink)]">
                       Your athletes could not be loaded, so there is nobody to choose. This is not a
                       statement that your gym has none -- reload and try again. Write the session down
                       on paper in the meantime; do not guess an athlete here.
@@ -843,7 +843,7 @@ export default function SparringTelemetryPage() {
                 )}
 
                 {rosterState === 'loaded' && authorizedAthletes.length === 0 && (
-                  <p className="m-0 text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                  <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                     There are no active athletes in your gym yet, so there is nobody you can log a session
                     for. An administrator adds athletes to the gym.
                   </p>
@@ -968,7 +968,7 @@ export default function SparringTelemetryPage() {
             {/* WHOLE SESSION -- copy accepted by Overwatch 2026-10-17 (lane L50). */}
             <div className="grid gap-[var(--s3)]">
               <h3 className="t-label m-0">Whole session</h3>
-              <p className="m-0 text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+              <p className="m-0 text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                 {actor === 'staff'
                   ? 'Every punch they threw, every round. Leave a box blank if nobody counted it.'
                   : "Every punch, every round. Leave a box blank if you didn't count it."}
@@ -1071,7 +1071,7 @@ export default function SparringTelemetryPage() {
               </div>
             </div>
 
-            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-200)]">
+            <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]">
               {actor === 'staff'
                 ? 'This is filed against the athlete you chose. Contact logged without a current medical clearance, or during a training hold, raises a safety review -- the record is still kept.'
                 : 'Nothing here is graded and nothing here is shared with the other kids. It stays on your record, and over time it is how you can see what is actually changing instead of guessing.'}

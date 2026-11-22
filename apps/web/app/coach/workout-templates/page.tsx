@@ -7,8 +7,12 @@ import RoleSessionGate from '@/components/RoleSessionGate';
 import WorkAxis from '@/components/WorkAxis';
 import { apiBase } from '@/lib/apiBase';
 import { orNotWritten } from '@/src/lib/drillPresentation';
+import { AI_DRAFT_MARK, DRAFT_NOT_CHECKED } from '@/src/lib/sessionScriptWords';
 import MakeSessionScript from './MakeSessionScript';
+import TemplateEditForm, { type TemplateEditOutcome } from './TemplateEditForm';
 import type {
+  TemplateFieldDrafts,
+  TemplateMarkedField,
   WorkoutTemplateItemWithDrillHead,
   WorkoutTemplateRow,
 } from '@/src/server/pilot/workoutTemplates';
@@ -47,6 +51,8 @@ interface TemplateDetail {
    * reader. null: the check could not run.
    */
   refusedDrills?: RefusedDrill[] | null;
+  /** Which shown fields are still AI drafts (lane ED-UI PR3): sent to coaches and admins only; undefined when not sent. */
+  fieldDrafts?: TemplateFieldDrafts;
 }
 
 // ---------------------------------------------------------------------------
@@ -710,6 +716,79 @@ function templateMatches(template: Template, query: string): boolean {
   return words.every((word) => hay.includes(word));
 }
 
+// THE STAFF AI-DRAFT MARK (OW25-57, OD-2026-11-19-012: coaches and admins only; lane ED-UI PR3, Q5 = A).
+// The route sends field_drafts to a coach or organization admin alone. Beside each drafted field; a
+// labelled version's unchecked field says so; a version with no label row says so once (Q4 = A).
+// The 6e mark and words (sessionScriptWords.ts). The words take --bone-200, the design system's
+// lift for a small voice on lit leather (OD-2026-10-02-010), inline: .t-label is unlayered.
+const LIFT = { color: 'var(--bone-200)' } as const;
+
+function DraftMark({ state }: { state: boolean | null | undefined }) {
+  if (state === false) return null;
+  if (state === true) return <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>;
+  return <span className="ml-[var(--s2)] text-[length:var(--t-md)] normal-case tracking-normal" style={LIFT}>({DRAFT_NOT_CHECKED})</span>;
+}
+
+// "LOOKS RIGHT" (OW25-55; lane ED-UI PR4): every field marked here is one the form can change (Q3 = A).
+interface LooksRightPress { onPress: (field: TemplateMarkedField) => void; disabled: boolean }
+// The Edit form's words for a save (TemplateEditForm.tsx).
+const LOOKS_RIGHT_FAILED = 'The template could not be saved.';
+const LOOKS_RIGHT_UNKNOWN = 'It is not known whether this change was saved.';
+const TEMPLATE_FIELD_LABEL: Record<TemplateMarkedField, string> = {
+  name: 'Name', session_type: 'Session type', difficulty: 'Difficulty', age_band: 'Age group', duration_minutes: 'Minutes',
+  intent: 'Intent', requires_coach_authorization: 'Coach authorization', coach_notes: 'Coach notes', items: 'The blocks',
+};
+
+function draftMark(detail: TemplateDetail, field: TemplateMarkedField, press?: LooksRightPress) {
+  if (detail.fieldDrafts?.labelled !== true) return null;
+  const state = detail.fieldDrafts[field];
+  return (
+    <>
+      <DraftMark state={state} />
+      {state === true && press && (
+        <span data-surface="kiosk" className="inline-block mb-[var(--s2)]">
+          <button type="button" className="btn btn--secondary ml-[var(--s2)]" aria-label={`Looks right: ${TEMPLATE_FIELD_LABEL[field]}`}
+            onClick={() => press.onPress(field)} disabled={press.disabled}>
+            Looks right
+          </button>
+        </span>
+      )}
+    </>
+  );
+}
+
+// draftMark as a component: the press reaches it as a prop, not during the page's render.
+function FieldMark({ detail, field, press }: { detail: TemplateDetail; field: TemplateMarkedField; press?: LooksRightPress }) {
+  return draftMark(detail, field, press);
+}
+
+/** The opened template's fields as a short list (Q5 = A), each with its mark. The name is the heading. */
+function TemplateFacts({ detail, press }: { detail: TemplateDetail; press?: LooksRightPress }) {
+  const { template, fieldDrafts } = detail;
+  const facts: Array<[TemplateMarkedField, string, string]> = [
+    ['session_type', 'Session type', template.session_type.replace(/_/g, ' ')],
+    ['difficulty', 'Difficulty', orNotWritten(template.difficulty)],
+    ['age_band', 'Age group', orNotWritten(template.age_band.replace(/_/g, ' '))],
+    ['duration_minutes', 'Minutes', template.duration_minutes === null ? orNotWritten(null) : String(template.duration_minutes)],
+    ['intent', 'Intent', orNotWritten(template.intent)],
+    ['requires_coach_authorization', 'Coach authorization', template.requires_coach_authorization ? 'Required' : 'Not required'],
+  ];
+  return (
+    <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
+      {fieldDrafts && fieldDrafts.labelled !== true && <p className="t-body mb-[var(--s2)]" style={LIFT}>({DRAFT_NOT_CHECKED})</p>}
+      {/* On a phone each label sits over its value, so a value keeps the width to read in. */}
+      <dl className="grid grid-cols-1 items-baseline gap-x-[var(--s3)] gap-y-[var(--s1)] sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-y-[var(--s2)]">
+        {facts.map(([field, label, value]) => (
+          <div key={field} className="contents">
+            <dt className="t-label" style={LIFT}>{label}</dt>
+            <dd className="t-body text-[color:var(--bone-300)]">{value}{draftMark(detail, field, press)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function CoachWorkoutTemplates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -721,6 +800,14 @@ function CoachWorkoutTemplates() {
   // including a second open of the same one after an error.
   const [focusDetail, setFocusDetail] = useState(0);
   const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  // Back to Edit when the form closes with no new version; centred, clear of the sticky bar.
+  const [focusEdit, setFocusEdit] = useState(0);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (focusEdit === 0) return;
+    editButtonRef.current?.focus({ preventScroll: true });
+    editButtonRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [focusEdit]);
 
   const [openTemplateId, setOpenTemplateId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TemplateDetail | null>(null);
@@ -732,6 +819,15 @@ function CoachWorkoutTemplates() {
   const [issuing, setIssuing] = useState(false);
   // The same, while a session script is being made from the open template.
   const [making, setMaking] = useState(false);
+  // Edit (OD-2026-11-19-005; ED-UI PR2): the gate admits the roles the PATCH admits; the route decides.
+  const [editingId, setEditingId] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editNotice, setEditNotice] = useState('');
+  // A "Looks right" press that did not land: the server's words, or that its outcome is not known. Focused when set.
+  const [looksRightError, setLooksRightError] = useState('');
+  const looksRightAlertRef = useRef<HTMLDivElement | null>(null);
+  // After a stale or unknown save, Cancel opens the template again from the server.
+  const rereadOnCancel = useRef(false);
   // The request key of every issue that has no settled answer yet, by template
   // and athlete. Held here, above the issue control, which comes and goes.
   const requestKeys = useRef<RequestKeys>(new Map());
@@ -777,6 +873,9 @@ function CoachWorkoutTemplates() {
     // template's items -- or its failure -- never render under another
     // template's name while the new read is in flight.
     setOpenTemplateId(templateId);
+    setEditNotice('');
+    setLooksRightError('');
+    setEditingId('');
     setDetail(null);
     setDetailError('');
     setDetailLoading(true);
@@ -787,9 +886,10 @@ function CoachWorkoutTemplates() {
         { method: 'GET', credentials: 'include' },
       );
       if (!response.ok) throw new Error('That workout template could not be opened.');
-      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills' | 'refusedDrills'>> & {
+      const payload = (await response.json()) as Partial<Omit<TemplateDetail, 'untestedDrills' | 'refusedDrills' | 'fieldDrafts'>> & {
         untested_drills?: unknown;
         refused_drills?: unknown;
+        field_drafts?: unknown;
       };
       if (!payload.template) throw new Error('That workout template could not be opened.');
       if (latest()) {
@@ -802,6 +902,9 @@ function CoachWorkoutTemplates() {
           refusedDrills: payload.refused_drills === undefined
             ? undefined
             : Array.isArray(payload.refused_drills) ? refusedDrillsFrom(payload.refused_drills) : null,
+          fieldDrafts: typeof payload.field_drafts === 'object' && payload.field_drafts !== null
+            ? (payload.field_drafts as TemplateFieldDrafts)
+            : undefined,
         });
       }
     } catch (error) {
@@ -813,6 +916,91 @@ function CoachWorkoutTemplates() {
       if (latest()) setDetailLoading(false);
     }
   }, []);
+
+  // The current version of a template: the listed row of its lineage ("Reload it and edit the current version", the
+  // route's 409). After a 409 or an unknown outcome the list was just read again, and a replaced version is not in it.
+  const currentVersionId = (template: Template) =>
+    templates.find((row) => row.lineage_id === template.lineage_id)?.template_id ?? template.template_id;
+
+  // After a save the list is read again and the new version opens from the server.
+  async function afterEditSaved(outcome: TemplateEditOutcome) {
+    const reread = rereadOnCancel.current;
+    rereadOnCancel.current = false;
+    if (!outcome.changed) {
+      setEditingId('');
+      setEditBusy(false);
+      // After a 409 or an unknown outcome nothing is known to be unwritten: no notice; the current version opens.
+      if (reread && detail) {
+        void openTemplate(currentVersionId(detail.template));
+        return;
+      }
+      setEditNotice('Nothing changed. No new version was written.');
+      setFocusEdit((count) => count + 1);
+      return;
+    }
+    try { // The form stays, locked, until openTemplate closes it: the old version never shows meanwhile.
+      await load();
+      await openTemplate(outcome.templateId);
+      setEditNotice(`Saved as version ${outcome.version}.`);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  // "LOOKS RIGHT" (lane ED-UI PR4): as after a save, the new version opens from the server; a 409 or an
+  // unknown outcome reads the list and this version again.
+  async function pressLooksRight(field: TemplateMarkedField) {
+    const opened = detail?.template;
+    if (!opened || editBusy) return;
+    setEditBusy(true);
+    setEditNotice('');
+    setLooksRightError('');
+    let status: number | null = null;
+    try {
+      const response = await fetch(`${apiBase()}/api/pilot/workout-templates`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_id: opened.template_id, looks_right: field }),
+      });
+      status = response.status;
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; changed?: boolean; template_id?: unknown; version?: unknown };
+      if (!response.ok) throw new Error(payload.error || LOOKS_RIGHT_FAILED);
+      if (payload.changed !== true || typeof payload.template_id !== 'string' || typeof payload.version !== 'number') {
+        status = null; // A 2xx that does not say what it wrote: what happened is not known.
+        throw new Error(LOOKS_RIGHT_UNKNOWN);
+      }
+      await load();
+      await openTemplate(payload.template_id);
+      setEditNotice(`Recorded as looks right. Saved as version ${payload.version}.`);
+    } catch (failure) {
+      const unknown = status === null || status >= 500;
+      if (unknown || status === 409) {
+        await load();
+        await openTemplate(opened.template_id);
+      }
+      setLooksRightError(unknown ? LOOKS_RIGHT_UNKNOWN : (failure instanceof Error && failure.message) || LOOKS_RIGHT_FAILED);
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  // On the current version only, as Edit is (TEMPLATE_VERSION_STALE).
+  const looksRightPress: LooksRightPress | undefined = detail && detail.template.superseded_at === null
+    ? { onPress: (field) => void pressLooksRight(field), disabled: issuing || making || editBusy }
+    : undefined;
+
+  // After a 409 or an unknown outcome the list is read again; the form keeps what was typed.
+  async function afterEditFailed(status: number | null) {
+    try {
+      if (status === null || status >= 500 || status === 409) {
+        rereadOnCancel.current = true;
+        await load();
+      }
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   // A day on Class plans opens its template here: /coach/workout-templates?template=<id>.
   // Read once on arrival, from the address (client only); without the
@@ -837,6 +1025,12 @@ function CoachWorkoutTemplates() {
     heading?.focus({ preventScroll: true });
     heading?.scrollIntoView?.({ block: 'start' });
   }, [focusDetail]);
+  // After the heading's: a press's alert, when there is one, is where focus ends.
+  useEffect(() => {
+    if (!looksRightError) return;
+    looksRightAlertRef.current?.focus({ preventScroll: true });
+    looksRightAlertRef.current?.scrollIntoView?.({ block: 'center' });
+  }, [looksRightError]);
 
   const openIsListed = openTemplateId !== null && templates.some((template) => template.template_id === openTemplateId);
 
@@ -869,35 +1063,83 @@ function CoachWorkoutTemplates() {
             aria-labelledby="open-template-heading"
             className="mat-leather rounded-[var(--r-lg)] p-[var(--s5)] md:col-span-2"
           >
-            <h2
-              id="open-template-heading"
-              ref={detailHeadingRef}
-              tabIndex={-1}
-              className="t-command text-[length:var(--t-lg)]"
-            >
-              {detail ? detail.template.name : 'Workout template'}
-            </h2>
+            <div className="flex flex-wrap items-baseline">
+              <h2
+                id="open-template-heading"
+                ref={detailHeadingRef}
+                tabIndex={-1}
+                className="t-command text-[length:var(--t-lg)]"
+              >
+                {detail ? detail.template.name : 'Workout template'}
+              </h2>
+              {detail && editingId !== detail.template.template_id && <FieldMark detail={detail} field="name" press={looksRightPress} />}
+            </div>
 
             {detailLoading && (
               <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">Loading the template...</p>
             )}
 
             {!detailLoading && detailError && (
-              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">
+              <p role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] px-[var(--s3)] py-[var(--s3)] text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">
                 {detailError}
               </p>
             )}
 
-            {!detailLoading && !detailError && detail && (
+            {/* On the kiosk floor, as the Issue control is (a utility cannot beat .t-body's size). */}
+            {editNotice && <div data-surface="kiosk"><p role="status" className="t-body mt-[var(--s3)] text-[color:var(--bone-200)]">{editNotice}</p></div>}
+            {looksRightError && (
+              <div data-surface="kiosk">
+                <div ref={looksRightAlertRef} tabIndex={-1} role="alert" className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[color:var(--hide-900)] p-[var(--s4)]">
+                  <p className="t-body font-semibold text-[color:var(--bone-100)]"><span aria-hidden="true">▲</span> {looksRightError}</p>
+                </div>
+              </div>
+            )}
+
+            {!detailLoading && !detailError && detail && editingId === detail.template.template_id && (
+              <div className="mt-[var(--s4)]">
+                <TemplateEditForm
+                  key={detail.template.template_id}
+                  template={detail.template}
+                  items={detail.items}
+                  itemNames={detail.items.map((item, index) => `${index + 1}. ${itemName(item)}`)}
+                  onCancel={() => {
+                    setEditingId('');
+                    if (rereadOnCancel.current) void openTemplate(currentVersionId(detail.template));
+                    else setFocusEdit((count) => count + 1);
+                    rereadOnCancel.current = false;
+                  }}
+                  onSaved={(outcome) => void afterEditSaved(outcome)}
+                  onSaving={() => setEditBusy(true)}
+                  onFailed={(status) => void afterEditFailed(status)}
+                  busy={editBusy}
+                />
+              </div>
+            )}
+
+            {!detailLoading && !detailError && detail && editingId !== detail.template.template_id && (
               <>
+                {/* Only the current version: the route refuses any other (TEMPLATE_VERSION_STALE). */}
+                {detail.template.superseded_at === null && (
+                  <div data-surface="kiosk" className="mt-[var(--s3)]">
+                    <button ref={editButtonRef} type="button" disabled={issuing || making || editBusy}
+                      onClick={() => { setEditNotice(''); setLooksRightError(''); setEditingId(detail.template.template_id); }}
+                      className="btn btn--ghost" aria-label={`Edit: ${detail.template.name}`}>
+                      Edit
+                    </button>
+                  </div>
+                )}
+                <TemplateFacts detail={detail} press={looksRightPress} />
                 {(detail.template.coach_notes ?? '').trim() !== '' && (
                   <div className="mt-[var(--s4)] rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-                    <p className="t-label">Coach notes</p>
+                    <p className="t-label">Coach notes<FieldMark detail={detail} field="coach_notes" press={looksRightPress} /></p>
                     <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">{detail.template.coach_notes}</p>
                   </div>
                 )}
 
-                <h3 className="t-command mt-[var(--s5)] text-[length:var(--t-md)]">The blocks</h3>
+                <div className="mt-[var(--s5)] flex flex-wrap items-baseline">
+                  <h3 className="t-command text-[length:var(--t-md)]">The blocks</h3>
+                  <FieldMark detail={detail} field="items" press={looksRightPress} />
+                </div>
 
                 {detail.items.length === 0 && (
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">
@@ -912,8 +1154,8 @@ function CoachWorkoutTemplates() {
                       className="rounded-[var(--r-md)] border border-[color:rgb(var(--brass-400-rgb)_/_.22)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]"
                     >
                       <div className="flex flex-wrap items-baseline gap-[var(--s3)]">
-                        <span className="plaque">{item.block.replace(/_/g, ' ')}</span>
-                        <h4 className="t-command text-[length:var(--t-sm)]">
+                        <span className="plaque" style={{ fontSize: 'var(--t-md)' }}>{item.block.replace(/_/g, ' ')}</span>
+                        <h4 className="t-command text-[length:var(--t-md)]">
                           {/* The lineage head's name; the raw drill_id only
                               when that row did not resolve. */}
                           {itemName(item)}
@@ -938,7 +1180,7 @@ function CoachWorkoutTemplates() {
                           Said, not fixed -- the server never repoints an item
                           (workoutTemplates.ts), so the coach decides. */}
                       {item.uses_older_drill_version && (
-                        <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <p className="t-body mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           Uses an older drill version.
                         </p>
                       )}
@@ -954,10 +1196,10 @@ function CoachWorkoutTemplates() {
                       {/* The source sheet's own fields for this item, as written (lane YR): information only. */}
                       {sheetFields(item).length > 0 && (
                         <details className="mt-[var(--s2)]">
-                          <summary className="t-label cursor-pointer">From the sheet</summary>
+                          <summary className="t-label min-h-[var(--tap)] cursor-pointer py-[var(--s3)]">From the sheet</summary>
                           <dl className="mt-[var(--s1)]">
                             {sheetFields(item).map(([key, value]) => (
-                              <div key={key} className="t-body mt-[var(--s1)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                              <div key={key} className="t-body mt-[var(--s1)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                                 <dt className="inline font-semibold">{`${key.replace(/_/g, ' ')}: `}</dt>
                                 <dd className="inline whitespace-pre-line">{sheetText(value)}</dd>
                               </div>
@@ -968,7 +1210,12 @@ function CoachWorkoutTemplates() {
                     </li>
                   ))}
                 </ol>
+              </>
+            )}
 
+            {/* Hidden, not unmounted, while editing: an issue or plan answer survives Cancel. */}
+            {!detailLoading && !detailError && detail && (
+              <div hidden={editingId === detail.template.template_id}>
                 {/* Opening another template unmounts this whole block while
                     the new one loads (openTemplate clears `detail`), so the
                     control always starts clean: no athlete, no confirm step,
@@ -1000,7 +1247,7 @@ function CoachWorkoutTemplates() {
                     onBusyChange={setMaking}
                   />
                 )}
-              </>
+              </div>
             )}
           </section>
   );
@@ -1034,7 +1281,7 @@ function CoachWorkoutTemplates() {
 
           {!loading && loadError && (
             <div className="mt-[var(--s3)] rounded-[var(--r-md)] border-2 border-[color:var(--brass-300)] bg-[rgba(0,0,0,.28)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
+              <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{loadError}</p>
               <p className="t-body mt-[var(--s2)] text-[color:var(--bone-300)]">
                 This is a failure to load, not an empty catalog of templates.
               </p>
@@ -1053,7 +1300,7 @@ function CoachWorkoutTemplates() {
               <input
                 id="template-find"
                 type="search"
-                className="input"
+                className="input input--kiosk"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Name, what it is for, session type, age group or level"
@@ -1091,12 +1338,12 @@ function CoachWorkoutTemplates() {
                 <article key={template.template_id} className="mat-leather--raised rounded-[var(--r-lg)] p-[var(--s4)]">
                   <div className="flex items-baseline justify-between gap-[var(--s3)]">
                     <h3 className="t-command text-[length:var(--t-md)]">{template.name}</h3>
-                    {template.difficulty && <span className="plaque">{template.difficulty}</span>}
+                    {template.difficulty && <span className="plaque" style={{ fontSize: 'var(--t-md)' }}>{template.difficulty}</span>}
                   </div>
                   <p className="t-label mt-[var(--s2)]">{templateFacts(template)}</p>
                   <p className="t-body mt-[var(--s3)] text-[color:var(--bone-300)]">{orNotWritten(template.intent)}</p>
                   {template.requires_coach_authorization && (
-                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                    <p className="t-body mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                       Requires coach authorization before use.
                     </p>
                   )}
@@ -1108,7 +1355,7 @@ function CoachWorkoutTemplates() {
                     // for the template already showing with its issue control (a
                     // stray tap would wipe the result the coach is reading). A
                     // template with no steps has no control, and can be re-read.
-                    disabled={issuing || making || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
+                    disabled={issuing || making || editingId !== '' || editBusy || (openTemplateId === template.template_id && detail !== null && detail.items.length > 0)}
                   >
                     {openTemplateId === template.template_id ? 'Showing template' : 'Open template'}
                   </button>

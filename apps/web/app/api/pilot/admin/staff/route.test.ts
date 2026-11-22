@@ -14,6 +14,7 @@ import {
   requireMicrosoftOrAttestedLocalPinPrincipal,
 } from '@/src/server/pilot/http';
 import { setStaffDisplayName } from '@/src/server/pilot/profileDb';
+import { GuardianLinkEndedError } from '@/src/server/pilot/guardianAccess';
 
 // requireGuardianLinkForParentInvite and the role vocabulary stay real: the
 // refusal of an unlinked parent invite is the behaviour under test, and a
@@ -300,6 +301,27 @@ describe('POST', () => {
         details: expect.objectContaining({ guardian_athlete_id: 'ath-1' }),
       }),
     );
+  });
+
+  // Lane GA: a parent invite naming an athlete who is 18 or over.
+  // createOrUpdateMicrosoftStaffAccount refuses it on its transaction before
+  // the guardian record and the link (staffProvisioning.test.ts and
+  // guardianInviteLink.pg.test.ts prove that); this pins the route's answer.
+  test('a parent invite for an athlete 18 or over answers 403 with the refusal, and audits nothing', async () => {
+    mockProvision.mockRejectedValue(new GuardianLinkEndedError());
+
+    const response = await POST(
+      jsonRequest('POST', {
+        login_email: 'dana@example.com',
+        role: 'parent',
+        guardian: { athlete_id: 'ath-adult', full_name: 'Dana Johnson', relationship_to_athlete: 'mother' },
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.error).toBe('Forbidden: this athlete is 18 or older; guardian access has ended');
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   test('refuses a guardian link attached to a non-parent role', async () => {

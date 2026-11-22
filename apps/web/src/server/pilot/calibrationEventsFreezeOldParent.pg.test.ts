@@ -143,7 +143,7 @@ async function seedOrganization(orgId: string, videoId: string): Promise<string>
     organizationId: orgId,
     calibrationProjectId: projectId,
     name: 'Events freeze old parent study',
-    ontologyVersion: ontology.PROJECT_CREATION_ONTOLOGY_VERSION,
+    ontologyVersion: ontology.BOXING_ONTOLOGY_VERSION_0_1,
     createdByAccountId: ANNOTATOR,
   });
   return projectId;

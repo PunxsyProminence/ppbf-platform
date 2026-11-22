@@ -1,5 +1,6 @@
 import { canonicalCell } from './canonical';
 import { writeCsv } from './csv';
+import { keptWhenTheHeaderOmits } from './datasets/drills';
 import { type IdKind, isNewId } from './ids';
 import { referenceSetsFromBaseline } from './referenceSets';
 import { committedPath, FILE_SPECS } from './specs';
@@ -65,6 +66,14 @@ export interface PrepareInput {
 
 type Cells = Record<string, string>;
 
+/** The Backbone label columns (specs/common.ts; datasets/contentLabels.ts). */
+const LABEL_COLUMNS = ['field_labels', 'evidence', 'stage_keys'] as const;
+
+/** A child file's own id column (a track block's track_block_id), or undefined. */
+function childIdColumn(spec: FileSpec): string | undefined {
+  return spec.parent ? spec.columns.find((column) => column.role === 'child_id')?.name : undefined;
+}
+
 function resolveNewIds(spec: FileSpec, cells: Cells, minted: MintedIds): void {
   for (const column of spec.columns) {
     const value = cells[column.name];
@@ -79,11 +88,13 @@ function resolveNewIds(spec: FileSpec, cells: Cells, minted: MintedIds): void {
 /** The package row as it will be written: normalized, new ids resolved, placeholders and ids filled. */
 function preparedCells(
   spec: FileSpec,
+  header: readonly string[],
   values: Readonly<Record<string, string>>,
   minted: MintedIds,
   committedByKey: ReadonlyMap<string, Record<string, string>>,
   counter: { childIds: number },
   blankKeyId: string | undefined,
+  committedById: ReadonlyMap<string, Record<string, string>> = new Map(),
 ): Cells {
   const cells: Cells = {};
   for (const column of spec.columns) {
@@ -109,6 +120,24 @@ function preparedCells(
     else if (column.role === 'lineage') cells[column.name] = kept || cells[spec.key[0]];
     else if (column.role === 'system') cells[column.name] = kept || (column.systemDefault ?? '');
     else if (column.role === 'child_id') cells[column.name] = kept;
+  }
+  // A drill file made before a column existed (lane GD; Q-GD2-1 = A on #2056): a column the package's
+  // header leaves out keeps the committed cell, as the engine keeps the stored value (datasets/drills.ts).
+  // Read as blank, it wrote '' over the committed cell, and the next load stored that as a new version.
+  for (const name of keptWhenTheHeaderOmits(spec)) {
+    if (!header.includes(name)) cells[name] = committed ? normalizeCell(committed[name]) : '';
+  }
+  // A label column (field_labels, evidence, stage_keys) the header leaves out keeps the committed cell
+  // too, as a load keeps the stored labels (datasets/contentLabels.ts withStoredLabels; lane GD,
+  // Q-GD2-2 = B). Read as blank, it wiped the labels, and a present blank cell means "no labels".
+  // By name, not role: a track block carries the three as plain content columns (specs/trainingTracks.ts).
+  // Labels follow the item, not its place: a child row that gives its own id takes that row's labels, so
+  // reordered track blocks keep their own (re-review on #2103); one with no id is the row at its key.
+  const idColumn = childIdColumn(spec);
+  const ownId = idColumn ? normalizeCell(values[idColumn] ?? '') : '';
+  const labelSource = ownId ? committedById.get(ownId) : committed;
+  for (const name of LABEL_COLUMNS) {
+    if (spec.columns.some((column) => column.name === name) && !header.includes(name)) cells[name] = labelSource ? normalizeCell(labelSource[name]) : '';
   }
 
   const mint = spec.mint;
@@ -155,8 +184,10 @@ function mergeFile(
   counter: { childIds: number },
 ): FileChange {
   const committedByKey = new Map((committed?.rows ?? []).map((row) => [rowKey(spec, row.values), row.raw]));
+  const idColumn = childIdColumn(spec);
+  const committedById = new Map(idColumn ? (committed?.rows ?? []).map((row) => [normalizeCell(row.raw[idColumn]), row.raw]) : []);
   const prepared = packageFile.rows.map((row) =>
-    preparedCells(spec, row.values, validation.minted, committedByKey, counter, validation.blankKeyIds.get(row)),
+    preparedCells(spec, packageFile.header, row.values, validation.minted, committedByKey, counter, validation.blankKeyIds.get(row), committedById),
   );
   const header = headerFor(spec, committed, prepared);
 

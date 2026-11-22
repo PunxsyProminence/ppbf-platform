@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { ReactElement, ReactNode } from 'react';
@@ -11,6 +11,7 @@ import { render } from '@testing-library/react';
 
 import AthleteLayout from '../../app/athlete/layout';
 import { readDesignSystemCss } from '../../src/design/readDesignSystemCss';
+import { stripSourceComments } from './readComponentSource';
 
 /**
  * The gym-floor tap floor has two halves, and each is useless without the
@@ -126,8 +127,10 @@ const FLOOR_ROUTES = [
   'coach/attempt-log',
   'coach/assessments',
   'coach/test-day',
-  'coach/injuries',
-  'coach/medical-restrictions', // OD-2026-11-17-009 ruling 4 (OW25-37 A)
+  // Injury Record and Medical Restrictions (OD-2026-11-17-009 ruling 4, OW25-37 A)
+  // are sections of Athlete Safety now (lane AS-5); their old addresses redirect.
+  'coach/athlete-safety',
+  'coach/sparring-caps', // app scrub CS-11 (lane AS-5)
   'coach/drills', // OD-2026-11-17-009 ruling 4 (OW25-37 A)
   'coach/behavior-standards', // app scrub CF-24 (lane U1, SC2-2)
   'coach/cue-library', // app scrub CF-24 (lane U1, SC2-2)
@@ -138,6 +141,7 @@ const FLOOR_ROUTES = [
   'coach/mental-skills', // app scrub CF-24 (lane U1, SC2-2)
   'coach/development-blocks', // app scrub CF-24 (lane U1, SC2-2)
   'coach/class', // the class screen (lane U2-6a)
+  'coach/workout-templates', // app scrub CF-24 remainder: the whole page, not only Issue and Make a plan (lane SWP, SWP-2; Q3 = A on #2046)
   'shadow',
   'parent/safety',
 ] as const;
@@ -157,5 +161,107 @@ describe('gym-floor pages carry the kiosk surface', () => {
     expect(marker).not.toBeNull();
     expect(marker?.querySelector('button')).not.toBeNull();
     expect(marker?.className).toContain('contents');
+  });
+});
+
+/**
+ * Workout Templates went onto the kiosk surface whole (app scrub CF-24
+ * remainder; lane SWP, SWP-2). The surface lifts the six voice classes and the
+ * controls the stylesheet names, but two things on this page it cannot reach:
+ *
+ *  - a size written as a utility on an element that wears no voice class
+ *    (`<p className="text-[length:var(--t-sm)]">`, an `<h4 className="t-command
+ *    text-[length:var(--t-sm)]">`): `.t-command` sets no size, so the utility
+ *    is the size, and it is 15px;
+ *  - a `<summary>`, which is a control but is not in the kiosk tap selector
+ *    list (app/globals.css, design-system/foundation/ppbf-foundation.css), so it
+ *    is as tall as its text.
+ *
+ * Found in review (#2067), and each measured in Chromium by the reviewer:
+ *
+ *  - `.input` / `.select` / `.textarea` declare `min-height: 46px` UNLAYERED
+ *    (design-system/legacy/ppbf-leather-brass.css:901), which beats both kiosk
+ *    tap rules (one in `@layer base`, one at `:where()` zero weight). Only the
+ *    `input--kiosk` modifier (:911) lifts them, so every one must wear it.
+ *  - `.plaque` sets `font: 650 13px` unlayered (:1260) and no kiosk rule lifts
+ *    it; a utility cannot beat it, so it takes an inline size.
+ *  - a bare `<span>` with no size and no voice class falls through to the
+ *    body's 15px: the "(not checked)" draft words beside a heading.
+ *
+ * Scoped to this folder on purpose: other floor pages still carry sub-floor
+ * sizes (activate, sports-medicine, attempt-log, assessments, shadow,
+ * parent/safety, counted 2026-11-21), and those files are other lanes'.
+ */
+describe('Workout Templates on the gym floor', () => {
+  const FOLDER = path.resolve(__dirname, '../../app/coach/workout-templates');
+  const SOURCES = readdirSync(FOLDER)
+    .filter((name) => name.endsWith('.tsx') && !name.endsWith('.test.tsx'))
+    .map((name) => ({ name, code: stripSourceComments(readFileSync(path.join(FOLDER, name), 'utf8')) }));
+  const SUB_FLOOR = /var\(\s*--t-(?:sm|xs)\s*\)|\btext-(?:xs|sm|base)\b/;
+  /** A literal size, in a utility or an inline style, read as px (a rem or em at 16px). */
+  const LITERAL_SIZE = /text-\[(?:length:)?\s*([\d.]+)(px|rem|em)\s*\]|fontSize\s*:\s*['"`]?([\d.]+)(px|rem|em)?/g;
+  const KIOSK_TYPE_FLOOR_PX = 19.1;
+  const subFloorLiterals = (line: string): string[] =>
+    [...line.matchAll(LITERAL_SIZE)]
+      .filter((match) => {
+        const value = Number(match[1] ?? match[3]);
+        const unit = match[2] ?? match[4] ?? 'px';
+        return (unit === 'px' ? value : value * 16) < KIOSK_TYPE_FLOOR_PX;
+      })
+      .map((match) => match[0]);
+
+  it('reads the page, its two parts and its layout, so nothing below passes on no files', () => {
+    expect(SOURCES.map((source) => source.name).sort()).toEqual(
+      ['MakeSessionScript.tsx', 'TemplateEditForm.tsx', 'layout.tsx', 'page.tsx'],
+    );
+  });
+
+  it.each(['page.tsx', 'MakeSessionScript.tsx', 'TemplateEditForm.tsx'])(
+    '%s sets no type below --t-md (19.1px)',
+    (name) => {
+      const code = SOURCES.find((source) => source.name === name)?.code ?? '';
+      const lines = code.split('\n').filter((line) => SUB_FLOOR.test(line) || subFloorLiterals(line).length > 0);
+      expect(lines.map((line) => line.trim())).toEqual([]);
+    },
+  );
+
+  it('gives every <summary> the 55px tap floor, which the kiosk stylesheet does not', () => {
+    const summaries = SOURCES.flatMap((source) =>
+      [...source.code.matchAll(/<summary\b[^>]*>/g)].map((match) => `${source.name}: ${match[0]}`));
+    expect(summaries.length).toBeGreaterThan(0);
+    expect(summaries.filter((tag) => !tag.includes('min-h-[var(--tap)]'))).toEqual([]);
+  });
+
+  it('reads a literal size below the floor, in a utility or inline, and passes one at or above it', () => {
+    expect(subFloorLiterals('className="text-[length:13px]"')).toEqual(['text-[length:13px]']);
+    expect(subFloorLiterals('className="text-[0.9rem]"')).toEqual(['text-[0.9rem]']);
+    expect(subFloorLiterals('style={{ fontSize: 13 }}')).toEqual(['fontSize: 13']);
+    expect(subFloorLiterals("style={{ fontSize: '12px' }}")).toEqual(["fontSize: '12px"]);
+    expect(subFloorLiterals('className="text-[length:24px]" style={{ fontSize: 20 }}')).toEqual([]);
+  });
+
+  it('puts every .input, .select and .textarea on input--kiosk: their unlayered 46px beats both kiosk tap rules', () => {
+    const fields = SOURCES.flatMap((source) =>
+      [...source.code.matchAll(/className=(?:"([^"]*)"|'([^']*)'|\{`([^`]*)`\})/g)]
+        .map((match) => match[1] ?? match[2] ?? match[3] ?? '')
+        .filter((classes) => /(?:^|\s)(?:input|select|textarea)(?:\s|$)/.test(classes))
+        .map((classes) => `${source.name}: ${classes}`));
+    expect(fields.length).toBeGreaterThan(0);
+    expect(fields.filter((field) => !/(?:^|\s)input--kiosk(?:\s|$)/.test(field))).toEqual([]);
+  });
+
+  it('sizes every .plaque inline at --t-md: its unlayered 13px shorthand beats any utility', () => {
+    const plaques = SOURCES.flatMap((source) =>
+      [...source.code.matchAll(/<\w+\b[^>]*className="[^"]*\bplaque\b[^"]*"[^>]*>/g)]
+        .map((match) => `${source.name}: ${match[0]}`));
+    expect(plaques.length).toBeGreaterThan(0);
+    expect(plaques.filter((tag) => !/fontSize:\s*'var\(--t-md\)'/.test(tag))).toEqual([]);
+  });
+
+  it('gives the "(not checked)" draft words a size of their own: a bare span beside a heading is 15px', () => {
+    const page = SOURCES.find((source) => source.name === 'page.tsx')?.code ?? '';
+    const marks = page.split('\n').filter((line) => line.includes('{DRAFT_NOT_CHECKED}'));
+    expect(marks.length).toBeGreaterThan(0);
+    expect(marks.filter((line) => !/\bt-body\b|\bt-label\b|var\(--t-md\)/.test(line)).map((line) => line.trim())).toEqual([]);
   });
 });

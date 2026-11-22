@@ -3426,6 +3426,143 @@ describe('arriving from "Record what you did"', () => {
   });
 });
 
+// Lane AS-5, CS-03: the Clearance Board's "Post to the Family's Page" link
+// opens this page on its athlete at that section. The address carries the
+// section's name, never the athlete.
+describe('arriving from "Post to the Family\'s Page"', () => {
+  const scrolled: Element[] = [];
+  const original = Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    scrolled.length = 0;
+    Element.prototype.scrollIntoView = function scrollIntoView(this: Element) {
+      scrolled.push(this);
+    };
+  });
+
+  afterEach(() => {
+    takeArrivalAthlete();
+    Element.prototype.scrollIntoView = original;
+    window.history.replaceState(null, '', '/');
+  });
+
+  test('the arriving athlete is chosen and the page scrolls to the post, once', async () => {
+    installFetch();
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await screen.findByText('Behavior & Habit Note');
+    expect(athletePicker().value).toBe('ath-1');
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+    expect(scrolled[0].id).toBe('post-to-family');
+    expect(within(scrolled[0] as HTMLElement).getByRole('heading', { name: "Post to the Family's Page" })).toBeInTheDocument();
+  });
+
+  test('the scroll waits until the athlete\'s records are read, so the lists above it are in place', async () => {
+    const base = installFetch();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/shadow/recommendations?')) await held;
+      return base(url, init);
+    }) as unknown as typeof fetch;
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await waitFor(() => expect(athletePicker().value).toBe('ath-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(scrolled).toEqual([]);
+
+    await act(async () => {
+      release();
+      await held;
+    });
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+    expect(scrolled[0].id).toBe('post-to-family');
+  });
+
+  test('a pick made before the arriving athlete\'s records are read drops the scroll', async () => {
+    const base = installFetch();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/pilot/shadow/recommendations?athleteId=ath-1')) await held;
+      return base(url, init);
+    }) as unknown as typeof fetch;
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+    await waitFor(() => expect(athletePicker().value).toBe('ath-1'));
+
+    fireEvent.change(athletePicker(), { target: { value: 'ath-2' } });
+    // Wait for ath-2's records to be read: the line below shows only once
+    // they are, which is when a scroll left pending would fire.
+    await screen.findByText('No medical administrative status recorded yet.');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(athletePicker().value).toBe('ath-2');
+    expect(scrolled).toEqual([]);
+
+    await act(async () => {
+      release();
+      await held;
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(scrolled).toEqual([]);
+  });
+
+  test('a later pick of another athlete does not scroll again', async () => {
+    installFetch();
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+    await screen.findByText('Behavior & Habit Note');
+    await waitFor(() => expect(scrolled).toHaveLength(1));
+
+    const other = Array.from(athletePicker().options).find((option) => option.value && option.value !== 'ath-1');
+    expect(other).toBeDefined();
+    fireEvent.change(athletePicker(), { target: { value: other!.value } });
+    await waitFor(() => expect(athletePicker().value).toBe(other!.value));
+    fireEvent.change(athletePicker(), { target: { value: 'ath-1' } });
+    await waitFor(() => expect(athletePicker().value).toBe('ath-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(scrolled).toHaveLength(1);
+  });
+
+  test('an arrival without the section in the address does not scroll', async () => {
+    installFetch();
+    handOffArrivalAthlete('ath-1');
+    render(<DecisionLoopReviewPage />);
+
+    await screen.findByText('Behavior & Habit Note');
+    expect(athletePicker().value).toBe('ath-1');
+    expect(scrolled).toEqual([]);
+  });
+
+  test('the section in the address with no athlete handed over: nobody is chosen, nothing scrolls', async () => {
+    installFetch();
+    window.history.replaceState(null, '', '/coach/decision-loop#post-to-family');
+    render(<DecisionLoopReviewPage />);
+
+    await screen.findByRole('option', { name: 'Jordan T.' });
+    expect(athletePicker().value).toBe('');
+    expect(scrolled).toEqual([]);
+  });
+});
+
 // F-072: what the coach reads on this page is the gym's day and time in words,
 // never a stored instant in computer form or the account id of who set it.
 // Each instant below is late in the gym's evening, so a UTC day is the wrong day.

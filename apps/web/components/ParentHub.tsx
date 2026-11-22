@@ -13,8 +13,8 @@ import FightCard from './FightCard';
 import GymWallModule from './GymWallModule';
 import ParentDigest from './ParentDigest';
 import ProfilePortrait from './ProfilePortrait';
-import { ParentSummaryPanel, HelpPanel, RoleSpecificShadow } from './RoleSummaryPanels';
-import ShadowChatButton from './ShadowChatButton';
+import { ParentSummaryPanel, HelpPanel, type ChildCount } from './RoleSummaryPanels';
+import FamilyChildPicker from './FamilyChildPicker';
 import SentToYourAthlete from './SentToYourAthlete';
 import { cardPhotoUrl, type FightCardPayload } from './profileClient';
 import { cx } from './uiStyles';
@@ -125,6 +125,63 @@ function membershipLine(row: SupportStatus['memberships'][number]): string {
 /** A task is open until the family ticks it. */
 function isOpenTask(message: ParentMessage): boolean {
   return message.task !== null && message.task.completed_at === null;
+}
+
+/* ONE COUNT PER CHILD, NAMED (scrub FAM-12; AS-9 Q4 = A, Overwatch
+   2026-11-20: "each child's first name beside its own count. Only the
+   parent's own children are shown"). The Parent Floor tasks and New messages
+   tiles count every child's messages, while the other tiles are the selected
+   child's, so a bare total did not say whose it was. Every linked child is
+   listed, a zero included, so no child's count is hidden. A child whose name
+   is not on file reads "Your child"; two children with the same first name
+   keep their full names. A message for a child the roster did not return
+   (not expected: both reads are the guardian's own children) is still
+   counted, under the name the message carries. */
+
+function firstName(name: string | null | undefined): string | null {
+  const trimmed = (name ?? '').trim();
+  if (!trimmed || trimmed === 'Unknown') return null;
+  return trimmed.split(/\s+/)[0];
+}
+
+function countsByChild(
+  childList: ReadonlyArray<{ id: string; name: string }>,
+  allMessages: ReadonlyArray<ParentMessage>,
+  counted: (message: ParentMessage) => boolean,
+): ChildCount[] {
+  const counts = new Map<string, number>();
+  for (const message of allMessages) {
+    if (counted(message)) counts.set(message.athlete_id, (counts.get(message.athlete_id) ?? 0) + 1);
+  }
+  // One list of people for both tiles: the roster's children, each once, then
+  // any child only a message names (every message, counted or not, so the two
+  // tiles never list different children).
+  const people: Array<{ id: string; full: string | null; first: string | null }> = [];
+  const known = new Set<string>();
+  for (const child of childList) {
+    if (known.has(child.id)) continue;
+    known.add(child.id);
+    people.push({
+      id: child.id,
+      full: child.name && child.name !== 'Unknown' ? child.name.trim() : null,
+      first: firstName(child.name),
+    });
+  }
+  for (const message of allMessages) {
+    if (known.has(message.athlete_id)) continue;
+    known.add(message.athlete_id);
+    people.push({ id: message.athlete_id, full: message.athlete_name?.trim() || null, first: firstName(message.athlete_name) });
+  }
+  const firstUses = new Map<string, number>();
+  for (const person of people) {
+    if (person.first) firstUses.set(person.first, (firstUses.get(person.first) ?? 0) + 1);
+  }
+  return people.map((person) => ({
+    label: person.first
+      ? (firstUses.get(person.first) ?? 0) > 1 ? person.full ?? person.first : person.first
+      : 'Your child',
+    count: counts.get(person.id) ?? 0,
+  }));
 }
 
 /* PAST DUE (parent walk 2026-10-19 item 5; Jason 2026-10-19, Q2 "A: "Past
@@ -292,19 +349,35 @@ export function safetyChildSentence(child: SafetyChild): string | null {
    tone below is mixed against paper, and every state pairs its colour with a
    glyph and an uppercase label via the .badge component (Law 3). */
 
-/* Selected tab / selected child: a control in the "on" position is brass
+/* AS9-3 (FAM-03; Q2 = A): the ten tabs sit in one row that scrolls sideways
+   on a phone instead of wrapping to five or six rows, so a tab never shrinks
+   or breaks its label. The child picker is FamilyChildPicker's buttons, not
+   this tab style, so a child no longer looks like a tab. */
+/* Selected tab: a control in the "on" position is brass
    chassis, never a status colour (Laws 1 and 2). */
 /* --t-sm, not --t-xs: a guardian reads these on a phone in the car park,
    and 11.8px uppercase mono was the smallest text on the page. Still a
    desk size (no kiosk attribute; OD-2026-10-08-011). */
 const TAB_BASE =
-  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
+  'inline-flex shrink-0 whitespace-nowrap min-h-[var(--tap)] items-center rounded-[var(--r-sm)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.1em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 const TAB_ACTIVE = 'border-[color:var(--brass-700)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
 const TAB_INACTIVE =
   'border-[color:rgba(0,0,0,.18)] bg-[var(--paper-2)] text-[color:var(--hide-800)] hover:border-[color:var(--brass-700)]';
 
 export default function ParentHub() {
   const [activeTab, setActiveTab] = useState<TabID>('overview');
+  // The tab row scrolls sideways on a phone (AS9-3), so the open tab is
+  // brought into view in the row when it changes. Not on first paint, so
+  // opening the hub never moves the page.
+  const tabButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const tabShownOnceRef = useRef(false);
+  useEffect(() => {
+    if (!tabShownOnceRef.current) {
+      tabShownOnceRef.current = true;
+      return;
+    }
+    tabButtonsRef.current.get(activeTab)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [activeTab]);
 
   // Real API: Children (athletes accessible to parent)
   const [children, setChildren] = useState<Child[]>([]);
@@ -837,7 +910,16 @@ export default function ParentHub() {
         const items = data.items || [];
         
         // Do not fabricate attendance/progression values from index-based placeholders.
-        const childList: Child[] = items.map((item) => {
+        // One child per athlete id: a roster row sent twice is one child, so the
+        // picker never draws the same child twice (AS9-3; the tiles already
+        // counted it once).
+        const seen = new Set<string>();
+        const unique = items.filter((item) => {
+          if (seen.has(item.athlete_id)) return false;
+          seen.add(item.athlete_id);
+          return true;
+        });
+        const childList: Child[] = unique.map((item) => {
           return {
             id: item.athlete_id,
             name: item.full_name || 'Unknown',
@@ -1113,6 +1195,9 @@ export default function ParentHub() {
      week, is on Messages. */
   /* No child selected (the roster failed or is still loading) is an unknown,
      not an empty week: the card says it cannot show the list. */
+  // The children read has answered (not loading, not failed). The two tiles
+  // that name every child wait for it (countsByChild).
+  const rosterAnswered = !childrenLoading && !childrenError;
   const weekBounds = messagesLoaded && activeChildId ? gymWeekBounds(floorClockMs) : null;
   const activeChildTasks = messages.filter((message) => message.athlete_id === activeChildId && message.task !== null);
   const byDueDate = (a: ParentMessage, b: ParentMessage) =>
@@ -1257,17 +1342,18 @@ export default function ParentHub() {
     : messagesFailed ? { state: 'failed' } : { state: 'loading' };
 
   /* Attendance outcomes on canvas take the -deep rungs (the text weights the
-     sheet ships for the warm ground) and always carry their glyph. */
+     sheet ships for the warm ground) and always carry their glyph. An absence
+     is not a medical stop, so it takes the restricted rung and its triangle,
+     as Excused does; the word says which it is. It used to wear the
+     medical-stop rung and its X (OW25-48 A: that mark is only for a medical
+     stop; Overwatch on #2033, 2026-11-20). */
   function attendanceStatusTone(status: AttendanceEntry['status']): string {
     if (status === 'Present') return 'text-[color:var(--cleared-deep)]';
-    if (status === 'Excused') return 'text-[color:var(--restricted-deep)]';
-    return 'text-[color:var(--locked-deep)]';
+    return 'text-[color:var(--restricted-deep)]';
   }
 
   function attendanceGlyph(status: AttendanceEntry['status']): string {
-    if (status === 'Present') return '✓';
-    if (status === 'Excused') return '▲';
-    return '✕';
+    return status === 'Present' ? '✓' : '▲';
   }
 
   /* One parent-support task on the Parent Floor: the coach's words, when it is
@@ -1365,12 +1451,18 @@ export default function ParentHub() {
         )}
 
         {childrenError && !childrenLoading && (
-          <div className="alert alert--critical" role="alert">
+          /* A read that failed is not a medical stop, so it wears the
+             restricted rung with its glyph, as the film and progress pages do
+             (SC2-4, #2002; scrub FAM-13), not --locked. Same words. */
+          <div className="alert alert--warning" role="alert">
             <div className="alert-body">
               <div className="mb-[var(--s3)] flex items-center justify-between gap-[var(--s4)]">
-                <span className="badge badge--locked"><i>✕</i>Failed</span>
+                <span className="badge badge--restricted"><i>▲</i>Failed</span>
                 <button
                   onClick={() => {
+                    // Loading in the same render as clearing the error, so the
+                    // hub never shows "No children found" between the two.
+                    setChildrenLoading(true);
                     setChildrenError(null);
                     setChildrenRetryNonce((value) => value + 1);
                   }}
@@ -1388,23 +1480,30 @@ export default function ParentHub() {
         {!childrenLoading && children.length === 0 && !childrenError && (
           <div className="mat-paper rounded-[var(--r-md)] p-[var(--s4)] text-center">
             <p className="t-muted">No children found</p>
+            {/* The next step, in the sentence the film and progress pages
+                already use (scrub FAM-27). */}
+            <p className="t-body mt-[var(--s2)]">Your account is not linked to an athlete yet. Ask the front desk to connect your family.</p>
           </div>
         )}
 
+        {/* THE CHILD PICKER (AS9-3; FAM-11): the family pages' one picker, so
+            a child is a button with the child's name, not a tab. Labels come
+            from familyChildLabel ("Your child" when no name is on file; two
+            that would read the same are told apart). With one child there is
+            nothing to choose and it draws nothing. The small portrait stays
+            in each button, decorative. Only this guardian's own children are
+            in the list (/api/pilot/athletes/list), and every read the hub
+            makes for the chosen child is checked again on the server. */}
         {!childrenLoading && children.length > 0 && (
-          <div className="mat-paper flex flex-wrap gap-[var(--s3)] rounded-[var(--r-md)] p-[var(--s3)]">
-            {children.map(child => (
-              <button
-                key={child.id}
-                type="button"
-                onClick={() => setActiveChildId(child.id)}
-                aria-pressed={activeChildId === child.id}
-                className={cx(
-                  TAB_BASE,
-                  'gap-[var(--s3)] pl-[var(--s2)]',
-                  activeChildId === child.id ? TAB_ACTIVE : TAB_INACTIVE,
-                )}
-              >
+          <FamilyChildPicker
+            linked={children.map((child) => ({ athlete_id: child.id, full_name: child.name }))}
+            activeId={activeChildId}
+            onChoose={setActiveChildId}
+            className="mat-paper rounded-[var(--r-md)] p-[var(--s3)]"
+            lead={(option) => {
+              const child = children.find((each) => each.id === option.athlete_id);
+              if (!child) return null;
+              return (
                 <ProfilePortrait
                   accountId={null}
                   src={cardPhotoUrl(apiBase(), child.photoPath)}
@@ -1414,15 +1513,14 @@ export default function ParentHub() {
                   size="sm"
                   decorative
                 />
-                {child.name}
-              </button>
-            ))}
-          </div>
+              );
+            }}
+          />
         )}
 
         {/* TAB NAVIGATION */}
         <div className="ge-family__rail mat-paper rounded-[var(--r-md)]">
-          <div className="flex flex-wrap gap-[var(--s2)] p-[var(--s3)]">
+          <div className="flex flex-nowrap gap-[var(--s2)] overflow-x-auto p-[var(--s3)]">
             {[
               { id: 'overview', label: 'Overview' },
               { id: 'parent-floor', label: 'Parent Floor' },
@@ -1437,6 +1535,10 @@ export default function ParentHub() {
             ].map(tab => (
               <button
                 key={tab.id}
+                ref={(element) => {
+                  if (element) tabButtonsRef.current.set(tab.id, element);
+                  else tabButtonsRef.current.delete(tab.id);
+                }}
                 type="button"
                 onClick={() => setActiveTab(tab.id as TabID)}
                 aria-pressed={activeTab === tab.id}
@@ -1455,25 +1557,24 @@ export default function ParentHub() {
         {/* PHONE ORDER (parent walk 2026-10-19 item 11: the tabs began about a
             screen and a half down, below the stat boxes). The child selector
             and the tab row come first, so any tab is one tap from the top of
-            the page. The family line and the summary tiles follow the row and
-            still show on every tab, so nothing was removed or hidden; only the
-            order changed. PROPOSED order. */}
-        <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
-          <p className="t-label">Family Commitment</p>
-          <p className="t-body mt-[var(--s2)]">Consistency at home builds confidence in the gym. Every ride, reminder, and check-in strengthens grit and motivation.</p>
-        </div>
-
+            the page; the summary tiles follow the row and show on every tab.
+            The fixed "Family Commitment" card that sat here went with AS-9
+            (scrub FAM-20): the same words on every tab pushed each tab's own
+            content down. */}
         {/* ROLE SUMMARY PANEL. Progress, Upcoming and Attendance are the
             selected child's; Parent Floor tasks and New messages count across every
             child. Each tile is Unavailable until the read it counts from has
             answered, never 0: a derived 0 would tell a parent "nothing is
-            scheduled" or "nothing is due", which nobody verified. */}
+            scheduled" or "nothing is due", which nobody verified. The two
+            all-children tiles name each child, so they also wait for the
+            children read: without it a child with nothing counted would be
+            missing from the line, or the line would be a bare 0. */}
         <ParentSummaryPanel
           childProgress={progressText}
-          tasksDue={messagesLoaded ? messages.filter(isOpenTask).length : null}
+          tasksDue={messagesLoaded && rosterAnswered ? countsByChild(children, messages, isOpenTask) : null}
           upcomingEvents={activeUpcomingPlaces}
           attendance={activeAttendanceTally}
-          unreadMessages={messagesLoaded && ownReadsLoaded ? messages.filter(isNewToMe).length : null}
+          unreadMessages={messagesLoaded && ownReadsLoaded && rosterAnswered ? countsByChild(children, messages, isNewToMe) : null}
         />
 
         {/* TAB CONTENT */}
@@ -1481,65 +1582,16 @@ export default function ParentHub() {
           {/* OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6 panel-settle">
-              {/* The digest leads the overview: the roadmap's "blind spot" is
-                  the guardian who never sees the room, and the first thing
-                  they should meet is the coach's own words, not a button
-                  grid. */}
-              {/* The roster maps a missing name to 'Unknown' for the selector;
-                  the digest gets null instead, so its lines read "your child"
-                  rather than "Marked by a coach or by Unknown". */}
-              <ParentDigest
-                athleteId={activeChildId || null}
-                childName={activeChild && activeChild.name !== 'Unknown' ? activeChild.name : null}
-              />
-
-              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
-                <h3 className="t-label">Quick Actions</h3>
-                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
-                  <ShadowChatButton
-                    context="Parent Overview"
-                    label="SHADOW Chat"
-                  />
-                  <Link href="/schedule" className="btn w-full">
-                    Open Scheduler
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('home-assignments')}
-                    className="btn w-full"
-                  >
-                    Open Assignments
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('attendance')}
-                    className="btn btn--ghost w-full"
-                  >
-                    Check Attendance
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('messages')}
-                    className="btn btn--ghost w-full"
-                  >
-                    View Messages from the Coaches
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('shadow')}
-                    className="btn btn--ghost w-full"
-                  >
-                    Open SHADOW Intel
-                  </button>
-                </div>
-              </section>
-
-              {/* Safety & Consent: pure aggregation of two guardian-facing
-                  surfaces this hub previously never linked to (#93/#167).
-                  Non-alarming by default -- the count line only appears once
-                  there is something for a guardian to actually look at, and
-                  it names a scope/outcome, never staff detail. */}
-              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
+              {/* SAFETY FIRST (scrub FAM-02; AS-9 Q5 = A). The Safety & Consent
+                  card is the first block of the Overview, above the coach's
+                  digest, so on a phone it follows the tab row and the tiles
+                  instead of sitting about tenth. Its count line is SH-3's
+                  (#1969): pure aggregation of two guardian-facing surfaces,
+                  non-alarming by default, naming a scope or outcome and never
+                  staff detail. The film link that sat in this card moved to
+                  the top of the Progress tab with the other record pages
+                  (FAM-07). */}
+              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]" data-testid="parent-safety-card">
                 <h3 className="t-label">Safety &amp; Consent</h3>
                 {safetySummary && safetySentences.length > 0 ? (
                   <p className="t-body mt-[var(--s2)]" data-testid="parent-safety-line">
@@ -1559,8 +1611,30 @@ export default function ParentHub() {
                   <Link href="/parent/consent" className="btn btn--ghost w-full">
                     Manage Consent
                   </Link>
-                  <Link href="/parent/video" className="btn btn--ghost w-full">
-                    Your athlete&apos;s film
+                </div>
+              </section>
+
+              {/* The coach's own words come next: the roadmap's "blind spot"
+                  is the guardian who never sees the room. */}
+              {/* The roster maps a missing name to 'Unknown' for the selector;
+                  the digest gets null instead, so its lines read "your child"
+                  rather than "Marked by a coach or by Unknown". */}
+              <ParentDigest
+                athleteId={activeChildId || null}
+                childName={activeChild && activeChild.name !== 'Unknown' ? activeChild.name : null}
+              />
+
+              {/* Quick Actions keeps the one action that leaves the hub. The
+                  four buttons that only switched to a tab already in the row
+                  above (Open Assignments, Check Attendance, View Messages from
+                  the Coaches, Open SHADOW Intel) went, and so did "SHADOW
+                  Chat", which repeated the page's own SHADOW button (scrub
+                  FAM-04, FAM-05; AS-9 Q3 = A). */}
+              <section className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]">
+                <h3 className="t-label">Quick Actions</h3>
+                <div className="mt-[var(--s4)] grid gap-[var(--s3)] md:grid-cols-2 lg:grid-cols-4">
+                  <Link href="/schedule" className="btn w-full">
+                    Open Scheduler
                   </Link>
                 </div>
               </section>
@@ -1627,34 +1701,16 @@ export default function ParentHub() {
                 ]}
               />
 
+              {/* Current Status keeps what is shown nowhere else: membership,
+                  scholarship and community service support. The child's name,
+                  Progress and Class attendance rows went (scrub FAM-20): the
+                  child picker and the tiles above already show them. The fixed
+                  "How to Support" card went with them. */}
               {activeChild && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-[var(--s5)]">
+                <div className="grid grid-cols-1 gap-[var(--s5)]">
                   <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
                     <h3 className="t-label">Current Status</h3>
                     <div className="space-y-[var(--s4)]">
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Child Name</p>
-                        <p className="t-body font-semibold">{activeChild.name}</p>
-                      </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Progress</p>
-                        <p className="t-body font-semibold">{progressText}</p>
-                      </div>
-                      <div>
-                        <p className="t-label mb-[var(--s2)]">Class attendance</p>
-                        {activeAttendanceTally ? (
-                          <>
-                            <p className="t-body font-semibold">
-                              {`Present ${activeAttendanceTally.present} · Excused ${activeAttendanceTally.excused} · Absent ${activeAttendanceTally.absent}`}
-                            </p>
-                            {activeAttendanceTally.latest ? (
-                              <p className="t-muted">{activeAttendanceTally.latest}</p>
-                            ) : null}
-                          </>
-                        ) : (
-                          <p className="t-body font-semibold">Unavailable</p>
-                        )}
-                      </div>
                       <div>
                         <p className="t-label mb-[var(--s2)]">Membership Status</p>
                         {shownSupport === 'loading' ? (
@@ -1701,28 +1757,6 @@ export default function ParentHub() {
                       </div>
                     </div>
                   </div>
-
-                  <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                    <h3 className="t-label">How to Support</h3>
-                    <ul className="space-y-[var(--s3)] t-body">
-                      <li className="flex items-start gap-[var(--s3)]">
-                        <span aria-hidden="true">✓</span>
-                        <span>Attend training sessions consistently</span>
-                      </li>
-                      <li className="flex items-start gap-[var(--s3)]">
-                        <span aria-hidden="true">✓</span>
-                        <span>Support home assignments and drills</span>
-                      </li>
-                      <li className="flex items-start gap-[var(--s3)]">
-                        <span aria-hidden="true">✓</span>
-                        <span>Maintain nutrition and sleep</span>
-                      </li>
-                      <li className="flex items-start gap-[var(--s3)]">
-                        <span aria-hidden="true">✓</span>
-                        <span>Stay informed through coach messages</span>
-                      </li>
-                    </ul>
-                  </div>
                 </div>
               )}
             </div>
@@ -1745,6 +1779,41 @@ export default function ParentHub() {
                   'Waiting until the due date to say something is in the way'
                 ]}
               />
+
+              {/* AS9-3 (FAM-24; Q6 = A): the coach's tasks come first, and
+                  "Report a Barrier" follows them. The tab keeps its name. */}
+              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
+                <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
+                {!weekBounds ? (
+                  <p className="t-muted">
+                    Unavailable - your tasks could not be shown. This is not an empty list.
+                  </p>
+                ) : (
+                  <>
+                    <p className="t-body">
+                      {thisWeekTasks.length === 0
+                        ? `Nothing from the gym is due this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`
+                        : `${thisWeekDone} of ${thisWeekTasks.length} done this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`}
+                    </p>
+                    {taskNotice && taskNotice.athleteId === activeChildId && (
+                      <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
+                    )}
+                    {thisWeekTasks.length > 0 && (
+                      <ul className="space-y-[var(--s3)]" aria-label="Due this week">
+                        {thisWeekTasks.map((message) => renderParentTask(message))}
+                      </ul>
+                    )}
+                    {earlierOpenTasks.length > 0 && (
+                      <>
+                        <h4 className="t-label">Still open: earlier or no due date</h4>
+                        <ul className="space-y-[var(--s3)]" aria-label="Still open: earlier or no due date">
+                          {earlierOpenTasks.map((message) => renderParentTask(message))}
+                        </ul>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
 
               {/* #95/#96: the guardian's barrier report. */}
               <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
@@ -1787,39 +1856,6 @@ export default function ParentHub() {
                   </button>
                 </form>
               </div>
-
-              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)]">
-                <h3 className="t-label">This Week&apos;s Parent Support Tasks</h3>
-                {!weekBounds ? (
-                  <p className="t-muted">
-                    Unavailable - your tasks could not be shown. This is not an empty list.
-                  </p>
-                ) : (
-                  <>
-                    <p className="t-body">
-                      {thisWeekTasks.length === 0
-                        ? `Nothing from the gym is due this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`
-                        : `${thisWeekDone} of ${thisWeekTasks.length} done this week (${formatDueDate(weekBounds.start)} to ${formatDueDate(weekBounds.end)}).`}
-                    </p>
-                    {taskNotice && taskNotice.athleteId === activeChildId && (
-                      <p role="alert" className="t-body font-bold text-[var(--restricted-ink)]">{taskNotice.text}</p>
-                    )}
-                    {thisWeekTasks.length > 0 && (
-                      <ul className="space-y-[var(--s3)]" aria-label="Due this week">
-                        {thisWeekTasks.map((message) => renderParentTask(message))}
-                      </ul>
-                    )}
-                    {earlierOpenTasks.length > 0 && (
-                      <>
-                        <h4 className="t-label">Still open: earlier or no due date</h4>
-                        <ul className="space-y-[var(--s3)]" aria-label="Still open: earlier or no due date">
-                          {earlierOpenTasks.map((message) => renderParentTask(message))}
-                        </ul>
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
             </div>
           )}
 
@@ -1832,7 +1868,7 @@ export default function ParentHub() {
                 usage={[
                   'Review what is being worked on now and when it is due',
                   'Make time and space for the practice at home',
-                  'Open the full progression record for the logged work'
+                  'Open Progress Visibility for the logged work'
                 ]}
                 mistakes={[
                   'Missing a due date',
@@ -2125,7 +2161,7 @@ export default function ParentHub() {
 
                 <p className="t-body">
                   <Link href="/schedule">Open the full scheduler</Link> to register, review a registration, or
-                  check an athlete in.
+                  mark your child here.
                 </p>
               </div>
             </div>
@@ -2136,6 +2172,46 @@ export default function ParentHub() {
             <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s4)] panel-settle">
               <h3 className="t-label">Progress & Achievements</h3>
               <p className="t-body">Track skill development and milestone achievements.</p>
+
+              {/* THE RECORD'S OTHER PAGES, FIRST (scrub FAM-07, FAM-08): the
+                  full record, the film, the plan and mental skills. The film
+                  link moved here from the Safety & Consent card, and the
+                  Development Plan and Mental Skills links moved up from the
+                  foot of this tab, below achievements, goals and the summary.
+                  Each page opens on the child chosen here
+                  (src/lib/chosenChild.ts), and its read re-checks the link. */}
+              <nav aria-label="Your child's progress pages" className="flex flex-wrap gap-[var(--s3)]">
+                {/* The full record, by its door's name (AS-9 Q13 = A). The
+                    summary below keeps its own link to the same page. */}
+                <Link
+                  href="/parent/progression-visibility"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Progress Visibility
+                </Link>
+                <Link
+                  href="/parent/video"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Your athlete&apos;s film
+                </Link>
+                <Link
+                  href="/parent/development-blocks"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Their Development Plan
+                </Link>
+                <Link
+                  href="/parent/mental-skills"
+                  onClick={() => rememberChosenChild(activeChildId)}
+                  className="btn btn--ghost"
+                >
+                  Mental Skills
+                </Link>
+              </nav>
 
               {/* THE SAME ACHIEVEMENTS, SAID TO SOMEBODY WHO WAS NOT IN THE ROOM.
                   Not a simplified subset and not a different set of facts: the
@@ -2172,30 +2248,11 @@ export default function ParentHub() {
                 <>
                   <p className="t-muted">Unavailable - no child selected.</p>
                   <Link href="/parent/progression-visibility" className="btn btn--ghost">
-                    Open the full progression record
+                    Open Progress Visibility
                   </Link>
                 </>
               )}
 
-              {/* The coach's multi-week plan and the mental-skills log, for the
-                  child on screen: those pages open on the child chosen here
-                  (src/lib/chosenChild.ts), and their reads re-check the link. */}
-              <div className="flex flex-wrap gap-[var(--s3)]">
-                <Link
-                  href="/parent/development-blocks"
-                  onClick={() => rememberChosenChild(activeChildId)}
-                  className="btn btn--ghost"
-                >
-                  Their Development Plan
-                </Link>
-                <Link
-                  href="/parent/mental-skills"
-                  onClick={() => rememberChosenChild(activeChildId)}
-                  className="btn btn--ghost"
-                >
-                  Mental Skills
-                </Link>
-              </div>
             </div>
           )}
 
@@ -2217,17 +2274,25 @@ export default function ParentHub() {
           {/* SHADOW AI */}
           {activeTab === 'shadow' && (
             <div className="space-y-6 panel-settle">
-              <RoleSpecificShadow
-                role="parent"
-                description="Ask SHADOW how to support your child at home. Tap below to open a live chat scoped to your family — there is no canned answer here."
-                chatContext="Parent Hub"
-              />
+              {/* AS9-3 (FAM-04; Q3 = A): one way into SHADOW Chat on the hub.
+                  The parent job bar points at the chat page, /shadow
+                  (components/jobBars.ts, the parent's "More"), which is where
+                  the shell's OPEN SHADOW CHAT button at the top of this page
+                  goes. So that button stays, and this tab's own "Ask SHADOW"
+                  button goes. The tab itself stays (Q2 = A, all ten tabs) and
+                  says where the chat is. HelpPanel's "ASK SHADOW" stays. */}
+              <div className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)] space-y-[var(--s3)]">
+                <h3 className="t-label">SHADOW Chat</h3>
+                <p className="t-body">
+                  Ask SHADOW how to support your child at home. The chat opens from the OPEN SHADOW CHAT button at the top of this page.
+                </p>
+              </div>
             </div>
           )}
         </div>
 
         {/* The gym wall, at the foot of the page. See the note where it used to
-            hang, above the family commitment card. */}
+            hang, above the child selector. */}
         <GymWallModule className="mat-paper rounded-[var(--r-lg)] p-[var(--s5)]" />
       </div>
     </div>

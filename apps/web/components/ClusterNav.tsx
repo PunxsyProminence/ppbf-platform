@@ -32,7 +32,11 @@ export const COACH_CLUSTERS = {
     '/coach/athlete-intelligence',
     '/coach/decision-loop',
   ],
-  sparring: ['/coach/sparring-caps', '/coach/sparring-exposure', '/athlete/dashboard/sparring', '/coach/athlete-limits'],
+  // Not the athlete's own Sparring Log: the coach's line names the coach pages
+  // (app scrub CS-06; lane AS-5 Q9 = A). The Log keeps its own door.
+  sparring: ['/coach/sparring-caps', '/coach/sparring-exposure', '/coach/athlete-limits'],
+  // The clinic's records of one athlete (app scrub CS-02, lane AS-5).
+  clinic: ['/coach/sports-medicine', '/coach/athlete-safety', '/coach/sparring-exposure'],
   interventions: ['/coach/intervention-protocols', '/coach/intervention-executions', '/coach/intervention-review'],
   film: [
     '/coach/video-analysis',
@@ -58,6 +62,8 @@ export type CoachCluster = keyof typeof COACH_CLUSTERS;
 const CLUSTER_NAMES: Record<CoachCluster, string> = {
   'who-needs-me': 'Who needs you',
   sparring: 'Sparring',
+  // The room's own name (buildingMap ROOM_LABEL) and the coach home's heading.
+  clinic: 'Clinic',
   interventions: 'Interventions',
   film: 'Film',
   planning: 'Planning',

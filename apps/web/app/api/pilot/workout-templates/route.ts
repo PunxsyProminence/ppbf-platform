@@ -11,6 +11,7 @@ import {
 } from '@/src/server/pilot/workoutTemplateProjection';
 import {
   getWorkoutTemplateWithItems,
+  readWorkoutTemplateFieldDrafts,
   listUntestedTemplateDrills,
   listWorkoutTemplates,
   planTemplateIssue,
@@ -95,6 +96,9 @@ export async function GET(request: NextRequest) {
           ...projected,
           untested_drills: await listUntestedTemplateDrills(principal.organizationId, detail.items),
           refused_drills: await refusedBeforeIssue(principal.organizationId, detail.items),
+          // Which shown fields are still AI drafts, for the staff mark (lane ED-UI PR3; OW25-57:
+          // coaches and admins only). This branch alone: every other reader gets the projection.
+          field_drafts: await readWorkoutTemplateFieldDrafts(principal.organizationId, detail.template),
         });
       }
       return NextResponse.json(projected);

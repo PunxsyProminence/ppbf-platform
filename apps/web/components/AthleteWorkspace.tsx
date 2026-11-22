@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import AnnouncementBanner from './AnnouncementBanner';
 import AthleteAchievements from './AthleteAchievements';
 import AthleteAttemptLog from './AthleteAttemptLog';
-import AthleteCheckInPanel, { type AthleteCheckInRecord } from './AthleteCheckInPanel';
+import AthleteCheckInPanel, { type AthleteCheckInDraft, type AthleteCheckInRecord } from './AthleteCheckInPanel';
 import AthleteCyclePanel from './AthleteCyclePanel';
 import AthleteMediaConsentPanel from './AthleteMediaConsentPanel';
 import { ENJOYMENT_LEVELS, ENJOYMENT_QUESTION, type EnjoymentLevel, enjoymentLabel } from '@/src/shared/enjoyment';
@@ -56,6 +56,7 @@ import type { SessionRpeMethod } from '@/src/server/pilot/contracts';
 import type { AthleteDrillDetail } from '@/src/server/pilot/drillLibraryV3';
 import { NO_ATHLETE_NOTE_PLACEHOLDER, isSystemCheckInNote } from '@/src/shared/sessionNoteSemantics';
 import AthleteImHere, { useTodaySchedulerRead, type TodaySchedulerRead } from './AthleteImHere';
+import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SAFESPORT_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
 
 type TabID = 'my-dashboard' | 'athlete-floor' | 'smart-goals' | 'attempt-log' | 'tracks' | 'assessments' | 'bio-checkin' | 'drill-library' | 'rabbit-holes' | 'message-coach' | 'schedule-session' | 'shadow';
 type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
@@ -112,7 +113,8 @@ type GroupID = 'today' | 'development' | 'learn' | 'schedule' | 'shadow';
  * athletes and "shown on the athlete's Tracks tab" (OD-2026-10-07-010 ruling
  * 3). Something stores it now: the gym's admin sets a track per athlete on
  * /admin, and AthleteTracksPanel reads the athlete's own from
- * /api/pilot/athlete/tracks. It sits in Development.
+ * /api/pilot/athlete/tracks. It sits in Progress (the group read "Development"
+ * until lane AS-8, OD-2026-11-19-017).
  *
  * Assessments stays unlisted. Nothing has changed for it.
  */
@@ -126,9 +128,10 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
       { id: 'athlete-floor', label: 'Floor' },
     ],
   },
+  // "Progress", label only (OD-2026-11-19-017, Q14 A); the id stays.
   {
     id: 'development',
-    label: 'Development',
+    label: 'Progress',
     tabs: [
       { id: 'smart-goals', label: 'Goals' },
       // BASE-05: the athlete's own attempt log over the training-attempts ledger.
@@ -146,7 +149,8 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
   },
   { id: 'schedule', label: 'Schedule', tabs: [{ id: 'schedule-session', label: 'Schedule' }] },
   // Ask SHADOW lives with SHADOW (WO-N5-02, N5-02-Q1 A). It was a "Messages" group of its own,
-  // which read as messaging a coach; the question is answered by SHADOW and reaches no coach.
+  // which read as messaging a coach; the question is answered by SHADOW, and a coach is told
+  // only when it sounds like someone may not be safe (askShadowWords.ts).
   // The tab id stays 'message-coach' so anything that opens it still does.
   {
     id: 'shadow',
@@ -161,6 +165,13 @@ const TAB_GROUPS: { id: GroupID; label: string; tabs: { id: TabID; label: string
 /** Which group owns a surface. Derived, never stored -- the tab stays the truth. */
 function groupForTab(tab: TabID): GroupID {
   return TAB_GROUPS.find((group) => group.tabs.some((entry) => entry.id === tab))?.id ?? 'today';
+}
+/* My Corner (Report pain first, then Start training and End training) is drawn
+   on How I feel today, where the workspace opens, and on the Dashboard (lane
+   AS-8, Overwatch Q1 A on #2020). On every other tab the hold and restriction
+   notices stand at the top instead, as before. */
+function cornerShownOn(tab: TabID): boolean {
+  return tab === 'bio-checkin' || tab === 'my-dashboard';
 }
 /**
  * The categories a goal can be filed under, and the mirror of GOAL_CATEGORIES
@@ -301,7 +312,7 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
         <span className="t-label">{work.status.replaceAll('_', ' ')}</span>
       </div>
       {step && <StepNotes step={step} />}
-      <dl className="grid grid-cols-2 gap-[var(--s3)] text-[length:var(--t-sm)]">
+      <dl className="grid grid-cols-2 gap-[var(--s3)] text-[length:var(--t-md)]">
         {work.rep_count != null && (
           <div>
             <dt className="t-label">Reps</dt>
@@ -812,7 +823,7 @@ function getGoalStatusBadge(status: GoalStatus): { className: string; glyph: str
    are floor-sized: every target clears var(--tap). A selected tab is a control
    in the "on" position — brass chassis, never a status colour (Laws 1 + 2). */
 const KIOSK_TAB_BASE =
-  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.08em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
+  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-md)] font-bold uppercase tracking-[0.08em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 const KIOSK_TAB_ACTIVE = 'border-[color:var(--brass-600)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
 const KIOSK_TAB_INACTIVE =
   'border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]';
@@ -1058,14 +1069,14 @@ function AthleteRabbitHoleLibrary() {
                 Gym coaching · Written by {lesson.author_display_name}
               </p>
               <h4 className="text-[length:var(--t-md)] font-semibold">{lesson.title}</h4>
-              <p className="text-[length:var(--t-sm)] leading-relaxed"><strong>Concept:</strong> {lesson.concept}</p>
+              <p className="text-[length:var(--t-md)] leading-relaxed"><strong>Concept:</strong> {lesson.concept}</p>
               {lesson.homework ? (
                 <div className="rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] bg-[var(--paper-2)] p-[var(--s4)]">
-                  <p className="text-[length:var(--t-sm)] leading-relaxed"><strong>Homework:</strong> {lesson.homework}</p>
+                  <p className="text-[length:var(--t-md)] leading-relaxed"><strong>Homework:</strong> {lesson.homework}</p>
                 </div>
               ) : null}
               {lesson.citation ? (
-                <p className="text-[length:var(--t-xs)] opacity-80">
+                <p className="text-[length:var(--t-md)] opacity-80">
                   <strong>Library source:</strong> {lesson.citation.document_name}
                 </p>
               ) : null}
@@ -1077,8 +1088,43 @@ function AthleteRabbitHoleLibrary() {
   );
 }
 
+/**
+ * End training, collapsed (lane U3 B4, Overwatch Q1 B): one End training
+ * button opens the check-out questions in place, and their own End training
+ * ends the session. The opener gives way, so a screen never shows two, and
+ * focus moves to what opened. It holds only "open"; the questions and the end
+ * are the workspace's (children). A refused end is said under it (Q2 A).
+ */
+function EndTrainingControl({ children, failure }: { children: ReactNode; failure: string | null }) {
+  const [open, setOpen] = useState(false);
+  const questionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open) questionsRef.current?.focus({ preventScroll: true });
+  }, [open]);
+  return (
+    <div className="space-y-[var(--s4)]">
+      {open ? (
+        <div ref={questionsRef} tabIndex={-1} role="group" aria-label="End training" className="space-y-[var(--s4)]">
+          {children}
+        </div>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="btn btn--kiosk">
+          End training
+        </button>
+      )}
+      {failure ? (
+        <p role="alert" className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]">{failure}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function AthleteWorkspace() {
-  const [activeTab, setActiveTabRaw] = useState<TabID>('my-dashboard');
+  /* The workspace opens on How I feel today, Today's first tab (lane AS-8,
+     Overwatch Q1 A on #2020; the plan in OD-2026-11-19-007 ruling 1: "opens on
+     I'm here and How I feel today"). My Corner is drawn on that tab too, so
+     Report pain, Start training and End training are on the opening screen. */
+  const [activeTab, setActiveTabRaw] = useState<TabID>('bio-checkin');
   const [backendAthleteId, setBackendAthleteId] = useState<string | null>(null);
   const [athleteIdentityState, setAthleteIdentityState] = useState<AthleteIdentityState>('loading');
   /* The last word from the backend about what just saved. A goal's message
@@ -1095,7 +1141,7 @@ export default function AthleteWorkspace() {
   // save that lands after they have left Goals has nobody to tell, and storing
   // its message would only bring it back on the next visit. Kept in step by
   // setActiveTab below, which is the only thing that changes the tab.
-  const currentTabRef = useRef<TabID>('my-dashboard');
+  const currentTabRef = useRef<TabID>('bio-checkin');
   const setGoalSyncMessage = useCallback((text: string) => {
     if (currentTabRef.current !== 'smart-goals') return;
     setSyncMessage({ text, tab: 'smart-goals' });
@@ -1119,6 +1165,16 @@ export default function AthleteWorkspace() {
   // state would leave the gate guessing until it mounted.
   const [todayCheckIn, setTodayCheckIn] = useState<AthleteCheckInRecord | null>(null);
   const [recentCheckIns, setRecentCheckIns] = useState<AthleteCheckInRecord[]>([]);
+  // The How I feel today form's unsaved answers (lane AS-8). My Corner's Report
+  // pain sits right above the form and opens the Dashboard, which unmounts it;
+  // without this the athlete came back to an empty form. Held here, so it goes
+  // with the workspace when the athlete signs out. A ref: nothing on screen
+  // reads it, and a keystroke must not redraw the workspace.
+  const checkInDraftRef = useRef<AthleteCheckInDraft | null>(null);
+  const rememberCheckInDraft = useCallback((draft: AthleteCheckInDraft) => {
+    checkInDraftRef.current = draft;
+  }, []);
+  const readCheckInDraft = useCallback(() => checkInDraftRef.current, []);
   const [checkInLoading, setCheckInLoading] = useState(true);
   const [checkInLoadError, setCheckInLoadError] = useState<string | null>(null);
   /* Set by the pain report below, never by the athlete directly. It is a
@@ -1275,10 +1331,20 @@ export default function AthleteWorkspace() {
   const [postSessionType, setPostSessionType] = useState<{ sessionId: string; value: SessionType } | null>(null);
   // The enjoyment tap (OD-2026-10-17-026 (a)), keyed to the session the same way.
   const [postSessionEnjoyment, setPostSessionEnjoyment] = useState<{ sessionId: string; value: EnjoymentLevel } | null>(null);
+  // A refused End training, said under the button too (lane U3 B4, Q2 A):
+  // it sits far from the foot-of-page message now. Keyed the same way.
+  const [checkOutFailure, setCheckOutFailure] = useState<{ sessionId: string; text: string } | null>(null);
   // True after a check-out of a session tagged Sparring, so the after-sparring
   // symptom check asks even if its status read fails. After a refresh the
   // server's after_sparring_due brings it back until it is answered.
   const [afterSparringCheck, setAfterSparringCheck] = useState(false);
+  // After a successful end, bring the "Training ended ..." line into view
+  // (lane U3 B4, Overwatch Q-CONFIRM A): the questions just closed under the
+  // athlete's thumb. My Corner's line on How I feel today and the Dashboard,
+  // the rail's elsewhere.
+  const [endedAt, setEndedAt] = useState(0);
+  const cornerLineRef = useRef<HTMLParagraphElement>(null);
+  const railLineRef = useRef<HTMLParagraphElement>(null);
 
   /* ONE SESSION WRITE AT A TIME. A note publication and check-out both send
      the WHOLE session row to /api/pilot/sessions/update, and the server applies
@@ -1338,10 +1404,8 @@ export default function AthleteWorkspace() {
   const activeGroupLabel = TAB_GROUPS.find((group) => group.id === activeGroup)?.label ?? 'Today';
   const activeTabLabel = activeGroupTabs.find((tab) => tab.id === activeTab)?.label ?? activeGroupLabel;
 
-  /* Where a group opens when its button is pressed. Only Today varies: it
-     opens on check-in until the athlete has checked in, then on their
-     dashboard, because the useful surface changes once that fact is recorded.
-     Every other group opens on its first surface. */
+  /* Where a group opens when its button is pressed: its first surface. For
+     Today that is How I feel today, which is also where the workspace opens. */
   const openingTabFor = (group: GroupID): TabID => {
     /* Today opens on Check In, because that is the first thing a visit is
        (owner decision 2026-08-28: "wellness and bios should be the first
@@ -1417,6 +1481,10 @@ export default function AthleteWorkspace() {
   // "0" or "04" may be "045" mid-typing: check-out stays held, but the error
   // is not announced until the entry cannot become a valid answer.
   const showMinutesError = parsedMinutes.status === 'invalid' && !/^0+$/.test(minutesDraft.trim());
+  const shownCheckOutFailure = checkOutFailure !== null && activeSessionRecord !== null
+    && checkOutFailure.sessionId === activeSessionRecord.sessionId
+    ? checkOutFailure.text
+    : null;
   // Only a successful read is a number. See AthleteCountRead.
   const openCoachWorkRead: AthleteCountRead = assignedWorkError
     ? { status: 'unavailable' }
@@ -1690,9 +1758,10 @@ export default function AthleteWorkspace() {
    *
    * This is the one thing on the athlete's screen that a person put there by
    * hand, and it was the hardest thing on the screen to find: the drills a
-   * coach assigned live at /athlete/progression-intelligence, reachable from
-   * here only through a collapsed "More in your workspace" at the foot of the
-   * page. Today states the day back to the athlete, so it has to include the
+   * coach assigned live at /athlete/progression-intelligence, which was then
+   * reachable from here only through a collapsed "More in your workspace" at
+   * the foot of the page (since lane AS-8 it is a card at the top of every
+   * Progress tab). Today states the day back to the athlete, so it has to include the
    * part of the day somebody else set.
    *
    * Every open item, in the order the API returned it. No "due today" window:
@@ -2393,6 +2462,7 @@ export default function AthleteWorkspace() {
 
     checkingOutRef.current = true;
     setIsCheckingOut(true);
+    setCheckOutFailure(null);
 
     try {
       // Every publication already on the wire, or queued, lands first, so none
@@ -2481,6 +2551,7 @@ export default function AthleteWorkspace() {
       // Re-read rather than trust the write: the recent list below and the
       // "are you still checked in" question are both answered from the server.
       await loadStoredSessions();
+      setEndedAt((count) => count + 1);
       // And the card, which is where a completed session actually lands. This
       // was missing, so the count only moved on the next page load — which is
       // also why crossing a milestone could never produce a moment: the card
@@ -2491,10 +2562,10 @@ export default function AthleteWorkspace() {
       // notes and the effort answer are still on screen, so the athlete can
       // try again instead of watching the screen empty itself.
       const detail = error instanceof Error && error.message ? `: ${error.message}` : '.';
-      setBackendSyncMessage(
-        `That did not take and your training is still going${detail} `
-        + "Press End training again, and tell a coach anything they need to know.",
-      );
+      const failure = `That did not take and your training is still going${detail} `
+        + "Press End training again, and tell a coach anything they need to know.";
+      setBackendSyncMessage(failure);
+      setCheckOutFailure({ sessionId: record.sessionId, text: failure });
     } finally {
       checkingOutRef.current = false;
       setIsCheckingOut(false);
@@ -2734,15 +2805,14 @@ export default function AthleteWorkspace() {
       setCoachMessageBody('');
       // The old copy promised a coach reply. This posts to SHADOW, not to a
       // person: it is recorded in the athlete's own conversation and answered
-      // by SHADOW. No coach is notified and none ever sees it, so saying so
-      // would be a promise the system does not keep.
+      // by SHADOW. A coach or the gym office is alerted only when the message
+      // sounds like someone may not be safe (shadowDisclosure.ts); the line
+      // says so, because the old "no coach" line was false then (HF2).
       //
       // The coach's name is gone from this string along with the picker that
       // produced it. Naming a person beside "saved" invited exactly the reading
       // the rest of this copy spends its time denying.
-      setCoachMessageStatus(
-        'Saved to your SHADOW conversation. SHADOW answers there -- open SHADOW Chat to read it. No coach is notified.',
-      );
+      setCoachMessageStatus(ASK_SHADOW_SENT_LINE);
     } catch (error) {
       setCoachMessageStatus(error instanceof Error ? error.message : 'That message did not send. Try it again.');
     } finally {
@@ -2812,13 +2882,220 @@ export default function AthleteWorkspace() {
             ? "How you feel today is saved. Training not started yet."
             : 'Training not started yet';
 
-  const goToPainReport = () => {
+  // The scroll itself, once per successful end, after the re-read has written
+  // the line. Read through refs, so a later tab change does not scroll again.
+  useEffect(() => {
+    if (endedAt === 0) return;
+    const line = cornerShownOn(currentTabRef.current) ? cornerLineRef.current : railLineRef.current;
+    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    line?.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'center' });
+  }, [endedAt]);
+
+  /* Report pain takes the athlete to the Pain/Soreness Report card and puts
+     the cursor in its location. The card is on the Dashboard; My Corner is
+     also on How I feel today (lane AS-8), so from there the jump opens the
+     Dashboard first and lands once the card is drawn. A JS scroll with an
+     explicit behavior ignores the CSS reduced-motion rule, so the check is
+     made here (scrub ATH-23), as the end-of-training scroll above does. */
+  const painJumpPendingRef = useRef(false);
+  const landOnPainReport = useCallback((): boolean => {
     const picker = document.getElementById('pain-location-select');
-    if (picker) {
-      picker.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      picker.focus({ preventScroll: true });
-    }
+    if (!picker) return false;
+    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    picker.scrollIntoView?.({ behavior: still ? 'auto' : 'smooth', block: 'center' });
+    picker.focus({ preventScroll: true });
+    return true;
+  }, []);
+  const goToPainReport = () => {
+    if (landOnPainReport()) return;
+    painJumpPendingRef.current = true;
+    setActiveTab('my-dashboard');
   };
+  useEffect(() => {
+    if (!painJumpPendingRef.current || activeTab !== 'my-dashboard') return;
+    painJumpPendingRef.current = false;
+    landOnPainReport();
+  }, [activeTab, landOnPainReport]);
+
+  /* END TRAINING WHERE THE ATHLETE IS (lane U3 B4, #2006). The Session Log's
+     own check-out questions and End training, moved, not copied: same answers,
+     same handleCheckOut, same request. They sit where "Training started" is
+     said (My Corner on How I feel today and the Dashboard, the top of the
+     Floor); one tab is drawn
+     at a time, so a screen holds one End training. Built under the Session
+     Log's conditions: athlete sign-in, an answered session read, an open
+     session. */
+  /* The after-sparring symptom check (OD-2026-10-17-023 item 1, -029) moves
+     with End training (Overwatch Q-SPAR A on #2006): where the athlete ends,
+     once no session is open, under the Session Log's old conditions. By its
+     own rule it draws nothing unless a sparring end is due or was answered
+     today (the answer, and "Something else now?", stay for the gym day). One
+     mount per tab, so its read moves rather than doubles. */
+  const afterSparring = athleteIdentityState === 'resolved' && storedSessionLoad === 'loaded' && !activeSessionRecord
+    ? <SparringSymptomCheck context="after_sparring" justCheckedOut={afterSparringCheck} />
+    : null;
+  const endTraining = athleteIdentityState === 'resolved' && storedSessionLoad === 'loaded' && activeSessionRecord ? (
+    <EndTrainingControl failure={shownCheckOutFailure}>
+      {/* POST-SESSION EFFORT (A-FIN-05). Eleven choices, 0 to 10,
+          rather than a slider, for the reason the Wellness panel
+          gives: a range input always has a position, so it
+          records an answer nobody gave. Nothing is selected until
+          the athlete selects it, skipping is said out loud, and
+          only Check Out writes it -- the note publication above
+          never carries it. */}
+      <fieldset className="space-y-[var(--s2)]">
+        <legend className="t-label mb-[var(--s2)]">{POST_SESSION_EFFORT_QUESTION}</legend>
+        <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
+          0 means not hard at all. 10 means as hard as you could go. It goes on the session when you check out.
+        </p>
+        <div className="grid grid-cols-4 sm:grid-cols-6 gap-[var(--s2)]">
+          {POST_SESSION_EFFORT_VALUES.map((value) => {
+            const selected = answeredEffort === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-label={`${POST_SESSION_EFFORT_QUESTION} ${value}`}
+                aria-pressed={selected}
+                disabled={isCheckingOut}
+                onClick={() => setPostSessionEffort({ sessionId: activeSessionRecord.sessionId, value })}
+                className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+              >
+                <span className="t-data" style={{ fontSize: 'var(--t-md)' }}>{value}</span>
+              </button>
+            );
+          })}
+        </div>
+        {answeredEffort === null ? (
+          <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
+            Not answered — you can skip this. Ending training without it records no effort.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setPostSessionEffort(null)}
+            disabled={isCheckingOut}
+            className="btn btn--ghost"
+          >
+            Clear my answer
+          </button>
+        )}
+      </fieldset>
+      {/* ENJOYMENT (OD-2026-10-17-026 (a)). Five choices, nothing
+          selected until the athlete taps; skippable; only Check
+          Out writes it. Copy PROPOSED. */}
+      <fieldset className="space-y-[var(--s2)]">
+        <legend className="t-label mb-[var(--s2)]">{ENJOYMENT_QUESTION}</legend>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-[var(--s2)]">
+          {ENJOYMENT_LEVELS.map((level) => {
+            const selected = answeredEnjoyment === level.value;
+            return (
+              <button
+                key={level.value}
+                type="button"
+                aria-label={`${ENJOYMENT_QUESTION} ${level.value}, ${level.label}`}
+                aria-pressed={selected}
+                disabled={isCheckingOut}
+                onClick={() => setPostSessionEnjoyment({ sessionId: activeSessionRecord.sessionId, value: level.value })}
+                className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+              >
+                {/* No inline size: the kiosk type floor (--t-md) sets it on the floor. */}
+                <span className="t-data">{level.value}</span> {level.label}
+              </button>
+            );
+          })}
+        </div>
+        {answeredEnjoyment === null ? (
+          <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
+            Not tapped — you can skip this. It goes on the session when you check out, and your coach sees it.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setPostSessionEnjoyment(null)}
+            disabled={isCheckingOut}
+            className="btn btn--ghost"
+          >
+            Clear enjoyment
+          </button>
+        )}
+      </fieldset>
+      {/* SESSION TYPE (Jason 2026-10-18). Optional, nothing
+          selected until the athlete picks; only Check Out
+          writes it. Copy PROPOSED. */}
+      <fieldset className="space-y-[var(--s2)]">
+        <legend className="t-label mb-[var(--s2)]">{SESSION_TYPE_QUESTION}</legend>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-[var(--s2)]">
+          {SESSION_TYPES.map((type) => {
+            const selected = answeredSessionType === type.key;
+            return (
+              <button
+                key={type.key}
+                type="button"
+                aria-label={`${SESSION_TYPE_QUESTION} ${type.label}`}
+                aria-pressed={selected}
+                disabled={isCheckingOut}
+                onClick={() => setPostSessionType({ sessionId: activeSessionRecord.sessionId, value: type.key })}
+                className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
+              >
+                {type.label}
+              </button>
+            );
+          })}
+        </div>
+        {answeredSessionType === null ? (
+          <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
+            Not picked — you can skip this. It goes on the session when you check out.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setPostSessionType(null)}
+            disabled={isCheckingOut}
+            className="btn btn--ghost"
+          >
+            Clear session type
+          </button>
+        )}
+      </fieldset>
+      {/* POST-SESSION MINUTES. Optional and empty until typed,
+          like the effort question; only Check Out writes it. A
+          number box, not a slider or a prefill, because a
+          control that already holds a value records an answer
+          nobody gave. */}
+      <div className="space-y-[var(--s2)]">
+        <label htmlFor="athlete-post-session-minutes" className="t-label block">{POST_SESSION_MINUTES_QUESTION}</label>
+        <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
+          Whole minutes, {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. You can skip this. It goes on the session when you check out.
+        </p>
+        <input
+          id="athlete-post-session-minutes"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={minutesDraft}
+          disabled={isCheckingOut}
+          aria-invalid={showMinutesError}
+          aria-describedby={showMinutesError ? 'athlete-post-session-minutes-error' : undefined}
+          onChange={(event) => setPostSessionMinutesDraft({ sessionId: activeSessionRecord.sessionId, draft: event.target.value })}
+          className="input input--kiosk w-[8rem]"
+        />
+        {showMinutesError ? (
+          <p id="athlete-post-session-minutes-error" role="alert" style={{ fontSize: 'var(--t-md)', color: 'var(--bone-100)' }}>
+            Minutes must be a whole number from {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. Fix it or clear the box to check out.
+          </p>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={() => void handleCheckOut()}
+        disabled={isCheckingOut || parsedMinutes.status === 'invalid'}
+        className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
+      >
+        {isCheckingOut ? 'Ending…' : 'End training'}
+      </button>
+    </EndTrainingControl>
+  ) : null;
 
   return (
     /* Gym-floor kiosk surface: ink ground with the floor room's brick wall
@@ -2860,22 +3137,24 @@ export default function AthleteWorkspace() {
 
         {/* #82: an active training hold, in the athlete's own language.
             Same self-contained contract as ProfileHeader -- renders nothing
-            when there is no hold. On My Dashboard it sits inside My Corner,
-            directly after the pain report (so a hold can never push Report
-            pain off the first screen); on every other tab it stands here,
-            first. */}
-        {activeTab !== 'my-dashboard' && <TrainingHoldBanner />}
+            when there is no hold. Where My Corner is drawn (How I feel today
+            and the Dashboard) it sits inside My Corner, directly after the
+            pain report (so a hold can never push Report pain off the first
+            screen); on every other tab it stands here, first. */}
+        {!cornerShownOn(activeTab) && <TrainingHoldBanner />}
         {/* A USA Boxing medical restriction in force (lane P22c, OW25-06 A),
             beside the hold in both places; one neutral "could not be checked"
             line when the read fails (OD-2026-11-17-009 ruling 3); nothing
             otherwise. */}
-        {activeTab !== 'my-dashboard' && <MedicalRestrictionNotice />}
+        {!cornerShownOn(activeTab) && <MedicalRestrictionNotice />}
 
-        {/* MY CORNER: the day's actions -- check in, report pain, coach work,
-            goals -- at the top of the screen on My Dashboard. This is the
-            Today section that used to sit below the tab rail, moved and
-            restyled; the same handlers, the same reads. See AthleteCorner.tsx. */}
-        {activeTab === 'my-dashboard' && (
+        {/* MY CORNER: the day's actions -- report pain, start and end
+            training, coach work, goals -- on How I feel today and the
+            Dashboard (lane AS-8, Overwatch Q1 A on #2020). First under the
+            header, above the tab rail, so Report pain stays on a phone's
+            opening screen (Overwatch Q-PHONE A on #2036; measured there). The
+            same handlers, the same reads. See AthleteCorner.tsx. */}
+        {cornerShownOn(activeTab) && (
           <AthleteCorner
             sessionState={storedSessionLoad}
             identityState={athleteIdentityState}
@@ -2888,43 +3167,22 @@ export default function AthleteWorkspace() {
             goals={goalsRead}
             onOpenGoals={() => setActiveTab('smart-goals')}
             onReportPain={goToPainReport}
-            onAskShadow={() => setActiveTab('shadow')}
+            onAskShadow={() => setActiveTab('message-coach')}
             checkedOutToday={checkedOutToday}
             checkInFailed={checkInFailed}
             afterPain={<><TrainingHoldBanner /><MedicalRestrictionNotice /></>}
+            endTraining={endTraining}
+            afterEnd={afterSparring}
+            checkInLineRef={cornerLineRef}
           />
         )}
 
-        {/* The athlete's own fight card. Self-contained: it fetches its own
-            data and renders nothing until it has some, so this is the single
-            insertion the profile layer makes into this file. */}
-        <ProfileHeader />
-
-        {/* Notices are posted paper on the leather wall. */}
-        <AnnouncementBanner
-          placement="athlete_workspace"
-          kind="notice"
-          heading="Gym Notices"
-          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
-        />
-
-        {/* The chalkboard REPLACES the paper "From the Gym" card that used to
-            sit here. Same table, same placement, same kind ('motivation') --
-            what changed is the object. A line somebody wrote by hand was being
-            rendered as a clean UI card with a heading on it; it is slate and
-            chalk now, and it shows one line rather than a list, because that is
-            what a board by the door holds. See Chalkboard.tsx. */}
-        <Chalkboard placement="athlete_workspace" />
-
-        {/* The role summary, the training card, achievements, "Off the
-            screen", and "What's Coming" all moved to the foot of the
-            page, below the tab content -- same reasoning already applied to
-            the gym wall (see its comment below): these are ambient/summary
-            content, not something an athlete opens this dashboard to act on,
-            and they used to sit between the header and Quick Actions, pushing
-            Quick Actions -- including Check-In -- below the fold. */}
-
-        {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels.
+        {/* GROUP NAVIGATION — floor-sized targets (Law 5), two levels. Under
+            My Corner where it is drawn, else under the header and the hold and
+            restriction notices; I'm here comes after it. Both sit above the
+            fight card, notices and chalkboard, so the way on is not below them
+            (lane AS-8, scrub ATH-02; Overwatch Q2 A on #2020, as Q-PHONE A on
+            #2036 replaced it: My Corner first).
             Five groups an athlete can hold in their head, each opening onto the
             surfaces it owns. A group with one surface has no second row: there
             is nothing to choose between, so nothing is drawn. */}
@@ -2971,7 +3229,7 @@ export default function AthleteWorkspace() {
                   check-in until it is done, and says so plainly -- nothing
                   more. */}
               {activeGroup === 'today' && railCheckInLine && (
-                <p className="t-label ml-[var(--s2)] text-[color:var(--bone-400)]">
+                <p ref={railLineRef} className="t-label ml-[var(--s2)] text-[color:var(--bone-400)]">
                   {railCheckInLine}
                 </p>
               )}
@@ -2986,8 +3244,109 @@ export default function AthleteWorkspace() {
           <AthleteImHere athleteId={backendAthleteId} schedule={todaySchedule.read} onReload={reloadTodaySchedule} />
         )}
 
+        {/* The athlete's own fight card. Self-contained: it fetches its own
+            data and renders nothing until it has some, so this is the single
+            insertion the profile layer makes into this file. */}
+        <ProfileHeader />
+
+        {/* Notices are posted paper on the leather wall. */}
+        <AnnouncementBanner
+          placement="athlete_workspace"
+          kind="notice"
+          heading="Gym Notices"
+          className="mat-paper rounded-[var(--r-lg)] p-[var(--s4)]"
+        />
+
+        {/* The chalkboard REPLACES the paper "From the Gym" card that used to
+            sit here. Same table, same placement, same kind ('motivation') --
+            what changed is the object. A line somebody wrote by hand was being
+            rendered as a clean UI card with a heading on it; it is slate and
+            chalk now, and it shows one line rather than a list, because that is
+            what a board by the door holds. See Chalkboard.tsx. */}
+        <Chalkboard placement="athlete_workspace" />
+
+        {/* The role summary, the training card, achievements, "Off the
+            screen", and "What's Coming" all moved to the foot of the
+            page, below the tab content -- same reasoning already applied to
+            the gym wall (see its comment below): these are ambient/summary
+            content, not something an athlete opens this dashboard to act on,
+            and they used to sit between the header and Quick Actions, pushing
+            Quick Actions -- including Check-In -- below the fold. */}
         {/* TAB CONTENT */}
         <div className="space-y-6">
+          {/* THE PROGRESS PAGES (lane AS-8, ATH-04; Overwatch Q6 A on #2020).
+              One open row at the top of each Progress tab. My Film, My
+              Progression and the Sparring Log were three cards in a collapsed
+              "More in your workspace" at the foot of every tab; they moved
+              here unchanged, and that disclosure is gone. My Development Plan
+              and Mental Skills had no link from this workspace (their doors
+              were only in the building map); each card is titled with its page
+              title and described by the first sentence of its page's own
+              intro, so nothing here is new wording.
+
+              The film and progression cards were once headed "What's Coming"
+              and described both pages as "Not Built Yet", one of them as "The
+              screens are drawn. Nothing behind them works yet." Both shipped
+              since that copy was written: /athlete/video-analysis reads
+              pilot.video via /api/pilot/video/list and the SHADOW observation
+              projection, and /athlete/progression-intelligence reads real gaps
+              and drill assignments and writes completions back. Telling an
+              athlete a working feature does not exist is the same class of
+              error as claiming one that does not -- it just fails in the
+              direction that hides their own record from them. What stays "not
+              built" is narrower and named: automatic scoring, which is PARKED
+              by owner decision and which those pages already label for
+              themselves. */}
+          {activeGroup === 'development' && (
+            <div data-progress-pages="" className="grid gap-[var(--s4)] sm:grid-cols-2 lg:grid-cols-3">
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">My Film</p>
+                <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
+                <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open My Film
+                </Link>
+              </article>
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">My Progression</p>
+                <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
+                <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open My Progression
+                </Link>
+              </article>
+              {/* /athlete/dashboard/sparring existed with a real, tested,
+                  API-backed form (rounds, contact, punch output feeding the
+                  same SHADOW formulas this tab is named for) and no link to it
+                  anywhere in the app -- reachable only by typing the URL or
+                  using site search. This card is the only thing that changed;
+                  the page itself and its own naming are untouched. */}
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">Sparring Log</p>
+                <p className="t-muted mt-[var(--s2)]">Write down a sparring session -- rounds, contact, what you threw and what landed. Your coach reads it.</p>
+                <Link href="/athlete/dashboard/sparring" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open Sparring Log
+                </Link>
+              </article>
+              {/* Title and line: app/athlete/development-blocks/page.tsx's own
+                  h1 and the first sentence of its intro. */}
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">My Development Plan</p>
+                <p className="t-muted mt-[var(--s2)]">What your coach is working on with you over the next several weeks, in their words.</p>
+                <Link href="/athlete/development-blocks" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open My Development Plan
+                </Link>
+              </article>
+              {/* Title and line: app/athlete/mental-skills/page.tsx's own h1
+                  and the first sentence of its intro. */}
+              <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">Mental Skills</p>
+                <p className="t-muted mt-[var(--s2)]">Your self-talk cue and your imagery sessions.</p>
+                <Link href="/athlete/mental-skills" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
+                  Open Mental Skills
+                </Link>
+              </article>
+            </div>
+          )}
+
           {/* MY DASHBOARD */}
           {activeTab === 'my-dashboard' && (
             <div className="space-y-6 panel-settle">
@@ -3225,7 +3584,7 @@ export default function AthleteWorkspace() {
                         not. One live region, so both lines are announced
                         together in this order. */}
                     <div role="status" className="space-y-[var(--s2)]">
-                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                      <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                         {notesSaveState === 'saving'
                           ? 'Sending...'
                           : sharedNote
@@ -3238,7 +3597,7 @@ export default function AthleteWorkspace() {
                           on screen (noteSendFailed requires noteAction), so
                           "try again" always names something pressable. */}
                       {noteSendFailed ? (
-                        <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                        <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           That did not reach your coach -- try again.
                         </p>
                       ) : null}
@@ -3264,172 +3623,10 @@ export default function AthleteWorkspace() {
                             : 'Withdraw from coach'}
                       </button>
                     ) : null}
-                    {/* POST-SESSION EFFORT (A-FIN-05). Eleven choices, 0 to 10,
-                        rather than a slider, for the reason the Wellness panel
-                        gives: a range input always has a position, so it
-                        records an answer nobody gave. Nothing is selected until
-                        the athlete selects it, skipping is said out loud, and
-                        only Check Out writes it -- the note publication above
-                        never carries it. */}
-                    <fieldset className="space-y-[var(--s2)]">
-                      <legend className="t-label mb-[var(--s2)]">{POST_SESSION_EFFORT_QUESTION}</legend>
-                      <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                        0 means not hard at all. 10 means as hard as you could go. It goes on the session when you check out.
-                      </p>
-                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-[var(--s2)]">
-                        {POST_SESSION_EFFORT_VALUES.map((value) => {
-                          const selected = answeredEffort === value;
-                          return (
-                            <button
-                              key={value}
-                              type="button"
-                              aria-label={`${POST_SESSION_EFFORT_QUESTION} ${value}`}
-                              aria-pressed={selected}
-                              disabled={isCheckingOut}
-                              onClick={() => setPostSessionEffort({ sessionId: activeSessionRecord.sessionId, value })}
-                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
-                            >
-                              <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {answeredEffort === null ? (
-                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not answered — you can skip this. Ending training without it records no effort.
-                        </p>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPostSessionEffort(null)}
-                          disabled={isCheckingOut}
-                          className="btn btn--ghost"
-                        >
-                          Clear my answer
-                        </button>
-                      )}
-                    </fieldset>
-                    {/* ENJOYMENT (OD-2026-10-17-026 (a)). Five choices, nothing
-                        selected until the athlete taps; skippable; only Check
-                        Out writes it. Copy PROPOSED. */}
-                    <fieldset className="space-y-[var(--s2)]">
-                      <legend className="t-label mb-[var(--s2)]">{ENJOYMENT_QUESTION}</legend>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-[var(--s2)]">
-                        {ENJOYMENT_LEVELS.map((level) => {
-                          const selected = answeredEnjoyment === level.value;
-                          return (
-                            <button
-                              key={level.value}
-                              type="button"
-                              aria-label={`${ENJOYMENT_QUESTION} ${level.value}, ${level.label}`}
-                              aria-pressed={selected}
-                              disabled={isCheckingOut}
-                              onClick={() => setPostSessionEnjoyment({ sessionId: activeSessionRecord.sessionId, value: level.value })}
-                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
-                            >
-                              {/* No inline size: the kiosk type floor (--t-md) sets it on the floor. */}
-                              <span className="t-data">{level.value}</span> {level.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {answeredEnjoyment === null ? (
-                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not tapped — you can skip this. It goes on the session when you check out, and your coach sees it.
-                        </p>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPostSessionEnjoyment(null)}
-                          disabled={isCheckingOut}
-                          className="btn btn--ghost"
-                        >
-                          Clear enjoyment
-                        </button>
-                      )}
-                    </fieldset>
-                    {/* SESSION TYPE (Jason 2026-10-18). Optional, nothing
-                        selected until the athlete picks; only Check Out
-                        writes it. Copy PROPOSED. */}
-                    <fieldset className="space-y-[var(--s2)]">
-                      <legend className="t-label mb-[var(--s2)]">{SESSION_TYPE_QUESTION}</legend>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-[var(--s2)]">
-                        {SESSION_TYPES.map((type) => {
-                          const selected = answeredSessionType === type.key;
-                          return (
-                            <button
-                              key={type.key}
-                              type="button"
-                              aria-label={`${SESSION_TYPE_QUESTION} ${type.label}`}
-                              aria-pressed={selected}
-                              disabled={isCheckingOut}
-                              onClick={() => setPostSessionType({ sessionId: activeSessionRecord.sessionId, value: type.key })}
-                              className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
-                            >
-                              {type.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {answeredSessionType === null ? (
-                        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                          Not picked — you can skip this. It goes on the session when you check out.
-                        </p>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPostSessionType(null)}
-                          disabled={isCheckingOut}
-                          className="btn btn--ghost"
-                        >
-                          Clear session type
-                        </button>
-                      )}
-                    </fieldset>
-                    {/* POST-SESSION MINUTES. Optional and empty until typed,
-                        like the effort question; only Check Out writes it. A
-                        number box, not a slider or a prefill, because a
-                        control that already holds a value records an answer
-                        nobody gave. */}
-                    <div className="space-y-[var(--s2)]">
-                      <label htmlFor="athlete-post-session-minutes" className="t-label block">{POST_SESSION_MINUTES_QUESTION}</label>
-                      <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
-                        Whole minutes, {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. You can skip this. It goes on the session when you check out.
-                      </p>
-                      <input
-                        id="athlete-post-session-minutes"
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="off"
-                        value={minutesDraft}
-                        disabled={isCheckingOut}
-                        aria-invalid={showMinutesError}
-                        aria-describedby={showMinutesError ? 'athlete-post-session-minutes-error' : undefined}
-                        onChange={(event) => setPostSessionMinutesDraft({ sessionId: activeSessionRecord.sessionId, draft: event.target.value })}
-                        className="input input--kiosk w-[8rem]"
-                      />
-                      {showMinutesError ? (
-                        <p id="athlete-post-session-minutes-error" role="alert" style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-100)' }}>
-                          Minutes must be a whole number from {POST_SESSION_MINUTES_MIN} to {POST_SESSION_MINUTES_MAX}. Fix it or clear the box to check out.
-                        </p>
-                      ) : null}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleCheckOut()}
-                      disabled={isCheckingOut || parsedMinutes.status === 'invalid'}
-                      className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
-                    >
-                      {isCheckingOut ? 'Ending…' : 'End training'}
-                    </button>
                   </div>
                 ) : (
                   <div className="space-y-[var(--s4)]">
                     <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">Your training has not started.</p>
-                    {/* The after-sparring symptom check (OD-2026-10-17-023,
-                        -029), where the check-out block was. Renders nothing
-                        unless a sparring check-out today is unanswered. */}
-                    <SparringSymptomCheck context="after_sparring" justCheckedOut={afterSparringCheck} />
                     {/* THE PRE-CHECK-IN NOTE (A-FIN-01), where the defaulted
                         readiness slider used to be the only pre-session input.
                         Optional and empty until the athlete writes in it.
@@ -3453,18 +3650,16 @@ export default function AthleteWorkspace() {
                         aria-describedby="pre-check-in-note-help"
                         className="textarea input--kiosk h-[89px]"
                       />
-                      <p id="pre-check-in-note-help" className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                      <p id="pre-check-in-note-help" className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                         Optional. You can leave it empty. Nobody sees this until you start training and press Share with coach.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleCheckIn()}
-                      disabled={isCheckingIn}
-                      className="btn btn--kiosk disabled:opacity-50 disabled:grayscale"
-                    >
-                      {isCheckingIn ? 'Starting…' : 'Start training'}
-                    </button>
+                    {/* One Start training (lane AS-8, scrub ATH-24, Overwatch Q3 A
+                        on #2020): My Corner's, beside End training. It is drawn
+                        under the same conditions this branch is (athlete sign-in,
+                        an answered session read, no session open) and calls the
+                        same handleCheckIn, so the note above still carries into
+                        the session. This button is removed, not moved. */}
                   </div>
                 )}
 
@@ -3477,7 +3672,7 @@ export default function AthleteWorkspace() {
                     </p>
                     <ul className="space-y-[var(--s3)]">
                       {recentSessions.map((session) => (
-                        <li key={session.sessionId} className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                        <li key={session.sessionId} className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           <span className="t-data">{formatCalendarDay(session.date)}</span>
                           {' - '}
                           {/* The system's words -- the no-note placeholder,
@@ -3496,6 +3691,21 @@ export default function AthleteWorkspace() {
             </div>
           )}
 
+          {/* End training at the top of the Floor, in both of its states, under
+              the rail's "Training started" (lane U3 B4, Overwatch Q3 A); once
+              ended, the after-sparring check in its place. The same elements
+              My Corner draws; see endTraining and afterSparring. */}
+          {activeTab === 'athlete-floor' && endTraining ? (
+            <div className={`${PANEL_RAISED} panel-settle`} data-section="end-training">
+              {endTraining}
+            </div>
+          ) : null}
+          {activeTab === 'athlete-floor' && afterSparring ? (
+            <div className={`${PANEL_RAISED} panel-settle empty:hidden`} data-section="after-sparring">
+              {afterSparring}
+            </div>
+          ) : null}
+
           {/* ATHLETE FLOOR -- gated on today's check-in, and only this. */}
           {activeTab === 'athlete-floor' && floorLockedPendingCheckIn && (
             <div className="space-y-6 panel-settle">
@@ -3512,7 +3722,7 @@ export default function AthleteWorkspace() {
                 >
                   Go to How I feel today
                 </button>
-                <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
                   Everything else stays open — goals, drills, messages, and telling a
                   coach about pain.
                 </p>
@@ -3547,8 +3757,8 @@ export default function AthleteWorkspace() {
                   assigned you anything" is a claim about a coach, and a
                   network failure is not evidence for it. */}
               {assignedWorkError && !assignedWorkLoading && (
-                <div className="alert alert--critical" role="alert">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div className="alert alert--warning" role="alert">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-title">Could not load your coach&apos;s work</p>
                     <p className="alert-msg">{assignedWorkError}</p>
@@ -3769,8 +3979,8 @@ export default function AthleteWorkspace() {
               )}
 
               {goalsError && !goalsLoading && (
-                <div className="alert alert--critical" role="alert">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div className="alert alert--warning" role="alert">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-title">Could not load your goals</p>
                     <p className="alert-msg">{goalsError}</p>
@@ -3823,7 +4033,7 @@ export default function AthleteWorkspace() {
                       <div className="space-y-[var(--s2)]">
                         <div className="flex justify-between">
                           <span className="t-label">Progress</span>
-                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }} data-testid={`goal-progress-value-${goal.id}`}>
+                          <span className="t-data" style={{ fontSize: 'var(--t-md)' }} data-testid={`goal-progress-value-${goal.id}`}>
                             {goal.progressPercent === null ? 'Not reported yet' : `${goal.progressPercent}%`}
                           </span>
                         </div>
@@ -3855,7 +4065,7 @@ export default function AthleteWorkspace() {
                           </select>
                         </label>
                       </div>
-                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">Target: {formatCalendarDay(goal.targetDate)}</p>
+                      <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">Target: {formatCalendarDay(goal.targetDate)}</p>
                       <p className="t-muted">{goal.successMetric}</p>
                     </div>
                   );
@@ -3904,7 +4114,7 @@ export default function AthleteWorkspace() {
               <div className="space-y-[var(--s4)]">
                 <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                   <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">Skill checks</p>
-                  <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                  <p className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                     If this is ever built, it records what you did on a given day — not what kind of person you are.
                   </p>
                   <button
@@ -3934,7 +4144,11 @@ export default function AthleteWorkspace() {
               loading={checkInLoading}
               loadError={checkInLoadError}
               onRetry={backendAthleteId ? () => void loadCheckIn() : undefined}
+              readDraft={readCheckInDraft}
+              onDraftChange={rememberCheckInDraft}
               onSaved={(row) => {
+                // Saved: nothing is left unsaved.
+                checkInDraftRef.current = null;
                 // The server has answered with today's check-in: the failed read is no longer the news.
                 setCheckInLoadError(null);
                 setTodayCheckIn(row);
@@ -3990,7 +4204,7 @@ export default function AthleteWorkspace() {
 
               <div className={PANEL}>
                 <p className="t-label">Reference · Learning</p>
-                <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                   This is reading material, not training your coach has given you. Opening a drill here does not assign
                   it to you, does not log it, and does not count toward anything. Your assigned work lives on the
                   progression page.
@@ -4002,8 +4216,8 @@ export default function AthleteWorkspace() {
               )}
 
               {!drillsLoading && drillsError && (
-                <div className="alert alert--critical" role="alert">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div className="alert alert--warning" role="alert">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-title">Could not load the reference library</p>
                     <p className="alert-msg">{drillsError}</p>
@@ -4049,9 +4263,9 @@ export default function AthleteWorkspace() {
                   {openDrillLoading && <span className="working">Loading the drill...</span>}
                   {!openDrillLoading && openDrillError && (
                     <div className={PANEL}>
-                      <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{openDrillError}</p>
+                      <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{openDrillError}</p>
                       {openDrillError !== DRILL_WITHDRAWN && (
-                        <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                        <p className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           This is a failure to load the drill, not a sign it was removed. Go back and try again.
                         </p>
                       )}
@@ -4072,8 +4286,8 @@ export default function AthleteWorkspace() {
                         <span className="t-data">Coach authorization required</span>
                       )}
                     </div>
-                    <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.purpose}</p>
-                    <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">{drill.purpose}</p>
+                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                       <span className="font-semibold text-[color:var(--bone-200)]">Contact:</span> {humanizeContactLevel(drill.contactLevel)}
                     </p>
                     <button
@@ -4135,9 +4349,11 @@ export default function AthleteWorkspace() {
           )}
 
           {/* ASK SHADOW.
-              Named for what it does. The copy here has been accurate for a
-              while -- it already said SHADOW answers and no coach is notified
-              -- but the surface around the copy said something else: it was
+              Named for what it does. The copy said SHADOW answers and no
+              coach is notified -- false whenever a safety alert is filed, so
+              it now says when a coach or the gym office can be alerted
+              (askShadowWords.ts, HF2). The surface around the copy had said
+              something else too: it was
               titled "Message Coach", its form said "Send Message to Coach",
               and it opened with a coach picker. Structure outranks body text,
               so an athlete reasonably read all that as "a coach will see this".
@@ -4146,7 +4362,7 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 panel-settle">
               <HelpPanel
                 title="Ask SHADOW"
-                description="Write a question. It is recorded in your own SHADOW conversation and answered by SHADOW -- it does not reach a coach."
+                description={ASK_SHADOW_HELP_LINE}
                 usage={[
                   'Be clear and specific in questions',
                   'Everything you send here is kept',
@@ -4163,12 +4379,15 @@ export default function AthleteWorkspace() {
                   no recipient, address, or delivery step is stored or sent --
                   so this surface cannot claim parent CC is in force. A missing
                   safeguard is a caution, not a Layer 11 lock, so it takes the
-                  warning rung with its glyph (Laws 2 + 3). */}
+                  warning rung with its glyph (Laws 2 + 3). Its "Not Built Yet"
+                  title stood over a form that works (it posts to
+                  /api/pilot/athlete/chat), so the title is gone and the
+                  SafeSport sentence stays word for word (lane AS-8, ATH-05;
+                  Overwatch Q10 A on #2020). */}
               <div className="alert alert--warning">
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
-                  <p className="alert-title">Not Built Yet</p>
-                  <p className="alert-msg"><strong>SafeSport:</strong> what you send here is kept, but your parent is not automatically copied and no coach is notified. Tell a coach or a trusted adult in person about anything urgent or unsafe.</p>
+                  <p className="alert-msg"><strong>SafeSport:</strong> {ASK_SHADOW_SAFESPORT_LINE}</p>
                 </div>
               </div>
 
@@ -4193,7 +4412,7 @@ export default function AthleteWorkspace() {
                       className="textarea input--kiosk h-24 resize-none"
                     />
                   </div>
-                  {coachMessageStatus ? <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]" role="status">{coachMessageStatus}</p> : null}
+                  {coachMessageStatus ? <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]" role="status">{coachMessageStatus}</p> : null}
                   <button
                     type="submit"
                     disabled={isSendingCoachMessage}
@@ -4211,7 +4430,7 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 panel-settle">
               <div className="flex flex-wrap gap-[var(--s3)]">
                 <Link href="/schedule" className="btn min-h-[var(--tap)]">
-                  Open Unified Scheduler
+                  Open Schedule
                 </Link>
               </div>
               {/* The athlete's classes and bookings, read in place (WO-N5-01).
@@ -4286,7 +4505,7 @@ export default function AthleteWorkspace() {
                   <p className="t-label">Things you can ask SHADOW:</p>
                   <ul className="list-disc space-y-[var(--s2)] pl-[var(--s5)]">
                     {suggestedQuestions.map((q) => (
-                      <li key={q} className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{q}</li>
+                      <li key={q} className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">{q}</li>
                     ))}
                   </ul>
                 </div>
@@ -4294,14 +4513,14 @@ export default function AthleteWorkspace() {
 
               {/* A scope note, not a caution state — plain leather, no rung. */}
               <div className={PANEL}>
-                <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-200)]"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
+                <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
               </div>
 
               <div className={PANEL}>
                 <h3 className="t-label">What SHADOW Has Noticed</h3>
                 {shadowObservationError ? (
-                  <div className="alert alert--critical" role="alert">
-                    <span className="alert-icon" aria-hidden="true">✕</span>
+                  <div className="alert alert--warning" role="alert">
+                    <span className="alert-icon" aria-hidden="true">▲</span>
                     <div className="alert-body">
                       <p className="alert-title">Could not load SHADOW&apos;s notes</p>
                       <p className="alert-msg">{shadowObservationError}</p>
@@ -4328,7 +4547,7 @@ export default function AthleteWorkspace() {
                 ) : null}
                 <div className="mt-[var(--s3)] space-y-[var(--s3)]">
                   {observationsForAthlete(shadowObservations).slice(0, 6).map((item) => (
-                    <div key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    <div key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                       <p className="font-semibold text-[color:var(--bone-100)]">{item.label}</p>
                       <p>{reviewStateLine(item.review_state)}</p>
                     </div>
@@ -4410,52 +4629,6 @@ export default function AthleteWorkspace() {
           </div>
         </div>
 
-        {/* This panel was headed "What's Coming" and described both pages below
-            as "Not Built Yet", one of them as "The screens are drawn. Nothing
-            behind them works yet." Both shipped since that copy was written:
-            /athlete/video-analysis reads pilot.video via /api/pilot/video/list
-            and the SHADOW observation projection, and
-            /athlete/progression-intelligence reads real gaps and drill
-            assignments and writes completions back.
-
-            Telling an athlete a working feature does not exist is the same
-            class of error as claiming one that does not -- it just fails in the
-            direction that hides their own record from them. What stays "not
-            built" is narrower and named: automatic scoring, which is PARKED by
-            owner decision and which those pages already label for themselves. */}
-        <details className={PANEL}>
-          <summary className="t-label cursor-pointer">More in your workspace</summary>
-          <div className="mt-[var(--s4)] grid gap-[var(--s4)] md:grid-cols-2">
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Film</p>
-              <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
-              <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open My Film
-              </Link>
-            </article>
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Progression</p>
-              <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
-              <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open My Progression
-              </Link>
-            </article>
-            {/* /athlete/dashboard/sparring existed with a real, tested,
-                API-backed form (rounds, contact, punch output feeding the
-                same SHADOW formulas this tab is named for) and no link to it
-                anywhere in the app -- reachable only by typing the URL or
-                using site search. This card is the only thing that changed;
-                the page itself and its own naming are untouched. */}
-            <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-              <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Sparring Log</p>
-              <p className="t-muted mt-[var(--s2)]">Write down a sparring session -- rounds, contact, what you threw and what landed. Your coach reads it.</p>
-              <Link href="/athlete/dashboard/sparring" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
-                Open Sparring Log
-              </Link>
-            </article>
-          </div>
-        </details>
-
         {/* PAIN MODAL */}
         {showPainModal && selectedPainLocation && aboveTheHeader(
           <div className="fixed inset-0 bg-[var(--hide-950)]/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto z-[60] p-[var(--s4)] text-[color:var(--bone-200)] font-sans">
@@ -4489,7 +4662,7 @@ export default function AthleteWorkspace() {
                     (painReportAlert.ts). */}
                 <fieldset className="space-y-[var(--s2)]">
                   <legend className="t-label mb-[var(--s2)]">Severity (1-10)</legend>
-                  <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                  <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
                     Choose the number that matches what you feel.
                   </p>
                   <div className="grid grid-cols-5 gap-[var(--s2)]">
@@ -4505,13 +4678,13 @@ export default function AthleteWorkspace() {
                           onClick={() => setCurrentPainSeverity(value)}
                           className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
                         >
-                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
+                          <span className="t-data" style={{ fontSize: 'var(--t-md)' }}>{value}</span>
                         </button>
                       );
                     })}
                   </div>
                   {currentPainSeverity === null ? (
-                    <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                    <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
                       Not answered yet.
                     </p>
                   ) : null}
@@ -4531,7 +4704,7 @@ export default function AthleteWorkspace() {
                 </p>
               ) : null}
               {painReportIncomplete ? (
-                <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
                   Choose a pain type and severity before saving.
                 </p>
               ) : null}

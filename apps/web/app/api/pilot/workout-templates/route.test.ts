@@ -13,6 +13,7 @@ import {
   listUntestedTemplateDrills,
   planTemplateIssue,
   listWorkoutTemplates,
+  readWorkoutTemplateFieldDrafts,
 } from '@/src/server/pilot/workoutTemplates';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
 import type { PilotRole } from '@/src/server/pilot/contracts';
@@ -53,6 +54,7 @@ jest.mock('@/src/server/pilot/workoutTemplates', () => {
     getWorkoutTemplateWithItems: jest.fn(),
     listUntestedTemplateDrills: jest.fn(async () => []),
     planTemplateIssue: jest.fn(async () => ({ refused: [] })),
+    readWorkoutTemplateFieldDrafts: jest.fn(),
   };
 });
 
@@ -61,6 +63,12 @@ const mockList = listWorkoutTemplates as jest.Mock;
 const mockDetail = getWorkoutTemplateWithItems as jest.Mock;
 const mockUntested = listUntestedTemplateDrills as jest.Mock;
 const mockPlan = planTemplateIssue as jest.Mock;
+const mockDrafts = readWorkoutTemplateFieldDrafts as jest.Mock;
+// Lane ED-UI PR3: which shown fields are still AI drafts, for the staff mark (OW25-57: coaches and admins only).
+const FIELD_DRAFTS = { name: false, session_type: true, difficulty: null, age_band: false, duration_minutes: true, intent: true, requires_coach_authorization: false, coach_notes: null, items: true, labelled: true };
+beforeEach(() => {
+  mockDrafts.mockResolvedValue(FIELD_DRAFTS);
+});
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -145,8 +153,10 @@ describe('the detail branch', () => {
       items: [{ item_id: 'item-1' }],
       untested_drills: [],
       refused_drills: [],
+      field_drafts: FIELD_DRAFTS,
     });
     expect(mockDetail).toHaveBeenCalledWith('org-1', 'tpl-1');
+    expect(mockDrafts).toHaveBeenCalledWith('org-1', TEMPLATE);
     expect(mockList).not.toHaveBeenCalled();
   });
 
@@ -562,6 +572,10 @@ describe('what each reader receives', () => {
       // Nor the refusal plan (lane U1, U1-ISSUE): only those who issue get it.
       expect(body).not.toHaveProperty('refused_drills');
       expect(mockPlan).not.toHaveBeenCalled();
+      // Nor the AI-draft state (OW25-57: coaches and admins only; lane ED-UI PR3), and it is not even read.
+      expect(keysAtAnyDepth(body).has('field_drafts')).toBe(false);
+      expect(text).not.toContain('field_drafts');
+      expect(mockDrafts).not.toHaveBeenCalled();
     });
   });
 
@@ -582,8 +596,9 @@ describe('what each reader receives', () => {
 
       expect(response.status).toBe(200);
       const body = await response.json();
-      expect(body).toEqual({ ...STORED_DETAIL, untested_drills: UNTESTED, refused_drills: [] });
-      expect(Object.keys(body)).toEqual(['template', 'items', 'coach_only_extra', 'untested_drills', 'refused_drills']);
+      expect(body).toEqual({ ...STORED_DETAIL, untested_drills: UNTESTED, refused_drills: [], field_drafts: FIELD_DRAFTS });
+      expect(Object.keys(body)).toEqual(['template', 'items', 'coach_only_extra', 'untested_drills', 'refused_drills', 'field_drafts']);
+      expect(mockDrafts).toHaveBeenCalledWith('org-1', STORED_DETAIL.template);
       // Read for the session gym, from the items this read returned.
       expect(mockUntested).toHaveBeenCalledWith('org-1', STORED_DETAIL.items);
     });

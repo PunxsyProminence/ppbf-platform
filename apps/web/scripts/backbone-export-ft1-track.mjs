@@ -20,6 +20,10 @@
 // naming each file, drill (or template, or track) and field, and nothing is written. Rows the run
 // only adds are not listed. --allow-overwrite writes anyway and prints the same list.
 //
+// TWO STOPS NO FLAG PASSES (lane GD; lib/backbone-export-guards.mjs). A row this run would write
+// that names a held DOC-136 record, or a committed template step that links a drill written back
+// as a typed line, stops the export and nothing is written, with or without --allow-overwrite.
+//
 // THE SET. The track's blocks, the templates they list, and the drills those templates and
 // the blocks' optional_drill_refs name. It must equal every record whose stage_keys is exactly
 // ["FT1"]; a difference stops the export (the brief's counts: 1 / 8 / 40 / 33 / 131 / 131).
@@ -40,6 +44,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { heldTextFindings, stopMessage, typedLineFindings } from './lib/backbone-export-guards.mjs';
+
 export const ORG_PLACEHOLDER = '{{PPBF_ORG_ID}}';
 export const FT1_TRACK_ID = 'trk_d104860a7eccef';
 export const MANIFEST_FILE = 'FREEZE_MANIFEST.json';
@@ -48,6 +54,8 @@ export const EXCERPT_KEYS = ['quote', 'quotes', 'owner_passages'];
 export const EXPECTED_COUNTS = { tracks: 1, blocks: 8, blockSessions: 40, templates: 33, items: 131, drills: 131, cues: 131, stopRules: 9, scaleLevels: 0 };
 
 export class ExportError extends Error {}
+
+const ITEMS_FILE = 'workout-templates/seed_workout_template_items.csv';
 
 // Backbone record keys, by kind: carried (to a column or a JSON cell) and deliberately not carried.
 const LABELS = ['field_labels', 'evidence', 'stage_keys'];
@@ -489,7 +497,8 @@ export function mergeCsv(kept, header, newRows) {
 /**
  * The packages for one Backbone folder: { files: { 'folder/file.csv': text }, counts, notices, overwrites, backboneVersion }.
  * `existing(name)` returns a committed file's text, or undefined. Throws, before any file is produced,
- * when a committed row would be changed or removed, unless `allowOverwrite` (see OVERWRITE GUARD).
+ * when a committed row would be changed or removed, unless `allowOverwrite` (see OVERWRITE GUARD), and
+ * whatever `allowOverwrite` says when a row would name a held record or put a typed line back.
  */
 export function exportFt1Track(backboneDir, existing = () => undefined, { allowOverwrite = false } = {}) {
   const set = readFt1(backboneDir);
@@ -513,6 +522,7 @@ export function exportFt1Track(backboneDir, existing = () => undefined, { allowO
   const templateIdSet = new Set(templateSet.rows.map((row) => row.template_id));
   const files = {};
   const overwrites = [];
+  const stops = [];
   // `replaces(row)`: the committed rows this run writes over; every other committed row is kept.
   const put = (name, rows, replaces) => {
     const committed = committedRows(existing(name), HEADERS[name]);
@@ -520,6 +530,8 @@ export function exportFt1Track(backboneDir, existing = () => undefined, { allowO
     const kept = committed.filter((row) => !replaces(row));
     checkUniqueIds(name, kept, rows);
     overwrites.push(...findOverwrites(name, replaced, rows));
+    stops.push(...heldTextFindings(name, HEADERS[name], rows));
+    if (name === ITEMS_FILE) stops.push(...typedLineFindings(name, replaced, rows));
     // A replaced row keeps its place (the training-tracks and drill files also hold other lanes'
     // rows after the FT1 ones, so a rerun must not move them); new rows follow.
     const fresh = new Map(rows.map((row) => [guardId(name, row), row]));
@@ -540,14 +552,18 @@ export function exportFt1Track(backboneDir, existing = () => undefined, { allowO
   put('training-tracks/seed_track_blocks.csv', trackSet.blockCells, ofFt1Track);
   put('training-tracks/seed_track_block_sessions.csv', trackSet.sessionCells, ofFt1Track);
   const overwriteLines = describeOverwrites(overwrites);
+  const stopText = stopMessage(stops);
   if (overwrites.length && !allowOverwrite) {
     throw new ExportError([
       `refused: this run would change or remove ${overwrites.length} committed row(s): edits made in the repo since the export`
         + ' (for FT1: the drafted drill fields and stop rules, OD-2026-11-12-005). Nothing was written.',
       ...overwriteLines,
-      'To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.',
+      ...(stopText
+        ? ['--allow-overwrite would not write this run either.', stopText]
+        : ['To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.']),
     ].join('\n'));
   }
+  if (stopText) throw new ExportError(stopText);
 
   const sessionTypes = {};
   for (const row of templateSet.rows) sessionTypes[row.session_type] = (sessionTypes[row.session_type] ?? 0) + 1;

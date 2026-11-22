@@ -60,14 +60,27 @@ const CAPTURE_ROW = {
   takes_with_multiple_files: 2,
 };
 
+const CLIPS_CUT_ROW = { clips_cut: 24 };
+
+/** One version's labelling counts. The 0.1 row; 0.4 answers LABELLING_ROW_04. */
 const LABELLING_ROW = {
-  clips_cut: 24,
   submitted_sets: 9,
   clips_with_two_submitted_sets: 4,
   adjudications: 2,
   gold_records: 1,
   gold_candidates: 3,
 };
+
+const LABELLING_ROW_04 = {
+  submitted_sets: 2,
+  clips_with_two_submitted_sets: 1,
+  adjudications: 0,
+  gold_records: 0,
+  gold_candidates: 0,
+};
+
+const V01 = 'boxing-ontology-0.1';
+const V04 = 'boxing-ontology-0.4';
 
 const REFUSED_ROWS = [
   { reason: 'CONTENT_SCREEN_REFUSED', files: 2, awaiting: 1 },
@@ -78,15 +91,23 @@ const REFUSED_ROWS = [
  *  query names itself instead of arriving as an opaque 500. */
 let unmatchedSql: string[] = [];
 
-function installQueryMock(options: { punchRows?: PunchRow[]; defenseRows?: DefenseRow[] } = {}) {
-  const { punchRows = [], defenseRows = [] } = options;
+/** punchRows / defenseRows answer for 0.1; the *04 ones answer for 0.4. */
+function installQueryMock(options: {
+  punchRows?: PunchRow[];
+  defenseRows?: DefenseRow[];
+  punchRows04?: PunchRow[];
+  defenseRows04?: DefenseRow[];
+} = {}) {
+  const { punchRows = [], defenseRows = [], punchRows04 = [], defenseRows04 = [] } = options;
 
-  mockQuery.mockImplementation(async (text: string) => {
+  mockQuery.mockImplementation(async (text: string, params: unknown[] = []) => {
+    const version = params[1];
     if (text.includes('as recording_sessions')) return [CAPTURE_ROW];
     if (text.includes("scan_state = 'blocked'")) return REFUSED_ROWS;
-    if (text.includes('as clips_cut')) return [LABELLING_ROW];
-    if (text.includes("e.event_class = 'punch'")) return punchRows;
-    if (text.includes("e.event_class = 'defense'")) return defenseRows;
+    if (text.includes('as clips_cut')) return [CLIPS_CUT_ROW];
+    if (text.includes('as submitted_sets')) return [version === V04 ? LABELLING_ROW_04 : LABELLING_ROW];
+    if (text.includes("e.event_class = 'punch'")) return version === V04 ? punchRows04 : punchRows;
+    if (text.includes("e.event_class = 'defense'")) return version === V04 ? defenseRows04 : defenseRows;
 
     unmatchedSql.push(text);
     throw new Error('Unrecognised SQL reached the query mock');
@@ -166,7 +187,7 @@ test('a coach gets the coverage summary', async () => {
   expect(response.status).toBe(200);
   expect(body.ok).toBe(true);
   expect(body.coverage.capture).toEqual(CAPTURE_ROW);
-  expect(body.coverage.labelling).toEqual(LABELLING_ROW);
+  expect(body.coverage.clips_cut).toBe(24);
   expect(body.coverage.refused).toEqual({
     files: 3,
     awaiting_human_review: 1,
@@ -175,7 +196,12 @@ test('a coach gets the coverage summary', async () => {
       { reason: 'FIXTURE_SECOND_REASON', files: 1 },
     ],
   });
-  expect(body.coverage.ontology_version).toBe('boxing-ontology-0.1');
+  // Each labellable version on its own and by name, new studies' first
+  // (TEACH-T T-1b; Overwatch on #2085, Q-T1 (a)).
+  expect(body.coverage.versions.map((v: { ontology_version: string; role: string }) => [v.ontology_version, v.role]))
+    .toEqual([[V04, 'new_studies'], [V01, 'finishing']]);
+  expect(body.coverage.versions[0]).toMatchObject(LABELLING_ROW_04);
+  expect(body.coverage.versions[1]).toMatchObject(LABELLING_ROW);
 });
 
 // The legacy 'admin' spelling is the same person as organization_admin, and
@@ -206,10 +232,12 @@ test('every statement is scoped to the session organization, never to the caller
   const response = await GET(request());
 
   expect(response.status).toBe(200);
-  expect(mockQuery).toHaveBeenCalledTimes(5);
+  // Capture, refused and clips cut once; labelling, punches and defences once
+  // per labellable version (two).
+  expect(mockQuery).toHaveBeenCalledTimes(9);
   for (const [, params] of mockQuery.mock.calls) {
-    // $1 is the organization on every statement. Four of the five also take
-    // the ontology version as $2, so the shape varies and only the first
+    // $1 is the organization on every statement. The per-version ones also
+    // take the ontology version as $2, so the shape varies and only the first
     // position is pinned here -- the version has its own test below.
     expect(params[0]).toBe('org-principal');
   }
@@ -244,7 +272,8 @@ test('no count treats footage that was not recorded to teach Shadow as corpus ev
   );
 
   expect(capture).toHaveLength(1);
-  expect(corpus).toHaveLength(3);
+  // Clips cut once, then labelling, punches and defences for each of two versions.
+  expect(corpus).toHaveLength(7);
   for (const text of corpus) {
     expect(text).toContain('capture_take_id is not null');
   }
@@ -270,11 +299,16 @@ test('a gold record is one that was promoted, not one that was nominated or excl
   const response = await GET(request());
   const body = await response.json();
 
-  const [labelling] = mockQuery.mock.calls.filter(([text]) => String(text).includes('as clips_cut'));
-  expect(String(labelling[0])).toContain("governance_state = 'gold'");
-  expect(String(labelling[0])).toContain("governance_state = 'candidate'");
-  expect(body.coverage.labelling).toHaveProperty('gold_records');
-  expect(body.coverage.labelling).toHaveProperty('gold_candidates');
+  const labelling = mockQuery.mock.calls.filter(([text]) => String(text).includes('as submitted_sets'));
+  expect(labelling).toHaveLength(2);
+  for (const [text] of labelling) {
+    expect(String(text)).toContain("governance_state = 'gold'");
+    expect(String(text)).toContain("governance_state = 'candidate'");
+  }
+  for (const version of body.coverage.versions) {
+    expect(version).toHaveProperty('gold_records');
+    expect(version).toHaveProperty('gold_candidates');
+  }
 });
 
 /*
@@ -283,10 +317,9 @@ test('a gold record is one that was promoted, not one that was nominated or excl
  * ontology.ts:36-44 says every calibration row carries the vocabulary it was
  * created under so that a study run under 0.1 and one run under 0.2 cannot be
  * pooled by accident, and that nothing in the subsystem may aggregate across
- * versions without a recorded decision. Only one version exists today, so an
- * unfiltered count happens to be right -- which is exactly why nothing would
- * fail if the filter were dropped, and why it is asserted here rather than
- * left to be noticed on the day a second version ships.
+ * versions without a recorded decision. Two versions are labellable now (0.1
+ * studies finishing, 0.4 for new studies), so each count is asked once per
+ * version and reported under that version's name.
  */
 test('every labelled count is confined to the ontology version it reports', async () => {
   mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
@@ -295,13 +328,41 @@ test('every labelled count is confined to the ontology version it reports', asyn
   const body = await response.json();
 
   const versioned = mockQuery.mock.calls.filter(([, params]) => params.length > 1);
-  // The capture-side statement counts video rows and is stamped with no
-  // vocabulary, so three of the four carry the version, not all four.
-  expect(versioned).toHaveLength(3);
-  for (const [text, params] of versioned) {
-    expect(params[1]).toBe(body.coverage.ontology_version);
+  // Capture, refused and clips cut carry no vocabulary; the three per-version
+  // statements are asked once for each of the two versions.
+  expect(versioned).toHaveLength(6);
+  for (const [text] of versioned) {
     expect(String(text)).toContain('ontology_version = $2');
   }
+  const reported = body.coverage.versions.map((v: { ontology_version: string }) => v.ontology_version).sort();
+  for (const version of reported) {
+    expect(versioned.filter(([, params]) => params[1] === version)).toHaveLength(3);
+  }
+});
+
+test('a body-point version has no stance split: one row per punch, its own counts (TEACH-T T-1b)', async () => {
+  mockRequirePrincipal.mockResolvedValueOnce(principal('coach'));
+  installQueryMock({
+    punchRows: [{ punch_type: 'lead_straight', stance: 'orthodox', events: 40, clips: 1 }],
+    punchRows04: [{ punch_type: 'lead_straight', stance: null, events: 6, clips: 2 }],
+  });
+
+  const body = await (await GET(request())).json();
+  const [v04, v01] = body.coverage.versions;
+
+  expect(v04.stance_split).toBe(false);
+  expect(v04.punch_evidence).toHaveLength(PUNCH_TYPES.length);
+  for (const cell of v04.punch_evidence) expect(cell.stance).toBeNull();
+  expect(v04.punch_evidence).toContainEqual({ punch_type: 'lead_straight', stance: null, events: 6, clips: 2 });
+  // 0.1's 40 are not pooled into 0.4's 6.
+  // On 0.4 the punches are grouped by type alone, so no row can fall outside
+  // the one-row-per-punch grid; 0.1 still groups by stance.
+  const punchStatements = mockQuery.mock.calls.filter(([text]) => String(text).includes("e.event_class = 'punch'"));
+  const byVersion = Object.fromEntries(punchStatements.map(([text, params]) => [params[1], String(text)]));
+  expect(byVersion[V04]).toContain('null::text as stance');
+  expect(byVersion[V01]).toContain('e.stance as stance');
+  expect(v01.stance_split).toBe(true);
+  expect(v01.punch_evidence).toContainEqual({ punch_type: 'lead_straight', stance: 'orthodox', events: 40, clips: 1 });
 });
 
 /*
@@ -324,19 +385,19 @@ test('every punch and defense term is listed at zero when nothing has been label
   expect(response.status).toBe(200);
 
   const punchTypesListed = new Set<string>(
-    body.coverage.punch_evidence.map((cell: PunchEvidenceShape) => cell.punch_type),
+    body.coverage.versions[1].punch_evidence.map((cell: PunchEvidenceShape) => cell.punch_type),
   );
   expect([...punchTypesListed].sort()).toEqual([...PUNCH_TYPES].sort());
   // Exactly the two stances an unlabelled grid is allowed to pre-fill
   // (coverage.ts:198): every punch type against orthodox and southpaw, and no
   // speculative 'transition' or 'unknown' rows nobody was ever going to film.
-  expect(body.coverage.punch_evidence).toHaveLength(PUNCH_TYPES.length * 2);
-  for (const cell of body.coverage.punch_evidence) {
+  expect(body.coverage.versions[1].punch_evidence).toHaveLength(PUNCH_TYPES.length * 2);
+  for (const cell of body.coverage.versions[1].punch_evidence) {
     expect(['orthodox', 'southpaw']).toContain(cell.stance);
     expect(cell).toEqual({ punch_type: cell.punch_type, stance: cell.stance, events: 0, clips: 0 });
   }
 
-  expect(body.coverage.defense_evidence).toEqual(
+  expect(body.coverage.versions[1].defense_evidence).toEqual(
     DEFENSE_TYPES.map((defense_type) => ({ defense_type, events: 0, clips: 0 })),
   );
 
@@ -344,7 +405,7 @@ test('every punch and defense term is listed at zero when nothing has been label
   // are the terms a pilot gym is least likely to have filmed, so they are the
   // first to vanish from a rows-only listing and the last anyone would notice.
   expect(punchTypesListed.has('unclassifiable_punch')).toBe(true);
-  expect(body.coverage.defense_evidence).toContainEqual({
+  expect(body.coverage.versions[1].defense_evidence).toContainEqual({
     defense_type: 'clinch_defense',
     events: 0,
     clips: 0,
@@ -379,25 +440,25 @@ test('labelled evidence reaches the grid, including a stance the empty grid omit
   const body = await response.json();
 
   expect(response.status).toBe(200);
-  expect(body.coverage.punch_evidence).toContainEqual({
+  expect(body.coverage.versions[1].punch_evidence).toContainEqual({
     punch_type: 'lead_straight',
     stance: 'orthodox',
     events: 40,
     clips: 1,
   });
-  expect(body.coverage.punch_evidence).toContainEqual({
+  expect(body.coverage.versions[1].punch_evidence).toContainEqual({
     punch_type: 'rear_hook',
     stance: 'transition',
     events: 3,
     clips: 2,
   });
-  expect(body.coverage.defense_evidence).toContainEqual({
+  expect(body.coverage.versions[1].defense_evidence).toContainEqual({
     defense_type: 'slip',
     events: 12,
     clips: 5,
   });
   // A term with evidence must not displace the terms without any.
-  expect(body.coverage.defense_evidence).toContainEqual({
+  expect(body.coverage.versions[1].defense_evidence).toContainEqual({
     defense_type: 'pivot',
     events: 0,
     clips: 0,

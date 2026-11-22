@@ -13,6 +13,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { usePathname } from 'next/navigation';
 
 import GlobalRoleHeader from './GlobalRoleHeader';
+import { BUILDING } from './buildingMap';
 import { getRoleSessionSnapshot, loadAuthoritativeRoleSession, persistAuthoritativeRoleSession } from './roleSession';
 
 const mockUsePathname = usePathname as jest.MockedFunction<typeof usePathname>;
@@ -97,10 +98,15 @@ it('offers nothing to submit before anyone is signed in', () => {
   expect(screen.queryByRole('button', { name: /tell us/i })).toBeNull();
 });
 
-it.each(['admin', 'platform_owner'])('links %s to the queue they work', (role) => {
+// AS10-7 (lane AS-10; app scrub OFF-15; plan #2018 Q12 B): the link says the title of the page it
+// opens, "Feedback Triage", read from its door in BUILDING (OD-2026-10-17-001 ruling 1).
+const FEEDBACK_TRIAGE = BUILDING.find((door) => door.href === '/admin/feedback')?.label;
+
+it.each(['admin', 'platform_owner'])('links %s to the queue they work, by its page title', (role) => {
   renderAs(role);
 
-  const link = screen.getByRole('link', { name: 'Triage' }) as HTMLAnchorElement;
+  expect(FEEDBACK_TRIAGE).toBe('Feedback Triage');
+  const link = screen.getByRole('link', { name: FEEDBACK_TRIAGE }) as HTMLAnchorElement;
   expect(link.getAttribute('href')).toBe('/admin/feedback');
 });
 
@@ -109,7 +115,8 @@ it.each(['athlete', 'parent', 'coach', 'volunteer', 'staff', 'board'])(
   (role) => {
     renderAs(role);
 
-    expect(screen.queryByRole('link', { name: 'Triage' })).toBeNull();
+    // By address, so the check does not depend on the link's words.
+    expect(document.querySelector('a[href="/admin/feedback"]')).toBeNull();
   },
 );
 
@@ -155,7 +162,8 @@ it.each(['athlete', 'coach', 'parent', 'staff', 'volunteer', 'board'])(
   (role) => {
     renderAs(role);
 
-    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
+    // The session bar's own Home (/dashboard); the job bar may draw a second Home beside it.
+    expect(screen.getAllByRole('link', { name: 'Home' }).some((link) => link.getAttribute('href') === '/dashboard')).toBe(true);
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
   },
 );
@@ -285,7 +293,8 @@ describe('the deny screen keeps this bar out of it', () => {
     renderAs('board');
 
     expect(screen.getByRole('button', { name: 'Logout' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Home' })).toBeTruthy();
+    // The session bar's own Home (/dashboard); the job bar may draw a second Home beside it.
+    expect(screen.getAllByRole('link', { name: 'Home' }).some((link) => link.getAttribute('href') === '/dashboard')).toBe(true);
   });
 
   it('is not fooled by a route the map has never heard of', () => {
@@ -440,9 +449,10 @@ describe('the phone bar keeps the whole room name', () => {
     const caption = screen.getByText('Session active');
     expect(classesOf(caption)).toEqual(expect.arrayContaining(['hidden', 'sm:inline']));
 
-    const trigger = screen.getByRole('button', { name: /front office/i });
+    // AS-4 (U2-4c): the plate names Search's room for the page, from the Room Map.
+    const trigger = screen.getByRole('button', { name: /where you are: the family room/i });
     const room = trigger.querySelector('.corridor-trigger-lbl') as HTMLElement;
-    expect(room.textContent).toBe('Front Office');
+    expect(room.textContent).toBe('The Family Room');
     expect(classesOf(room)).not.toContain('hidden');
 
     const surface = trigger.querySelector('.corridor-trigger-here') as HTMLElement;
@@ -508,5 +518,28 @@ describe('the gym tablet idle watcher rides every signed-in bar', () => {
     mockUsePathname.mockReturnValue('/login');
     renderAs('athlete');
     expect(screen.queryByTestId('tablet-idle-watch')).toBeNull();
+  });
+});
+
+describe('the job bar rides the full session bar (AS-4, U2-4b)', () => {
+  it('draws the coach their job sections as tags', () => {
+    renderAs('coach');
+    const nav = screen.getByRole('navigation', { name: 'Your jobs' });
+    expect(nav.className).toMatch(/job-bar--rail/);
+    expect(nav.querySelector('.leather-tag')).toBeTruthy();
+  });
+
+  it('draws no bar for an athlete (Q14 A) or a signed-out visitor', () => {
+    renderAs('athlete');
+    expect(screen.queryByRole('navigation', { name: 'Your jobs' })).toBeNull();
+    cleanup();
+    renderAs(null);
+    expect(screen.queryByRole('navigation', { name: 'Your jobs' })).toBeNull();
+  });
+
+  it('keeps it off a refusal screen, like every other control', () => {
+    mockUsePathname.mockReturnValue('/shadow');
+    renderAs('board');
+    expect(screen.queryByRole('navigation', { name: 'Your jobs' })).toBeNull();
   });
 });

@@ -330,7 +330,7 @@ function ContentImportScreen() {
     <main data-surface="kiosk" className="min-h-screen bg-[var(--hide-950)] text-[color:var(--bone-200)]">
       <div className="mx-auto w-full max-w-4xl px-[var(--s5)] py-[var(--s6)] lg:px-[var(--s6)]">
         <header className="space-y-[var(--s3)] border-b-[3px] border-[color:var(--brass-700)] pb-[var(--s5)]">
-          <p className="t-eyebrow">Admin Workspace</p>
+          <p className="t-eyebrow">Office</p>
           <h1 className="t-command" style={{ fontSize: 'var(--t-2xl)' }}>Load Gym Content</h1>
           <p className="t-body max-w-3xl">
             Choose the content files &mdash; disciplines, competence levels, cohorts, drills, stop rules,
