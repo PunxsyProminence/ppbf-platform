@@ -407,8 +407,9 @@ describe('no child selected', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Progress' }));
     });
     await screen.findByText('Unavailable - no child selected.');
-    // This link is the hub's own (ParentHub.tsx), renamed with the hub's step.
-    expect(screen.getByRole('link', { name: 'Open the full progression record' })).toHaveAttribute('href', '/parent/progression-visibility');
+    // This link is the hub's own (ParentHub.tsx); it takes the door's name,
+    // Progress Visibility, as the summary's link does (AS9-3).
+    expect(screen.getByRole('link', { name: 'Open Progress Visibility' })).toHaveAttribute('href', '/parent/progression-visibility');
   });
 
   test('a roster still loading is reading, not "no child"', async () => {

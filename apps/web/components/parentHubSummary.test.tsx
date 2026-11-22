@@ -19,7 +19,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import ParentHub from './ParentHub';
 import { BUILDING } from './buildingMap';
@@ -200,6 +200,8 @@ describe('Progress: earned milestones and completed sessions (Q1 = A)', () => {
 
     await selectChild('Second Child');
     await waitFor(() => expect(tileValue('Progress')).toBe(SECOND_PROGRESS));
+    const status = screen.getByText('Current Status').parentElement as HTMLElement;
+    expect(within(status).queryByText('Progress')).toBeNull();
   });
 
   test('a real zero is a zero', async () => {
@@ -344,6 +346,8 @@ describe('Attendance: the recorded marks, counted and never divided', () => {
 
     await selectChild('Second Child');
     expect(tileValue('Class attendance')).toMatch(/^Present 1 · Excused 0 · Absent 2Latest class on the register: Jan 21, 2020, 6:00 PM/);
+    const status = screen.getByText('Current Status').parentElement as HTMLElement;
+    expect(within(status).queryByText('Class attendance')).toBeNull();
   });
 
   test('a child with no marks reads zeros and no last-marked line', async () => {
