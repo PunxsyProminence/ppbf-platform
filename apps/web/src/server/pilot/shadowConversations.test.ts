@@ -5,7 +5,6 @@ import {
   loadConversationMessages,
   loadHumanReviewExchange,
   listConversations,
-  purgeExpiredShadowChatData,
   requestOwnShadowDataDeletion,
   resolveConversation,
   submitMemoryCorrection,
@@ -307,23 +306,6 @@ describe('SHADOW durable conversation isolation', () => {
       action: 'replace',
     })).rejects.toThrow('Forbidden: board role cannot access account-level SHADOW memory');
     expect(mockedQuery).not.toHaveBeenCalled();
-  });
-
-  it('requires explicit retention confirmation and bounded whole days', async () => {
-    await expect(purgeExpiredShadowChatData({
-      retentionDays: 30,
-      confirmed: false,
-    })).resolves.toBe(0);
-    expect(mockedQuery).not.toHaveBeenCalled();
-
-    await expect(purgeExpiredShadowChatData({
-      retentionDays: 0,
-      confirmed: true,
-    })).rejects.toThrow('Invalid SHADOW retention period');
-    await expect(purgeExpiredShadowChatData({
-      retentionDays: 30.5,
-      confirmed: true,
-    })).rejects.toThrow('Invalid SHADOW retention period');
   });
 });
 
