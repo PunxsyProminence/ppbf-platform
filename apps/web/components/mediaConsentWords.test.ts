@@ -17,7 +17,12 @@ import path from 'node:path';
 
 import ts from 'typescript';
 
-import { ADULT_MEDIA_FRAMES_WORDS, GUARDIAN_MEDIA_WORDS } from './mediaConsentWords';
+import {
+  ADULT_MEDIA_FRAMES_WORDS,
+  GUARDIAN_MEDIA_WORDS,
+  GUARDIAN_PAGE_INTRO_WORDS,
+  guardianMediaWords,
+} from './mediaConsentWords';
 
 const GUARDIAN_WORDS_AS_RULED =
   'Photos and video are used inside the gym: coaches review them, and a clip the gym publishes goes in its clip '
@@ -45,6 +50,45 @@ test('the adult athlete panel says, word for word, what the owner chose (Q3 = A)
 
 test('the guardian words no longer say photos and video stay inside the gym', () => {
   expect(GUARDIAN_MEDIA_WORDS).not.toMatch(/stays? inside the gym/i);
+});
+
+// Overwatch on #2083 (comment 7085637440), the owner's "go with your
+// recomendation": on a card whose own consent on file allows public use, only
+// the sentence "Nothing is posted publicly on this consent." is left out.
+const GUARDIAN_WORDS_WITH_PUBLIC_USE_ON_FILE =
+  'Photos and video are used inside the gym: coaches review them, and a clip the gym publishes goes in its clip '
+  + 'library, which coaches and athletes signed in at this gym can browse. '
+  + "Still frames from videos are also sent to Microsoft's Azure AI service, which the gym's app uses to check new "
+  + 'videos for safety and, when a coach or the gym administrator asks, to describe the technique in one athlete\'s '
+  + 'video. Your choice here covers videos your child is filed under or tagged in: with photos only, or no consent, '
+  + 'frames from those are not sent. A video your child is in but not tagged in, such as a team video with no one '
+  + "tagged, a teaching video, or another athlete's video, can be sent whatever you choose here.";
+
+// The same answer, header = A: the page header no longer says the choice
+// "controls one thing", and says it also decides playback and the frames,
+// in the ruled passages' own words where they have them.
+const GUARDIAN_PAGE_INTRO_AS_ANSWERED =
+  'Nothing here blocks your child from training. It decides whether photos or videos of your child may be used in '
+  + 'gym publications. For videos your child is filed under or tagged in, it also decides whether they can be played '
+  + "back in the gym's app and whether still frames from them are sent to Microsoft's Azure AI service. You can grant "
+  + 'or withdraw consent at any time. If your child has more than one guardian, every guardian must consent before '
+  + 'anything is published.';
+
+test('a card with no public use on file gets the whole guardian passage', () => {
+  expect(guardianMediaWords(false)).toBe(GUARDIAN_WORDS_AS_RULED);
+});
+
+test('a card whose own consent on file allows public use gets the passage less that one sentence, and only that', () => {
+  expect(guardianMediaWords(true)).toBe(GUARDIAN_WORDS_WITH_PUBLIC_USE_ON_FILE);
+  expect(guardianMediaWords(true)).not.toContain('Nothing is posted publicly');
+  expect(GUARDIAN_WORDS_AS_RULED.replace('Nothing is posted publicly on this consent. ', '')).toBe(
+    GUARDIAN_WORDS_WITH_PUBLIC_USE_ON_FILE,
+  );
+});
+
+test('the page header says what the choice decides, as answered, and no longer "controls one thing"', () => {
+  expect(GUARDIAN_PAGE_INTRO_WORDS).toBe(GUARDIAN_PAGE_INTRO_AS_ANSWERED);
+  expect(GUARDIAN_PAGE_INTRO_WORDS).not.toMatch(/one thing/i);
 });
 
 const WEB_DIR = path.resolve(__dirname, '..');

@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
-import { GUARDIAN_MEDIA_WORDS } from '@/components/mediaConsentWords';
+import { GUARDIAN_MEDIA_WORDS, GUARDIAN_PAGE_INTRO_WORDS, guardianMediaWords } from '@/components/mediaConsentWords';
 
 import GuardianMediaConsentPage from './page';
 
@@ -182,6 +182,75 @@ describe('where photos and video go', () => {
     }
     expect(screen.getAllByText(GUARDIAN_MEDIA_WORDS)).toHaveLength(2);
   });
+
+  /* Overwatch on #2083 (comment 7085637440), the owner's "go with your
+     recomendation": a card whose own consent on file allows public use (an
+     admin records it from a signed paper form, OD-2026-10-09-003) already says
+     "public use allowed", so it leaves out only "Nothing is posted publicly on
+     this consent." Every other card keeps the passage whole. */
+  const PUBLIC_SENTENCE = 'Nothing is posted publicly on this consent.';
+  const withPublicUse = (row: Row): Row => ({ ...row, public_use_allowed: true });
+
+  test('a card whose own consent on file allows public use leaves out only the public sentence', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({
+      ok: true,
+      items: [child('ath-1', 'Jamie Rivera', [withPublicUse(own('signed', true))])],
+    })) as unknown as typeof fetch;
+
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Jamie Rivera');
+
+    const card = cardOf('Jamie Rivera');
+    expect(within(card).getByText(/^On file since .+: photos and video, public use allowed$/)).toBeInTheDocument();
+    expect(within(card).getAllByText(guardianMediaWords(true))).toHaveLength(1);
+    expect(card.textContent).not.toContain(PUBLIC_SENTENCE);
+  });
+
+  test('with two children, only the card with public use on file leaves the sentence out', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({
+      ok: true,
+      items: [
+        child('ath-1', 'Jamie Rivera', [withPublicUse(own('signed', true))]),
+        child('ath-2', 'Alex Rivera', [own('signed', true)]),
+      ],
+    })) as unknown as typeof fetch;
+
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Alex Rivera');
+
+    expect(cardOf('Jamie Rivera').textContent).not.toContain(PUBLIC_SENTENCE);
+    expect(within(cardOf('Alex Rivera')).getAllByText(GUARDIAN_MEDIA_WORDS)).toHaveLength(1);
+  });
+
+  test.each([
+    // Public use stays on a withdrawn row, but nothing is on file that allows it.
+    ['withdrawn', [withPublicUse(own('withdrawn', false))]],
+    // Only this guardian's own row counts; a co-guardian's public use is not shown here.
+    ['not decided, while a co-guardian signed', [own(null, null), { you: false, status: 'granted' }]],
+  ])('a card whose own consent is %s keeps the whole passage', async (_label, rows) => {
+    global.fetch = jest.fn().mockResolvedValue(
+      jsonResponse({ ok: true, items: [child('ath-1', 'Jamie Rivera', rows)] }),
+    ) as unknown as typeof fetch;
+
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Jamie Rivera');
+
+    expect(within(cardOf('Jamie Rivera')).getAllByText(GUARDIAN_MEDIA_WORDS)).toHaveLength(1);
+  });
+});
+
+/* Overwatch on #2083 (comment 7085637440), header = A: the header no longer
+   says the choice "controls one thing"; it also says the choice decides
+   playback and whether still frames go to Microsoft's Azure AI service. */
+test('the page header says what the choice decides, as answered, signed or not', async () => {
+  for (const items of [NEEDS_CONSENT, ALREADY_SIGNED]) {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items })) as unknown as typeof fetch;
+    const view = render(<GuardianMediaConsentPage />);
+    await screen.findByText(/^Consent (needed|on file)$/);
+    expect(within(view.container.querySelector('header') as HTMLElement).getByText(GUARDIAN_PAGE_INTRO_WORDS)).toBeInTheDocument();
+    expect(view.container.textContent).not.toMatch(/controls one thing/i);
+    view.unmount();
+  }
 });
 
 test('withdrawing asks for confirmation first and sends nothing if declined', async () => {
