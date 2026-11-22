@@ -59,6 +59,9 @@ const SOFT = 'ath-bsw-4';
 const COACH_LAPSED = 'acct-bsw-lapsed';
 const COACH_GONE = 'acct-bsw-gone';
 const BOARD_MEMBER = 'acct-bsw-board';
+// Coaches delivering the settle tests' live runs: one live run per coach (pilot_ssrun_one_live_per_coach).
+const COACH_C = 'acct-bsw-coach-c';
+const COACH_D = 'acct-bsw-coach-d';
 const RETIRED_KEY = 'bk_fixture_bsw_retired';
 const RUN = 'run-bsw-1';
 const PLANNED_RUN = 'run-bsw-2';
@@ -214,6 +217,7 @@ beforeAll(async () => {
   for (const [accountId, role, organizationId] of [
     [COACH_A, 'coach', ORG], [COACH_B, 'coach', ORG], [OTHER_GYM_COACH, 'coach', OTHER_ORG],
     [COACH_LAPSED, 'coach', ORG], [COACH_GONE, 'coach', ORG], [BOARD_MEMBER, 'board', ORG],
+    [COACH_C, 'coach', ORG], [COACH_D, 'coach', ORG],
   ]) {
     await db.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
@@ -249,7 +253,7 @@ beforeAll(async () => {
     `insert into pilot.session_script_runs
        (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
         run_state, started_at, ended_at)
-     values ($1, $2, null, null, $3, current_date, 'completed', now() - interval '1 hour', now()),
+     values ($1, $2, null, null, $3, current_date, 'in_progress', now() - interval '1 hour', null),
             ($1, $4, null, null, $3, current_date, 'completed', now() - interval '1 hour', now())`,
     [ORG, RUN, COACH_A, OTHER_RUN],
   );
@@ -307,9 +311,9 @@ beforeAll(async () => {
   await db.query(
     `insert into pilot.session_script_runs
        (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
-        run_state, started_at, ended_at)
-     values ($1, $2, 'scr-bsw-1', 1, $3, current_date, 'completed', now() - interval '1 hour', now())`,
-    [ORG, PLANNED_RUN, COACH_A],
+        run_state, started_at, ended_at, current_block_id)
+     values ($1, $2, 'scr-bsw-1', 1, $3, current_date, 'in_progress', now() - interval '1 hour', null, 'blk-bsw-1')`,
+    [ORG, PLANNED_RUN, COACH_B],
   );
   await db.query(
     `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
@@ -509,6 +513,45 @@ describe('opening a window (PATTERN-1d-2; Q5 A, Q7 A)', () => {
     await expect(open({ chances: 51 })).rejects.toThrow('A window has 1 to 50 chances.');
     await expect(open({ taskConstraint: 'sparring' })).rejects.toThrow('taskConstraint must be one of');
     await expect(open({ behaviourKey: RETIRED_KEY })).rejects.toThrow('not on the active list');
+  });
+
+  test('a window opens only on a live run: a settled one is refused (Overwatch 7086220125)', async () => {
+    await expect(open({ runId: OTHER_RUN })).rejects.toThrow('That session run has ended.');
+    await expect(open({ runId: 'run-nowhere' })).rejects.toThrow('That session run is not in this gym.');
+  });
+
+  test('an open behind a settle in flight waits for it, and is then refused', async () => {
+    await db.query(
+      `insert into pilot.session_script_runs
+         (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on, run_state, started_at)
+       values ($1, 'run-bsw-settling', null, null, $2, current_date, 'in_progress', now() - interval '1 minute')`,
+      [ORG, COACH_C],
+    );
+    await db.query(
+      `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+       values ($1, 'run-bsw-settling', $2, $3, 'coach')`,
+      [ORG, ATHLETE, COACH_C],
+    );
+    // A settle on another connection, not yet committed.
+    const settling = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+    await settling.connect();
+    await settling.query('begin');
+    await settling.query(
+      `update pilot.session_script_runs set run_state = 'completed', ended_at = now()
+        where organization_id = $1 and run_id = 'run-bsw-settling'`,
+      [ORG],
+    );
+    let queued = false;
+    const opening = open({ runId: 'run-bsw-settling' });
+    opening.catch(() => undefined);
+    try {
+      queued = await waiters(1);
+    } finally {
+      await settling.query('commit');
+      await settling.end();
+    }
+    expect(queued).toBe(true);
+    await expect(opening).rejects.toThrow('That session run has ended.');
   });
 
   test('a drill that was not part of the run\'s plan is refused (the writer\'s check, which the table cannot make)', async () => {
@@ -823,8 +866,8 @@ describe('a settling run closes its windows; the tier engine reads no open windo
   let otherGymWindow: string;
 
   beforeAll(async () => {
-    await liveRun(LIVE_RUN, COACH_A);
-    await liveRun(IDLE_RUN, COACH_B);
+    await liveRun(LIVE_RUN, COACH_C);
+    await liveRun(IDLE_RUN, COACH_D);
     // Another gym with a run of the same id, and an open window on it: a settle here must not touch it.
     await db.query(
       `insert into pilot.athletes
@@ -871,7 +914,7 @@ describe('a settling run closes its windows; the tier engine reads no open windo
     await tap(windowId, 1, COACH_A, 'occurrence');
     await close(closedFirst);
     const firstClose = await closedAtOf(closedFirst);
-    await runs.finishSessionScriptRun(ORG, COACH_A, LIVE_RUN, { runState: 'completed' });
+    await runs.finishSessionScriptRun(ORG, COACH_C, LIVE_RUN, { runState: 'completed' });
     expect(await closedAtOf(windowId)).not.toBeNull();
     expect((await closedAtOf(closedFirst))?.toISOString()).toBe(firstClose?.toISOString());
     expect(await closedAtOf(elsewhere)).toBeNull();
@@ -880,14 +923,6 @@ describe('a settling run closes its windows; the tier engine reads no open windo
     expect((await writer.listBehaviourObservations(ORG, ATHLETE, 500)).map((row) => row.episode_id))
       .toContain(writer.windowEpisodeId(ORG, windowId, 1));
     await close(elsewhere);
-  });
-
-  test('the idle sweep settling a forgotten run closes its open windows too', async () => {
-    const windowId = (await open({ runId: IDLE_RUN })).window_id;
-    await tap(windowId, 1, COACH_B, 'occurrence');
-    expect(await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) })).toContain(IDLE_RUN);
-    expect(await closedAtOf(windowId)).not.toBeNull();
-    expect(await otherGymWindowOpen()).toBe(true);
   });
 
   test('the tier engine reads no tap of a window still open, and every tap once it closes', async () => {
@@ -905,12 +940,22 @@ describe('a settling run closes its windows; the tier engine reads no open windo
     for (const episode of tapped) expect(after).toContain(episode);
   });
 
+  // With a future `now` the sweep settles every live run of the gym, the suite's own fixture runs too,
+  // so it runs after the last test that opens a window on them.
+  test('the idle sweep settling a forgotten run closes its open windows too', async () => {
+    const windowId = (await open({ runId: IDLE_RUN })).window_id;
+    await tap(windowId, 1, COACH_B, 'occurrence');
+    expect(await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) })).toContain(IDLE_RUN);
+    expect(await closedAtOf(windowId)).not.toBeNull();
+    expect(await otherGymWindowOpen()).toBe(true);
+  });
+
   test('settling a run and the tier engine still work where the window table is not yet applied', async () => {
-    await liveRun('run-bsw-away', COACH_A);
-    await liveRun('run-bsw-away-idle', COACH_B);
+    await liveRun('run-bsw-away', COACH_C);
+    await liveRun('run-bsw-away-idle', COACH_D);
     await db.query('alter table pilot.behaviour_observations_windows rename to behaviour_observations_windows_away');
     try {
-      expect((await runs.finishSessionScriptRun(ORG, COACH_A, 'run-bsw-away', { runState: 'abandoned' })).run_state).toBe('abandoned');
+      expect((await runs.finishSessionScriptRun(ORG, COACH_C, 'run-bsw-away', { runState: 'abandoned' })).run_state).toBe('abandoned');
       expect(await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) })).toEqual(['run-bsw-away-idle']);
       expect((await writer.listBehaviourReadingsForEvaluation(ORG, KEY)).length).toBeGreaterThan(0);
     } finally {
@@ -919,7 +964,7 @@ describe('a settling run closes its windows; the tier engine reads no open windo
   });
 
   test('the run settles and its windows close together, or neither happens', async () => {
-    await liveRun('run-bsw-atomic', COACH_A);
+    await liveRun('run-bsw-atomic', COACH_C);
     const windowId = (await open({ runId: 'run-bsw-atomic' })).window_id;
     const runState = async () => (await db.query<{ run_state: string }>(
       'select run_state from pilot.session_script_runs where organization_id = $1 and run_id = $2', [ORG, 'run-bsw-atomic'],
@@ -930,7 +975,7 @@ describe('a settling run closes its windows; the tier engine reads no open windo
     await db.query(`create trigger test_refuse_window_close before update on pilot.behaviour_observations_windows
       for each row execute function pilot.test_refuse_window_close()`);
     try {
-      await expect(runs.finishSessionScriptRun(ORG, COACH_A, 'run-bsw-atomic', { runState: 'completed' }))
+      await expect(runs.finishSessionScriptRun(ORG, COACH_C, 'run-bsw-atomic', { runState: 'completed' }))
         .rejects.toThrow('TEST_REFUSES_WINDOW_CLOSE');
       expect(await runState()).toBe('in_progress');
       await expect(runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) }))
@@ -941,7 +986,7 @@ describe('a settling run closes its windows; the tier engine reads no open windo
       await db.query('drop trigger test_refuse_window_close on pilot.behaviour_observations_windows');
       await db.query('drop function pilot.test_refuse_window_close()');
     }
-    await runs.finishSessionScriptRun(ORG, COACH_A, 'run-bsw-atomic', { runState: 'completed' });
+    await runs.finishSessionScriptRun(ORG, COACH_C, 'run-bsw-atomic', { runState: 'completed' });
     expect(await runState()).toBe('completed');
     expect(await closedAtOf(windowId)).not.toBeNull();
   });

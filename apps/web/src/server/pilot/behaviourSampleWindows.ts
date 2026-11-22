@@ -29,8 +29,10 @@ import { ForbiddenError, ValidationError } from './errors';
 //
 // Staff only, like the reports (privacyTiers.ts): opening and tapping by the
 // table guards, closing and reading by an active staff membership of this gym
-// checked here. No route calls these yet: the staff window routes are
-// PATTERN-1e-2, and they must take every account id from the session.
+// checked here. The callers are the staff window routes, app/api/pilot/coach/
+// behaviour-windows (PATTERN-1e-3), which take every account id from the
+// session. A window is opened only on a live run (Overwatch 7086220125), and a
+// settling run closes its open windows (sessionScriptRuns.ts, PATTERN-1e-2).
 
 export const DEFAULT_WINDOW_CHANCES = 10;
 export const MAX_WINDOW_CHANCES = 50;
@@ -98,6 +100,19 @@ export async function openBehaviourWindow(input: {
       : ['context', input.context.attemptContext];
   try {
     return await withTransaction(async (client) => {
+      // A window belongs to a live class (Overwatch 7086220125). The run row is
+      // held for share until the window commits: a settle (which updates it)
+      // waits for this open, or this open waits for the settle and then finds
+      // the run ended, so no window is opened that its run's settle cannot
+      // close. The run before the presence mark, as the presence writer takes them.
+      const run = await client.query<{ run_state: string | null }>(
+        `select run_state from pilot.session_script_runs
+          where organization_id = $1 and run_id = $2
+          for share`,
+        [input.organizationId, input.runId],
+      );
+      if (run.rows.length === 0) throw new ValidationError('That session run is not in this gym.');
+      if (run.rows[0].run_state !== 'in_progress') throw new ValidationError('That session run has ended.');
       // The writer's own checks: the run is this gym's, the athlete is marked
       // present on it, and the drill or block was part of it (Q5 A).
       await reportPlaceFor(client, {
