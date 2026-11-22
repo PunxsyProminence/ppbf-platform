@@ -78,18 +78,24 @@ export function heldTextFindings(file, header, rows, heldHashes = HELD_ID_HASHES
  * line (a blank drill_id). A step is followed by its item_id, so one that moved is still found
  * where the export puts it, and one that moved and keeps its link is not; a step whose item_id the
  * export does not have is matched by its template and position, so one re-minted under a new
- * item_id is still the same step (review F1 on #2098). A committed step the export no longer has
- * is not one of these: the overwrite guard names a removed row.
+ * item_id is still the same step (review F1 on #2098), unless the row there is another committed
+ * step. A committed step the export no longer has is not one of these: the overwrite guard names a
+ * removed row. Not caught: a re-minted step that also changed position reads as a removal plus a
+ * new row, so only the overwrite guard names it.
  * Returns [{ kind: 'typed_line', file, template, ordinal, drill }].
  */
 export function typedLineFindings(file, committedRows, newRows) {
   const position = (row) => `${row.template_id ?? ''}\u0000${Number(row.ordinal)}`;
   const fresh = new Map(newRows.map((row) => [position(row), row]));
   const byItem = new Map(newRows.filter((row) => (row.item_id ?? '') !== '').map((row) => [row.item_id, row]));
+  // The position fallback is for a re-minted step only: a row there that carries another committed
+  // step's item_id is that step, followed by its own id, so a removed step is not matched to it.
+  const committedItems = new Set(committedRows.map((row) => row.item_id ?? '').filter((id) => id !== ''));
+  const reminted = (row) => (row && !committedItems.has(row.item_id ?? '') ? row : undefined);
   const found = [];
   for (const old of committedRows) {
     if ((old.drill_id ?? '') === '') continue;
-    const next = byItem.get(old.item_id ?? '') ?? fresh.get(position(old));
+    const next = byItem.get(old.item_id ?? '') ?? reminted(fresh.get(position(old)));
     if (next && (next.drill_id ?? '') === '') {
       found.push({ kind: 'typed_line', file, template: old.template_id, ordinal: String(old.ordinal), drill: old.drill_id });
     }

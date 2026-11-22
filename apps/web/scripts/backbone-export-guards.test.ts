@@ -121,6 +121,9 @@ describe('typedLineFindings', () => {
       { kind: 'typed_line', file: ITEMS, template: T, ordinal: '3', drill: D },
     ]);
     expect(run([step(T, '2', D, linked)], [step(T, '2', '', { item_id: 'wti_00000000000c0c' }), step(T, '3', D, linked)])).toEqual([]);
+    // A removed linked step is not one: the typed step that moved into its place is another committed step,
+    // followed by its own item id (fix-delta review on #2098). The overwrite guard names the removal.
+    expect(run([step(T, '1', D, linked), step(T, '2', '', { item_id: 'wti_00000000000c0c' })], [step(T, '1', '', { item_id: 'wti_00000000000c0c' })])).toEqual([]);
   });
 
   it('finds nothing when the line was typed all along, the link is kept or changed, the export links a typed line, or the step is gone', () => {
