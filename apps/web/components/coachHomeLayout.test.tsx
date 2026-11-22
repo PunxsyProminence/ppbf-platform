@@ -208,12 +208,27 @@ describe('the four jobs and More, from the coach job bar (stage 2 3.9; #2029)', 
 });
 
 describe('"Open class screen" on each class scheduled today (CF-07, Q8)', () => {
-  const today = new Date();
-  const at = (hour: number) => {
-    const d = new Date(today);
-    d.setHours(hour, 0, 0, 0);
-    return d.toISOString();
-  };
+  // The coach home keeps a class when its start falls on today's GYM date
+  // (formatGymDateNumeric), but this test used to build "today" from the
+  // runner's own clock. Between 00:00 and 05:00 UTC the gym's date is still
+  // yesterday, so the classes fell off the list and the test failed. Pin the
+  // clock to midday at the gym (16:00 UTC) so both dates agree; only Date is
+  // faked, so the async render keeps its real timers.
+  const NOW = new Date('2026-06-15T16:00:00Z');
+  beforeAll(() => {
+    jest.useFakeTimers({
+      now: NOW,
+      doNotFake: [
+        'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame',
+        'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate',
+        'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+      ],
+    });
+  });
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+  const at = (hour: number) => new Date(NOW.getTime() + (hour - 12) * 3_600_000).toISOString();
 
   test('a scheduled class opens the class screen on that class; a cancelled one does not', async () => {
     await renderWorkspace({
