@@ -6,6 +6,8 @@ import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
+import { GUARDIAN_MEDIA_WORDS } from '@/components/mediaConsentWords';
+
 import GuardianMediaConsentPage from './page';
 
 jest.mock('@/components/RoleSessionGate', () => ({
@@ -116,6 +118,71 @@ test('no "Allow public use" control is offered; the page says the consent is gym
   // Who inside the gym can see it is named, not implied: the clip library is
   // gym-wide (OD-2026-10-08-004) and coaches and athletes can browse it.
   expect(screen.getByText(/clip library, which coaches and athletes signed in at this gym can browse/)).toBeInTheDocument();
+});
+
+/* HF9-1 (Q3 = A on #2083): where photos and video go, in the owner's words,
+   on every child's card, whether this guardian has signed, withdrawn or not
+   yet decided. Before this, the one sentence on it said photos and video
+   "stay inside the gym", and only a guardian who had not signed saw it. */
+describe('where photos and video go', () => {
+  const own = (status: string | null, coversVideo: boolean | null) => ({
+    you: true,
+    status,
+    covers_video: coversVideo,
+    public_use_allowed: status === null ? null : false,
+    signed_at: status === null ? null : '2026-08-01T00:00:00Z',
+  });
+  const child = (id: string, name: string, row: ReturnType<typeof own>) => ({
+    athlete_id: id,
+    athlete_name: name,
+    consent_ok: row.status === 'signed',
+    guardian_count: 1,
+    missing_guardian_count: row.status === 'signed' ? 0 : 1,
+    per_guardian: [row],
+  });
+  const cardOf = (name: string) => screen.getByText(name).closest('article') as HTMLElement;
+
+  test.each([
+    ['not yet decided', own(null, null)],
+    ['signed, photos and video', own('signed', true)],
+    ['signed, photos only', own('signed', false)],
+    ['withdrawn', own('withdrawn', false)],
+  ])('a guardian whose own consent is %s reads the words, whole, on the child\'s card', async (_label, row) => {
+    global.fetch = jest.fn().mockResolvedValue(
+      jsonResponse({ ok: true, items: [child('ath-1', 'Jamie Rivera', row)] }),
+    ) as unknown as typeof fetch;
+
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Jamie Rivera');
+
+    expect(within(cardOf('Jamie Rivera')).getByText(GUARDIAN_MEDIA_WORDS)).toBeInTheDocument();
+  });
+
+  test('with two children, one signed and one not, each card carries the words once', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse({
+      ok: true,
+      items: [child('ath-1', 'Jamie Rivera', own('signed', true)), child('ath-2', 'Alex Rivera', own(null, null))],
+    })) as unknown as typeof fetch;
+
+    render(<GuardianMediaConsentPage />);
+    await screen.findByText('Alex Rivera');
+
+    for (const name of ['Jamie Rivera', 'Alex Rivera']) {
+      expect(within(cardOf(name)).getAllByText(GUARDIAN_MEDIA_WORDS)).toHaveLength(1);
+    }
+    expect(screen.getAllByText(GUARDIAN_MEDIA_WORDS)).toHaveLength(2);
+  });
+
+  test('the page no longer says photos and video stay inside the gym, signed or not', async () => {
+    for (const items of [NEEDS_CONSENT, ALREADY_SIGNED]) {
+      global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items })) as unknown as typeof fetch;
+      const view = render(<GuardianMediaConsentPage />);
+      await screen.findByText(/^Consent (needed|on file)$/);
+      expect(view.container.textContent).not.toMatch(/stays? inside the gym/i);
+      expect(view.container.textContent).toContain('Still frames from videos are also sent to Microsoft');
+      view.unmount();
+    }
+  });
 });
 
 test('withdrawing asks for confirmation first and sends nothing if declined', async () => {
