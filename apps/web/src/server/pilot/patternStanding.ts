@@ -1,6 +1,6 @@
 import { listBehaviourReadingsForEvaluation } from './behaviourObservations';
 import { listActiveLearningPolicies } from './learningPolicies';
-import { barInForce, evaluateStoredPatternStanding, type StoredPatternStanding } from './patterns/fromStore';
+import { evaluateStoredPatternStanding, standingBars, type StoredPatternStanding } from './patterns/fromStore';
 
 // PATTERN-1b (PunxsyProminence/ppbf-platform#2082): one athlete's standing on
 // one behaviour, from the stored reports and the gym's bars in force, through
@@ -10,7 +10,8 @@ import { barInForce, evaluateStoredPatternStanding, type StoredPatternStanding }
 // staff of this gym with access to the athlete, as for the reports themselves
 // (privacyTiers.ts, behaviour_observations).
 //
-// With no pattern bar in force it returns the reason and reads no report.
+// With no pattern bar in force, or an unreadable bar, it returns the reason
+// and reads no report.
 
 export async function evaluatePatternStanding(input: {
   organizationId: string;
@@ -20,7 +21,7 @@ export async function evaluatePatternStanding(input: {
 }): Promise<StoredPatternStanding> {
   const asOf = input.asOf ?? new Date().toISOString();
   const activePolicies = await listActiveLearningPolicies(input.organizationId);
-  const gymReadings = barInForce(activePolicies, 'pattern_formation')
+  const gymReadings = standingBars(activePolicies).notEvaluated === null
     ? await listBehaviourReadingsForEvaluation(input.organizationId, input.behaviourKey)
     : [];
   return evaluateStoredPatternStanding({

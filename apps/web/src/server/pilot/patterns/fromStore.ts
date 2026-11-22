@@ -12,13 +12,16 @@
  * would be an attempt of its own, two coaches' reports of one rep would never
  * be a paired judgment, and no pair could ever be calibrated.
  *
- * What is not carried: the coach's note (free text the engine never reads).
+ * The gym is the row's own, so the engine's scope check can refuse another
+ * gym's row. What is not carried: the coach's note (free text the engine never
+ * reads).
  *
  * NO BAR IN FORCE, NO EVALUATION. Without a ratified pattern bar there are no
  * numbers to judge by, so nothing is evaluated and the reason is returned. A
  * stored bar that is not its kind's shape is not used, and says so. A missing
  * calibration bar is the engine's case: it evaluates, nothing counts, and the
- * evaluation says no calibration bar is in force (Q1 A).
+ * evaluation says no calibration bar is in force (Q1 A). The bars are the ones
+ * in force now; `asOf` sets the evidence window, not which bar applied then.
  */
 
 import type { ObservationSourceType, SourceQuality } from '../formulas/types';
@@ -43,6 +46,7 @@ import type {
 /** One stored report as the tier read selects it (behaviourObservations.ts listBehaviourReadingsForEvaluation). */
 export interface StoredBehaviourReading {
   observation_id: string;
+  organization_id: string;
   athlete_id: string;
   behaviour_key: string;
   episode_id: string;
@@ -62,11 +66,11 @@ export interface StoredBehaviourReading {
   observed_at: string | Date;
 }
 
-export function observationFromStored(organizationId: string, row: StoredBehaviourReading): BehaviourObservation {
+export function observationFromStored(row: StoredBehaviourReading): BehaviourObservation {
   const at = new Date(row.observed_at);
   return Object.freeze({
     observationId: row.observation_id,
-    organizationId,
+    organizationId: row.organization_id,
     athleteId: row.athlete_id,
     behaviourKey: row.behaviour_key,
     sessionId: row.session_key,
@@ -76,7 +80,9 @@ export function observationFromStored(organizationId: string, row: StoredBehavio
     // An unreadable time is passed as it came, for the engine to refuse (INVALID_TIMESTAMP).
     observedAt: Number.isNaN(at.getTime()) ? String(row.observed_at) : at.toISOString(),
     opportunityKey: row.episode_id,
-    source: Object.freeze({ type: row.source_type, quality: row.source_quality, referenceId: row.observation_id }),
+    source: Object.freeze({
+      type: row.source_type, quality: row.source_quality, referenceId: `behaviour_observation:${row.observation_id}`,
+    }),
     observerAccountId: row.observer_account_id,
     interpretation: row.interpretation,
     polarity: row.polarity,
@@ -118,6 +124,27 @@ function readable<T>(kind: PolicyKind, policy: LearningPolicyRow): T | null {
   }
 }
 
+/** The bars a standing would use, or why there is no evaluation: decided before any report is read. */
+export function standingBars(activePolicies: readonly LearningPolicyRow[]): {
+  readonly notEvaluated: NotEvaluatedReason | null;
+  readonly bars: Readonly<{ pattern: BarInForce | null; calibration: BarInForce | null }>;
+  readonly bar: PatternFormationBar | null;
+  readonly calibration: ObserverCalibrationBar | null;
+} {
+  const patternPolicy = barInForce(activePolicies, 'pattern_formation');
+  const calibrationPolicy = barInForce(activePolicies, 'observer_calibration');
+  const named = (policy: LearningPolicyRow | null): BarInForce | null => (
+    policy ? Object.freeze({ policyId: policy.policy_id, version: policy.version }) : null);
+  const bars = Object.freeze({ pattern: named(patternPolicy), calibration: named(calibrationPolicy) });
+  const bar = patternPolicy ? readable<PatternFormationBar>('pattern_formation', patternPolicy) : null;
+  const calibration = calibrationPolicy ? readable<ObserverCalibrationBar>('observer_calibration', calibrationPolicy) : null;
+  const notEvaluated: NotEvaluatedReason | null = !patternPolicy ? 'no_pattern_bar_in_force'
+    : !bar ? 'pattern_bar_unreadable'
+      : calibrationPolicy && !calibration ? 'calibration_bar_unreadable'
+        : null;
+  return Object.freeze({ notEvaluated, bars, bar: notEvaluated ? null : bar, calibration: notEvaluated ? null : calibration });
+}
+
 export function evaluateStoredPatternStanding(input: {
   organizationId: string;
   athleteId: string;
@@ -127,30 +154,22 @@ export function evaluateStoredPatternStanding(input: {
   /** The gym's stored reports of this behaviour, every athlete (they judge the coach pairs). */
   gymReadings: readonly StoredBehaviourReading[];
 }): StoredPatternStanding {
-  const patternPolicy = barInForce(input.activePolicies, 'pattern_formation');
-  const calibrationPolicy = barInForce(input.activePolicies, 'observer_calibration');
-  const named = (policy: LearningPolicyRow | null): BarInForce | null => (
-    policy ? Object.freeze({ policyId: policy.policy_id, version: policy.version }) : null);
-  const outcome = (notEvaluated: NotEvaluatedReason | null, evaluation: PatternTierEvaluation | null) => Object.freeze({
+  const { notEvaluated, bars, bar, calibration } = standingBars(input.activePolicies);
+  const outcome = (evaluation: PatternTierEvaluation | null) => Object.freeze({
     organizationId: input.organizationId,
     athleteId: input.athleteId,
     behaviourKey: input.behaviourKey,
     asOf: input.asOf,
-    bars: Object.freeze({ pattern: named(patternPolicy), calibration: named(calibrationPolicy) }),
+    bars,
     notEvaluated,
     evaluation,
   });
-
-  if (!patternPolicy) return outcome('no_pattern_bar_in_force', null);
-  const bar = readable<PatternFormationBar>('pattern_formation', patternPolicy);
-  if (!bar) return outcome('pattern_bar_unreadable', null);
-  const calibration = calibrationPolicy ? readable<ObserverCalibrationBar>('observer_calibration', calibrationPolicy) : null;
-  if (calibrationPolicy && !calibration) return outcome('calibration_bar_unreadable', null);
+  if (notEvaluated || !bar) return outcome(null);
 
   const readings = input.gymReadings
     .filter((row) => row.behaviour_key === input.behaviourKey)
-    .map((row) => observationFromStored(input.organizationId, row));
-  return outcome(null, evaluatePatternTiers({
+    .map(observationFromStored);
+  return outcome(evaluatePatternTiers({
     organizationId: input.organizationId,
     athleteId: input.athleteId,
     behaviourKey: input.behaviourKey,

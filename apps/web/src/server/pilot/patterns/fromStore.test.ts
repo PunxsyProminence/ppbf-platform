@@ -14,7 +14,7 @@ import {
   APPROVED_OBSERVER_CALIBRATION_V1,
   APPROVED_PATTERN_FORMATION_V1,
 } from '../learningPolicyApprovedV1';
-import { evaluateStoredPatternStanding, observationFromStored, type StoredBehaviourReading } from './fromStore';
+import { evaluateStoredPatternStanding, observationFromStored, standingBars, type StoredBehaviourReading } from './fromStore';
 
 const ORG = 'org-1';
 const ATHLETE = 'athlete-1';
@@ -27,6 +27,7 @@ function stored(overrides: Partial<StoredBehaviourReading> = {}): StoredBehaviou
   serial += 1;
   return {
     observation_id: `00000000-0000-4000-8000-${String(serial).padStart(12, '0')}`,
+    organization_id: ORG,
     athlete_id: ATHLETE,
     behaviour_key: KEY,
     episode_id: `ep:${randomUUID()}`,
@@ -94,7 +95,7 @@ const BOTH = () => [policy('pattern_formation'), policy('observer_calibration')]
 describe('a stored report as the engine reads it', () => {
   test('the stored episode is the attempt and the stored session key is the session (LL-W4)', () => {
     const row = stored({ supersedes_observation_id: 'earlier-1', polarity: 'counterexample', source_quality: 'high' });
-    expect(observationFromStored(ORG, row)).toEqual({
+    expect(observationFromStored(row)).toEqual({
       observationId: row.observation_id,
       organizationId: ORG,
       athleteId: ATHLETE,
@@ -105,7 +106,7 @@ describe('a stored report as the engine reads it', () => {
       fatigueContext: 'unknown',
       observedAt: '2026-06-01T22:00:00.000Z',
       opportunityKey: row.episode_id,
-      source: { type: 'coach_tag', quality: 'high', referenceId: row.observation_id },
+      source: { type: 'coach_tag', quality: 'high', referenceId: `behaviour_observation:${row.observation_id}` },
       observerAccountId: 'coach-a',
       interpretation: 'human_observed',
       polarity: 'counterexample',
@@ -115,13 +116,13 @@ describe('a stored report as the engine reads it', () => {
   });
 
   test('a time given as text reads the same as one given as a Date; an unreadable one is left for the engine to refuse', () => {
-    expect(observationFromStored(ORG, stored({ observed_at: '2026-06-01T18:00:00-04:00' })).observedAt).toBe('2026-06-01T22:00:00.000Z');
-    expect(observationFromStored(ORG, stored({ observed_at: 'not a time' })).observedAt).toBe('not a time');
+    expect(observationFromStored(stored({ observed_at: '2026-06-01T18:00:00-04:00' })).observedAt).toBe('2026-06-01T22:00:00.000Z');
+    expect(observationFromStored(stored({ observed_at: 'not a time' })).observedAt).toBe('not a time');
   });
 
   test('the coach\'s note is not carried into the engine', () => {
     const row = { ...stored(), note: 'free text a coach typed' } as StoredBehaviourReading;
-    expect(observationFromStored(ORG, row)).not.toHaveProperty('note');
+    expect(observationFromStored(row)).not.toHaveProperty('note');
   });
 });
 
@@ -179,5 +180,22 @@ describe('stored reports through the engine', () => {
     const result = standing([...emerging(), ...pairedHistory(), ...otherBehaviour, ...teammate], BOTH());
     expect(result.evaluation?.athleteId).toBe(ATHLETE);
     expect(result.evaluation?.counts.codedChances).toBe(5);
+  });
+});
+
+describe('review fixes on #2099', () => {
+  test('the gym is the row\'s own: another gym\'s row passed in is refused by the engine, not stamped as this gym\'s', () => {
+    const otherGym = emerging().map((row) => ({ ...row, organization_id: 'org-2' }));
+    const result = standing([...otherGym, ...pairedHistory()], BOTH());
+    expect(result.evaluation?.counts.codedChances).toBe(0);
+    expect(result.evaluation?.tier).toBeNull();
+  });
+
+  test('which bars a standing would use, and why not, before any report is read', () => {
+    expect(standingBars([]).notEvaluated).toBe('no_pattern_bar_in_force');
+    expect(standingBars([policy('pattern_formation', { parameters: {} as never })]).notEvaluated).toBe('pattern_bar_unreadable');
+    expect(standingBars([policy('pattern_formation'), policy('observer_calibration', { parameters: {} as never })]).notEvaluated)
+      .toBe('calibration_bar_unreadable');
+    expect(standingBars(BOTH())).toEqual(expect.objectContaining({ notEvaluated: null, bar: APPROVED_PATTERN_FORMATION_V1 }));
   });
 });

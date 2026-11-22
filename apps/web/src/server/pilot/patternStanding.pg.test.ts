@@ -61,6 +61,8 @@ let db: Client;
 let standing: typeof import('./patternStanding');
 let reports: typeof import('./behaviourObservations');
 let policies: typeof import('./learningPolicies');
+let revision: string;
+let superseded: string;
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -86,19 +88,19 @@ async function freePort(): Promise<number> {
 /** One stored report, written straight to the table as the writer would leave it. */
 async function report(input: {
   athleteId: string; coach: string; day: string; episodeId?: string; polarity?: 'occurrence' | 'counterexample';
-  organizationId?: string; behaviourKey?: string;
+  organizationId?: string; behaviourKey?: string; supersedes?: string;
 }): Promise<string> {
   const result = await db.query<{ observation_id: string }>(
     `insert into pilot.behaviour_observations
        (organization_id, athlete_id, behaviour_key, episode_id, session_key, task_context_key, task_constraint,
         polarity, attribution_target, attribution_certainty, source_type, source_quality, interpretation,
-        observer_account_id, author_role, note, observed_at)
+        observer_account_id, author_role, note, observed_at, supersedes_observation_id)
      values ($1, $2, $3, $4, $5, 'context:session', 'controlled', $6, 'athlete', 'probable', 'coach_tag', 'moderate',
-             'human_observed', $7, 'coach', 'a note the reader must not return', $8)
+             'human_observed', $7, 'coach', 'a note the reader must not return', $8, $9)
      returning observation_id`,
     [
       input.organizationId ?? ORG, input.athleteId, input.behaviourKey ?? KEY, input.episodeId ?? `ep:${randomUUID()}`,
-      `day:${input.day}`, input.polarity ?? 'occurrence', input.coach, `${input.day}T22:00:00.000Z`,
+      `day:${input.day}`, input.polarity ?? 'occurrence', input.coach, `${input.day}T22:00:00.000Z`, input.supersedes ?? null,
     ],
   );
   return result.rows[0].observation_id;
@@ -202,6 +204,12 @@ beforeAll(async () => {
     await report({ athleteId: TEAMMATE, coach: COACH_A, day: '2026-01-10', episodeId, polarity });
     await report({ athleteId: TEAMMATE, coach: COACH_B, day: '2026-01-10', episodeId, polarity });
   }
+  // A coach's own revision: the read returns the revision, not the call it replaced. (Should the
+  // coach's account go, both rows lose their observer and the engine could no longer tell.)
+  const revisedEpisode = `ep:${randomUUID()}`;
+  const original = await report({ athleteId: TEAMMATE, coach: COACH_B, day: '2026-01-11', episodeId: revisedEpisode, polarity: 'counterexample' });
+  revision = await report({ athleteId: TEAMMATE, coach: COACH_B, day: '2026-01-11', episodeId: revisedEpisode, supersedes: original });
+  superseded = original;
   // Rows the read must not return: another behaviour, another gym, and a de-identified report.
   await report({ athleteId: ATHLETE, coach: COACH_A, day: '2026-06-02', behaviourKey: OTHER_KEY });
   await report({ organizationId: OTHER_ORG, athleteId: OTHER_GYM_ATHLETE, coach: OTHER_GYM_COACH, day: '2026-06-02' });
@@ -246,7 +254,10 @@ const ratify = (kind: 'pattern_formation' | 'observer_calibration') => policies.
 describe('the read', () => {
   test('this gym\'s live reports of this behaviour, every athlete, oldest first, with no note', async () => {
     const rows = await reports.listBehaviourReadingsForEvaluation(ORG, KEY);
-    expect(rows).toHaveLength(65);
+    expect(rows).toHaveLength(66);
+    expect(rows.map((row) => row.observation_id)).toContain(revision);
+    expect(rows.map((row) => row.observation_id)).not.toContain(superseded);
+    expect(new Set(rows.map((row) => row.organization_id))).toEqual(new Set([ORG]));
     expect(new Set(rows.map((row) => row.behaviour_key))).toEqual(new Set([KEY]));
     expect(new Set(rows.map((row) => row.athlete_id))).toEqual(new Set([ATHLETE, TEAMMATE]));
     expect(rows.some((row) => 'note' in row)).toBe(false);
@@ -257,10 +268,13 @@ describe('the read', () => {
 });
 
 describe('the standing', () => {
-  test('no pattern bar in force: no evaluation, and the reason', async () => {
+  test('no pattern bar in force: no evaluation, the reason, and no report read', async () => {
+    const read = jest.spyOn(reports, 'listBehaviourReadingsForEvaluation');
     const result = await standing.evaluatePatternStanding({ organizationId: ORG, athleteId: ATHLETE, behaviourKey: KEY, asOf: AS_OF });
     expect(result.evaluation).toBeNull();
     expect(result.notEvaluated).toBe('no_pattern_bar_in_force');
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
   });
 
   test('with the pattern bar alone nothing counts and it says so; with the calibration bar too, the paired coach\'s readings count', async () => {
