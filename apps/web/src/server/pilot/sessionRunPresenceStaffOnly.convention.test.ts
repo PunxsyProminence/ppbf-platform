@@ -117,6 +117,8 @@ const WRITER_IMPORT = /\bbehaviour(Observations|SampleWindows)(\.[cm]?[jt]sx?)?[
 const WRITER_ROUTES = [
   'app/api/pilot/coach/behaviour-keys/route.ts',
   'app/api/pilot/coach/behaviour-observations/route.ts',
+  'app/api/pilot/coach/behaviour-windows/[windowId]/route.ts',
+  'app/api/pilot/coach/behaviour-windows/route.ts',
 ];
 const WRITER_MODULES = [
   'src/server/pilot/behaviourSampleWindows.ts',
@@ -191,13 +193,20 @@ describe('who was in a session, and notes on a run, are reached only from staff 
 
   it.each(WRITER_ROUTES)('%s admits only coach, organization admin and the legacy admin name, on every handler', (route) => {
     const text = source(path.join(WEB_DIR, route));
-    const handlers = Array.from(text.matchAll(HANDLER)).length;
-    expect(handlers).toBeGreaterThan(0);
     expect(text).not.toMatch(/^export\s*(\{|\*)/m);
-    const gates = Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.([A-Z_]+)\]\s*\)/g), (match) => match[1]);
-    expect(gates).toHaveLength(handlers);
+    // Each handler's own text, from its export to the next handler's, holds exactly one role gate.
+    const starts = Array.from(text.matchAll(HANDLER), (match) => match.index ?? 0);
+    expect(starts.length).toBeGreaterThan(0);
+    const gates = starts.map((start, index) => {
+      const body = text.slice(start, starts[index + 1] ?? text.length);
+      const found = Array.from(body.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.([A-Z_]+)\]\s*\)/g), (match) => match[1]);
+      expect(found).toHaveLength(1);
+      return found[0];
+    });
+    // Each gate's list is defined once, at the start of a line (not in a comment), as exactly the three staff roles.
     for (const gate of new Set(gates)) {
-      expect(text).toMatch(new RegExp(`const ${gate} = \\['coach', 'organization_admin', 'admin'\\] as const;`));
+      expect(Array.from(text.matchAll(new RegExp(`^const ${gate} = (.*)$`, 'gm')), (match) => match[1]))
+        .toEqual(["['coach', 'organization_admin', 'admin'] as const;"]);
     }
   });
 
