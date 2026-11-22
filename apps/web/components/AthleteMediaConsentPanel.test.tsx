@@ -6,6 +6,7 @@ import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import AthleteMediaConsentPanel from './AthleteMediaConsentPanel';
+import { ADULT_MEDIA_FRAMES_WORDS } from './mediaConsentWords';
 
 // The adult athlete's own photo and video consent (OD-2026-10-08-015).
 
@@ -82,12 +83,35 @@ test('closed by default, and nothing is read until it is tapped; closing it take
   expect(screen.queryByText(/You said yes/)).toBeNull();
 });
 
+// HF9-1 (Q3 = A on #2083): the adult reads where frames go, in the owner's
+// words, straight after what the consent is about, whatever is on file. The
+// status line about public use ("for use inside the gym only") is a different
+// fact and stays as it is (pinned in the first test above).
+test.each([
+  ['no decision yet', NONE],
+  ['photos and video, gym only', VIDEO_GYM],
+  ['photos only', PHOTO_PUBLIC],
+  ['withdrawn', WITHDRAWN],
+])('an adult with %s reads where frames go, after what the consent is about', async (_label, view) => {
+  installFetch(view, () => respond(view));
+  await renderPanel();
+  const scope = screen.getByText(/^This is about photos and video of you that the gym uses/);
+  expect(scope.textContent).toBe(
+    'This is about photos and video of you that the gym uses: the research library, and anything shared outside the gym. '
+    + ADULT_MEDIA_FRAMES_WORDS,
+  );
+});
+
 test('a minor is told their guardian decides until 18, and is offered nothing to press', async () => {
   installFetch(MINOR, () => respond(MINOR));
   await renderPanel();
   expect(screen.getByText(/Until you are 18, your guardian decides/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Save my answer' })).toBeNull();
   expect(screen.queryByRole('radio')).toBeNull();
+  // The adult passage says "Your choice here covers ...", which is not true for
+  // a minor: their guardian decides (HF9-1; the ruling names the adult panel).
+  expect(document.body.textContent).not.toContain(ADULT_MEDIA_FRAMES_WORDS);
+  expect(screen.queryByText(/Your choice here covers/)).toBeNull();
 });
 
 test.each([
