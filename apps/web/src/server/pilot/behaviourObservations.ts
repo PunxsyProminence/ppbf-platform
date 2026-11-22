@@ -12,6 +12,7 @@ import type {
   ObservationPolarity,
   TaskConstraint,
 } from './patterns';
+import type { StoredBehaviourReading } from './patterns/fromStore';
 
 // The learning loop's writer (lane L49): the gym's shared list of behaviour
 // names (Jason 2026-10-18 Q1, "A: Shared growing list") and a coach's report of
@@ -473,5 +474,29 @@ export async function listBehaviourObservations(
       order by o.observed_at desc, o.created_at desc
       limit $3`,
     [organizationId, athleteId, Math.max(1, Math.min(500, Math.trunc(limit)))],
+  );
+}
+
+/**
+ * Every live report of one behaviour in this gym, every athlete, oldest first,
+ * for the tier engine (patterns/fromStore.ts, patternStanding.ts): the coach
+ * pairs are judged on the gym's whole record of the behaviour. Revisions are
+ * included (the engine drops what they supersede). Not read: the coach's note,
+ * and any de-identified report (a purged athlete's). No limit: a cut-off list
+ * would count wrongly rather than fail.
+ */
+export async function listBehaviourReadingsForEvaluation(
+  organizationId: string,
+  behaviourKey: string,
+): Promise<StoredBehaviourReading[]> {
+  return query<StoredBehaviourReading>(
+    `select o.observation_id, o.athlete_id, o.behaviour_key, o.episode_id, o.session_key, o.task_context_key,
+            o.task_constraint, o.fatigue_context, o.polarity, o.attribution_target, o.attribution_certainty,
+            o.source_type, o.source_quality, o.interpretation, o.observer_account_id, o.supersedes_observation_id,
+            o.observed_at
+       from pilot.behaviour_observations o
+      where o.organization_id = $1 and o.behaviour_key = $2 and o.deidentified_at is null
+      order by o.observed_at, o.observation_id`,
+    [organizationId, behaviourKey],
   );
 }
