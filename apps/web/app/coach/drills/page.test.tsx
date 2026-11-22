@@ -2,11 +2,14 @@
  * @jest-environment jsdom
  */
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import CoachDrillLibraryPage from './page';
+import { DESIGN_SYSTEM_ENTRY, readDesignSystemCss } from '@/src/design/readDesignSystemCss';
 import type { PilotSessionRole } from '@/components/usePilotSession';
 import type { DrillLineageResponse } from '@/app/api/pilot/drills/lineage/route';
 import type { DrillChangeProposalListResponse } from '@/app/api/pilot/drills/proposals/route';
@@ -2794,6 +2797,155 @@ describe('Edit (lane ED-UI)', () => {
   });
 });
 
+/*
+ * THE OPENED DRILL'S HEADER STANDS ON THE CARD (readable-and-usable, AGENT_KERNEL
+ * "UI and visual work" item 2). In the drill case the card is light parchment
+ * and every voice in it takes dark card ink. `.ge-drillcase header`, written for
+ * the page's own header plaque, also caught the <header> inside the card, so the
+ * drill's name, its status line and the "Not ready to adopt" list were dark ink
+ * on near-black lacquer (seen at 1024x768, 2026-11-20). This reads every author
+ * rule the browser loads and asks which ones reach the real header of the real
+ * opened card; none may paint a ground there. Conditional rules (@media) count
+ * too, and state pseudo-classes and ::before/::after are stripped before
+ * matching, so a plaque that only appears on hover or at one width is caught.
+ */
+describe('the opened drill\'s header stands on the card', () => {
+  const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const SHEETS = `${readDesignSystemCss(DESIGN_SYSTEM_ENTRY)}\n${readFileSync(path.resolve(__dirname, '../../globals.css'), 'utf8')}`;
+
+  /**
+   * Every style rule, flat. Rules under @media, @supports or @layer count (a
+   * plaque at one width is still a plaque); rules under @media print do not,
+   * since paper is not the screen, and @keyframes steps are not selectors.
+   */
+  const RULES = (() => {
+    const text = stripComments(SHEETS);
+    const rules: { selector: string; body: string }[] = [];
+    const atRules: string[] = [];
+    let prelude = '';
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (ch === '{') {
+        const head = prelude.trim();
+        prelude = '';
+        if (head.startsWith('@')) {
+          atRules.push(head);
+          continue;
+        }
+        const close = text.indexOf('}', i);
+        const body = text.slice(i + 1, close);
+        // These sheets use no CSS nesting; a nested block would mis-parse here.
+        expect(body).not.toContain('{');
+        const skipped = atRules.some((at) => /^@media\s+print\b/.test(at) || /^@(?:-\w+-)?keyframes\b/.test(at));
+        if (!skipped) rules.push({ selector: head, body });
+        i = close;
+        continue;
+      }
+      if (ch === '}') {
+        prelude = '';
+        atRules.pop();
+        continue;
+      }
+      if (ch === ';') {
+        // A statement at-rule (`@import`, `@layer a, b;`) or a declaration
+        // inside an at-rule block such as @theme ends here.
+        prelude = '';
+        continue;
+      }
+      prelude += ch;
+    }
+    return rules;
+  })();
+
+  /** A declaration that puts something behind the text. */
+  const GROUND = /(?:^|;)\s*background(?:-color|-image)?\s*:(?!\s*(?:none|transparent|initial|unset|revert)\s*(?:!important\s*)?(?:;|$))[^;]+/;
+
+  /** State and pseudo-element suffixes, so `header:hover` or `header::before` is judged as `header`. */
+  const asElement = (selector: string) =>
+    selector.replace(/::?(?:before|after)\b/g, '').replace(/:(?:hover|focus|focus-visible|focus-within|active)\b/g, '');
+
+  /** A selector list's parts, split only on commas outside (), [] and quotes. */
+  function selectorParts(list: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let quote = '';
+    let current = '';
+    for (const ch of list) {
+      if (quote) {
+        if (ch === quote) quote = '';
+      } else if (ch === '"' || ch === '\'') {
+        quote = ch;
+      } else if (ch === '(' || ch === '[') {
+        depth += 1;
+      } else if (ch === ')' || ch === ']') {
+        depth -= 1;
+      } else if (ch === ',' && depth === 0) {
+        parts.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += ch;
+    }
+    parts.push(current.trim());
+    return parts.filter(Boolean);
+  }
+
+  /** Every selector in the sheets that reaches `element` and paints a ground on it. */
+  function groundsOn(element: Element) {
+    const hits: string[] = [];
+    const unread: string[] = [];
+    for (const rule of RULES) {
+      if (!GROUND.test(rule.body)) continue;
+      for (const part of selectorParts(rule.selector)) {
+        try {
+          if (element.matches(asElement(part))) hits.push(part);
+        } catch {
+          unread.push(part);
+        }
+      }
+    }
+    return { hits, unread };
+  }
+
+  async function openDraftDrill() {
+    global.fetch = routes({
+      details: { [reference.drill_id]: { ...referenceDetail, field_provenance: LITERATURE_DRAFT } },
+    }) as unknown as typeof fetch;
+    render(<CoachDrillLibraryPage />);
+    const card = await openReference();
+    const cardHeader = card.querySelector(':scope > header') as HTMLElement;
+    // The header the defect hid: the drill's name, and the readiness list a
+    // coach lands on after saving a draft as a new version.
+    expect(within(cardHeader).getByRole('heading', { name: 'Seeded jab return' })).toBeInTheDocument();
+    expect(within(cardHeader).getByText('Not ready to adopt')).toBeInTheDocument();
+    return { card, cardHeader };
+  }
+
+  it('reads the sheets, and every selector that paints a ground is one jsdom can evaluate', () => {
+    expect(RULES.length).toBeGreaterThan(500);
+    const probe = document.createElement('div');
+    expect(groundsOn(probe).unread).toEqual([]);
+  });
+
+  it('no author rule paints a ground on the card\'s header', async () => {
+    const { card, cardHeader } = await openDraftDrill();
+    // Non-vacuity: the card's own parchment IS found on this markup, so the
+    // matcher is reading these selectors against the page as rendered. If the
+    // card stops having a light ground of its own, this test goes with it.
+    expect(card.closest('.ge-drillcase')).not.toBeNull();
+    expect(groundsOn(card).hits).toContain('.ge-drillcase .mat-leather--raised');
+    expect(groundsOn(cardHeader).hits).toEqual([]);
+  });
+
+  it('the page\'s own header keeps its plaque', async () => {
+    // Pins a look the defect report asked to keep; a redesign of the page
+    // header deletes this case with it (OD-2026-10-02-004).
+    await openDraftDrill();
+    const pageHeader = screen.getByRole('heading', { level: 1, name: 'Drill Library' }).closest('header') as HTMLElement;
+    expect(groundsOn(pageHeader).hits).toEqual(['.ge-drillcase > div > header']);
+  });
+});
+
 // "LOOKS RIGHT" (OD-2026-11-19-007, OW25-55; lane ED-UI PR4): beside each drafted field of the opened
 // current reference drill, for the roles that may edit it. A press is PATCH /api/pilot/drill-library
 // with looks_right alone; the page then opens the version the server answered with, as after a save.
@@ -2920,5 +3072,80 @@ describe('Looks right (lane ED-UI PR4)', () => {
     // Opened again, the drill starts clean.
     await openReference();
     expect(screen.queryByText('Refused.')).not.toBeInTheDocument();
+  });
+});
+
+// Lane AS-11 (app scrub CF-23; Q6 = A): a link that names one drill opens it.
+// The Cue Library links here with ?drill_id=<reference drill id>; a drill id
+// is gym content, not a person, so it may sit in the address.
+describe('arriving with a drill named in the address (lane AS-11)', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  const detailReads = (fetchMock: FetchMock) =>
+    fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/pilot/drill-library?drill_id=')).length;
+
+  it('opens the reference drill ?drill_id= names', async () => {
+    window.history.replaceState(null, '', '/coach/drills?drill_id=reference-1');
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+
+    const detail = await screen.findByRole('article', { name: 'Seeded jab return' });
+    expect(within(detail).getByRole('region', { name: 'Safety' })).toBeInTheDocument();
+    expect(readsOf(fetchMock, DETAIL_URL)).toBe(1);
+  });
+
+  it("says a drill this gym's library does not hold is not there, not that it failed to load", async () => {
+    window.history.replaceState(null, '', '/coach/drills?drill_id=no-such-drill');
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+
+    expect(await screen.findByText("This reference drill is not in this gym's library.")).toBeInTheDocument();
+    expect(screen.queryByText(/This is a failure to load, not a missing drill/)).not.toBeInTheDocument();
+    expect(readsOf(fetchMock, '/api/pilot/drill-library?drill_id=no-such-drill')).toBe(1);
+  });
+
+  it('opens the drill only after the library\'s own read has answered, so a failed list read cannot clear its status', async () => {
+    window.history.replaceState(null, '', '/coach/drills?drill_id=reference-1');
+    let releaseLibrary: () => void = () => {};
+    const libraryAnswer = new Promise<Response>((resolve) => {
+      releaseLibrary = () => resolve(jsonResponse({ error: 'unavailable' }, false, 500));
+    });
+    // Held open: the route answers with whatever this returns, and a promise
+    // is awaited like a response.
+    const fetchMock = routes({ libraryRead: () => libraryAnswer as unknown as Response });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+    await act(async () => {});
+
+    // While the library's read is out, the named drill is not read yet.
+    expect(readsOf(fetchMock, DETAIL_URL)).toBe(0);
+
+    await act(async () => {
+      releaseLibrary();
+    });
+
+    await screen.findByRole('article', { name: 'Seeded jab return' });
+    expect(readsOf(fetchMock, DETAIL_URL)).toBe(1);
+    // The drill's status is the one its own read returned, not wiped by the
+    // list read that failed before it.
+    expect(screen.queryByText("This drill's status in this gym could not be read.")).not.toBeInTheDocument();
+  });
+
+  it('with no drill named, no drill is opened', async () => {
+    window.history.replaceState(null, '', '/coach/drills');
+    const fetchMock = routes();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<CoachDrillLibraryPage />);
+
+    await screen.findAllByRole('button', { name: 'View drill: Seeded jab return' });
+    expect(detailReads(fetchMock)).toBe(0);
   });
 });
