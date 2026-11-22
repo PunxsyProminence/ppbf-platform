@@ -102,7 +102,7 @@ describe('the tab row sits directly under the masthead (CF-03)', () => {
   test('it comes before the floor board, the safety lists and the jobs', async () => {
     await renderWorkspace();
 
-    const dashboardTab = screen.getByRole('button', { name: 'Dashboard' });
+    const dashboardTab = screen.getByRole('button', { name: /^Dashboard/ });
     expect(before(dashboardTab, screen.getByRole('region', { name: 'The floor' }))).toBe(true);
     expect(before(dashboardTab, screen.getByRole('heading', { name: 'Athlete Pain Reports' }))).toBe(true);
     expect(before(dashboardTab, screen.getByRole('heading', { name: 'Safety Escalations' }))).toBe(true);

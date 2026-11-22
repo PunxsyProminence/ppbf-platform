@@ -312,7 +312,7 @@ function FloorWorkCard({ work, step }: { work: CoachWorkItem; step: IssuedWorkou
         <span className="t-label">{work.status.replaceAll('_', ' ')}</span>
       </div>
       {step && <StepNotes step={step} />}
-      <dl className="grid grid-cols-2 gap-[var(--s3)] text-[length:var(--t-sm)]">
+      <dl className="grid grid-cols-2 gap-[var(--s3)] text-[length:var(--t-md)]">
         {work.rep_count != null && (
           <div>
             <dt className="t-label">Reps</dt>
@@ -823,7 +823,7 @@ function getGoalStatusBadge(status: GoalStatus): { className: string; glyph: str
    are floor-sized: every target clears var(--tap). A selected tab is a control
    in the "on" position — brass chassis, never a status colour (Laws 1 + 2). */
 const KIOSK_TAB_BASE =
-  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-sm)] font-bold uppercase tracking-[0.08em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
+  'inline-flex min-h-[var(--tap)] items-center rounded-[var(--r-md)] border-2 px-[var(--s4)] font-mono text-[length:var(--t-md)] font-bold uppercase tracking-[0.08em] transition focus-visible:outline-none focus-visible:shadow-[var(--focus)]';
 const KIOSK_TAB_ACTIVE = 'border-[color:var(--brass-600)] bg-[var(--brass-500)] text-[color:var(--hide-950)]';
 const KIOSK_TAB_INACTIVE =
   'border-[color:rgb(var(--brass-400-rgb)_/_.28)] bg-[rgba(0,0,0,.26)] text-[color:var(--bone-300)] hover:border-[color:var(--brass-400)] hover:text-[color:var(--bone-100)]';
@@ -1069,14 +1069,14 @@ function AthleteRabbitHoleLibrary() {
                 Gym coaching · Written by {lesson.author_display_name}
               </p>
               <h4 className="text-[length:var(--t-md)] font-semibold">{lesson.title}</h4>
-              <p className="text-[length:var(--t-sm)] leading-relaxed"><strong>Concept:</strong> {lesson.concept}</p>
+              <p className="text-[length:var(--t-md)] leading-relaxed"><strong>Concept:</strong> {lesson.concept}</p>
               {lesson.homework ? (
                 <div className="rounded-[var(--r-md)] border-l-4 border-[color:var(--brass-700)] bg-[var(--paper-2)] p-[var(--s4)]">
-                  <p className="text-[length:var(--t-sm)] leading-relaxed"><strong>Homework:</strong> {lesson.homework}</p>
+                  <p className="text-[length:var(--t-md)] leading-relaxed"><strong>Homework:</strong> {lesson.homework}</p>
                 </div>
               ) : null}
               {lesson.citation ? (
-                <p className="text-[length:var(--t-xs)] opacity-80">
+                <p className="text-[length:var(--t-md)] opacity-80">
                   <strong>Library source:</strong> {lesson.citation.document_name}
                 </p>
               ) : null}
@@ -3167,7 +3167,7 @@ export default function AthleteWorkspace() {
             goals={goalsRead}
             onOpenGoals={() => setActiveTab('smart-goals')}
             onReportPain={goToPainReport}
-            onAskShadow={() => setActiveTab('shadow')}
+            onAskShadow={() => setActiveTab('message-coach')}
             checkedOutToday={checkedOutToday}
             checkInFailed={checkInFailed}
             afterPain={<><TrainingHoldBanner /><MedicalRestrictionNotice /></>}
@@ -3300,14 +3300,14 @@ export default function AthleteWorkspace() {
           {activeGroup === 'development' && (
             <div data-progress-pages="" className="grid gap-[var(--s4)] sm:grid-cols-2 lg:grid-cols-3">
               <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Film</p>
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">My Film</p>
                 <p className="t-muted mt-[var(--s2)]">Your own film, and what SHADOW noticed in it. Nothing scores your technique automatically -- that part is not built.</p>
                 <Link href="/athlete/video-analysis" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
                   Open My Film
                 </Link>
               </article>
               <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Progression</p>
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">My Progression</p>
                 <p className="t-muted mt-[var(--s2)]">The gaps your coach identified and the drills they assigned, where you can log what you finished. Your coach still decides what comes next.</p>
                 <Link href="/athlete/progression-intelligence" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
                   Open My Progression
@@ -3320,7 +3320,7 @@ export default function AthleteWorkspace() {
                   using site search. This card is the only thing that changed;
                   the page itself and its own naming are untouched. */}
               <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Sparring Log</p>
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">Sparring Log</p>
                 <p className="t-muted mt-[var(--s2)]">Write down a sparring session -- rounds, contact, what you threw and what landed. Your coach reads it.</p>
                 <Link href="/athlete/dashboard/sparring" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
                   Open Sparring Log
@@ -3329,7 +3329,7 @@ export default function AthleteWorkspace() {
               {/* Title and line: app/athlete/development-blocks/page.tsx's own
                   h1 and the first sentence of its intro. */}
               <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">My Development Plan</p>
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">My Development Plan</p>
                 <p className="t-muted mt-[var(--s2)]">What your coach is working on with you over the next several weeks, in their words.</p>
                 <Link href="/athlete/development-blocks" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
                   Open My Development Plan
@@ -3338,7 +3338,7 @@ export default function AthleteWorkspace() {
               {/* Title and line: app/athlete/mental-skills/page.tsx's own h1
                   and the first sentence of its intro. */}
               <article className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">Mental Skills</p>
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">Mental Skills</p>
                 <p className="t-muted mt-[var(--s2)]">Your self-talk cue and your imagery sessions.</p>
                 <Link href="/athlete/mental-skills" className="btn btn--ghost mt-[var(--s3)] min-h-[var(--tap)]">
                   Open Mental Skills
@@ -3584,7 +3584,7 @@ export default function AthleteWorkspace() {
                         not. One live region, so both lines are announced
                         together in this order. */}
                     <div role="status" className="space-y-[var(--s2)]">
-                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                      <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                         {notesSaveState === 'saving'
                           ? 'Sending...'
                           : sharedNote
@@ -3597,7 +3597,7 @@ export default function AthleteWorkspace() {
                           on screen (noteSendFailed requires noteAction), so
                           "try again" always names something pressable. */}
                       {noteSendFailed ? (
-                        <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                        <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           That did not reach your coach -- try again.
                         </p>
                       ) : null}
@@ -3650,7 +3650,7 @@ export default function AthleteWorkspace() {
                         aria-describedby="pre-check-in-note-help"
                         className="textarea input--kiosk h-[89px]"
                       />
-                      <p id="pre-check-in-note-help" className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                      <p id="pre-check-in-note-help" className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                         Optional. You can leave it empty. Nobody sees this until you start training and press Share with coach.
                       </p>
                     </div>
@@ -3672,7 +3672,7 @@ export default function AthleteWorkspace() {
                     </p>
                     <ul className="space-y-[var(--s3)]">
                       {recentSessions.map((session) => (
-                        <li key={session.sessionId} className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                        <li key={session.sessionId} className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           <span className="t-data">{formatCalendarDay(session.date)}</span>
                           {' - '}
                           {/* The system's words -- the no-note placeholder,
@@ -3722,7 +3722,7 @@ export default function AthleteWorkspace() {
                 >
                   Go to How I feel today
                 </button>
-                <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
                   Everything else stays open — goals, drills, messages, and telling a
                   coach about pain.
                 </p>
@@ -3757,8 +3757,8 @@ export default function AthleteWorkspace() {
                   assigned you anything" is a claim about a coach, and a
                   network failure is not evidence for it. */}
               {assignedWorkError && !assignedWorkLoading && (
-                <div className="alert alert--critical" role="alert">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div className="alert alert--warning" role="alert">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-title">Could not load your coach&apos;s work</p>
                     <p className="alert-msg">{assignedWorkError}</p>
@@ -3979,8 +3979,8 @@ export default function AthleteWorkspace() {
               )}
 
               {goalsError && !goalsLoading && (
-                <div className="alert alert--critical" role="alert">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div className="alert alert--warning" role="alert">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-title">Could not load your goals</p>
                     <p className="alert-msg">{goalsError}</p>
@@ -4033,7 +4033,7 @@ export default function AthleteWorkspace() {
                       <div className="space-y-[var(--s2)]">
                         <div className="flex justify-between">
                           <span className="t-label">Progress</span>
-                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }} data-testid={`goal-progress-value-${goal.id}`}>
+                          <span className="t-data" style={{ fontSize: 'var(--t-md)' }} data-testid={`goal-progress-value-${goal.id}`}>
                             {goal.progressPercent === null ? 'Not reported yet' : `${goal.progressPercent}%`}
                           </span>
                         </div>
@@ -4065,7 +4065,7 @@ export default function AthleteWorkspace() {
                           </select>
                         </label>
                       </div>
-                      <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">Target: {formatCalendarDay(goal.targetDate)}</p>
+                      <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">Target: {formatCalendarDay(goal.targetDate)}</p>
                       <p className="t-muted">{goal.successMetric}</p>
                     </div>
                   );
@@ -4114,7 +4114,7 @@ export default function AthleteWorkspace() {
               <div className="space-y-[var(--s4)]">
                 <div className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
                   <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">Skill checks</p>
-                  <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                  <p className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                     If this is ever built, it records what you did on a given day — not what kind of person you are.
                   </p>
                   <button
@@ -4204,7 +4204,7 @@ export default function AthleteWorkspace() {
 
               <div className={PANEL}>
                 <p className="t-label">Reference · Learning</p>
-                <p className="mt-[var(--s2)] text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                <p className="mt-[var(--s2)] text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                   This is reading material, not training your coach has given you. Opening a drill here does not assign
                   it to you, does not log it, and does not count toward anything. Your assigned work lives on the
                   progression page.
@@ -4216,8 +4216,8 @@ export default function AthleteWorkspace() {
               )}
 
               {!drillsLoading && drillsError && (
-                <div className="alert alert--critical" role="alert">
-                  <span className="alert-icon" aria-hidden="true">✕</span>
+                <div className="alert alert--warning" role="alert">
+                  <span className="alert-icon" aria-hidden="true">▲</span>
                   <div className="alert-body">
                     <p className="alert-title">Could not load the reference library</p>
                     <p className="alert-msg">{drillsError}</p>
@@ -4263,9 +4263,9 @@ export default function AthleteWorkspace() {
                   {openDrillLoading && <span className="working">Loading the drill...</span>}
                   {!openDrillLoading && openDrillError && (
                     <div className={PANEL}>
-                      <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{openDrillError}</p>
+                      <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{openDrillError}</p>
                       {openDrillError !== DRILL_WITHDRAWN && (
-                        <p className="mt-[var(--s2)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                        <p className="mt-[var(--s2)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                           This is a failure to load the drill, not a sign it was removed. Go back and try again.
                         </p>
                       )}
@@ -4286,8 +4286,8 @@ export default function AthleteWorkspace() {
                         <span className="t-data">Coach authorization required</span>
                       )}
                     </div>
-                    <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">{drill.purpose}</p>
-                    <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-300)]">
+                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">{drill.purpose}</p>
+                    <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-300)]">
                       <span className="font-semibold text-[color:var(--bone-200)]">Contact:</span> {humanizeContactLevel(drill.contactLevel)}
                     </p>
                     <button
@@ -4379,11 +4379,14 @@ export default function AthleteWorkspace() {
                   no recipient, address, or delivery step is stored or sent --
                   so this surface cannot claim parent CC is in force. A missing
                   safeguard is a caution, not a Layer 11 lock, so it takes the
-                  warning rung with its glyph (Laws 2 + 3). */}
+                  warning rung with its glyph (Laws 2 + 3). Its "Not Built Yet"
+                  title stood over a form that works (it posts to
+                  /api/pilot/athlete/chat), so the title is gone and the
+                  SafeSport sentence stays word for word (lane AS-8, ATH-05;
+                  Overwatch Q10 A on #2020). */}
               <div className="alert alert--warning">
                 <span className="alert-icon" aria-hidden="true">▲</span>
                 <div className="alert-body">
-                  <p className="alert-title">Not Built Yet</p>
                   <p className="alert-msg"><strong>SafeSport:</strong> {ASK_SHADOW_SAFESPORT_LINE}</p>
                 </div>
               </div>
@@ -4409,7 +4412,7 @@ export default function AthleteWorkspace() {
                       className="textarea input--kiosk h-24 resize-none"
                     />
                   </div>
-                  {coachMessageStatus ? <p className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]" role="status">{coachMessageStatus}</p> : null}
+                  {coachMessageStatus ? <p className="text-[length:var(--t-md)] text-[color:var(--bone-300)]" role="status">{coachMessageStatus}</p> : null}
                   <button
                     type="submit"
                     disabled={isSendingCoachMessage}
@@ -4427,7 +4430,7 @@ export default function AthleteWorkspace() {
             <div className="space-y-6 panel-settle">
               <div className="flex flex-wrap gap-[var(--s3)]">
                 <Link href="/schedule" className="btn min-h-[var(--tap)]">
-                  Open Unified Scheduler
+                  Open Schedule
                 </Link>
               </div>
               {/* The athlete's classes and bookings, read in place (WO-N5-01).
@@ -4502,7 +4505,7 @@ export default function AthleteWorkspace() {
                   <p className="t-label">Things you can ask SHADOW:</p>
                   <ul className="list-disc space-y-[var(--s2)] pl-[var(--s5)]">
                     {suggestedQuestions.map((q) => (
-                      <li key={q} className="text-[length:var(--t-sm)] text-[color:var(--bone-300)]">{q}</li>
+                      <li key={q} className="text-[length:var(--t-md)] text-[color:var(--bone-300)]">{q}</li>
                     ))}
                   </ul>
                 </div>
@@ -4510,14 +4513,14 @@ export default function AthleteWorkspace() {
 
               {/* A scope note, not a caution state — plain leather, no rung. */}
               <div className={PANEL}>
-                <p className="text-[length:var(--t-sm)] leading-relaxed text-[color:var(--bone-200)]"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
+                <p className="text-[length:var(--t-md)] leading-relaxed text-[color:var(--bone-200)]"><strong>Note:</strong> SHADOW cannot answer questions about other athletes, board operations, financial data, or provide medical/legal advice.</p>
               </div>
 
               <div className={PANEL}>
                 <h3 className="t-label">What SHADOW Has Noticed</h3>
                 {shadowObservationError ? (
-                  <div className="alert alert--critical" role="alert">
-                    <span className="alert-icon" aria-hidden="true">✕</span>
+                  <div className="alert alert--warning" role="alert">
+                    <span className="alert-icon" aria-hidden="true">▲</span>
                     <div className="alert-body">
                       <p className="alert-title">Could not load SHADOW&apos;s notes</p>
                       <p className="alert-msg">{shadowObservationError}</p>
@@ -4544,7 +4547,7 @@ export default function AthleteWorkspace() {
                 ) : null}
                 <div className="mt-[var(--s3)] space-y-[var(--s3)]">
                   {observationsForAthlete(shadowObservations).slice(0, 6).map((item) => (
-                    <div key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-sm)] text-[color:var(--bone-300)]">
+                    <div key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s3)] text-[length:var(--t-md)] text-[color:var(--bone-300)]">
                       <p className="font-semibold text-[color:var(--bone-100)]">{item.label}</p>
                       <p>{reviewStateLine(item.review_state)}</p>
                     </div>
@@ -4659,7 +4662,7 @@ export default function AthleteWorkspace() {
                     (painReportAlert.ts). */}
                 <fieldset className="space-y-[var(--s2)]">
                   <legend className="t-label mb-[var(--s2)]">Severity (1-10)</legend>
-                  <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                  <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
                     Choose the number that matches what you feel.
                   </p>
                   <div className="grid grid-cols-5 gap-[var(--s2)]">
@@ -4675,13 +4678,13 @@ export default function AthleteWorkspace() {
                           onClick={() => setCurrentPainSeverity(value)}
                           className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'}`}
                         >
-                          <span className="t-data" style={{ fontSize: 'var(--t-sm)' }}>{value}</span>
+                          <span className="t-data" style={{ fontSize: 'var(--t-md)' }}>{value}</span>
                         </button>
                       );
                     })}
                   </div>
                   {currentPainSeverity === null ? (
-                    <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                    <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
                       Not answered yet.
                     </p>
                   ) : null}
@@ -4701,7 +4704,7 @@ export default function AthleteWorkspace() {
                 </p>
               ) : null}
               {painReportIncomplete ? (
-                <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+                <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
                   Choose a pain type and severity before saving.
                 </p>
               ) : null}

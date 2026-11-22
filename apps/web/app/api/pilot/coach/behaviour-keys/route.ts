@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { requireRole } from '@/src/server/pilot/access';
-import { createBehaviourKey, listBehaviourKeys } from '@/src/server/pilot/behaviourObservations';
+import { behaviourSkillCodes, createBehaviourKey, listBehaviourKeys } from '@/src/server/pilot/behaviourObservations';
 import { jsonError, requirePrincipal } from '@/src/server/pilot/http';
 
 export const runtime = 'nodejs';
@@ -13,7 +13,8 @@ export const runtime = 'nodejs';
 // its label, so the list is staff only (FIELD_TIERS behaviour_keys.label) and
 // the purge scrubs a purged person's name out of it. A name is never re-worded
 // or deleted once made (the table's own guard): a coach retires it and adds a
-// new one.
+// new one. GET also gives the skill codes a new name may sit under (LL-W8b),
+// so a coach picks one rather than typing it.
 
 const BEHAVIOUR_KEY_ROLES = ['coach', 'organization_admin', 'admin'] as const;
 
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
     const principal = await requirePrincipal(request);
     requireRole(principal, [...BEHAVIOUR_KEY_ROLES]);
     const keys = await listBehaviourKeys(principal.organizationId);
-    return NextResponse.json({ ok: true, keys });
+    return NextResponse.json({ ok: true, keys, skillCodes: behaviourSkillCodes() });
   } catch (error) {
     return jsonError(error);
   }

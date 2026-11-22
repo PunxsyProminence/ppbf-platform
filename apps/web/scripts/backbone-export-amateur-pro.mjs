@@ -20,6 +20,10 @@
 // HELD: none. Every source of the set is Jason's own (DOC-022, DOC-023 'PPBF owner-authored', D-PN10
 // and Q-143; The Long Road; his rulings); outside material appears only as evidence citations.
 //
+// TWO STOPS NO FLAG PASSES (lane GD; lib/backbone-export-guards.mjs). A row this run would write
+// that names a held DOC-136 record, or a committed template step that links a drill written back
+// as a typed line, stops the export and nothing is written, with or without --allow-overwrite.
+//
 // DRAFTS (OD-2026-11-17-001, Jason: "B: AI drafts the values"). A blank session_type, difficulty,
 // duration_minutes or intent is filled from DRAFTS below, by Overwatch's order of basis: the
 // template's own content (INFERRED), else the same source document's sheet that matches its kind
@@ -68,6 +72,7 @@ import {
   sourcesCell,
   stripExcerpts,
 } from './backbone-export-youth-recreational.mjs';
+import { heldTextFindings, stopMessage, typedLineFindings } from './lib/backbone-export-guards.mjs';
 
 export const AMATEUR_STAGES = ['T1', 'T2', 'AM1', 'AM2', 'AM3'];
 export const PRO_STAGES = ['PR1', 'PR2', 'PR3', 'PR4', 'PR5'];
@@ -532,11 +537,14 @@ export function exportAmateurPro(backboneDir, existing = () => undefined, { allo
   const ordinal = (column, order = 'ordinal') => (a, b) => compare(a[column], b[column]) || Number(a[order]) - Number(b[order]);
   const files = {};
   const overwrites = [];
+  const stops = [];
   const put = (name, rows, replaces) => {
     const committed = committedRows(existing(name), HEADERS[name]);
     const kept = committed.filter((row) => !replaces(row));
     checkUniqueIds(name, kept, rows);
     overwrites.push(...findOverwrites(name, committed.filter(replaces), rows));
+    stops.push(...heldTextFindings(name, HEADERS[name], rows));
+    if (name === FILES.items) stops.push(...typedLineFindings(name, committed.filter(replaces), rows));
     // A replaced row keeps its place; new rows follow the kept ones (lane YR's merge).
     const byId = new Map(rows.map((row) => [guardId(name, row), row]));
     const inPlace = committed.map((row) => (replaces(row) ? byId.get(guardId(name, row)) : row)).filter(Boolean);
@@ -552,13 +560,17 @@ export function exportAmateurPro(backboneDir, existing = () => undefined, { allo
   put(FILES.blocks, trackSet.blockCells.sort(ordinal('track_id', 'block_order')), ofTrack);
   put(FILES.sessions, trackSet.sessionCells, ofTrack);
   const overwriteLines = describeOverwrites(overwrites);
+  const stopText = stopMessage(stops);
   if (overwrites.length && !allowOverwrite) {
     throw new ExportError([
       `refused: this run would change or remove ${overwrites.length} committed row(s): edits made in the repo since the export. Nothing was written.`,
       ...overwriteLines,
-      'To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.',
+      ...(stopText
+        ? ['--allow-overwrite would not write this run either.', stopText]
+        : ['To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.']),
     ].join('\n'));
   }
+  if (stopText) throw new ExportError(stopText);
 
   const draftsBy = {};
   for (const fields of Object.values(drafts)) for (const [field, draft] of Object.entries(fields)) draftsBy[`${field} ${draft.status}`] = (draftsBy[`${field} ${draft.status}`] ?? 0) + 1;

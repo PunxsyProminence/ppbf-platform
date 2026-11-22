@@ -146,7 +146,7 @@ export default function SparringSymptomCheck({
           <p className="t-data">You said: {alreadyTicked.map(sparringSymptomLabel).join(', ')}.</p>
           <p className="t-data">{SPARRING_SYMPTOM_MESSAGE}</p>
           {today.protocol_text.trim() !== '' && <p className="t-data">{today.protocol_text}</p>}
-          <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>{sparringSymptomSentLine(today.recipient_role)}</p>
+          <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>{sparringSymptomSentLine(today.recipient_role)}</p>
         </div>
       )}
       {saved && alreadyTicked.length === 0 && (
@@ -196,7 +196,7 @@ export default function SparringSymptomCheck({
             )}
           </div>
           {!none && picked.length === 0 && (
-            <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+            <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
               {saved ? 'Tap anything new, then Send.' : `Tap what you have, or ${SPARRING_SYMPTOM_NONE.toLowerCase()}, then Send.`}
             </p>
           )}

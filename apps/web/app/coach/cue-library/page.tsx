@@ -135,20 +135,28 @@ export default function CueLibraryPage() {
                     {familyCues.map((cue) => (
                       <li key={cue.cue_id}>
                         <p className="t-body font-semibold text-[color:var(--bone-100)]">&ldquo;{cue.cue_text}&rdquo;</p>
-                        {/* This carried `?drill_id=${cue.drill_id}` until 2026-08-23.
-                            /coach/drills has no useSearchParams and never read it,
-                            so the parameter promised a jump to one drill and
-                            delivered the top of the library -- a dead affordance
-                            that also told the next reader deep-linking worked.
-                            Whether the library should support opening on a named
-                            drill is a real question and a separate one; the link
-                            is honest without it in the meantime.
+                        {/* The drill's name opens that drill in the Drill Library
+                            (lane AS-11, app scrub CF-23; Q6 = A). Until
+                            2026-08-23 this carried ?drill_id= while
+                            /coach/drills never read it, so it opened the top of
+                            the library; the library now reads it once on
+                            arrival and opens the reference drill it names, or
+                            says the drill is not in this gym's library. A drill
+                            id names gym content, not a person, so it may sit in
+                            the address.
                             One per cue, so on a full library this link is
                             nearly every target on the page: it carries the
                             gym-floor height itself, because the app's 44px
                             floor (globals.css) deliberately skips links. */}
                         <p className="t-data mt-[var(--s1)]">
-                          {cue.focus_type} · from <Link className="inline-flex min-h-[var(--tap)] items-center underline" href="/coach/drills">{cue.drill_name}</Link> ({cue.discipline} / {cue.category})
+                          {cue.focus_type} · from{' '}
+                          <Link
+                            className="inline-flex min-h-[var(--tap)] items-center underline"
+                            href={`/coach/drills?drill_id=${encodeURIComponent(cue.drill_id)}`}
+                          >
+                            {cue.drill_name}
+                          </Link>{' '}
+                          ({cue.discipline} / {cue.category})
                         </p>
                         {cue.evidence_note ? (
                           <p className="t-body mt-[var(--s1)] text-[color:var(--bone-300)]">{cue.evidence_note}</p>

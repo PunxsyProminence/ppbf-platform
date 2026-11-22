@@ -66,6 +66,9 @@ function recordingFetch(respond: (call: Call, index: number) => { status: number
 
 const created = { status: 201, json: { ok: true, document: { document_id: 'doc_1' } } };
 
+// "Evidence Review" not followed by " Queue": the old name for /evidence.
+const BARE_EVIDENCE_REVIEW = /Evidence Review(?! Queue)/;
+
 describe('splitIntakeText', () => {
   it('rejoins to exactly the normalized submitted text', () => {
     const chunks = splitIntakeText(INPUT.text);
@@ -247,6 +250,10 @@ describe('submitLibraryTextIntake', () => {
     expect(result).toMatchObject({ ok: false, resume: null, writtenChunks: 1 });
     expect(result.ok === false && result.message).toContain(budget);
     expect(result.ok === false && result.message).not.toMatch(/Finish saving|\(422\)/);
+    // AS12-2d (OD-2026-10-17-001 ruling 1): /evidence is titled "Evidence Review
+    // Queue", so the message names it that way and no other.
+    expect(result.ok === false && result.message).toContain('reject it in Evidence Review Queue, or save a shorter excerpt.');
+    expect(result.ok === false && result.message).not.toMatch(BARE_EVIDENCE_REVIEW);
     expect(calls).toHaveLength(3);
   });
 
@@ -349,6 +356,14 @@ describe('submitLibraryTextIntake', () => {
       totalChunks: total,
     });
     expect(second.calls).toHaveLength(1);
+  });
+
+  // The test above compares with the constant, so it cannot see a change of its
+  // words. This pins them: the page is named by its title (AS12-2d).
+  it('the part-conflict words send the curator to Evidence Review Queue, by that name only', () => {
+    const words = INTAKE_RECOVERY_WORDS.chunkConflict(2, 5);
+    expect(words).toContain('The entry is incomplete; reject it in Evidence Review Queue, then enter the text again.');
+    expect(words).not.toMatch(BARE_EVIDENCE_REVIEW);
   });
 
   it('a plain 200 without already_stored is not taken as a stored part', async () => {

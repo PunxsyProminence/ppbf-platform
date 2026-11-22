@@ -1382,6 +1382,29 @@ describe('the SHADOW tab lets a coach act on review-queue items, as the Tasks ta
     await waitFor(() => expect(screen.queryByText('Status: approved')).not.toBeNull());
   });
 
+  // Lane 6C7, 7c (app scrub CF-21, CF-25).
+  test('a read-only task card links to its SHADOW Intel item, on the Dashboard and on the Tasks tab', async () => {
+    await renderWorkspace({
+      reviewProjection: async () => jsonResponse({ queue: [queueItem()] }),
+    });
+    const links = await screen.findAllByRole('button', { name: 'Open in SHADOW Intel' });
+    fireEvent.click(links[0]);
+    expect(document.getElementById('shadow-intel-case_1')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeNull();
+
+    openTab('Tasks');
+    expect(screen.getAllByRole('button', { name: 'Open in SHADOW Intel' }).length).toBeGreaterThan(0);
+  });
+
+  test('the open tab says so in a word and a glyph, and only that tab', async () => {
+    await renderWorkspace();
+    const open = screen.getByRole('button', { name: /^Dashboard/ });
+    expect(open.textContent).toContain('(open)');
+    expect(open.textContent).toContain('◉');
+    expect(open.getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: /^Tasks/ }).textContent).not.toContain('(open)');
+  });
+
   test('an already-decided item shows no action buttons', async () => {
     await renderWorkspace({
       reviewProjection: async () => jsonResponse({ queue: [queueItem({ status: 'approved' })] }),

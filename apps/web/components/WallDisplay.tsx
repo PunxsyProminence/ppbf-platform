@@ -1067,7 +1067,7 @@ function OnTheFloor({ board, compact = false }: { board: WallBoard; compact?: bo
       {board.on_floor_total === 0 ? (
         // Honest, and not an error: an empty gym at 6am is a true fact about
         // the room, so it is stated as one rather than dressed as a fault.
-        <p className="wall-quiet text-4xl">Nobody checked in yet today.</p>
+        <p className="wall-quiet text-4xl">Nobody is marked here yet today.</p>
       ) : board.on_floor.length === 0 ? (
         // name_mode is 'off': the count is real, the names are withheld.
         <p className="wall-quiet text-4xl">

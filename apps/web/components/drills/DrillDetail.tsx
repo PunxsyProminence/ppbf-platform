@@ -113,7 +113,7 @@ export default function DrillDetail({ view, audience, actions, looksRight, focus
   // label row says so once, under the header (Q4 = A). Never on an athlete view (coach is null there).
   const drafts = audience === 'coach' ? view.coach?.fieldDrafts ?? null : null;
   const labelled = drafts?.labelled === true;
-  const mark = (state: boolean | null | undefined, onDark = false) => (labelled ? <DraftMark state={state} onDark={onDark} /> : null);
+  const mark = (state: boolean | null | undefined) => (labelled ? <DraftMark state={state} /> : null);
   // "Looks right": a drafted field the form can change (Q3 = A), per scale level, the stop rules as one
   // (Q2 = A); in an expander it sits inside, never in the summary.
   const press = (state: boolean | null | undefined, target: string, label: string | null) => {
@@ -127,8 +127,10 @@ export default function DrillDetail({ view, audience, actions, looksRight, focus
   const both = (marked: ReactNode, pressed: ReactNode) => (marked || pressed ? <>{marked}{pressed}</> : null);
   const field = (key: DrillMarkedField, label = FIELD_LABEL[key]) => both(mark(drafts?.fields[key]), pressFor(key, label));
   const markOnly = (key: DrillMarkedField) => mark(drafts?.fields[key]);
-  // The header (a near-black ground on /coach/drills, Q-PR1-3) keeps a light ink.
-  const headerField = (key: DrillMarkedField) => both(mark(drafts?.fields[key], true), pressFor(key));
+  // The header stands on the card, as the body does: the card's ink under .ge-drillcase, the lift elsewhere. It
+  // once forced a light ink here for a near-black plaque the drill case laid under it; that plaque is scoped to
+  // the page's own header now (ppbf-golden-era.css), and a light ink on the parchment read at 1.22:1.
+  const headerField = (key: DrillMarkedField) => both(mark(drafts?.fields[key]), pressFor(key));
   // Equipment shows the setup column's word only when equipment is blank and that word is not shown as Setup
   // (setupAndEquipment); otherwise its words are the equipment column's, a blank one's included.
   const equipmentKey: DrillMarkedField = !view.equipment.trim() && setup === null && view.setup.trim() ? 'standard_setup' : 'equipment_needed';
@@ -363,16 +365,15 @@ const FIELD_LABEL: Record<DrillMarkedField, string | null> = {
 };
 
 /** The 6e mark and words (sessionScriptWords.ts), beside one field: a draft, or not checked; nothing when not a draft. */
-function DraftMark({ state, onDark = false }: { state: boolean | null | undefined; onDark?: boolean }) {
+function DraftMark({ state }: { state: boolean | null | undefined }) {
   if (state === false) return null;
   if (state === true) return <span className="badge badge--filed ml-[var(--s2)]"><i aria-hidden="true">◉</i>{AI_DRAFT_MARK}</span>;
   // As 6e shows it: sentence case, the body face, weight and size (with the kiosk rise), also inside a label or
   // beside a heading. Off the parchment, the design system's lift (--bone-200): the console's lit card is
-  // mid-brown. On the parchment card the card's body ink (CARD_BODY_INK); in its dark header the lift again.
+  // mid-brown. On the parchment card the card's body ink (CARD_BODY_INK), in its header too.
   return (
     <span
       className={`ml-[var(--s2)] font-[family-name:var(--font-body)] font-normal normal-case tracking-normal text-[length:var(--t-sm)] ${KIOSK_TEXT} text-[color:var(--bone-200)] ${CARD_BODY_INK}`}
-      style={onDark ? { color: 'var(--bone-200)' } : undefined}
     >
       ({DRAFT_NOT_CHECKED})
     </span>

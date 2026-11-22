@@ -67,8 +67,9 @@ const PLAIN_HELP: Record<Exclude<HelpAudience, 'platform_owner'>, PlainHelp> = {
     intro: 'Where things are in your PPBF workspace.',
     anchor: 'athlete-guide',
     topics: [
-      // app/athlete/dashboard/page.tsx mounts AthleteWorkspace: check-ins, session notes, goals.
-      { title: 'Your workspace', text: 'Your dashboard is your athlete workspace: check-ins, session notes and goals.' },
+      // app/athlete/dashboard/page.tsx mounts AthleteWorkspace: I'm here, How I feel today,
+      // Start training, session notes, goals (the words, OD-2026-11-20-001, Q12 A on #2020).
+      { title: 'Your workspace', text: "Your dashboard is your athlete workspace: I'm here, How I feel today, Start training, session notes and goals." },
       // app/athlete/video-analysis/page.tsx: h1 "My Film", streams video with coach notes.
       { title: 'My Film', text: 'My Film is where you watch film and read the notes your coach left on it.' },
       // app/athlete/progression-intelligence/page.tsx: h1 "My Progression", lists assigned gaps and a log.
