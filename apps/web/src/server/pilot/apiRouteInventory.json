@@ -15712,7 +15712,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lane L49. One athlete's coach behaviour reports, as written (no evaluation). Staff only (Q2); a refused athlete is a hidden 404.",
+    "notes": "Lane L49. One athlete's coach behaviour reports, as written (no evaluation). Staff only (Q2); a refused athlete is a hidden 404. The taps of a sampled window still open are left out until it closes (PATTERN-1e; Q2 A).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

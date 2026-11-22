@@ -743,6 +743,9 @@ describe('joining a window, and the reports route (PATTERN-1e; Overwatch 7084899
     await tap(windowId, 2, COACH_B, 'occurrence');
     await tap(windowId, 3, COACH_A, 'occurrence');
     expect(await current(COACH_A)).toBe(4);
+    // Point 2 as ruled: past the last chance it reads chances + 1; the screen (1f) shows the window full.
+    await tap(windowId, 10, COACH_B, 'occurrence');
+    expect(await current()).toBe(11);
     await expect(current(BOARD_MEMBER)).rejects.toThrow('Only staff of this gym can read a window.');
     await expect(windows.currentWindowChance({ organizationId: OTHER_ORG, windowId, readerAccountId: OTHER_GYM_COACH }))
       .rejects.toThrow('That window is not in this gym.');
@@ -764,19 +767,24 @@ describe('joining a window, and the reports route (PATTERN-1e; Overwatch 7084899
     await expect(change(windowId, 'counterexample')).rejects.toThrow('That window is closed.');
   });
 
-  test('the reports route leaves out the taps of a window still open, and shows them once it closes', async () => {
+  test('the reports route leaves out the taps of a window still open, every chance and coach, and shows them once it closes', async () => {
     const windowId = (await open()).window_id;
     await tap(windowId, 1, COACH_A, 'occurrence');
-    const tapped = writer.windowEpisodeId(ORG, windowId, 1);
+    await tap(windowId, 5, COACH_B, 'counterexample');
+    await tap(windowId, 10, COACH_A, 'occurrence');
+    await tap(windowId, 10, COACH_B, 'occurrence');
+    const tappedAll = [1, 5, 10].map((chance) => writer.windowEpisodeId(ORG, windowId, chance));
+    const tapped = tappedAll[0];
     const plain = await writer.recordBehaviourObservation({
       organizationId: ORG, athleteId: ATHLETE, behaviourKey: KEY, observerAccountId: COACH_B, authorRole: 'coach',
       session: { runId: RUN }, context: { drillId: DRILL }, taskConstraint: 'live',
       polarity: 'occurrence', attributionTarget: 'athlete', attributionCertainty: 'probable',
     });
     const listed = async () => (await writer.listBehaviourObservations(ORG, ATHLETE, 500)).map((row) => row.episode_id);
-    expect(await listed()).not.toContain(tapped);
+    for (const episode of tappedAll) expect(await listed()).not.toContain(episode);
     expect(await listed()).toContain(plain.episode_id);
     await close(windowId);
+    for (const episode of tappedAll) expect(await listed()).toContain(episode);
     expect(await listed()).toContain(tapped);
   });
 

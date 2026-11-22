@@ -113,7 +113,7 @@ const TABLE_FILES = [
 // athlete is marked present on a run (see TABLE_FILES). Only these files import either, and each
 // route among them is gated to the three staff roles (Overwatch 7084899452 point 3).
 // patternStanding.ts reads the reports for the tier engine; it files nothing and opens no window.
-const WRITER_IMPORT = /\bbehaviour(Observations|SampleWindows)['"]/;
+const WRITER_IMPORT = /\bbehaviour(Observations|SampleWindows)(\.[cm]?[jt]sx?)?['"]/;
 const WRITER_ROUTES = [
   'app/api/pilot/coach/behaviour-keys/route.ts',
   'app/api/pilot/coach/behaviour-observations/route.ts',

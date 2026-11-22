@@ -572,17 +572,17 @@ const OBSERVATION_SELECT = `select o.observation_id, o.athlete_id, o.behaviour_k
  * joins a window is blind to the others' judgments (Q2 A; Overwatch 7084899452
  * point 1). None where the window table is not yet applied.
  */
-async function openWindowEpisodes(organizationId: string, athleteId: string): Promise<string[]> {
-  const [table] = await query<{ present: boolean }>(
+async function openWindowEpisodes(client: PoolClient, organizationId: string, athleteId: string): Promise<string[]> {
+  const table = await client.query<{ present: boolean }>(
     `select to_regclass('pilot.behaviour_observations_windows') is not null as present`,
   );
-  if (!table?.present) return [];
-  const open = await query<{ window_id: string; chances: number }>(
+  if (!table.rows[0]?.present) return [];
+  const open = await client.query<{ window_id: string; chances: number }>(
     `select window_id::text as window_id, chances from pilot.behaviour_observations_windows
       where organization_id = $1 and athlete_id = $2 and closed_at is null`,
     [organizationId, athleteId],
   );
-  return open.flatMap((window) => Array.from({ length: window.chances }, (_, index) =>
+  return open.rows.flatMap((window) => Array.from({ length: window.chances }, (_, index) =>
     windowEpisodeId(organizationId, window.window_id, index + 1)));
 }
 
@@ -592,13 +592,19 @@ export async function listBehaviourObservations(
   athleteId: string,
   limit = 200,
 ): Promise<BehaviourObservationRow[]> {
-  return query<BehaviourObservationRow>(
-    `${OBSERVATION_SELECT}
-      where o.organization_id = $1 and o.athlete_id = $2 and o.episode_id <> all($4::text[])
-      order by o.observed_at desc, o.created_at desc
-      limit $3`,
-    [organizationId, athleteId, Math.max(1, Math.min(500, Math.trunc(limit))), await openWindowEpisodes(organizationId, athleteId)],
-  );
+  // One snapshot for both reads: a window opened and tapped between them cannot slip its taps through.
+  return withTransaction(async (client) => {
+    await client.query('set transaction isolation level repeatable read, read only');
+    const hidden = await openWindowEpisodes(client, organizationId, athleteId);
+    const rows = await client.query<BehaviourObservationRow>(
+      `${OBSERVATION_SELECT}
+        where o.organization_id = $1 and o.athlete_id = $2 and o.episode_id <> all($4::text[])
+        order by o.observed_at desc, o.created_at desc
+        limit $3`,
+      [organizationId, athleteId, Math.max(1, Math.min(500, Math.trunc(limit))), hidden],
+    );
+    return rows.rows;
+  });
 }
 
 /**
