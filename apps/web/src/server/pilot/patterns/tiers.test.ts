@@ -482,7 +482,7 @@ describe('readings that count for nothing (review fixes on #2092)', () => {
     expect(result.counts).toEqual(expect.objectContaining({ codedChances: 9, occurrences: 7 }));
   });
 
-  test('an attempt the counting readings dispute is listed once, as disputed, even when a model also read it', () => {
+  test('an attempt the counting readings dispute is listed as disputed, not as dissent, even when a model also read it', () => {
     const rows = [
       chance(12, { opportunityKey: 'rep-n' }),
       chance(12, { opportunityKey: 'rep-n', polarity: 'counterexample' }),
@@ -491,6 +491,31 @@ describe('readings that count for nothing (review fixes on #2092)', () => {
     const result = tiersOf([...patternEvidence(), ...rows, ...calibrationHistory()]);
     expect(result.disputed).toEqual({ attempts: 1, observationIds: idsOf(rows) });
     expect(result.uncountedDissent).toEqual({ attempts: 0, observationIds: [] });
+    // Left out already: the model changes no count, so nothing is held.
+    expect(result.heldForRulingConflict).toEqual({ attempts: 0, observationIds: [] });
+    expect(result.tier).toBe('pattern');
+  });
+
+  // Round-3 review on #2092: hold only where the reading that counts for nothing would change what counts.
+  test.each([
+    ['a calibrated pair disputes it and a model agrees with one of them', [
+      { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-b', polarity: 'counterexample' as const }, model('occurrence'),
+    ]],
+    ['one coach scored it both ways and a person naming no coach also read it', [
+      { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-a', polarity: 'counterexample' as const }, { observerAccountId: null },
+    ]],
+    ['a coach calibrated only with someone else co-coded it and a model disputes it', [
+      { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-c' }, model('counterexample'),
+    ]],
+    ['a coach calibrated only with someone else and a coach in no calibrated pair co-coded it', [
+      { observerAccountId: 'coach-a' }, { observerAccountId: 'coach-c' }, { observerAccountId: 'coach-z' },
+    ]],
+  ])('not held when the rulings already settle the attempt without it: %s', (_label, readers) => {
+    const rows = (readers as Partial<BehaviourObservation>[]).map((overrides) => chance(12, { opportunityKey: 'rep-s', ...overrides }));
+    const history = [...calibrationHistory(), ...calibrationHistory('coach-c', 'coach-d')];
+    const result = tiersOf([...patternEvidence(), ...rows, ...history]);
+    expect(result.heldForRulingConflict).toEqual({ attempts: 0, observationIds: [] });
+    expect(result.tier).toBe('pattern');
   });
 
   test('held: a model or an uncalibrated coach disputing a lapse cannot lift it', () => {
