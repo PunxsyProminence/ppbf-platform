@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
+import BehaviourSampleWindow from '@/components/BehaviourSampleWindow';
 import SessionStaffNotesPanel from '@/components/SessionStaffNotesPanel';
 import { formatGymTimeOfDay } from '@/src/lib/gymTime';
 import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
@@ -23,7 +24,8 @@ import { attendanceMethodWords } from '@/src/shared/attendanceMethodWords';
 // refuses anything else, and its answer is what the screen shows.
 //
 // A marked athlete gets a staff note box for this session (staff only, OD-2026-10-10-003 items 3
-// and 4). The note panel reads nothing until the coach opens it.
+// and 4), and a sampled window on one behaviour (PATTERN-1f, Q5 A: opened from the class that is
+// running, on an athlete marked present). Neither reads anything until the coach opens it.
 //
 // HONEST ABOUT WHAT IS KNOWN. A read that failed is "could not be read", never "nobody here". A
 // tap the server refused (400, 401, 403, 404, 409, 422) says nothing was saved; a tap whose answer
@@ -475,11 +477,14 @@ export default function SessionRunPresence({
                           <p aria-hidden="true" className="t-body mt-[var(--s1)] text-[color:var(--brass-300)]">{note.text}</p>
                         ) : null}
                         {here ? (
-                          <SessionStaffNotesPanel
-                            runId={runId}
-                            athleteId={athlete.athlete_id}
-                            buttonLabel={`Staff notes on ${athlete.full_name}`}
-                          />
+                          <>
+                            <SessionStaffNotesPanel
+                              runId={runId}
+                              athleteId={athlete.athlete_id}
+                              buttonLabel={`Staff notes on ${athlete.full_name}`}
+                            />
+                            <BehaviourSampleWindow runId={runId} athleteId={athlete.athlete_id} athleteName={athlete.full_name} />
+                          </>
                         ) : null}
                       </li>
                     );
