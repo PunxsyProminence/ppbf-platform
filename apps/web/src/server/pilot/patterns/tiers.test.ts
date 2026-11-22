@@ -411,6 +411,17 @@ describe('a reading that does not count changes no count (review fixes on #2092)
     expect(result.uncountedDissent).toEqual({ attempts: 2, observationIds: idsOf([...misses, ...extra]) });
   });
 
+  test('two models disagreeing on an attempt no person coded: not a coded chance, so not listed', () => {
+    const models = [
+      chance(12, { ...model('occurrence'), opportunityKey: 'rep-m' }),
+      chance(12, { ...model('counterexample'), opportunityKey: 'rep-m' }),
+    ];
+    const result = tiersOf([...emergingEvidence(), ...models, ...calibrationHistory()]);
+    expect(result.disputed).toEqual({ attempts: 0, observationIds: [] });
+    expect(result.uncountedDissent).toEqual({ attempts: 0, observationIds: [] });
+    expect(result.tier).toBe('emerging');
+  });
+
   test('a calibrated coach disputing a miss still leaves that attempt out (Q4 A)', () => {
     const extra = [chance(16, { opportunityKey: 'miss-1', observerAccountId: 'coach-b', polarity: 'occurrence' })];
     const result = tiersOf([...seventyPercent(), ...extra, ...calibrationHistory()]);
