@@ -339,6 +339,86 @@ describe('backbone-export-youth-recreational', () => {
     expect(read(forced.out, TEMPLATES)).toBe(read(first.out, TEMPLATES));
   });
 
+  // LANE GD: TWO STOPS NO FLAG PASSES (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042).
+
+  it('a track that names a held DOC-136 template stops the export, with or without --allow-overwrite, and nothing is written', () => {
+    // The frozen tracks name the held days in their session_refs; the track itself is in the set.
+    const naming = fixture();
+    naming.tracks[0] = { ...naming.tracks[0], session_refs: [{ week: 1, day: 'Monday', template_id: HELD[0] }] };
+    const held = backbone(naming);
+    for (const extra of [[], ['--allow-overwrite']]) {
+      const refused = exportInto(held, first.out, extra);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${TRACKS} track_id ${LIBRARY}: details names a held DOC-136 record`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      // The refusal says where, never which held record.
+      for (const id of HELD) expect(refused.stderr.includes(id)).toBe(false);
+      for (const name of WRITTEN) expect(read(refused.out, name)).toBe(read(first.out, name));
+    }
+    // Onto a seed that has none of this lane's rows yet: still nothing is produced.
+    const before = seed();
+    const fresh = exportInto(held, before);
+    expect(fresh.status).toBe(1);
+    expect(fs.existsSync(path.join(fresh.out, TEMPLATES))).toBe(false);
+    expect(read(fresh.out, TRACKS)).toBe(read(before, TRACKS));
+  });
+
+  it('a row that carries the DOC-136 source key stops the export the same way; a key that only starts the same does not', () => {
+    const sourced = fixture();
+    sourced.tracks[0] = { ...sourced.tracks[0], sources: ['LR-1', 'DOC-136 (a made-up source line)'] };
+    const refused = exportInto(backbone(sourced), first.out, ['--allow-overwrite']);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`  ${TRACKS} track_id ${LIBRARY}: sources names a held DOC-136 record`);
+    for (const name of WRITTEN) expect(read(refused.out, name)).toBe(read(first.out, name));
+
+    const other = fixture();
+    other.tracks[0] = { ...other.tracks[0], sources: ['LR-1', 'DOC-1360 (another document)'] };
+    const written = exportInto(backbone(other), first.out, ['--allow-overwrite']);
+    expect(written.status).toBe(2);
+    expect(read(written.out, TRACKS)).toContain('DOC-1360 (another document)');
+  });
+
+  it('a committed step that links a drill is never written back as a typed line, with or without --allow-overwrite', () => {
+    // What a later lane does to a typed line (OW26-05 B, OW27-09 B): the step gets a drill_id and loses its typed text.
+    const editItems = (edit: (row: string[], at: (name: string) => number) => void) => {
+      const out = tempDir();
+      fs.cpSync(first.out, out, { recursive: true });
+      const table = readCsv(read(out, ITEMS));
+      const cells = table.records.map((record) => [...record.cells]);
+      const at = (name: string) => table.header.indexOf(name);
+      for (const row of cells) edit(row, at);
+      fs.writeFileSync(path.join(out, ITEMS), writeCsv(table.header, cells));
+      return out;
+    };
+    const converted = editItems((row, at) => {
+      if (row[at('template_id')] !== T1 || row[at('ordinal')] !== '2') return;
+      // Typed in the Backbone.
+      expect([row[at('drill_id')], row[at('free_text_drill')]]).toEqual(['', 'Jump rope']);
+      row[at('drill_id')] = D1;
+      row[at('free_text_drill')] = '';
+    });
+    expect(read(converted, ITEMS)).not.toBe(read(first.out, ITEMS));
+    for (const extra of [[], ['--allow-overwrite']]) {
+      const refused = exportInto(dir, converted, extra);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${ITEMS} template_id ${T1}: step 2 links drill ${D1}; the export would write it back as a typed line`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      for (const name of WRITTEN) expect(read(refused.out, name)).toBe(read(converted, name));
+    }
+
+    // The stop is about typed lines only. A step whose drill link merely differs from the Backbone's
+    // is the overwrite guard's, and --allow-overwrite still writes the Backbone's row over it.
+    const relinked = editItems((row, at) => {
+      if (row[at('template_id')] === T1 && row[at('ordinal')] === '1') row[at('drill_id')] = 'drl_00000000000002';
+    });
+    const refusedPlain = exportInto(dir, relinked);
+    expect(refusedPlain.status).toBe(1);
+    expect(refusedPlain.stderr).toContain('run again with --allow-overwrite');
+    const forced = exportInto(dir, relinked, ['--allow-overwrite']);
+    expect(forced.status).toBe(2);
+    expect(read(forced.out, ITEMS)).toBe(read(first.out, ITEMS));
+  });
+
   it('stops on an unknown record key, a manifest mismatch, a drill the drill library lacks, or a block session naming a template outside the set', () => {
     const unknown = fixture();
     unknown.sessions[0] = { ...unknown.sessions[0], new_field: 'x' };
@@ -404,11 +484,19 @@ describe('the committed youth + recreational rows', () => {
     const laneTemplateIds = new Set(templates.map((row) => row.template_id));
     const text = [...templates, ...tracks, ...rows(ITEMS).filter((row) => laneTemplateIds.has(row.template_id))]
       .map((row) => [row.details, row.drill_id, row.field_labels].join(' ')).join('\n');
-    // A held DOC-136 template is named by a track's session_refs as text only (Overwatch, option B).
-    const heldIds = new Set(['wtp_0f42c41a78dea4', 'wtp_35c593e3b96cdf', 'wtp_40b6956ea37245', 'wtp_b965c8174bd41a', 'wtp_f20745471ef7c4', 'wtp_fb399b5d31e70d']);
+    // No allowance for a held DOC-136 template: a track's text may not name one (lane GD; Overwatch C1 on #2042).
     for (const [pattern, known] of tables) {
-      const missing = [...new Set(text.match(pattern) ?? [])].filter((id) => !known.has(id) && !heldIds.has(id));
+      const missing = [...new Set(text.match(pattern) ?? [])].filter((id) => !known.has(id));
       expect({ pattern: pattern.source, missing }).toEqual({ pattern: pattern.source, missing: [] });
+    }
+  });
+
+  it('name no held DOC-136 record: no held template id and no DOC-136 source key in any file this export writes', () => {
+    // A row that names one stops the export (lib/backbone-export-guards.mjs), so none may be committed either.
+    for (const name of WRITTEN) {
+      const text = fs.readFileSync(path.join(SEED_DIR, name), 'utf8');
+      expect({ file: name, namesHeldId: HELD.some((id) => text.includes(id)) }).toEqual({ file: name, namesHeldId: false });
+      expect({ file: name, carriesKey: /DOC-136(?![0-9])/.test(text) }).toEqual({ file: name, carriesKey: false });
     }
   });
 
@@ -457,31 +545,19 @@ describe('the committed youth + recreational rows', () => {
     expect(named.filter(([file]) => file !== TEMPLATES)).toEqual([[TRACKS, HW_TRACK, HW_TRACK_COLUMNS.join(', ')]]);
     expect(named.filter(([file]) => file === TEMPLATES).map(([, id]) => id).sort()).toEqual(draftedIds);
 
-    // Written anyway: every file but the templates file is byte-identical, and the templates differ
-    // only in the drafted cells (blank in the export) and their field_labels.
+    // Lane GD: the frozen track row still names the held six in its details, so no flag writes it back
+    // (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042). The plain refusal says so, and
+    // the forced run is refused too, writing nothing. These expectations were written where the frozen
+    // folder is absent: they are INFERRED from that row as it was committed before lane HW (#1980), when
+    // the held ids and the DOC-136 key sat in its details and in no other seed row.
+    const heldLine = `  ${TRACKS} track_id ${HW_TRACK}: details names a held DOC-136 record`;
+    const heldLines = (stderr: string) => stderr.split('\n').filter((line) => line.includes('names a held DOC-136 record'));
+    expect(refused.stderr).toContain('--allow-overwrite would not write this run either.');
+    expect(heldLines(refused.stderr)).toEqual([heldLine]);
     const forced = exportInto(FROZEN, SEED_DIR, ['--allow-overwrite']);
-    expect(forced.status).toBe(0);
-    expect(forced.stdout).toContain('counts: besideLines 2, tracks 53, blocks 3, blockSessions 48, templates 27, items 240, heldTemplates 6, heldItems 42, scripts 1, scriptBlocks 13, quoteKeys 469, ownerPassages 354, sp10Sentences 1');
-    for (const name of WRITTEN.filter((file) => file !== TEMPLATES && file !== TRACKS)) expect(read(forced.out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, name), 'utf8'));
-    // The tracks file: identical but for lane HW's three cells on its one track.
-    const exportedTracks = rowsOf(read(forced.out, TRACKS));
-    const committedTracks = rows(TRACKS);
-    expect(exportedTracks.map((row) => row.track_id)).toEqual(committedTracks.map((row) => row.track_id));
-    exportedTracks.forEach((row, index) => {
-      const differing = Object.keys(row).filter((column) => row[column] !== committedTracks[index][column]);
-      expect({ id: row.track_id, differing }).toEqual({ id: row.track_id, differing: row.track_id === HW_TRACK ? HW_TRACK_COLUMNS : [] });
-    });
-    const exported = rowsOf(read(forced.out, TEMPLATES));
-    const committedRows = rows(TEMPLATES);
-    expect(exported.map((row) => row.template_id)).toEqual(committedRows.map((row) => row.template_id));
-    exported.forEach((row, index) => {
-      const committed = committedRows[index];
-      const differing = Object.keys(row).filter((column) => row[column] !== committed[column]);
-      const labels = committed.field_labels ? JSON.parse(committed.field_labels) : {};
-      // Only this lane's rows are re-exported; another lane's drafted rows (lane AP) are kept as committed.
-      const expected = inLane(committed) ? DRAFTED.filter((field) => labels[field]?.draft) : [];
-      expect({ id: row.template_id, differing }).toEqual({ id: row.template_id, differing: expected.length ? [...expected, 'field_labels'].sort((a, b) => Object.keys(row).indexOf(a) - Object.keys(row).indexOf(b)) : [] });
-      for (const field of expected) expect(row[field]).toBe('');
-    });
+    expect(forced.status).toBe(1);
+    expect(heldLines(forced.stderr)).toEqual([heldLine]);
+    expect(forced.stderr).not.toContain('the export would write it back as a typed line');
+    for (const name of WRITTEN) expect(read(forced.out, name)).toBe(fs.readFileSync(path.join(SEED_DIR, name), 'utf8'));
   });
 });

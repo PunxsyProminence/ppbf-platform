@@ -299,7 +299,7 @@ export default function GlobalRoleHeader() {
           <FeedbackBox />
           {FEEDBACK_TRIAGE_ROLES.includes(session.role) ? (
             <ChromeLink href="/admin/feedback" className={CONTROL_QUIET}>
-              Triage
+              Feedback Triage
             </ChromeLink>
           ) : null}
           {/* Administration, not a cross-role launcher (owner decision,

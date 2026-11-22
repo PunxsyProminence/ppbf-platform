@@ -451,7 +451,7 @@ const CREDENTIAL_BAND_LABEL: Record<string, { readonly tone: BadgeTone; readonly
   submitted: { tone: 'monitor', label: 'Awaiting review' },
   revoked: { tone: 'restricted', label: 'Revoked' },
   not_required: { tone: 'neutral', label: 'Not required' },
-  missing: { tone: 'locked', label: 'Not on file' },
+  missing: { tone: 'restricted', label: 'Not on file' },
 };
 
 function credentialBandBadge(band: string): { readonly tone: BadgeTone; readonly label: string } {
@@ -1049,13 +1049,12 @@ function readinessDotClass(readiness: Athlete['readiness']): string {
    colour alone. 'neutral' is for values that are genuinely NOT a safety state
    or queue outcome (unknown readiness, low priority), which Law 2 forbids from
    wearing a saturated rung. */
-type BadgeTone = 'cleared' | 'monitor' | 'restricted' | 'locked' | 'neutral';
+type BadgeTone = 'cleared' | 'monitor' | 'restricted' | 'neutral';
 
 const BADGE_GLYPH: Record<Exclude<BadgeTone, 'neutral'>, string> = {
   cleared: '✓',
   monitor: '◉',
   restricted: '▲',
-  locked: '✕',
 };
 
 function StatusBadge({ tone, label }: { readonly tone: BadgeTone; readonly label: string }) {
@@ -1402,6 +1401,15 @@ export default function CoachWorkspace() {
       })),
     [shadowQueue],
   );
+  /* A task card is read-only (the work is acted on in one place, SHADOW
+     Intel; app scrub CF-21): this opens that tab and scrolls to the item. */
+  const openShadowIntelItem = (intakeCaseId: string) => {
+    setActiveTab('shadow');
+    window.setTimeout(() => {
+      const el = document.getElementById(`shadow-intel-${intakeCaseId}`);
+      if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center' });
+    }, 0);
+  };
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
   const assignmentsDue = coachTasks.filter(t => t.status === 'Open').length;
   // A missing badge must mean "genuinely nothing pending", never "the queue
@@ -2760,7 +2768,7 @@ export default function CoachWorkspace() {
         {/* HEADER */}
         <div className="border-b-2 border-[color:var(--brass-700)] pb-[var(--s5)] space-y-[var(--s4)]">
           <div>
-            <p className="t-eyebrow">Coach Development Workspace</p>
+            <p className="t-eyebrow">Coach home</p>
             {/* The masthead names the open surface, the way the approved
                 athlete board does. It read "Live Session Management" on all
                 ten tabs, so the one line claiming to say where the coach was
@@ -2819,7 +2827,13 @@ export default function CoachWorkspace() {
                   activeTab === tab.id ? ui.tabButtonActive : ui.tabButtonInactive,
                 )}
               >
+                {/* The open tab says so in a glyph and a word, not by fill
+                    alone (app scrub CF-25; Law 3). */}
+                {activeTab === tab.id ? <span aria-hidden="true">◉</span> : null}
                 {tab.label}
+                {activeTab === tab.id ? (
+                  <span className="text-[length:var(--t-xs)] font-normal normal-case">(open)</span>
+                ) : null}
                 {reviewQueueBadge && REVIEW_BADGED_TABS.has(tab.id) ? (
                   <StatusBadge tone={reviewQueueBadge.tone} label={reviewQueueBadge.label} />
                 ) : null}
@@ -3568,7 +3582,7 @@ export default function CoachWorkspace() {
                           </span>
                         </div>
                         {athlete.injuryFlag && (
-                          <p className="mt-[var(--s2)]"><StatusBadge tone="locked" label="Injury flag active" /></p>
+                          <p className="mt-[var(--s2)]"><StatusBadge tone="restricted" label="Injury flag active" /></p>
                         )}
                       </button>
 
@@ -4050,6 +4064,9 @@ export default function CoachWorkspace() {
                           <StatusBadge tone={priorityTone(task.priority)} label={task.priority} />
                         </div>
                         <p className="t-muted">{task.when}</p>
+                        <button type="button" onClick={() => openShadowIntelItem(task.id)} className="btn btn--ghost mt-[var(--s2)]">
+                          Open in SHADOW Intel
+                        </button>
                       </div>
                     ))}
                     {coachTasks.length === 0 && (shadowQueueUnavailable ? (
@@ -4431,6 +4448,9 @@ export default function CoachWorkspace() {
                       <div>
                         <h4 className="font-semibold">{task.title}</h4>
                         <p className="t-muted mt-[var(--s2)]">{task.when}</p>
+                        <button type="button" onClick={() => openShadowIntelItem(task.id)} className="btn btn--ghost mt-[var(--s2)]">
+                          Open in SHADOW Intel
+                        </button>
                       </div>
                       <div className="flex gap-[var(--s3)]">
                         <StatusBadge tone={priorityTone(task.priority)} label={task.priority} />
@@ -4485,7 +4505,7 @@ export default function CoachWorkspace() {
                         </p>
                       )}
                       {shadowQueue.map((item) => (
-                        <div key={item.intake_case_id} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
+                        <div key={item.intake_case_id} id={`shadow-intel-${item.intake_case_id}`} className="rounded-[var(--r-sm)] border border-[color:rgb(var(--brass-400-rgb)_/_.18)] bg-[rgba(0,0,0,.28)] p-[var(--s3)] text-[length:var(--t-xs)] text-[color:var(--bone-300)]">
                           <p className="font-semibold text-[color:var(--bone-200)]">{item.summary}</p>
                           <p>Status: {shadowObservationStateLabel(item.status)}</p>
                           <p>Documents: {item.document_count}</p>

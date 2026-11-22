@@ -30,6 +30,9 @@ describe('TrainingCard', () => {
     render(<TrainingCard sessions={[]} />);
     expect(screen.getByText(/no sessions on the card yet/i)).toBeTruthy();
     expect(screen.getByText(/never resets/i)).toBeTruthy();
+    // Start training makes the stamp, not a check-in (lane AS-8, Q12 A; OD-2026-11-20-001).
+    expect(screen.getByText(/^Start training on the floor kiosk and the first stamp lands here\./)).toBeTruthy();
+    expect(screen.queryByText(/Check in at the floor kiosk/)).toBeNull();
   });
 
   it('counts completed sessions, not booked ones', () => {

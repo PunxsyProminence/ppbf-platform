@@ -136,7 +136,7 @@ export const ROOM_PLACE_DOORS: Readonly<Record<RoomPlace, readonly string[]>> = 
     '/admin/grants', '/admin/payments', '/admin/memberships', '/admin/organizations', '/admin/customize',
     '/admin/public-interest', '/admin/data-quality', '/admin/floor-hours', '/admin/community-service',
     '/admin/consent', '/notices', '/admin/setup', '/admin/content-import', '/admin/data-deletion', '/admin/quotes',
-    '/admin/program-phases', '/admin/export', '/admin/gear', '/admin/gear/vendors',
+    '/admin/program-phases', '/admin/export', '/admin/gear', '/admin/gear/vendors', '/admin/learning-policies',
   ],
   // All Gyms Overview (a door since 4a) sits with Omega, the Room Map's "Platform".
   workshop: [

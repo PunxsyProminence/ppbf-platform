@@ -50,13 +50,12 @@ import { fetchTieableClasses } from './SessionClassPicker';
  * read it, and showing it would need a read this view is not allowed to add.
  */
 
-export type FocusTone = 'cleared' | 'monitor' | 'restricted' | 'locked' | 'neutral';
+export type FocusTone = 'cleared' | 'monitor' | 'restricted' | 'neutral';
 
 const TONE_GLYPH: Record<FocusTone, string> = {
   cleared: '✓',
   monitor: '◉',
   restricted: '▲',
-  locked: '✕',
   neutral: '◌',
 };
 

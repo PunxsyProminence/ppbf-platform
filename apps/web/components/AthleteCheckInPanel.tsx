@@ -128,8 +128,8 @@ function ScaleQuestion({
               onClick={() => onPick(choice)}
               className={`btn btn--kiosk ${selected ? '' : 'btn--ghost'} text-left`}
             >
-              <span className="t-data block" style={{ fontSize: 'var(--t-sm)' }}>{choice}</span>
-              <span className="block" style={{ fontSize: 'var(--t-sm)' }}>{anchor}</span>
+              <span className="t-data block" style={{ fontSize: 'var(--t-md)' }}>{choice}</span>
+              <span className="block" style={{ fontSize: 'var(--t-md)' }}>{anchor}</span>
             </button>
           );
         })}
@@ -137,7 +137,7 @@ function ScaleQuestion({
       {value === undefined && (
         // Said out loud rather than implied by an unselected row: skipping is
         // legal, and a child should not think they have failed to do something.
-        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+        <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
           Not answered — you can skip this.
         </p>
       )}
@@ -154,24 +154,24 @@ function StoredAnswers({ record }: { record: AthleteCheckInRecord }) {
   return (
     <div className="space-y-[var(--s3)]">
       {record.sleep_hours !== null && (
-        <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
+        <p className="t-data" style={{ fontSize: 'var(--t-md)' }}>
           Sleep: {record.sleep_hours} hours
         </p>
       )}
       {reported.map(({ scale, anchor }) => (
-        <p key={scale.key} className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
+        <p key={scale.key} className="t-data" style={{ fontSize: 'var(--t-md)' }}>
           {scale.question} {anchor}
         </p>
       ))}
       {reported.length === 0 && record.sleep_hours === null && (
         // A bare check-in is a real check-in. "I'm here" on its own is the
         // whole point of every field being optional.
-        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+        <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
           You saved it without answering the questions — that counts.
         </p>
       )}
       {record.note.trim() !== '' && (
-        <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>Note: {record.note}</p>
+        <p className="t-data" style={{ fontSize: 'var(--t-md)' }}>Note: {record.note}</p>
       )}
     </div>
   );
@@ -334,15 +334,15 @@ export default function AthleteCheckInPanel({
         {readFailed}
         <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s4)]`}>
           <h3 className="t-label">Saved for today</h3>
-          <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
+          <p className="t-data" style={{ fontSize: 'var(--t-md)' }}>
             You said how you feel on {formatCalendarDay(today.checked_in_on)}. Your workout and tasks are open.
           </p>
           <StoredAnswers record={today} />
           {earlierCheckInNotice !== '' && (
-            <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{earlierCheckInNotice}</p>
+            <p className="t-data" style={{ fontSize: 'var(--t-md)' }} role="status">{earlierCheckInNotice}</p>
           )}
           {bodyMassNotice !== '' && (
-            <p className="t-data" style={{ fontSize: 'var(--t-sm)' }} role="status">{bodyMassNotice}</p>
+            <p className="t-data" style={{ fontSize: 'var(--t-md)' }} role="status">{bodyMassNotice}</p>
           )}
           <OwnBodyMass onCorrected={() => setBodyMassNotice('')} />
         </div>
@@ -354,7 +354,7 @@ export default function AthleteCheckInPanel({
                 and deliberately no streak counter or shame framing -- the
                 contract's engagement rules apply to anything built on this. */}
             {recent.slice(0, 14).map((record) => (
-              <p key={record.check_in_id} className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
+              <p key={record.check_in_id} className="t-data" style={{ fontSize: 'var(--t-md)' }}>
                 {formatCalendarDay(record.checked_in_on)}
               </p>
             ))}
@@ -371,7 +371,7 @@ export default function AthleteCheckInPanel({
       {readFailed}
       <div className={`${PANEL_RAISED_CLASS} space-y-[var(--s5)]`}>
         <h3 className="t-label">How I feel today</h3>
-        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-300)' }}>
+        <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-300)' }}>
           Tell your coach how you feel. Every question is optional — you can save without
           answering any of them.
         </p>
@@ -483,7 +483,7 @@ export default function AthleteCheckInPanel({
 
         {saveError !== '' && <p className="t-data">{saveError}</p>}
 
-        <p style={{ fontSize: 'var(--t-sm)', color: 'var(--bone-400)' }}>
+        <p style={{ fontSize: 'var(--t-md)', color: 'var(--bone-400)' }}>
           {/* Said plainly, because the contract forbids presenting this as
               attendance and a child should know what it is and is not. */}
           This is not your attendance. &ldquo;I&apos;m here&rdquo; on Today marks that.
@@ -539,7 +539,7 @@ function OwnBodyMass({ onCorrected }: { onCorrected: () => void }) {
   return (
     <div className="space-y-[var(--s2)]" data-testid="own-body-mass">
       {read.latest && (
-        <p className="t-data" style={{ fontSize: 'var(--t-sm)' }}>
+        <p className="t-data" style={{ fontSize: 'var(--t-md)' }}>
           Your latest body mass: {read.latest.pounds} lb, logged {formatGymDateNumeric(read.latest.observed_at) ?? read.latest.observed_at}.
         </p>
       )}

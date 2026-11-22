@@ -370,6 +370,16 @@ export async function listLearningPolicies(organizationId: string): Promise<Lear
   );
 }
 
+/** The bars in force for this gym: at most one per kind (idx_learning_policies_one_active). */
+export async function listActiveLearningPolicies(organizationId: string): Promise<LearningPolicyRow[]> {
+  return query<LearningPolicyRow>(
+    `select ${FIELDS} from pilot.learning_policies
+      where organization_id = $1 and status = 'active'
+      order by policy_kind`,
+    [organizationId],
+  );
+}
+
 export async function ratifyLearningPolicy(input: {
   organizationId: string;
   kind: string;
