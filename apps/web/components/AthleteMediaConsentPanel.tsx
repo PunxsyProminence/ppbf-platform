@@ -4,6 +4,8 @@ import { useId, useRef, useState } from 'react';
 
 import { apiBase } from '@/lib/apiBase';
 
+import { ADULT_MEDIA_FRAMES_WORDS } from './mediaConsentWords';
+
 // The adult athlete's own photo and video consent (OD-2026-10-08-015: at 18 a
 // guardian's consent stops counting for anything new, and the athlete decides
 // for themselves). It talks only to /api/pilot/athlete/media-consent, which
@@ -20,7 +22,9 @@ interface ConsentView {
   retracted_publication_ids?: string[];
 }
 
-const SCOPE_LINE = 'This is about photos and video of you that the gym uses: the research library, and anything shared outside the gym.';
+// What the consent is about, then where still frames go, in the owner's words
+// (HF9-1, Q3 = A on #2083; mediaConsentWords.ts).
+const SCOPE_LINE = `This is about photos and video of you that the gym uses: the research library, and anything shared outside the gym. ${ADULT_MEDIA_FRAMES_WORDS}`;
 
 /** What is on file, in the athlete's words. */
 export function currentWords(view: ConsentView): string {
