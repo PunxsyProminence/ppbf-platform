@@ -77,6 +77,7 @@ let db: Client;
 let windows: typeof import('./behaviourSampleWindows');
 let writer: typeof import('./behaviourObservations');
 let runs: typeof import('./sessionScriptRuns');
+let presence: typeof import('./sessionRunAthletes');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -327,6 +328,7 @@ beforeAll(async () => {
   windows = await import('./behaviourSampleWindows');
   writer = await import('./behaviourObservations');
   runs = await import('./sessionScriptRuns');
+  presence = await import('./sessionRunAthletes');
 
 });
 
@@ -497,6 +499,30 @@ const tap = (windowId: string, chance: number, observer: string, polarity: 'occu
   organizationId: ORG, windowId, chance, polarity, observerAccountId: observer, authorRole: 'coach',
 });
 
+/** A live plain run delivered by `coach`, with the athlete marked present on it. */
+async function liveRunMarked(runId: string, coach: string): Promise<void> {
+  await db.query(
+    `insert into pilot.session_script_runs
+       (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on, run_state, started_at)
+     values ($1, $2, null, null, $3, current_date, 'in_progress', now() - interval '1 minute')`,
+    [ORG, runId, coach],
+  );
+  await db.query(
+    `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+     values ($1, $2, $3, $4, 'coach')`,
+    [ORG, runId, ATHLETE, coach],
+  );
+}
+
+/** A transaction on its own connection holding the lock `sql` takes, until the caller commits it. */
+async function holding(sql: string, params: unknown[]): Promise<Client> {
+  const holder = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+  await holder.connect();
+  await holder.query('begin');
+  await holder.query(sql, params);
+  return holder;
+}
+
 describe('opening a window (PATTERN-1d-2; Q5 A, Q7 A)', () => {
   test('opens under the run, for a present athlete, with ten chances unless set', async () => {
     const row = await open();
@@ -521,22 +547,9 @@ describe('opening a window (PATTERN-1d-2; Q5 A, Q7 A)', () => {
   });
 
   test('an open behind a settle in flight waits for it, and is then refused', async () => {
-    await db.query(
-      `insert into pilot.session_script_runs
-         (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on, run_state, started_at)
-       values ($1, 'run-bsw-settling', null, null, $2, current_date, 'in_progress', now() - interval '1 minute')`,
-      [ORG, COACH_C],
-    );
-    await db.query(
-      `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
-       values ($1, 'run-bsw-settling', $2, $3, 'coach')`,
-      [ORG, ATHLETE, COACH_C],
-    );
+    await liveRunMarked('run-bsw-settling', COACH_C);
     // A settle on another connection, not yet committed.
-    const settling = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
-    await settling.connect();
-    await settling.query('begin');
-    await settling.query(
+    const settling = await holding(
       `update pilot.session_script_runs set run_state = 'completed', ended_at = now()
         where organization_id = $1 and run_id = 'run-bsw-settling'`,
       [ORG],
@@ -552,6 +565,61 @@ describe('opening a window (PATTERN-1d-2; Q5 A, Q7 A)', () => {
     }
     expect(queued).toBe(true);
     await expect(opening).rejects.toThrow('That session run has ended.');
+  });
+
+  test('a settle behind an open in flight waits for it, then closes the new window', async () => {
+    await liveRunMarked('run-bsw-open-first', COACH_C);
+    // Pause the open once it holds the run: hold the behaviour name its window insert checks.
+    const holder = await holding(
+      'select 1 from pilot.behaviour_keys where organization_id = $1 and behaviour_key = $2 for update', [ORG, KEY],
+    );
+    const opening = open({ runId: 'run-bsw-open-first' });
+    opening.catch(() => undefined);
+    let finishing: Promise<unknown> = Promise.resolve();
+    const queued: boolean[] = [];
+    try {
+      queued.push(await waiters(1));
+      finishing = runs.finishSessionScriptRun(ORG, COACH_C, 'run-bsw-open-first', { runState: 'completed' });
+      finishing.catch(() => undefined);
+      queued.push(await waiters(2));
+    } finally {
+      await holder.query('commit');
+      await holder.end();
+    }
+    expect(queued).toEqual([true, true]);
+    const { window_id: windowId } = await opening;
+    await finishing;
+    expect((await db.query<{ closed_at: Date | null }>(
+      'select closed_at from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2', [ORG, windowId],
+    )).rows[0].closed_at).not.toBeNull();
+  });
+
+  test('an open behind a presence take-back holding the run waits without deadlock, then is refused (the run before the mark)', async () => {
+    await liveRunMarked('run-bsw-takeback', COACH_D);
+    // Pause the take-back once it holds the run: hold the athlete row it checks next.
+    const holder = await holding(
+      'select 1 from pilot.athletes where organization_id = $1 and athlete_id = $2 for update', [ORG, ATHLETE],
+    );
+    const taking = presence.setRunAthletePresent({
+      actor: { accountId: COACH_D, role: 'coach', organizationId: ORG, athleteId: null },
+      runId: 'run-bsw-takeback', athleteId: ATHLETE, present: false,
+    });
+    taking.catch(() => undefined);
+    let opening: Promise<unknown> = Promise.resolve();
+    const queued: boolean[] = [];
+    try {
+      queued.push(await waiters(1));
+      opening = open({ runId: 'run-bsw-takeback' });
+      opening.catch(() => undefined);
+      queued.push(await waiters(2));
+    } finally {
+      await holder.query('commit');
+      await holder.end();
+    }
+    expect(queued).toEqual([true, true]);
+    await taking;
+    await expect(opening).rejects.toThrow('not marked present');
+    await runs.finishSessionScriptRun(ORG, COACH_D, 'run-bsw-takeback', { runState: 'completed' });
   });
 
   test('a drill that was not part of the run\'s plan is refused (the writer\'s check, which the table cannot make)', async () => {
@@ -956,7 +1024,8 @@ describe('a settling run closes its windows; the tier engine reads no open windo
     await db.query('alter table pilot.behaviour_observations_windows rename to behaviour_observations_windows_away');
     try {
       expect((await runs.finishSessionScriptRun(ORG, COACH_C, 'run-bsw-away', { runState: 'abandoned' })).run_state).toBe('abandoned');
-      expect(await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) })).toEqual(['run-bsw-away-idle']);
+      // Relies on the earlier idle-sweep test having settled the gym's other live runs (COACH_D's among them).
+      expect(await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) })).toContain('run-bsw-away-idle');
       expect((await writer.listBehaviourReadingsForEvaluation(ORG, KEY)).length).toBeGreaterThan(0);
     } finally {
       await db.query('alter table pilot.behaviour_observations_windows_away rename to behaviour_observations_windows');

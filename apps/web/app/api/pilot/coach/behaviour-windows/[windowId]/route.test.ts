@@ -105,6 +105,13 @@ test('a window of another gym, or of an athlete the caller may not reach, answer
   for (const action of ACTIONS) expect(action).not.toHaveBeenCalled();
 });
 
+test('a window id too long to be one answers as one that does not exist, without a lookup', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  const response = await GET(new NextRequest(URL_BASE), { params: Promise.resolve({ windowId: 'w'.repeat(101) }) });
+  expect(response.status).toBe(404);
+  expect(mockWindow).not.toHaveBeenCalled();
+});
+
 test('a failure to read the window is an error, not a quiet 404', async () => {
   mockRequirePrincipal.mockResolvedValue(principal({}));
   mockWindow.mockRejectedValue(new Error('connection refused'));

@@ -15802,7 +15802,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "PATTERN-1e-3. Opens a sampled window as the caller, in the caller's role and gym, through the writer's run, presence and drill checks (Q5 A); the table's guard re-checks staff, athlete and behaviour name. A refused athlete is a hidden 404.",
+    "notes": "PATTERN-1e-3. Opens a sampled window as the caller, in the caller's role and gym, through the writer's run, presence and drill checks (Q5 A); the table's guard re-checks staff, athlete and behaviour name. A refused athlete is a hidden 404. A run that is not live is refused; the open holds the run row so a settle waits for it or refuses it (Overwatch 7086220125).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

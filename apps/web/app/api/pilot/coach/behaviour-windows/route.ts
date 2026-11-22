@@ -68,7 +68,9 @@ export async function POST(request: NextRequest) {
     const behaviourKey = text(body.behaviourKey);
     const runId = text(body.sessionRunId);
     const context = contextFrom(body);
-    if (!athleteId || athleteId.length > 300 || !behaviourKey || !runId || !context
+    const tooLong = [athleteId, behaviourKey, runId, text(body.drillId), text(body.blockId), text(body.attemptContext)]
+      .some((value) => (value?.length ?? 0) > 300);
+    if (!athleteId || tooLong || !behaviourKey || !runId || !context
         || (body.chances !== undefined && typeof body.chances !== 'number')) {
       return NextResponse.json({
         ok: false,
