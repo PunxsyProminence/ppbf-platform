@@ -567,20 +567,25 @@ const OBSERVATION_SELECT = `select o.observation_id, o.athlete_id, o.behaviour_k
   join pilot.behaviour_keys k on k.organization_id = o.organization_id and k.behaviour_key = o.behaviour_key`;
 
 /**
- * The episodes of this athlete's sampled windows still open (PATTERN-1e): their
- * taps stay out of the reports list until the window closes, so a coach who
- * joins a window is blind to the others' judgments (Q2 A; Overwatch 7084899452
- * point 1). None where the window table is not yet applied.
+ * The episodes of the sampled windows still open, of one athlete or of one
+ * behaviour (PATTERN-1e): their taps stay out of the reports list and the tier
+ * engine until the window closes, so a coach who joins a window is blind to the
+ * others' judgments (Q2 A; Overwatch 7084899452 point 1, 7085598624 point 2).
+ * None where the window table is not yet applied.
  */
-async function openWindowEpisodes(client: PoolClient, organizationId: string, athleteId: string): Promise<string[]> {
+async function openWindowEpisodes(
+  client: PoolClient,
+  organizationId: string,
+  by: { athleteId: string } | { behaviourKey: string },
+): Promise<string[]> {
   const table = await client.query<{ present: boolean }>(
     `select to_regclass('pilot.behaviour_observations_windows') is not null as present`,
   );
   if (!table.rows[0]?.present) return [];
   const open = await client.query<{ window_id: string; chances: number }>(
     `select window_id::text as window_id, chances from pilot.behaviour_observations_windows
-      where organization_id = $1 and athlete_id = $2 and closed_at is null`,
-    [organizationId, athleteId],
+      where organization_id = $1 and ${'athleteId' in by ? 'athlete_id' : 'behaviour_key'} = $2 and closed_at is null`,
+    [organizationId, 'athleteId' in by ? by.athleteId : by.behaviourKey],
   );
   return open.rows.flatMap((window) => Array.from({ length: window.chances }, (_, index) =>
     windowEpisodeId(organizationId, window.window_id, index + 1)));
@@ -595,7 +600,7 @@ export async function listBehaviourObservations(
   // One snapshot for both reads: a window opened and tapped between them cannot slip its taps through.
   return withTransaction(async (client) => {
     await client.query('set transaction isolation level repeatable read, read only');
-    const hidden = await openWindowEpisodes(client, organizationId, athleteId);
+    const hidden = await openWindowEpisodes(client, organizationId, { athleteId });
     const rows = await client.query<BehaviourObservationRow>(
       `${OBSERVATION_SELECT}
         where o.organization_id = $1 and o.athlete_id = $2 and o.episode_id <> all($4::text[])
@@ -614,24 +619,31 @@ export async function listBehaviourObservations(
  * revision replaced is not read: the guard lets only its own coach revise it,
  * and once that coach's account goes both rows lose their observer, so the
  * engine could no longer tell the revision from a second call. Not read
- * either: the coach's note, and any de-identified report (a purged
- * athlete's). No limit: a cut-off list would count wrongly rather than fail.
+ * either: the coach's note, any de-identified report (a purged athlete's), or
+ * the taps of a sampled window still open (Overwatch 7085598624 point 2; the
+ * open windows and the reports are read in one snapshot). No limit: a cut-off
+ * list would count wrongly rather than fail.
  */
 export async function listBehaviourReadingsForEvaluation(
   organizationId: string,
   behaviourKey: string,
 ): Promise<StoredBehaviourReading[]> {
-  return query<StoredBehaviourReading>(
-    `select o.observation_id, o.organization_id, o.athlete_id, o.behaviour_key, o.episode_id, o.session_key, o.task_context_key,
-            o.task_constraint, o.fatigue_context, o.polarity, o.attribution_target, o.attribution_certainty,
-            o.source_type, o.source_quality, o.interpretation, o.observer_account_id, o.supersedes_observation_id,
-            o.observed_at
-       from pilot.behaviour_observations o
-      where o.organization_id = $1 and o.behaviour_key = $2 and o.deidentified_at is null
-        and not exists (
-          select 1 from pilot.behaviour_observations s
-           where s.organization_id = o.organization_id and s.supersedes_observation_id = o.observation_id)
-      order by o.observed_at, o.observation_id`,
-    [organizationId, behaviourKey],
-  );
+  return withTransaction(async (client) => {
+    await client.query('set transaction isolation level repeatable read, read only');
+    const hidden = await openWindowEpisodes(client, organizationId, { behaviourKey });
+    const rows = await client.query<StoredBehaviourReading>(
+      `select o.observation_id, o.organization_id, o.athlete_id, o.behaviour_key, o.episode_id, o.session_key, o.task_context_key,
+              o.task_constraint, o.fatigue_context, o.polarity, o.attribution_target, o.attribution_certainty,
+              o.source_type, o.source_quality, o.interpretation, o.observer_account_id, o.supersedes_observation_id,
+              o.observed_at
+         from pilot.behaviour_observations o
+        where o.organization_id = $1 and o.behaviour_key = $2 and o.deidentified_at is null and o.episode_id <> all($3::text[])
+          and not exists (
+            select 1 from pilot.behaviour_observations s
+             where s.organization_id = o.organization_id and s.supersedes_observation_id = o.observation_id)
+        order by o.observed_at, o.observation_id`,
+      [organizationId, behaviourKey, hidden],
+    );
+    return rows.rows;
+  });
 }

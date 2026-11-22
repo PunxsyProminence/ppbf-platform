@@ -73,6 +73,7 @@ let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
 let db: Client;
 let windows: typeof import('./behaviourSampleWindows');
 let writer: typeof import('./behaviourObservations');
+let runs: typeof import('./sessionScriptRuns');
 
 function connectionStringFor(database: string): string {
   return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
@@ -321,6 +322,7 @@ beforeAll(async () => {
   process.env.PPBF_POSTGRES_DISABLE_SSL = 'true';
   windows = await import('./behaviourSampleWindows');
   writer = await import('./behaviourObservations');
+  runs = await import('./sessionScriptRuns');
 
 });
 
@@ -792,6 +794,82 @@ describe('joining a window, and the reports route (PATTERN-1e; Overwatch 7084899
     await db.query('alter table pilot.behaviour_observations_windows rename to behaviour_observations_windows_away');
     try {
       expect((await writer.listBehaviourObservations(ORG, ATHLETE, 500)).length).toBeGreaterThan(0);
+    } finally {
+      await db.query('alter table pilot.behaviour_observations_windows_away rename to behaviour_observations_windows');
+    }
+  });
+});
+
+describe('a settling run closes its windows; the tier engine reads no open window (PATTERN-1e-2; Overwatch 7085598624 points 1 and 2)', () => {
+  const LIVE_RUN = 'run-bsw-live';
+  const IDLE_RUN = 'run-bsw-idle';
+  const closedAtOf = async (windowId: string) => (await db.query<{ closed_at: Date | null }>(
+    'select closed_at from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2', [ORG, windowId],
+  )).rows[0].closed_at;
+  const liveRun = async (runId: string, coach: string) => {
+    await db.query(
+      `insert into pilot.session_script_runs
+         (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on, run_state, started_at)
+       values ($1, $2, null, null, $3, current_date, 'in_progress', now() - interval '1 minute')`,
+      [ORG, runId, coach],
+    );
+    await db.query(
+      `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+       values ($1, $2, $3, $4, 'coach')`,
+      [ORG, runId, ATHLETE, coach],
+    );
+  };
+
+  beforeAll(async () => {
+    await liveRun(LIVE_RUN, COACH_A);
+    await liveRun(IDLE_RUN, COACH_B);
+  });
+
+  test('a coach finishing the run closes its open windows, and only its own; a tap is then refused and the taps show', async () => {
+    const windowId = (await open({ runId: LIVE_RUN })).window_id;
+    const closedFirst = (await open({ runId: LIVE_RUN })).window_id;
+    const elsewhere = (await open()).window_id;
+    await tap(windowId, 1, COACH_A, 'occurrence');
+    await close(closedFirst);
+    const firstClose = await closedAtOf(closedFirst);
+    await runs.finishSessionScriptRun(ORG, COACH_A, LIVE_RUN, { runState: 'completed' });
+    expect(await closedAtOf(windowId)).not.toBeNull();
+    expect((await closedAtOf(closedFirst))?.toISOString()).toBe(firstClose?.toISOString());
+    expect(await closedAtOf(elsewhere)).toBeNull();
+    await expect(tap(windowId, 2, COACH_A, 'occurrence')).rejects.toThrow('That window is closed.');
+    expect((await writer.listBehaviourObservations(ORG, ATHLETE, 500)).map((row) => row.episode_id))
+      .toContain(writer.windowEpisodeId(ORG, windowId, 1));
+    await close(elsewhere);
+  });
+
+  test('the idle sweep settling a forgotten run closes its open windows too', async () => {
+    const windowId = (await open({ runId: IDLE_RUN })).window_id;
+    await tap(windowId, 1, COACH_B, 'occurrence');
+    expect(await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) })).toContain(IDLE_RUN);
+    expect(await closedAtOf(windowId)).not.toBeNull();
+  });
+
+  test('the tier engine reads no tap of a window still open, and every tap once it closes', async () => {
+    const windowId = (await open()).window_id;
+    await tap(windowId, 2, COACH_A, 'occurrence');
+    await tap(windowId, 7, COACH_B, 'counterexample');
+    const tapped = [2, 7].map((chance) => writer.windowEpisodeId(ORG, windowId, chance));
+    const read = async () => (await writer.listBehaviourReadingsForEvaluation(ORG, KEY)).map((row) => row.episode_id);
+    const before = await read();
+    expect(before.length).toBeGreaterThan(0);
+    for (const episode of tapped) expect(before).not.toContain(episode);
+    await close(windowId);
+    const after = await read();
+    for (const episode of tapped) expect(after).toContain(episode);
+  });
+
+  test('settling a run and the tier engine still work where the window table is not yet applied', async () => {
+    await liveRun('run-bsw-away', COACH_A);
+    await db.query('alter table pilot.behaviour_observations_windows rename to behaviour_observations_windows_away');
+    try {
+      expect((await runs.finishSessionScriptRun(ORG, COACH_A, 'run-bsw-away', { runState: 'abandoned' })).run_state).toBe('abandoned');
+      await runs.closeIdleSessionRuns(ORG, { now: new Date(Date.now() + 4 * 3_600_000) });
+      expect((await writer.listBehaviourReadingsForEvaluation(ORG, KEY)).length).toBeGreaterThan(0);
     } finally {
       await db.query('alter table pilot.behaviour_observations_windows_away rename to behaviour_observations_windows');
     }

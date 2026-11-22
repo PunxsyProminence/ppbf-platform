@@ -238,46 +238,67 @@ export async function closeIdleSessionRuns(
   const now = options.now ?? new Date();
   const limit = options.idleLimitSeconds ?? SESSION_RUN_IDLE_LIMIT_SECONDS;
   const sources = await readActivitySources();
-  const rows = await query<{ run_id: string }>(
-    `with idle as (
-       select r.organization_id, r.run_id, ${lastActivitySql(sources)} as last_activity_at
-         from pilot.session_script_runs r
-        where r.organization_id = $1
+  return withTransaction(async (client) => {
+    const { rows } = await client.query<{ run_id: string }>(
+      `with idle as (
+         select r.organization_id, r.run_id, ${lastActivitySql(sources)} as last_activity_at
+           from pilot.session_script_runs r
+          where r.organization_id = $1
+            and r.run_state = 'in_progress'
+            and r.started_at is not null
+       )
+       update pilot.session_script_runs r
+          set run_state = 'abandoned',
+              ended_at = i.last_activity_at + make_interval(secs => $3::integer),
+              current_block_id = null,
+              paused_seconds = coalesce(r.paused_seconds, 0)
+                               + case
+                                   when r.paused_at is not null
+                                     then greatest(0, floor(extract(epoch from (
+                                            i.last_activity_at + make_interval(secs => $3::integer) - r.paused_at
+                                          )))::integer)
+                                   else 0
+                                 end,
+              paused_at = null,
+              show_on_wall = false,
+              deviation_note = case
+                                 when btrim(r.deviation_note) = '' then $4::text
+                                 else r.deviation_note || E'\\n' || $4::text
+                               end
+         from idle i
+        where r.organization_id = i.organization_id
+          and r.run_id = i.run_id
+          -- Re-read under the row lock: a coach's own finish that committed first wins, and so does a
+          -- pause or resume (the run's own signals are asked again of the locked row, not only of the
+          -- statement's snapshot above).
           and r.run_state = 'in_progress'
-          and r.started_at is not null
-     )
-     update pilot.session_script_runs r
-        set run_state = 'abandoned',
-            ended_at = i.last_activity_at + make_interval(secs => $3::integer),
-            current_block_id = null,
-            paused_seconds = coalesce(r.paused_seconds, 0)
-                             + case
-                                 when r.paused_at is not null
-                                   then greatest(0, floor(extract(epoch from (
-                                          i.last_activity_at + make_interval(secs => $3::integer) - r.paused_at
-                                        )))::integer)
-                                 else 0
-                               end,
-            paused_at = null,
-            show_on_wall = false,
-            deviation_note = case
-                               when btrim(r.deviation_note) = '' then $4::text
-                               else r.deviation_note || E'\\n' || $4::text
-                             end
-       from idle i
-      where r.organization_id = i.organization_id
-        and r.run_id = i.run_id
-        -- Re-read under the row lock: a coach's own finish that committed first wins, and so does a
-        -- pause or resume (the run's own signals are asked again of the locked row, not only of the
-        -- statement's snapshot above).
-        and r.run_state = 'in_progress'
-        and least($2::timestamptz, greatest(${RUN_ROW_SIGNALS.join(', ')}))
-              <= $2::timestamptz - make_interval(secs => $3::integer)
-        and i.last_activity_at <= $2::timestamptz - make_interval(secs => $3::integer)
-      returning r.run_id`,
-    [organizationId, now, limit, SESSION_RUN_IDLE_CLOSE_NOTE],
+          and least($2::timestamptz, greatest(${RUN_ROW_SIGNALS.join(', ')}))
+                <= $2::timestamptz - make_interval(secs => $3::integer)
+          and i.last_activity_at <= $2::timestamptz - make_interval(secs => $3::integer)
+        returning r.run_id`,
+      [organizationId, now, limit, SESSION_RUN_IDLE_CLOSE_NOTE],
+    );
+    const closed = rows.map((row) => row.run_id);
+    await closeRunWindows(client, organizationId, closed);
+    return closed;
+  });
+}
+
+// A settling run closes its open sampled windows, in the same transaction (PATTERN-1e-2; Overwatch
+// 7085598624 point 1): a window left open on a finished class would stay joinable, and its taps
+// would stay out of the reports route and the tier engine with no end. The window table's guard
+// stamps the close. Skipped where that table is not yet applied, so settling never fails on it.
+async function closeRunWindows(client: PoolClient, organizationId: string, runIds: string[]): Promise<void> {
+  if (runIds.length === 0) return;
+  const table = await client.query<{ present: boolean }>(
+    `select to_regclass('pilot.behaviour_observations_windows') is not null as present`,
   );
-  return rows.map((row) => row.run_id);
+  if (!table.rows[0]?.present) return;
+  await client.query(
+    `update pilot.behaviour_observations_windows set closed_at = now()
+      where organization_id = $1 and run_id = any($2::text[]) and closed_at is null`,
+    [organizationId, runIds],
+  );
 }
 
 // The readers' form. A sweep that fails must not take the coach's screen or the TV down with it:
@@ -691,50 +712,53 @@ export async function finishSessionScriptRun(
   }
   await requireOwnLiveRun(organizationId, accountId, runId);
 
-  const rows = await query<SessionScriptRunRow>(
-    `update pilot.session_script_runs
-        set run_state = $3,
-            ended_at = now(),
-            current_block_id = null,
-            -- Bank the OPEN pause before discarding it. A coach who pauses and then ends the
-            -- session without resuming would otherwise lose that final interval, and every later
-            -- reading of actual teaching time (ended_at - started_at - paused_seconds) would
-            -- overcount by exactly the length of the last pause.
-            paused_seconds = coalesce(paused_seconds, 0)
-                             + case
-                                 when paused_at is not null
-                                   then greatest(0, floor(extract(epoch from (now() - paused_at)))::integer)
-                                 else 0
-                               end,
-            paused_at = null,
-            -- Off the TV in the same statement that settles the run. pilot_ssrun_wall_only_live
-            -- would refuse a settled run left showing, and the wall must never present a finished
-            -- session as the one on the floor now.
-            show_on_wall = false,
-            blocks_completed = coalesce($4, blocks_completed),
-            athletes_present = coalesce($5, athletes_present),
-            reset_protocol_used = coalesce($6, reset_protocol_used),
-            deviation_note = coalesce($7, deviation_note),
-            what_worked = coalesce($8, what_worked),
-            what_did_not = coalesce($9, what_did_not)
-      where organization_id = $1 and run_id = $2 and run_state = 'in_progress'
-      returning ${RUN_COLUMNS}`,
-    [
-      organizationId,
-      runId,
-      input.runState,
-      input.blocksCompleted ?? null,
-      input.athletesPresent ?? null,
-      input.resetProtocolUsed ?? null,
-      input.deviationNote ?? null,
-      input.whatWorked ?? null,
-      input.whatDidNot ?? null,
-    ],
-  );
-  if (rows.length === 0) {
-    throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
-  }
-  return rows[0];
+  return withTransaction(async (client) => {
+    const { rows } = await client.query<SessionScriptRunRow>(
+      `update pilot.session_script_runs
+          set run_state = $3,
+              ended_at = now(),
+              current_block_id = null,
+              -- Bank the OPEN pause before discarding it. A coach who pauses and then ends the
+              -- session without resuming would otherwise lose that final interval, and every later
+              -- reading of actual teaching time (ended_at - started_at - paused_seconds) would
+              -- overcount by exactly the length of the last pause.
+              paused_seconds = coalesce(paused_seconds, 0)
+                               + case
+                                   when paused_at is not null
+                                     then greatest(0, floor(extract(epoch from (now() - paused_at)))::integer)
+                                   else 0
+                                 end,
+              paused_at = null,
+              -- Off the TV in the same statement that settles the run. pilot_ssrun_wall_only_live
+              -- would refuse a settled run left showing, and the wall must never present a finished
+              -- session as the one on the floor now.
+              show_on_wall = false,
+              blocks_completed = coalesce($4, blocks_completed),
+              athletes_present = coalesce($5, athletes_present),
+              reset_protocol_used = coalesce($6, reset_protocol_used),
+              deviation_note = coalesce($7, deviation_note),
+              what_worked = coalesce($8, what_worked),
+              what_did_not = coalesce($9, what_did_not)
+        where organization_id = $1 and run_id = $2 and run_state = 'in_progress'
+        returning ${RUN_COLUMNS}`,
+      [
+        organizationId,
+        runId,
+        input.runState,
+        input.blocksCompleted ?? null,
+        input.athletesPresent ?? null,
+        input.resetProtocolUsed ?? null,
+        input.deviationNote ?? null,
+        input.whatWorked ?? null,
+        input.whatDidNot ?? null,
+      ],
+    );
+    if (rows.length === 0) {
+      throw new SessionScriptRunError('SESSION_RUN_NOT_LIVE', 409);
+    }
+    await closeRunWindows(client, organizationId, [runId]);
+    return rows[0];
+  });
 }
 
 // History for a script. Excludes live runs: a session still on the floor is not yet a record of
