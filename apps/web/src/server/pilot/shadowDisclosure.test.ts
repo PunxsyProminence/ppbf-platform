@@ -81,8 +81,23 @@ describe('a parent\'s message (HF8-1, Q1 = B)', () => {
   test.each(F076_SENTENCES)('a parent typing "$message" is a disclosure', ({ message, namesGymStaff: staff }) => {
     const disclosure = detectShadowDisclosure(message, 'parent');
     expect(disclosure).not.toBeNull();
-    expect(disclosure).toEqual(detectShadowDisclosure(message, 'athlete'));
+    // The same reading as an athlete's, except that it files no escalation.
+    expect({ ...disclosure, filesEscalation: true }).toEqual(detectShadowDisclosure(message, 'athlete'));
+    expect(disclosure?.filesEscalation).toBe(false);
     expect(disclosure?.namesGymStaff).toBe(staff);
+  });
+
+  test.each(F076_SENTENCES)('an athlete\'s "$message" files an escalation', ({ message }) => {
+    expect(detectShadowDisclosure(message, 'athlete')?.filesEscalation).toBe(true);
+  });
+
+  test('a parent\'s disclosure files nothing, even when an athlete id is passed', async () => {
+    const disclosure = detectShadowDisclosure('My coach touched me and told me not to tell anyone', 'parent')!;
+    await expect(fileShadowDisclosureEscalation({
+      organizationId: 'org-1', athleteId: 'ATH-1', conversationId: 'conv-1', disclosure,
+    })).resolves.toBeNull();
+    expect(mockFileEscalation).not.toHaveBeenCalled();
+    expect(queryOne).not.toHaveBeenCalled();
   });
 
   test('the carve-outs hold for a parent as for an athlete', () => {

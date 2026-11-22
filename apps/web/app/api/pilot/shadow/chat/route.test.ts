@@ -4018,6 +4018,29 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
   ];
   const mockFileDisclosure = jest.mocked(fileShadowDisclosureEscalation);
   const athleteCheck = jest.mocked(assertActorCanAccessAthlete);
+  const realFileDisclosure = jest.requireActual<typeof import('@/src/server/pilot/shadowDisclosure')>(
+    '@/src/server/pilot/shadowDisclosure',
+  ).fileShadowDisclosureEscalation;
+
+  // The route hands every disclosure to fileShadowDisclosureEscalation, which
+  // decides; so this block runs the real one. A parent's disclosure must come
+  // back null without touching the escalation table.
+  beforeEach(() => {
+    mockFileDisclosure.mockImplementation(realFileDisclosure);
+  });
+  afterEach(() => {
+    mockFileDisclosure.mockImplementation(async () => null);
+  });
+
+  async function expectNoEscalation(): Promise<void> {
+    for (const [params] of mockFileDisclosure.mock.calls) {
+      expect(params.disclosure.filesEscalation).toBe(false);
+    }
+    for (const result of mockFileDisclosure.mock.results) {
+      await expect(result.value).resolves.toBeNull();
+    }
+    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('safety_escalations'))).toBe(false);
+  }
 
   async function ask(
     message: string,
@@ -4049,8 +4072,10 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     expect(body.highRiskTopic).toBeUndefined();
     expect(body.handoff ?? null).toBeNull();
 
-    // Office review only: no escalation entry, so no coach alert.
-    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    // Office review only: handed to the filer, which files no escalation
+    // entry, so no coach is alerted.
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+    await expectNoEscalation();
 
     // The org admin's SHADOW review row for this one exchange.
     const critical = isCriticalShadowDisclosure(detectShadowDisclosure(message, 'parent'));
@@ -4075,7 +4100,7 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     expect(response.status).toBe(200);
     expect(body.response).toBe(ANSWER);
     expect(athleteCheck).toHaveBeenCalledWith(expect.objectContaining({ role: 'parent' }), 'ATH-CHILD');
-    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    await expectNoEscalation();
     expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
     expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
       category: 'safeguarding_disclosure',
@@ -4086,7 +4111,8 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
   test('a parent principal that carries an athlete id still files no escalation', async () => {
     await ask('My dad hits me', { principalAthleteId: 'ATH-ODD' });
 
-    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({ athleteId: 'ATH-ODD' }));
+    await expectNoEscalation();
     expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({ category: 'safeguarding_disclosure' }));
   });
 
@@ -4095,7 +4121,7 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     const response = await POST(postRequest({ message: 'My dad hits me', sessionType: 'board_summary' }));
 
     expect(response.status).toBe(403);
-    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    await expectNoEscalation();
   });
 
   // F-093 applies: the same words a coach sends are withheld as a personal
@@ -4113,7 +4139,7 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     expect(providerCalled).toBe(true);
     expect(body.state).toBe('ok');
     expect(body.response).toBe(ANSWER);
-    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    await expectNoEscalation();
     expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({ category: 'safeguarding_disclosure' }));
   });
 

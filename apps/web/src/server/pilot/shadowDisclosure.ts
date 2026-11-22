@@ -42,8 +42,10 @@ import type { ShadowValidationResult } from './shadowChat';
  * A PARENT'S MESSAGE (HF8-1 B; Jason, 2026-11-21, Q1 = B "office review
  * only", relayed by Overwatch on #2083) gets the same scan and carve-outs and
  * the same mark, so the admin SHADOW review row is owed, the words stay out of
- * the research feed and F-093 applies. It files no escalation:
- * shadowDisclosureFilesEscalation.
+ * the research feed and F-093 applies. It files no escalation
+ * (shadowDisclosureFilesEscalation; fileShadowDisclosureEscalation returns
+ * null for it). The guard lives here, not in the chat route: the route still
+ * hands every disclosure to fileShadowDisclosureEscalation, which decides.
  */
 
 /**
@@ -225,6 +227,12 @@ export interface ShadowDisclosure {
   readonly namesGymStaff: boolean;
   /** Filed admin-only: names gym staff, or carries a grooming, secrecy or touch cue. */
   readonly adminOnly: boolean;
+  /**
+   * Whether the in-app safety escalation is filed: an athlete's own
+   * disclosure only (shadowDisclosureFilesEscalation). A parent's is office
+   * review only, and fileShadowDisclosureEscalation files nothing for it.
+   */
+  readonly filesEscalation: boolean;
 }
 
 /**
@@ -261,7 +269,7 @@ export function detectShadowDisclosure(message: string, role: string): ShadowDis
   const adminOnly = staff
     || scan.cues.some((cue) => ADMIN_ONLY_CUES.has(cue))
     || inAnyReading(TOUCH_PATTERN);
-  return { cues: scan.cues, namesGymStaff: staff, adminOnly };
+  return { cues: scan.cues, namesGymStaff: staff, adminOnly, filesEscalation: shadowDisclosureFilesEscalation(role) };
 }
 
 /**
@@ -377,8 +385,10 @@ function escalationInput(params: FileShadowDisclosureParams & { athleteId: strin
 
 /**
  * Files the escalation, or returns null when the sender has no athlete record
- * (safety_escalations.athlete_id is NOT NULL). The admin SHADOW review row is
- * the route's, as for every high-risk message.
+ * (safety_escalations.athlete_id is NOT NULL) or the disclosure is a parent's
+ * (filesEscalation false: office review only, Q1 = B, whatever athlete id the
+ * caller passes). The admin SHADOW review row is the route's, as for every
+ * high-risk message.
  *
  * A database whose source_type CHECK predates 'shadow_disclosure' (code
  * deployed before pilot:apply-safety-escalations) rejects the row with 23514.
@@ -388,7 +398,7 @@ function escalationInput(params: FileShadowDisclosureParams & { athleteId: strin
 export async function fileShadowDisclosureEscalation(
   params: FileShadowDisclosureParams,
 ): Promise<SafetyEscalationRow | null> {
-  if (!params.athleteId) return null;
+  if (!params.athleteId || !params.disclosure.filesEscalation) return null;
   const withAthlete = { ...params, athleteId: params.athleteId };
   const adminOnly = params.disclosure.adminOnly || await conversationAlreadyNamedStaff(withAthlete);
   const sourceType = shadowDisclosureSourceType({ adminOnly });
