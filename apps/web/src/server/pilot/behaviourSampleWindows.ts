@@ -4,11 +4,10 @@ import {
   recordBehaviourObservation,
   reportPlaceFor,
   windowEpisodeId,
-  type BehaviourObservationRow,
   type ContextRef,
 } from './behaviourObservations';
 import { query, withTransaction } from './db';
-import { ValidationError } from './errors';
+import { ForbiddenError, ValidationError } from './errors';
 
 // PATTERN-1d (lane PATTERN-1; PunxsyProminence/ppbf-platform#2082): a SAMPLED
 // WINDOW (OD-2026-11-21-004 LL-Q1, "Sampled window"; Overwatch Q2 A, Q3 A, Q5 A,
@@ -21,11 +20,15 @@ import { ValidationError } from './errors';
 // chance (behaviourObservations.ts windowEpisodeId): a second coach who taps
 // the same chance codes the same attempt, and a coach's second tap of a chance
 // revises their first ("Change last tap", Q8 A). A tap says nothing about
-// whose fault it was, so it records that as unsaid (Q3 A). Each coach reads
-// back only their own taps: a second coach joins blind (Q2 A).
+// whose fault it was, so it records that as unsaid (Q3 A). Through these
+// functions a coach reads back only their own taps, and a tap returns nothing
+// of anyone else's: a second coach joins blind (Q2 A). (The reports route
+// lists every report of an athlete to staff, taps included: which screen calls
+// it during a window is PATTERN-1e's and 1f's.)
 //
-// Staff only, like the reports (privacyTiers.ts). No route calls these yet:
-// the window routes are PATTERN-1e.
+// Staff only, like the reports (privacyTiers.ts): opening and tapping by the
+// table guards, closing and reading back by an active staff membership of this
+// gym checked here. No route calls these yet: the window routes are PATTERN-1e.
 
 export const DEFAULT_WINDOW_CHANCES = 10;
 export const MAX_WINDOW_CHANCES = 50;
@@ -51,6 +54,7 @@ const FIELDS = `window_id, athlete_id, behaviour_key, run_id, context_kind, cont
 const REFUSALS: Record<string, string> = {
   pilot_behaviour_windows_live_athlete: 'That athlete is not on this gym\'s roster.',
   pilot_behaviour_windows_opener_of_this_gym: 'Only staff of this gym can open a window.',
+  pilot_behaviour_windows_role_check: 'Only staff of this gym can open a window.',
   pilot_behaviour_windows_active_key: 'That behaviour name is not on the active list.',
 };
 
@@ -120,6 +124,20 @@ export async function openBehaviourWindow(input: {
   }
 }
 
+const STAFF_ROLES = ['coach', 'organization_admin', 'admin'];
+
+/** Fail closed: an active account with an active staff membership in this gym, as the table guards require. */
+async function assertStaffOfThisGym(organizationId: string, accountId: string, what: string): Promise<void> {
+  const rows = await query<{ ok: number }>(
+    `select 1 as ok from pilot.organization_memberships om
+       join pilot.accounts acc on acc.account_id = om.account_id
+      where om.account_id = $1 and om.organization_id = $2 and om.active_flag and om.role = any($3::text[])
+        and acc.active_flag and acc.deleted_at is null`,
+    [accountId, organizationId, STAFF_ROLES],
+  );
+  if (rows.length === 0) throw new ForbiddenError(`Only staff of this gym can ${what}.`);
+}
+
 async function windowOf(organizationId: string, windowId: string): Promise<BehaviourWindowRow> {
   const rows = await query<BehaviourWindowRow>(
     `select ${FIELDS} from pilot.behaviour_observations_windows
@@ -138,14 +156,14 @@ export async function recordWindowTap(input: {
   polarity: string;
   observerAccountId: string;
   authorRole: string;
-}): Promise<BehaviourObservationRow> {
+}): Promise<{ chance: number; polarity: string }> {
   if (!(POLARITIES as readonly string[]).includes(input.polarity)) {
     throw new ValidationError(`polarity must be one of: ${POLARITIES.join(', ')}.`);
   }
   const window = await windowOf(input.organizationId, input.windowId);
   // The writer re-reads the window in its own transaction, held until the
-  // report commits: open, this chance in range, this athlete, behaviour and run.
-  return recordBehaviourObservation({
+  // report commits: open, this chance in range, this athlete, behaviour, run, drill and task.
+  const written = await recordBehaviourObservation({
     organizationId: input.organizationId,
     athleteId: window.athlete_id,
     behaviourKey: window.behaviour_key,
@@ -159,9 +177,17 @@ export async function recordWindowTap(input: {
     attributionTarget: 'unresolved',
     attributionCertainty: 'uncertain',
   });
+  // Only what this coach tapped: the report's time is the chance's first tap,
+  // which may be another coach's (Q2 A: join blind).
+  return { chance: input.chance, polarity: written.polarity };
 }
 
-export async function closeBehaviourWindow(input: { organizationId: string; windowId: string }): Promise<BehaviourWindowRow> {
+export async function closeBehaviourWindow(input: {
+  organizationId: string;
+  windowId: string;
+  closedByAccountId: string;
+}): Promise<BehaviourWindowRow> {
+  await assertStaffOfThisGym(input.organizationId, input.closedByAccountId, 'close a window');
   const closed = await query<BehaviourWindowRow>(
     `update pilot.behaviour_observations_windows set closed_at = now()
       where organization_id = $1 and window_id::text = $2 and closed_at is null
@@ -179,6 +205,7 @@ export async function listMyWindowTaps(input: {
   windowId: string;
   observerAccountId: string;
 }): Promise<{ chance: number; polarity: string }[]> {
+  await assertStaffOfThisGym(input.organizationId, input.observerAccountId, 'read back window taps');
   const window = await windowOf(input.organizationId, input.windowId);
   const chanceOf = new Map(Array.from({ length: window.chances }, (_, index) => [
     windowEpisodeId(input.organizationId, window.window_id, index + 1), index + 1,

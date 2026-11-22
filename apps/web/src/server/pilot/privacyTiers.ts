@@ -542,7 +542,9 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
     note:
       'Which child a coach opened a sampled window on, in which behaviour, run and drill (PATTERN-1d, '
       + 'Q2 A). No free text. Staff only under the same ruling as the reports its taps become '
-      + '(behaviour_observations.note, below); a coach reads back only their own taps. The public-surface denylist entry '
+      + '(behaviour_observations.note, below): opening and tapping by the table guards, closing and reading back by '
+      + 'an active staff membership of this gym checked in the function. Through these functions a coach reads back '
+      + 'only their own taps; the reports route lists every report to staff, taps included. The public-surface denylist entry '
       + 'pilot.behaviour_observations covers it (the wall tests match it as a substring). The purge de-identifies it with the reports.',
   },
   'session_run_athletes.athlete_id': {
