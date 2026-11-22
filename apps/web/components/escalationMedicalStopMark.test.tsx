@@ -30,14 +30,20 @@
  * here: it loads 'pg', which does not run under jsdom.
  */
 
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import type { ReactNode } from 'react';
 import { act, render, screen } from '@testing-library/react';
+import ts from 'typescript';
 
 import EscalationsPage, { SOURCE_LABEL } from '@/app/admin/escalations/page';
 import SafetyReviewPage from '@/app/admin/safety-review/page';
 import CoachIntelligencePage from '@/app/coach/intelligence/page';
 import CoachWorkspace from './CoachWorkspace';
 import SafetyAttentionBadge, { showsPainNumber } from './SafetyAttentionBadge';
+import { DESIGN_SYSTEM_ENTRY, readDesignSystemCss } from '@/src/design/readDesignSystemCss';
 
 // The bar's route. The badge shows a lone pain number only on the office's
 // safety-record pages; every test starts on one and moves where it says.
@@ -478,28 +484,38 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
 });
 
 /* ------------------------------------------------------------------------
- * THE MARK ANYWHERE ELSE (lane U1, SC2-2; Jason, card OW25-48 A: "Medical-stop
- * mark only for a medical stop"; Overwatch Q6: the whole non-home population).
+ * THE MARK ANYWHERE ELSE (lane U1, SC2-2, widened by lane SWP, SWP-1; Jason,
+ * card OW25-48 A: "Medical-stop mark only for a medical stop"; Overwatch Q6:
+ * the whole non-home population).
  *
- * The cases above render the escalation surfaces. This one reads the source:
- * every non-test .ts/.tsx under app/ and components/, comments removed by a
- * string-aware pass (a `/*` or `//` inside a string such as accept="video/*"
- * is code, not a comment), for what draws --locked: alert--critical,
- * badge--locked, var(--locked), --locked-ink, the --safety-locked /
- * --status-critical / --status-danger aliases, and the string 'locked', which
- * is how a tone map reaches `badge--${tone}`. Not caught: a class built from a
- * tone whose VALUE is 'critical' (`alert--${tone}`); app/admin/memberships is
- * the one such page, swept in SC2-3. CSS is not read.
+ * The cases above render the escalation surfaces. The rest reads the source:
+ *   1. every non-test .ts/.tsx under app/, components/ and src/, comments
+ *      removed by the TypeScript parser (not a hand-written lexer: a JSX
+ *      apostrophe or a nested template literal holding a URL used to flip the
+ *      lexer's quote state and hide the mark), for the token family:
+ *      alert--critical, badge--locked and every other spelling of --locked
+ *      (var(--locked), border-(--locked), --locked-ink, --locked-deep,
+ *      --locked-rgb), the --safety-locked / --status-critical /
+ *      --status-danger aliases, the string 'locked' (how a tone map reaches
+ *      `badge--${tone}`), and every class the CSS paints with the family;
+ *   2. the CSS the app loads (app/globals.css and the design system, imports
+ *      resolved): a rule that paints the family must be on CSS_ALLOWED;
+ *   3. each `alert--${x}` / `badge--${x}` / 'badge--' + x site, asked of the
+ *      TypeScript checker: a site that can be 'critical' (alert) or 'locked'
+ *      (badge) must be in a file on MARK_ALLOWED, and a site the checker cannot
+ *      resolve to string literals is on UNRESOLVED_TONE_SITES with its reason.
+ *
+ * What this does NOT see: a mark applied by an inline style built at run time,
+ * a class string that comes from an API response, `.concat()`, `.join()` or any
+ * other way of building a tone class than `${}` or `+`, a Tailwind utility
+ * that names the colour without the token, and nothing is rendered here.
  *
  * A file may carry the mark only if it is
  *   - ALLOWED, with the reason, and no more often than today; or
- *   - PENDING: still to be swept by the next U1 PRs (SC2-3, SC2-4), no more
- *     often than today. Each of those PRs deletes its files from the list, and
- *     a PENDING file that no longer carries the mark fails here until it is
- *     deleted, so the lists only shrink.
+ *   - PENDING: still to be swept, no more often than today. A PENDING file that
+ *     no longer carries the mark fails here until it is deleted, so the lists
+ *     only shrink. The CSS and tone lists below shrink the same way.
  * ------------------------------------------------------------------------ */
-
-const MARK_TOKEN = /alert--critical|badge--locked|--locked-ink|var\(--locked\)|var\(--safety-locked\)|var\(--status-critical\)|var\(--status-danger\)|['"`]locked['"`]/g;
 
 const MARK_ALLOWED = new Map<string, { readonly count: number; readonly why: string }>([
   // The clearance badge moved here from the Clearance Board (lane AS-5, Q-B1 = A on #2041); the board and Athlete Safety draw it.
@@ -521,147 +537,382 @@ const MARK_PENDING_SC2_3 = new Map<string, number>([
 const MARK_PENDING_SC2_4 = new Map<string, number>([]);
 
 /**
- * Source with comments removed; strings (and what is inside them) kept.
- * `unbalanced` is set when the file ends still inside a string: a quote the
- * pass misread (in a regex literal or bare JSX text) has flipped which spans
- * it treats as code, so the count for that file cannot be trusted.
+ * CSS rules that paint the family, keyed by the rule's first selector (with its
+ * @media prefix when it sits in one). `count` is the declarations in it that
+ * use the family, summed over every rule with that key. `mark: true` means the
+ * rule draws the medical-stop mark, so its class names join the source tokens
+ * above and a component using one must be on MARK_ALLOWED. `mark: false` is a
+ * rule that borrows a colour and is not the mark. Like MARK_ALLOWED, the list
+ * only shrinks: an entry whose rule is gone, or that paints fewer declarations,
+ * fails until it is edited down.
  */
-let unbalanced = false;
-function withoutComments(source: string): string {
-  unbalanced = false;
-  let out = '';
-  let quote: string | null = null;
-  for (let i = 0; i < source.length;) {
-    const c = source[i];
-    const next = source[i + 1];
-    if (quote) {
-      out += c;
-      if (c === '\\') {
-        out += next ?? '';
-        i += 2;
-        continue;
-      }
-      if (c === quote) quote = null;
-      i += 1;
-      continue;
-    }
-    if (c === '/' && next === '/') {
-      while (i < source.length && source[i] !== '\n') i += 1;
-      continue;
-    }
-    if (c === '/' && next === '*') {
-      const end = source.indexOf('*/', i + 2);
-      i = end === -1 ? source.length : end + 2;
-      out += ' ';
-      continue;
-    }
-    // A regex literal: a `/` where a value starts (after an operator, an
-    // opening bracket, a comma or `return`). Its quotes and slashes are not
-    // strings or comments (/filename="([^"]+)"/ has three quotes).
-    // Not after `<`: `</div>` closes a tag, it is not a regex.
-    if (c === '/' && /(^|[=(,:[!&|?{};+\-*%~^]|\breturn)\s*$/.test(out.slice(-12))) {
-      let j = i + 1;
-      let inClass = false;
-      while (j < source.length && source[j] !== '\n') {
-        if (source[j] === '\\') {
-          j += 2;
-          continue;
-        }
-        if (source[j] === '[') inClass = true;
-        else if (source[j] === ']') inClass = false;
-        else if (source[j] === '/' && !inClass) break;
-        j += 1;
-      }
-      out += source.slice(i, j + 1);
-      i = j + 1;
-      continue;
-    }
-    if (c === "'" || c === '"' || c === '`') quote = c;
-    out += c;
-    i += 1;
-  }
-  unbalanced = quote !== null;
-  return out;
-}
+const CSS_ALLOWED = new Map<string, { readonly count: number; readonly mark: boolean; readonly why: string }>([
+  [':root', { count: 3, mark: false, why: 'the aliases --safety-locked, --status-critical and --status-danger, each var(--locked) (app/globals.css); a use of an alias is counted as the mark in source' }],
+  ['.tactical-chip-critical', { count: 1, mark: true, why: 'unused today (no component names it); a component that does is the mark and fails here. app/globals.css belongs to lane U2' }],
+  ['.tactical-btn-critical', { count: 1, mark: true, why: 'unused today, as .tactical-chip-critical' }],
+  ['.tactical-alert-critical', { count: 3, mark: true, why: 'unused today, as .tactical-chip-critical' }],
+  ['.badge--locked', { count: 2, mark: true, why: "the mark's own definition: the badge rung for a medical stop (design-system/legacy/ppbf-leather-brass.css)" }],
+  ['@media print | .badge--locked', { count: 2, mark: true, why: "the mark's own definition, for print" }],
+  ['.alert--critical', { count: 2, mark: true, why: "the mark's own definition: the alert rung for a medical stop" }],
+  [
+    '.mat-leather .stamp',
+    {
+      count: 1,
+      mark: false,
+      why: "a bare .stamp on the seven dark materials takes the pale --locked-ink because the stamp red is unreadable on dark hides (ppbf-leather-brass.css, its own comment; Overwatch's Q2 = A on #2046; OD-2026-09-29-001: red is free to use). It is not a mark class: a bare 'stamp' in a component is not counted",
+    },
+  ],
+]);
 
-/** Files the comment pass ended inside a string: their counts are not trusted. */
-const misread: string[] = [];
+/** `alert--${x}` / `badge--${x}` sites the checker cannot prove, keyed `file :: expression`, with why. */
+const UNRESOLVED_TONE_SITES = new Map<string, string>([
+  ['components/CoachLiveTiles.tsx :: badge.tone', "Tile's badge.tone is typed string. Its three call sites pass 'restricted' and 'monitor' (read by hand, #2046 section 4). Typing it as the ladder's union would let the checker prove it (lane 6C7's file)"],
+]);
 
-function markCountsInSource(): Map<string, number> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require('node:fs') as typeof import('node:fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const path = require('node:path') as typeof import('node:path');
-  const webRoot = path.resolve(__dirname, '..');
-  const counts = new Map<string, number>();
-  misread.length = 0;
+const WEB_ROOT = path.resolve(__dirname, '..');
+const SCANNED_DIRS = ['app', 'components', 'src'];
+
+/** Every non-test .ts/.tsx under app/, components/ and src/, as paths relative to apps/web. */
+function sourceFiles(): string[] {
+  const found: string[] = [];
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name !== 'node_modules') walk(full);
+        if (entry.name !== 'node_modules' && entry.name !== '.next') walk(full);
       } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
-        const relative = path.relative(webRoot, full).split(path.sep).join('/');
-        const found = withoutComments(fs.readFileSync(full, 'utf8')).match(MARK_TOKEN);
-        if (unbalanced) misread.push(relative);
-        if (found) counts.set(relative, found.length);
+        found.push(path.relative(WEB_ROOT, full).split(path.sep).join('/'));
       }
     }
   };
-  walk(path.join(webRoot, 'app'));
-  walk(path.join(webRoot, 'components'));
+  for (const dir of SCANNED_DIRS) walk(path.join(WEB_ROOT, dir));
+  return found.sort();
+}
+
+/** Files the parser reported a syntax error in: their counts are not trusted. */
+const unparsed: string[] = [];
+
+/**
+ * Source with comments removed, by the TypeScript parser. Strings, template
+ * literals and JSX text are kept exactly as written, so a `//` inside
+ * 'https://x.org' is not a comment. A file the parser cannot read cleanly is
+ * recorded in `unparsed` (the parser's own diagnostics; the field is internal to
+ * TypeScript, so a missing one reads as a failure, not as a clean parse).
+ */
+function withoutComments(source: string, fileName = 'file.tsx', record?: string): string {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const diagnostics = (sourceFile as unknown as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics;
+  if (record && (!diagnostics || diagnostics.length > 0)) unparsed.push(record);
+  return ts.createPrinter({ removeComments: true }).printFile(sourceFile);
+}
+
+// --- the CSS the app loads -------------------------------------------------
+
+/** A declaration's value uses one of the family's custom properties. */
+const FAMILY_VALUE = /var\(\s*--(?:locked(?:-ink|-deep|-rgb)?|safety-locked|status-critical|status-danger)\s*[,)]/;
+
+interface CssRule {
+  readonly selector: string;
+  readonly body: string;
+  readonly atRules: string;
+}
+
+/**
+ * Every style rule in `css`, flat, with the at-rules it sits in. Strings and
+ * parentheses are skipped whole, so a brace inside `content: "{"` or a url() is
+ * not a block. An at-rule block with no nested braces (@theme, @font-face) is a
+ * declaration block and is returned as a rule of its own. CSS nesting is not
+ * used in these sheets; a nested block throws, so a sheet that starts nesting
+ * fails here instead of being misread. @media print is kept (the mark's print
+ * rule is listed as its own key).
+ */
+function cssRules(css: string): CssRule[] {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const rules: CssRule[] = [];
+  const atRules: string[] = [];
+  let prelude = '';
+  const skipPast = (from: number, open: string, close: string): number => {
+    let depth = 1;
+    let j = from + 1;
+    while (j < text.length && depth > 0) {
+      const c = text[j];
+      if (c === '"' || c === "'") {
+        j += 1;
+        while (j < text.length && text[j] !== c) j += text[j] === '\\' ? 2 : 1;
+      } else if (c === open) depth += 1;
+      else if (c === close) depth -= 1;
+      j += 1;
+    }
+    return j;
+  };
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== ch) j += text[j] === '\\' ? 2 : 1;
+      prelude += text.slice(i, j + 1);
+      i = j;
+      continue;
+    }
+    if (ch === '(') {
+      const end = skipPast(i, '(', ')');
+      prelude += text.slice(i, end);
+      i = end - 1;
+      continue;
+    }
+    if (ch === '{') {
+      const head = prelude.trim().replace(/\s+/g, ' ');
+      prelude = '';
+      const end = skipPast(i, '{', '}');
+      const body = text.slice(i + 1, end - 1);
+      const hasBlock = /\{/.test(body.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, ''));
+      if (head.startsWith('@') && hasBlock) {
+        atRules.push(head);
+        continue;
+      }
+      if (hasBlock) throw new Error(`CSS nesting inside "${head}": cssRules reads flat rules only`);
+      rules.push({ selector: head, body, atRules: atRules.join(' | ') });
+      i = end - 1;
+      continue;
+    }
+    if (ch === '}') {
+      prelude = '';
+      atRules.pop();
+      continue;
+    }
+    if (ch === ';') {
+      prelude = '';
+      continue;
+    }
+    prelude += ch;
+  }
+  return rules;
+}
+
+/** A selector list's parts, split only on commas outside (), [] and quotes. */
+function selectorParts(list: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote = '';
+  let current = '';
+  for (const ch of list) {
+    if (quote) {
+      if (ch === quote) quote = '';
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '(' || ch === '[') {
+      depth += 1;
+    } else if (ch === ')' || ch === ']') {
+      depth -= 1;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current.trim());
+  return parts.filter(Boolean);
+}
+
+/** A rule body's declarations, split on `;` outside () and quotes. */
+function declarations(body: string): string[] {
+  const found: string[] = [];
+  let depth = 0;
+  let quote = '';
+  let current = '';
+  for (const ch of body) {
+    if (quote) {
+      if (ch === quote) quote = '';
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      depth -= 1;
+    } else if (ch === ';' && depth === 0) {
+      found.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  found.push(current.trim());
+  return found.filter(Boolean);
+}
+
+/** The rules that paint the family: key, how many declarations do, and the class names in the selector. */
+function paintingRules(css: string): Array<{ key: string; count: number; classes: string[] }> {
+  const found: Array<{ key: string; count: number; classes: string[] }> = [];
+  for (const rule of cssRules(css)) {
+    const count = declarations(rule.body).filter((declaration) => FAMILY_VALUE.test(declaration.slice(declaration.indexOf(':') + 1))).length;
+    if (count === 0) continue;
+    const parts = selectorParts(rule.selector);
+    const key = `${rule.atRules.startsWith('@media print') ? '@media print | ' : ''}${parts[0]}`;
+    found.push({ key, count, classes: [...rule.selector.matchAll(/\.([A-Za-z_][\w-]*)/g)].map((match) => match[1]) });
+  }
+  return found;
+}
+
+function loadedCss(): string {
+  return `${readDesignSystemCss(DESIGN_SYSTEM_ENTRY)}\n${fs.readFileSync(path.join(WEB_ROOT, 'app/globals.css'), 'utf8')}`;
+}
+
+// --- the token ---------------------------------------------------------------
+
+/** The family, in any spelling: `--locked` followed by anything but a word character or hyphen (so var(--locked), border-(--locked) and badge--locked), its -ink/-deep/-rgb forms, the aliases, alert--critical and the string 'locked'. */
+const FAMILY_TOKEN = String.raw`alert--critical|--locked(?![\w-])|--locked-(?:ink|deep|rgb)\b|--safety-locked|--status-critical|--status-danger|['"\x60]locked['"\x60]`;
+
+/** The token plus the classes the CSS paints with the mark (a `mark: true` rule). */
+function markTokenFor(markClasses: readonly string[]): RegExp {
+  const classes = markClasses.map((name) => `(?<![\\w-])${name.replace(/[-\\^$*+?.()|[\]{}]/g, '\\$&')}(?![\\w-])`);
+  return new RegExp([FAMILY_TOKEN, ...classes].join('|'), 'g');
+}
+
+const CSS_PAINTING = paintingRules(loadedCss());
+const MARK_CLASSES = [...new Set(CSS_PAINTING.filter(({ key }) => CSS_ALLOWED.get(key)?.mark ?? true).flatMap(({ classes }) => classes))];
+const MARK_TOKEN = markTokenFor(MARK_CLASSES);
+
+function markCountsInSource(): Map<string, number> {
+  const counts = new Map<string, number>();
+  unparsed.length = 0;
+  for (const relative of sourceFiles()) {
+    const found = withoutComments(fs.readFileSync(path.join(WEB_ROOT, relative), 'utf8'), relative, relative).match(MARK_TOKEN);
+    if (found) counts.set(relative, found.length);
+  }
   return counts;
 }
 
-/** Non-test files under app/ and components/, other than the badge's own, that name the shared clearance badge. */
+/** Non-test files under app/, components/ and src/, other than the badge's own, that name the shared clearance badge. */
 function clearanceBadgeUsers(): string[] {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require('node:fs') as typeof import('node:fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const path = require('node:path') as typeof import('node:path');
-  const webRoot = path.resolve(__dirname, '..');
-  const users: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name !== 'node_modules') walk(full);
-      } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
-        const relative = path.relative(webRoot, full).split(path.sep).join('/');
-        if (relative === 'components/clearanceReading.ts') continue;
-        if (/\b(clearanceBadge|CLEARANCE_BADGE)\b/.test(withoutComments(fs.readFileSync(full, 'utf8')))) users.push(relative);
-      }
-    }
-  };
-  walk(path.join(webRoot, 'app'));
-  walk(path.join(webRoot, 'components'));
-  return users.sort();
+  return sourceFiles()
+    .filter((relative) => relative !== 'components/clearanceReading.ts')
+    .filter((relative) => /\b(clearanceBadge|CLEARANCE_BADGE)\b/.test(withoutComments(fs.readFileSync(path.join(WEB_ROOT, relative), 'utf8'), relative)))
+    .sort();
 }
+
+// --- the tone sites ------------------------------------------------------------
+
+interface ToneSite {
+  readonly file: string;
+  readonly line: number;
+  readonly family: 'alert' | 'badge';
+  readonly expression: string;
+  /** The string literals the checker says the expression can be. */
+  readonly literals: readonly string[];
+  /** True when some member of its type is not a string literal. */
+  readonly unresolved: boolean;
+}
+
+/**
+ * Each `alert--${x}`, `badge--${x}` and 'alert--' + x site in `files`, with the
+ * type the TypeScript checker gives x. Only these two ways of building the class
+ * are read (see the block comment). `rootNames` are absolute paths.
+ */
+function toneSites(rootNames: readonly string[], options: ts.CompilerOptions, relativeTo: string): ToneSite[] {
+  const program = ts.createProgram([...rootNames], options);
+  const checker = program.getTypeChecker();
+  const sites: ToneSite[] = [];
+  for (const file of rootNames) {
+    const sourceFile = program.getSourceFile(file);
+    if (!sourceFile) throw new Error(`the checker could not open ${file}`);
+    const read = (prefix: string, expression: ts.Expression) => {
+      const match = /(alert|badge)--$/.exec(prefix);
+      if (!match) return;
+      const type = checker.getTypeAtLocation(expression);
+      const members = type.isUnion() ? type.types : [type];
+      sites.push({
+        file: path.relative(relativeTo, file).split(path.sep).join('/'),
+        line: sourceFile.getLineAndCharacterOfPosition(expression.getStart()).line + 1,
+        family: match[1] as 'alert' | 'badge',
+        expression: expression.getText(),
+        literals: members.filter((member): member is ts.StringLiteralType => member.isStringLiteral()).map((member) => member.value),
+        unresolved: members.some((member) => !member.isStringLiteral()),
+      });
+    };
+    const visit = (node: ts.Node) => {
+      if (ts.isTemplateExpression(node)) {
+        let prefix = node.head.text;
+        for (const span of node.templateSpans) {
+          read(prefix, span.expression);
+          prefix = span.literal.text;
+        }
+      } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken && ts.isStringLiteralLike(node.left)) {
+        read(node.left.text, node.right);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+  }
+  return sites;
+}
+
+function appToneSites(): ToneSite[] {
+  const files = sourceFiles()
+    .filter((relative) => /(?:alert|badge)--\$\{|['"`](?:alert|badge)--['"`]\s*\+/.test(fs.readFileSync(path.join(WEB_ROOT, relative), 'utf8')))
+    .map((relative) => path.join(WEB_ROOT, relative));
+  const config = ts.readConfigFile(path.join(WEB_ROOT, 'tsconfig.json'), ts.sys.readFile);
+  const options = ts.parseJsonConfigFileContent(config.config, ts.sys, WEB_ROOT).options;
+  return toneSites(files, options, WEB_ROOT);
+}
+
+/** Where a tone class is the mark: `badge--${x}` can be 'locked', `alert--${x}` can be 'critical'. */
+const isMarkTone = (site: ToneSite) => site.literals.includes(site.family === 'badge' ? 'locked' : 'critical');
 
 describe('the medical-stop mark appears nowhere else in the source', () => {
   const counts = markCountsInSource();
   const pending = new Map([...MARK_PENDING_SC2_3, ...MARK_PENDING_SC2_4]);
 
-  test('the comment pass skips a regex literal, whose quotes are not strings', () => {
-    expect(withoutComments('const m = /filename="([^"]+)"/.exec(h); // badge--locked\nx')).toBe('const m = /filename="([^"]+)"/.exec(h); \nx');
-    expect(unbalanced).toBe(false);
-    expect(withoutComments('a = b / c; d = "e"; // f\ng')).toBe('a = b / c; d = "e"; \ng');
+  // The two inputs the hand-written lexer misread (U1 named them; #2046 measured
+  // guard 0, TypeScript parser 1). Each holds the mark once, in code.
+  test('a JSX apostrophe does not hide a later string that holds the mark', () => {
+    const source = "export const A = () => <p>Don't</p>;\nconst u = 'https://example.org'; const cls = \"alert alert--critical\";\n";
+    expect(withoutComments(source).match(MARK_TOKEN)).toHaveLength(1);
   });
 
-  test('the comment pass keeps code that holds a comment marker inside a string', () => {
-    expect(withoutComments('a = "video/*"; b = "badge--locked"; // badge--locked\nc = 1; /* alert--critical */ d')).toBe(
-      'a = "video/*"; b = "badge--locked"; \nc = 1;   d',
-    );
+  test('a nested template literal holding a URL does not hide the mark after it', () => {
+    const source = "const a = `${ok ? `https://a.org` : 'x'} y`; const c = 'badge badge--locked'\n";
+    expect(withoutComments(source, 'a.ts').match(MARK_TOKEN)).toHaveLength(1);
   });
 
-  // What this proves: no file ENDS inside a string. A quote misread mid-file
-  // that a later quote happens to re-balance is not caught here.
-  test('the comment pass ends every file outside a string', () => {
-    expect(misread).toEqual([]);
+  test('a comment that names the mark is not counted; code that holds a comment marker in a string is', () => {
+    expect(withoutComments('const m = /filename="([^"]+)"/.exec(h); // badge--locked\n/* alert--critical */ x', 'a.ts').match(MARK_TOKEN)).toBeNull();
+    expect(withoutComments('a = "video/*"; b = "badge--locked"; // badge--locked\nc = 1;', 'a.ts').match(MARK_TOKEN)).toHaveLength(1);
+  });
+
+  test.each([
+    ['"border-(--locked) bg-(--safety-locked)"', 2],
+    ['"text-[color:var(--locked-deep)]"', 1],
+    ['{ color: "var(--status-danger)" }', 1],
+    ['"var(--locked-ink)" + "var(--locked-rgb)"', 2],
+    ['"var(--locked, #a81e22)"', 1],
+    ['"var(--stamp-red)"', 0],
+    ['"var(--locked-other)"', 0],
+  ])('the token reads %s as %i use(s)', (value, expected) => {
+    expect(withoutComments(`const x = ${value};`, 'a.ts').match(MARK_TOKEN)?.length ?? 0).toBe(expected);
+  });
+
+  test('a class the CSS paints with the mark counts in a component; a class that only borrows a colour does not', () => {
+    expect(MARK_CLASSES).toEqual(expect.arrayContaining(['tactical-alert-critical', 'badge--locked', 'alert--critical']));
+    expect(MARK_CLASSES).not.toContain('stamp');
+    expect(withoutComments('const c = "ge-tile tactical-btn-critical"', 'a.ts').match(MARK_TOKEN)).toHaveLength(1);
+    expect(withoutComments('const c = "stamp mat-leather"', 'a.ts').match(MARK_TOKEN)).toBeNull();
+  });
+
+  // What this proves: every scanned file parses without a syntax error, so no
+  // count rests on a half-read file.
+  test('every scanned file parses cleanly', () => {
+    expect(unparsed).toEqual([]);
   });
 
   test('the scan sees the one real medical stop, so it is not blind', () => {
     expect(counts.get('components/clearanceReading.ts')).toBe(1);
+  });
+
+  test('the scan walks src/ as well as app/ and components/', () => {
+    expect(sourceFiles().some((file) => file.startsWith('src/'))).toBe(true);
+    expect(sourceFiles().some((file) => file.startsWith('app/'))).toBe(true);
+    expect(sourceFiles().some((file) => file.startsWith('components/'))).toBe(true);
   });
 
   // The scan counts the mark's TOKEN, so it cannot see a file that draws the
@@ -679,11 +930,7 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
   // checks above, so its exports are pinned: a new one is added here, with its
   // reason, and is not a way to the badge.
   test('the badge\'s own file exports no other way to the badge than clearanceBadge()', () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('node:fs') as typeof import('node:fs');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = require('node:path') as typeof import('node:path');
-    const source = withoutComments(fs.readFileSync(path.resolve(__dirname, 'clearanceReading.ts'), 'utf8'));
+    const source = withoutComments(fs.readFileSync(path.resolve(__dirname, 'clearanceReading.ts'), 'utf8'), 'clearanceReading.ts');
     expect(source).not.toMatch(/\bexport\s*(\{|\*|default\b)/);
     const exported = [...source.matchAll(/\bexport\s+(?:declare\s+)?(?:async\s+)?(?:const|let|var|function|type|interface|class|enum)\s+(\w+)/g)]
       .map((match) => match[1])
@@ -710,5 +957,105 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
   test('the pending lists only shrink: a swept file is taken off', () => {
     const swept = [...pending.keys()].filter((file) => !counts.has(file));
     expect(swept).toEqual([]);
+  });
+});
+
+describe('the CSS the app loads paints the medical-stop family only where it is listed', () => {
+  // The scanner is checked on a fixture before it is trusted on the sheets: a
+  // brace in a string, a comment holding a rule, a declaration-only at-rule, a
+  // rule under @media, and a selector list whose first part is the key.
+  const FIXTURE = `
+    /* .commented { color: var(--locked); } */
+    :root { --a: var(--locked); --b: #fff; --c: var( --safety-locked ); }
+    @theme { --color-x: var(--status-danger); }
+    @media print { .p, .q { color: var(--locked-ink); } }
+    @media (min-width: 40rem) { .wide .y { content: "}{"; border: 1px solid var(--locked-rgb, red); } }
+    .quiet { color: var(--stamp-red); background: url("a{b}.png"); }
+    .multi, .other .child { background: var(--status-critical); color: var(--locked-deep); }
+  `;
+
+  test('the scanner reads the rules a postcss listing shows, in a fixture', () => {
+    expect(paintingRules(FIXTURE)).toEqual([
+      { key: ':root', count: 2, classes: [] },
+      { key: '@theme', count: 1, classes: [] },
+      { key: '@media print | .p', count: 1, classes: ['p', 'q'] },
+      { key: '.wide .y', count: 1, classes: ['wide', 'y'] },
+      { key: '.multi', count: 2, classes: ['multi', 'other', 'child'] },
+    ]);
+  });
+
+  test('a nested block fails loudly instead of being misread', () => {
+    expect(() => cssRules('.a { color: red; .b { color: var(--locked); } }')).toThrow(/nesting/);
+  });
+
+  test('the scanner reads the sheets, so it is not blind', () => {
+    expect(cssRules(loadedCss()).length).toBeGreaterThan(500);
+    expect(CSS_PAINTING.map(({ key }) => key)).toEqual(expect.arrayContaining(['.badge--locked', '.alert--critical', ':root']));
+  });
+
+  test('every rule that paints the family is listed, with its reason', () => {
+    const unlisted = [...new Set(CSS_PAINTING.map(({ key }) => key))].filter((key) => !CSS_ALLOWED.has(key));
+    expect(unlisted).toEqual([]);
+  });
+
+  test('no listed rule paints more declarations than it does today, and a rule that no longer paints is taken off', () => {
+    const painted = new Map<string, number>();
+    for (const { key, count } of CSS_PAINTING) painted.set(key, (painted.get(key) ?? 0) + count);
+    const grown = [...CSS_ALLOWED].filter(([key, { count }]) => (painted.get(key) ?? 0) > count).map(([key]) => key);
+    const gone = [...CSS_ALLOWED.keys()].filter((key) => !painted.has(key));
+    expect({ grown, gone }).toEqual({ grown: [], gone: [] });
+  });
+});
+
+describe('a runtime tone class cannot carry the mark unseen', () => {
+  const sites = appToneSites();
+
+  // Fixtures: the checker is asked about code written to the temp directory, so
+  // the cases that must go red are shown going red (the mutation proof for
+  // SWP-1 adds the same shapes to a real scanned file).
+  function fixtureSites(code: string): ToneSite[] {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tone-fixture-'));
+    try {
+      const file = path.join(dir, 'fixture.tsx');
+      fs.writeFileSync(file, code);
+      return toneSites([file], { strict: true, jsx: ts.JsxEmit.Preserve, noResolve: true, target: ts.ScriptTarget.ES2020 }, dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test("an alert--${tone} whose type can be 'critical' is a mark site (U1's third gap)", () => {
+    const [site] = fixtureSites("type Sev = 'low' | 'critical';\nexport const f = (s: Sev) => `alert alert--${s}`;\n");
+    expect(site).toMatchObject({ family: 'alert', expression: 's', literals: ['low', 'critical'], unresolved: false });
+    expect(isMarkTone(site)).toBe(true);
+  });
+
+  test("a badge--${tone} that can be 'locked' is a mark site, and one that cannot is not", () => {
+    const [locked, plain] = fixtureSites(
+      "export const a = (t: 'cleared' | 'locked') => `badge badge--${t}`;\nexport const b = (t: 'monitor' | 'restricted') => 'badge--' + t;\n",
+    );
+    expect([isMarkTone(locked), isMarkTone(plain)]).toEqual([true, false]);
+  });
+
+  test('a tone typed string is unresolved, and the checker says so', () => {
+    const [site] = fixtureSites('export const f = (t: string) => `badge badge--${t}`;\n');
+    expect(site).toMatchObject({ literals: [], unresolved: true });
+  });
+
+  test('the checker reads the real sites, so it is not blind', () => {
+    expect(sites.length).toBeGreaterThanOrEqual(7);
+    const decisionLoop = sites.find(({ file }) => file === 'app/coach/decision-loop/page.tsx');
+    expect(decisionLoop?.literals).toContain('locked');
+  });
+
+  test('a site that can be the mark is in a file on MARK_ALLOWED', () => {
+    const unexplained = sites.filter((site) => isMarkTone(site) && !MARK_ALLOWED.has(site.file)).map(({ file, line }) => `${file}:${line}`);
+    expect(unexplained).toEqual([]);
+  });
+
+  test('a site the checker cannot resolve is listed with its reason, and the list only shrinks', () => {
+    const unresolved = sites.filter((site) => site.unresolved).map(({ file, expression }) => `${file} :: ${expression}`);
+    expect(unresolved.filter((key) => !UNRESOLVED_TONE_SITES.has(key))).toEqual([]);
+    expect([...UNRESOLVED_TONE_SITES.keys()].filter((key) => !unresolved.includes(key))).toEqual([]);
   });
 });
