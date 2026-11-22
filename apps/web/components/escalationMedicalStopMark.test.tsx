@@ -507,7 +507,8 @@ test('a lone critical pain report beside an ordinary high: the number belongs to
  *
  * What this does NOT see: a mark applied by an inline style built at run time,
  * a class string that comes from an API response, `.concat()`, `.join()` or any
- * other way of building a tone class than `${}` or `+`, a Tailwind utility
+ * other way of building a tone class than `${}` or `+` (a `+` chain is read
+ * by the string it ends in before the variable), a Tailwind utility
  * that names the colour without the token, and nothing is rendered here.
  *
  * A file may carry the mark only if it is
@@ -570,9 +571,10 @@ const UNRESOLVED_TONE_SITES = new Map<string, string>([
 ]);
 
 const WEB_ROOT = path.resolve(__dirname, '..');
-const SCANNED_DIRS = ['app', 'components', 'src'];
+const SCANNED_DIRS = ['app', 'components', 'lib', 'src'];
+const SCANNED_FILE = /\.(?:tsx?|jsx?|mjs|cjs)$/;
 
-/** Every non-test .ts/.tsx under app/, components/ and src/, as paths relative to apps/web. */
+/** Every non-test .ts/.tsx/.js/.jsx/.mjs/.cjs under app/, components/, lib/ and src/, as paths relative to apps/web. */
 function sourceFiles(): string[] {
   const found: string[] = [];
   const walk = (dir: string) => {
@@ -580,7 +582,7 @@ function sourceFiles(): string[] {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (entry.name !== 'node_modules' && entry.name !== '.next') walk(full);
-      } else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+      } else if (SCANNED_FILE.test(entry.name) && !/\.test\./.test(entry.name)) {
         found.push(path.relative(WEB_ROOT, full).split(path.sep).join('/'));
       }
     }
@@ -600,7 +602,8 @@ const unparsed: string[] = [];
  * TypeScript, so a missing one reads as a failure, not as a clean parse).
  */
 function withoutComments(source: string, fileName = 'file.tsx', record?: string): string {
-  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const scriptKind = /\.tsx$/.test(fileName) ? ts.ScriptKind.TSX : /\.jsx$/.test(fileName) ? ts.ScriptKind.JSX : /\.(?:js|mjs|cjs)$/.test(fileName) ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, scriptKind);
   const diagnostics = (sourceFile as unknown as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics;
   if (record && (!diagnostics || diagnostics.length > 0)) unparsed.push(record);
   return ts.createPrinter({ removeComments: true }).printFile(sourceFile);
@@ -796,7 +799,7 @@ function clearanceBadgeUsers(): string[] {
 interface ToneSite {
   readonly file: string;
   readonly line: number;
-  readonly family: 'alert' | 'badge';
+  readonly family: 'alert' | 'badge' | 'tactical';
   readonly expression: string;
   /** The string literals the checker says the expression can be. */
   readonly literals: readonly string[];
@@ -817,14 +820,14 @@ function toneSites(rootNames: readonly string[], options: ts.CompilerOptions, re
     const sourceFile = program.getSourceFile(file);
     if (!sourceFile) throw new Error(`the checker could not open ${file}`);
     const read = (prefix: string, expression: ts.Expression) => {
-      const match = /(alert|badge)--$/.exec(prefix);
+      const match = /(alert|badge)--$|(tactical)-(?:alert|chip|btn)-$/.exec(prefix);
       if (!match) return;
       const type = checker.getTypeAtLocation(expression);
       const members = type.isUnion() ? type.types : [type];
       sites.push({
         file: path.relative(relativeTo, file).split(path.sep).join('/'),
         line: sourceFile.getLineAndCharacterOfPosition(expression.getStart()).line + 1,
-        family: match[1] as 'alert' | 'badge',
+        family: (match[1] ?? match[2]) as ToneSite['family'],
         expression: expression.getText(),
         literals: members.filter((member): member is ts.StringLiteralType => member.isStringLiteral()).map((member) => member.value),
         unresolved: members.some((member) => !member.isStringLiteral()),
@@ -837,8 +840,9 @@ function toneSites(rootNames: readonly string[], options: ts.CompilerOptions, re
           read(prefix, span.expression);
           prefix = span.literal.text;
         }
-      } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken && ts.isStringLiteralLike(node.left)) {
-        read(node.left.text, node.right);
+      } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+        const before = trailingText(node.left);
+        if (before !== null) read(before, node.right);
       }
       ts.forEachChild(node, visit);
     };
@@ -847,16 +851,24 @@ function toneSites(rootNames: readonly string[], options: ts.CompilerOptions, re
   return sites;
 }
 
+/** The string literal a `+` chain ends in: 'a' gives 'a'; 'a' + 'b' gives 'b'; anything else gives null. */
+function trailingText(expression: ts.Expression): string | null {
+  if (ts.isStringLiteralLike(expression)) return expression.text;
+  if (ts.isParenthesizedExpression(expression)) return trailingText(expression.expression);
+  if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.PlusToken) return trailingText(expression.right);
+  return null;
+}
+
 function appToneSites(): ToneSite[] {
   const files = sourceFiles()
-    .filter((relative) => /(?:alert|badge)--\$\{|['"`](?:alert|badge)--['"`]\s*\+/.test(fs.readFileSync(path.join(WEB_ROOT, relative), 'utf8')))
+    .filter((relative) => /(?:alert|badge)--\$\{|tactical-(?:alert|chip|btn)-\$\{|['"`](?:(?:alert|badge)--|tactical-(?:alert|chip|btn)-)['"`]\s*\+/.test(fs.readFileSync(path.join(WEB_ROOT, relative), 'utf8')))
     .map((relative) => path.join(WEB_ROOT, relative));
   const config = ts.readConfigFile(path.join(WEB_ROOT, 'tsconfig.json'), ts.sys.readFile);
   const options = ts.parseJsonConfigFileContent(config.config, ts.sys, WEB_ROOT).options;
   return toneSites(files, options, WEB_ROOT);
 }
 
-/** Where a tone class is the mark: `badge--${x}` can be 'locked', `alert--${x}` can be 'critical'. */
+/** Where a tone class is the mark: `badge--${x}` can be 'locked'; `alert--${x}` and the CSS's `tactical-alert-${x}` (and -chip-, -btn-) can be 'critical'. */
 const isMarkTone = (site: ToneSite) => site.literals.includes(site.family === 'badge' ? 'locked' : 'critical');
 
 describe('the medical-stop mark appears nowhere else in the source', () => {
@@ -913,6 +925,9 @@ describe('the medical-stop mark appears nowhere else in the source', () => {
     expect(sourceFiles().some((file) => file.startsWith('src/'))).toBe(true);
     expect(sourceFiles().some((file) => file.startsWith('app/'))).toBe(true);
     expect(sourceFiles().some((file) => file.startsWith('components/'))).toBe(true);
+    expect(sourceFiles().some((file) => file.startsWith('lib/'))).toBe(true);
+    // Not only .ts/.tsx: a .mjs under src/ is read too.
+    expect(sourceFiles()).toContain('src/testing/legacyLoaderGoldenData/generate.mjs');
   });
 
   // The scan counts the mark's TOKEN, so it cannot see a file that draws the
@@ -998,12 +1013,13 @@ describe('the CSS the app loads paints the medical-stop family only where it is 
     expect(unlisted).toEqual([]);
   });
 
-  test('no listed rule paints more declarations than it does today, and a rule that no longer paints is taken off', () => {
+  test('each listed rule paints exactly the declarations its entry counts: a rule that paints fewer, or no longer paints, is edited down or taken off', () => {
     const painted = new Map<string, number>();
     for (const { key, count } of CSS_PAINTING) painted.set(key, (painted.get(key) ?? 0) + count);
     const grown = [...CSS_ALLOWED].filter(([key, { count }]) => (painted.get(key) ?? 0) > count).map(([key]) => key);
-    const gone = [...CSS_ALLOWED.keys()].filter((key) => !painted.has(key));
-    expect({ grown, gone }).toEqual({ grown: [], gone: [] });
+    // A rule that paints fewer declarations than its entry says leaves slack a later use could hide in.
+    const shrunk = [...CSS_ALLOWED].filter(([key, { count }]) => (painted.get(key) ?? 0) < count).map(([key]) => key);
+    expect({ grown, shrunk }).toEqual({ grown: [], shrunk: [] });
   });
 });
 
@@ -1035,6 +1051,13 @@ describe('a runtime tone class cannot carry the mark unseen', () => {
       "export const a = (t: 'cleared' | 'locked') => `badge badge--${t}`;\nexport const b = (t: 'monitor' | 'restricted') => 'badge--' + t;\n",
     );
     expect([isMarkTone(locked), isMarkTone(plain)]).toEqual([true, false]);
+  });
+
+  test("a chained + ('badge ' + 'badge--' + t) is read, as is the CSS's single-dash tactical-alert-${t}", () => {
+    const [chain, tactical] = fixtureSites(
+      "export const a = (t: 'ok' | 'locked') => 'badge ' + 'badge--' + t;\nexport const b = (t: 'ok' | 'critical') => `tactical-alert-${t}`;\n",
+    );
+    expect([chain.family, isMarkTone(chain), tactical.family, isMarkTone(tactical)]).toEqual(['badge', true, 'tactical', true]);
   });
 
   test('a tone typed string is unresolved, and the checker says so', () => {
