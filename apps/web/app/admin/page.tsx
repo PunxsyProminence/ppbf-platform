@@ -851,10 +851,6 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
   // 403 from it is worse than not showing it at all -- they get Organization
   // Provisioning instead, which is the surface that actually does their job.
   const canManagePeople = isOrganizationAdminSessionRole(pilotSession.role);
-  // Same boundary as the People console: every compliance route is
-  // organization-scoped and refuses a platform owner, so the entry point would
-  // only lead to a 403.
-  const canOpenComplianceCenter = isOrganizationAdminSessionRole(pilotSession.role);
   // The organization provisioning links that used to sit here were for the
   // platform owner, who now gets the per-gym notice (see the role switch below)
   // and reaches provisioning from there; an organization admin following them
@@ -1470,144 +1466,17 @@ function AdminCapabilitiesConsole({ pilotSession }: { readonly pilotSession: Pil
                   href="/admin/people"
                   className="btn"
                 >
-                  PEOPLE
-                </Link>
-              )}
-              {/* Lane L31 P5: what is left before the gym's first class. */}
-              {canManagePeople && (
-                <Link href="/admin/setup" className="btn btn--ghost">
-                  GYM SETUP
+                  Gym Office
                 </Link>
               )}
               {/*
-                Video upload lives on a COACH page, and an organization_admin
-                lands here -- so the only surface that calls
-                POST /api/pilot/video/upload had no entry point for a role its
-                own API admits. The owner found it the only way anyone would:
-                by trying to upload a video and not finding a button.
-                Gated on the same organization-admin check as PEOPLE, because
-                platform_owner is refused by that API (access.ts bars Omega
-                from athlete-scoped records) and a link that 403s is worse
-                than no link.
+                AS10-2b (lane AS-10; app scrub OFF-05; plan #2018 Q4 A, Q19 A): the
+                rest of this row moved to Gym Office, grouped by the admin's job
+                sections, then Video Analysis (was VIDEO UPLOAD), Drill Library, Waivers & Consent and
+                System in one row (they sit in no section). Gym Setup was already
+                on Gym Office's header. Gym Office (was PEOPLE) stays as this page's
+                way back, and Export JSON exports this page.
               */}
-              {canManagePeople && (
-                <Link
-                  href="/coach/video-analysis"
-                  className="btn btn--ghost"
-                >
-                  VIDEO UPLOAD
-                </Link>
-              )}
-              {/*
-                The same defect the VIDEO UPLOAD comment above describes,
-                repeated three times by the change that shipped these consoles.
-                /admin/athletes, /admin/export and /coach/drills were reachable
-                only by typing the URL -- no navigation anywhere in the app
-                pointed at any of them.
-
-                Two of the three are the floor-readiness surfaces: correcting an
-                athlete's record before a real roster is loaded, and handing a
-                family their own information back. Built for the pilot, and
-                findable by nobody in it.
-
-                Gated on the same organization-admin check for the same reason:
-                every route behind them refuses platform_owner, and a link that
-                403s is worse than no link.
-              */}
-              {canManagePeople && (
-                <Link
-                  href="/admin/athletes"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  ATHLETE RECORDS
-                </Link>
-              )}
-              {canManagePeople && (
-                <Link
-                  href="/admin/export"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  EXPORT
-                </Link>
-              )}
-              {canManagePeople && (
-                <Link
-                  href="/coach/drills"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  DRILL LIBRARY
-                </Link>
-              )}
-              {/*
-                Linked in the same change that built the screen, deliberately.
-                pilot.waivers and domain-upsert both existed for months with no
-                caller, and two planning documents ended up disagreeing about
-                whether consent capture existed at all -- because from the
-                outside, a capability with no way in is indistinguishable from
-                one that was never built.
-              */}
-              {canManagePeople && (
-                <Link
-                  href="/admin/consent"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  CONSENT
-                </Link>
-              )}
-              {canManagePeople && (
-                <Link
-                  href="/admin/import"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  LOAD ROSTER
-                </Link>
-              )}
-              {canManagePeople && (
-                <Link
-                  href="/admin/gear"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  EQUIPMENT
-                </Link>
-              )}
-              {canManagePeople && (
-                <Link
-                  href="/admin/customize"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  CUSTOMIZE
-                </Link>
-              )}
-              {canManagePeople && (
-                <Link
-                  href="/admin/system"
-                  className="inline-flex h-11 items-center border border-[color:var(--brass-700)] bg-[var(--hide-900)] px-4 text-[14px] font-bold text-[color:var(--bone-100)] transition hover:bg-[var(--hide-800)]"
-                >
-                  SYSTEM
-                </Link>
-              )}
-              <Link
-                href="/operations"
-                className="inline-flex h-11 items-center border border-[color:var(--hide-600)] bg-[var(--hide-900)] px-4 text-[length:var(--t-sm)] font-bold text-[color:var(--bone-300)] transition hover:border-[color:var(--brass-700)]"
-              >
-                OPERATIONS
-              </Link>
-              {/*
-                No "Planned" stamp (lane U2, audit UX-A A-2; Overwatch
-                2026-10-17): the Compliance Center reads and records
-                violations today, so the button opens a working page. What is
-                not built is the automated monitoring behind it, and the
-                "Planned -- Not Yet Implemented" note further down this page
-                still says so.
-              */}
-              {canOpenComplianceCenter && (
-                <Link
-                  href="/admin/compliance-center"
-                  className="btn btn--ghost"
-                >
-                  COMPLIANCE CENTER
-                </Link>
-              )}
               <button
                 type="button"
                 onClick={exportCapabilities}
