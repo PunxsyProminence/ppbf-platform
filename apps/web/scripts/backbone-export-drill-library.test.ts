@@ -338,6 +338,35 @@ describe('exit_condition and correction_path (lane NW-b)', () => {
   it('--fill-columns never overwrites: it refuses --allow-overwrite', () => {
     expect(run([dir, '--fill-columns', '--allow-overwrite']).stderr).toContain('--fill-columns never overwrites');
   });
+
+  // LANE GD: A STOP NO FLAG PASSES (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042).
+
+  it('--fill-columns stops on a cell it would fill that carries the DOC-136 source key, writing nothing', () => {
+    const sourced = fixture();
+    sourced[3] = { ...sourced[3], exit_condition: `${D23_EXIT} (DOC-136, a made-up source line)` };
+    const seed = oldSeed();
+    const refused = exportInto(backbone(sourced), seed, ['--fill-columns']);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain(`  ${DRILLS} drill_id ${D23}: exit_condition names a held DOC-136 record`);
+    expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+    expect(snapshot(refused.out)).toEqual(snapshot(seed));
+  });
+});
+
+describe('a held DOC-136 record (lane GD; Overwatch Q2 = A and C1 on #2042)', () => {
+  it('a row that carries the DOC-136 source key stops the export, with or without --allow-overwrite, and nothing is written', () => {
+    const sourced = fixture();
+    sourced[1] = { ...sourced[1], source_ref: 'DOC-136 (a made-up source line)' };
+    const held = backbone(sourced);
+    const seed = committedSeed();
+    for (const extra of [[], ['--allow-overwrite']]) {
+      const refused = exportInto(held, seed, extra);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${DRILLS} drill_id ${LR}: source_ref names a held DOC-136 record`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      expect(snapshot(refused.out)).toEqual(snapshot(seed));
+    }
+  });
 });
 
 // The committed seed after the fill (OBSERVED from the frozen Backbone, manifest 38b52df4c2d8d7a1):
