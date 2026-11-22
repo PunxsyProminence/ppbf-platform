@@ -757,6 +757,33 @@ function CoachDrillLibrary() {
     }
   }
 
+  // A LINK THAT NAMES ONE DRILL OPENS IT (lane AS-11, app scrub CF-23; Q6 = A).
+  // The Cue Library's drill names link here with ?drill_id=<reference drill
+  // id>. A drill id names gym content, not a person, so it may sit in the
+  // address, and the address can be bookmarked. Read once per mount, after the
+  // library's first read has answered (either way): a list read that failed
+  // after the drill's own read would clear the status the drill was read with.
+  // Next writes the new address before the arriving page's effects run
+  // (HistoryUpdater's insertion effect, next/dist/client/components/
+  // app-router.js), so a link from another page is read here. A second
+  // ?drill_id= while this page stays mounted is not read. The drill opens
+  // through openReferenceDrill, whose read answers a drill this gym's library
+  // does not hold with REFERENCE_NOT_FOUND. Back returns to the drill's card,
+  // or to the search box when the card is not shown; the address keeps the id,
+  // so a reload opens the drill again.
+  const arrivalDrillReadRef = useRef(false);
+  useEffect(() => {
+    if (referenceLoading || arrivalDrillReadRef.current) return;
+    arrivalDrillReadRef.current = true;
+    const drillId = new URLSearchParams(window.location.search).get('drill_id')?.trim() ?? '';
+    if (!drillId) return;
+    // Deferred behind an await so no state is set while the effect body runs.
+    void (async () => {
+      await Promise.resolve();
+      await openReferenceDrill(drillId, `view-reference-${drillId}`);
+    })();
+  }, [referenceLoading]);
+
   // After an action, succeeded or failed: focus goes to the drill's lifecycle
   // control, re-rendered under the same id with its new label -- or, when the
   // new state offers no action, to the drill's heading, so it never falls to
