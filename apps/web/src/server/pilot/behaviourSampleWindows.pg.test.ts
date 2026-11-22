@@ -1,0 +1,470 @@
+// Real PostgreSQL proof of PATTERN-1d's storage (PunxsyProminence/ppbf-platform#2082;
+// Q2 A): the window table and its migration. The migration applies over itself
+// and its apply script finds every part ready; the table's guard holds what the
+// server will rely on (no direct delete; close once; the opener's set-null and
+// the purge's de-identify of a deleted athlete, and nothing else; inserts need
+// a live athlete, an active opener of this gym in its role and an active
+// behaviour name); a window still naming an athlete goes with the athlete row;
+// the purge gives a window the same token as the child's reports. Taps and the
+// window functions arrive with the writer change in PATTERN-1d-2.
+//
+// Spins up the disposable local-only embedded Postgres the other suites use.
+// It NEVER connects to production or staging.
+
+import { type ChildProcessByStdio, execFile, spawn } from 'node:child_process';
+import fs from 'node:fs';
+import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import readline from 'node:readline';
+import type { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
+
+import { Client } from 'pg';
+
+import { closePool } from './db';
+
+jest.setTimeout(240_000);
+
+const PG_USER = 'postgres';
+const PG_PASSWORD = 'postgres';
+const DATA_DIR = path.join(os.tmpdir(), `ppbf-behaviour-windows-pg-test-${Date.now()}`);
+const SERVER_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/test-embedded-pg-server.mjs');
+const FULL_SCHEMA_HELPER_PATH = path.resolve(__dirname, '../../../scripts/lib/full-schema.mjs');
+const APPLY_SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/pilot-apply-behaviour-sample-windows-migration.mjs');
+const CLEANUP_SCRIPT = path.resolve(__dirname, '../../../scripts/pilot-cleanup-deleted-data.mjs');
+const INFRA_DIR = path.resolve(__dirname, '../../../../../infra/azure');
+const MIGRATION_PATH = path.join(INFRA_DIR, 'pilot_slice_postgres_behaviour_sample_windows_migration.sql');
+const TEST_DB_NAME = 'ppbf_test_behaviour_windows';
+
+const nativeDynamicImport = new Function('specifier', 'return import(specifier)') as (
+  specifier: string,
+) => Promise<Record<string, unknown>>;
+
+const ORG = 'org-bsw-1';
+const OTHER_ORG = 'org-bsw-2';
+const COACH_A = 'acct-bsw-coach-a';
+const COACH_B = 'acct-bsw-coach-b';
+const OTHER_GYM_COACH = 'acct-bsw-other';
+const ATHLETE = 'ath-bsw-1';
+const OTHER_ATHLETE = 'ath-bsw-2';
+const LEAVING = 'ath-bsw-3';
+const SOFT = 'ath-bsw-4';
+const COACH_LAPSED = 'acct-bsw-lapsed';
+const COACH_GONE = 'acct-bsw-gone';
+const RETIRED_KEY = 'bk_fixture_bsw_retired';
+const RUN = 'run-bsw-1';
+const DRILL = 'drill-bsw-1';
+// A fixture key written straight to the table; keys the app makes are minted (bk_<hex>).
+const KEY = 'bk_fixture_bsw_guard';
+
+let PG_PORT: number;
+let serverProcess: ChildProcessByStdio<null, Readable, Readable>;
+let db: Client;
+
+function connectionStringFor(database: string): string {
+  return `postgres://${PG_USER}:${PG_PASSWORD}@localhost:${PG_PORT}/${database}`;
+}
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address && typeof address === 'object') {
+        const { port } = address;
+        server.close(() => resolve(port));
+        return;
+      }
+      server.close(() => reject(new Error('Could not determine a free port')));
+    });
+  });
+}
+
+function runCleanupScript(extraEnv: Record<string, string>) {
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    execFile(
+      process.execPath,
+      [CLEANUP_SCRIPT],
+      {
+        env: {
+          ...process.env,
+          AZURE_POSTGRES_CONNECTION_STRING: connectionStringFor(TEST_DB_NAME),
+          PPBF_EXPECTED_POSTGRES_HOSTNAME: 'localhost',
+          PPBF_EXPECTED_POSTGRES_DATABASE: TEST_DB_NAME,
+          PPBF_POSTGRES_DISABLE_SSL: 'true',
+          PPBF_RETENTION_STORAGE_ACCOUNT_URL: '',
+          ...extraEnv,
+        },
+      },
+      (_error, stdout, stderr) => {
+        const line = `${stdout}${stderr}`.split('\n').find((entry) => entry.trim().startsWith('{'));
+        if (!line) {
+          reject(new Error(`No JSON output. stdout=${stdout} stderr=${stderr}`));
+          return;
+        }
+        resolve(JSON.parse(line) as Record<string, unknown>);
+      },
+    );
+  });
+}
+
+/** The database's refusal, as code and constraint. */
+async function refusalOf(sql: string, params: unknown[]): Promise<{ code?: string; constraint?: string }> {
+  try {
+    await db.query(sql, params);
+  } catch (error) {
+    const pgError = error as { code?: string; constraint?: string };
+    return { code: pgError.code, constraint: pgError.constraint };
+  }
+  return {};
+}
+
+/** An insert attempt with every column named; the database's refusal, or {} when it was taken. */
+function tryInsert(o: {
+  athlete?: string; opener?: string; role?: string; key?: string; run?: string; kind?: string; id?: string;
+  closedAt?: string | null; deidentifiedAt?: string | null;
+} = {}) {
+  return refusalOf(
+    `insert into pilot.behaviour_observations_windows
+       (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint,
+        opened_by_account_id, opened_by_role, closed_at, deidentified_at)
+     values ($1, $2, $3, $4, $5, $6, 'controlled', $7, $8, $9, $10)`,
+    [ORG, o.athlete ?? ATHLETE, o.key ?? KEY, o.run ?? RUN, o.kind ?? 'drill', o.id ?? DRILL, o.opener ?? COACH_A,
+      o.role ?? 'coach', o.closedAt ?? null, o.deidentifiedAt ?? null],
+  );
+}
+
+/** One window, written straight to the table as the window functions will. */
+async function insertWindow(input: { athlete?: string; opener?: string; chances?: number } = {}): Promise<{ window_id: string; chances: number; closed_at: Date | null }> {
+  const result = await db.query<{ window_id: string; chances: number; closed_at: Date | null }>(
+    `insert into pilot.behaviour_observations_windows
+       (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint,
+        opened_by_account_id, opened_by_role${input.chances === undefined ? '' : ', chances'})
+     values ($1, $2, $3, $4, 'drill', $5, 'controlled', $6, 'coach'${input.chances === undefined ? '' : ', $7'})
+     returning window_id, chances, closed_at`,
+    [ORG, input.athlete ?? ATHLETE, KEY, RUN, DRILL, input.opener ?? COACH_A, ...(input.chances === undefined ? [] : [input.chances])],
+  );
+  return result.rows[0];
+}
+
+beforeAll(async () => {
+  PG_PORT = await freePort();
+  serverProcess = spawn(
+    process.execPath,
+    [SERVER_SCRIPT_PATH, DATA_DIR, String(PG_PORT)],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  ) as ChildProcessByStdio<null, Readable, Readable>;
+  let stderrOutput = '';
+  serverProcess.stderr.on('data', (chunk) => {
+    stderrOutput += String(chunk);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const rl = readline.createInterface({ input: serverProcess.stdout });
+    const timeout = setTimeout(() => {
+      rl.close();
+      reject(new Error(`Embedded Postgres did not become ready in time. stderr:\n${stderrOutput}`));
+    }, 120_000);
+    rl.on('line', (line) => {
+      if (line.includes('EMBEDDED_PG_READY')) {
+        clearTimeout(timeout);
+        rl.close();
+        resolve();
+      }
+    });
+    serverProcess.once('exit', (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`Embedded Postgres exited early (code ${code}). stderr:\n${stderrOutput}`));
+    });
+  });
+
+  const admin = new Client({ connectionString: connectionStringFor('postgres') });
+  await admin.connect();
+  await admin.query(`drop database if exists ${TEST_DB_NAME}`);
+  await admin.query(`create database ${TEST_DB_NAME}`);
+  await admin.end();
+
+  db = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
+  await db.connect();
+  const helper = await nativeDynamicImport(pathToFileURL(FULL_SCHEMA_HELPER_PATH).href);
+  await (helper.applyFullSchema as (client: Client, opts?: { infraDir?: string }) => Promise<unknown>)(db, {
+    infraDir: INFRA_DIR,
+  });
+
+  await db.query(
+    `insert into pilot.organizations (organization_id, organization_name, status)
+     values ($1, 'Fixture Gym', 'active'), ($2, 'Other Fixture Gym', 'active')`,
+    [ORG, OTHER_ORG],
+  );
+  for (const [accountId, role, organizationId] of [
+    [COACH_A, 'coach', ORG], [COACH_B, 'coach', ORG], [OTHER_GYM_COACH, 'coach', OTHER_ORG],
+    [COACH_LAPSED, 'coach', ORG], [COACH_GONE, 'coach', ORG],
+  ]) {
+    await db.query(
+      `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
+      [accountId, role, organizationId],
+    );
+    await db.query(
+      `insert into pilot.organization_memberships (account_id, organization_id, role, active_flag) values ($1, $2, $3, true)`,
+      [accountId, organizationId, role],
+    );
+  }
+  for (const athleteId of [ATHLETE, OTHER_ATHLETE, LEAVING, SOFT]) {
+    await db.query(
+      `insert into pilot.athletes
+         (organization_id, athlete_id, full_name, dob, weight_class, gym_status,
+          emergency_contact, active_flag, coach_id, created_at, updated_at, deleted_at)
+       values ($1, $2, 'Fixture Athlete', '2012-04-03', 'youth-60', 'active', 'Guardian', true, $3, now(), now(), null)`,
+      [ORG, athleteId, COACH_A],
+    );
+  }
+  await db.query(
+    `insert into pilot.disciplines (organization_id, discipline, display_name, lane, exposure_model)
+     values ($1, 'boxing', 'Boxing', 'striking', 'head_impact')`,
+    [ORG],
+  );
+  await db.query(
+    `insert into pilot.drill_library
+       (organization_id, drill_id, lineage_id, name, category, target_behavior, purpose,
+        standard_setup, execution, what_good_looks_like, what_bad_looks_like, contact_level, skill_id)
+     values ($1, $2, 'lineage-bsw-1', 'Jab return', 'technical', 'b', 'p', 's', 'e', 'g', 'bad', 'none', 'SK-JAB-01')`,
+    [ORG, DRILL],
+  );
+  await db.query(
+    `insert into pilot.session_script_runs
+       (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
+        run_state, started_at, ended_at)
+     values ($1, $2, null, null, $3, current_date, 'completed', now() - interval '1 hour', now())`,
+    [ORG, RUN, COACH_A],
+  );
+  await db.query(
+    `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+     values ($1, $2, $3, $6, 'coach'), ($1, $2, $4, $6, 'coach'), ($1, $2, $5, $6, 'coach')`,
+    [ORG, RUN, ATHLETE, LEAVING, SOFT, COACH_A],
+  );
+  await db.query(
+    'update pilot.organization_memberships set active_flag = false where account_id = $1 and organization_id = $2',
+    [COACH_LAPSED, ORG],
+  );
+  await db.query(
+    `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+     values ($1, $2, 'Fixture behaviour', 'SK-JAB-01', $3)`,
+    [ORG, KEY, COACH_A],
+  );
+  await db.query(
+    `insert into pilot.behaviour_keys (organization_id, behaviour_key, label, skill_id, created_by_account_id)
+     values ($1, $2, 'Fixture retired behaviour', 'SK-JAB-01', $3)`,
+    [ORG, RETIRED_KEY, COACH_A],
+  );
+  await db.query(`update pilot.behaviour_keys set status = 'retired' where organization_id = $1 and behaviour_key = $2`, [ORG, RETIRED_KEY]);
+
+});
+
+afterAll(async () => {
+  await closePool().catch(() => {});
+  await db?.end().catch(() => {});
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(safetyTimer);
+      resolve();
+    };
+    const safetyTimer = setTimeout(finish, 15_000);
+    safetyTimer.unref();
+    serverProcess.once('exit', finish);
+    serverProcess.kill('SIGTERM');
+  });
+});
+
+describe('the migration', () => {
+  test('applies again over itself, and its apply script finds every part ready', async () => {
+    const sql = fs.readFileSync(MIGRATION_PATH, 'utf8');
+    await db.query(sql);
+    const apply = await nativeDynamicImport(pathToFileURL(APPLY_SCRIPT_PATH).href);
+    await expect((apply.applyMigrationTransaction as (client: Client, sql: string) => Promise<void>)(db, sql)).resolves.toBeUndefined();
+  });
+});
+
+describe('a window row', () => {
+  test('opens with ten chances unless set, and the table keeps its numbers in bounds', async () => {
+    expect(await insertWindow()).toEqual(expect.objectContaining({ chances: 10, closed_at: null }));
+    expect((await insertWindow({ chances: 3 })).chances).toBe(3);
+    expect(await refusalOf(
+      `insert into pilot.behaviour_observations_windows
+         (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint,
+          opened_by_account_id, opened_by_role, chances)
+       values ($1, $2, $3, $4, 'drill', $5, 'controlled', $6, 'coach', 51)`,
+      [ORG, ATHLETE, KEY, RUN, DRILL, COACH_A],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_chances_check' });
+  });
+
+  test('a window is for a child marked present on that run of this gym (Q5 A)', async () => {
+    expect(await tryInsert({ run: 'run-nowhere' })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_present_on_run' });
+    expect(await tryInsert({ athlete: OTHER_ATHLETE })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_present_on_run' });
+  });
+
+  test('the drill or block is this gym\'s, and a context is one of the fixed nine: no free text', async () => {
+    expect(await tryInsert({ kind: 'context', id: 'open_floor' })).toEqual({});
+    expect(await tryInsert({ kind: 'context', id: 'Fixture_free_text' })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_context_check' });
+    expect(await tryInsert({ id: 'drill-nowhere' })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_context_of_this_gym' });
+    expect(await tryInsert({ kind: 'block', id: 'block-nowhere' })).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_context_of_this_gym' });
+  });
+
+  test('the open and close times are the database\'s, not the caller\'s', async () => {
+    const row = await db.query<{ window_id: string; opened_at: Date }>(
+      `insert into pilot.behaviour_observations_windows
+         (organization_id, athlete_id, behaviour_key, run_id, context_kind, context_id, task_constraint,
+          opened_by_account_id, opened_by_role, opened_at)
+       values ($1, $2, $3, $4, 'drill', $5, 'controlled', $6, 'coach', '2099-01-01T00:00:00Z')
+       returning window_id, opened_at`,
+      [ORG, ATHLETE, KEY, RUN, DRILL, COACH_A],
+    );
+    expect(Math.abs(row.rows[0].opened_at.getTime() - Date.now())).toBeLessThan(60_000);
+    const closed = await db.query<{ closed_at: Date }>(
+      `update pilot.behaviour_observations_windows set closed_at = '9999-01-01T00:00:00Z'
+        where organization_id = $1 and window_id = $2 returning closed_at`,
+      [ORG, row.rows[0].window_id],
+    );
+    expect(Math.abs(closed.rows[0].closed_at.getTime() - Date.now())).toBeLessThan(60_000);
+  });
+});
+
+describe('the table\'s guard', () => {
+  let windowId: string;
+  beforeAll(async () => {
+    windowId = (await insertWindow()).window_id;
+  });
+
+  test.each([
+    ['delete', 'delete from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2', 'pilot_behaviour_windows_no_delete'],
+    ['change the number of chances', 'update pilot.behaviour_observations_windows set chances = 20 where organization_id = $1 and window_id = $2', 'pilot_behaviour_windows_append_only'],
+    ['name another athlete', `update pilot.behaviour_observations_windows set athlete_id = 'ath-bsw-2' where organization_id = $1 and window_id = $2`, 'pilot_behaviour_windows_append_only'],
+  ])('refuses to %s', async (_label, sql, constraint) => {
+    expect(await refusalOf(sql, [ORG, windowId])).toEqual({ code: '23514', constraint });
+  });
+
+  test('closes once, and refuses to reopen or close again', async () => {
+    const close = 'update pilot.behaviour_observations_windows set closed_at = now() where organization_id = $1 and window_id = $2';
+    await db.query(close, [ORG, windowId]);
+    expect(await refusalOf(close, [ORG, windowId])).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+    expect(await refusalOf(
+      'update pilot.behaviour_observations_windows set closed_at = null where organization_id = $1 and window_id = $2', [ORG, windowId],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+  });
+
+  test.each([
+    ['an opener from another gym', { opener: OTHER_GYM_COACH }, 'pilot_behaviour_windows_opener_of_this_gym'],
+    ['an athlete not on the roster', { athlete: 'ath-nowhere' }, 'pilot_behaviour_windows_live_athlete'],
+    ['an anon token', { athlete: 'anon_00000000-0000-4000-8000-000000000000' }, 'pilot_behaviour_windows_live_athlete'],
+    ['an athlete marked deleted', { athlete: SOFT, soft: true }, 'pilot_behaviour_windows_live_athlete'],
+    ['an opener whose membership lapsed', { opener: COACH_LAPSED }, 'pilot_behaviour_windows_opener_of_this_gym'],
+    ['a role the opener does not hold', { role: 'organization_admin' }, 'pilot_behaviour_windows_opener_of_this_gym'],
+    ['a retired behaviour name', { key: RETIRED_KEY }, 'pilot_behaviour_windows_active_key'],
+    ['a row already closed', { closedAt: '2026-01-01T00:00:00Z' }, 'pilot_behaviour_windows_live_athlete'],
+    ['a row already de-identified', { deidentifiedAt: '2026-01-01T00:00:00Z' }, 'pilot_behaviour_windows_live_athlete'],
+  ])('refuses a window from %s', async (_label, given, constraint) => {
+    const { soft, ...overrides } = given as typeof given & { soft?: boolean };
+    if (soft) await db.query('update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2', [ORG, SOFT]);
+    expect(await tryInsert(overrides)).toEqual({ code: '23514', constraint });
+    if (soft) await db.query('update pilot.athletes set deleted_at = null where organization_id = $1 and athlete_id = $2', [ORG, SOFT]);
+  });
+
+  test('closing moves nothing else', async () => {
+    const { window_id: other } = await insertWindow();
+    expect(await refusalOf(
+      'update pilot.behaviour_observations_windows set closed_at = now(), chances = 5 where organization_id = $1 and window_id = $2',
+      [ORG, other],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+  });
+
+  test('the opener\'s account going clears the opener and nothing else', async () => {
+    const { window_id: theirs } = await insertWindow({ opener: COACH_GONE });
+    await db.query('delete from pilot.organization_memberships where account_id = $1', [COACH_GONE]);
+    await db.query('delete from pilot.accounts where account_id = $1', [COACH_GONE]);
+    const row = await db.query<{ opened_by_account_id: string | null; athlete_id: string }>(
+      'select opened_by_account_id, athlete_id from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2',
+      [ORG, theirs],
+    );
+    expect(row.rows).toEqual([{ opened_by_account_id: null, athlete_id: ATHLETE }]);
+  });
+
+  test('refuses de-identification to anything but a token', async () => {
+    const { window_id: softWindow } = await insertWindow({ athlete: SOFT });
+    await db.query('update pilot.athletes set deleted_at = now() where organization_id = $1 and athlete_id = $2', [ORG, SOFT]);
+    expect(await refusalOf(
+      `update pilot.behaviour_observations_windows set athlete_id = 'anon_bad', deidentified_at = now()
+        where organization_id = $1 and window_id = $2`,
+      [ORG, softWindow],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+    await db.query('update pilot.athletes set deleted_at = null where organization_id = $1 and athlete_id = $2', [ORG, SOFT]);
+  });
+
+  test('refuses de-identification while the athlete is on the roster', async () => {
+    expect(await refusalOf(
+      `update pilot.behaviour_observations_windows
+          set athlete_id = 'anon_00000000-0000-4000-8000-000000000001', deidentified_at = now()
+        where organization_id = $1 and window_id = $2`,
+      [ORG, windowId],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+  });
+});
+
+describe('when the athlete goes', () => {
+  test('a window still naming an athlete goes with the athlete row', async () => {
+    const { window_id: windowId } = await insertWindow({ athlete: LEAVING });
+    await db.query('delete from pilot.athletes where organization_id = $1 and athlete_id = $2', [ORG, LEAVING]);
+    const left = await db.query(
+      'select 1 from pilot.behaviour_observations_windows where organization_id = $1 and window_id = $2', [ORG, windowId],
+    );
+    expect(left.rows).toHaveLength(0);
+  });
+
+  test('the purge keeps the athlete\'s windows under the same token as their reports', async () => {
+    await db.query(
+      `insert into pilot.behaviour_observations
+         (organization_id, athlete_id, behaviour_key, episode_id, session_key, task_context_key, task_constraint,
+          polarity, attribution_target, attribution_certainty, source_type, source_quality, interpretation,
+          observer_account_id, author_role, observed_at)
+       values ($1, $2, $3, 'ep:00000000-0000-4000-8000-0000000000a1', $4, 'drill:lineage-bsw-1', 'controlled',
+               'occurrence', 'unresolved', 'uncertain', 'coach_tag', 'moderate', 'human_observed', $5, 'coach', now())`,
+      [ORG, ATHLETE, KEY, `run:${RUN}`, COACH_A],
+    );
+    await db.query(
+      `update pilot.athletes set active_flag = false, deleted_at = now() - interval '3 years'
+        where organization_id = $1 and athlete_id = $2`,
+      [ORG, ATHLETE],
+    );
+    const before = await db.query<{ n: number; ids: string[] }>(
+      `select count(*)::int as n, array_agg(window_id::text) as ids from pilot.behaviour_observations_windows
+        where organization_id = $1 and athlete_id = $2`, [ORG, ATHLETE],
+    );
+    const dry = await runCleanupScript({ PPBF_RETENTION_APPLY: 'false' });
+    expect(dry.event).toBe('retention.cleanup.dry-run');
+    expect(dry.would_deidentify_behaviour_observations_windows).toBe(before.rows[0].n);
+    const event = await runCleanupScript({ PPBF_RETENTION_APPLY: 'true' });
+    expect(event.event).toBe('retention.cleanup.completed');
+    expect(event.behaviour_observations_windows_deidentified).toBe(before.rows[0].n);
+    const tokens = await db.query<{ athlete_id: string; stamped: boolean }>(
+      `select distinct athlete_id, deidentified_at is not null as stamped from pilot.behaviour_observations_windows
+        where organization_id = $1 and window_id::text = any($2::text[])
+       union
+       select distinct athlete_id, deidentified_at is not null as stamped from pilot.behaviour_observations
+        where organization_id = $1 and behaviour_key = $3`,
+      [ORG, before.rows[0].ids, KEY],
+    );
+    expect(tokens.rows).toHaveLength(1);
+    expect(tokens.rows[0].athlete_id).toMatch(/^anon_[0-9a-f-]{36}$/);
+    expect(tokens.rows[0].stamped).toBe(true);
+    // Once only.
+    expect(await refusalOf(
+      `update pilot.behaviour_observations_windows
+          set athlete_id = 'anon_00000000-0000-4000-8000-000000000002', deidentified_at = now()
+        where organization_id = $1 and athlete_id = $2`,
+      [ORG, tokens.rows[0].athlete_id],
+    )).toEqual({ code: '23514', constraint: 'pilot_behaviour_windows_append_only' });
+  });
+});
