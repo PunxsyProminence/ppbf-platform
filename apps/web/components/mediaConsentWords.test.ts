@@ -7,7 +7,8 @@
 // apps/web that call analyzeFramesWithVision, the one function that sends still
 // frames to the Azure AI service, and expects exactly the three callers the
 // words describe. A new caller fails here with a message that points at the
-// words. It does NOT catch a new direct fetch that sends images some other way.
+// words. It reads code, not comments. It does NOT catch a new direct fetch that
+// sends images some other way.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -60,16 +61,23 @@ function shippedSourceUnder(dir: string): string[] {
 
 const relative = (file: string) => path.relative(WEB_DIR, file).split(path.sep).join('/');
 
+// Code only: a comment that names the function (as mediaConsentWords.ts does)
+// is not a caller. Block comments go first, then line comments that do not
+// follow a colon or a quote, so a URL in a string keeps the rest of its line.
+const codeOf = (file: string) => fs.readFileSync(file, 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
+
 test('frames go to the AI service from exactly the callers these words describe', () => {
   const callers = shippedSourceUnder(WEB_DIR)
     .filter((file) => relative(file) !== SENDER_MODULE)
-    .filter((file) => (fs.readFileSync(file, 'utf8').match(SENDER) ?? []).length > 0)
+    .filter((file) => (codeOf(file).match(SENDER) ?? []).length > 0)
     .map(relative)
     .sort();
 
   const reason = 'A new caller of analyzeFramesWithVision sends still frames to the Azure AI service. Check that '
     + 'GUARDIAN_MEDIA_WORDS and ADULT_MEDIA_FRAMES_WORDS in components/mediaConsentWords.ts still tell families '
-    + 'the truth, and ask the owner before changing them (HF9-1, Q3 on #2083).';
+    + 'the truth, and ask the owner before changing them (HF9-1, Q3 on #2083). Then update this list.';
   expect({ reason, callers }).toEqual({
     reason,
     callers: [
@@ -84,6 +92,6 @@ test('frames go to the AI service from exactly the callers these words describe'
 
   // The module that sends names the function once, where it is declared, so a
   // second call added inside it trips here too.
-  const inSender = fs.readFileSync(path.join(WEB_DIR, SENDER_MODULE), 'utf8').match(SENDER) ?? [];
+  const inSender = codeOf(path.join(WEB_DIR, SENDER_MODULE)).match(SENDER) ?? [];
   expect({ reason, namesInSender: inSender.length }).toEqual({ reason, namesInSender: 1 });
 });

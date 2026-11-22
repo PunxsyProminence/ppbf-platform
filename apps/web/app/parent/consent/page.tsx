@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import RoleSessionGate from '@/components/RoleSessionGate';
+import { GUARDIAN_MEDIA_WORDS } from '@/components/mediaConsentWords';
 import { apiBase } from '@/lib/apiBase';
 import { formatGymDate } from '@/lib/gymTime';
 
@@ -336,17 +337,20 @@ export default function GuardianMediaConsentPage() {
                         </label>
                         {/* No "Allow public use" box here (A-Q14, hide until
                             used). What is granted on this page is gym-only
-                            use; the sentence below names who inside the gym
-                            can see it (the clip library is gym-wide,
+                            use; the words under this block name who inside
+                            the gym can see it (the clip library is gym-wide,
                             OD-2026-10-08-004; its readers are coaches, staff
                             and athletes, publications/library/route.ts). */}
-                        <p className="t-muted">
-                          Photos and video stay inside the gym: coaches review them, and a clip the gym publishes goes in
-                          its clip library, which coaches and athletes signed in at this gym can browse. Nothing is posted
-                          publicly on this consent.
-                        </p>
                       </div>
                     ) : null}
+                    {/* Where photos and video go, in the owner's words (HF9-1,
+                        Q3 = A on #2083; mediaConsentWords.ts). On every card,
+                        signed or not: a guardian who signed before these words
+                        existed reads them too. They used to sit inside the
+                        not-yet-signed block and said photos and video "stay
+                        inside the gym", while still frames go to Microsoft's
+                        Azure AI service. */}
+                    <p className="t-muted mt-[var(--s2)]">{GUARDIAN_MEDIA_WORDS}</p>
                     {/* .btn .btn--kiosk, not `.btn--lever min-h-[44px]`.
 
                         The old class string asked for 44px and rendered 38. It is
