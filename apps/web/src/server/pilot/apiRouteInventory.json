@@ -15654,7 +15654,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lane L49. The gym's shared list of behaviour names (Jason 2026-10-18 Q1); keys are server-minted. A coach-typed label could name a child, so staff only (FIELD_TIERS behaviour_keys.label).",
+    "notes": "Lane L49. The gym's shared list of behaviour names (Jason 2026-10-18 Q1); keys are server-minted. A coach-typed label could name a child, so staff only (FIELD_TIERS behaviour_keys.label). GET also returns the skill codes a new name may sit under (LL-W8b, PATTERN-1e): the graph's, as the writer checks them.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -15743,6 +15743,126 @@
     "looksWrong": "",
     "confidence": "high",
     "notes": "Lane L49. Files a report as the caller in the caller's role; recordBehaviourObservation builds session, drill and episode keys from this gym's records and the table's guard re-checks staff membership and the athlete.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-windows/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behaviour-windows",
+    "gate": "requirePrincipal + requireRole(WINDOW_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "PATTERN-1e. The open sampled windows of one session run, so a second coach can join (Q2 A); windows whose athlete the caller may not reach are left out. The window table's athlete id is staff only (FIELD_TIERS behaviour_observations_windows.athlete_id).",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-windows/route.ts#POST",
+    "method": "POST",
+    "path": "/api/pilot/coach/behaviour-windows",
+    "gate": "requirePrincipal + requireRole(WINDOW_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "PATTERN-1e. Opens a sampled window as the caller, in the caller's role and gym, through the writer's run, presence and drill checks (Q5 A); the table's guard re-checks staff, athlete and behaviour name. A refused athlete is a hidden 404.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-windows/[windowId]/route.ts#GET",
+    "method": "GET",
+    "path": "/api/pilot/coach/behaviour-windows/[windowId]",
+    "gate": "requirePrincipal + requireRole(WINDOW_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": false,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "PATTERN-1e. One window, the chance the count stands at (a number only, Overwatch 7084899452 point 2) and the caller's own taps, never another coach's (Q2 A). Another gym's window, or an unreachable athlete's, is a hidden 404.",
+    "mechanical": {
+      "sessionGates": [
+        "requirePrincipal"
+      ],
+      "authorizationGates": [
+        "requireRole",
+        "assertActorCanAccessAthlete"
+      ],
+      "roleLiterals": [
+        "admin,coach,organization_admin"
+      ]
+    }
+  },
+  {
+    "id": "app/api/pilot/coach/behaviour-windows/[windowId]/route.ts#PATCH",
+    "method": "PATCH",
+    "path": "/api/pilot/coach/behaviour-windows/[windowId]",
+    "gate": "requirePrincipal + requireRole(WINDOW_ROLES) + assertActorCanAccessAthlete",
+    "rolesAdmitted": [
+      "coach",
+      "organization_admin",
+      "admin"
+    ],
+    "athleteData": true,
+    "writes": true,
+    "coachReachRule": "applied",
+    "missingGate": false,
+    "looksWrong": "",
+    "confidence": "high",
+    "notes": "PATTERN-1e. tap, change_last (Q8 A) or close, as the caller in the caller's role; taps go through the behaviour-report writer with attribution unresolved (Q3 A). Another gym's window, or an unreachable athlete's, is a hidden 404.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"

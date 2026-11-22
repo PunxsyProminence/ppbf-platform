@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 
 import { GET, POST } from './route';
 import type { PilotPrincipal } from '@/src/server/pilot/auth';
-import { createBehaviourKey, listBehaviourKeys } from '@/src/server/pilot/behaviourObservations';
+import { SKILL_CODE_PATTERN, createBehaviourKey, listBehaviourKeys } from '@/src/server/pilot/behaviourObservations';
+import { skillCodesFromSkillFamilies } from '@/src/server/pilot/contentImport/referenceSets';
 import { requirePrincipal } from '@/src/server/pilot/http';
 
 jest.mock('@/src/server/pilot/http', () => {
@@ -53,7 +54,7 @@ test("a coach reads the gym's list and adds a name to it as themself", async () 
   mockRequirePrincipal.mockResolvedValue(principal({ accountId: 'acct-3' }));
   mockList.mockResolvedValue([{ behaviour_key: 'k_one' }]);
   const listed = await GET(new NextRequest(URL_BASE));
-  expect(await listed.json()).toEqual({ ok: true, keys: [{ behaviour_key: 'k_one' }] });
+  expect(await listed.json()).toEqual(expect.objectContaining({ ok: true, keys: [{ behaviour_key: 'k_one' }] }));
   expect(mockList).toHaveBeenCalledWith('org-1');
 
   mockCreate.mockResolvedValue({ behaviour_key: 'k_two' });
@@ -64,4 +65,13 @@ test("a coach reads the gym's list and adds a name to it as themself", async () 
     organizationId: 'org-1', label: 'K two', skillId: 'SK-JAB-01', createdByAccountId: 'acct-3',
   });
   expect((await POST(postRequest({ label: 'No skill' }))).status).toBe(400);
+});
+
+test('the list comes with the skill codes a new name may sit under (LL-W8b): every graph code the writer accepts, sorted', async () => {
+  mockRequirePrincipal.mockResolvedValue(principal({}));
+  const body = await (await GET(new NextRequest(URL_BASE))).json();
+  const codes = [...skillCodesFromSkillFamilies()].filter((code) => SKILL_CODE_PATTERN.test(code)).sort();
+  expect(codes.length).toBeGreaterThan(50);
+  expect(body.skillCodes).toEqual(codes);
+  expect(body.skillCodes).toContain('SK-JAB-01');
 });

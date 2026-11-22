@@ -22,13 +22,15 @@ import { ForbiddenError, ValidationError } from './errors';
 // revises their first ("Change last tap", Q8 A). A tap says nothing about
 // whose fault it was, so it records that as unsaid (Q3 A). Through these
 // functions a coach reads back only their own taps, and a tap returns nothing
-// of anyone else's: a second coach joins blind (Q2 A). (The reports route
-// lists every report of an athlete to staff, taps included: which screen calls
-// it during a window is PATTERN-1e's and 1f's.)
+// of anyone else's; a joining coach learns only the chance the count stands
+// at, and the reports route leaves out an open window's taps
+// (listBehaviourObservations): a second coach joins blind (Q2 A; Overwatch
+// 7084899452 points 1 and 2).
 //
 // Staff only, like the reports (privacyTiers.ts): opening and tapping by the
-// table guards, closing and reading back by an active staff membership of this
-// gym checked here. No route calls these yet: the window routes are PATTERN-1e.
+// table guards, closing and reading by an active staff membership of this gym
+// checked here. The callers are the staff window routes, app/api/pilot/coach/
+// behaviour-windows (PATTERN-1e), which take the account from the session.
 
 export const DEFAULT_WINDOW_CHANCES = 10;
 export const MAX_WINDOW_CHANCES = 50;
@@ -140,7 +142,8 @@ async function assertStaffOfThisGym(organizationId: string, accountId: string, w
   if (rows.length === 0) throw new ForbiddenError(`Only staff of this gym can ${what}.`);
 }
 
-async function windowOf(organizationId: string, windowId: string): Promise<BehaviourWindowRow> {
+/** One window of this gym (a route reads it to check the athlete before acting); refused as not in this gym otherwise. */
+export async function behaviourWindowOf(organizationId: string, windowId: string): Promise<BehaviourWindowRow> {
   const rows = await query<BehaviourWindowRow>(
     `select ${FIELDS} from pilot.behaviour_observations_windows
       where organization_id = $1 and window_id::text = $2`,
@@ -148,6 +151,50 @@ async function windowOf(organizationId: string, windowId: string): Promise<Behav
   );
   if (rows.length === 0) throw new ValidationError('That window is not in this gym.');
   return rows[0];
+}
+
+/** Each chance's episode in a window, to its chance number. */
+function chanceByEpisode(organizationId: string, window: BehaviourWindowRow): Map<string, number> {
+  return new Map(Array.from({ length: window.chances }, (_, index) => [
+    windowEpisodeId(organizationId, window.window_id, index + 1), index + 1,
+  ] as const));
+}
+
+/** The open windows of one session run, for a second coach to join (Q2 A): the windows, not their taps. */
+export async function listOpenBehaviourWindows(input: {
+  organizationId: string;
+  runId: string;
+  readerAccountId: string;
+}): Promise<BehaviourWindowRow[]> {
+  await assertStaffOfThisGym(input.organizationId, input.readerAccountId, 'read a window');
+  return query<BehaviourWindowRow>(
+    `select ${FIELDS} from pilot.behaviour_observations_windows
+      where organization_id = $1 and run_id = $2 and closed_at is null
+      order by opened_at, window_id`,
+    [input.organizationId, input.runId],
+  );
+}
+
+/**
+ * The chance the count stands at, for a coach joining or working a window: the
+ * highest chance anyone has tapped, plus one (Overwatch 7084899452 point 2).
+ * A number only: no polarity and no observer, so a joining coach stays blind
+ * to the others' judgments (Q2 A) but codes the same attempts.
+ */
+export async function currentWindowChance(input: {
+  organizationId: string;
+  windowId: string;
+  readerAccountId: string;
+}): Promise<number> {
+  await assertStaffOfThisGym(input.organizationId, input.readerAccountId, 'read a window');
+  const window = await behaviourWindowOf(input.organizationId, input.windowId);
+  const chanceOf = chanceByEpisode(input.organizationId, window);
+  const tapped = await query<{ episode_id: string }>(
+    `select distinct episode_id from pilot.behaviour_observations
+      where organization_id = $1 and episode_id = any($2::text[])`,
+    [input.organizationId, [...chanceOf.keys()]],
+  );
+  return Math.max(0, ...tapped.map((row) => chanceOf.get(row.episode_id) ?? 0)) + 1;
 }
 
 /** One tap: shown (occurrence) or not shown (counterexample) on one chance. */
@@ -162,7 +209,7 @@ export async function recordWindowTap(input: {
   if (!(POLARITIES as readonly string[]).includes(input.polarity)) {
     throw new ValidationError(`polarity must be one of: ${POLARITIES.join(', ')}.`);
   }
-  const window = await windowOf(input.organizationId, input.windowId);
+  const window = await behaviourWindowOf(input.organizationId, input.windowId);
   // The writer re-reads the window in its own transaction, held until the
   // report commits: open, this chance in range, this athlete, behaviour, run, drill and task.
   const written = await recordBehaviourObservation({
@@ -184,6 +231,28 @@ export async function recordWindowTap(input: {
   return { chance: input.chance, polarity: written.polarity };
 }
 
+/** "Change last tap" (Q8 A): this coach's most recent tap on the window, revised to the polarity given. */
+export async function changeLastWindowTap(input: {
+  organizationId: string;
+  windowId: string;
+  polarity: string;
+  observerAccountId: string;
+  authorRole: string;
+}): Promise<{ chance: number; polarity: string }> {
+  const window = await behaviourWindowOf(input.organizationId, input.windowId);
+  const chanceOf = chanceByEpisode(input.organizationId, window);
+  const [last] = await query<{ episode_id: string }>(
+    `select episode_id from pilot.behaviour_observations
+      where organization_id = $1 and episode_id = any($2::text[]) and observer_account_id = $3
+      order by created_at desc, observation_id desc
+      limit 1`,
+    [input.organizationId, [...chanceOf.keys()], input.observerAccountId],
+  );
+  const chance = last ? chanceOf.get(last.episode_id) : undefined;
+  if (chance === undefined) throw new ValidationError('You have no tap on this window to change.');
+  return recordWindowTap({ ...input, chance });
+}
+
 export async function closeBehaviourWindow(input: {
   organizationId: string;
   windowId: string;
@@ -197,7 +266,7 @@ export async function closeBehaviourWindow(input: {
     [input.organizationId, input.windowId],
   );
   if (closed.length > 0) return closed[0];
-  await windowOf(input.organizationId, input.windowId);
+  await behaviourWindowOf(input.organizationId, input.windowId);
   throw new ValidationError('That window is already closed.');
 }
 
@@ -208,10 +277,8 @@ export async function listMyWindowTaps(input: {
   observerAccountId: string;
 }): Promise<{ chance: number; polarity: string }[]> {
   await assertStaffOfThisGym(input.organizationId, input.observerAccountId, 'read back window taps');
-  const window = await windowOf(input.organizationId, input.windowId);
-  const chanceOf = new Map(Array.from({ length: window.chances }, (_, index) => [
-    windowEpisodeId(input.organizationId, window.window_id, index + 1), index + 1,
-  ] as const));
+  const window = await behaviourWindowOf(input.organizationId, input.windowId);
+  const chanceOf = chanceByEpisode(input.organizationId, window);
   const rows = await query<{ episode_id: string; polarity: string }>(
     `select o.episode_id, o.polarity from pilot.behaviour_observations o
       where o.organization_id = $1 and o.episode_id = any($2::text[]) and o.observer_account_id = $3

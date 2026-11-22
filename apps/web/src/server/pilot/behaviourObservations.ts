@@ -55,6 +55,11 @@ export type ViewQuality = keyof typeof VIEW_QUALITY;
 export const BEHAVIOUR_KEY_PATTERN = /^[a-z][a-z0-9_]{2,79}$/;
 /** The skill code shape (contentImport/ids.ts SKILL_CODE_PATTERN). */
 export const SKILL_CODE_PATTERN = /^SK-[A-Z]+-\d{2}$/;
+
+/** The skill codes a new behaviour name may sit under (LL-W8b): the graph's, as createBehaviourKey checks them, sorted. */
+export function behaviourSkillCodes(): string[] {
+  return [...skillCodesFromSkillFamilies()].filter((code) => SKILL_CODE_PATTERN.test(code)).sort();
+}
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const ID_PATTERN = /^[^\s]{1,200}$/;
 export const MAX_NOTE_LENGTH = 2000;
@@ -561,7 +566,27 @@ const OBSERVATION_SELECT = `select o.observation_id, o.athlete_id, o.behaviour_k
   from pilot.behaviour_observations o
   join pilot.behaviour_keys k on k.organization_id = o.organization_id and k.behaviour_key = o.behaviour_key`;
 
-/** One athlete's reports, newest first, as written: no evaluation, revisions included. */
+/**
+ * The episodes of this athlete's sampled windows still open (PATTERN-1e): their
+ * taps stay out of the reports list until the window closes, so a coach who
+ * joins a window is blind to the others' judgments (Q2 A; Overwatch 7084899452
+ * point 1). None where the window table is not yet applied.
+ */
+async function openWindowEpisodes(organizationId: string, athleteId: string): Promise<string[]> {
+  const [table] = await query<{ present: boolean }>(
+    `select to_regclass('pilot.behaviour_observations_windows') is not null as present`,
+  );
+  if (!table?.present) return [];
+  const open = await query<{ window_id: string; chances: number }>(
+    `select window_id::text as window_id, chances from pilot.behaviour_observations_windows
+      where organization_id = $1 and athlete_id = $2 and closed_at is null`,
+    [organizationId, athleteId],
+  );
+  return open.flatMap((window) => Array.from({ length: window.chances }, (_, index) =>
+    windowEpisodeId(organizationId, window.window_id, index + 1)));
+}
+
+/** One athlete's reports, newest first, as written: no evaluation, revisions included; an open window's taps left out. */
 export async function listBehaviourObservations(
   organizationId: string,
   athleteId: string,
@@ -569,10 +594,10 @@ export async function listBehaviourObservations(
 ): Promise<BehaviourObservationRow[]> {
   return query<BehaviourObservationRow>(
     `${OBSERVATION_SELECT}
-      where o.organization_id = $1 and o.athlete_id = $2
+      where o.organization_id = $1 and o.athlete_id = $2 and o.episode_id <> all($4::text[])
       order by o.observed_at desc, o.created_at desc
       limit $3`,
-    [organizationId, athleteId, Math.max(1, Math.min(500, Math.trunc(limit)))],
+    [organizationId, athleteId, Math.max(1, Math.min(500, Math.trunc(limit))), await openWindowEpisodes(organizationId, athleteId)],
   );
 }
 
