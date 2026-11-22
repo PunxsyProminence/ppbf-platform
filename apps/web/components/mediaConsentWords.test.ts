@@ -65,14 +65,17 @@ const GUARDIAN_WORDS_WITH_PUBLIC_USE_ON_FILE =
   + "tagged, a teaching video, or another athlete's video, can be sent whatever you choose here.";
 
 // The same answer, header = A: the page header no longer says the choice
-// "controls one thing", and says it also decides playback and the frames,
-// in the ruled passages' own words where they have them.
+// "controls one thing", and says it also decides the frames and playback, in
+// the ruled passages' own words where they have them. The playback sentence is
+// Overwatch's A on #2083 (comment 7085890882): with no answer playback is not
+// refused, so the header names what stops it, and that a link already given
+// out can still play for up to an hour.
 const GUARDIAN_PAGE_INTRO_AS_ANSWERED =
   'Nothing here blocks your child from training. It decides whether photos or videos of your child may be used in '
-  + 'gym publications. For videos your child is filed under or tagged in, it also decides whether they can be played '
-  + "back in the gym's app and whether still frames from them are sent to Microsoft's Azure AI service. You can grant "
-  + 'or withdraw consent at any time. If your child has more than one guardian, every guardian must consent before '
-  + 'anything is published.';
+  + 'gym publications. For videos your child is filed under or tagged in, it also decides whether still frames from '
+  + "them are sent to Microsoft's Azure AI service. With photos only, or if you withdraw, they cannot be played back "
+  + "in the gym's app; a link already given out can still play for up to an hour. You can grant or withdraw consent "
+  + 'at any time. If your child has more than one guardian, every guardian must consent before anything is published.';
 
 test('a card with no public use on file gets the whole guardian passage', () => {
   expect(guardianMediaWords(false)).toBe(GUARDIAN_WORDS_AS_RULED);
