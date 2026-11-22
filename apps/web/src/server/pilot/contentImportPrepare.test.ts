@@ -503,6 +503,32 @@ describe('a hand-off that leaves out a label column (field_labels, evidence, sta
     }
   });
 
+  it('a block keeps its own labels when the hand-off reorders the blocks: labels follow the block id, not its place', () => {
+    // Re-review on #2103: matched by the file's key (track_id + block_order), two swapped blocks took each other's labels.
+    const BLOCKS = 'training-tracks/seed_track_blocks.csv';
+    fs.cpSync(path.join(REAL_SEED_DATA, 'training-tracks'), path.join(seedData, 'training-tracks'), { recursive: true });
+    const committed = table(BLOCKS, REAL_SEED_DATA);
+    const block = committed.find((row) => LABELS.every((name) => row[name].trim() !== ''));
+    if (!block) throw new Error('no committed track block carries all three labels');
+    const track = committed.filter((row) => row.track_id === block.track_id);
+    const [first, second] = track;
+    expect(LABELS.some((name) => first[name] !== second[name])).toBe(true);
+    const swapped = track.map((row) => {
+      if (row.track_block_id === first.track_block_id) return { ...row, block_order: second.block_order };
+      if (row.track_block_id === second.track_block_id) return { ...row, block_order: first.block_order };
+      return row;
+    });
+    writePackageFile('seed_track_blocks.csv', swapped, LABELS);
+
+    expect(prepare(true).code).toBe(0);
+    const after = table(BLOCKS);
+    for (const row of [first, second]) {
+      expect(after.find((candidate) => candidate.track_block_id === row.track_block_id)).toMatchObject({
+        field_labels: row.field_labels, evidence: row.evidence, stage_keys: row.stage_keys,
+      });
+    }
+  });
+
   it('a new drill has no committed row to keep from: its label cells are blank', () => {
     writePackageFile('seed_drill_library.csv', [newDrill()], LABELS);
     expect(prepare(true).code).toBe(0);
