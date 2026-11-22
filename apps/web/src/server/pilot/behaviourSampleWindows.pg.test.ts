@@ -58,9 +58,11 @@ const LEAVING = 'ath-bsw-3';
 const SOFT = 'ath-bsw-4';
 const COACH_LAPSED = 'acct-bsw-lapsed';
 const COACH_GONE = 'acct-bsw-gone';
+const BOARD_MEMBER = 'acct-bsw-board';
 const RETIRED_KEY = 'bk_fixture_bsw_retired';
 const RUN = 'run-bsw-1';
 const PLANNED_RUN = 'run-bsw-2';
+const OTHER_RUN = 'run-bsw-3';
 const DRILL = 'drill-bsw-1';
 // A fixture key written straight to the table; keys the app makes are minted (bk_<hex>).
 const KEY = 'bk_fixture_bsw_guard';
@@ -210,7 +212,7 @@ beforeAll(async () => {
   );
   for (const [accountId, role, organizationId] of [
     [COACH_A, 'coach', ORG], [COACH_B, 'coach', ORG], [OTHER_GYM_COACH, 'coach', OTHER_ORG],
-    [COACH_LAPSED, 'coach', ORG], [COACH_GONE, 'coach', ORG],
+    [COACH_LAPSED, 'coach', ORG], [COACH_GONE, 'coach', ORG], [BOARD_MEMBER, 'board', ORG],
   ]) {
     await db.query(
       `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, $2, $3, 'microsoft')`,
@@ -246,8 +248,15 @@ beforeAll(async () => {
     `insert into pilot.session_script_runs
        (organization_id, run_id, script_id, script_version, delivered_by_account_id, delivered_on,
         run_state, started_at, ended_at)
-     values ($1, $2, null, null, $3, current_date, 'completed', now() - interval '1 hour', now())`,
-    [ORG, RUN, COACH_A],
+     values ($1, $2, null, null, $3, current_date, 'completed', now() - interval '1 hour', now()),
+            ($1, $4, null, null, $3, current_date, 'completed', now() - interval '1 hour', now())`,
+    [ORG, RUN, COACH_A, OTHER_RUN],
+  );
+  // Another unplanned run the athlete was at: a report there differs from the window by its run alone.
+  await db.query(
+    `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
+     values ($1, $2, $3, $4, 'coach')`,
+    [ORG, OTHER_RUN, ATHLETE, COACH_A],
   );
   await db.query(
     `insert into pilot.session_run_athletes (organization_id, run_id, athlete_id, marked_by_account_id, marked_by_role)
@@ -523,6 +532,16 @@ async function readingsOf(windowId: string, chance: number) {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Waits (up to 10 s) until `count` lock requests are queued; false if they never are. */
+async function waiters(count: number): Promise<boolean> {
+  for (let tries = 0; tries < 200; tries += 1) {
+    const { rows } = await db.query<{ n: number }>('select count(*)::int as n from pg_locks where not granted');
+    if (rows[0].n >= count) return true;
+    await sleep(50);
+  }
+  return false;
+}
+
 /** Holds a chance's episode lock from another connection, as a tap in flight would. */
 async function holdEpisode(windowId: string, chance: number): Promise<Client> {
   const holder = new Client({ connectionString: connectionStringFor(TEST_DB_NAME) });
@@ -586,7 +605,7 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
       .toEqual([{ chance: 1, polarity: 'counterexample' }]);
     expect(await windows.listMyWindowTaps({ organizationId: ORG, windowId, observerAccountId: COACH_B }))
       .toEqual([{ chance: 1, polarity: 'counterexample' }, { chance: 2, polarity: 'occurrence' }]);
-    for (const outsider of [COACH_LAPSED, OTHER_GYM_COACH]) {
+    for (const outsider of [COACH_LAPSED, OTHER_GYM_COACH, BOARD_MEMBER]) {
       await expect(windows.listMyWindowTaps({ organizationId: ORG, windowId, observerAccountId: outsider }))
         .rejects.toThrow('Only staff of this gym can read back window taps.');
     }
@@ -604,6 +623,7 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
     const mismatch = 'That window is about another athlete, behaviour, session, drill or task.';
     await expect(direct(windowId, 4, { athleteId: LEAVING })).rejects.toThrow(mismatch);
     await expect(direct(windowId, 4, { behaviourKey: OTHER_KEY })).rejects.toThrow(mismatch);
+    await expect(direct(windowId, 4, { session: { runId: OTHER_RUN } })).rejects.toThrow(mismatch);
     await expect(direct(windowId, 4, { session: { runId: PLANNED_RUN }, context: { blockId: 'blk-bsw-1' } })).rejects.toThrow(mismatch);
     await expect(direct(windowId, 4, { context: { attemptContext: 'open_floor' } })).rejects.toThrow(mismatch);
     await expect(direct(windowId, 4, { taskConstraint: 'live' })).rejects.toThrow(mismatch);
@@ -629,9 +649,9 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
   test('two first taps of one chance at once still take one moment', async () => {
     const holder = await holdEpisode(windowId, 5);
     const first = tap(windowId, 5, COACH_A, 'occurrence');
-    await sleep(300);
     const second = tap(windowId, 5, COACH_B, 'counterexample');
-    await sleep(300);
+    // Both taps queued on the chance's lock before it is let go.
+    expect(await waiters(2)).toBe(true);
     await release(holder);
     await Promise.all([first, second]);
     const readings = await readingsOf(windowId, 5);
@@ -644,24 +664,30 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
     const holder = await holdEpisode(other, 1);
     let closedEarly = false;
     const tapping = tap(other, 1, COACH_A, 'occurrence');
-    await sleep(300);
+    // The tap holds the window and waits on the chance's lock; then the close queues behind the tap.
+    expect(await waiters(1)).toBe(true);
     const closing = close(other).then((row) => {
       closedEarly = true;
       return row;
     });
-    await sleep(500);
+    await waiters(2);
     const closedWhileTapping = closedEarly;
+    const letGo = (await db.query<{ at: Date }>('select clock_timestamp() as at')).rows[0].at;
     await release(holder);
     const [, closed] = await Promise.all([tapping, closing]);
     expect(closedWhileTapping).toBe(false);
+    // The close is stamped when it takes the row, after the tap it waited for, not when it began.
     const [reading] = await readingsOf(other, 1);
+    expect(new Date(closed.closed_at as string).getTime()).toBeGreaterThanOrEqual(letGo.getTime());
     expect(new Date(closed.closed_at as string).getTime()).toBeGreaterThanOrEqual(reading.created_at.getTime());
   });
 
   test('a closed window takes no tap; only staff of this gym close it, and only once', async () => {
     await expect(windows.closeBehaviourWindow({ organizationId: OTHER_ORG, windowId, closedByAccountId: OTHER_GYM_COACH }))
       .rejects.toThrow('That window is not in this gym.');
-    await expect(close(windowId, COACH_LAPSED)).rejects.toThrow('Only staff of this gym can close a window.');
+    for (const outsider of [COACH_LAPSED, BOARD_MEMBER]) {
+      await expect(close(windowId, outsider)).rejects.toThrow('Only staff of this gym can close a window.');
+    }
     expect((await close(windowId)).closed_at).not.toBeNull();
     await expect(tap(windowId, 3, COACH_A, 'occurrence')).rejects.toThrow('That window is closed.');
     await expect(close(windowId)).rejects.toThrow('That window is already closed.');

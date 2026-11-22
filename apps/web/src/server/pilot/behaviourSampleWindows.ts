@@ -55,6 +55,8 @@ const REFUSALS: Record<string, string> = {
   pilot_behaviour_windows_live_athlete: 'That athlete is not on this gym\'s roster.',
   pilot_behaviour_windows_opener_of_this_gym: 'Only staff of this gym can open a window.',
   pilot_behaviour_windows_role_check: 'Only staff of this gym can open a window.',
+  pilot_behaviour_windows_present_on_run: 'That athlete is not marked present in that session run.',
+  pilot_behaviour_windows_context_of_this_gym: 'That drill or session block is not in this gym.',
   pilot_behaviour_windows_active_key: 'That behaviour name is not on the active list.',
 };
 
