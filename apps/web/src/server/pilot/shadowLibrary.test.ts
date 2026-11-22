@@ -37,7 +37,7 @@ import {
   resolveCoveredCapabilityGapRequirements,
   syncCapabilityGapRequirement,
 } from './shadowResearch';
-import { ValidationError } from './errors';
+import { ConflictError, ValidationError } from './errors';
 import {
   createShadowLibraryChunk,
   createShadowLibraryClaim,
@@ -1435,4 +1435,35 @@ describe('SHADOW library writers refuse importer-only provenance', () => {
       expect(mockQueryOne).not.toHaveBeenCalled();
     },
   );
+});
+
+// AS12-2e (OD-2026-10-17-001 ruling 1: one word for each thing on every screen):
+// the intake's source-mismatch refusal reaches the curator verbatim (the route
+// answers a ConflictError with its message), and /evidence is titled "Evidence
+// Review Queue". The pg suite that reaches this refusal over HTTP compares only
+// the code, so nothing else pins these words.
+describe('an entry started under a different source (L54, AS12-2e)', () => {
+  it('is refused with words that name the page by its title, "Evidence Review Queue", and by no other name', async () => {
+    const statements: string[] = [];
+    const clientQuery = jest.fn(async (sql: string) => {
+      statements.push(sql);
+      // The advisory lock answers nothing; the entry this retry repeats was filed under another source.
+      return statements.length === 1 ? { rows: [] } : { rows: [{ document_id: 'doc-a', source_id: 'source-other' }] };
+    });
+    mockWithTransaction.mockImplementationOnce(async (fn) => fn({ query: clientQuery } as never));
+
+    const refused = await createShadowLibraryDocument({
+      organizationId: 'org-1', actorAccountId: 'acct-1', actorRole: 'organization_admin',
+      sourceId: 'source-a', documentName: 'Excerpt', requestId: 'request-0001',
+    }).then(() => null, (error: unknown) => error);
+
+    expect(refused).toBeInstanceOf(ConflictError);
+    expect((refused as ConflictError).code).toBe('SHADOW_LIBRARY_INTAKE_SOURCE_MISMATCH');
+    expect((refused as ConflictError).message).toBe(
+      'This entry was already started under a different source. Finish it there, or reject it in Evidence Review Queue.',
+    );
+    expect((refused as ConflictError).message).not.toMatch(/Evidence Review(?! Queue)/);
+    // It stopped at the refusal: the lock and the look-up, no insert.
+    expect(statements).toHaveLength(2);
+  });
 });

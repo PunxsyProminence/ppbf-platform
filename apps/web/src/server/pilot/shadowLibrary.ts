@@ -1207,7 +1207,7 @@ export async function createShadowLibraryDocument(input: {
         // An unfinished excerpt stays with the source it was started under.
         if (found.source_id !== input.sourceId) {
           throw new ConflictError(
-            'This entry was already started under a different source. Finish it there, or reject it in Evidence Review.',
+            'This entry was already started under a different source. Finish it there, or reject it in Evidence Review Queue.',
             'SHADOW_LIBRARY_INTAKE_SOURCE_MISMATCH',
           );
         }
