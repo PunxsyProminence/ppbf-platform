@@ -14,6 +14,7 @@ import {
   isCriticalShadowDisclosure,
   markShadowDisclosure,
   SHADOW_DISCLOSURE_CLASSIFICATION,
+  shadowDisclosureFilesEscalation,
 } from '@/src/server/pilot/shadowDisclosure';
 import type { PilotRole } from '@/src/server/pilot/contracts';
 import {
@@ -727,7 +728,8 @@ async function handleShadowChat(
     // that pre-empts "chest pain" answers the wrong question about the wrong
     // thing. The refusal below therefore defers to it.
     //
-    // An athlete's disclosure (F-076) is marked high-risk here when the
+    // An athlete's disclosure (F-076), or a parent's (HF8-1 B, Q1 = B), is
+    // marked high-risk here when the
     // validator did not mark it: the admin review row becomes owed and the
     // words stay out of the research feed. A disclosure is answered: one the
     // validator withheld for a non-emergency medical reason is answered on the
@@ -1014,8 +1016,10 @@ async function handleShadowChat(
     // The disclosure escalation is owed from the same point: authenticated,
     // authorized and inside the chat limits, which bound how many one account
     // can file. It is filed at the exit so it can carry the conversation the
-    // exchange was stored in.
-    if (shadowDisclosure) {
+    // exchange was stored in. An athlete's only: a parent's disclosure is
+    // office review only (Q1 = B), so the review row above is all it writes,
+    // whatever athlete the principal or the chat names.
+    if (shadowDisclosure && shadowDisclosureFilesEscalation(userRole)) {
       atExit.fileDisclosureEscalation = () => fileShadowDisclosureEscalation({
         organizationId,
         athleteId: principal.athleteId,

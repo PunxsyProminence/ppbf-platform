@@ -38,6 +38,12 @@ import type { ShadowValidationResult } from './shadowChat';
  *
  * NON-DISCLOSING, like athleteVoice: a fixed reason and the conversation
  * pointer only. Never the message, never the matched cues.
+ *
+ * A PARENT'S MESSAGE (HF8-1 B; Jason, 2026-11-21, Q1 = B "office review
+ * only", relayed by Overwatch on #2083) gets the same scan and carve-outs and
+ * the same mark, so the admin SHADOW review row is owed, the words stay out of
+ * the research feed and F-093 applies. It files no escalation:
+ * shadowDisclosureFilesEscalation.
  */
 
 /**
@@ -222,12 +228,19 @@ export interface ShadowDisclosure {
 }
 
 /**
- * The disclosure in an athlete's SHADOW message, or null. Athletes only: the
- * lane brief scopes F-076 to an athlete's own message, whose athlete scope is
- * the sender's own record.
+ * Whose SHADOW messages are scanned: an athlete's (F-076) and a parent's
+ * (HF8-1 B; Jason, 2026-11-21, Q1 = B "office review only", relayed by
+ * Overwatch on #2083). Staff and every other role are not.
+ */
+const SCANNED_ROLES: ReadonlySet<string> = new Set(['athlete', 'parent']);
+
+/**
+ * The disclosure in an athlete's or a parent's SHADOW message, or null. The
+ * same scan and the same carve-outs for both. What a match then does differs
+ * by role: see shadowDisclosureFilesEscalation.
  */
 export function detectShadowDisclosure(message: string, role: string): ShadowDisclosure | null {
-  if (role !== 'athlete') return null;
+  if (!SCANNED_ROLES.has(role)) return null;
   const scan = scanForSafetyLanguage(message);
   if (!scan.safeguarding) return null;
   const normalized = normalizeForSafetyScan(message);
@@ -249,6 +262,17 @@ export function detectShadowDisclosure(message: string, role: string): ShadowDis
     || scan.cues.some((cue) => ADMIN_ONLY_CUES.has(cue))
     || inAnyReading(TOUCH_PATTERN);
   return { cues: scan.cues, namesGymStaff: staff, adminOnly };
+}
+
+/**
+ * Whether a disclosure files the in-app safety escalation. Only an athlete's:
+ * its athlete scope is the sender's own record. A parent's is office review
+ * only (Q1 = B): the org admin's SHADOW review row for that one exchange
+ * (OD-2026-10-07-009 ruling 4), never a coach alert or an escalation entry,
+ * whatever athlete the parent's chat names.
+ */
+export function shadowDisclosureFilesEscalation(role: string): boolean {
+  return role === 'athlete';
 }
 
 /** A disclosure the Tell us box would file 'critical'. Its review row takes the critical allowance. */
