@@ -74,16 +74,26 @@ test('each row is the body voice and its second line the muted voice, with no ra
   expect(second).toHaveClass('t-muted');
   const row = second.closest('li') as HTMLElement;
   expect(row).toHaveClass('t-body');
+  /* An allowlist, not a blocklist: every row and line carries exactly the
+     voice it should and nothing else, and no inline style. A blocklist of raw
+     forms missed the ones that do paint over an unlayered voice (an inline
+     colour; an `!important` utility). */
   const list = container.querySelector('ul') as HTMLElement;
-  // No raw ink or size of any kind, so the voices are the only answer: not a
-  // bone or brass token, not an arbitrary colour or size, not an inline style.
-  expect(list.innerHTML).not.toMatch(/--bone-|--brass-|text-\[length:|text-\[color:|text-\[#|style="/);
+  for (const li of Array.from(list.querySelectorAll('li'))) {
+    expect(li.className).toBe('t-body');
+    const [what, who] = Array.from(li.querySelectorAll('p'));
+    expect(what.className).toBe('');
+    expect(who.className).toBe('t-muted');
+  }
+  for (const element of Array.from(list.querySelectorAll('*'))) {
+    expect(element.hasAttribute('style')).toBe(false);
+  }
 });
 
-test('"No injuries on record." is the body voice with no raw colour', async () => {
+test('"No injuries on record." is the body voice and nothing else', async () => {
   mockFetch({ ok: true, body: { ok: true, injuries: [] } });
   render(<MyInjuries athleteId="ath-1" />);
   const line = await screen.findByText('No injuries on record.');
-  expect(line).toHaveClass('t-body');
-  expect(line.className).not.toMatch(/text-\[color:|--bone-/);
+  expect(line.className).toBe('t-body mt-[var(--s2)]');
+  expect(line.hasAttribute('style')).toBe(false);
 });

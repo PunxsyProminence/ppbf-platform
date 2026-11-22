@@ -47,10 +47,13 @@ function depthAt(at: number): number {
   return depth;
 }
 
+/* The colour a selector's last TOP-LEVEL rule declares. A rule inside an
+   at-rule (@media, @layer) is skipped: one wrapped in an inert query does not
+   paint the screen, and a later print-only restatement does not change it. */
 function colourFor(selector: string): { value: string; at: number } | null {
   let last: { value: string; at: number } | null = null;
   for (const rule of rules()) {
-    if (!rule.selectors.includes(selector)) continue;
+    if (!rule.selectors.includes(selector) || depthAt(rule.at) !== 0) continue;
     const colour = rule.body.match(/(?:^|;)\s*color\s*:\s*([^;]+)/);
     if (colour) last = { value: colour[1].trim(), at: rule.at };
   }
@@ -77,10 +80,8 @@ describe('.stamp--brass on the light grounds', () => {
     },
   );
 
-  it.each(['.mat-paper .stamp--brass', '.on-canvas .stamp--brass'])('%s is a top-level rule, not inside an at-rule', (selector) => {
-    const light = colourFor(selector);
-    expect(light).not.toBeNull();
-    expect(depthAt((light as { at: number }).at)).toBe(0);
+  it.each(['.mat-paper .stamp--brass', '.on-canvas .stamp--brass'])('%s is stated at the top level, not only inside an at-rule', (selector) => {
+    expect(colourFor(selector)).not.toBeNull();
   });
 });
 
@@ -90,11 +91,37 @@ describe('.stamp--brass on the light grounds', () => {
    one, `.on-canvas .t-muted`, is the one that paints it; the paper one answers a
    paper panel off the canvas. Each must stay an ink, not a bone rung written
    for leather, or the line goes back to about 2:1 on paper. */
+/** Relative luminance of a #rrggbb colour. */
+function luminance(hex: string): number {
+  const channel = (i: number) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+}
+
+/* The bone rungs as the sheet declares them, so a bone ink written as a hex is
+   caught as well as one written as a token. */
+const BONE_HEXES = new Set(
+  [...SHEET.matchAll(/--bone-\d+\s*:\s*(#[0-9a-fA-F]{6})/g)].map((m) => m[1].toLowerCase()),
+);
+
 describe('.t-muted on the light grounds', () => {
-  it.each(['.mat-paper .t-muted', '.on-canvas .t-muted'])('%s is an ink, not a bone rung', (selector) => {
+  it('reads the bone rungs from the sheet, or it is comparing nothing', () => {
+    expect(BONE_HEXES.size).toBeGreaterThan(3);
+  });
+
+  it.each(['.mat-paper .t-muted', '.on-canvas .t-muted'])('%s is an ink at 4.5:1 or better on the darker paper, not a bone rung', (selector) => {
     const muted = colourFor(selector);
     expect(muted).not.toBeNull();
-    expect((muted as { value: string }).value).not.toMatch(/--bone-/);
-    expect(depthAt((muted as { at: number }).at)).toBe(0);
+    const value = (muted as { value: string }).value.toLowerCase();
+    expect(value).not.toMatch(/--bone-/);
+    expect(BONE_HEXES.has(value)).toBe(false);
+    // A literal ink, measured against the foot of the paper gradient (#E7DBBD),
+    // the lighter-ink end of every paper and canvas panel.
+    expect(value).toMatch(/^#[0-9a-f]{6}$/);
+    const ink = luminance(value);
+    const paper = luminance('#e7dbbd');
+    expect((paper + 0.05) / (ink + 0.05)).toBeGreaterThanOrEqual(4.5);
   });
 });
