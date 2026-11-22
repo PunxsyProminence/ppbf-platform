@@ -191,17 +191,24 @@ describe('where photos and video go', () => {
   const PUBLIC_SENTENCE = 'Nothing is posted publicly on this consent.';
   const withPublicUse = (row: Row): Row => ({ ...row, public_use_allowed: true });
 
-  test('a card whose own consent on file allows public use leaves out only the public sentence', async () => {
-    global.fetch = jest.fn().mockResolvedValue(jsonResponse({
-      ok: true,
-      items: [child('ath-1', 'Jamie Rivera', [withPublicUse(own('signed', true))])],
-    })) as unknown as typeof fetch;
+  test.each([
+    ['signed, photos and video', [withPublicUse(own('signed', true))]],
+    // A paper form can say photos only and public use (admin/athlete-consent takes the two separately).
+    ['signed, photos only', [withPublicUse(own('signed', false))]],
+    // Stored with stray spaces and capitals: the page reads it as signed, as the server does.
+    ['signed, stored as " Signed "', [withPublicUse(own(' Signed ', true))]],
+    // Listed second, after a co-guardian who has not consented: still this guardian's own row.
+    ['signed, after a co-guardian who has not', [{ you: false, status: 'not_on_file' }, withPublicUse(own('signed', true))]],
+  ])('a card whose own consent on file is %s with public use leaves out only the public sentence', async (_label, rows) => {
+    global.fetch = jest.fn().mockResolvedValue(
+      jsonResponse({ ok: true, items: [child('ath-1', 'Jamie Rivera', rows)] }),
+    ) as unknown as typeof fetch;
 
     render(<GuardianMediaConsentPage />);
     await screen.findByText('Jamie Rivera');
 
     const card = cardOf('Jamie Rivera');
-    expect(within(card).getByText(/^On file since .+: photos and video, public use allowed$/)).toBeInTheDocument();
+    expect(within(card).getByText(/^On file since .+, public use allowed$/)).toBeInTheDocument();
     expect(within(card).getAllByText(guardianMediaWords(true))).toHaveLength(1);
     expect(card.textContent).not.toContain(PUBLIC_SENTENCE);
   });
@@ -227,6 +234,8 @@ describe('where photos and video go', () => {
     ['withdrawn', [withPublicUse(own('withdrawn', false))]],
     // Only this guardian's own row counts; a co-guardian's public use is not shown here.
     ['not decided, while a co-guardian signed', [own(null, null), { you: false, status: 'granted' }]],
+    // Signed, with public use not stated: the card does not say "public use allowed" either.
+    ['signed, public use not stated', [{ ...own('signed', true), public_use_allowed: null }]],
   ])('a card whose own consent is %s keeps the whole passage', async (_label, rows) => {
     global.fetch = jest.fn().mockResolvedValue(
       jsonResponse({ ok: true, items: [child('ath-1', 'Jamie Rivera', rows)] }),
@@ -242,6 +251,20 @@ describe('where photos and video go', () => {
 /* Overwatch on #2083 (comment 7085637440), header = A: the header no longer
    says the choice "controls one thing"; it also says the choice decides
    playback and whether still frames go to Microsoft's Azure AI service. */
+test('the header says it while the page loads, when the read fails, and when no child is linked', async () => {
+  for (const [response, title] of [
+    [new Promise<Response>(() => {}), 'Loading consent status…'],
+    [Promise.resolve(jsonResponse({ error: 'down' }, false)), 'Consent status could not be loaded'],
+    [Promise.resolve(jsonResponse({ ok: true, items: [] })), 'No linked children found'],
+  ] as const) {
+    global.fetch = jest.fn().mockReturnValue(response) as unknown as typeof fetch;
+    const view = render(<GuardianMediaConsentPage />);
+    await screen.findByText(title);
+    expect(within(view.container.querySelector('header') as HTMLElement).getByText(GUARDIAN_PAGE_INTRO_WORDS)).toBeInTheDocument();
+    view.unmount();
+  }
+});
+
 test('the page header says what the choice decides, as answered, signed or not', async () => {
   for (const items of [NEEDS_CONSENT, ALREADY_SIGNED]) {
     global.fetch = jest.fn().mockResolvedValue(jsonResponse({ ok: true, items })) as unknown as typeof fetch;

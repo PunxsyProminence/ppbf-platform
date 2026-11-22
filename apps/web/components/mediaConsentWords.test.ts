@@ -92,13 +92,19 @@ test('the page header says what the choice decides, as answered, and no longer "
 });
 
 const WEB_DIR = path.resolve(__dirname, '..');
-const SKIPPED_DIRS = new Set(['node_modules', '.next', 'public', 'e2e', 'seed-data']);
+// Skipped only directly under apps/web: static assets, the Playwright suite and
+// seed data. Deeper down these names are ordinary route folders (app/public,
+// app/api/public, .../floor-hours/public), which ship and are walked.
+const SKIPPED_AT_TOP = new Set(['public', 'e2e', 'seed-data']);
+// Skipped at any depth: installed packages and build output.
+const SKIPPED_ANYWHERE = new Set(['node_modules', '.next']);
 const SENDER_NAME = 'analyzeFramesWithVision';
 
 function shippedSourceUnder(dir: string): string[] {
   const found: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || SKIPPED_DIRS.has(entry.name)) continue;
+    if (entry.name.startsWith('.') || SKIPPED_ANYWHERE.has(entry.name)) continue;
+    if (dir === WEB_DIR && SKIPPED_AT_TOP.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) found.push(...shippedSourceUnder(full));
     else if (/\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(entry.name) && !/\.(test|spec)\.[a-z]+$/.test(entry.name)) found.push(full);
@@ -151,8 +157,9 @@ test('frames go to the AI service from exactly the callers these words describe'
     uses: {
       // Admin diagnostic, a clip it makes itself, no member footage: the import and one call.
       'app/api/pilot/shadow/film-study/diagnostic/route.ts': 2,
-      // Film Study, when a coach or the gym administrator asks: the import and one call. A second call
-      // here (a new job type, say) is a new way out for frames, and fails.
+      // Film Study, when a coach or the gym administrator asks: the import and one call. A second
+      // written-out call here fails; a new job type that reuses executeFilmStudyJob does not change
+      // this count, and is for review to catch.
       'src/server/pilot/shadowJobProcessor.ts': 2,
       // The sender itself: its declaration only.
       'src/server/pilot/shadowFilmStudy.ts': 1,
