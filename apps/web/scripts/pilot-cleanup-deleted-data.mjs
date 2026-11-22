@@ -327,7 +327,7 @@ function emptyShadowCounts() {
     shadowFlaggedConversations: 0, shadowFlaggedMessagesDeleted: 0,
     shadowGymMessagesScrubbed: 0, shadowGymTitlesScrubbed: 0, shadowGymFeedbackScrubbed: 0,
     shadowGymFlagNotesScrubbed: 0, shadowGymResearchScrubbed: 0, shadowGymReviewSummariesScrubbed: 0,
-    shadowEventsDeleted: 0, behaviourObservations: 0, shadowGymBehaviourNotesScrubbed: 0,
+    shadowEventsDeleted: 0, behaviourObservations: 0, behaviourObservationsWindows: 0, shadowGymBehaviourNotesScrubbed: 0,
     shadowGymBehaviourLabelsScrubbed: 0, shadowTelemetryDeleted: 0,
   };
 }
@@ -1349,6 +1349,22 @@ async function deidentifyBehaviourObservations(client, tables, athlete, token, n
   return result.rowCount ?? 0;
 }
 
+/* THE CHILD'S SAMPLED WINDOWS (pilot.behaviour_observations_windows, PATTERN-1d)
+   go the way of their reports: the athlete key becomes the same token, so a
+   window still finds its taps. A window holds no free text. Runs before the
+   athlete row goes, whose follow trigger deletes any window still naming the
+   child; the table's guard admits only this update, and only once. */
+async function deidentifyBehaviourObservationsWindows(client, tables, athlete, token) {
+  if (!tables.behaviourObservationsWindows) return 0;
+  const result = await client.query(
+    `update pilot.behaviour_observations_windows
+        set athlete_id = $3, deidentified_at = now()
+      where organization_id = $1 and athlete_id = $2`,
+    [athlete.organization_id, athlete.athlete_id, token],
+  );
+  return result.rowCount ?? 0;
+}
+
 /* The learning-loop tables admit a name scrub only as exactly what the purge's
    pattern makes of the text (their guards read pilot.name_scrub_pattern), so
    the pattern is set for the transaction around the scrub and cleared after:
@@ -1617,6 +1633,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       // the athlete row goes so their behaviour reports can carry it too.
       const token = anonymousToken();
       const behaviourHere = await deidentifyBehaviourObservations(client, tables, athlete, token, knownNames);
+      const windowsHere = await deidentifyBehaviourObservationsWindows(client, tables, athlete, token);
       const removed = await client.query(
         'delete from pilot.athletes where organization_id = $1 and athlete_id = $2 returning athlete_id',
         key,
@@ -1637,6 +1654,7 @@ async function attemptPurge(client, athletes, accountIds, { tables, blobStore })
       let correctionsHere = 0;
       const shadowHere = emptyShadowCounts();
       shadowHere.behaviourObservations = behaviourHere;
+      shadowHere.behaviourObservationsWindows = windowsHere;
       if (removed.rows.length > 0) {
         for (const login of linked.rows) {
           /* A retired athlete login keeps only what refusing its sign-in needs:
@@ -2217,6 +2235,7 @@ function shadowCountsFor(shadow, prefix, suffix) {
     [`${prefix}shadow_events${suffix}`]: shadow.shadowEventsDeleted,
     [`${prefix}shadow_telemetry_events${suffix}`]: shadow.shadowTelemetryDeleted,
     [`${prefix.replace('delete_', 'deidentify_')}behaviour_observations${suffix.replace('_deleted', '_deidentified')}`]: shadow.behaviourObservations,
+    [`${prefix.replace('delete_', 'deidentify_')}behaviour_observations_windows${suffix.replace('_deleted', '_deidentified')}`]: shadow.behaviourObservationsWindows,
   };
 }
 
@@ -2314,6 +2333,7 @@ async function main() {
                        where table_schema = 'pilot' and table_name = 'shadow_human_review_queue'
                          and column_name = 'deidentified_at') as "deidentifyKeys",
               to_regclass('pilot.behaviour_observations') is not null as "behaviourObservations",
+              to_regclass('pilot.behaviour_observations_windows') is not null as "behaviourObservationsWindows",
               to_regclass('pilot.public_interest_submissions') is not null as inquiries`,
     );
     const tables = present.rows[0];

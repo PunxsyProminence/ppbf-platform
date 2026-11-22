@@ -355,6 +355,10 @@ kept with the child's names scrubbed (Jason 2026-10-07: "Scrub the child's name,
 emptied when no name is on record. A purged person's name is also scrubbed gym-wide from other
 reports' notes and from coach-typed behaviour names (`pilot.behaviour_keys.label`). The tables'
 guards admit only that exact scrub, checked against the cleanup's own name pattern.
+Sampled windows (`pilot.behaviour_observations_windows`, PATTERN-1d) go with their reports: the
+cleanup gives a window the same token as the child's reports, and the trigger
+`pilot_behaviour_observations_windows_follow_athlete` deletes any window still naming the athlete
+when the athlete row goes. A window holds no free text.
 
 **Marked deleted -- no screen shows them after the deletion:**
 - Videos: the video lists (coach and admin), any read of one video (publishing, clipping,
