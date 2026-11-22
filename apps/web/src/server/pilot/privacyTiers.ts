@@ -540,10 +540,6 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       'behaviourSampleWindows.ts#listMyWindowTaps',
       'behaviourSampleWindows.ts#listOpenBehaviourWindows',
       'behaviourSampleWindows.ts#currentWindowChance',
-      '../../../app/api/pilot/coach/behaviour-windows/route.ts#GET',
-      '../../../app/api/pilot/coach/behaviour-windows/route.ts#POST',
-      '../../../app/api/pilot/coach/behaviour-windows/[windowId]/route.ts#GET',
-      '../../../app/api/pilot/coach/behaviour-windows/[windowId]/route.ts#PATCH',
     ],
     note:
       'Which child a coach opened a sampled window on, in which behaviour, run and drill (PATTERN-1d, '
@@ -551,7 +547,7 @@ export const FIELD_TIERS: Readonly<Record<string, FieldTierEntry>> = {
       + '(behaviour_observations.note, below): opening and tapping by the table guards, closing and reading back by '
       + 'an active staff membership of this gym checked in the function. Through these functions a coach reads back '
       + 'only their own taps and the chance the count stands at; the reports route leaves out an open window\'s taps '
-      + '(PATTERN-1e). The window routes are staff only and check the athlete. The public-surface denylist entry '
+      + '(PATTERN-1e). The public-surface denylist entry '
       + 'pilot.behaviour_observations covers it (the wall tests match it as a substring). The purge de-identifies it with the reports.',
   },
   'session_run_athletes.athlete_id': {

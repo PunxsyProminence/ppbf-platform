@@ -117,8 +117,6 @@ const WRITER_IMPORT = /\bbehaviour(Observations|SampleWindows)['"]/;
 const WRITER_ROUTES = [
   'app/api/pilot/coach/behaviour-keys/route.ts',
   'app/api/pilot/coach/behaviour-observations/route.ts',
-  'app/api/pilot/coach/behaviour-windows/[windowId]/route.ts',
-  'app/api/pilot/coach/behaviour-windows/route.ts',
 ];
 const WRITER_MODULES = [
   'src/server/pilot/behaviourSampleWindows.ts',

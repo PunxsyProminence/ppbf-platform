@@ -29,8 +29,8 @@ import { ForbiddenError, ValidationError } from './errors';
 //
 // Staff only, like the reports (privacyTiers.ts): opening and tapping by the
 // table guards, closing and reading by an active staff membership of this gym
-// checked here. The callers are the staff window routes, app/api/pilot/coach/
-// behaviour-windows (PATTERN-1e), which take the account from the session.
+// checked here. No route calls these yet: the staff window routes are
+// PATTERN-1e-2, and they must take every account id from the session.
 
 export const DEFAULT_WINDOW_CHANCES = 10;
 export const MAX_WINDOW_CHANCES = 50;
