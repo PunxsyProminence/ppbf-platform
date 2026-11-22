@@ -3688,7 +3688,11 @@
   .athlete-corner__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 /* The training-hold notice, when there is one, spans the grid right after the
-   pain patch. Empty when there is no hold (the banner renders nothing). */
+   pain patch. Empty when there is no hold (the banner renders nothing).
+   That slot (the one wide cell that is not a panel) stands on leather, like the
+   panels below: the hold and medical-restriction notices are written in bone
+   for a dark ground, and on this canvas they read 2.1:1 and 1.9:1 (lane AS-8,
+   Q-INK; Overwatch Q-INK A on #2020, a defect fix). */
 .athlete-corner__wide { grid-column: 1 / -1; min-width: 0; }
 .athlete-corner__wide:empty { display: none; }
 /* End training (lane U3 B4) came from the Session Log's dark ground. On this
@@ -3698,7 +3702,8 @@
 .athlete-corner__end { --bone-400: var(--bone-300); }
 .athlete-corner__end :is(.btn, .input):focus-visible { outline: 3px solid var(--bone-100); outline-offset: 2px; }
 .athlete-corner__end .btn--ghost { border: 2px solid rgba(231,200,138,.55); background-color: rgba(30,16,6,.55); }
-.athlete-corner__panel {
+.athlete-corner__panel,
+.athlete-corner__wide:not(.athlete-corner__panel):not(:empty) {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -3716,7 +3721,8 @@
     linear-gradient(170deg, #6a4426, #5a3820 50%, #4a2d19);
   box-shadow: inset 0 1px 0 rgba(255,220,170,.18), inset 0 -2px 6px rgba(0,0,0,.4), 0 4px 10px rgba(40,20,5,.55);
 }
-.athlete-corner__panel::before {
+.athlete-corner__panel::before,
+.athlete-corner__wide:not(.athlete-corner__panel):not(:empty)::before {
   content: "";
   position: absolute;
   inset: 6px;
@@ -3724,7 +3730,12 @@
   border-radius: 8px;
   pointer-events: none;
 }
-.athlete-corner__panel > * { position: relative; }
+.athlete-corner__panel > *,
+.athlete-corner__wide:not(.athlete-corner__panel):not(:empty) > * { position: relative; }
+/* The hold notice's brass stamp takes the brass the sheet gives a stamp on any
+   dark mat (ppbf-leather-brass.css, .mat-leather .stamp--brass): the slot is
+   leather now, without the .mat-leather class that would say so. */
+.athlete-corner__wide:not(.athlete-corner__panel):not(:empty) .stamp--brass { color: var(--brass-300); }
 /* Oxblood leather for the pain patch: darker and redder than its neighbours
    so it is found first, and its words say what it is. */
 .athlete-corner__panel--pain {
