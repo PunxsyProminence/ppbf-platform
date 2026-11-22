@@ -59,18 +59,22 @@ export function guardianMediaWords(publicUseOnFile: boolean): string {
 /**
  * The guardian page header. The owner's answer (same comment): it no longer
  * says the choice "controls one thing"; it also says the choice decides
- * playback and whether still frames go to Microsoft's Azure AI service, in the
- * ruled passages' own words where they have them.
+ * whether still frames go to Microsoft's Azure AI service, and governs
+ * playback, in the ruled passages' own words where they have them.
  *
- * Playback is refused when any guardian of the video's own athlete or of a
- * tagged athlete chose photos only or withdrew (assertConsentCoversVideo,
- * through mintUnderPlaybackConsent in app/api/pilot/video/[videoId]/route.ts).
- * A missing consent does not refuse playback, which is why this says the
- * choice "decides whether" and does not say that no answer stops it.
+ * THE PLAYBACK SENTENCE (Overwatch's A on #2083, comment 7085890882). Playback
+ * is refused when any guardian of the video's own athlete or of a tagged
+ * athlete chose photos only or withdrew (assertConsentCoversVideo, through
+ * mintUnderPlaybackConsent in app/api/pilot/video/[videoId]/route.ts). A
+ * missing consent does not refuse it ("absence still plays",
+ * videoPlaybackConsent.ts), so the header names what stops playback instead of
+ * putting it under "decides whether" with the frames. A link issued before the
+ * change is a 60-minute credential (the same file; page.tsx's photos-only
+ * confirm), so the sentence says it can still play for up to an hour.
  */
 export const GUARDIAN_PAGE_INTRO_WORDS =
   'Nothing here blocks your child from training. It decides whether photos or videos of your child may be used in '
-  + 'gym publications. For videos your child is filed under or tagged in, it also decides whether they can be played '
-  + "back in the gym's app and whether still frames from them are sent to Microsoft's Azure AI service. You can grant "
-  + 'or withdraw consent at any time. If your child has more than one guardian, every guardian must consent before '
-  + 'anything is published.';
+  + 'gym publications. For videos your child is filed under or tagged in, it also decides whether still frames from '
+  + "them are sent to Microsoft's Azure AI service. With photos only, or if you withdraw, they cannot be played back "
+  + "in the gym's app; a link already given out can still play for up to an hour. You can grant or withdraw consent "
+  + 'at any time. If your child has more than one guardian, every guardian must consent before anything is published.';
