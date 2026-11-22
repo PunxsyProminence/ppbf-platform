@@ -512,7 +512,6 @@ const MARK_ALLOWED = new Map<string, { readonly count: number; readonly why: str
   ['components/uiStyles.ts', { count: 6, why: "token definitions (statusDanger, errorButton, errorContainer, errorText) that nothing renders" }],
   ['components/CoachWorkspace.tsx', { count: 3, why: "the coach home: its marks are fixed with the home batch (AS-7), not in this sweep" }],
   ['components/CoachFloorFocus.tsx', { count: 1, why: "draws whatever tone the coach home hands it ('locked' included); the home batch (AS-7) owns those tones" }],
-  ['components/AthleteWorkspace.tsx', { count: 4, why: "the athlete home: its marks are fixed with the home batch (AS-8), not in this sweep" }],
 ]);
 
 /** Still to be swept, with today's count: SC2-3 (office, board and platform pages). */

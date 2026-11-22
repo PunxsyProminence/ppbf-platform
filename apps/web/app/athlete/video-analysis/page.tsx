@@ -222,7 +222,7 @@ export default function AthleteVideoAnalysisPage() {
                   <div>
                     <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{v.title}</p>
                     <p className="t-muted mt-[var(--s1)]">{v.file_name} · {formatBytes(v.file_size_bytes)} · {v.status}</p>
-                    <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-xs)' }}>{formatGymStamp(v.created_at)}</p>
+                    <p className="t-data mt-[var(--s1)]" style={{ fontSize: 'var(--t-md)' }}>{formatGymStamp(v.created_at)}</p>
                   </div>
                   <button
                     onClick={() => { void openVideo(v.video_session_id); }}
@@ -251,7 +251,7 @@ export default function AthleteVideoAnalysisPage() {
             ) : null}
             {athleteObservations.slice(0, 5).map((item) => (
               <article key={item.id} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-100)]">{item.label}</p>
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-100)]">{item.label}</p>
                 <p className="t-muted mt-[var(--s2)]">{reviewStateLine(item.review_state)}</p>
               </article>
             ))}
@@ -266,7 +266,7 @@ export default function AthleteVideoAnalysisPage() {
           <div className="mt-[var(--s3)] grid gap-[var(--s3)] sm:grid-cols-2">
             {['Skill Recognition', 'Technique Scoring'].map((p) => (
               <div key={p} className="mat-leather--raised rounded-[var(--r-md)] p-[var(--s4)]">
-                <p className="text-[length:var(--t-sm)] font-semibold text-[color:var(--bone-300)]">{p}</p>
+                <p className="text-[length:var(--t-md)] font-semibold text-[color:var(--bone-300)]">{p}</p>
                 <p className="t-label mt-[var(--s2)]">{ML_PLACEHOLDER}</p>
               </div>
             ))}
