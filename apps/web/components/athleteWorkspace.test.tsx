@@ -22,7 +22,7 @@ import { FORMULA_UNITS, OBSERVATION_KINDS } from '@/src/server/pilot/formulas/ty
 import type { AnnouncementItem } from './AnnouncementBanner';
 import type { RabbitHoleLessonItem } from './RabbitHole';
 import AthleteWorkspace, { SMART_GOAL_CATEGORIES } from './AthleteWorkspace';
-import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
+import { ASK_SHADOW_HELP_LINE, ASK_SHADOW_SAFESPORT_LINE, ASK_SHADOW_SENT_LINE } from './askShadowWords';
 import { formatGymStamp } from '@/src/lib/gymTime';
 import { IssuedWorkoutsUnreadableError } from '@/src/lib/issuedWorkouts';
 
@@ -649,6 +649,25 @@ test('the Dashboard shows "From your coach" with a message the coach sent', asyn
   expect(await within(section).findByText('Great work on the jab.')).toBeTruthy();
 });
 
+/* Lane AS-8, ATH-05 (Overwatch Q10 A on #2020). My Corner's "Ask SHADOW"
+   opened SHADOW Intel; it opens the tab of the same name. That tab's alert was
+   titled "Not Built Yet" over a form that works: the title is gone, and the
+   SafeSport sentence stays word for word. */
+describe("My Corner's Ask SHADOW opens Ask SHADOW", () => {
+  test('the corner button lands on the Ask SHADOW tab, which no longer says "Not Built Yet"', async () => {
+    await renderWorkspace();
+
+    fireEvent.click(corner().getByRole('button', { name: 'Ask SHADOW' }));
+
+    // The open tab (the form's own submit button shares the name).
+    expect(screen.getAllByRole('button', { name: 'Ask SHADOW' }).filter((button) => button.getAttribute('aria-current') === 'page')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'SHADOW Intel', current: 'page' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Ask SHADOW' })).toBeTruthy();
+    expect(screen.queryByText('Not Built Yet')).toBeNull();
+    expect(document.body.textContent).toContain(`SafeSport: ${ASK_SHADOW_SAFESPORT_LINE}`);
+  });
+});
+
 describe('athlete workspace honesty', () => {
   test('the summary row claims no message count while no feed measures one', async () => {
     // "Messages 0" was a hardcoded zero: the athlete's question box is
@@ -693,7 +712,7 @@ describe('athlete workspace honesty', () => {
 
     expect(screen.queryByRole('button', { name: 'Book' })).toBeNull();
     expect(screen.queryByText(/Mon-Thu 4:00 PM Youth Class/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Schedule' })).toBeTruthy();
   });
 
   // BASE-05 Slice 1: the athlete's own record, filed under Progress beside
@@ -767,7 +786,7 @@ describe('athlete workspace honesty', () => {
 
     // The link was always real; the NOT BUILT wrapper around it is what left.
     expect(screen.queryByText(/this tab cannot see the gym's classes/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Schedule' })).toBeTruthy();
   });
 
   test('double-clicking Create Goal posts the goal once', async () => {
@@ -3276,7 +3295,7 @@ describe('tabs with nothing behind them are not offered', () => {
     expect(await screen.findByText(/have not added any reference drills/)).toBeTruthy();
 
     openTab('Schedule');
-    expect(screen.getByRole('link', { name: 'Open Unified Scheduler' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Schedule' })).toBeTruthy();
   });
 
   /* The masthead read "My Training Dashboard" on all eleven surfaces, so the

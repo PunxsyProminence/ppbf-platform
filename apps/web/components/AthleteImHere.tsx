@@ -338,13 +338,13 @@ export default function AthleteImHere({
         <p className="t-body mt-[var(--s3)]">Looking for today&apos;s class…</p>
       ) : read.state === 'failed' ? (
         <p className="t-body mt-[var(--s3)]">
-          Today&apos;s class could not be read. <Link href="/schedule" className="underline">Open the schedule</Link>.
+          Today&apos;s class could not be read. <Link href="/schedule" className="underline">Open Schedule</Link>.
         </p>
       ) : (
         <>
         {read.classes.length === 0 ? (
           <p className="t-body mt-[var(--s3)]">
-            No class for you today. <Link href="/schedule" className="underline">Open the schedule</Link>.
+            No class for you today. <Link href="/schedule" className="underline">Open Schedule</Link>.
           </p>
         ) : null}
         {read.classes.length + read.open.length > 0 ? (

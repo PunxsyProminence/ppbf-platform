@@ -174,7 +174,7 @@ test('no open class today and none booked: no button, and the way to the schedul
   await mount();
   expect(screen.getByText(/No class for you today/)).toBeTruthy();
   expect(screen.queryByRole('button')).toBeNull();
-  expect(screen.getByRole('link', { name: 'Open the schedule' }).getAttribute('href')).toBe('/schedule');
+  expect(screen.getByRole('link', { name: 'Open Schedule' }).getAttribute('href')).toBe('/schedule');
 });
 
 /* Lane AS-8, scrub ATH-07 (Overwatch Q9 A on #2020): a walk-in registers from
@@ -195,7 +195,7 @@ describe('a walk-in registers for an open class today', () => {
     serve(WALK_IN, registered);
     await mount();
     expect(screen.getByText(/No class for you today/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open the schedule' }).getAttribute('href')).toBe('/schedule');
+    expect(screen.getByRole('link', { name: 'Open Schedule' }).getAttribute('href')).toBe('/schedule');
     expect(screen.getByText(/Youth Boxing/)).toBeTruthy();
     const button = screen.getByRole('button', { name: REGISTER });
     // The class's own line describes the button, so two Registers are told apart.

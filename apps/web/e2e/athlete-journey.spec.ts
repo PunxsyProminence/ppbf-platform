@@ -434,7 +434,7 @@ test.describe('Athlete journey', () => {
     await page.goto('/athlete/dashboard/sparring');
 
     await expect(page.getByRole('heading', { level: 1, name: 'Sparring Log' })).toBeVisible();
-    await expect(page.getByText('Your Corner')).toBeVisible();
+    await expect(page.getByText('Your entry', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Which athlete is this for')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Log This Session' })).toBeEnabled();
   });
