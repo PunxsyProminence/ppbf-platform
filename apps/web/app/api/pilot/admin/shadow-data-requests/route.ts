@@ -94,7 +94,11 @@ export async function POST(request: NextRequest) {
          session ids into a table read by more people than the chat ever was --
          republishing the shape of what they asked to have removed. How many is
          the fact an auditor needs; which ones is not. */
-      details: { action, conversations_cleared: outcome.conversationsCleared },
+      details: {
+        action,
+        conversations_cleared: outcome.conversationsCleared,
+        conversations_held: outcome.conversationsHeld,
+      },
       shadow_mirror: false,
     });
 

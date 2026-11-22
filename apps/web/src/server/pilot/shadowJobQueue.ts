@@ -35,7 +35,7 @@ import type { ShadowSessionType } from './shadowRouter';
  * cannot see a job enqueued a second later; this makes the guarantee a
  * property of the payload instead of a property of timing.
  */
-export const SHADOW_CONTEXT_CONTRACT_VERSION = 46;
+export const SHADOW_CONTEXT_CONTRACT_VERSION = 47;
 // 5: #1176 -- Film Study analysis now also checks every tagged athlete's
 // consent before enqueueing (shadow/video-analysis route).
 // 6: Film Study's consent check moved to filmStudyConsent.ts: photo-only and
@@ -191,6 +191,11 @@ export const SHADOW_CONTEXT_CONTRACT_VERSION = 46;
 // RESEARCH_STAFF_ROLES. What goes into authorizedContext is unchanged; bumped
 // because listed files moved. A v45 job still queued at deploy is refused as
 // STALE.
+// 47: a parent's SHADOW disclosure is office review only (HF8-1 B, #2091):
+// the chat route says "Passed to the gym administrator." for it only when
+// its review row was written. What goes into authorizedContext is unchanged;
+// bumped because a listed file moved. A v46 job still queued at deploy is
+// refused as STALE.
 // 3: the first bump made by the fingerprint below -- #1133, #1132 and
 // others changed watched files after v2 was recorded.
 // 2 was BUMPED for the near-miss
@@ -292,6 +297,7 @@ export const SHADOW_CONTEXT_CONTRACT_FINGERPRINTS: readonly { version: number; s
   { version: 44, sha256: '79e81272d892b29901db3365c22012c6023ffbbc4c5e8b12ecedffb9a50bcc9e' },
   { version: 45, sha256: 'af6029f4195175290a134f84618e375960da5bff6d6bf89d2ba3a5adaed6d15d' },
   { version: 46, sha256: '23ee29e766733d7e2ac5c1c62ca99ce695b505d2ebc3291ba448b6019dd46e22' },
+  { version: 47, sha256: '4dec0012d8257f41f66393fcc3ee291bf03658b58b1e8de086be073606f43dda' },
 ];
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

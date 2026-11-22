@@ -426,7 +426,11 @@ describe('the selected child and tab are marked, not only coloured', () => {
     await renderHub();
 
     expect(screen.getByRole('button', { name: 'Overview' }).className).toContain('text-[length:var(--t-sm)]');
-    expect(screen.getByRole('button', { name: 'First Child' }).className).toContain('text-[length:var(--t-sm)]');
+    // AS9-3: a child is a FamilyChildPicker button, the design system's .btn,
+    // whose type is 15px (--t-sm) in ppbf-leather-brass.css; never --t-xs.
+    const child = screen.getByRole('button', { name: 'First Child' });
+    expect(child).toHaveClass('btn');
+    expect(child.className).not.toContain('--t-xs');
   });
 });
 

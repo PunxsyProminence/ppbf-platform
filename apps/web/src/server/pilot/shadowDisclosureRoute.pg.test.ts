@@ -243,6 +243,22 @@ async function sendAsAthlete(message: string, conversationId?: string) {
   return { status: response.status, body: await response.json(), providerCalled: fetchSpy.mock.calls.length > 0 };
 }
 
+const PARENT_ACCOUNT = 'acct-parent-1';
+
+async function sendAsParent(message: string) {
+  mockRequirePrincipal.mockResolvedValue(principal(PARENT_ACCOUNT, 'parent'));
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: ANSWER } }] }),
+  }) as unknown as typeof fetch;
+  const response = await chatPOST(new NextRequest('http://localhost/api/pilot/shadow/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message }),
+  }));
+  return { status: response.status, body: await response.json() };
+}
+
 async function escalationIdsReadableBy(accountId: string, role: PilotPrincipal['role']): Promise<string[]> {
   mockRequirePrincipal.mockResolvedValue(principal(accountId, role));
   const response = await escalationsGET(new NextRequest('http://localhost/api/pilot/escalations'));
@@ -467,6 +483,52 @@ describe('an athlete disclosure in SHADOW chat, end to end on real Postgres (F-0
       expect(rows.map((row: { source_type: string }) => row.source_type)).toEqual(['athlete_voice', 'athlete_voice']);
       const coachView = await escalationIdsReadableBy(COACH_OF_RECORD, 'coach');
       for (const row of rows) expect(coachView).not.toContain(row.escalation_id);
+    } finally {
+      activeClient = null;
+      await client.end();
+    }
+  });
+});
+
+// HF8-1 B (Jason, 2026-11-21, Q1 = B "office review only", relayed by
+// Overwatch on #2083): a parent's disclosure gets the athlete's scan, and a
+// match is the org admin's SHADOW review row for that one exchange only:
+// never an escalation entry, never a research row with the words. The reply's
+// "passed" flag rests on that row, so once the hour's review allowance is
+// spent it is no longer set (Overwatch's A on #2083, comment 7074202926).
+describe('a parent disclosure in SHADOW chat, end to end on real Postgres (HF8-1 B)', () => {
+  test('office review only: a review row per disclosure, no escalation, no research row; no "passed" flag past the hourly bound', async () => {
+    const client = await freshDatabase('ppbf_test_shadow_disclosure_parent');
+    activeClient = client;
+    try {
+      await client.query(
+        `insert into pilot.accounts (account_id, role, organization_id, auth_provider) values ($1, 'parent', $2, 'ppbf_local')`,
+        [PARENT_ACCOUNT, ORG_ID],
+      );
+
+      // CONTROL FIRST: a parent's ordinary question is still filed as research.
+      const control = await sendAsParent('How do I help my kid with footwork at home?');
+      expect(control).toMatchObject({ status: 200, body: { state: 'ok', response: ANSWER } });
+      expect(control.body.researchFiled).toBe(true);
+      expect(await researchRowsText(client)).toContain('footwork at home');
+
+      const message = 'My dad hits me';
+      for (let i = 1; i <= 4; i += 1) {
+        const sent = await sendAsParent(message);
+        expect(sent).toMatchObject({ status: 200, body: { state: 'ok', response: ANSWER } });
+        expect(sent.body.handoff ?? null).toBeNull();
+        const reviews = await client.query(
+          `select count(*)::int as n from pilot.shadow_human_review_queue where category = 'safeguarding_disclosure'`,
+        );
+        // Three an hour per account (OD-2026-10-01-006 s2): the fourth row is
+        // suppressed, and then nothing reached anyone, so the reply says nothing.
+        expect(reviews.rows[0].n).toBe(Math.min(i, 3));
+        expect(sent.body.researchFiled).toBe(i <= 3);
+      }
+
+      const escalations = await client.query('select count(*)::int as n from pilot.safety_escalations');
+      expect(escalations.rows[0].n).toBe(0);
+      expect(await researchRowsText(client)).not.toContain(message.toLowerCase());
     } finally {
       activeClient = null;
       await client.end();
