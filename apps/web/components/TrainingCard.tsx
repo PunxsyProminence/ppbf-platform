@@ -211,7 +211,7 @@ export default function TrainingCard({
           <div className="empty-glyph" aria-hidden="true">🥊</div>
           <div className="empty-title">No sessions on the card yet</div>
           <div className="empty-msg">
-            Check in at the floor kiosk and the first stamp lands here. The card keeps every
+            Start training on the floor kiosk and the first stamp lands here. The card keeps every
             session you log — it never resets.
           </div>
         </div>

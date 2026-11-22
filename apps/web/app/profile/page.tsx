@@ -4,7 +4,8 @@ import ProfileSettings from '@/components/ProfileSettings';
 import RoleStandaloneView from '@/components/RoleStandaloneView';
 
 /**
- * YOUR CORNER — the one surface in the platform that belongs to whoever is
+ * YOUR PROFILE (titled "Your Corner" until lane AS-8; Jason, OW27-11 A,
+ * OD-2026-11-20-001) — the one surface in the platform that belongs to whoever is
  * standing in front of it.
  *
  * Every role is allowed, which is the point: a coach whose face is supposed to
@@ -21,11 +22,14 @@ import RoleStandaloneView from '@/components/RoleStandaloneView';
 export default function ProfilePage() {
   return (
     <RoleStandaloneView
-      roleLabel="Your Corner"
+      roleLabel="Your Profile"
       routeLabel="/profile"
+      // No route chip (lane AS-8, ATH-26): the address is not a title. This is
+      // every role's page, so every role loses the chip here.
+      showRouteLabel={false}
       allowedRoles={['athlete', 'coach', 'parent', 'admin', 'staff', 'volunteer']}
       room="office"
-      breadcrumbs={[{ label: 'Your Corner' }]}
+      breadcrumbs={[{ label: 'Your Profile' }]}
     >
       <div className="mx-auto w-full max-w-[987px] px-[var(--s5)] py-[var(--s6)]">
         <ProfileSettings />

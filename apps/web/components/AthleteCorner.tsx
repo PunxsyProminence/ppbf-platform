@@ -6,8 +6,8 @@ import React from 'react';
 /**
  * MY CORNER: THE ATHLETE'S DAY, AT THE TOP OF THE SCREEN.
  *
- * This is the "Today" section of My Dashboard, moved to the top of the
- * workspace and set in the canvas-and-leather look Jason chose from his Canva
+ * This was the "Today" section of My Dashboard. It sits at the top of the
+ * workspace, on How I feel today and the Dashboard, and set in the canvas-and-leather look Jason chose from his Canva
  * references ("Look into canva again for one that has cotton old brown leather
  * cartoonist gages and buttons", 2026-10-03). It used to sit about 1,900px
  * down a 390px phone, under the fight card, the notices, the chalkboard and the
@@ -15,7 +15,7 @@ import React from 'react';
  *
  * IT READS NOTHING AND WRITES NOTHING OF ITS OWN. Every value is a prop from
  * AthleteWorkspace, and every button calls a handler the workspace already
- * had: Start check-in is the Session Log's own handleCheckIn, and the two
+ * had: Start training is the workspace's handleCheckIn, and the two
  * "Open" buttons switch tabs. athleteCorner.test.tsx pins that it fetches
  * nothing.
  *
@@ -183,7 +183,7 @@ export default function AthleteCorner({
         ) : null}
 
         <div className="athlete-corner__panel" data-section="coach-work">
-          <p className="athlete-corner__label">From your coach</p>
+          <p className="athlete-corner__label">Your coach&apos;s work</p>
           <p>{countLine(coachWork, 'No assigned work recorded.', (count) => `${count} still to do.`)}</p>
           <button type="button" onClick={onOpenFloor} className="btn btn--ghost athlete-corner__btn">
             Open the floor
@@ -201,7 +201,7 @@ export default function AthleteCorner({
 
       <div className="athlete-corner__row">
         <Link href="/schedule" className="btn btn--ghost athlete-corner__btn">
-          Open Scheduler
+          Open Schedule
         </Link>
         <button type="button" onClick={onAskShadow} className="btn btn--ghost athlete-corner__btn">
           Ask SHADOW

@@ -239,3 +239,15 @@ describe('the after-sparring slot and the line', () => {
     expect(ref.current?.textContent).toBe('Training ended today. Start again if you are back on the floor.');
   });
 });
+
+/* Lane AS-8 (Overwatch Q13 A on #2020; OD-2026-11-20-001): the scheduler link
+   reads the page title, and the work count says whose work it is. "From your
+   coach" stays the messages block's (FromYourCoach). */
+test('the corner says "Your coach\'s work" and "Open Schedule"', () => {
+  render(<AthleteCorner {...props()} />);
+  const work = within(document.querySelector('[data-section="coach-work"]') as HTMLElement);
+  expect(work.getByText("Your coach's work")).toBeTruthy();
+  expect(screen.queryByText('From your coach')).toBeNull();
+  expect(screen.getByRole('link', { name: 'Open Schedule' }).getAttribute('href')).toBe('/schedule');
+  expect(screen.queryByRole('link', { name: 'Open Scheduler' })).toBeNull();
+});

@@ -407,7 +407,7 @@ export default function AthleteAchievements({
       {/* ------------------------------------------------------------------ */}
       <div className="mt-[var(--s5)]">
         <h4 className={isFamily ? 't-label' : 't-label'}>
-          {isFamily ? 'What the coaches have said' : 'From your coaches'}
+          {isFamily ? 'What the coaches have said' : 'What your coaches have said'}
         </h4>
 
         {recognitionFailed ? (
@@ -464,7 +464,7 @@ export default function AthleteAchievements({
       {/* ------------------------------------------------------------------ */}
       {mentorships.length > 0 && (
         <div className="mt-[var(--s5)]">
-          <h4 className="t-label">{isFamily ? 'Who they train with' : 'Your corner'}</h4>
+          <h4 className="t-label">{isFamily ? 'Who they train with' : 'Who you train with'}</h4>
           <ul className="mt-[var(--s3)] space-y-[var(--s2)]" role="list">
             {mentorships.map((link) => {
               const iAmMentor = link.mentor_athlete_id === athleteId;
