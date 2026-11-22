@@ -94,6 +94,17 @@ describe('backbone-export-pathway-catalog', () => {
   const defaults = rowsOf(files[DEFAULTS]);
   const VERSION = `spine ${sha(path.join(dir, SPINE))} / catalogs ${sha(path.join(dir, CATALOGS))} / 2026-11-08T23:18:05Z, 2026-11-09T13:32:02Z`;
 
+  // LANE GD: A STOP NO FLAG PASSES (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042).
+  it('a row that carries the DOC-136 source key stops the export and nothing is written', () => {
+    const held = backbone({ spine: (data) => { (data.stages[1].who as unknown as { value: string }).value = 'Ages 5-8 (DOC-136, a made-up source line)'; } });
+    const out = tempDir();
+    const refused = run([held, '--out', out]);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toMatch(/seed_pathway_stages\.csv .*: who_text names a held DOC-136 record/);
+    expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+    expect(fs.readdirSync(out)).toEqual([]);
+  });
+
   it('writes exactly the three package files, each header the spec\'s column list in order', () => {
     expect(Object.keys(files)).toEqual([DEFAULTS, LINKS, STAGES]);
     for (const name of [STAGES, LINKS, DEFAULTS]) {
