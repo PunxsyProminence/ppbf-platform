@@ -596,7 +596,7 @@ describe('the Needs You Now strip on the coach home (7b)', () => {
     await renderWorkspace({ athletesList: roster });
     const strip = screen.getByRole('region', { name: /^Needs you now/ });
     const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(follows(screen.getByRole('button', { name: 'Dashboard' }), strip)).toBe(true);
+    expect(follows(screen.getByRole('button', { name: /^Dashboard/ }), strip)).toBe(true);
     expect(follows(strip, screen.getByRole('region', { name: 'The floor' }))).toBe(true);
     expect(follows(strip, screen.getByRole('heading', { name: 'Athlete Pain Reports' }))).toBe(true);
     for (const key of ['escalations', 'pain', 'barrier']) {

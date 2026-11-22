@@ -32,13 +32,13 @@ const PIN_PATTERN = /^\d{6}$/;
    14px and 11px through the `font:` shorthand and silently beat any size
    utility. .t-command carries no font-size, so it still composes. */
 const EYEBROW =
-  'font-mono text-[length:var(--t-sm)] uppercase tracking-[0.28em] text-[color:var(--brass-800)]';
+  'font-mono text-[length:var(--t-md)] uppercase tracking-[0.28em] text-[color:var(--brass-800)]';
 const LEDE = 'text-[length:var(--t-md)] leading-[1.55] text-[color:var(--hide-800)]';
 const CARD =
   'mat-paper flex flex-col gap-[var(--s5)] rounded-[var(--r-lg)] border border-[color:rgba(0,0,0,.14)] p-[var(--s6)]';
 const FIELD_LABEL =
-  'block font-mono text-[length:var(--t-sm)] font-semibold uppercase tracking-[0.14em] text-[color:var(--hide-900)]';
-const FIELD_HINT = 'mt-[var(--s3)] text-[length:var(--t-sm)] leading-[1.5] text-[color:var(--hide-700)]';
+  'block font-mono text-[length:var(--t-md)] font-semibold uppercase tracking-[0.14em] text-[color:var(--hide-900)]';
+const FIELD_HINT = 'mt-[var(--s3)] text-[length:var(--t-md)] leading-[1.5] text-[color:var(--hide-700)]';
 const PIN_INPUT =
   'input input--kiosk mt-[var(--s3)] text-center tracking-[0.35em] font-[family-name:var(--font-mono)]';
 const ALERT =
@@ -192,7 +192,7 @@ function ActivatePageContent() {
         {stage !== 'done' && (
           /* The step marker is real sequence -- you cannot choose a PIN before
              the code is accepted -- so numbering it says something true. */
-          <ol className="flex items-center justify-center gap-[var(--s4)] font-mono text-[length:var(--t-sm)] uppercase tracking-[0.12em]">
+          <ol className="flex items-center justify-center gap-[var(--s4)] font-mono text-[length:var(--t-md)] uppercase tracking-[0.12em]">
             <li className={stage === 'code' ? STEP_ON : STEP_OFF}>1. Your code</li>
             <li aria-hidden="true" className={STEP_OFF}>→</li>
             <li className={stage === 'pin' ? STEP_ON : STEP_OFF}>2. Your PIN</li>
@@ -248,7 +248,7 @@ function ActivatePageContent() {
         {stage === 'pin' && (
           <form onSubmit={submitActivation} className={CARD}>
             <div className="rounded-[var(--r-sm)] border border-[color:rgba(0,0,0,.12)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s3)]">
-              <p className="text-[length:var(--t-sm)] text-[color:var(--hide-800)]">
+              <p className="text-[length:var(--t-md)] text-[color:var(--hide-800)]">
                 Code <span className="font-mono font-semibold text-[color:var(--hide-950)]">{code}</span>
               </p>
             </div>
@@ -292,7 +292,7 @@ function ActivatePageContent() {
                    the words take dark ink and the ▲ keeps the caution hue: the
                    glyph is the second channel Law 3 asks for, and it is the part
                    the 3:1 rule actually governs. */
-                <p className="mt-[var(--s3)] flex items-center gap-[var(--s2)] text-[length:var(--t-sm)] font-semibold text-[color:var(--hide-900)]">
+                <p className="mt-[var(--s3)] flex items-center gap-[var(--s2)] text-[length:var(--t-md)] font-semibold text-[color:var(--hide-900)]">
                   <span aria-hidden="true" className="text-[color:var(--restricted)]">▲</span> These do not match yet.
                 </p>
               )}
@@ -332,7 +332,7 @@ function ActivatePageContent() {
 
             {accountId && (
               <div className="rounded-[var(--r-sm)] border border-[color:rgba(0,0,0,.12)] bg-[var(--paper-2)] px-[var(--s4)] py-[var(--s4)]">
-                <p className="font-mono text-[length:var(--t-sm)] uppercase tracking-[0.14em] text-[color:var(--hide-800)]">
+                <p className="font-mono text-[length:var(--t-md)] uppercase tracking-[0.14em] text-[color:var(--hide-800)]">
                   Your sign-in ID
                 </p>
                 <p className="mt-[var(--s3)] break-all font-mono text-[length:var(--t-md)] font-bold text-[color:var(--hide-950)]">
@@ -364,7 +364,7 @@ function ActivatePageContent() {
         )}
 
         {stage !== 'done' && (
-          <p className="text-center text-[length:var(--t-sm)] leading-[1.6] text-[color:var(--hide-800)]">
+          <p className="text-center text-[length:var(--t-md)] leading-[1.6] text-[color:var(--hide-800)]">
             {/* "the gym office": OW25-46 A (OD-2026-11-19-003), Q14b A on #2020.
                 This link stays on /login (Q-BACK A on #2051): it is the one way
                 back to every sign-in door for someone here by mistake, and

@@ -126,7 +126,7 @@ export default function AthletePinSignInPage() {
   return (
     <main className="on-canvas grid min-h-screen place-items-center px-[var(--s5)] py-[var(--s6)]">
       <div className="mat-paper w-full max-w-[520px] rounded-[var(--r-lg)] border border-[color:rgba(0,0,0,.16)] p-[var(--s6)]">
-        <p className="font-mono text-[length:var(--t-sm)] uppercase tracking-[0.22em] text-[color:var(--brass-800)]">
+        <p className="font-mono text-[length:var(--t-md)] uppercase tracking-[0.22em] text-[color:var(--brass-800)]">
           Athlete sign in
         </p>
         <h1 className="t-command mt-[var(--s3)] text-[length:var(--t-xl)]">PIN login</h1>
@@ -136,7 +136,7 @@ export default function AthletePinSignInPage() {
 
         <form className="mt-[var(--s6)] flex flex-col gap-[var(--s5)]" onSubmit={submit}>
           <label className="field" htmlFor="athlete-account-id">
-            <span className="mb-[var(--s3)] block font-mono text-[length:var(--t-sm)] uppercase tracking-[0.14em] text-[color:var(--hide-800)]">
+            <span className="mb-[var(--s3)] block font-mono text-[length:var(--t-md)] uppercase tracking-[0.14em] text-[color:var(--hide-800)]">
               Athlete Account ID
             </span>
             <input
@@ -151,7 +151,7 @@ export default function AthletePinSignInPage() {
           </label>
 
           <label className="field" htmlFor="athlete-pin">
-            <span className="mb-[var(--s3)] block font-mono text-[length:var(--t-sm)] uppercase tracking-[0.14em] text-[color:var(--hide-800)]">
+            <span className="mb-[var(--s3)] block font-mono text-[length:var(--t-md)] uppercase tracking-[0.14em] text-[color:var(--hide-800)]">
               PIN
             </span>
             <input

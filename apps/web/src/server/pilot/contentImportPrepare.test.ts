@@ -427,6 +427,115 @@ describe('a drill file made before exit_condition and correction_path existed', 
   });
 });
 
+// A HAND-OFF THAT LEAVES OUT A LABEL COLUMN (lane GD, GD-2b; Overwatch Q-GD2-2 = B on #2042).
+// prepare read a missing field_labels, evidence or stage_keys column as blank and wrote '' over the
+// committed labels, exit 0; the next load reads a file that has the column, and a present blank cell
+// means "no labels" (datasets/contentLabels.ts). A load keeps the stored labels instead (withStoredLabels).
+describe('a hand-off that leaves out a label column (field_labels, evidence, stage_keys)', () => {
+  const LABELS = ['field_labels', 'evidence', 'stage_keys'];
+  const LIBRARY = 'drill-library/seed_drill_library.csv';
+  const TEMPLATES = 'workout-templates/seed_workout_templates.csv';
+  /** Committed rows that carry all three labels: the ones such a hand-off would have wiped. */
+  const labelled = (relative: string) => table(relative, REAL_SEED_DATA).filter((row) => LABELS.every((name) => row[name].trim() !== ''));
+
+  it('a revision without them keeps every committed label cell', () => {
+    const drill = labelled(LIBRARY)[0];
+    const purpose = `${drill.purpose} Revised without labels.`;
+    writePackageFile('seed_drill_library.csv', [{ ...drill, purpose }], LABELS);
+    // So this cannot pass vacuously: the hand-off really lacks all three.
+    expect(readCsv(fs.readFileSync(path.join(handoff, LIBRARY), 'utf8')).header.filter((name) => LABELS.includes(name))).toEqual([]);
+
+    const { code, output } = prepare(true);
+    expect(code).toBe(0);
+    expect(output).toContain(`revised: ${drill.drill_id}`);
+    expect(table(LIBRARY).find((row) => row.drill_id === drill.drill_id)).toMatchObject({
+      purpose, field_labels: drill.field_labels, evidence: drill.evidence, stage_keys: drill.stage_keys,
+    });
+  });
+
+  it('re-sending labelled rows without them merges byte for byte as the same rows sent with them, drills and templates alike', () => {
+    for (const [file, relative] of [['seed_drill_library.csv', LIBRARY], ['seed_workout_templates.csv', TEMPLATES]] as const) {
+      const rows = labelled(relative).slice(0, 5);
+      expect(rows.length).toBeGreaterThan(0);
+      const after = (omit: readonly string[]) => {
+        for (const dir of [seedData, handoff]) fs.rmSync(dir, { recursive: true, force: true });
+        fs.mkdirSync(handoff);
+        copySeedData(seedData);
+        writePackageFile(file, rows, omit);
+        expect(prepare(true).code).toBe(0);
+        return fs.readFileSync(path.join(seedData, relative), 'utf8');
+      };
+      expect({ file, bytes: after(LABELS) }).toEqual({ file, bytes: after([]) });
+    }
+  });
+
+  it('a header that has the column says what its cell says: an empty cell blanks it, and the columns it lacks are kept', () => {
+    const drill = labelled(LIBRARY)[0];
+    writePackageFile('seed_drill_library.csv', [{ ...drill, field_labels: '' }], ['evidence', 'stage_keys']);
+    expect(prepare(true).code).toBe(0);
+    expect(table(LIBRARY).find((row) => row.drill_id === drill.drill_id)).toMatchObject({
+      field_labels: '', evidence: drill.evidence, stage_keys: drill.stage_keys,
+    });
+  });
+
+  it('a track block keeps them too, though in that child file they are plain content columns', () => {
+    // Data-integrity review on #2103: matched by role ('annotation', root files only), a hand-off of one
+    // track's blocks without these columns wiped their labels, exit 0.
+    const BLOCKS = 'training-tracks/seed_track_blocks.csv';
+    // The shared copy leaves the training-tracks folder out; this case needs the committed blocks.
+    fs.cpSync(path.join(REAL_SEED_DATA, 'training-tracks'), path.join(seedData, 'training-tracks'), { recursive: true });
+    const committed = table(BLOCKS, REAL_SEED_DATA);
+    const block = committed.find((row) => LABELS.every((name) => row[name].trim() !== ''));
+    if (!block) throw new Error('no committed track block carries all three labels');
+    const track = committed.filter((row) => row.track_id === block.track_id);
+    const title = `${block.title} Revised without labels.`;
+    writePackageFile('seed_track_blocks.csv', track.map((row) => (row.track_block_id === block.track_block_id ? { ...row, title } : row)), LABELS);
+
+    const { code, output } = prepare(true);
+    expect(code).toBe(0);
+    expect(output).toContain(`${BLOCKS}: changed`);
+    const after = table(BLOCKS);
+    expect(after.find((row) => row.track_block_id === block.track_block_id)?.title).toBe(title);
+    for (const row of track) {
+      expect(after.find((candidate) => candidate.track_block_id === row.track_block_id)).toMatchObject({
+        field_labels: row.field_labels, evidence: row.evidence, stage_keys: row.stage_keys,
+      });
+    }
+  });
+
+  it('a block keeps its own labels when the hand-off reorders the blocks: labels follow the block id, not its place', () => {
+    // Re-review on #2103: matched by the file's key (track_id + block_order), two swapped blocks took each other's labels.
+    const BLOCKS = 'training-tracks/seed_track_blocks.csv';
+    fs.cpSync(path.join(REAL_SEED_DATA, 'training-tracks'), path.join(seedData, 'training-tracks'), { recursive: true });
+    const committed = table(BLOCKS, REAL_SEED_DATA);
+    const block = committed.find((row) => LABELS.every((name) => row[name].trim() !== ''));
+    if (!block) throw new Error('no committed track block carries all three labels');
+    const track = committed.filter((row) => row.track_id === block.track_id);
+    const [first, second] = track;
+    expect(LABELS.some((name) => first[name] !== second[name])).toBe(true);
+    const swapped = track.map((row) => {
+      if (row.track_block_id === first.track_block_id) return { ...row, block_order: second.block_order };
+      if (row.track_block_id === second.track_block_id) return { ...row, block_order: first.block_order };
+      return row;
+    });
+    writePackageFile('seed_track_blocks.csv', swapped, LABELS);
+
+    expect(prepare(true).code).toBe(0);
+    const after = table(BLOCKS);
+    for (const row of [first, second]) {
+      expect(after.find((candidate) => candidate.track_block_id === row.track_block_id)).toMatchObject({
+        field_labels: row.field_labels, evidence: row.evidence, stage_keys: row.stage_keys,
+      });
+    }
+  });
+
+  it('a new drill has no committed row to keep from: its label cells are blank', () => {
+    writePackageFile('seed_drill_library.csv', [newDrill()], LABELS);
+    expect(prepare(true).code).toBe(0);
+    expect(table(LIBRARY).find((row) => row.drill_id === MINT.drill('boxing', 'Mirror Jab'))).toMatchObject({ field_labels: '', evidence: '', stage_keys: '' });
+  });
+});
+
 describe('a new drill whose lineage_id repeats its new:<name>', () => {
   it('is prepared like a blank lineage: both become the minted id, in the committed file and the hand-off', () => {
     // Before: validate passed it and prepare threw "has no minted id".
