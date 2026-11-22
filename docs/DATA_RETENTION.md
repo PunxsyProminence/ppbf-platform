@@ -156,21 +156,22 @@ after deletion (Recommended)"), applied to a member's own deletion under OD-2026
   (a lesson's, or a notice's or chalkboard line's as its post audit row records it; old ones
   included); an earlier value of any other name is not read. The same method and limits as the
   purge's `namePattern`: each part of a name two characters or longer, split on whitespace and
-  `,.'’()-` (not on `_`, so a login's `_`-joined parts stay; an email gives itself whole and its
-  part before the `@`, never its domain, so a domain quoted alone stays), is blanked wherever it
-  stands as a word, so any name read that carries a title, a role word or an article (a byline or
-  staff name such as "Coach Jason" or "The Board", a ring name such as "The Hammer", a login such
-  as "coach.dave@…") blanks that word throughout the member's kept replies too. Any other name a
-  reply holds stays: another athlete it mentions (a sibling or a teammate keeps their name, except
-  a part shared with a scrubbed name, such as a sibling's surname), an athlete's or guardian's
-  login or login email, a guardian's ring name, an emergency contact, a guardian record's email, a
-  coach's or other staff member's name (other than the member's own names listed above), a name on
-  record only elsewhere (a waiver signer, a physician, another gym), an earlier name of the
-  member's or of an athlete of theirs, after a rename, copied onto another record (a recognition,
-  a 1% Club nomination or vote, a floor plan) or kept in the audit log where an admin set it, a
-  notice signature whose post audit row was not written or records no poster, a nickname never
-  recorded, a misspelling; so does anything else a reply restates (a school, a town, a number).
-  Kept times are the day, not the moment (an exact time
+  `,.'’()-` (not on `_`, so a login's `_`-joined parts stay; a name holding an `@`, an email or
+  not, gives itself whole and its part before the first `@`, never what follows it, so a domain
+  quoted alone stays, and so does a handle such as the "jsmith" in "Jason (@jsmith)"), is blanked
+  wherever it stands as a word, so any name read that carries a title, a role word or an article
+  (a byline or staff name such as "Coach Jason" or "The Board", a ring name such as "The Hammer",
+  a login such as "coach.dave@…") blanks that word throughout the member's kept replies too. Any
+  other name a reply holds stays: another athlete it mentions (a sibling or a teammate keeps their
+  name, except a part shared with a scrubbed name, such as a sibling's surname), an athlete's or
+  guardian's login or login email, a guardian's ring name, an emergency contact, a guardian
+  record's email, a coach's or other staff member's name (other than the member's own names listed
+  above), a name on record only elsewhere (a waiver signer, a physician, another gym), an earlier
+  name of the member's or of an athlete of theirs, after a rename, copied onto another record (a
+  recognition, a 1% Club nomination or vote, a floor plan) or kept in the audit log where an admin
+  set it, a notice signature whose post audit row was not written or records no poster, a nickname
+  never recorded, a misspelling; so does anything else a reply restates (a school, a town, a
+  number). Kept times are the day, not the moment (an exact time
   would line the kept rows up with the member's own). What is kept takes **new ids**: a new conversation id
   and new message ids, so nothing that copied the old ones joins it (a background reply's id is
   a hash of its job's id; an escalation or an audit row can hold the conversation's). The
