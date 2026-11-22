@@ -84,8 +84,11 @@ const DEFINING_MODULES = [
 // behaviourObservations.ts asks one yes/no of session_run_athletes before a
 // coach's behaviour report is filed under a run (Jason 2026-10-18, "A: Strict
 // (Rec.)"): is this athlete marked present on it. It returns nothing from the
-// table; its only callers are the coach routes behaviour-observations and
-// behaviour-keys, gated to coach, organization_admin and admin.
+// table, but its refusal says whether the athlete is marked present, and so
+// does that of reportPlaceFor, which opens a sampled window
+// (behaviourSampleWindows.ts). Who may import either module is pinned below
+// (WRITER_ROUTES, WRITER_MODULES), and every route among them is gated to
+// coach, organization_admin and admin.
 // sessionRunClass.ts (D4) sets one mark's register pointer after a tap on a
 // session tied to a class wrote the register, and reads a run's standing marks
 // (ids) to copy them when the session is tied mid-way and to skip them in the
@@ -104,6 +107,20 @@ const TABLE_FILES = [
   'src/server/pilot/sessionRunClass.ts',
   'src/server/pilot/sessionScriptRuns.ts',
   'src/server/pilot/sessionStaffNotes.ts',
+];
+
+// The behaviour writer and the window module (PATTERN-1d-2, 1e): their refusals say whether an
+// athlete is marked present on a run (see TABLE_FILES). Only these files import either, and each
+// route among them is gated to the three staff roles (Overwatch 7084899452 point 3).
+// patternStanding.ts reads the reports for the tier engine; it files nothing and opens no window.
+const WRITER_IMPORT = /\bbehaviour(Observations|SampleWindows)(\.[cm]?[jt]sx?)?['"]/;
+const WRITER_ROUTES = [
+  'app/api/pilot/coach/behaviour-keys/route.ts',
+  'app/api/pilot/coach/behaviour-observations/route.ts',
+];
+const WRITER_MODULES = [
+  'src/server/pilot/behaviourSampleWindows.ts',
+  'src/server/pilot/patternStanding.ts',
 ];
 
 const HANDLER = /^export\s+(?:async\s+function|function|const|let|var)\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/gm;
@@ -162,6 +179,25 @@ describe('who was in a session, and notes on a run, are reached only from staff 
     }
     if (gates.includes('RUN_ROLES')) {
       expect(text).toMatch(/const RUN_ROLES = \['coach', 'admin', 'organization_admin'\] as const;/);
+    }
+  });
+
+  it('the behaviour writer and the window module are imported only by the staff behaviour routes and two server modules', () => {
+    const all = ALL_SOURCE.map(relative);
+    for (const file of [...WRITER_ROUTES, ...WRITER_MODULES]) expect(all).toContain(file);
+    expect(ALL_SOURCE.filter((file) => WRITER_IMPORT.test(source(file))).map(relative).sort())
+      .toEqual([...WRITER_ROUTES, ...WRITER_MODULES].sort());
+  });
+
+  it.each(WRITER_ROUTES)('%s admits only coach, organization admin and the legacy admin name, on every handler', (route) => {
+    const text = source(path.join(WEB_DIR, route));
+    const handlers = Array.from(text.matchAll(HANDLER)).length;
+    expect(handlers).toBeGreaterThan(0);
+    expect(text).not.toMatch(/^export\s*(\{|\*)/m);
+    const gates = Array.from(text.matchAll(/requireRole\(\s*principal\s*,\s*\[\.\.\.([A-Z_]+)\]\s*\)/g), (match) => match[1]);
+    expect(gates).toHaveLength(handlers);
+    for (const gate of new Set(gates)) {
+      expect(text).toMatch(new RegExp(`const ${gate} = \\['coach', 'organization_admin', 'admin'\\] as const;`));
     }
   });
 

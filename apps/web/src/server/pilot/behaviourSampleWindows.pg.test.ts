@@ -709,6 +709,95 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
   });
 });
 
+describe('joining a window, and the reports route (PATTERN-1e; Overwatch 7084899452 points 1 and 2)', () => {
+  const change = (windowId: string, polarity: 'occurrence' | 'counterexample', observer = COACH_A) => windows.changeLastWindowTap({
+    organizationId: ORG, windowId, polarity, observerAccountId: observer, authorRole: 'coach',
+  });
+
+  test('the open windows of a run, for a second coach to join: that run\'s open ones only; staff of this gym only', async () => {
+    const joinable = (await open()).window_id;
+    const closedOne = (await open()).window_id;
+    await close(closedOne);
+    const elsewhere = (await open({ runId: PLANNED_RUN, context: { blockId: 'blk-bsw-1' } })).window_id;
+    const listed = (await windows.listOpenBehaviourWindows({ organizationId: ORG, runId: RUN, readerAccountId: COACH_B }))
+      .map((row) => row.window_id);
+    expect(listed).toContain(joinable);
+    expect(listed).not.toContain(closedOne);
+    expect(listed).not.toContain(elsewhere);
+    expect(await windows.listOpenBehaviourWindows({ organizationId: OTHER_ORG, runId: RUN, readerAccountId: OTHER_GYM_COACH }))
+      .toEqual([]);
+    for (const outsider of [COACH_LAPSED, OTHER_GYM_COACH, BOARD_MEMBER]) {
+      await expect(windows.listOpenBehaviourWindows({ organizationId: ORG, runId: RUN, readerAccountId: outsider }))
+        .rejects.toThrow('Only staff of this gym can read a window.');
+    }
+  });
+
+  test('a joining coach gets the chance the count stands at -- the highest anyone has tapped, plus one -- and nothing of the taps', async () => {
+    const windowId = (await open()).window_id;
+    const current = (reader = COACH_B) => windows.currentWindowChance({ organizationId: ORG, windowId, readerAccountId: reader });
+    expect(await current()).toBe(1);
+    await tap(windowId, 1, COACH_A, 'occurrence');
+    await tap(windowId, 3, COACH_A, 'counterexample');
+    expect(await current()).toBe(4);
+    // A later tap of a lower chance, or a revision, does not move it back.
+    await tap(windowId, 2, COACH_B, 'occurrence');
+    await tap(windowId, 3, COACH_A, 'occurrence');
+    expect(await current(COACH_A)).toBe(4);
+    // Point 2 as ruled: past the last chance it reads chances + 1; the screen (1f) shows the window full.
+    await tap(windowId, 10, COACH_B, 'occurrence');
+    expect(await current()).toBe(11);
+    await expect(current(BOARD_MEMBER)).rejects.toThrow('Only staff of this gym can read a window.');
+    await expect(windows.currentWindowChance({ organizationId: OTHER_ORG, windowId, readerAccountId: OTHER_GYM_COACH }))
+      .rejects.toThrow('That window is not in this gym.');
+  });
+
+  test('change last tap revises the coach\'s most recent tap (Q8 A), not their highest chance nor another coach\'s', async () => {
+    const windowId = (await open()).window_id;
+    await expect(change(windowId, 'occurrence')).rejects.toThrow('You have no tap on this window to change.');
+    await tap(windowId, 2, COACH_A, 'occurrence');
+    await tap(windowId, 1, COACH_A, 'occurrence');
+    await tap(windowId, 3, COACH_B, 'occurrence');
+    expect(await change(windowId, 'counterexample')).toEqual({ chance: 1, polarity: 'counterexample' });
+    expect(await windows.listMyWindowTaps({ organizationId: ORG, windowId, observerAccountId: COACH_A }))
+      .toEqual([{ chance: 1, polarity: 'counterexample' }, { chance: 2, polarity: 'occurrence' }]);
+    // Changed again, the same tap is still the last; it revises, never adds.
+    expect(await change(windowId, 'occurrence')).toEqual({ chance: 1, polarity: 'occurrence' });
+    expect(await readingsOf(windowId, 1)).toHaveLength(3);
+    await close(windowId);
+    await expect(change(windowId, 'counterexample')).rejects.toThrow('That window is closed.');
+  });
+
+  test('the reports route leaves out the taps of a window still open, every chance and coach, and shows them once it closes', async () => {
+    const windowId = (await open()).window_id;
+    await tap(windowId, 1, COACH_A, 'occurrence');
+    await tap(windowId, 5, COACH_B, 'counterexample');
+    await tap(windowId, 10, COACH_A, 'occurrence');
+    await tap(windowId, 10, COACH_B, 'occurrence');
+    const tappedAll = [1, 5, 10].map((chance) => writer.windowEpisodeId(ORG, windowId, chance));
+    const tapped = tappedAll[0];
+    const plain = await writer.recordBehaviourObservation({
+      organizationId: ORG, athleteId: ATHLETE, behaviourKey: KEY, observerAccountId: COACH_B, authorRole: 'coach',
+      session: { runId: RUN }, context: { drillId: DRILL }, taskConstraint: 'live',
+      polarity: 'occurrence', attributionTarget: 'athlete', attributionCertainty: 'probable',
+    });
+    const listed = async () => (await writer.listBehaviourObservations(ORG, ATHLETE, 500)).map((row) => row.episode_id);
+    for (const episode of tappedAll) expect(await listed()).not.toContain(episode);
+    expect(await listed()).toContain(plain.episode_id);
+    await close(windowId);
+    for (const episode of tappedAll) expect(await listed()).toContain(episode);
+    expect(await listed()).toContain(tapped);
+  });
+
+  test('the reports route still answers where the window table is not yet applied', async () => {
+    await db.query('alter table pilot.behaviour_observations_windows rename to behaviour_observations_windows_away');
+    try {
+      expect((await writer.listBehaviourObservations(ORG, ATHLETE, 500)).length).toBeGreaterThan(0);
+    } finally {
+      await db.query('alter table pilot.behaviour_observations_windows_away rename to behaviour_observations_windows');
+    }
+  });
+});
+
 describe('when the athlete goes', () => {
   test('a window still naming an athlete goes with the athlete row', async () => {
     const { window_id: windowId } = await insertWindow({ athlete: LEAVING });

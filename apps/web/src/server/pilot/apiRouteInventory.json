@@ -15654,7 +15654,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lane L49. The gym's shared list of behaviour names (Jason 2026-10-18 Q1); keys are server-minted. A coach-typed label could name a child, so staff only (FIELD_TIERS behaviour_keys.label).",
+    "notes": "Lane L49. The gym's shared list of behaviour names (Jason 2026-10-18 Q1); keys are server-minted. A coach-typed label could name a child, so staff only (FIELD_TIERS behaviour_keys.label). GET also returns the skill codes a new name may sit under (LL-W8b, PATTERN-1e): the graph's, as the writer checks them.",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
@@ -15712,7 +15712,7 @@
     "missingGate": false,
     "looksWrong": "",
     "confidence": "high",
-    "notes": "Lane L49. One athlete's coach behaviour reports, as written (no evaluation). Staff only (Q2); a refused athlete is a hidden 404.",
+    "notes": "Lane L49. One athlete's coach behaviour reports, as written (no evaluation). Staff only (Q2); a refused athlete is a hidden 404. The taps of a sampled window still open are left out until it closes (PATTERN-1e; Q2 A).",
     "mechanical": {
       "sessionGates": [
         "requirePrincipal"
