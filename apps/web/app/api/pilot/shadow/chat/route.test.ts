@@ -4096,6 +4096,49 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     expect(body.researchFiled).toBe(true);
   });
 
+  // The "passed" flag must rest on a hand-off that happened. A parent's
+  // disclosure files no escalation, so its only hand-off is the review row,
+  // which is bounded per account per hour (OD-2026-09-30-005) and can fail.
+  // When that row is not written the reply must not say it was passed on
+  // (both reviews of #2091; Overwatch's A on #2083, comment 7074202926).
+  test('the "passed" flag is false when the hour\'s review allowance is spent', async () => {
+    mockConsumeReviewSlot.mockRejectedValue(new ShadowRateLimitExceeded(1800, 'safety_review'));
+    const { response, body } = await ask('My dad hits me');
+
+    expect(response.status).toBe(200);
+    expect(body.response).toBe(ANSWER);
+    expect(body.evidenceNotice).toBe('NO_VERIFIED_EVIDENCE');
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
+    expect(body.researchFiled).toBe(false);
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
+    await expectNoEscalation();
+  });
+
+  test('the "passed" flag is false when the review row insert fails', async () => {
+    mockQueueHumanReview.mockRejectedValue(new Error('insert failed'));
+    const { response, body } = await ask('I want to kill myself');
+
+    expect(response.status).toBe(200);
+    expect(body.evidenceNotice).toBe('NO_VERIFIED_EVIDENCE');
+    expect(mockQueueHumanReview).toHaveBeenCalled();
+    expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
+    expect(body.researchFiled).toBe(false);
+  });
+
+  test('CONTROL: an athlete\'s disclosure keeps the flag when the review allowance is spent (its escalation is the hand-off)', async () => {
+    mockFileDisclosure.mockImplementation(async () => null);
+    mockConsumeReviewSlot.mockRejectedValue(new ShadowRateLimitExceeded(1800, 'safety_review'));
+    const { body } = await ask('My dad hits me', { role: 'athlete', principalAthleteId: 'ATH-SELF' });
+
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    expect(mockFileDisclosure).toHaveBeenCalledWith(expect.objectContaining({
+      athleteId: 'ATH-SELF',
+      disclosure: expect.objectContaining({ filesEscalation: true }),
+    }));
+    expect(body.researchFiled).toBe(true);
+  });
+
   test('a parent chat that names a child still files no escalation; the review row says it was athlete-scoped', async () => {
     const { response, body } = await ask('My dad hits me', { chatAthleteId: 'ATH-CHILD' });
 
