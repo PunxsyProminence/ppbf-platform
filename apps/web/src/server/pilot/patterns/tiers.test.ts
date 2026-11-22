@@ -176,13 +176,14 @@ describe('the approved tiers', () => {
 });
 
 describe('review fixes', () => {
-  test('two coaches not yet calibrated who disagree: the attempt is listed as disputed and withholds nothing', () => {
+  test('two coaches not yet calibrated who disagree: the attempt is listed for a person and withholds nothing', () => {
     const disputed = [
       chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-c' }),
       chance(20, { opportunityKey: 'rep-1', observerAccountId: 'coach-d', polarity: 'counterexample' }),
     ];
     const result = tiersOf([...emergingEvidence(), ...disputed, ...calibrationHistory()]);
-    expect(result.disputed).toEqual({ attempts: 1, observationIds: idsOf(disputed) });
+    expect(result.disputed).toEqual({ attempts: 0, observationIds: [] });
+    expect(result.uncountedDissent).toEqual({ attempts: 1, observationIds: idsOf(disputed) });
     expect(result.unverifiedObservationIds).toEqual(idsOf(disputed));
     expect(result.withheld).toEqual([]);
     expect(result.tier).toBe('emerging');
@@ -355,8 +356,138 @@ describe('disputed attempts (Overwatch Q4 A on #2082)', () => {
     ];
     const result = tiersOf([...patternEvidence(), ...contradicted, ...calibrationHistory()]);
     expect(result.withheld).toEqual(['VIDEO_CONTRADICTS_OBSERVER']);
-    expect(result.disputed.attempts).toBe(1);
+    // The model's reading does not count, so it does not take the coach's reading out of the counts; it is listed.
+    expect(result.disputed.attempts).toBe(0);
+    expect(result.uncountedDissent).toEqual({ attempts: 1, observationIds: idsOf(contradicted) });
     expect(result.standings.pattern).toEqual({ met: false, shortfalls: [] });
     expect(result.tier).toBeNull();
+  });
+});
+
+describe('a reading that does not count changes no count (review fixes on #2092)', () => {
+  /** Pattern evidence plus two more coach misses: 7 shown of 10, a share of 0.7, so no tier. */
+  const missKeys = ['miss-1', 'miss-2'];
+  function seventyPercent(): BehaviourObservation[] {
+    return [
+      ...patternEvidence(),
+      chance(16, { opportunityKey: 'miss-1', polarity: 'counterexample' }),
+      chance(17, { opportunityKey: 'miss-2', polarity: 'counterexample', observerAccountId: 'coach-b' }),
+    ];
+  }
+  /** One more reading on each of the two misses, made the same day as the miss. */
+  const onTheMisses = (overrides: Partial<BehaviourObservation>) => missKeys.map((key, index) => chance(16 + index, {
+    opportunityKey: key, ...overrides,
+  }));
+  const model = (polarity: BehaviourObservation['polarity']): Partial<BehaviourObservation> => ({
+    observerAccountId: null, interpretation: 'ai_proposed', polarity,
+    source: { type: 'imported', quality: 'moderate', referenceId: 'model-run' },
+  });
+
+  test('the base case: 7 of 10 is below the 80% share, so no tier', () => {
+    const result = tiersOf([...seventyPercent(), ...calibrationHistory()]);
+    expect(result.counts).toEqual(expect.objectContaining({ codedChances: 10, occurrences: 7 }));
+    expect(result.tier).toBeNull();
+  });
+
+  test.each([
+    ['a person naming no coach agrees with the misses', { observerAccountId: null, polarity: 'counterexample' as const }],
+    ['a coach in no calibrated pair agrees with the misses', { observerAccountId: 'coach-z', polarity: 'counterexample' as const }],
+    ['a coach in no calibrated pair says the misses showed', { observerAccountId: 'coach-z', polarity: 'occurrence' as const }],
+    ['a model agrees with the misses', model('counterexample')],
+    ['a model says the misses showed', model('occurrence')],
+  ])('%s: the misses still count and the tier does not move', (_label, overrides) => {
+    const extra = onTheMisses(overrides);
+    const result = tiersOf([...seventyPercent(), ...extra, ...calibrationHistory()]);
+    expect(result.counts).toEqual(expect.objectContaining({ codedChances: 10, occurrences: 7 }));
+    expect(result.disputed.attempts).toBe(0);
+    expect(result.tier).toBeNull();
+  });
+
+  test('dissent that does not count is listed for a person', () => {
+    const base = seventyPercent();
+    const extra = onTheMisses(model('occurrence'));
+    const result = tiersOf([...base, ...extra, ...calibrationHistory()]);
+    const misses = base.filter((row) => missKeys.includes(row.opportunityKey ?? ''));
+    expect(result.uncountedDissent).toEqual({ attempts: 2, observationIds: idsOf([...misses, ...extra]) });
+  });
+
+  test('a calibrated coach disputing a miss still leaves that attempt out (Q4 A)', () => {
+    const extra = [chance(16, { opportunityKey: 'miss-1', observerAccountId: 'coach-b', polarity: 'occurrence' })];
+    const result = tiersOf([...seventyPercent(), ...extra, ...calibrationHistory()]);
+    expect(result.disputed.attempts).toBe(1);
+    expect(result.counts).toEqual(expect.objectContaining({ codedChances: 9, occurrences: 7 }));
+  });
+
+  test('a lapse stands whatever a model or an uncalibrated coach says about the misses', () => {
+    const misses = [21, 22, 23].map((day) => chance(day, { opportunityKey: `lapse-${day}`, polarity: 'counterexample', taskContextKey: 'task-bag' }));
+    const lapsed = tiersOf([...patternEvidence(), ...misses, ...calibrationHistory()]);
+    expect(lapsed.standings.pattern.shortfalls).toContain('lapsed');
+    for (const overrides of [model('occurrence'), { observerAccountId: 'coach-z', polarity: 'occurrence' as const }]) {
+      const dissent = misses.map((miss) => chance(0, { ...miss, observationId: `${miss.observationId}-x`, ...overrides }));
+      const result = tiersOf([...patternEvidence(), ...misses, ...dissent, ...calibrationHistory()]);
+      expect(result.counts.trailingMisses).toBe(3);
+      expect(result.tier).toBe(lapsed.tier);
+    }
+  });
+
+  test('film contradicting a coach in no calibrated pair still withholds', () => {
+    const contradicted = [
+      chance(12, { opportunityKey: 'rep-v', observerAccountId: 'coach-c' }),
+      chance(12, {
+        opportunityKey: 'rep-v', observerAccountId: null, interpretation: 'ai_proposed', polarity: 'counterexample',
+        source: { type: 'computer_vision', quality: 'high', referenceId: 'clip-v' },
+      }),
+    ];
+    const result = tiersOf([...patternEvidence(), ...contradicted, ...calibrationHistory()]);
+    expect(result.withheld).toEqual(['VIDEO_CONTRADICTS_OBSERVER']);
+    expect(result.tier).toBeNull();
+  });
+
+  test('film contradicting a coach withholds whatever the coach\'s reading was sourced from', () => {
+    const contradicted = [
+      chance(12, { opportunityKey: 'rep-w', source: { type: 'imported', quality: 'moderate', referenceId: 'sheet-1' } }),
+      chance(12, {
+        opportunityKey: 'rep-w', observerAccountId: null, interpretation: 'ai_proposed', polarity: 'counterexample',
+        source: { type: 'computer_vision', quality: 'high', referenceId: 'clip-w' },
+      }),
+    ];
+    const result = tiersOf([...patternEvidence(), ...contradicted, ...calibrationHistory()]);
+    expect(result.withheld).toEqual(['VIDEO_CONTRADICTS_OBSERVER']);
+    expect(result.tier).toBeNull();
+  });
+
+  test('two calibrated coaches both coding from film who disagree: a dispute between people, left out, not withheld', () => {
+    const fromFilm = { type: 'computer_vision', quality: 'high', referenceId: 'clip-f' } as const;
+    const disputed = [
+      chance(12, { opportunityKey: 'rep-f', source: fromFilm }),
+      chance(12, { opportunityKey: 'rep-f', source: fromFilm, observerAccountId: 'coach-b', polarity: 'counterexample' }),
+    ];
+    const result = tiersOf([...patternEvidence(), ...disputed, ...calibrationHistory()]);
+    expect(result.withheld).toEqual([]);
+    expect(result.disputed.attempts).toBe(1);
+    expect(result.tier).toBe('pattern');
+  });
+
+  test('whose fault it was is reported over the counted attempts only', () => {
+    const modelOnly = [4, 9].map((day) => chance(day, {
+      ...model('occurrence'), opportunityKey: `m-${day}`, attribution: { target: 'coach_cue', certainty: 'probable' },
+    }));
+    const withBar = tiersOf([...emergingEvidence(), ...modelOnly, ...calibrationHistory()]);
+    expect(withBar.attribution.tally.coach_cue).toBe(0);
+    expect(withBar.attribution.athleteShare).toBe(1);
+    const noBar = tiersOf([...emergingEvidence(), ...modelOnly, ...calibrationHistory()], false);
+    expect(noBar.attribution.athleteShare).toBeNull();
+  });
+
+  test('a calibration bar passed as undefined is no bar: nothing counts and the result says so', () => {
+    const result = evaluatePatternTiers({
+      organizationId: ORG, athleteId: ATHLETE, behaviourKey: BEHAVIOUR,
+      observations: emergingEvidence(), calibrationReadings: calibrationHistory(),
+      bar: APPROVED_PATTERN_FORMATION_V1,
+      calibration: undefined as unknown as null,
+      asOf: AS_OF,
+    });
+    expect(result.calibrationBarInForce).toBe(false);
+    expect(result.counts.codedChances).toBe(0);
   });
 });
