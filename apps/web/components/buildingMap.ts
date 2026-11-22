@@ -302,6 +302,11 @@ export const BUILDING: readonly Door[] = [
   { href: '/admin/calibration/review', label: 'Calibration Review', room: 'office', roles: ['admin'],
     keywords: 'calibration comparison disagreement annotation coaches agreement study adjudication clip review blinding',
     hint: 'Where two coaches disagreed on a study clip, side by side. Read-only, and no score.' },
+  /* PATTERN-1c. The page lets coaches read too (the route's read roles); the
+     door is the office's, where the bar is put in force. */
+  { href: '/admin/learning-policies', label: 'Learning Bars', room: 'office', roles: ['admin'],
+    keywords: 'learning bars pattern labels emerging established lesson results coach calibration thresholds put in force ratify sources research',
+    hint: 'The approved numbers behind pattern labels, lesson results and coach calibration, with their sources. Put them in force here.' },
   /* NOT OPEN. The page computes `hasPlatformAccess = isMicrosoftSession &&
      sessionRole === 'platform_owner'` (admin/platform/page.tsx) and shows
      nothing without it, so OPEN advertised an /admin/* door to every role --
