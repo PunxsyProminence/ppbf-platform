@@ -1406,7 +1406,8 @@ export default function CoachWorkspace() {
   const openShadowIntelItem = (intakeCaseId: string) => {
     setActiveTab('shadow');
     window.setTimeout(() => {
-      document.getElementById(`shadow-intel-${intakeCaseId}`)?.scrollIntoView({ block: 'center' });
+      const el = document.getElementById(`shadow-intel-${intakeCaseId}`);
+      if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center' });
     }, 0);
   };
   const reviewsNeeded = coachTasks.filter(t => t.status === 'Open' && t.title.includes('Review')).length;
