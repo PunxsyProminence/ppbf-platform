@@ -314,8 +314,9 @@ function isEmergencyReturn(validation: ShadowValidationResult): boolean {
  * disclosure path, exactly as the same disclosure without the pain word:
  * SHADOW still answers (OD-2026-10-10-007). The emergency return stays
  * ahead of a disclosure (OD-2026-10-10-006; Overwatch, F-093 Q1), and a
- * result that is already high-risk and allowed is main's. The escalation
- * files in every case; this decides only the answer.
+ * result that is already high-risk and allowed is main's. An athlete's
+ * escalation files in every case, and a parent's disclosure files none
+ * (filesEscalation); this decides only the answer.
  */
 export function markShadowDisclosure(
   validation: ShadowValidationResult,

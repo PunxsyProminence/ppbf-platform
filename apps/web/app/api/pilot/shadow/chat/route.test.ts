@@ -4116,12 +4116,18 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({ category: 'safeguarding_disclosure' }));
   });
 
-  test('a parent disclosure refused as a board summary files nothing at the refusal either', async () => {
+  // A KNOWN GAP, recorded rather than closed here: on a refusal like this one
+  // a parent's disclosure reaches nobody. An athlete's escalation still files
+  // at the refusal, but a parent's only channel is the review row, and no row
+  // is owed to a request refused as a board summary (route.ts, "auth stays
+  // above safety", OD-2026-09-30-005). Writing one would be the owner's call.
+  test('a parent disclosure refused as a board summary files nothing at the refusal either (known gap: no review row)', async () => {
     mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent' }));
     const response = await POST(postRequest({ message: 'My dad hits me', sessionType: 'board_summary' }));
 
     expect(response.status).toBe(403);
     await expectNoEscalation();
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
   });
 
   // F-093 applies: the same words a coach sends are withheld as a personal
