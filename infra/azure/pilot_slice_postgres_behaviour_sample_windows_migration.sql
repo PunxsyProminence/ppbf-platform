@@ -76,10 +76,12 @@ begin
        and to_jsonb(new) - 'opened_by_account_id' = to_jsonb(old) - 'opened_by_account_id' then
       return new;
     end if;
-    -- (2) Closing, once, at the database's time; nothing else moves.
+    -- (2) Closing, once, at the database's time; nothing else moves. The
+    -- clock when the close takes the row, not its transaction's start: a
+    -- close that waited for taps in flight (PATTERN-1d-2) is later than each.
     if old.closed_at is null and new.closed_at is not null
        and to_jsonb(new) - 'closed_at' = to_jsonb(old) - 'closed_at' then
-      new.closed_at := greatest(now(), old.opened_at);
+      new.closed_at := greatest(clock_timestamp(), old.opened_at);
       return new;
     end if;
     -- (3) The purge's de-identification of a DELETED athlete's window
