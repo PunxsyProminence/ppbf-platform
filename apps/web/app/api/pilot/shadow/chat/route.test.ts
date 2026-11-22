@@ -3998,3 +3998,155 @@ describe('an athlete disclosure in SHADOW chat (F-076)', () => {
     });
   });
 });
+
+// HF8-1 B (Jason, 2026-11-21, Q1 = B "office review only", relayed by
+// Overwatch on #2083, comment 7065230094): a parent's SHADOW message gets the
+// athlete's disclosure scan and carve-outs. A match gives the org admin the
+// SHADOW review row for that one exchange (OD-2026-10-07-009 ruling 4) and
+// nothing else: never a coach alert or an escalation entry, whatever athlete
+// the principal or the chat names. The words are not copied into the research
+// list, the pain-word change (F-093) applies, and the reply's "passed" flag
+// follows the athlete rule, so it never differs only because of a disclosure.
+describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)', () => {
+  const ANSWER = 'Thank you for telling us. Talk to the gym office today.';
+  const SENTENCES: readonly string[] = [
+    'My coach hits me and I am scared to go to the gym',
+    'My coach touched me and told me not to tell anyone',
+    'my coach makes me stay behind after everyone leaves',
+    'My dad hits me',
+    'I want to kill myself',
+  ];
+  const mockFileDisclosure = jest.mocked(fileShadowDisclosureEscalation);
+  const athleteCheck = jest.mocked(assertActorCanAccessAthlete);
+
+  async function ask(
+    message: string,
+    options: { role?: PilotPrincipal['role']; principalAthleteId?: string | null; chatAthleteId?: string } = {},
+  ) {
+    const role = options.role ?? 'parent';
+    mockRequirePrincipal.mockResolvedValue(principal({ role, athleteId: options.principalAthleteId ?? null }));
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: ANSWER } }] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    const response = await POST(postRequest({
+      message,
+      ...(options.chatAthleteId ? { athleteId: options.chatAthleteId } : {}),
+    }));
+    return { response, body: await response.json(), providerCalled: fetchSpy.mock.calls.length > 0 };
+  }
+
+  test.each(SENTENCES)('"%s": answered unchanged, the office review row only, no escalation, no research row', async (message) => {
+    const { response, body, providerCalled } = await ask(message);
+
+    expect(response.status).toBe(200);
+    expect(providerCalled).toBe(true);
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(ANSWER);
+    expect(body.filtered).toBe(false);
+    expect(body.requiresHumanReview).toBe(false);
+    expect(body.highRiskTopic).toBeUndefined();
+    expect(body.handoff ?? null).toBeNull();
+
+    // Office review only: no escalation entry, so no coach alert.
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+
+    // The org admin's SHADOW review row for this one exchange.
+    const critical = isCriticalShadowDisclosure(detectShadowDisclosure(message, 'parent'));
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'safeguarding_disclosure',
+      severity: critical ? 'critical' : 'high',
+      conversationId: 'conversation-1',
+    }));
+    expect(mockConsumeReviewSlot).toHaveBeenCalledWith(expect.objectContaining({
+      event: { kind: 'request_risk', critical },
+    }));
+
+    // Not copied into the research list; the "passed" flag is what main gave.
+    expect(fileUnansweredShadowQuestion).not.toHaveBeenCalled();
+    expect(body.researchFiled).toBe(true);
+  });
+
+  test('a parent chat that names a child still files no escalation; the review row says it was athlete-scoped', async () => {
+    const { response, body } = await ask('My dad hits me', { chatAthleteId: 'ATH-CHILD' });
+
+    expect(response.status).toBe(200);
+    expect(body.response).toBe(ANSWER);
+    expect(athleteCheck).toHaveBeenCalledWith(expect.objectContaining({ role: 'parent' }), 'ATH-CHILD');
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'safeguarding_disclosure',
+      metadata: expect.objectContaining({ athleteScoped: true }),
+    }));
+  });
+
+  test('a parent principal that carries an athlete id still files no escalation', async () => {
+    await ask('My dad hits me', { principalAthleteId: 'ATH-ODD' });
+
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({ category: 'safeguarding_disclosure' }));
+  });
+
+  test('a parent disclosure refused as a board summary files nothing at the refusal either', async () => {
+    mockRequirePrincipal.mockResolvedValue(principal({ role: 'parent' }));
+    const response = await POST(postRequest({ message: 'My dad hits me', sessionType: 'board_summary' }));
+
+    expect(response.status).toBe(403);
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+  });
+
+  // F-093 applies: the same words a coach sends are withheld as a personal
+  // health question; from a parent they are a disclosure, answered.
+  test('a parent disclosure with a pain word is answered, where a coach\'s is withheld (F-093)', async () => {
+    const message = 'my coach hits me and it hurts';
+    const asCoach = await ask(message, { role: 'coach' });
+    expect(asCoach.response.status).toBe(400);
+    expect(asCoach.body.state).toBe('filtered');
+    jest.clearAllMocks();
+
+    const { response, body, providerCalled } = await ask(message);
+
+    expect(response.status).toBe(200);
+    expect(providerCalled).toBe(true);
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(ANSWER);
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({ category: 'safeguarding_disclosure' }));
+  });
+
+  test('CONTROL: a parent\'s plain question writes no review row and is filed as research as before', async () => {
+    const { body } = await ask('How do I help my kid with footwork at home?');
+
+    expect(body.state).toBe('ok');
+    expect(body.response).toBe(ANSWER);
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    expect(fileUnansweredShadowQuestion).toHaveBeenCalledTimes(1);
+    expect(body.researchFiled).toBe(true);
+  });
+
+  test('CONTROL: a parent\'s ordinary sparring question writes no review row and is filed as research as before', async () => {
+    const { body } = await ask('How do I keep my guard up when he punches me?');
+
+    expect(body.state).toBe('ok');
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).not.toHaveBeenCalled();
+    expect(fileUnansweredShadowQuestion).toHaveBeenCalledTimes(1);
+  });
+
+  test('CONTROL: a parent\'s pain report that is no disclosure is withheld exactly as a coach\'s is', async () => {
+    const message = 'My legs are sore after roadwork';
+    const asCoach = await ask(message, { role: 'coach' });
+    jest.clearAllMocks();
+    const asParent = await ask(message);
+
+    expect(asParent.response.status).toBe(asCoach.response.status);
+    expect(asParent.body.state).toBe(asCoach.body.state);
+    expect(asParent.body.response).toBe(asCoach.body.response);
+    expect(mockFileDisclosure).not.toHaveBeenCalled();
+    expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.not.objectContaining({ category: 'safeguarding_disclosure' }));
+  });
+});
