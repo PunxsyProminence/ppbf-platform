@@ -4036,10 +4036,12 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     for (const [params] of mockFileDisclosure.mock.calls) {
       expect(params.disclosure.filesEscalation).toBe(false);
     }
+    // The real filer returns null at its guard. Past the guard it would read
+    // and write through the db module (queryOne, then fileEscalation), which
+    // this file's db mock does not provide, so the call would reject instead.
     for (const result of mockFileDisclosure.mock.results) {
       await expect(result.value).resolves.toBeNull();
     }
-    expect(mockQuery.mock.calls.some(([sql]) => String(sql).includes('safety_escalations'))).toBe(false);
   }
 
   async function ask(
@@ -4100,6 +4102,7 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     expect(response.status).toBe(200);
     expect(body.response).toBe(ANSWER);
     expect(athleteCheck).toHaveBeenCalledWith(expect.objectContaining({ role: 'parent' }), 'ATH-CHILD');
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
     await expectNoEscalation();
     expect(mockQueueHumanReview).toHaveBeenCalledTimes(1);
     expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({
@@ -4126,6 +4129,7 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     const response = await POST(postRequest({ message: 'My dad hits me', sessionType: 'board_summary' }));
 
     expect(response.status).toBe(403);
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
     await expectNoEscalation();
     expect(mockQueueHumanReview).not.toHaveBeenCalled();
   });
@@ -4145,6 +4149,7 @@ describe('a parent\'s message in SHADOW chat: office review only (HF8-1, Q1 = B)
     expect(providerCalled).toBe(true);
     expect(body.state).toBe('ok');
     expect(body.response).toBe(ANSWER);
+    expect(mockFileDisclosure).toHaveBeenCalledTimes(1);
     await expectNoEscalation();
     expect(mockQueueHumanReview).toHaveBeenCalledWith(expect.objectContaining({ category: 'safeguarding_disclosure' }));
   });
