@@ -266,6 +266,22 @@ describe('backbone-export-assessment-catalog (lane CAT-c)', () => {
     for (const name of FILES) expect(read(again.out, name)).toBe(read(first.out, name));
   });
 
+  // LANE GD: A STOP NO FLAG PASSES (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042).
+  it('a row that carries the DOC-136 source key stops the export, with or without --allow-overwrite, and nothing is written', () => {
+    const items = catalogs().scorecard_items as Json[];
+    const held = backbone(catalogs({ scorecard_items: [{ ...items[0], definition: `${items[0].definition as string} (DOC-136, a made-up source line)` }, ...items.slice(1)] }));
+    for (const extra of [[], ['--allow-overwrite']]) {
+      const refused = exportInto(held, first.out, extra);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toMatch(/seed_scorecard_items\.csv scorecard_item_id sci_3e422ec1f94b2a: definition names a held DOC-136 record/);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      for (const name of FILES) {
+        const file = path.join(first.out, DIR, name);
+        if (fs.existsSync(file)) expect(read(refused.out, name)).toBe(fs.readFileSync(file, 'utf8'));
+      }
+    }
+  });
+
   it('will not overwrite a committed row edited after the export unless --allow-overwrite, and then lists it', () => {
     const seed = tempDir();
     fs.cpSync(first.out, seed, { recursive: true });

@@ -278,6 +278,41 @@ ${oldHeader.map((column) => old[column]).join(',')}
     expect(snapshot(forced.out)).toEqual(snapshot(first.out));
   });
 
+  // LANE GD: TWO STOPS NO FLAG PASSES (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042).
+
+  it('a row that carries the DOC-136 source key stops the export, with or without --allow-overwrite, and nothing is written', () => {
+    const sourced = fixture();
+    sourced.track = track({ sources: ['DOC-123', 'DOC-136 (a made-up source line)'] });
+    const held = backbone(sourced);
+    for (const extra of [[], ['--allow-overwrite']]) {
+      const refused = exportInto(held, first.out, extra);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${TRACKS} track_id ${TRACK}: sources names a held DOC-136 record`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      expect(snapshot(refused.out)).toEqual(snapshot(first.out));
+    }
+    const fresh = exportInto(held);
+    expect(fresh.status).toBe(1);
+    expect(Object.values(snapshot(fresh.out)).filter((text) => text !== undefined)).toEqual([]);
+  });
+
+  it('a committed step that links a drill is never written back as a typed line, with or without --allow-overwrite', () => {
+    const typed = fixture();
+    // The Backbone still has T1's first step as a typed line; D1 stays in the set through the block's optional drills.
+    typed.templates[1].items = [{ item_id: 'wti_000000000000d1', ordinal: 1, block: 'footwork', contact_level: 'none', free_text_drill: 'Jump rope' },
+      (typed.templates[1].items as Json[])[1]];
+    typed.blocks[0].optional_drill_refs = [D3, D1];
+    const typedDir = backbone(typed);
+    for (const extra of [[], ['--allow-overwrite']]) {
+      const refused = exportInto(typedDir, first.out, extra);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${ITEMS} template_id ${T1}: step 1 links drill ${D1}; the export would write it back as a typed line`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      expect(snapshot(refused.out)).toEqual(snapshot(first.out));
+    }
+    expect(exportInto(typedDir, first.out).stderr).toContain('--allow-overwrite would not write this run either.');
+  });
+
   it('keeps the rows of another track in the training-tracks files (lane YR adds its tracks there), and the FT1 rows in their place', () => {
     const seed = exportInto(dir).out;
     const name = 'training-tracks/seed_training_tracks.csv';

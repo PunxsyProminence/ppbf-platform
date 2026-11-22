@@ -21,6 +21,10 @@
 // disappear stops the export, naming each file, drill and field, and nothing is written.
 // --allow-overwrite writes anyway and prints the same list.
 //
+// A STOP NO FLAG PASSES (lane GD; lib/backbone-export-guards.mjs). A row or a filled cell this run
+// would write that names a held DOC-136 record stops the export and nothing is written, with or
+// without --allow-overwrite, and in --fill-columns too.
+//
 // THE SET. 256 drills: 190 'Long Road practice'; 54 'PPBF owner-authored' (DOC-091 22, DOC-151 12,
 // DOC-152 12, DOC-089 8); 12 DOC-023/DOC-022. A different count is printed by name and the run exits 2,
 // as the FT1 exporter does (the L2b brief: a different count stops the lane).
@@ -59,6 +63,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { heldTextFindings, stopMessage } from './lib/backbone-export-guards.mjs';
 import {
   CONTENT_DIRS,
   EXCERPT_KEYS,
@@ -207,7 +212,8 @@ function drillRows(drills, dropped, tally) {
 /**
  * The drill-library files for one Backbone folder: { files, counts, differences, notices, overwrites, backboneVersion }.
  * `existing(name)` returns a committed file's text, or undefined. Throws, before any file is produced,
- * when a committed lane-2 row would be changed or removed, unless `allowOverwrite`.
+ * when a committed lane-2 row would be changed or removed, unless `allowOverwrite`, and whatever
+ * `allowOverwrite` says when a row would name a held record.
  */
 export function exportDrillLibrary(backboneDir, existing = () => undefined, { allowOverwrite = false } = {}) {
   const set = readLane2(backboneDir);
@@ -231,7 +237,9 @@ export function exportDrillLibrary(backboneDir, existing = () => undefined, { al
   const ordinal = (a, b) => compare(a.drill_id, b.drill_id) || Number(a.ordinal) - Number(b.ordinal);
   const files = {};
   const overwrites = [];
+  const stops = [];
   const put = (name, newRows) => {
+    stops.push(...heldTextFindings(name, HEADERS[name], newRows));
     const committed = committedRows(existing(name), HEADERS[name]);
     const replaced = committed.filter(ofLane2);
     const kept = committed.filter((row) => !ofLane2(row));
@@ -251,14 +259,18 @@ export function exportDrillLibrary(backboneDir, existing = () => undefined, { al
   put(FILES[1], rows.cues.sort(ordinal));
   put(FILES[2], rows.stopRules.sort(ordinal));
   const overwriteLines = describeOverwrites(overwrites);
+  const stopText = stopMessage(stops);
   if (overwrites.length && !allowOverwrite) {
     throw new ExportError([
       `refused: this run would change or remove ${overwrites.length} committed lane-2 row(s): edits made in the repo since the export`
         + ' (the drafted drill fields, cues, stop rules and labels, OD-2026-11-15-002 ruling 2). Nothing was written.',
       ...overwriteLines,
-      'To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.',
+      ...(stopText
+        ? ['--allow-overwrite would not write this run either.', stopText]
+        : ['To write the frozen Backbone\'s rows over them on purpose, run again with --allow-overwrite.']),
     ].join('\n'));
   }
+  if (stopText) throw new ExportError(stopText);
   const notCarried = Object.entries(tally).sort(([a], [b]) => compare(a, b)).map(([key, n]) => `${key} x${n}`);
   return {
     backboneVersion,
@@ -299,6 +311,7 @@ export function fillColumns(backboneDir, existing = () => undefined) {
   }
   const counts = { drills: records.length, ...Object.fromEntries(FILL_COLUMNS.map((column) => [column, 0])) };
   const problems = [];
+  const filledRows = [];
   for (const record of records) {
     const where = `drill ${record.drill_id}`;
     const row = byId.get(record.drill_id);
@@ -306,6 +319,7 @@ export function fillColumns(backboneDir, existing = () => undefined) {
       problems.push(`  ${name}: ${where} is in the Backbone and has no committed row`);
       continue;
     }
+    filledRows.push(row);
     for (const column of FILL_COLUMNS) {
       const value = textOrLines(record[column], `${where} ${column}`);
       if (value !== '') counts[column] += 1;
@@ -318,6 +332,9 @@ export function fillColumns(backboneDir, existing = () => undefined) {
   if (problems.length) {
     throw new ExportError([`refused: --fill-columns would change ${problems.length} committed cell(s) or row(s). Nothing was written.`, ...problems].join('\n'));
   }
+  // The cells this mode fills, on the rows it fills them on.
+  const stopText = stopMessage(heldTextFindings(name, ['drill_id', ...FILL_COLUMNS], filledRows));
+  if (stopText) throw new ExportError(stopText);
   const differences = Object.entries(FILL_EXPECTED).filter(([key, expected]) => counts[key] !== expected)
     .map(([key, expected]) => `${key}: expected ${expected}, observed ${counts[key]}`);
   const filled = FILL_COLUMNS.map((column) => `${column} ${counts[column]} filled, ${counts.drills - counts[column]} empty`).join('; ');

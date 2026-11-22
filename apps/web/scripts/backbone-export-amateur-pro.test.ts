@@ -302,6 +302,35 @@ describe('backbone-export-amateur-pro', () => {
     expect(read(forced.out, TEMPLATES)).toBe(read(first.out, TEMPLATES));
   });
 
+  // LANE GD: TWO STOPS NO FLAG PASSES (lib/backbone-export-guards.mjs; Overwatch Q2 = A and C1 on #2042).
+
+  it('a row that carries the DOC-136 source key stops the export, with or without allowOverwrite, and nothing is written', () => {
+    const sourced = fixture();
+    sourced.tracks[0] = { ...sourced.tracks[0], sources: ['LR-050', 'DOC-136 (a made-up source line)'] };
+    const held = backbone(sourced);
+    for (const options of [{}, { allowOverwrite: true }]) {
+      const refused = exportInto(held, first.out, options);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${TRACKS} track_id ${CLASS}: sources names a held DOC-136 record`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      for (const name of WRITTEN) expect(read(refused.out, name)).toBe(read(first.out, name));
+    }
+  });
+
+  it('a committed step that links a drill is never written back as a typed line, with or without allowOverwrite', () => {
+    const typed = fixture();
+    // The Backbone still has T1's first step as a typed line.
+    typed.sessions[0] = { ...typed.sessions[0], items: [item(1, { free_text_drill: 'Jump rope', slot: 'AM' }), (typed.sessions[0].items as Json[])[1]] };
+    const typedDir = backbone(typed);
+    for (const options of [{}, { allowOverwrite: true }]) {
+      const refused = exportInto(typedDir, first.out, options);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain(`  ${ITEMS} template_id ${T1}: step 1 links drill ${D1}; the export would write it back as a typed line`);
+      expect(refused.stderr).toContain('Nothing was written, and --allow-overwrite does not change that.');
+      for (const name of WRITTEN) expect(read(refused.out, name)).toBe(read(first.out, name));
+    }
+  });
+
   it('stops on an unknown record key, a manifest mismatch, a drill the drill library lacks, or a block session naming a template outside the set', () => {
     const unknown = fixture();
     unknown.sessions[0] = { ...unknown.sessions[0], new_field: 'x' };
