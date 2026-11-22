@@ -542,6 +542,16 @@ describe('taps (PATTERN-1d-2; Q2 A, Q3 A, Q8 A)', () => {
     })).rejects.toThrow('That window is not in this gym.');
   });
 
+  test('the writer refuses a window chance on a report of another athlete or another run', async () => {
+    const report = (athleteId: string, runId: string, context: { drillId: string } | { blockId: string }) => writer.recordBehaviourObservation({
+      organizationId: ORG, athleteId, behaviourKey: KEY, observerAccountId: COACH_A, authorRole: 'coach',
+      session: { runId }, context, windowChance: { windowId, chance: 4 }, taskConstraint: 'controlled',
+      polarity: 'occurrence', attributionTarget: 'unresolved', attributionCertainty: 'uncertain',
+    });
+    await expect(report(LEAVING, RUN, { drillId: DRILL })).rejects.toThrow('That window is not in this gym.');
+    await expect(report(ATHLETE, PLANNED_RUN, { blockId: 'blk-bsw-1' })).rejects.toThrow('That window is not in this gym.');
+  });
+
   test('a closed window takes no tap, and closes once', async () => {
     const closed = await windows.closeBehaviourWindow({ organizationId: ORG, windowId });
     expect(closed.closed_at).not.toBeNull();
