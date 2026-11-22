@@ -23,22 +23,30 @@
  *                    calibrated pair
  *   P6 lapse         the latest coded chances all missed: the tier lapses
  *
- * NOT UNTIL CALIBRATED. An attempt coded by two people whose pair has not met
- * the calibration bar (inference/reliability.ts assessPairCalibration) is
- * UNVERIFIED: returned, so a coach can see it, and kept out of every count.
- * Calibration is per behaviour, per coach pair (report section 4), so it is
- * judged on the gym's whole record of this behaviour -- every athlete -- which
- * the caller passes as `calibrationReadings`. One coach's own readings are not
- * a pair and still count; the emerging tier says "single observer" when that
- * is all there is.
+ * NOT UNTIL CALIBRATED (pick 3; Overwatch Q1 A on the PATTERN-1 plan,
+ * PunxsyProminence/ppbf-platform#2082). A coach's reading counts only when
+ * that coach is in a pair that has met the calibration bar on this behaviour
+ * (inference/reliability.ts assessPairCalibration), and an attempt coded by
+ * two or more people counts only when every pair among them has. Anything
+ * else is UNVERIFIED: returned, and counted apart, so a coach can see it, and
+ * kept out of every tier count. A person's reading that names no coach cannot
+ * be calibrated, and is unverified too. Calibration is per behaviour, per
+ * coach pair (report section 4), so it is judged on the gym's whole record of
+ * this behaviour -- every athlete -- which the caller passes as
+ * `calibrationReadings`. With no ratified calibration bar no coach is
+ * calibrated, nothing counts, and the evaluation says so. One calibrated coach
+ * can carry the emerging tier alone; it says "single observer" when that is
+ * all there is.
  *
- * DISPUTES WITHHOLD EVERY TIER. Attempts read both ways, two observers
- * scoring the same attempt differently, or film contradicting a coach: the
- * readers do not agree on what happened, so no tier is claimed until a person
- * looks. Disputes are read from every current reading, the unverified ones
- * included: two coaches not yet calibrated who disagree still disagree.
- * Whose fault it was (attribution) is reported, not thresholded -- the
- * approved bar sets no number for it, and none is invented here.
+ * DISPUTES (Overwatch Q4 A, #2082). An attempt read both ways -- by one
+ * coach, two coaches, or a coach and a model -- counts for neither side: it is
+ * left out of every count and listed for a person to look at, and the tiers
+ * stand on the remaining attempts. Disputes are read from every current
+ * reading, the unverified ones included: two coaches not yet calibrated who
+ * disagree still disagree. Film contradicting a coach still withholds every
+ * tier until a person looks. Whose fault it was (attribution) is reported, not
+ * thresholded -- the approved bar sets no number for it, and none is invented
+ * here.
  *
  * Nothing here decides anything: like the rest of this directory it returns
  * the standing and the reasons, and a coach decides what to do with it.
@@ -51,8 +59,8 @@ import type {
   PatternTier,
   PatternTierBar,
 } from '../learningPolicies';
-import { collapseToEpisodes, episodeKeyOf } from './episodes';
-import { admitObservations, detectObserverDisagreement, detectVideoContradiction, summarizeAttribution } from './evidence';
+import { collapseToEpisodes, episodeKeyOf, type EpisodeCollapse } from './episodes';
+import { admitObservations, detectVideoContradiction, summarizeAttribution } from './evidence';
 import { assessPairCalibration, pairKey, type PairCalibration } from './inference/reliability';
 import type { AttributionSummary, BehaviourObservation, PatternReasonCode } from './types';
 
@@ -100,12 +108,18 @@ export interface PatternTierEvaluation {
   readonly tier: PatternTier | null;
   readonly standings: Readonly<Record<PatternTier, TierStanding>>;
   readonly counts: TierCounts;
-  /** Disputes that withhold every tier until a person looks. */
+  /** Film contradicting a coach: withholds every tier until a person looks. */
   readonly withheld: readonly PatternReasonCode[];
+  /** Attempts read both ways, left out of every count, with every reading of them, for a person to look at. */
+  readonly disputed: Readonly<{ attempts: number; observationIds: readonly string[] }>;
   /** Only one coach saw it. */
   readonly singleObserver: boolean;
-  /** Readings of attempts coded by an uncalibrated pair: shown, not counted. */
+  /** False when the gym has no ratified calibration bar: no coach is calibrated, so nothing counts. */
+  readonly calibrationBarInForce: boolean;
+  /** Readings of attempts not every coach of which is calibrated, alone and as a pair: shown, not counted. */
   readonly unverifiedObservationIds: readonly string[];
+  /** The unverified readings' undisputed attempts a person coded, and how many of them showed it. */
+  readonly unverifiedCounts: Readonly<{ codedChances: number; occurrences: number }>;
   readonly pairCalibrations: readonly PairCalibration[];
   readonly attribution: AttributionSummary;
   readonly asOf: string;
@@ -167,6 +181,14 @@ function hasCalibratedGroup(observers: readonly string[], size: number, pairs: R
   return extend(0, []);
 }
 
+/** P1: a coded chance is an attempt a person scored; film or a model alone is none. Oldest first. */
+function codedChancesOf(collapse: EpisodeCollapse): BehaviourObservation[] {
+  return collapse.episodes
+    .filter((episode) => (collapse.readingsOf.get(episode.observationId) ?? [episode])
+      .some((reading) => reading.interpretation === 'human_observed'))
+    .sort((left, right) => Date.parse(left.observedAt) - Date.parse(right.observedAt));
+}
+
 function admitCalibrationReadings(input: EvaluatePatternTiersInput): BehaviourObservation[] {
   const byAthlete = new Map<string, BehaviourObservation[]>();
   for (const reading of input.calibrationReadings) {
@@ -200,34 +222,38 @@ export function evaluatePatternTiers(input: EvaluatePatternTiersInput): PatternT
     (reading) => gymDayNumber(reading.observedAt) >= asOfDay - input.bar.currentWithinDays,
   );
 
-  // Not until calibrated: an attempt two people coded counts only when their
-  // pair is calibrated. Its readings are returned, not counted, otherwise.
-  const unverified = new Set<string>();
+  // Not until calibrated, judged per attempt (a reading with no key is an
+  // attempt of its own): every person who coded it is a calibrated coach,
+  // and every pair of them is a calibrated pair, or none of it counts.
+  const calibratedCoaches = new Set([...pairs.values()].filter((pair) => pair.calibrated).flatMap((pair) => pair.observers));
   const attempts = new Map<string, BehaviourObservation[]>();
   for (const reading of current) {
-    if (typeof reading.opportunityKey !== 'string' || reading.opportunityKey.length === 0) continue;
     const attempt = episodeKeyOf(reading);
     attempts.set(attempt, [...(attempts.get(attempt) ?? []), reading]);
   }
+  const unverified = new Set<string>();
   for (const readings of attempts.values()) {
-    const observers = observersOf(readings);
-    if (observers.length >= 2 && !pairsCalibrated(observers, pairs)) {
+    const everyCoachCalibrated = readings
+      .filter((reading) => reading.interpretation === 'human_observed')
+      .every((reading) => typeof reading.observerAccountId === 'string' && calibratedCoaches.has(reading.observerAccountId));
+    if (!everyCoachCalibrated || !pairsCalibrated(observersOf(readings), pairs)) {
       for (const reading of readings) unverified.add(reading.observationId);
     }
   }
-  const verified = current.filter((reading) => !unverified.has(reading.observationId));
-  const collapse = collapseToEpisodes(verified);
 
-  const withheld: PatternReasonCode[] = [];
-  if (collapseToEpisodes(current).disputedEpisodeKeys.length > 0) withheld.push('ATTEMPT_DISPUTED');
-  if (detectObserverDisagreement(current)) withheld.push('OBSERVER_DISAGREEMENT');
-  if (detectVideoContradiction(current)) withheld.push('VIDEO_CONTRADICTS_OBSERVER');
+  // Disputed attempts are left out and listed; only film contradicting a
+  // coach withholds.
+  const disputedKeys = new Set(collapseToEpisodes(current).disputedEpisodeKeys);
+  const isDisputed = (reading: BehaviourObservation) => disputedKeys.has(episodeKeyOf(reading));
+  const withheld: PatternReasonCode[] = detectVideoContradiction(current) ? ['VIDEO_CONTRADICTS_OBSERVER'] : [];
+  const counted = current.filter((reading) => !unverified.has(reading.observationId) && !isDisputed(reading));
+  const collapse = collapseToEpisodes(counted);
+  const shownOnly = codedChancesOf(collapseToEpisodes(
+    current.filter((reading) => unverified.has(reading.observationId) && !isDisputed(reading)),
+  ));
 
-  // P1: a coded chance is an attempt a coach scored.
   const readingsOf = (episode: BehaviourObservation) => collapse.readingsOf.get(episode.observationId) ?? [episode];
-  const episodes = collapse.episodes
-    .filter((episode) => readingsOf(episode).some((reading) => reading.interpretation === 'human_observed'))
-    .sort((left, right) => Date.parse(left.observedAt) - Date.parse(right.observedAt));
+  const episodes = codedChancesOf(collapse);
   const occurrences = episodes.filter((episode) => episode.polarity === 'occurrence');
   const days = episodes.map((episode) => gymDayNumber(episode.observedAt));
   let trailingMisses = 0;
@@ -239,7 +265,7 @@ export function evaluatePatternTiers(input: EvaluatePatternTiersInput): PatternT
   // shown or not; a coach who only ever recorded misses did not see it.
   const sessionsByCoach = new Map<string, Set<string>>();
   const sawIt = new Set<string>();
-  for (const reading of verified) {
+  for (const reading of counted) {
     if (reading.interpretation !== 'human_observed' || !reading.observerAccountId) continue;
     const sessions = sessionsByCoach.get(reading.observerAccountId) ?? new Set<string>();
     sessions.add(reading.sessionId);
@@ -304,8 +330,17 @@ export function evaluatePatternTiers(input: EvaluatePatternTiersInput): PatternT
     standings: Object.freeze(standings),
     counts,
     withheld: Object.freeze(withheld),
+    disputed: Object.freeze({
+      attempts: disputedKeys.size,
+      observationIds: Object.freeze(current.filter(isDisputed).map((reading) => reading.observationId).sort()),
+    }),
     singleObserver: coaches.length === 1,
+    calibrationBarInForce: input.calibration !== null,
     unverifiedObservationIds: Object.freeze([...unverified].sort()),
+    unverifiedCounts: Object.freeze({
+      codedChances: shownOnly.length,
+      occurrences: shownOnly.filter((episode) => episode.polarity === 'occurrence').length,
+    }),
     pairCalibrations: Object.freeze([...pairs.values()]),
     attribution: summarizeAttribution(collapse.episodes),
     asOf: input.asOf,
