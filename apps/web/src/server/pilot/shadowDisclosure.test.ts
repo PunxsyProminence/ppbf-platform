@@ -17,6 +17,7 @@ import {
   SHADOW_DISCLOSURE_CLASSIFICATION,
   SHADOW_DISCLOSURE_MEDICAL_ONLY_CUES,
   SHADOW_DISCLOSURE_REASON,
+  shadowDisclosureFilesEscalation,
 } from './shadowDisclosure';
 
 const mockFileEscalation = jest.mocked(fileEscalation);
@@ -57,7 +58,7 @@ describe('detectShadowDisclosure', () => {
     expect(detectShadowDisclosure('My dad hits me and it hurts', 'athlete')).not.toBeNull();
   });
 
-  test.each(['coach', 'parent', 'organization_admin', 'admin', 'staff', 'volunteer', 'board', 'platform_owner'])(
+  test.each(['coach', 'organization_admin', 'admin', 'staff', 'volunteer', 'board', 'platform_owner'])(
     'role %s is out of scope',
     (role) => {
       expect(detectShadowDisclosure('My dad hits me', role)).toBeNull();
@@ -67,6 +68,49 @@ describe('detectShadowDisclosure', () => {
   test('the medical-only cue ids are real scan cues', () => {
     for (const cue of SHADOW_DISCLOSURE_MEDICAL_ONLY_CUES) {
       expect(ATHLETE_VOICE_TRIAGED_HIGH_CUES).toContain(cue);
+    }
+  });
+});
+
+// HF8-1 B (Jason, 2026-11-21, Q1 = B "office review only", relayed by
+// Overwatch on #2083): a parent's SHADOW message gets the athlete's scan and
+// the same carve-outs. A match is office review only: the org admin's SHADOW
+// review row for that one exchange (OD-2026-10-07-009 ruling 4), never a
+// coach alert or an escalation entry.
+describe('a parent\'s message (HF8-1, Q1 = B)', () => {
+  test.each(F076_SENTENCES)('a parent typing "$message" is a disclosure', ({ message, namesGymStaff: staff }) => {
+    const disclosure = detectShadowDisclosure(message, 'parent');
+    expect(disclosure).not.toBeNull();
+    // The same reading as an athlete's, except that it files no escalation.
+    expect({ ...disclosure, filesEscalation: true }).toEqual(detectShadowDisclosure(message, 'athlete'));
+    expect(disclosure?.filesEscalation).toBe(false);
+    expect(disclosure?.namesGymStaff).toBe(staff);
+  });
+
+  test.each(F076_SENTENCES)('an athlete\'s "$message" files an escalation', ({ message }) => {
+    expect(detectShadowDisclosure(message, 'athlete')?.filesEscalation).toBe(true);
+  });
+
+  test('a parent\'s disclosure files nothing, even when an athlete id is passed', async () => {
+    const disclosure = detectShadowDisclosure('My coach touched me and told me not to tell anyone', 'parent')!;
+    await expect(fileShadowDisclosureEscalation({
+      organizationId: 'org-1', athleteId: 'ATH-1', conversationId: 'conv-1', disclosure,
+    })).resolves.toBeNull();
+    expect(mockFileEscalation).not.toHaveBeenCalled();
+    expect(queryOne).not.toHaveBeenCalled();
+  });
+
+  test('the carve-outs hold for a parent as for an athlete', () => {
+    expect(detectShadowDisclosure('How do I throw a better jab?', 'parent')).toBeNull();
+    expect(detectShadowDisclosure('My legs are sore after roadwork, what should I stretch?', 'parent')).toBeNull();
+    expect(detectShadowDisclosure('I think I broke my thumb on the bag', 'parent')).toBeNull();
+    expect(detectShadowDisclosure('How do I keep my guard up when he punches me?', 'parent')).toBeNull();
+  });
+
+  test('only an athlete\'s disclosure files an escalation; a parent\'s is office review only', () => {
+    expect(shadowDisclosureFilesEscalation('athlete')).toBe(true);
+    for (const role of ['parent', 'coach', 'organization_admin', 'admin', 'staff', 'volunteer', 'board', 'platform_owner', '']) {
+      expect(shadowDisclosureFilesEscalation(role)).toBe(false);
     }
   });
 });
@@ -243,9 +287,38 @@ describe('a disclosure wins over the non-emergency medical withhold', () => {
     expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'athlete'))).toBe(base);
   });
 
-  test('a parent or coach sending the same words is unchanged (athletes only, as F-076)', () => {
+  test('a coach sending the same words is unchanged (coaches are not scanned)', () => {
+    const message = 'my coach hits me and it hurts';
+    const base = validateShadowRequest(message, 'coach', 'org');
+    expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'coach'))).toBe(base);
+  });
+
+  // HF8-1 B: the F-093 change applies to a parent (Overwatch on #2083,
+  // comment 7065230094: "the pain-word change (F-093) applies").
+  test('a parent\'s disclosure with a pain word is answered, not withheld (F-093, Q1 = B)', () => {
     const message = 'my coach hits me and it hurts';
     const base = validateShadowRequest(message, 'parent', 'org');
+    expect(base.valid).toBe(false);
+    expect(base.classification).toBe('personal_health_concern');
+    expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'parent'))).toEqual({
+      valid: true, highRisk: true, topic: base.topic, classification: SHADOW_DISCLOSURE_CLASSIFICATION,
+    });
+  });
+
+  test('a parent\'s disclosure with no pain word is marked high-risk and still answered (Q1 = B)', () => {
+    const message = 'My dad hits me';
+    const base = validateShadowRequest(message, 'parent', 'org');
+    expect(base.valid).toBe(true);
+    expect(base.highRisk).not.toBe(true);
+    const marked = markShadowDisclosure(base, detectShadowDisclosure(message, 'parent'));
+    expect(marked).toEqual({ ...base, highRisk: true, classification: SHADOW_DISCLOSURE_CLASSIFICATION });
+    expect(marked.valid).toBe(true);
+  });
+
+  test('a parent\'s pain report that is no disclosure is still withheld as main had it', () => {
+    const message = 'My legs are sore after roadwork';
+    const base = validateShadowRequest(message, 'parent', 'org');
+    expect(base.classification).toBe('personal_health_concern');
     expect(markShadowDisclosure(base, detectShadowDisclosure(message, 'parent'))).toBe(base);
   });
 
